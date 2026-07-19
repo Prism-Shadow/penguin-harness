@@ -1,0 +1,236 @@
+# Release: tag v* -> build the one-line install artifacts and publish a GitHub Release.
+# Two parallel jobs:
+# - release: build the monorepo -> pnpm deploy a production CLI dir -> assemble penguin/ (bin + lib + web)
+#   -> four platform packages each bundling the official Node runtime + a universal package -> SHA256 files -> upload to the Release.
+#   Artifacts: penguin-{linux,darwin}-{x64,arm64}.tar.gz, penguin-universal.tar.gz,
+#   their .sha256 files, SHA256SUMS, and install.sh; one version per tag, multiple versions coexist.
+# - publish-npm: publish the whole chain (@prismshadow/penguin-skills -> @prismshadow/penguin-core
+#   -> @prismshadow/penguin-server -> @prismshadow/penguin-cli) to npm at the tag version.
+#   skills/core serve the penguin-sdk Skill's `npm install`; server ships the built web assets inside
+#   the package (web-dist/, its default web dir falls back to it), so `npm install -g
+#   @prismshadow/penguin-cli` alone yields a working `penguin` incl. the Web UI (needs Node >= 24).
+#   The publish flow mirrors AgentHub's publish.yml: OIDC trusted publishing (environment: npm +
+#   id-token: write, no token). A Trusted Publisher can only be configured in the settings page of a
+#   package that ALREADY EXISTS on the registry, so a brand-new package cannot be first-published by
+#   this workflow. Release checklist for a new package: (1) a maintainer bootstrap-publishes it once
+#   manually with a one-off granular token (revoke it afterwards), running the same prepare steps as
+#   this job (stamp versions, build, copy LICENSE + web-dist) and publishing with `pnpm publish
+#   --access public --no-git-checks` -- NEVER `npm publish`, which keeps workspace:* deps unrewritten
+#   and yields a package that fails to install (Unsupported URL Type "workspace:");
+#   (2) configure this repo + workflow as its Trusted Publisher on npmjs; (3) subsequent tags publish
+#   via OIDC. The publish step is idempotent (versions already on the registry are skipped), so a tag
+#   that failed mid-chain can be re-run as-is after fixing the config.
+#   npm publishing lives here rather than a separate `on: release: published` workflow: the Release is created
+#   by this workflow's GITHUB_TOKEN, and GitHub won't trigger other workflows' release events from that.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g. v0.1.0)"
+        required: true
+
+env:
+  # Bundled Node runtime version (official nodejs.org dist, aligned with engines >=24).
+  NODE_RUNTIME_VERSION: v24.18.0
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      # On manual dispatch, check out the tag itself (not the selected branch HEAD): when re-uploading an existing
+      # tag's artifacts this keeps them in sync with the tag's source. On tag-push, leaving ref empty is the default.
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || '' }}
+
+      # pnpm version comes from package.json's packageManager field.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Inject the release tag into core's VERSION constant (the source for CLI --version and the install-complete
+      # message); otherwise artifacts always carry the in-repo dev version and multiple installs can't be told apart.
+      - name: Stamp release version
+        run: |
+          TAG="${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
+          V="${TAG#v}"
+          grep -q 'export const VERSION = "' packages/core/src/index.ts
+          sed -i "s/export const VERSION = \"[^\"]*\"/export const VERSION = \"$V\"/" packages/core/src/index.ts
+
+      - name: Build (tsup + vite)
+        run: pnpm build
+
+      # lib/: the CLI and its production deps (including workspace core/server/skills, all build outputs);
+      # pnpm 10's deploy needs --legacy (this repo doesn't enable inject-workspace-packages).
+      # bin/penguin launcher: resolve its own real path (following symlinks) -> default PENGUIN_WEB_DIST to
+      # the sibling web/ -> use the bundled runtime (node/bin/node) if present, else fall back to system node.
+      - name: Assemble penguin/ (lib + web + bin)
+        run: |
+          pnpm --filter @prismshadow/penguin-cli --prod deploy --legacy "$PWD/out/penguin/lib"
+          cp -r packages/web/dist out/penguin/web
+          mkdir -p out/penguin/bin
+          cat > out/penguin/bin/penguin <<'EOF'
+          #!/bin/sh
+          SELF="$0"
+          while [ -h "$SELF" ]; do
+            DIR="$(cd "$(dirname "$SELF")" && pwd)"
+            SELF="$(readlink "$SELF")"
+            case "$SELF" in /*) ;; *) SELF="$DIR/$SELF" ;; esac
+          done
+          DIR="$(cd "$(dirname "$SELF")/.." && pwd)"
+          export PENGUIN_WEB_DIST="${PENGUIN_WEB_DIST:-$DIR/web}"
+          if [ -x "$DIR/node/bin/node" ]; then
+            exec "$DIR/node/bin/node" "$DIR/lib/dist/index.js" "$@"
+          fi
+          exec node "$DIR/lib/dist/index.js" "$@"
+          EOF
+          chmod +x out/penguin/bin/penguin
+
+      # Platform packages: linux uses .tar.xz, darwin uses .tar.gz (nodejs.org naming);
+      # node/ is only lightly trimmed (drop share/doc and share/man, keep the rest).
+      - name: Package platform + universal tarballs
+        run: |
+          mkdir -p dist-artifacts
+          for target in linux-x64 linux-arm64 darwin-x64 darwin-arm64; do
+            os="${target%%-*}"
+            arch="${target#*-}"
+            name="node-$NODE_RUNTIME_VERSION-$os-$arch"
+            if [ "$os" = "linux" ]; then ext="tar.xz"; else ext="tar.gz"; fi
+            curl -fsSL "https://nodejs.org/dist/$NODE_RUNTIME_VERSION/$name.$ext" -o "/tmp/$name.$ext"
+            rm -rf /tmp/node-runtime out/penguin/node
+            mkdir -p /tmp/node-runtime
+            if [ "$ext" = "tar.xz" ]; then
+              tar -xJf "/tmp/$name.$ext" -C /tmp/node-runtime
+            else
+              tar -xzf "/tmp/$name.$ext" -C /tmp/node-runtime
+            fi
+            mv "/tmp/node-runtime/$name" out/penguin/node
+            rm -rf out/penguin/node/share/doc out/penguin/node/share/man
+            tar -czf "dist-artifacts/penguin-$os-$arch.tar.gz" -C out penguin
+          done
+          # Universal package: no bundled runtime, requires system Node >= 24.
+          rm -rf out/penguin/node
+          tar -czf dist-artifacts/penguin-universal.tar.gz -C out penguin
+
+      # SHA256SUMS summary + a same-named .sha256 per artifact (install.sh verifies against the latter).
+      - name: Generate SHA256 checksums
+        run: |
+          cd dist-artifacts
+          sha256sum *.tar.gz > SHA256SUMS
+          for f in *.tar.gz; do
+            sha256sum "$f" > "$f.sha256"
+          done
+
+      # On tag-push use the ref name; on manual dispatch use the input tag.
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          files: |
+            dist-artifacts/*.tar.gz
+            dist-artifacts/*.sha256
+            dist-artifacts/SHA256SUMS
+            install.sh
+
+  publish-npm:
+    name: Publish npm packages
+    runs-on: ubuntu-latest
+    # OIDC trusted publishing (same as AgentHub's publish.yml): no token; npmjs establishes trust via
+    # environment `npm` + this workflow. A publish failure doesn't affect the release job (independent, parallel).
+    permissions:
+      id-token: write
+      contents: read
+    environment:
+      name: npm
+      url: https://www.npmjs.com/package/@prismshadow/penguin-cli
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || '' }}
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: "https://registry.npmjs.org"
+
+      # npm Trusted Publishing (OIDC) requires npm CLI >= 11.5.1: Node 24 ships npm 11.x, which satisfies it;
+      # this just asserts the version to guard against regressions -- pnpm publish's registry auth ultimately
+      # delegates to system npm, ordinary CI doesn't exercise OIDC (so a green run won't catch it), and too old
+      # a version only surfaces as an auth failure when actually publishing a tag.
+      - name: Assert npm supports trusted publishing (>= 11.5.1)
+        run: |
+          V="$(npm --version)"
+          echo "npm $V"
+          node -e 'const [M, m, p] = process.argv[1].split(".").map(Number); if (M < 11 || (M === 11 && (m < 5 || (m === 5 && p < 1)))) { console.error("npm " + process.argv[1] + " < 11.5.1"); process.exit(1); }' "$V"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Version always comes from the tag: package version and core's VERSION constant are injected together (the
+      # repo keeps the dev version). All published packages must bump in lockstep -- pnpm publish rewrites every
+      # workspace:* dep to the dependency's current version, so the versions must match.
+      - name: Stamp release version
+        run: |
+          TAG="${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
+          V="${TAG#v}"
+          grep -q 'export const VERSION = "' packages/core/src/index.ts
+          sed -i "s/export const VERSION = \"[^\"]*\"/export const VERSION = \"$V\"/" packages/core/src/index.ts
+          (cd packages/skills && npm version --no-git-tag-version "$V")
+          (cd packages/core && npm version --no-git-tag-version "$V")
+          (cd packages/server && npm version --no-git-tag-version "$V")
+          (cd packages/cli && npm version --no-git-tag-version "$V")
+
+      # Dependency order: cli bundles core's dist (tsup noExternal), server/web need core's types;
+      # web is built here only to be copied into the server package below.
+      - name: Build and test
+        run: |
+          pnpm --filter @prismshadow/penguin-skills build
+          pnpm --filter @prismshadow/penguin-core build
+          pnpm --filter @prismshadow/penguin-server build
+          pnpm --filter @prismshadow/penguin-web build
+          pnpm --filter @prismshadow/penguin-cli build
+          pnpm --filter @prismshadow/penguin-skills test
+          pnpm --filter @prismshadow/penguin-core test
+          pnpm --filter @prismshadow/penguin-server test
+          pnpm --filter @prismshadow/penguin-cli test
+
+      # Copy LICENSE into the package dirs (the files allowlist includes it, so artifacts ship the license)
+      # and the built web assets into the server package (web-dist/, in its files allowlist: an npm install
+      # serves the Web UI from there without PENGUIN_WEB_DIST).
+      # Idempotent: a version already on the registry is skipped. The check tests `npm view`'s output
+      # rather than its exit code -- for a missing version of an existing package, older npm exits 0 and
+      # newer npm exits 1, but the output is non-empty only when the version exists. Re-running the tag
+      # after a mid-chain failure (e.g. Trusted Publisher not configured yet) picks up where it left off.
+      - name: Publish to npm
+        run: |
+          TAG="${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
+          V="${TAG#v}"
+          cp LICENSE packages/skills/LICENSE
+          cp LICENSE packages/core/LICENSE
+          cp LICENSE packages/server/LICENSE
+          cp LICENSE packages/cli/LICENSE
+          rm -rf packages/server/web-dist
+          cp -r packages/web/dist packages/server/web-dist
+          for pkg in skills core server cli; do
+            name="@prismshadow/penguin-$pkg"
+            if [ -n "$(npm view "$name@$V" version 2>/dev/null || true)" ]; then
+              echo "$name@$V already on the registry, skipping."
+              continue
+            fi
+            pnpm --filter "$name" publish --access public --no-git-checks
+          done

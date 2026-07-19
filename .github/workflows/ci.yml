@@ -1,0 +1,57 @@
+# CI: build -> style (Prettier) -> typecheck (tsc) -> unit tests (vitest) -> live e2e (DeepSeek).
+# Build first: core's exports point at dist/, and cli's type resolution and runtime imports both need core's build output.
+# e2e needs the repo secret DEEPSEEK_API_KEY; when absent (e.g. forks) that step self-skips and the other checks run as usual.
+name: CI
+
+# Limit triggers to avoid duplicate runs: push runs only on main/dev; PRs always run once (no target-branch filter --
+# this repo's PRs often target integration branches rather than main/dev, and a target filter would leave them with no CI).
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # pnpm version comes from package.json's packageManager field.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build (tsup)
+        run: pnpm build
+
+      - name: Code style (Prettier)
+        run: pnpm format:check
+
+      - name: Typecheck (tsc)
+        run: pnpm typecheck
+
+      - name: Unit tests (vitest)
+        run: pnpm test
+
+      # The secret is exposed only in this step (step-level env); earlier steps and third-party actions can't see it.
+      # The secrets context can't be used in if expressions, so skip inside the shell when it's absent (e.g. forks).
+      - name: E2E (live LLM via DeepSeek)
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: |
+          if [ -z "$DEEPSEEK_API_KEY" ]; then
+            echo "DEEPSEEK_API_KEY not available; skipping e2e."
+            exit 0
+          fi
+          pnpm test:e2e

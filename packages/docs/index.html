@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#030712" media="(prefers-color-scheme: dark)" />
+    <meta
+      name="description"
+      content="PenguinHarness documentation — architecture, the OmniMessage protocol, SDK interfaces, CLI and Server API reference."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="PenguinHarness Docs" />
+    <meta
+      property="og:description"
+      content="Documentation for PenguinHarness — architecture, the OmniMessage protocol, SDK interfaces, CLI and Server API reference."
+    />
+    <meta name="twitter:card" content="summary" />
+    <link rel="icon" type="image/svg+xml" href="./penguin-logo.svg" />
+    <title>PenguinHarness Docs</title>
+    <!-- Apply the stored/system theme before first paint so text-heavy doc pages
+         don't flash the wrong background while React boots. -->
+    <script>
+      try {
+        var m = localStorage.getItem("penguin-docs.theme");
+        if (m === "dark" || (m !== "light" && matchMedia("(prefers-color-scheme: dark)").matches))
+          document.documentElement.classList.add("dark");
+      } catch {}
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

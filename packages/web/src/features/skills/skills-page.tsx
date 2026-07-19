@@ -1,0 +1,441 @@
+/**
+ * Skill library page: the @prismshadow/penguin-skills
+ * Skill library, shown sectioned by skill group. Group styling matches the model
+ * config page — the group header (group name + skill count, no icon) is
+ * collapsible, highlights on hover, and animates height on expand/collapse;
+ * expanded by default. Cards within a group form a grid (up to three per row on
+ * wide screens, generously sized). Each card = an enlarged skill icon spanning
+ * two rows (rounded border + light background; DTO icon = the raw icon.svg from
+ * the catalog, rendered inline once it passes sanitize, otherwise falls back to
+ * a default book icon) + a name (monospace) and short description on the right,
+ * one line each (single-line truncation, falling back to the full description
+ * when missing) + a metadata line (version · semantic update time · usage count
+ * "used by N Agents"); group and card copy follow the UI language (localizedText /
+ * localizedShortText), and groups have no description. Two **icon buttons** for
+ * actions (copy goes into aria-label and title) —
+ * - Paper plane "quick invoke": enters /chat/new draft mode with default_agent,
+ *   pre-selects the skill, and pre-fills the invocation text per UI language
+ *   (zh "使用 X 技能" / en "use the X skill", overwriting any existing draft body);
+ * - Download "manage installs": a Modal listing every Agent in the current
+ *   Project — not-installed shows "安装"/"Install", installed shows
+ *   "已安装"/"Installed" (hover switches to "卸载"/"Uninstall", click to
+ *   uninstall); any member can operate it; optimistic update, a top-level
+ *   toast on success for install/uninstall, rollback plus a toast on failure.
+ */
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router";
+import type { SkillGroupItem, SkillMetadataItem } from "@prismshadow/penguin-server/api";
+import * as api from "../../api/endpoints";
+import { ApiError } from "../../api/client";
+import { S } from "../../lib/strings";
+import { apiErrorText } from "../../lib/api-error";
+import { formatRelativeDate } from "../../lib/format";
+import { useDocumentTitle } from "../../lib/use-document-title";
+import { useAuth } from "../../state/auth";
+import { useLocale } from "../../state/locale";
+import { agentDisplayName, useProject } from "../../state/project";
+import { AgentAvatar } from "../../components/ui/agent-avatar";
+import { Button } from "../../components/ui/button";
+import { Chevron } from "../../components/ui/chevron";
+import { GlyphIcon } from "../../components/ui/glyph-icon";
+import { Modal } from "../../components/ui/modal";
+import { Skeleton, SkeletonCard } from "../../components/ui/skeleton";
+import { toastError, toastSuccess } from "../../components/ui/toast";
+import { DRAFT_SESSION_ID } from "../chat/chat-page";
+import { draftKey, loadDraft, saveDraft } from "../chat/draft-cache";
+import { localizedShortText, localizedText } from "../chat/skill-use";
+import { SkillIcon } from "./skill-icon-view";
+
+/** agentId → set of installed skill names (in-page install-state snapshot, rewritten in place by optimistic updates). */
+type InstalledMap = ReadonlyMap<string, ReadonlySet<string>>;
+
+/** "Quick invoke" button icon (paper plane, 24×24 line path; button shows only the icon, copy goes into aria/title). */
+const SEND_ICON = "M22 2 11 13M22 2 15 22 11 13 2 9 22 2";
+/** "Manage installs" button icon (download into tray, 24×24 line path). */
+const INSTALL_ICON = "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3";
+
+export function SkillsPage() {
+  useDocumentTitle(S.nav.skills);
+  const navigate = useNavigate();
+  const { locale } = useLocale();
+  const userId = useAuth().user?.userId ?? null;
+  const { currentProject, agents, setCurrentAgentId } = useProject();
+  const projectId = currentProject?.projectId ?? null;
+
+  const [groups, setGroups] = useState<SkillGroupItem[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [installed, setInstalled] = useState<InstalledMap>(new Map());
+  /** Collapsed skill groups (all expanded by default; same convention as the model page's provider groups). */
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+
+  // Library list: readable once logged in, fetched once on page entry.
+  useEffect(() => {
+    let cancelled = false;
+    setError(null);
+    api
+      .getSkillLibrary()
+      .then((res) => {
+        if (!cancelled) setGroups(res.groups);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setError(apiErrorText(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Installed skills for every Agent in the current Project (fetched in
+  // parallel, same convention as the sessions context): a single Agent's
+  // failure is silently treated as "no skills" and doesn't break the whole page.
+  const agentIdsKey = agents.map((a) => a.agentId).join(",");
+  useEffect(() => {
+    // Clear the snapshot before fetching: agentId (e.g. default_agent) is
+    // reused across Projects, and leftover state from the previous project
+    // would otherwise overwrite the new data when merged below, leaving the
+    // page permanently showing the old project's install state.
+    setInstalled(new Map());
+    if (!projectId || agentIdsKey === "") return;
+    let cancelled = false;
+    const ids = agentIdsKey.split(",");
+    void Promise.all(
+      ids.map(async (agentId) => {
+        try {
+          const res = await api.getAgentSkills(projectId, agentId);
+          return [agentId, new Set(res.skills.map((s) => s.name))] as const;
+        } catch {
+          return [agentId, new Set<string>()] as const;
+        }
+      }),
+    ).then((entries) => {
+      // Merge instead of replacing the whole table: an Agent the user has
+      // already interacted with during the fetch keeps its interaction result
+      // (an optimistic state or an install/uninstall response is newer than
+      // this mount-time snapshot), so a late-arriving initial snapshot never
+      // regresses the UI.
+      if (!cancelled)
+        setInstalled((prev) => {
+          const next = new Map<string, ReadonlySet<string>>(entries);
+          for (const [agentId, set] of prev) next.set(agentId, set);
+          return next;
+        });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, agentIdsKey]);
+
+  /** Rewrite one Agent's install state in place (shared by optimistic updates and failure rollback). */
+  const setAgentSkill = (agentId: string, name: string, on: boolean) =>
+    setInstalled((prev) => {
+      const next = new Map(prev);
+      const set = new Set(next.get(agentId) ?? []);
+      if (on) set.add(name);
+      else set.delete(name);
+      next.set(agentId, set);
+      return next;
+    });
+
+  /** Check to install / uncheck to uninstall (any member can do this): optimistic update, a confirmation toast on success, rollback plus a toast on failure. */
+  const toggleInstall = async (agentId: string, name: string, on: boolean) => {
+    if (!projectId) return;
+    setAgentSkill(agentId, name, on);
+    const target = agents.find((a) => a.agentId === agentId);
+    const agentName = target ? agentDisplayName(target) : agentId;
+    try {
+      if (on) {
+        // On a successful install, calibrate the whole Agent from the list the response carries (concurrent install/uninstall also converges to the server's truth).
+        const res = await api.installAgentSkills(projectId, agentId, [name]);
+        setInstalled((prev) => new Map(prev).set(agentId, new Set(res.skills.map((s) => s.name))));
+        toastSuccess(S.skills.installedToast(name, agentName));
+      } else {
+        await api.removeAgentSkill(projectId, agentId, name);
+        toastSuccess(S.skills.uninstalledToast(name, agentName));
+      }
+    } catch (e) {
+      // A 404 on uninstall means "was already not installed": the target
+      // state is already reached, so keep it unchecked without rolling back
+      // or erroring (otherwise the checkbox would be stuck permanently
+      // checked whenever this page's snapshot is stale).
+      if (!on && e instanceof ApiError && e.status === 404) return;
+      setAgentSkill(agentId, name, !on);
+      toastError(apiErrorText(e));
+    }
+  };
+
+  /**
+   * Quick invoke: pre-selects the skill in the draft cache (the `skills`
+   * field, used by ChatInput as its initial selection on mount), pre-fills
+   * the invocation text per UI language (overwriting any existing draft
+   * body — quick invoke's intent is unambiguous, and leftover draft text
+   * would only be noise here), and points the Agent to default_agent before
+   * entering draft mode — the route state explicitly carries agentId
+   * (overriding whatever was last selected in the cache). handoffAgentId
+   * must be cleared: a leftover @ target would forward the whole skill
+   * invocation to a different Agent — quick invoke must always start a new
+   * conversation with default_agent.
+   */
+  const quickInvoke = (name: string) => {
+    if (userId && projectId) {
+      const key = draftKey(userId, projectId);
+      saveDraft(key, {
+        ...loadDraft(key),
+        agentId: "default_agent",
+        text: S.skills.quickInvokeText(name),
+        skills: [name],
+        handoffAgentId: undefined,
+      });
+    }
+    setCurrentAgentId("default_agent");
+    navigate(`/chat/${DRAFT_SESSION_ID}`, { state: { agentId: "default_agent" } });
+  };
+
+  return (
+    <div className="h-full overflow-y-auto p-4 md:p-6">
+      <div className="mx-auto max-w-5xl">
+        <h1 className="text-xl font-semibold">{S.skills.pageTitle}</h1>
+        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{S.skills.pageDesc}</p>
+
+        {error ? (
+          <div className="mt-6 flex items-center gap-3">
+            <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+            <Button size="sm" onClick={() => window.location.reload()}>
+              {S.common.retry}
+            </Button>
+          </div>
+        ) : groups === null ? (
+          <div className="mt-6 grid gap-2.5 md:grid-cols-2 xl:grid-cols-3">
+            {Array.from({ length: 4 }, (_, i) => (
+              <SkeletonCard key={i} className="p-4">
+                <Skeleton className="h-4 w-32" />
+                <Skeleton className="mt-2 h-4 w-3/4" />
+                <Skeleton className="mt-3 h-6 w-36" />
+              </SkeletonCard>
+            ))}
+          </div>
+        ) : (
+          <div className="mt-6 space-y-3">
+            {groups.map((group) => {
+              const open = !collapsed.has(group.id);
+              return (
+                <section
+                  key={group.id}
+                  className="overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900"
+                >
+                  {/* Group header (styled like the model page's provider groups): group name +
+                      skill count (no icon, no description); the whole row toggles
+                      collapse on click and highlights on hover. */}
+                  <button
+                    type="button"
+                    aria-expanded={open}
+                    onClick={() =>
+                      setCollapsed((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(group.id)) next.delete(group.id);
+                        else next.add(group.id);
+                        return next;
+                      })
+                    }
+                    className="flex w-full items-center gap-2.5 bg-gray-50 px-3 py-2.5 text-left transition-colors duration-150 hover:bg-gray-100 dark:bg-gray-900/60 dark:hover:bg-gray-800/60"
+                  >
+                    {/* Group name can truncate (min-w-0): the count and collapse arrow must not shrink. */}
+                    <span className="min-w-0 truncate text-sm font-semibold">
+                      {localizedText(locale, group.title, group.titleZh)}
+                    </span>
+                    <span className="shrink-0 whitespace-nowrap font-mono text-xs text-gray-400">
+                      {S.skills.skillCount(group.skills.length)}
+                    </span>
+                    <span className="min-w-0 flex-1" />
+                    <Chevron open={open} className="text-gray-400" />
+                  </button>
+
+                  {/* Expand/collapse height transition: grid-template-rows tweens between
+                      0fr and 1fr, with the inner overflow-hidden clipping the content
+                      (same convention as the model page). */}
+                  <div
+                    className={`grid transition-[grid-template-rows] duration-200 ease-out ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}
+                  >
+                    {/* inert while collapsed: cards at zero height shouldn't still be Tab-focusable or clickable. */}
+                    <div className="overflow-hidden" inert={!open}>
+                      {/* Up to three cards per row, generously sized (3 columns ≥xl, 2 columns ≥md, 1 column on narrow screens). */}
+                      <div
+                        className={`grid gap-2.5 border-t border-gray-200 p-2.5 transition-opacity duration-200 md:grid-cols-2 xl:grid-cols-3 dark:border-gray-800 ${open ? "opacity-100" : "opacity-0"}`}
+                      >
+                        {group.skills.map((skill) => (
+                          <SkillCard
+                            key={skill.name}
+                            skill={skill}
+                            installed={installed}
+                            onQuickInvoke={quickInvoke}
+                            onToggleInstall={toggleInstall}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </section>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** A single skill card: metadata display (including a semantic metadata line) + quick invoke + "manage installs" Modal. */
+function SkillCard({
+  skill,
+  installed,
+  onQuickInvoke,
+  onToggleInstall,
+}: {
+  skill: SkillMetadataItem;
+  installed: InstalledMap;
+  onQuickInvoke: (name: string) => void;
+  onToggleInstall: (agentId: string, name: string, on: boolean) => Promise<void>;
+}) {
+  const { locale } = useLocale();
+  const { agents } = useProject();
+  const [installOpen, setInstallOpen] = useState(false);
+  let installedCount = 0;
+  for (const set of installed.values()) if (set.has(skill.name)) installedCount += 1;
+
+  // Short description takes priority, falling back to the full description
+  // when missing (per UI language); title carries the full description for hover reading.
+  const description = localizedShortText(locale, skill);
+  const fullDescription = skill.description;
+  // Metadata line: version · semantic update time (omitted when there's no
+  // date) · usage count (a plain, readable phrase rather than a bare number badge).
+  const meta = [
+    `v${skill.version}`,
+    skill.updated ? formatRelativeDate(skill.updated, locale) : null,
+    S.skills.usedByAgents(installedCount),
+  ]
+    .filter((v): v is string => v !== null)
+    .join(" · ");
+  return (
+    <div className="flex h-full flex-col rounded-md border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+      {/* Header: an enlarged skill icon spanning two rows (rounded border + light background), with the name and short description on one line each to the right. */}
+      <div className="flex items-center gap-3">
+        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-gray-50 text-gray-600 dark:border-gray-700 dark:bg-gray-800/60 dark:text-gray-300">
+          <SkillIcon icon={skill.icon} size={26} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <span className="block truncate font-mono text-[13px] font-semibold" title={skill.name}>
+            {skill.name}
+          </span>
+          {/* Short description truncates to one line (full description goes into title for hover reading). */}
+          <p
+            className="mt-0.5 truncate text-xs leading-5 text-gray-500 dark:text-gray-400"
+            title={fullDescription}
+          >
+            {description}
+          </p>
+        </div>
+      </div>
+      {/* Footer row: metadata on the left (e.g. `v1 · 今天更新 · N 个 Agent 在用`) +
+          icon buttons on the right (copy goes into aria-label and title), pinned to the card's bottom with mt-auto. */}
+      <div className="mt-auto flex items-center gap-1.5 pt-3">
+        <span
+          className="min-w-0 flex-1 truncate text-[11px] text-gray-400 dark:text-gray-500"
+          title={meta}
+        >
+          {meta}
+        </span>
+        <Button
+          size="sm"
+          className="shrink-0 px-1.5"
+          aria-label={`${S.skills.quickInvoke} ${skill.name}`}
+          title={S.skills.quickInvoke}
+          onClick={() => onQuickInvoke(skill.name)}
+        >
+          <GlyphIcon d={SEND_ICON} size={15} />
+        </Button>
+        <Button
+          size="sm"
+          variant="primary"
+          className="shrink-0 px-1.5"
+          aria-label={`${S.skills.manageInstall} ${skill.name}`}
+          title={S.skills.manageInstall}
+          onClick={() => setInstallOpen(true)}
+        >
+          <GlyphIcon d={INSTALL_ICON} size={15} />
+        </Button>
+      </div>
+      {installOpen && (
+        <Modal
+          open
+          title={S.skills.manageInstallTitle(skill.name)}
+          onClose={() => setInstallOpen(false)}
+        >
+          <div className="space-y-0.5">
+            {agents.length === 0 && (
+              <p className="py-1.5 text-xs text-gray-400">{S.common.loading}</p>
+            )}
+            {agents.map((a) => (
+              <InstallRow
+                key={a.agentId}
+                agentId={a.agentId}
+                name={agentDisplayName(a)}
+                installed={installed.get(a.agentId)?.has(skill.name) ?? false}
+                onToggle={(on) => void onToggleInstall(a.agentId, skill.name, on)}
+              />
+            ))}
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+/**
+ * One Agent row in the "manage installs" Modal: not-installed shows
+ * "安装"/"Install"; installed shows "已安装"/"Installed", switching to
+ * "卸载"/"Uninstall" on hover (same button, click to uninstall). Both
+ * install and uninstall go through optimistic updates (toggleInstall), rolling back on failure.
+ */
+function InstallRow({
+  agentId,
+  name,
+  installed,
+  onToggle,
+}: {
+  agentId: string;
+  name: string;
+  installed: boolean;
+  onToggle: (on: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center gap-2 rounded-md px-1.5 py-1.5 transition-colors duration-150 hover:bg-gray-50 dark:hover:bg-gray-800/60">
+      <AgentAvatar id={agentId} size={22} className="shrink-0 rounded" />
+      <span className="min-w-0 flex-1 truncate text-sm" title={agentId}>
+        {name}
+      </span>
+      {installed ? (
+        // group: on hover the button's copy switches "已安装"/"Installed" → "卸载"/"Uninstall" (the same button carries the uninstall action).
+        <Button
+          size="sm"
+          variant="ghost"
+          className="group shrink-0"
+          aria-label={`${S.skills.uninstall} ${agentId}`}
+          onClick={() => onToggle(false)}
+        >
+          <span className="group-hover:hidden">{S.skills.installed}</span>
+          <span className="hidden text-red-600 group-hover:inline dark:text-red-400">
+            {S.skills.uninstall}
+          </span>
+        </Button>
+      ) : (
+        <Button
+          size="sm"
+          className="shrink-0"
+          aria-label={`${S.skills.install} ${agentId}`}
+          onClick={() => onToggle(true)}
+        >
+          {S.skills.install}
+        </Button>
+      )}
+    </div>
+  );
+}

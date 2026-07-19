@@ -1,0 +1,191 @@
+/**
+ * Docs site styles: single-file Tailwind CSS 4 entry point sharing the landing page's
+ * visual language (GitHub-style simplicity, solid backgrounds + 1px borders + one
+ * brand blue accent) minus its marketing effects — doc pages stay calm and readable.
+ * Dark theme is toggled via the html.dark class.
+ */
+@import "tailwindcss";
+
+/* Dark theme toggled via the html.dark class (Tailwind 4 custom variant). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Brand color scale (Google blue family), identical to the landing page / Web App. */
+@theme {
+  --color-brand-25: #f8fbff;
+  --color-brand-50: #e8f0fe;
+  --color-brand-100: #d2e3fc;
+  --color-brand-200: #aecbfa;
+  --color-brand-300: #8ab4f8;
+  --color-brand-400: #669df6;
+  --color-brand-500: #4285f4;
+  --color-brand-600: #1a73e8;
+  --color-brand-700: #0b57d0;
+  --color-brand-800: #0842a0;
+  --color-brand-900: #062e6f;
+  --color-brand-950: #041e49;
+}
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+  .dark {
+    color-scheme: dark;
+    /* Pure-black dark base, matching the landing page (true-neutral gray overrides). */
+    --color-gray-950: #000000;
+    --color-gray-900: #0d0d0d;
+    --color-gray-800: #1f1f1f;
+    --color-gray-700: #303030;
+  }
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    @apply bg-white text-gray-900 antialiased dark:bg-gray-950 dark:text-gray-100;
+    font-family:
+      ui-sans-serif,
+      system-ui,
+      -apple-system,
+      "Segoe UI",
+      Roboto,
+      "PingFang SC",
+      "Microsoft YaHei",
+      sans-serif;
+  }
+  code,
+  pre,
+  kbd {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  }
+  button:focus-visible,
+  a:focus-visible,
+  summary:focus-visible {
+    outline: 3px solid rgb(107 114 128 / 0.4);
+    outline-offset: 2px;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+  ::selection {
+    background: rgb(0 0 0 / 0.1);
+  }
+  .dark ::selection {
+    background: rgb(255 255 255 / 0.18);
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(60 64 67 / 0.28) transparent;
+  }
+  .dark * {
+    scrollbar-color: rgb(232 234 237 / 0.2) transparent;
+  }
+}
+
+/* ---------- Animations (same tone as the landing page: short ease, slight offset) ---------- */
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.anim-rise {
+  animation: rise-in 280ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+.anim-fade {
+  animation: fade-in 120ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ---------- Typography for Markdown doc bodies (same voice as the landing blog) ---------- */
+
+.md-body {
+  overflow-wrap: break-word;
+}
+.md-body :is(p, ul, ol, pre, blockquote, table) {
+  margin: 0.625rem 0;
+}
+.md-body li {
+  margin: 0.3rem 0;
+}
+.md-body p,
+.md-body li {
+  line-height: 1.75;
+}
+.md-body :is(h1, h2, h3, h4) {
+  font-weight: 600;
+  margin: 1.75rem 0 0.5rem;
+}
+.md-body h1 {
+  font-size: 1.375rem;
+}
+.md-body h2 {
+  font-size: 1.1875rem;
+  @apply border-b border-gray-200 pb-1.5 dark:border-gray-800;
+}
+.md-body h3 {
+  font-size: 1.0625rem;
+}
+.md-body ul {
+  list-style: disc;
+  padding-left: 1.25rem;
+}
+.md-body ol {
+  list-style: decimal;
+  padding-left: 1.25rem;
+}
+.md-body a {
+  @apply text-brand-700 underline decoration-brand-300 underline-offset-2 transition-colors hover:text-brand-600 dark:text-brand-300 dark:decoration-brand-700;
+}
+.md-body code {
+  @apply rounded bg-gray-100 px-1 py-0.5 text-[0.85em] text-gray-800 dark:bg-gray-800 dark:text-gray-200;
+}
+.md-body pre {
+  @apply overflow-x-auto rounded-lg border border-gray-200 bg-gray-50 p-3 text-[13px] leading-6 dark:border-gray-800 dark:bg-gray-900;
+}
+.md-body pre code {
+  background: transparent;
+  color: inherit;
+  padding: 0;
+}
+.md-body blockquote {
+  @apply border-l-2 border-gray-300 pl-3 text-gray-600 dark:border-gray-700 dark:text-gray-400;
+}
+.md-body table {
+  border-collapse: collapse;
+  display: block;
+  overflow-x: auto;
+}
+.md-body :is(th, td) {
+  @apply border border-gray-200 px-2.5 py-1.5 text-sm dark:border-gray-800;
+}
+.md-body th {
+  @apply bg-gray-50 text-left dark:bg-gray-900;
+}
+.md-body hr {
+  @apply my-4 border-gray-200 dark:border-gray-800;
+}

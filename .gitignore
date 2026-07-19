@@ -1,0 +1,31 @@
+.DS_Store
+
+# dependencies
+node_modules/
+
+# build output
+dist/
+*.tsbuildinfo
+# web assets copied into the server package at npm publish time
+packages/server/web-dist/
+
+# secrets / local config
+.env
+.env.*
+!.env.example
+
+# agenthub trace cache
+cache/
+
+# legacy .penguin workspace symlink (no longer created; ignored for old working copies)
+.penguin
+
+# logs
+*.log
+
+# claude code session state (worktrees, skills)
+.claude/
+
+# playwright e2e artifacts
+packages/web/test-results/
+packages/web/playwright-report/

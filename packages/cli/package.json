@@ -1,0 +1,48 @@
+{
+  "name": "@prismshadow/penguin-cli",
+  "version": "0.0.1",
+  "type": "module",
+  "description": "PenguinHarness CLI: interactive REPL and single-task runner over @prismshadow/penguin-core.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "packages/cli"
+  },
+  "bin": {
+    "penguin": "./dist/index.js"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "build": "tsup",
+    "penguin": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@prismshadow/agenthub": "^0.3.3",
+    "@prismshadow/penguin-core": "workspace:*",
+    "@prismshadow/penguin-server": "workspace:*",
+    "@prismshadow/penguin-skills": "workspace:*",
+    "commander": "^13.0.0",
+    "dotenv": "^17.0.0",
+    "smol-toml": "^1.3.0",
+    "yaml": "^2.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsup": "^8.3.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  },
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

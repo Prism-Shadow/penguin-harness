@@ -1,0 +1,405 @@
+/**
+ * Landing page styles: single-file Tailwind CSS 4 entry point, sharing the Web App's
+ * visual language — GitHub-style simplicity, solid backgrounds + 1px borders + one
+ * brand blue accent, no glassmorphism. Dark theme is toggled via the html.dark class.
+ */
+@import "tailwindcss";
+
+/* Dark theme toggled via the html.dark class (Tailwind 4 custom variant). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Brand color scale (Google blue family), identical to the Web App. */
+@theme {
+  --color-brand-25: #f8fbff;
+  --color-brand-50: #e8f0fe;
+  --color-brand-100: #d2e3fc;
+  --color-brand-200: #aecbfa;
+  --color-brand-300: #8ab4f8;
+  --color-brand-400: #669df6;
+  --color-brand-500: #4285f4;
+  --color-brand-600: #1a73e8;
+  --color-brand-700: #0b57d0;
+  --color-brand-800: #0842a0;
+  --color-brand-900: #062e6f;
+  --color-brand-950: #041e49;
+}
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+  .dark {
+    color-scheme: dark;
+    /* Pure-black dark base, matching the Web App (true-neutral gray overrides). */
+    --color-gray-950: #000000;
+    --color-gray-900: #0d0d0d;
+    --color-gray-800: #1f1f1f;
+    --color-gray-700: #303030;
+  }
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    @apply bg-white text-gray-900 antialiased dark:bg-gray-950 dark:text-gray-100;
+    font-family:
+      ui-sans-serif,
+      system-ui,
+      -apple-system,
+      "Segoe UI",
+      Roboto,
+      "PingFang SC",
+      "Microsoft YaHei",
+      sans-serif;
+  }
+  code,
+  pre,
+  kbd {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  }
+  button:focus-visible,
+  a:focus-visible,
+  summary:focus-visible {
+    outline: 3px solid rgb(107 114 128 / 0.4);
+    outline-offset: 2px;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+  ::selection {
+    background: rgb(0 0 0 / 0.1);
+  }
+  .dark ::selection {
+    background: rgb(255 255 255 / 0.18);
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(60 64 67 / 0.28) transparent;
+  }
+  .dark * {
+    scrollbar-color: rgb(232 234 237 / 0.2) transparent;
+  }
+  /* Anchor sections scroll below the sticky header. */
+  section[id] {
+    scroll-margin-top: 4.5rem;
+  }
+}
+
+/* ---------- Animations (same tone as the Web App: 160-280ms ease, slight offset) ---------- */
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.anim-rise {
+  animation: rise-in 280ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+.anim-fade {
+  animation: fade-in 120ms ease-out both;
+}
+
+/* Scroll reveal: sections start slightly offset and settle in when they enter the viewport. */
+.reveal {
+  opacity: 0;
+  transform: translateY(14px);
+  transition:
+    opacity 500ms cubic-bezier(0.2, 0.7, 0.3, 1),
+    transform 500ms cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+.reveal-visible {
+  opacity: 1;
+  transform: none;
+}
+
+/* Hero backdrop: a faint dot grid fading out downwards — subtle, no gradients on content. */
+.hero-dots {
+  background-image: radial-gradient(rgb(26 115 232 / 0.14) 1px, transparent 1px);
+  background-size: 22px 22px;
+  mask-image: linear-gradient(to bottom, black 0%, transparent 78%);
+  -webkit-mask-image: linear-gradient(to bottom, black 0%, transparent 78%);
+}
+.dark .hero-dots {
+  background-image: radial-gradient(rgb(138 180 248 / 0.16) 1px, transparent 1px);
+}
+
+/* ---------- Ambient neon backdrop: blurred glows wandering across the screen ----------
+   Viewport-FIXED (the page background stays put while content scrolls over it) with a
+   uniform page background behind every section, so nothing jumps at section boundaries.
+   Each glow wanders freely across the whole screen on its own slow route (vw/vh
+   amplitudes), soft and blue-family only (enterprise tone; hue drift stays within blues). Reduced-motion freezes them in place. */
+.neon-bg {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+.neon-blob {
+  position: absolute;
+  width: 48rem;
+  height: 48rem;
+  border-radius: 9999px;
+  opacity: 0.12;
+  will-change: transform, filter;
+  filter: blur(88px);
+  animation: neon-hue 44s linear infinite alternate;
+}
+.dark .neon-blob {
+  opacity: 0.16;
+}
+.neon-blob-a {
+  top: -12rem;
+  left: -10rem;
+  background: radial-gradient(circle, #4285f4 0%, transparent 66%);
+  animation:
+    neon-wander-a 44s ease-in-out infinite,
+    neon-hue 46s linear infinite alternate;
+}
+.neon-blob-b {
+  top: 8%;
+  right: -12rem;
+  background: radial-gradient(circle, #0ea5e9 0%, transparent 66%);
+  animation:
+    neon-wander-b 56s ease-in-out infinite,
+    neon-hue 52s linear infinite alternate -16s;
+}
+.neon-blob-c {
+  bottom: -14rem;
+  left: 18%;
+  background: radial-gradient(circle, #06b6d4 0%, transparent 66%);
+  animation:
+    neon-wander-c 50s ease-in-out infinite,
+    neon-hue 58s linear infinite alternate -30s;
+}
+.neon-blob-d {
+  top: 42%;
+  left: -14rem;
+  background: radial-gradient(circle, #2563eb 0%, transparent 66%);
+  animation:
+    neon-wander-d 62s ease-in-out infinite,
+    neon-hue 48s linear infinite alternate -22s;
+}
+@keyframes neon-wander-a {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  30% {
+    transform: translate3d(48vw, 22vh, 0) scale(1.12);
+  }
+  60% {
+    transform: translate3d(16vw, 58vh, 0) scale(0.94);
+  }
+  80% {
+    transform: translate3d(-6vw, 28vh, 0) scale(1.06);
+  }
+}
+@keyframes neon-wander-b {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  25% {
+    transform: translate3d(-38vw, 32vh, 0) scale(1.08);
+  }
+  55% {
+    transform: translate3d(-58vw, 6vh, 0) scale(1.16);
+  }
+  80% {
+    transform: translate3d(-14vw, -6vh, 0) scale(0.96);
+  }
+}
+@keyframes neon-wander-c {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  30% {
+    transform: translate3d(30vw, -34vh, 0) scale(1.1);
+  }
+  55% {
+    transform: translate3d(-12vw, -56vh, 0) scale(0.95);
+  }
+  80% {
+    transform: translate3d(8vw, -16vh, 0) scale(1.05);
+  }
+}
+@keyframes neon-wander-d {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  25% {
+    transform: translate3d(34vw, -18vh, 0) scale(1.1);
+  }
+  50% {
+    transform: translate3d(64vw, 8vh, 0) scale(0.95);
+  }
+  75% {
+    transform: translate3d(28vw, 24vh, 0) scale(1.08);
+  }
+}
+@keyframes neon-hue {
+  from {
+    filter: blur(88px) hue-rotate(-8deg);
+  }
+  to {
+    filter: blur(88px) hue-rotate(12deg);
+  }
+}
+
+/* ---------- Trend-line growth: draw from zero rightwards, hold, fade, loop ----------
+   Paths must set pathLength=1; the dot pops in once the line has fully grown. */
+.anim-line-draw {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: line-draw var(--draw-dur, 4.6s) cubic-bezier(0.3, 0, 0.35, 1) infinite;
+}
+.anim-line-dot {
+  opacity: 0;
+  animation: line-dot var(--draw-dur, 4.6s) linear infinite;
+}
+@keyframes line-draw {
+  0% {
+    stroke-dashoffset: 1;
+    opacity: 1;
+  }
+  55% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  84% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  94%,
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+}
+@keyframes line-dot {
+  0%,
+  52% {
+    opacity: 0;
+  }
+  58%,
+  84% {
+    opacity: 1;
+  }
+  94%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+  .reveal {
+    opacity: 1;
+    transform: none;
+  }
+  /* With animations disabled the trend lines' base state is hidden; restore them fully drawn. */
+  .anim-line-draw {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  .anim-line-dot {
+    opacity: 1;
+  }
+}
+
+/* Printing never scrolls, so scroll-reveal must not hide content on paper/PDF. */
+@media print {
+  .reveal {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ---------- Minimal typography for Markdown body content (blog + CONTRACT.md) ---------- */
+
+.md-body {
+  overflow-wrap: break-word;
+}
+.md-body :is(p, ul, ol, pre, blockquote, table) {
+  margin: 0.625rem 0;
+}
+.md-body li {
+  margin: 0.3rem 0;
+}
+.md-body p,
+.md-body li {
+  line-height: 1.75;
+}
+.md-body :is(h1, h2, h3, h4) {
+  font-weight: 600;
+  margin: 1.25rem 0 0.5rem;
+}
+.md-body h1 {
+  font-size: 1.375rem;
+}
+.md-body h2 {
+  font-size: 1.125rem;
+}
+.md-body h3 {
+  font-size: 1rem;
+}
+.md-body ul {
+  list-style: disc;
+  padding-left: 1.25rem;
+}
+.md-body ol {
+  list-style: decimal;
+  padding-left: 1.25rem;
+}
+.md-body a {
+  @apply text-brand-700 underline decoration-brand-300 underline-offset-2 transition-colors hover:text-brand-600 dark:text-brand-300 dark:decoration-brand-700;
+}
+.md-body code {
+  @apply rounded bg-gray-100 px-1 py-0.5 text-[0.85em] text-gray-800 dark:bg-gray-800 dark:text-gray-200;
+}
+.md-body pre {
+  @apply overflow-x-auto rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm dark:border-gray-800 dark:bg-gray-900;
+}
+.md-body pre code {
+  background: transparent;
+  color: inherit;
+  padding: 0;
+}
+.md-body blockquote {
+  @apply border-l-2 border-gray-300 pl-3 text-gray-600 dark:border-gray-700 dark:text-gray-400;
+}
+.md-body table {
+  border-collapse: collapse;
+  display: block;
+  overflow-x: auto;
+}
+.md-body :is(th, td) {
+  @apply border border-gray-200 px-2.5 py-1.5 text-sm dark:border-gray-800;
+}
+.md-body hr {
+  @apply my-4 border-gray-200 dark:border-gray-800;
+}
