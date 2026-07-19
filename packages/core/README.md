@@ -23,11 +23,11 @@ A single `run` drives a complete Task: streaming output, per-call approvals, con
 
 ## Documentation
 
-- [Architecture](https://prism-shadow.github.io/penguin-harness/docs/architecture)
-- [The OmniMessage Protocol](https://prism-shadow.github.io/penguin-harness/docs/omni-message)
-- [Core Interfaces](https://prism-shadow.github.io/penguin-harness/docs/interfaces)
-- [The Agent Loop](https://prism-shadow.github.io/penguin-harness/docs/agent-loop)
-- [Sessions & Traces](https://prism-shadow.github.io/penguin-harness/docs/sessions-and-traces)
+- [Architecture](https://penguin.ooo/docs/architecture)
+- [The OmniMessage Protocol](https://penguin.ooo/docs/omni-message)
+- [Core Interfaces](https://penguin.ooo/docs/interfaces)
+- [The Agent Loop](https://penguin.ooo/docs/agent-loop)
+- [Sessions & Traces](https://penguin.ooo/docs/sessions-and-traces)
 
 ## Development
 

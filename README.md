@@ -20,9 +20,9 @@
 
 <p align="center">
   English | <a href="README.zh.md">简体中文</a> ·
-  <a href="https://prism-shadow.github.io/penguin-harness/">Website</a> ·
-  <a href="https://prism-shadow.github.io/penguin-harness/docs/">Docs</a> ·
-  <a href="https://prism-shadow.github.io/penguin-harness/blog">Blog</a>
+  <a href="https://penguin.ooo/">Website</a> ·
+  <a href="https://penguin.ooo/docs/">Docs</a> ·
+  <a href="https://penguin.ooo/blog">Blog</a>
 </p>
 
 <p align="center">
@@ -100,11 +100,11 @@ A pnpm monorepo (TypeScript, Node >= 24). One install ships four layers that sha
 | [`packages/landing`](packages/landing) | — | Product landing page (this repo's website) |
 | [`packages/docs`](packages/docs) | — | Documentation site (bilingual, deployed under `/docs/`) |
 
-Responsibilities split by source of truth: the **SDK** owns protocol and execution (message parsing, the agent loop, tools), the **Server** owns the multi-user runtime (auth, SSE streaming, scheduled tasks), and the **file layer** under `~/.penguin/data` owns everything editable and recorded (prompts, Skills, secrets, Traces). The full design-by-design map is in [Architecture → Division of responsibilities](https://prism-shadow.github.io/penguin-harness/docs/architecture).
+Responsibilities split by source of truth: the **SDK** owns protocol and execution (message parsing, the agent loop, tools), the **Server** owns the multi-user runtime (auth, SSE streaming, scheduled tasks), and the **file layer** under `~/.penguin/data` owns everything editable and recorded (prompts, Skills, secrets, Traces). The full design-by-design map is in [Architecture → Division of responsibilities](https://penguin.ooo/docs/architecture).
 
 ## Documentation
 
-The docs site covers both usage and design: [Introduction](https://prism-shadow.github.io/penguin-harness/docs/) · [Quickstart](https://prism-shadow.github.io/penguin-harness/docs/quickstart) · [Architecture](https://prism-shadow.github.io/penguin-harness/docs/architecture) · [The OmniMessage Protocol](https://prism-shadow.github.io/penguin-harness/docs/omni-message) · [Core Interfaces](https://prism-shadow.github.io/penguin-harness/docs/interfaces) · [The Agent Loop](https://prism-shadow.github.io/penguin-harness/docs/agent-loop) · [CLI Reference](https://prism-shadow.github.io/penguin-harness/docs/cli) · [Server API](https://prism-shadow.github.io/penguin-harness/docs/server-api) · [Configuration](https://prism-shadow.github.io/penguin-harness/docs/configuration)
+The docs site covers both usage and design: [Introduction](https://penguin.ooo/docs/) · [Quickstart](https://penguin.ooo/docs/quickstart) · [Architecture](https://penguin.ooo/docs/architecture) · [The OmniMessage Protocol](https://penguin.ooo/docs/omni-message) · [Core Interfaces](https://penguin.ooo/docs/interfaces) · [The Agent Loop](https://penguin.ooo/docs/agent-loop) · [CLI Reference](https://penguin.ooo/docs/cli) · [Server API](https://penguin.ooo/docs/server-api) · [Configuration](https://penguin.ooo/docs/configuration)
 
 Every doc page has a "Copy Markdown" button, so you can paste it straight into a model context.
 

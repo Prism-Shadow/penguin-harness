@@ -1,6 +1,6 @@
 # @prismshadow/penguin-web
 
-The PenguinHarness Web App — a React 19 + Vite + Tailwind CSS 4 SPA that renders the OmniMessage stream (same protocol and statistics as the CLI) and manages Agents, Skills, Models, usage and Traces. Feature tour: [Web App Guide](https://prism-shadow.github.io/penguin-harness/docs/web-app).
+The PenguinHarness Web App — a React 19 + Vite + Tailwind CSS 4 SPA that renders the OmniMessage stream (same protocol and statistics as the CLI) and manages Agents, Skills, Models, usage and Traces. Feature tour: [Web App Guide](https://penguin.ooo/docs/web-app).
 
 ## Layout
 
