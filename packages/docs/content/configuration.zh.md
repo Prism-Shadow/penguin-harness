@@ -11,7 +11,7 @@ CLI 与服务端启动时会自动加载工作目录下的 `.env` 文件。
 
 | 变量 | 说明 | 缺省值 |
 | --- | --- | --- |
-| `PENGUIN_HOME` | 数据根目录 | `~/.penguin` |
+| `PENGUIN_HOME` | 数据根目录 | `~/.penguin/data` |
 | `PORT` | Web 服务监听端口 | `7364` |
 | `HOST` | Web 服务监听地址 | `127.0.0.1` |
 | `PENGUIN_WEB_DB` | 服务端 SQLite 数据库路径 | `<root>/web.db` |

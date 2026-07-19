@@ -8,7 +8,7 @@ PenguinHarness Server 提供一套同源 HTTP API，自带的 Web App 与其他 
 ## 总览
 
 - 技术栈：Hono + @hono/node-server，要求 Node >= 24；
-- 存储：SQLite（内置 `node:sqlite`，WAL 模式）仅存放索引与聚合数据——用户、登录会话、Project 授权、Agent / Session 索引、用量、UI 偏好、错误记录与 Schedule 状态；Agent、Trace 与 Workspace 数据全部以文件形式存放在 `~/.penguin` 下，与 CLI / SDK 共享，见[配置参考](/configuration)；
+- 存储：SQLite（内置 `node:sqlite`，WAL 模式）仅存放索引与聚合数据——用户、登录会话、Project 授权、Agent / Session 索引、用量、UI 偏好、错误记录与 Schedule 状态；Agent、Trace 与 Workspace 数据全部以文件形式存放在 `~/.penguin/data` 下，与 CLI / SDK 共享，见[配置参考](/configuration)；
 - 监听：默认 `127.0.0.1:7364`，可用环境变量 `PORT` / `HOST` 调整；
 - 请求体：写请求仅接受 JSON（Content-Type 校验，CSRF 防线之一），上限 20MB；
 - 错误响应统一为：

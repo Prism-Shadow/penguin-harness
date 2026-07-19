@@ -22,7 +22,7 @@ See the [Architecture](/architecture) page for how the levels cooperate, and the
 
 ## Data layout
 
-The data root is the `PENGUIN_HOME` environment variable, defaulting to `~/.penguin`. The layout is defined in one place, `packages/core/src/state/paths.ts`:
+The data root is the `PENGUIN_HOME` environment variable, defaulting to `~/.penguin/data`. The layout is defined in one place, `packages/core/src/state/paths.ts`:
 
 ```text
 <root>/<project>/
@@ -55,7 +55,7 @@ See `packages/core/src/trace/writer.ts` for the implementation.
 The head of a Trace (illustrative; one OmniMessage envelope per line):
 
 ```jsonl
-{"timestamp":"2026-07-18T03:10:22.531Z","type":"session_meta","payload":{"session_id":"session-2026-07-18-11-10-22-3f8a1c2d","provider":"deepseek","model_id":"deepseek-v4-pro","model_context_window":1000000,"system_prompt":"…","tools":[…],"thinking_level":"medium","agent_state":"/home/u/.penguin/default_project/agents/default_agent/agent_state","workspace":"/home/u/work"}}
+{"timestamp":"2026-07-18T03:10:22.531Z","type":"session_meta","payload":{"session_id":"session-2026-07-18-11-10-22-3f8a1c2d","provider":"deepseek","model_id":"deepseek-v4-pro","model_context_window":1000000,"system_prompt":"…","tools":[…],"thinking_level":"medium","agent_state":"/home/u/.penguin/data/default_project/agents/default_agent/agent_state","workspace":"/home/u/work"}}
 {"timestamp":"…","type":"event_msg","payload":{"type":"request_begin"}}
 {"timestamp":"…","type":"model_msg","payload":{"type":"text","role":"user","text":"Create hello.txt"}}
 {"timestamp":"…","type":"model_msg","payload":{"type":"tool_call","role":"assistant","name":"exec_command","arguments":"{\"cmd\":\"printf hi > hello.txt\"}","tool_call_id":"call_0"}}

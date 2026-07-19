@@ -118,7 +118,7 @@ export const zh = {
     eyebrow: "快速开始",
     title: "三步跑通第一个任务",
     subtitle:
-      "一行命令安装，打开桌面级界面即可让 Agent 开始工作；数据全部保存在本地 ~/.penguin 目录。",
+      "一行命令安装，打开桌面级界面即可让 Agent 开始工作；数据全部保存在本地 ~/.penguin/data 目录。",
     step1: "安装",
     step1Desc:
       "Linux / macOS（x64 / arm64），产物内嵌 Node 运行时，解压即用；升级与重装不触碰数据。",

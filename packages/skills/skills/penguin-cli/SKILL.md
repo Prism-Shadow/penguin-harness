@@ -30,7 +30,7 @@ penguin config model add --model-id <upstream_id> [--provider <group>] [--api-ke
 - For any OpenAI chat-completion compatible endpoint use `--client-type openai --base-url <endpoint>`; omit `--client-type` to auto-route by model id.
 - Prices are USD per million tokens (cache read / cache write / output).
 - `--vision` / `--no-vision` mark whether the model accepts images; omitting both keeps the current value (default is vision-capable).
-- All `penguin config model ...` and `penguin config vault ...` commands accept `--root <dir>` to target another data root (default `PENGUIN_HOME`, then `~/.penguin`).
+- All `penguin config model ...` and `penguin config vault ...` commands accept `--root <dir>` to target another data root (default `PENGUIN_HOME`, then `~/.penguin/data`).
 
 Other model commands:
 

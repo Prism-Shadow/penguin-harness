@@ -8,7 +8,7 @@ The PenguinHarness server exposes a same-origin HTTP API used by the bundled Web
 ## Overview
 
 - Stack: Hono + @hono/node-server, requires Node >= 24;
-- Storage: SQLite (built-in `node:sqlite`, WAL mode) holds only indexes and aggregates — users, auth sessions, Project authorization, Agent / Session indexes, usage, UI preferences, error records, and Schedule state; all Agent, Trace, and Workspace data stays as files under `~/.penguin`, shared with the CLI / SDK — see the [Configuration Reference](/configuration);
+- Storage: SQLite (built-in `node:sqlite`, WAL mode) holds only indexes and aggregates — users, auth sessions, Project authorization, Agent / Session indexes, usage, UI preferences, error records, and Schedule state; all Agent, Trace, and Workspace data stays as files under `~/.penguin/data`, shared with the CLI / SDK — see the [Configuration Reference](/configuration);
 - Binding: defaults to `127.0.0.1:7364`, adjustable via the `PORT` / `HOST` environment variables;
 - Request bodies: writes accept JSON only (Content-Type check, one of the CSRF defenses), capped at 20MB;
 - Errors share a single shape:

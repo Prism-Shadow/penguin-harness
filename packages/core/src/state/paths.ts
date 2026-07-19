@@ -1,7 +1,7 @@
 /**
  * Local directory layout for Agent State and Project config.
  *
- * Strictly follows the `~/.penguin/<project>/agents/<agent>/...` structure.
+ * Strictly follows the `~/.penguin/data/<project>/agents/<agent>/...` structure.
  * This module only provides constants and pure path functions; it never creates directories or reads/writes files.
  * Docs: /docs/sessions-and-traces § "Data layout".
  */
@@ -16,11 +16,12 @@ export const DEFAULT_AGENT_ID = "default_agent";
 
 /**
  * Resolves the local data root directory.
- * Prefers the `PENGUIN_HOME` environment variable, otherwise falls back to `~/.penguin`
- * (a hidden directory in the user's home, so it never collides with unrelated folders).
+ * Prefers the `PENGUIN_HOME` environment variable, otherwise falls back to `~/.penguin/data`
+ * (under the hidden `~/.penguin` home so it never collides with unrelated folders, and in a
+ * `data/` subdir kept separate from the installer's binaries under `~/.penguin`).
  */
 export function resolveRoot(): string {
-  return process.env.PENGUIN_HOME ?? path.join(os.homedir(), ".penguin");
+  return process.env.PENGUIN_HOME ?? path.join(os.homedir(), ".penguin", "data");
 }
 
 /** `<root>/<projectId>`. */

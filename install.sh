@@ -8,7 +8,7 @@
 #   PENGUIN_INSTALL_DIR=<dir> install dir; default ~/.penguin
 #   --universal               install the universal package (no bundled Node runtime; needs system Node >= 24)
 #
-# The data dir (~/.penguin) is independent of the install dir: reinstall/upgrade never touch data.
+# The data dir (~/.penguin/data) sits under the install home but is never touched by reinstall/upgrade (which only replace bin/lib/web/node).
 #
 # Docs: https://prism-shadow.github.io/penguin-harness/docs/installation
 set -eu
@@ -102,7 +102,7 @@ fi
 #    dir (same filesystem as the final location, so any slow cross-device copy happens before the
 #    old install is touched), then swap fast (rm old + same-disk mv is a rename; tiny window).
 #    No stale files after upgrade; the universal package has no node/, so cleanup lets the wrapper
-#    fall back to system Node. The data dir (~/.penguin) is separate and untouched. ---
+#    fall back to system Node. The data dir (~/.penguin/data) is untouched. ---
 tar -xzf "$TMP/$ASSET" -C "$TMP"
 [ -d "$TMP/penguin" ] || fail "unexpected archive layout: top-level penguin/ missing."
 mkdir -p "$INSTALL_DIR"

@@ -72,7 +72,7 @@ const MAX_SUBAGENT_DEPTH = 1;
 export interface CreateAgentOptions {
   agentId?: string;
   projectId?: string;
-  /** Local data root directory; defaults to `resolveRoot()` (PENGUIN_HOME or ~/.penguin). */
+  /** Local data root directory; defaults to `resolveRoot()` (PENGUIN_HOME or ~/.penguin/data). */
   root?: string;
 }
 
