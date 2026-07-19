@@ -47,13 +47,13 @@ describe("内置 Agent 供给", () => {
 
     // Install policy: default_agent is pre-installed with every Skill currently in the library.
     const skillsOf = async (agentId: string) =>
-      (await fs.readdir(path.join(t.root, projectId, agentId, "agent_state", "skills"))).sort();
+      (await fs.readdir(path.join(t.root, projectId, "agents", agentId, "agent_state", "skills"))).sort();
     expect(await skillsOf("default_agent")).toEqual(loadLibrarySkills().map((skill) => skill.name));
 
     // The default AGENTS.md is empty: it carries no preset guidance (delegation and task
     // conventions live in the default template's Suggested workflows section).
     const defaultMd = await fs.readFile(
-      path.join(t.root, projectId, "default_agent", "agent_state", "AGENTS.md"),
+      path.join(t.root, projectId, "agents", "default_agent", "agent_state", "AGENTS.md"),
       "utf8",
     );
     expect(defaultMd).toBe("");

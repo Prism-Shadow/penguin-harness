@@ -11,7 +11,7 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { readTraceTolerant, tracesDir } from "@prismshadow/penguin-core";
+import { agentsDir, readTraceTolerant, tracesDir } from "@prismshadow/penguin-core";
 import type { OmniMessage } from "@prismshadow/penguin-core";
 import type {
   AgentTracesResponse,
@@ -137,7 +137,7 @@ export class TraceService {
    */
   private async buildSessionIndex(projectId: string): Promise<Map<string, string>> {
     const index = new Map<string, string>();
-    for (const agentId of await listDirs(path.join(this.root, projectId))) {
+    for (const agentId of await listDirs(agentsDir(this.root, projectId))) {
       const dir = tracesDir(this.root, projectId, agentId);
       for (const dateDir of await listDirs(dir)) {
         for (const file of await listFiles(path.join(dir, dateDir))) {

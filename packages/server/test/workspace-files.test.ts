@@ -204,7 +204,7 @@ describe("agent 删除路由", () => {
       await owner.post(`/api/projects/${projectId}/agents`, { agentId: "temp_agent", name: "临时" })
     ).json()) as AgentCreateResponse;
     const agentId = created.agent.agentId;
-    const dir = path.join(t.root, projectId, agentId);
+    const dir = path.join(t.root, projectId, "agents", agentId);
     await fs.access(dir); // directory exists after creation
 
     const outsiderRes = await outsider.delete(`/api/projects/${projectId}/agents/${agentId}`);

@@ -8,7 +8,7 @@ CLI 由 npm 包 `@prismshadow/penguin-cli` 提供，命令为 `penguin`。不带
 ## 全局约定
 
 - 模型引用：模型身份始终是 `(provider, model_id)` 二元组。`--model-id` 填上游模型 id，与 `--provider` 组成配对引用。`run` / `chat` 省略 `--provider` 时，仅当该 `--model-id` 在配置中全局唯一才会匹配，存在歧义则报错。
-- 数据根目录：`--root <dir>` 覆盖数据根目录，优先级为 `--root` > 环境变量 `PENGUIN_HOME` > `~/PenguinHarness`。
+- 数据根目录：`--root <dir>` 覆盖数据根目录，优先级为 `--root` > 环境变量 `PENGUIN_HOME` > `~/.penguin`。
 
 ## penguin run
 

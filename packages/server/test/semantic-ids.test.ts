@@ -102,7 +102,7 @@ describe("语义 id", () => {
       (await api.post("/api/projects/ida-default_project/agents", { agentId: "flaky" })).status,
     ).toBe(500);
     spy.mockRestore();
-    await expect(fs.access(path.join(t.root, "ida-default_project", "flaky"))).rejects.toThrow();
+    await expect(fs.access(path.join(t.root, "ida-default_project", "agents", "flaky"))).rejects.toThrow();
     t.deps.agentConfigService.updateConfig = original;
     expect(
       (await api.post("/api/projects/ida-default_project/agents", { agentId: "flaky" })).status,
@@ -128,7 +128,7 @@ describe("语义 id", () => {
     expect(agent.name).toBe("爬虫");
     await expect(
       fs.access(
-        path.join(t.root, "ida-default_project", "crawler", "agent_state", "system_config.yaml"),
+        path.join(t.root, "ida-default_project", "agents", "crawler", "agent_state", "system_config.yaml"),
       ),
     ).resolves.toBeUndefined();
 

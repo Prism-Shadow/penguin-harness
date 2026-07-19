@@ -8,7 +8,7 @@ The CLI ships as the npm package `@prismshadow/penguin-cli`; the command is `pen
 ## Global conventions
 
 - Model references: a model's identity is always the `(provider, model_id)` pair. `--model-id` takes the upstream model id and pairs with `--provider`. When `run` / `chat` omit `--provider`, the `--model-id` matches only if it is globally unique in the configuration; ambiguity is an error.
-- Data root: `--root <dir>` overrides the data root directory. Priority: `--root` > the `PENGUIN_HOME` env var > `~/PenguinHarness`.
+- Data root: `--root <dir>` overrides the data root directory. Priority: `--root` > the `PENGUIN_HOME` env var > `~/.penguin`.
 
 ## penguin run
 

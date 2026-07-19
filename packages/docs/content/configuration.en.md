@@ -11,7 +11,7 @@ The CLI and the server automatically load a `.env` file from the working directo
 
 | Variable | Description | Default |
 | --- | --- | --- |
-| `PENGUIN_HOME` | Data root directory | `~/PenguinHarness` |
+| `PENGUIN_HOME` | Data root directory | `~/.penguin` |
 | `PORT` | Web service listen port | `7364` |
 | `HOST` | Web service listen address | `127.0.0.1` |
 | `PENGUIN_WEB_DB` | Server SQLite database path | `<root>/web.db` |

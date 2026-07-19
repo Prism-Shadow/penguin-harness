@@ -88,7 +88,7 @@ for await (const output of session.run([userText("Create hello.txt containing hi
 
 ## What's inside
 
-A pnpm monorepo (TypeScript, Node >= 24). One install ships four layers that share a single data directory (`~/PenguinHarness`) and a single message protocol (OmniMessage):
+A pnpm monorepo (TypeScript, Node >= 24). One install ships four layers that share a single data directory (`~/.penguin`) and a single message protocol (OmniMessage):
 
 | Package | Name | Role |
 | --- | --- | --- |
@@ -100,7 +100,7 @@ A pnpm monorepo (TypeScript, Node >= 24). One install ships four layers that sha
 | [`packages/landing`](packages/landing) | — | Product landing page (this repo's website) |
 | [`packages/docs`](packages/docs) | — | Documentation site (bilingual, deployed under `/docs/`) |
 
-Responsibilities split by source of truth: the **SDK** owns protocol and execution (message parsing, the agent loop, tools), the **Server** owns the multi-user runtime (auth, SSE streaming, scheduled tasks), and the **file layer** under `~/PenguinHarness` owns everything editable and recorded (prompts, Skills, secrets, Traces). The full design-by-design map is in [Architecture → Division of responsibilities](https://prism-shadow.github.io/penguin-harness/docs/architecture).
+Responsibilities split by source of truth: the **SDK** owns protocol and execution (message parsing, the agent loop, tools), the **Server** owns the multi-user runtime (auth, SSE streaming, scheduled tasks), and the **file layer** under `~/.penguin` owns everything editable and recorded (prompts, Skills, secrets, Traces). The full design-by-design map is in [Architecture → Division of responsibilities](https://prism-shadow.github.io/penguin-harness/docs/architecture).
 
 ## Documentation
 

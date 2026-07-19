@@ -20,7 +20,7 @@
  * gateway's endpoint base URL pre-filled). For `model default` / `model vision`,
  * --provider is **required**; core validation raises an error when the reference is not
  * found in models. `--root` specifies the data root directory (priority: option >
- * PENGUIN_HOME > ~/PenguinHarness). The UI language is controlled by the PENGUIN_LANG
+ * PENGUIN_HOME > ~/.penguin). The UI language is controlled by the PENGUIN_LANG
  * environment variable; `config lang` writes it into the shell startup file and restarts
  * the shell to take effect.
  * Docs: /docs/cli § "penguin config".
@@ -53,7 +53,7 @@ import { parseApprovalAnswer } from "../approval.js";
 import { getMessages, maskApiKey, type Messages } from "../i18n.js";
 import { applyLanguageToRc, restartShell } from "../lang-config.js";
 
-/** Data root directory: the `--root` option takes priority (relative paths resolved against cwd), then PENGUIN_HOME / ~/PenguinHarness. */
+/** Data root directory: the `--root` option takes priority (relative paths resolved against cwd), then PENGUIN_HOME / ~/.penguin. */
 function resolveRootOption(root: string | undefined): string {
   return root !== undefined ? path.resolve(root) : resolveRoot();
 }

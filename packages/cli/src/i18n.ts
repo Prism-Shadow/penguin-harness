@@ -25,7 +25,7 @@ export interface Messages {
     modelId: string;
     /** run/chat's --provider: pairs with --model-id; when omitted, resolved by unique match (ambiguity is an error). */
     provider: string;
-    /** Data root directory option (priority: --root > PENGUIN_HOME > ~/PenguinHarness). */
+    /** Data root directory option (priority: --root > PENGUIN_HOME > ~/.penguin). */
     root: string;
     workspace: string;
     approve: string;
@@ -157,7 +157,7 @@ const en: Messages = {
     modelId: "Model to use (upstream model id; defaults to the Project default model)",
     provider:
       "Provider of --model-id; when omitted, the model id must match exactly one configured entry (ambiguity is an error)",
-    root: "Data root directory (overrides PENGUIN_HOME and ~/PenguinHarness)",
+    root: "Data root directory (overrides PENGUIN_HOME and ~/.penguin)",
     workspace: "Workspace directory; must already exist (defaults to the current directory)",
     approve:
       "Approval mode: allow-all (auto-approve, default), deny-all (auto-reject), read-only (auto-approve read-only tools, prompt for the rest), always-ask (prompt per tool)",
@@ -269,7 +269,7 @@ const zh: Messages = {
     agentId: "Agent id",
     modelId: "本次使用的模型（上游模型 id；默认 Project 默认模型）",
     provider: "--model-id 的 provider 分组；省略时 model id 须在配置中精确唯一命中（歧义报错）",
-    root: "数据根目录（优先于 PENGUIN_HOME 与 ~/PenguinHarness）",
+    root: "数据根目录（优先于 PENGUIN_HOME 与 ~/.penguin）",
     workspace: "Workspace 目录，须为已存在目录（默认当前目录）",
     approve:
       "审批模式：allow-all（全部放行，缺省）、deny-all（全部拒绝）、read-only（自动放行只读工具，其余仍逐个询问）、always-ask（逐个询问）",

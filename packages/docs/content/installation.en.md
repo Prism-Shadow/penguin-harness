@@ -38,7 +38,7 @@ Script flags are passed as `curl ... | sh -s -- --universal`.
 
 ### Data directory
 
-The data directory is separate from the install directory: `~/PenguinHarness` by default, overridable with the `PENGUIN_HOME` env var. Install and upgrade never touch it — model configuration, Session records, and other data are preserved.
+The data directory is separate from the install directory: `~/.penguin` by default, overridable with the `PENGUIN_HOME` env var. Install and upgrade never touch it — model configuration, Session records, and other data are preserved.
 
 ## npm install
 

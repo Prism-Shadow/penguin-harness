@@ -38,7 +38,7 @@ penguin -v
 
 ### 数据目录
 
-数据目录与安装目录分离，默认位于 `~/PenguinHarness`，可用环境变量 `PENGUIN_HOME` 覆盖。安装与升级不会触碰数据目录，模型配置、Session 记录等均会保留。
+数据目录与安装目录分离，默认位于 `~/.penguin`，可用环境变量 `PENGUIN_HOME` 覆盖。安装与升级不会触碰数据目录，模型配置、Session 记录等均会保留。
 
 ## npm 安装
 

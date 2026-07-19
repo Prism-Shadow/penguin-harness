@@ -114,7 +114,7 @@ export const en: Strings = {
     eyebrow: "Quick start",
     title: "Your first task in three steps",
     subtitle:
-      "Install with one command and let the Agent work from a desktop-grade interface — all data stays in your local ~/PenguinHarness directory.",
+      "Install with one command and let the Agent work from a desktop-grade interface — all data stays in your local ~/.penguin directory.",
     step1: "Install",
     step1Desc:
       "Linux / macOS (x64 / arm64) with a bundled Node runtime — unpack and run; upgrades never touch your data.",

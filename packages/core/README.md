@@ -19,7 +19,7 @@ for await (const output of session.run([userText("Create hello.txt containing hi
 }
 ```
 
-A single `run` drives a complete Task: streaming output, per-call approvals, concurrent tool execution, interrupt carry-over, automatic reconnect and context compaction. State lives under `~/PenguinHarness` (`PENGUIN_HOME`); every Session restores fully from its Trace.
+A single `run` drives a complete Task: streaming output, per-call approvals, concurrent tool execution, interrupt carry-over, automatic reconnect and context compaction. State lives under `~/.penguin` (`PENGUIN_HOME`); every Session restores fully from its Trace.
 
 ## Documentation
 

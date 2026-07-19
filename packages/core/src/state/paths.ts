@@ -1,7 +1,7 @@
 /**
  * Local directory layout for Agent State and Project config.
  *
- * Strictly follows the `~/PenguinHarness/<project>/<agent>/...` structure.
+ * Strictly follows the `~/.penguin/<project>/agents/<agent>/...` structure.
  * This module only provides constants and pure path functions; it never creates directories or reads/writes files.
  * Docs: /docs/sessions-and-traces § "Data layout".
  */
@@ -16,10 +16,11 @@ export const DEFAULT_AGENT_ID = "default_agent";
 
 /**
  * Resolves the local data root directory.
- * Prefers the `PENGUIN_HOME` environment variable, otherwise falls back to `~/PenguinHarness`.
+ * Prefers the `PENGUIN_HOME` environment variable, otherwise falls back to `~/.penguin`
+ * (a hidden directory in the user's home, so it never collides with unrelated folders).
  */
 export function resolveRoot(): string {
-  return process.env.PENGUIN_HOME ?? path.join(os.homedir(), "PenguinHarness");
+  return process.env.PENGUIN_HOME ?? path.join(os.homedir(), ".penguin");
 }
 
 /** `<root>/<projectId>`. */
@@ -27,9 +28,14 @@ export function projectDir(root: string, projectId: string): string {
   return path.join(root, projectId);
 }
 
-/** `<root>/<projectId>/<agentId>`. */
+/** `<projectDir>/agents`, the container directory holding every Agent in the Project. */
+export function agentsDir(root: string, projectId: string): string {
+  return path.join(projectDir(root, projectId), "agents");
+}
+
+/** `<projectDir>/agents/<agentId>`. */
 export function agentDir(root: string, projectId: string, agentId: string): string {
-  return path.join(projectDir(root, projectId), agentId);
+  return path.join(agentsDir(root, projectId), agentId);
 }
 
 /** `<agentDir>/agent_state`. */

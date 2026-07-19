@@ -48,6 +48,7 @@ describe("id-validation", () => {
     const victimConfigPath = path.join(
       t.root,
       victimProject,
+      "agents",
       "default_agent",
       "agent_state",
       "system_config.yaml",
@@ -65,6 +66,7 @@ describe("id-validation", () => {
     const victimConfigPath = path.join(
       t.root,
       victimProject,
+      "agents",
       "default_agent",
       "agent_state",
       "system_config.yaml",

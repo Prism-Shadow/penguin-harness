@@ -136,7 +136,7 @@ export async function writeTraceFile(
   index: number,
   messages: OmniMessage[],
 ): Promise<string> {
-  const dir = path.join(root, projectId, agentId, "traces", dateDir);
+  const dir = path.join(root, projectId, "agents", agentId, "traces", dateDir);
   await fs.mkdir(dir, { recursive: true });
   const file = path.join(dir, `${sessionId}_${String(index).padStart(3, "0")}.jsonl`);
   await fs.writeFile(file, messages.map((m) => JSON.stringify(m)).join("\n") + "\n", "utf8");

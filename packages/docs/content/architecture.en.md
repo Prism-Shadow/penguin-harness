@@ -39,7 +39,7 @@ To place a design in a layer, ask where its **source of truth** lives. The four 
 | --- | --- | --- |
 | SDK (`core`) | Protocol and execution — everything that makes messages flow | persisted user state, multi-user, any rendering |
 | Server | The resident process and the multi-user runtime | engine logic (fully delegated to the SDK) |
-| File layer (`~/PenguinHarness`) | Everything editable and everything recorded | any computation |
+| File layer (`~/.penguin`) | Everything editable and everything recorded | any computation |
 | CLI / Web | Rendering and interaction | business state |
 
 Item by item (design → owner → carrying file or module):
@@ -118,7 +118,7 @@ Every message and event flows to two destinations at once: streamed live to the 
 
 ## The state layer
 
-Below the engine sits a purely file-based state layer rooted at `~/PenguinHarness` (override with `PENGUIN_HOME`), organized as `<project>/<agent>/`:
+Below the engine sits a purely file-based state layer rooted at `~/.penguin` (override with `PENGUIN_HOME`), organized as `<project>/agents/<agent>/`:
 
 - **Agent State** — the `agent_state/` directory: `system_config.yaml`, `AGENTS.md`, Skills, Vault. An Agent's entire behavior is editable files.
 - **Project config** — `.project_config.toml`: the model table and credentials; model identity is always the `(provider, model_id)` pair.

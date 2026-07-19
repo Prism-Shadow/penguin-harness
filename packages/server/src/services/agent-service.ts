@@ -13,12 +13,12 @@ import fs from "node:fs/promises";
 import { HttpError } from "../http/errors.js";
 import {
   agentDir,
+  agentsDir,
   agentsMdPath,
   BUILTIN_AGENT_IDS,
   createAgent as coreCreateAgent,
   isValidId,
   loadAgentVault,
-  projectDir,
   scheduleDir,
   systemConfigPath,
 } from "@prismshadow/penguin-core";
@@ -56,10 +56,10 @@ export class AgentService {
 
     let entries: string[] = [];
     try {
-      const dirents = await fs.readdir(projectDir(this.root, projectId), { withFileTypes: true });
+      const dirents = await fs.readdir(agentsDir(this.root, projectId), { withFileTypes: true });
       entries = dirents.filter((d) => d.isDirectory()).map((d) => d.name);
     } catch {
-      // The Project directory doesn't exist yet (no Agent directories): return from the DB index only.
+      // The Project's agents/ directory doesn't exist yet (no Agent directories): return from the DB index only.
     }
     for (const agentId of entries) {
       if (known.has(agentId) || !isValidId(agentId)) continue;

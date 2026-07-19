@@ -53,7 +53,7 @@ describe("auth", () => {
     expect(projects.projects[0]!.role).toBe("owner");
     // default_agent has been initialized (directory exists).
     await expect(
-      fs.access(path.join(t.root, "default_project", "default_agent", "agent_state")),
+      fs.access(path.join(t.root, "default_project", "agents", "default_agent", "agent_state")),
     ).resolves.toBeUndefined();
     // Seeding is idempotent: re-seeding does not create a duplicate account.
     await t.deps.authService.seedAdmin();
