@@ -61,7 +61,7 @@ Run the Test Agent exactly once in the foreground with a fresh top-level Session
 PROJECT_DIR="<project_dir>"
 PROJECT_ID="$(basename "$PROJECT_DIR")"
 PENGUIN_HOME="$(dirname "$PROJECT_DIR")"
-WORKSPACE="$PROJECT_DIR/<test_agent_id>/workspaces/<unique_workspace_id>"
+WORKSPACE="$PROJECT_DIR/agents/<test_agent_id>/workspaces/<unique_workspace_id>"
 export PENGUIN_HOME
 penguin run --message "Read README.md in the current Workspace and complete the task exactly as specified there." \
   --provider "<provider>" --model-id "<model_id>" --project-id "$PROJECT_ID" \

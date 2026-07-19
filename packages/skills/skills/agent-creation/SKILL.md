@@ -21,8 +21,8 @@ All agents of this project live side by side in the project directory:
 
 ```bash
 PROJECT_DIR="<project_dir>"        # the Project Dir value from your Environment section
-ls "$PROJECT_DIR"                  # existing agents (each is a sibling folder)
-TARGET="$PROJECT_DIR/<agent_id>"   # the agent to configure
+ls "$PROJECT_DIR/agents"          # existing agents (each is a folder here)
+TARGET="$PROJECT_DIR/agents/<agent_id>"   # the agent to configure
 ```
 
 An agent directory contains `agent_state/` (`system_config.yaml`, `AGENTS.md`, `skills/`, `memory/`, `tools/`) plus `scratchpad/` — and `traces/`, which appears once the agent has run at least once.
@@ -67,7 +67,7 @@ Prefer configuring an agent the user already created. If you must create one fro
 
 ```bash
 mkdir -p "$TARGET/agent_state/skills" "$TARGET/agent_state/memory" "$TARGET/agent_state/tools" "$TARGET/scratchpad"
-cp "$PROJECT_DIR/default_agent/agent_state/system_config.yaml" "$TARGET/agent_state/"
+cp "$PROJECT_DIR/agents/default_agent/agent_state/system_config.yaml" "$TARGET/agent_state/"
 ```
 
 A new agent starts with no skills — install only what it needs. Then write its AGENTS.md, name and description as above.

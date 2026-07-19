@@ -66,4 +66,4 @@ penguin config lang <en|zh>   # persist the CLI language via PENGUIN_LANG in you
 ## Storage
 
 - `<project_dir>/.project_config.toml` — the project's single hidden config file: model list, settings and per-model credentials (`api_key` etc. inlined in each model entry). Configuration is CLI-only — never read, print or hand-edit this file.
-- `<project_dir>/<agent_id>/agent_state/.vault.toml` — that agent's vault entries, hidden file; same rule, manage it with `penguin config vault`.
+- `<project_dir>/agents/<agent_id>/agent_state/.vault.toml` — that agent's vault entries, hidden file; same rule, manage it with `penguin config vault`.

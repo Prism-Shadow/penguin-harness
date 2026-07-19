@@ -1,5 +1,5 @@
 /**
- * Agent-level environment-variable vault (`<project>/<agent_id>/agent_state/.vault.toml`).
+ * Agent-level environment-variable vault (`<project>/agents/<agent_id>/agent_state/.vault.toml`).
  *
  * Key-value pairs such as third-party API keys, configured per Agent: injected into that Agent
  * session's `exec_command` / `input_command` child-process environment, with key names disclosed

@@ -95,7 +95,9 @@ describe("session-index", () => {
     expect(session.status).toBe("idle");
     expect(session.hasTrace).toBe(false);
     // The temporary Workspace lives inside this Agent's workspaces directory.
-    expect(session.workspace).toContain(path.join(projectId, "agents", "default_agent", "workspaces"));
+    expect(session.workspace).toContain(
+      path.join(projectId, "agents", "default_agent", "workspaces"),
+    );
 
     const list = (await (await api.get(base())).json()) as SessionsResponse;
     expect(list.sessions.map((s) => s.sessionId)).toContain(session.sessionId);

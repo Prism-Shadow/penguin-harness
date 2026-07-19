@@ -25,8 +25,8 @@ Use the Environment's Project Dir and the explicit Test Agent id:
 PROJECT_DIR = <project_dir>
 PROJECT_ID = <basename_of_project_dir>
 PENGUIN_HOME = <parent_of_project_dir>
-TEST_AGENT_DIR = <project_dir>/<test_agent_id>
-BENCHMARK_DIR = <project_dir>/<test_agent_id>/benchmarks/<benchmark_id>
+TEST_AGENT_DIR = <project_dir>/agents/<test_agent_id>
+BENCHMARK_DIR = <project_dir>/agents/<test_agent_id>/benchmarks/<benchmark_id>
 SCOREBOARD = <benchmark_dir>/scoreboard.yaml
 ```
 

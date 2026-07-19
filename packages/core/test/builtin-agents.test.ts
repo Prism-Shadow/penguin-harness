@@ -132,5 +132,10 @@ describe("Project Dir / Agent ID 占位符", () => {
     expect(prompt).not.toContain("{{PROJECT_DIR}}");
     // Skill execution conventions are built from project-relative paths (no longer reference .penguin).
     expect(prompt).not.toContain(".penguin");
+    // Agent State, scratchpad and Skills are addressed under the Project's agents/ container.
+    expect(prompt).toContain("<project_dir>/agents/<agent_id>/agent_state/");
+    expect(prompt).toContain("<project_dir>/agents/<agent_id>/agent_state/skills/");
+    // The pre-agents/ layout (an agent directly under the Project dir) must never be handed to the model.
+    expect(prompt).not.toContain("<project_dir>/<agent_id>/");
   });
 });

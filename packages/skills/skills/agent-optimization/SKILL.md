@@ -27,7 +27,7 @@ Resolve paths from the Environment's Project Dir without recursively discovering
 PROJECT_DIR = <project_dir>
 PROJECT_ID = <basename_of_project_dir>
 PENGUIN_HOME = <parent_of_project_dir>
-TARGET = <project_dir>/<test_agent_id>
+TARGET = <project_dir>/agents/<test_agent_id>
 STATE = <target>/agent_state
 TRACES = <target>/traces
 BENCHMARK = <target>/benchmarks/<benchmark_id>
