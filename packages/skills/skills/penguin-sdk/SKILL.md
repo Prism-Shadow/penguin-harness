@@ -11,7 +11,7 @@ updated: 2026-07-17T00:00:00Z
 
 `@prismshadow/penguin-core` is the TypeScript SDK this agent itself runs on. Use it to build your own AI apps:
 
-- An **Agent** loads its state (prompts, tools, skills) from `<root>/<project_id>/<agent_id>/`. Creating an Agent whose directory is empty initializes it with defaults.
+- An **Agent** loads its state (prompts, tools, skills) from `<root>/<project_id>/agents/<agent_id>/`. Creating an Agent whose directory is empty initializes it with defaults.
 - A **Session** is one conversation of an Agent inside a **Workspace** directory.
 - `session.run()` executes one task and streams every step (thinking, text, tool calls) as OmniMessages.
 

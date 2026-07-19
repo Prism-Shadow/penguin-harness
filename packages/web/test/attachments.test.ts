@@ -9,7 +9,7 @@ import { splitImageAttachments } from "../src/lib/attachments";
 describe("splitImageAttachments", () => {
   it("scratchpad 路径行 → 会话文件端点，正文保留", () => {
     const { text, images } = splitImageAttachments(
-      "看看这张图\n\n[attached image: /home/u/.penguin/data/p1/a1/scratchpad/session-20260712-abc/upload-1752300000000-0.png]",
+      "看看这张图\n\n[attached image: /home/u/.penguin/data/p1/agents/a1/scratchpad/session-20260712-abc/upload-1752300000000-0.png]",
     );
     expect(text).toBe("看看这张图");
     expect(images).toEqual([

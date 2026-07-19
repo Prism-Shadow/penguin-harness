@@ -17,7 +17,7 @@ packages/server/web-dist/
 # agenthub trace cache
 cache/
 
-# runtime .penguin symlink (created in a Workspace, points to agent_state)
+# legacy .penguin workspace symlink (no longer created; ignored for old working copies)
 .penguin
 
 # logs
