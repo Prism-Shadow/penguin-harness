@@ -2,7 +2,7 @@
 
 The PenguinHarness documentation site (React + Vite + Tailwind CSS 4). Its own package, sharing the landing page's visual language: bilingual pages (zh/en), light/dark themes, a sidebar + per-page table of contents, and a "Copy Markdown" button on every page.
 
-Live at <https://prism-shadow.github.io/penguin-harness/docs/>.
+Live at <https://penguin.ooo/docs/>.
 
 ## Content model
 

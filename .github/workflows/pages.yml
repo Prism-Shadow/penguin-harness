@@ -3,9 +3,9 @@
 # tree — landing dist with the docs dist copied under docs/).
 # - Pull requests touching either package only BUILD (validation) — no Pages
 #   configuration and no deploy, so PRs never fail on Pages availability.
-# - Pushes to main (and manual dispatch) build + deploy. BASE_PATH is derived from the
-#   repository name so project-pages URLs (https://<owner>.github.io/<repo>/) resolve;
-#   repos served from a custom domain / user pages can set it to "/" instead.
+# - Pushes to main (and manual dispatch) build + deploy. The site is served from the
+#   custom apex domain https://penguin.ooo/ (Settings -> Pages -> Custom domain), so
+#   BASE_PATH is "/" — assets resolve from the domain root, not a /<repo>/ subpath.
 # First-time setup: repository Settings -> Pages -> Source = "GitHub Actions".
 name: Deploy Site
 
@@ -54,7 +54,7 @@ jobs:
 
       - name: Build site (landing + docs, vite)
         env:
-          BASE_PATH: /${{ github.event.repository.name }}/
+          BASE_PATH: /
         run: pnpm build:site
 
       # Only the deploying runs need the Pages artifact (PRs stop at the build check).

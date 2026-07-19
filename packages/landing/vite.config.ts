@@ -1,8 +1,8 @@
 /**
  * Vite config: static landing page (React SPA + Tailwind CSS 4).
  *
- * BASE_PATH is injected by the GitHub Pages workflow (e.g. "/penguin-harness/") so asset
- * URLs resolve under the project-pages subpath; local dev and previews default to "/".
+ * BASE_PATH is injected by the GitHub Pages workflow ("/" — the site is served from the
+ * custom apex domain https://penguin.ooo/); local dev and previews also default to "/".
  * Blog posts are local Markdown files imported at build time via import.meta.glob (?raw),
  * so the built site is fully static — no server or CMS involved.
  */

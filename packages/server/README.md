@@ -10,7 +10,7 @@ The PenguinHarness Web backend — the Web implementation of the SDK's Human bou
 - **SSE**: per-channel monotonic event ids with a bounded replay buffer (1000 events / 2MB); reconnects replay from `Last-Event-ID` or receive `resync_required`; heartbeat comment every 20s.
 - **Usage**: `token_usage` events are persisted row by row; costs are computed at query time from current per-model pricing.
 
-The full route tables and the SSE protocol are documented in the [Server API reference](https://prism-shadow.github.io/penguin-harness/docs/server-api). DTO types are exported for type-only import via `@prismshadow/penguin-server/api`.
+The full route tables and the SSE protocol are documented in the [Server API reference](https://penguin.ooo/docs/server-api). DTO types are exported for type-only import via `@prismshadow/penguin-server/api`.
 
 ## Environment
 

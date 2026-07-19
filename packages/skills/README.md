@@ -18,8 +18,8 @@ The first group powers the self-improvement loop: design a Benchmark, evaluate t
 
 ## Documentation
 
-- [Skills](https://prism-shadow.github.io/penguin-harness/docs/skills)
-- [Self-Improvement](https://prism-shadow.github.io/penguin-harness/docs/self-improvement)
+- [Skills](https://penguin.ooo/docs/skills)
+- [Self-Improvement](https://penguin.ooo/docs/self-improvement)
 
 ## Development
 
