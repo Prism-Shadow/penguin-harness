@@ -190,10 +190,10 @@ jobs:
           V="${TAG#v}"
           grep -q 'export const VERSION = "' packages/core/src/index.ts
           sed -i "s/export const VERSION = \"[^\"]*\"/export const VERSION = \"$V\"/" packages/core/src/index.ts
-          (cd packages/skills && npm version --no-git-tag-version "$V")
-          (cd packages/core && npm version --no-git-tag-version "$V")
-          (cd packages/server && npm version --no-git-tag-version "$V")
-          (cd packages/cli && npm version --no-git-tag-version "$V")
+          (cd packages/skills && npm version --no-git-tag-version --allow-same-version "$V")
+          (cd packages/core && npm version --no-git-tag-version --allow-same-version "$V")
+          (cd packages/server && npm version --no-git-tag-version --allow-same-version "$V")
+          (cd packages/cli && npm version --no-git-tag-version --allow-same-version "$V")
 
       # Dependency order: cli bundles core's dist (tsup noExternal), server/web need core's types;
       # web is built here only to be copied into the server package below.
