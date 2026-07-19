@@ -1,0 +1,75 @@
+# Public site: build the landing page (site root) and the docs site (/docs/) with Vite
+# and deploy them as ONE artifact to GitHub Pages (scripts/build-site.mjs assembles the
+# tree — landing dist with the docs dist copied under docs/).
+# - Pull requests touching either package only BUILD (validation) — no Pages
+#   configuration and no deploy, so PRs never fail on Pages availability.
+# - Pushes to main (and manual dispatch) build + deploy. BASE_PATH is derived from the
+#   repository name so project-pages URLs (https://<owner>.github.io/<repo>/) resolve;
+#   repos served from a custom domain / user pages can set it to "/" instead.
+# First-time setup: repository Settings -> Pages -> Source = "GitHub Actions".
+name: Deploy Site
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/landing/**"
+      - "packages/docs/**"
+      - "scripts/build-site.mjs"
+      - ".github/workflows/pages.yml"
+  pull_request:
+    paths:
+      - "packages/landing/**"
+      - "packages/docs/**"
+      - "scripts/build-site.mjs"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time; let an in-flight production deploy finish rather than cancelling it.
+concurrency:
+  group: pages-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # pnpm version comes from package.json's packageManager field.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build site (landing + docs, vite)
+        env:
+          BASE_PATH: /${{ github.event.repository.name }}/
+        run: pnpm build:site
+
+      # Only the deploying runs need the Pages artifact (PRs stop at the build check).
+      - if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: packages/landing/dist
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

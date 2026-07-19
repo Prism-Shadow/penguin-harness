@@ -1,0 +1,396 @@
+/**
+ * Global styles: single-file Tailwind CSS 4 entry point.
+ * Visual tone: GitHub-style simplicity — solid white background + 1px borders + a single brand blue accent,
+ * no glassmorphism/gradients; the login page background is a circuit-trace animation (.login-trace, see
+ * login-circuit.tsx). Dark theme is toggled via the html.dark class.
+ *
+ * Stacking-context convention (to avoid contexts masking each other): chrome (top bar/navigation) does not
+ * create a stacking context; dropdown/user menus use z-40; modal and drawer overlays use z-50.
+ */
+@import "tailwindcss";
+
+/* Dark theme toggled via the html.dark class (Tailwind 4 custom variant). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Brand color scale (Google blue family): generates utility classes like bg-brand-600 / text-brand-300. */
+@theme {
+  --color-brand-25: #f8fbff;
+  --color-brand-50: #e8f0fe;
+  --color-brand-100: #d2e3fc;
+  --color-brand-200: #aecbfa;
+  --color-brand-300: #8ab4f8;
+  --color-brand-400: #669df6;
+  --color-brand-500: #4285f4;
+  --color-brand-600: #1a73e8;
+  --color-brand-700: #0b57d0;
+  --color-brand-800: #0842a0;
+  --color-brand-900: #062e6f;
+  --color-brand-950: #041e49;
+}
+
+@layer base {
+  :root {
+    color-scheme: light;
+    /* Theme color (accent): used for primary buttons, focus rings, etc. Defaults to gray/white (neutral,
+       switches with light/dark); selecting a specific color via data-accent overrides it (consistent across
+       light/dark, white text). */
+    --accent-bg: #111827; /* neutral light = gray-900 */
+    --accent-fg: #ffffff;
+  }
+  .dark {
+    color-scheme: dark;
+    /* Dark mode uses a pure-black base tone (no indigo tint): overrides the neutral gray scale with
+       true-neutral values — gray-950 pure black as the body background, gray-900/800/700 as near-black
+       surfaces and borders. */
+    --color-gray-950: #000000;
+    --color-gray-900: #0d0d0d;
+    --color-gray-800: #1f1f1f;
+    --color-gray-700: #303030;
+    /* neutral accent dark = gray-100 (light background, dark text button). */
+    --accent-bg: #f3f4f6;
+    --accent-fg: #111827;
+  }
+  /* Theme color presets (consistent across light/dark, white text): selecting data-accent overrides the neutral default. */
+  :root[data-accent="blue"] {
+    --accent-bg: #2563eb;
+    --accent-fg: #ffffff;
+  }
+  :root[data-accent="green"] {
+    --accent-bg: #15803d; /* green-700: contrast with white text >= AA */
+    --accent-fg: #ffffff;
+  }
+  :root[data-accent="violet"] {
+    --accent-bg: #7c3aed;
+    --accent-fg: #ffffff;
+  }
+  :root[data-accent="rose"] {
+    --accent-bg: #be123c; /* rose-700: contrast with white text >= AA */
+    --accent-fg: #ffffff;
+  }
+  :root[data-accent="amber"] {
+    --accent-bg: #b45309; /* amber-700: contrast with white text >= AA */
+    --accent-fg: #ffffff;
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-white text-gray-900 antialiased dark:bg-gray-950 dark:text-gray-100;
+    font-family:
+      ui-sans-serif,
+      system-ui,
+      -apple-system,
+      "Segoe UI",
+      Roboto,
+      "PingFang SC",
+      "Microsoft YaHei",
+      sans-serif;
+  }
+  code,
+  pre,
+  kbd {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  }
+  /* Keyboard accessibility: soft brand-colored outer ring (input controls use their own focus ring, not stacked). */
+  button:focus-visible,
+  a:focus-visible,
+  [role="tab"]:focus-visible,
+  summary:focus-visible {
+    outline: 3px solid rgb(107 114 128 / 0.4);
+    outline-offset: 2px;
+  }
+  /* Consistent pointer cursor for clickable buttons: Tailwind 4 preflight reverted button to the browser's
+     default arrow cursor (v3 used pointer); disabled state keeps the default. Explicit cursor-* utility
+     classes (e.g. cursor-zoom-in) take precedence. */
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+  ::selection {
+    background: rgb(0 0 0 / 0.1);
+  }
+  .dark ::selection {
+    background: rgb(255 255 255 / 0.18);
+  }
+  /* Thin scrollbar. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(60 64 67 / 0.28) transparent;
+  }
+  .dark * {
+    scrollbar-color: rgb(232 234 237 / 0.2) transparent;
+  }
+  /* Hide the native scrollbar (replaced with custom controls, e.g. zoom/pan sliders in trace viewing). */
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* ---------- Animations (EmaPowerbank style: 160-280ms ease, slight entrance offset + subtle scale) ---------- */
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes msg-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes drawer-in-left {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: none;
+  }
+}
+
+@keyframes drawer-in-right {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: none;
+  }
+}
+
+/* Login card entrance (used only on the login page; in-app pages skip entrance animations to avoid a
+   transform ancestor hijacking fixed-positioned overlays). */
+.anim-rise {
+  animation: rise-in 280ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+/* Dropdown menu / popover entrance. */
+.anim-pop {
+  animation: pop-in 120ms ease-out both;
+}
+/* Top toast overlay: slides in from above / slides up while fading out. */
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes toast-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+  }
+}
+.anim-toast-in {
+  animation: toast-in 180ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+.anim-toast-out {
+  animation: toast-out 160ms ease-in both;
+}
+
+/* Overlay fade-in. */
+.anim-fade {
+  animation: fade-in 120ms ease-out both;
+}
+/* Message item entrance. */
+.anim-msg {
+  animation: msg-in 180ms ease-out both;
+}
+/* Drawer slide-in. */
+.anim-drawer-left {
+  animation: drawer-in-left 240ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+.anim-drawer-right {
+  animation: drawer-in-right 240ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+/* Login page circuit traces (login-circuit.tsx): pathLength=1 normalization, draw-in -> hold -> fade-out
+   loop. Base state is fully hidden: the positive animation-delay wait keeps the first paint blank, and
+   lines only start growing after load; once reduced-motion globally disables animation, the override below
+   restores fully static lines. */
+@keyframes login-trace-draw {
+  0% {
+    stroke-dashoffset: 1;
+    opacity: 0;
+  }
+  6% {
+    opacity: 1;
+  }
+  45% {
+    stroke-dashoffset: 0;
+  }
+  78% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  92%,
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+}
+@keyframes login-via-blink {
+  0%,
+  40% {
+    opacity: 0;
+  }
+  50%,
+  78% {
+    opacity: 1;
+  }
+  92%,
+  100% {
+    opacity: 0;
+  }
+}
+.login-trace {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  opacity: 0;
+  animation: login-trace-draw var(--trace-dur, 14s) linear infinite;
+}
+.login-via {
+  opacity: 0;
+  animation: login-via-blink var(--trace-dur, 14s) linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+  /* With the trace animation disabled, the base state is fully hidden; this overrides it back to static full lines. */
+  .login-trace {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  .login-via {
+    opacity: 1;
+  }
+}
+
+/* ---------- Minimal typography for Markdown body content (no typography plugin) ---------- */
+
+.md-body {
+  /* Long unspaced strings like attachment paths / long URLs wrap within the narrow container instead of breaking the layout (especially important for mobile message streams). */
+  overflow-wrap: break-word;
+}
+.md-body :is(p, ul, ol, pre, blockquote, table) {
+  margin: 0.5rem 0;
+}
+.md-body li {
+  margin: 0.25rem 0;
+}
+.md-body p {
+  line-height: 1.7;
+}
+.md-body :is(h1, h2, h3, h4) {
+  font-weight: 600;
+  margin: 0.75rem 0 0.5rem;
+}
+.md-body h1 {
+  font-size: 1.25rem;
+}
+.md-body h2 {
+  font-size: 1.125rem;
+}
+.md-body h3 {
+  font-size: 1rem;
+}
+.md-body ul {
+  list-style: disc;
+  padding-left: 1.25rem;
+}
+.md-body ol {
+  list-style: decimal;
+  padding-left: 1.25rem;
+}
+.md-body a {
+  @apply text-brand-700 underline decoration-brand-300 underline-offset-2 transition-colors hover:text-brand-600 dark:text-brand-300 dark:decoration-brand-700;
+}
+.md-body code {
+  @apply rounded bg-gray-100 px-1 py-0.5 text-[0.85em] text-gray-800 dark:bg-gray-800 dark:text-gray-200;
+}
+.md-body pre {
+  @apply overflow-x-auto rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm dark:border-gray-800 dark:bg-gray-900;
+}
+.md-body pre code {
+  background: transparent;
+  color: inherit;
+  padding: 0;
+}
+/* Shiki code block (features/chat/code-block.tsx): the outer component provides its own chrome (rounded
+   border + language label header), so this resets the inner pre's border/background/radius — overriding
+   both .md-body pre's styles and Shiki's own inline background colors (!important beats inline style), with
+   the dark background left to the outer dark:bg-*. Not scoped to .md-body: the Files preview's source view
+   isn't inside a markdown container. Dark text is overridden via the dual-theme inline variable
+   --shiki-dark, so switching themes doesn't require re-highlighting. */
+.code-block pre {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent !important;
+  padding: 0.625rem 0.75rem;
+}
+html.dark .shiki,
+html.dark .shiki span {
+  color: var(--shiki-dark) !important;
+  font-style: var(--shiki-dark-font-style) !important;
+  font-weight: var(--shiki-dark-font-weight) !important;
+  text-decoration: var(--shiki-dark-text-decoration) !important;
+}
+.md-body blockquote {
+  @apply border-l-2 border-gray-300 pl-3 text-gray-600 dark:border-gray-700 dark:text-gray-400;
+}
+.md-body table {
+  border-collapse: collapse;
+}
+.md-body :is(th, td) {
+  @apply border border-gray-200 px-2 py-1 text-sm dark:border-gray-800;
+}

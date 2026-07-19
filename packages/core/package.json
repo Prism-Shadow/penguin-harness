@@ -1,0 +1,58 @@
+{
+  "name": "@prismshadow/penguin-core",
+  "version": "0.0.1",
+  "type": "module",
+  "description": "PenguinHarness core SDK: context_engine, OmniMessage protocol, LLM/Environment interfaces.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "packages/core"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./omnimessage": {
+      "types": "./dist/omnimessage/index.d.ts",
+      "import": "./dist/omnimessage/index.js"
+    },
+    "./interfaces": {
+      "types": "./dist/interfaces.d.ts",
+      "import": "./dist/interfaces.js"
+    },
+    "./model-catalog": {
+      "types": "./dist/state/model-catalog.d.ts",
+      "import": "./dist/state/model-catalog.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "test:e2e": "PENGUIN_E2E=1 vitest run test/llm.e2e.test.ts",
+    "build": "tsup"
+  },
+  "dependencies": {
+    "@prismshadow/agenthub": "^0.3.3",
+    "@prismshadow/penguin-skills": "workspace:*",
+    "smol-toml": "^1.3.0",
+    "yaml": "^2.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "dotenv": "^17.0.0",
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  },
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}
