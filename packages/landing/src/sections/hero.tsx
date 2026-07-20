@@ -1,14 +1,40 @@
 /**
- * Hero: enlarged logo + product name, the slogan inside the pill badge, then the
- * two-line 1×/100× story headline (same story as the README) with the "100×"
- * fragment in the brand color, the zero-code subtitle, three keywords, the
- * install one-liner and stats.
+ * Hero: enlarged logo + product name, the slogan inside the pill badge, then a
+ * bilingual headline whose rotating word crossfades through a gaussian blur
+ * (Developers <-> Enterprises), three keywords, the install one-liner and stats.
+ * The rotating word is a stacked inline-grid so line width never jumps.
  */
-import { Fragment } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { S } from "../lib/strings";
 import { INSTALL_CMD, REPO_URL } from "../lib/links";
 import { CopyButton } from "../components/copy-button";
 import { ArrowRightIcon, GitHubIcon } from "../components/icons";
+
+const ROTATE_MS = 2600;
+
+function RotatingWord({ words }: { words: string[] }) {
+  const [active, setActive] = useState(0);
+  useEffect(() => {
+    if (words.length < 2) return;
+    const timer = setInterval(() => setActive((i) => (i + 1) % words.length), ROTATE_MS);
+    return () => clearInterval(timer);
+  }, [words.length]);
+  return (
+    <span className="inline-grid justify-items-center align-bottom">
+      {words.map((word, i) => (
+        <span
+          key={word}
+          aria-hidden={i !== active}
+          className={`col-start-1 row-start-1 text-brand-600 transition-[opacity,filter] duration-500 dark:text-brand-300 ${
+            i === active ? "opacity-100 blur-none" : "opacity-0 blur-[6px]"
+          }`}
+        >
+          {word}
+        </span>
+      ))}
+    </span>
+  );
+}
 
 export function Hero() {
   return (
@@ -31,24 +57,16 @@ export function Hero() {
           {S.hero.badge}
         </p>
         <h1
-          className="anim-rise mx-auto mt-6 max-w-4xl tracking-tight text-balance"
+          className="anim-rise mx-auto mt-6 max-w-full text-3xl font-semibold tracking-tight text-balance sm:text-5xl"
           style={{ animationDelay: "80ms" }}
         >
-          <span className="block text-lg font-medium text-gray-500 sm:text-2xl dark:text-gray-400">
-            {S.hero.storyMuted}
-          </span>
-          <span className="mt-3 block text-2xl font-semibold text-gray-900 sm:text-[2.6rem] sm:leading-[1.25] dark:text-gray-100">
-            {S.hero.storyPre}
-            <span className="text-brand-600 dark:text-brand-300">{S.hero.storyEmph}</span>
-            {S.hero.storyPost}
-          </span>
+          {S.hero.titlePrefix}
+          <RotatingWord words={S.hero.titleWords} />
+          {S.hero.titleSuffix}
+          {S.hero.titleSuffixNoWrap && (
+            <span className="whitespace-nowrap">{S.hero.titleSuffixNoWrap}</span>
+          )}
         </h1>
-        <p
-          className="anim-rise mx-auto mt-5 max-w-2xl text-base text-gray-600 sm:text-lg dark:text-gray-400"
-          style={{ animationDelay: "110ms" }}
-        >
-          {S.hero.subtitle}
-        </p>
 
         <div
           className="anim-rise mt-6 flex items-center justify-center gap-4 text-base font-medium text-gray-600 sm:text-lg dark:text-gray-300"

@@ -17,8 +17,9 @@ export const en: Strings = {
   },
 
   nav: {
-    why: "Why PenguinHarness",
+    highlights: "Highlights",
     quickstart: "Quick start",
+    benchmark: "Benchmark",
     contract: "CONTRACT.md",
     features: "Features",
     blog: "Blog",
@@ -44,11 +45,10 @@ export const en: Strings = {
 
   hero: {
     badge: "Build AI agents, with an Agent",
-    storyMuted: "With LangChain, you build agents by hand — at 1× speed.",
-    storyPre: "With PenguinHarness, agents build agents — at ",
-    storyEmph: "100×",
-    storyPost: ".",
-    subtitle: "A zero-code Harness CLI and Web UI, connected to 1000+ models.",
+    titlePrefix: "Efficient Self-Improving Harness for ",
+    titleWords: ["Developers", "Enterprises"],
+    titleSuffix: "",
+    titleSuffixNoWrap: "",
     keywords: ["Lightweight", "Efficient", "Open Source"],
     ctaPrimary: "Get started",
     ctaGithub: "GitHub",
@@ -67,26 +67,59 @@ export const en: Strings = {
     copied: "Copied",
   },
 
-  why: {
-    eyebrow: "Why PenguinHarness",
-    title: "Three reasons, in order",
+  pillars: {
+    eyebrow: "Three pillars",
+    title: "Built for building — and evolving — agents",
     subtitle:
-      "From task quality, to how agents get built, to how they keep improving — then hand your next Agent to an Agent.",
-    reason1Title: "Better on complex tasks, at lower cost",
-    reason1Desc:
-      "Same DeepSeek V4 Pro model, head-to-head against Claude Code and OpenAI Codex on two suites: equal or better accuracy with fewer Tokens at lower cost — deeply tuned for open models like DeepSeek.",
-    reason2Title: "One sentence, and an Agent builds your Agent app",
-    reason2Desc:
-      "Hand PenguinHarness one sentence and an Agent delivers a runnable Agent application end to end: scaffold, code, and run instructions.",
-    reason2Caption:
-      "One sentence in, a working RAG app out: scaffold, retrieval entry with citations, and run instructions",
-    reason3Title: "Self-evolution: it gets stronger with use",
-    reason3Desc:
-      "The Optimizer orchestrates multiple Evaluators to score the Target Agent in parallel, uses the scores and run traces to find where points were lost, and upgrades the Agent from version N to N+1 — with a snapshot before every round.",
-    videoSoon: "Demo video coming soon",
+      "PenguinHarness is the first open-source harness to ship “agents building agents” and recursive self-improvement.",
+    root: "PenguinHarness",
+    concepts: ["Penguin Message", "Penguin SDK", "Penguin Skills"],
+    diagramLabel:
+      "PenguinHarness radiates into Penguin Message, Penguin SDK and Penguin Skills, each extending into one pillar",
+    items: [
+      {
+        title: "Simplest Is the Best",
+        tag: "",
+        desc: "A deliberately minimal toolset over clean low-level interfaces: fewer tool calls, fewer Tokens, complex tasks done efficiently.",
+      },
+      {
+        title: "Harness for Building Agents",
+        tag: "",
+        desc: "With the PenguinHarness SDK, an Agent builds complete Agent applications for you — autonomously, from scratch.",
+      },
+      {
+        title: "Harness for Recursive Self-Improvement",
+        tag: "",
+        desc: "With PenguinHarness Skills, an Agent evaluates and optimizes itself, improving recursively over time.",
+      },
+    ],
+  },
+
+  compare: {
+    eyebrow: "vs. LangChain",
+    title: "The gap between 1× and 100×",
+    subtitle:
+      "With LangChain, you build agents by hand — at 1× speed. With PenguinHarness, agents build agents — at 100×.",
+    langchain: {
+      name: "LangChain",
+      speed: "1×",
+      mode: "Agents built by hand",
+      note: "Chains, tools and prompts written line by line — every app starts from zero.",
+    },
+    penguin: {
+      name: "PenguinHarness",
+      speed: "100×",
+      mode: "Agents built by agents",
+      note: "One sentence in — an Agent delivers scaffold, code and run instructions end to end.",
+    },
   },
 
   selfImprove: {
+    eyebrow: "The self-improvement loop",
+    title: "Multi-agent collaboration makes evolution automatic",
+    subtitle:
+      "The Optimizer orchestrates multiple Evaluators to score the Target Agent in parallel, uses the scores and run traces to find where points were lost, and upgrades the Agent from version N to N+1 — with a snapshot before every round.",
+    videoSoon: "Demo video coming soon",
     nodeOptimizer: "Optimizer",
     nodeEvaluator: "Evaluator × N",
     nodeTarget: "Target Agent",
@@ -150,6 +183,20 @@ export const en: Strings = {
   --message "Analyze data.csv and summarize quarterly sales"`,
   },
 
+  cases: {
+    eyebrow: "Cases",
+    title: "From one sentence to a running app",
+    subtitle:
+      "Hand the requirement to an Agent and get a runnable result end to end — more cases are on the way.",
+    tabs: [
+      {
+        label: "RAG app",
+        caption:
+          "One sentence in, a working RAG app out: scaffold, retrieval entry with citations, and run instructions",
+      },
+    ],
+  },
+
   contract: {
     eyebrow: "A contract for stable evolution",
     title: "CONTRACT.md",
@@ -203,6 +250,10 @@ export const en: Strings = {
   },
 
   benchmark: {
+    eyebrow: "Benchmark",
+    title: "Same model, equal or better quality, lower cost",
+    subtitle:
+      "All runs use the same DeepSeek V4 Pro model — head-to-head against Claude Code and OpenAI Codex on two suites.",
     higherBetter: "higher is better",
     lowerBetter: "lower is better",
     dimScore: "Accuracy",
@@ -289,6 +340,18 @@ export const en: Strings = {
         desc: "Credentials land as hidden 0600 files, are barred from the system prompt, and stay masked throughout the UI.",
       },
     ],
+  },
+
+  community: {
+    eyebrow: "Community",
+    title: "Join the community and build with us",
+    subtitle: "Discuss, ask, contribute — your first Issue is the best way to start.",
+    items: {
+      discord: { name: "Discord", desc: "Chat with us and other developers in real time." },
+      x: { name: "X (Twitter)", desc: "Follow the latest product and team updates." },
+      wechat: { name: "WeChat group", desc: "Chinese community discussions and support." },
+      github: { name: "GitHub", desc: "Stars, Issues, and PRs all welcome." },
+    },
   },
 
   cta: {

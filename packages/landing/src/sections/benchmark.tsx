@@ -9,6 +9,7 @@
  * and the exact table relieves the sub-3:1 gray fills.
  */
 import { S } from "../lib/strings";
+import { Section } from "../components/section";
 import { HarnessLogo } from "../components/harness-logo";
 import {
   CODE_BENCH,
@@ -234,28 +235,34 @@ function SuiteBlock({
   );
 }
 
-/** Content-only block (both suites), composed by the Why section. */
-export function BenchmarkSuites() {
+export function Benchmark() {
   return (
-    <div className="mx-auto flex max-w-4xl flex-col gap-14">
-      <SuiteBlock
-        title={S.benchmark.dataTitle}
-        desc={S.benchmark.dataDesc}
-        rows={DATA_BENCH}
-        accDp={1}
-        tokenDp={2}
-        costDp={3}
-        footnote={S.benchmark.dataFootnote}
-      />
-      <SuiteBlock
-        title={S.benchmark.codeTitle}
-        desc={S.benchmark.codeDesc}
-        rows={CODE_BENCH}
-        accDp={2}
-        tokenDp={2}
-        costDp={3}
-        footnote={S.benchmark.codeFootnote}
-      />
-    </div>
+    <Section
+      id="benchmark"
+      eyebrow={S.benchmark.eyebrow}
+      title={S.benchmark.title}
+      subtitle={S.benchmark.subtitle}
+    >
+      <div className="mx-auto flex max-w-4xl flex-col gap-14">
+        <SuiteBlock
+          title={S.benchmark.dataTitle}
+          desc={S.benchmark.dataDesc}
+          rows={DATA_BENCH}
+          accDp={1}
+          tokenDp={2}
+          costDp={3}
+          footnote={S.benchmark.dataFootnote}
+        />
+        <SuiteBlock
+          title={S.benchmark.codeTitle}
+          desc={S.benchmark.codeDesc}
+          rows={CODE_BENCH}
+          accDp={2}
+          tokenDp={2}
+          costDp={3}
+          footnote={S.benchmark.codeFootnote}
+        />
+      </div>
+    </Section>
   );
 }
