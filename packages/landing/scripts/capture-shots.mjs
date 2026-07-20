@@ -47,7 +47,7 @@ cat > claude-code-expert/package.json <<'EOF'
   "private": true,
   "type": "module",
   "scripts": { "start": "tsx src/rag.ts" },
-  "dependencies": { "@prismshadow/penguin-core": "^0.1.0" }
+  "dependencies": { "@prismshadow/penguin-core": "^0.1.0", "tsx": "^4" }
 }
 EOF
 cat > claude-code-expert/src/rag.ts <<'EOF'
@@ -102,6 +102,32 @@ http.createServer(async (req, res) => {
   session.dispose();
   res.end();
 }).listen(4630);
+EOF
+cat > claude-code-expert/public/index.html <<'EOF'
+<!doctype html>
+<meta charset="utf-8" />
+<title>Claude Code docs expert</title>
+<body style="max-width:640px;margin:3rem auto;font-family:system-ui;line-height:1.5">
+<h3>Claude Code docs expert</h3>
+<div id="log"></div>
+<input id="q" style="width:100%;padding:.5rem" placeholder="Ask about Claude Code…" autofocus />
+<script>
+q.addEventListener("keydown", async (e) => {
+  if (e.key !== "Enter" || !q.value.trim()) return;
+  const question = q.value; q.value = "";
+  const p = document.createElement("p"); log.append(p);
+  const res = await fetch("/api/ask", { method: "POST", body: JSON.stringify({ question }) });
+  const reader = res.body.getReader(), dec = new TextDecoder();
+  for (let r; !(r = await reader.read()).done; )
+    for (const chunk of dec.decode(r.value).split("\\n\\n")) {
+      if (!chunk.startsWith("data:")) continue;
+      const d = JSON.parse(chunk.slice(5));
+      if (d.delta) p.textContent += d.delta;
+      if (d.sources) p.textContent += "  Sources: " + d.sources.join(", ");
+    }
+});
+</script>
+</body>
 EOF
 wc -l claude-code-expert/src/rag.ts`;
 

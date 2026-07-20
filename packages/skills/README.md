@@ -12,6 +12,7 @@ Included skills:
 | Data Analysis | `data-analysis` |
 | Penguin Development | `penguin-sdk`, `penguin-cli`, `agenthub-models` |
 | Web Development | `web-design` |
+| Web Research | `firecrawl` |
 | Software Engineering | `software-engineering` |
 
 The first group powers the self-improvement loop: design a Benchmark, evaluate the Target Agent, optimize it to version N+1 with a snapshot before every round.

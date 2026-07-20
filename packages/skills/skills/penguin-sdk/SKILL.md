@@ -3,8 +3,8 @@ name: penguin-sdk
 description: Build AI apps on the Penguin Harness SDK — self-contained projects, the createSession/run streaming loop, and a complete RAG recipe that ingests documents into a knowledge base and answers with citations behind a web UI.
 short_description: Build AI and RAG apps on the Penguin Harness SDK.
 short_description_zh: 基于 Penguin SDK 构建 AI 与 RAG 应用。
-version: 4
-updated: 2026-07-20T16:00:00Z
+version: 5
+updated: 2026-07-20T17:00:00Z
 ---
 
 # Penguin Harness SDK
@@ -240,10 +240,19 @@ http.createServer(async (req, res) => {
     }
     const hits = search(index, question);
     const context = hits.map((c, i) => `[${i + 1}] ${c.source} — ${c.heading}\n${c.text}`).join("\n\n");
-    res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
     const ac = new AbortController();
     res.on("close", () => ac.abort()); // client navigated away → cancel the in-flight generation
-    const session = await agent.createSession({ workspaceDir: ROOT });
+    // Create the Session BEFORE committing headers: a model-config failure then returns a real
+    // HTTP error instead of an unhandled rejection with a 200 already on the wire.
+    let session;
+    try {
+      session = await agent.createSession({ workspaceDir: ROOT });
+    } catch {
+      res.writeHead(503, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "no model configured yet — see the setup steps" }));
+      return;
+    }
+    res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
     try {
       const prompt = `Answer from the context below; cite blocks inline as [1][2]. If the context is not enough, say so.\n\n${context}\n\nQuestion: ${question}`;
       for await (const msg of session.run([userText(prompt)], { approve: async () => "deny", signal: ac.signal })) {
@@ -258,7 +267,8 @@ http.createServer(async (req, res) => {
       if (!res.writableEnded)
         res.write(`data: ${JSON.stringify({ sources: hits.map((c) => ({ source: c.source, heading: c.heading, url: `/${c.source}`, text: c.text })) })}\n\n`);
     } catch {
-      // Aborted (client left) or the provider call failed: nothing left to stream — fall through to cleanup.
+      // The run failed after headers were sent, or the client left: surface an error event (best effort), then clean up.
+      if (!res.writableEnded) res.write(`data: ${JSON.stringify({ error: "generation failed" })}\n\n`);
     } finally {
       session.dispose();
       if (!res.writableEnded) res.end();
