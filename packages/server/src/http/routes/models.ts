@@ -160,6 +160,10 @@ export function modelsRoutes(deps: AppDeps): Hono<AppEnv> {
       if (typeof body.clearApiKey !== "boolean") throw badRequest("clearApiKey must be a boolean.");
       req.clearApiKey = body.clearApiKey;
     }
+    if (body.speed !== undefined) {
+      if (typeof body.speed !== "boolean") throw badRequest("speed must be a boolean.");
+      req.speed = body.speed;
+    }
     // null = explicit clear (test against the draft, don't fall back to the stored value); empty string is treated as null.
     if (body.baseUrl !== undefined) {
       if (body.baseUrl !== null && typeof body.baseUrl !== "string") {
