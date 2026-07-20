@@ -366,6 +366,16 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
+    modelId: "x-ai/grok-4.5",
+    displayName: "Grok 4.5",
+    provider: "openrouter",
+    contextWindow: 500000,
+    pricing: usd(2, 2, 6),
+    supportsVision: true,
+    clientType: "openai",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
     modelId: "xiaomi/mimo-v2.5",
     displayName: "MiMo-V2.5",
     provider: "openrouter",
