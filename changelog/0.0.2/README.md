@@ -35,3 +35,5 @@ One line per change, linking its detail file; oldest first.
 - [Announcement carousel: one-direction slide, arrow kept, dots removed](2026-07-20-announcement-one-direction.md) — click-through arrows stay, manual dots go, and rotation always slides the same way via a clone-and-snap loop.
 - [Trend value labels carry units with animated decimals](2026-07-20-trend-labels-units.md) — score as 79.0%, cost as $0.25, time as 83.0s, decimals animating with the curve.
 - [Feature tabs drop the description card](2026-07-20-feature-tab-centered-text.md) — centered one-line text above the screenshot instead of an icon card.
+- [Merge main to restore the persistent nav active highlight](2026-07-20-restore-nav-active-state.md) — the branch predated main's nav-state fix (#6); merging brings back the black current-item chip, hash-synced section links, and sticky-header scroll spacing, reconciled with the announcement bar and the in-place hover pill.
+- [Nav highlight follows the live scroll position](2026-07-20-nav-scroll-spy.md) — a rAF-throttled scroll-spy lights the current section in real time while scrolling, instead of only on click.

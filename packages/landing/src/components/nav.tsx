@@ -1,9 +1,10 @@
 /**
  * Sticky top navigation: logo + section anchors + blog link + language/theme toggles +
  * GitHub. Desktop links share a sliding hover pill, while the selected section or route
- * keeps its own active background; section links route through "/#id" so the Router
- * and URL hash stay in sync while native smooth scrolling remains enabled. A disclosure
- * menu covers small screens.
+ * keeps its own active background. On the home page the active section tracks the
+ * LIVE scroll position (scroll-spy), so the highlight follows as you scroll; on other
+ * routes it falls back to route state (e.g. Blog). Section links route through "/#id"
+ * so the URL hash stays in sync on click. A disclosure menu covers small screens.
  */
 import { useRef, useState } from "react";
 import type { MouseEvent } from "react";
@@ -11,15 +12,20 @@ import { Link, useLocation } from "react-router";
 import { S } from "../lib/strings";
 import { DOCS_URL, REPO_URL } from "../lib/links";
 import { getActiveNavItem, SECTION_IDS } from "../lib/nav-state";
+import type { ActiveNavItem, SectionId } from "../lib/nav-state";
+import { useScrollSpy } from "../lib/use-scroll-spy";
 import { GitHubIcon, MenuIcon, XIcon } from "./icons";
 import { ThemeToggle } from "./theme-toggle";
 import { LangToggle } from "./lang-toggle";
 
-const SECTION_IDS = ["highlights", "quickstart", "benchmark", "contract", "features"] as const;
+/** Stable empty list: keeps the spy idle away from the home page. */
+const NO_IDS: readonly string[] = [];
 
 export function Nav() {
   const { pathname, hash } = useLocation();
-  const activeItem = getActiveNavItem(pathname, hash);
+  const onHome = pathname === "/";
+  const spied = useScrollSpy(onHome ? SECTION_IDS : NO_IDS) as SectionId | null;
+  const activeItem: ActiveNavItem = onHome ? spied : getActiveNavItem(pathname, hash);
   const [open, setOpen] = useState(false);
   const pillRef = useRef<HTMLSpanElement | null>(null);
   const pillVisible = useRef(false);
