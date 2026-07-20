@@ -89,7 +89,7 @@ interface GenerativeModelConfig {
 `GenerativeModel` (`packages/core/src/llm/generative-model.ts`) grounds the contract on the `AutoLLMClient` of the `@prismshadow/agenthub` model gateway:
 
 - the gateway maintains conversation history **statefully**, receiving only new messages each turn; resuming a Session replays committed history through a one-time `setHistory`;
-- an internal `EventTranslator` translates gateway stream events into `partial_*` fragments plus complete messages, preserving the `signature` / `phase` fidelity fields; complete messages settle in thinking → text → tool_call order;
+- an internal `EventTranslator` translates gateway stream events into `partial_*` fragments plus complete messages, preserving each item's opaque `fidelity` payload verbatim; segmentation mirrors the gateway's own aggregation — a thinking block is closed by its fidelity payload and a run of equal fidelity stays one block (OpenAI-compatible clients stamp every delta with the same `{ reasoning_field }`, which must not split blocks), while a text segment splits on a differing `fidelity.phase` and closes on a `fidelity.signature`, fidelity keys accumulating on merge; complete messages settle in thinking → text → tool_call order;
 - `ToolCallIdAllocator` disambiguates providers that use the function name as the call id (append `#n` inbound, strip outbound), scoped to the whole Session;
 - provider differences (tool-call formats, reasoning content, streaming events) are absorbed entirely inside the gateway — see [Models & Providers](/models).
 

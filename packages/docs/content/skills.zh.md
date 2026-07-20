@@ -66,6 +66,7 @@ Skill 库以 npm 包 `@prismshadow/penguin-skills` 发布，tarball 直接携带
 | Penguin 开发 | `penguin-sdk` | 基于 SDK 构建 AI 应用(createSession/run 流式循环) |
 | | `penguin-cli` | 用 penguin CLI 管理模型 API Key、默认模型与各 Agent 的 Vault 密钥 |
 | | `agenthub-models` | 经 `@prismshadow/agenthub` 调用模型 API：流式文本、图像生成、语音合成与 Embedding |
+| | `agenthub-dev` | 为 AgentHub 本身新增或更新模型支持：同步文档、捕获线上 API、成对实现 Python/TypeScript 客户端并做按模型的 e2e 测试 |
 | 网页开发 | `web-design` | 生成网页的默认视觉规范：极简黑白灰 |
 | 软件工程 | `software-engineering` | 完成软件工程任务：调查与审查代码，以最小改动实现修复、特性与重构，验证改动并报告经过确认的结果 |
 

@@ -66,6 +66,7 @@ The built-in Skills, by group (the group manifest is `SKILL_GROUPS` in `packages
 | Penguin Development | `penguin-sdk` | Build AI apps on the SDK (the createSession/run streaming loop) |
 | | `penguin-cli` | Manage model API keys, default models and per-agent Vault secrets with the penguin CLI |
 | | `agenthub-models` | Call model APIs through `@prismshadow/agenthub`: streaming text, image generation, speech synthesis and embeddings |
+| | `agenthub-dev` | Add or update model support in AgentHub itself: doc syncing, live API capture, paired Python/TypeScript implementation and model-scoped e2e testing |
 | Web Development | `web-design` | Default visual language for generated web pages: minimal black-white-gray |
 | Software Engineering | `software-engineering` | Complete software-engineering tasks: investigate and review code, implement fixes, features and refactors with minimal scope, validate changes, and report verified outcomes |
 

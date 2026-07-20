@@ -10,7 +10,11 @@
  * determination.
  */
 import { describe, expect, it } from "vitest";
-import { ThinkingLevel } from "@prismshadow/agenthub";
+import {
+  EmptyResponseError,
+  ThinkingLevel,
+  ToolCallArgumentParseError,
+} from "@prismshadow/agenthub";
 import type { UniEvent, UniMessage, UsageMetadata } from "@prismshadow/agenthub";
 import type { LLMOutcome } from "../src/interfaces.js";
 
@@ -1105,6 +1109,37 @@ describe("isMalformedJsonParseError", () => {
     );
     expect(isMalformedJsonParseError(new Error("socket hang up"))).toBe(false);
   });
+
+  it("detects AgentHub 0.4 parse/validation error classes (truncated tool args, thinking-only)", () => {
+    // A stream truncated mid-arguments surfaces as ToolCallArgumentParseError since agenthub
+    // 0.4 (previously a raw SyntaxError) — must stay malformed so the engine reconnects.
+    expect(
+      isMalformedJsonParseError(
+        new ToolCallArgumentParseError({
+          client: "Claude5Client",
+          toolName: "exec_command",
+          toolCallId: "toolu_broken_1",
+          rawArguments: '{"cmd": "ec',
+          reason: "Unterminated string in JSON at position 11",
+        }),
+      ),
+    ).toBe(true);
+    // A completed thinking-only response cannot be replayed (400 on the next turn): retrying
+    // via malformed gives the model another chance instead of failing the turn.
+    expect(
+      isMalformedJsonParseError(
+        new EmptyResponseError({ client: "Claude5Client", finishReason: "stop" }),
+      ),
+    ).toBe(true);
+    // Also detectable via the name fallback and the cause chain.
+    expect(
+      isMalformedJsonParseError(
+        new Error("request failed", {
+          cause: new EmptyResponseError({ client: "GPT5_5Client", finishReason: null }),
+        }),
+      ),
+    ).toBe(true);
+  });
 });
 
 describe("isIncompleteStreamError", () => {
@@ -1337,35 +1372,40 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
   });
 });
 
-describe("provider fidelity fields (signature / phase)", () => {
+describe("provider fidelity payloads (opaque, AgentHub 0.4 semantics)", () => {
   const complete = (messages: ReturnType<typeof translateEvents>["messages"]) =>
     messages.filter((m) => !(m.payload as { type: string }).type.startsWith("partial_"));
 
-  it("captures the thinking signature arriving as an empty-text delta (Claude signature_delta)", () => {
+  it("captures the thinking fidelity arriving as an empty-text delta (Claude signature_delta)", () => {
     const { messages } = translateEvents([
       ev({ content_items: [{ type: "thinking", thinking: "let me think" }] }),
-      ev({ content_items: [{ type: "thinking", thinking: "", signature: "sig-abc" }] }),
+      ev({
+        content_items: [{ type: "thinking", thinking: "", fidelity: { signature: "sig-abc" } }],
+      }),
       ev({ content_items: [{ type: "text", text: "answer" }] }),
       ev({ event_type: "stop", content_items: [], finish_reason: "stop" }),
     ]);
     const thinking = complete(messages).find(
       (m) => (m.payload as { type: string }).type === "thinking",
     )!;
-    expect((thinking.payload as { thinking: string; signature?: string }).thinking).toBe(
-      "let me think",
-    );
-    expect((thinking.payload as { signature?: string }).signature).toBe("sig-abc");
+    const p = thinking.payload as { thinking: string; fidelity?: Record<string, unknown> };
+    expect(p.thinking).toBe("let me think");
+    expect(p.fidelity).toEqual({ signature: "sig-abc" });
   });
 
-  it("splits adjacent thinking blocks on signature (redacted + normal keep their own signatures)", () => {
+  it("splits adjacent thinking blocks on differing fidelity (redacted + normal keep their own)", () => {
     const { messages } = translateEvents([
-      // A redacted block: sentinel text + signature arrive together (Claude content_block_start).
+      // A redacted block: sentinel text + fidelity arrive together (Claude content_block_start).
       ev({
-        content_items: [{ type: "thinking", thinking: "_REDACTED_THINKING", signature: "sig-red" }],
+        content_items: [
+          { type: "thinking", thinking: "_REDACTED_THINKING", fidelity: { signature: "sig-red" } },
+        ],
       }),
       // The next, ordinary thinking block.
       ev({ content_items: [{ type: "thinking", thinking: "visible" }] }),
-      ev({ content_items: [{ type: "thinking", thinking: "", signature: "sig-vis" }] }),
+      ev({
+        content_items: [{ type: "thinking", thinking: "", fidelity: { signature: "sig-vis" } }],
+      }),
       ev({ event_type: "stop", content_items: [], finish_reason: "stop" }),
     ]);
     const thinkings = complete(messages).filter(
@@ -1373,49 +1413,85 @@ describe("provider fidelity fields (signature / phase)", () => {
     );
     expect(
       thinkings.map((m) => {
-        const p = m.payload as { thinking: string; signature?: string };
-        return [p.thinking, p.signature];
+        const p = m.payload as { thinking: string; fidelity?: Record<string, unknown> };
+        return [p.thinking, p.fidelity];
       }),
     ).toEqual([
-      ["_REDACTED_THINKING", "sig-red"],
-      ["visible", "sig-vis"],
+      ["_REDACTED_THINKING", { signature: "sig-red" }],
+      ["visible", { signature: "sig-vis" }],
     ]);
   });
 
-  it("emits an empty-text thinking with signature (GPT-5 encrypted reasoning)", () => {
+  it("keeps a run of equal fidelity as one thinking block (OpenAI-compatible reasoning_field per delta)", () => {
+    const rf = { reasoning_field: "reasoning_content" };
     const { messages } = translateEvents([
-      ev({ content_items: [{ type: "thinking", thinking: "", signature: '{"id":"rs_1"}' }] }),
+      ev({ content_items: [{ type: "thinking", thinking: "step 1, ", fidelity: { ...rf } }] }),
+      ev({ content_items: [{ type: "thinking", thinking: "step 2, ", fidelity: { ...rf } }] }),
+      ev({ content_items: [{ type: "thinking", thinking: "done", fidelity: { ...rf } }] }),
       ev({ content_items: [{ type: "text", text: "answer" }] }),
       ev({ event_type: "stop", content_items: [], finish_reason: "stop" }),
     ]);
-    const thinking = complete(messages).find(
+    const thinkings = complete(messages).filter(
       (m) => (m.payload as { type: string }).type === "thinking",
-    )!;
-    expect((thinking.payload as { thinking: string }).thinking).toBe("");
-    expect((thinking.payload as { signature?: string }).signature).toBe('{"id":"rs_1"}');
+    );
+    expect(
+      thinkings.map((m) => {
+        const p = m.payload as { thinking: string; fidelity?: Record<string, unknown> };
+        return [p.thinking, p.fidelity];
+      }),
+    ).toEqual([["step 1, step 2, done", rf]]);
   });
 
-  it("splits text segments on phase markers arriving as empty-text deltas (GPT-5)", () => {
+  it("emits an empty-text thinking with fidelity (GPT-5 encrypted reasoning) and splits on the next one", () => {
     const { messages } = translateEvents([
-      ev({ content_items: [{ type: "text", text: "", phase: "planning" }] }),
+      ev({
+        content_items: [
+          { type: "thinking", thinking: "", fidelity: { id: "rs_1", encrypted_content: "aaa" } },
+        ],
+      }),
+      ev({
+        content_items: [
+          { type: "thinking", thinking: "", fidelity: { id: "rs_2", encrypted_content: "bbb" } },
+        ],
+      }),
+      ev({ content_items: [{ type: "text", text: "answer" }] }),
+      ev({ event_type: "stop", content_items: [], finish_reason: "stop" }),
+    ]);
+    const thinkings = complete(messages).filter(
+      (m) => (m.payload as { type: string }).type === "thinking",
+    );
+    expect(
+      thinkings.map((m) => {
+        const p = m.payload as { thinking: string; fidelity?: Record<string, unknown> };
+        return [p.thinking, p.fidelity];
+      }),
+    ).toEqual([
+      ["", { id: "rs_1", encrypted_content: "aaa" }],
+      ["", { id: "rs_2", encrypted_content: "bbb" }],
+    ]);
+  });
+
+  it("splits text segments on fidelity.phase markers arriving as empty-text deltas (GPT-5)", () => {
+    const { messages } = translateEvents([
+      ev({ content_items: [{ type: "text", text: "", fidelity: { phase: "planning" } }] }),
       ev({ content_items: [{ type: "text", text: "plan..." }] }),
-      ev({ content_items: [{ type: "text", text: "", phase: "answer" }] }),
+      ev({ content_items: [{ type: "text", text: "", fidelity: { phase: "answer" } }] }),
       ev({ content_items: [{ type: "text", text: "final" }] }),
       ev({ event_type: "stop", content_items: [], finish_reason: "stop" }),
     ]);
     const texts = complete(messages).filter((m) => (m.payload as { type: string }).type === "text");
     expect(
       texts.map((m) => {
-        const p = m.payload as { text: string; phase?: string | null };
-        return [p.text, p.phase];
+        const p = m.payload as { text: string; fidelity?: Record<string, unknown> };
+        return [p.text, p.fidelity];
       }),
     ).toEqual([
-      ["plan...", "planning"],
-      ["final", "answer"],
+      ["plan...", { phase: "planning" }],
+      ["final", { phase: "answer" }],
     ]);
   });
 
-  it("carries the tool_call signature through to the complete message", () => {
+  it("carries the tool_call fidelity through to the complete message", () => {
     const { messages } = translateEvents([
       ev({
         content_items: [
@@ -1424,7 +1500,7 @@ describe("provider fidelity fields (signature / phase)", () => {
             name: "exec_command",
             arguments: { cmd: "ls" },
             tool_call_id: "tc1",
-            signature: "sig-tool",
+            fidelity: { signature: "sig-tool" },
           },
         ],
       }),
@@ -1433,32 +1509,42 @@ describe("provider fidelity fields (signature / phase)", () => {
     const tc = complete(messages).find(
       (m) => (m.payload as { type: string }).type === "tool_call",
     )!;
-    expect((tc.payload as { signature?: string }).signature).toBe("sig-tool");
+    expect((tc.payload as { fidelity?: Record<string, unknown> }).fidelity).toEqual({
+      signature: "sig-tool",
+    });
   });
 
-  it("round-trips fidelity fields back to UniMessage content items (setHistory path)", () => {
+  it("round-trips fidelity payloads back to UniMessage content items (setHistory path)", () => {
     const uni = mergeOmniToUniMessage([
       thinkingMessage("deep", "completed", { signature: "sig-1" }),
       assistantText("hi", "completed", { phase: "answer", signature: "sig-2" }),
-      toolCall({ name: "t", arguments: "{}", toolCallId: "tc1", signature: "sig-3" }),
+      toolCall({ name: "t", arguments: "{}", toolCallId: "tc1", fidelity: { signature: "sig-3" } }),
     ]);
     expect(uni.content_items).toEqual([
-      { type: "thinking", thinking: "deep", signature: "sig-1" },
-      { type: "text", text: "hi", phase: "answer", signature: "sig-2" },
-      { type: "tool_call", name: "t", arguments: {}, tool_call_id: "tc1", signature: "sig-3" },
+      { type: "thinking", thinking: "deep", fidelity: { signature: "sig-1" } },
+      { type: "text", text: "hi", fidelity: { phase: "answer", signature: "sig-2" } },
+      {
+        type: "tool_call",
+        name: "t",
+        arguments: {},
+        tool_call_id: "tc1",
+        fidelity: { signature: "sig-3" },
+      },
     ]);
   });
 });
 
-describe("flushText signature parity (PR #39 review)", () => {
-  it("emits an empty-text message carrying a text signature instead of dropping it", () => {
+describe("flushText fidelity parity (PR #39 review)", () => {
+  it("emits an empty-text message carrying a text fidelity instead of dropping it", () => {
     const { messages } = translateEvents([
-      ev({ content_items: [{ type: "text", text: "", signature: "sig-t" }] }),
+      ev({ content_items: [{ type: "text", text: "", fidelity: { signature: "sig-t" } }] }),
       ev({ event_type: "stop", content_items: [], finish_reason: "stop" }),
     ]);
     const text = messages.find((m) => (m.payload as { type: string }).type === "text")!;
     expect((text.payload as { text: string }).text).toBe("");
-    expect((text.payload as { signature?: string }).signature).toBe("sig-t");
+    expect((text.payload as { fidelity?: Record<string, unknown> }).fidelity).toEqual({
+      signature: "sig-t",
+    });
   });
 });
 

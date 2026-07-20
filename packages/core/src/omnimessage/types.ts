@@ -99,15 +99,23 @@ export interface SessionMetaPayload {
 // ---------------------------------------------------------------------------
 // Docs: /docs/omni-message § "model_msg: complete payloads"
 
+/**
+ * Provider-fidelity payload (mirrors AgentHub's `Fidelity`): an arbitrary JSON-style object of
+ * wire-level data the LLM client records to reproduce the original message on replay — thinking
+ * signatures, phase labels, encrypted reasoning, the upstream reasoning field name, etc. Opaque
+ * to PenguinHarness: written to the Trace as-is and passed back verbatim; some models **require**
+ * it when history is replayed (e.g. Claude thinking signatures, GPT-5 encrypted reasoning) —
+ * losing it breaks Session resumption.
+ */
+export type Fidelity = Record<string, unknown>;
+
 export interface TextPayload {
   type: "text";
   role: Role;
   text: string;
   stop_reason?: StopReason;
-  /** Provider fidelity field: text phase marker (e.g. GPT-5 segments by phase), kept as-is and restored verbatim. */
-  phase?: string | null;
-  /** Provider fidelity field: signature, kept as-is and restored verbatim. */
-  signature?: string;
+  /** Provider-fidelity payload (e.g. `phase` for GPT-5 segment markers, `signature`), kept as-is and restored verbatim. */
+  fidelity?: Fidelity;
 }
 
 export interface ImageUrlPayload {
@@ -125,8 +133,8 @@ export interface InlineDataPayload {
   data: string;
   mime_type: string;
   stop_reason?: StopReason;
-  /** Provider fidelity field: signature, kept as-is and restored verbatim. */
-  signature?: string;
+  /** Provider-fidelity payload, kept as-is and restored verbatim. */
+  fidelity?: Fidelity;
 }
 
 export interface ThinkingPayload {
@@ -135,11 +143,12 @@ export interface ThinkingPayload {
   thinking: string;
   stop_reason?: StopReason;
   /**
-   * Provider fidelity field: thinking-block signature (Claude thinking blocks / redacted
-   * thinking, GPT-5 encrypted reasoning, etc. — **required** when some models replay history),
-   * kept as-is and restored verbatim — losing it breaks Session resumption.
+   * Provider-fidelity payload closing the thinking block (Claude thinking signatures / redacted
+   * thinking, GPT-5 encrypted reasoning, the OpenAI-compatible reasoning field name, etc. —
+   * **required** when some models replay history), kept as-is and restored verbatim — losing it
+   * breaks Session resumption.
    */
-  signature?: string;
+  fidelity?: Fidelity;
 }
 
 export interface InlineThinkingPayload {
@@ -149,8 +158,8 @@ export interface InlineThinkingPayload {
   data: string;
   mime_type: string;
   stop_reason?: StopReason;
-  /** Provider fidelity field: signature, kept as-is and restored verbatim. */
-  signature?: string;
+  /** Provider-fidelity payload, kept as-is and restored verbatim. */
+  fidelity?: Fidelity;
 }
 
 export interface ToolCallPayload {
@@ -161,8 +170,8 @@ export interface ToolCallPayload {
   arguments: string;
   tool_call_id: string;
   stop_reason?: StopReason;
-  /** Provider fidelity field: signature, kept as-is and restored verbatim. */
-  signature?: string;
+  /** Provider-fidelity payload, kept as-is and restored verbatim. */
+  fidelity?: Fidelity;
 }
 
 export interface ToolCallOutputPayload {
