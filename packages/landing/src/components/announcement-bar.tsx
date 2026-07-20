@@ -1,12 +1,15 @@
 /**
  * Rotating announcement bar above the sticky nav (it scrolls away with the page).
- * Light brand-tinted background; announcements SLIDE horizontally between each
- * other (auto-advance on a timer, paused while hovered) with dot indicators for
- * manual switching — no arrows. Every announcement links to a blog post.
+ * Light brand-tinted background; announcements auto-advance by SLIDING in one
+ * direction only (a clone of the first slide follows the last one, and the track
+ * snaps back without animation once the clone is fully in view). No manual
+ * switch controls; hovering pauses the rotation. Every announcement is a link
+ * into the blog, with a small arrow marking it as click-through.
  */
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { S } from "../lib/strings";
+import { ArrowRightIcon } from "./icons";
 
 const ROTATE_MS = 6000;
 
@@ -21,14 +24,26 @@ export function AnnouncementBar() {
     models: S.announcement.models,
     fireworks: S.announcement.fireworks,
   };
-  const [active, setActive] = useState(0);
+  // pos runs 0..ITEMS.length where ITEMS.length is the clone of slide 0.
+  const [pos, setPos] = useState(0);
+  const [animate, setAnimate] = useState(true);
   const [paused, setPaused] = useState(false);
 
   useEffect(() => {
     if (paused) return;
-    const timer = setInterval(() => setActive((i) => (i + 1) % ITEMS.length), ROTATE_MS);
+    const timer = setInterval(() => setPos((p) => (p >= ITEMS.length ? p : p + 1)), ROTATE_MS);
     return () => clearInterval(timer);
   }, [paused]);
+
+  // After snapping back to the real first slide, re-enable the transition on the
+  // next frame pair so the jump itself never animates.
+  useEffect(() => {
+    if (animate) return;
+    const raf = requestAnimationFrame(() => requestAnimationFrame(() => setAnimate(true)));
+    return () => cancelAnimationFrame(raf);
+  }, [animate]);
+
+  const slides = [...ITEMS, ITEMS[0]!];
 
   return (
     <div
@@ -38,46 +53,35 @@ export function AnnouncementBar() {
       onMouseLeave={() => setPaused(false)}
       className="border-b border-brand-100 bg-brand-50 dark:border-brand-950 dark:bg-brand-950/50"
     >
-      <div className="mx-auto flex h-9 max-w-6xl items-center gap-3 px-4 sm:px-6">
-        {/* Sliding track: one full-width slide per announcement. */}
-        <div className="min-w-0 flex-1 overflow-hidden">
-          <div
-            className="flex transition-transform duration-500 ease-out"
-            style={{ transform: `translateX(-${active * 100}%)` }}
-          >
-            {ITEMS.map((item, i) => (
-              <div
-                key={item.key}
-                aria-hidden={i !== active}
-                className="flex w-full shrink-0 justify-center"
+      <div className="mx-auto h-9 max-w-6xl overflow-hidden px-4 sm:px-6">
+        <div
+          className={`flex h-full ${animate ? "transition-transform duration-500 ease-out" : ""}`}
+          style={{ transform: `translateX(-${pos * 100}%)` }}
+          onTransitionEnd={(e) => {
+            if (e.target !== e.currentTarget || e.propertyName !== "transform") return;
+            if (pos === ITEMS.length) {
+              setAnimate(false);
+              setPos(0);
+            }
+          }}
+        >
+          {slides.map((item, i) => (
+            <div
+              key={`${item.key}-${i}`}
+              aria-hidden={i !== pos}
+              className="flex w-full shrink-0 items-center justify-center"
+            >
+              <Link
+                to={item.to}
+                tabIndex={i === pos ? 0 : -1}
+                className="inline-flex min-w-0 items-center gap-1.5 text-[13px] font-medium text-brand-800 underline-offset-2 hover:underline dark:text-brand-200"
               >
-                <Link
-                  to={item.to}
-                  tabIndex={i === active ? 0 : -1}
-                  className="truncate text-[13px] font-medium text-brand-800 underline-offset-2 hover:underline dark:text-brand-200"
-                >
-                  {texts[item.key]}
-                </Link>
-              </div>
-            ))}
-          </div>
-        </div>
-        <span className="flex shrink-0 items-center gap-1.5">
-          {ITEMS.map((item, i) => (
-            <button
-              key={item.key}
-              type="button"
-              onClick={() => setActive(i)}
-              aria-label={texts[item.key]}
-              aria-current={i === active}
-              className={`h-1.5 rounded-full transition-all ${
-                i === active
-                  ? "w-4 bg-brand-600 dark:bg-brand-300"
-                  : "w-1.5 bg-brand-300 hover:bg-brand-400 dark:bg-brand-800 dark:hover:bg-brand-700"
-              }`}
-            />
+                <span className="truncate">{texts[item.key]}</span>
+                <ArrowRightIcon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              </Link>
+            </div>
           ))}
-        </span>
+        </div>
       </div>
     </div>
   );
