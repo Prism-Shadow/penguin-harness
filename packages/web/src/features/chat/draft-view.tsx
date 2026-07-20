@@ -447,7 +447,6 @@ export function DraftView({
                 type="button"
                 disabled={exampleBusy !== null || sending || !skillsLoaded || !agentId || !models}
                 onClick={() => void runExample(task)}
-                title={copy.desc}
                 className="group flex min-w-0 items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 text-left transition-colors duration-150 hover:border-gray-300 disabled:cursor-default disabled:opacity-60 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-gray-700"
               >
                 {/* 24×24 line icons (gamepad / music note / sparkle), consistent with the icon convention */}
