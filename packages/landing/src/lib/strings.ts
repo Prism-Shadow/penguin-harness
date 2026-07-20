@@ -9,6 +9,14 @@
 export const zh = {
   siteName: "PenguinHarness",
 
+  announcement: {
+    label: "公告",
+    prev: "上一条公告",
+    next: "下一条公告",
+    models: "Kimi K3 与 Qwen 3.8 Max 模型现已在 PenguinHarness 可用",
+    fireworks: "携手 AMD 开发者计划：$50 Fireworks API 额度免费领取中",
+  },
+
   nav: {
     why: "为什么选择",
     quickstart: "快速开始",

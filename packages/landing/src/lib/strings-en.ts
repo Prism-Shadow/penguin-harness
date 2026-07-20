@@ -8,6 +8,14 @@ import type { Strings } from "./strings";
 export const en: Strings = {
   siteName: "PenguinHarness",
 
+  announcement: {
+    label: "Announcements",
+    prev: "Previous announcement",
+    next: "Next announcement",
+    models: "Kimi K3 and Qwen 3.8 Max are now available in PenguinHarness",
+    fireworks: "Claim $50 in Fireworks API credits with the AMD Developer Program",
+  },
+
   nav: {
     why: "Why PenguinHarness",
     quickstart: "Quick start",
