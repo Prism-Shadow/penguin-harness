@@ -5,9 +5,11 @@ category: news
 excerpt: The first open-source harness with recursive self-improvement is here — lightweight, efficient and secure infrastructure covering everything from automatic agent construction to continuous self-evolution.
 ---
 
-Today we are releasing **PenguinHarness** — an open-source harness built for constructing and evolving agents. Its purpose fits in one line:
+Today we are releasing **PenguinHarness** — an open-source harness built for constructing and evolving agents: a zero-code Harness CLI and Web UI, connected to 1000+ models. The story it tells fits in one line:
 
-> Efficient Self-Improving Harness for Everyone.
+> With LangChain, you build agents by hand — at 1× speed. With PenguinHarness, agents build agents — at 100×.
+
+And its purpose is right in the name: Efficient Self-Improving Harness for Everyone.
 
 ## Why PenguinHarness
 
@@ -55,7 +57,7 @@ The biggest worry about self-improvement is losing control. PenguinHarness answe
 Install with one command (Linux / macOS, x64 / arm64, bundled Node runtime):
 
 ```bash
-curl -fsSL https://github.com/Prism-Shadow/penguin-harness/releases/latest/download/install.sh | sh
+curl -fsSL https://penguin.ooo/install.sh | sh
 ```
 
 Configure a model (DeepSeek as an example), run your first task, or open the desktop-grade web interface with `penguin web`:

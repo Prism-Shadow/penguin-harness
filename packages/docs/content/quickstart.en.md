@@ -8,7 +8,7 @@ description: Install PenguinHarness, configure a model, and run your first Task.
 One-liner for Linux / macOS:
 
 ```bash
-curl -fsSL https://github.com/Prism-Shadow/penguin-harness/releases/latest/download/install.sh | sh
+curl -fsSL https://penguin.ooo/install.sh | sh
 ```
 
 For other options (npm, from source), see [Installation](/installation).

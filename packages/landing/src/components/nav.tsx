@@ -15,6 +15,8 @@ import { GitHubIcon, MenuIcon, XIcon } from "./icons";
 import { ThemeToggle } from "./theme-toggle";
 import { LangToggle } from "./lang-toggle";
 
+const SECTION_IDS = ["why", "quickstart", "contract", "features"] as const;
+
 interface Indicator {
   left: number;
   width: number;
@@ -27,9 +29,8 @@ export function Nav() {
   const [indicator, setIndicator] = useState<Indicator | null>(null);
 
   const sectionLabel: Record<(typeof SECTION_IDS)[number], string> = {
-    highlights: S.nav.highlights,
+    why: S.nav.why,
     quickstart: S.nav.quickstart,
-    benchmark: S.nav.benchmark,
     contract: S.nav.contract,
     features: S.nav.features,
   };

@@ -8,7 +8,7 @@ description: 安装 PenguinHarness、配置模型并运行第一个 Task。
 Linux / macOS 一键安装：
 
 ```bash
-curl -fsSL https://github.com/Prism-Shadow/penguin-harness/releases/latest/download/install.sh | sh
+curl -fsSL https://penguin.ooo/install.sh | sh
 ```
 
 其他方式（npm、源码）见[安装](/installation)。
