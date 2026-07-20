@@ -2,34 +2,26 @@
 title: "Introducing PenguinHarness: agents that build agents"
 date: 2026-07-17
 category: news
-excerpt: We proved agents can self-evolve in our GDPevo Benchmark — now we are bringing that capability to everyone. The first open-source harness with recursive self-improvement is here, covering everything from automatic agent construction to continuous self-evolution.
+excerpt: We proved agents can self-evolve in our GDPevo Benchmark — now we are bringing that capability to everyone. The first open-source harness with recursive self-improvement covers everything from one-sentence agent construction to continuous self-evolution.
 ---
 
 Today we are releasing **PenguinHarness** — an open-source harness built for constructing and evolving agents: a zero-code Harness CLI and Web UI, connected to 1000+ models. The story it tells fits in one line:
 
 > With LangChain, you build agents by hand — at 1× speed. With PenguinHarness, agents build agents — at 100×.
 
-And its purpose is right in the name: Efficient Self-Improving Harness for Everyone.
-
 ## From GDPevo to PenguinHarness: why we built this
 
 Before PenguinHarness, our team published the [GDPevo Benchmark](https://prism-shadow.github.io/GDPevo/). In GDPevo we systematically verified one thing: **agents can self-evolve** — an Agent can score its own performance, find where the points were lost, rewrite its own prompts and Skills, and climb version after version.
 
-With the capability proven, the question became: how does everyone get to use it? Self-evolution should not stay a curve in a paper — it should be infrastructure that works out of the box on every developer's desk. **Bringing an efficient self-improving harness to everyone is why we built PenguinHarness.**
+With the capability proven, the question became: how does everyone get to use it? Self-evolution should not stay a curve in a paper — it should be infrastructure that works out of the box on every developer's desk. **Bringing an efficient self-improving harness to everyone is why we built PenguinHarness** — and it is right there in the name: Efficient Self-Improving Harness for Everyone.
 
 ## Why PenguinHarness
 
-Over the past year the way agent applications are built has been converging fast: what really decides quality is not a heavyweight framework but a simple, reliable, observable harness. PenguinHarness is rebuilt from the ground up — no dependency on any agent framework, a fully open-source self-developed kernel — and it brings three things to the open-source world first:
+Three reasons, in deliberate order — from task quality, to how agents get built, to how they keep improving.
 
-- **Simplest Is the Best**: a deliberately minimal toolset over clean low-level interfaces — fewer tool calls, fewer Tokens, complex tasks done efficiently.
-- **Harness for Building Agents**: with the PenguinHarness SDK, an Agent builds complete Agent applications for you, autonomously, from scratch.
-- **Harness for Recursive Self-Improvement**: with PenguinHarness Skills, an Agent evaluates and optimizes itself, improving recursively over time.
+### 1. Better on complex tasks, at lower cost
 
-For the latter two, PenguinHarness is the first open-source implementation in the industry.
-
-## Same model, equal or better quality, lower cost
-
-All runs use the same DeepSeek V4 Pro model, head-to-head against Claude Code and OpenAI Codex on two suites (per-run means below).
+A deliberately minimal toolset over clean low-level interfaces: fewer tool calls, fewer Tokens, deeply tuned for open models like DeepSeek. All runs use the same DeepSeek V4 Pro model, head-to-head against Claude Code and OpenAI Codex on two suites:
 
 ![Benchmark: PenguinHarness matches Claude Code on accuracy at lower cost, and beats OpenAI Codex on both suites](/blog-assets/benchmark-light.svg)
 
@@ -51,7 +43,7 @@ Coding tasks (40 tasks × 2 runs averaged, thinking high, 30-minute per-task tim
 
 On the data-analysis suite we tie Claude Code on accuracy and clearly beat OpenAI Codex, with 14.8% fewer Tokens and 13.8% lower cost; on the coding suite we score the highest accuracy of the three at the lowest per-run cost.
 
-## One sentence, and an Agent builds your Agent app
+### 2. One sentence, and an Agent builds your Agent app
 
 Type one sentence, and an Agent builds the complete Agent application for you — scaffold, code, and run instructions, end to end:
 
@@ -61,7 +53,9 @@ Build a RAG app that answers questions over the Markdown files in docs/ with cit
 
 ![One sentence in, a working RAG app out: scaffold, retrieval entry with citations, and run instructions](/blog-assets/rag-demo-light.webp)
 
-A self-evolution demo video is coming soon.
+### 3. Self-evolution: it gets stronger with use
+
+With PenguinHarness Skills, an Agent evaluates and optimizes itself: the Optimizer orchestrates multiple Evaluators to score in parallel, uses the scores and run traces to find where points were lost, and upgrades the Agent from version N to N+1 — with a snapshot before every round, and every request replayable in the Trace view. A self-evolution demo video is coming soon.
 
 ## Evolution within bounds, security first
 
@@ -87,7 +81,7 @@ The biggest worry about self-evolution is losing control. PenguinHarness answers
 
 Any OpenAI-protocol endpoint is supported: pick a preset above, or point a custom endpoint at any of the 1000+ online and local models.
 
-## Start right now
+## How to use it
 
 Install with one command (Linux / macOS, x64 / arm64, bundled Node runtime), then launch the Web UI:
 
@@ -97,8 +91,6 @@ penguin web        # opens http://127.0.0.1:7364 (first login: admin / admin123)
 ```
 
 Open the Models page, paste an API key under the DeepSeek or OpenRouter group and set it as default; then head back to Chat and hand the Agent its first task — e.g. "Analyze data.csv and summarize quarterly sales".
-
-PenguinHarness supports 1000+ online and local models and multi-agent collaborative evolution, and runs on as little as a single CPU. Through continuous evolution it makes complex AI development ever simpler — a more efficient, more reliable, lower-hallucination and lower-cost Agent productivity engine.
 
 ## What's next
 
