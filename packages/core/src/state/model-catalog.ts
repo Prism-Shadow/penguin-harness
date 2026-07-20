@@ -284,6 +284,16 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
+    modelId: "google/gemini-3.5-flash",
+    displayName: "Gemini 3.5 Flash",
+    provider: "openrouter",
+    contextWindow: 1000000,
+    pricing: usd(1.5, 1.5, 9),
+    supportsVision: true,
+    clientType: "openai",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
     // No official separate cache price published: cache_read uses the standard input price (no discount assumed).
     modelId: "minimax/minimax-m3",
     displayName: "MiniMax M3",

@@ -88,7 +88,7 @@ Build a RAG app that answers questions over the Markdown files in docs/ with cit
 | Hunyuan 3        | OpenRouter                                                                     |
 | Qwen 3.8 Max     | Qwen Token Plan(预览)                                                        |
 | GPT 5.5          | OpenAI, OpenRouter                                                             |
-| Gemini 3.5 Flash | Google Gemini                                                                  |
+| Gemini 3.5 Flash | Google Gemini, OpenRouter                                                                  |
 | Claude Opus 4.8  | Anthropic, OpenRouter                                                          |
 
 模型即 `(provider, model_id)` 二元组加一个 API key:一方厂商分组(DeepSeek、Anthropic、OpenAI、Google Gemini、Z.AI、Moonshot)自动路由,五个 OpenAI 兼容网关(OpenRouter、Fireworks AI、SiliconFlow、Qwen Token Plan、Qwen Pay-As-You-Go)自带预置端点,另有 1000+ 在线与本地模型可经这些网关或任意自定义端点接入。

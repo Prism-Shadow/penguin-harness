@@ -88,7 +88,7 @@ With PenguinHarness Skills, an Agent evaluates and optimizes itself: run the ben
 | Hunyuan 3        | OpenRouter                                                                     |
 | Qwen 3.8 Max     | Qwen Token Plan (preview)                                                      |
 | GPT 5.5          | OpenAI, OpenRouter                                                             |
-| Gemini 3.5 Flash | Google Gemini                                                                  |
+| Gemini 3.5 Flash | Google Gemini, OpenRouter                                                                  |
 | Claude Opus 4.8  | Anthropic, OpenRouter                                                          |
 
 A model is just a `(provider, model_id)` pair plus an API key: direct vendor groups (DeepSeek, Anthropic, OpenAI, Google Gemini, Z.AI, Moonshot) route automatically, five OpenAI-compatible gateways (OpenRouter, Fireworks AI, SiliconFlow, Qwen Token Plan, Qwen Pay-As-You-Go) come with preset endpoints, and 1000+ more online and local models are reachable through those gateways or any custom endpoint.
