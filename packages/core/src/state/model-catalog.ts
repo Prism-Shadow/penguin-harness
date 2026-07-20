@@ -419,16 +419,17 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     clientType: "openai",
     baseUrl: SILICONFLOW_BASE_URL,
   },
-  // -- Qwen Token Plan (subscription gateway: usage deducts plan quota, no per-token price, so
-  // pricing is omitted and costs read as 0; vision flags per the plan's supported-model table).
-  // The plan page doesn't document context windows: the Qwen trio uses the Qwen Max series'
-  // published 256K until the plan documents its own; the cross-listed GLM/DeepSeek entries
-  // mirror the vendors' native windows (transport doesn't change the model). --
+  // -- Qwen Token Plan (subscription gateway; vision flags per the plan's supported-model
+  // table). Pricing and context windows from each model's page at
+  // www.qianwenai.com/models/<id> (official CNY list prices; limited-time promotions such as
+  // the 8折/5折 discounts are not stored). qwen3.8-max-preview is preview-only with a
+  // quota-multiplier promotion and publishes no per-token list price nor a context window, so
+  // it carries no pricing and uses its family's 1M window. --
   {
     modelId: "qwen3.8-max-preview",
     displayName: "Qwen 3.8 Max Preview",
     provider: "qwen-token-plan",
-    contextWindow: 262144,
+    contextWindow: 1000000,
     supportsVision: true,
     clientType: "openai",
     baseUrl: QWEN_TOKEN_PLAN_BASE_URL,
@@ -437,7 +438,8 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     modelId: "qwen3.7-max",
     displayName: "Qwen 3.7 Max",
     provider: "qwen-token-plan",
-    contextWindow: 262144,
+    contextWindow: 1000000,
+    pricing: cny(2.4, 12, 36),
     supportsVision: false,
     clientType: "openai",
     baseUrl: QWEN_TOKEN_PLAN_BASE_URL,
@@ -446,7 +448,8 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     modelId: "qwen3.7-plus",
     displayName: "Qwen 3.7 Plus",
     provider: "qwen-token-plan",
-    contextWindow: 262144,
+    contextWindow: 1000000,
+    pricing: cny(0.4, 2, 8),
     supportsVision: true,
     clientType: "openai",
     baseUrl: QWEN_TOKEN_PLAN_BASE_URL,
@@ -455,7 +458,8 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     modelId: "glm-5.2",
     displayName: "GLM-5.2",
     provider: "qwen-token-plan",
-    contextWindow: 1000000,
+    contextWindow: 1048576,
+    pricing: cny(2, 8, 28),
     supportsVision: false,
     clientType: "openai",
     baseUrl: QWEN_TOKEN_PLAN_BASE_URL,
@@ -465,6 +469,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     displayName: "DeepSeek V4 Pro",
     provider: "qwen-token-plan",
     contextWindow: 1000000,
+    pricing: cny(1, 12, 24),
     supportsVision: false,
     clientType: "openai",
     baseUrl: QWEN_TOKEN_PLAN_BASE_URL,

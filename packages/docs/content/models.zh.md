@@ -58,7 +58,7 @@ api_key = "sk-..."
 | deepseek | `DEEPSEEK_API_KEY` | 默认模型所在分组 |
 | openrouter | `OPENAI_API_KEY` | OpenAI 兼容网关，预置 base URL `https://openrouter.ai/api/v1` |
 | siliconflow | `OPENAI_API_KEY` | OpenAI 兼容网关，预置 base URL `https://api.siliconflow.cn/v1` |
-| qwen-token-plan | `OPENAI_API_KEY` | Qwen Token Plan 订阅网关(按套餐扣配额、无逐 token 单价)，预置 base URL `https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1` |
+| qwen-token-plan | `OPENAI_API_KEY` | Qwen Token Plan 订阅网关，预置 base URL `https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1`；定价取各模型页官方牌价(预览模型仅配额倍率促销、无牌价) |
 | google | `GEMINI_API_KEY` | |
 | anthropic | `ANTHROPIC_API_KEY` | |
 | openai | `OPENAI_API_KEY` | |
