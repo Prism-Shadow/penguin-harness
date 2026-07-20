@@ -102,7 +102,9 @@ ${TREE}
     marker: "data-analysis Agent app",
     prompt:
       "Use the PenguinHarness SDK to create a data-analysis Agent app that reads CSV files and writes a summary report",
-    title: "Build a data-analysis Agent app",
+    // Stay under core's TITLE_MAX_CHARS (30): a longer title gets hard-clipped
+    // mid-word in the shots ("…Agent ap").
+    title: "Build a data-analysis Agent",
     turns: [
       {
         thinking:
@@ -549,17 +551,15 @@ try {
       await page.waitForTimeout(2000);
       await saveWebp(await page.screenshot(), `chat-${lang}-${theme}.webp`);
 
-      // Trace view: select the session in the list (deep-link selection is unreliable
-      // right after a fresh navigation, so click explicitly — sidebar shows the same
-      // title first in DOM order, hence .last()).
-      await page.goto(`${BASE}/traces?sessionId=${sessionId}`);
-      await page.waitForTimeout(1500);
-      await page
-        .getByText(script.title)
-        .last()
-        .click()
-        .catch(() => {});
-      await page.waitForTimeout(2500);
+      // Trace view: the product's canonical deep link carries BOTH agentId and
+      // sessionId (?sessionId= alone is ignored by TracesPage's focus wiring), and
+      // auto-selects the Session once its trace list loads. Waiting for the
+      // execution timeline's exec_command lanes guarantees every language captures
+      // the same opened trace — stats + a timeline with tool calls — never the
+      // empty "select a Session" state.
+      await page.goto(`${BASE}/traces?agentId=default_agent&sessionId=${sessionId}`);
+      await page.getByText("exec_command").first().waitFor({ timeout: 20000 });
+      await page.waitForTimeout(2000);
       await saveWebp(await page.screenshot(), `traces-${lang}-${theme}.webp`);
 
       // Evaluation center: open the pre-provisioned example Benchmark scoreboard.
