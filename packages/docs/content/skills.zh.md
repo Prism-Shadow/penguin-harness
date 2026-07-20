@@ -63,11 +63,12 @@ Skill 库以 npm 包 `@prismshadow/penguin-skills` 发布，tarball 直接携带
 | | `agent-evaluation` | 隔离执行并评分单个 Benchmark Case:CLI 执行、Trace 溯源检查、Rubric 私有隔离 |
 | | `agent-optimization` | 依据直接反馈或带版本的多 Case Benchmark 分数与关联 Trace 改进 Agent State |
 | 数据分析 | `data-analysis` | 以有界的证据检查、显式的改答案决策、原生产物处理与最终输出校验完成数据分析任务 |
-| Penguin 开发 | `penguin-sdk` | 基于 SDK 构建 AI 应用(createSession/run 流式循环) |
+| Penguin 开发 | `penguin-sdk` | 基于 SDK 构建 AI 与 RAG 应用：createSession/run 流式循环，外加带可溯源引用的完整检索配方 |
 | | `penguin-cli` | 用 penguin CLI 管理模型 API Key、默认模型与各 Agent 的 Vault 密钥 |
 | | `agenthub-models` | 经 `@prismshadow/agenthub` 调用模型 API：流式文本、图像生成、语音合成与 Embedding |
 | | `agenthub-dev` | 为 AgentHub 本身新增或更新模型支持：同步文档、捕获线上 API、成对实现 Python/TypeScript 客户端并做按模型的 e2e 测试 |
-| 网页开发 | `web-design` | 生成网页的默认视觉规范：极简黑白灰 |
+| 网页开发 | `web-design` | 生成网页与应用界面的 Penguin 视觉语言：设计令牌、组件配方、明暗主题与聊天布局 |
+| 网络调研 | `firecrawl` | 经 Firecrawl API 做网络搜索与页面抓取，产出干净的 Markdown |
 | 软件工程 | `software-engineering` | 完成软件工程任务：调查与审查代码，以最小改动实现修复、特性与重构，验证改动并报告经过确认的结果 |
 
 ## 编写与优化
