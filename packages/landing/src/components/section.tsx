@@ -19,8 +19,8 @@ export function Section({
 }) {
   const ref = useReveal<HTMLElement>();
   return (
-    <section id={id} ref={ref} className={`px-4 py-16 sm:px-6 sm:py-24 ${className}`}>
-      <div className="mx-auto max-w-6xl">
+    <section ref={ref} className={`px-4 py-16 sm:px-6 sm:py-24 ${className}`}>
+      <div id={id} className={`mx-auto max-w-6xl ${id ? "section-anchor" : ""}`}>
         {(eyebrow || title || subtitle) && (
           <div className="mx-auto mb-10 max-w-3xl text-center sm:mb-14">
             {eyebrow && (

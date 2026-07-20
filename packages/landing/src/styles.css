@@ -79,9 +79,9 @@
   .dark * {
     scrollbar-color: rgb(232 234 237 / 0.2) transparent;
   }
-  /* Anchor sections scroll below the sticky header. */
-  section[id] {
-    scroll-margin-top: 4.5rem;
+  /* Anchor targets start at the section content, below the sticky header and its breathing room. */
+  .section-anchor {
+    scroll-margin-top: 5.5rem;
   }
 }
 
