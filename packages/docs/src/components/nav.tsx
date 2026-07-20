@@ -4,7 +4,6 @@
  * toggle. The sidebar itself lives in the layout (router.tsx); this bar only flips
  * its open state.
  */
-import { Link } from "react-router";
 import { S } from "../lib/strings";
 import { REPO_URL, SITE_URL } from "../lib/links";
 import { GitHubIcon, MenuIcon, XIcon } from "./icons";
@@ -25,13 +24,13 @@ export function Nav({ menuOpen, onToggleMenu }: { menuOpen: boolean; onToggleMen
           {menuOpen ? <XIcon className="h-5 w-5" /> : <MenuIcon className="h-5 w-5" />}
         </button>
 
-        <Link to="/" className="flex items-center gap-2">
+        <a href={SITE_URL} className="flex items-center gap-2">
           <img src={`${import.meta.env.BASE_URL}penguin-logo.svg`} alt="" className="h-7 w-7" />
           <span className="text-[15px] font-semibold tracking-tight">{S.siteName}</span>
           <span className="rounded-full border border-brand-200 bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700 dark:border-brand-900 dark:bg-brand-950 dark:text-brand-300">
             {S.docsBadge}
           </span>
-        </Link>
+        </a>
 
         <div className="ml-auto flex items-center gap-1">
           <a
