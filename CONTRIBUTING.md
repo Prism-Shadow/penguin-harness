@@ -79,8 +79,9 @@ pnpm test:e2e                                        # core live-model e2e, need
 - **Every change ships with a changelog entry**: add
   `changelog/<version>/YYYY-MM-DD-<semantic-id>.md` under the next unreleased version
   (released versions' folders are frozen) — an H1 title, a one-sentence summary
-  paragraph, then details — and add the entry to the index in
-  [`changelog/README.md`](changelog/README.md). See that index for the full convention.
+  paragraph, then details — and add a one-line link for it to that version's index,
+  `changelog/<version>/README.md`. The layout is documented in
+  [`changelog/README.md`](changelog/README.md).
 - README assets under `assets/readme/` are generated — the benchmark charts from the
   landing benchmark data, and the demo screenshots via
   `node packages/landing/scripts/capture-readme-demo.mjs` (build first; needs Playwright
