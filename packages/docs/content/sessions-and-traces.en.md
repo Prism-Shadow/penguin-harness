@@ -81,7 +81,7 @@ Special case: if the latest Trace file ends with a completed compaction, that co
 
 ## Field fidelity
 
-Provider-specific fields (such as `signature` and `phase`) are preserved verbatim in the Trace and sent back verbatim — some models require them byte-for-byte on history replay, and any rewriting would break compatibility. This is one reason the Trace stores raw OmniMessage envelopes rather than a post-processed format.
+Each content message's opaque provider `fidelity` payload (thinking signatures, phase labels, encrypted reasoning, …) is preserved verbatim in the Trace and sent back verbatim — some models require it byte-for-byte on history replay, and any rewriting would break compatibility. This is one reason the Trace stores raw OmniMessage envelopes rather than a post-processed format.
 
 ## Observability
 

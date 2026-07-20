@@ -82,6 +82,7 @@ describe("skills api", () => {
       "penguin-sdk",
       "penguin-cli",
       "agenthub-models",
+      "agenthub-dev",
     ]);
     expect(body.groups[3]!.skills.map((s) => s.name)).toEqual(["web-design"]);
     expect(body.groups[4]!.skills.map((s) => s.name)).toEqual(["software-engineering"]);

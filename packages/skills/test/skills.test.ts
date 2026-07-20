@@ -107,6 +107,7 @@ describe("loadSkillGroups / groupSkills", () => {
       "penguin-sdk",
       "penguin-cli",
       "agenthub-models",
+      "agenthub-dev",
     ]);
     expect(groups[3]!.skills.map((s) => s.name)).toEqual(["web-design"]);
     expect(groups[3]!.title).toBe("Web Development");
@@ -162,7 +163,10 @@ describe("loadSkillGroups / groupSkills", () => {
         skills: ["agent-creation", "benchmark-design", "agent-evaluation", "agent-optimization"],
       },
       { id: "data-analysis", skills: ["data-analysis"] },
-      { id: "penguin-development", skills: ["penguin-sdk", "penguin-cli", "agenthub-models"] },
+      {
+        id: "penguin-development",
+        skills: ["penguin-sdk", "penguin-cli", "agenthub-models", "agenthub-dev"],
+      },
       { id: "web-development", skills: ["web-design"] },
       { id: "software-engineering", skills: ["software-engineering"] },
     ]);

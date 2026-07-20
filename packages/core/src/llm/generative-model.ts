@@ -21,7 +21,12 @@
  * `context_engine` only consumes OmniMessage; all Uni* protocol details are encapsulated here.
  * Docs: /docs/interfaces § "The built-in implementation: GenerativeModel".
  */
-import { AutoLLMClient, ThinkingLevel } from "@prismshadow/agenthub";
+import {
+  AutoLLMClient,
+  EmptyResponseError,
+  ThinkingLevel,
+  ToolCallArgumentParseError,
+} from "@prismshadow/agenthub";
 import type {
   ContentItem,
   FinishReason,
@@ -45,6 +50,7 @@ import {
 } from "../omnimessage/index.js";
 import type {
   CompleteModelPayload,
+  Fidelity,
   OmniMessage,
   StopReason,
   TokenCounts,
@@ -76,20 +82,42 @@ function parseToolArguments(raw: string): Record<string, unknown> {
 }
 
 /**
+ * Whether a fidelity payload carries at least one key (mirrors AgentHub's baseClient helper —
+ * an absent and an empty fidelity are equivalent).
+ */
+function hasFidelity(fidelity?: Fidelity): boolean {
+  return fidelity != null && Object.keys(fidelity).length > 0;
+}
+
+/**
+ * Compare two fidelity payloads by value (mirrors AgentHub's baseClient helper). Fidelity
+ * objects are built with a stable key order by each AgentHub client, so JSON serialization is
+ * a faithful equality check.
+ */
+function fidelityEquals(a?: Fidelity, b?: Fidelity): boolean {
+  return JSON.stringify(a ?? {}) === JSON.stringify(b ?? {});
+}
+
+/** Spread helper: attach `fidelity` only when it carries at least one key. */
+function fidelityProp(fidelity?: Fidelity): { fidelity?: Fidelity } {
+  return hasFidelity(fidelity) ? { fidelity } : {};
+}
+
+/**
  * Maps a complete OmniMessage payload to an AgentHub `ContentItem`.
  * Only complete model_msg payloads are supported; `partial_*` is an output-only protocol.
  */
 function payloadToContentItem(payload: CompleteModelPayload): ContentItem {
-  // Provider-fidelity fields (signature / phase) are restored verbatim — some models require
-  // them when history is replayed back (e.g. Claude thinking signatures, GPT-5 encrypted
-  // reasoning and phase segmentation); losing them would break Session recovery.
+  // The provider-fidelity payload is opaque and restored verbatim — some models require it
+  // when history is replayed back (e.g. Claude thinking signatures, GPT-5 encrypted reasoning
+  // and phase segmentation, the OpenAI-compatible reasoning field name); losing it would break
+  // Session recovery.
   switch (payload.type) {
     case "text":
       return {
         type: "text",
         text: payload.text,
-        ...(payload.phase != null ? { phase: payload.phase } : {}),
-        ...(payload.signature !== undefined ? { signature: payload.signature } : {}),
+        ...fidelityProp(payload.fidelity),
       };
     case "image_url":
       return { type: "image_url", image_url: payload.image_url };
@@ -98,20 +126,20 @@ function payloadToContentItem(payload: CompleteModelPayload): ContentItem {
         type: "inline_data",
         data: Buffer.from(payload.data, "base64"),
         mime_type: payload.mime_type,
-        ...(payload.signature !== undefined ? { signature: payload.signature } : {}),
+        ...fidelityProp(payload.fidelity),
       };
     case "inline_thinking":
       return {
         type: "inline_thinking",
         data: Buffer.from(payload.data, "base64"),
         mime_type: payload.mime_type,
-        ...(payload.signature !== undefined ? { signature: payload.signature } : {}),
+        ...fidelityProp(payload.fidelity),
       };
     case "thinking":
       return {
         type: "thinking",
         thinking: payload.thinking,
-        ...(payload.signature !== undefined ? { signature: payload.signature } : {}),
+        ...fidelityProp(payload.fidelity),
       };
     case "tool_call":
       return {
@@ -121,7 +149,7 @@ function payloadToContentItem(payload: CompleteModelPayload): ContentItem {
         arguments: parseToolArguments(payload.arguments),
         // On the way back, strip the uniqueness suffix to restore the provider's original id (see tool-call-ids.ts).
         tool_call_id: stripToolCallIdSuffix(payload.tool_call_id),
-        ...(payload.signature !== undefined ? { signature: payload.signature } : {}),
+        ...fidelityProp(payload.fidelity),
       };
     case "tool_call_output":
       return {
@@ -240,8 +268,8 @@ interface ToolCallAccumulator {
   toolCallId: string;
   /** The original tool_call_id reported by the provider (the attribution key for inbound events). */
   providerKey: string;
-  /** Provider-fidelity field: signature (kept verbatim, produced alongside the complete tool_call). */
-  signature: string | undefined;
+  /** Provider-fidelity payload (kept verbatim, produced alongside the complete tool_call). */
+  fidelity: Fidelity | undefined;
   /** Whether this tool_call's complete message has already been emitted eagerly in `pushEvent` (avoids duplicate emission in finish). */
   emitted: boolean;
 }
@@ -274,12 +302,12 @@ export class EventTranslator {
   // Buffers needed for the complete message.
   private textBuffer = "";
   private thinkingBuffer = "";
-  // Provider-fidelity fields: the thinking block's signature (a signature
-  // marks the end of a block) and the current text segment's phase (sticky across segments;
-  // a differing phase marker starts a new segment) and signature.
-  private thinkingSignature: string | undefined;
-  private textPhase: string | null = null;
-  private textSignature: string | undefined;
+  // Provider-fidelity payloads of the currently open segments. Segmentation mirrors AgentHub's
+  // baseClient aggregation: a thinking block is closed by its fidelity payload (a run of equal
+  // fidelity is one block); a text segment is closed by a `fidelity.signature` and split by a
+  // differing `fidelity.phase`.
+  private thinkingFidelity: Fidelity | undefined;
+  private textFidelity: Fidelity | undefined;
   /** Provider id keys saved in order of appearance, so complete tool_calls are emitted in a stable order. */
   private toolOrder: string[] = [];
   /** provider's original tool_call_id → the accumulator for the **latest** call under that id. */
@@ -306,17 +334,26 @@ export class EventTranslator {
     for (const item of event.content_items) {
       switch (item.type) {
         case "text": {
-          // Provider fidelity: a phase marker can arrive as an increment with **empty text**
-          // (e.g. GPT-5's segment markers). A phase differing from the current segment's phase
-          // starts a new segment — providers split by phase when replaying history, so mixing
-          // segments would break fidelity. Phase is sticky across segments (a subsequent segment
-          // with the same phase isn't re-marked).
-          if (item.phase != null && item.phase !== this.textPhase) {
+          // Mirrors AgentHub baseClient text aggregation. A `fidelity.phase` marker can arrive
+          // as an increment with **empty text** (e.g. GPT-5's segment markers): a phase
+          // differing from the current segment's phase starts a new segment — providers split
+          // by phase when replaying history, so mixing segments would break fidelity. A
+          // `fidelity.signature` closes the segment: any further content starts a new one.
+          // On merge, fidelity keys accumulate ({...current, ...incoming}).
+          const curPhase = (this.textFidelity as { phase?: unknown } | undefined)?.phase ?? null;
+          const inPhase = (item.fidelity as { phase?: unknown } | undefined)?.phase ?? null;
+          const signatureClosed =
+            (this.textFidelity as { signature?: unknown } | undefined)?.signature != null;
+          if (
+            (signatureClosed && (item.text || hasFidelity(item.fidelity))) ||
+            (inPhase != null && inPhase !== curPhase)
+          ) {
             yield* this.flushThinking("completed");
             yield* this.flushText("completed");
-            this.textPhase = item.phase;
           }
-          if (item.signature) this.textSignature = item.signature;
+          if (hasFidelity(item.fidelity)) {
+            this.textFidelity = { ...this.textFidelity, ...item.fidelity };
+          }
           if (!item.text) break;
           // Type boundary: before a text segment starts, flush any unclosed thinking
           // segment, so the complete-message order matches generation order (thinking → text).
@@ -332,16 +369,22 @@ export class EventTranslator {
           break;
         }
         case "thinking": {
-          // Provider fidelity: a thinking block ends with a signature (Claude's signature_delta
-          // is empty text + signature; redacted blocks carry sentinel text + signature; GPT-5
-          // encrypted reasoning is empty text + signature). If thinking content/a new signature
-          // arrives after a signature is already set, that's a new block — close the current
-          // segment first, so each block's signature stays independently faithful and blocks
-          // don't bleed into each other when history is replayed.
-          if (this.thinkingSignature !== undefined && (item.thinking || item.signature)) {
+          // Mirrors AgentHub baseClient thinking aggregation: a thinking block is closed by its
+          // fidelity payload (Claude's signature_delta is empty text + fidelity{signature};
+          // redacted blocks carry sentinel text + fidelity; GPT-5 encrypted reasoning is empty
+          // text + fidelity{id, encrypted_content}), and **a run of equal fidelity is one
+          // block** — OpenAI-compatible clients stamp every delta with the same
+          // fidelity{reasoning_field}, which must not split blocks. Content arriving after a
+          // different fidelity is set starts a new block, so each block's fidelity stays
+          // independently faithful when history is replayed.
+          if (
+            hasFidelity(this.thinkingFidelity) &&
+            !fidelityEquals(this.thinkingFidelity, item.fidelity) &&
+            (item.thinking || hasFidelity(item.fidelity))
+          ) {
             yield* this.flushThinking("completed");
           }
-          if (item.signature) this.thinkingSignature = item.signature;
+          if (hasFidelity(item.fidelity)) this.thinkingFidelity = item.fidelity;
           if (!item.thinking) break;
           // Type boundary: before a thinking segment starts, flush any unclosed text
           // segment, so the complete-message order matches generation order (text → thinking).
@@ -365,7 +408,7 @@ export class EventTranslator {
           if (item.tool_call_id) this.activeToolCallId = item.tool_call_id;
           const acc = this.ensureTool(providerKey, item.name);
           if (item.name) acc.name = item.name;
-          if (item.signature) acc.signature = item.signature;
+          if (hasFidelity(item.fidelity)) acc.fidelity = item.fidelity;
           // Externally always use the uniqueness-resolved id (with a `#n` suffix on provider id collisions), matching the complete tool_call.
           if (!this.toolStarted.has(acc.toolCallId)) {
             // Type boundary: before a new tool_call starts, flush any unclosed thinking/text
@@ -418,7 +461,7 @@ export class EventTranslator {
           if (!acc || acc.emitted) acc = this.createTool(item.tool_call_id, item.name);
           acc.name = item.name;
           acc.completeArgs = JSON.stringify(item.arguments ?? {});
-          if (item.signature) acc.signature = item.signature;
+          if (hasFidelity(item.fidelity)) acc.fidelity = item.fidelity;
           yield* this.emitCompleteTool(acc);
           break;
         }
@@ -507,7 +550,7 @@ export class EventTranslator {
       arguments: acc.completeArgs ?? acc.argsBuffer,
       toolCallId: acc.toolCallId,
       stopReason,
-      ...(acc.signature !== undefined ? { signature: acc.signature } : {}),
+      ...(acc.fidelity !== undefined ? { fidelity: acc.fidelity } : {}),
     });
     // activeToolCallId holds the provider id key (used to attribute id-less deltas); reset it by providerKey.
     if (this.activeToolCallId === acc.providerKey) {
@@ -536,14 +579,12 @@ export class EventTranslator {
       yield partialThinking("stop", "", stopReason);
       this.thinkingStarted = false;
     }
-    // A thinking block with empty text but a signature (GPT-5 encrypted reasoning) still
-    // produces a complete message — the signature is required when replaying history.
-    if (this.thinkingBuffer || this.thinkingSignature !== undefined) {
-      yield thinkingMessage(this.thinkingBuffer, stopReason, {
-        ...(this.thinkingSignature !== undefined ? { signature: this.thinkingSignature } : {}),
-      });
+    // A thinking block with empty text but a fidelity payload (GPT-5 encrypted reasoning)
+    // still produces a complete message — the fidelity is required when replaying history.
+    if (this.thinkingBuffer || hasFidelity(this.thinkingFidelity)) {
+      yield thinkingMessage(this.thinkingBuffer, stopReason, this.thinkingFidelity);
       this.thinkingBuffer = "";
-      this.thinkingSignature = undefined;
+      this.thinkingFidelity = undefined;
     }
   }
 
@@ -559,18 +600,14 @@ export class EventTranslator {
       yield partialText("stop", "", stopReason);
       this.textStarted = false;
     }
-    // A text segment with empty text but a signature (e.g. Gemini carrying a thoughtSignature on
-    // a text part) still produces a complete message — aligned with flushThinking, so the
-    // signature isn't lost or leaked into a later segment just because the buffer is empty.
-    if (this.textBuffer || this.textSignature !== undefined) {
-      yield assistantText(this.textBuffer, stopReason, {
-        ...(this.textPhase != null ? { phase: this.textPhase } : {}),
-        ...(this.textSignature !== undefined ? { signature: this.textSignature } : {}),
-      });
+    // A text segment with empty text but a fidelity payload (e.g. Gemini carrying a
+    // thoughtSignature on a text part, or a GPT-5 phase marker with no text) still produces a
+    // complete message — aligned with flushThinking, so the fidelity isn't lost or leaked into
+    // a later segment just because the buffer is empty.
+    if (this.textBuffer || hasFidelity(this.textFidelity)) {
+      yield assistantText(this.textBuffer, stopReason, this.textFidelity);
       this.textBuffer = "";
-      this.textSignature = undefined;
-      // textPhase is sticky across segments: a later segment with the same phase isn't
-      // re-marked; it's updated when a different phase marker appears.
+      this.textFidelity = undefined;
     }
   }
 
@@ -601,7 +638,7 @@ export class EventTranslator {
       completeArgs: null,
       toolCallId: this.toolCallIds.allocate(providerKey),
       providerKey,
-      signature: undefined,
+      fidelity: undefined,
       emitted: false,
     };
     this.tools.set(providerKey, acc);
@@ -665,19 +702,37 @@ export function translateEvents(
 // ---------------------------------------------------------------------------
 
 /**
- * Determines whether an error is an AgentHub / Provider response JSON parse error.
+ * Determines whether an error is an AgentHub / Provider "response delivered but unusable"
+ * parse or validation error. Two shapes (@prismshadow/agenthub 0.4.x):
  *
- * AgentHub uses `JSON.parse` internally to parse response bodies, and a parse failure throws a
- * `SyntaxError`; hence we judge directly by exception type (the `name` check also covers
- * cross-realm or deserialization-reconstructed errors, and we probe down the `cause` chain for
- * wrapped errors). This is not an auth/parameter failure but an incomplete LLM Request, and
- * should end with `malformed` and be handed to the engine to retry.
+ * - A raw `SyntaxError` from `JSON.parse` on a response body;
+ * - AgentHub's own error classes: `ToolCallArgumentParseError` (streamed tool-call arguments
+ *   are not valid JSON — e.g. a stream truncated mid-arguments) and `EmptyResponseError`
+ *   (a completed response carrying thinking only, which cannot be replayed).
+ *
+ * In every case the turn was **not committed** to AgentHub history: this is not an
+ * auth/parameter failure but an incomplete LLM Request, and should end with `malformed` and
+ * be handed to the engine to reconnect and retry. Judged by exception type with a `name`
+ * fallback (covers cross-realm or deserialization-reconstructed errors), probing down the
+ * `cause` chain for wrapped errors.
  */
 export function isMalformedJsonParseError(error: unknown): boolean {
   if (error == null) return false;
-  if (error instanceof SyntaxError) return true;
+  if (
+    error instanceof SyntaxError ||
+    error instanceof ToolCallArgumentParseError ||
+    error instanceof EmptyResponseError
+  ) {
+    return true;
+  }
   const err = error as { name?: string; cause?: unknown };
-  if (err.name === "SyntaxError") return true;
+  if (
+    err.name === "SyntaxError" ||
+    err.name === "ToolCallArgumentParseError" ||
+    err.name === "EmptyResponseError"
+  ) {
+    return true;
+  }
   if (err.cause && err.cause !== error) {
     return isMalformedJsonParseError(err.cause);
   }
@@ -692,7 +747,7 @@ export function isMalformedJsonParseError(error: unknown): boolean {
  * usage_metadata|finish_reason"). This is not an auth/parameter failure but an incomplete LLM
  * Request, and should end with `malformed` and be handed to the engine to reconnect and retry.
  * AgentHub doesn't provide an error type for this, so we match by message prefix
- * (@prismshadow/agenthub 0.3.x), probing down the `cause` chain.
+ * (verified against @prismshadow/agenthub 0.4.x), probing down the `cause` chain.
  */
 export function isIncompleteStreamError(error: unknown): boolean {
   if (error == null) return false;

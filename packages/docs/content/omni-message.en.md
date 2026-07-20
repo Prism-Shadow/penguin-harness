@@ -54,15 +54,16 @@ On resume, the engine takes this Trace line as the runtime config — the model,
 
 ## model_msg: complete payloads
 
-Seven content payloads, discriminated by `payload.type`. Shared optional fields: `stop_reason` (marks an abnormal terminal state) and `signature` (a provider-fidelity field, see below):
+Seven content payloads, discriminated by `payload.type`. Shared optional fields: `stop_reason` (marks an abnormal terminal state) and `fidelity` (an opaque provider-fidelity payload, see below):
 
 ```ts
+type Fidelity = Record<string, unknown>;  // opaque provider-fidelity payload (see below)
+
 interface TextPayload {
   type: "text";
   role: "user" | "assistant";
   text: string;
-  phase?: string | null;      // segmentation marker (e.g. GPT-5 phases)
-  signature?: string;
+  fidelity?: Fidelity;        // e.g. { phase } segment marker (GPT-5), { signature }
   stop_reason?: StopReason;
 }
 
@@ -70,7 +71,7 @@ interface ThinkingPayload {
   type: "thinking";
   role: "assistant";
   thinking: string;
-  signature?: string;         // required by some models to replay history
+  fidelity?: Fidelity;        // required by some models to replay history
   stop_reason?: StopReason;
 }
 
@@ -79,7 +80,7 @@ interface InlineThinkingPayload {
   role: "assistant";
   data: string;               // reasoning content in binary form
   mime_type: string;
-  signature?: string;
+  fidelity?: Fidelity;
   stop_reason?: StopReason;
 }
 
@@ -89,7 +90,7 @@ interface ToolCallPayload {
   name: string;
   arguments: string;          // arguments as a JSON string
   tool_call_id: string;
-  signature?: string;
+  fidelity?: Fidelity;
   stop_reason?: StopReason;
 }
 
@@ -114,7 +115,7 @@ interface InlineDataPayload {
   role: "user" | "assistant";
   data: string;               // other binary content
   mime_type: string;
-  signature?: string;
+  fidelity?: Fidelity;
   stop_reason?: StopReason;
 }
 ```
@@ -273,7 +274,20 @@ Errors never cross an interface boundary as exceptions — they *are* messages. 
 
 ## Provider-fidelity fields
 
-Provider-specific fields such as `signature` and `phase` pass through and persist verbatim end to end — some models require them byte-for-byte when history is replayed, and any rewriting would break compatibility. This is one of the preconditions for lossless Session recovery from the Trace.
+Provider-specific wire data travels in a single optional field, `fidelity` — an arbitrary JSON object the LLM client records to reproduce the original message on replay: thinking signatures, `phase` segment labels, GPT-5 encrypted reasoning, the OpenAI-compatible upstream reasoning field name:
+
+```ts
+// Claude: a thinking block closed by its signature
+{ type: "thinking", thinking: "…", fidelity: { signature: "EqQBCkYIBxgCKkB…" } }
+
+// GPT-5: encrypted reasoning (empty thinking text, fidelity only)
+{ type: "thinking", thinking: "", fidelity: { id: "rs_0d3…", encrypted_content: "gAAAA…" } }
+
+// OpenAI-compatible: the upstream field the reasoning text came from
+{ type: "thinking", thinking: "…", fidelity: { reasoning_field: "reasoning_content" } }
+```
+
+The payload is opaque to PenguinHarness: it passes through and persists verbatim end to end — some models require it byte-for-byte when history is replayed, and any rewriting (or loss) would break compatibility. This is one of the preconditions for lossless Session recovery from the Trace.
 
 ## Three jobs, one protocol
 
