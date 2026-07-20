@@ -1,8 +1,8 @@
 # Refresh the README model table against the current catalog
 
-The supported-models table (the same eight models) gains a "Preset in" column reflecting
-where each model is preset in today's catalog, and the note below now names all five
-OpenAI-compatible gateways.
+The supported-models table (the same eight models) becomes two columns — model on the
+left, the comma-separated providers it's available from on the right (per today's catalog)
+— and the note below now names all five OpenAI-compatible gateways.
 
 ## Details
 

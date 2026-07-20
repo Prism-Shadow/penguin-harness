@@ -80,16 +80,16 @@ With PenguinHarness Skills, an Agent evaluates and optimizes itself: run the ben
 
 ## Supported Models
 
-| Model            | Provider    | Preset in                                                                             |
-| ---------------- | ----------- | ------------------------------------------------------------------------------------- |
-| DeepSeek V4      | DeepSeek    | DeepSeek · OpenRouter · Fireworks AI · SiliconFlow · Qwen Token Plan                  |
-| Kimi K3          | Moonshot AI | OpenRouter · Qwen Pay-As-You-Go                                                       |
-| GLM 5.2          | Z.AI        | Z.AI · OpenRouter · Fireworks AI · SiliconFlow · Qwen Token Plan · Qwen Pay-As-You-Go |
-| Hunyuan 3        | Tencent     | OpenRouter                                                                            |
-| Qwen 3.8 Max     | Alibaba     | Qwen Token Plan (preview)                                                             |
-| GPT 5.5          | OpenAI      | OpenAI · OpenRouter                                                                   |
-| Gemini 3.5 Flash | Google      | Google Gemini                                                                         |
-| Claude Opus 4.8  | Anthropic   | Anthropic · OpenRouter                                                                |
+| Model            | Providers                                                                     |
+| ---------------- | ------------------------------------------------------------------------------ |
+| DeepSeek V4      | DeepSeek, OpenRouter, Fireworks AI, SiliconFlow, Qwen Token Plan               |
+| Kimi K3          | Moonshot AI, OpenRouter, Qwen Pay-As-You-Go                                    |
+| GLM 5.2          | Z.AI, OpenRouter, Fireworks AI, SiliconFlow, Qwen Token Plan, Qwen Pay-As-You-Go |
+| Hunyuan 3        | OpenRouter                                                                     |
+| Qwen 3.8 Max     | Qwen Token Plan (preview)                                                      |
+| GPT 5.5          | OpenAI, OpenRouter                                                             |
+| Gemini 3.5 Flash | Google Gemini                                                                  |
+| Claude Opus 4.8  | Anthropic, OpenRouter                                                          |
 
 A model is just a `(provider, model_id)` pair plus an API key: direct vendor groups (DeepSeek, Anthropic, OpenAI, Google Gemini, Z.AI, Moonshot) route automatically, five OpenAI-compatible gateways (OpenRouter, Fireworks AI, SiliconFlow, Qwen Token Plan, Qwen Pay-As-You-Go) come with preset endpoints, and 1000+ more online and local models are reachable through those gateways or any custom endpoint.
 
