@@ -567,6 +567,7 @@ export const en: Strings = {
     mentionHint: "@ to handoff to another agent",
     mentionRemove: "Remove @ target",
     skillsSelect: "Skills",
+    skillRemove: "Remove skill",
     skillsSearchPlaceholder: "Search skills",
     skillsNoMatch: "No matching skills",
     skillsEmptyHint: "No skills installed yet — add some from the skill library",

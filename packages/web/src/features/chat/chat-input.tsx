@@ -56,6 +56,7 @@ import { ZoomableImage } from "../../components/ui/image-zoom";
 import { ProviderLogo } from "../../components/ui/provider-logo";
 import { matchesQuery, orderModelsLikeLibrary, sameModelRef } from "../models/model-grouping";
 import { filterAgents, matchMention, splitLeadingMention } from "./agent-mentions";
+import { matchSlash, removeSlashToken } from "./slash-token";
 import {
   BOOK_ICON,
   buildSkillsMessage,
@@ -355,9 +356,11 @@ function SkillSelect({
       open={open}
       setOpen={setOpen}
       menuClass={
+        // As wide as reasonably possible so descriptions stay readable; the viewport clamp
+        // keeps it inside phone screens.
         direction === "down"
-          ? "left-0 top-full mt-1 w-72 max-w-[calc(100vw-2rem)] origin-top-left"
-          : "bottom-full left-0 mb-1 w-72 max-w-[calc(100vw-2rem)] origin-bottom-left"
+          ? "left-0 top-full mt-1 w-[26rem] max-w-[calc(100vw-2rem)] origin-top-left"
+          : "bottom-full left-0 mb-1 w-[26rem] max-w-[calc(100vw-2rem)] origin-bottom-left"
       }
       button={
         <button
@@ -375,7 +378,7 @@ function SkillSelect({
           <GlyphIcon d={BOOK_ICON} size={14} className="shrink-0" />
           {/* When the card is narrower than @md, only the icon + badge remain (title shows the full name). */}
           <span className="hidden min-w-0 truncate @md:block">{S.chat.skillsSelect}</span>
-          {/* Selected-count badge: chips no longer exist, so this is the only visible rendering of the selected state. */}
+          {/* Selected-count badge (the chip row above the input mirrors the selection too). */}
           {selected.length > 0 && (
             <span className="shrink-0 rounded-full bg-gray-200/80 px-1.5 py-px font-mono text-[10px] font-semibold text-gray-700 dark:bg-gray-700/60 dark:text-gray-200">
               {selected.length}
@@ -618,6 +621,9 @@ export function ChatInput({
 }) {
   const { locale } = useLocale();
   const [text, setText] = useState(initialText ?? "");
+  /** Live text mirror for slash-command run() closures (the commands memo deliberately doesn't depend on text). */
+  const textRef = useRef(text);
+  textRef.current = text;
   const [images, setImages] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [slashIndex, setSlashIndex] = useState(0);
@@ -656,11 +662,15 @@ export function ChatInput({
     [selectedSkills, onSkillsChange],
   );
 
+  /** The slash token currently under the caret (kept in a ref so command run() closures always remove the live token). */
+  const slashMatchRef = useRef<ReturnType<typeof matchSlash>>(null);
   const commands = useMemo<SlashCommand[]>(() => {
-    /** Clears the input after a slash command runs (setText is async: wait for the DOM value to update before measuring height). */
+    /** Removes just the slash token after a command runs (the rest of the text stays; setText is async: wait for the DOM value to update before measuring height). */
     const clearInput = () => {
-      setText("");
-      onTextChange?.("");
+      const match = slashMatchRef.current;
+      const next = match ? removeSlashToken(textRef.current, match) : "";
+      setText(next);
+      onTextChange?.(next);
       requestAnimationFrame(autoGrow);
     };
     return [
@@ -683,11 +693,13 @@ export function ChatInput({
       })),
     ];
   }, [onCompact, onTextChange, skills, locale, toggleSkill]);
-  const trimmed = text.trim();
-  const slashMatches =
-    text.trimStart().startsWith("/") && !running && !compacting
-      ? commands.filter((c) => c.cmd.startsWith(trimmed) || trimmed === "/")
-      : [];
+  // Positional matching (like @ mentions): a slash opens the menu from any caret position;
+  // running a command removes just the token, leaving the rest of the text intact.
+  const slashTok = !running && !compacting ? matchSlash(text, caret) : null;
+  slashMatchRef.current = slashTok;
+  const slashMatches = slashTok
+    ? commands.filter((c) => c.cmd.startsWith(`/${slashTok.query}`))
+    : [];
   const slashOpen = slashMatches.length > 0;
   const activeSlash = slashMatches[Math.min(slashIndex, slashMatches.length - 1)];
 
@@ -1003,27 +1015,56 @@ export function ChatInput({
           card's width changes with the viewport and the Files panel squeezing it, viewport
           breakpoints wouldn't judge it accurately. */}
       <div className="@container rounded-lg border border-gray-300 bg-white px-2.5 pb-2 pt-2 transition-[border-color,box-shadow] duration-200 focus-within:border-gray-500 focus-within:ring-2 focus-within:ring-gray-400/30 dark:border-gray-700 dark:bg-gray-900 dark:focus-within:border-gray-400">
-        {/* @ handoff target chip: above the text body (background highlight to distinguish it from plain text), removed via the x button or backspace at the start of the text. */}
-        {target !== null && (
+        {/* Chip row above the text body: the @ handoff target (fixed at the front — send-time
+            @ semantics stay leading-only) followed by the selected skills, mirroring the
+            agent chip's look. Remove buttons recolor the x on hover (no background wash). */}
+        {(target !== null || selectedSkills.length > 0) && (
           <div className="mb-1 flex flex-wrap items-center gap-1">
-            <span
-              className="anim-pop flex max-w-48 items-center gap-0.5 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 font-mono text-sm text-gray-800 dark:bg-gray-800 dark:text-gray-200"
-              {...(target.name && target.name !== target.agentId ? { title: target.name } : {})}
-            >
-              <span className="truncate">@{target.agentId}</span>
-              <button
-                type="button"
-                aria-label={S.chat.mentionRemove}
-                onClick={() => {
-                  setTarget(null);
-                  onHandoffTargetChange?.(null);
-                  textareaRef.current?.focus();
-                }}
-                className="shrink-0 rounded p-0.5 text-gray-400 transition-colors duration-150 hover:bg-gray-200 hover:text-gray-700 dark:hover:bg-gray-700 dark:hover:text-gray-200"
+            {target !== null && (
+              <span
+                className="anim-pop flex max-w-48 items-center gap-0.5 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 font-mono text-sm text-gray-800 dark:bg-gray-800 dark:text-gray-200"
+                {...(target.name && target.name !== target.agentId ? { title: target.name } : {})}
               >
-                ×
-              </button>
-            </span>
+                <span className="truncate">@{target.agentId}</span>
+                <button
+                  type="button"
+                  aria-label={S.chat.mentionRemove}
+                  onClick={() => {
+                    setTarget(null);
+                    onHandoffTargetChange?.(null);
+                    textareaRef.current?.focus();
+                  }}
+                  className="shrink-0 rounded p-0.5 text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:hover:text-gray-200"
+                >
+                  ×
+                </button>
+              </span>
+            )}
+            {selectedSkills.map((name) => {
+              const meta = skills.find((sk) => sk.name === name);
+              return (
+                <span
+                  key={name}
+                  className="anim-pop flex max-w-48 items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 font-mono text-sm text-gray-800 dark:bg-gray-800 dark:text-gray-200"
+                  {...(meta ? { title: localizedShortText(locale, meta) } : {})}
+                >
+                  <SkillIcon
+                    icon={meta?.icon}
+                    size={13}
+                    className="shrink-0 text-gray-500 dark:text-gray-400"
+                  />
+                  <span className="truncate">{name}</span>
+                  <button
+                    type="button"
+                    aria-label={`${S.chat.skillRemove} ${name}`}
+                    onClick={() => toggleSkill(name)}
+                    className="shrink-0 rounded p-0.5 text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:hover:text-gray-200"
+                  >
+                    ×
+                  </button>
+                </span>
+              );
+            })}
           </div>
         )}
 
