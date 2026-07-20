@@ -1,7 +1,7 @@
 /**
  * Built-in model catalog (single source of truth): official chat models that AgentHub can
  * auto-route, shared by core's default config, server's initial config, and web/cli display.
- * Data verified as of 2026-07-10.
+ * Data verified as of 2026-07-10 (Qwen Token Plan entries: 2026-07-20, per the plan's docs).
  * Docs: packages/docs/content/models.{zh,en}.md (site path /docs/models) documents the
  * provider groups and credential resolution described here.
  *
@@ -17,10 +17,10 @@
  *
  * Scope: excludes deepseek-chat / deepseek-reasoner legacy aliases that AgentHub cannot
  * auto-route (deprecated 2026-07-24), glm-5v-turbo (image input unsupported by AgentHub's GLM
- * client), non-chat models (embedding / image generation / TTS), and Bedrock plus
- * OpenRouter / SiliconFlow gateway mirror ids. Every model id in this catalog can be
- * auto-routed by AgentHub via substring matching, so none set client_type; only custom
- * OpenAI-protocol models need `client_type: "openai"`.
+ * client), non-chat models (embedding / image generation / TTS), and Bedrock. Direct-vendor
+ * ids are auto-routed by AgentHub and leave client_type unset; gateway entries (OpenRouter /
+ * SiliconFlow / Qwen Token Plan) can't be auto-routed, so they set `client_type: "openai"`
+ * and inline their preset base URL.
  *
  * This file imports no Node built-ins (type-only imports only), so it can be bundled directly
  * for the browser.
@@ -41,8 +41,9 @@ export interface ModelProviderInfo {
   /** Vendor's model list / docs page URL (frontend's "add model" dialog links this as "get model id"); none for custom. */
   modelsUrl?: string;
   /**
-   * Gateway's OpenAI-compatible endpoint (openrouter / siliconflow): used by the frontend's
-   * "add model" dialog to prefill base URL by group; left blank for direct vendors and custom.
+   * Gateway's OpenAI-compatible endpoint (openrouter / siliconflow / qwen-token-plan): used by
+   * the frontend's "add model" dialog to prefill base URL by group; left blank for direct
+   * vendors and custom.
    */
   gatewayBaseUrl?: string;
 }
@@ -66,11 +67,13 @@ export interface ModelCatalogEntry {
 /** Each gateway's OpenAI-compatible endpoint (preset base URL for gateway models; also used as the provider's gatewayBaseUrl). */
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 const SILICONFLOW_BASE_URL = "https://api.siliconflow.cn/v1";
+const QWEN_TOKEN_PLAN_BASE_URL =
+  "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1";
 
 /**
  * Provider list (web model page groups in this order): DeepSeek first (the default model's
- * provider), followed by the OpenRouter and SiliconFlow gateways, then Google Gemini before
- * Anthropic; custom groups custom OpenAI-protocol models and comes last.
+ * provider), followed by the OpenRouter, SiliconFlow, and Qwen Token Plan gateways, then
+ * Google Gemini before Anthropic; custom groups custom OpenAI-protocol models and comes last.
  */
 export const MODEL_PROVIDERS: ModelProviderInfo[] = [
   {
@@ -102,6 +105,16 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     apiKeyUrl: "https://cloud.siliconflow.cn/me/account/ak",
     modelsUrl: "https://cloud.siliconflow.cn/models",
     gatewayBaseUrl: SILICONFLOW_BASE_URL,
+  },
+  {
+    id: "qwen-token-plan",
+    label: "Qwen Token Plan",
+    envKey: "OPENAI_API_KEY",
+    envBaseUrlKey: "OPENAI_BASE_URL",
+    apiKeyUrl: "https://platform.qianwenai.com/pricing/token-plan",
+    modelsUrl:
+      "https://platform.qianwenai.com/docs/token-plan/personal/token-plan-personal-overview",
+    gatewayBaseUrl: QWEN_TOKEN_PLAN_BASE_URL,
   },
   {
     id: "google",
@@ -405,6 +418,56 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     supportsVision: false,
     clientType: "openai",
     baseUrl: SILICONFLOW_BASE_URL,
+  },
+  // -- Qwen Token Plan (subscription gateway: usage deducts plan quota, no per-token price, so
+  // pricing is omitted and costs read as 0; vision flags per the plan's supported-model table).
+  // The plan page doesn't document context windows: the Qwen trio uses the Qwen Max series'
+  // published 256K until the plan documents its own; the cross-listed GLM/DeepSeek entries
+  // mirror the vendors' native windows (transport doesn't change the model). --
+  {
+    modelId: "qwen3.8-max-preview",
+    displayName: "Qwen 3.8 Max Preview",
+    provider: "qwen-token-plan",
+    contextWindow: 262144,
+    supportsVision: true,
+    clientType: "openai",
+    baseUrl: QWEN_TOKEN_PLAN_BASE_URL,
+  },
+  {
+    modelId: "qwen3.7-max",
+    displayName: "Qwen 3.7 Max",
+    provider: "qwen-token-plan",
+    contextWindow: 262144,
+    supportsVision: false,
+    clientType: "openai",
+    baseUrl: QWEN_TOKEN_PLAN_BASE_URL,
+  },
+  {
+    modelId: "qwen3.7-plus",
+    displayName: "Qwen 3.7 Plus",
+    provider: "qwen-token-plan",
+    contextWindow: 262144,
+    supportsVision: true,
+    clientType: "openai",
+    baseUrl: QWEN_TOKEN_PLAN_BASE_URL,
+  },
+  {
+    modelId: "glm-5.2",
+    displayName: "GLM-5.2",
+    provider: "qwen-token-plan",
+    contextWindow: 1000000,
+    supportsVision: false,
+    clientType: "openai",
+    baseUrl: QWEN_TOKEN_PLAN_BASE_URL,
+  },
+  {
+    modelId: "deepseek-v4-pro",
+    displayName: "DeepSeek V4 Pro",
+    provider: "qwen-token-plan",
+    contextWindow: 1000000,
+    supportsVision: false,
+    clientType: "openai",
+    baseUrl: QWEN_TOKEN_PLAN_BASE_URL,
   },
 ];
 

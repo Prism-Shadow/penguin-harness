@@ -58,6 +58,7 @@ api_key = "sk-..."
 | deepseek | `DEEPSEEK_API_KEY` | 默认模型所在分组 |
 | openrouter | `OPENAI_API_KEY` | OpenAI 兼容网关，预置 base URL `https://openrouter.ai/api/v1` |
 | siliconflow | `OPENAI_API_KEY` | OpenAI 兼容网关，预置 base URL `https://api.siliconflow.cn/v1` |
+| qwen-token-plan | `OPENAI_API_KEY` | Qwen Token Plan 订阅网关(按套餐扣配额、无逐 token 单价)，预置 base URL `https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1` |
 | google | `GEMINI_API_KEY` | |
 | anthropic | `ANTHROPIC_API_KEY` | |
 | openai | `OPENAI_API_KEY` | |
@@ -65,9 +66,9 @@ api_key = "sk-..."
 | moonshot | `MOONSHOT_API_KEY` | |
 | custom | `OPENAI_API_KEY` | 任意 OpenAI 协议端点 |
 
-网关分组(openrouter / siliconflow)经 AgentHub 的 OpenAI 客户端请求，因此凭证留空时读取的是 `OPENAI_API_KEY`，而非网关自己的变量名。
+网关分组(openrouter / siliconflow / qwen-token-plan)经 AgentHub 的 OpenAI 客户端请求，因此凭证留空时读取的是 `OPENAI_API_KEY`，而非网关自己的变量名。
 
-预置目录中的部分模型：deepseek-v4-pro / deepseek-v4-flash、gemini-3.1-pro-preview、claude-opus-4-8 / claude-sonnet-4-6、gpt-5.5、glm-5.2、kimi-k2.6 等(非完整清单)。
+预置目录中的部分模型：deepseek-v4-pro / deepseek-v4-flash、gemini-3.1-pro-preview、claude-opus-4-8 / claude-sonnet-4-6、gpt-5.5、glm-5.2、kimi-k2.6、qwen3.8-max-preview 等(非完整清单)。
 
 ## 思考等级
 
