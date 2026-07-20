@@ -163,6 +163,12 @@ export const SKILL_GROUPS: SkillGroupInfo[] = [
     skills: ["web-design"],
   },
   {
+    id: "web-research",
+    title: "Web Research",
+    titleZh: "网络调研",
+    skills: ["firecrawl"],
+  },
+  {
     id: "software-engineering",
     title: "Software Engineering",
     titleZh: "软件工程",

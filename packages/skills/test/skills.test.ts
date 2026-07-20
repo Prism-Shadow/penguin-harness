@@ -93,6 +93,7 @@ describe("loadSkillGroups / groupSkills", () => {
       "data-analysis",
       "penguin-development",
       "web-development",
+      "web-research",
       "software-engineering",
     ]);
     expect(groups[0]!.skills.map((s) => s.name)).toEqual([
@@ -113,9 +114,12 @@ describe("loadSkillGroups / groupSkills", () => {
     expect(groups[3]!.skills.map((s) => s.name)).toEqual(["web-design"]);
     expect(groups[3]!.title).toBe("Web Development");
     expect(groups[3]!.titleZh).toBe("网页开发");
-    expect(groups[4]!.skills.map((s) => s.name)).toEqual(["software-engineering"]);
-    expect(groups[4]!.title).toBe("Software Engineering");
-    expect(groups[4]!.titleZh).toBe("软件工程");
+    expect(groups[4]!.skills.map((s) => s.name)).toEqual(["firecrawl"]);
+    expect(groups[4]!.title).toBe("Web Research");
+    expect(groups[4]!.titleZh).toBe("网络调研");
+    expect(groups[5]!.skills.map((s) => s.name)).toEqual(["software-engineering"]);
+    expect(groups[5]!.title).toBe("Software Engineering");
+    expect(groups[5]!.titleZh).toBe("软件工程");
     for (const group of groups) {
       expect(group.title).toBeTruthy();
       expect(group.titleZh).toBeTruthy();
@@ -132,10 +136,11 @@ describe("loadSkillGroups / groupSkills", () => {
       "data-analysis",
       "penguin-development",
       "web-development",
+      "web-research",
       "software-engineering",
       "other",
     ]);
-    const other = groups[5]!;
+    const other = groups[6]!;
     expect(other.title).toBe("Other");
     expect(other.titleZh).toBe("其他");
     expect(other.skills).toEqual([stray]);
@@ -148,6 +153,7 @@ describe("loadSkillGroups / groupSkills", () => {
       "data-analysis",
       "penguin-development",
       "web-development",
+      "web-research",
       "software-engineering",
     ]);
     expect(groups[0]!.skills).toEqual([]);
@@ -155,6 +161,7 @@ describe("loadSkillGroups / groupSkills", () => {
     expect(groups[2]!.skills.map((s) => s.name)).toEqual(["penguin-cli"]);
     expect(groups[3]!.skills).toEqual([]);
     expect(groups[4]!.skills).toEqual([]);
+    expect(groups[5]!.skills).toEqual([]);
   });
 
   it("SKILL_GROUPS hardcodes member names (sole group info source outside library files)", () => {
@@ -169,6 +176,7 @@ describe("loadSkillGroups / groupSkills", () => {
         skills: ["penguin-sdk", "penguin-cli", "agenthub-models", "agenthub-dev"],
       },
       { id: "web-development", skills: ["web-design"] },
+      { id: "web-research", skills: ["firecrawl"] },
       { id: "software-engineering", skills: ["software-engineering"] },
     ]);
   });
