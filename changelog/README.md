@@ -1,24 +1,17 @@
 # Changelog
 
-Per-release update records, written in English. Each release version has its own folder, and
-every change lands as a file named `<version>/YYYY-MM-DD-<semantic-id>.md` describing the
-update, where `<version>` is the next unreleased version at the time the change is made
-(folders of released versions are frozen). Each entry starts with an H1 title followed by a
-one-sentence summary; this index lists every entry's title with that summary.
+Per-release update records, written in English. The top level holds one folder per release
+version:
 
-History starts after the v0.0.1 release (2026-07-19); v0.0.1 and earlier changes are not
-backfilled.
+```text
+changelog/<version>/README.md          the release summary: one line per change, linking its detail file
+changelog/<version>/<date>-<slug>.md   one detail file per entry
+```
 
-## 0.0.2 (unreleased)
+A detail file starts with an H1 title, then a one-sentence summary paragraph (quoted verbatim
+in the version README), then details. Entries land in the next unreleased version's folder —
+if the latest release tag is vX.Y.Z, new entries go into the following version (e.g. v0.0.1
+released -> `0.0.2/`); released versions' folders are frozen. Every new entry must also be
+added to its version's README index.
 
-- [Make English the repository working language](0.0.2/2026-07-20-english-working-language.md) — Translated all residual non-i18n Chinese (comments, error/log messages, test titles and fixtures, package metadata, e2e mock content) to English; Chinese remains only in i18n catalogs, zh documents, and CJK-purpose test fixtures.
-- [Serialize the dev prebuild to fix concurrent dev:server / dev:web clobbering](0.0.2/2026-07-20-serialize-dev-prebuild.md) — dev:server and dev:web now share a lock-serialized, deduplicated prebuild of skills and core, so launching both at the same time no longer corrupts dist/.
-- [Add a combined pnpm dev and a dev:landing shortcut](0.0.2/2026-07-20-combined-dev-and-landing-shortcut.md) — pnpm dev starts the backend and web app together with prefixed logs (deps built once via the prebuild lock), and pnpm dev:landing serves the landing page dev server (port 7366) from the repo root.
-- [Restructure the README around the product story](0.0.2/2026-07-20-readme-product-story.md) — The README now leads with the agents-build-agents pitch and community links, then three feature showcases (benchmark chart, one-sentence RAG demo, self-evolution), supported models, human-first installation, a roadmap, CONTRIBUTING.md, and a citation.
-- [Upgrade AgentHub to 0.4.0 and adopt the opaque fidelity payload](0.0.2/2026-07-20-agenthub-0-4-fidelity.md) — Content items replace the item-level signature/phase fields with one opaque fidelity object carried verbatim through OmniMessage, Trace, and replay, and the agenthub-dev skill joins the built-in library.
-- [Add the Qwen Token Plan provider group to the model catalog](0.0.2/2026-07-20-qwen-token-plan-provider.md) — A subscription-gateway group (OpenAI-compatible, preset base URL) with qwen3.8-max-preview, qwen3.7-max, qwen3.7-plus, glm-5.2, and deepseek-v4-pro, plus a custom provider logo.
-- [Add a sync-presets button to the Models page](0.0.2/2026-07-20-sync-presets-button.md) — An owner-only button next to the search box merges the built-in catalog into the Project's model table (union; the catalog wins on differing preset entries, local additions and API keys stay untouched), and the Qwen logo is trimmed to the emblem only.
-- [Expand the OpenRouter catalog with twelve models](0.0.2/2026-07-20-openrouter-catalog-expansion.md) — The OpenRouter group grows from 4 to 16 entries (Claude Fable 5 / Opus 4.8 / 4.7 / Sonnet 5, GPT-5.6 Sol / Terra / 5.5, Kimi K3, GLM-5.2, DeepSeek V4 Pro / Flash, and a free Nemotron 3 Ultra tier) with pricing and vision flags from each model's OpenRouter page.
-- [Model test no longer fails on thinking-only responses](0.0.2/2026-07-20-model-probe-thinking-only.md) — A reasoning-heavy model that burns the connectivity probe's tiny output cap entirely on thinking (finish_reason=length, AgentHub EmptyResponseError) now counts as reachable instead of failing the test.
-- [Skill library: update reminder, borderless groups, accent icons](0.0.2/2026-07-20-skills-update-reminder.md) — Cards remind you when an Agent's installed skill copy is older than the library (one-click update of all outdated Agents; per-Agent Update buttons in the manage dialog), group borders are removed, and card icons use the theme accent background.
-- [Model page refinements: draft follows the new default, ordered dropdown, GPT vision, homepage links](0.0.2/2026-07-20-model-page-refinements.md) — Changing the default model resets stored drafts to follow it, the chat model dropdown mirrors the library page's order, GPT models are uniformly vision-capable, and model cards link to each model's homepage.
+History starts after the v0.0.1 release (2026-07-19); earlier changes are not backfilled.
