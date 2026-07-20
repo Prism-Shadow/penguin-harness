@@ -116,9 +116,11 @@ pnpm build       # build first: core's exports point at dist/
 pnpm typecheck
 pnpm test
 
+pnpm dev         # backend + web app together (prefixed logs, deps built once)
 pnpm dev:server  # backend at 127.0.0.1:7364
 pnpm dev:web     # web app (Vite) at 127.0.0.1:7365, /api proxied
 pnpm dev:docs    # docs site (Vite) at 127.0.0.1:7367
+pnpm dev:landing # landing page (Vite) at 127.0.0.1:7366
 
 BASE_PATH=/ pnpm build:site   # assemble landing + docs exactly like the Pages deploy
 ```

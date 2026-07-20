@@ -115,9 +115,11 @@ pnpm build       # 先构建:core 的导出指向 dist/
 pnpm typecheck
 pnpm test
 
+pnpm dev         # 服务端 + Web App 一起启动(带前缀日志,依赖只构建一次)
 pnpm dev:server  # 服务端 127.0.0.1:7364
 pnpm dev:web     # Web App(Vite)127.0.0.1:7365,/api 代理到服务端
 pnpm dev:docs    # 文档站(Vite)127.0.0.1:7367
+pnpm dev:landing # 落地页(Vite)127.0.0.1:7366
 
 BASE_PATH=/ pnpm build:site   # 按 Pages 部署的方式组装 落地页 + 文档
 ```
