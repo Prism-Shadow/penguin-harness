@@ -641,9 +641,12 @@ export function ModelsPage() {
                         onClick={() => setSpeedFor(group.provider.id)}
                       >
                         <GlyphIcon d={GAUGE_ICON} size={13} />
-                        {speedRunning === group.provider.id
-                          ? S.models.speedPending
-                          : S.models.speedTest}
+                        {/* Phone width: icon only (the header can't fit three labeled actions at 390px). */}
+                        <span className="hidden sm:inline">
+                          {speedRunning === group.provider.id
+                            ? S.models.speedPending
+                            : S.models.speedTest}
+                        </span>
                       </Button>
                     )}
                     {group.provider.apiKeyUrl && (

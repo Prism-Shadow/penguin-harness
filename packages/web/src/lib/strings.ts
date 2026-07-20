@@ -546,6 +546,7 @@ export const zh = {
     mentionRemove: "移除 @ 目标",
     /** Skill multi-select dropdown (input toolbar): button text, search box, empty state, and no-match hint. */
     skillsSelect: "技能",
+    skillRemove: "移除技能",
     skillsSearchPlaceholder: "搜索技能",
     skillsNoMatch: "没有匹配的技能",
     skillsEmptyHint: "暂无已装技能，去技能库添加",
