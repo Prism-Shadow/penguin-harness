@@ -5,7 +5,7 @@
  * StreamRenderContext threads the pending-approval map and approval callback down to tool
  * cards at any nesting depth.
  */
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { S } from "../../lib/strings";
 import type { ChatItem } from "../../lib/omni/stream-model";
@@ -152,16 +152,48 @@ export function MessageStream({
   // (wheel-up at the very top fires no scroll event, so syncing on scroll alone is not enough)
   // and in the version effect (content growing while unstuck fires no scroll event either).
   const [showJump, setShowJump] = useState(false);
+  /**
+   * Animated-return phase (back-to-bottom clicked, glide in flight). The glide is a
+   * self-driven rAF loop rather than native scrollTo({behavior:"smooth"}) for two
+   * live-tested reasons: (1) re-aiming a native smooth scroll on every stream commit resets
+   * its easing, capping descent below a fast stream's growth rate — the return then never
+   * arrives; (2) an in-flight native smooth scroll cannot be interrupted, so a wheel-up
+   * cancel would keep dragging the user downward for hundreds of ms. The rAF loop chases the
+   * LIVE bottom each frame with a velocity floor above any realistic growth rate, and
+   * cancelling it stops the descent within a frame. While returning, the button stays hidden
+   * and the stick snap must not fire (an instant snap on the next commit would kill the glide).
+   */
+  const returningRef = useRef(false);
+  const returnRafRef = useRef<number | null>(null);
+  const cancelReturn = () => {
+    if (returnRafRef.current !== null) {
+      cancelAnimationFrame(returnRafRef.current);
+      returnRafRef.current = null;
+    }
+    returningRef.current = false;
+  };
+  useEffect(() => () => cancelReturn(), []);
+  /** Local previous scrollTop, only for detecting the user fighting the return animation upward (the follow object keeps its own). */
+  const lastTopRef = useRef<number | null>(null);
   const syncJump = () => {
     const el = scrollRef.current;
     setShowJump(
-      !follow.stick && el !== null && el.scrollHeight - el.scrollTop - el.clientHeight > 1,
+      !returningRef.current &&
+        !follow.stick &&
+        el !== null &&
+        el.scrollHeight - el.scrollTop - el.clientHeight > 1,
     );
   };
 
   const onScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
+    const prevTop = lastTopRef.current;
+    lastTopRef.current = el.scrollTop;
+    // Scrollbar-drag / keyboard scroll upward during the return cancels it (wheel/touch cancel in their own handlers).
+    if (returningRef.current && prevTop !== null && el.scrollTop < prevTop - 1) {
+      cancelReturn();
+    }
     follow.scrolled({
       scrollTop: el.scrollTop,
       scrollHeight: el.scrollHeight,
@@ -171,20 +203,54 @@ export function MessageStream({
   };
 
   // Layout effect (not useEffect): the stick-to-bottom snap must land before paint, otherwise
-  // fast streams show the bottom edge "catching up" by the growth of each commit.
+  // fast streams show the bottom edge "catching up" by the growth of each commit. Suppressed
+  // during the animated return — the glide owns the scroll position until it arrives.
   useLayoutEffect(() => {
     const el = scrollRef.current;
-    if (el && follow.stick) el.scrollTop = el.scrollHeight;
+    if (el && follow.stick && !returningRef.current) el.scrollTop = el.scrollHeight;
     syncJump();
     // syncJump is recreated per render; the effect intentionally keys on stream growth only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [version, follow]);
 
-  /** Back-to-bottom: resume follow first, then jump — the resulting scroll event sees a bottom position and keeps live-updating from there. */
+  /** Back-to-bottom: glide down to the live bottom (reduced motion gets an instant jump); follow re-engages on arrival. */
   const jumpToLatest = () => {
-    follow.resume();
     const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (!el) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      follow.resume();
+      el.scrollTop = el.scrollHeight;
+      syncJump();
+      return;
+    }
+    cancelReturn();
+    returningRef.current = true;
+    // Far away: teleport to three viewports above the bottom first, then glide the rest —
+    // bounds the animation to well under a second regardless of how far the user scrolled.
+    const far = el.scrollHeight - el.clientHeight - el.scrollTop;
+    if (far > 3 * el.clientHeight) el.scrollTop = el.scrollHeight - 4 * el.clientHeight;
+    let last = performance.now();
+    const stepFrame = (now: number) => {
+      returnRafRef.current = null;
+      const live = scrollRef.current;
+      if (!live || !returningRef.current) return;
+      const dt = Math.min(0.05, Math.max(0.001, (now - last) / 1000));
+      last = now;
+      const remaining = live.scrollHeight - live.clientHeight - live.scrollTop;
+      if (remaining <= 1) {
+        returningRef.current = false;
+        follow.resume();
+        live.scrollTop = live.scrollHeight;
+        syncJump();
+        return;
+      }
+      // Proportional ease-out toward the LIVE bottom, with a time-based velocity floor
+      // (3200px/s) that outruns any realistic streaming growth so the glide always lands.
+      const step = Math.max(remaining * Math.min(1, dt * 10), 3200 * dt);
+      live.scrollTop += Math.min(step, remaining);
+      returnRafRef.current = requestAnimationFrame(stepFrame);
+    };
+    returnRafRef.current = requestAnimationFrame(stepFrame);
     syncJump();
   };
 
@@ -195,6 +261,7 @@ export function MessageStream({
         onScroll={onScroll}
         onWheel={(e) => {
           follow.wheel(e.deltaY);
+          if (e.deltaY < 0) cancelReturn(); // user takes over: the glide stops within a frame
           syncJump();
         }}
         onTouchStart={(e) => {
@@ -204,6 +271,7 @@ export function MessageStream({
         onTouchMove={(e) => {
           const t = e.touches[0];
           if (t) follow.touchMove(t.clientY);
+          if (returningRef.current) cancelReturn(); // touching the list mid-return = taking control
           syncJump();
         }}
         onTouchEnd={() => follow.touchEnd()}
