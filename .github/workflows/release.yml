@@ -1,5 +1,8 @@
 # Release: tag v* -> build the one-line install artifacts and publish a GitHub Release.
-# Two parallel jobs:
+# Releases are immutable: once published, assets can never be replaced. A tiny check-release
+# job therefore gates the release job on the tag's Release not existing yet — dispatching an
+# already-released tag skips the build/upload entirely and only re-runs npm publishing.
+# Two parallel jobs (after the existence check):
 # - release: build the monorepo -> pnpm deploy a production CLI dir -> assemble penguin/ (bin + lib + web)
 #   -> four platform packages each bundling the official Node runtime + a universal package -> SHA256 files -> upload to the Release.
 #   Artifacts: penguin-{linux,darwin}-{x64,arm64}.tar.gz, penguin-universal.tar.gz,
@@ -38,13 +41,36 @@ env:
   NODE_RUNTIME_VERSION: v24.18.0
 
 jobs:
+  # Skip the build/upload when the tag's Release already exists (immutable releases forbid
+  # replacing assets, so re-uploading can only fail; npm publishing is idempotent on its own).
+  check-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      exists: ${{ steps.check.outputs.exists }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
   release:
+    needs: check-release
+    if: needs.check-release.outputs.exists != 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      # On manual dispatch, check out the tag itself (not the selected branch HEAD): when re-uploading an existing
-      # tag's artifacts this keeps them in sync with the tag's source. On tag-push, leaving ref empty is the default.
+      # On manual dispatch, check out the tag itself (not the selected branch HEAD): a tag whose Release is
+      # missing (e.g. an earlier run failed before publishing) rebuilds from the tag's own source. On tag-push,
+      # leaving ref empty is the default.
       - uses: actions/checkout@v5
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || '' }}
