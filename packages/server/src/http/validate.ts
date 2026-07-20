@@ -166,8 +166,20 @@ export function optionalNumber(
 /** Validate a yyyy-mm-dd query parameter (defaults to undefined). */
 export function optionalDateParam(value: string | undefined, label: string): string | undefined {
   if (value === undefined || value === "") return undefined;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    throw badRequest(`${label} must be in YYYY-MM-DD format.`);
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  // The shape check alone accepts impossible dates (2026-13-40, 2026-02-30); verify it's a real
+  // calendar day by round-tripping through UTC (which never rolls over into an adjacent month).
+  if (m) {
+    const [, y, mo, d] = m;
+    const dt = new Date(`${value}T00:00:00Z`);
+    if (
+      !Number.isNaN(dt.getTime()) &&
+      dt.getUTCFullYear() === Number(y) &&
+      dt.getUTCMonth() + 1 === Number(mo) &&
+      dt.getUTCDate() === Number(d)
+    ) {
+      return value;
+    }
   }
-  return value;
+  throw badRequest(`${label} must be a valid date in YYYY-MM-DD format.`);
 }
