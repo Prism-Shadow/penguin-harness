@@ -27,7 +27,7 @@ import {
   resolveModelEnv,
   userText,
 } from "@prismshadow/penguin-core";
-import type { ModelRef } from "@prismshadow/penguin-core";
+import type { LLMOutcome, ModelRef, OmniMessage } from "@prismshadow/penguin-core";
 import type {
   ModelInfo,
   ModelPricingDto,
@@ -203,8 +203,14 @@ export class ProjectConfigService {
    * as a pair in the request body; sends one minimal request using that model's
    * config (optionally overridden with an unsaved apiKey / baseUrl) — no tools, no
    * system prompt, thinking disabled, a tiny output cap, 20s timeout — just to see
-   * whether it completes normally. The model id sent to AgentHub is `modelId`
+   * whether the endpoint answers. The model id sent to AgentHub is `modelId`
    * itself (the upstream id verbatim; client_type inference follows it).
+   *
+   * A reasoning-heavy model may ignore the disabled thinking level and burn the
+   * whole tiny output cap on thinking (finish_reason=length with no text — AgentHub
+   * raises EmptyResponseError, collapsed to a malformed outcome): the endpoint
+   * demonstrably streamed model output, which is everything a connectivity test
+   * proves, so that case counts as ok too (see probeVerdict).
    *
    * Never throws: the LLM layer collapses auth/parameter/network errors into an
    * `LLMOutcome`, which is translated here into ok / message. Consumes very few
@@ -240,15 +246,14 @@ export class ProjectConfigService {
         requestTimeoutMs: 20_000,
       });
       const gen = llm.streamGenerate({ newMessages: [userText("ping")] });
+      let sawContent = false;
       for (;;) {
         const step = await gen.next();
         if (step.done) {
-          const outcome = step.value;
-          if (outcome.status === "completed")
-            return { ok: true, latencyMs: Date.now() - startedAt };
-          const detail = "message" in outcome && outcome.message ? outcome.message : outcome.status;
-          return { ok: false, message: String(detail).slice(0, 300) };
+          const verdict = probeVerdict(step.value, sawContent);
+          return verdict.ok ? { ok: true, latencyMs: Date.now() - startedAt } : verdict;
         }
+        if (isProbeContent(step.value)) sawContent = true;
       }
     } catch (err) {
       // Defensive: an unexpected exception during construction/iteration (the LLM layer promises not to throw; this is a fallback).
@@ -495,4 +500,35 @@ export class ProjectConfigService {
     await this.writeRaw(projectId, next);
     return this.getModels(projectId);
   }
+}
+
+/**
+ * Whether a streamed message carries genuine model content (thinking or text, partial delta
+ * or complete backfill) — the probe's "the endpoint really answered" signal. Tool calls and
+ * event messages don't count (the probe declares no tools).
+ */
+export function isProbeContent(msg: OmniMessage): boolean {
+  const p = msg.payload as { type?: string; thinking?: string; text?: string };
+  if (p.type === "partial_thinking" || p.type === "thinking") return Boolean(p.thinking);
+  if (p.type === "partial_text" || p.type === "text") return Boolean(p.text);
+  return false;
+}
+
+/**
+ * Probe verdict from the terminal LLM outcome. `completed` always passes. A `malformed`
+ * ending after genuine streamed content also passes: the typical case is a reasoning-heavy
+ * model that ignores the disabled thinking level and burns the probe's tiny max_tokens
+ * entirely on thinking (finish_reason=length -> AgentHub's EmptyResponseError) — the
+ * endpoint, credential, and model id all demonstrably work, which is what a connectivity
+ * test measures. Everything else (auth/parameter failures, timeouts, malformed with nothing
+ * received) fails with the outcome's message.
+ */
+export function probeVerdict(
+  outcome: LLMOutcome,
+  sawContent: boolean,
+): { ok: true } | { ok: false; message: string } {
+  if (outcome.status === "completed") return { ok: true };
+  if (outcome.status === "malformed" && sawContent) return { ok: true };
+  const detail = "message" in outcome && outcome.message ? outcome.message : outcome.status;
+  return { ok: false, message: String(detail).slice(0, 300) };
 }
