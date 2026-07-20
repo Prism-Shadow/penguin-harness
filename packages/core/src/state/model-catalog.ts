@@ -70,6 +70,7 @@ const SILICONFLOW_BASE_URL = "https://api.siliconflow.cn/v1";
 const QWEN_TOKEN_PLAN_BASE_URL =
   "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1";
 const QWEN_PAYG_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
+const FIREWORKS_BASE_URL = "https://api.fireworks.ai/inference/v1";
 
 /**
  * Provider list (web model page groups in this order): DeepSeek first (the default model's
@@ -97,6 +98,15 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     apiKeyUrl: "https://openrouter.ai/workspaces/default/keys",
     modelsUrl: "https://openrouter.ai/models",
     gatewayBaseUrl: OPENROUTER_BASE_URL,
+  },
+  {
+    id: "fireworks",
+    label: "Fireworks AI",
+    envKey: "OPENAI_API_KEY",
+    envBaseUrlKey: "OPENAI_BASE_URL",
+    apiKeyUrl: "https://app.fireworks.ai/settings/users/api-keys",
+    modelsUrl: "https://app.fireworks.ai/models",
+    gatewayBaseUrl: FIREWORKS_BASE_URL,
   },
   {
     id: "siliconflow",
@@ -523,6 +533,59 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     clientType: "openai",
     baseUrl: OPENROUTER_BASE_URL,
   },
+  // -- Fireworks AI (gateway, standard serverless USD pricing: cached input / uncached
+  // input / output from each model's page; API ids use the accounts/fireworks/models/<slug>
+  // form; ordered by output price) --
+  {
+    modelId: "accounts/fireworks/models/glm-5p2",
+    displayName: "GLM-5.2",
+    provider: "fireworks",
+    contextWindow: 1000000,
+    pricing: usd(0.14, 1.4, 4.4),
+    supportsVision: false,
+    clientType: "openai",
+    baseUrl: FIREWORKS_BASE_URL,
+  },
+  {
+    modelId: "accounts/fireworks/models/kimi-k2p7-code",
+    displayName: "Kimi K2.7 Code",
+    provider: "fireworks",
+    contextWindow: 262144,
+    pricing: usd(0.19, 0.95, 4),
+    supportsVision: true,
+    clientType: "openai",
+    baseUrl: FIREWORKS_BASE_URL,
+  },
+  {
+    modelId: "accounts/fireworks/models/deepseek-v4-pro",
+    displayName: "DeepSeek V4 Pro",
+    provider: "fireworks",
+    contextWindow: 1000000,
+    pricing: usd(0.15, 1.74, 3.48),
+    supportsVision: false,
+    clientType: "openai",
+    baseUrl: FIREWORKS_BASE_URL,
+  },
+  {
+    modelId: "accounts/fireworks/models/minimax-m3",
+    displayName: "MiniMax M3",
+    provider: "fireworks",
+    contextWindow: 524288,
+    pricing: usd(0.06, 0.3, 1.2),
+    supportsVision: true,
+    clientType: "openai",
+    baseUrl: FIREWORKS_BASE_URL,
+  },
+  {
+    modelId: "accounts/fireworks/models/deepseek-v4-flash",
+    displayName: "DeepSeek V4 Flash",
+    provider: "fireworks",
+    contextWindow: 1000000,
+    pricing: usd(0.03, 0.14, 0.28),
+    supportsVision: false,
+    clientType: "openai",
+    baseUrl: FIREWORKS_BASE_URL,
+  },
   // -- SiliconFlow (gateway, official CNY pricing: cache hit / input / output) --
   {
     modelId: "zai-org/GLM-5.2",
@@ -748,6 +811,14 @@ export function modelHomepageUrl(provider: string, modelId: string): string | un
     return modelId === "qwen3.8-max-preview"
       ? providerInfo(provider)?.modelsUrl
       : `https://www.qianwenai.com/models/${modelId}`;
+  }
+  if (provider === "fireworks") {
+    // API id "accounts/<owner>/models/<slug>" -> page "app.fireworks.ai/models/<owner>/<slug>";
+    // nonconforming (user-added) ids fall back to the models listing.
+    const m = /^accounts\/([^/]+)\/models\/(.+)$/.exec(modelId);
+    return m
+      ? `https://app.fireworks.ai/models/${m[1]}/${m[2]}`
+      : providerInfo(provider)?.modelsUrl;
   }
   if (provider === "qwen-pay-as-you-go") {
     return `https://www.qianwenai.com/models/${encodeURIComponent(modelId)}`;

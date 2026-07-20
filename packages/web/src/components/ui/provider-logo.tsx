@@ -3,12 +3,12 @@
  * light and dark themes).
  *
  * Anthropic / OpenAI / Google Gemini / DeepSeek / Moonshot AI / OpenRouter /
- * SiliconFlow / Qwen Token Plan use each vendor's brand mark (for recognition
- * purposes, not under trademark license; Qwen's official gradient wordmark is
- * flattened to currentColor monochrome); Z.AI uses a simplified geometric
- * approximation of its branded glyph (not an exact reproduction of the
- * trademark); unknown vendors and custom models use a generic cube. All are
- * pure paths, no external image assets.
+ * SiliconFlow / Qwen Token Plan / Qwen Pay-As-You-Go use each vendor's brand
+ * mark (for recognition purposes, not under trademark license; Qwen's official
+ * gradient wordmark is flattened to currentColor monochrome); Z.AI and
+ * Fireworks AI use simplified geometric approximations of their branded glyphs
+ * (not exact reproductions of the trademarks); unknown vendors and custom
+ * models use a generic cube. All are pure paths, no external image assets.
  */
 import type { ReactNode } from "react";
 
@@ -83,6 +83,18 @@ const GLYPHS: Record<string, Glyph> = {
   },
   "qwen-token-plan": QWEN_GLYPH,
   "qwen-pay-as-you-go": QWEN_GLYPH,
+  fireworks: {
+    // Simplified geometric approximation of the Fireworks AI burst mark: eight rays of
+    // alternating length around a small core.
+    stroke: true,
+    path: (
+      <>
+        <path d="M12 2.6v4.2M12 17.2v4.2M2.6 12h4.2M17.2 12h4.2" />
+        <path d="M5.4 5.4l2.4 2.4M16.2 16.2l2.4 2.4M5.4 18.6l2.4-2.4M16.2 7.8l2.4-2.4" />
+        <circle cx="12" cy="12" r="2.1" />
+      </>
+    ),
+  },
   custom: {
     stroke: true,
     path: (

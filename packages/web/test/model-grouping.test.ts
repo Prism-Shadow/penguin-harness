@@ -68,6 +68,7 @@ describe("groupModelRows", () => {
     expect(MODEL_PROVIDERS.map((p) => p.id)).toEqual([
       "deepseek",
       "openrouter",
+      "fireworks",
       "siliconflow",
       "qwen-token-plan",
       "qwen-pay-as-you-go",
