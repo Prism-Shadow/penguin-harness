@@ -455,6 +455,10 @@ export const en: Strings = {
     usedByAgents: (n: number): string =>
       n === 0 ? "not used yet" : n === 1 ? "used by 1 agent" : `used by ${n} agents`,
     installedToast: (skill: string, agent: string): string => `Installed ${skill} to ${agent}`,
+    updateOutdated: (n: number): string => `Update available: update ${n} Agent install(s)`,
+    updateAction: "Update",
+    updatedToast: (skill: string, n: number): string =>
+      `Updated ${skill} to the latest version (${n} Agent(s))`,
     uninstalledToast: (skill: string, agent: string): string =>
       `Uninstalled ${skill} from ${agent}`,
   },
