@@ -489,14 +489,23 @@ export const en: Strings = {
         label: "Example: 2D motocross game",
         desc: "Space to jump over obstacles, easy start with rising difficulty — a pure-frontend mini game",
         prompt:
-          "Build a 2D motocross game where you press Space to jump over obstacles, starting easy with difficulty ramping up.",
+          "Build a 2D motocross game: press Space to jump over oncoming obstacles; " +
+          "start easy, with speed and difficulty ramping up over time, live scoring, " +
+          "and a collision ending the run with one-click restart. " +
+          "Pure frontend (a single HTML file is fine), styled per the web-design skill. " +
+          "When done, test it in a browser once and tell me how to open it and how to play.",
       },
       rag: {
         label: "Example: build a Claude Code docs expert",
         desc: "Collect the claude-code-docs repo into a conversational RAG knowledge app with source citations",
         prompt:
-          "Collect the docs from https://github.com/ericbuess/claude-code-docs and build a RAG app " +
-          "that answers Claude Code questions as a configuration expert, citing its sources.",
+          "Collect the docs from https://github.com/ericbuess/claude-code-docs and build a RAG knowledge app: " +
+          "clone the repo and prepare the corpus, then build a retrieval index; " +
+          "the app acts as a Claude Code configuration expert, answering Claude Code questions " +
+          "with retrieval-augmented replies and clickable citations that reveal the matched " +
+          "original text chunk and link to the real documents; " +
+          "give it a beautiful web chat UI following the web-design skill, with a few example questions in the empty state. " +
+          "When done, run the app, verify one streamed answer yourself, and tell me how to access it.",
       },
     },
     sessionList: "Sessions",
@@ -522,6 +531,7 @@ export const en: Strings = {
     statusRunning: "Running",
     statusCompacting: "Compacting",
     pendingApprovals: (n: number) => `${n} pending approval${n > 1 ? "s" : ""}`,
+    jumpToLatest: "Jump to latest",
     inputPlaceholder: "Type a message. Enter to send, Shift+Enter for newline, paste images",
     inputPlaceholderShort: "Type a message…",
     send: "Send",

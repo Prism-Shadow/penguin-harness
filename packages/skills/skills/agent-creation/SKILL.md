@@ -3,8 +3,8 @@ name: agent-creation
 description: Turn a user requirement into a concrete agent — write the target agent's AGENTS.md and install the skills it needs.
 short_description: Turn a requirement into a working agent.
 short_description_zh: 把需求变成可用的 Agent。
-version: 1
-updated: 2026-07-20T00:00:00Z
+version: 2
+updated: 2026-07-20T13:00:00Z
 ---
 
 # Agent Creation
@@ -44,8 +44,8 @@ A skill is a directory `agent_state/skills/<skill_name>/` containing a `SKILL.md
 ---
 name: <skill_name>
 description: <skill_description>
-version: 1
-updated: <ISO 8601 timestamp>
+version: <natural number — bump it on every content change>
+updated: <ISO 8601 timestamp — move it together with version>
 ---
 
 <skill_instructions>

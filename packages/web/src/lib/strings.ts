@@ -464,22 +464,31 @@ export const zh = {
     draftSubtitle: "最擅长 AI 开发任务的自进化 Agent",
     /**
      * Example task cards on the draft screen: one click auto-submits the canned prompt (game
-     * card first, RAG card below/after it). Prompts stay a single condensed sentence — the
-     * pinned skills carry the detailed requirements (citations link to real documents, example
-     * questions in the empty state, run-and-verify before handover, Penguin visual language).
+     * card first, RAG card below/after it). These are the FULL working prompts — the README and
+     * landing page show a condensed one-sentence version of the RAG example for reading, and
+     * the cards' own desc lines stay short, but what actually gets submitted stays detailed:
+     * build quality depends on it.
      */
     exampleTasks: {
       game: {
         label: "示例：2D 摩托车越野游戏",
         desc: "空格起跳躲避障碍，难度由易到难，纯前端小游戏",
-        prompt: "做一个 2D 摩托车越野游戏，按空格起跳躲避障碍物，开局简单、难度逐渐上升。",
+        prompt:
+          "做一个 2D 摩托车越野游戏：按空格键起跳，躲避迎面而来的障碍物；" +
+          "开局简单，车速与难度随时间逐渐上升，实时计分，碰撞即结束并可一键重新开始。" +
+          "纯前端实现（单个 HTML 文件即可），界面遵循 web-design 技能。" +
+          "完成后在浏览器里自测一次，并告诉我怎么打开和怎么玩。",
       },
       rag: {
         label: "示例：构建 Claude Code 文档专家",
         desc: "收集 claude-code-docs 仓库，生成可对话、带来源引用的 RAG 知识应用",
         prompt:
-          "收集 https://github.com/ericbuess/claude-code-docs 的文档，" +
-          "做一个化身 Claude Code 配置专家、回答带来源引用的 RAG 问答应用。",
+          "收集 https://github.com/ericbuess/claude-code-docs 的文档，构建一个 RAG 知识应用：" +
+          "克隆仓库并整理语料，建立检索索引；应用化身 Claude Code 配置专家，" +
+          "检索增强回答 Claude Code 相关问题并标注可点击的来源引用——" +
+          "引用要能展示命中的原文片段，并链接到真实文档；" +
+          "按 web-design 技能提供美观的 Web 聊天界面，空态展示几个示例问题。" +
+          "完成后运行应用、自测一个问题验证流式回答，并告诉我访问方式。",
       },
     },
     sessionList: "Session",
@@ -505,6 +514,7 @@ export const zh = {
     statusRunning: "运行中",
     statusCompacting: "压缩中",
     pendingApprovals: (n: number) => `${n} 个待审批`,
+    jumpToLatest: "回到最新消息",
     inputPlaceholder: "输入消息，Enter 发送，Shift+Enter 换行，可粘贴图片",
     inputPlaceholderShort: "输入消息…",
     send: "发送",

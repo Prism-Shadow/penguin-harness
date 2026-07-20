@@ -5,7 +5,7 @@
  * StreamRenderContext threads the pending-approval map and approval callback down to tool
  * cards at any nesting depth.
  */
-import { useEffect, useRef } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { S } from "../../lib/strings";
 import type { ChatItem } from "../../lib/omni/stream-model";
@@ -144,6 +144,20 @@ export function MessageStream({
   // An upward-swipe intent immediately exits auto-follow; scrolling back near the bottom resumes it — see stream-follow.ts (#75) for the exact rule.
   const followRef = useRef<StreamFollow | null>(null);
   const follow = (followRef.current ??= createStreamFollow());
+  // Back-to-bottom button visibility (React state — the follow object mutates outside React):
+  // shown only when follow is off AND there is actually content below the fold. The second
+  // condition matters: a wheel-up flick over a list that already fits the viewport exits follow
+  // (stream-follow.ts keeps that rule deliberately) but must not surface a "jump to latest"
+  // button with nothing to jump to. Synced after every event that can change either input
+  // (wheel-up at the very top fires no scroll event, so syncing on scroll alone is not enough)
+  // and in the version effect (content growing while unstuck fires no scroll event either).
+  const [showJump, setShowJump] = useState(false);
+  const syncJump = () => {
+    const el = scrollRef.current;
+    setShowJump(
+      !follow.stick && el !== null && el.scrollHeight - el.scrollTop - el.clientHeight > 1,
+    );
+  };
 
   const onScroll = () => {
     const el = scrollRef.current;
@@ -153,36 +167,84 @@ export function MessageStream({
       scrollHeight: el.scrollHeight,
       clientHeight: el.clientHeight,
     });
+    syncJump();
   };
 
-  useEffect(() => {
+  // Layout effect (not useEffect): the stick-to-bottom snap must land before paint, otherwise
+  // fast streams show the bottom edge "catching up" by the growth of each commit.
+  useLayoutEffect(() => {
     const el = scrollRef.current;
     if (el && follow.stick) el.scrollTop = el.scrollHeight;
+    syncJump();
+    // syncJump is recreated per render; the effect intentionally keys on stream growth only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [version, follow]);
 
+  /** Back-to-bottom: resume follow first, then jump — the resulting scroll event sees a bottom position and keeps live-updating from there. */
+  const jumpToLatest = () => {
+    follow.resume();
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+    syncJump();
+  };
+
   return (
-    <div
-      ref={scrollRef}
-      onScroll={onScroll}
-      onWheel={(e) => follow.wheel(e.deltaY)}
-      onTouchStart={(e) => {
-        const t = e.touches[0];
-        if (t) follow.touchStart(t.clientY);
-      }}
-      onTouchMove={(e) => {
-        const t = e.touches[0];
-        if (t) follow.touchMove(t.clientY);
-      }}
-      onTouchEnd={() => follow.touchEnd()}
-      className="anim-fade h-full overflow-y-auto px-4 py-4 md:px-6"
-    >
-      <div className="mx-auto max-w-3xl">
-        {items.length === 0 ? (
-          <EmptyState title={S.chat.emptyStream} />
-        ) : (
-          <MessageItems items={items} ctx={ctx} />
-        )}
+    <div className="relative h-full min-h-0">
+      <div
+        ref={scrollRef}
+        onScroll={onScroll}
+        onWheel={(e) => {
+          follow.wheel(e.deltaY);
+          syncJump();
+        }}
+        onTouchStart={(e) => {
+          const t = e.touches[0];
+          if (t) follow.touchStart(t.clientY);
+        }}
+        onTouchMove={(e) => {
+          const t = e.touches[0];
+          if (t) follow.touchMove(t.clientY);
+          syncJump();
+        }}
+        onTouchEnd={() => follow.touchEnd()}
+        className="anim-fade h-full overflow-y-auto px-4 py-4 md:px-6"
+      >
+        <div className="mx-auto max-w-3xl">
+          {items.length === 0 ? (
+            <EmptyState title={S.chat.emptyStream} />
+          ) : (
+            <MessageItems items={items} ctx={ctx} />
+          )}
+        </div>
       </div>
+      {/* Back-to-bottom (shows once the user scrolls away from content below the fold): floats
+          just above the composer; clicking returns to the bottom and re-enters follow, so the
+          view keeps tracking the live stream. */}
+      {showJump && (
+        <button
+          type="button"
+          aria-label={S.chat.jumpToLatest}
+          title={S.chat.jumpToLatest}
+          onClick={jumpToLatest}
+          className="anim-pop absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-full border border-gray-300 bg-white p-1.5 text-gray-500 shadow-sm transition-colors duration-150 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            aria-hidden
+          >
+            <path
+              d="M12 5v14M6 13l6 6 6-6"
+              strokeWidth="1.7"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+      )}
     </div>
   );
 }

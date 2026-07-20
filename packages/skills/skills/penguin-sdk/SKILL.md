@@ -3,8 +3,8 @@ name: penguin-sdk
 description: Build AI apps on the Penguin Harness SDK — self-contained projects, the createSession/run streaming loop, and a complete RAG recipe that ingests documents into a knowledge base and answers with citations behind a web UI.
 short_description: Build AI and RAG apps on the Penguin Harness SDK.
 short_description_zh: 基于 Penguin SDK 构建 AI 与 RAG 应用。
-version: 1
-updated: 2026-07-20T00:00:00Z
+version: 2
+updated: 2026-07-20T13:00:00Z
 ---
 
 # Penguin Harness SDK
@@ -215,7 +215,9 @@ http.createServer(async (req, res) => {
             res.write(`data: ${JSON.stringify({ delta: p.text })}\n\n`);
         }
       }
-      res.write(`data: ${JSON.stringify({ sources: hits.map((c) => ({ source: c.source, heading: c.heading, url: `/${c.source}` })) })}\n\n`);
+      // Sources carry the matched chunk text verbatim: the UI must be able to show the exact
+      // block behind each [n], not just a file link.
+      res.write(`data: ${JSON.stringify({ sources: hits.map((c) => ({ source: c.source, heading: c.heading, url: `/${c.source}`, text: c.text })) })}\n\n`);
     } finally {
       session.dispose();
       res.end();
@@ -242,7 +244,10 @@ http.createServer(async (req, res) => {
 }).listen(Number(process.env.PORT ?? 4630), () => console.log("http://localhost:4630"));
 ```
 
-**UI** (`public/index.html`) — a chat interface built per the web-design skill: message list, streamed assistant text appended delta by delta, the final `sources` event rendered as citation chips, an empty state inviting the first question with **3–4 example questions the corpus can actually answer** (pill chips; clicking one submits it), and a visible error state when `/api/ask` fails. Citation chips must be **real links, never bare text**: `<a href="<url>" target="_blank">` using the `url` field from the sources event (`/corpus/<path>`, which this server serves), labeled with the source path + heading. When the corpus was cloned from a public repository, prefer mapping the path to the canonical upstream page instead (e.g. the GitHub blob URL derived from the clone URL), so citations point at the real document online.
+**UI** (`public/index.html`) — a chat interface built per the web-design skill: message list, streamed assistant text appended delta by delta, the final `sources` event rendered as citation chips, an empty state inviting the first question with **3–4 example questions the corpus can actually answer** (pill chips; clicking one submits it), and a visible error state when `/api/ask` fails. Citations must satisfy both of these, never bare text:
+
+- **Reveal the original chunk**: clicking a citation chip (or an inline `[n]`) opens a popover/panel showing the matched chunk's `text` from the sources event **verbatim** — the numbering maps 1:1 to the context blocks in the prompt, so `[n]` always reveals exactly the block the answer drew on.
+- **Link to the real document**: inside the popover, `<a href="<url>" target="_blank">` using the `url` field (`/corpus/<path>`, which this server serves) — clicking the chip itself opens the popover, the document link lives within it. When the corpus was cloned from a public repository, prefer mapping the path to the canonical upstream page instead (e.g. the GitHub blob URL derived from the clone URL).
 
 **Persona** (`persona.md`) — the embedded agent's role, written per the agent-creation skill. Shape: one role sentence ("You are an expert on X; you answer strictly from the provided context blocks"), citation and refusal rules, answer language follows the question.
 
@@ -254,7 +259,7 @@ Never declare the app done without running it:
 2. Model configured for `penguin_data` (CLI or env var; no usable key → see Setup: ask the user to add one to this agent's key vault, and report the app as unverified for now).
 3. `npm run ingest` prints `indexed N chunks` with N > 0.
 4. Start `npm start` in the background, then ask a real question:
-   `curl -N -sS -X POST localhost:4630/api/ask -H 'content-type: application/json' -d '{"question":"<something the corpus answers>"}'` — expect streamed `data:` deltas ending in a `sources` event. If nothing streams, the model call failed: re-check step 2 and the provider endpoint before touching the code.
+   `curl -N -sS -X POST localhost:4630/api/ask -H 'content-type: application/json' -d '{"question":"<something the corpus answers>"}'` — expect streamed `data:` deltas ending in a `sources` event that carries `source`, `url` **and the matched chunk `text`** per hit. If nothing streams, the model call failed: re-check step 2 and the provider endpoint before touching the code.
    Then `curl` one of the returned source `url`s — it must return the document, not a 404 (citation links have to resolve).
 5. Open the UI (or screenshot it) to confirm the layout renders.
 

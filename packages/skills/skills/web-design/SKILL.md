@@ -3,8 +3,8 @@ name: web-design
 description: Penguin visual language for generated web pages and app UIs — GitHub-style simplicity with a single blue accent, light and pure-black dark themes, design tokens, and component and chat-interface recipes.
 short_description: Penguin-style visual defaults for generated web UIs.
 short_description_zh: 生成网页的 Penguin 风格视觉规范。
-version: 1
-updated: 2026-07-20T00:00:00Z
+version: 2
+updated: 2026-07-20T13:00:00Z
 ---
 
 # Web Design
@@ -87,7 +87,7 @@ The default shape for a generated conversational or docs-QA app:
 - **Shell** — centered column, `max-width: 48rem`, `padding: 0 16px`; sticky nav on top with the app name; message list grows, composer pinned at the bottom.
 - **Empty state** — vertically centered title + one-line subtitle in `--fg-muted`, over an optional dot-grid backdrop (`background-image: radial-gradient(rgb(26 115 232 / .14) 1px, transparent 1px); background-size: 22px 22px;` faded out with a bottom mask) — the only decorative flourish allowed. Below it, a wrapped row of 3–4 example-question pill chips the app can genuinely answer; clicking one fills and submits the composer.
 - **Messages** — user messages right-aligned in a `--gray-100`/dark `#1f1f1f` rounded bubble (radius 12px, padding 8px 14px, max-width 85%); assistant messages plain on the page background, no bubble. Stream deltas into the assistant message as they arrive with a 1-character pulsing cursor; render markdown.
-- **Citations** — after an answer, a wrapped row of pill chips: `[1] path — heading`, brand-tinted variant, title attribute carrying the full path.
+- **Citations** — after an answer, a wrapped row of pill chips: `[1] path — heading`, brand-tinted variant. Clicking a chip (or an inline `[n]` in the answer) opens a popover/panel showing the **verbatim original text block** the citation refers to, with a link to open the full source document; a citation that is only a label or only a link is not enough.
 - **Composer** — a bordered card (radius 12px) with a borderless textarea inside and a small primary send button bottom-right; Enter sends, Shift+Enter for newline; disable while streaming. **Never send while an IME composition is in progress**: on keydown, ignore Enter when `event.isComposing` (or `event.keyCode === 229`) — for CJK input methods that Enter only confirms the composed text, and auto-sending on it fires half-typed messages.
 - **States** — loading: three pulsing dots in `--fg-faint`; error: 13px `#b91c1c` text on `#fef2f2` (dark: `#f87171` on `#450a0a`) in a rounded box with a retry affordance. Never leave a silent failure.
 

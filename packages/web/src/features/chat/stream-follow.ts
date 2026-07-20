@@ -35,6 +35,8 @@ export interface StreamFollow {
   touchEnd(): void;
   /** scroll event (user scrolling and programmatic stick-to-bottom share this path): moving up exits; otherwise nearing the bottom resumes; the first event initializes from position. */
   scrolled(m: ScrollMetrics): void;
+  /** Explicit re-entry (the back-to-bottom button): resumes follow immediately — the caller scrolls to the bottom right after, and the resulting scroll event sees a bottom position, keeping it stuck. */
+  resume(): void;
 }
 
 export function createStreamFollow(): StreamFollow {
@@ -71,6 +73,12 @@ export function createStreamFollow(): StreamFollow {
         return;
       }
       if (dist < 80) stick = true;
+    },
+    resume() {
+      stick = true;
+      // Forget the last position: the caller jumps to the bottom right after, and that large
+      // downward scroll must not be judged against a stale historical scrollTop.
+      lastTop = null;
     },
   };
 }

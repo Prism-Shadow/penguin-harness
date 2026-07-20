@@ -40,8 +40,9 @@ describe("loadLibrarySkills", () => {
       expect(skill.shortDescriptionZh, skill.name).toBeTruthy();
       expect(skill.shortDescription!.length, skill.name).toBeLessThan(skill.description.length);
       expect(skill.shortDescriptionZh!.length, skill.name).toBeLessThan(skill.description.length);
-      // Pre-release, version is always 1.
-      expect(skill.version).toBe(1);
+      // version is a natural number, bumped on every content change (updated moves with it).
+      expect(Number.isInteger(skill.version), skill.name).toBe(true);
+      expect(skill.version, skill.name).toBeGreaterThanOrEqual(1);
       expect(skill.updated).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/);
       // content is the full SKILL.md text including frontmatter (written as-is on install).
       expect(skill.content.startsWith("---\n")).toBe(true);
