@@ -46,6 +46,8 @@ Configure a model for the app's data root, in this order — stop at the first t
 
 Model config lives in one hidden file under the data root's project directory: `.project_config.toml`. It is CLI-only — never read, print or edit it.
 
+If neither route yields a usable credential, do not fake the verification: finish the build, report it as **unverified**, and tell the user exactly how to unblock you — in the Penguin web app, open this agent's settings via the **gear icon** on its card (Agents page) and add a model API key (e.g. `DEEPSEEK_API_KEY`) under the **key vault** tab. Vault keys are injected into your shell environment on the next task, so once the user has added one, you can run the self-test to completion.
+
 ## Streaming loop
 
 The raw `run()` stream mixes model, event and session-meta payloads — always narrow with the exported guards (`isModelMessage`, `isCompleteModelMessage`, `isEventMessage`) before touching `payload.type`; accessing `msg.payload.type` directly does not typecheck.
@@ -213,7 +215,7 @@ http.createServer(async (req, res) => {
             res.write(`data: ${JSON.stringify({ delta: p.text })}\n\n`);
         }
       }
-      res.write(`data: ${JSON.stringify({ sources: hits.map((c) => ({ source: c.source, heading: c.heading })) })}\n\n`);
+      res.write(`data: ${JSON.stringify({ sources: hits.map((c) => ({ source: c.source, heading: c.heading, url: `/${c.source}` })) })}\n\n`);
     } finally {
       session.dispose();
       res.end();
@@ -221,8 +223,16 @@ http.createServer(async (req, res) => {
     return;
   }
   const pathname = (req.url ?? "/").split("?")[0] ?? "/";
-  const file = path.normalize(path.join(PUB, pathname === "/" ? "index.html" : pathname.slice(1)));
-  if (file.startsWith(PUB + path.sep) && fs.existsSync(file) && fs.statSync(file).isFile()) {
+  // /corpus/* serves the source documents read-only, so citation links resolve to real files.
+  const inCorpus = pathname.startsWith("/corpus/");
+  const base = inCorpus ? path.join(ROOT, "corpus") : PUB;
+  const rel = inCorpus
+    ? pathname.slice("/corpus/".length)
+    : pathname === "/"
+      ? "index.html"
+      : pathname.slice(1);
+  const file = path.normalize(path.join(base, rel));
+  if (file.startsWith(base + path.sep) && fs.existsSync(file) && fs.statSync(file).isFile()) {
     res.writeHead(200, { "content-type": MIME[path.extname(file)] ?? "text/plain" });
     res.end(fs.readFileSync(file));
   } else {
@@ -232,7 +242,7 @@ http.createServer(async (req, res) => {
 }).listen(Number(process.env.PORT ?? 4630), () => console.log("http://localhost:4630"));
 ```
 
-**UI** (`public/index.html`) — a chat interface built per the web-design skill: message list, streamed assistant text appended delta by delta, the final `sources` event rendered as citation chips (source path + heading), an empty state inviting the first question, and a visible error state when `/api/ask` fails.
+**UI** (`public/index.html`) — a chat interface built per the web-design skill: message list, streamed assistant text appended delta by delta, the final `sources` event rendered as citation chips, an empty state inviting the first question with **3–4 example questions the corpus can actually answer** (pill chips; clicking one submits it), and a visible error state when `/api/ask` fails. Citation chips must be **real links, never bare text**: `<a href="<url>" target="_blank">` using the `url` field from the sources event (`/corpus/<path>`, which this server serves), labeled with the source path + heading. When the corpus was cloned from a public repository, prefer mapping the path to the canonical upstream page instead (e.g. the GitHub blob URL derived from the clone URL), so citations point at the real document online.
 
 **Persona** (`persona.md`) — the embedded agent's role, written per the agent-creation skill. Shape: one role sentence ("You are an expert on X; you answer strictly from the provided context blocks"), citation and refusal rules, answer language follows the question.
 
@@ -241,10 +251,11 @@ http.createServer(async (req, res) => {
 Never declare the app done without running it:
 
 1. `npm install` succeeds (or the workspace route builds).
-2. Model configured for `penguin_data` (CLI or env var).
+2. Model configured for `penguin_data` (CLI or env var; no usable key → see Setup: ask the user to add one to this agent's key vault, and report the app as unverified for now).
 3. `npm run ingest` prints `indexed N chunks` with N > 0.
 4. Start `npm start` in the background, then ask a real question:
    `curl -N -sS -X POST localhost:4630/api/ask -H 'content-type: application/json' -d '{"question":"<something the corpus answers>"}'` — expect streamed `data:` deltas ending in a `sources` event. If nothing streams, the model call failed: re-check step 2 and the provider endpoint before touching the code.
+   Then `curl` one of the returned source `url`s — it must return the document, not a 404 (citation links have to resolve).
 5. Open the UI (or screenshot it) to confirm the layout renders.
 
 Fix any failure and re-verify. Report with backtick-wrapped relative paths (`server.ts`, `public/index.html`, …), how to start the app, and the assumptions you made.

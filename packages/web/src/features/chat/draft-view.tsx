@@ -54,8 +54,16 @@ import { sameModelRef } from "../models/model-grouping";
 /** Coalescing window for writing body text to the cache: keystrokes are frequent, so a short batch accumulates before persisting (option changes are still written immediately). */
 const DRAFT_SAVE_DEBOUNCE_MS = 300;
 
-/** Skills pinned by the example task via a `<use_skills>` block (only those the selected Agent actually has installed are included, so the block never references a skill the agent can't read). */
-const EXAMPLE_TASK_SKILLS = ["penguin-sdk", "web-design"];
+/**
+ * Example tasks on the draft screen, in display order (game card first, RAG build below/after).
+ * Copy lives in S.chat.exampleTasks[id]; skills are pinned via a `<use_skills>` block — only
+ * those the selected Agent actually has installed are included, so the block never references
+ * a skill the agent can't read.
+ */
+const EXAMPLE_TASKS: { id: "game" | "rag"; skills: string[] }[] = [
+  { id: "game", skills: ["web-design"] },
+  { id: "rag", skills: ["penguin-sdk", "web-design"] },
+];
 
 export function DraftView({
   projectId,
@@ -302,24 +310,27 @@ export function DraftView({
     [projectId, agentId, approvalMode, modelRef, workspace, add, discardDraft, navigate],
   );
 
-  // Example task: one click submits the canned prompt exactly like a hand-typed send (the
-  // busy flag drives this card's spinner; the shared in-flight guard and all failure handling
-  // live in onSend). keepDraft: the example never consumes the composer text, so a
+  // Example tasks: one click submits the canned prompt exactly like a hand-typed send (the
+  // busy id drives the clicked card's spinner; the shared in-flight guard and all failure
+  // handling live in onSend). keepDraft: an example never consumes the composer text, so a
   // typed-but-unsent draft must survive. The selected model / Workspace / approval mode apply as-is.
-  const [exampleBusy, setExampleBusy] = useState(false);
-  const runExample = useCallback(async () => {
-    if (exampleBusy) return;
-    setExampleBusy(true);
-    try {
-      const names = EXAMPLE_TASK_SKILLS.filter((n) => agentSkills.some((s) => s.name === n));
-      await onSend(
-        [{ type: "text", text: buildSkillsMessage(names, S.chat.exampleTaskPrompt) }],
-        true,
-      );
-    } finally {
-      setExampleBusy(false);
-    }
-  }, [exampleBusy, agentSkills, onSend]);
+  const [exampleBusy, setExampleBusy] = useState<"game" | "rag" | null>(null);
+  const runExample = useCallback(
+    async (task: (typeof EXAMPLE_TASKS)[number]) => {
+      if (exampleBusy !== null) return;
+      setExampleBusy(task.id);
+      try {
+        const names = task.skills.filter((n) => agentSkills.some((s) => s.name === n));
+        await onSend(
+          [{ type: "text", text: buildSkillsMessage(names, S.chat.exampleTasks[task.id].prompt) }],
+          true,
+        );
+      } finally {
+        setExampleBusy(null);
+      }
+    },
+    [exampleBusy, agentSkills, onSend],
+  );
 
   // @ handoff: opens a new chat for the @-mentioned agent (approval mode carries over from the
   // draft's current value; model/Workspace use the creation defaults), first input =
@@ -422,67 +433,97 @@ export function DraftView({
           <WorkspaceSelect projectId={projectId} workspace={workspace} onChange={setWorkspace} />
         </div>
 
-        {/* Example task: a one-click canned build showing off the one-sentence → app flow.
-            Disabled until agents/models are resolved (onSend would silently no-op without an
-            Agent); hover only darkens the border, per the card convention. */}
-        <div className="mt-6 flex justify-center">
-          <button
-            type="button"
-            disabled={exampleBusy || sending || !skillsLoaded || !agentId || !models}
-            onClick={() => void runExample()}
-            title={S.chat.exampleTaskDesc}
-            className="group flex max-w-full items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 text-left transition-colors duration-150 hover:border-gray-300 disabled:cursor-default disabled:opacity-60 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-gray-700"
-          >
-            {/* Sparkle icon (24×24 line path, consistent with the icon convention) */}
-            <svg
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              className="shrink-0 text-brand-500 dark:text-brand-400"
-              aria-hidden
-            >
-              <path
-                d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z"
-                strokeWidth="1.7"
-                strokeLinejoin="round"
-              />
-              <path
-                d="M18.5 15.5l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9.9-2.1z"
-                strokeWidth="1.4"
-                strokeLinejoin="round"
-              />
-            </svg>
-            <span className="min-w-0">
-              <span className="block truncate text-sm font-medium text-gray-900 dark:text-gray-100">
-                {S.chat.exampleTaskLabel}
-              </span>
-              <span className="line-clamp-2 text-xs text-gray-500 dark:text-gray-400">
-                {S.chat.exampleTaskDesc}
-              </span>
-            </span>
-            {exampleBusy ? (
-              <span className="ml-1 shrink-0 text-xs text-gray-400">{S.common.loading}</span>
-            ) : (
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                className="ml-1 shrink-0 text-gray-300 transition-colors duration-150 group-hover:text-gray-500 dark:text-gray-600 dark:group-hover:text-gray-400"
-                aria-hidden
+        {/* Example tasks: one-click canned builds showing off the one-sentence → app flow
+            (game card first, RAG build second — stacked on mobile, side by side from sm up).
+            Disabled until agents/models/skills are resolved (onSend would silently no-op
+            without an Agent); hover only darkens the border, per the card convention. */}
+        <div className="mt-6 flex flex-col items-stretch justify-center gap-2 sm:flex-row">
+          {EXAMPLE_TASKS.map((task) => {
+            const copy = S.chat.exampleTasks[task.id];
+            return (
+              <button
+                key={task.id}
+                type="button"
+                disabled={exampleBusy !== null || sending || !skillsLoaded || !agentId || !models}
+                onClick={() => void runExample(task)}
+                title={copy.desc}
+                className="group flex min-w-0 items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 text-left transition-colors duration-150 hover:border-gray-300 disabled:cursor-default disabled:opacity-60 sm:max-w-sm sm:flex-1 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-gray-700"
               >
-                <path
-                  d="M5 12h14M13 6l6 6-6 6"
-                  strokeWidth="1.7"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            )}
-          </button>
+                {/* 24×24 line icons (gamepad / sparkle), consistent with the icon convention */}
+                {task.id === "game" ? (
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    className="shrink-0 text-brand-500 dark:text-brand-400"
+                    aria-hidden
+                  >
+                    <path
+                      d="M6.7 6h10.6a4 4 0 0 1 3.97 3.56c.2 1.8.73 5.05.73 6.44a3 3 0 0 1-3 3c-1 0-1.5-.5-2-1l-1.4-1.4a2 2 0 0 0-1.42-.6H9.82a2 2 0 0 0-1.41.6L7 18c-.5.5-1 1-2 1a3 3 0 0 1-3-3c0-1.39.52-4.64.73-6.44A4 4 0 0 1 6.7 6z"
+                      strokeWidth="1.7"
+                      strokeLinejoin="round"
+                    />
+                    <path
+                      d="M6.5 11h4M8.5 9v4M15 12h.01M18 10h.01"
+                      strokeWidth="1.7"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                ) : (
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    className="shrink-0 text-brand-500 dark:text-brand-400"
+                    aria-hidden
+                  >
+                    <path
+                      d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z"
+                      strokeWidth="1.7"
+                      strokeLinejoin="round"
+                    />
+                    <path
+                      d="M18.5 15.5l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9.9-2.1z"
+                      strokeWidth="1.4"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                )}
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium text-gray-900 dark:text-gray-100">
+                    {copy.label}
+                  </span>
+                  <span className="line-clamp-2 text-xs text-gray-500 dark:text-gray-400">
+                    {copy.desc}
+                  </span>
+                </span>
+                {exampleBusy === task.id ? (
+                  <span className="ml-1 shrink-0 text-xs text-gray-400">{S.common.loading}</span>
+                ) : (
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    className="ml-1 shrink-0 text-gray-300 transition-colors duration-150 group-hover:text-gray-500 dark:text-gray-600 dark:group-hover:text-gray-400"
+                    aria-hidden
+                  >
+                    <path
+                      d="M5 12h14M13 6l6 6-6 6"
+                      strokeWidth="1.7"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
 

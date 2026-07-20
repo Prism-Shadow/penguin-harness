@@ -462,15 +462,28 @@ export const zh = {
     workspaceClear: "改用自动临时目录",
     workspaceDirInvalid: "目录不存在或无法访问，已回退",
     draftSubtitle: "最擅长 AI 开发任务的自进化 Agent",
-    /** Example task card on the draft screen: one click auto-submits the canned prompt below. */
-    exampleTaskLabel: "示例：构建 Claude Code 文档专家",
-    exampleTaskDesc: "收集 claude-code-docs 仓库，生成可对话、带来源引用的 RAG 知识应用",
-    exampleTaskPrompt:
-      "收集 https://github.com/ericbuess/claude-code-docs 的文档，构建一个 RAG 知识应用：" +
-      "克隆仓库并整理语料，建立检索索引；应用化身 Claude Code 配置专家，" +
-      "检索增强回答 Claude Code 相关问题并标注来源引用；" +
-      "按 web-design 技能提供美观的 Web 聊天界面。" +
-      "完成后运行应用、自测一个问题验证流式回答，并告诉我访问方式。",
+    /** Example task cards on the draft screen: one click auto-submits the canned prompt (game card first, RAG card below/after it). */
+    exampleTasks: {
+      game: {
+        label: "示例：2D 越野小游戏",
+        desc: "空格起跳躲避障碍，纯前端小游戏",
+        prompt:
+          "制作一个 2D 越野小游戏：按空格键起跳，躲避迎面而来的障碍物；" +
+          "随时间逐渐加速并计分，碰撞即结束并可一键重新开始。" +
+          "纯前端实现（单个 HTML 文件即可），界面遵循 web-design 技能。" +
+          "完成后在浏览器里自测一次，并告诉我怎么打开和怎么玩。",
+      },
+      rag: {
+        label: "示例：构建 Claude Code 文档专家",
+        desc: "收集 claude-code-docs 仓库，生成可对话、带来源引用的 RAG 知识应用",
+        prompt:
+          "收集 https://github.com/ericbuess/claude-code-docs 的文档，构建一个 RAG 知识应用：" +
+          "克隆仓库并整理语料，建立检索索引；应用化身 Claude Code 配置专家，" +
+          "检索增强回答 Claude Code 相关问题并标注可点击的来源引用（引用必须链接到真实文档）；" +
+          "按 web-design 技能提供美观的 Web 聊天界面，空态展示几个示例问题。" +
+          "完成后运行应用、自测一个问题验证流式回答，并告诉我访问方式。",
+      },
+    },
     sessionList: "Session",
     defaultSessionTitle: "新对话",
     model: "Model",

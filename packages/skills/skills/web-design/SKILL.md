@@ -57,6 +57,10 @@ code, pre, kbd { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, mon
 
 Headings are always `font-weight: 600` with `letter-spacing: -0.025em` — nothing heavier, no thin weights. Scale: page/hero title 30–36px; section title 24–30px; card title 16–18px; body 14px / line-height 1.5; captions 12px in `--fg-faint`; code 13px / line-height 1.85. Hierarchy comes from weight, size, spacing and hairlines — never from colored blocks.
 
+## Language
+
+Write the page's UI copy in the language the user's request was made in — a Chinese request gets a Chinese interface, an English request an English one — and set `<html lang>` to match. Code identifiers, CSS class names and code comments stay English.
+
 ## Components
 
 - **Primary button** — `background: var(--accent-bg); color: var(--accent-fg); border-radius: 6px; padding: 6px 12px; font-size: 14px; font-weight: 500;` hover: `opacity: .9`. Large CTA variant: height 44px, radius 8px, padding 0 20px.
@@ -81,10 +85,10 @@ One easing everywhere: `var(--ease)`, durations 120–280ms. Entrances rise in (
 The default shape for a generated conversational or docs-QA app:
 
 - **Shell** — centered column, `max-width: 48rem`, `padding: 0 16px`; sticky nav on top with the app name; message list grows, composer pinned at the bottom.
-- **Empty state** — vertically centered title + one-line subtitle in `--fg-muted`, over an optional dot-grid backdrop (`background-image: radial-gradient(rgb(26 115 232 / .14) 1px, transparent 1px); background-size: 22px 22px;` faded out with a bottom mask) — the only decorative flourish allowed.
+- **Empty state** — vertically centered title + one-line subtitle in `--fg-muted`, over an optional dot-grid backdrop (`background-image: radial-gradient(rgb(26 115 232 / .14) 1px, transparent 1px); background-size: 22px 22px;` faded out with a bottom mask) — the only decorative flourish allowed. Below it, a wrapped row of 3–4 example-question pill chips the app can genuinely answer; clicking one fills and submits the composer.
 - **Messages** — user messages right-aligned in a `--gray-100`/dark `#1f1f1f` rounded bubble (radius 12px, padding 8px 14px, max-width 85%); assistant messages plain on the page background, no bubble. Stream deltas into the assistant message as they arrive with a 1-character pulsing cursor; render markdown.
 - **Citations** — after an answer, a wrapped row of pill chips: `[1] path — heading`, brand-tinted variant, title attribute carrying the full path.
-- **Composer** — a bordered card (radius 12px) with a borderless textarea inside and a small primary send button bottom-right; Enter sends, Shift+Enter for newline; disable while streaming.
+- **Composer** — a bordered card (radius 12px) with a borderless textarea inside and a small primary send button bottom-right; Enter sends, Shift+Enter for newline; disable while streaming. **Never send while an IME composition is in progress**: on keydown, ignore Enter when `event.isComposing` (or `event.keyCode === 229`) — for CJK input methods that Enter only confirms the composed text, and auto-sending on it fires half-typed messages.
 - **States** — loading: three pulsing dots in `--fg-faint`; error: 13px `#b91c1c` text on `#fef2f2` (dark: `#f87171` on `#450a0a`) in a rounded box with a retry affordance. Never leave a silent failure.
 
 ## Page layout (marketing / landing)
