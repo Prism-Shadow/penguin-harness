@@ -105,7 +105,6 @@ export function Features() {
   const [active, setActive] = useState(0);
   const tab = SHOT_TABS[active] ?? SHOT_TABS[0]!;
   const item = S.features.items[tab.index]!;
-  const ActiveIcon = ICONS[tab.index] ?? SparklesIcon;
 
   return (
     <Section
@@ -143,21 +142,14 @@ export function Features() {
         })}
       </div>
 
-      <div role="tabpanel" className="anim-fade mx-auto mt-8 max-w-5xl" key={tab.shot}>
-        <div className="flex items-start gap-4 rounded-xl border border-gray-200 bg-white p-5 sm:p-6 dark:border-gray-800 dark:bg-gray-900">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600 dark:bg-brand-950 dark:text-brand-300">
-            <ActiveIcon className="h-5 w-5" />
-          </span>
-          <div>
-            <h3 className="text-[15px] font-semibold tracking-tight">{item.title}</h3>
-            <p className="mt-1 text-sm leading-6 text-gray-600 dark:text-gray-400">{item.desc}</p>
-          </div>
-        </div>
-        <div className="mt-6">
-          <BrowserFrame>
-            <ThemedShot set={SHOTS[tab.shot]} alt={item.title} />
-          </BrowserFrame>
-        </div>
+      <div role="tabpanel" className="anim-fade mx-auto mt-6 max-w-5xl" key={tab.shot}>
+        {/* Centered feature text above the shot — the tab chip already names it. */}
+        <p className="mx-auto mb-5 max-w-2xl text-center text-sm leading-6 text-gray-600 dark:text-gray-400">
+          {item.desc}
+        </p>
+        <BrowserFrame>
+          <ThemedShot set={SHOTS[tab.shot]} alt={item.title} />
+        </BrowserFrame>
       </div>
 
       {/* Features without a capture: the classic card grid, closed by "and more…". */}
