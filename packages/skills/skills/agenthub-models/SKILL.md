@@ -3,8 +3,8 @@ name: agenthub-models
 description: Call model APIs through @prismshadow/agenthub — streaming text generation, image generation, speech synthesis and embeddings with one client.
 short_description: Call model APIs with one AgentHub client.
 short_description_zh: 用一个 AgentHub 客户端调用模型 API。
-version: 1
-updated: 2026-07-17T00:00:00Z
+version: 2
+updated: 2026-07-20T15:00:00Z
 ---
 
 # AgentHub Model APIs
@@ -28,6 +28,14 @@ const client = new AutoLLMClient({ model: "<model_id>", apiKey: "<key>", baseUrl
 ## Before you start
 
 If the user's message only invokes this skill (e.g. "use agenthub-models skill") without a concrete task, ask the user what they want to build. Do not write code until the requirement is clear.
+
+Check for a usable API key before writing code — the client needs one for whichever provider you target:
+
+```bash
+env | grep -oE "(DEEPSEEK|OPENAI|ANTHROPIC|GEMINI)_API_KEY" || echo none
+```
+
+Vault keys also appear in your Vault Keys section. If none is usable, stop and ask the user to add one in the agent's **key vault**: gear icon on the agent's card (Agents page) → settings → key vault tab; vault values reach your shell environment on the next task.
 
 ## Model IDs
 

@@ -3,8 +3,8 @@ name: penguin-sdk
 description: Build AI apps on the Penguin Harness SDK — self-contained projects, the createSession/run streaming loop, and a complete RAG recipe that ingests documents into a knowledge base and answers with citations behind a web UI.
 short_description: Build AI and RAG apps on the Penguin Harness SDK.
 short_description_zh: 基于 Penguin SDK 构建 AI 与 RAG 应用。
-version: 2
-updated: 2026-07-20T13:00:00Z
+version: 3
+updated: 2026-07-20T15:00:00Z
 ---
 
 # Penguin Harness SDK
@@ -23,13 +23,23 @@ If the user's message only invokes this skill (e.g. "use penguin-sdk skill") wit
 
 ## Project location
 
-Create the app in the current workspace directory by default (the `CWD` value from your Environment section), as a self-contained project — do not place it under `<project_dir>` or depend on any path outside the project folder. Point the agent data root at a directory inside the project with `createAgent({ root })`, resolved from the source file so it stays relative:
+Create the app in the current workspace directory by default (the `CWD` value from your Environment section), as a self-contained project — do not place it under `<project_dir>` or depend on any path outside the project folder. When creating the app's agent, the data root defaults **under the working directory (CWD)** too: point `createAgent({ root })` at a directory inside the project, resolved from the source file so it stays relative:
 
 ```ts
 const agent = await createAgent({ root: path.join(import.meta.dirname, "penguin_data") });
 ```
 
 With every reference relative to the project, the user can move or copy the folder anywhere and it still runs.
+
+## Check the model first
+
+Before writing any code, verify a usable model credential exists — a finished app that cannot answer is a failed delivery discovered too late:
+
+```bash
+env | grep -oE "(DEEPSEEK|OPENAI|ANTHROPIC|GEMINI)_API_KEY" || echo none
+```
+
+Vault keys also appear in your Vault Keys section. If nothing is usable, **stop and tell the user first**: ask them to open the agent's settings via the **gear icon** on its card (left side, Agents page) and add a model API key (e.g. `DEEPSEEK_API_KEY`) in the **key vault** tab — vault values reach your shell environment on the next task. Build only after a credential is confirmed, or clearly agree with the user to build now and verify later.
 
 ## Setup
 

@@ -10,7 +10,7 @@ Included skills:
 | --- | --- |
 | Agent Development | `agent-creation`, `benchmark-design`, `agent-evaluation`, `agent-optimization` |
 | Data Analysis | `data-analysis` |
-| Penguin Development | `penguin-sdk`, `penguin-cli`, `agenthub-models`, `agenthub-dev` |
+| Penguin Development | `penguin-sdk`, `penguin-cli`, `agenthub-models` |
 | Web Development | `web-design` |
 | Software Engineering | `software-engineering` |
 

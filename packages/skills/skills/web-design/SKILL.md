@@ -3,8 +3,8 @@ name: web-design
 description: Penguin visual language for generated web pages and app UIs — GitHub-style simplicity with a single blue accent, light and pure-black dark themes, design tokens, and component and chat-interface recipes.
 short_description: Penguin-style visual defaults for generated web UIs.
 short_description_zh: 生成网页的 Penguin 风格视觉规范。
-version: 2
-updated: 2026-07-20T13:00:00Z
+version: 3
+updated: 2026-07-20T15:00:00Z
 ---
 
 # Web Design
@@ -14,6 +14,8 @@ Default visual language for every web page or frontend you generate, distilled f
 ## Before you start
 
 If the user's message only invokes this skill (e.g. "use web-design skill") without a concrete page or interface to build, ask what they want to build. When a concrete build is already requested (an app UI, a landing page, a RAG chat interface), do **not** ask about styling — apply the defaults below.
+
+Non-negotiable for ANY text input that sends on Enter: **never send while an IME composition is in progress** (check `event.isComposing`, falling back to `event.keyCode === 229`, on keydown). For Chinese/Japanese/Korean input methods, that Enter only confirms the composed text — auto-sending on it fires half-typed messages. Details in the composer recipe below.
 
 ## Design tokens
 
