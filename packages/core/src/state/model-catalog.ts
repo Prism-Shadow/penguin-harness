@@ -440,6 +440,16 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   },
   // -- SiliconFlow (gateway, official CNY pricing: cache hit / input / output) --
   {
+    modelId: "deepseek-ai/DeepSeek-V4-Flash",
+    displayName: "DeepSeek V4 Flash",
+    provider: "siliconflow",
+    contextWindow: 1000000,
+    pricing: cny(0.02, 1, 2),
+    supportsVision: false,
+    clientType: "openai",
+    baseUrl: SILICONFLOW_BASE_URL,
+  },
+  {
     modelId: "deepseek-ai/DeepSeek-V4-Pro",
     displayName: "DeepSeek V4 Pro",
     provider: "siliconflow",
@@ -456,6 +466,16 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: cny(0.1, 5, 20),
     supportsVision: false,
+    clientType: "openai",
+    baseUrl: SILICONFLOW_BASE_URL,
+  },
+  {
+    modelId: "moonshotai/Kimi-K2.7-Code",
+    displayName: "Kimi K2.7 Code",
+    provider: "siliconflow",
+    contextWindow: 262144,
+    pricing: cny(1.3, 6.5, 27),
+    supportsVision: true,
     clientType: "openai",
     baseUrl: SILICONFLOW_BASE_URL,
   },
@@ -825,6 +845,17 @@ export function modelHomepageUrl(provider: string, modelId: string): string | un
   }
   if (provider === "qwen-pay-as-you-go") {
     return `https://www.qianwenai.com/models/${encodeURIComponent(modelId)}`;
+  }
+  if (provider === "zhipu") {
+    // Z.AI's per-model guide pages use the bare model id as the slug.
+    return `https://docs.z.ai/guides/llm/${modelId}`;
+  }
+  if (provider === "moonshot") {
+    // Moonshot's pricing pages: kimi-k2.6 -> chat-k26 (dot dropped); other ids fall back.
+    const m = /^kimi-k(\d+)\.(\d+)$/.exec(modelId);
+    return m
+      ? `https://platform.kimi.com/docs/pricing/chat-k${m[1]}${m[2]}`
+      : providerInfo(provider)?.modelsUrl;
   }
   if (provider === "custom") return undefined;
   return providerInfo(provider)?.modelsUrl;

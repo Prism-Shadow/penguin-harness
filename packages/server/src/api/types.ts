@@ -273,6 +273,8 @@ export interface ModelTestRequest {
   apiKey?: string;
   /** "Clear saved API key" is checked: the test does **not** fall back to the stored key (tests against the current draft). */
   clearApiKey?: boolean;
+  /** Speed-test mode: raises the probe's output cap (16 -> 64 tokens) so TTFT/TPS are measurable; costs a little more quota. */
+  speed?: boolean;
   /**
    * base URL (not secret; the frontend always sends the form's current value): a string
    * means use it, `null` means explicitly clear it (no fallback to the stored value),
@@ -283,10 +285,18 @@ export interface ModelTestRequest {
   clientType?: string;
 }
 
-/** Connectivity test result: carries round-trip latency when ok, and a reason on failure (truncated raw provider error). */
+/**
+ * Connectivity test result: carries round-trip latency when ok, and a reason on failure
+ * (truncated raw provider error). When streamed content was observed, also carries the
+ * time-to-first-token and, when usage was reported (completed streams), the output rate.
+ */
 export interface ModelTestResponse {
   ok: boolean;
   latencyMs?: number;
+  /** Time from request start to the first streamed content (thinking or text), ms. */
+  ttftMs?: number;
+  /** Output tokens per second over the streaming window (first content -> stream end), 1dp. */
+  tps?: number;
   message?: string;
 }
 

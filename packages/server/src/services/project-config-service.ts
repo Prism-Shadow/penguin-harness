@@ -242,18 +242,41 @@ export class ProjectConfigService {
         ...(clientType ? { clientType } : {}),
         tools: [],
         thinkingLevel: "none",
-        maxTokens: 16,
+        // Speed mode raises the cap so TTFT/TPS are measurable over a real streaming window;
+        // the plain connectivity test keeps the single-digit-token budget.
+        maxTokens: req.speed ? 64 : 16,
         requestTimeoutMs: 20_000,
       });
       const gen = llm.streamGenerate({ newMessages: [userText("ping")] });
       let sawContent = false;
+      let firstContentAt: number | null = null;
+      let outputTokens = 0;
       for (;;) {
         const step = await gen.next();
         if (step.done) {
           const verdict = probeVerdict(step.value, sawContent);
-          return verdict.ok ? { ok: true, latencyMs: Date.now() - startedAt } : verdict;
+          if (!verdict.ok) return verdict;
+          const res: ModelTestResponse = { ok: true, latencyMs: Date.now() - startedAt };
+          if (firstContentAt !== null) {
+            res.ttftMs = firstContentAt - startedAt;
+            // TPS over the streaming window (first content -> stream end); usage is only
+            // reported on completed streams, so thinking-only malformed endings carry TTFT
+            // but no rate.
+            const windowMs = Date.now() - firstContentAt;
+            if (outputTokens > 0 && windowMs > 0) {
+              res.tps = Math.round((outputTokens / (windowMs / 1000)) * 10) / 10;
+            }
+          }
+          return res;
         }
-        if (isProbeContent(step.value)) sawContent = true;
+        if (isProbeContent(step.value)) {
+          sawContent = true;
+          if (firstContentAt === null) firstContentAt = Date.now();
+        }
+        const p = step.value.payload as { type?: string; request?: { output?: number } };
+        if (p.type === "token_usage" && typeof p.request?.output === "number") {
+          outputTokens = p.request.output;
+        }
       }
     } catch (err) {
       // Defensive: an unexpected exception during construction/iteration (the LLM layer promises not to throw; this is a fallback).

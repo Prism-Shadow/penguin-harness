@@ -69,6 +69,8 @@ import type { ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog"
 import { groupModelRows, sameModelRef, userProviderInfo } from "./model-grouping";
 import { draftKey, loadDraft, saveDraft } from "../chat/draft-cache";
 import { syncRowsWithCatalog } from "./catalog-sync";
+import { tpsTone, ttftTone } from "./speed-test";
+import type { SpeedResult, SpeedTone } from "./speed-test";
 
 /** Display currency follows the user setting (pricing is always stored in USD/million tokens; conversion happens only for display and input). */
 const CURRENCY_SYMBOL: Record<Currency, string> = { USD: "$", CNY: "¥" };
@@ -109,6 +111,21 @@ function inputToUsd(inputStr: string, currency: Currency): string {
   if (!Number.isFinite(n)) return t;
   return currency === "CNY" ? trimNum(n / USD_TO_CNY) : trimNum(n);
 }
+
+/** Speed-test glyphs (24x24 line paths): gauge for the group action, clock = TTFT, zap = TPS. */
+const GAUGE_ICON = "M12 14l3.5-3.5M20.49 17A10 10 0 1 0 3.5 17";
+const CLOCK_ICON = "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20ZM12 7v5l3.5 2";
+const ZAP_ICON = "M13 2 3 14h9l-1 8 10-12h-9l1-8Z";
+
+/** Metric tone -> text color classes for the card speed badges. */
+const TONE_CLASS: Record<SpeedTone, string> = {
+  green: "text-green-600 dark:text-green-400",
+  yellow: "text-amber-600 dark:text-amber-400",
+  red: "text-red-600 dark:text-red-400",
+};
+
+/** In-page key for one model's speed result. */
+const speedKey = (provider: string, modelId: string) => `${provider}\u0000${modelId}`;
 
 /** Default context window (tokens) for custom models when left unset. */
 const CUSTOM_CONTEXT_DEFAULT = 128000;
@@ -306,6 +323,12 @@ export function ModelsPage() {
   const projectId = currentProject?.projectId ?? null;
   const isOwner = currentProject?.role === "owner";
   const userId = useAuth().user?.userId ?? null;
+  /** Per-model speed results (session-scoped; "pending" while that model's turn is running). */
+  const [speedResults, setSpeedResults] = useState<Map<string, SpeedResult | "pending">>(new Map());
+  /** Group whose speed-test confirmation dialog is open (provider id). */
+  const [speedFor, setSpeedFor] = useState<string | null>(null);
+  /** Group currently being speed-tested (provider id); tests run strictly one model at a time. */
+  const [speedRunning, setSpeedRunning] = useState<string | null>(null);
 
   const [rows, setRows] = useState<RowState[] | null>(null);
   const [defaultModel, setDefaultModel] = useState<ModelRefDto | undefined>(undefined);
@@ -415,6 +438,40 @@ export function ModelsPage() {
       visionModel,
       S.models.syncDone(merged.added, merged.updated),
     );
+  };
+
+  /**
+   * Group speed test: one real request per model, strictly sequential (concurrent probes
+   * trip provider rate limits), each result written to the card as it lands. The
+   * confirmation dialog (speedFor) has already warned about quota by the time this runs.
+   */
+  const runSpeedTest = async (providerId: string) => {
+    if (!projectId || !rows) return;
+    const targets = rows.filter((r) => r.provider === providerId);
+    setSpeedRunning(providerId);
+    try {
+      for (const row of targets) {
+        const key = speedKey(row.provider, row.modelId);
+        setSpeedResults((prev) => new Map(prev).set(key, "pending"));
+        try {
+          const res = await api.testModel(projectId, {
+            provider: row.provider,
+            modelId: row.modelId,
+            speed: true,
+          });
+          setSpeedResults((prev) => new Map(prev).set(key, res));
+        } catch (e) {
+          setSpeedResults((prev) =>
+            new Map(prev).set(key, {
+              ok: false,
+              message: e instanceof ApiError ? e.message : S.common.unknownError,
+            }),
+          );
+        }
+      }
+    } finally {
+      setSpeedRunning(null);
+    }
   };
 
   /**
@@ -562,6 +619,23 @@ export function ModelsPage() {
                         </Button>
                       </span>
                     )}
+                    {isOwner && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="shrink-0 px-1.5"
+                        disabled={busy || speedRunning !== null}
+                        aria-label={`${S.models.speedTest} ${group.provider.label}`}
+                        title={
+                          speedRunning === group.provider.id
+                            ? S.models.speedPending
+                            : S.models.speedTest
+                        }
+                        onClick={() => setSpeedFor(group.provider.id)}
+                      >
+                        <GlyphIcon d={GAUGE_ICON} size={14} />
+                      </Button>
+                    )}
                     {group.provider.apiKeyUrl && (
                       // Not enough room on phone width for all group-level actions: collapse
                       // it the same way as "bulk configure key", keeping the add entry and
@@ -612,6 +686,7 @@ export function ModelsPage() {
                               currency={currency}
                               isDefault={sameModelRef(rowRef(row), defaultModel)}
                               isVisionModel={sameModelRef(rowRef(row), visionModel)}
+                              speed={speedResults.get(speedKey(row.provider, row.modelId))}
                               onOpen={() => setEditing(rowRef(row))}
                             />
                           ))
@@ -671,6 +746,26 @@ export function ModelsPage() {
         />
       )}
 
+      {speedFor !== null && (
+        <Modal open title={S.models.speedTestTitle} onClose={() => setSpeedFor(null)}>
+          <p className="text-sm text-gray-600 dark:text-gray-300">
+            {S.models.speedTestConfirm(rows?.filter((r) => r.provider === speedFor).length ?? 0)}
+          </p>
+          <div className="mt-4 flex justify-end gap-2">
+            <Button onClick={() => setSpeedFor(null)}>{S.common.cancel}</Button>
+            <Button
+              variant="primary"
+              onClick={() => {
+                const id = speedFor;
+                setSpeedFor(null);
+                if (id) void runSpeedTest(id);
+              }}
+            >
+              {S.models.speedTestStart}
+            </Button>
+          </div>
+        </Modal>
+      )}
       {addGroupOpen && (
         <Modal
           open
@@ -762,18 +857,25 @@ export function ModelsPage() {
 // Model card
 // ---------------------------------------------------------------------------
 
-/** Card: display name + upstream id + status badges; context / pricing / key status folded into one line of small text. The whole card is clickable. */
+/**
+ * Card: display name + upstream id + status badges; context / pricing / key status folded
+ * into one line of small text; group speed-test results (TTFT / TPS, tone-colored) ride the
+ * title row's right edge. The whole card is clickable (the model homepage link lives in the
+ * config dialog).
+ */
 function ModelCard({
   row,
   currency,
   isDefault,
   isVisionModel,
+  speed,
   onOpen,
 }: {
   row: RowState;
   currency: Currency;
   isDefault: boolean;
   isVisionModel: boolean;
+  speed?: SpeedResult | "pending";
   onOpen: () => void;
 }) {
   const priced = row.cacheRead || row.cacheWrite || row.output;
@@ -791,51 +893,65 @@ function ModelCard({
         : S.models.noKey,
   ].filter((v): v is string => v !== null);
 
-  const homepage = modelHomepageUrl(row.provider, row.modelId);
-  return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={onOpen}
-        className="flex w-full flex-col gap-0.5 rounded-md border border-gray-200 px-3 py-2.5 text-left transition-colors duration-150 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-800 dark:hover:border-gray-700 dark:hover:bg-gray-800/40"
-      >
-        <span className={`flex flex-wrap items-center gap-1.5 ${homepage ? "pr-6" : ""}`}>
-          <span className="text-sm font-medium">{row.displayName ?? row.modelId}</span>
-          {isDefault && <Badge tone="brand">{S.models.default}</Badge>}
-          {row.vision && <Badge tone="green">{S.models.visionBadge}</Badge>}
-          {isVisionModel && <Badge tone="amber">{S.models.visionModelBadge}</Badge>}
+  const speedBadges =
+    speed === "pending" ? (
+      <span className="ml-auto shrink-0 text-[11px] text-gray-400">{S.models.speedPending}</span>
+    ) : speed ? (
+      speed.ok ? (
+        <span className="ml-auto flex shrink-0 items-center gap-1.5 text-[11px] font-medium">
+          {speed.ttftMs !== undefined && (
+            <span
+              className={`flex items-center gap-0.5 ${TONE_CLASS[ttftTone(speed.ttftMs)]}`}
+              title={S.models.ttftTitle}
+            >
+              <GlyphIcon d={CLOCK_ICON} size={11} />
+              {Math.round(speed.ttftMs)}ms
+            </span>
+          )}
+          {speed.tps !== undefined && (
+            <span
+              className={`flex items-center gap-0.5 ${TONE_CLASS[tpsTone(speed.tps)]}`}
+              title={S.models.tpsTitle}
+            >
+              <GlyphIcon d={ZAP_ICON} size={11} />
+              {speed.tps} tok/s
+            </span>
+          )}
         </span>
-        {/* Upstream id in small text (grouping already separates by group, no composite id is
-            shown anymore); when there's no display name, the main line is already the
-            upstream id, so it isn't repeated on a second line. */}
-        {row.displayName !== undefined && (
-          <span className="truncate font-mono text-[11px] text-gray-500 dark:text-gray-400">
-            {row.modelId}
-          </span>
-        )}
-        <span className="truncate text-[11px] text-gray-400 dark:text-gray-500">
-          {meta.join(" · ")}
-        </span>
-      </button>
-      {/* Model homepage link (top-right corner, a sibling of the card button — interactive
-          elements must not nest): gateway groups link to the model's own page, direct
-          vendors to the vendor's model docs; custom/user-defined groups have none. */}
-      {homepage && (
-        <a
-          href={homepage}
-          target="_blank"
-          rel="noreferrer"
-          title={S.models.homepage}
-          aria-label={`${S.models.homepage} ${row.modelId}`}
-          className="absolute right-1.5 top-1.5 rounded p-1 text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+      ) : (
+        <span
+          className="ml-auto shrink-0 text-[11px] font-medium text-red-600 dark:text-red-400"
+          title={speed.message}
         >
-          <GlyphIcon
-            d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3"
-            size={13}
-          />
-        </a>
+          {S.models.speedFailed}
+        </span>
+      )
+    ) : null;
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="flex w-full flex-col gap-0.5 rounded-md border border-gray-200 px-3 py-2.5 text-left transition-colors duration-150 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-800 dark:hover:border-gray-700 dark:hover:bg-gray-800/40"
+    >
+      <span className="flex flex-wrap items-center gap-1.5">
+        <span className="text-sm font-medium">{row.displayName ?? row.modelId}</span>
+        {isDefault && <Badge tone="brand">{S.models.default}</Badge>}
+        {row.vision && <Badge tone="green">{S.models.visionBadge}</Badge>}
+        {isVisionModel && <Badge tone="amber">{S.models.visionModelBadge}</Badge>}
+        {speedBadges}
+      </span>
+      {/* Upstream id in small text (grouping already separates by group, no composite id is
+          shown anymore); when there's no display name, the main line is already the
+          upstream id, so it isn't repeated on a second line. */}
+      {row.displayName !== undefined && (
+        <span className="truncate font-mono text-[11px] text-gray-500 dark:text-gray-400">
+          {row.modelId}
+        </span>
       )}
-    </div>
+      <span className="truncate text-[11px] text-gray-400 dark:text-gray-500">
+        {meta.join(" · ")}
+      </span>
+    </button>
   );
 }
 
@@ -1085,16 +1201,29 @@ function ModelDialog({
           <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
             {S.models.modelId}
           </span>
-          {dialogProvider?.modelsUrl && (
-            <a
-              href={dialogProvider.modelsUrl}
-              target="_blank"
-              rel="noreferrer noopener"
-              className="shrink-0 text-xs text-brand-600 underline-offset-2 hover:underline dark:text-brand-300"
-            >
-              {S.models.getModelIds} ↗
-            </a>
-          )}
+          <span className="flex shrink-0 items-baseline gap-2.5">
+            {/* Model homepage (the model's own page; gateway groups have per-model URLs) — only for existing rows, whose identity is settled. */}
+            {row && modelHomepageUrl(row.provider, row.modelId) && (
+              <a
+                href={modelHomepageUrl(row.provider, row.modelId)}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="shrink-0 text-xs text-brand-600 underline-offset-2 hover:underline dark:text-brand-300"
+              >
+                {S.models.homepage} ↗
+              </a>
+            )}
+            {dialogProvider?.modelsUrl && (
+              <a
+                href={dialogProvider.modelsUrl}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="shrink-0 text-xs text-brand-600 underline-offset-2 hover:underline dark:text-brand-300"
+              >
+                {S.models.getModelIds} ↗
+              </a>
+            )}
+          </span>
         </span>
         <Input
           size="sm"
