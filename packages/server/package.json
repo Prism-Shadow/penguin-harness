@@ -25,7 +25,7 @@
     "node": ">=24"
   },
   "scripts": {
-    "dev": "pnpm --filter @prismshadow/penguin-core build && tsx watch src/index.ts",
+    "dev": "node ../../scripts/dev-prebuild.mjs && tsx watch src/index.ts",
     "start": "node --disable-warning=ExperimentalWarning dist/index.js",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
