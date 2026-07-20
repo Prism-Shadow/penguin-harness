@@ -3,8 +3,8 @@ name: penguin-sdk
 description: Build AI apps on the Penguin Harness SDK — self-contained projects, the createSession/run streaming loop, and a complete RAG recipe that ingests documents into a knowledge base and answers with citations behind a web UI.
 short_description: Build AI and RAG apps on the Penguin Harness SDK.
 short_description_zh: 基于 Penguin SDK 构建 AI 与 RAG 应用。
-version: 3
-updated: 2026-07-20T15:00:00Z
+version: 4
+updated: 2026-07-20T16:00:00Z
 ---
 
 # Penguin Harness SDK
@@ -153,46 +153,62 @@ fs.writeFileSync(path.join(ROOT, "data", "index.json"), JSON.stringify(chunks));
 console.log(`indexed ${chunks.length} chunks`);
 ```
 
-**Retrieve** (`rag.ts`) — standard BM25 (k1 = 1.2, b = 0.75); the tokenizer treats each CJK character as a token so Chinese queries work:
+**Retrieve** (`rag.ts`) — standard BM25 (k1 = 1.2, b = 0.75); the tokenizer treats each CJK character as a token so Chinese queries work. The corpus-wide statistics (per-chunk term frequencies, document frequencies, average length) never change once the corpus is indexed, so build them **once** in `loadIndex` — a per-query rescan would make every question O(corpus):
 
 ```ts
 import fs from "node:fs";
 import path from "node:path";
 
 export interface Chunk { id: number; source: string; heading: string; text: string }
+export interface Index {
+  chunks: Chunk[];
+  tf: Map<string, number>[]; // per-chunk term → count
+  len: number[];             // per-chunk token length
+  df: Map<string, number>;   // term → number of chunks containing it
+  avg: number;               // mean chunk length (BM25 length normalization)
+}
 
 const tokenize = (s: string): string[] => s.toLowerCase().match(/[a-z0-9]+|[一-鿿]/g) ?? [];
 
-export function loadIndex(): Chunk[] {
-  return JSON.parse(fs.readFileSync(path.join(import.meta.dirname, "data", "index.json"), "utf8"));
+export function loadIndex(): Index {
+  const chunks: Chunk[] = JSON.parse(
+    fs.readFileSync(path.join(import.meta.dirname, "data", "index.json"), "utf8"));
+  const tf: Map<string, number>[] = [];
+  const len: number[] = [];
+  const df = new Map<string, number>();
+  for (const c of chunks) {
+    const toks = tokenize(`${c.heading} ${c.text}`);
+    const m = new Map<string, number>();
+    for (const t of toks) m.set(t, (m.get(t) ?? 0) + 1);
+    for (const t of m.keys()) df.set(t, (df.get(t) ?? 0) + 1);
+    tf.push(m);
+    len.push(toks.length);
+  }
+  const avg = len.reduce((n, l) => n + l, 0) / Math.max(len.length, 1);
+  return { chunks, tf, len, df, avg };
 }
 
-export function search(chunks: Chunk[], query: string, k = 6): Chunk[] {
-  const docs = chunks.map((c) => tokenize(`${c.heading} ${c.text}`));
-  const avg = docs.reduce((n, d) => n + d.length, 0) / Math.max(docs.length, 1);
-  const df = new Map<string, number>();
-  for (const d of docs) for (const t of new Set(d)) df.set(t, (df.get(t) ?? 0) + 1);
+export function search(index: Index, query: string, k = 6): Chunk[] {
+  const { chunks, tf, len, df, avg } = index;
   const q = [...new Set(tokenize(query))];
-  const score = (d: string[]): number => {
-    const tf = new Map<string, number>();
-    for (const t of d) tf.set(t, (tf.get(t) ?? 0) + 1);
+  const score = (i: number): number => {
     let s = 0;
     for (const t of q) {
-      const f = tf.get(t) ?? 0;
+      const f = tf[i]!.get(t) ?? 0;
       if (f === 0) continue;
       const n = df.get(t) ?? 0;
-      s += Math.log(1 + (docs.length - n + 0.5) / (n + 0.5)) *
-        (f * 2.2) / (f + 1.2 * (0.25 + (0.75 * d.length) / avg));
+      s += Math.log(1 + (chunks.length - n + 0.5) / (n + 0.5)) *
+        (f * 2.2) / (f + 1.2 * (0.25 + (0.75 * len[i]!) / avg));
     }
     return s;
   };
-  return docs.map((d, i) => [score(d), i] as const)
+  return chunks.map((_, i) => [score(i), i] as const)
     .filter(([s]) => s > 0).sort((a, b) => b[0] - a[0]).slice(0, k)
     .map(([, i]) => chunks[i]!);
 }
 ```
 
-**Answer & serve** (`server.ts`) — one Session per request (stateless QA), retrieved chunks numbered into the prompt, deltas streamed over SSE, sources sent as the final event. A pure QA session needs no tool calls — deny every approval; a denied or tool-less turn terminates normally. Do **not** clear the toolset with `tools: { builtin: [] }`: an empty tools array is sent to the provider verbatim and some OpenAI-compatible endpoints reject it with a 400, which surfaces as a silent empty answer.
+**Answer & serve** (`server.ts`) — one Session per request (stateless QA), retrieved chunks numbered into the prompt, deltas streamed over SSE, sources sent as the final event. A pure QA session needs no tool calls — deny every approval; a denied or tool-less turn terminates normally. Do **not** clear the toolset with `tools: { builtin: [] }`: an empty tools array is sent to the provider verbatim and some OpenAI-compatible endpoints reject it with a 400, which surfaces as a silent empty answer. Guard the request boundary — a malformed body must return 400, never reject the async handler (an unhandled rejection takes the whole server down) — and abort the run if the client disconnects mid-answer so you stop generating (and paying) for a page nobody is reading.
 
 ```ts
 import fs from "node:fs";
@@ -204,33 +220,48 @@ import { loadIndex, search } from "./rag.ts";
 const ROOT = import.meta.dirname;
 const PUB = path.join(ROOT, "public");
 const agent = await createAgent({ root: path.join(ROOT, "penguin_data") });
-const chunks = loadIndex();
+const index = loadIndex();
 const MIME: Record<string, string> = { ".html": "text/html", ".css": "text/css", ".js": "text/javascript" };
 
 http.createServer(async (req, res) => {
+  res.on("error", () => {}); // a client that vanishes mid-write must not throw an uncaught EPIPE
   if (req.method === "POST" && req.url === "/api/ask") {
-    let body = "";
-    for await (const part of req) body += part;
-    const { question } = JSON.parse(body) as { question: string };
-    const hits = search(chunks, question);
+    let question: string;
+    try {
+      let body = "";
+      for await (const part of req) body += part; // a mid-body connection reset rejects here — caught below, never fatal
+      const parsed = JSON.parse(body) as { question?: unknown };
+      if (typeof parsed.question !== "string" || !parsed.question.trim()) throw new Error();
+      question = parsed.question;
+    } catch {
+      res.writeHead(400, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "expected a JSON body { question: string }" }));
+      return;
+    }
+    const hits = search(index, question);
     const context = hits.map((c, i) => `[${i + 1}] ${c.source} — ${c.heading}\n${c.text}`).join("\n\n");
     res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
+    const ac = new AbortController();
+    res.on("close", () => ac.abort()); // client navigated away → cancel the in-flight generation
     const session = await agent.createSession({ workspaceDir: ROOT });
     try {
       const prompt = `Answer from the context below; cite blocks inline as [1][2]. If the context is not enough, say so.\n\n${context}\n\nQuestion: ${question}`;
-      for await (const msg of session.run([userText(prompt)], { approve: async () => "deny" })) {
+      for await (const msg of session.run([userText(prompt)], { approve: async () => "deny", signal: ac.signal })) {
         if (isModelMessage(msg)) {
           const p = msg.payload;
-          if (p.type === "partial_text" && p.event_type === "delta")
+          if (p.type === "partial_text" && p.event_type === "delta" && !res.writableEnded)
             res.write(`data: ${JSON.stringify({ delta: p.text })}\n\n`);
         }
       }
       // Sources carry the matched chunk text verbatim: the UI must be able to show the exact
       // block behind each [n], not just a file link.
-      res.write(`data: ${JSON.stringify({ sources: hits.map((c) => ({ source: c.source, heading: c.heading, url: `/${c.source}`, text: c.text })) })}\n\n`);
+      if (!res.writableEnded)
+        res.write(`data: ${JSON.stringify({ sources: hits.map((c) => ({ source: c.source, heading: c.heading, url: `/${c.source}`, text: c.text })) })}\n\n`);
+    } catch {
+      // Aborted (client left) or the provider call failed: nothing left to stream — fall through to cleanup.
     } finally {
       session.dispose();
-      res.end();
+      if (!res.writableEnded) res.end();
     }
     return;
   }

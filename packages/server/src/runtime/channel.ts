@@ -8,7 +8,7 @@
  *     recycled/recreated or the process restarts, so a stale Last-Event-ID always misses
  *     and falls through to resync — this prevents a silent false-hit event loss when the
  *     new epoch's event count happens to exceed the old id;
- *   - A bounded ring buffer (most recent 1000 entries or 2MB, whichever comes first,
+ *   - A bounded ring buffer (most recent 10,000 entries or 8MB, whichever comes first,
  *     evicting the oldest on overflow) serves replay-on-reconnect via `Last-Event-ID`;
  *     an evicted/unknown id is handled by the caller sending `resync_required`;
  *   - Unicast (sendTo) is used for one-off replay at subscribe time (pending approvals /

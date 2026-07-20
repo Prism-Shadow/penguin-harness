@@ -64,7 +64,22 @@ const chunks = walk("corpus").flatMap((f) =>
   fs.readFileSync(f, "utf8").split(/\\n(?=#{1,3} )/).map((text) => ({ source: f, text })));
 
 const tok = (s) => s.toLowerCase().match(/[a-z0-9]+|[一-鿿]/g) ?? [];
-const score = (q, t) => tok(q).filter((w) => tok(t).includes(w)).length;
+const docs = chunks.map((c) => tok(c.text));
+const avg = docs.reduce((n, d) => n + d.length, 0) / Math.max(docs.length, 1);
+const df = new Map();
+for (const d of docs) for (const w of new Set(d)) df.set(w, (df.get(w) ?? 0) + 1);
+// BM25 (k1=1.2, b=0.75): idf weights rare terms, term frequency saturates, long chunks are penalized.
+const score = (q, i) => {
+  const d = docs[i];
+  let s = 0;
+  for (const w of new Set(tok(q))) {
+    const f = d.filter((x) => x === w).length;
+    if (!f) continue;
+    const n = df.get(w) ?? 0;
+    s += Math.log(1 + (docs.length - n + 0.5) / (n + 0.5)) * (f * 2.2) / (f + 1.2 * (0.25 + 0.75 * d.length / avg));
+  }
+  return s;
+};
 const agent = await createAgent({ root: "penguin_data" });
 
 http.createServer(async (req, res) => {
@@ -72,8 +87,8 @@ http.createServer(async (req, res) => {
   let body = "";
   for await (const p of req) body += p;
   const { question } = JSON.parse(body);
-  const hits = chunks.map((c) => [score(question, c.text), c]).sort((a, b) => b[0] - a[0])
-    .slice(0, 6).map(([, c]) => c);
+  const hits = chunks.map((c, i) => [score(question, i), c]).filter(([s]) => s > 0)
+    .sort((a, b) => b[0] - a[0]).slice(0, 6).map(([, c]) => c);
   res.writeHead(200, { "content-type": "text/event-stream" });
   const ctx = hits.map((c, i) => "[" + (i + 1) + "] " + c.source + "\\n" + c.text).join("\\n\\n");
   const session = await agent.createSession({ workspaceDir: process.cwd() });
