@@ -157,8 +157,8 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
       // which is more useful than copying segment by segment.
       return (
         <div className="md-body anim-msg my-3 text-base leading-relaxed text-gray-800 dark:text-gray-100">
-          {/* Re-renders the accumulated text directly while streaming (a key point of the contract implementation); memoized so settled messages skip the re-parse (see md.tsx). */}
-          <Md text={item.text} />
+          {/* Re-renders the accumulated text directly while streaming (a key point of the contract implementation); memoized so settled messages skip the re-parse, and code blocks highlight once on settle (see md.tsx). */}
+          <Md text={item.text} streaming={item.streaming} />
           {item.streaming && <span className="animate-pulse text-gray-400">▌</span>}
           {item.stopReason && item.stopReason !== "completed" && (
             <span className="ml-1 font-mono text-xs text-gray-400">[{item.stopReason}]</span>

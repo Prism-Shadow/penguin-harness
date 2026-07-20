@@ -46,7 +46,7 @@ export function ThinkingBlock({ item }: { item: ThinkingItem }) {
       </button>
       {open && (
         <div className="md-body anim-fade mx-3 mb-2 rounded-md bg-gray-50 px-3 py-2 text-sm leading-relaxed text-gray-600 dark:bg-gray-900/60 dark:text-gray-400">
-          <Md text={item.thinking} />
+          <Md text={item.thinking} streaming={item.streaming} />
         </div>
       )}
     </div>

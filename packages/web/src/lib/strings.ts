@@ -654,6 +654,7 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     title: "文件",
     upload: "上传",
     download: "下载",
+    openInNewTab: "新页面打开",
     refresh: "刷新",
     root: "根目录",
     empty: "空目录",

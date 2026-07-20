@@ -330,6 +330,10 @@ export const listWorkspaceFiles = (sessionId: string, path: string) =>
 export const workspaceFileUrl = (sessionId: string, path: string, download = false): string =>
   `/api/sessions/${sessionId}/files/content?path=${encodeURIComponent(path)}${download ? "&download=1" : ""}`;
 
+/** Sandboxed top-level preview URL (open an html file in a new tab): real content type under a CSP sandbox, see the server route. */
+export const workspaceFilePreviewUrl = (sessionId: string, path: string): string =>
+  `/api/sessions/${sessionId}/files/content?path=${encodeURIComponent(path)}&preview=1`;
+
 export const uploadWorkspaceFile = (sessionId: string, path: string, dataBase64: string) =>
   apiFetch<void>(`/api/sessions/${sessionId}/files/content`, {
     method: "PUT",
