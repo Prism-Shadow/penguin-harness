@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 368" width="920" height="368" role="img" aria-label="Benchmark: PenguinHarness vs Claude Code vs OpenAI Codex, accuracy and cost per run, all driven by DeepSeek V4 Pro">
+<text x="148" y="36" font-size="12" font-weight="400" fill="#898781" text-anchor="start" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">Accuracy · per-run mean · higher is better</text>
+<text x="596" y="36" font-size="12" font-weight="400" fill="#898781" text-anchor="start" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">Cost per run (USD) · lower is better</text>
+<text x="24" y="68" font-size="13" font-weight="600" fill="#1f2328" text-anchor="start" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">Data analysis — 15 tasks, single run</text>
+<rect x="147" y="78" width="1" height="92" fill="#c3c2b7"/>
+<text x="136" y="94.5" font-size="12" font-weight="600" fill="#1f2328" text-anchor="end" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">PenguinHarness</text>
+<path d="M148 82 h156.1 a4 4 0 0 1 4 4 v8 a4 4 0 0 1 -4 4 h-156.1 z" fill="#2a78d6"/>
+<text x="316.08000000000004" y="94.5" font-size="12" font-weight="600" fill="#1f2328" text-anchor="start" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">66.7%</text>
+<text x="136" y="124.5" font-size="12" font-weight="400" fill="#52514e" text-anchor="end" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">Claude Code</text>
+<path d="M148 112 h156.1 a4 4 0 0 1 4 4 v8 a4 4 0 0 1 -4 4 h-156.1 z" fill="#898781"/>
+<text x="316.08000000000004" y="124.5" font-size="12" font-weight="400" fill="#1f2328" text-anchor="start" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">66.7%</text>
+<text x="136" y="154.5" font-size="12" font-weight="400" fill="#52514e" text-anchor="end" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">OpenAI Codex</text>
+<path d="M148 142 h108.1 a4 4 0 0 1 4 4 v8 a4 4 0 0 1 -4 4 h-108.1 z" fill="#898781"/>
+<text x="268.08000000000004" y="154.5" font-size="12" font-weight="400" fill="#1f2328" text-anchor="start" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">46.7%</text>
+<rect x="595" y="78" width="1" height="92" fill="#c3c2b7"/>
+<text x="584" y="94.5" font-size="12" font-weight="600" fill="#1f2328" text-anchor="end" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">PenguinHarness</text>
+<path d="M596 82 h180.1 a4 4 0 0 1 4 4 v8 a4 4 0 0 1 -4 4 h-180.1 z" fill="#2a78d6"/>
+<text x="788.1353333333334" y="94.5" font-size="12" font-weight="600" fill="#1f2328" text-anchor="start" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">$0.55</text>
+<text x="584" y="124.5" font-size="12" font-weight="400" fill="#52514e" text-anchor="end" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">Claude Code</text>
+<path d="M596 112 h209.6 a4 4 0 0 1 4 4 v8 a4 4 0 0 1 -4 4 h-209.6 z" fill="#898781"/>
+<text x="817.5686666666667" y="124.5" font-size="12" font-weight="400" fill="#1f2328" text-anchor="start" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">$0.64</text>
+<text x="584" y="154.5" font-size="12" font-weight="400" fill="#52514e" text-anchor="end" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">OpenAI Codex</text>
+<path d="M596 142 h138.3 a4 4 0 0 1 4 4 v8 a4 4 0 0 1 -4 4 h-138.3 z" fill="#898781"/>
+<text x="746.337" y="154.5" font-size="12" font-weight="400" fill="#1f2328" text-anchor="start" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">$0.43</text>
+<text x="24" y="210" font-size="13" font-weight="600" fill="#1f2328" text-anchor="start" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">Coding — 40 tasks × 2 runs</text>
+<rect x="147" y="220" width="1" height="92" fill="#c3c2b7"/>
+<text x="136" y="236.5" font-size="12" font-weight="600" fill="#1f2328" text-anchor="end" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">PenguinHarness</text>
+<path d="M148 224 h116.0 a4 4 0 0 1 4 4 v8 a4 4 0 0 1 -4 4 h-116.0 z" fill="#2a78d6"/>
+<text x="276" y="236.5" font-size="12" font-weight="600" fill="#1f2328" text-anchor="start" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">50.0%</text>
+<text x="136" y="266.5" font-size="12" font-weight="400" fill="#52514e" text-anchor="end" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">Claude Code</text>
+<path d="M148 254 h113.0 a4 4 0 0 1 4 4 v8 a4 4 0 0 1 -4 4 h-113.0 z" fill="#898781"/>
+<text x="273" y="266.5" font-size="12" font-weight="400" fill="#1f2328" text-anchor="start" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">48.8%</text>
+<text x="136" y="296.5" font-size="12" font-weight="400" fill="#52514e" text-anchor="end" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">OpenAI Codex</text>
+<path d="M148 284 h98.0 a4 4 0 0 1 4 4 v8 a4 4 0 0 1 -4 4 h-98.0 z" fill="#898781"/>
+<text x="258" y="296.5" font-size="12" font-weight="400" fill="#1f2328" text-anchor="start" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">42.5%</text>
+<rect x="595" y="220" width="1" height="92" fill="#c3c2b7"/>
+<text x="584" y="236.5" font-size="12" font-weight="600" fill="#1f2328" text-anchor="end" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">PenguinHarness</text>
+<path d="M596 224 h179.6 a4 4 0 0 1 4 4 v8 a4 4 0 0 1 -4 4 h-179.6 z" fill="#2a78d6"/>
+<text x="787.5555555555555" y="236.5" font-size="12" font-weight="600" fill="#1f2328" text-anchor="start" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">$0.041</text>
+<text x="584" y="266.5" font-size="12" font-weight="400" fill="#52514e" text-anchor="end" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">Claude Code</text>
+<path d="M596 254 h210.7 a4 4 0 0 1 4 4 v8 a4 4 0 0 1 -4 4 h-210.7 z" fill="#898781"/>
+<text x="818.6666666666667" y="266.5" font-size="12" font-weight="400" fill="#1f2328" text-anchor="start" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">$0.048</text>
+<text x="584" y="296.5" font-size="12" font-weight="400" fill="#52514e" text-anchor="end" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">OpenAI Codex</text>
+<path d="M596 284 h185.8 a4 4 0 0 1 4 4 v8 a4 4 0 0 1 -4 4 h-185.8 z" fill="#898781"/>
+<text x="793.7777777777778" y="296.5" font-size="12" font-weight="400" fill="#1f2328" text-anchor="start" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">$0.043</text>
+<text x="24" y="346" font-size="12" font-weight="400" fill="#898781" text-anchor="start" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">Every run drives the same model — DeepSeek V4 Pro. Coding suite averaged over 2 runs; official CNY pricing converted at $1 = ¥7.</text>
+</svg>
