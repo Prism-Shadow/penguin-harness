@@ -18,12 +18,13 @@
  * the protocol follows group semantics: a first-party vendor group doesn't persist
  * client_type (AgentHub auto-routes by upstream id, with env fallback resolved live from the
  * id), while custom / user-defined groups / gateways use a fixed OpenAI protocol, and
- * gateways (OpenRouter / SiliconFlow) additionally pre-fill their endpoint base URL; the
- * "get model id / API key" external links sit next to the corresponding input's label
- * (shown in both add and edit dialogs). The group list ends with an "add group" action
- * (user-defined groups share custom's semantics; the group appears once the first model
- * saves successfully — groups are carried by the model entry's provider field, not
- * persisted separately).
+ * gateways (OpenRouter / SiliconFlow / Qwen Token Plan) additionally pre-fill their endpoint
+ * base URL; the "get model id / API key" external links sit next to the corresponding
+ * input's label (shown in both add and edit dialogs). The group list ends with an "add
+ * group" action (user-defined groups share custom's semantics; the group appears once the
+ * first model saves successfully — groups are carried by the model entry's provider field,
+ * not persisted separately). The header also holds an owner-only "sync presets" action next
+ * to the search box (union-merge with the built-in catalog, see catalog-sync.ts).
  *
  * Saving does a PUT full-table replace (models not present are deleted; an empty apiKey
  * means keep the existing value); only the owner can edit.
@@ -63,6 +64,7 @@ import {
 } from "@prismshadow/penguin-core/model-catalog";
 import type { ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
 import { groupModelRows, sameModelRef, userProviderInfo } from "./model-grouping";
+import { syncRowsWithCatalog } from "./catalog-sync";
 
 /** Display currency follows the user setting (pricing is always stored in USD/million tokens; conversion happens only for display and input). */
 const CURRENCY_SYMBOL: Record<Currency, string> = { USD: "$", CNY: "¥" };
@@ -384,6 +386,26 @@ export function ModelsPage() {
   const groups = useMemo(() => (rows ? groupModelRows(rows, query) : []), [rows, query]);
 
   /**
+   * "Sync presets": merge the built-in catalog into the current table (union; the catalog
+   * wins on differing preset entries, local additions and API keys stay untouched — see
+   * catalog-sync.ts). No-op with a toast when everything is already up to date.
+   */
+  const syncPresets = async () => {
+    if (!rows) return;
+    const merged = syncRowsWithCatalog(rows);
+    if (merged.added === 0 && merged.updated === 0) {
+      toastSuccess(S.models.syncUpToDate);
+      return;
+    }
+    await persist(
+      merged.rows,
+      defaultModel,
+      visionModel,
+      S.models.syncDone(merged.added, merged.updated),
+    );
+  };
+
+  /**
    * "Add group" confirm: a valid name that doesn't conflict with a built-in group or an
    * existing provider proceeds directly to that group's add-model dialog — groups are
    * carried by the model entry's provider field and aren't persisted separately, so the
@@ -426,9 +448,9 @@ export function ModelsPage() {
               <p className="text-xs text-gray-500 dark:text-gray-400">{S.models.readOnlyHint}</p>
             )}
           </div>
-          {/* The header only holds search (add-model entry points live in each group header);
-              on narrow screens (flex-wrap wraps it to its own line) the search box shrinks
-              flexibly, fixed width at >=sm. */}
+          {/* The header holds search plus the owner-only "sync presets" action (add-model
+              entry points live in each group header); on narrow screens (flex-wrap wraps it
+              to its own line) the search box shrinks flexibly, fixed width at >=sm. */}
           <div className="flex min-w-0 max-w-full grow items-center gap-2 sm:grow-0">
             <div className="min-w-0 flex-1 sm:w-56 sm:flex-none">
               <Input
@@ -438,6 +460,16 @@ export function ModelsPage() {
                 placeholder={S.models.searchPlaceholder}
               />
             </div>
+            {isOwner && (
+              <Button
+                size="sm"
+                onClick={() => void syncPresets()}
+                disabled={busy || rows === null}
+                title={S.models.syncCatalogHint}
+              >
+                {S.models.syncCatalog}
+              </Button>
+            )}
           </div>
         </div>
 
