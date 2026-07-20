@@ -6,6 +6,7 @@
 import { useEffect } from "react";
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from "react-router";
 import { DOCS_URL } from "./lib/links";
+import { AnnouncementBar } from "./components/announcement-bar";
 import { Nav } from "./components/nav";
 import { Footer } from "./components/footer";
 import { NeonBackground } from "./components/neon-bg";
@@ -56,6 +57,7 @@ function Layout() {
   return (
     <div className="relative flex min-h-full flex-col">
       <NeonBackground />
+      <AnnouncementBar />
       <Nav />
       <main className="flex-1">
         <Outlet />
