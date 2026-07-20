@@ -7,7 +7,6 @@
  * Illustrative; all colors are theme-aware Tailwind fill/stroke classes.
  */
 import { S } from "../lib/strings";
-import { Section } from "../components/section";
 
 /** Rounded node with a centered label and an optional version pill. */
 function Node({
@@ -285,142 +284,136 @@ const TRENDS: Array<{
   },
 ];
 
-export function SelfImprove() {
+/** Content-only block (loop diagram + trend charts), composed by the Why section. */
+export function SelfImproveLoop() {
   return (
-    <Section
-      id="self-improvement"
-      eyebrow={S.selfImprove.eyebrow}
-      title={S.selfImprove.title}
-      subtitle={S.selfImprove.subtitle}
-    >
-      <div className="mx-auto grid max-w-5xl items-center gap-6 lg:grid-cols-[minmax(0,1fr)_15.5rem]">
-        <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
-          <svg
-            viewBox="0 0 720 380"
-            role="img"
-            aria-label={S.selfImprove.diagramLabel}
-            className="mx-auto w-full max-w-2xl min-w-[34rem]"
-          >
-            <defs>
-              <marker
-                id="si-arrow"
-                viewBox="0 0 10 10"
-                refX="9"
-                refY="5"
-                markerWidth="7"
-                markerHeight="7"
-                orient="auto-start-reverse"
-              >
-                <path d="M0,0 L10,5 L0,10 Z" className="fill-gray-400 dark:fill-gray-500" />
-              </marker>
-              <marker
-                id="si-arrow-accent"
-                viewBox="0 0 10 10"
-                refX="9"
-                refY="5"
-                markerWidth="7"
-                markerHeight="7"
-                orient="auto-start-reverse"
-              >
-                <path d="M0,0 L10,5 L0,10 Z" className="fill-brand-500 dark:fill-brand-400" />
-              </marker>
-            </defs>
-
-            {/* Loop edges: Evaluators benchmark BOTH versions (vN and vN+1). */}
-            <g
-              fill="none"
-              strokeWidth={1.5}
-              className="stroke-gray-400 dark:stroke-gray-500"
-              markerEnd="url(#si-arrow)"
+    <div className="mx-auto grid max-w-5xl items-center gap-6 lg:grid-cols-[minmax(0,1fr)_15.5rem]">
+      <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+        <svg
+          viewBox="0 0 720 380"
+          role="img"
+          aria-label={S.selfImprove.diagramLabel}
+          className="mx-auto w-full max-w-2xl min-w-[34rem]"
+        >
+          <defs>
+            <marker
+              id="si-arrow"
+              viewBox="0 0 10 10"
+              refX="9"
+              refY="5"
+              markerWidth="7"
+              markerHeight="7"
+              orient="auto-start-reverse"
             >
-              <path d={EDGE_SPAWN} />
-              <path d={EDGE_FEEDBACK} />
-              <path d={EDGE_BENCH_OLD} />
-              <path d={EDGE_BENCH_NEW} />
-            </g>
-            {/* The evolve chord: vN -> vN+1 is the story (the Optimizer's update lands here). */}
-            <path
-              d={EDGE_EVOLVE}
-              fill="none"
-              strokeWidth={2.5}
-              className="stroke-brand-500 dark:stroke-brand-400"
-              markerEnd="url(#si-arrow-accent)"
-            />
+              <path d="M0,0 L10,5 L0,10 Z" className="fill-gray-400 dark:fill-gray-500" />
+            </marker>
+            <marker
+              id="si-arrow-accent"
+              viewBox="0 0 10 10"
+              refX="9"
+              refY="5"
+              markerWidth="7"
+              markerHeight="7"
+              orient="auto-start-reverse"
+            >
+              <path d="M0,0 L10,5 L0,10 Z" className="fill-brand-500 dark:fill-brand-400" />
+            </marker>
+          </defs>
 
-            {/* Moving dots along every arrow. */}
-            <FlowDot path={EDGE_SPAWN} dur="2.4s" begin="0s" />
-            <FlowDot path={EDGE_FEEDBACK} dur="2.4s" begin="1.2s" />
-            <FlowDot path={EDGE_BENCH_OLD} dur="2.6s" begin="0.6s" />
-            <FlowDot path={EDGE_BENCH_NEW} dur="2.6s" begin="1.9s" />
-            <FlowDot path={EDGE_EVOLVE} dur="2.2s" begin="0s" accent r={2} />
-            <FlowDot path={EDGE_EVOLVE} dur="2.2s" begin="1.1s" accent r={2} />
+          {/* Loop edges: Evaluators benchmark BOTH versions (vN and vN+1). */}
+          <g
+            fill="none"
+            strokeWidth={1.5}
+            className="stroke-gray-400 dark:stroke-gray-500"
+            markerEnd="url(#si-arrow)"
+          >
+            <path d={EDGE_SPAWN} />
+            <path d={EDGE_FEEDBACK} />
+            <path d={EDGE_BENCH_OLD} />
+            <path d={EDGE_BENCH_NEW} />
+          </g>
+          {/* The evolve chord: vN -> vN+1 is the story (the Optimizer's update lands here). */}
+          <path
+            d={EDGE_EVOLVE}
+            fill="none"
+            strokeWidth={2.5}
+            className="stroke-brand-500 dark:stroke-brand-400"
+            markerEnd="url(#si-arrow-accent)"
+          />
 
-            <EdgeLabel x={322} y={120} anchor="end">
-              {S.selfImprove.edgeSpawn}
-            </EdgeLabel>
-            <EdgeLabel x={398} y={120} anchor="start">
-              {S.selfImprove.edgeFeedback}
-            </EdgeLabel>
-            {/* Centered between the two benchmark diagonals: it applies to both. */}
-            <EdgeLabel x={360} y={252} anchor="middle">
-              {S.selfImprove.edgeBench}
-            </EdgeLabel>
-            <EdgeLabel x={360} y={312} anchor="middle" accent>
-              {S.selfImprove.edgeImprove}
-            </EdgeLabel>
+          {/* Moving dots along every arrow. */}
+          <FlowDot path={EDGE_SPAWN} dur="2.4s" begin="0s" />
+          <FlowDot path={EDGE_FEEDBACK} dur="2.4s" begin="1.2s" />
+          <FlowDot path={EDGE_BENCH_OLD} dur="2.6s" begin="0.6s" />
+          <FlowDot path={EDGE_BENCH_NEW} dur="2.6s" begin="1.9s" />
+          <FlowDot path={EDGE_EVOLVE} dur="2.2s" begin="0s" accent r={2} />
+          <FlowDot path={EDGE_EVOLVE} dur="2.2s" begin="1.1s" accent r={2} />
 
-            {/* Evaluator stack (x N) */}
-            <rect
-              x={301}
-              y={170}
-              width={150}
-              height={48}
-              rx={10}
-              className="fill-gray-100 stroke-gray-200 dark:fill-gray-800/60 dark:stroke-gray-700/60"
-            />
-            <rect
-              x={293}
-              y={162}
-              width={150}
-              height={48}
-              rx={10}
-              className="fill-gray-100 stroke-gray-200 dark:fill-gray-800/80 dark:stroke-gray-700/80"
-            />
-            <Node x={285} y={154} label={S.selfImprove.nodeEvaluator} />
+          <EdgeLabel x={322} y={120} anchor="end">
+            {S.selfImprove.edgeSpawn}
+          </EdgeLabel>
+          <EdgeLabel x={398} y={120} anchor="start">
+            {S.selfImprove.edgeFeedback}
+          </EdgeLabel>
+          {/* Centered between the two benchmark diagonals: it applies to both. */}
+          <EdgeLabel x={360} y={252} anchor="middle">
+            {S.selfImprove.edgeBench}
+          </EdgeLabel>
+          <EdgeLabel x={360} y={312} anchor="middle" accent>
+            {S.selfImprove.edgeImprove}
+          </EdgeLabel>
 
-            <Node x={285} y={28} label={S.selfImprove.nodeOptimizer} kind="accent" />
-            <Node
-              x={60}
-              y={300}
-              label={S.selfImprove.nodeTarget}
-              badge={S.selfImprove.badgeOld}
-              badgeKind="neutral"
-            />
-            <Node
-              x={510}
-              y={300}
-              label={S.selfImprove.nodeTarget}
-              kind="target"
-              badge={S.selfImprove.badgeNew}
-              badgeKind="accent"
-            />
-          </svg>
-        </div>
+          {/* Evaluator stack (x N) */}
+          <rect
+            x={301}
+            y={170}
+            width={150}
+            height={48}
+            rx={10}
+            className="fill-gray-100 stroke-gray-200 dark:fill-gray-800/60 dark:stroke-gray-700/60"
+          />
+          <rect
+            x={293}
+            y={162}
+            width={150}
+            height={48}
+            rx={10}
+            className="fill-gray-100 stroke-gray-200 dark:fill-gray-800/80 dark:stroke-gray-700/80"
+          />
+          <Node x={285} y={154} label={S.selfImprove.nodeEvaluator} />
 
-        <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
-          {S.selfImprove.trends.map((t, i) => (
-            <TrendChart
-              key={t.label}
-              label={t.label}
-              hint={t.hint}
-              points={TRENDS[i]?.points ?? []}
-              yTicks={TRENDS[i]?.yTicks ?? [0, 1]}
-              xTicks={TRENDS[i]?.xTicks ?? []}
-              delay={`${-i * 1.4}s`}
-            />
-          ))}
-        </div>
+          <Node x={285} y={28} label={S.selfImprove.nodeOptimizer} kind="accent" />
+          <Node
+            x={60}
+            y={300}
+            label={S.selfImprove.nodeTarget}
+            badge={S.selfImprove.badgeOld}
+            badgeKind="neutral"
+          />
+          <Node
+            x={510}
+            y={300}
+            label={S.selfImprove.nodeTarget}
+            kind="target"
+            badge={S.selfImprove.badgeNew}
+            badgeKind="accent"
+          />
+        </svg>
       </div>
-    </Section>
+
+      <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
+        {S.selfImprove.trends.map((t, i) => (
+          <TrendChart
+            key={t.label}
+            label={t.label}
+            hint={t.hint}
+            points={TRENDS[i]?.points ?? []}
+            yTicks={TRENDS[i]?.yTicks ?? [0, 1]}
+            xTicks={TRENDS[i]?.xTicks ?? []}
+            delay={`${-i * 1.4}s`}
+          />
+        ))}
+      </div>
+    </div>
   );
 }

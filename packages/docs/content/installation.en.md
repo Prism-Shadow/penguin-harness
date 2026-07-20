@@ -13,7 +13,7 @@ description: Install PenguinHarness via the install script, npm, or from source.
 On Linux / macOS:
 
 ```bash
-curl -fsSL https://github.com/Prism-Shadow/penguin-harness/releases/latest/download/install.sh | sh
+curl -fsSL https://penguin.ooo/install.sh | sh
 ```
 
 The script downloads the matching `penguin-{linux,darwin}-{x64,arm64}.tar.gz`, which bundles an official Node.js runtime. Other platforms do **not** fall back automatically: the script exits and asks you to install Node.js >= 24 and re-run with `--universal`, which selects the runtime-less `penguin-universal.tar.gz`.

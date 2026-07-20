@@ -11,8 +11,12 @@ export const LICENSE_URL = `${REPO_URL}/blob/main/LICENSE`;
  */
 export const DOCS_URL = `${import.meta.env.BASE_URL}docs/`;
 
-/** One-line installer (Linux / macOS, x64 / arm64, bundled Node runtime). */
-export const INSTALL_CMD = `curl -fsSL ${REPO_URL}/releases/latest/download/install.sh | sh`;
+/**
+ * One-line installer (Linux / macOS, x64 / arm64, bundled Node runtime).
+ * penguin.ooo/install.sh is this site's own public/install.sh — a thin forwarder
+ * to the latest GitHub release installer (Pages cannot serve real redirects).
+ */
+export const INSTALL_CMD = "curl -fsSL https://penguin.ooo/install.sh | sh";
 
 /** API key consoles (same URLs the in-app Models page links to). */
 export const DEEPSEEK_KEYS_URL = "https://platform.deepseek.com/api_keys";
