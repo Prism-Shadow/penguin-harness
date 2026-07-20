@@ -5,7 +5,7 @@
  * and URL hash stay in sync while native smooth scrolling remains enabled. A disclosure
  * menu covers small screens.
  */
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { MouseEvent } from "react";
 import { Link, useLocation } from "react-router";
 import { S } from "../lib/strings";
@@ -17,16 +17,12 @@ import { LangToggle } from "./lang-toggle";
 
 const SECTION_IDS = ["highlights", "quickstart", "benchmark", "contract", "features"] as const;
 
-interface Indicator {
-  left: number;
-  width: number;
-}
-
 export function Nav() {
   const { pathname, hash } = useLocation();
   const activeItem = getActiveNavItem(pathname, hash);
   const [open, setOpen] = useState(false);
-  const [indicator, setIndicator] = useState<Indicator | null>(null);
+  const pillRef = useRef<HTMLSpanElement | null>(null);
+  const pillVisible = useRef(false);
 
   const sectionLabel: Record<(typeof SECTION_IDS)[number], string> = {
     highlights: S.nav.highlights,
@@ -47,9 +43,33 @@ export function Nav() {
   const deskLinkCls = (active: boolean) =>
     `relative z-10 rounded-md px-2.5 py-1.5 text-sm transition-colors ${active ? activeLinkCls : deskInactiveLinkCls}`;
 
+  /**
+   * The hover pill appears IN PLACE under the first link it lands on (position
+   * jumps with only the fade animating), slides while moving between links, and
+   * fades out where it is on leave — never sweeping in from the nav's edge.
+   */
   const slideTo = (e: MouseEvent<HTMLElement>) => {
     const el = e.currentTarget;
-    setIndicator({ left: el.offsetLeft, width: el.offsetWidth });
+    const pill = pillRef.current;
+    if (!pill) return;
+    if (!pillVisible.current) {
+      pill.style.transitionProperty = "opacity";
+      pill.style.left = `${el.offsetLeft}px`;
+      pill.style.width = `${el.offsetWidth}px`;
+      void pill.offsetWidth; // flush the jump before restoring the full transition
+      pill.style.transitionProperty = "";
+      pillVisible.current = true;
+    } else {
+      pill.style.left = `${el.offsetLeft}px`;
+      pill.style.width = `${el.offsetWidth}px`;
+    }
+    pill.style.opacity = "1";
+  };
+
+  const hidePill = () => {
+    const pill = pillRef.current;
+    if (pill) pill.style.opacity = "0";
+    pillVisible.current = false;
   };
 
   const desktopLinks = (
@@ -124,17 +144,14 @@ export function Nav() {
         <nav
           className="relative ml-4 hidden items-center gap-0.5 md:flex"
           aria-label="Primary"
-          onMouseLeave={() => setIndicator(null)}
+          onMouseLeave={hidePill}
         >
-          {/* Sliding hover pill: moves between links; active links retain their own background. */}
+          {/* Sliding hover pill: appears in place, slides between links, fades out in place. */}
           <span
+            ref={pillRef}
             aria-hidden="true"
             className="absolute top-1/2 h-8 -translate-y-1/2 rounded-md bg-gray-100 transition-[left,width,opacity] duration-200 ease-out dark:bg-gray-800"
-            style={{
-              left: indicator?.left ?? 0,
-              width: indicator?.width ?? 0,
-              opacity: indicator ? 1 : 0,
-            }}
+            style={{ left: 0, width: 0, opacity: 0 }}
           />
           {desktopLinks}
         </nav>
