@@ -171,6 +171,9 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
   const rebuild = async (): Promise<void> => {
     epoch += 1;
     phase = "buffering";
+    // Surface the rebuild: incoming deltas stop rendering until the refetch completes, and
+    // without the loading flag that reads as a silent freeze on a large transcript.
+    deps.onLoading(true);
     buffer = [];
     // Clear the pending-approvals table: an approval decided while
     // disconnected shouldn't leave a lingering button; the server will

@@ -26,6 +26,9 @@ import type { StreamModel } from "../../lib/omni/stream-model";
 
 export type { PendingApproval } from "../../lib/omni/stream-controller";
 
+/** Minimum spacing between version commits: below one frame at 8fps, invisible as staleness, but ~8× fewer full re-parses of the growing message during a fast large-code stream. */
+const BUMP_MIN_INTERVAL_MS = 120;
+
 export interface SessionStreamState {
   /** View model (updated in place; version bump triggers re-render). */
   model: StreamModel;
@@ -70,13 +73,33 @@ export function useSessionStream(
   const placeholderRef = useRef<StreamModel | null>(null);
   if (placeholderRef.current === null) placeholderRef.current = createStreamModel();
   const rafRef = useRef<number | null>(null);
+  const throttleRef = useRef<number | null>(null);
+  const lastBumpAtRef = useRef(0);
 
-  // Coalesce high-frequency deltas: multiple pushes within one frame trigger only a single re-render.
+  // Coalesce high-frequency deltas: multiple pushes within one frame trigger only a single
+  // re-render, and commits are additionally spaced ≥BUMP_MIN_INTERVAL_MS apart. Every commit
+  // re-renders (and re-parses) the currently streaming message at its full accumulated length,
+  // so per-frame commits during a large streamed reply go O(n²) and freeze the main thread —
+  // the interval caps that at a bounded, invisible staleness. Inside the interval a single
+  // trailing timer is armed (the flush): the final deltas always land even if no further push
+  // ever arrives.
   const bump = useCallback(() => {
-    if (rafRef.current !== null) return;
+    if (rafRef.current !== null || throttleRef.current !== null) return;
+    const commit = () => {
+      lastBumpAtRef.current = Date.now();
+      setVersion((v) => v + 1);
+    };
+    const wait = lastBumpAtRef.current + BUMP_MIN_INTERVAL_MS - Date.now();
+    if (wait > 0) {
+      throttleRef.current = window.setTimeout(() => {
+        throttleRef.current = null;
+        commit();
+      }, wait);
+      return;
+    }
     rafRef.current = requestAnimationFrame(() => {
       rafRef.current = null;
-      setVersion((v) => v + 1);
+      commit();
     });
   }, []);
 
@@ -133,6 +156,10 @@ export function useSessionStream(
       if (rafRef.current !== null) {
         cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
+      }
+      if (throttleRef.current !== null) {
+        window.clearTimeout(throttleRef.current);
+        throttleRef.current = null;
       }
     };
     // initialStatus only serves as the first-frame placeholder; it doesn't rebuild the connection

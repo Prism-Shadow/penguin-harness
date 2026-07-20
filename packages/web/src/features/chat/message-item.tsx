@@ -5,14 +5,13 @@
  * stats lines. Items have a light entrance animation.
  */
 import { useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { S } from "../../lib/strings";
 import { useLocale } from "../../state/locale";
 import { formatMessageTime } from "../../lib/format";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { splitImageAttachments } from "../../lib/attachments";
 import type { ChatItem } from "../../lib/omni/stream-model";
+import { Md } from "./md";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { ZoomableImage } from "../../components/ui/image-zoom";
 import { MessageFilesCard } from "./message-files-card";
@@ -158,8 +157,8 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
       // which is more useful than copying segment by segment.
       return (
         <div className="md-body anim-msg my-3 text-base leading-relaxed text-gray-800 dark:text-gray-100">
-          {/* Re-renders the accumulated text directly while streaming (a key point of the contract implementation). */}
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{item.text}</ReactMarkdown>
+          {/* Re-renders the accumulated text directly while streaming (a key point of the contract implementation); memoized so settled messages skip the re-parse (see md.tsx). */}
+          <Md text={item.text} />
           {item.streaming && <span className="animate-pulse text-gray-400">▌</span>}
           {item.stopReason && item.stopReason !== "completed" && (
             <span className="ml-1 font-mono text-xs text-gray-400">[{item.stopReason}]</span>

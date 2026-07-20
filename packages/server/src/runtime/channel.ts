@@ -37,8 +37,12 @@ export interface ChannelOptions {
   maxBufferBytes?: number;
 }
 
-const DEFAULT_MAX_COUNT = 1000;
-const DEFAULT_MAX_BYTES = 2 * 1024 * 1024;
+// Sized so a mid-stream reconnect during a fast large-code reply still hits replay instead of
+// resync_required: the server publishes one event per provider delta (a 240KB reply ≈ 5k events
+// / 1.4MB), and 1000 events covered only ~6s of such a stream — every longer blip forced a full
+// client-side history rebuild.
+const DEFAULT_MAX_COUNT = 10_000;
+const DEFAULT_MAX_BYTES = 8 * 1024 * 1024;
 
 /** Buffered entry: seq is stored separately so hit checks never need to parse the string id. */
 interface BufferedEvent {
