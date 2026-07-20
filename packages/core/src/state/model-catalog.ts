@@ -69,6 +69,7 @@ const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 const SILICONFLOW_BASE_URL = "https://api.siliconflow.cn/v1";
 const QWEN_TOKEN_PLAN_BASE_URL =
   "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1";
+const QWEN_PAYG_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
 
 /**
  * Provider list (web model page groups in this order): DeepSeek first (the default model's
@@ -115,6 +116,15 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     modelsUrl:
       "https://platform.qianwenai.com/docs/token-plan/personal/token-plan-personal-overview",
     gatewayBaseUrl: QWEN_TOKEN_PLAN_BASE_URL,
+  },
+  {
+    id: "qwen-pay-as-you-go",
+    label: "Qwen Pay-As-You-Go",
+    envKey: "OPENAI_API_KEY",
+    envBaseUrlKey: "OPENAI_BASE_URL",
+    apiKeyUrl: "https://platform.qianwenai.com/docs/api-reference/preparation/api-key",
+    modelsUrl: "https://www.qianwenai.com/models",
+    gatewayBaseUrl: QWEN_PAYG_BASE_URL,
   },
   {
     id: "google",
@@ -599,6 +609,50 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     clientType: "openai",
     baseUrl: QWEN_TOKEN_PLAN_BASE_URL,
   },
+  // -- Qwen Pay-As-You-Go (DashScope's OpenAI-compatible pay-per-token marketplace; official
+  // CNY list prices and specs from each model's page at www.qianwenai.com/models/<id> —
+  // resold third-party models keep their vendor-prefixed upstream ids; ordered by output
+  // price) --
+  {
+    modelId: "kimi/kimi-k3",
+    displayName: "Kimi K3",
+    provider: "qwen-pay-as-you-go",
+    contextWindow: 1048576,
+    pricing: cny(2, 20, 100),
+    supportsVision: true,
+    clientType: "openai",
+    baseUrl: QWEN_PAYG_BASE_URL,
+  },
+  {
+    modelId: "qwen3.7-max",
+    displayName: "Qwen 3.7 Max",
+    provider: "qwen-pay-as-you-go",
+    contextWindow: 1000000,
+    pricing: cny(2.4, 12, 36),
+    supportsVision: false,
+    clientType: "openai",
+    baseUrl: QWEN_PAYG_BASE_URL,
+  },
+  {
+    modelId: "ZHIPU/GLM-5.2",
+    displayName: "GLM-5.2",
+    provider: "qwen-pay-as-you-go",
+    contextWindow: 1048576,
+    pricing: cny(2, 8, 28),
+    supportsVision: false,
+    clientType: "openai",
+    baseUrl: QWEN_PAYG_BASE_URL,
+  },
+  {
+    modelId: "qwen3.7-plus",
+    displayName: "Qwen 3.7 Plus",
+    provider: "qwen-pay-as-you-go",
+    contextWindow: 1000000,
+    pricing: cny(0.4, 2, 8),
+    supportsVision: true,
+    clientType: "openai",
+    baseUrl: QWEN_PAYG_BASE_URL,
+  },
 ];
 
 /** Looks up a catalog entry by (provider, upstream id) pair (**the sole catalog-matching entry point**); returns undefined if not in the catalog. */
@@ -694,6 +748,9 @@ export function modelHomepageUrl(provider: string, modelId: string): string | un
     return modelId === "qwen3.8-max-preview"
       ? providerInfo(provider)?.modelsUrl
       : `https://www.qianwenai.com/models/${modelId}`;
+  }
+  if (provider === "qwen-pay-as-you-go") {
+    return `https://www.qianwenai.com/models/${encodeURIComponent(modelId)}`;
   }
   if (provider === "custom") return undefined;
   return providerInfo(provider)?.modelsUrl;
