@@ -462,6 +462,15 @@ export const zh = {
     workspaceClear: "改用自动临时目录",
     workspaceDirInvalid: "目录不存在或无法访问，已回退",
     draftSubtitle: "最擅长 AI 开发任务的自进化 Agent",
+    /** Example task card on the draft screen: one click auto-submits the canned prompt below. */
+    exampleTaskLabel: "示例：构建 Claude Code 文档专家",
+    exampleTaskDesc: "收集 claude-code-docs 仓库，生成可对话、带来源引用的 RAG 知识应用",
+    exampleTaskPrompt:
+      "收集 https://github.com/ericbuess/claude-code-docs 的文档，构建一个 RAG 知识应用：" +
+      "克隆仓库并整理语料，建立检索索引；应用化身 Claude Code 配置专家，" +
+      "检索增强回答 Claude Code 相关问题并标注来源引用；" +
+      "按 web-design 技能提供美观的 Web 聊天界面。" +
+      "完成后运行应用、自测一个问题验证流式回答，并告诉我访问方式。",
     sessionList: "Session",
     defaultSessionTitle: "新对话",
     model: "Model",

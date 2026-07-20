@@ -484,6 +484,16 @@ export const en: Strings = {
     workspaceClear: "Use auto temp directory instead",
     workspaceDirInvalid: "Directory does not exist or is inaccessible; reverted",
     draftSubtitle: "The self-evolving agent that excels at AI development tasks",
+    exampleTaskLabel: "Example: build a Claude Code docs expert",
+    exampleTaskDesc:
+      "Collect the claude-code-docs repo into a conversational RAG knowledge app with source citations",
+    exampleTaskPrompt:
+      "Collect the docs from https://github.com/ericbuess/claude-code-docs and build a RAG knowledge app: " +
+      "clone the repo and prepare the corpus, then build a retrieval index; " +
+      "the app acts as a Claude Code configuration expert, answering Claude Code questions " +
+      "with retrieval-augmented, source-cited replies; " +
+      "give it a beautiful web chat UI following the web-design skill. " +
+      "When done, run the app, verify one streamed answer yourself, and tell me how to access it.",
     sessionList: "Sessions",
     defaultSessionTitle: "New chat",
     model: "Model",

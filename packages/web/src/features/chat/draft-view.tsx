@@ -45,6 +45,7 @@ import { Dropdown } from "../../components/ui/dropdown";
 import { PenguinLogo } from "../../components/ui/penguin-logo";
 import { toastError } from "../../components/ui/toast";
 import { ChatInput } from "./chat-input";
+import { buildSkillsMessage } from "./skill-use";
 import { clearDraft, draftKey, loadDraft, saveDraft } from "./draft-cache";
 import type { DraftCache } from "./draft-cache";
 import { handoffMessage } from "./agent-mentions";
@@ -52,6 +53,9 @@ import { sameModelRef } from "../models/model-grouping";
 
 /** Coalescing window for writing body text to the cache: keystrokes are frequent, so a short batch accumulates before persisting (option changes are still written immediately). */
 const DRAFT_SAVE_DEBOUNCE_MS = 300;
+
+/** Skills pinned by the example task via a `<use_skills>` block (only those the selected Agent actually has installed are included, so the block never references a skill the agent can't read). */
+const EXAMPLE_TASK_SKILLS = ["penguin-sdk", "web-design"];
 
 export function DraftView({
   projectId,
@@ -146,8 +150,11 @@ export function DraftView({
   // mount render would trigger ChatInput's pruning effect and wrongly clear the
   // quick-invoke preselection.
   const [agentSkills, setAgentSkills] = useState<SkillMetadataItem[]>([]);
+  /** Whether the skills fetch for the current Agent has settled — the example task waits for it so its `<use_skills>` pinning doesn't silently depend on network timing. */
+  const [skillsLoaded, setSkillsLoaded] = useState(false);
   useEffect(() => {
     setAgentSkills((prev) => (prev.length > 0 ? [] : prev));
+    setSkillsLoaded(false);
     if (!agentId) return;
     let cancelled = false;
     api
@@ -155,7 +162,10 @@ export function DraftView({
       .then((res) => {
         if (!cancelled) setAgentSkills(res.skills);
       })
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) setSkillsLoaded(true);
+      });
     return () => {
       cancelled = true;
     };
@@ -244,12 +254,23 @@ export function DraftView({
     setCurrentAgentId(a.agentId);
   };
 
+  // One in-flight guard shared by every send entry point (composer send / example task /
+  // @-handoff): a second submission while one is running would create a second Session with
+  // its own first task and a racing navigation. The ref is the synchronous guard; the state
+  // drives disabled styling on the example button (the composer has its own busy state).
+  const sendingRef = useRef(false);
+  const [sending, setSending] = useState(false);
+
   // First message sent: only now is the Session created (Agent / Workspace / Model / approval
   // mode are all locked in together), then the route jumps once sent; returns false on any
-  // failure, so the input area keeps the draft and can resend.
+  // failure, so the input area keeps the draft and can resend. `keepDraft` is set by sends
+  // that did not consume the composer text (the example task), so a typed-but-unsent draft
+  // survives the navigation instead of being silently discarded.
   const onSend = useCallback(
-    async (input: TaskInputPart[]): Promise<boolean> => {
-      if (!agentId) return false;
+    async (input: TaskInputPart[], keepDraft = false): Promise<boolean> => {
+      if (!agentId || sendingRef.current) return false;
+      sendingRef.current = true;
+      setSending(true);
       let createdId: string | null = null;
       try {
         const body: SessionCreateRequest = { approvalMode };
@@ -263,7 +284,7 @@ export function DraftView({
         createdId = created.session.sessionId;
         const res = await api.postTask(createdId, { input });
         add(created.session);
-        discardDraft();
+        if (!keepDraft) discardDraft();
         navigate(`/chat/${res.sessionId}`, { replace: true });
         return true;
       } catch (e) {
@@ -273,10 +294,32 @@ export function DraftView({
         if (createdId) void api.deleteSession(createdId).catch(() => undefined);
         toastError(apiErrorText(e, modelRef ? { modelId: modelRef.modelId } : {}));
         return false;
+      } finally {
+        sendingRef.current = false;
+        setSending(false);
       }
     },
     [projectId, agentId, approvalMode, modelRef, workspace, add, discardDraft, navigate],
   );
+
+  // Example task: one click submits the canned prompt exactly like a hand-typed send (the
+  // busy flag drives this card's spinner; the shared in-flight guard and all failure handling
+  // live in onSend). keepDraft: the example never consumes the composer text, so a
+  // typed-but-unsent draft must survive. The selected model / Workspace / approval mode apply as-is.
+  const [exampleBusy, setExampleBusy] = useState(false);
+  const runExample = useCallback(async () => {
+    if (exampleBusy) return;
+    setExampleBusy(true);
+    try {
+      const names = EXAMPLE_TASK_SKILLS.filter((n) => agentSkills.some((s) => s.name === n));
+      await onSend(
+        [{ type: "text", text: buildSkillsMessage(names, S.chat.exampleTaskPrompt) }],
+        true,
+      );
+    } finally {
+      setExampleBusy(false);
+    }
+  }, [exampleBusy, agentSkills, onSend]);
 
   // @ handoff: opens a new chat for the @-mentioned agent (approval mode carries over from the
   // draft's current value; model/Workspace use the creation defaults), first input =
@@ -284,7 +327,9 @@ export function DraftView({
   const selectedAgent = agents.find((a) => a.agentId === agentId) ?? null;
   const onHandoff = useCallback(
     async (target: AgentSummary, input: TaskInputPart[]): Promise<boolean> => {
-      if (!selectedAgent) return false;
+      if (!selectedAgent || sendingRef.current) return false;
+      sendingRef.current = true;
+      setSending(true);
       const origin: TaskInputPart = {
         type: "text",
         text: handoffMessage({
@@ -308,6 +353,9 @@ export function DraftView({
           apiErrorText(e, models?.defaultModel ? { modelId: models.defaultModel.modelId } : {}),
         );
         return false;
+      } finally {
+        sendingRef.current = false;
+        setSending(false);
       }
     },
     [projectId, selectedAgent, approvalMode, add, discardDraft, navigate, models],
@@ -372,6 +420,69 @@ export function DraftView({
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <AgentSelect agents={agents} selected={selectedAgent} onSelect={selectAgent} />
           <WorkspaceSelect projectId={projectId} workspace={workspace} onChange={setWorkspace} />
+        </div>
+
+        {/* Example task: a one-click canned build showing off the one-sentence → app flow.
+            Disabled until agents/models are resolved (onSend would silently no-op without an
+            Agent); hover only darkens the border, per the card convention. */}
+        <div className="mt-6 flex justify-center">
+          <button
+            type="button"
+            disabled={exampleBusy || sending || !skillsLoaded || !agentId || !models}
+            onClick={() => void runExample()}
+            title={S.chat.exampleTaskDesc}
+            className="group flex max-w-full items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 text-left transition-colors duration-150 hover:border-gray-300 disabled:cursor-default disabled:opacity-60 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-gray-700"
+          >
+            {/* Sparkle icon (24×24 line path, consistent with the icon convention) */}
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              className="shrink-0 text-brand-500 dark:text-brand-400"
+              aria-hidden
+            >
+              <path
+                d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z"
+                strokeWidth="1.7"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M18.5 15.5l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9.9-2.1z"
+                strokeWidth="1.4"
+                strokeLinejoin="round"
+              />
+            </svg>
+            <span className="min-w-0">
+              <span className="block truncate text-sm font-medium text-gray-900 dark:text-gray-100">
+                {S.chat.exampleTaskLabel}
+              </span>
+              <span className="line-clamp-2 text-xs text-gray-500 dark:text-gray-400">
+                {S.chat.exampleTaskDesc}
+              </span>
+            </span>
+            {exampleBusy ? (
+              <span className="ml-1 shrink-0 text-xs text-gray-400">{S.common.loading}</span>
+            ) : (
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                className="ml-1 shrink-0 text-gray-300 transition-colors duration-150 group-hover:text-gray-500 dark:text-gray-600 dark:group-hover:text-gray-400"
+                aria-hidden
+              >
+                <path
+                  d="M5 12h14M13 6l6 6-6 6"
+                  strokeWidth="1.7"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            )}
+          </button>
         </div>
       </div>
 
