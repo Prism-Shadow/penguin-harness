@@ -528,6 +528,7 @@ export const en: Strings = {
     statCost: "Cost",
     statElapsed: "Elapsed",
     statInput: "Input tokens",
+    statCached: "cached",
     statOutput: "Output tokens",
     statTps: "Output TPS",
     noSessions: "No Sessions yet",

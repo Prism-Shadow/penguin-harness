@@ -71,7 +71,14 @@ export function TaskStatsLine({
 
   const copy = () => {
     const text =
-      assistantText?.trim() || stats === null ? (assistantText ?? "") : formatTaskStats(stats);
+      assistantText?.trim() || stats === null
+        ? (assistantText ?? "")
+        : formatTaskStats(stats, {
+            stats: S.chat.statsLabel,
+            input: S.chat.statInput,
+            cached: S.chat.statCached,
+            output: S.chat.statOutput,
+          });
     void navigator.clipboard?.writeText(text).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);

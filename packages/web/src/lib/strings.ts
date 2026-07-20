@@ -506,6 +506,7 @@ export const zh = {
     statCost: "成本",
     statElapsed: "用时",
     statInput: "输入 tokens",
+    statCached: "已缓存",
     statOutput: "输出 tokens",
     statTps: "输出 TPS",
     noSessions: "还没有 Session",

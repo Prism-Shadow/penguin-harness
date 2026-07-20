@@ -195,33 +195,70 @@ describe("TaskStatsTracker", () => {
 });
 
 describe("formatTaskStats", () => {
-  it("the convention is this round's usage \"输入（已缓存）· 输出 · 输出 TPS\", taking this Task's three-bucket usage + this Task's TPS", () => {
+  const EN_LABELS = {
+    stats: "Stats",
+    input: "Input tokens",
+    cached: "cached",
+    output: "Output tokens",
+  };
+  const ZH_LABELS = {
+    stats: "统计信息",
+    input: "输入 tokens",
+    cached: "已缓存",
+    output: "输出 tokens",
+  };
+
+  it("the convention is this round's usage \"input (cached) · output · output TPS\", taking this Task's three-bucket usage + this Task's TPS", () => {
     expect(
-      formatTaskStats({
-        context: 40000, // context usage isn't in the stats row (shown by the input-box ring instead)
-        contextDelta: 1000,
-        tokens: 60000,
-        tokensDelta: 1200,
-        elapsedMs: 5100,
-        elapsedDeltaMs: 2300,
-        tokensByBucket: { cacheRead: 3000, cacheWrite: 1000, output: 1200 },
-        outputTps: 42.5,
-      }),
-    ).toBe("[统计信息] 输入 tokens 4k（已缓存 3k） · 输出 tokens 1.2k · 42.5 tok/s");
+      formatTaskStats(
+        {
+          context: 40000, // context usage isn't in the stats row (shown by the input-box ring instead)
+          contextDelta: 1000,
+          tokens: 60000,
+          tokensDelta: 1200,
+          elapsedMs: 5100,
+          elapsedDeltaMs: 2300,
+          tokensByBucket: { cacheRead: 3000, cacheWrite: 1000, output: 1200 },
+          outputTps: 42.5,
+        },
+        EN_LABELS,
+      ),
+    ).toBe("[Stats] Input tokens 4k (cached 3k) · Output tokens 1.2k · 42.5 tok/s");
   });
 
   it("TPS shows — without LLM timing", () => {
     expect(
-      formatTaskStats({
-        context: 500,
-        contextDelta: 0,
-        tokens: 500,
-        tokensDelta: 500,
-        elapsedMs: 900,
-        elapsedDeltaMs: 900,
-        tokensByBucket: { cacheRead: 500, cacheWrite: 0, output: 0 },
-        outputTps: null,
-      }),
-    ).toBe("[统计信息] 输入 tokens 500（已缓存 500） · 输出 tokens 0 · —");
+      formatTaskStats(
+        {
+          context: 500,
+          contextDelta: 0,
+          tokens: 500,
+          tokensDelta: 500,
+          elapsedMs: 900,
+          elapsedDeltaMs: 900,
+          tokensByBucket: { cacheRead: 500, cacheWrite: 0, output: 0 },
+          outputTps: null,
+        },
+        EN_LABELS,
+      ),
+    ).toBe("[Stats] Input tokens 500 (cached 500) · Output tokens 0 · —");
+  });
+
+  it("renders with the supplied locale labels (zh)", () => {
+    expect(
+      formatTaskStats(
+        {
+          context: 40000,
+          contextDelta: 1000,
+          tokens: 60000,
+          tokensDelta: 1200,
+          elapsedMs: 5100,
+          elapsedDeltaMs: 2300,
+          tokensByBucket: { cacheRead: 3000, cacheWrite: 1000, output: 1200 },
+          outputTps: 42.5,
+        },
+        ZH_LABELS,
+      ),
+    ).toBe("[统计信息] 输入 tokens 4k (已缓存 3k) · 输出 tokens 1.2k · 42.5 tok/s");
   });
 });

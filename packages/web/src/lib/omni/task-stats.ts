@@ -287,17 +287,29 @@ export function endTask(t: TaskStatsTracker, elapsedMs: number): TaskStats | nul
   return stats;
 }
 
+/** Localized labels for {@link formatTaskStats} (supplied by the view layer's active dictionary). */
+export interface TaskStatsLabels {
+  /** Row prefix, e.g. "Stats" / "统计信息". */
+  stats: string;
+  /** Input-tokens label, e.g. "Input tokens" / "输入 tokens". */
+  input: string;
+  /** Cached-amount label, e.g. "cached" / "已缓存". */
+  cached: string;
+  /** Output-tokens label, e.g. "Output tokens" / "输出 tokens". */
+  output: string;
+}
+
 /**
  * Stats row text (copy fallback / used when there's no body text): same basis as the stats row —
  * this round's usage "input tokens (including cached amount) · output tokens · output TPS", e.g.
- * `[统计信息] 输入 tokens 4k（已缓存 3k） · 输出 tokens 1.2k · 42.5 tok/s`; label can be overridden
- * per UI locale.
+ * `[Stats] Input tokens 4k (cached 3k) · Output tokens 1.2k · 42.5 tok/s`. Labels come from the
+ * caller's active locale dictionary so the copied text matches the UI language.
  */
-export function formatTaskStats(s: TaskStats, label = "统计信息"): string {
+export function formatTaskStats(s: TaskStats, labels: TaskStatsLabels): string {
   const b = s.tokensByBucket;
   return (
-    `[${label}] 输入 tokens ${humanizeTokens(b.cacheRead + b.cacheWrite)}（已缓存 ${humanizeTokens(b.cacheRead)}）` +
-    ` · 输出 tokens ${humanizeTokens(b.output)}` +
+    `[${labels.stats}] ${labels.input} ${humanizeTokens(b.cacheRead + b.cacheWrite)} (${labels.cached} ${humanizeTokens(b.cacheRead)})` +
+    ` · ${labels.output} ${humanizeTokens(b.output)}` +
     ` · ${formatTps(s.outputTps)}`
   );
 }
