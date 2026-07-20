@@ -22,12 +22,12 @@ const rows: ModelRowLike[] = [
 ];
 
 describe("matchesQuery", () => {
-  it("空查询恒真", () => {
+  it("an empty query is always true", () => {
     expect(matchesQuery(rows[0]!, "")).toBe(true);
     expect(matchesQuery(rows[0]!, "   ")).toBe(true);
   });
 
-  it("按 model_id / 展示名 / 厂商名匹配，大小写不敏感", () => {
+  it("matches by model_id / display name / provider name, case-insensitive", () => {
     expect(matchesQuery(rows[0]!, "SONNET")).toBe(true); // display name
     expect(matchesQuery(rows[0]!, "claude-sonnet")).toBe(true); // upstream id
     expect(matchesQuery(rows[0]!, "anthropic")).toBe(true); // provider
@@ -35,7 +35,7 @@ describe("matchesQuery", () => {
     expect(matchesQuery(rows[0]!, "gemini")).toBe(false);
   });
 
-  it("无展示名的自定义模型按 id 与 Custom 组名匹配", () => {
+  it("custom models without a display name match by id and the Custom group name", () => {
     expect(matchesQuery(rows[3]!, "proxy")).toBe(true);
     expect(matchesQuery(rows[3]!, "custom")).toBe(true);
     // Custom-built groups are searchable by their group name (raw provider value); no longer folded into the Custom bucket.
@@ -45,7 +45,7 @@ describe("matchesQuery", () => {
 });
 
 describe("groupModelRows", () => {
-  it("按条目 provider 分组（顺序沿 MODEL_PROVIDERS），custom 末位，自建分组附加其后", () => {
+  it("groups by the row's provider (order follows MODEL_PROVIDERS), custom last, custom-built groups appended after", () => {
     const groups = groupModelRows(rows, "");
     expect(groups.map((g) => g.provider.id)).toEqual([
       "anthropic",
@@ -75,7 +75,7 @@ describe("groupModelRows", () => {
     expect(MODEL_PROVIDERS.find((p) => p.id === "siliconflow")!.label).toBe("SiliconFlow");
   });
 
-  it("custom 组在无搜索词时恒展示（空组也返回，承载新增入口）", () => {
+  it("the custom group always shows without a search query (returned even when empty, hosting the add entry point)", () => {
     const vendorOnly: ModelRowLike[] = [{ provider: "moonshot", modelId: "kimi-k2.6" }];
     const groups = groupModelRows(vendorOnly, "");
     expect(groups.map((g) => g.provider.id)).toEqual(["moonshot", "custom"]);
@@ -85,7 +85,7 @@ describe("groupModelRows", () => {
     expect(groupModelRows(vendorOnly, "kimi").map((g) => g.provider.id)).toEqual(["moonshot"]);
   });
 
-  it("搜索时只保留命中行，空组不返回", () => {
+  it("searching keeps only matching rows; empty groups are not returned", () => {
     const groups = groupModelRows(rows, "kimi");
     expect(groups).toHaveLength(1);
     expect(groups[0]!.provider.id).toBe("moonshot");
@@ -93,7 +93,7 @@ describe("groupModelRows", () => {
     expect(groupModelRows(rows, "no-such-model")).toEqual([]);
   });
 
-  it("上游 id 自身含 `/`（网关模型）只是普通字符：分组只看 provider 字段", () => {
+  it("a `/` inside the upstream id (gateway models) is just a character: grouping reads only the provider field", () => {
     const gateway: ModelRowLike[] = [{ provider: "openrouter", modelId: "xiaomi/mimo-v2.5" }];
     const groups = groupModelRows(gateway, "");
     expect(groups.map((g) => g.provider.id)).toEqual(["openrouter", "custom"]);
@@ -101,7 +101,7 @@ describe("groupModelRows", () => {
     expect(matchesQuery(gateway[0]!, "mimo")).toBe(true);
   });
 
-  it("同名 model_id 在不同 provider 下并存：各归各组，互不合并", () => {
+  it("the same model_id under different providers coexists: each in its own group, never merged", () => {
     const dup: ModelRowLike[] = [
       { provider: "moonshot", modelId: "kimi-k2.6" },
       { provider: "siliconflow", modelId: "kimi-k2.6" },
@@ -112,7 +112,7 @@ describe("groupModelRows", () => {
     expect(groups[1]!.rows).toHaveLength(1);
   });
 
-  it("多个自建分组按名排序附加在 custom 之后", () => {
+  it("multiple custom-built groups sort by name and append after custom", () => {
     const mixed: ModelRowLike[] = [
       { provider: "zeta-lab", modelId: "z-1" },
       { provider: "alpha-proxy", modelId: "a-1" },

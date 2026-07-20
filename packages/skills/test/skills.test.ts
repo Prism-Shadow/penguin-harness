@@ -29,7 +29,7 @@ const fakeSkill = (name: string): LibrarySkill => ({
 });
 
 describe("loadLibrarySkills", () => {
-  it("按 name 排序读出技能，metadata 齐全（含中文描述与短描述）", async () => {
+  it("loads skills sorted by name with complete metadata (zh and short descriptions)", async () => {
     const skills = loadLibrarySkills();
     const names = skills.map((skill) => skill.name);
     expect(names).toEqual([...names].sort());
@@ -48,7 +48,7 @@ describe("loadLibrarySkills", () => {
     }
   });
 
-  it("每个技能都带定制 icon.svg（原文读入，站内线稿风，无脚本）", async () => {
+  it("every skill has a custom icon.svg (read verbatim, line-art style, no scripts)", async () => {
     for (const skill of loadLibrarySkills()) {
       const raw = await fs.readFile(path.join(skillsRoot, skill.name, "icon.svg"), "utf8");
       // The icon field is the raw icon.svg content in the directory (the file is the sole source).
@@ -62,7 +62,7 @@ describe("loadLibrarySkills", () => {
     }
   });
 
-  it("name 以目录名为准，content 与 skills/ 下 SKILL.md 原文一致", async () => {
+  it("name is the directory name, content matches the raw SKILL.md under skills/", async () => {
     const dirs = (await fs.readdir(skillsRoot, { withFileTypes: true }))
       .filter((entry) => entry.isDirectory())
       .map((entry) => entry.name)
@@ -77,7 +77,7 @@ describe("loadLibrarySkills", () => {
     }
   });
 
-  it("每个技能正文都有 `## Before you start` 一节（无具体需求时先反问）", () => {
+  it("every skill body has a `## Before you start` section (ask first if no concrete need)", () => {
     for (const skill of loadLibrarySkills()) {
       expect(skill.content, skill.name).toContain("## Before you start");
     }
@@ -85,7 +85,7 @@ describe("loadLibrarySkills", () => {
 });
 
 describe("loadSkillGroups / groupSkills", () => {
-  it("按 Skill 组清单解组，成员齐全且带中文组名，无 Other 组", () => {
+  it("loads groups per SKILL_GROUPS, members complete with Chinese titles, no Other group", () => {
     const groups = loadSkillGroups();
     expect(groups.map((g) => g.id)).toEqual([
       "agent-development",
@@ -122,7 +122,7 @@ describe("loadSkillGroups / groupSkills", () => {
     }
   });
 
-  it("groupSkills：未列入任何组的技能追加 Other 组（含中英文组名）", () => {
+  it("groupSkills: appends an Other group for unlisted skills (Chinese and English titles)", () => {
     const stray = fakeSkill("stray-skill");
     const groups = groupSkills([fakeSkill("agent-creation"), stray]);
     expect(groups.map((g) => g.id)).toEqual([
@@ -139,7 +139,7 @@ describe("loadSkillGroups / groupSkills", () => {
     expect(other.skills).toEqual([stray]);
   });
 
-  it("groupSkills：成员名缺失则跳过；全部入组时不出现 Other 组", () => {
+  it("groupSkills: missing members are skipped; no Other group when all are grouped", () => {
     const groups = groupSkills([fakeSkill("penguin-cli")]);
     expect(groups.map((g) => g.id)).toEqual([
       "agent-development",
@@ -155,7 +155,7 @@ describe("loadSkillGroups / groupSkills", () => {
     expect(groups[4]!.skills).toEqual([]);
   });
 
-  it("SKILL_GROUPS 清单硬编码为成员名（库文件之外唯一的组信息真源）", () => {
+  it("SKILL_GROUPS hardcodes member names (sole group info source outside library files)", () => {
     expect(SKILL_GROUPS.map((g) => ({ id: g.id, skills: g.skills }))).toEqual([
       {
         id: "agent-development",
@@ -170,12 +170,12 @@ describe("loadSkillGroups / groupSkills", () => {
 });
 
 describe("librarySkill", () => {
-  it("按名称读单个技能，未知名称返回 undefined", () => {
+  it("reads a single skill by name, returns undefined for unknown names", () => {
     expect(librarySkill("penguin-sdk")?.name).toBe("penguin-sdk");
     expect(librarySkill("no-such-skill")).toBeUndefined();
   });
 
-  it("非法字符名一律拒绝（防路径穿越），不触达文件系统", () => {
+  it("rejects illegal-character names (path traversal guard) and never hits the filesystem", () => {
     for (const name of ["../penguin-sdk", "..", "penguin-sdk/SKILL.md", "a/../b", ".", ""]) {
       expect(librarySkill(name), name).toBeUndefined();
     }
@@ -183,7 +183,7 @@ describe("librarySkill", () => {
 });
 
 describe("parseSkillFrontmatter", () => {
-  it("解析 name/description/version/updated，值允许含冒号", () => {
+  it("parses name/description/version/updated, values may contain colons", () => {
     const meta = parseSkillFrontmatter(
       "---\nname: demo\ndescription: How to use x: y and z\nversion: 3\nupdated: 2026-07-16\n---\n\nBody",
     );
@@ -195,7 +195,7 @@ describe("parseSkillFrontmatter", () => {
     });
   });
 
-  it("short_description_zh 可选：有则解析，缺省不带该字段", () => {
+  it("short_description_zh is optional: parsed when present, omitted when absent", () => {
     const withZh = parseSkillFrontmatter(
       "---\nname: demo\ndescription: Do x\nshort_description_zh: 做 x\n---\nBody",
     );
@@ -205,7 +205,7 @@ describe("parseSkillFrontmatter", () => {
     expect(withoutZh && "shortDescriptionZh" in withoutZh).toBe(false);
   });
 
-  it("short_description(_zh) 可选：有则解析为 shortDescription(Zh)，缺省不带该字段", () => {
+  it("short_description(_zh) is optional: parsed as shortDescription(Zh), else omitted", () => {
     const withShort = parseSkillFrontmatter(
       "---\nname: demo\ndescription: Do x in detail\nshort_description: Do x\nshort_description_zh: 做 x\n---\nBody",
     );
@@ -216,21 +216,21 @@ describe("parseSkillFrontmatter", () => {
     expect(without && "shortDescriptionZh" in without).toBe(false);
   });
 
-  it("UTF-8 BOM 与 CRLF 换行照常解析（手改文件的编辑器可能引入）", () => {
+  it("parses UTF-8 BOM and CRLF newlines normally (hand-edited files may introduce them)", () => {
     const bom = parseSkillFrontmatter("\uFEFF---\nname: demo\ndescription: Do x\n---\nBody");
     expect(bom?.name).toBe("demo");
     const crlf = parseSkillFrontmatter("---\r\nname: demo\r\ndescription: Do x\r\n---\r\nBody");
     expect(crlf?.description).toBe("Do x");
   });
 
-  it("缺 --- 块或缺 name 返回 null", () => {
+  it("returns null when the --- block or name is missing", () => {
     expect(parseSkillFrontmatter("# No frontmatter")).toBeNull();
     expect(parseSkillFrontmatter("---\ndescription: only desc\n---\nBody")).toBeNull();
     // A block that isn't at the start doesn't count as frontmatter either.
     expect(parseSkillFrontmatter("Body\n---\nname: x\n---")).toBeNull();
   });
 
-  it("version 非自然数回退 1，updated 缺省空串", () => {
+  it("version falls back to 1 when not a natural number, updated defaults to empty string", () => {
     expect(parseSkillFrontmatter("---\nname: a\nversion: zero\n---")?.version).toBe(1);
     expect(parseSkillFrontmatter("---\nname: a\nversion: 0\n---")?.version).toBe(1);
     expect(parseSkillFrontmatter("---\nname: a\n---")).toEqual({

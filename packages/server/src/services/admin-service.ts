@@ -41,13 +41,17 @@ export class AdminService {
 
   async createUser(userId: string, password: string): Promise<UserInfo> {
     if (!USERNAME_PATTERN.test(userId)) {
-      throw new HttpError(400, "invalid_user_id", `用户名须为 2~32 位：${SEMANTIC_ID_RULE}。`);
+      throw new HttpError(
+        400,
+        "invalid_user_id",
+        `Username must be 2–32 characters: ${SEMANTIC_ID_RULE}.`,
+      );
     }
     if (password.length < MIN_PASSWORD_LENGTH) {
-      throw new HttpError(400, "invalid_password", "密码至少 8 个字符。");
+      throw new HttpError(400, "invalid_password", "Password must be at least 8 characters.");
     }
     if (this.deps.users.findById(userId)) {
-      throw new HttpError(409, "user_exists", `用户已存在：${userId}。`);
+      throw new HttpError(409, "user_exists", `User already exists: ${userId}.`);
     }
     const user: UserRow = {
       userId,
@@ -70,10 +74,10 @@ export class AdminService {
   /** Reset another user's password: flags it as initial and clears all their sessions (prompts a password change on next login). */
   async resetPassword(userId: string, password: string): Promise<void> {
     if (!this.deps.users.findById(userId)) {
-      throw new HttpError(404, "user_not_found", `用户不存在：${userId}。`);
+      throw new HttpError(404, "user_not_found", `User does not exist: ${userId}.`);
     }
     if (password.length < MIN_PASSWORD_LENGTH) {
-      throw new HttpError(400, "invalid_password", "密码至少 8 个字符。");
+      throw new HttpError(400, "invalid_password", "Password must be at least 8 characters.");
     }
     this.deps.users.updatePassword(userId, await hashPassword(password), true);
     this.deps.authSessions.deleteByUser(userId);
@@ -83,10 +87,10 @@ export class AdminService {
   async deleteUser(userId: string): Promise<void> {
     const target = this.deps.users.findById(userId);
     if (!target) {
-      throw new HttpError(404, "user_not_found", `用户不存在：${userId}。`);
+      throw new HttpError(404, "user_not_found", `User does not exist: ${userId}.`);
     }
     if (target.isAdmin) {
-      throw new HttpError(409, "cannot_delete_admin", "内置管理员不能删除。");
+      throw new HttpError(409, "cannot_delete_admin", "The built-in admin cannot be deleted.");
     }
     for (const project of this.deps.projects.listByOwner(userId)) {
       await this.deps.projectService.destroyProject(project.projectId);

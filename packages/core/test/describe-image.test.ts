@@ -101,14 +101,14 @@ afterEach(async () => {
   await rm(tmp, { recursive: true, force: true });
 });
 
-describe("describe_image（read_image 的纯文本模型版）", () => {
-  it("定义原样取自配置条目（不做运行期改写）", () => {
+describe("describe_image (the text-only-model variant of read_image)", () => {
+  it("the definition is taken verbatim from the config entry (no runtime rewriting)", () => {
     const tool = createDescribeImageTool(definition, { modelId: "vis-1" });
     expect(tool.name).toBe(DESCRIBE_IMAGE_NAME);
     expect(tool.definition).toBe(definition);
   });
 
-  it("registry 按工具名装配；未注入 visionDescriber 时以 failed 说明收尾（而非回图片）", async () => {
+  it("the registry assembles by tool name; without an injected visionDescriber it finishes as failed with a note (instead of returning the image)", async () => {
     const factory = BUILTIN_TOOL_FACTORIES[DESCRIBE_IMAGE_NAME]!;
     await writeFile(path.join(tmp, "a.png"), PNG_1X1);
     const describeTool = factory(definition, undefined);
@@ -127,7 +127,7 @@ describe("describe_image（read_image 的纯文本模型版）", () => {
     expect(text).toContain("No vision model");
   });
 
-  it("图片 + 自定义 prompt 单发视觉模型，回其文本，结果不携带 images", async () => {
+  it("image + custom prompt is sent to the vision model in a single shot, its text comes back, the result carries no images", async () => {
     await writeFile(path.join(tmp, "a.png"), PNG_1X1);
     const { llm, calls } = fakeLLM("图里是一只企鹅。");
     const describer: VisionDescriberService = { modelId: "vis-1", createLLM: () => llm };
@@ -159,7 +159,7 @@ describe("describe_image（read_image 的纯文本模型版）", () => {
     expect(result?.stopReason).toBeUndefined(); // defaults to completed
   });
 
-  it("未给 prompt 时用默认问题", async () => {
+  it("uses the default question when no prompt is given", async () => {
     await writeFile(path.join(tmp, "a.png"), PNG_1X1);
     const { llm, calls } = fakeLLM("desc");
     await run({ source: "a.png" }, tmp, { modelId: "vis-1", createLLM: () => llm });
@@ -167,7 +167,7 @@ describe("describe_image（read_image 的纯文本模型版）", () => {
     expect(first.text).toContain("Describe this image");
   });
 
-  it("未配置视觉模型：failed 并解释如何配置", async () => {
+  it("no vision model configured: failed plus an explanation of how to configure one", async () => {
     await writeFile(path.join(tmp, "a.png"), PNG_1X1);
     const { result, text } = await run({ source: "a.png" }, tmp, { modelId: null });
     expect(result?.stopReason).toBe("failed");
@@ -175,7 +175,7 @@ describe("describe_image（read_image 的纯文本模型版）", () => {
     expect(text).toContain("vision_model");
   });
 
-  it("视觉模型请求失败：failed 并带状态与消息", async () => {
+  it("vision model request failure: failed with the status and message", async () => {
     await writeFile(path.join(tmp, "a.png"), PNG_1X1);
     const { llm } = fakeLLM("", { status: "failed", message: "401 unauthorized" });
     const { result, text } = await run({ source: "a.png" }, tmp, {
@@ -187,7 +187,7 @@ describe("describe_image（read_image 的纯文本模型版）", () => {
     expect(text).toContain("401 unauthorized");
   });
 
-  it("图片校验复用 read_image：不支持的类型直接 failed，不请求视觉模型", async () => {
+  it("image validation reuses read_image: an unsupported type fails immediately without calling the vision model", async () => {
     await writeFile(path.join(tmp, "a.txt"), "not an image");
     const { llm, calls } = fakeLLM("desc");
     const { result } = await run({ source: "a.txt" }, tmp, {
@@ -198,7 +198,7 @@ describe("describe_image（read_image 的纯文本模型版）", () => {
     expect(calls).toHaveLength(0);
   });
 
-  it("Environment 装配 describe_image 条目走代读实现，定义与配置一致", async () => {
+  it("Environment assembles the describe_image entry with the delegated-description implementation; definition matches the config", async () => {
     await writeFile(path.join(tmp, "a.png"), PNG_1X1);
     const { llm } = fakeLLM("代读结果");
     const env = new Environment({

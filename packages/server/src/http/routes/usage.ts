@@ -20,7 +20,7 @@ export function usageRoutes(deps: AppDeps): Hono<AppEnv> {
     deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
     const groupByRaw = c.req.query("groupBy") ?? "date";
     if (!(GROUP_BYS as readonly string[]).includes(groupByRaw)) {
-      throw badRequest(`groupBy 必须是 ${GROUP_BYS.join(" / ")} 之一。`);
+      throw badRequest(`groupBy must be one of ${GROUP_BYS.join(" / ")}.`);
     }
     const from = optionalDateParam(c.req.query("from"), "from");
     const to = optionalDateParam(c.req.query("to"), "to");

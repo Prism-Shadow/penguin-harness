@@ -10,19 +10,19 @@ import {
 } from "../src/commands/serve.js";
 import { getMessages } from "../src/i18n.js";
 
-describe("resolvePort（选项 > 环境变量 > 缺省 7364）", () => {
-  it("都未给时用缺省 7364", () => {
+describe("resolvePort (option > env var > default 7364)", () => {
+  it("uses the default 7364 when neither is given", () => {
     expect(DEFAULT_PORT).toBe(7364);
     expect(resolvePort(undefined, undefined)).toBe(7364);
     expect(resolvePort(undefined, "")).toBe(7364); // an empty string counts as unset
   });
-  it("只有环境变量时取环境变量", () => {
+  it("takes the env var when only the env var is set", () => {
     expect(resolvePort(undefined, "8080")).toBe(8080);
   });
-  it("选项优先于环境变量", () => {
+  it("the option beats the env var", () => {
     expect(resolvePort("9000", "8080")).toBe(9000);
   });
-  it("非法值（非整数 / 越界）抛错", () => {
+  it("throws on invalid values (non-integer / out of range)", () => {
     expect(() => resolvePort("abc", undefined)).toThrow(/abc/);
     expect(() => resolvePort("3.14", undefined)).toThrow();
     expect(() => resolvePort("-1", undefined)).toThrow();
@@ -31,36 +31,36 @@ describe("resolvePort（选项 > 环境变量 > 缺省 7364）", () => {
   });
 });
 
-describe("browserCommand（按平台选择打开命令）", () => {
+describe("browserCommand (picks the open command per platform)", () => {
   const url = "http://127.0.0.1:7364/";
   it("darwin → open", () => {
     expect(browserCommand("darwin", url)).toEqual({ command: "open", args: [url] });
   });
-  it("win32 → cmd /c start（空标题占位在 URL 前）", () => {
+  it("win32 -> cmd /c start (empty title placeholder before the URL)", () => {
     expect(browserCommand("win32", url)).toEqual({
       command: "cmd",
       args: ["/c", "start", "", url],
     });
   });
-  it("其他平台（linux 等）→ xdg-open", () => {
+  it("other platforms (linux etc.) -> xdg-open", () => {
     expect(browserCommand("linux", url)).toEqual({ command: "xdg-open", args: [url] });
     expect(browserCommand("freebsd", url)).toEqual({ command: "xdg-open", args: [url] });
   });
 });
 
-describe("browserUrl（通配监听地址转 127.0.0.1）", () => {
-  it("常规 host 原样拼接", () => {
+describe("browserUrl (wildcard listen addresses map to 127.0.0.1)", () => {
+  it("a regular host is joined as-is", () => {
     expect(browserUrl(DEFAULT_HOST, 7364)).toBe("http://127.0.0.1:7364/");
     expect(browserUrl("192.168.1.2", 8080)).toBe("http://192.168.1.2:8080/");
   });
-  it("0.0.0.0 / :: 时浏览器 URL 用 127.0.0.1", () => {
+  it("the browser URL uses 127.0.0.1 for 0.0.0.0 / ::", () => {
     expect(browserUrl("0.0.0.0", 7364)).toBe("http://127.0.0.1:7364/");
     expect(browserUrl("::", 7364)).toBe("http://127.0.0.1:7364/");
   });
 });
 
-describe("registerServeCommands（命令注册）", () => {
-  it("注册 server 与 web 两个顶层命令，web 缺省 open=true（--no-open 可关）", () => {
+describe("registerServeCommands (command registration)", () => {
+  it("registers the server and web top-level commands; web defaults to open=true (--no-open turns it off)", () => {
     const program = new Command();
     registerServeCommands(program, getMessages("en"));
     const names = program.commands.map((c) => c.name());

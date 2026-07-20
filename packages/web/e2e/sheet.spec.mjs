@@ -43,7 +43,7 @@ test("mobile Files sheet: open → nested dir → md rendered preview → esc cl
   ).json();
   const sessionId = sess.session.sessionId;
 
-  const md = Buffer.from("# Sheet 标题\n\n正文段落。").toString("base64");
+  const md = Buffer.from("# Sheet Heading\n\nBody paragraph.").toString("base64");
   const up = await page.request.put(
     `${BASE}/api/sessions/${sessionId}/files/content?path=notes/demo.md`,
     { data: { dataBase64: md } },
@@ -58,7 +58,7 @@ test("mobile Files sheet: open → nested dir → md rendered preview → esc cl
   // Drill into the directory → open the md → default rendered view (h1 shown, not source).
   await sheet.getByText("notes").first().click();
   await sheet.getByText("demo.md").first().click();
-  await expect(sheet.getByRole("heading", { name: "Sheet 标题" })).toBeVisible();
+  await expect(sheet.getByRole("heading", { name: "Sheet Heading" })).toBeVisible();
 
   // Esc closes: unmounts entirely once the exit animation finishes.
   await page.keyboard.press("Escape");

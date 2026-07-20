@@ -14,7 +14,7 @@
     "test": "pnpm -r test",
     "test:e2e": "pnpm --filter @prismshadow/penguin-core test:e2e",
     "build": "pnpm -r build && pnpm link:cli",
-    "link:cli": "pnpm --dir packages/cli link --global || echo '[link:cli] 未配置 pnpm 全局目录，跳过 penguin 全局链接（先运行一次 pnpm setup）'",
+    "link:cli": "pnpm --dir packages/cli link --global || echo '[link:cli] pnpm global directory not configured; skipping the global penguin link (run pnpm setup once first)'",
     "penguin": "tsx packages/cli/src/index.ts",
     "dev:server": "pnpm --filter @prismshadow/penguin-skills --filter @prismshadow/penguin-core build && pnpm --filter @prismshadow/penguin-server dev",
     "dev:web": "pnpm --filter @prismshadow/penguin-skills --filter @prismshadow/penguin-core build && pnpm --filter @prismshadow/penguin-web dev",

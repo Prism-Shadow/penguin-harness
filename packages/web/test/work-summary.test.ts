@@ -41,13 +41,13 @@ const tool = (
 });
 
 describe("summarizeWork", () => {
-  it("并行工具的重叠时间只算一次（15 路并行 9 分钟不再报 99 分钟）", () => {
+  it("overlapping time of parallel tools counts once (15-way parallel for 9 minutes no longer reports 99 minutes)", () => {
     const nine = 9 * 60_000;
     const items = Array.from({ length: 15 }, () => tool({ start: 0, durationMs: nine }));
     expect(summarizeWork(items)).toEqual({ steps: 15, durationMs: nine });
   });
 
-  it("部分重叠按并集合并", () => {
+  it("partial overlaps merge as a union", () => {
     const items = [
       tool({ start: 0, durationMs: 60_000 }),
       tool({ start: 10_000, durationMs: 60_000 }),
@@ -56,7 +56,7 @@ describe("summarizeWork", () => {
     expect(summarizeWork(items)).toEqual({ steps: 3, durationMs: 90_000 });
   });
 
-  it("顺序调用照常累计，空档不计", () => {
+  it("sequential calls accumulate as usual; gaps do not count", () => {
     const items = [
       tool({ start: 0, durationMs: 10_000 }),
       tool({ start: 15_000, durationMs: 10_000 }),
@@ -64,12 +64,12 @@ describe("summarizeWork", () => {
     expect(summarizeWork(items)).toEqual({ steps: 2, durationMs: 20_000 });
   });
 
-  it("思考与工具同轴合并；思考不计步数", () => {
+  it("thinking and tools merge on the same axis; thinking does not count as a step", () => {
     const items = [thinking(0, 5_000), tool({ start: 5_000, durationMs: 10_000 })];
     expect(summarizeWork(items)).toEqual({ steps: 1, durationMs: 15_000 });
   });
 
-  it("审批等待不计入：区间自 approvalAtMs 起算", () => {
+  it("approval waits excluded: intervals start at approvalAtMs", () => {
     const items = [
       tool({ start: 0, approvalAt: 100_000, durationMs: 5_000 }),
       tool({ start: 102_000, durationMs: 8_000 }),
@@ -78,7 +78,7 @@ describe("summarizeWork", () => {
     expect(summarizeWork(items)).toEqual({ steps: 2, durationMs: 10_000 });
   });
 
-  it("参数生成段与执行段分属两个区间：生成段不平移进执行期", () => {
+  it("argument-generation and execution are separate intervals: generation is not shifted into the execution period", () => {
     const items = [
       // A: arg generation 0-10s, approval wait 10-100s, execution 100-110s (durationMs = 10s generation + 10s execution).
       tool({ argStart: 0, start: 10_000, approvalAt: 100_000, durationMs: 20_000 }),
@@ -89,7 +89,7 @@ describe("summarizeWork", () => {
     expect(summarizeWork(items)).toEqual({ steps: 2, durationMs: 30_000 });
   });
 
-  it("缺起点的项退化为直接累加；无耗时的项只计步数", () => {
+  it("items missing a start point fall back to direct accumulation; items without a duration only count as steps", () => {
     const items = [tool({ start: 0, durationMs: 10_000 }), tool({ durationMs: 7_000 }), tool()];
     expect(summarizeWork(items)).toEqual({ steps: 3, durationMs: 17_000 });
   });

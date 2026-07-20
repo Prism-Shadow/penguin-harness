@@ -292,7 +292,7 @@ describe("StreamRenderer", () => {
     );
   });
 
-  it("轮结束后的压缩：压缩完成行展示本次消耗，但不计入本轮统计增量；不更新上下文", () => {
+  it("compaction after the turn ends: the completion line shows its own cost, excluded from the turn stats delta; context not updated", () => {
     const { stream, text } = collector();
     const r = new StreamRenderer(stream, t);
     // Ordinary request: context 5000.
@@ -325,7 +325,7 @@ describe("StreamRenderer", () => {
     expect(s).toContain("tokens 14k (+5k)");
   });
 
-  it("轮途中的压缩（其后还有普通 request_end）：用时含压缩跨度，Token 增量计入压缩", () => {
+  it("mid-turn compaction (a normal request_end follows): elapsed time includes the compaction span, Token delta includes compaction", () => {
     const { stream, text } = collector();
     const r = new StreamRenderer(stream, t);
     // own1: ordinary request, request 5000, 00:00 -> 00:02.
@@ -362,7 +362,7 @@ describe("StreamRenderer", () => {
     expect(s).toContain("16s (+16s)");
   });
 
-  it("轮结束后的压缩（带 request 事件）：用时止于压缩前的最后一个 request_end", () => {
+  it("compaction after the turn ends (with request events): elapsed time stops at the last request_end before compaction", () => {
     const { stream, text } = collector();
     const r = new StreamRenderer(stream, t);
     // own1: 00:00 -> 00:03.

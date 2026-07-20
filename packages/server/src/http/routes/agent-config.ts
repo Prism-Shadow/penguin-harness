@@ -33,7 +33,7 @@ export function agentConfigRoutes(deps: AppDeps): Hono<AppEnv> {
     if (agentsMd !== undefined) req.agentsMd = agentsMd;
     if (body.config !== undefined) {
       if (body.config === null || typeof body.config !== "object" || Array.isArray(body.config)) {
-        throw badRequest("config 必须是对象。");
+        throw badRequest("config must be an object.");
       }
       req.config = body.config as AgentConfigUpdateRequest["config"];
     }

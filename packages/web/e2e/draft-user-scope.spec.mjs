@@ -15,7 +15,7 @@ const P = "password123";
 const UA = "draftowner";
 const UB = "draftguest";
 
-test("切换账号：B 不恢复 A 的草稿，两人草稿并存", async ({ page }) => {
+test("switching accounts: B does not restore A's draft; both drafts coexist", async ({ page }) => {
   // A is provisioned and logged in (page's cookie belongs to A); B is only provisioned, logging in via the UI later. userId is the username.
   const userA = (await provisionAndLogin(page.request, UA, P)).userId;
   await provisionUser(UB, P);
@@ -49,13 +49,13 @@ test("切换账号：B 不恢复 A 的草稿，两人草稿并存", async ({ pag
   // A types a body on the draft page and waits for debounce to persist it under A's key; after a reload it restores as usual (confirming it was persisted).
   await page.goto(`${BASE}/chat`);
   const ta = page.getByPlaceholder(/输入消息/);
-  await ta.fill("A 的机密草稿");
+  await ta.fill("A's secret draft");
   const keyA = `penguin.chatDraft.${userA}.${projectId}`;
   await expect
     .poll(() => page.evaluate((k) => localStorage.getItem(k), keyA))
-    .toContain("A 的机密草稿");
+    .toContain("A's secret draft");
   await page.reload();
-  await expect(ta).toHaveValue("A 的机密草稿");
+  await expect(ta).toHaveValue("A's secret draft");
 
   // A logs out: the bottom-left user menu (the username button shares its name with the top
   // Project switcher — the initial Project's display name defaults to the username — so take
@@ -77,10 +77,10 @@ test("切换账号：B 不恢复 A 的草稿，两人草稿并存", async ({ pag
 
   // B writes their own draft: it lands under B's key (the key includes projectId, confirming B
   // is on the same shared Project), while A's draft is left untouched — neither overwrites the other.
-  await ta.fill("B 自己的草稿");
+  await ta.fill("B's own draft");
   const keyB = `penguin.chatDraft.${userB}.${projectId}`;
   await expect
     .poll(() => page.evaluate((k) => localStorage.getItem(k), keyB))
-    .toContain("B 自己的草稿");
-  expect(await page.evaluate((k) => localStorage.getItem(k), keyA)).toContain("A 的机密草稿");
+    .toContain("B's own draft");
+  expect(await page.evaluate((k) => localStorage.getItem(k), keyA)).toContain("A's secret draft");
 });

@@ -165,7 +165,7 @@ describe("listInstalledSkills", () => {
   });
 });
 
-describe("skillMetadataSection / assembleSystemPrompt 注入", () => {
+describe("skillMetadataSection / assembleSystemPrompt injection", () => {
   it("renders one `- \\`name\\` — description` line per skill; empty input renders empty", () => {
     expect(skillMetadataSection([])).toBe("");
     expect(

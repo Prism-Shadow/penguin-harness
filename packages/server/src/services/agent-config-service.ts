@@ -68,7 +68,7 @@ export class AgentConfigService {
 
   async requireExists(projectId: string, agentId: string): Promise<void> {
     if (!(await this.exists(projectId, agentId))) {
-      throw new HttpError(404, "agent_not_found", "Agent 不存在。");
+      throw new HttpError(404, "agent_not_found", "Agent does not exist.");
     }
   }
 
@@ -269,11 +269,11 @@ export class AgentConfigService {
     for (const entry of req.entries) {
       if (!isValidVaultKey(entry.key)) {
         throw badRequest(
-          `vault 键名不合法：${entry.key}（仅字母、数字与下划线，且不能以数字开头）。`,
+          `Invalid vault key name: ${entry.key} (letters, digits and underscores only, and must not start with a digit).`,
         );
       }
       if (seen.has(entry.key)) {
-        throw badRequest(`entries 中存在重复的键名：${entry.key}。`);
+        throw badRequest(`entries contains a duplicate key: ${entry.key}.`);
       }
       seen.add(entry.key);
       const prevValue = prev[entry.key];
@@ -281,13 +281,15 @@ export class AgentConfigService {
         // Values are injected into the child process environment: an oversized value would
         // make exec spawn fail (E2BIG), so we reject it on write (same limit as core).
         if (entry.value.length > VAULT_VALUE_MAX_LENGTH) {
-          throw badRequest(`vault 值过长：${entry.key}（上限 ${VAULT_VALUE_MAX_LENGTH} 字符）。`);
+          throw badRequest(
+            `Vault value too long: ${entry.key} (limit ${VAULT_VALUE_MAX_LENGTH} characters).`,
+          );
         }
         nextVault[entry.key] = entry.value;
       } else if (prevValue !== undefined) {
         nextVault[entry.key] = prevValue;
       } else {
-        throw badRequest(`新增键 ${entry.key} 必须提供 value。`);
+        throw badRequest(`New key ${entry.key} must provide a value.`);
       }
     }
 
@@ -297,20 +299,20 @@ export class AgentConfigService {
 }
 
 function validateToolsBuiltin(value: unknown): ToolDefinitionConfig[] {
-  if (!Array.isArray(value)) throw badRequest("toolsBuiltin 必须是数组。");
+  if (!Array.isArray(value)) throw badRequest("toolsBuiltin must be an array.");
   return value.map((item, i) => {
     const t = asRecord(item);
     if (typeof t.name !== "string" || t.name.length === 0) {
-      throw badRequest(`toolsBuiltin[${i}].name 必须是非空字符串。`);
+      throw badRequest(`toolsBuiltin[${i}].name must be a non-empty string.`);
     }
     if (typeof t.description !== "string") {
-      throw badRequest(`toolsBuiltin[${i}].description 必须是字符串。`);
+      throw badRequest(`toolsBuiltin[${i}].description must be a string.`);
     }
     if (t.permission !== undefined && t.permission !== "r" && t.permission !== "rw") {
-      throw badRequest(`toolsBuiltin[${i}].permission 必须是 r / rw 之一。`);
+      throw badRequest(`toolsBuiltin[${i}].permission must be one of r / rw.`);
     }
     if (t.forModel !== undefined && t.forModel !== "vision" && t.forModel !== "text-only") {
-      throw badRequest(`toolsBuiltin[${i}].forModel 必须是 vision / text-only 之一。`);
+      throw badRequest(`toolsBuiltin[${i}].forModel must be one of vision / text-only.`);
     }
     optionalNumber(t, "timeoutMs", {
       integer: true,
@@ -327,14 +329,14 @@ function validateToolsBuiltin(value: unknown): ToolDefinitionConfig[] {
 }
 
 function validateMcpServers(value: unknown): MCPServerConfig[] {
-  if (!Array.isArray(value)) throw badRequest("mcpServers 必须是数组。");
+  if (!Array.isArray(value)) throw badRequest("mcpServers must be an array.");
   return value.map((item, i) => {
     const s = asRecord(item);
     if (typeof s.name !== "string" || s.name.length === 0) {
-      throw badRequest(`mcpServers[${i}].name 必须是非空字符串。`);
+      throw badRequest(`mcpServers[${i}].name must be a non-empty string.`);
     }
     if (s.config === null || typeof s.config !== "object" || Array.isArray(s.config)) {
-      throw badRequest(`mcpServers[${i}].config 必须是对象。`);
+      throw badRequest(`mcpServers[${i}].config must be an object.`);
     }
     return s as unknown as MCPServerConfig;
   });

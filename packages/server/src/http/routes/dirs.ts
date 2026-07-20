@@ -31,18 +31,22 @@ export function dirsRoutes(deps: AppDeps): Hono<AppEnv> {
     const raw = c.req.query("path");
     const target = raw && raw.trim() ? raw.trim() : os.homedir();
     if (!path.isAbsolute(target)) {
-      throw new HttpError(400, "dir_not_absolute", "目录必须是绝对路径。");
+      throw new HttpError(400, "dir_not_absolute", "Directory must be an absolute path.");
     }
 
     let real: string;
     try {
       real = await fs.realpath(target);
     } catch {
-      throw new HttpError(404, "dir_not_found", `目录不存在或不可访问：${target}。`);
+      throw new HttpError(
+        404,
+        "dir_not_found",
+        `Directory does not exist or is inaccessible: ${target}.`,
+      );
     }
     const stat = await fs.stat(real);
     if (!stat.isDirectory()) {
-      throw new HttpError(400, "not_a_dir", "不是目录。");
+      throw new HttpError(400, "not_a_dir", "Not a directory.");
     }
 
     let dirents: import("node:fs").Dirent[] = [];

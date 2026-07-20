@@ -14,7 +14,7 @@ export function adminUsersRoutes(deps: AppDeps): Hono<AppEnv> {
 
   app.use("*", async (c, next) => {
     if (!c.var.user.isAdmin) {
-      throw new HttpError(403, "admin_required", "该操作仅管理员可执行。");
+      throw new HttpError(403, "admin_required", "Only an admin can perform this operation.");
     }
     await next();
   });

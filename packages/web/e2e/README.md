@@ -1,13 +1,14 @@
-# Web E2E（Playwright）
+# Web E2E (Playwright)
 
-浏览器端到端：对话（thinking + 工具审批 + 工具执行 + 二轮答复）、图标化统计（成本折算 /
-复制回复）、轨迹观测（分 Task 时间线 + 图例 + 悬停联动高亮）、Workspace 文件预览（HTML
-sandbox 渲染、路径默认隐藏）。LLM 由 `mock-llm.mjs`（mock Anthropic Messages SSE）驱动，
-不联网。
+Browser end-to-end tests: chat (thinking + tool approval + tool execution + second-turn
+reply), the iconified stats line (cost conversion / copy reply), Traces (per-Task timeline +
+legend + hover-linked highlighting), Workspace file preview (sandboxed HTML rendering, path
+hidden by default). The LLM is driven by `mock-llm.mjs` (a mock Anthropic Messages SSE
+endpoint) — no network access.
 
 ```sh
-pnpm --filter @prismshadow/penguin-web test:e2e          # 构建 + 起服务 + 跑用例
-SKIP_BUILD=1 pnpm --filter @prismshadow/penguin-web test:e2e   # 跳过构建
+pnpm --filter @prismshadow/penguin-web test:e2e          # build + start the server + run the tests
+SKIP_BUILD=1 pnpm --filter @prismshadow/penguin-web test:e2e   # skip the build
 ```
 
-首次需 `npx playwright install chromium`。
+The first run requires `npx playwright install chromium`.

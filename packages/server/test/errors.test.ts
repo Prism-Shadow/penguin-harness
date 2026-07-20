@@ -65,14 +65,14 @@ describe("errors-repo", () => {
   });
   afterEach(() => db.close());
 
-  it("汇总：总数与其中未预期数；expected 照记不丢", () => {
+  it("summary: total and unexpected count; expected ones are still recorded", () => {
     repo.insert(row("2026-07-06"));
     repo.insert(row("2026-07-06", { kind: "expected", code: "not_found", status: 404 }));
     repo.insert(row("2026-07-06", { kind: "expected", code: "bad_request", status: 400 }));
     expect(repo.summary("p1")).toEqual({ total: 3, unexpected: 1 });
   });
 
-  it("无归属异常（登录失败 / 进程崩溃）只对管理员可见：普通成员只看本 Project", () => {
+  it("unattributed errors (login failure / crash) are admin-only, invisible to members", () => {
     const global = { projectId: null, source: "process", code: "uncaught_exception" };
     repo.insert(row("2026-07-06", global)); // Unattributed: another tenant's login failure / process crash
     repo.insert(row("2026-07-06", global));
@@ -99,7 +99,7 @@ describe("errors-repo", () => {
     expect(repo.recent("p-other").map((r) => r.code)).toEqual(["internal"]);
   });
 
-  it("最常见错误码：按 source+code+kind 分组取次数最高的一条", () => {
+  it("top error code: grouped by source+code+kind, takes the highest count", () => {
     for (let i = 0; i < 3; i++) repo.insert(row("2026-07-06", { code: "internal" }));
     repo.insert(row("2026-07-06", { source: "session", code: "session_run_failed" }));
     repo.insert(row("2026-07-06", { kind: "expected", code: "not_found", status: 404 }));
@@ -116,7 +116,7 @@ describe("errors-repo", () => {
     expect(repo.topCode("p1", { from: "2026-07-07" })).toBeNull();
   });
 
-  it("日期区间与 agent 过滤（HTTP / 进程级异常无 agent_id，按 Agent 过滤时天然只剩该 Agent）", () => {
+  it("date range and agent filters (HTTP / process errors have no agent_id)", () => {
     repo.insert(row("2026-07-05"));
     repo.insert(row("2026-07-06", { kind: "expected" }));
     repo.insert(row("2026-07-06", { agentId: "a1", source: "session" }));
@@ -128,15 +128,15 @@ describe("errors-repo", () => {
     expect(repo.recent("p1", { agentId: "a1" })).toHaveLength(1);
   });
 
-  it("最近异常：时间倒序取前 limit 条", () => {
-    repo.insert(row("2026-07-05", { message: "旧" }));
-    repo.insert(row("2026-07-06", { message: "新" }));
+  it("recent errors: newest first, top limit rows", () => {
+    repo.insert(row("2026-07-05", { message: "old" }));
+    repo.insert(row("2026-07-06", { message: "new" }));
     const recent = repo.recent("p1", {}, 1);
     expect(recent).toHaveLength(1);
-    expect(recent[0]!.message).toBe("新");
+    expect(recent[0]!.message).toBe("new");
   });
 
-  it("deleteByProject：只删该 Project 的行，无归属异常保留", () => {
+  it("deleteByProject: deletes only that Project's rows, unattributed errors remain", () => {
     repo.insert(row("2026-07-06"));
     repo.insert(row("2026-07-06", { projectId: null }));
     repo.deleteByProject("p1");
@@ -153,14 +153,14 @@ describe("errors-repo", () => {
       .all()
       .map((r) => r.message as string);
 
-  it("容量上限：超出后按 id 淘汰最旧的行（每 pruneEvery 次插入才检查一次）", () => {
+  it("row cap: evicts the oldest rows by id (checked every pruneEvery inserts)", () => {
     const capped = new ErrorsRepo(db, { maxRows: 5, pruneEvery: 2 });
     for (let i = 0; i < 10; i++) capped.insert(row("2026-07-06", { message: `m${i}` }));
     // The 5 most recent rows within the cap are kept, older ones are evicted.
     expect(messages()).toEqual(["m5", "m6", "m7", "m8", "m9"]);
   });
 
-  it("淘汰按行数算：deleteByProject 留下的 id 空洞不会误删有效数据（近似式会）", () => {
+  it("eviction counts rows: id gaps left by deleteByProject never misdelete valid data", () => {
     const capped = new ErrorsRepo(db, { maxRows: 3, pruneEvery: 1 });
     capped.insert(row("2026-07-06", { message: "keep-1" })); // id 1
     capped.insert(row("2026-07-06", { message: "keep-2" })); // id 2
@@ -188,10 +188,14 @@ describe("error-recorder", () => {
   });
   afterEach(() => db.close());
 
-  it("HttpError → expected（保留 code 与状态码）", () => {
+  it("HttpError → expected (keeps code and status)", () => {
     new ErrorRecorder(repo, now).record({
       source: "http",
-      err: new HttpError(404, "session_not_found", "Session 不存在或无权访问。"),
+      err: new HttpError(
+        404,
+        "session_not_found",
+        "Session does not exist or you do not have access.",
+      ),
       ctx: { projectId: "p1" },
     });
     const r = db.prepare("SELECT * FROM error_records").get()!;
@@ -202,12 +206,12 @@ describe("error-recorder", () => {
     expect(r.date).toBe("2026-07-06");
   });
 
-  it("非 HttpError → unexpected；HTTP 来源收敛 500，非 HTTP 来源 status 为 NULL", () => {
+  it("non-HttpError → unexpected; HTTP source converges to 500, non-HTTP status is NULL", () => {
     const rec = new ErrorRecorder(repo, now);
     rec.record({ source: "http", err: new Error("boom") });
     rec.record({
       source: "session",
-      err: new Error("drive 挂了"),
+      err: new Error("drive crashed"),
       ctx: { projectId: "p1", agentId: "a1", sessionId: "s1" },
       code: "session_run_failed",
     });
@@ -222,19 +226,19 @@ describe("error-recorder", () => {
     expect(rows[1]!.session_id).toBe("s1");
   });
 
-  it("非 Error 抛出物与超长 message：String 化并截断到上限", () => {
+  it("non-Error throwables and overlong messages: stringified and truncated to the cap", () => {
     const rec = new ErrorRecorder(repo, now);
-    rec.record({ source: "process", err: "字符串异常", code: "unhandled_rejection" });
+    rec.record({ source: "process", err: "a string error", code: "unhandled_rejection" });
     rec.record({ source: "usage", err: new Error("x".repeat(MESSAGE_MAX + 100)) });
     const rows = db.prepare("SELECT message FROM error_records ORDER BY id").all();
-    expect(rows[0]!.message).toBe("字符串异常");
+    expect(rows[0]!.message).toBe("a string error");
     expect((rows[1]!.message as string).length).toBe(MESSAGE_MAX);
   });
 
-  it("记录器自身出错绝不外抛（否则挂在 onError 上会无限递归）", () => {
+  it("the recorder itself never throws (hooked on onError it would recurse forever)", () => {
     const broken = {
       insert() {
-        throw new Error("DB 已关闭");
+        throw new Error("DB is closed");
       },
     } as unknown as ErrorsRepo;
     expect(() =>
@@ -242,10 +246,10 @@ describe("error-recorder", () => {
     ).not.toThrow();
   });
 
-  it("显式 kind 优先于 HttpError 推断（新来源自报「要不要人介入」）", () => {
+  it("explicit kind wins over HttpError inference (sources self-report human need)", () => {
     const rec = new ErrorRecorder(repo, now);
-    rec.record({ source: "llm", err: "超时", code: "llm_timeout", kind: "expected" });
-    rec.record({ source: "llm", err: "鉴权失败", code: "llm_failed", kind: "unexpected" });
+    rec.record({ source: "llm", err: "timed out", code: "llm_timeout", kind: "expected" });
+    rec.record({ source: "llm", err: "auth failed", code: "llm_failed", kind: "unexpected" });
     const rows = db.prepare("SELECT kind, source, status FROM error_records ORDER BY id").all();
     expect(rows[0]).toMatchObject({ kind: "expected", source: "llm", status: null });
     expect(rows[1]).toMatchObject({ kind: "unexpected", source: "llm", status: null });
@@ -259,13 +263,13 @@ describe("error-recorder", () => {
   const lastSeen = (rec: ErrorRecorder) =>
     (rec as unknown as { lastSeen: Map<string, number> }).lastSeen;
 
-  it("短窗去重：窗口内的同类异常只落一条，窗口外恢复记录", () => {
+  it("short-window dedup: same-kind errors persist once per window, then resume", () => {
     let t = Date.parse("2026-07-06T10:00:00Z");
     const rec = new ErrorRecorder(repo, () => new Date(t));
     const boom = () =>
       rec.record({
         source: "http",
-        err: new HttpError(404, "not_found", "没有"),
+        err: new HttpError(404, "not_found", "Not found."),
         ctx: { projectId: "p1" },
       });
 
@@ -282,7 +286,7 @@ describe("error-recorder", () => {
     expect(count()).toBe(2);
   });
 
-  it("去重不跨 source / code / Project（不同类的异常互不压制）", () => {
+  it("dedup never crosses source / code / Project (kinds don't suppress each other)", () => {
     const rec = new ErrorRecorder(repo, now); // time frozen: everything lands in the same window
     const err = new Error("boom");
     rec.record({ source: "http", err, ctx: { projectId: "p1" }, code: "c1" });
@@ -294,7 +298,7 @@ describe("error-recorder", () => {
     expect(count()).toBe(5);
   });
 
-  it("去重表有界：先清过期项，仍超限则整体清空——清空后照常去重与记录", () => {
+  it("bounded dedup table: expired entries cleaned first, else wiped; works afterward", () => {
     let t = Date.parse("2026-07-06T10:00:00Z");
     const rec = new ErrorRecorder(repo, () => new Date(t));
     const boom = (code: string) =>
@@ -318,7 +322,7 @@ describe("error-recorder", () => {
   });
 });
 
-describe("stream-error-watcher（LLM / Environment 异常）", () => {
+describe("stream-error-watcher (LLM / Environment errors)", () => {
   let db: DatabaseSync;
   let repo: ErrorsRepo;
   const now = () => new Date("2026-07-06T10:00:00");
@@ -365,7 +369,7 @@ describe("stream-error-watcher（LLM / Environment 异常）", () => {
 
   // —— LLM ——
 
-  it("LLM failed → unexpected（不可重试，需人介入）；message 取随后 abort 事件的真实原因", () => {
+  it("LLM failed → unexpected (needs a human); message takes the abort reason", () => {
     const got = feed([
       requestBegin(),
       requestEnd("failed"),
@@ -384,7 +388,7 @@ describe("stream-error-watcher（LLM / Environment 异常）", () => {
     });
   });
 
-  it("LLM timeout / malformed → expected（引擎自动重连重试）；重试耗尽时 message 取 abort 原因", () => {
+  it("LLM timeout / malformed → expected (engine retries); message from the abort reason", () => {
     const got = feed([
       requestBegin(),
       requestEnd("timeout"), // First attempt times out → the engine retries (revealed by the next request_begin: no reason text yet)
@@ -394,7 +398,7 @@ describe("stream-error-watcher（LLM / Environment 异常）", () => {
     ]);
     expect(got).toHaveLength(2);
     expect(got[0]).toMatchObject({ source: "llm", kind: "expected", code: "llm_timeout" });
-    expect(got[0]!.message).toContain("超时"); // No abort arrived: falls back to the status text
+    expect(got[0]!.message).toContain("timed out"); // No abort arrived: falls back to the status text
     expect(got[1]).toMatchObject({
       source: "llm",
       kind: "expected",
@@ -403,7 +407,7 @@ describe("stream-error-watcher（LLM / Environment 异常）", () => {
     });
   });
 
-  it("aborted（用户点「停止」）不是异常：不记录；completed 亦不记", () => {
+  it("aborted (user clicked Stop) is not an error: not recorded; neither is completed", () => {
     expect(
       feed([
         requestBegin(),
@@ -415,7 +419,7 @@ describe("stream-error-watcher（LLM / Environment 异常）", () => {
     ).toHaveLength(0);
   });
 
-  it("用户在重试退避期间中断：timeout 是真实失败照记，但 message 不采信用户中断文案", () => {
+  it("interrupt during retry backoff: timeout still recorded, interrupt text distrusted", () => {
     const got = feed([
       requestBegin(),
       requestEnd("timeout"),
@@ -423,11 +427,11 @@ describe("stream-error-watcher（LLM / Environment 异常）", () => {
     ]);
     expect(got).toHaveLength(1);
     expect(got[0]).toMatchObject({ code: "llm_timeout", kind: "expected" });
-    expect(got[0]!.message).toContain("超时");
+    expect(got[0]!.message).toContain("timed out");
     expect(got[0]!.message).not.toContain("aborted");
   });
 
-  it("失败先挂起等原因；run 结束仍未揭晓 → close 兜底落库（用 status 文案）", () => {
+  it("failure pends for its reason; unresolved at run end → close persists (status text)", () => {
     const w = watcher();
     w.observe(requestBegin());
     w.observe(requestEnd("failed"));
@@ -436,10 +440,10 @@ describe("stream-error-watcher（LLM / Environment 异常）", () => {
     const got = rows();
     expect(got).toHaveLength(1);
     expect(got[0]).toMatchObject({ code: "llm_failed", kind: "unexpected" });
-    expect(got[0]!.message).toContain("LLM 请求失败");
+    expect(got[0]!.message).toContain("LLM request failed");
   });
 
-  it("父/子会话的 LLM 失败按 origin 各自挂起，abort 原因不串味", () => {
+  it("parent/child LLM failures pend separately by origin; abort reasons never cross over", () => {
     const got = feed([
       requestBegin(), // parent session initiates
       withOrigin(requestBegin(), "session-child"),
@@ -463,7 +467,7 @@ describe("stream-error-watcher（LLM / Environment 异常）", () => {
 
   const call = (name: string, id: string) => toolCall({ name, arguments: "{}", toolCallId: id });
 
-  it("工具 failed / timeout → environment + expected，code 带工具名（能看出是哪个工具挂了）", () => {
+  it("tool failed / timeout → environment + expected, code carries the tool name", () => {
     const got = feed([
       call("exec_command", "tc-1"),
       toolCallOutput({
@@ -491,7 +495,7 @@ describe("stream-error-watcher（LLM / Environment 异常）", () => {
     expect(got[1]).toMatchObject({ code: "tool_timeout:read_file", kind: "expected" });
   });
 
-  it("工具 aborted（拒批 / 用户中断）与 completed 不记", () => {
+  it("tool aborted (denial / user interrupt) and completed are not recorded", () => {
     expect(
       feed([
         call("exec_command", "tc-1"),
@@ -506,7 +510,7 @@ describe("stream-error-watcher（LLM / Environment 异常）", () => {
     ).toHaveLength(0);
   });
 
-  it("并行工具：tool_call_id → 工具名各自对上（输出乱序到达也不错位）", () => {
+  it("parallel tools: each tool_call_id maps to its own name despite out-of-order outputs", () => {
     const got = feed([
       call("exec_command", "tc-1"),
       call("read_file", "tc-2"),
@@ -519,7 +523,7 @@ describe("stream-error-watcher（LLM / Environment 异常）", () => {
     expect(got.map((r) => r.message)).toEqual(["boom-2", "boom-1"]);
   });
 
-  it("子会话（origin）的工具失败照记：工具名与父会话的同名 tool_call_id 不串味", () => {
+  it("a child session's tool failure: no name mix-up with the parent's equal tool_call_id", () => {
     const got = feed([
       call("exec_command", "tc-1"), // parent session
       withOrigin(call("write_file", "tc-1"), "session-child"), // sub-session happens to share the same id
@@ -538,7 +542,7 @@ describe("stream-error-watcher（LLM / Environment 异常）", () => {
     expect(got[1]).toMatchObject({ code: "tool_failed:exec_command", message: "parent boom" });
   });
 
-  it("超长工具输出：message 取尾部（失败原因在末尾）并截断到上限", () => {
+  it("overlong tool output: message takes the tail (the reason is at the end)", () => {
     const got = feed([
       call("exec_command", "tc-1"),
       toolCallOutput({
@@ -553,10 +557,10 @@ describe("stream-error-watcher（LLM / Environment 异常）", () => {
     expect(message.endsWith("[tool error] boom")).toBe(true); // truncating from the head would cut off the reason entirely
   });
 
-  it("无关消息为 no-op：正文、以及流式 partial_*（完整 tool_call_output 才是收尾）", () => {
+  it("irrelevant messages are a no-op: body text and streaming partial_*", () => {
     expect(
       feed([
-        assistantText("正常输出"),
+        assistantText("normal output"),
         call("exec_command", "tc-1"),
         partialToolCallOutput({ eventType: "stop", toolCallId: "tc-1", stopReason: "failed" }),
       ]),
@@ -565,7 +569,7 @@ describe("stream-error-watcher（LLM / Environment 异常）", () => {
 
   // —— Attribution: an error is recorded against **the session that actually produced it** (a sub-session's failure must not be attributed to the parent Agent) ——
 
-  it("子会话的 LLM 失败归到子 Agent / 子 Session（不是父的）", () => {
+  it("a child session's LLM failure attributes to the child Agent / Session", () => {
     const got = feed([
       childMeta("session-child", "/data/agents/agent-child/agent_state"),
       withOrigin(requestBegin(), "session-child"),
@@ -583,7 +587,7 @@ describe("stream-error-watcher（LLM / Environment 异常）", () => {
     });
   });
 
-  it("子会话的工具失败同样归到子会话（code 仍带工具名）", () => {
+  it("a child session's tool failure attributes to it (code still carries the tool name)", () => {
     const got = feed([
       childMeta("session-child", "/data/agents/agent-child/agent_state"),
       withOrigin(call("exec_command", "tc-1"), "session-child"),
@@ -603,7 +607,7 @@ describe("stream-error-watcher（LLM / Environment 异常）", () => {
     });
   });
 
-  it("父子交错到达：各自归各自；主会话（无 origin）的失败仍归父", () => {
+  it("parent/child interleaving: each attributes to its own; no-origin goes to the parent", () => {
     const got = feed([
       requestBegin(), // parent session initiates
       childMeta("session-child", "/data/agents/agent-child/agent_state"),
@@ -629,7 +633,7 @@ describe("stream-error-watcher（LLM / Environment 异常）", () => {
     ]);
   });
 
-  it("session_meta 还没到就先失败（边界）：回退父 ctx，不崩", () => {
+  it("failure before session_meta arrives: falls back to the parent ctx, no crash", () => {
     const got = feed([
       withOrigin(requestEnd("failed"), "session-child"), // the sub-session's meta hasn't arrived yet
       withOrigin(abortEvent("llm request error: 500"), "session-child"),
@@ -638,7 +642,7 @@ describe("stream-error-watcher（LLM / Environment 异常）", () => {
     expect(got[0]).toMatchObject({ code: "llm_failed", agent_id: "a1", session_id: "s1" });
   });
 
-  it("agent_state 路径异常（空串）：不登记，回退父 ctx（不写进一个不存在的 agentId）", () => {
+  it("malformed agent_state path (empty): not registered, falls back to the parent ctx", () => {
     const got = feed([
       childMeta("session-child", ""), // path.basename(path.dirname("")) === "." → caught by the defensive check
       withOrigin(requestEnd("failed"), "session-child"),
@@ -649,7 +653,7 @@ describe("stream-error-watcher（LLM / Environment 异常）", () => {
   });
 });
 
-describe("HTTP onError 落库（集成）", () => {
+describe("HTTP onError persistence (integration)", () => {
   let t: TestApp;
   let api: ReturnType<typeof apiClient>;
   let projectId: string;
@@ -659,7 +663,7 @@ describe("HTTP onError 落库（集成）", () => {
     const u = await provisionUser(t.app, "err_user");
     api = apiClient(t.app, u.cookie);
     const created = (await (
-      await api.post("/api/projects", { projectId: "err_user-proj", name: "异常项目" })
+      await api.post("/api/projects", { projectId: "err_user-proj", name: "Error project" })
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
   });
@@ -672,7 +676,7 @@ describe("HTTP onError 落库（集成）", () => {
       Record<string, unknown>
     >;
 
-  it("业务错误（HttpError 404）→ expected，带 code / 状态码 / projectId", async () => {
+  it("business error (HttpError 404) → expected, with code / status / projectId", async () => {
     const res = await api.get(`/api/projects/${projectId}/agents/agent-nope/sessions`);
     expect(res.status).toBe(404);
 
@@ -686,11 +690,11 @@ describe("HTTP onError 落库（集成）", () => {
     expect(rows[0]!.project_id).toBe(projectId);
   });
 
-  it("未预期异常（服务层抛普通 Error）→ unexpected + 500", async () => {
+  it("unexpected error (service layer throws a plain Error) → unexpected + 500", async () => {
     // handleError logs the stack trace: silence it in the test so it doesn't clutter output.
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     t.deps.usageService.query = () => {
-      throw new Error("查询炸了");
+      throw new Error("query blew up");
     };
     const res = await api.get(`/api/projects/${projectId}/usage?groupBy=date`);
     expect(res.status).toBe(500);
@@ -701,14 +705,14 @@ describe("HTTP onError 落库（集成）", () => {
     expect(rows[0]!.kind).toBe("unexpected");
     expect(rows[0]!.code).toBe("internal");
     expect(rows[0]!.status).toBe(500);
-    expect(rows[0]!.message).toBe("查询炸了");
+    expect(rows[0]!.message).toBe("query blew up");
     expect(rows[0]!.project_id).toBe(projectId);
   });
 
-  it("异常经 usage 端点暴露：汇总 / 最常见错误码 / 最近异常（统计中心的统计信息 + 表格）", async () => {
+  it("errors exposed via the usage endpoint: summary / top code / recent", async () => {
     // An error in another Project owned by the same owner: attributed to that Project, not this one's view.
     const other = (await (
-      await api.post("/api/projects", { projectId: "err_user-proj_2", name: "另一个项目" })
+      await api.post("/api/projects", { projectId: "err_user-proj_2", name: "Another project" })
     ).json()) as ProjectCreateResponse;
     await api.get(`/api/projects/${other.project.projectId}/agents/agent-nope/sessions`); // 404
     await api.get(`/api/projects/${projectId}/agents/agent-nope/sessions`); // 404 → expected
@@ -727,7 +731,7 @@ describe("HTTP onError 落库（集成）", () => {
     expect(body.errors.recent[0]).toMatchObject({ source: "http", code: "agent_not_found" });
   });
 
-  it("无归属异常（登录失败）只对管理员可见：普通成员的统计中心里看不到别的租户的异常", async () => {
+  it("unattributed errors (login failure) are admin-only, hidden from members", async () => {
     // A login failure has no Project context → produces one unattributed error (project_id is NULL).
     const bad = await t.app.request("/api/auth/login", {
       method: "POST",
@@ -742,7 +746,7 @@ describe("HTTP onError 落库（集成）", () => {
     expect(plain.user.isAdmin).toBe(false);
     const plainApi = apiClient(t.app, plain.cookie);
     const own = (await (
-      await plainApi.post("/api/projects", { projectId: "plain_user-proj", name: "普通成员的项目" })
+      await plainApi.post("/api/projects", { projectId: "plain_user-proj", name: "Member project" })
     ).json()) as ProjectCreateResponse;
     const plainBody = (await (
       await plainApi.get(`/api/projects/${own.project.projectId}/usage?groupBy=date`)
@@ -759,7 +763,7 @@ describe("HTTP onError 落库（集成）", () => {
     expect(adminBody.errors.recent[0]).toMatchObject({ code: "invalid_credentials" });
   });
 
-  it("删除 Project 级联清理该 Project 的异常记录", async () => {
+  it("Project deletion cascade-cleans that Project's error records", async () => {
     await api.get(`/api/projects/${projectId}/agents/agent-nope/sessions`);
     expect(errorRows().filter((r) => r.project_id === projectId)).toHaveLength(1);
 
@@ -769,7 +773,7 @@ describe("HTTP onError 落库（集成）", () => {
   });
 });
 
-describe("HTTP 异常归属（仅在请求方确有该 Project 访问权时）", () => {
+describe("HTTP error attribution (only when the requester actually has Project access)", () => {
   let t: TestApp;
   /** The built-in admin: unattributed errors are visible only to them. */
   let adminApi: ReturnType<typeof apiClient>;
@@ -784,7 +788,7 @@ describe("HTTP 异常归属（仅在请求方确有该 Project 访问权时）",
     adminApi = apiClient(t.app, admin.cookie);
     adminProjectId = (
       (await (
-        await adminApi.post("/api/projects", { projectId: "admin_proj", name: "管理员的项目" })
+        await adminApi.post("/api/projects", { projectId: "admin_proj", name: "Admin project" })
       ).json()) as ProjectCreateResponse
     ).project.projectId;
 
@@ -793,7 +797,7 @@ describe("HTTP 异常归属（仅在请求方确有该 Project 访问权时）",
     ownerApi = apiClient(t.app, owner.cookie);
     projectId = (
       (await (
-        await ownerApi.post("/api/projects", { projectId: "owner_user-victim", name: "受害项目" })
+        await ownerApi.post("/api/projects", { projectId: "owner_user-victim", name: "Victim" })
       ).json()) as ProjectCreateResponse
     ).project.projectId;
   });
@@ -820,7 +824,7 @@ describe("HTTP 异常归属（仅在请求方确有该 Project 访问权时）",
       ).json()) as UsageResponse
     ).errors;
 
-  it("未登录 → 401：不归属该 Project（否则任何人都能往别人的 Project 里灌异常统计）", async () => {
+  it("not logged in → 401: unattributed (anyone could flood another's error stats)", async () => {
     const res = await t.app.request(`/api/projects/${projectId}/usage?groupBy=date`);
     expect(res.status).toBe(401);
 
@@ -842,7 +846,7 @@ describe("HTTP 异常归属（仅在请求方确有该 Project 访问权时）",
     expect(admin.recent[0]).toMatchObject({ source: "http", code: "unauthorized" });
   });
 
-  it("已登录但无权（非成员）→ 404：同样不归属", async () => {
+  it("logged in but without access (non-member) → 404: likewise unattributed", async () => {
     const outsider = await provisionUser(t.app, "outsider");
     const res = await apiClient(t.app, outsider.cookie).get(
       `/api/projects/${projectId}/usage?groupBy=date`,
@@ -858,7 +862,7 @@ describe("HTTP 异常归属（仅在请求方确有该 Project 访问权时）",
     expect((await adminErrors()).recent[0]).toMatchObject({ code: "project_not_found" });
   });
 
-  it("有权成员（owner / 被授权 member）触发的业务错误 → 照常归属该 Project", async () => {
+  it("business errors from an authorized member → attributed as usual", async () => {
     // owner: an invalid groupBy → 400.
     expect((await ownerApi.get(`/api/projects/${projectId}/usage?groupBy=bogus`)).status).toBe(400);
 
@@ -880,9 +884,9 @@ describe("HTTP 异常归属（仅在请求方确有该 Project 访问权时）",
     expect(await ownerErrors()).toMatchObject({ total: 2, unexpected: 0 });
   });
 
-  it("归属判断自身抛异常：onError 不被搞崩（错误响应照常，异常按无归属落库）", async () => {
+  it("the attribution check throws: onError survives, error lands unattributed", async () => {
     t.deps.projectService.canAccess = () => {
-      throw new Error("授权判定炸了");
+      throw new Error("access check blew up");
     };
     const res = await ownerApi.get(`/api/projects/${projectId}/usage?groupBy=bogus`);
     expect(res.status).toBe(400); // still the original business error: not turned into a 500, nor an empty response

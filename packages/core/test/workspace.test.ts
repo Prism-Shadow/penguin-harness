@@ -38,14 +38,14 @@ afterEach(async () => {
 });
 
 describe("createTempWorkspace", () => {
-  it("在 workspaces/ 下创建 tmp-<8hex> 目录并返回路径", async () => {
+  it("creates a tmp-<8hex> directory under workspaces/ and returns its path", async () => {
     const dir = await createTempWorkspace(tmpRoot, "proj", "agent");
     expect(path.dirname(dir)).toBe(workspacesDir(tmpRoot, "proj", "agent"));
     expect(path.basename(dir)).toMatch(/^tmp-[0-9a-f]{8}$/);
     expect((await fs.stat(dir)).isDirectory()).toBe(true);
   });
 
-  it("id 与已有目录冲突时重新生成，不复用已有目录", async () => {
+  it("regenerates the id when it collides with an existing directory instead of reusing it", async () => {
     const base = workspacesDir(tmpRoot, "proj", "agent");
     await fs.mkdir(path.join(base, "tmp-aaaaaaaa"), { recursive: true });
     await fs.writeFile(path.join(base, "tmp-aaaaaaaa", "keep.txt"), "old");
@@ -64,7 +64,7 @@ describe("createTempWorkspace", () => {
     );
   });
 
-  it("重试耗尽时报错，而非复用已有目录", async () => {
+  it("errors when retries are exhausted instead of reusing an existing directory", async () => {
     const base = workspacesDir(tmpRoot, "proj", "agent");
     await fs.mkdir(path.join(base, "tmp-cccccccc"), { recursive: true });
     mocked.uuids.push(...Array.from({ length: 16 }, () => "cccccccc-3333-4333-8333-333333333333"));

@@ -121,23 +121,23 @@ describe("session-manager", () => {
     db.close();
   });
 
-  it("未知 Session → 404", async () => {
+  it("unknown Session → 404", async () => {
     const manager = makeManager(loaderOf(approvalFakeSession("session-1")));
     const err = await manager.startTask("session-ghost", [userText("x")]).catch((e: unknown) => e);
     expect((err as { status: number }).status).toBe(404);
   });
 
-  it("startTask：先 publish 输入，驱动结束置回 idle 并推送 task_state", async () => {
+  it("startTask: publishes the input first; when driving ends it returns to idle and pushes task_state", async () => {
     sessions.updateApprovalMode("session-1", "allow-all");
     const manager = makeManager(loaderOf(approvalFakeSession("session-1")));
     const events = capture("session-1");
-    const { sessionId } = await manager.startTask("session-1", [userText("你好")]);
+    const { sessionId } = await manager.startTask("session-1", [userText("hello")]);
     expect(sessionId).toBe("session-1");
     await waitFor(() => manager.statusOf("session-1") === "idle" && recorded.length >= 3);
 
     // The first entry is the input message (visible to other subscribers), followed by task_state: running.
     const first = JSON.parse(events[0]!.data) as { payload: { text: string } };
-    expect(first.payload.text).toBe("你好");
+    expect(first.payload.text).toBe("hello");
     const states = serverEvents(events).filter((e) => e.type === "task_state");
     expect(states.map((s) => s.state)).toEqual(["running", "idle"]);
     // Outputs and events are forwarded one by one and handed to the recorder.
@@ -150,7 +150,7 @@ describe("session-manager", () => {
     });
   });
 
-  it("消息流里的 LLM / 工具失败经 drive 落库（source=llm / environment，带当前 Session 上下文）", async () => {
+  it("LLM / tool failures in the message stream are persisted via drive (source=llm / environment, with the current Session context)", async () => {
     sessions.updateApprovalMode("session-1", "allow-all");
     const captured: ErrorRecordArgs[] = [];
     // core folds LLM / tool failures into the message stream (no throw): a tool
@@ -175,7 +175,7 @@ describe("session-manager", () => {
       async *compact(): AsyncGenerator<OmniMessage> {},
     };
     const manager = makeManager(loaderOf(failing), { record: (args) => captured.push(args) });
-    await manager.startTask("session-1", [userText("跑")]);
+    await manager.startTask("session-1", [userText("run")]);
     await waitFor(() => manager.statusOf("session-1") === "idle" && captured.length >= 2);
 
     expect(captured.map((a) => [a.source, a.code, a.kind])).toEqual([
@@ -187,7 +187,7 @@ describe("session-manager", () => {
     expect(String(captured[1]!.err)).toBe("llm request error: 500 upstream"); // the abort's real reason
   });
 
-  it("互斥：运行中再次 startTask → 409 task_in_progress；compact → 409", async () => {
+  it("mutual exclusion: startTask again while running → 409 task_in_progress; compact → 409", async () => {
     const manager = makeManager(loaderOf(approvalFakeSession("session-1")));
     await manager.startTask("session-1", [userText("go")]);
     await waitFor(() => manager.pendingApprovalCount("session-1") === 1);
@@ -202,7 +202,7 @@ describe("session-manager", () => {
     await waitFor(() => manager.statusOf("session-1") === "idle");
   });
 
-  it("always-ask：登记未决审批并推送 approval_request；决定后继续", async () => {
+  it("always-ask: registers a pending approval and pushes approval_request; continues after the decision", async () => {
     const manager = makeManager(loaderOf(approvalFakeSession("session-1")));
     const events = capture("session-1");
     await manager.startTask("session-1", [userText("go")]);
@@ -225,7 +225,7 @@ describe("session-manager", () => {
     expect(texts).toContain("decision=allow");
   });
 
-  it("deny-all / read-only 自动判定（不转人工）", async () => {
+  it("deny-all / read-only decide automatically (no human handoff)", async () => {
     sessions.updateApprovalMode("session-1", "deny-all");
     const manager = makeManager(loaderOf(approvalFakeSession("session-1")));
     await manager.startTask("session-1", [userText("go")]);
@@ -249,7 +249,7 @@ describe("session-manager", () => {
     );
   });
 
-  it("子会话（origin）登记：session_meta 落库，标题交模型据子会话自己的对话生成", async () => {
+  it("sub-session (origin) registration: session_meta persists; the title is left to the model using the sub-session's own conversation", async () => {
     const fake: RuntimeSession = {
       sessionId: "session-1",
       toolPermission: () => "rw",
@@ -259,7 +259,7 @@ describe("session-manager", () => {
         // The parent-level run_subagent call (no origin): its prompt becomes the sub-session title.
         yield toolCall({
           name: "run_subagent",
-          arguments: JSON.stringify({ prompt: "研究一下这个问题的背景资料" }),
+          arguments: JSON.stringify({ prompt: "Research the background of this question" }),
           toolCallId: "sub-1",
         });
         const hop = "child-1";
@@ -308,17 +308,17 @@ describe("session-manager", () => {
     expect(childTitle).toBeTruthy();
     // Explicit material override for the sub-session: user material = the prompt that spawned it; assistant material = the sub-session's **own** model output.
     expect(childTitle!.req.material).toEqual({
-      userText: "研究一下这个问题的背景资料",
+      userText: "Research the background of this question",
       assistantText: "child done",
     });
-    expect(childTitle!.req.fallbackText).toBe("研究一下这个问题的背景资料");
+    expect(childTitle!.req.fallbackText).toBe("Research the background of this question");
     // Session/Agent record the sub-session, but modelId records the parent — the request runs on the parent's bare LLM.
     expect(childTitle!.ctx).toMatchObject({ agentId: "child_agent", modelId: "m1" });
     // The sub-session has no SSE channel of its own: title events are delivered over the parent session's channel.
     expect(childTitle!.req.notifyOn).toBe("session-1");
   });
 
-  it("审批模式即改即生效：运行中 PATCH 后下一次决策用新模式", async () => {
+  it("approval mode takes effect immediately: after a mid-run PATCH, the next decision uses the new mode", async () => {
     // A fake Session that requests approval twice.
     const fake: RuntimeSession = {
       sessionId: "session-1",
@@ -349,7 +349,7 @@ describe("session-manager", () => {
     expect(manager.pendingApprovalCount("session-1")).toBe(0);
   });
 
-  it("abort：未决审批收敛为 deny 再触发 AbortSignal", async () => {
+  it("abort: pending approvals collapse to deny before the AbortSignal fires", async () => {
     const manager = makeManager(loaderOf(approvalFakeSession("session-1")));
     expect(manager.abortTask("session-1")).toBe(false); // no Task in progress → no-op
     await manager.startTask("session-1", [userText("go")]);
@@ -363,7 +363,7 @@ describe("session-manager", () => {
     expect(payloads.some((p) => p.type === "abort")).toBe(true);
   });
 
-  it("beginSessionDeletion：中断活跃运行、清出活跃表并标记删除中（新任务 409），end 后恢复", async () => {
+  it("beginSessionDeletion: interrupts active runs, clears the active table and marks deleting (new Tasks 409); recovers after end", async () => {
     const manager = makeManager(loaderOf(approvalFakeSession("session-1")));
     expect(manager.beginSessionDeletion("session-1")).toEqual([]); // no active entry
     // While deletion is in progress: a new Task is rejected with 409 (prevents resurrection).
@@ -380,7 +380,7 @@ describe("session-manager", () => {
     manager.endSessionDeletion("session-1");
   });
 
-  it("自愈：loader 返回新 session_id 时更新索引主键并返回当前实际 id", async () => {
+  it("self-heal: when the loader returns a new session_id, the index primary key is updated and the actual current id returned", async () => {
     sessions.updateApprovalMode("session-1", "allow-all");
     const manager = makeManager(loaderOf(approvalFakeSession("session-2-healed")));
     const { sessionId } = await manager.startTask("session-1", [userText("go")]);
@@ -392,7 +392,7 @@ describe("session-manager", () => {
     expect(recordedCtx[0]!.sessionId).toBe("session-2-healed");
   });
 
-  it("通道被回收重建后 drive 仍发到当前通道（每次 publish 前重新 get）", async () => {
+  it("after the channel is swept and rebuilt, drive still sends to the current channel (re-get before every publish)", async () => {
     const manager = makeManager(loaderOf(approvalFakeSession("session-1")));
     await manager.startTask("session-1", [userText("go")]);
     await waitFor(() => manager.pendingApprovalCount("session-1") === 1);
@@ -415,7 +415,7 @@ describe("session-manager", () => {
     expect(states.map((s) => s.state)).toContain("idle");
   });
 
-  it("abortProject：返回进行中的驱动 Promise，等待后收尾完成", async () => {
+  it("abortProject: returns the in-flight drive Promises; wrap-up completes after awaiting them", async () => {
     const manager = makeManager(loaderOf(approvalFakeSession("session-1")));
     expect(manager.abortProject("p1")).toEqual([]); // no active runs → empty array
     await manager.startTask("session-1", [userText("go")]);
@@ -429,10 +429,10 @@ describe("session-manager", () => {
     expect(manager.statusOf("session-1")).toBe("idle");
   });
 
-  it("loader 抛 HttpError（如 workspace_missing 409）→ 原样透传，不被重复包装", async () => {
+  it("loader throwing HttpError (e.g. workspace_missing 409) → passed through as-is, not re-wrapped", async () => {
     const loader: SessionLoader = {
       load: async () => {
-        throw new HttpError(409, "workspace_missing", "Workspace 已不存在。");
+        throw new HttpError(409, "workspace_missing", "Workspace no longer exists.");
       },
     };
     const manager = makeManager(loader);
@@ -441,7 +441,7 @@ describe("session-manager", () => {
     expect((err as { code: string }).code).toBe("workspace_missing");
   });
 
-  it("shutdown 置位后拒收新任务（503 shutting_down）", async () => {
+  it("rejects new Tasks once shutdown is set (503 shutting_down)", async () => {
     const manager = makeManager(loaderOf(approvalFakeSession("session-1")));
     await manager.shutdown();
     const err = await manager.startTask("session-1", [userText("x")]).catch((e: unknown) => e);
@@ -451,7 +451,7 @@ describe("session-manager", () => {
     expect((compactErr as { status: number }).status).toBe(503);
   });
 
-  it("sweepIdle：空闲超时的 entry 被淘汰（下次访问经 loader 重新装载）", async () => {
+  it("sweepIdle: entries idle past the timeout are evicted (reloaded via the loader on next access)", async () => {
     let loads = 0;
     const loader: SessionLoader = {
       load: async () => {
@@ -475,7 +475,7 @@ describe("session-manager", () => {
     expect(loads).toBe(1);
   });
 
-  it("sweepIdle：运行中 / 有未决审批的 entry 不淘汰", async () => {
+  it("sweepIdle: entries that are running / have pending approvals are not evicted", async () => {
     const manager = makeManager(loaderOf(approvalFakeSession("session-1")));
     await manager.startTask("session-1", [userText("go")]);
     await waitFor(() => manager.pendingApprovalCount("session-1") === 1);
@@ -486,7 +486,7 @@ describe("session-manager", () => {
     await waitFor(() => manager.statusOf("session-1") === "idle");
   });
 
-  it("compact：置 compacting、输出进通道、结束回 idle", async () => {
+  it("compact: sets compacting, output goes to the channel, returns to idle at the end", async () => {
     const manager = makeManager(loaderOf(approvalFakeSession("session-1")));
     const events = capture("session-1");
     await manager.startCompact("session-1");
@@ -499,7 +499,7 @@ describe("session-manager", () => {
     ]);
   });
 
-  it("Task 完成后通知标题生成：兜底素材取用户 text、生成素材由 Session 自采；压缩不通知", async () => {
+  it("notifies title generation after a Task completes: fallback material is the user text, generation material is self-collected by the Session; compaction doesn't notify", async () => {
     const notified: { ctx: UsageContext; session: unknown; req: TitleRequest }[] = [];
     const plainSession: RuntimeSession = {
       sessionId: "session-1",
@@ -507,10 +507,10 @@ describe("session-manager", () => {
       generateTitle: async () => ({ title: null, usage: null }),
       compactability: () => "ok" as const,
       async *run() {
-        yield thinkingMessage("思考中");
-        yield assistantText("答案A");
-        yield withOrigin(assistantText("子会话文本"), "session-sub");
-        yield assistantText("答案B");
+        yield thinkingMessage("thinking");
+        yield assistantText("answer A");
+        yield withOrigin(assistantText("sub-session text"), "session-sub");
+        yield assistantText("answer B");
       },
       async *compact() {
         yield compactionBegin({ reason: "manual", mode: "summarize", context: 1, turns: 1 });
@@ -528,9 +528,9 @@ describe("session-manager", () => {
       log: () => {},
     });
 
-    await manager.startTask("session-1", [userText("问题1"), userText("问题2")]);
+    await manager.startTask("session-1", [userText("question 1"), userText("question 2")]);
     await waitFor(() => notified.length === 1);
-    expect(notified[0]!.req.fallbackText).toBe("问题1\n问题2");
+    expect(notified[0]!.req.fallbackText).toBe("question 1\nquestion 2");
     // No material override for the main session: material is gathered by the core Session during run.
     expect(notified[0]!.req.material).toBeUndefined();
     expect(notified[0]!.session).toBe(plainSession);

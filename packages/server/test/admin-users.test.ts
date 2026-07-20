@@ -10,7 +10,7 @@ import type { AdminUsersResponse, MembersResponse } from "../src/api/types.js";
 import { apiClient, createTestApp, loginAdmin, loginUser, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
-describe("admin 用户后台", () => {
+describe("admin users backend", () => {
   let t: TestApp;
   let admin: ReturnType<typeof apiClient>;
 
@@ -22,7 +22,7 @@ describe("admin 用户后台", () => {
     await t.cleanup();
   });
 
-  it("非管理员访问一律 403", async () => {
+  it("non-admin access is always 403", async () => {
     const { cookie } = await provisionUser(t.app, "norm");
     const api = apiClient(t.app, cookie);
     expect((await api.get("/api/admin/users")).status).toBe(403);
@@ -35,7 +35,7 @@ describe("admin 用户后台", () => {
     expect((await api.delete("/api/admin/users/norm")).status).toBe(403);
   });
 
-  it("建号校验：非法用户名 / 过短密码 400；重复 409", async () => {
+  it("account creation: invalid username / short password 400; duplicate 409", async () => {
     for (const bad of ["Bob", "1abc", "a", "-abc", "a-b", "a!b", "a".repeat(33)]) {
       const res = await admin.post("/api/admin/users", { userId: bad, password: "password-123" });
       expect(res.status, `userId=${bad}`).toBe(400);
@@ -56,7 +56,7 @@ describe("admin 用户后台", () => {
     ).toBe(409);
   });
 
-  it("默认 Project id 被占用时建号失败并回滚用户", async () => {
+  it("default Project id taken: account creation fails and rolls back the user", async () => {
     // Occupy the frank-default_project directory (simulating CLI creation; no Web-side user can construct another's prefix).
     await fs.mkdir(path.join(t.root, "frank-default_project"), { recursive: true });
     const res = await admin.post("/api/admin/users", { userId: "frank", password: "password-123" });
@@ -66,7 +66,7 @@ describe("admin 用户后台", () => {
     expect(list.users.map((u) => u.userId)).not.toContain("frank");
   });
 
-  it("用户列表：种子 admin 与新建用户，字段齐全", async () => {
+  it("user list: seeded admin and newly created user, all fields present", async () => {
     await provisionUser(t.app, "kate");
     const list = (await (await admin.get("/api/admin/users")).json()) as AdminUsersResponse;
     expect(list.users.map((u) => u.userId)).toEqual(["admin", "kate"]);
@@ -77,7 +77,7 @@ describe("admin 用户后台", () => {
     expect(list.users[1]!.isAdmin).toBe(false);
   });
 
-  it("重置密码：清空目标用户全部会话，新密码带初始标记", async () => {
+  it("password reset: clears the user's sessions, new password keeps initial flag", async () => {
     const rex = await provisionUser(t.app, "rex");
     const rexApi = apiClient(t.app, rex.cookie);
     expect((await rexApi.get("/api/me")).status).toBe(200);
@@ -99,11 +99,11 @@ describe("admin 用户后台", () => {
     expect(again.user.passwordIsInitial).toBe(true);
   });
 
-  it("删除用户：owned Project（含目录）连带删除，成员关系随级联清除", async () => {
+  it("user deletion: owned Projects (with directories) and memberships removed", async () => {
     const gone = await provisionUser(t.app, "gone");
     const goneApi = apiClient(t.app, gone.cookie);
     expect(
-      (await goneApi.post("/api/projects", { projectId: "gone-extra", name: "多余项目" })).status,
+      (await goneApi.post("/api/projects", { projectId: "gone-extra", name: "Extra" })).status,
     ).toBe(201);
     // gone is also a member of admin's default_project.
     expect(
@@ -131,7 +131,7 @@ describe("admin 用户后台", () => {
     expect(members.members.map((m) => m.userId)).toEqual(["admin"]);
   });
 
-  it("内置 admin 不可删除；未知用户 404", async () => {
+  it("built-in admin cannot be deleted; unknown user 404", async () => {
     expect((await admin.delete("/api/admin/users/admin")).status).toBe(409);
     expect((await admin.delete("/api/admin/users/ghost")).status).toBe(404);
   });

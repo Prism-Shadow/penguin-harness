@@ -675,7 +675,7 @@ export class TraceService {
       throw new HttpError(
         404,
         "trace_not_found",
-        `该 Session 没有 index 为 ${index} 的 Trace 文件。`,
+        `This Session has no Trace file with index ${index}.`,
       );
     }
     return readTraceTolerant(file.path);

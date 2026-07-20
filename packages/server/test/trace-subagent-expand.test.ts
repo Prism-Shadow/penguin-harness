@@ -61,7 +61,7 @@ async function writeTrace(
   );
 }
 
-describe("TraceService.readMessages — 子会话展开", () => {
+describe("TraceService.readMessages — sub-session expansion", () => {
   let root: string;
   let svc: TraceService;
 
@@ -73,27 +73,27 @@ describe("TraceService.readMessages — 子会话展开", () => {
     await fs.rm(root, { recursive: true, force: true });
   });
 
-  it("按指针就地插入子会话消息，并补上 origin 链（子 Agent 按 Session id 在 Project 内定位）", async () => {
+  it("inserts child-session messages in place per the pointer and attaches the origin chain (the child Agent is located within the Project by Session id)", async () => {
     await writeTrace(root, PARENT_AGENT, PARENT, [
       meta(PARENT, PARENT_AGENT),
-      userText("跑个子 agent"),
+      userText("run a sub-agent"),
       toolCall({ name: "run_subagent", arguments: "{}", toolCallId: "c1" }),
       subagentEvent(CHILD), // pointer: holds only the child Session id
       toolCallOutput({ output: "done", toolCallId: "c1" }),
     ]);
     await writeTrace(root, CHILD_AGENT, CHILD, [
       meta(CHILD, CHILD_AGENT),
-      assistantText("子会话回答"),
+      assistantText("sub-session answer"),
     ]);
 
     const msgs = await svc.readMessages(PROJECT, PARENT_AGENT, PARENT);
     const texts = msgs.map((m) => (m.payload as { text?: string; type?: string }).text ?? m.type);
     expect(texts).toEqual([
       "session_meta",
-      "跑个子 agent",
+      "run a sub-agent",
       "model_msg", // tool_call
       "session_meta", // the child session's own meta (replaces the pointer, matching the live-stream forwarding shape)
-      "子会话回答",
+      "sub-session answer",
       "model_msg", // tool_call_output
     ]);
 
@@ -104,7 +104,7 @@ describe("TraceService.readMessages — 子会话展开", () => {
     for (const m of nested) expect(m.origin).toEqual([CHILD]);
   });
 
-  it("递归展开孙会话，origin 链逐层前缀", async () => {
+  it("recursively expands grandchild sessions; the origin chain is prefixed level by level", async () => {
     await writeTrace(root, PARENT_AGENT, PARENT, [
       meta(PARENT, PARENT_AGENT),
       subagentEvent(CHILD),
@@ -115,16 +115,16 @@ describe("TraceService.readMessages — 子会话展开", () => {
     ]);
     await writeTrace(root, CHILD_AGENT, GRANDCHILD, [
       meta(GRANDCHILD, CHILD_AGENT),
-      assistantText("孙会话回答"),
+      assistantText("grandchild answer"),
     ]);
 
     const msgs = await svc.readMessages(PROJECT, PARENT_AGENT, PARENT);
-    const deepest = msgs.find((m) => (m.payload as { text?: string }).text === "孙会话回答");
+    const deepest = msgs.find((m) => (m.payload as { text?: string }).text === "grandchild answer");
     expect(deepest?.origin).toEqual([CHILD, GRANDCHILD]);
     expect(msgs.filter((m) => m.type === "session_meta")).toHaveLength(3);
   });
 
-  it("循环指针（指向自身/祖先）不展开，保留指针事件", async () => {
+  it("cyclic pointers (self / ancestor) are not expanded; the pointer event is kept", async () => {
     // Never produced by normal operation (core only writes a direct child-session
     // pointer at the spawn point); this guards against expansion runaway on a
     // tampered/corrupted Trace.
@@ -136,7 +136,7 @@ describe("TraceService.readMessages — 子会话展开", () => {
     await writeTrace(root, CHILD_AGENT, CHILD, [
       meta(CHILD, CHILD_AGENT),
       subagentEvent(PARENT), // points back to an ancestor
-      assistantText("子会话回答"),
+      assistantText("sub-session answer"),
     ]);
 
     const msgs = await svc.readMessages(PROJECT, PARENT_AGENT, PARENT);
@@ -144,12 +144,12 @@ describe("TraceService.readMessages — 子会话展开", () => {
     const pointers = msgs.filter((m) => (m.payload as { type?: string }).type === "subagent");
     expect(pointers).toHaveLength(2);
     expect(msgs.filter((m) => m.type === "session_meta")).toHaveLength(2);
-    expect(msgs.filter((m) => (m.payload as { text?: string }).text === "子会话回答")).toHaveLength(
-      1,
-    );
+    expect(
+      msgs.filter((m) => (m.payload as { text?: string }).text === "sub-session answer"),
+    ).toHaveLength(1);
   });
 
-  it("子 Trace 缺失时保留指针事件（子会话内容无从恢复，但派生记录不凭空消失）", async () => {
+  it("a missing child Trace keeps the pointer event (the child content can't be recovered, but the spawn record doesn't vanish)", async () => {
     await writeTrace(root, PARENT_AGENT, PARENT, [
       meta(PARENT, PARENT_AGENT),
       subagentEvent(CHILD),

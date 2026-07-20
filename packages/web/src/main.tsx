@@ -8,7 +8,7 @@ import { App } from "./app";
 import "./styles.css";
 
 const container = document.getElementById("root");
-if (!container) throw new Error("找不到 #root 挂载点");
+if (!container) throw new Error("#root mount point not found");
 
 createRoot(container).render(
   <StrictMode>

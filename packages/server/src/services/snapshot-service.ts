@@ -42,7 +42,7 @@ export class SnapshotService {
     try {
       raw = await fs.readFile(systemConfigPath(this.root, projectId, agentId), "utf8");
     } catch {
-      throw new HttpError(404, "agent_not_found", "Agent 不存在。");
+      throw new HttpError(404, "agent_not_found", "Agent does not exist.");
     }
     const parsed = parseYaml(raw) as { version?: unknown } | null;
     return agentStateVersion({
@@ -117,7 +117,7 @@ export class SnapshotService {
           filter: (p) => !isVaultEntry(p),
         });
       } catch {
-        throw badRequest("导入失败：不是合法的 tar.gz 快照包。");
+        throw badRequest("Import failed: not a valid tar.gz snapshot package.");
       }
 
       // Validation: the package must contain agent_state/system_config.yaml, and version must be valid.
@@ -126,21 +126,21 @@ export class SnapshotService {
       try {
         parsed = parseYaml(await fs.readFile(configPath, "utf8"));
       } catch {
-        throw badRequest("导入失败：包内缺少 agent_state/system_config.yaml。");
+        throw badRequest("Import failed: the package is missing agent_state/system_config.yaml.");
       }
       if (
         parsed === null ||
         typeof parsed !== "object" ||
         typeof (parsed as { system_prompt?: unknown }).system_prompt !== "string"
       ) {
-        throw badRequest("导入失败：包内 system_config.yaml 非法。");
+        throw badRequest("Import failed: the package's system_config.yaml is invalid.");
       }
       const incomingRaw = (parsed as { version?: unknown }).version;
       if (
         incomingRaw !== undefined &&
         (!Number.isInteger(incomingRaw) || (incomingRaw as number) < 1)
       ) {
-        throw badRequest("导入失败：包内 version 非法。");
+        throw badRequest("Import failed: the package's version is invalid.");
       }
       const incoming = agentStateVersion({
         version: typeof incomingRaw === "number" ? incomingRaw : undefined,
@@ -149,7 +149,7 @@ export class SnapshotService {
         throw new HttpError(
           409,
           "version_conflict",
-          `包版本 v${incoming} 不高于当前 v${current}，需要确认后导入。`,
+          `Package version v${incoming} is not higher than the current v${current}; confirmation is required to import.`,
         );
       }
 

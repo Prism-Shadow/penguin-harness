@@ -31,4 +31,5 @@ export const PROJECT_SUFFIX_PATTERN = /^[a-z0-9_]+$/;
 export const PROJECT_ID_MAX_LENGTH = 64;
 
 /** Human-readable description of the rule (reused in error messages). */
-export const SEMANTIC_ID_RULE = "小写字母开头，仅小写字母、数字与下划线";
+export const SEMANTIC_ID_RULE =
+  "starts with a lowercase letter; lowercase letters, digits and underscores only";

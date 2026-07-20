@@ -592,7 +592,7 @@ describe("context compaction", () => {
     expect(llm1.calls).toHaveLength(1);
   });
 
-  it("compactability(): 逐一给出「不能压缩」的原因，而不是笼统的 false", async () => {
+  it('compactability(): reports each specific "cannot compact" reason instead of a blanket false', async () => {
     // compact() emits **zero messages** when there is nothing compactable. The caller (Web / CLI)
     // must be able to ask ahead of time, otherwise it can only wait forever for a compaction
     // banner that never comes -- exactly how "no response from /compact after interrupting on the

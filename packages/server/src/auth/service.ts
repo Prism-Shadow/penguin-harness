@@ -81,7 +81,7 @@ export class AuthService {
     const row = this.deps.users.findById(userId);
     const ok = row !== null && (await verifyPassword(password, row.passwordHash));
     if (!row || !ok) {
-      throw new HttpError(401, "invalid_credentials", "用户名或密码错误。");
+      throw new HttpError(401, "invalid_credentials", "Incorrect username or password.");
     }
     this.deps.authSessions.deleteExpired(this.now().toISOString());
     return { user: toUserInfo(row), token: this.issueSession(row.userId) };
@@ -91,10 +91,10 @@ export class AuthService {
   async changePassword(userId: string, oldPassword: string, newPassword: string): Promise<void> {
     const row = this.deps.users.findById(userId);
     if (!row || !(await verifyPassword(oldPassword, row.passwordHash))) {
-      throw new HttpError(400, "password_mismatch", "当前密码不正确。");
+      throw new HttpError(400, "password_mismatch", "Current password is incorrect.");
     }
     if (newPassword.length < MIN_PASSWORD_LENGTH) {
-      throw new HttpError(400, "invalid_password", "密码至少 8 个字符。");
+      throw new HttpError(400, "invalid_password", "Password must be at least 8 characters.");
     }
     this.deps.users.updatePassword(userId, await hashPassword(newPassword), false);
   }

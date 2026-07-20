@@ -4,6 +4,9 @@
  * persisting + event push + usage accounted as token usage, idempotency (no
  * regeneration when a title already exists / generation is in flight), and
  * silent failure.
+ * The Chinese conversation/title fixtures are intentional: a Session title must
+ * follow the conversation language (zh chat → zh title), including the fallback
+ * path that derives the title from the conversation text itself.
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import type { DatabaseSync } from "node:sqlite";
@@ -89,7 +92,7 @@ describe("title-generator", () => {
     db.close();
   });
 
-  it("生成标题：落库 + 推送 session_title + 用量折算入账；素材缺省由 Session 自采", async () => {
+  it("title generation: persists + pushes session_title + usage converted and recorded; material defaults to Session self-collection", async () => {
     const events = captureChannel();
     const calls = { count: 0, args: [] as unknown[] };
     const gen = makeGenerator();
@@ -119,7 +122,7 @@ describe("title-generator", () => {
     expect((usageMsg?.payload as { request?: { total: number } }).request?.total).toBe(6);
   });
 
-  it("素材覆盖（子会话场景）原样传给 generateTitle", async () => {
+  it("material override (sub-session scenario) is passed to generateTitle verbatim", async () => {
     const calls = { count: 0, args: [] as unknown[] };
     const gen = makeGenerator();
     const material = { userText: "子会话 prompt", assistantText: "子会话回答" };
@@ -132,18 +135,18 @@ describe("title-generator", () => {
     expect(sessions.findById(ROW.sessionId)?.title).toBe("子标题");
   });
 
-  it("已有标题不再生成（不发起单发请求）", async () => {
-    sessions.updateTitle(ROW.sessionId, "已有标题");
+  it("an existing title is never regenerated (no one-shot request issued)", async () => {
+    sessions.updateTitle(ROW.sessionId, "existing title");
     const calls = { count: 0, args: [] as unknown[] };
-    makeGenerator().maybeGenerate(CTX, fakeSession({ title: "新标题", usage: null }, calls), {
+    makeGenerator().maybeGenerate(CTX, fakeSession({ title: "new title", usage: null }, calls), {
       fallbackText: "u",
     });
     await new Promise((r) => setTimeout(r, 20));
     expect(calls.count).toBe(0);
-    expect(sessions.findById(ROW.sessionId)?.title).toBe("已有标题");
+    expect(sessions.findById(ROW.sessionId)?.title).toBe("existing title");
   });
 
-  it("LLM 返回 null（请求失败/空结果）时用兜底素材首行落库；usage 仍入账", async () => {
+  it("when the LLM returns null (failed request / empty result), the fallback material's first line is persisted; usage still recorded", async () => {
     const calls = { count: 0, args: [] as unknown[] };
     const gen = makeGenerator();
     gen.maybeGenerate(
@@ -161,7 +164,7 @@ describe("title-generator", () => {
     await waitFor(() => recorded.length > 0);
   });
 
-  it("LLM 返回 null 且兜底素材为空 → 标题保持 NULL（下次可重试）", async () => {
+  it("LLM returns null and the fallback material is blank → the title stays NULL (retryable next time)", async () => {
     const calls = { count: 0, args: [] as unknown[] };
     const gen = makeGenerator();
     gen.maybeGenerate(CTX, fakeSession({ title: null, usage: null }, calls), {
@@ -171,7 +174,7 @@ describe("title-generator", () => {
     expect(sessions.findById(ROW.sessionId)?.title).toBeNull();
   });
 
-  it("LLM 返回 null 且兜底素材为纯标点 → 兜底退回截断原文（不落 NULL）", async () => {
+  it("LLM returns null and the fallback material is pure punctuation → falls back to the truncated original text (never NULL)", async () => {
     const calls = { count: 0, args: [] as unknown[] };
     const gen = makeGenerator();
     // sanitizeTitle strips "？？？" down to empty — the fallback must revert to the truncated original text so a title is still produced.

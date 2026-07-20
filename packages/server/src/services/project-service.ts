@@ -84,7 +84,11 @@ export class ProjectService {
   requireProjectAccess(userId: string, projectId: string): ProjectRow & { role: ProjectRole } {
     const row = this.resolveAccess(userId, projectId);
     if (!row) {
-      throw new HttpError(404, "project_not_found", "Project 不存在或无权访问。");
+      throw new HttpError(
+        404,
+        "project_not_found",
+        "Project does not exist or you do not have access.",
+      );
     }
     return row;
   }
@@ -103,7 +107,11 @@ export class ProjectService {
   requireProjectOwner(userId: string, projectId: string): ProjectRow {
     const row = this.requireProjectAccess(userId, projectId);
     if (row.role !== "owner") {
-      throw new HttpError(403, "owner_required", "该操作仅 Project owner 可执行。");
+      throw new HttpError(
+        403,
+        "owner_required",
+        "Only the Project owner can perform this operation.",
+      );
     }
     return row;
   }
@@ -149,7 +157,7 @@ export class ProjectService {
         throw new HttpError(
           400,
           "invalid_project_id",
-          `Project id 须为 2~64 位：${SEMANTIC_ID_RULE}（连字符保留作用户命名空间分隔）。`,
+          `Project id must be 2–64 characters: ${SEMANTIC_ID_RULE} (the hyphen is reserved as the user namespace separator).`,
         );
       }
     } else {
@@ -159,7 +167,7 @@ export class ProjectService {
         throw new HttpError(
           400,
           "project_id_prefix_required",
-          `Project id 须以 ${prefix} 开头，后接小写字母、数字或下划线（总长不超过 ${PROJECT_ID_MAX_LENGTH}）。`,
+          `Project id must start with ${prefix}, followed by lowercase letters, digits or underscores (at most ${PROJECT_ID_MAX_LENGTH} in total).`,
         );
       }
     }
@@ -167,7 +175,7 @@ export class ProjectService {
       this.deps.projects.findById(projectId) !== null ||
       (await dirExists(projectDir(this.deps.root, projectId)))
     ) {
-      throw new HttpError(409, "project_exists", `Project id 已被占用：${projectId}。`);
+      throw new HttpError(409, "project_exists", `Project id is already taken: ${projectId}.`);
     }
     const displayName = name ?? projectId;
     const createdAt = new Date().toISOString();
@@ -179,7 +187,7 @@ export class ProjectService {
       this.deps.projects.insert({ projectId, ownerUserId: owner.userId, createdAt });
     } catch (err) {
       if (err instanceof Error && err.message.includes("UNIQUE")) {
-        throw new HttpError(409, "project_exists", `Project id 已被占用：${projectId}。`);
+        throw new HttpError(409, "project_exists", `Project id is already taken: ${projectId}.`);
       }
       throw err;
     }
@@ -248,14 +256,14 @@ export class ProjectService {
       throw new HttpError(
         409,
         "cannot_delete_default_project",
-        "default_project 与 CLI 共用，不能从 Web 删除。",
+        "default_project is shared with the CLI and cannot be deleted from the web.",
       );
     }
     if (this.deps.projects.listAccessible(userId).length <= 1) {
       throw new HttpError(
         409,
         "cannot_delete_last_project",
-        "这是当前账号最后一个 Project，删除后将无 Project 可用；请先创建新的 Project。",
+        "This is the account's last Project; deleting it would leave no Project available. Create a new Project first.",
       );
     }
     await this.destroyProject(projectId);
@@ -306,13 +314,21 @@ export class ProjectService {
     const project = this.requireProjectOwner(userId, projectId);
     const target = this.deps.users.findById(targetUserId);
     if (!target) {
-      throw new HttpError(404, "user_not_found", `用户不存在：${targetUserId}。`);
+      throw new HttpError(404, "user_not_found", `User does not exist: ${targetUserId}.`);
     }
     if (target.userId === project.ownerUserId) {
-      throw new HttpError(409, "already_owner", "owner 无需授权给自己。");
+      throw new HttpError(
+        409,
+        "already_owner",
+        "The owner does not need to grant access to themselves.",
+      );
     }
     if (this.deps.members.isMember(projectId, target.userId)) {
-      throw new HttpError(409, "already_member", `${targetUserId} 已是该 Project 的成员。`);
+      throw new HttpError(
+        409,
+        "already_member",
+        `${targetUserId} is already a member of this Project.`,
+      );
     }
     const createdAt = new Date().toISOString();
     this.deps.members.insert({ projectId, userId: target.userId, createdAt });
@@ -323,7 +339,7 @@ export class ProjectService {
   removeMember(userId: string, projectId: string, targetUserId: string): void {
     this.requireProjectOwner(userId, projectId);
     if (!this.deps.members.isMember(projectId, targetUserId)) {
-      throw new HttpError(404, "member_not_found", `该 Project 没有成员：${targetUserId}。`);
+      throw new HttpError(404, "member_not_found", `This Project has no member: ${targetUserId}.`);
     }
     this.deps.members.delete(projectId, targetUserId);
   }

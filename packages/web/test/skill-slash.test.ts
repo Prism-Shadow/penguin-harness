@@ -23,34 +23,34 @@ import {
 import { zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 
-describe("localizedText（界面语言取文案）", () => {
-  it("zh 优先中文字段", () => {
+describe("localizedText (copy selection by UI language)", () => {
+  it("zh prefers the Chinese field", () => {
     expect(localizedText("zh", "Create agents", "创建 Agent")).toBe("创建 Agent");
   });
 
-  it("zh 但中文缺省（undefined / 空串）回退英文", () => {
+  it("zh with the Chinese value missing (undefined / empty string) falls back to English", () => {
     expect(localizedText("zh", "Create agents")).toBe("Create agents");
     expect(localizedText("zh", "Create agents", "")).toBe("Create agents");
   });
 
-  it("en 恒用英文（即使有中文字段）", () => {
+  it("en always uses English (even with a Chinese field present)", () => {
     expect(localizedText("en", "Create agents", "创建 Agent")).toBe("Create agents");
   });
 });
 
-describe("localizedShortText（短描述优先，缺失回退完整描述）", () => {
+describe("localizedShortText (short description first, falling back to the full description)", () => {
   const full = {
     description: "Create agents from requirements",
     shortDescription: "Create agents",
     shortDescriptionZh: "创建 Agent",
   };
 
-  it("双语短描述齐全：按界面语言取短描述", () => {
+  it("both short descriptions present: picks the short description by UI language", () => {
     expect(localizedShortText("zh", full)).toBe("创建 Agent");
     expect(localizedShortText("en", full)).toBe("Create agents");
   });
 
-  it("zh 短中文缺失时回退短英文，再回退完整英文（完整描述仅英文）", () => {
+  it("zh falls back to the short English when the short Chinese is missing, then to the full English (the full description is English-only)", () => {
     expect(localizedShortText("zh", { ...full, shortDescriptionZh: undefined })).toBe(
       "Create agents",
     );
@@ -61,7 +61,7 @@ describe("localizedShortText（短描述优先，缺失回退完整描述）", (
     ).toBe("Create agents from requirements");
   });
 
-  it("en：短描述缺失（含空串）回退完整描述", () => {
+  it("en: a missing short description (including empty string) falls back to the full description", () => {
     expect(localizedShortText("en", { ...full, shortDescription: undefined })).toBe(
       "Create agents from requirements",
     );
@@ -71,7 +71,7 @@ describe("localizedShortText（短描述优先，缺失回退完整描述）", (
   });
 });
 
-describe("skillSlashItems（slash 技能命令项组装）", () => {
+describe("skillSlashItems (slash skill command item assembly)", () => {
   const skills: SkillMetadataItem[] = [
     {
       name: "agent-creation",
@@ -82,7 +82,7 @@ describe("skillSlashItems（slash 技能命令项组装）", () => {
     { name: "penguin-sdk", description: "Develop with the Penguin SDK", version: 2, updated: "" },
   ];
 
-  it("每个技能一项：cmd 为 /<skill_name>，desc 按界面语言（无中文短描述回退英文）", () => {
+  it("one item per skill: cmd is /<skill_name>, desc follows the UI language (falling back to English without a Chinese short description)", () => {
     expect(skillSlashItems(skills, "zh")).toEqual([
       { name: "agent-creation", cmd: "/agent-creation", desc: "Create agents from requirements" },
       { name: "penguin-sdk", cmd: "/penguin-sdk", desc: "Develop with the Penguin SDK" },
@@ -93,11 +93,11 @@ describe("skillSlashItems（slash 技能命令项组装）", () => {
     ]);
   });
 
-  it("空列表给空数组", () => {
+  it("an empty list yields an empty array", () => {
     expect(skillSlashItems([], "zh")).toEqual([]);
   });
 
-  it("cmd 前缀匹配（slash 过滤口径）：/agent-opt 命中 /agent-optimization", () => {
+  it("cmd prefix matching (slash filter convention): /agent-opt hits /agent-optimization", () => {
     const items = skillSlashItems(
       [{ name: "agent-optimization", description: "Optimize agents", version: 1, updated: "" }],
       "en",
@@ -105,7 +105,7 @@ describe("skillSlashItems（slash 技能命令项组装）", () => {
     expect(items[0]!.cmd.startsWith("/agent-opt")).toBe(true);
   });
 
-  it("desc 短描述优先（缺失回退完整描述）", () => {
+  it("desc prefers the short description (falling back to the full one when missing)", () => {
     const withShort: SkillMetadataItem[] = [
       {
         name: "agent-creation",
@@ -121,14 +121,14 @@ describe("skillSlashItems（slash 技能命令项组装）", () => {
   });
 });
 
-describe("quickInvokeText（技能库快捷调用的预填文本，zh/en 字典）", () => {
-  it("与空正文自动调用文本同口径：zh「使用 X 技能」/ en「use the X skill」", () => {
+describe("quickInvokeText (prefill text for skill-library quick invoke, zh/en dictionaries)", () => {
+  it('same convention as the empty-body auto-invoke text: zh "使用 X 技能" / en "use the X skill"', () => {
     expect(zh.skills.quickInvokeText("agent-creation")).toBe("使用 agent-creation 技能");
     expect(en.skills.quickInvokeText("agent-creation")).toBe("use the agent-creation skill");
   });
 });
 
-describe("filterSkills（技能下拉的搜索过滤）", () => {
+describe("filterSkills (search filter for the skill dropdown)", () => {
   const skills: SkillMetadataItem[] = [
     {
       name: "agent-creation",
@@ -139,17 +139,17 @@ describe("filterSkills（技能下拉的搜索过滤）", () => {
     { name: "penguin-sdk", description: "Develop with the Penguin SDK", version: 2, updated: "" },
   ];
 
-  it("空查询（含纯空白）返回全量", () => {
+  it("an empty query (including pure whitespace) returns everything", () => {
     expect(filterSkills(skills, "zh", "")).toEqual(skills);
     expect(filterSkills(skills, "en", "   ")).toEqual(skills);
   });
 
-  it("按 name 子串过滤（大小写不敏感）：sdk 只剩 penguin-sdk", () => {
+  it("filters by name substring (case-insensitive): sdk leaves only penguin-sdk", () => {
     expect(filterSkills(skills, "en", "sdk").map((s) => s.name)).toEqual(["penguin-sdk"]);
     expect(filterSkills(skills, "en", "SDK").map((s) => s.name)).toEqual(["penguin-sdk"]);
   });
 
-  it("按显示文案过滤：zh 命中中文短描述，en 恒用英文", () => {
+  it("filters by display copy: zh matches the Chinese short description, en always uses English", () => {
     const withZh = [{ ...skills[0]!, shortDescriptionZh: "把需求变成 Agent" }, skills[1]!];
     expect(filterSkills(withZh, "zh", "需求").map((s) => s.name)).toEqual(["agent-creation"]);
     expect(filterSkills(withZh, "en", "需求")).toEqual([]);
@@ -158,18 +158,18 @@ describe("filterSkills（技能下拉的搜索过滤）", () => {
     ]);
   });
 
-  it("无匹配给空数组", () => {
+  it("no match yields an empty array", () => {
     expect(filterSkills(skills, "zh", "nonexistent")).toEqual([]);
   });
 });
 
-describe("skillsAutoMessage（空正文发送的自动调用文本，zh/en 字典）", () => {
-  it("zh：技能名以「、」相连，单复数同款", () => {
+describe("skillsAutoMessage (auto-invoke text for empty-body sends, zh/en dictionaries)", () => {
+  it("zh: skill names joined with 、, same wording for singular and plural", () => {
     expect(zh.chat.skillsAutoMessage(["agent-creation"])).toBe("使用 agent-creation 技能");
     expect(zh.chat.skillsAutoMessage(["a", "b"])).toBe("使用 a、b 技能");
   });
 
-  it("en：单数 use the <name> skill、复数逗号相连 + skills", () => {
+  it("en: singular use the <name> skill, plural comma-joined + skills", () => {
     expect(en.chat.skillsAutoMessage(["agent-creation"])).toBe("use the agent-creation skill");
     expect(en.chat.skillsAutoMessage(["a", "b"])).toBe("use the a, b skills");
   });

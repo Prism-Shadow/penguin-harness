@@ -15,23 +15,23 @@ function run(from: number, target: number, config: SpringConfig, frames = 240) {
 }
 
 describe("stepSpring", () => {
-  it("收敛到目标", () => {
+  it("converges to the target", () => {
     const { x, v } = run(600, 0, SPRING_DEFAULT);
     expect(Math.abs(x)).toBeLessThan(0.5);
     expect(Math.abs(v)).toBeLessThan(5);
   });
 
-  it("临界阻尼（damping=1）从静止出发不过冲", () => {
+  it("critical damping (damping=1) from rest does not overshoot", () => {
     const { path } = run(600, 0, SPRING_DEFAULT);
     for (const p of path) expect(p).toBeGreaterThanOrEqual(-0.5);
   });
 
-  it("欠阻尼（damping=0.8）会过冲后回摆", () => {
+  it("underdamped (damping=0.8) overshoots then swings back", () => {
     const { path } = run(600, 0, SPRING_MOMENTUM);
     expect(Math.min(...path)).toBeLessThan(-1);
   });
 
-  it("初速度朝反方向时先随速度走再回归（速度交接语义）", () => {
+  it("an initial velocity away from the target follows the velocity first, then returns (velocity-handoff semantics)", () => {
     let x = 100;
     let v = 800; // moving away from target 0
     [x, v] = stepSpring(x, v, 0, SPRING_MOMENTUM, 16);
@@ -40,7 +40,7 @@ describe("stepSpring", () => {
     expect(Math.abs(x)).toBeLessThan(0.5);
   });
 
-  it("超大帧间隔（后台标签页恢复）不数值爆炸", () => {
+  it("huge frame gaps (background tab resume) do not blow up numerically", () => {
     let x = 600;
     let v = 0;
     for (let i = 0; i < 60; i++) [x, v] = stepSpring(x, v, 0, SPRING_MOMENTUM, 500);
@@ -51,7 +51,7 @@ describe("stepSpring", () => {
 });
 
 describe("isSettled", () => {
-  it("位置与速度双阈值", () => {
+  it("dual thresholds on position and velocity", () => {
     expect(isSettled(0.4, 4, 0)).toBe(true);
     expect(isSettled(1, 0, 0)).toBe(false);
     expect(isSettled(0, 10, 0)).toBe(false);

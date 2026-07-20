@@ -75,12 +75,16 @@ type LlmFailure = "failed" | "timeout" | "malformed";
 
 /** LLM failure state → error code, classification, and fallback message (used when the abort reason isn't available). */
 const LLM_FAILURES: Record<LlmFailure, { code: string; kind: ErrorKind; text: string }> = {
-  failed: { code: "llm_failed", kind: "unexpected", text: "LLM 请求失败（不可重试）。" },
-  timeout: { code: "llm_timeout", kind: "expected", text: "LLM 请求超时（引擎重连重试）。" },
+  failed: { code: "llm_failed", kind: "unexpected", text: "LLM request failed (not retryable)." },
+  timeout: {
+    code: "llm_timeout",
+    kind: "expected",
+    text: "LLM request timed out (the engine reconnects and retries).",
+  },
   malformed: {
     code: "llm_malformed",
     kind: "expected",
-    text: "LLM 响应无法解析（引擎重连重试）。",
+    text: "LLM response could not be parsed (the engine reconnects and retries).",
   },
 };
 
@@ -113,7 +117,7 @@ function originKey(msg: OmniMessage): string {
  * drop the reason.
  */
 function toolFailureText(output: string): string {
-  if (!output) return "工具执行失败（无输出）。";
+  if (!output) return "Tool execution failed (no output).";
   if (output.length <= MESSAGE_MAX) return output;
   return `…${output.slice(output.length - (MESSAGE_MAX - 1))}`;
 }

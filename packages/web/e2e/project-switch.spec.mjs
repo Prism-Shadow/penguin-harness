@@ -20,7 +20,9 @@ const U = "projswitcher";
 const P = "password123";
 const PROJ = "SwitchTarget";
 
-test("下拉里点当前 Project：Agent 与 Session 列表不消失", async ({ page }) => {
+test("clicking the current Project in the dropdown: Agent and Session lists must not disappear", async ({
+  page,
+}) => {
   await provisionAndLogin(page.request, U, P);
 
   const initial = (await (await page.request.get(`${BASE}/api/projects`)).json()).projects[0];

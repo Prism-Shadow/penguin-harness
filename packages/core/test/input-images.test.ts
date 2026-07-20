@@ -29,10 +29,10 @@ afterEach(async () => {
 });
 
 describe("imagesToScratchpadPaths", () => {
-  it("data URL 图片落盘、路径拼接进用户文本，图片消息移除", async () => {
+  it("data URL images are saved to disk, paths appended to the user text, image messages removed", async () => {
     const dir = path.join(tmp, "scratch", "session-1"); // auto-created if the directory doesn't exist
     const out = await imagesToScratchpadPaths(
-      [userText("看看这两张图"), imageUrlMessage(DATA_URL), imageUrlMessage(DATA_URL)],
+      [userText("Look at these two images"), imageUrlMessage(DATA_URL), imageUrlMessage(DATA_URL)],
       dir,
     );
 
@@ -40,7 +40,7 @@ describe("imagesToScratchpadPaths", () => {
     const p = out[0]!.payload as TextPayload;
     expect(p.type).toBe("text");
     expect(p.role).toBe("user");
-    expect(p.text.startsWith("看看这两张图\n\n")).toBe(true);
+    expect(p.text.startsWith("Look at these two images\n\n")).toBe(true);
     const paths = [...p.text.matchAll(/\[attached image: ([^\]]+)\]/g)].map((m) => m[1]!);
     expect(paths).toHaveLength(2);
 
@@ -56,7 +56,7 @@ describe("imagesToScratchpadPaths", () => {
     expect(new Set(paths).size).toBe(2);
   });
 
-  it("http(s) URL 不落盘，原样引用；仅图片输入时补一条纯路径文本", async () => {
+  it("http(s) URLs are not saved but referenced as-is; image-only input gets a paths-only text message", async () => {
     const out = await imagesToScratchpadPaths([imageUrlMessage("https://example.com/a.png")], tmp);
     expect(out).toHaveLength(1);
     const p = out[0]!.payload as TextPayload;
@@ -65,13 +65,13 @@ describe("imagesToScratchpadPaths", () => {
     expect(await readdir(tmp)).toHaveLength(0);
   });
 
-  it("无图片输入原样返回（不触碰文件系统）", async () => {
-    const input = [userText("纯文本")];
+  it("input without images is returned as-is (never touches the filesystem)", async () => {
+    const input = [userText("plain text")];
     const out = await imagesToScratchpadPaths(input, path.join(tmp, "untouched"));
     expect(out).toBe(input);
   });
 
-  it("无法解析的图片以说明行代替，不静默丢失", async () => {
+  it("an unparsable image is replaced with an explanatory line, never silently dropped", async () => {
     const out = await imagesToScratchpadPaths(
       [userText("hi"), imageUrlMessage("data:text/plain,oops")],
       tmp,

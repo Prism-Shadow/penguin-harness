@@ -30,8 +30,8 @@ function memStorage(): DraftStorage & { map: Map<string, string> } {
   };
 }
 
-describe("parseDraft（逐字段校验）", () => {
-  it("null / 空串 / 坏 JSON / 非对象一律给空草稿", () => {
+describe("parseDraft (field-by-field validation)", () => {
+  it("null / empty string / bad JSON / non-objects all yield an empty draft", () => {
     expect(parseDraft(null)).toEqual({});
     expect(parseDraft("")).toEqual({});
     expect(parseDraft("{not json")).toEqual({});
@@ -41,9 +41,9 @@ describe("parseDraft（逐字段校验）", () => {
     expect(parseDraft("[1,2]")).toEqual({});
   });
 
-  it("合法字段逐项透传（模型为成对引用）", () => {
+  it("valid fields pass through one by one (the model is a paired reference)", () => {
     const raw = JSON.stringify({
-      text: "帮我写个脚本",
+      text: "Write me a script",
       agentId: "default_agent",
       workspace: "/srv/repo",
       approvalMode: "read-only",
@@ -52,7 +52,7 @@ describe("parseDraft（逐字段校验）", () => {
       skills: ["agent-creation", "penguin-sdk"],
     });
     expect(parseDraft(raw)).toEqual({
-      text: "帮我写个脚本",
+      text: "Write me a script",
       agentId: "default_agent",
       workspace: "/srv/repo",
       approvalMode: "read-only",
@@ -62,7 +62,7 @@ describe("parseDraft（逐字段校验）", () => {
     });
   });
 
-  it("类型不对的字段丢弃，其余保留", () => {
+  it("wrongly typed fields are dropped, the rest kept", () => {
     const raw = JSON.stringify({
       text: 123,
       agentId: null,
@@ -74,25 +74,25 @@ describe("parseDraft（逐字段校验）", () => {
     expect(parseDraft(raw)).toEqual({ approvalMode: "read-only" });
   });
 
-  it("旧格式的字符串 modelId 与半个引用一律丢弃（未发布，不做迁移）", () => {
+  it("legacy string modelId and half references are always dropped (never released, no migration)", () => {
     expect(parseDraft(JSON.stringify({ modelId: "claude-opus-4-8" }))).toEqual({});
     expect(parseDraft(JSON.stringify({ modelRef: { modelId: "claude-opus-4-8" } }))).toEqual({});
     expect(parseDraft(JSON.stringify({ modelRef: { provider: "anthropic" } }))).toEqual({});
   });
 
-  it("approvalMode 只收四个合法值", () => {
+  it("approvalMode accepts only the four valid values", () => {
     expect(parseDraft(JSON.stringify({ approvalMode: "yolo" }))).toEqual({});
     for (const m of ["always-ask", "read-only", "allow-all", "deny-all"]) {
       expect(parseDraft(JSON.stringify({ approvalMode: m }))).toEqual({ approvalMode: m });
     }
   });
 
-  it("未知字段不透传", () => {
+  it("unknown fields do not pass through", () => {
     const out = parseDraft(JSON.stringify({ text: "hi", evil: "x" }));
     expect(out).toEqual({ text: "hi" });
   });
 
-  it("skills：非数组丢弃，数组内非字符串元素过滤，过滤后为空整个字段丢弃", () => {
+  it("skills: non-arrays dropped, non-string elements filtered out, the whole field dropped when empty after filtering", () => {
     // Non-arrays are always discarded
     expect(parseDraft(JSON.stringify({ skills: "agent-creation" }))).toEqual({});
     expect(parseDraft(JSON.stringify({ skills: { 0: "x" } }))).toEqual({});
@@ -107,25 +107,27 @@ describe("parseDraft（逐字段校验）", () => {
   });
 });
 
-describe("load / save / clear（按键隔离，异常静默）", () => {
-  it("保存后可等值读回；Project 草稿与 Session 草稿互不影响", () => {
+describe("load / save / clear (key isolation, errors silenced)", () => {
+  it("saved drafts read back equal; Project and Session drafts do not affect each other", () => {
     const s = memStorage();
     saveDraft(
       draftKey("user-a1", "project-a"),
       {
-        text: "草稿 A",
+        text: "Draft A",
         modelRef: { provider: "deepseek", modelId: "deepseek-v4-pro" },
         skills: ["agent-creation"],
       },
       s,
     );
-    saveDraft(sessionDraftKey("user-a1", "session-1"), { text: "会话草稿" }, s);
+    saveDraft(sessionDraftKey("user-a1", "session-1"), { text: "session draft" }, s);
     expect(loadDraft(draftKey("user-a1", "project-a"), s)).toEqual({
-      text: "草稿 A",
+      text: "Draft A",
       modelRef: { provider: "deepseek", modelId: "deepseek-v4-pro" },
       skills: ["agent-creation"],
     });
-    expect(loadDraft(sessionDraftKey("user-a1", "session-1"), s)).toEqual({ text: "会话草稿" });
+    expect(loadDraft(sessionDraftKey("user-a1", "session-1"), s)).toEqual({
+      text: "session draft",
+    });
     // Lock down the key format (e2e accesses it as a literal; ids are all
     // <prefix>-<hex> with no ".", so the key space never collides).
     expect(draftKey("user-a1", "project-a")).toBe("penguin.chatDraft.user-a1.project-a");
@@ -135,28 +137,28 @@ describe("load / save / clear（按键隔离，异常静默）", () => {
     expect(s.map.size).toBe(2);
   });
 
-  it("同一 Project/Session 的草稿按用户隔离：互相读不到、写不覆盖（#68）", () => {
+  it("drafts for the same Project/Session are isolated per user: neither reads nor overwrites the other (#68)", () => {
     const s = memStorage();
-    saveDraft(draftKey("user-a1", "project-a"), { text: "A 的机密草稿" }, s);
-    saveDraft(sessionDraftKey("user-a1", "session-1"), { text: "A 的会话草稿" }, s);
+    saveDraft(draftKey("user-a1", "project-a"), { text: "A's secret draft" }, s);
+    saveDraft(sessionDraftKey("user-a1", "session-1"), { text: "A's session draft" }, s);
     // Switch accounts (same browser): B reading the same Project/Session only gets an empty draft.
     expect(loadDraft(draftKey("user-b2", "project-a"), s)).toEqual({});
     expect(loadDraft(sessionDraftKey("user-b2", "session-1"), s)).toEqual({});
     // B saves its own draft: coexists with A's, neither overwrites the other.
-    saveDraft(draftKey("user-b2", "project-a"), { text: "B 的草稿" }, s);
-    expect(loadDraft(draftKey("user-a1", "project-a"), s)).toEqual({ text: "A 的机密草稿" });
-    expect(loadDraft(draftKey("user-b2", "project-a"), s)).toEqual({ text: "B 的草稿" });
+    saveDraft(draftKey("user-b2", "project-a"), { text: "B's draft" }, s);
+    expect(loadDraft(draftKey("user-a1", "project-a"), s)).toEqual({ text: "A's secret draft" });
+    expect(loadDraft(draftKey("user-b2", "project-a"), s)).toEqual({ text: "B's draft" });
   });
 
-  it("clear 后读回空草稿", () => {
+  it("reads back an empty draft after clear", () => {
     const s = memStorage();
-    saveDraft(draftKey("user-a1", "project-a"), { text: "要清掉" }, s);
+    saveDraft(draftKey("user-a1", "project-a"), { text: "to be cleared" }, s);
     clearDraft(draftKey("user-a1", "project-a"), s);
     expect(loadDraft(draftKey("user-a1", "project-a"), s)).toEqual({});
     expect(s.map.size).toBe(0);
   });
 
-  it("storage 抛异常（配额/隐私模式）：save 不抛、load 给空草稿", () => {
+  it("storage throwing (quota/private mode): save does not throw, load yields an empty draft", () => {
     const broken: DraftStorage = {
       getItem: () => {
         throw new Error("SecurityError");

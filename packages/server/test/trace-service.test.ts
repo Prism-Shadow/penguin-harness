@@ -73,29 +73,29 @@ describe("trace-service", () => {
     await fs.rm(root, { recursive: true, force: true });
   });
 
-  it("messages：全部 index 文件按序拼接（跨日期目录）", async () => {
+  it("messages: all index files concatenated in order (across date directories)", async () => {
     await writeTraceFile(root, P, A, "2026-07-05", S, 1, [
       sessionMeta(metaPayload()),
-      userText("第一个文件"),
+      userText("first file"),
     ]);
     await writeTraceFile(root, P, A, "2026-07-06", S, 2, [
       sessionMeta(metaPayload()),
-      userText("第二个文件"),
+      userText("second file"),
     ]);
     const messages = await service.readMessages(P, A, S);
     expect(messages).toHaveLength(4);
-    expect((messages[1]!.payload as { text: string }).text).toBe("第一个文件");
-    expect((messages[3]!.payload as { text: string }).text).toBe("第二个文件");
+    expect((messages[1]!.payload as { text: string }).text).toBe("first file");
+    expect((messages[3]!.payload as { text: string }).text).toBe("second file");
   });
 
-  it("messages：容忍残缺末行", async () => {
+  it("messages: tolerates a truncated last line", async () => {
     const file = await writeTraceFile(root, P, A, "2026-07-05", S, 1, [userText("ok")]);
     await fs.appendFile(file, '{"timestamp":"2026', "utf8");
     const messages = await service.readMessages(P, A, S);
     expect(messages).toHaveLength(1);
   });
 
-  it("traces 列表：index / 日期 / 大小 / mtime", async () => {
+  it("traces listing: index / date / size / mtime", async () => {
     await writeTraceFile(root, P, A, "2026-07-05", S, 1, [userText("a")]);
     await writeTraceFile(root, P, A, "2026-07-06", S, 2, [userText("bb")]);
     const files = await service.listTraceFiles(P, A, S);
@@ -105,7 +105,7 @@ describe("trace-service", () => {
     expect(Date.parse(files[0]!.mtime)).not.toBeNaN();
   });
 
-  it("按行分页读取：offset/limit 与 total", async () => {
+  it("paginated line reads: offset/limit and total", async () => {
     const messages = Array.from({ length: 10 }, (_, i) => userText(`m${i}`));
     await writeTraceFile(root, P, A, "2026-07-05", S, 1, messages);
     const page = await service.readEvents(P, A, S, 1, 3, 4);
@@ -117,7 +117,7 @@ describe("trace-service", () => {
     expect((notFound as { status: number }).status).toBe(404);
   });
 
-  it("性能分析：Request 配对、工具耗时、reconnect / 压缩计数、Token 趋势", async () => {
+  it("performance analysis: Request pairing, tool durations, reconnect / compaction counts, Token trend", async () => {
     await writeTraceFile(root, P, A, "2026-07-05", S, 1, [
       sessionMeta(metaPayload()),
       at("2026-07-05T10:00:00.000Z", userText("hi")),
@@ -168,7 +168,7 @@ describe("trace-service", () => {
     ]);
   });
 
-  it("Task 上下文快照取该轮最后一次 Request，不是各次 Request 的累加", async () => {
+  it("the Task context snapshot takes the turn's last Request, not a sum across its Requests", async () => {
     // Two Requests within one Task (a tool call triggers another round): each
     // input **re-carries the entire history**, so 60k → 65k is the context
     // growing, not a 60k + 65k = 125k sum of usage. Summing them would double-count
@@ -206,7 +206,7 @@ describe("trace-service", () => {
     expect(t.llmMs).toBe(2000 + 2000);
   });
 
-  it("人工审批等待不计入 LLM 生成时长（TPS 分母）", async () => {
+  it("human approval waits don't count toward LLM generation time (the TPS denominator)", async () => {
     // core does `await approve(tc)` inside the streaming loop: until approval
     // returns, the next chunk isn't consumed and request_end can't fire, so the
     // entire human wait sits between request_begin and request_end. Without
@@ -234,7 +234,7 @@ describe("trace-service", () => {
     expect(a.tasks[0]!.tokens.output).toBe(1_000); // → 500 tok/s, not 31 tok/s
   });
 
-  it("压缩自成一轮：它的 TPS 归自己，不污染用户轮次；上下文快照仍只取非压缩 Request", async () => {
+  it("compaction is its own turn: its TPS is its own and doesn't pollute user turns; the context snapshot still takes only non-compaction Requests", async () => {
     // Compaction's request_begin/end and token_usage all sit between
     // compaction_begin and compaction_end (see core's context-engine summarize
     // flow). Both sides of the Chat page exclude compaction, so Trace must use
@@ -293,7 +293,7 @@ describe("trace-service", () => {
     expect(a.elapsedMs).toBe(2_100 + 11_000);
   });
 
-  it("压缩请求重试耗尽（以 timeout 收尾）不把下一个用户轮次并进压缩 Task", async () => {
+  it("a compaction request exhausting retries (ending in timeout) doesn't fold the next user turn into the compaction Task", async () => {
     // The intersection of "timeout → continuation" and "compaction is its own
     // turn": when a compaction request exhausts its retries and ends in timeout,
     // it would be classified as continuing; compaction_end must clear that
@@ -315,7 +315,7 @@ describe("trace-service", () => {
         "2026-07-05T10:00:06.000Z",
         compactionEnd({ reason: "context", mode: "summarize", status: "aborted" }),
       ),
-      at("2026-07-05T10:00:07.000Z", userText("下一轮")),
+      at("2026-07-05T10:00:07.000Z", userText("next turn")),
       at("2026-07-05T10:00:08.000Z", requestBegin()),
       at("2026-07-05T10:00:10.000Z", requestEnd("completed")),
       at("2026-07-05T10:00:10.100Z", tokenUsage(counts(1200), buckets(0, 0, 700))),
@@ -335,7 +335,7 @@ describe("trace-service", () => {
     expect(a.tasks[2]!.tokens.output).toBe(700);
   });
 
-  it("用户 Prompt 归入本轮消息区间，但用时从首个 request_begin 起算；空轮次照样在列表里", async () => {
+  it("the user Prompt joins this turn's message range, but duration starts at the first request_begin; empty turns still make the list", async () => {
     // Message **attribution** (messageFrom/To) and **duration** (startTs/endTs)
     // are two different things: the Prompt belongs to this turn's message range
     // (the frontend uses this to list it on this turn's card), but the duration
@@ -349,19 +349,19 @@ describe("trace-service", () => {
     // turn — this must be backstopped by the server-side tasks logic too.
     await writeTraceFile(root, P, A, "2026-07-05", S, 1, [
       at("2026-07-05T10:00:00.000Z", sessionMeta(metaPayload())),
-      at("2026-07-05T10:00:00.000Z", userText("第一问")),
+      at("2026-07-05T10:00:00.000Z", userText("question one")),
       at("2026-07-05T10:00:01.000Z", requestBegin()),
       at("2026-07-05T10:00:02.000Z", requestEnd("completed")),
       at("2026-07-05T10:00:02.100Z", tokenUsage(counts(1000), buckets(0, 900, 100))),
       // Second turn: the Prompt precedes the Request; this turn's request fails outright, with no model output or tool call at all.
-      at("2026-07-05T10:01:00.000Z", userText("第二问")),
+      at("2026-07-05T10:01:00.000Z", userText("question two")),
       at("2026-07-05T10:01:01.000Z", requestBegin()),
       at("2026-07-05T10:01:04.000Z", requestEnd("failed")),
     ]);
     const a = await service.analyze(P, A, S, 1);
 
     expect(a.tasks.map((t) => t.taskIndex)).toEqual([0, 1]); // the empty turn is present too
-    // Message attribution: starting from "第二问" (index 5), it belongs to the second turn, not the tail of the previous one.
+    // Message attribution: starting from "question two" (index 5), it belongs to the second turn, not the tail of the previous one.
     expect(a.tasks[0]!.messageTo).toBe(4);
     expect(a.tasks[1]!.messageFrom).toBe(5);
     // Duration start = request_begin (10:01:01), not the Prompt (10:01:00).
@@ -379,7 +379,7 @@ describe("trace-service", () => {
     expect(a.elapsedMs).toBe(4_100);
   });
 
-  it("上一轮以 timeout 收尾（重试耗尽）后，新的用户消息另起一轮", async () => {
+  it("after the previous turn ends in timeout (retries exhausted), a new user message starts a new turn", async () => {
     // "timeout → continuation" holds only for **automatic retries within the
     // same run**. Once retries are exhausted and the engine gives up, a message
     // the user sends afterward starts a new turn — if continuation were still
@@ -388,12 +388,12 @@ describe("trace-service", () => {
     // always breaks continuation, regardless of how the previous turn wrapped up.
     await writeTraceFile(root, P, A, "2026-07-05", S, 1, [
       at("2026-07-05T10:00:00.000Z", sessionMeta(metaPayload())),
-      at("2026-07-05T10:00:00.000Z", userText("第一问")),
+      at("2026-07-05T10:00:00.000Z", userText("question one")),
       at("2026-07-05T10:00:01.000Z", requestBegin()),
       at("2026-07-05T10:00:02.000Z", requestEnd("timeout")), // retries exhausted → gives up
       at("2026-07-05T10:00:03.000Z", abortEvent()),
       // A new user send
-      at("2026-07-05T10:01:00.000Z", userText("第二问")),
+      at("2026-07-05T10:01:00.000Z", userText("question two")),
       at("2026-07-05T10:01:01.000Z", requestBegin()),
       at("2026-07-05T10:01:03.000Z", requestEnd("completed")),
       at("2026-07-05T10:01:03.100Z", tokenUsage(counts(1000), buckets(0, 900, 100))),
@@ -405,19 +405,19 @@ describe("trace-service", () => {
     expect(a.tasks[1]!.tokens.output).toBe(100); // the second turn's usage isn't folded into the first
   });
 
-  it("一次发送含文本 + 多张图片：轮次归属从**第一条**消息起，不是最后一张图", async () => {
+  it("one send with text + multiple images: turn attribution starts at the **first** message, not the last image", async () => {
     // One send = multiple messages (user text + some number of image_url). If the
     // pending index were overwritten on every message, turn attribution would
     // start from the last image, with the preceding text and images assigned to
     // the previous turn — completely at odds with "the user clicked send once".
     await writeTraceFile(root, P, A, "2026-07-05", S, 1, [
       at("2026-07-05T10:00:00.000Z", sessionMeta(metaPayload())),
-      at("2026-07-05T10:00:00.000Z", userText("第一问")),
+      at("2026-07-05T10:00:00.000Z", userText("question one")),
       at("2026-07-05T10:00:01.000Z", requestBegin()),
       at("2026-07-05T10:00:02.000Z", requestEnd("completed")),
       at("2026-07-05T10:00:02.100Z", tokenUsage(counts(500), buckets(0, 400, 100))),
       // Second send: text + two images
-      at("2026-07-05T10:01:00.000Z", userText("看这两张图")),
+      at("2026-07-05T10:01:00.000Z", userText("look at these two images")),
       at("2026-07-05T10:01:00.500Z", imageUrlMessage("data:image/png;base64,AAAA")),
       at("2026-07-05T10:01:01.000Z", imageUrlMessage("data:image/png;base64,BBBB")),
       at("2026-07-05T10:01:02.000Z", requestBegin()),
@@ -433,7 +433,7 @@ describe("trace-service", () => {
     expect(a.tasks[0]!.endTs).toBe("2026-07-05T10:00:02.100Z"); // the second send's messages don't land in the first turn
   });
 
-  it("消息逐条归属，不按时间戳猜：同一毫秒的「本轮回复 / 压缩开始 / 压缩 Prompt / 下轮 request」各归各轮", async () => {
+  it("messages attributed one by one, never guessed from timestamps: same-millisecond \"this turn's reply / compaction begin / compaction Prompt / next turn's request\" each land on their own turn", async () => {
     // Automatic compaction triggered at turn wrap-up crams these messages into
     // **the same millisecond**: this turn's last reply, compaction_begin, the
     // compaction Prompt, and the compaction turn's request_begin. Attributing by
@@ -444,9 +444,9 @@ describe("trace-service", () => {
     const T = "2026-07-05T10:00:05.000Z"; // same millisecond
     await writeTraceFile(root, P, A, "2026-07-05", S, 1, [
       at("2026-07-05T10:00:00.000Z", sessionMeta(metaPayload())),
-      at("2026-07-05T10:00:00.000Z", userText("问")),
+      at("2026-07-05T10:00:00.000Z", userText("q")),
       at("2026-07-05T10:00:01.000Z", requestBegin()),
-      at(T, assistantText("本轮的回复")), // ← this turn's own reply, same millisecond as the entries below
+      at(T, assistantText("this turn's reply")), // ← this turn's own reply, same millisecond as the entries below
       at(T, tokenUsage(counts(500), buckets(0, 400, 100))),
       at(T, requestEnd("completed")),
       at(T, compactionBegin({ reason: "context", mode: "summarize", context: 500, turns: 1 })),
@@ -475,7 +475,7 @@ describe("trace-service", () => {
     expect(Date.parse(a.tasks[1]!.endTs) - Date.parse(a.tasks[1]!.startTs)).toBe(20_000);
   });
 
-  it("Agent 级逐级浏览：日期倒序、Session 倒序、文件 index 升序", async () => {
+  it("Agent-level drill-down browsing: dates descending, Sessions descending, file index ascending", async () => {
     const s2 = "session-2026-07-06-09-00-00-11112222";
     await writeTraceFile(root, P, A, "2026-07-05", S, 1, [userText("a")]);
     await writeTraceFile(root, P, A, "2026-07-05", S, 2, [userText("b")]);
@@ -486,18 +486,18 @@ describe("trace-service", () => {
     expect(res.dates[1]!.sessions[0]!.files.map((f) => f.index)).toEqual([1, 2]);
   });
 
-  it("无 Trace 时各接口返回空", async () => {
+  it("every endpoint returns empty when there is no Trace", async () => {
     expect(await service.readMessages(P, A, S)).toEqual([]);
     expect(await service.listTraceFiles(P, A, S)).toEqual([]);
     expect((await service.agentTraces(P, A)).dates).toEqual([]);
   });
-  it("执行时间线：模型串行分段（起点=上一事件）、工具审批/执行两阶段、下一轮以 request_begin 起算", async () => {
+  it("execution timeline: serial model segments (start = previous event), tool approval/execution phases, the next round anchored on request_begin", async () => {
     const T = (sec: string) => `2026-07-05T10:00:${sec}Z`;
     await writeTraceFile(root, P, A, "2026-07-05", S, 7, [
       sessionMeta(metaPayload()),
       at(T("00.000"), userText("q")), // the user input is sent instantly, so it occupies no segment
       at(T("01.000"), requestBegin()),
-      at(T("03.000"), thinkingMessage("想", "completed")),
+      at(T("03.000"), thinkingMessage("think", "completed")),
       at(T("04.000"), toolCall({ name: "exec_command", arguments: "{}", toolCallId: "t1" })),
       // Two async tools: t1 is already in approval/execution while the model keeps decoding t2
       at(T("04.500"), toolCall({ name: "read_file", arguments: "{}", toolCallId: "t2" })),
@@ -508,7 +508,7 @@ describe("trace-service", () => {
       at(T("08.000"), toolCallOutput({ output: "o2", toolCallId: "t2" })),
       // The model starts the next round only after all outputs are back: the new segment is anchored on request_begin
       at(T("08.500"), requestBegin()),
-      at(T("10.000"), assistantText("答")),
+      at(T("10.000"), assistantText("answer")),
       at(T("10.100"), requestEnd("completed")),
     ]);
     const a = await service.analyze(P, A, S, 7);
@@ -559,7 +559,7 @@ describe("trace-service", () => {
     ]);
   });
 
-  it("Task 分组：模型出纯文本后不再调工具 → 下一用户轮次进入新 Task（taskIndex 递增）", async () => {
+  it("Task grouping: plain text with no further tool call → the next user turn enters a new Task (taskIndex increments)", async () => {
     const T = (sec: string) => `2026-07-05T10:01:${sec}Z`;
     await writeTraceFile(root, P, A, "2026-07-05", S, 9, [
       sessionMeta(metaPayload()),
@@ -570,12 +570,12 @@ describe("trace-service", () => {
       at(T("02.500"), requestEnd("completed")),
       at(T("03.000"), toolCallOutput({ output: "o", toolCallId: "t1" })),
       at(T("03.500"), requestBegin()),
-      at(T("04.000"), assistantText("答1")),
+      at(T("04.000"), assistantText("answer 1")),
       at(T("04.500"), requestEnd("completed")),
       // Task 1: a new user turn (the previous turn ended in plain text, not a continuation).
       at(T("20.000"), userText("q2")),
       at(T("21.000"), requestBegin()),
-      at(T("22.000"), assistantText("答2")),
+      at(T("22.000"), assistantText("answer 2")),
       at(T("22.500"), requestEnd("completed")),
     ]);
     const a = await service.analyze(P, A, S, 9);
@@ -589,7 +589,7 @@ describe("trace-service", () => {
   // otherwise "continue", but compaction_begin breaks that continuation, so the
   // compaction request lands on a new taskIndex. A successful compaction splits
   // the Trace into a new file, so this file ends at compaction_end.
-  it("Task 分组：压缩请求不并入上一轮（成功压缩，本文件在 compaction_end 收尾）", async () => {
+  it("Task grouping: the compaction request isn't folded into the previous turn (successful compaction; this file ends at compaction_end)", async () => {
     const T = (sec: string) => `2026-07-05T10:02:${sec}Z`;
     await writeTraceFile(root, P, A, "2026-07-05", S, 10, [
       sessionMeta(metaPayload()),
@@ -619,7 +619,7 @@ describe("trace-service", () => {
   // A failed compaction doesn't split the file: the continuation request is
   // still in the same file, and it starts a new turn (the compaction request
   // doesn't call a tool, and request_end has already broken continuation).
-  it("Task 分组：压缩失败后的续跑请求另起一轮", async () => {
+  it("Task grouping: the continuation request after a failed compaction starts a new turn", async () => {
     const T = (sec: string) => `2026-07-05T10:03:${sec}Z`;
     await writeTraceFile(root, P, A, "2026-07-05", S, 11, [
       sessionMeta(metaPayload()),
@@ -633,11 +633,11 @@ describe("trace-service", () => {
         compactionBegin({ reason: "context", mode: "summarize", context: 1, turns: 1 }),
       ),
       at(T("04.500"), requestBegin()),
-      at(T("05.000"), assistantText("坏摘要")),
+      at(T("05.000"), assistantText("bad summary")),
       at(T("05.500"), requestEnd("failed")),
       at(T("06.000"), compactionEnd({ reason: "context", mode: "summarize", status: "failed" })),
       at(T("07.000"), requestBegin()),
-      at(T("08.000"), assistantText("答")),
+      at(T("08.000"), assistantText("answer")),
       at(T("08.500"), requestEnd("completed")),
     ]);
     const a = await service.analyze(P, A, S, 11);
@@ -645,7 +645,7 @@ describe("trace-service", () => {
     expect(a.toolSpans.map((s) => s.taskIndex)).toEqual([0]);
   });
 
-  it("中断补偿 tool_call（stop_reason 非 completed）不入时间线泳道（不生成幻影执行段）", async () => {
+  it("interrupt-compensation tool_calls (stop_reason not completed) stay out of the timeline lanes (no phantom execution segments)", async () => {
     const T = (sec: string) => `2026-07-05T10:00:${sec}Z`;
     await writeTraceFile(root, P, A, "2026-07-05", S, 8, [
       sessionMeta(metaPayload()),

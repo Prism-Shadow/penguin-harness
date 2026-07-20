@@ -19,14 +19,14 @@ describe("auth", () => {
     await t.cleanup();
   });
 
-  it("未登录访问受保护 API 返回 401", async () => {
+  it("accessing a protected API while not logged in returns 401", async () => {
     const res = await t.app.request("/api/projects");
     expect(res.status).toBe(401);
     const body = (await res.json()) as { error: { code: string } };
     expect(body.error.code).toBe("unauthorized");
   });
 
-  it("不开放注册：register 接口不存在", async () => {
+  it("registration is closed: no register endpoint", async () => {
     // Not logged in: no such route under /api/auth, falls into the protected-section 401.
     const anon = await t.app.request("/api/auth/register", {
       method: "POST",
@@ -43,7 +43,7 @@ describe("auth", () => {
     expect(res.status).toBe(404);
   });
 
-  it("种子 admin 纳管 default_project；初始密码带标记", async () => {
+  it("seeded admin manages default_project; initial password carries the flag", async () => {
     const admin = await loginAdmin(t.app);
     expect(admin.user.isAdmin).toBe(true);
     expect(admin.user.passwordIsInitial).toBe(true);
@@ -60,7 +60,7 @@ describe("auth", () => {
     expect(t.deps.db.prepare("SELECT COUNT(*) AS n FROM users").get()?.n).toBe(1);
   });
 
-  it("管理员建号：默认 Project 为 <用户名>-default_project，显示名缺省为用户名", async () => {
+  it("admin-created: default Project is <userId>-default_project, name defaults", async () => {
     const bob = await provisionUser(t.app, "bob");
     expect(bob.user.isAdmin).toBe(false);
     expect(bob.user.passwordIsInitial).toBe(true);
@@ -83,7 +83,7 @@ describe("auth", () => {
     );
   });
 
-  it("登录 / me / 登出闭环；错误密码 401", async () => {
+  it("login / me / logout round trip; wrong password 401", async () => {
     await provisionUser(t.app, "carol");
     const wrong = await t.app.request("/api/auth/login", {
       method: "POST",
@@ -105,7 +105,7 @@ describe("auth", () => {
     expect(after.status).toBe(401);
   });
 
-  it("本人改密：旧密码校验、新密码生效、初始密码标记清除", async () => {
+  it("self password change: old checked, new takes effect, initial flag cleared", async () => {
     const { cookie } = await provisionUser(t.app, "dave");
     const api = apiClient(t.app, cookie);
 
@@ -138,7 +138,7 @@ describe("auth", () => {
     await loginUser(t.app, "dave", "new-password-1");
   });
 
-  it("写请求拒绝非 JSON Content-Type（CSRF 防线）", async () => {
+  it("write requests reject non-JSON Content-Type (CSRF defense)", async () => {
     const res = await t.app.request("/api/auth/login", {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
@@ -147,7 +147,7 @@ describe("auth", () => {
     expect(res.status).toBe(415);
   });
 
-  it("ui prefs 读写", async () => {
+  it("ui prefs read/write", async () => {
     const { cookie } = await provisionUser(t.app, "erin");
     const api = apiClient(t.app, cookie);
     const empty = (await (await api.get("/api/me/prefs")).json()) as { prefs: unknown };
@@ -159,7 +159,7 @@ describe("auth", () => {
     expect(got.prefs.theme).toBe("dark");
   });
 
-  it("PUT prefs 浅合并，不覆盖其他写入方的字段", async () => {
+  it("PUT prefs shallow-merges without clobbering other writers' fields", async () => {
     const { cookie } = await provisionUser(t.app, "fred");
     const api = apiClient(t.app, cookie);
     // Simulate two independent writers: switching Project writes lastProjectId, and onboarding writes credentialGuideSeen.

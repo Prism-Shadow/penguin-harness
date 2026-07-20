@@ -158,6 +158,6 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
 
 export function useSessions(): SessionsContextValue {
   const ctx = useContext(SessionsContext);
-  if (!ctx) throw new Error("useSessions 必须在 SessionsProvider 内使用");
+  if (!ctx) throw new Error("useSessions must be used within a SessionsProvider");
   return ctx;
 }

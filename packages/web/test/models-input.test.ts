@@ -19,8 +19,8 @@ import {
   toRow,
 } from "../src/features/models/models-page";
 
-describe("digitsOnly（上下文窗口）", () => {
-  it("只留数字", () => {
+describe("digitsOnly (context window)", () => {
+  it("keeps digits only", () => {
     expect(digitsOnly("200000")).toBe("200000");
     expect(digitsOnly("20e5")).toBe("205");
     expect(digitsOnly("200,000 tokens")).toBe("200000");
@@ -29,8 +29,8 @@ describe("digitsOnly（上下文窗口）", () => {
   });
 });
 
-describe("decimalOnly（价格）", () => {
-  it("留数字与至多一个小数点", () => {
+describe("decimalOnly (price)", () => {
+  it("keeps digits and at most one decimal point", () => {
     expect(decimalOnly("3.75")).toBe("3.75");
     expect(decimalOnly("$3.75")).toBe("3.75");
     expect(decimalOnly("3.7.5")).toBe("3.75");
@@ -41,8 +41,8 @@ describe("decimalOnly（价格）", () => {
   });
 });
 
-describe("toRow（DTO → 行编辑态）", () => {
-  it("provider 与 modelId 都是条目字段（零拆解），载入身份为成对引用", () => {
+describe("toRow (DTO → row edit state)", () => {
+  it("provider and modelId are both plain entry fields (zero parsing); the loaded identity is a paired reference", () => {
     const row = toRow({
       provider: "anthropic",
       modelId: "claude-sonnet-4-6",
@@ -55,27 +55,27 @@ describe("toRow（DTO → 行编辑态）", () => {
     expect(rowRef(row)).toEqual({ provider: "anthropic", modelId: "claude-sonnet-4-6" });
   });
 
-  it("不在目录清单的 provider 原样保留（展示层才归 custom 桶）", () => {
+  it("providers outside the catalog list are kept as-is (only the display layer buckets them under custom)", () => {
     const row = toRow({ provider: "myproxy", modelId: "claude-sonnet-4-6", isDefault: false });
     expect(row.provider).toBe("myproxy");
     expect(row.modelId).toBe("claude-sonnet-4-6");
     expect(row.original).toEqual({ provider: "myproxy", modelId: "claude-sonnet-4-6" });
   });
 
-  it("上游 id 自身可含 `/`（网关模型）：仍是完整的 model_id，不被误当分组", () => {
+  it("an upstream id may itself contain `/` (gateway models): still the full model_id, not mistaken for a group", () => {
     const row = toRow({ provider: "openrouter", modelId: "xiaomi/mimo-v2.5", isDefault: false });
     expect(row.provider).toBe("openrouter");
     expect(row.modelId).toBe("xiaomi/mimo-v2.5");
   });
 });
 
-describe("nextPointers（保存后默认/视觉代理模型指向谁；一律成对）", () => {
+describe("nextPointers (where the default/vision-agent model pointers land after save; always paired)", () => {
   const mA = { provider: "custom", modelId: "m-a" };
   const mANew = { provider: "custom", modelId: "m-a-new" };
   const mB = { provider: "custom", modelId: "m-b" };
   const base = { action: "save" as const, defaultModel: mA, visionModel: mB };
 
-  it("改名时指针跟着改名走（否则提交的旧引用已不在 models 内，服务端 400）", () => {
+  it("renames carry the pointer along (otherwise the submitted stale reference is no longer in models and the server 400s)", () => {
     // Renaming the current default model.
     expect(nextPointers({ ...base, editing: mA, ref: mANew })).toEqual({
       defaultModel: mANew,
@@ -94,7 +94,7 @@ describe("nextPointers（保存后默认/视觉代理模型指向谁；一律成
     });
   });
 
-  it("只换分组（model_id 不变）同样是改名：指针跟着新 provider 走", () => {
+  it("changing only the group (model_id unchanged) is also a rename: the pointer follows the new provider", () => {
     const moved = { provider: "openai", modelId: "m-a" };
     expect(nextPointers({ ...base, editing: mA, ref: moved })).toEqual({
       defaultModel: moved,
@@ -102,7 +102,7 @@ describe("nextPointers（保存后默认/视觉代理模型指向谁；一律成
     });
   });
 
-  it("不改名、改别的模型：指针原样不动", () => {
+  it("no rename, or editing another model: pointers stay put", () => {
     expect(nextPointers({ ...base, editing: mA, ref: mA })).toEqual({
       defaultModel: mA,
       visionModel: mB,
@@ -115,7 +115,7 @@ describe("nextPointers（保存后默认/视觉代理模型指向谁；一律成
     });
   });
 
-  it("同名 model_id 双 provider 并存：只有成对相等的指针才跟随", () => {
+  it("the same model_id under two providers: only a pointer equal as a pair follows", () => {
     // Default pointer points to openai/m-a, but the edit renames custom/m-a:
     // same modelId, different provider — the pointer must not be changed.
     const openaiA = { provider: "openai", modelId: "m-a" };
@@ -130,7 +130,7 @@ describe("nextPointers（保存后默认/视觉代理模型指向谁；一律成
     ).toEqual({ defaultModel: openaiA, visionModel: undefined });
   });
 
-  it("设为默认 / 设为视觉代理：指针指向本模型", () => {
+  it("set as default / set as vision agent: the pointer points at this model", () => {
     const mC = { provider: "custom", modelId: "m-c" };
     expect(nextPointers({ ...base, editing: mC, ref: mC, action: "setDefault" })).toEqual({
       defaultModel: mC,
@@ -142,7 +142,7 @@ describe("nextPointers（保存后默认/视觉代理模型指向谁；一律成
     });
   });
 
-  it("新增的第一个模型（此前无默认）自动成为默认模型", () => {
+  it("the first model added (no default before) automatically becomes the default model", () => {
     const first = { provider: "custom", modelId: "m-first" };
     expect(
       nextPointers({

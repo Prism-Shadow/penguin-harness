@@ -77,13 +77,13 @@ function createHarness(): Harness {
 }
 
 const HISTORY_TASK: OmniMessage[] = [
-  at(userText("问题"), "2026-07-05T00:00:00.000Z"),
-  at(assistantText("回答"), "2026-07-05T00:00:03.000Z"),
+  at(userText("question"), "2026-07-05T00:00:00.000Z"),
+  at(assistantText("answer"), "2026-07-05T00:00:03.000Z"),
   at(tokenUsage(counts(1000), counts(1000)), "2026-07-05T00:00:05.000Z"),
 ];
 
-describe("流中 task_state 为权威运行状态（历史收口判定）", () => {
-  it("订阅快照 idle：历史收口，产出最后一个 Task 的统计行", async () => {
+describe("in-stream task_state is the authoritative running state (history-closing decision)", () => {
+  it("subscription snapshot idle: history closes, producing the last Task's stats row", async () => {
     const h = createHarness();
     const p = h.controller.load();
     // Connection comes first: the snapshot arrives before history, so it's buffered.
@@ -98,7 +98,7 @@ describe("流中 task_state 为权威运行状态（历史收口判定）", () =
     ]);
   });
 
-  it("订阅快照 running：不提前收口；随后的 idle 事件才收口", async () => {
+  it("subscription snapshot running: no early close; only the later idle event closes", async () => {
     const h = createHarness();
     const p = h.controller.load();
     h.controller.handleServer({ type: "task_state", state: "running" });
@@ -110,7 +110,7 @@ describe("流中 task_state 为权威运行状态（历史收口判定）", () =
     expect(h.controller.model.items.some((i) => i.kind === "task_stats")).toBe(true);
   });
 
-  it("快照未到时不按列表快照收口；迟到的 idle 快照到达后完成同等收口", async () => {
+  it("no close on the list snapshot while the stream snapshot is missing; a late idle snapshot completes the same close", async () => {
     const h = createHarness();
     const p = h.controller.load();
     h.resolveLoad(HISTORY_TASK);
@@ -121,7 +121,7 @@ describe("流中 task_state 为权威运行状态（历史收口判定）", () =
     expect(h.controller.model.items.some((i) => i.kind === "task_stats")).toBe(true);
   });
 
-  it("缓冲期间的 task_state 即时上报输入区（不等历史回放）", async () => {
+  it("task_state during buffering reports to the input area immediately (without waiting for history replay)", async () => {
     const h = createHarness();
     void h.controller.load();
     h.controller.handleServer({ type: "task_state", state: "running" });
@@ -130,8 +130,8 @@ describe("流中 task_state 为权威运行状态（历史收口判定）", () =
   });
 });
 
-describe("审批补发（origin 组合键 + 缺卡补建）", () => {
-  it("子会话审批补发：找不到工具卡时用 toolCall 补建嵌套卡，重复补发不重复建卡", async () => {
+describe("approval re-delivery (origin composite key + missing-card backfill)", () => {
+  it("child-session approval re-delivery: builds the nested card from toolCall when none is found; repeated re-delivery builds no duplicate", async () => {
     const h = createHarness();
     const p = h.controller.load();
     h.resolveLoad([]);
@@ -156,7 +156,7 @@ describe("审批补发（origin 组合键 + 缺卡补建）", () => {
     expect(sub.items.filter((i) => i.kind === "tool_call")).toHaveLength(1);
   });
 
-  it("主会话审批补发：历史已有工具卡则不重复建卡", async () => {
+  it("main-session approval re-delivery: no duplicate card when history already has one", async () => {
     const h = createHarness();
     const p = h.controller.load();
     const tc = toolCall({ name: "write_file", arguments: "{}", toolCallId: "t2" });
@@ -167,7 +167,7 @@ describe("审批补发（origin 组合键 + 缺卡补建）", () => {
     expect(h.controller.pendingApprovals.has(approvalKey(undefined, "t2"))).toBe(true);
   });
 
-  it("approval_decision 事件按 origin 组合键移除对应未决项", async () => {
+  it("approval_decision events remove the matching pending entry by origin composite key", async () => {
     const h = createHarness();
     const p = h.controller.load();
     h.resolveLoad([]);
@@ -180,8 +180,8 @@ describe("审批补发（origin 组合键 + 缺卡补建）", () => {
   });
 });
 
-describe("resync 重建", () => {
-  it("重建清空未决审批表；服务端随后补发的仍未决请求天然重建（#28）", async () => {
+describe("resync rebuild", () => {
+  it("rebuild clears the pending-approval table; still-pending requests the server re-delivers afterwards rebuild naturally (#28)", async () => {
     const h = createHarness();
     const p = h.controller.load();
     h.resolveLoad([]);
@@ -201,7 +201,7 @@ describe("resync 重建", () => {
     expect(h.controller.pendingApprovals.size).toBe(1);
   });
 
-  it("重建保留 localDecisions：本端点过的审批重放后仍标「人工」（#22）", async () => {
+  it("rebuild keeps localDecisions: approvals clicked locally still show as manual after replay (#22)", async () => {
     const h = createHarness();
     const p = h.controller.load();
     const tc = at(
@@ -220,26 +220,26 @@ describe("resync 重建", () => {
     expect(card.decisionSource).toBe("manual");
   });
 
-  it("回放中触发 resync：本轮作废、剩余缓冲转入新一轮，不乱序不重复（#21/#26）", async () => {
+  it("resync during replay: the current round is voided and the remaining buffer moves to the new round, with no reordering or duplication (#21/#26)", async () => {
     const h = createHarness();
     const p = h.controller.load();
     // Buffer: old event A → resync_required → task_state:idle (server re-delivery order).
-    h.controller.handleOmni(at(assistantText("旧事件 A"), "2026-07-05T00:00:01.000Z"));
+    h.controller.handleOmni(at(assistantText("old event A"), "2026-07-05T00:00:01.000Z"));
     h.controller.handleServer({ type: "resync_required" });
     h.controller.handleServer({ type: "task_state", state: "idle" });
     // First round of history returns: replaying up to resync_required invalidates this round.
-    h.resolveLoad([at(userText("问题"), "2026-07-05T00:00:00.000Z")]);
+    h.resolveLoad([at(userText("question"), "2026-07-05T00:00:00.000Z")]);
     await p;
     expect(h.loadCalls()).toBe(2);
     // The old replay must not reset phase back to live: events arriving during rebuild
     // should still be buffered, not fed to the new model.
-    const live = at(assistantText("重建期间的输出"), "2026-07-05T00:00:02.000Z");
+    const live = at(assistantText("output during rebuild"), "2026-07-05T00:00:02.000Z");
     h.controller.handleOmni(live);
     expect(h.controller.model.items).toHaveLength(0);
     // Second round of history (authoritative) returns: the transferred task_state and
     // buffered events replay in order.
     h.resolveLoad([
-      at(userText("问题"), "2026-07-05T00:00:00.000Z"),
+      at(userText("question"), "2026-07-05T00:00:00.000Z"),
       at(tokenUsage(counts(500), counts(500)), "2026-07-05T00:00:01.500Z"),
     ]);
     await flush();
@@ -252,14 +252,14 @@ describe("resync 重建", () => {
   });
 });
 
-describe("历史加载失败与重试（#6）", () => {
-  it("失败暴露错误并停止加载；重试保留缓冲（快照与初始事件不丢）", async () => {
+describe("history load failure and retry (#6)", () => {
+  it("failure surfaces the error and stops loading; retry keeps the buffer (snapshot and initial events are not lost)", async () => {
     const h = createHarness();
     const p = h.controller.load();
     h.controller.handleServer({ type: "task_state", state: "idle" });
-    h.rejectLoad(new Error("网络错误"));
+    h.rejectLoad(new Error("network error"));
     await p;
-    expect(h.errors[h.errors.length - 1]).toBe("网络错误");
+    expect(h.errors[h.errors.length - 1]).toBe("network error");
     expect(h.loadings[h.loadings.length - 1]).toBe(false);
 
     const retryP = h.controller.retry();
@@ -270,7 +270,7 @@ describe("历史加载失败与重试（#6）", () => {
     expect(h.controller.model.items.some((i) => i.kind === "task_stats")).toBe(true);
   });
 
-  it("未失败时 retry 是 no-op（不会重复回放历史）", async () => {
+  it("retry without a failure is a no-op (history is not replayed twice)", async () => {
     const h = createHarness();
     const p = h.controller.load();
     h.resolveLoad(HISTORY_TASK);

@@ -64,11 +64,11 @@ function libraryResponse(): SkillLibraryResponse {
 /** Validate the POST request body: names must be a non-empty array of strings. */
 function parseInstallNames(body: Record<string, unknown>): string[] {
   if (!Array.isArray(body.names) || body.names.length === 0) {
-    throw badRequest("names 必须是非空数组。");
+    throw badRequest("names must be a non-empty array.");
   }
   return body.names.map((v, i) => {
     if (typeof v !== "string" || v.length === 0) {
-      throw badRequest(`names[${i}] 必须是非空字符串。`);
+      throw badRequest(`names[${i}] must be a non-empty string.`);
     }
     return v;
   });
@@ -110,7 +110,7 @@ export function agentSkillsRoutes(deps: AppDeps): Hono<AppEnv> {
     // Verify all names up front before writing anything: if any name isn't in the library, reject the whole request rather than leaving a half-installed state.
     const skills: LibrarySkill[] = names.map((name) => {
       const skill = librarySkill(name);
-      if (!skill) throw new HttpError(404, "unknown_skill", `Skill 库中不存在：${name}`);
+      if (!skill) throw new HttpError(404, "unknown_skill", `Skill is not in the library: ${name}`);
       return skill;
     });
     for (const skill of skills) {
@@ -129,7 +129,7 @@ export function agentSkillsRoutes(deps: AppDeps): Hono<AppEnv> {
     try {
       await fs.access(file);
     } catch {
-      throw new HttpError(404, "not_found", `Skill 未安装：${name}`);
+      throw new HttpError(404, "not_found", `Skill is not installed: ${name}`);
     }
     await removeSkill(deps.config.root, projectId, agentId, name);
     return c.body(null, 204);

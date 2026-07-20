@@ -28,7 +28,7 @@ describe("vault api", () => {
     member = apiClient(t.app, b.cookie);
     outsider = apiClient(t.app, c.cookie);
     const created = (await (
-      await owner.post("/api/projects", { projectId: "owner_a-vault", name: "vault 项目" })
+      await owner.post("/api/projects", { projectId: "owner_a-vault", name: "vault project" })
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
     vaultPath = `/api/projects/${projectId}/agents/default_agent/vault`;
@@ -39,7 +39,7 @@ describe("vault api", () => {
     await t.cleanup();
   });
 
-  it("GET 掩码且明文不下发；member 可读、外人 404；空 vault 返回空表", async () => {
+  it("GET masks values and never sends plaintext; members can read, outsiders 404; an empty vault returns an empty table", async () => {
     // Not configured yet: an empty table.
     const empty = (await (await owner.get(vaultPath)).json()) as VaultResponse;
     expect(empty.entries).toEqual([]);
@@ -67,14 +67,14 @@ describe("vault api", () => {
     expect((await outsider.get(vaultPath)).status).toBe(404);
   });
 
-  it("PUT 仅 owner：member 403、外人 404", async () => {
+  it("PUT is owner-only: member 403, outsider 404", async () => {
     expect((await member.put(vaultPath, { entries: [{ key: "K", value: "v" }] })).status).toBe(403);
     expect((await outsider.put(vaultPath, { entries: [{ key: "K", value: "v" }] })).status).toBe(
       404,
     );
   });
 
-  it("整表替换：value 省略保留原值、缺席的键删除、新键缺 value 400", async () => {
+  it("whole-table replace: omitting value keeps the original, absent keys are deleted, a new key without value 400", async () => {
     await owner.put(vaultPath, {
       entries: [
         { key: "KEEP_ME", value: "keep-secret-000111" },
@@ -99,7 +99,7 @@ describe("vault api", () => {
     expect(cleared.entries).toEqual([]);
   });
 
-  it("vault 更新不动 models/credential 等其他配置", async () => {
+  it("vault updates leave models/credential and other config untouched", async () => {
     await owner.put(`/api/projects/${projectId}/models`, {
       defaultModel: { provider: "custom", modelId: "m-1" },
       models: [{ provider: "custom", modelId: "m-1", apiKey: "sk-model-key-999888" }],
@@ -112,7 +112,7 @@ describe("vault api", () => {
     expect(modelsBody.models[0]!.credential).toBeTruthy();
   });
 
-  it("Agent 级隔离：不同 Agent 的 vault 互相独立；不存在的 Agent 404", async () => {
+  it("Agent-level isolation: different Agents' vaults are independent; a nonexistent Agent 404", async () => {
     await owner.put(vaultPath, { entries: [{ key: "ONLY_DEFAULT", value: "v-default-1" }] });
 
     // Another Agent in the same Project: empty table, and writes don't affect each other.
@@ -139,7 +139,7 @@ describe("vault api", () => {
     ).toBe(404);
   });
 
-  it("键名与请求体形状校验 400", async () => {
+  it("key name and request body shape validation 400", async () => {
     const cases: unknown[] = [
       { entries: [{ key: "1BAD", value: "v" }] }, // starts with a digit
       { entries: [{ key: "BAD-DASH", value: "v" }] }, // hyphen

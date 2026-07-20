@@ -87,8 +87,8 @@ function items(model: StreamModel) {
   return model.items;
 }
 
-describe("partial 聚合与完整消息收敛", () => {
-  it("partial_text start/delta/stop 累积为一个流式项，完整消息替换内容", () => {
+describe("partial aggregation and full-message convergence", () => {
+  it("partial_text start/delta/stop accumulates into one streaming item; the full message replaces its content", () => {
     const m = createStreamModel();
     pushMessage(m, partialText("start"));
     pushMessage(m, partialText("delta", "Hel"));
@@ -108,31 +108,31 @@ describe("partial 聚合与完整消息收敛", () => {
     expect(item.text).toBe("Hello!");
   });
 
-  it("partial_thinking 同理，stop_reason 记录在项上", () => {
+  it("partial_thinking works the same; stop_reason is recorded on the item", () => {
     const m = createStreamModel();
     pushMessage(m, partialThinking("start"));
-    pushMessage(m, partialThinking("delta", "思考中"));
+    pushMessage(m, partialThinking("delta", "thinking"));
     pushMessage(m, partialThinking("stop", "", "aborted"));
     const item = items(m)[0] as ThinkingItem;
     expect(item.kind).toBe("thinking");
-    expect(item.thinking).toBe("思考中");
+    expect(item.thinking).toBe("thinking");
     expect(item.stopReason).toBe("aborted");
-    pushMessage(m, thinkingMessage("思考中（完整）", "aborted"));
+    pushMessage(m, thinkingMessage("thinking (complete)", "aborted"));
     expect(items(m)).toHaveLength(1);
-    expect(item.thinking).toBe("思考中（完整）");
+    expect(item.thinking).toBe("thinking (complete)");
   });
 
-  it("孤儿 delta/stop（未见 start，中途加入）被忽略，随后的完整消息直接追加", () => {
+  it("orphan delta/stop (no start seen, joined mid-stream) is ignored; the subsequent full message appends directly", () => {
     const m = createStreamModel();
-    pushMessage(m, partialText("delta", "半截"));
+    pushMessage(m, partialText("delta", "halfway"));
     pushMessage(m, partialText("stop"));
     expect(items(m)).toHaveLength(0);
-    pushMessage(m, assistantText("完整文本"));
+    pushMessage(m, assistantText("full text"));
     expect(items(m)).toHaveLength(1);
-    expect((items(m)[0] as AssistantTextItem).text).toBe("完整文本");
+    expect((items(m)[0] as AssistantTextItem).text).toBe("full text");
   });
 
-  it("工具卡：partial_tool_call 按 tool_call_id 归属，完整消息替换参数", () => {
+  it("tool cards: partial_tool_call attaches by tool_call_id; the full message replaces the arguments", () => {
     const m = createStreamModel();
     pushMessage(m, partialToolCall({ eventType: "start", name: "exec_command", toolCallId: "t1" }));
     pushMessage(
@@ -165,29 +165,32 @@ describe("partial 聚合与完整消息收敛", () => {
     expect(card.outputComplete).toBe(true);
   });
 
-  it("完整 tool_call 先到（历史）时，迟到的流式副本被忽略", () => {
+  it("when the full tool_call arrives first (history), the late streaming copy is ignored", () => {
     const m = createStreamModel();
     pushMessage(m, toolCall({ name: "read_file", arguments: '{"path":"x"}', toolCallId: "t2" }));
     pushMessage(m, partialToolCall({ eventType: "start", name: "read_file", toolCallId: "t2" }));
     pushMessage(
       m,
-      partialToolCall({ eventType: "delta", name: "", arguments: "重复", toolCallId: "t2" }),
+      partialToolCall({ eventType: "delta", name: "", arguments: "duplicate", toolCallId: "t2" }),
     );
     const card = items(m)[0] as ToolCallItem;
     expect(items(m)).toHaveLength(1);
     expect(card.argumentsText).toBe('{"path":"x"}');
   });
 
-  it("无调用卡的孤儿输出 delta 被忽略，完整输出补建卡片", () => {
+  it("orphan output deltas without a call card are ignored; the full output creates the card", () => {
     const m = createStreamModel();
-    pushMessage(m, partialToolCallOutput({ eventType: "delta", output: "孤儿", toolCallId: "t3" }));
+    pushMessage(
+      m,
+      partialToolCallOutput({ eventType: "delta", output: "orphan", toolCallId: "t3" }),
+    );
     expect(items(m)).toHaveLength(0);
-    pushMessage(m, toolCallOutput({ output: "完整输出", toolCallId: "t3" }));
+    pushMessage(m, toolCallOutput({ output: "full output", toolCallId: "t3" }));
     expect(items(m)).toHaveLength(1);
-    expect((items(m)[0] as ToolCallItem).output).toBe("完整输出");
+    expect((items(m)[0] as ToolCallItem).output).toBe("full output");
   });
 
-  it("工具输出图片经流式 delta 整体到达即写入工具卡，完整消息再次收敛", () => {
+  it("tool-output images land on the tool card as soon as a streaming delta carries them whole; the full message converges again", () => {
     const dataUrl = "data:image/png;base64,AAAA";
     const m = createStreamModel();
     pushMessage(
@@ -220,8 +223,8 @@ describe("partial 聚合与完整消息收敛", () => {
   });
 });
 
-describe("审批与事件", () => {
-  it("approval_decision 标注对应工具卡；本端登记的标 manual，其余 remote", () => {
+describe("approvals and events", () => {
+  it("approval_decision annotates the matching tool card; locally registered ones are manual, the rest remote", () => {
     const m = createStreamModel();
     pushMessage(m, toolCall({ name: "a", arguments: "{}", toolCallId: "t1" }));
     pushMessage(m, toolCall({ name: "b", arguments: "{}", toolCallId: "t2" }));
@@ -235,20 +238,20 @@ describe("审批与事件", () => {
     expect(c2.decisionSource).toBe("remote");
   });
 
-  it("先于卡片到达的审批决定在卡片创建时回填", () => {
+  it("approval decisions arriving before the card are backfilled when the card is created", () => {
     const m = createStreamModel();
     pushMessage(m, approvalDecision("allow", "t9"));
     pushMessage(m, toolCall({ name: "x", arguments: "{}", toolCallId: "t9" }));
     expect((items(m)[0] as ToolCallItem).decision).toBe("allow");
   });
 
-  it("abort 事件产出中断标记项", () => {
+  it("abort events produce an abort marker item", () => {
     const m = createStreamModel();
-    pushMessage(m, abortEvent("用户中断"));
-    expect(items(m)[0]).toMatchObject({ kind: "abort", reason: "用户中断" });
+    pushMessage(m, abortEvent("user abort"));
+    expect(items(m)[0]).toMatchObject({ kind: "abort", reason: "user abort" });
   });
 
-  it("compaction begin/end 产出横幅项，完成行带 tokens 口径", () => {
+  it("compaction begin/end produce a banner item; tokens accounting for the completion row", () => {
     const m = createStreamModel();
     pushMessage(m, tokenUsage(counts(1000), counts(1000)));
     pushMessage(
@@ -268,7 +271,7 @@ describe("审批与事件", () => {
     expect(banner).not.toHaveProperty("tokens");
   });
 
-  it("request_begin/end（正常终态）与主会话 session_meta 不渲染", () => {
+  it("request_begin/end (normal final state) and main-session session_meta do not render", () => {
     const m = createStreamModel();
     pushMessage(m, meta("session-x"));
     pushMessage(m, requestBegin());
@@ -276,7 +279,7 @@ describe("审批与事件", () => {
     expect(items(m)).toHaveLength(0);
   });
 
-  it("request_end 终态 timeout/malformed 产出重试提示项（含第几次）；request_begin 置为已重发", () => {
+  it("request_end final state timeout/malformed produces a retry notice item (with attempt number); request_begin marks it as resent", () => {
     const m = createStreamModel();
     pushMessage(m, requestBegin());
     pushMessage(m, requestEnd("malformed"));
@@ -303,7 +306,7 @@ describe("审批与事件", () => {
     expect((items(m)[2] as ReconnectItem).attempt).toBe(1);
   });
 
-  it("重试耗尽：abort 到达把等待中的重试提示置为 gaveUp，连续失败计数清零", () => {
+  it("retries exhausted: an arriving abort marks the waiting retry notice gaveUp and resets the consecutive-failure count", () => {
     const m = createStreamModel();
     pushMessage(m, requestBegin());
     pushMessage(m, requestEnd("timeout"));
@@ -323,7 +326,7 @@ describe("审批与事件", () => {
     expect((items(m)[2] as ReconnectItem).attempt).toBe(1);
   });
 
-  it("新 Task 开始收口上一 Task 悬挂的重试提示（服务端死在退避窗、Trace 无 abort）", () => {
+  it("a new Task closes the previous Task's dangling retry notice (server died in the backoff window, no abort in the Trace)", () => {
     const m = createStreamModel();
     pushMessage(m, userText("go"));
     pushMessage(m, requestBegin());
@@ -340,7 +343,7 @@ describe("审批与事件", () => {
     expect(fresh.attempt).toBe(1);
   });
 
-  it("非 completed 收口的 tool_call（malformed 闭合）到达即收卡，不再显示执行中", () => {
+  it("a tool_call closed non-completed (malformed closure) settles the card on arrival instead of showing as running", () => {
     const m = createStreamModel();
     pushMessage(
       m,
@@ -359,7 +362,7 @@ describe("审批与事件", () => {
     expect(card.outputStopReason).toBe("malformed");
   });
 
-  it("压缩区间内的 request 事件不产出重试提示（历史重建，压缩过程只暴露事件对）", () => {
+  it("request events inside a compaction span produce no retry notice (history rebuild exposes only the event pair for compaction)", () => {
     const m = createStreamModel();
     pushMessage(m, compactionBegin({ reason: "context", mode: "summarize", context: 1, turns: 1 }));
     pushMessage(m, requestBegin());
@@ -369,8 +372,8 @@ describe("审批与事件", () => {
   });
 });
 
-describe("origin 嵌套路由", () => {
-  it("子 session_meta 绑到最近已放行且未完成的 run_subagent 工具卡，卡内递归渲染", () => {
+describe("origin nested routing", () => {
+  it("child session_meta binds to the nearest approved, unfinished run_subagent tool card and renders recursively inside it", () => {
     const m = createStreamModel();
     pushMessage(m, toolCall({ name: "run_subagent", arguments: "{}", toolCallId: "t1" }));
     pushMessage(m, approvalDecision("allow", "t1"));
@@ -381,31 +384,34 @@ describe("origin 嵌套路由", () => {
     expect(card.subagentSessionId).toBe("child1");
 
     // Child-session messages (after stripping the first hop) go into the card's nested model.
-    pushMessage(m, withOrigin(userText("子任务"), "child1"));
-    pushMessage(m, withOrigin(assistantText("子回复"), "child1"));
+    pushMessage(m, withOrigin(userText("subtask"), "child1"));
+    pushMessage(m, withOrigin(assistantText("child reply"), "child1"));
     const sub = card.subagent!;
     expect(sub.items).toHaveLength(2);
-    expect(sub.items[0]).toMatchObject({ kind: "user_text", text: "子任务" });
-    expect(sub.items[1]).toMatchObject({ kind: "assistant_text", text: "子回复" });
+    expect(sub.items[0]).toMatchObject({ kind: "user_text", text: "subtask" });
+    expect(sub.items[1]).toMatchObject({ kind: "assistant_text", text: "child reply" });
   });
 
-  it("更深的 origin 链逐层剥离路由（孙会话）", () => {
+  it("deeper origin chains route by stripping one hop per level (grandchild session)", () => {
     const m = createStreamModel();
     pushMessage(m, toolCall({ name: "run_subagent", arguments: "{}", toolCallId: "t1" }));
     pushMessage(m, approvalDecision("allow", "t1"));
     pushMessage(m, withOrigin(meta("child1"), "child1"));
     // Grandchild-session message: origin = [child1, child2].
-    pushMessage(m, withOrigin(withOrigin(assistantText("孙回复"), "child2"), "child1"));
+    pushMessage(m, withOrigin(withOrigin(assistantText("grandchild reply"), "child2"), "child1"));
 
     const sub = (items(m)[0] as ToolCallItem).subagent!;
     // Within the child model, child2 has no run_subagent card to bind to -> standalone SubagentCard.
     const nested = sub.items.find((i) => i.kind === "subagent") as SubagentItem;
     expect(nested).toBeDefined();
     expect(nested.sessionId).toBe("child2");
-    expect(nested.model.items[0]).toMatchObject({ kind: "assistant_text", text: "孙回复" });
+    expect(nested.model.items[0]).toMatchObject({
+      kind: "assistant_text",
+      text: "grandchild reply",
+    });
   });
 
-  it("找不到可绑定卡时建独立 SubagentCard；被拒绝的卡不绑定", () => {
+  it("builds a standalone SubagentCard when no bindable card exists; denied cards do not bind", () => {
     const m = createStreamModel();
     pushMessage(m, toolCall({ name: "run_subagent", arguments: "{}", toolCallId: "t1" }));
     pushMessage(m, approvalDecision("deny", "t1"));
@@ -416,9 +422,9 @@ describe("origin 嵌套路由", () => {
     expect((items(m)[0] as ToolCallItem).subagent).toBeUndefined();
   });
 
-  it("子会话 token_usage 计入父级统计（tokens 含子会话，上下文不含）", () => {
+  it("child-session token_usage counts toward parent stats (tokens include child sessions, context does not)", () => {
     const m = createStreamModel();
-    pushMessage(m, at(userText("任务"), "2026-07-05T00:00:00.000Z"));
+    pushMessage(m, at(userText("task"), "2026-07-05T00:00:00.000Z"));
     pushMessage(m, at(tokenUsage(counts(1000), counts(1000)), "2026-07-05T00:00:01.000Z"));
     pushMessage(
       m,
@@ -432,41 +438,41 @@ describe("origin 嵌套路由", () => {
   });
 });
 
-describe("消息时刻（页脚 hover 展示）", () => {
-  it("用户与助手消息都带 atMs；助手流式先用 start 占位，完整消息到达后改用完成时刻", () => {
+describe("message timestamps (footer hover display)", () => {
+  it("user and assistant messages both carry atMs; streaming assistant uses start as a placeholder, switching to the completion time when the full message arrives", () => {
     const m = createStreamModel();
-    pushMessage(m, at(userText("问"), "2026-07-05T00:00:00.000Z"));
+    pushMessage(m, at(userText("Q"), "2026-07-05T00:00:00.000Z"));
     // Streaming: the start timestamp is used as a placeholder first.
     pushMessage(m, at(partialText("start"), "2026-07-05T00:00:01.000Z"));
-    pushMessage(m, at(partialText("delta", "答"), "2026-07-05T00:00:02.000Z"));
+    pushMessage(m, at(partialText("delta", "A"), "2026-07-05T00:00:02.000Z"));
     const reply = items(m)[1] as AssistantTextItem;
     expect(reply.atMs).toBe(Date.parse("2026-07-05T00:00:01.000Z"));
     // Full message arrives -> switch to the **completion** timestamp (matches Trace's
     // convention: Trace records completion time).
     pushMessage(m, at(partialText("stop"), "2026-07-05T00:00:03.000Z"));
-    pushMessage(m, at(assistantText("答完了"), "2026-07-05T00:00:04.000Z"));
+    pushMessage(m, at(assistantText("answer done"), "2026-07-05T00:00:04.000Z"));
 
     const user = items(m)[0] as UserTextItem;
     expect(user.atMs).toBe(Date.parse("2026-07-05T00:00:00.000Z"));
     expect(reply.atMs).toBe(Date.parse("2026-07-05T00:00:04.000Z"));
   });
 
-  it("历史重建（无流式片段）的助手消息同样带 atMs", () => {
+  it("assistant messages from history rebuild (no streaming fragments) also carry atMs", () => {
     const m = createStreamModel();
-    pushMessage(m, at(userText("问"), "2026-07-05T00:00:00.000Z"));
-    pushMessage(m, at(assistantText("答"), "2026-07-05T00:00:05.000Z"));
+    pushMessage(m, at(userText("Q"), "2026-07-05T00:00:00.000Z"));
+    pushMessage(m, at(assistantText("A"), "2026-07-05T00:00:05.000Z"));
     expect((items(m)[1] as AssistantTextItem).atMs).toBe(Date.parse("2026-07-05T00:00:05.000Z"));
   });
 });
 
-describe("Task 分段与统计触发", () => {
-  it("user text/image 开启新 Task；下一个 Task 开始时补上一 Task 的统计行（历史口径）", () => {
+describe("Task segmentation and stats triggering", () => {
+  it("user text/image starts a new Task; the next Task's start backfills the previous Task's stats row (history accounting)", () => {
     const m = createStreamModel();
     pushMessages(m, [
-      at(userText("第一问"), "2026-07-05T00:00:00.000Z"),
-      at(assistantText("第一答"), "2026-07-05T00:00:03.000Z"),
+      at(userText("first question"), "2026-07-05T00:00:00.000Z"),
+      at(assistantText("first answer"), "2026-07-05T00:00:03.000Z"),
       at(tokenUsage(counts(1000), counts(1000)), "2026-07-05T00:00:05.000Z"),
-      at(userText("第二问"), "2026-07-05T00:01:00.000Z"),
+      at(userText("second question"), "2026-07-05T00:01:00.000Z"),
     ]);
     // Order: user1, text1, stats(task1), user2.
     expect(items(m).map((i) => i.kind)).toEqual([
@@ -480,13 +486,13 @@ describe("Task 分段与统计触发", () => {
     expect(stats.stats!.elapsedDeltaMs).toBe(5000); // time span from the first to the last message
   });
 
-  it("流结尾（finalizeHistory）收口最后一个 Task；无 usage 的轮次不给统计数字，但仍给页脚", () => {
+  it("stream end (finalizeHistory) closes the last Task; rounds without usage get no stats figures but still get a footer", () => {
     const m = createStreamModel();
     pushMessages(m, [
-      at(userText("有用量"), "2026-07-05T00:00:00.000Z"),
+      at(userText("with usage"), "2026-07-05T00:00:00.000Z"),
       at(tokenUsage(counts(500), counts(500)), "2026-07-05T00:00:01.000Z"),
-      at(userText("无用量"), "2026-07-05T00:01:00.000Z"),
-      at(assistantText("直接答"), "2026-07-05T00:01:01.000Z"),
+      at(userText("no usage"), "2026-07-05T00:01:00.000Z"),
+      at(assistantText("direct answer"), "2026-07-05T00:01:01.000Z"),
     ]);
     finalizeHistory(m);
     const statsItems = items(m).filter((i) => i.kind === "task_stats") as TaskStatsItem[];
@@ -496,20 +502,20 @@ describe("Task 分段与统计触发", () => {
     // must still be produced: it doubles as this reply's footer (timestamp + copy). Otherwise an
     // aborted reply would have neither a timestamp nor a copy button.
     expect(statsItems[1]!.stats).toBeNull();
-    expect(statsItems[1]!.assistantText).toBe("直接答");
+    expect(statsItems[1]!.assistantText).toBe("direct answer");
     expect(statsItems[1]!.atMs).toBe(Date.parse("2026-07-05T00:01:01.000Z"));
   });
 
-  it("既无 usage 又无正文的轮次：不产出任何项", () => {
+  it("rounds with neither usage nor body text produce no items", () => {
     const m = createStreamModel();
-    pushMessages(m, [at(userText("空转"), "2026-07-05T00:00:00.000Z")]);
+    pushMessages(m, [at(userText("no-op"), "2026-07-05T00:00:00.000Z")]);
     finalizeHistory(m);
     expect(items(m).filter((i) => i.kind === "task_stats")).toHaveLength(0);
   });
 
-  it("实时流以 task_state:idle 收口，用本地时钟计增量", () => {
+  it("live streams close at task_state:idle, measuring the delta with the local clock", () => {
     const m = createStreamModel();
-    pushMessage(m, userText("实时问"), 10_000);
+    pushMessage(m, userText("live question"), 10_000);
     pushMessage(m, tokenUsage(counts(800), counts(800)), 11_000);
     notifyTaskIdle(m, 15_100);
     const stats = items(m).find((i) => i.kind === "task_stats") as TaskStatsItem;
@@ -517,7 +523,7 @@ describe("Task 分段与统计触发", () => {
     expect(stats.stats!.tokens).toBe(800);
   });
 
-  it("image_url 完整消息同样开启新 Task", () => {
+  it("a full image_url message also starts a new Task", () => {
     const m = createStreamModel();
     pushMessage(m, tokenUsage(counts(100), counts(100))); // outside the Task boundary
     pushMessage(m, imageUrlMessage("data:image/png;base64,xx"));
@@ -528,9 +534,9 @@ describe("Task 分段与统计触发", () => {
     expect(stats.stats!.tokensDelta).toBe(600);
   });
 
-  it("Task 之间的手动压缩消耗不误记入下一 Task 增量", () => {
+  it("manual compaction usage between Tasks is not misattributed to the next Task's delta", () => {
     const m = createStreamModel();
-    pushMessage(m, at(userText("一"), "2026-07-05T00:00:00.000Z"));
+    pushMessage(m, at(userText("one"), "2026-07-05T00:00:00.000Z"));
     pushMessage(m, at(tokenUsage(counts(1000), counts(1000)), "2026-07-05T00:00:01.000Z"));
     notifyTaskIdle(m, Date.now());
     // Manual /compact (outside the Task boundary).
@@ -541,7 +547,7 @@ describe("Task 分段与统计触发", () => {
     pushMessage(m, tokenUsage(counts(1300), counts(300)));
     pushMessage(m, compactionEnd({ reason: "manual", mode: "summarize", status: "completed" }));
     // Next Task.
-    pushMessage(m, at(userText("二"), "2026-07-05T00:02:00.000Z"));
+    pushMessage(m, at(userText("two"), "2026-07-05T00:02:00.000Z"));
     pushMessage(m, at(tokenUsage(counts(1800), counts(500)), "2026-07-05T00:02:01.000Z"));
     notifyTaskIdle(m, Date.now());
     const statsItems = items(m).filter((i) => i.kind === "task_stats") as TaskStatsItem[];
@@ -550,7 +556,7 @@ describe("Task 分段与统计触发", () => {
     expect(last.stats!.context).toBe(500);
   });
 
-  it("轮末取最后一个 request_end：其后到达的下一轮注入不撑大本轮用时", () => {
+  it("round end takes the last request_end: the next round's injection arriving after it does not inflate this round's elapsed time", () => {
     // During history rebuild, the compaction summary `<context_summary>` is written alongside the
     // next round, with its timestamp landing in that next round — it arrives while the previous
     // round is still open. If round-end took the latest message seen, this injection would
@@ -558,13 +564,13 @@ describe("Task 分段与统计触发", () => {
     // after a refresh); taking the last request_end instead naturally excludes it from the round.
     const m = createStreamModel();
     pushMessages(m, [
-      at(userText("问"), "2026-07-05T00:00:00.000Z"),
+      at(userText("Q"), "2026-07-05T00:00:00.000Z"),
       at(requestBegin(), "2026-07-05T00:00:01.000Z"),
       at(tokenUsage(out(100), out(100)), "2026-07-05T00:00:02.000Z"),
       at(requestEnd("completed"), "2026-07-05T00:00:03.000Z"), // this round's last request_end
       // Next round's summary injection, timestamped much later; it arrives while this round hasn't closed yet.
-      at(userText("<context_summary>\n摘要\n</context_summary>"), "2026-07-05T00:00:50.000Z"),
-      at(userText("下一问"), "2026-07-05T00:01:00.000Z"), // startTask: closes the previous round
+      at(userText("<context_summary>\nsummary\n</context_summary>"), "2026-07-05T00:00:50.000Z"),
+      at(userText("next question"), "2026-07-05T00:01:00.000Z"), // startTask: closes the previous round
     ]);
     finalizeHistory(m);
     const first = items(m).find((i) => i.kind === "task_stats") as TaskStatsItem;
@@ -572,8 +578,8 @@ describe("Task 分段与统计触发", () => {
   });
 });
 
-describe("输出 TPS（request 事件配对计时）", () => {
-  it("request_begin/request_end 配对累加本 Task LLM 时长，产出输出 TPS（含工具参数生成、不含工具执行）", () => {
+describe("output TPS (request event pair timing)", () => {
+  it("request_begin/request_end pairs accumulate this Task's LLM duration, producing output TPS (includes tool-argument generation, excludes tool execution)", () => {
     const m = createStreamModel();
     pushMessage(m, at(userText("q"), "2026-07-05T00:00:00.000Z"));
     pushMessage(m, at(requestBegin(), "2026-07-05T00:00:01.000Z"));
@@ -587,7 +593,7 @@ describe("输出 TPS（request 事件配对计时）", () => {
     expect(stats.stats!.tokensByBucket).toEqual({ cacheRead: 0, cacheWrite: 0, output: 900 });
   });
 
-  it("同一 Task 多轮 request 时长累加；无 request 配对时 TPS 为 null", () => {
+  it("multiple request rounds in one Task accumulate duration; TPS is null without request pairs", () => {
     const m = createStreamModel();
     // No request events -> no LLM timing -> TPS is null.
     pushMessage(m, at(userText("q1"), "2026-07-05T00:00:00.000Z"));
@@ -608,7 +614,7 @@ describe("输出 TPS（request 事件配对计时）", () => {
     expect(stats[stats.length - 1]!.stats!.outputTps).toBe(200);
   });
 
-  it("人工审批等待不计入 TPS 分母（与 Trace 页 activeMs 同口径）", () => {
+  it("human approval wait is excluded from the TPS denominator (same convention as the Trace page's activeMs)", () => {
     const m = createStreamModel();
     pushMessage(m, at(userText("q"), "2026-07-05T00:00:00.000Z"));
     pushMessage(m, at(requestBegin(), "2026-07-05T00:00:01.000Z"));
@@ -632,7 +638,7 @@ describe("输出 TPS（request 事件配对计时）", () => {
     expect(stats.stats!.outputTps).toBe(500);
   });
 
-  it("压缩请求的计时与输出都不计入 TPS（只算普通请求，与 Trace 页压缩自成一轮一致）", () => {
+  it("compaction requests contribute neither timing nor output to TPS (only normal requests count, matching the Trace page where compaction is its own round)", () => {
     const m = createStreamModel();
     pushMessage(m, at(userText("q"), "2026-07-05T00:00:00.000Z"));
     pushMessage(m, at(requestBegin(), "2026-07-05T00:00:01.000Z"));
@@ -662,8 +668,8 @@ describe("输出 TPS（request 事件配对计时）", () => {
   });
 });
 
-describe("压缩按落点归属：轮内计入本轮、轮后不计", () => {
-  it("本轮用时止于最后一个 request_end；收尾压缩排在轮外，天然不计；统计行排在压缩横幅之前", () => {
+describe("compaction attribution by position: in-round counts toward the round, post-round does not", () => {
+  it("round elapsed stops at the last request_end; tail compaction sits outside the round and naturally does not count; the stats row precedes the compaction banner", () => {
     // Auto-compaction triggered at the **end** of a round: compaction is itself a full LLM
     // request (here 20s). It sits entirely **after** the round's last request_end. Using "the
     // last request_end" as the round boundary naturally excludes it — no need to walk each
@@ -671,9 +677,9 @@ describe("压缩按落点归属：轮内计入本轮、轮后不计", () => {
     // already being excluded).
     const m = createStreamModel();
     pushMessages(m, [
-      at(userText("问"), "2026-07-05T00:00:00.000Z"),
+      at(userText("Q"), "2026-07-05T00:00:00.000Z"),
       at(requestBegin(), "2026-07-05T00:00:01.000Z"),
-      at(assistantText("答"), "2026-07-05T00:00:02.500Z"),
+      at(assistantText("A"), "2026-07-05T00:00:02.500Z"),
       at(tokenUsage(out(600), out(600)), "2026-07-05T00:00:02.900Z"),
       at(requestEnd("completed"), "2026-07-05T00:00:03.000Z"), // this round's last request_end
       // Tail compaction: 00:04 -> 00:24, a full 20s, entirely after the round end
@@ -703,7 +709,7 @@ describe("压缩按落点归属：轮内计入本轮、轮后不计", () => {
     expect(stats.stats!.elapsedDeltaMs).toBe(3_000);
   });
 
-  it("轮次**进行中**的压缩：夹在本轮跨度之内，用时与 Token 都算进本轮", () => {
+  it("**mid-round** compaction: inside the round's span, both elapsed time and Tokens count toward the round", () => {
     // After compaction, the engine keeps running with the carry-over, and this round still has a
     // normal Request after compaction — so compaction sits between two of this round's
     // request_ends. It genuinely is time and cost spent to finish this round's work, so both
@@ -713,7 +719,7 @@ describe("压缩按落点归属：轮内计入本轮、轮后不计", () => {
     // Compaction's output still doesn't count toward TPS (it isn't generation for a user request).
     const m = createStreamModel();
     pushMessages(m, [
-      at(userText("问"), "2026-07-05T00:00:00.000Z"),
+      at(userText("Q"), "2026-07-05T00:00:00.000Z"),
       at(requestBegin(), "2026-07-05T00:00:01.000Z"),
       at(tokenUsage(out(100), out(100)), "2026-07-05T00:00:02.000Z"),
       at(requestEnd("completed"), "2026-07-05T00:00:03.000Z"), // own1: 2s, 100 output tokens
@@ -731,7 +737,7 @@ describe("压缩按落点归属：轮内计入本轮、轮后不计", () => {
       ),
       // This round keeps running after compaction
       at(requestBegin(), "2026-07-05T00:00:24.000Z"),
-      at(assistantText("答"), "2026-07-05T00:00:25.000Z"),
+      at(assistantText("A"), "2026-07-05T00:00:25.000Z"),
       at(tokenUsage(out(200), out(200)), "2026-07-05T00:00:25.000Z"),
       at(requestEnd("completed"), "2026-07-05T00:00:26.000Z"), // own2: 2s, 200 output tokens
     ]);
@@ -747,16 +753,16 @@ describe("压缩按落点归属：轮内计入本轮、轮后不计", () => {
     expect(stats.stats!.outputTps).toBe(75);
   });
 
-  it("本轮被打断后隔很久才发下一条：上一轮的用时不含这段空档", () => {
+  it("next message sent long after the round was aborted: the previous round's elapsed excludes the gap", () => {
     const m = createStreamModel();
     pushMessages(m, [
-      at(userText("问"), "2026-07-05T00:00:00.000Z"),
+      at(userText("Q"), "2026-07-05T00:00:00.000Z"),
       at(requestBegin(), "2026-07-05T00:00:01.000Z"),
       at(tokenUsage(out(100), out(100)), "2026-07-05T00:00:02.000Z"),
       at(requestEnd("aborted"), "2026-07-05T00:00:03.000Z"),
       at(abortEvent("user"), "2026-07-05T00:00:03.000Z"),
       // The user doesn't send the next message until 60 seconds later
-      at(userText("再问"), "2026-07-05T00:01:03.000Z"),
+      at(userText("ask again"), "2026-07-05T00:01:03.000Z"),
       at(requestBegin(), "2026-07-05T00:01:04.000Z"),
       at(tokenUsage(out(50), out(50)), "2026-07-05T00:01:05.000Z"),
       at(requestEnd("completed"), "2026-07-05T00:01:06.000Z"),
@@ -767,10 +773,10 @@ describe("压缩按落点归属：轮内计入本轮、轮后不计", () => {
     expect(all[1]!.stats!.elapsedDeltaMs).toBe(3_000);
   });
 
-  it("手动 /compact 夹在两轮之间：上一轮的账目不吃压缩（历史重建须与实时流一致）", () => {
+  it("manual /compact between two rounds: the previous round's tally does not absorb compaction (history rebuild must match the live stream)", () => {
     const m = createStreamModel();
     pushMessages(m, [
-      at(userText("问"), "2026-07-05T00:00:00.000Z"),
+      at(userText("Q"), "2026-07-05T00:00:00.000Z"),
       at(requestBegin(), "2026-07-05T00:00:01.000Z"),
       at(tokenUsage(out(100), out(100)), "2026-07-05T00:00:02.000Z"),
       at(requestEnd("completed"), "2026-07-05T00:00:03.000Z"),
@@ -788,7 +794,7 @@ describe("压缩按落点归属：轮内计入本轮、轮后不计", () => {
         compactionEnd({ reason: "manual", mode: "summarize", status: "completed" }),
         "2026-07-05T00:00:33.000Z",
       ),
-      at(userText("<context_summary>\n摘要\n</context_summary>"), "2026-07-05T00:00:33.000Z"),
+      at(userText("<context_summary>\nsummary\n</context_summary>"), "2026-07-05T00:00:33.000Z"),
     ]);
     finalizeHistory(m);
     const stats = items(m).find((i) => i.kind === "task_stats") as TaskStatsItem;
@@ -801,27 +807,30 @@ describe("压缩按落点归属：轮内计入本轮、轮后不计", () => {
   });
 });
 
-describe("压缩内部消息（#17：历史重建与实时流对齐）", () => {
-  it("压缩区间内的压缩 Prompt 与摘要输出不渲染、不参与 Task 分段；context 口径不被污染", () => {
+describe("compaction-internal messages (#17: history rebuild aligned with the live stream)", () => {
+  it("compaction prompt and summary output inside the span neither render nor affect Task segmentation; the context figure is not polluted", () => {
     const m = createStreamModel();
     pushMessages(m, [
-      at(userText("任务"), "2026-07-05T00:00:00.000Z"),
+      at(userText("task"), "2026-07-05T00:00:00.000Z"),
       at(tokenUsage(counts(10000), counts(10000)), "2026-07-05T00:00:05.000Z"),
       at(
         compactionBegin({ reason: "context", mode: "summarize", context: 10000, turns: 5 }),
         "2026-07-05T00:00:06.000Z",
       ),
       // Compaction prompt (user text) and the compaction request's summary output (assistant text): internal messages.
-      at(userText("请总结上文（压缩 Prompt）"), "2026-07-05T00:00:06.100Z"),
-      at(assistantText("<summary>摘要内容</summary>"), "2026-07-05T00:00:09.000Z"),
+      at(userText("Summarize the above (compaction prompt)"), "2026-07-05T00:00:06.100Z"),
+      at(assistantText("<summary>summary content</summary>"), "2026-07-05T00:00:09.000Z"),
       at(tokenUsage(counts(11000), counts(1000)), "2026-07-05T00:00:09.500Z"),
       at(
         compactionEnd({ reason: "context", mode: "summarize", status: "completed" }),
         "2026-07-05T00:00:10.000Z",
       ),
       // Summary injected at the start of the new context file: internal input.
-      at(userText("<context_summary>\n摘要内容\n</context_summary>"), "2026-07-05T00:00:10.500Z"),
-      at(userText("下一问"), "2026-07-05T00:01:00.000Z"),
+      at(
+        userText("<context_summary>\nsummary content\n</context_summary>"),
+        "2026-07-05T00:00:10.500Z",
+      ),
+      at(userText("next question"), "2026-07-05T00:01:00.000Z"),
       at(tokenUsage(counts(3000), counts(3000)), "2026-07-05T00:01:05.000Z"),
     ]);
     finalizeHistory(m);
@@ -852,44 +861,47 @@ describe("压缩内部消息（#17：历史重建与实时流对齐）", () => {
     expect(stats2.stats!.tokensDelta).toBe(3000); // excludes compaction usage
   });
 
-  it("Task 进行中的压缩：区间后消息仍归属同一 Task，context_summary 不开新 Task", () => {
+  it("mid-Task compaction: messages after the span still belong to the same Task; context_summary does not start a new Task", () => {
     const m = createStreamModel();
     pushMessages(m, [
-      at(userText("修复 bug"), "2026-07-05T00:00:00.000Z"),
+      at(userText("fix a bug"), "2026-07-05T00:00:00.000Z"),
       at(tokenUsage(counts(9000), counts(9000)), "2026-07-05T00:00:05.000Z"),
       at(
         compactionBegin({ reason: "context", mode: "summarize", context: 9000, turns: 3 }),
         "2026-07-05T00:00:06.000Z",
       ),
-      at(userText("压缩 Prompt"), "2026-07-05T00:00:06.100Z"),
-      at(assistantText("<summary>进展摘要</summary>"), "2026-07-05T00:00:08.000Z"),
+      at(userText("compaction prompt"), "2026-07-05T00:00:06.100Z"),
+      at(assistantText("<summary>progress summary</summary>"), "2026-07-05T00:00:08.000Z"),
       at(
         compactionEnd({ reason: "context", mode: "summarize", status: "completed" }),
         "2026-07-05T00:00:09.000Z",
       ),
       // Mid-round compaction: the summary is written as the new context's first input, after end.
-      at(userText("<context_summary>\n进展摘要\n</context_summary>"), "2026-07-05T00:00:09.500Z"),
-      at(assistantText("继续修复并完成"), "2026-07-05T00:00:12.000Z"),
+      at(
+        userText("<context_summary>\nprogress summary\n</context_summary>"),
+        "2026-07-05T00:00:09.500Z",
+      ),
+      at(assistantText("continue fixing and finish"), "2026-07-05T00:00:12.000Z"),
     ]);
     finalizeHistory(m);
     const kinds = items(m).map((i) => i.kind);
     // Only one Task: user, banner, assistant (output after compaction continues), stats.
     expect(kinds).toEqual(["user_text", "compaction", "assistant_text", "task_stats"]);
-    expect((items(m)[2] as AssistantTextItem).text).toBe("继续修复并完成");
+    expect((items(m)[2] as AssistantTextItem).text).toBe("continue fixing and finish");
     expect(items(m).filter((i) => i.kind === "user_text")).toHaveLength(1);
   });
 });
 
-describe("live 收口用时（#5/#20：中途加入取消息时间戳下界）", () => {
-  it("刷新后立刻结束的 Task：elapsed 取消息时间戳跨度而非本地时钟增量", () => {
+describe("live close-out elapsed (#5/#20: mid-join takes the message-timestamp lower bound)", () => {
+  it("a Task ending right after a refresh: elapsed takes the message-timestamp span, not the local-clock delta", () => {
     const m = createStreamModel();
     const loadNow = 1_000_000;
     // History replay: the Task actually ran for 60s.
     pushMessages(
       m,
       [
-        at(userText("跑了很久的任务"), "2026-07-05T00:00:00.000Z"),
-        at(assistantText("输出"), "2026-07-05T00:01:00.000Z"),
+        at(userText("long-running task"), "2026-07-05T00:00:00.000Z"),
+        at(assistantText("output"), "2026-07-05T00:01:00.000Z"),
         at(tokenUsage(counts(500), counts(500)), "2026-07-05T00:01:00.000Z"),
       ],
       loadNow,
@@ -901,9 +913,9 @@ describe("live 收口用时（#5/#20：中途加入取消息时间戳下界）",
     expect(stats.stats!.elapsedMs).toBe(60_000); // sessionElapsedMs is corrected in sync
   });
 
-  it("本地时钟增量更大时（正常实时流）仍取本地时钟", () => {
+  it("when the local-clock delta is larger (normal live stream), the local clock still wins", () => {
     const m = createStreamModel();
-    pushMessage(m, at(userText("实时问"), "2026-07-05T00:00:00.000Z"), 10_000);
+    pushMessage(m, at(userText("live question"), "2026-07-05T00:00:00.000Z"), 10_000);
     pushMessage(m, at(tokenUsage(counts(800), counts(800)), "2026-07-05T00:00:01.000Z"), 11_000);
     notifyTaskIdle(m, 15_100);
     const stats = items(m).find((i) => i.kind === "task_stats") as TaskStatsItem;
@@ -911,8 +923,8 @@ describe("live 收口用时（#5/#20：中途加入取消息时间戳下界）",
   });
 });
 
-describe("审批键与工具卡定位（#7/#19）", () => {
-  it("approvalKey 按 origin 链区分同名 toolCallId", () => {
+describe("approval keys and tool-card lookup (#7/#19)", () => {
+  it("approvalKey distinguishes identical toolCallIds by origin chain", () => {
     expect(approvalKey(undefined, "t1")).toBe(" t1");
     expect(approvalKey([], "t1")).toBe(" t1");
     expect(approvalKey(["c1"], "t1")).toBe("c1 t1");
@@ -920,7 +932,7 @@ describe("审批键与工具卡定位（#7/#19）", () => {
     expect(approvalKey(["c1"], "t1")).not.toBe(approvalKey(undefined, "t1"));
   });
 
-  it("findToolCard 按 origin 链定位任意深度的工具卡", () => {
+  it("findToolCard locates tool cards at any depth by origin chain", () => {
     const m = createStreamModel();
     pushMessage(m, toolCall({ name: "run_subagent", arguments: "{}", toolCallId: "t1" }));
     pushMessage(m, approvalDecision("allow", "t1"));
@@ -941,8 +953,8 @@ describe("审批键与工具卡定位（#7/#19）", () => {
   });
 });
 
-describe("localDecisions 共享集合（#22：resync 重建存续）", () => {
-  it("注入共享集合的新模型仍把此前登记的审批标「人工」", () => {
+describe("localDecisions shared set (#22: survives resync rebuild)", () => {
+  it("a new model injected with the shared set still marks previously registered approvals as manual", () => {
     const shared = new Set<string>();
     const m1 = createStreamModel(shared);
     registerLocalDecision(m1, "t1");
@@ -954,52 +966,52 @@ describe("localDecisions 共享集合（#22：resync 重建存续）", () => {
   });
 });
 
-describe("重叠去重（契约 §7.2）", () => {
-  it("buildDedupIndex 只索引最后 limit 条；isDuplicate 按外壳 JSON 完全相同判重", () => {
-    const m1 = at(userText("一"), "2026-07-05T00:00:00.000Z");
-    const m2 = at(assistantText("二"), "2026-07-05T00:00:01.000Z");
-    const m3 = at(assistantText("三"), "2026-07-05T00:00:02.000Z");
+describe("overlap dedup (contract §7.2)", () => {
+  it("buildDedupIndex indexes only the last limit messages; isDuplicate matches on an identical envelope JSON", () => {
+    const m1 = at(userText("one"), "2026-07-05T00:00:00.000Z");
+    const m2 = at(assistantText("two"), "2026-07-05T00:00:01.000Z");
+    const m3 = at(assistantText("three"), "2026-07-05T00:00:02.000Z");
     const index = buildDedupIndex([m1, m2, m3], 2);
     expect(isDuplicate(index, m1)).toBe(false); // already slid out of the window
     expect(isDuplicate(index, m2)).toBe(true);
     expect(isDuplicate(index, { ...m3 })).toBe(true); // matches on identical structure
   });
 
-  it("完整消息命中去重时丢弃对应在途片段（discardFragmentFor）", () => {
+  it("a full message hitting dedup discards the matching in-flight fragment (discardFragmentFor)", () => {
     const m = createStreamModel();
     // History already contains the full message.
-    const complete = at(assistantText("你好"), "2026-07-05T00:00:00.000Z");
+    const complete = at(assistantText("hello"), "2026-07-05T00:00:00.000Z");
     pushMessage(m, complete);
     expect(items(m)).toHaveLength(1);
     // The streaming copy from the replay buffer reaches the reducer first.
     pushMessage(m, partialText("start"));
-    pushMessage(m, partialText("delta", "你好"));
+    pushMessage(m, partialText("delta", "hello"));
     expect(items(m)).toHaveLength(2);
     // The subsequent full message matches on dedup -> the in-flight fragment is discarded.
     discardFragmentFor(m, complete);
     expect(items(m)).toHaveLength(1);
-    expect((items(m)[0] as AssistantTextItem).text).toBe("你好");
+    expect((items(m)[0] as AssistantTextItem).text).toBe("hello");
   });
 
-  it("嵌套（带 origin）的在途片段同样可被丢弃", () => {
+  it("nested (origin-tagged) in-flight fragments can be discarded too", () => {
     const m = createStreamModel();
     pushMessage(m, withOrigin(meta("c1"), "c1"));
     pushMessage(m, withOrigin(partialText("start"), "c1"));
-    pushMessage(m, withOrigin(partialText("delta", "子文本"), "c1"));
+    pushMessage(m, withOrigin(partialText("delta", "child text"), "c1"));
     const sub = (items(m).find((i) => i.kind === "subagent") as SubagentItem).model;
     expect(sub.items).toHaveLength(1);
-    discardFragmentFor(m, withOrigin(assistantText("子文本"), "c1"));
+    discardFragmentFor(m, withOrigin(assistantText("child text"), "c1"));
     expect(sub.items).toHaveLength(0);
   });
 });
 
-describe("思考/工具耗时（折叠行展示数据）", () => {
+describe("thinking/tool durations (collapsed-row display data)", () => {
   const T0 = "2026-07-07T00:00:00.000Z";
   const T1 = "2026-07-07T00:00:03.200Z";
   const T2 = "2026-07-07T00:00:08.000Z";
   const TAPPROVE = "2026-07-07T00:00:05.000Z";
 
-  it("流式工具（含审批）：耗时 = 生成段 + 执行段，扣除审批等待", () => {
+  it("streaming tool (with approval): duration = generation segment + execution segment, minus the approval wait", () => {
     const m = createStreamModel();
     pushMessage(
       m,
@@ -1015,27 +1027,27 @@ describe("思考/工具耗时（折叠行展示数据）", () => {
     expect(card.durationMs).toBe(6200);
   });
 
-  it("流式思考：partial start 记开始，完整消息按时间戳结算耗时", () => {
+  it("streaming thinking: partial start records the start; the full message settles duration by timestamp", () => {
     const m = createStreamModel();
     pushMessage(m, at(partialThinking("start"), T0));
-    pushMessage(m, at(partialThinking("delta", "推理"), T0));
+    pushMessage(m, at(partialThinking("delta", "reasoning"), T0));
     pushMessage(m, at(partialThinking("stop"), T1));
-    pushMessage(m, at(thinkingMessage("推理", "completed"), T1));
+    pushMessage(m, at(thinkingMessage("reasoning", "completed"), T1));
     const th = items(m)[0] as ThinkingItem;
     expect(th.startedAtMs).toBe(Date.parse(T0));
     expect(th.durationMs).toBe(3200);
   });
 
-  it("历史思考（无片段）：以上一条消息时间近似开始", () => {
+  it("history thinking (no fragments): approximates the start with the previous message's time", () => {
     const m = createStreamModel();
-    pushMessage(m, at(userText("问题"), T0));
-    pushMessage(m, at(thinkingMessage("推理", "completed"), T1));
+    pushMessage(m, at(userText("question"), T0));
+    pushMessage(m, at(thinkingMessage("reasoning", "completed"), T1));
     const th = items(m).find((i) => i.kind === "thinking") as ThinkingItem;
     expect(th.startedAtMs).toBe(Date.parse(T0));
     expect(th.durationMs).toBe(3200);
   });
 
-  it("工具耗时：tool_call 收口 → tool_call_output 完整（与 Trace 分析同口径）", () => {
+  it("tool duration: tool_call close → full tool_call_output (same convention as Trace analysis)", () => {
     const m = createStreamModel();
     pushMessage(m, at(toolCall({ name: "exec_command", arguments: "{}", toolCallId: "t1" }), T1));
     const card = items(m)[0] as ToolCallItem;
@@ -1045,7 +1057,7 @@ describe("思考/工具耗时（折叠行展示数据）", () => {
     expect(card.durationMs).toBe(4800);
   });
 
-  it("工具耗时扣除审批等待：从审批通过时刻起算到输出（非调用时刻）", () => {
+  it("tool duration subtracts the approval wait: measured from approval time (not call time) to output", () => {
     const m = createStreamModel();
     const Ta = "2026-07-07T00:00:05.000Z"; // approval granted: after call(T1), before output(T2)
     pushMessage(m, at(toolCall({ name: "exec_command", arguments: "{}", toolCallId: "t1" }), T1));
@@ -1056,9 +1068,9 @@ describe("思考/工具耗时（折叠行展示数据）", () => {
     expect(card.durationMs).toBe(3000); // T2 - Ta (subtracting the T1->Ta approval wait), not 4800
   });
 
-  it("中断收口：执行中的工具卡不再滚动计时（outputComplete 置位、耗时保持缺省）", () => {
+  it("abort close-out: running tool cards stop ticking (outputComplete set, duration left unset)", () => {
     const m = createStreamModel();
-    pushMessage(m, at(userText("问"), T0));
+    pushMessage(m, at(userText("Q"), T0));
     pushMessage(m, at(toolCall({ name: "exec_command", arguments: "{}", toolCallId: "ta" }), T1));
     pushMessage(m, at(abortEvent("user"), T2));
     const card = items(m).find((i) => i.kind === "tool_call") as ToolCallItem;
@@ -1069,9 +1081,9 @@ describe("思考/工具耗时（折叠行展示数据）", () => {
     expect(card.outputStopReason).toBe("aborted");
   });
 
-  it("Task 收口（task_state:idle）同样关闭执行中的工具卡", () => {
+  it("Task close-out (task_state:idle) also closes running tool cards", () => {
     const m = createStreamModel();
-    pushMessage(m, at(userText("问"), T0));
+    pushMessage(m, at(userText("Q"), T0));
     pushMessage(m, at(toolCall({ name: "x", arguments: "{}", toolCallId: "tb" }), T1));
     notifyTaskIdle(m, Date.parse(T2));
     const card = items(m).find((i) => i.kind === "tool_call") as ToolCallItem;
@@ -1079,12 +1091,12 @@ describe("思考/工具耗时（折叠行展示数据）", () => {
     expect(card.outputStopReason).toBe("aborted");
   });
 
-  it("历史工具（无片段）：以上一条消息时间近似参数生成起点，耗时含生成段", () => {
+  it("history tools (no fragments): approximate the argument-generation start with the previous message's time; duration includes the generation segment", () => {
     // Replaying Trace after a page refresh: there's no partial_tool_call start. Without
     // approximating the generation start, tool duration would silently lose the argument
     // generation segment (the model emits arguments token by token, often the bulk of the time).
     const m = createStreamModel();
-    pushMessage(m, at(userText("问题"), T0));
+    pushMessage(m, at(userText("question"), T0));
     pushMessage(m, at(toolCall({ name: "exec_command", arguments: "{}", toolCallId: "th" }), T1));
     const card = items(m).find((i) => i.kind === "tool_call") as ToolCallItem;
     expect(card.argStartedAtMs).toBe(Date.parse(T0));
@@ -1093,7 +1105,7 @@ describe("思考/工具耗时（折叠行展示数据）", () => {
     expect(card.durationMs).toBe(8000);
   });
 
-  it("流式工具：耗时 = 参数生成段 + 执行段（无审批），完整消息不回缩", () => {
+  it("streaming tool: duration = argument-generation segment + execution segment (no approval); the full message does not shrink it", () => {
     const m = createStreamModel();
     pushMessage(
       m,
@@ -1113,8 +1125,8 @@ describe("思考/工具耗时（折叠行展示数据）", () => {
   });
 });
 
-describe("重复 tool_call_id 的多次调用（name-as-id provider 存量 Trace 兜底）", () => {
-  it("已完成卡再收到同 id 完整 tool_call：另建新卡，不覆盖旧卡", () => {
+describe("multiple calls with a repeated tool_call_id (fallback for legacy Traces of name-as-id providers)", () => {
+  it("a completed card receiving another full tool_call with the same id: a new card is built, the old one untouched", () => {
     const m = createStreamModel();
     // Round 1: get_time(Tokyo) call + output.
     pushMessage(
@@ -1139,7 +1151,7 @@ describe("重复 tool_call_id 的多次调用（name-as-id provider 存量 Trace
     expect(cards[1]!.outputComplete).toBe(true);
   });
 
-  it("重复 id 的第二次调用：流式输出与审批决定归属最新卡", () => {
+  it("second call with a repeated id: streaming output and approval decisions attach to the newest card", () => {
     const m = createStreamModel();
     pushMessage(m, toolCall({ name: "exec", arguments: '{"cmd":"a"}', toolCallId: "exec" }));
     pushMessage(m, toolCallOutput({ output: "out-a", toolCallId: "exec" }));
@@ -1160,7 +1172,7 @@ describe("重复 tool_call_id 的多次调用（name-as-id provider 存量 Trace
     expect(cards[1]!.output).toBe("out-b");
   });
 
-  it("被顶替时旧卡仍在执行中（无输出）：按中断收口，不再等输出", () => {
+  it("old card still running (no output) when superseded: closed as aborted instead of waiting for output", () => {
     const m = createStreamModel();
     pushMessage(m, toolCall({ name: "exec", arguments: '{"cmd":"slow"}', toolCallId: "exec" }));
     // Old card's output isn't closed (callComplete with outputComplete=false) when a new same-id call arrives.

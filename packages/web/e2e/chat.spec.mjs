@@ -52,7 +52,7 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   // Approval-mode is a custom dropdown (button), NOT a native <select>.
   await expect(page.locator("select")).toHaveCount(0);
 
-  await ta.fill("帮我配置 @theme");
+  await ta.fill("Help me set up @theme");
   await page.getByRole("button", { name: "发送" }).click();
 
   // Tool name is shown on the collapsed tool row + in the pending-approval block.
@@ -84,7 +84,7 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   await page.getByRole("button", { name: "允许" }).click();
 
   // Final assistant answer (turn 2 from mock).
-  await expect(page.getByText("命令已执行完成，结果符合预期。")).toBeVisible();
+  await expect(page.getByText("Command finished; the result looks as expected.")).toBeVisible();
 
   // Regression: after entering a session and rendering messages, the page must not overflow
   // horizontally (previously, with the Files dock panel closed, the sr-only upload input was
@@ -124,12 +124,12 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
 
   // Hovering the REPLY ITSELF must reveal it — the reply and its stats line share a `group` wrapper
   // for exactly this. Requiring a hover on the number row would make the footer undiscoverable.
-  await page.getByText("命令已执行完成，结果符合预期。").first().hover();
+  await page.getByText("Command finished; the result looks as expected.").first().hover();
   await expect(statsLine).toHaveCSS("opacity", "1");
   await expect(statsLine.locator("text=/\\d{1,2}:\\d{2}/")).toBeVisible();
   await copyBtn.click();
   const clip = await page.evaluate(() => navigator.clipboard.readText());
-  expect(clip).toContain("命令已执行完成");
+  expect(clip).toContain("Command finished");
 
   // The AI reply's time + copy live on the stats line (it sits right under the reply and IS its
   // footer) — the assistant message must NOT render a second footer, or one spot grows two copy
@@ -149,17 +149,17 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   ).not.toBeNull();
 
   // Hover the user bubble → its footer fades in (human-readable time + copy).
-  await page.getByText("帮我配置 @theme").first().hover();
+  await page.getByText("Help me set up @theme").first().hover();
   await expect(meta).toHaveCSS("opacity", "1");
   await expect(meta.locator("text=/\\d{1,2}:\\d{2}/")).toBeVisible();
   await msgCopy.click();
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("帮我配置 @theme");
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("Help me set up @theme");
 
   // --- traces --- (scope to <main>; the global sidebar also lists the session title)
   await page.goto(`${BASE}/traces`);
   const main = page.locator("main");
   // Auto-generated title should appear in the traces tree (agents default-expanded).
-  const titleNode = main.getByText("配置 Tailwind 主题").first();
+  const titleNode = main.getByText("Configure Tailwind theme").first();
   await expect(titleNode).toBeVisible();
   await titleNode.click();
   await expect(main.getByText("轨迹观测").first()).toBeVisible();
@@ -236,9 +236,9 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   // The mock reply mentions two backtick paths: demo.html was truly uploaded above via
   // files/content; missing-report.pdf exists nowhere. The card must render after the
   // files/stat round-trip with a single row for the existing file only.
-  await ta.fill("文件卡测试");
+  await ta.fill("files card test");
   await page.getByRole("button", { name: "发送" }).click();
-  await expect(page.getByText(/报告已生成/)).toBeVisible();
+  await expect(page.getByText(/Report generated/)).toBeVisible();
   await expect(page.getByText("1 个文件")).toBeVisible();
   // Card rows carry the 点击预览 ("click to preview") affordance — that distinguishes them from
   // the Files panel tree rows, which also use title=<name> on their buttons.
@@ -260,11 +260,11 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
 
   // --- agent group collapse / expand (header button shows the agent name, so its state
   //     lives on aria-label rather than a duplicate title tooltip) ---
-  await expect(sidebar.getByText("配置 Tailwind 主题")).toBeVisible();
+  await expect(sidebar.getByText("Configure Tailwind theme")).toBeVisible();
   await sidebar.locator('button[aria-label="折叠"]').first().click();
-  await expect(sidebar.getByText("配置 Tailwind 主题")).toHaveCount(0);
+  await expect(sidebar.getByText("Configure Tailwind theme")).toHaveCount(0);
   await sidebar.locator('button[aria-label="展开"]').first().click();
-  await expect(sidebar.getByText("配置 Tailwind 主题")).toBeVisible();
+  await expect(sidebar.getByText("Configure Tailwind theme")).toBeVisible();
 
   // --- settings: adjustable accent color + font size (default gray/white) ---
   // The username button shares its name with the Project switcher (the initial Project's
@@ -281,14 +281,14 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   await page.keyboard.press("Escape");
 
   // --- session rename (manual title wins over the auto-generated one) ---
-  const renameTarget = sidebar.locator("li", { hasText: "配置 Tailwind 主题" }).first();
+  const renameTarget = sidebar.locator("li", { hasText: "Configure Tailwind theme" }).first();
   await renameTarget.hover();
   await renameTarget.getByRole("button", { name: "重命名对话" }).click();
-  await page.getByLabel("标题").fill("我改的标题");
+  await page.getByLabel("标题").fill("My renamed title");
   await page.getByRole("button", { name: "保存" }).click();
-  await expect(sidebar.getByText("我改的标题")).toBeVisible();
+  await expect(sidebar.getByText("My renamed title")).toBeVisible();
   await page.reload();
-  await expect(sidebar.getByText("我改的标题")).toBeVisible();
+  await expect(sidebar.getByText("My renamed title")).toBeVisible();
 
   // --- session archive + delete (throwaway session) ---
   await page.request.post(`${BASE}/api/projects/${projectId}/agents/${agentId}/sessions`, {

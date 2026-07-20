@@ -31,7 +31,8 @@ async function readSseFrames(res: Response, count: number, timeoutMs = 3000): Pr
   const deadline = Date.now() + timeoutMs;
   try {
     while (frames.length < count) {
-      if (Date.now() > deadline) throw new Error(`SSE 读取超时（已有 ${frames.length} 帧）`);
+      if (Date.now() > deadline)
+        throw new Error(`SSE read timed out (${frames.length} frames so far)`);
       const { done, value } = await reader.read();
       if (done) break;
       buf += decoder.decode(value, { stream: true });
@@ -103,14 +104,14 @@ describe("sse-stream", () => {
   const getStream = (headers: Record<string, string> = {}) =>
     t.app.request(`/api/sessions/${SID}/stream`, { headers: { cookie, ...headers } });
 
-  it("FD-1：新订阅第一条恒为 task_state 快照（idle）", async () => {
+  it("FD-1: a new subscription's first frame is always the task_state snapshot (idle)", async () => {
     const frames = await readSseFrames(await getStream(), 1);
     expect(frames[0]!.event).toBe("server_event");
     expect(JSON.parse(frames[0]!.data)).toEqual({ type: "task_state", state: "idle" });
     expect(frames[0]!.id).toMatch(/^[0-9a-f]{8}-\d+$/); // FD-2: opaque string id
   });
 
-  it("FD-1：运行中订阅收到 task_state: running，再补发未决审批", async () => {
+  it("FD-1: subscribing while running receives task_state: running, then pending approvals are replayed", async () => {
     t.deps.manager.adopt(row, approvalFakeSession(SID));
     await t.deps.manager.startTask(SID, [userText("go")]);
     await waitFor(() => t.deps.manager.pendingApprovalCount(SID) === 1);
@@ -128,8 +129,8 @@ describe("sse-stream", () => {
     await waitFor(() => t.deps.manager.statusOf(SID) === "idle");
   });
 
-  it("FD-2：Last-Event-ID 纪元不一致 → 先发 resync_required 再发 task_state 快照", async () => {
-    t.deps.channels.get(SID).publish(userText("旧事件"));
+  it("FD-2: mismatched Last-Event-ID epoch → resync_required first, then the task_state snapshot", async () => {
+    t.deps.channels.get(SID).publish(userText("old event"));
     const frames = await readSseFrames(
       await getStream({ "Last-Event-ID": "deadbeef-1" }), // guaranteed to differ from the current channel epoch
       2,
@@ -138,7 +139,7 @@ describe("sse-stream", () => {
     expect(JSON.parse(frames[1]!.data)).toEqual({ type: "task_state", state: "idle" });
   });
 
-  it("FD-2：同纪元 Last-Event-ID 命中缓冲 → 补发其后事件，再发 task_state 快照", async () => {
+  it("FD-2: same-epoch Last-Event-ID hitting the buffer → replays later events, then the task_state snapshot", async () => {
     const channel = t.deps.channels.get(SID);
     const first = channel.publish(userText("m1"));
     channel.publish(userText("m2"));

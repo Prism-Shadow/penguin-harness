@@ -42,8 +42,8 @@ afterEach(async () => {
 const skillMdPath = (agentId: string, skillName: string): string =>
   path.join(skillsDir(tmpRoot, DEFAULT_PROJECT_ID, agentId), skillName, "SKILL.md");
 
-describe("Skill 安装策略", () => {
-  it("普通新建 Agent 不预装任何 Skill，AGENTS.md 为空文件（指导在模板 Suggested workflows）", async () => {
+describe("Skill installation policy", () => {
+  it("a plain new Agent preinstalls no Skills and AGENTS.md is an empty file (guidance lives in the template's Suggested workflows)", async () => {
     const state = await loadOrInitAgentState({ agentId: "some_agent" });
     expect(await listInstalledSkills(tmpRoot, DEFAULT_PROJECT_ID, "some_agent")).toEqual([]);
 
@@ -58,7 +58,7 @@ describe("Skill 安装策略", () => {
     expect(onDisk).toBe("");
   });
 
-  it("无 preset 直建的 default_agent（如 CLI 首次运行）同样预装库内全部 Skill", async () => {
+  it("a default_agent created directly without a preset (e.g. first CLI run) likewise preinstalls every Skill in the library", async () => {
     await loadOrInitAgentState({ agentId: DEFAULT_AGENT_ID });
     const names = (await listInstalledSkills(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID)).map(
       (s) => s.name,
@@ -68,7 +68,7 @@ describe("Skill 安装策略", () => {
 });
 
 describe("provisionProjectAgents", () => {
-  it("唯一内置 Agent default_agent：装库内全部 Skill、AGENTS.md 为空", async () => {
+  it("the only built-in Agent default_agent: installs every Skill in the library, AGENTS.md is empty", async () => {
     const ids = await provisionProjectAgents();
     expect(ids).toEqual([DEFAULT_AGENT_ID]);
     expect(BUILTIN_AGENT_IDS).toEqual([DEFAULT_AGENT_ID]);
@@ -86,7 +86,7 @@ describe("provisionProjectAgents", () => {
     expect(sdkMd).toBe(librarySkill("penguin-sdk")!.content);
   });
 
-  it("provision 幂等：重复执行不改变结果", async () => {
+  it("provision is idempotent: running it again does not change the result", async () => {
     await provisionProjectAgents();
     const ids = await provisionProjectAgents();
     expect(ids).toEqual([DEFAULT_AGENT_ID]);
@@ -99,8 +99,8 @@ describe("provisionProjectAgents", () => {
     expect(installed.map((s) => s.name).sort()).toEqual(loadLibrarySkills().map((s) => s.name));
   });
 
-  it("已存在的 Agent 不被覆盖（preset 仅初始化生效）", async () => {
-    const custom = "# AGENTS.md\n\n用户自己改过的内容\n";
+  it("an existing Agent is not overwritten (the preset only applies at initialization)", async () => {
+    const custom = "# AGENTS.md\n\nContent the user edited themselves\n";
     await loadOrInitAgentState({ agentId: DEFAULT_AGENT_ID });
     await fs.writeFile(agentsMdPath(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID), custom, "utf8");
 
@@ -114,8 +114,8 @@ describe("provisionProjectAgents", () => {
   });
 });
 
-describe("Project Dir / Agent ID 占位符", () => {
-  it("assembleSystemPrompt 注入 Project Dir 与 Agent ID（Skill 定位改走项目相对路径，不依赖 .penguin）", async () => {
+describe("Project Dir / Agent ID placeholders", () => {
+  it("assembleSystemPrompt injects Project Dir and Agent ID (Skill lookup uses project-relative paths, no .penguin dependency)", async () => {
     const state = await loadOrInitAgentState({ agentId: "env_agent" });
     const prompt = assembleSystemPrompt(state, {
       sessionId: "session-x",

@@ -621,7 +621,7 @@ describe("project-config round trip", () => {
     ).rejects.toThrow(/model_id=nope/);
     await expect(
       setVisionModel(tmpRoot, DEFAULT_PROJECT_ID, { provider: "custom", model_id: "blind" }),
-    ).rejects.toThrow(/不支持图片/);
+    ).rejects.toThrow(/not supporting images/);
   });
 
   it("upsert preserves existing context_window and inline credential when not re-specified", async () => {
@@ -763,7 +763,7 @@ describe("project-config round trip", () => {
     ).rejects.toThrow(/\(provider=custom, model_id=nope\).*model list/);
     await expect(
       setDefaultModel(tmpRoot, DEFAULT_PROJECT_ID, { provider: "openai", model_id: "m2" }),
-    ).rejects.toThrow(/不在 models 中/);
+    ).rejects.toThrow(/is not in models/);
     expect((await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID)).default_model).toEqual(m2Ref);
   });
 
@@ -780,7 +780,9 @@ describe("project-config round trip", () => {
     await fs.mkdir(path.dirname(file), { recursive: true });
     // Old format 1: default_model is a concatenated storage id string.
     await fs.writeFile(file, 'default_model = "deepseek/deepseek-v4-pro"\n', "utf8");
-    await expect(loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID)).rejects.toThrow(/旧版本|成对引用/);
+    await expect(loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID)).rejects.toThrow(
+      /legacy|paired reference/,
+    );
     // Old format 2: a model entry missing provider (from the era of composite model_id +
     // request_model_id).
     await fs.writeFile(
@@ -792,11 +794,13 @@ describe("project-config round trip", () => {
       ].join("\n"),
       "utf8",
     );
-    await expect(loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID)).rejects.toThrow(/旧版本|独立字段/);
+    await expect(loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID)).rejects.toThrow(
+      /legacy|separate fields/,
+    );
   });
 });
 
-describe("resolveModelRef（唯一的「省略 provider」解析入口）", () => {
+describe('resolveModelRef (the single "provider omitted" resolution entry point)', () => {
   const cfg: ProjectConfig = {
     models: [
       { provider: "deepseek", model_id: "deepseek-v4-pro" },
@@ -811,7 +815,7 @@ describe("resolveModelRef（唯一的「省略 provider」解析入口）", () =
       model_id: "deepseek-v4-pro",
     });
     // Exact-match lookup, no fuzzy/prefix matching.
-    expect(() => resolveModelRef(cfg, "deepseek-v4")).toThrow(/不在 Project 配置中/);
+    expect(() => resolveModelRef(cfg, "deepseek-v4")).toThrow(/is not in the Project config/);
   });
 
   it("validates the exact pair when provider is given", () => {
@@ -827,19 +831,19 @@ describe("resolveModelRef（唯一的「省略 provider」解析入口）", () =
 
   it("errors clearly on zero matches", () => {
     expect(() => resolveModelRef(cfg, "no-such-model")).toThrow(
-      /不在 Project 配置中.*no-such-model/,
+      /is not in the Project config.*no-such-model/,
     );
   });
 
   it("errors on ambiguity, listing the candidate pair references", () => {
-    expect(() => resolveModelRef(cfg, "shared-id")).toThrow(/歧义/);
+    expect(() => resolveModelRef(cfg, "shared-id")).toThrow(/Ambiguous/);
     expect(() => resolveModelRef(cfg, "shared-id")).toThrow(
       /\(provider=siliconflow, model_id=shared-id\).*\(provider=openrouter, model_id=shared-id\)/,
     );
   });
 });
 
-describe("单一隐藏配置文件（.project_config.toml，credential 内联）", () => {
+describe("single hidden config file (.project_config.toml, credentials inlined)", () => {
   it("addModel writes one hidden file with 0600 permission; api_key lives inline", async () => {
     await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
       provider: "custom",
@@ -980,9 +984,9 @@ describe("defensive config parsing", () => {
     await loadOrInitAgentState();
     const cfgPath = systemConfigPath(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID);
     await fs.writeFile(cfgPath, "", "utf8");
-    await expect(loadOrInitAgentState()).rejects.toThrow(/system_prompt|非法|损坏/);
+    await expect(loadOrInitAgentState()).rejects.toThrow(/system_prompt|Invalid|corrupted/);
 
     await fs.writeFile(cfgPath, "just a string, not a mapping", "utf8");
-    await expect(loadOrInitAgentState()).rejects.toThrow(/system_prompt|非法|损坏/);
+    await expect(loadOrInitAgentState()).rejects.toThrow(/system_prompt|Invalid|corrupted/);
   });
 });

@@ -14,9 +14,10 @@ import type { AgentCreateResponse, ProjectCreateResponse } from "../src/api/type
 import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
+// "项目" stays Chinese on purpose: ids must reject CJK (ASCII lowercase only).
 const BAD_IDS = ["Foo", "1abc", "a", "-abc", "a-b", "a b", "a.b", "项目", "a".repeat(65)];
 
-describe("语义 id", () => {
+describe("semantic ids", () => {
   let t: TestApp;
   let admin: ReturnType<typeof apiClient>;
   let api: ReturnType<typeof apiClient>;
@@ -30,7 +31,7 @@ describe("语义 id", () => {
     await t.cleanup();
   });
 
-  it("建 Project（admin 无前缀、不含连字符）：非法 id 400；合法 id 落目录，显示名缺省为 id", async () => {
+  it("create Project (admin: no prefix, no hyphen): invalid ids 400; a valid id lands a directory; display name defaults to the id", async () => {
     for (const bad of BAD_IDS) {
       const res = await admin.post("/api/projects", { projectId: bad, name: "x" });
       expect(res.status, `projectId=${bad}`).toBe(400);
@@ -44,7 +45,7 @@ describe("语义 id", () => {
     await expect(fs.access(path.join(t.root, "my_proj_2"))).resolves.toBeUndefined();
   });
 
-  it("建 Project：DB 占用、纯目录占用与保留 id 都是 409", async () => {
+  it("create Project: DB-taken, directory-only-taken, and reserved ids are all 409", async () => {
     expect((await admin.post("/api/projects", { projectId: "taken", name: "a" })).status).toBe(201);
     expect((await admin.post("/api/projects", { projectId: "taken", name: "b" })).status).toBe(409);
     // A directory that exists but isn't tracked (e.g. created by the CLI) is also considered taken.
@@ -58,7 +59,7 @@ describe("语义 id", () => {
     ).toBe(409);
   });
 
-  it("非管理员建 Project：id 强制为 <用户名>-<后缀>，后缀仅小写字母数字下划线", async () => {
+  it("non-admin Project creation: id forced to <username>-<suffix>; the suffix allows only lowercase letters, digits, underscores", async () => {
     // No prefix / prefix only / suffix with a hyphen or an invalid character: 400.
     for (const bad of ["blog", "ida", "ida-", "idablog", "proj_ida", "ida-sub-x", "ida-Bad"]) {
       const res = await api.post("/api/projects", { projectId: bad, name: "x" });
@@ -72,14 +73,14 @@ describe("语义 id", () => {
     await expect(fs.access(path.join(t.root, "ida-blog"))).resolves.toBeUndefined();
   });
 
-  it("创建 Project 中途失败：DB 行与目录回滚，同 id 重试可成功", async () => {
+  it("mid-flight Project creation failure: the DB row and directory roll back; retrying the same id succeeds", async () => {
     // Inject a config write failure (handleError logs the stack trace: silence it so it doesn't clutter output).
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const original = t.deps.projectConfigService.writeInitialConfig.bind(
       t.deps.projectConfigService,
     );
     t.deps.projectConfigService.writeInitialConfig = async () => {
-      throw new Error("写配置炸了");
+      throw new Error("config write blew up");
     };
     expect((await admin.post("/api/projects", { projectId: "flaky", name: "x" })).status).toBe(500);
     spy.mockRestore();
@@ -92,11 +93,11 @@ describe("语义 id", () => {
     expect((await admin.post("/api/projects", { projectId: "flaky", name: "x" })).status).toBe(201);
   });
 
-  it("创建 Agent 中途失败：目录回滚，同 id 重试可成功", async () => {
+  it("mid-flight Agent creation failure: the directory rolls back; retrying the same id succeeds", async () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const original = t.deps.agentConfigService.updateConfig.bind(t.deps.agentConfigService);
     t.deps.agentConfigService.updateConfig = async () => {
-      throw new Error("写配置炸了");
+      throw new Error("config write blew up");
     };
     expect(
       (await api.post("/api/projects/ida-default_project/agents", { agentId: "flaky" })).status,
@@ -111,7 +112,7 @@ describe("语义 id", () => {
     ).toBe(201);
   });
 
-  it("建 Agent：非法 id 400；合法 id 初始化；重复与内置 id 409；跨 Project 不冲突", async () => {
+  it("create Agent: invalid ids 400; a valid id initializes; duplicates and built-in ids 409; no conflicts across Projects", async () => {
     for (const bad of BAD_IDS) {
       const res = await api.post("/api/projects/ida-default_project/agents", {
         agentId: bad,
@@ -120,6 +121,7 @@ describe("语义 id", () => {
       expect(res.status, `agentId=${bad}`).toBe(400);
     }
 
+    // Unlike ids, display names are free-form — a CJK name must round-trip untouched.
     const created = await api.post("/api/projects/ida-default_project/agents", {
       agentId: "crawler",
       name: "爬虫",

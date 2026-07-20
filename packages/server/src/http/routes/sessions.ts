@@ -59,16 +59,16 @@ const APPROVAL_MODES: readonly ApprovalMode[] = [
 function parseTaskInput(body: Record<string, unknown>): OmniMessage[] {
   const input = body.input;
   if (!Array.isArray(input) || input.length === 0) {
-    throw badRequest("input 必须是至少包含一项的数组。");
+    throw badRequest("input must be an array with at least one item.");
   }
   return input.map((item, i) => {
     if (item === null || typeof item !== "object" || Array.isArray(item)) {
-      throw badRequest(`input[${i}] 必须是对象。`);
+      throw badRequest(`input[${i}] must be an object.`);
     }
     const part = item as Record<string, unknown>;
     if (part.type === "text") {
       if (typeof part.text !== "string" || part.text.length === 0) {
-        throw badRequest(`input[${i}].text 必须是非空字符串。`);
+        throw badRequest(`input[${i}].text must be a non-empty string.`);
       }
       return userText(part.text);
     }
@@ -78,11 +78,11 @@ function parseTaskInput(body: Record<string, unknown>): OmniMessage[] {
         typeof url !== "string" ||
         !(url.startsWith("data:") || url.startsWith("http://") || url.startsWith("https://"))
       ) {
-        throw badRequest(`input[${i}].imageUrl 仅支持 data: 或 http(s) URL。`);
+        throw badRequest(`input[${i}].imageUrl only supports data: or http(s) URLs.`);
       }
       return imageUrlMessage(url);
     }
-    throw badRequest(`input[${i}].type 必须是 text / image_url 之一。`);
+    throw badRequest(`input[${i}].type must be one of text / image_url.`);
   });
 }
 
@@ -110,7 +110,9 @@ export function agentSessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     const provider = optionalString(body, "provider", { minLen: 1, label: "provider" });
     // Model reference is submitted as a pair: provider can't appear without modelId (core does the same validation; this catches it early).
     if (provider !== undefined && modelId === undefined) {
-      throw badRequest("指定了 provider 却未指定 modelId：模型引用须成对给出。");
+      throw badRequest(
+        "provider is specified but modelId is not: a model reference must be given as a pair.",
+      );
     }
     const approvalMode = optionalEnum(body, "approvalMode", APPROVAL_MODES);
     let workspace = optionalString(body, "workspace", { minLen: 1, label: "workspace" });
@@ -141,12 +143,20 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     const sessionId = c.req.param("sessionId");
     const row = sessionId ? deps.sessionsRepo.findById(sessionId) : null;
     if (!row) {
-      throw new HttpError(404, "session_not_found", "Session 不存在或无权访问。");
+      throw new HttpError(
+        404,
+        "session_not_found",
+        "Session does not exist or you do not have access.",
+      );
     }
     try {
       deps.projectService.requireProjectAccess(c.var.user.userId, row.projectId);
     } catch {
-      throw new HttpError(404, "session_not_found", "Session 不存在或无权访问。");
+      throw new HttpError(
+        404,
+        "session_not_found",
+        "Session does not exist or you do not have access.",
+      );
     }
     return row;
   };
@@ -167,15 +177,23 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     let title: string | undefined;
     if (titleRaw !== undefined) {
       if (typeof titleRaw !== "string") {
-        throw new HttpError(400, "invalid_title", "title 必须是字符串。");
+        throw new HttpError(400, "invalid_title", "title must be a string.");
       }
       title = titleRaw.trim();
       if (!title || title.length > SESSION_TITLE_MAX) {
-        throw new HttpError(400, "invalid_title", `title 需为 1–${SESSION_TITLE_MAX} 个字符。`);
+        throw new HttpError(
+          400,
+          "invalid_title",
+          `title must be 1–${SESSION_TITLE_MAX} characters.`,
+        );
       }
     }
     if (approvalMode === undefined && archived === undefined && title === undefined) {
-      throw new HttpError(400, "no_update", "缺少可更新字段（approvalMode / archived / title）。");
+      throw new HttpError(
+        400,
+        "no_update",
+        "No updatable field provided (approvalMode / archived / title).",
+      );
     }
     let updated: SessionRow = { ...row };
     if (title !== undefined) {
@@ -239,7 +257,7 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     const row = resolveSession(c);
     const fileName = c.req.param("fileName") ?? "";
     if (!/^[A-Za-z0-9._-]+$/.test(fileName) || fileName.includes("..")) {
-      throw new HttpError(404, "file_not_found", "文件不存在。");
+      throw new HttpError(404, "file_not_found", "File does not exist.");
     }
     const filePath = path.join(
       scratchpadDir(deps.config.root, row.projectId, row.agentId),
@@ -250,7 +268,7 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     try {
       bytes = await fs.readFile(filePath);
     } catch {
-      throw new HttpError(404, "file_not_found", "文件不存在。");
+      throw new HttpError(404, "file_not_found", "File does not exist.");
     }
     const MIME_BY_EXT: Record<string, string> = {
       ".png": "image/png",
@@ -309,7 +327,11 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     const decision = requireEnum(body, "decision", ["allow", "deny"] as const);
     const ok = deps.manager.decideApproval(row.sessionId, pathParam(c, "toolCallId"), decision);
     if (!ok) {
-      throw new HttpError(404, "approval_not_found", "该审批不存在或已被决定。");
+      throw new HttpError(
+        404,
+        "approval_not_found",
+        "Approval does not exist or has already been decided.",
+      );
     }
     return c.body(null, 204);
   });
@@ -374,7 +396,7 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       !paths.every((p) => typeof p === "string" && p.length <= STAT_MAX_PATH_LEN)
     ) {
       throw badRequest(
-        `paths 必须是字符串数组（≤${STAT_MAX_PATHS} 项，每项 ≤${STAT_MAX_PATH_LEN} 字符）。`,
+        `paths must be an array of strings (≤${STAT_MAX_PATHS} items, each ≤${STAT_MAX_PATH_LEN} characters).`,
       );
     }
     const existing = await deps.workspaceFiles.statExisting(row.workspace, paths as string[]);
@@ -386,11 +408,11 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     const rel = c.req.query("path") ?? "";
     const body = await readJson(c);
     if (typeof body.dataBase64 !== "string") {
-      throw badRequest("dataBase64 必须是 base64 字符串。");
+      throw badRequest("dataBase64 must be a base64 string.");
     }
     const data = Buffer.from(body.dataBase64, "base64");
     if (data.length > MAX_UPLOAD_BYTES) {
-      throw new HttpError(413, "file_too_large", "上传文件超过 14MB 上限。");
+      throw new HttpError(413, "file_too_large", "Uploaded file exceeds the 14MB limit.");
     }
     await deps.workspaceFiles.write(row.workspace, rel, data);
     return c.body(null, 204);

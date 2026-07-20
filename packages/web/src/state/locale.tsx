@@ -88,6 +88,6 @@ export function LocaleScope({ children }: { children: ReactNode }) {
 
 export function useLocale(): LocaleContextValue {
   const ctx = useContext(LocaleContext);
-  if (!ctx) throw new Error("useLocale 必须在 LocaleProvider 内使用");
+  if (!ctx) throw new Error("useLocale must be used within a LocaleProvider");
   return ctx;
 }

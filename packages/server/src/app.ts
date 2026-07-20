@@ -254,7 +254,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
     });
     return handleError(err, c);
   });
-  app.notFound((c) => c.json(errorBody("not_found", "接口不存在。"), 404));
+  app.notFound((c) => c.json(errorBody("not_found", "Endpoint does not exist."), 404));
 
   // Request logging: a minimal one-liner (method path status ms).
   app.use("*", async (c, next) => {
@@ -268,7 +268,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   app.use("/api/*", async (c, next) => {
     const contentLength = Number(c.req.header("content-length") ?? 0);
     if (contentLength > MAX_BODY_BYTES) {
-      throw new HttpError(413, "payload_too_large", "请求体超过 20MB 上限。");
+      throw new HttpError(413, "payload_too_large", "Request body exceeds the 20MB limit.");
     }
     await next();
   });
@@ -362,7 +362,7 @@ function registerStaticRoutes(app: Hono<AppEnv>, webDist: string): void {
   app.get("*", async (c) => {
     const reqPath = decodeURIComponent(c.req.path);
     if (reqPath.startsWith("/api/")) {
-      return c.json(errorBody("not_found", "接口不存在。"), 404);
+      return c.json(errorBody("not_found", "Endpoint does not exist."), 404);
     }
     const rel = reqPath.replace(/^\/+/, "");
     const resolved = path.resolve(webDist, rel === "" ? "index.html" : rel);
@@ -384,7 +384,7 @@ function registerStaticRoutes(app: Hono<AppEnv>, webDist: string): void {
     try {
       content = await fsp.readFile(file);
     } catch {
-      return c.json(errorBody("not_found", "资源不存在。"), 404);
+      return c.json(errorBody("not_found", "Resource does not exist."), 404);
     }
     const type = CONTENT_TYPES[path.extname(file).toLowerCase()] ?? "application/octet-stream";
     return new Response(new Uint8Array(content), {

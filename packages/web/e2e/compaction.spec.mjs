@@ -53,10 +53,10 @@ test("compaction mid-turn: the reply's stats line is still reachable by hovering
   await page.goto(`${BASE}/chat/${sess.session.sessionId}`);
   const ta = page.getByPlaceholder(/输入消息/);
   await ta.waitFor();
-  await ta.fill("帮我配置 @theme");
+  await ta.fill("Help me set up @theme");
   await page.getByRole("button", { name: "发送" }).click();
 
-  const reply = page.getByText("命令已执行完成，结果符合预期。").first();
+  const reply = page.getByText("Command finished; the result looks as expected.").first();
   await expect(reply).toBeVisible();
   const banner = page.getByText(/\[压缩\]/).first();
   await expect(banner).toBeVisible();
@@ -97,7 +97,7 @@ test("compaction mid-turn: the reply's stats line is still reachable by hovering
   // fast the summary was generated), not a "—".
   await page.goto(`${BASE}/traces`);
   const main = page.locator("main");
-  const node = main.getByText(/配置|新对话/).first();
+  const node = main.getByText(/Configure|新对话/).first();
   await expect(node).toBeVisible();
   await node.click();
   await expect(main.getByText("第 1 轮")).toBeVisible();
@@ -191,9 +191,9 @@ test("manual /compact between turns: reloading must not fold the compaction into
   await page.goto(`${BASE}/chat/${sess.session.sessionId}`);
   const ta = page.getByPlaceholder(/输入消息/);
   await ta.waitFor();
-  await ta.fill("帮我配置 @theme");
+  await ta.fill("Help me set up @theme");
   await page.getByRole("button", { name: "发送" }).click();
-  await expect(page.getByText("命令已执行完成，结果符合预期。")).toBeVisible();
+  await expect(page.getByText("Command finished; the result looks as expected.")).toBeVisible();
 
   // The whole stats line is transparent by default, but innerText still reads fine (no need to hover).
   const statsText = async () =>
@@ -207,7 +207,7 @@ test("manual /compact between turns: reloading must not fold the compaction into
   };
 
   const live = await statsText();
-  expect(costOf(live), `统计行应有成本：${live}`).not.toBeNull();
+  expect(costOf(live), `stats line should include a cost: ${live}`).not.toBeNull();
   expect(elapsedMsOf(live)).toBeLessThan(1500);
 
   // The user reads the reply, then 3 seconds later remembers to compact.
@@ -216,14 +216,14 @@ test("manual /compact between turns: reloading must not fold the compaction into
   await ta.press("Enter");
   await expect(page.getByText(/\[压缩\]/)).toBeVisible();
   await expect(page.getByRole("button", { name: "停止" })).toHaveCount(0);
-  expect(await statsText(), "实时流里上一轮早已收口，压缩不该改动它").toBe(live);
+  expect(await statsText(), "compaction must not touch the already-closed prior turn").toBe(live);
 
   await page.reload();
   await ta.waitFor();
-  await expect(page.getByText("命令已执行完成，结果符合预期。")).toBeVisible();
+  await expect(page.getByText("Command finished; the result looks as expected.")).toBeVisible();
   const rebuilt = await statsText();
   // Cost is derived from Token counts: if compaction's usage were folded in, cost would double out of nowhere.
-  expect(costOf(rebuilt), `刷新前后成本必须一致（前：${live}｜后：${rebuilt}）`).toBe(costOf(live));
+  expect(costOf(rebuilt), `cost must survive reload (${live} -> ${rebuilt})`).toBe(costOf(live));
   // Elapsed time should include neither the 3-second thinking gap nor compaction itself.
-  expect(elapsedMsOf(rebuilt), `刷新后用时不得吃进压缩（${rebuilt}）`).toBeLessThan(1500);
+  expect(elapsedMsOf(rebuilt), `elapsed must not eat compaction (${rebuilt})`).toBeLessThan(1500);
 });

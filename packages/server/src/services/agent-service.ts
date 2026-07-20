@@ -155,7 +155,7 @@ export class AgentService {
       throw new HttpError(
         409,
         "cannot_delete_builtin_agent",
-        "内置 Agent（default_agent）随 Project 供给，不能从 Web 删除。",
+        "Built-in Agents (default_agent) are provisioned with the Project and cannot be deleted from the web.",
       );
     }
     await fs.rm(agentDir(this.root, projectId, agentId), { recursive: true, force: true });
@@ -175,7 +175,11 @@ export class AgentService {
     description?: string,
   ): Promise<AgentListItem> {
     if (!SEMANTIC_ID_PATTERN.test(agentId)) {
-      throw new HttpError(400, "invalid_agent_id", `Agent id 须为 2~64 位：${SEMANTIC_ID_RULE}。`);
+      throw new HttpError(
+        400,
+        "invalid_agent_id",
+        `Agent id must be 2–64 characters: ${SEMANTIC_ID_RULE}.`,
+      );
     }
     const taken =
       this.agents.exists(projectId, agentId) ||
@@ -184,7 +188,7 @@ export class AgentService {
         () => false,
       ));
     if (taken) {
-      throw new HttpError(409, "agent_exists", `Agent id 已被占用：${agentId}。`);
+      throw new HttpError(409, "agent_exists", `Agent id is already taken: ${agentId}.`);
     }
     const displayName = name ?? agentId;
     await coreCreateAgent({ root: this.root, projectId, agentId });

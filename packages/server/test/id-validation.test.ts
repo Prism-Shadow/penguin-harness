@@ -31,11 +31,11 @@ describe("id-validation", () => {
     attacker = apiClient(t.app, a.cookie);
     const victim = apiClient(t.app, v.cookie);
     const created = (await (
-      await attacker.post("/api/projects", { projectId: "attacker-proj", name: "攻击者项目" })
+      await attacker.post("/api/projects", { projectId: "attacker-proj", name: "Attacker project" })
     ).json()) as ProjectCreateResponse;
     attackerProject = created.project.projectId;
     const victimCreated = (await (
-      await victim.post("/api/projects", { projectId: "victim-proj", name: "受害者项目" })
+      await victim.post("/api/projects", { projectId: "victim-proj", name: "Victim project" })
     ).json()) as ProjectCreateResponse;
     victimProject = victimCreated.project.projectId;
   });
@@ -43,7 +43,7 @@ describe("id-validation", () => {
     await t.cleanup();
   });
 
-  it("GET config：穿越型 agentId → 404，不泄露他人 system_config.yaml", async () => {
+  it("GET config: traversal agentId → 404, no leak of system_config.yaml", async () => {
     // The victim Agent's config does exist (readable by the victim via the legitimate path).
     const victimConfigPath = path.join(
       t.root,
@@ -62,7 +62,7 @@ describe("id-validation", () => {
     expect(own.status).toBe(200);
   });
 
-  it("PUT config：穿越型 agentId → 404，受害文件未被覆写", async () => {
+  it("PUT config: traversal agentId → 404, victim file not overwritten", async () => {
     const victimConfigPath = path.join(
       t.root,
       victimProject,
@@ -79,13 +79,13 @@ describe("id-validation", () => {
     expect(await fs.readFile(victimConfigPath, "utf8")).toBe(before);
   });
 
-  it("GET traces / GET|POST sessions：穿越型 agentId → 404", async () => {
+  it("GET traces / GET|POST sessions: traversal agentId → 404", async () => {
     expect((await attacker.get(`${agentBase()}/${traversal()}/traces`)).status).toBe(404);
     expect((await attacker.get(`${agentBase()}/${traversal()}/sessions`)).status).toBe(404);
     expect((await attacker.post(`${agentBase()}/${traversal()}/sessions`, {})).status).toBe(404);
   });
 
-  it("Trace 明细端点：穿越型 sessionId / agentId → 404", async () => {
+  it("Trace detail endpoints: traversal sessionId / agentId → 404", async () => {
     expect((await attacker.get(`${agentBase()}/default_agent/traces/..%2Fx/1`)).status).toBe(404);
     expect(
       (await attacker.get(`${agentBase()}/default_agent/traces/..%2Fx/1/analysis`)).status,
@@ -93,7 +93,7 @@ describe("id-validation", () => {
     expect((await attacker.get(`${agentBase()}/${traversal()}/traces/s/1`)).status).toBe(404);
   });
 
-  it("穿越型 / 含非法字符的 projectId → 404（防御性校验）", async () => {
+  it("traversal / invalid-character projectId → 404 (defensive validation)", async () => {
     expect((await attacker.get(`/api/projects/..%2Fetc/agents`)).status).toBe(404);
     expect((await attacker.get(`/api/projects/..%2Fetc/models`)).status).toBe(404);
     expect((await attacker.get(`/api/projects/..%2Fetc/usage`)).status).toBe(404);

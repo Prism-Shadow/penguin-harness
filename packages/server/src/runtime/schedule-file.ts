@@ -82,30 +82,31 @@ export function parseScheduleFile(name: string, raw: string): ScheduleParseResul
   } catch (err) {
     return {
       ok: false,
-      error: `TOML 解析失败：${err instanceof Error ? err.message : String(err)}`,
+      error: `Failed to parse TOML: ${err instanceof Error ? err.message : String(err)}`,
     };
   }
   if (parsed === null || typeof parsed !== "object")
-    return { ok: false, error: "内容不是 TOML 表" };
+    return { ok: false, error: "Content is not a TOML table" };
   const t = parsed as Record<string, unknown>;
 
   const prompt = t["prompt"];
   if (typeof prompt !== "string" || prompt.trim() === "") {
-    return { ok: false, error: "缺少必填字段 prompt" };
+    return { ok: false, error: "Missing required field prompt" };
   }
   const enabled = t["enabled"] === undefined ? false : t["enabled"];
-  if (typeof enabled !== "boolean") return { ok: false, error: "enabled 必须是布尔值" };
+  if (typeof enabled !== "boolean") return { ok: false, error: "enabled must be a boolean" };
 
   const startAt = parseInstant(t["start_at"]);
-  if (startAt === null) return { ok: false, error: "start_at 缺失或不是合法的 ISO 8601 时刻" };
+  if (startAt === null)
+    return { ok: false, error: "start_at is missing or not a valid ISO 8601 instant" };
 
   let period: string | undefined;
   let periodMs: number | undefined;
   if (t["period"] !== undefined) {
-    if (typeof t["period"] !== "string") return { ok: false, error: "period 必须是字符串" };
+    if (typeof t["period"] !== "string") return { ok: false, error: "period must be a string" };
     const ms = parsePeriod(t["period"]);
-    if (ms === null) return { ok: false, error: "period 必须形如 30m / 12h / 7d" };
-    if (ms < MIN_PERIOD_MS) return { ok: false, error: "period 低于下限 5m" };
+    if (ms === null) return { ok: false, error: "period must look like 30m / 12h / 7d" };
+    if (ms < MIN_PERIOD_MS) return { ok: false, error: "period is below the 5m minimum" };
     period = t["period"].trim();
     periodMs = ms;
   }
@@ -113,41 +114,46 @@ export function parseScheduleFile(name: string, raw: string): ScheduleParseResul
   let endAt: { ms: number; raw: string } | undefined;
   if (t["end_at"] !== undefined) {
     const parsedEnd = parseInstant(t["end_at"]);
-    if (parsedEnd === null) return { ok: false, error: "end_at 不是合法的 ISO 8601 时刻" };
-    if (parsedEnd.ms <= startAt.ms) return { ok: false, error: "end_at 必须晚于 start_at" };
+    if (parsedEnd === null) return { ok: false, error: "end_at is not a valid ISO 8601 instant" };
+    if (parsedEnd.ms <= startAt.ms)
+      return { ok: false, error: "end_at must be later than start_at" };
     endAt = parsedEnd;
   }
 
   let sessionId: string | undefined;
   if (t["session_id"] !== undefined) {
     if (typeof t["session_id"] !== "string" || t["session_id"] === "") {
-      return { ok: false, error: "session_id 必须是非空字符串" };
+      return { ok: false, error: "session_id must be a non-empty string" };
     }
     sessionId = t["session_id"];
   }
   let workspace: string | undefined;
   if (t["workspace"] !== undefined) {
     if (typeof t["workspace"] !== "string" || t["workspace"] === "") {
-      return { ok: false, error: "workspace 必须是非空字符串" };
+      return { ok: false, error: "workspace must be a non-empty string" };
     }
     workspace = t["workspace"];
   }
   let modelId: string | undefined;
   if (t["model_id"] !== undefined) {
     if (typeof t["model_id"] !== "string" || t["model_id"] === "") {
-      return { ok: false, error: "model_id 必须是非空字符串" };
+      return { ok: false, error: "model_id must be a non-empty string" };
     }
     modelId = t["model_id"];
   }
   let provider: string | undefined;
   if (t["provider"] !== undefined) {
     if (typeof t["provider"] !== "string" || t["provider"] === "") {
-      return { ok: false, error: "provider 必须是非空字符串" };
+      return { ok: false, error: "provider must be a non-empty string" };
     }
     provider = t["provider"];
   }
   if (provider !== undefined && modelId === undefined) {
-    return { ok: false, error: "provider 仅与 model_id 成对使用（模型引用须成对给出）" };
+    return {
+      ok: false,
+      error:
+        "provider is only used together with model_id (a model reference must be given as a pair)",
+    };
   }
   if (
     sessionId !== undefined &&
@@ -155,7 +161,7 @@ export function parseScheduleFile(name: string, raw: string): ScheduleParseResul
   ) {
     return {
       ok: false,
-      error: "目标二选一：workspace 与 provider / model_id 仅用于新建 Session 模式",
+      error: "Pick one target: workspace and provider / model_id are only for new-Session mode",
     };
   }
 

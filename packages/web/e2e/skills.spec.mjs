@@ -58,7 +58,7 @@ const SKILLS = [
 // and the card renders a custom icon.svg — neither spot should show this fallback path.
 const BOOK_PATH_PREFIX = "M2 3h6a4";
 
-test("skills: 技能库分组与卡片 → 管理安装 Modal → 快捷调用预填 → 下拉过滤与 slash 选中", async ({
+test("skills: library groups and cards -> manage-install Modal -> quick-invoke prefill -> dropdown filter and slash selection", async ({
   page,
 }) => {
   await provisionAndLogin(page.request, U, P);
@@ -225,7 +225,7 @@ test("skills: 技能库分组与卡片 → 管理安装 Modal → 快捷调用�
   await expect(skillsBtn).not.toContainText("1");
 
   // The mock LLM's fallback reply completes a full round (allow-all auto-approves exec_command).
-  await expect(page.getByText("命令已执行完成，结果符合预期。")).toBeVisible();
+  await expect(page.getByText("Command finished; the result looks as expected.")).toBeVisible();
 
   // —— Slash invocation: typing /agent-opt shows a skill command item; pressing Enter selects it and clears the input box (without sending) ——
   await ta.fill("/agent-opt");

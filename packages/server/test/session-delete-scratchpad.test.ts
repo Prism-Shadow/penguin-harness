@@ -21,7 +21,7 @@ async function exists(p: string): Promise<boolean> {
   }
 }
 
-describe("会话删除清理 scratchpad", () => {
+describe("session deletion cleans up the scratchpad", () => {
   let t: TestApp;
   let owner: ReturnType<typeof apiClient>;
   let projectId: string;
@@ -33,7 +33,7 @@ describe("会话删除清理 scratchpad", () => {
     const created = (await (
       await owner.post("/api/projects", {
         projectId: "owner_s-scratchpad",
-        name: "scratchpad 项目",
+        name: "scratchpad project",
       })
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
@@ -46,7 +46,7 @@ describe("会话删除清理 scratchpad", () => {
     await t.cleanup();
   });
 
-  it("DELETE 会话后其 scratchpad 目录一并删除", async () => {
+  it("DELETE removes the session's scratchpad directory along with it", async () => {
     const created = await owner.post(
       `/api/projects/${projectId}/agents/default_agent/sessions`,
       {},
@@ -72,7 +72,7 @@ describe("会话删除清理 scratchpad", () => {
     expect((await owner.delete(`/api/sessions/${s2.sessionId}`)).status).toBe(204);
   });
 
-  it("GET /sessions/:id/scratchpad/:file 按会话读取文件；缺失或非法文件名 404", async () => {
+  it("GET /sessions/:id/scratchpad/:file reads per-session files; missing or invalid filenames 404", async () => {
     const created = await owner.post(
       `/api/projects/${projectId}/agents/default_agent/sessions`,
       {},

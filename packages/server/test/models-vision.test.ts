@@ -8,7 +8,7 @@ import type { ModelsResponse, ProjectCreateResponse } from "../src/api/types.js"
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
-describe("models vision 标注", () => {
+describe("models vision annotation", () => {
   let t: TestApp;
   let owner: ReturnType<typeof apiClient>;
   let projectId: string;
@@ -18,7 +18,7 @@ describe("models vision 标注", () => {
     const a = await provisionUser(t.app, "owner_v");
     owner = apiClient(t.app, a.cookie);
     const created = (await (
-      await owner.post("/api/projects", { projectId: "owner_v-vision", name: "vision 项目" })
+      await owner.post("/api/projects", { projectId: "owner_v-vision", name: "vision project" })
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
   });
@@ -26,7 +26,7 @@ describe("models vision 标注", () => {
     await t.cleanup();
   });
 
-  it("vision=false 落盘回读；目录外模型省略 = 支持（不携带字段）", async () => {
+  it("vision=false persists and reads back; omitted on a non-catalog model = supported (no field)", async () => {
     // Use a custom id outside the catalog to verify pure TOML semantics (a catalog id
     // falls back to the catalog's own annotation — see the next test case).
     const put = await owner.put(`/api/projects/${projectId}/models`, {
@@ -51,7 +51,7 @@ describe("models vision 标注", () => {
     expect("vision" in body2.models[0]!).toBe(false);
   });
 
-  it("目录内模型无 TOML 标注时 vision 回落内置目录标注", async () => {
+  it("a catalog model without a TOML annotation falls back to the built-in catalog's vision annotation", async () => {
     const put = await owner.put(`/api/projects/${projectId}/models`, {
       models: [
         { provider: "deepseek", modelId: "deepseek-v4-pro" },
@@ -68,7 +68,7 @@ describe("models vision 标注", () => {
     ).toBe(true);
   });
 
-  it("visionModel 指针：往返、省略保留、目标失效即移除", async () => {
+  it("visionModel pointer: round-trips, omission preserves it, removed once the target is invalid", async () => {
     const put = await owner.put(`/api/projects/${projectId}/models`, {
       visionModel: { provider: "google", modelId: "gemini-3-flash-preview" },
       models: [
@@ -102,7 +102,7 @@ describe("models vision 标注", () => {
     expect("visionModel" in ((await put3.json()) as ModelsResponse)).toBe(false);
   });
 
-  it("visionModel 不在 models 内或指向不支持图片的模型：400", async () => {
+  it("visionModel absent from models or pointing at a model without image support: 400", async () => {
     const missing = await owner.put(`/api/projects/${projectId}/models`, {
       visionModel: { provider: "custom", modelId: "nope" },
       models: [{ provider: "custom", modelId: "m-1" }],
@@ -115,7 +115,7 @@ describe("models vision 标注", () => {
     expect(blind.status).toBe(400);
   });
 
-  it("vision 非布尔值 400", async () => {
+  it("non-boolean vision returns 400", async () => {
     const bad = await owner.put(`/api/projects/${projectId}/models`, {
       models: [{ provider: "custom", modelId: "m-1", vision: "no" }],
     });

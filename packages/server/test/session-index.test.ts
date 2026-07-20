@@ -29,7 +29,7 @@ describe("session-index", () => {
     const { cookie } = await provisionUser(t.app, "alice");
     api = apiClient(t.app, cookie);
     const created = (await (
-      await api.post("/api/projects", { projectId: "alice-index", name: "测试项目" })
+      await api.post("/api/projects", { projectId: "alice-index", name: "test project" })
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
   });
@@ -45,7 +45,7 @@ describe("session-index", () => {
     expect(res.status).toBe(200);
   }
 
-  it("未配置默认模型时创建 Session → 400 no_default_model", async () => {
+  it("creating a Session with no default model configured → 400 no_default_model", async () => {
     // A newly created Project comes with a default model preset: first replace
     // the whole table to clear it (omitting defaultModel + the original default
     // absent from models = removes default_model), then verify the
@@ -60,11 +60,11 @@ describe("session-index", () => {
     expect(body.error.code).toBe("no_default_model");
   });
 
-  it("模型没有可用 credential 时创建 Session → 400 model_credential_missing", async () => {
+  it("creating a Session when the model has no usable credential → 400 model_credential_missing", async () => {
     // A model using the OpenAI protocol: the SDK requires a credential as soon as
     // the client is constructed. Clear the environment variable key so none is
     // available — the error must carry an **error code** (the frontend renders
-    // localized text from the code, not by parsing the Chinese message).
+    // localized text from the code, not by parsing the message text).
     const prev = process.env.OPENAI_API_KEY;
     delete process.env.OPENAI_API_KEY;
     try {
@@ -84,7 +84,7 @@ describe("session-index", () => {
     }
   });
 
-  it("创建 Session：缺省自动临时 Workspace、默认 allow-all、进列表", async () => {
+  it("creating a Session: auto temp Workspace by default, allow-all default, shows in the list", async () => {
     await configureModels();
     const res = await api.post(base(), {});
     expect(res.status).toBe(201);
@@ -103,7 +103,7 @@ describe("session-index", () => {
     expect(list.sessions.map((s) => s.sessionId)).toContain(session.sessionId);
   });
 
-  it("显式 Workspace 只要求已存在，可在 Project 目录之外", async () => {
+  it("an explicit Workspace only needs to exist; it may live outside the Project directory", async () => {
     await configureModels();
     const inside = path.join(t.root, projectId, "my-workdir");
     await fs.mkdir(inside, { recursive: true });
@@ -124,7 +124,7 @@ describe("session-index", () => {
     ).toBe(400);
   });
 
-  it("列表并集：Trace 目录发现未纳管 Session 并补插索引行", async () => {
+  it("list union: Trace directory discovery finds unmanaged Sessions and backfills index rows", async () => {
     await configureModels();
     const discovered = "session-2026-07-01-08-30-00-deadbeef";
     const meta: SessionMetaPayload = {
@@ -140,7 +140,7 @@ describe("session-index", () => {
     };
     await writeTraceFile(t.root, projectId, "default_agent", "2026-07-01", discovered, 1, [
       sessionMeta(meta),
-      userText("cli 会话"),
+      userText("cli session"),
     ]);
 
     const list = (await (await api.get(base())).json()) as SessionsResponse;
@@ -157,7 +157,7 @@ describe("session-index", () => {
     expect(single.status).toBe(200);
   });
 
-  it("DELETE Session：清索引行与全部 Trace 分片，列表不复活；重删 404", async () => {
+  it("DELETE Session: clears the index row and every Trace shard; the list doesn't resurrect it; re-delete 404", async () => {
     await configureModels();
     const { session } = (await (await api.post(base(), {})).json()) as SessionCreateResponse;
     const sessionId = session.sessionId;
@@ -181,7 +181,7 @@ describe("session-index", () => {
       "2026-07-01",
       sessionId,
       1,
-      [sessionMeta(meta), userText("第一轮")],
+      [sessionMeta(meta), userText("round one")],
     );
     const f2 = await writeTraceFile(
       t.root,
@@ -190,7 +190,7 @@ describe("session-index", () => {
       "2026-07-02",
       sessionId,
       2,
-      [sessionMeta(meta), userText("第二轮")],
+      [sessionMeta(meta), userText("round two")],
     );
 
     const del = await api.delete(`/api/sessions/${sessionId}`);
@@ -205,7 +205,7 @@ describe("session-index", () => {
     expect((await api.get(`/api/sessions/${sessionId}`)).status).toBe(404);
   });
 
-  it("DELETE Session：Workspace 目录不随删除清除（用户自带目录必须保留）", async () => {
+  it("DELETE Session: the Workspace directory is not removed (user-supplied directories must survive)", async () => {
     await configureModels();
     const inside = path.join(t.root, projectId, "keep-me");
     await fs.mkdir(inside, { recursive: true });
@@ -217,7 +217,7 @@ describe("session-index", () => {
     expect((await fs.stat(inside)).isDirectory()).toBe(true);
   });
 
-  it("列表按 createdAt 降序", async () => {
+  it("the list is sorted by createdAt descending", async () => {
     await configureModels();
     const older = "session-2020-01-01-00-00-00-00000001";
     await writeTraceFile(t.root, projectId, "default_agent", "2020-01-01", older, 1, [
@@ -239,7 +239,7 @@ describe("session-index", () => {
     expect(list.sessions[list.sessions.length - 1]!.sessionId).toBe(older);
   });
 
-  it("PATCH 审批模式即存并回读", async () => {
+  it("PATCH approval mode persists and reads back", async () => {
     await configureModels();
     const { session } = (await (await api.post(base(), {})).json()) as SessionCreateResponse;
     // Change from the default allow-all to a different mode, to confirm it's actually persisted.
@@ -257,7 +257,7 @@ describe("session-index", () => {
     ).toBe(400);
   });
 
-  it("insertOrIgnore 幂等：并发首次发现同一 Session 不因 UNIQUE 约束抛错", async () => {
+  it("insertOrIgnore is idempotent: concurrent first discovery of one Session doesn't throw on the UNIQUE constraint", async () => {
     const row = {
       sessionId: "session-2026-07-02-00-00-00-11223344",
       projectId,
@@ -277,7 +277,7 @@ describe("session-index", () => {
     expect(t.deps.sessionsRepo.findById(row.sessionId)!.modelId).toBe("cli-model");
   });
 
-  it("sessionIdCreatedAt：非法格式返回 null", () => {
+  it("sessionIdCreatedAt: invalid formats return null", () => {
     expect(sessionIdCreatedAt("session-2026-07-01-08-30-00-deadbeef")).toBe(
       new Date(2026, 6, 1, 8, 30, 0).toISOString(),
     );

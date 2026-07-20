@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { hashPassword, verifyPassword } from "../src/auth/password.js";
 
 describe("password", () => {
-  it("散列格式为 scrypt$N$r$p$salt$hash 且可校验", async () => {
+  it("hash format is scrypt$N$r$p$salt$hash and verifies", async () => {
     const stored = await hashPassword("hello-world-123");
     const parts = stored.split("$");
     expect(parts).toHaveLength(6);
@@ -15,12 +15,12 @@ describe("password", () => {
     await expect(verifyPassword("hello-world-123", stored)).resolves.toBe(true);
   });
 
-  it("错误密码校验失败", async () => {
+  it("a wrong password fails verification", async () => {
     const stored = await hashPassword("correct-password");
     await expect(verifyPassword("wrong-password", stored)).resolves.toBe(false);
   });
 
-  it("同一密码两次散列结果不同（随机盐）", async () => {
+  it("hashing the same password twice differs (random salt)", async () => {
     const a = await hashPassword("same-password");
     const b = await hashPassword("same-password");
     expect(a).not.toBe(b);
@@ -28,7 +28,7 @@ describe("password", () => {
     await expect(verifyPassword("same-password", b)).resolves.toBe(true);
   });
 
-  it("非法存储串返回 false 而非抛异常", async () => {
+  it("invalid stored strings return false instead of throwing", async () => {
     await expect(verifyPassword("x", "not-a-hash")).resolves.toBe(false);
     await expect(verifyPassword("x", "bcrypt$a$b$c$d$e")).resolves.toBe(false);
     await expect(verifyPassword("x", "scrypt$abc$8$1$!!$!!")).resolves.toBe(false);

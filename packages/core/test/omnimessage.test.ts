@@ -161,7 +161,7 @@ describe("PartialAggregator", () => {
     expect(p.arguments).toBe('{"cmd":"ls -la"}');
   });
 
-  it("folds tool output image deltas into the complete tool_call_output (拼接 == 完整)", () => {
+  it("folds tool output image deltas into the complete tool_call_output (concatenated == complete)", () => {
     const dataUrl = "data:image/png;base64,AAAA";
     const out = aggregateAll([
       partialToolCallOutput({ eventType: "start", toolCallId: "c9" }),

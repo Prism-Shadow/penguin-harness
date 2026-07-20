@@ -31,7 +31,7 @@ describe("agent export/import", () => {
     owner = apiClient(t.app, a.cookie);
     member = apiClient(t.app, b.cookie);
     const created = (await (
-      await owner.post("/api/projects", { projectId: "owner_a-snap", name: "快照项目" })
+      await owner.post("/api/projects", { projectId: "owner_a-snap", name: "Snapshot project" })
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
     base = `/api/projects/${projectId}/agents/default_agent`;
@@ -43,7 +43,7 @@ describe("agent export/import", () => {
     await t.cleanup();
   });
 
-  it("导出→改动→导入回滚：同版本需确认、agent_state 被替换、vault 保留", async () => {
+  it("reimport same version: confirm required, agent_state replaced, vault kept", async () => {
     // First set a vault key (must be preserved after import).
     expect(
       (await owner.put(`${base}/vault`, { entries: [{ key: "TOKEN", value: "secret-1" }] })).status,
@@ -79,7 +79,7 @@ describe("agent export/import", () => {
     expect(vault.entries.map((e) => e.key)).toEqual(["TOKEN"]);
   });
 
-  it("高版本包直接导入并落 version；非法包 400", async () => {
+  it("newer-version package imports directly, persists version; invalid package 400", async () => {
     // Bump the current agent_state's version to 3, then export to get the v3 package.
     const configPath = path.join(
       agentStateDir(t.root, projectId, "default_agent"),
@@ -101,7 +101,7 @@ describe("agent export/import", () => {
     ).toBe(400);
   });
 
-  it("包内混入 .vault.toml 会被忽略，导入后仍是现行 vault", async () => {
+  it("a .vault.toml in the package is ignored; the current vault survives import", async () => {
     expect(
       (await owner.put(`${base}/vault`, { entries: [{ key: "TOKEN", value: "current" }] })).status,
     ).toBe(200);
