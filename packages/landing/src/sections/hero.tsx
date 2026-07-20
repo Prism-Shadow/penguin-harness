@@ -5,6 +5,7 @@
  * The rotating word is a stacked inline-grid so line width never jumps.
  */
 import { Fragment, useEffect, useState } from "react";
+import { Link } from "react-router";
 import { S } from "../lib/strings";
 import { INSTALL_CMD, REPO_URL } from "../lib/links";
 import { CopyButton } from "../components/copy-button";
@@ -89,13 +90,13 @@ export function Hero() {
           className="anim-rise mt-8 flex flex-wrap items-center justify-center gap-3"
           style={{ animationDelay: "200ms" }}
         >
-          <a
-            href="#quickstart"
+          <Link
+            to="/#quickstart"
             className="inline-flex h-11 items-center gap-2 rounded-lg bg-gray-900 px-5 text-sm font-medium text-white transition-colors hover:bg-gray-700 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white"
           >
             {S.hero.ctaPrimary}
             <ArrowRightIcon className="h-4 w-4" />
-          </a>
+          </Link>
           <a
             href={REPO_URL}
             target="_blank"

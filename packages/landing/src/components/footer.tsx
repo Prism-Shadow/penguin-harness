@@ -1,21 +1,14 @@
 /** Site footer: brand + product/resource link columns + copyright. */
-import { Link, useLocation } from "react-router";
+import { Link } from "react-router";
 import { S } from "../lib/strings";
 import { DOCS_URL, LICENSE_URL, RELEASES_URL, REPO_URL } from "../lib/links";
 
 export function Footer() {
-  const { pathname } = useLocation();
-  const onHome = pathname === "/";
-  const anchor = (id: string, label: string) =>
-    onHome ? (
-      <a href={`#${id}`} className="hover:text-gray-900 dark:hover:text-gray-100">
-        {label}
-      </a>
-    ) : (
-      <Link to={`/#${id}`} className="hover:text-gray-900 dark:hover:text-gray-100">
-        {label}
-      </Link>
-    );
+  const anchor = (id: string, label: string) => (
+    <Link to={`/#${id}`} className="hover:text-gray-900 dark:hover:text-gray-100">
+      {label}
+    </Link>
+  );
 
   return (
     <footer className="border-t border-gray-200 dark:border-gray-800">

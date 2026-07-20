@@ -1,4 +1,5 @@
 /** Closing call-to-action: the productivity-engine pitch + install / docs buttons. */
+import { Link } from "react-router";
 import { S } from "../lib/strings";
 import { DOCS_URL } from "../lib/links";
 import { Section } from "../components/section";
@@ -15,13 +16,13 @@ export function Cta() {
           {S.cta.subtitle}
         </p>
         <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
-          <a
-            href="#quickstart"
+          <Link
+            to="/#quickstart"
             className="inline-flex h-11 items-center gap-2 rounded-lg bg-gray-900 px-5 text-sm font-medium text-white transition-colors hover:bg-gray-700 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white"
           >
             {S.cta.install}
             <ArrowRightIcon className="h-4 w-4" />
-          </a>
+          </Link>
           <a
             href={DOCS_URL}
             className="inline-flex h-11 items-center rounded-lg border border-gray-200 bg-white px-5 text-sm font-medium text-gray-900 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
