@@ -19,8 +19,8 @@
     "dev": "concurrently -n server,web -c cyan,magenta \"pnpm dev:server\" \"pnpm dev:web\"",
     "dev:server": "pnpm --filter @prismshadow/penguin-server dev",
     "dev:web": "node scripts/dev-prebuild.mjs && pnpm --filter @prismshadow/penguin-web dev",
-    "dev:docs": "pnpm --filter @prismshadow/penguin-docs dev",
-    "dev:landing": "pnpm --filter @prismshadow/penguin-landing dev",
+    "dev:docs": "node scripts/dev-prebuild.mjs --install-only && pnpm --filter @prismshadow/penguin-docs dev",
+    "dev:landing": "node scripts/dev-prebuild.mjs --install-only && pnpm --filter @prismshadow/penguin-landing dev",
     "build:site": "node scripts/build-site.mjs"
   },
   "devDependencies": {
