@@ -70,6 +70,7 @@ describe("groupModelRows", () => {
       "openrouter",
       "siliconflow",
       "qwen-token-plan",
+      "qwen-pay-as-you-go",
       "google",
       "anthropic",
       "openai",
