@@ -55,13 +55,14 @@ import { sameModelRef } from "../models/model-grouping";
 const DRAFT_SAVE_DEBOUNCE_MS = 300;
 
 /**
- * Example tasks on the draft screen, in display order (game card first, RAG build below/after).
- * Copy lives in S.chat.exampleTasks[id]; skills are pinned via a `<use_skills>` block — only
- * those the selected Agent actually has installed are included, so the block never references
- * a skill the agent can't read.
+ * Example tasks on the draft screen, in display order (game card first, LoL music player,
+ * then the RAG build). Copy lives in S.chat.exampleTasks[id]; skills are pinned via a
+ * `<use_skills>` block — only those the selected Agent actually has installed are included,
+ * so the block never references a skill the agent can't read.
  */
-const EXAMPLE_TASKS: { id: "game" | "rag"; skills: string[] }[] = [
+const EXAMPLE_TASKS: { id: "game" | "lol" | "rag"; skills: string[] }[] = [
   { id: "game", skills: ["web-design"] },
+  { id: "lol", skills: ["web-design"] },
   { id: "rag", skills: ["penguin-sdk", "web-design"] },
 ];
 
@@ -314,7 +315,7 @@ export function DraftView({
   // busy id drives the clicked card's spinner; the shared in-flight guard and all failure
   // handling live in onSend). keepDraft: an example never consumes the composer text, so a
   // typed-but-unsent draft must survive. The selected model / Workspace / approval mode apply as-is.
-  const [exampleBusy, setExampleBusy] = useState<"game" | "rag" | null>(null);
+  const [exampleBusy, setExampleBusy] = useState<"game" | "lol" | "rag" | null>(null);
   const runExample = useCallback(
     async (task: (typeof EXAMPLE_TASKS)[number]) => {
       if (exampleBusy !== null) return;
@@ -449,8 +450,27 @@ export function DraftView({
                 title={copy.desc}
                 className="group flex min-w-0 items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 text-left transition-colors duration-150 hover:border-gray-300 disabled:cursor-default disabled:opacity-60 sm:max-w-sm sm:flex-1 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-gray-700"
               >
-                {/* 24×24 line icons (gamepad / sparkle), consistent with the icon convention */}
-                {task.id === "game" ? (
+                {/* 24×24 line icons (gamepad / music note / sparkle), consistent with the icon convention */}
+                {task.id === "lol" ? (
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    className="shrink-0 text-brand-500 dark:text-brand-400"
+                    aria-hidden
+                  >
+                    <path
+                      d="M9 18V6l11-2v12"
+                      strokeWidth="1.7"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                    <circle cx="6.5" cy="18" r="2.5" strokeWidth="1.7" />
+                    <circle cx="17.5" cy="16" r="2.5" strokeWidth="1.7" />
+                  </svg>
+                ) : task.id === "game" ? (
                   <svg
                     width="20"
                     height="20"

@@ -495,6 +495,36 @@ export const en: Strings = {
           "Pure frontend (a single HTML file is fine), styled per the web-design skill. " +
           "When done, test it in a browser once and tell me how to open it and how to play.",
       },
+      lol: {
+        label: "Example: League of Legends music player",
+        desc: "Worlds anthems on the SoundCloud Widget API — a single file that opens from file://",
+        prompt: `Build a League of Legends Worlds anthem player with the SoundCloud Widget API (see https://developers.soundcloud.com/docs/api/html5-widget): a single index.html that works when opened from file://.
+
+## Technical constraints
+- Use the SC.Widget JS API (widget.load / widget.toggle / widget.setVolume / widget.seekTo), loading https://w.soundcloud.com/player/api.js
+- The iframe must stay visible (180px tall), with visual=true color=f0b90b single_active=true
+- Include ONLY these 8 tracks confirmed playable (oEmbed-verified); do not add tracks that are not oEmbed-verified:
+  - Warriors (S4) — soundcloud.com/leagueoflegends/warriors
+  - Worlds Collide (S5) — soundcloud.com/leagueoflegends/worlds-collide
+  - Legends Never Die (S7) — soundcloud.com/leagueoflegends/legends-never-die
+  - Phoenix (S9) — soundcloud.com/leagueoflegends/phoenix
+  - Burn It All Down (S11) — soundcloud.com/leagueoflegends/burn-it-all-down
+  - GODS (S13) — soundcloud.com/leagueoflegends/gods
+  - Heavy Is The Crown (S14) — soundcloud.com/linkinpark/heavy-is-the-crown
+  - Sacrifice (S15) — soundcloud.com/leagueoflegends/sacrifice
+
+## Layout
+- Left 260px sticky sidebar: the track list (S4/S5/… badge + emoji + title + year); clicking highlights with a gold border and switches tracks via SC.Widget.load() with auto_play
+- Right main area: hero title + a desktop clock (80px monospace gold HH:MM:SS, refreshed every second, blinking colons) + a mood tag
+- Player card: the SoundCloud iframe + a custom control bar (⏮ ▶/⏸ ⏭ + track info + a volume slider; clicking the speaker icon toggles mute)
+- Mood-wave section: 15 gold animated bars, re-randomized on every track switch
+- Keyboard shortcuts: Space play/pause, ← → previous/next, ↑ ↓ volume
+
+## Design
+Penguin visual style (see the web-design skill), dark/light themes via <html data-theme>, dark by default, remembered in localStorage. Responsive: on phones the sidebar becomes a horizontally scrolling top bar.
+
+When done, open index.html in a browser and self-test once.`,
+      },
       rag: {
         label: "Example: build a Claude Code docs expert",
         desc: "Collect the claude-code-docs repo into a conversational RAG knowledge app with source citations",

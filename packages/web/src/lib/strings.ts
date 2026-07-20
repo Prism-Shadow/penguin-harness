@@ -479,6 +479,36 @@ export const zh = {
           "纯前端实现（单个 HTML 文件即可），界面遵循 web-design 技能。" +
           "完成后在浏览器里自测一次，并告诉我怎么打开和怎么玩。",
       },
+      lol: {
+        label: "示例：英雄联盟音乐播放器",
+        desc: "用 SoundCloud Widget API 播放历届 Worlds 主题曲，单文件即开即用",
+        prompt: `用 SoundCloud Widget API（见 https://developers.soundcloud.com/docs/api/html5-widget）做一个英雄联盟 Worlds 主题曲播放器，单文件 index.html，file:// 打开即用。
+
+## 技术约束
+- 使用 SC.Widget JS API（widget.load / widget.toggle / widget.setVolume / widget.seekTo），引入 https://w.soundcloud.com/player/api.js
+- iframe 必须可见（180px 高），visual=true color=f0b90b single_active=true
+- 仅包含以下 8 首已确认可播曲目（oEmbed 验证通过），不要添加未经 oEmbed 验证的曲目：
+  - Warriors (S4) — soundcloud.com/leagueoflegends/warriors
+  - Worlds Collide (S5) — soundcloud.com/leagueoflegends/worlds-collide
+  - Legends Never Die (S7) — soundcloud.com/leagueoflegends/legends-never-die
+  - Phoenix (S9) — soundcloud.com/leagueoflegends/phoenix
+  - Burn It All Down (S11) — soundcloud.com/leagueoflegends/burn-it-all-down
+  - GODS (S13) — soundcloud.com/leagueoflegends/gods
+  - Heavy Is The Crown (S14) — soundcloud.com/linkinpark/heavy-is-the-crown
+  - Sacrifice (S15) — soundcloud.com/leagueoflegends/sacrifice
+
+## 布局
+- 左侧 260px 粘性侧边栏：曲目列表（S4/S5/… 标签 + emoji + 曲名 + 年份），点击高亮金色边框，SC.Widget.load() 切歌 + auto_play
+- 右侧主区域：Hero 标题 + 桌面时钟（80px 等宽金色 HH:MM:SS，每秒刷新，冒号闪烁）+ 心情标签
+- 播放器卡片：SoundCloud iframe + 自定义控制栏（⏮ ▶/⏸ ⏭ + 曲目信息 + 音量滑块，点击喇叭图标静音切换）
+- 心情波动区：15 根金色动画柱，切歌时重新随机生成
+- 键盘快捷键：空格播放暂停、← → 切歌、↑ ↓ 调音量
+
+## 设计
+Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html data-theme>），默认深色，localStorage 记忆。响应式：手机端侧边栏变为顶部横向滚动。
+
+完成后在浏览器打开 index.html 自测一次。`,
+      },
       rag: {
         label: "示例：构建 Claude Code 文档专家",
         desc: "收集 claude-code-docs 仓库，生成可对话、带来源引用的 RAG 知识应用",
