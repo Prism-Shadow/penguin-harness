@@ -42,7 +42,10 @@ export function requireValidId(c: Context, name: string): string {
 
 /** Parse a positive-integer path parameter (e.g. Trace file index). */
 export function positiveIntParam(c: Context, name: string): number {
-  const v = Number.parseInt(pathParam(c, name), 10);
+  // Match digits only: Number.parseInt would accept trailing garbage ("12abc" -> 12).
+  const raw = pathParam(c, name);
+  if (!/^\d+$/.test(raw)) throw badRequest(`${name} must be a positive integer.`);
+  const v = Number.parseInt(raw, 10);
   if (!Number.isInteger(v) || v < 1) throw badRequest(`${name} must be a positive integer.`);
   return v;
 }
