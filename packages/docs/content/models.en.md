@@ -58,7 +58,7 @@ Built-in groups and their env-var fallbacks (catalog source: `packages/core/src/
 | deepseek | `DEEPSEEK_API_KEY` | Group of the default model |
 | openrouter | `OPENAI_API_KEY` | OpenAI-compatible gateway, preset base URL `https://openrouter.ai/api/v1` |
 | siliconflow | `OPENAI_API_KEY` | OpenAI-compatible gateway, preset base URL `https://api.siliconflow.cn/v1` |
-| qwen-token-plan | `OPENAI_API_KEY` | Qwen Token Plan subscription gateway (usage deducts plan quota; no per-token price), preset base URL `https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1` |
+| qwen-token-plan | `OPENAI_API_KEY` | Qwen Token Plan subscription gateway, preset base URL `https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1`; pricing from each model page's official list price (the preview model has only a quota-multiplier promo, no list price) |
 | google | `GEMINI_API_KEY` | |
 | anthropic | `ANTHROPIC_API_KEY` | |
 | openai | `OPENAI_API_KEY` | |
