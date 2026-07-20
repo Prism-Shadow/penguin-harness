@@ -23,10 +23,13 @@ pnpm dev:landing # landing page (Vite) at 127.0.0.1:7366
 BASE_PATH=/ pnpm build:site   # assemble landing + docs exactly like the Pages deploy
 ```
 
-The dev commands prebuild the workspace deps (skills, core) through
-`scripts/dev-prebuild.mjs`, which serializes concurrent invocations behind a lock and
-dedupes back-to-back builds — starting `dev:server` and `dev:web` at the same time (or
-just `pnpm dev`) builds the deps exactly once.
+Every dev command runs `scripts/dev-prebuild.mjs` first, which (behind a lock that
+serializes concurrent invocations) **keeps `pnpm install` current automatically** — a
+fresh clone or a pulled lockfile change installs before starting, and an up-to-date tree
+pays nothing (the lockfile hash is stamped) — then prebuilds the workspace deps (skills,
+core) with back-to-back builds deduped: starting `dev:server` and `dev:web` at the same
+time (or just `pnpm dev`) installs and builds exactly once. `dev:docs` / `dev:landing`
+run the install check only (`--install-only`).
 
 Copy `.env.example` to `.env` for model credentials in development.
 
