@@ -247,7 +247,16 @@ export class ProjectConfigService {
         maxTokens: req.speed ? 64 : 16,
         requestTimeoutMs: 20_000,
       });
-      const gen = llm.streamGenerate({ newMessages: [userText("ping")] });
+      // The wording discourages reasoning and the trailing empty <think></think> makes many
+      // reasoning models treat their thinking phase as already closed - keeping the probe's
+      // tiny budget on actual output instead of burning it on thinking.
+      const gen = llm.streamGenerate({
+        newMessages: [
+          userText(
+            'ping - reply with the single word "pong" and nothing else. Do not think or explain.\n<think></think>',
+          ),
+        ],
+      });
       let sawContent = false;
       let firstContentAt: number | null = null;
       let outputTokens = 0;

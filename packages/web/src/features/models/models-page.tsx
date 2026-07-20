@@ -112,6 +112,11 @@ function inputToUsd(inputStr: string, currency: Currency): string {
   return currency === "CNY" ? trimNum(n / USD_TO_CNY) : trimNum(n);
 }
 
+/** Group-header action glyphs (24x24 line paths): add, bulk key, gauge for speed test. */
+const PLUS_ICON = "M12 5v14M5 12h14";
+const KEY_ICON =
+  "M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4";
+
 /** Speed-test glyphs (24x24 line paths): gauge for the group action, clock = TTFT, zap = TPS. */
 const GAUGE_ICON = "M12 14l3.5-3.5M20.49 17A10 10 0 1 0 3.5 17";
 const CLOCK_ICON = "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20ZM12 7v5l3.5 2";
@@ -599,6 +604,7 @@ export function ModelsPage() {
                           disabled={busy}
                           onClick={() => setAddingTo(group.provider.id)}
                         >
+                          <GlyphIcon d={PLUS_ICON} size={13} />
                           {S.models.addToGroup}
                         </Button>
                       </span>
@@ -615,6 +621,7 @@ export function ModelsPage() {
                           disabled={busy}
                           onClick={() => setGroupKeyFor(group.provider.id)}
                         >
+                          <GlyphIcon d={KEY_ICON} size={13} />
                           {S.models.groupApiKey}
                         </Button>
                       </span>
@@ -623,7 +630,7 @@ export function ModelsPage() {
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="shrink-0 px-1.5"
+                        className="shrink-0"
                         disabled={busy || speedRunning !== null}
                         aria-label={`${S.models.speedTest} ${group.provider.label}`}
                         title={
@@ -633,7 +640,10 @@ export function ModelsPage() {
                         }
                         onClick={() => setSpeedFor(group.provider.id)}
                       >
-                        <GlyphIcon d={GAUGE_ICON} size={14} />
+                        <GlyphIcon d={GAUGE_ICON} size={13} />
+                        {speedRunning === group.provider.id
+                          ? S.models.speedPending
+                          : S.models.speedTest}
                       </Button>
                     )}
                     {group.provider.apiKeyUrl && (
@@ -895,10 +905,10 @@ function ModelCard({
 
   const speedBadges =
     speed === "pending" ? (
-      <span className="ml-auto shrink-0 text-[11px] text-gray-400">{S.models.speedPending}</span>
+      <span className="shrink-0 text-[11px] text-gray-400">{S.models.speedPending}</span>
     ) : speed ? (
       speed.ok ? (
-        <span className="ml-auto flex shrink-0 items-center gap-1.5 text-[11px] font-medium">
+        <span className="flex shrink-0 items-center gap-1.5 text-[11px] font-medium">
           {speed.ttftMs !== undefined && (
             <span
               className={`flex items-center gap-0.5 ${TONE_CLASS[ttftTone(speed.ttftMs)]}`}
@@ -920,7 +930,7 @@ function ModelCard({
         </span>
       ) : (
         <span
-          className="ml-auto shrink-0 text-[11px] font-medium text-red-600 dark:text-red-400"
+          className="shrink-0 text-[11px] font-medium text-red-600 dark:text-red-400"
           title={speed.message}
         >
           {S.models.speedFailed}
@@ -938,7 +948,6 @@ function ModelCard({
         {isDefault && <Badge tone="brand">{S.models.default}</Badge>}
         {row.vision && <Badge tone="green">{S.models.visionBadge}</Badge>}
         {isVisionModel && <Badge tone="amber">{S.models.visionModelBadge}</Badge>}
-        {speedBadges}
       </span>
       {/* Upstream id in small text (grouping already separates by group, no composite id is
           shown anymore); when there's no display name, the main line is already the
@@ -948,8 +957,13 @@ function ModelCard({
           {row.modelId}
         </span>
       )}
-      <span className="truncate text-[11px] text-gray-400 dark:text-gray-500">
-        {meta.join(" · ")}
+      {/* Meta line: the truncating text takes the flexible space; speed badges keep their own
+          non-shrinking slot on the right so the numbers never wrap or get pushed out. */}
+      <span className="flex w-full items-center gap-1.5">
+        <span className="min-w-0 flex-1 truncate text-[11px] text-gray-400 dark:text-gray-500">
+          {meta.join(" · ")}
+        </span>
+        {speedBadges}
       </span>
     </button>
   );

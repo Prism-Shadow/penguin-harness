@@ -22,3 +22,8 @@ moves from the card corner into the config dialog.
 - The model-homepage link moves off the card corner into the config dialog next to the
   "get model ids" link (the card stays a single clickable surface; the freed corner hosts
   the speed badges).
+- Refinements: the group-header actions (add model / bulk API key / speed test) are all
+  icon + text buttons; the speed badges live on the card's meta line in their own
+  non-shrinking slot (the numbers never crowd or wrap the title row); the probe prompt
+  discourages reasoning and ends with an empty `<think></think>` block so reasoning models
+  skip their thinking phase instead of burning the probe budget on it.

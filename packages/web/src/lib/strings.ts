@@ -268,7 +268,7 @@ export const zh = {
     syncDone: (added: number, updated: number) => `预置模型已同步：新增 ${added}、更新 ${updated}`,
     syncUpToDate: "预置模型已是最新",
     homepage: "模型主页",
-    speedTest: "分组测速",
+    speedTest: "测速",
     speedTestTitle: "分组测速",
     speedTestConfirm: (n: number): string =>
       `将对该分组的 ${n} 个模型逐个发起一次真实请求,测量首 token 延迟(TTFT)与输出速率(TPS),会消耗少量 API 额度。是否继续?`,
