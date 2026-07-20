@@ -43,6 +43,7 @@ import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useProject } from "../../state/project";
+import { useAuth } from "../../state/auth";
 import { USD_TO_CNY, useTheme } from "../../state/theme";
 import type { Currency } from "../../state/theme";
 import { Button } from "../../components/ui/button";
@@ -52,6 +53,7 @@ import { Select } from "../../components/ui/select";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { Badge } from "../../components/ui/badge";
 import { Chevron } from "../../components/ui/chevron";
+import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { ProviderLogo } from "../../components/ui/provider-logo";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { EmptyState } from "../../components/ui/empty-state";
@@ -59,11 +61,13 @@ import { formatDateTime, humanizeTokens } from "../../lib/format";
 import {
   MODEL_PROVIDERS,
   catalogEntryFor,
+  modelHomepageUrl,
   providerInfo,
   resolveModelEnv,
 } from "@prismshadow/penguin-core/model-catalog";
 import type { ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
 import { groupModelRows, sameModelRef, userProviderInfo } from "./model-grouping";
+import { draftKey, loadDraft, saveDraft } from "../chat/draft-cache";
 import { syncRowsWithCatalog } from "./catalog-sync";
 
 /** Display currency follows the user setting (pricing is always stored in USD/million tokens; conversion happens only for display and input). */
@@ -301,6 +305,7 @@ export function ModelsPage() {
   const { currentProject } = useProject();
   const projectId = currentProject?.projectId ?? null;
   const isOwner = currentProject?.role === "owner";
+  const userId = useAuth().user?.userId ?? null;
 
   const [rows, setRows] = useState<RowState[] | null>(null);
   const [defaultModel, setDefaultModel] = useState<ModelRefDto | undefined>(undefined);
@@ -370,6 +375,13 @@ export function ModelsPage() {
       setRows(res.models.map(toRow));
       setDefaultModel(res.defaultModel);
       setVisionModel(res.visionModel);
+      // Default model changed: drop the stored draft's model selection so the draft chat
+      // follows the new default (a stored pick would otherwise pin the old model forever).
+      if (userId && res.defaultModel && !sameModelRef(res.defaultModel, defaultModel)) {
+        const key = draftKey(userId, projectId);
+        const draft = loadDraft(key);
+        if (draft.modelRef) saveDraft(key, { ...draft, modelRef: undefined });
+      }
       toastSuccess(successText ?? S.common.saved);
       return true;
     } catch (e) {
@@ -779,30 +791,51 @@ function ModelCard({
         : S.models.noKey,
   ].filter((v): v is string => v !== null);
 
+  const homepage = modelHomepageUrl(row.provider, row.modelId);
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className="flex w-full flex-col gap-0.5 rounded-md border border-gray-200 px-3 py-2.5 text-left transition-colors duration-150 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-800 dark:hover:border-gray-700 dark:hover:bg-gray-800/40"
-    >
-      <span className="flex flex-wrap items-center gap-1.5">
-        <span className="text-sm font-medium">{row.displayName ?? row.modelId}</span>
-        {isDefault && <Badge tone="brand">{S.models.default}</Badge>}
-        {row.vision && <Badge tone="green">{S.models.visionBadge}</Badge>}
-        {isVisionModel && <Badge tone="amber">{S.models.visionModelBadge}</Badge>}
-      </span>
-      {/* Upstream id in small text (grouping already separates by group, no composite id is
-          shown anymore); when there's no display name, the main line is already the
-          upstream id, so it isn't repeated on a second line. */}
-      {row.displayName !== undefined && (
-        <span className="truncate font-mono text-[11px] text-gray-500 dark:text-gray-400">
-          {row.modelId}
+    <div className="relative">
+      <button
+        type="button"
+        onClick={onOpen}
+        className="flex w-full flex-col gap-0.5 rounded-md border border-gray-200 px-3 py-2.5 text-left transition-colors duration-150 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-800 dark:hover:border-gray-700 dark:hover:bg-gray-800/40"
+      >
+        <span className={`flex flex-wrap items-center gap-1.5 ${homepage ? "pr-6" : ""}`}>
+          <span className="text-sm font-medium">{row.displayName ?? row.modelId}</span>
+          {isDefault && <Badge tone="brand">{S.models.default}</Badge>}
+          {row.vision && <Badge tone="green">{S.models.visionBadge}</Badge>}
+          {isVisionModel && <Badge tone="amber">{S.models.visionModelBadge}</Badge>}
         </span>
+        {/* Upstream id in small text (grouping already separates by group, no composite id is
+            shown anymore); when there's no display name, the main line is already the
+            upstream id, so it isn't repeated on a second line. */}
+        {row.displayName !== undefined && (
+          <span className="truncate font-mono text-[11px] text-gray-500 dark:text-gray-400">
+            {row.modelId}
+          </span>
+        )}
+        <span className="truncate text-[11px] text-gray-400 dark:text-gray-500">
+          {meta.join(" · ")}
+        </span>
+      </button>
+      {/* Model homepage link (top-right corner, a sibling of the card button — interactive
+          elements must not nest): gateway groups link to the model's own page, direct
+          vendors to the vendor's model docs; custom/user-defined groups have none. */}
+      {homepage && (
+        <a
+          href={homepage}
+          target="_blank"
+          rel="noreferrer"
+          title={S.models.homepage}
+          aria-label={`${S.models.homepage} ${row.modelId}`}
+          className="absolute right-1.5 top-1.5 rounded p-1 text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+        >
+          <GlyphIcon
+            d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3"
+            size={13}
+          />
+        </a>
       )}
-      <span className="truncate text-[11px] text-gray-400 dark:text-gray-500">
-        {meta.join(" · ")}
-      </span>
-    </button>
+    </div>
   );
 }
 
