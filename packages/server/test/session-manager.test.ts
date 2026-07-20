@@ -547,4 +547,48 @@ describe("session-manager", () => {
     await new Promise((r) => setTimeout(r, 10));
     expect(notified.length).toBe(1);
   });
+
+  it("fires title generation early once 1000 chars of body text have streamed (mid-run, before the Task finishes)", async () => {
+    const notified: { ctx: UsageContext; req: TitleRequest }[] = [];
+    // Gate the run after the big body text so the early trigger provably happens mid-run.
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const longSession: RuntimeSession = {
+      sessionId: "session-1",
+      toolPermission: () => "rw",
+      generateTitle: async () => ({ title: null, usage: null }),
+      compactability: () => "ok" as const,
+      async *run() {
+        yield assistantText("x".repeat(600));
+        // Sub-session text doesn't count toward the main-session body threshold.
+        yield withOrigin(assistantText("z".repeat(2000)), "session-sub");
+        yield assistantText("y".repeat(600)); // crosses the 1000-char threshold
+        await gate;
+        yield assistantText("tail");
+      },
+      async *compact() {},
+    };
+    const manager = new SessionManager({
+      sessions,
+      channels,
+      loader: loaderOf(longSession),
+      recorder: { record: async () => {} },
+      titles: {
+        maybeGenerate: (ctx, _session, req) => notified.push({ ctx, req }),
+      },
+      log: () => {},
+    });
+
+    await manager.startTask("session-1", [userText("long question")]);
+    // The early trigger fires while the run is still in flight (gated before completion).
+    await waitFor(() => notified.length === 1);
+    expect(manager.statusOf("session-1")).toBe("running");
+    expect(notified[0]!.req.fallbackText).toBe("long question");
+    expect(notified[0]!.req.material).toBeUndefined();
+
+    // Completion still notifies as the short-answer fallback path (the generator itself dedups).
+    release();
+    await waitFor(() => manager.statusOf("session-1") === "idle");
+    await waitFor(() => notified.length === 2);
+  });
 });
