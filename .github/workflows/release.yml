@@ -2,7 +2,7 @@
 # Releases are immutable: once published, assets can never be replaced. A tiny check-release
 # job therefore gates the release job on the tag's Release not existing yet — dispatching an
 # already-released tag skips the build/upload entirely and only re-runs npm publishing.
-# Two parallel jobs (after the existence check):
+# Two parallel jobs (the release job is gated on the existence check):
 # - release: build the monorepo -> pnpm deploy a production CLI dir -> assemble penguin/ (bin + lib + web)
 #   -> four platform packages each bundling the official Node runtime + a universal package -> SHA256 files -> upload to the Release.
 #   Artifacts: penguin-{linux,darwin}-{x64,arm64}.tar.gz, penguin-universal.tar.gz,
