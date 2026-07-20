@@ -11,10 +11,10 @@ import type { AppDeps } from "../../app.js";
 
 /** Validate the PUT request body and shape it into a VaultUpdateRequest (semantic checks like key-name rules live in the service layer). */
 function parseVaultUpdate(body: Record<string, unknown>): VaultUpdateRequest {
-  if (!Array.isArray(body.entries)) throw badRequest("entries 必须是数组。");
+  if (!Array.isArray(body.entries)) throw badRequest("entries must be an array.");
   const entries: VaultEntryUpdate[] = body.entries.map((item, i) => {
     if (item === null || typeof item !== "object" || Array.isArray(item)) {
-      throw badRequest(`entries[${i}] 必须是对象。`);
+      throw badRequest(`entries[${i}] must be an object.`);
     }
     const e = item as Record<string, unknown>;
     const entry: VaultEntryUpdate = {
@@ -22,7 +22,7 @@ function parseVaultUpdate(body: Record<string, unknown>): VaultUpdateRequest {
     };
     if (e.value !== undefined) {
       if (typeof e.value !== "string" || e.value.length === 0) {
-        throw badRequest(`entries[${i}].value 必须是非空字符串。`);
+        throw badRequest(`entries[${i}].value must be a non-empty string.`);
       }
       entry.value = e.value;
     }

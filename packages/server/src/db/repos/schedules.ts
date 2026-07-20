@@ -114,7 +114,7 @@ export class SchedulesRepo {
         .run(args.defHash, args.projectId, args.agentId, args.name);
     }
     const row = this.find(args.projectId, args.agentId, args.name);
-    if (!row) throw new Error("schedule_state 登记后读取失败");
+    if (!row) throw new Error("Failed to read back schedule_state after registration");
     return { row, fresh };
   }
 

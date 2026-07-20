@@ -364,7 +364,7 @@ export class ProjectConfigService {
       const key = refKey(entry.provider, entry.modelId);
       if (seen.has(key)) {
         throw badRequest(
-          `models 中存在重复的模型引用：${showRef(entry.provider, entry.modelId)}。`,
+          `models contains a duplicate model reference: ${showRef(entry.provider, entry.modelId)}.`,
         );
       }
       seen.add(key);
@@ -436,7 +436,7 @@ export class ProjectConfigService {
     if (req.defaultModel !== undefined) {
       if (!seen.has(refKey(req.defaultModel.provider, req.defaultModel.modelId))) {
         throw badRequest(
-          `defaultModel 必须包含在 models 内：${showRef(req.defaultModel.provider, req.defaultModel.modelId)}。`,
+          `defaultModel must be included in models: ${showRef(req.defaultModel.provider, req.defaultModel.modelId)}.`,
         );
       }
       defaultModel = req.defaultModel;
@@ -459,12 +459,12 @@ export class ProjectConfigService {
     if (req.visionModel !== undefined) {
       if (!seen.has(refKey(req.visionModel.provider, req.visionModel.modelId))) {
         throw badRequest(
-          `visionModel 必须包含在 models 内：${showRef(req.visionModel.provider, req.visionModel.modelId)}。`,
+          `visionModel must be included in models: ${showRef(req.visionModel.provider, req.visionModel.modelId)}.`,
         );
       }
       if (targetOf(req.visionModel)?.vision === false) {
         throw badRequest(
-          `visionModel 不能指向标注为不支持图片的模型：${showRef(req.visionModel.provider, req.visionModel.modelId)}。`,
+          `visionModel must not point to a model annotated as not supporting images: ${showRef(req.visionModel.provider, req.visionModel.modelId)}.`,
         );
       }
       visionModel = req.visionModel;

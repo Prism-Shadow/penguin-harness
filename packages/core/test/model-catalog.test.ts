@@ -14,7 +14,7 @@ import {
 } from "../src/state/index.js";
 
 describe("model-catalog", () => {
-  it("model id 全局唯一；DeepSeek 排在最前（默认模型所属厂商）", () => {
+  it("model ids are globally unique; DeepSeek comes first (the default model's provider)", () => {
     const ids = MODEL_CATALOG.map((m) => m.modelId);
     expect(new Set(ids).size).toBe(ids.length);
     expect(MODEL_CATALOG[0]!.provider).toBe("deepseek");
@@ -36,7 +36,7 @@ describe("model-catalog", () => {
     expect(ids).not.toContain("glm-5-turbo");
   });
 
-  it("provider 均在 MODEL_PROVIDERS 内（custom 仅收拢自定义模型，目录不使用）", () => {
+  it("every provider is in MODEL_PROVIDERS (custom only groups user-defined models; the catalog never uses it)", () => {
     const providerIds = new Set(MODEL_PROVIDERS.map((p) => p.id));
     for (const m of MODEL_CATALOG) {
       expect(providerIds.has(m.provider)).toBe(true);
@@ -61,7 +61,7 @@ describe("model-catalog", () => {
     }
   });
 
-  it("三桶价格均为正数，context_window 为正整数", () => {
+  it("all three price buckets are positive; context_window is a positive integer", () => {
     for (const m of MODEL_CATALOG) {
       expect(m.pricing, m.modelId).toBeDefined();
       expect(m.pricing!.unit).toBe("usd_per_mtok");
@@ -73,12 +73,12 @@ describe("model-catalog", () => {
     }
   });
 
-  it("providerInfo 按 id 命中，未知返回 undefined", () => {
+  it("providerInfo matches by id; unknown ids return undefined", () => {
     expect(providerInfo("moonshot")?.envKey).toBe("MOONSHOT_API_KEY");
     expect(providerInfo("nonexistent")).toBeUndefined();
   });
 
-  it("成对匹配与分组推断：catalogEntryFor / inferProviderForUpstream", () => {
+  it("pair matching and provider-grouping inference: catalogEntryFor / inferProviderForUpstream", () => {
     // catalogEntryFor is the sole catalog lookup entry point: it matches on (group, upstream id)
     // pairs, so an identically named upstream id never matches across the wrong group.
     expect(catalogEntryFor("anthropic", "claude-sonnet-4-6")?.displayName).toBe(
@@ -95,7 +95,7 @@ describe("model-catalog", () => {
     expect(inferProviderForUpstream("my-own-model")).toBe("custom");
   });
 
-  it("presetModelEntries：provider 与纯上游 model_id 分列；网关模型内联 base_url", () => {
+  it("presetModelEntries: provider and bare upstream model_id are separate fields; gateway models inline base_url", () => {
     const entries = presetModelEntries();
     expect(entries).toHaveLength(MODEL_CATALOG.length);
     for (const [i, entry] of entries.entries()) {
@@ -115,7 +115,7 @@ describe("model-catalog", () => {
     }
   });
 
-  it("网关模型（OpenRouter / SiliconFlow）：openai 协议 + 预置 base URL；env 兜底为 OPENAI_API_KEY", () => {
+  it("gateway models (OpenRouter / SiliconFlow): openai protocol + preset base URL; env fallback is OPENAI_API_KEY", () => {
     const or = MODEL_CATALOG.filter((m) => m.provider === "openrouter");
     expect(or.map((m) => m.modelId)).toEqual([
       "xiaomi/mimo-v2.5",
@@ -164,7 +164,7 @@ describe("model-catalog", () => {
     );
   });
 
-  it("DeepSeek 与 Kimi 按官方人民币价初始化（存储美元，×7 还原官方原价）", () => {
+  it("DeepSeek and Kimi are initialized from official CNY prices (stored in USD; x7 recovers the official price)", () => {
     const cnyOf = (usdV: number) => Math.round(usdV * 7 * 1000) / 1000;
     const pro = MODEL_CATALOG.find((m) => m.modelId === "deepseek-v4-pro")!.pricing!;
     expect([cnyOf(pro.cache_read), cnyOf(pro.cache_write), cnyOf(pro.output)]).toEqual([
@@ -177,8 +177,8 @@ describe("model-catalog", () => {
   });
 });
 
-describe("resolveModelEnv（PRN-021：env 兜底按 AgentHub 路由规则解析）", () => {
-  it("一方厂商 id 按子串路由到厂商客户端的环境变量", () => {
+describe("resolveModelEnv (PRN-021: env fallback resolved by AgentHub routing rules)", () => {
+  it("first-party provider ids route by substring to the provider client's env var", () => {
     expect(resolveModelEnv("deepseek-v4-pro")?.envKey).toBe("DEEPSEEK_API_KEY");
     expect(resolveModelEnv("claude-opus-4-8")?.envKey).toBe("ANTHROPIC_API_KEY");
     expect(resolveModelEnv("claude-sonnet-4-6")?.envKey).toBe("ANTHROPIC_API_KEY");
@@ -188,17 +188,17 @@ describe("resolveModelEnv（PRN-021：env 兜底按 AgentHub 路由规则解析�
     expect(resolveModelEnv("kimi-k2.6")?.envBaseUrlKey).toBe("MOONSHOT_BASE_URL");
   });
 
-  it("显式 client_type 优先于 id：openai 协议一律 OPENAI_*（与分组无关）", () => {
+  it("explicit client_type beats id: the openai protocol always uses OPENAI_* (independent of grouping)", () => {
     expect(resolveModelEnv("deepseek-v4-pro", "openai")?.envKey).toBe("OPENAI_API_KEY");
     expect(resolveModelEnv("zai-org/GLM-5.2", "openai")?.envKey).toBe("OPENAI_API_KEY");
   });
 
-  it("无法路由的 id 返回 undefined（AgentHub 会拒绝，需显式 client_type 或 OpenAI 协议分组）", () => {
+  it("unroutable ids return undefined (AgentHub would reject; needs explicit client_type or an OpenAI-protocol grouping)", () => {
     expect(resolveModelEnv("totally-unknown-model")).toBeUndefined();
     expect(resolveModelEnv("xiaomi/mimo-v2.5")).toBeUndefined();
   });
 
-  it("目录不变式：无 client_type 的条目按 id 可路由且 envKey 与厂商一致；网关条目经 client_type 解析为 OPENAI_*", () => {
+  it("catalog invariant: entries without client_type route by id with envKey matching the provider; gateway entries resolve to OPENAI_* via client_type", () => {
     for (const m of MODEL_CATALOG) {
       const env = resolveModelEnv(m.modelId, m.clientType);
       expect(env, `${m.provider}/${m.modelId}`).toBeDefined();

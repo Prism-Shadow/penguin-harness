@@ -40,12 +40,14 @@ test("a malformed tool_call settles unpaired; the retry line shows and the retry
   const sessionId = sess.session.sessionId;
 
   await page.goto(`${BASE}/chat/${sessionId}`);
-  await page.getByPlaceholder(/输入消息/).fill("坏流测试");
+  await page.getByPlaceholder(/输入消息/).fill("bad stream test");
   await page.getByRole("button", { name: "发送" }).click();
 
   // The retried exec_command finishes → final answer, proving the retry and the following
   // tool call complete normally.
-  await expect(page.getByText("命令已执行完成，结果符合预期。")).toBeVisible({ timeout: 20000 });
+  await expect(page.getByText("Command finished; the result looks as expected.")).toBeVisible({
+    timeout: 20000,
+  });
 
   // Retry hint line: set to "retry attempt 1 started" once request_begin arrives.
   await expect(page.getByText(/已发起第 1 次重试/)).toBeVisible();

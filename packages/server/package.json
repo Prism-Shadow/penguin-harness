@@ -2,7 +2,7 @@
   "name": "@prismshadow/penguin-server",
   "version": "0.0.1",
   "type": "module",
-  "description": "PenguinHarness Web 服务端：多用户认证与授权、Session 运行与 SSE 流式通道、用量统计，引用 @prismshadow/penguin-core。",
+  "description": "PenguinHarness web server: multi-user authentication and authorization, Session execution with SSE streaming, and usage accounting, built on @prismshadow/penguin-core.",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",

@@ -188,7 +188,7 @@ describe("agent.resumeSession", () => {
   it("errors when the session does not exist", async () => {
     const agent = await createAgent({});
     await expect(agent.resumeSession({ sessionId: "session-none" })).rejects.toThrow(
-      /Session 不存在/,
+      /Session does not exist/,
     );
   });
 
@@ -196,7 +196,9 @@ describe("agent.resumeSession", () => {
     const agent = await createAgent({});
     const gone = path.join(workspace, "gone");
     await writeTraceFile(tmpRoot, SID, [metaFor(SID, gone), userText("x")]);
-    await expect(agent.resumeSession({ sessionId: SID })).rejects.toThrow(/Workspace 已不存在/);
+    await expect(agent.resumeSession({ sessionId: SID })).rejects.toThrow(
+      /Workspace no longer exists/,
+    );
   });
 
   it("errors when the recorded model is no longer in the project config", async () => {
@@ -205,7 +207,9 @@ describe("agent.resumeSession", () => {
       metaFor(SID, workspace, { provider: "custom", model_id: "vanished-model" }),
       userText("x"),
     ]);
-    await expect(agent.resumeSession({ sessionId: SID })).rejects.toThrow(/不在 Project 配置/);
+    await expect(agent.resumeSession({ sessionId: SID })).rejects.toThrow(
+      /is not in the Project config/,
+    );
   });
 
   it("errors clearly when session_meta lacks provider (old-format trace, no migration)", async () => {
@@ -214,7 +218,7 @@ describe("agent.resumeSession", () => {
     const legacy = metaFor(SID, workspace);
     delete (legacy.payload as { provider?: string }).provider;
     await writeTraceFile(tmpRoot, SID, [legacy, userText("x")]);
-    await expect(agent.resumeSession({ sessionId: SID })).rejects.toThrow(/旧版本/);
+    await expect(agent.resumeSession({ sessionId: SID })).rejects.toThrow(/legacy data/);
   });
 
   it("latestSessionId returns the newest session by embedded timestamp", async () => {

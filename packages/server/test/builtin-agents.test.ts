@@ -21,7 +21,7 @@ interface ProjectCreateResponse {
   project: { projectId: string };
 }
 
-describe("内置 Agent 供给", () => {
+describe("built-in Agent provisioning", () => {
   let t: TestApp;
   let owner: ReturnType<typeof apiClient>;
 
@@ -61,19 +61,19 @@ describe("内置 Agent 供给", () => {
     expect(defaultMd).toBe("");
   }
 
-  it("建号时的初始 Project 自带 default_agent", async () => {
+  it("the initial Project created at account setup comes with default_agent", async () => {
     const projects = (await (await owner.get("/api/projects")).json()) as ProjectsResponse;
     await expectBuiltinAgents(projects.projects[0]!.projectId);
   });
 
-  it("新建 Project 同样自带 default_agent", async () => {
+  it("a newly created Project also comes with default_agent", async () => {
     const created = (await (
-      await owner.post("/api/projects", { projectId: "owner1-new", name: "新项目" })
+      await owner.post("/api/projects", { projectId: "owner1-new", name: "New project" })
     ).json()) as ProjectCreateResponse;
     await expectBuiltinAgents(created.project.projectId);
   });
 
-  it("default_agent 附带示例 Benchmark：GET /benchmarks 可读（3 evaluations、runs=2、summary 存在）", async () => {
+  it("default_agent ships a sample Benchmark readable via GET /benchmarks", async () => {
     const projects = (await (await owner.get("/api/projects")).json()) as ProjectsResponse;
     const projectId = projects.projects[0]!.projectId;
     const res = await owner.get(`/api/projects/${projectId}/agents/default_agent/benchmarks`);
@@ -102,14 +102,14 @@ describe("内置 Agent 供给", () => {
     expect(scores).toEqual([...scores].sort((a, b) => a - b));
   });
 
-  it("default_agent 不可删除（409）", async () => {
+  it("default_agent cannot be deleted (409)", async () => {
     const projects = (await (await owner.get("/api/projects")).json()) as ProjectsResponse;
     const projectId = projects.projects[0]!.projectId;
     const res = await owner.delete(`/api/projects/${projectId}/agents/default_agent`);
     expect(res.status).toBe(409);
   });
 
-  it("agent_creator 等旧专用 id 不再受内置保护：可自建、可删除", async () => {
+  it("legacy ids like agent_creator lose built-in protection: creatable, deletable", async () => {
     const projects = (await (await owner.get("/api/projects")).json()) as ProjectsResponse;
     const projectId = projects.projects[0]!.projectId;
     const created = await owner.post(`/api/projects/${projectId}/agents`, {

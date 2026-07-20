@@ -873,7 +873,7 @@ describe("translateEvents", () => {
   });
 });
 
-describe("EventTranslator.finishInterrupted (PRN-012 结构闭合)", () => {
+describe("EventTranslator.finishInterrupted (PRN-012 structural closure)", () => {
   it("closes an open text segment with a stop + complete text marked with the interruption reason, and emits no token_usage", () => {
     const tr = new EventTranslator();
     const out: OmniMessage[] = [];
@@ -1196,7 +1196,7 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
     expect(messages).toHaveLength(0);
   });
 
-  it("中断落在消费者挂起于 yield 期间：立即以 aborted 收尾，绝不再去拉已被 abort 的上游", async () => {
+  it("interrupt lands while the consumer is suspended at yield: finish immediately as aborted, never pull the already-aborted upstream again", async () => {
     // This is exactly the cause of "the session hangs forever after interrupting it in the
     // browser": when the user interrupts, this generator is usually suspended at `yield`
     // (the engine is blocked on `await approve(tc)` waiting for manual approval). onUserAbort
@@ -1462,13 +1462,13 @@ describe("flushText signature parity (PR #39 review)", () => {
   });
 });
 
-describe("tool_call_id 唯一化（name-as-id provider，如 Gemini 以函数名当 id）", () => {
+describe("tool_call_id uniquification (name-as-id providers, e.g. Gemini uses the function name as the id)", () => {
   const callIdsOf = (messages: OmniMessage[]): string[] =>
     messages
       .filter((m) => (m.payload as { type: string }).type === "tool_call")
       .map((m) => (m.payload as ToolCallPayload).tool_call_id);
 
-  it("同一 Request 内重复 id 的第二个完整 tool_call 不被丢弃，且分到 #2 后缀", () => {
+  it("the second complete tool_call with a duplicate id within one Request is not dropped and gets the #2 suffix", () => {
     const { messages } = translateEvents([
       ev({
         event_type: "stop",
@@ -1498,7 +1498,7 @@ describe("tool_call_id 唯一化（name-as-id provider，如 Gemini 以函数名
     expect(calls.every((c) => c.stop_reason === "completed")).toBe(true);
   });
 
-  it("不同 id 的并行调用不受影响（原样透传，无后缀）", () => {
+  it("parallel calls with distinct ids are unaffected (passed through as-is, no suffix)", () => {
     const { messages } = translateEvents([
       ev({
         event_type: "stop",
@@ -1513,7 +1513,7 @@ describe("tool_call_id 唯一化（name-as-id provider，如 Gemini 以函数名
     expect(callIdsOf(messages)).toEqual(["get_time", "get_weather", "get_time#2"]);
   });
 
-  it("跨 Request 共享登记表：下一轮同名调用分到新后缀（前端工具卡不再互相覆盖）", () => {
+  it("the registry is shared across Requests: a same-name call in the next round gets a new suffix (frontend tool cards no longer overwrite each other)", () => {
     const ids = new ToolCallIdAllocator();
     const round = (city: string): string[] => {
       const translator = new EventTranslator(ids);
@@ -1534,7 +1534,7 @@ describe("tool_call_id 唯一化（name-as-id provider，如 Gemini 以函数名
     expect(round("NYC")).toEqual(["get_time#3"]);
   });
 
-  it("跨 Request 撞车时，partial 片段与完整消息用同一个带后缀 id", () => {
+  it("on a cross-Request collision, partial fragments and the complete message use the same suffixed id", () => {
     const ids = new ToolCallIdAllocator();
     ids.markUsed("exec"); // this provider id was already taken in the previous turn
     const translator = new EventTranslator(ids);
@@ -1576,7 +1576,7 @@ describe("tool_call_id 唯一化（name-as-id provider，如 Gemini 以函数名
     expect(callIdsOf(out)).toEqual(["exec#2"]);
   });
 
-  it("出站还原：tool_call / tool_call_output 的 #n 后缀发往 provider 前剥掉，无后缀原样", () => {
+  it("outbound restoration: the #n suffix on tool_call / tool_call_output is stripped before sending to the provider; unsuffixed ids pass as-is", () => {
     const result = mergeOmniToUniMessage([
       toolCallOutput({ output: "10:00", toolCallId: "get_time#2" }),
     ]);
@@ -1595,7 +1595,7 @@ describe("tool_call_id 唯一化（name-as-id provider，如 Gemini 以函数名
     );
   });
 
-  it("stripToolCallIdSuffix 只剥结尾的 #数字（幂等，不误伤中缀）", () => {
+  it("stripToolCallIdSuffix only strips a trailing #digits (idempotent, never touches an infix)", () => {
     expect(stripToolCallIdSuffix("get_time#2")).toBe("get_time");
     expect(stripToolCallIdSuffix("get_time#12")).toBe("get_time");
     expect(stripToolCallIdSuffix("get_time")).toBe("get_time");
@@ -1603,7 +1603,7 @@ describe("tool_call_id 唯一化（name-as-id provider，如 Gemini 以函数名
     expect(stripToolCallIdSuffix("a#x")).toBe("a#x");
   });
 
-  it("ToolCallIdAllocator：探测跳过已占用后缀；markUsed 播种生效", () => {
+  it("ToolCallIdAllocator: probing skips occupied suffixes; markUsed seeding takes effect", () => {
     const ids = new ToolCallIdAllocator();
     ids.markUsed("t");
     ids.markUsed("t#2");
@@ -1612,7 +1612,7 @@ describe("tool_call_id 唯一化（name-as-id provider，如 Gemini 以函数名
     expect(ids.allocate("u")).toBe("u#2");
   });
 
-  it("恢复播种：setHistory 后新的同名调用不与历史撞 id", async () => {
+  it("resume seeding: after setHistory, new same-name calls do not collide with historical ids", async () => {
     class SeedModel extends GenerativeModel {
       constructor() {
         super({ modelId: "claude-sonnet-4-6", tools: [] });

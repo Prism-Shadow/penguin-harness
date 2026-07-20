@@ -78,10 +78,10 @@ export async function loginUser(
     body: JSON.stringify({ userId, password }),
   });
   if (res.status !== 200) {
-    throw new Error(`登录失败: ${res.status} ${await res.text()}`);
+    throw new Error(`Login failed: ${res.status} ${await res.text()}`);
   }
   const setCookie = res.headers.get("set-cookie");
-  if (!setCookie) throw new Error("登录响应缺少 set-cookie");
+  if (!setCookie) throw new Error("Login response is missing set-cookie");
   const body = (await res.json()) as { user: UserInfo };
   return { cookie: setCookie.split(";")[0]!, user: body.user };
 }
@@ -101,7 +101,7 @@ export async function provisionUser(
   const admin = await loginAdmin(app);
   const res = await apiClient(app, admin.cookie).post("/api/admin/users", { userId, password });
   if (res.status !== 201) {
-    throw new Error(`建号失败: ${res.status} ${await res.text()}`);
+    throw new Error(`Account creation failed: ${res.status} ${await res.text()}`);
   }
   return loginUser(app, userId, password);
 }
@@ -147,7 +147,7 @@ export async function writeTraceFile(
 export async function waitFor(cond: () => boolean, timeoutMs = 2000): Promise<void> {
   const start = Date.now();
   while (!cond()) {
-    if (Date.now() - start > timeoutMs) throw new Error("waitFor 超时");
+    if (Date.now() - start > timeoutMs) throw new Error("waitFor timed out");
     await new Promise((r) => setTimeout(r, 5));
   }
 }

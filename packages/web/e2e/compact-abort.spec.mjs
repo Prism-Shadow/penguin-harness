@@ -56,7 +56,7 @@ test("aborting before any turn completes: /compact says so instead of doing noth
   await page.goto(`${BASE}/chat/${sessionId}`);
   const ta = page.getByPlaceholder(/输入消息/);
   await ta.waitFor();
-  await ta.fill("帮我配置 @theme");
+  await ta.fill("Help me set up @theme");
   await page.getByRole("button", { name: "发送" }).click();
   // Wait for the approval to be pending before aborting: at this point the LLM stream has
   // already finished sending, the engine is blocked on `await approve(tc)`, and the generator is
@@ -86,8 +86,8 @@ test("aborting before any turn completes: /compact says so instead of doing noth
   await ta.press("Enter");
 
   // There must be feedback — silently doing nothing is exactly the bug being tested for.
-  await expect(page.getByRole("button", { name: /没有可压缩的内容/ })).toBeVisible();
-  expect(nativeDialogs, "反馈必须走应用内轻提示，不得回退到原生 alert").toHaveLength(0);
+  await expect(page.getByRole("button", { name: /nothing to compact/ })).toBeVisible();
+  expect(nativeDialogs, "feedback must be an in-app toast, not a native alert").toHaveLength(0);
   // And indeed no compaction was started (no banner).
   await expect(page.getByText(/\[压缩\]/)).toHaveCount(0);
 });
@@ -123,9 +123,9 @@ test("compacting twice in a row: says the context was just compacted, not that n
   await page.goto(`${BASE}/chat/${sess.session.sessionId}`);
   const ta = page.getByPlaceholder(/输入消息/);
   await ta.waitFor();
-  await ta.fill("帮我配置 @theme");
+  await ta.fill("Help me set up @theme");
   await page.getByRole("button", { name: "发送" }).click();
-  await expect(page.getByText("命令已执行完成，结果符合预期。")).toBeVisible();
+  await expect(page.getByText("Command finished; the result looks as expected.")).toBeVisible();
 
   const nativeDialogs = [];
   page.on("dialog", (d) => {
@@ -137,14 +137,20 @@ test("compacting twice in a row: says the context was just compacted, not that n
   await ta.fill("/compact");
   await ta.press("Enter");
   await expect(page.getByText(/\[压缩\]/)).toBeVisible();
-  await expect(page.getByRole("button", { name: /压缩/ })).toHaveCount(0);
+  // No compact-unavailable toast (match the 409 reasons, not bare "compact" — usernames like
+  // "dblcompact" would collide).
+  await expect(
+    page.getByRole("button", { name: /compaction configured|nothing to compact|just compacted/ }),
+  ).toHaveCount(0);
 
   // Second /compact: there's no conversation yet in the new context -> tell the user clearly, and the wording must match reality.
   await ta.fill("/compact");
   await ta.press("Enter");
-  await expect(page.getByRole("button", { name: /刚压缩过/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /just compacted/ })).toBeVisible();
   // Having just finished a full round, saying "no completed conversation round yet" would be absurd.
-  await expect(page.getByRole("button", { name: /尚无已完成的对话轮次/ })).toHaveCount(0);
-  expect(nativeDialogs, "反馈必须走应用内轻提示，不得回退到原生 alert").toHaveLength(0);
+  await expect(
+    page.getByRole("button", { name: /no completed conversation turns yet/ }),
+  ).toHaveCount(0);
+  expect(nativeDialogs, "feedback must be an in-app toast, not a native alert").toHaveLength(0);
   await expect(page.getByText(/\[压缩\]/)).toHaveCount(1); // no second compaction banner
 });

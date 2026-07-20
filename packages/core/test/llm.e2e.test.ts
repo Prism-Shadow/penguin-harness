@@ -77,9 +77,9 @@ describe(`GenerativeModel live e2e (${provider?.modelId ?? "skipped"})`, () => {
 const runGemini = process.env.PENGUIN_E2E === "1" && process.env.GEMINI_API_KEY !== undefined;
 const maybeGemini = runGemini ? it : it.skip;
 
-describe(`GenerativeModel live e2e (gemini-3.5-flash: tool_call_id 唯一化${runGemini ? "" : "，skipped"})`, () => {
+describe(`GenerativeModel live e2e (gemini-3.5-flash: tool_call_id uniquification${runGemini ? "" : ", skipped"})`, () => {
   maybeGemini(
-    "连续两轮同名工具调用拿到不同 tool_call_id；带后缀 id 的 tool_result 回传被正确配对",
+    "same-name tool calls in two consecutive rounds get distinct tool_call_ids; a tool_result sent back with a suffixed id is paired correctly",
     async () => {
       const model = new GenerativeModel({
         modelId: "gemini-3.5-flash",

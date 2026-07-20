@@ -54,7 +54,7 @@ export function resolveServerConfig(env: NodeJS.ProcessEnv = process.env): Serve
   // port; this matches the CLI's resolvePort convention.
   const port = Number(env.PORT || 7364);
   if (!Number.isInteger(port) || port < 0 || port > 65535) {
-    throw new Error(`非法端口配置 PORT=${env.PORT}`);
+    throw new Error(`Invalid port configuration PORT=${env.PORT}`);
   }
   return {
     root,

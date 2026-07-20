@@ -36,13 +36,13 @@ function req(cr: number, cw: number, o: number): TokenUsagePayload {
 }
 
 describe("TaskStatsTracker", () => {
-  it("无 token_usage 的 Task 不产出统计行，但用时仍累计", () => {
+  it("a Task without token_usage produces no stats row, but elapsed time still accumulates", () => {
     const t = createTaskStatsTracker();
     expect(endTask(t, 500)).toBeNull();
     expect(t.sessionElapsedMs).toBe(500);
   });
 
-  it("上下文/Token/用时三项均为累计值 + 增量", () => {
+  it("context/Token/elapsed each report a cumulative value + delta", () => {
     const t = createTaskStatsTracker();
     trackMainUsage(t, usage(1000, 1000));
     const s1 = endTask(t, 2300);
@@ -72,7 +72,7 @@ describe("TaskStatsTracker", () => {
     });
   });
 
-  it("分桶用量按本 Task 累加（父 + 子），供成本折算；跨 Task 重置", () => {
+  it("bucketed usage accumulates per Task (parent + child) for cost conversion; resets across Tasks", () => {
     const t = createTaskStatsTracker();
     const buckets = (cr: number, cw: number, o: number, total: number): TokenUsagePayload => ({
       type: "token_usage",
@@ -89,7 +89,7 @@ describe("TaskStatsTracker", () => {
     expect(s2?.tokensByBucket).toEqual({ cacheRead: 20, cacheWrite: 2, output: 1 });
   });
 
-  it("输出 TPS = 本 Task 主会话输出 ÷ LLM 秒数", () => {
+  it("output TPS = this Task's main-session output ÷ LLM seconds", () => {
     const t = createTaskStatsTracker();
     // No LLM timing (no request pairing) -> TPS is null, avoiding a divide-by-zero.
     trackMainUsage(t, req(300, 100, 200));
@@ -106,7 +106,7 @@ describe("TaskStatsTracker", () => {
     expect(endTask(t, 100)?.outputTps).toBe(300);
   });
 
-  it("子会话用量计入 Token 累计与增量，不影响上下文", () => {
+  it("child-session usage counts toward the Token cumulative and delta, without affecting context", () => {
     const t = createTaskStatsTracker();
     trackMainUsage(t, usage(1000, 1000));
     trackSubagentUsage(t, usage(400, 400));
@@ -117,7 +117,7 @@ describe("TaskStatsTracker", () => {
     expect(t.subagentTotal).toBe(400); // persists across Tasks
   });
 
-  it("轮**结束后**的压缩（挂起后未落实）：Token / 成本 / 上下文都不沾，只累进会话总数", () => {
+  it("compaction **after** the round ends (pending, never committed): Token / cost / context untouched, only the session total advances", () => {
     const t = createTaskStatsTracker();
     trackMainUsage(t, usage(1000, 1000));
     beginCompaction(t);
@@ -130,7 +130,7 @@ describe("TaskStatsTracker", () => {
     expect(endTask(t, 100)?.tokensDelta).toBe(1000);
   });
 
-  it("轮**途中**的压缩（commitPendingCompaction 落实）：Token / 成本计入本轮，但不进上下文 / TPS", () => {
+  it("**mid-round** compaction (committed via commitPendingCompaction): Token / cost count toward the round, but not context / TPS", () => {
     const t = createTaskStatsTracker();
     trackMainUsage(t, req(200, 0, 100)); // own1: request 300 (cache 200 + output 100)
     beginCompaction(t);
@@ -149,7 +149,7 @@ describe("TaskStatsTracker", () => {
     expect(s?.outputTps).toBe(75);
   });
 
-  it("压缩成功后上下文占用标记过期（圆环画空，不停留在压缩前的旧值）；压缩被放弃则不置位", () => {
+  it("successful compaction marks context usage stale (the ring draws empty instead of holding the pre-compaction value); abandoned compaction does not set it", () => {
     // The ring reads usage **live**: once compaction succeeds, the old value no longer holds,
     // and the new usage isn't measurable until the next normal Request's token_usage arrives.
     // Without this flag, right after a user runs /compact the ring would still show "nearly
@@ -179,7 +179,7 @@ describe("TaskStatsTracker", () => {
     expect(t2.contextNow).toBe(120_000);
   });
 
-  it("resetTaskCounters 防止 Task 边界外用量误记入下一 Task", () => {
+  it("resetTaskCounters prevents usage outside the Task boundary from being misattributed to the next Task", () => {
     const t = createTaskStatsTracker();
     // Manual compaction (outside the Task boundary) consumes usage.
     beginCompaction(t);
@@ -195,7 +195,7 @@ describe("TaskStatsTracker", () => {
 });
 
 describe("formatTaskStats", () => {
-  it("口径为本轮用量「输入（已缓存）· 输出 · 输出 TPS」，取本 Task 三桶用量 + 本 Task TPS", () => {
+  it("the convention is this round's usage \"输入（已缓存）· 输出 · 输出 TPS\", taking this Task's three-bucket usage + this Task's TPS", () => {
     expect(
       formatTaskStats({
         context: 40000, // context usage isn't in the stats row (shown by the input-box ring instead)
@@ -210,7 +210,7 @@ describe("formatTaskStats", () => {
     ).toBe("[统计信息] 输入 tokens 4k（已缓存 3k） · 输出 tokens 1.2k · 42.5 tok/s");
   });
 
-  it("无 LLM 计时时 TPS 显示 —", () => {
+  it("TPS shows — without LLM timing", () => {
     expect(
       formatTaskStats({
         context: 500,

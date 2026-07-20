@@ -54,7 +54,7 @@ describe("usage-recorder", () => {
   });
   afterEach(() => db.close());
 
-  it("token_usage → 一行记录（request 桶，只落 Token 不落成本）", async () => {
+  it("token_usage → one row (the request bucket; only Tokens persisted, never cost)", async () => {
     const rec = new UsageRecorder(repo);
     await rec.record(CTX, tokenUsage(counts(1000), counts(115)));
     const rows = db.prepare("SELECT * FROM usage_records").all();
@@ -67,7 +67,7 @@ describe("usage-recorder", () => {
     expect(row.cache_read).toBe(100);
   });
 
-  it("子会话 session_meta 登记 origin→model 映射；token_usage 按映射归因", async () => {
+  it("a sub-session's session_meta registers the origin→model mapping; token_usage is attributed via it", async () => {
     const rec = new UsageRecorder(repo);
     const childMeta = withOrigin(
       sessionMeta(meta("session-child", "child-model")),
@@ -81,20 +81,20 @@ describe("usage-recorder", () => {
     expect(row.model_id).toBe("child-model");
   });
 
-  it("origin 映射缺失时回退主 Session Model", async () => {
+  it("falls back to the main Session's Model when the origin mapping is missing", async () => {
     const rec = new UsageRecorder(repo);
     await rec.record(CTX, withOrigin(tokenUsage(counts(5), counts(5)), "session-unknown"));
     const row = db.prepare("SELECT model_id FROM usage_records").get()!;
     expect(row.model_id).toBe("main-model");
   });
 
-  it("非 token_usage 消息为 no-op", async () => {
+  it("non-token_usage messages are a no-op", async () => {
     const rec = new UsageRecorder(repo);
     await rec.record(CTX, sessionMeta(meta("session-main", "main-model")));
     expect(db.prepare("SELECT COUNT(*) AS n FROM usage_records").get()!.n).toBe(0);
   });
 
-  it("origin 映射有上限：超限淘汰最早登记项，被淘汰的回退主 Session Model", async () => {
+  it("the origin mapping is capped: past the limit the earliest entry is evicted and falls back to the main Session's Model", async () => {
     const rec = new UsageRecorder(repo);
     for (let i = 0; i <= ORIGIN_MODELS_MAX; i++) {
       // ORIGIN_MODELS_MAX + 1 entries total: the earliest, sub-0, gets evicted.
@@ -108,7 +108,7 @@ describe("usage-recorder", () => {
   });
 });
 
-describe("usage-service（成本实时折算）", () => {
+describe("usage-service (cost computed on the fly)", () => {
   let db: DatabaseSync;
   let repo: UsageRepo;
   let service: (now: Date) => UsageService;
@@ -148,7 +148,7 @@ describe("usage-service（成本实时折算）", () => {
     });
   }
 
-  it("汇总卡片：今日 / 近 7 天 / 累计；无 pricing 的 Model 标记 hasUncosted", async () => {
+  it("summary cards: today / last 7 days / cumulative; Models without pricing flag hasUncosted", async () => {
     const now = new Date("2026-07-06T10:00:00");
     const today = formatLocalDate(now);
     insert(today);
@@ -165,7 +165,7 @@ describe("usage-service（成本实时折算）", () => {
     expect(res.summary.last7d.hasUncosted).toBe(false);
   });
 
-  it("价格后补：插入时无 pricing，配置价格后再查询即计价", async () => {
+  it("price added later: no pricing at insert time; once configured, queries price it immediately", async () => {
     const now = new Date("2026-07-06T10:00:00");
     insert("2026-07-06", { modelId: "m-late" });
     const svc = service(now);
@@ -180,7 +180,7 @@ describe("usage-service（成本实时折算）", () => {
     expect(after.summary.total.hasUncosted).toBe(false);
   });
 
-  it("分组聚合：date 按日期倒序；agent/model/session 维度与 agentId 下钻；跨 Model 折叠", async () => {
+  it("group aggregation: date sorted descending; agent/model/session dimensions with agentId drill-down; folded across Models", async () => {
     const now = new Date("2026-07-06T10:00:00");
     pricing.m2 = { cacheRead: 1, cacheWrite: 1, output: 1 };
     insert("2026-07-05", { agentId: "a1", sessionId: "s1", modelId: "m1" });
@@ -206,7 +206,7 @@ describe("usage-service（成本实时折算）", () => {
     expect(other.groups).toEqual([]);
   });
 
-  it("from/to 过滤分组；趋势固定近 30 天窗口", async () => {
+  it("from/to filter the groups; the trend is a fixed 30-day window", async () => {
     const now = new Date("2026-07-06T10:00:00");
     insert("2026-07-06");
     insert("2026-06-20");
@@ -224,7 +224,7 @@ describe("usage-service（成本实时折算）", () => {
 
   // —— status → success-rate pipeline ——
 
-  it("成功率：completed / 非 aborted 请求，失败细分随行带出", async () => {
+  it("success rate: completed / non-aborted requests, with the failure breakdown carried along", async () => {
     const now = new Date("2026-07-06T10:00:00");
     for (let i = 0; i < 7; i++) insert("2026-07-06");
     insert("2026-07-06", { status: "failed", total: 0 });
@@ -243,7 +243,7 @@ describe("usage-service（成本实时折算）", () => {
     });
   });
 
-  it("回归：aborted（用户点「停止」）不是模型失败——不进分母，成功率不因中断下降", async () => {
+  it('regression: aborted (the user clicked "Stop") is not a model failure — excluded from the denominator, so interrupts never drag the success rate down', async () => {
     const now = new Date("2026-07-06T10:00:00");
     for (let i = 0; i < 8; i++) insert("2026-07-06");
     // The user clicked "Stop" twice: under the old accounting, the success rate would drop to 8/10 = 80%.
@@ -263,7 +263,7 @@ describe("usage-service（成本实时折算）", () => {
     expect(after.success.find((s) => s.modelId === "m1")!.total).toBe(9);
   });
 
-  it("成功率不受 model 过滤、仍受 agent 与日期过滤（图展示全部 Model）", async () => {
+  it("the success rate ignores the model filter but still honors agent and date filters (the chart shows all Models)", async () => {
     const now = new Date("2026-07-06T10:00:00");
     insert("2026-07-06", { modelId: "m1", agentId: "a1" });
     insert("2026-07-06", { modelId: "m2", agentId: "a2", status: "failed", total: 0 });

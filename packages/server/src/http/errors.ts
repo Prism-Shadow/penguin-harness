@@ -1,6 +1,6 @@
 /**
  * Unified HTTP error: `{error: {code, message}}` response body,
- * with message in Chinese.
+ * with message in English.
  *
  * Routes and services express business errors via throw HttpError; app-level onError
  * uniformly converges these into a JSON response, with unknown errors converged to 500
@@ -40,7 +40,7 @@ export function modelCredentialMissing(modelId: string): HttpError {
   return new HttpError(
     400,
     "model_credential_missing",
-    `模型 ${modelId} 还没有可用的 API key，请先在「模型」页为它配置。`,
+    `Model ${modelId} has no API key yet. Configure it on the Models page first.`,
   );
 }
 
@@ -50,6 +50,6 @@ export function handleError(err: Error, c: Context): Response {
     return c.json(errorBody(err.code, err.message), err.status as 400);
   }
   // Unknown error: print the stack for diagnosis, but never expose details externally.
-  console.error(`[server] 未处理异常: ${err.stack ?? err.message}`);
-  return c.json(errorBody("internal", "服务器内部错误。"), 500);
+  console.error(`[server] Unhandled exception: ${err.stack ?? err.message}`);
+  return c.json(errorBody("internal", "Internal server error."), 500);
 }

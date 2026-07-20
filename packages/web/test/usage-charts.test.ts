@@ -28,7 +28,7 @@ import {
 } from "../src/features/usage/chart-geom";
 
 describe("makeGeom", () => {
-  it("x 取每格中点、y 以 max 为满格自上而下", () => {
+  it("x takes each slot's midpoint; y runs top-down with max as full scale", () => {
     const g = makeGeom(2, 100, 640);
     // innerW=586, step=293; x=PAD_L(46)+step*i+step/2
     expect(g.w).toBe(640);
@@ -41,14 +41,14 @@ describe("makeGeom", () => {
     expect(g.y(50)).toBe(94);
   });
 
-  it("画布宽由调用方给（1 单位 = 1 像素）：内宽随之伸缩", () => {
+  it("canvas width comes from the caller (1 unit = 1 pixel): inner width scales with it", () => {
     const g = makeGeom(30, 100, 1554);
     expect(g.innerW).toBe(1500);
     expect(g.step).toBe(50);
     expect(g.x(0)).toBe(71); // 46 + 0 + 25 (unchanged, kept for reference)
   });
 
-  it("n=0 时 step 回退为整个内宽（不除零）", () => {
+  it("step falls back to the whole inner width when n=0 (no division by zero)", () => {
     expect(makeGeom(0, 1, 640).step).toBe(586);
   });
 });
@@ -56,15 +56,15 @@ describe("makeGeom", () => {
 describe("linePath / areaPath", () => {
   const g = makeGeom(2, 100, 640);
 
-  it("折线：M 起点 + 逐点 L（与旧成本折线一字不差）", () => {
+  it("line: M start + L per point (byte-identical to the old cost line)", () => {
     expect(linePath(g, [100, 0])).toBe("M192.5,10 L485.5,178");
   });
 
-  it("面积：折线末端落到基线、回到起点闭合", () => {
+  it("area: the line's end drops to the baseline and closes back at the start", () => {
     expect(areaPath(g, [100, 0])).toBe("M192.5,10 L485.5,178 L485.5,178 L192.5,178 Z");
   });
 
-  it("空序列返回空串", () => {
+  it("an empty series returns an empty string", () => {
     expect(areaPath(g, [])).toBe("");
   });
 });
@@ -73,7 +73,7 @@ describe("tokenBarLayout", () => {
   /** Bar width is real pixels, so inner width = container width - left/right padding: a 990 container has inner width 936. */
   const inner = (containerW: number) => containerW - PAD_L - PAD_R;
 
-  it("柱宽固定 25px：30 天在半格（495px）里塞不下 → 撑出超宽画布，横向滚动", () => {
+  it("fixed 25px bar width: 30 days do not fit a half row (495px) → an extra-wide canvas with horizontal scrolling", () => {
     const l = tokenBarLayout(495, 30);
     expect(l.barW).toBe(25);
     expect(l.barW).toBe(BAR_W);
@@ -83,7 +83,7 @@ describe("tokenBarLayout", () => {
     expect(l.scroll).toBe(true);
   });
 
-  it("塞不下时柱间距 = 柱宽：每格 = 2×柱宽，柱居格中 → 柱间空白正好一个柱宽", () => {
+  it("when they do not fit, bar gap = bar width: each slot = 2× bar width with the bar centered → exactly one bar width of space between bars", () => {
     const l = tokenBarLayout(495, 30);
     const g = makeGeom(30, 1, l.chartW);
     expect(g.step).toBe(2 * l.barW);
@@ -95,7 +95,7 @@ describe("tokenBarLayout", () => {
     expect(g.x(29) + l.barW / 2).toBeCloseTo(l.chartW - PAD_R - l.barW / 2);
   });
 
-  it("点数少：柱子**不撑宽**（25px 是固定值不是下限），富余空间全部让给柱间距", () => {
+  it("few points: bars do **not** widen (25px is fixed, not a floor); all slack goes into the gaps", () => {
     const l = tokenBarLayout(990, 7);
     expect(l.barW).toBe(BAR_W); // the old implementation would stretch it to 936/14 = 66.86px
     expect(l.chartW).toBe(990); // the canvas still fills the container: the slack goes into the bar gaps, not the right edge
@@ -108,7 +108,7 @@ describe("tokenBarLayout", () => {
     expect(gap).toBeGreaterThan(BAR_W);
   });
 
-  it("临界点：每格正好 50px 时铺满不滚动，再多一天就超宽 + 滚动（柱宽始终 25px）", () => {
+  it("boundary: exactly 50px per slot fills without scrolling; one more day means extra width + scrolling (bar width stays 25px)", () => {
     const exact = inner(990) / 50; // 18.72 days
     const fits = Math.floor(exact); // 18 days: inner width 936 >= 18x50 = 900
     expect(tokenBarLayout(990, fits)).toMatchObject({ barW: BAR_W, chartW: 990, scroll: false });
@@ -116,7 +116,7 @@ describe("tokenBarLayout", () => {
     expect(tokenBarLayout(990, fits + 1).chartW).toBe(PAD_L + 2 * BAR_W * 19 + PAD_R);
   });
 
-  it("整行容器 + 少量日点：柱宽仍是 25px（旧实现在这里胖到 ~180px）", () => {
+  it("full-row container + few day points: bar width stays 25px (the old implementation fattened to ~180px here)", () => {
     const l = tokenBarLayout(990, 3);
     expect(l.barW).toBe(25);
     expect(l.chartW).toBe(990);
@@ -125,12 +125,12 @@ describe("tokenBarLayout", () => {
 });
 
 describe("autoLabelIdx", () => {
-  it("每格够宽就逐日标（Token 柱图每格 ≥ 50px）", () => {
+  it("labels every day when slots are wide enough (Token bar chart slots ≥ 50px)", () => {
     expect(autoLabelIdx(30, 50)).toEqual(Array.from({ length: 30 }, (_, i) => i));
     expect(autoLabelIdx(7, 133)).toEqual([0, 1, 2, 3, 4, 5, 6]);
   });
 
-  it("格窄时按需隔格标，不糊在一起", () => {
+  it("narrow slots label every nth as needed, without smearing together", () => {
     expect(autoLabelIdx(30, 20)).toEqual([0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28]);
     expect(autoLabelIdx(30, 10)).toEqual([0, 4, 8, 12, 16, 20, 24, 28]);
     expect(autoLabelIdx(0, 50)).toEqual([]);
@@ -141,7 +141,7 @@ describe("barSegments", () => {
   // max=100, innerH=168: 1 unit of value = 1.68 canvas units; baseline y(0)=178.
   const g = makeGeom(30, 100, 640);
 
-  it("自底向上 output → cacheWrite → cacheRead，三段严丝合缝、总高 = 当日总量", () => {
+  it("bottom-up output → cacheWrite → cacheRead: three seamless segments whose total height = the day's total", () => {
     const segs = barSegments(g, { cacheRead: 50, cacheWrite: 30, output: 20 });
     expect(segs.map((s) => s.key)).toEqual(["output", "cacheWrite", "cacheRead"]);
     // output 20 sits on the baseline: 178 - 20*1.68 = 144.4
@@ -158,7 +158,7 @@ describe("barSegments", () => {
     expect(segs[1]!.y).toBeCloseTo(segs[2]!.y + segs[2]!.h);
   });
 
-  it("零值桶不出段（不画、也不该被 hover 到）；全零当日无段", () => {
+  it("zero-value buckets produce no segment (not drawn, not hoverable); an all-zero day has none", () => {
     expect(barSegments(g, { cacheRead: 10, cacheWrite: 0, output: 5 }).map((s) => s.key)).toEqual([
       "output",
       "cacheRead",
@@ -170,7 +170,7 @@ describe("barSegments", () => {
     expect(one[0]!.hitH).toBeCloseTo(g.y(0) - g.y(4));
   });
 
-  it("命中带铺满整根柱、互不重叠（自底向上首尾相接）", () => {
+  it("hit bands cover the whole bar without overlapping (bottom-up, end to end)", () => {
     const segs = barSegments(g, { cacheRead: 50, cacheWrite: 30, output: 20 });
     const base = g.y(0);
     const top = g.y(100);
@@ -181,7 +181,7 @@ describe("barSegments", () => {
     expect(segs.reduce((s, x) => s + x.hitH, 0)).toBeCloseTo(base - top);
   });
 
-  it("亚像素的小段：命中带抬到下限（否则 output 常不足 1%、根本 hover 不到），大段等比让出空间", () => {
+  it("sub-pixel small segments: the hit band is raised to the floor (output is often under 1% and otherwise unhoverable); large segments yield space proportionally", () => {
     // Realistic shape: cacheRead is 99%, output only 0.5% -> visual height under 1 unit.
     const segs = barSegments(g, { cacheRead: 99, cacheWrite: 0.5, output: 0.5 });
     const out = segs.find((s) => s.key === "output")!;
@@ -192,7 +192,7 @@ describe("barSegments", () => {
     expect(segs.reduce((s, x) => s + x.hitH, 0)).toBeCloseTo(g.y(0) - g.y(100));
   });
 
-  it("整根柱都矮于 k*minHit 时命中带等分（谁也挤不走谁）", () => {
+  it("when the whole bar is shorter than k*minHit, hit bands split evenly (nobody squeezes anybody out)", () => {
     const segs = barSegments(g, { cacheRead: 2, cacheWrite: 2, output: 2 });
     const total = g.y(0) - g.y(6); // 6 * 1.68 = 10.08 < 3 * 8
     for (const s of segs) expect(s.hitH).toBeCloseTo(total / 3);
@@ -200,7 +200,7 @@ describe("barSegments", () => {
 });
 
 describe("pieSlices", () => {
-  it("按值占比自 12 点顺时针排布：半圆的 arc 起于顶、止于底", () => {
+  it("laid out clockwise from 12 o'clock by value share: a half-circle arc starts at the top and ends at the bottom", () => {
     const [a, b] = pieSlices([1, 1], 50, 50, 40);
     expect(a!.frac).toBe(0.5);
     expect(a!.start).toBe(0);
@@ -212,19 +212,19 @@ describe("pieSlices", () => {
     expect(b!.path).toBe("M50,50 L50,90 A40,40 0 0 1 50,10 Z");
   });
 
-  it("跨过半圆的扇区置 large-arc=1", () => {
+  it("slices spanning more than a half circle set large-arc=1", () => {
     const [big] = pieSlices([3, 1], 50, 50, 40);
     expect(big!.frac).toBe(0.75);
     expect(big!.path).toBe("M50,50 L50,10 A40,40 0 1 1 10,50 Z");
   });
 
-  it("单个类别独占 100% 时退化为整圆（两段半圆 arc，A 指令首尾重合画不出东西）", () => {
+  it("a single category at 100% degenerates to a full circle (two half-circle arcs; an A command with coincident endpoints draws nothing)", () => {
     const [only] = pieSlices([7], 50, 50, 40);
     expect(only!.frac).toBe(1);
     expect(only!.path).toBe("M50,10 A40,40 0 1 1 50,90 A40,40 0 1 1 50,10 Z");
   });
 
-  it("非正值不出扇区（保留原下标供调用方回查名称/配色）；总量 ≤ 0 时为空", () => {
+  it("non-positive values produce no slice (original indexes kept so callers can look up names/colors); empty when the total ≤ 0", () => {
     const slices = pieSlices([5, 0, 5], 50, 50, 40);
     expect(slices.map((s) => s.index)).toEqual([0, 2]);
     expect(slices.map((s) => s.frac)).toEqual([0.5, 0.5]);
@@ -234,7 +234,7 @@ describe("pieSlices", () => {
 });
 
 describe("sparseLabelIdx", () => {
-  it("首/中/尾稀疏标注", () => {
+  it("sparse first/middle/last labeling", () => {
     expect(sparseLabelIdx(0)).toEqual([]);
     expect(sparseLabelIdx(1)).toEqual([0]);
     expect(sparseLabelIdx(2)).toEqual([0, 1]);
@@ -244,7 +244,7 @@ describe("sparseLabelIdx", () => {
 });
 
 describe("successRate", () => {
-  it("completed/total，无请求视为 1", () => {
+  it("completed/total; no requests counts as 1", () => {
     expect(successRate(99, 100)).toBeCloseTo(0.99);
     expect(successRate(5, 10)).toBe(0.5);
     expect(successRate(0, 0)).toBe(1);

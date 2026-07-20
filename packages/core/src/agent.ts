@@ -140,7 +140,7 @@ export class Agent {
     // credentials, pricing, and the context window would all be unavailable.
     if (opts.modelId === undefined && opts.provider !== undefined) {
       throw new Error(
-        "指定了 provider 却未指定 modelId：模型引用须成对给出（provider 不能单独使用）。",
+        "provider was specified without modelId: a model reference must be given as a pair (provider cannot be used alone).",
       );
     }
     let ref: ModelRef;
@@ -151,13 +151,13 @@ export class Agent {
       ref = this.projectConfig.default_model;
     } else {
       throw new Error(
-        "未指定 modelId，且 Project 配置中没有 default_model。请用 `penguin config model add/default` 设置默认模型。",
+        "No modelId was specified and the Project config has no default_model. Use `penguin config model add/default` to set the default model.",
       );
     }
     const modelEntry = getModel(this.projectConfig, ref);
     if (!modelEntry) {
       throw new Error(
-        `Model 不在 Project 配置中：${formatModelRef(ref)}。请用 \`penguin config model list\` 查看已配置的模型，或用 \`penguin config model add\` 添加。`,
+        `Model is not in the Project config: ${formatModelRef(ref)}. Use \`penguin config model list\` to see the configured models, or \`penguin config model add\` to add one.`,
       );
     }
     // Credentials are inlined on the model entry (single config file); an
@@ -177,11 +177,11 @@ export class Agent {
         stat = await fs.stat(workspaceDir);
       } catch {
         throw new Error(
-          `Workspace 不存在：${workspaceDir}。请指定一个已存在的目录，或不指定 Workspace 以使用临时目录。`,
+          `Workspace does not exist: ${workspaceDir}. Specify an existing directory, or omit the Workspace to use a temporary directory.`,
         );
       }
       if (!stat.isDirectory()) {
-        throw new Error(`Workspace 不是目录：${workspaceDir}。`);
+        throw new Error(`Workspace is not a directory: ${workspaceDir}.`);
       }
     } else {
       workspaceDir = await createTempWorkspace(
@@ -284,17 +284,19 @@ export class Agent {
     const dir = tracesDir(this.state.root, this.state.projectId, this.state.agentId);
     const located = await findLatestTraceFile(dir, sessionId);
     if (!located) {
-      throw new Error(`Session 不存在：${sessionId}（在 ${dir} 下未找到对应 Trace 文件）。`);
+      throw new Error(
+        `Session does not exist: ${sessionId} (no matching Trace file found under ${dir}).`,
+      );
     }
     const resumed = resumeTrace(await readTraceTolerant(located.path));
     if (!resumed.meta) {
-      throw new Error(`Trace 缺少 session_meta，无法恢复：${located.path}`);
+      throw new Error(`Trace is missing session_meta and cannot be resumed: ${located.path}`);
     }
     const meta = resumed.meta.payload;
     // Model reference is stored as a pair in session_meta; a missing provider means legacy data (no migration since the product hasn't shipped yet).
     if (typeof meta.provider !== "string") {
       throw new Error(
-        `Trace 来自旧版本数据（session_meta 缺少 provider，模型引用未分列）：${located.path}。请删除数据目录后重建会话。`,
+        `Trace is from legacy data (session_meta is missing provider; the model reference is not split into separate fields): ${located.path}. Delete the data directory and recreate the Session.`,
       );
     }
 
@@ -304,10 +306,14 @@ export class Agent {
     try {
       stat = await fs.stat(workspaceDir);
     } catch {
-      throw new Error(`原 Session 的 Workspace 已不存在：${workspaceDir}，无法恢复。`);
+      throw new Error(
+        `The original Session's Workspace no longer exists: ${workspaceDir}; cannot resume.`,
+      );
     }
     if (!stat.isDirectory()) {
-      throw new Error(`原 Session 的 Workspace 不是目录：${workspaceDir}，无法恢复。`);
+      throw new Error(
+        `The original Session's Workspace is not a directory: ${workspaceDir}; cannot resume.`,
+      );
     }
 
     // The Model carries over from the original Session (paired reference) and must still be present in the Project config.
@@ -315,7 +321,7 @@ export class Agent {
     const modelEntry = getModel(this.projectConfig, ref);
     if (!modelEntry) {
       throw new Error(
-        `原 Session 的 Model 不在 Project 配置中：${formatModelRef(ref)}。请用 \`penguin config model add\` 重新配置后再恢复。`,
+        `The original Session's Model is not in the Project config: ${formatModelRef(ref)}. Use \`penguin config model add\` to configure it again before resuming.`,
       );
     }
     const apiKey = opts.apiKey ?? modelEntry.api_key;
@@ -349,7 +355,7 @@ export class Agent {
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
         throw new Error(
-          `恢复失败：Trace 历史无法注入（记录可能损坏，如非法的工具参数 JSON）：${detail}`,
+          `Resume failed: the Trace history could not be injected (records may be corrupted, e.g. invalid tool-argument JSON): ${detail}`,
         );
       }
     }

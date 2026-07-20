@@ -57,7 +57,7 @@ async function runVault(args: string[]): Promise<{ out: string; err: string; cod
 }
 
 describe("penguin config vault", () => {
-  it("set → list（掩码）→ remove 全链路；落盘为隐藏 .vault.toml 且 0600", async () => {
+  it("set -> list (masked) -> remove full round trip; stored as hidden .vault.toml with 0600", async () => {
     const set = await runVault(["set", "--key", "MY_KEY", "--value", "vault-secret-9876"]);
     expect(set.code).toBe(0);
     expect(set.out).toContain("Saved vault entry MY_KEY.");
@@ -81,7 +81,7 @@ describe("penguin config vault", () => {
     expect(empty.out).toContain("The vault is empty.");
   });
 
-  it("--agent-id 定向到目标 Agent 的 vault，不影响 default_agent", async () => {
+  it("--agent-id targets that Agent's vault without touching default_agent", async () => {
     const set = await runVault([
       "set",
       "--key",
@@ -99,7 +99,7 @@ describe("penguin config vault", () => {
     expect(defaultList.out).toContain("The vault is empty.");
   });
 
-  it("--root 指定数据根目录（优先于 PENGUIN_HOME），set/list 均定向到该根目录", async () => {
+  it("--root picks the data root (beats PENGUIN_HOME); set/list both target that root", async () => {
     const otherRoot = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-cli-vault-root-"));
     try {
       const set = await runVault([
@@ -125,7 +125,7 @@ describe("penguin config vault", () => {
     }
   });
 
-  it("非法键名 / 超长值以非零码退出并打印原因；remove 不存在的键报错", async () => {
+  it("invalid key name / oversized value exit nonzero and print the reason; removing a missing key errors", async () => {
     const badKey = await runVault(["set", "--key", "1BAD", "--value", "v"]);
     expect(badKey.code).toBe(1);
     expect(badKey.err).toContain("Invalid vault key");

@@ -26,12 +26,16 @@ export async function assertWorkspaceAllowed(args: { workspace: string }): Promi
     throw new HttpError(
       400,
       "workspace_not_found",
-      `Workspace 不存在或不可访问：${args.workspace}。请指定一个已存在的目录，或留空以使用临时目录。`,
+      `Workspace does not exist or is inaccessible: ${args.workspace}. Specify an existing directory, or leave it empty to use a temporary directory.`,
     );
   }
   const stat = await fs.stat(ws);
   if (!stat.isDirectory()) {
-    throw new HttpError(400, "workspace_not_found", `Workspace 不是目录：${args.workspace}。`);
+    throw new HttpError(
+      400,
+      "workspace_not_found",
+      `Workspace is not a directory: ${args.workspace}.`,
+    );
   }
   return ws;
 }

@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "PenguinHarness Landing Page：产品落地页（React + Vite + Tailwind CSS），多语言、亮暗主题、Benchmark 展示与本地 Markdown 博客，经 GitHub Actions 部署到 GitHub Pages。",
+  "description": "PenguinHarness landing page (React + Vite + Tailwind CSS): multilingual, light/dark themes, benchmark showcase, and a local Markdown blog, deployed to GitHub Pages via GitHub Actions.",
   "scripts": {
     "dev": "vite",
     "build": "vite build && node scripts/postbuild.mjs",

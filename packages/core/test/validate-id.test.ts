@@ -27,25 +27,25 @@ describe("isValidId / assertValidId", () => {
     "emoji😀",
   ];
 
-  it.each(valid)("接受合法单段目录名：%j", (id) => {
+  it.each(valid)("accepts a valid single-segment directory name: %j", (id) => {
     expect(isValidId(id)).toBe(true);
     expect(() => assertValidId("project_id", id)).not.toThrow();
     expect(() => assertValidId("agent_id", id)).not.toThrow();
   });
 
-  it.each(invalid)("拒绝非法 id：%j", (id) => {
+  it.each(invalid)("rejects an invalid id: %j", (id) => {
     expect(isValidId(id)).toBe(false);
     expect(() => assertValidId("agent_id", id)).toThrow();
   });
 
-  it("错误信息点明 kind 与非法 id", () => {
+  it("the error message names the kind and the invalid id", () => {
     expect(() => assertValidId("agent_id", "a/b")).toThrow(/agent_id/);
     expect(() => assertValidId("agent_id", "a/b")).toThrow(/a\/b/);
     expect(() => assertValidId("project_id", "..")).toThrow(/project_id/);
   });
 });
 
-describe("loadOrInitAgentState id 校验", () => {
+describe("loadOrInitAgentState id validation", () => {
   let tmpRoot: string;
   let prevHome: string | undefined;
 
@@ -64,19 +64,19 @@ describe("loadOrInitAgentState id 校验", () => {
     await fs.rm(tmpRoot, { recursive: true, force: true });
   });
 
-  it("agentId 含路径分隔符时抛错", async () => {
+  it("throws when agentId contains a path separator", async () => {
     await expect(loadOrInitAgentState({ agentId: "a/b" })).rejects.toThrow(/agent_id/);
   });
 
-  it("projectId 为 .. 时抛错", async () => {
+  it("throws when projectId is ..", async () => {
     await expect(loadOrInitAgentState({ projectId: ".." })).rejects.toThrow(/project_id/);
   });
 
-  it("agentId 为 Windows 结尾空格变体 '.. ' 时抛错（防路径穿越绕过）", async () => {
+  it("throws on the Windows trailing-space variant '.. ' as agentId (blocks a path-traversal bypass)", async () => {
     await expect(loadOrInitAgentState({ agentId: ".. " })).rejects.toThrow(/agent_id/);
   });
 
-  it("默认 id 合法，可正常初始化", async () => {
+  it("the default ids are valid and initialization succeeds", async () => {
     const state = await loadOrInitAgentState();
     expect(state.projectId).toBe("default_project");
     expect(state.agentId).toBe("default_agent");

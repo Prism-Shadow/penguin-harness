@@ -52,9 +52,10 @@ import type { UsageContext } from "./usage-recorder.js";
 /** 409 for when there's nothing to compact: give the specific reason rather than a one-size-fits-none message. */
 function compactUnavailable(why: Exclude<CompactAvailability, "ok">): HttpError {
   const messages: Record<typeof why, string> = {
-    unsupported: "该 Agent 未配置上下文压缩能力。",
-    empty: "当前上下文没有可压缩的内容（尚无已完成的对话轮次）。",
-    just_compacted: "上下文刚压缩过，此后还没有新的对话，无需再次压缩。",
+    unsupported: "This Agent does not have context compaction configured.",
+    empty: "The current context has nothing to compact (no completed conversation turns yet).",
+    just_compacted:
+      "The context was just compacted and there is no new conversation since; no need to compact again.",
   };
   return new HttpError(409, "nothing_to_compact", messages[why]);
 }
@@ -129,7 +130,7 @@ export function createCoreSessionLoader(root: string): SessionLoader {
         throw new HttpError(
           409,
           "workspace_missing",
-          `该 Session 的 Workspace 已不存在：${row.workspace}，无法继续。请新建 Session。`,
+          `This Session's Workspace no longer exists: ${row.workspace}, so it cannot continue. Create a new Session.`,
         );
       }
       try {
@@ -533,7 +534,11 @@ export class SessionManager {
 
   private assertOpen(): void {
     if (this.closed) {
-      throw new HttpError(503, "shutting_down", "服务端正在关停，暂不接受新任务。");
+      throw new HttpError(
+        503,
+        "shutting_down",
+        "Server is shutting down; not accepting new Tasks.",
+      );
     }
   }
 
@@ -541,23 +546,35 @@ export class SessionManager {
   private assertAgentNotDeleting(sessionId: string): void {
     const row = this.deps.sessions.findById(sessionId);
     if (row && this.deletingAgents.has(agentKey(row.projectId, row.agentId))) {
-      throw new HttpError(409, "agent_deleting", "该 Agent 正在删除，暂不接受新任务。");
+      throw new HttpError(
+        409,
+        "agent_deleting",
+        "This Agent is being deleted; not accepting new Tasks.",
+      );
     }
   }
 
   /** This Session is being deleted → 409 (guards against the entry/Trace being rebuilt and reviving it inside the deletion race window). */
   private assertSessionNotDeleting(sessionId: string): void {
     if (this.deletingSessions.has(sessionId)) {
-      throw new HttpError(409, "session_deleting", "该 Session 正在删除，暂不接受新任务。");
+      throw new HttpError(
+        409,
+        "session_deleting",
+        "This Session is being deleted; not accepting new Tasks.",
+      );
     }
   }
 
   private assertIdle(entry: RuntimeEntry): void {
     if (entry.status === "running") {
-      throw new HttpError(409, "task_in_progress", "该 Session 已有进行中的 Task。");
+      throw new HttpError(409, "task_in_progress", "This Session already has a Task in progress.");
     }
     if (entry.status === "compacting") {
-      throw new HttpError(409, "compacting", "该 Session 正在压缩上下文，暂不接受新输入。");
+      throw new HttpError(
+        409,
+        "compacting",
+        "This Session is compacting its context; not accepting new input.",
+      );
     }
   }
 
@@ -567,7 +584,11 @@ export class SessionManager {
     if (existing) return existing;
     const row = this.deps.sessions.findById(sessionId);
     if (!row) {
-      throw new HttpError(404, "session_not_found", "Session 不存在或无权访问。");
+      throw new HttpError(
+        404,
+        "session_not_found",
+        "Session does not exist or you do not have access.",
+      );
     }
     const session = await this.deps.loader.load(row);
     // The Session/Agent was marked for deletion while loading: discard the load result,
@@ -676,7 +697,7 @@ export class SessionManager {
             }
           } catch (err) {
             this.log(
-              `[subagent] 子会话登记失败: ${err instanceof Error ? err.message : String(err)}`,
+              `[subagent] Failed to register child session: ${err instanceof Error ? err.message : String(err)}`,
             );
             this.deps.errors?.record({
               source: "subagent",
@@ -702,7 +723,7 @@ export class SessionManager {
         try {
           await this.deps.recorder.record(ctx, msg);
         } catch (err) {
-          this.log(`[usage] 落库失败: ${err instanceof Error ? err.message : String(err)}`);
+          this.log(`[usage] Insert failed: ${err instanceof Error ? err.message : String(err)}`);
           this.deps.errors?.record({ source: "usage", err, ctx, code: "usage_insert_failed" });
         }
       }
@@ -710,7 +731,7 @@ export class SessionManager {
       // The SDK doesn't normally throw (errors are converged into the message stream);
       // this is a defensive record here to avoid crashing the runtime.
       this.log(
-        `[session] 运行异常: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`,
+        `[session] Run failed: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`,
       );
       this.deps.errors?.record({ source: "session", err, ctx, code: "session_run_failed" });
     } finally {

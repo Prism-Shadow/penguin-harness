@@ -71,7 +71,7 @@ export class TitleGenerator implements TitleNotifier {
     this.inflight.add(ctx.sessionId);
     void this.generate(ctx, session, req)
       .catch((err: unknown) => {
-        this.log(`[title] 生成失败: ${err instanceof Error ? err.message : String(err)}`);
+        this.log(`[title] Generation failed: ${err instanceof Error ? err.message : String(err)}`);
         this.deps.errors?.record({ source: "title", err, ctx, code: "title_failed" });
       })
       .finally(() => {
@@ -97,7 +97,9 @@ export class TitleGenerator implements TitleNotifier {
         try {
           await this.deps.recorder.record(ctx, tokenUsage(emptyTokenCounts(), res.usage));
         } catch (err) {
-          this.log(`[title] 用量落库失败: ${err instanceof Error ? err.message : String(err)}`);
+          this.log(
+            `[title] Usage insert failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
           this.deps.errors?.record({
             source: "title",
             err,
@@ -109,7 +111,7 @@ export class TitleGenerator implements TitleNotifier {
     } catch (err) {
       // A model request error (rate limit / timeout / network, etc.) shouldn't leave the
       // title permanently missing: log it and fall through to the fallback.
-      this.log(`[title] 模型请求失败: ${err instanceof Error ? err.message : String(err)}`);
+      this.log(`[title] Model request failed: ${err instanceof Error ? err.message : String(err)}`);
       this.deps.errors?.record({ source: "title", err, ctx, code: "title_llm_failed" });
     }
     // When the LLM produces no usable title (failure / empty result), truncate the fallback material's first line — this guarantees a title is always generated.

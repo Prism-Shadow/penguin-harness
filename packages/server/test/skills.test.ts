@@ -35,7 +35,7 @@ describe("skills api", () => {
     member = apiClient(t.app, b.cookie);
     outsider = apiClient(t.app, c.cookie);
     const created = (await (
-      await owner.post("/api/projects", { projectId: "owner_s-skills", name: "技能项目" })
+      await owner.post("/api/projects", { projectId: "owner_s-skills", name: "skills project" })
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
     expect(
@@ -52,7 +52,7 @@ describe("skills api", () => {
     expect(res.status).toBe(201);
   }
 
-  it("GET /api/skills：分组与 metadata、短描述、图标齐全且不下发正文", async () => {
+  it("GET /api/skills: groups with metadata, short descriptions, and icons, without sending bodies", async () => {
     const res = await member.get("/api/skills");
     expect(res.status).toBe(200);
     const body = (await res.json()) as SkillLibraryResponse;
@@ -102,7 +102,7 @@ describe("skills api", () => {
     }
   });
 
-  it("成员可装可卸；安装原文落盘、卸载后目录消失", async () => {
+  it("members can install and uninstall; installs land verbatim on disk, the directory disappears after uninstall", async () => {
     await createPlainAgent("bare_agent");
     const url = base("bare_agent");
 
@@ -141,7 +141,7 @@ describe("skills api", () => {
     expect((await member.delete(`${url}/penguin-sdk`)).status).toBe(404);
   });
 
-  it("重复安装幂等更新：手改落盘内容后再装，恢复为库内容", async () => {
+  it("reinstall is an idempotent update: hand-edited on-disk content is restored to the library content", async () => {
     await createPlainAgent("update_agent");
     const url = base("update_agent");
     expect((await owner.post(url, { names: ["penguin-cli"] })).status).toBe(201);
@@ -157,7 +157,7 @@ describe("skills api", () => {
     expect(await fs.readFile(file, "utf8")).toBe(librarySkill("penguin-cli")!.content);
   });
 
-  it("未知技能 404 unknown_skill，且不产生半安装状态", async () => {
+  it("unknown skill 404 unknown_skill, with no half-installed state", async () => {
     await createPlainAgent("strict_agent");
     const url = base("strict_agent");
     const res = await owner.post(url, { names: ["penguin-sdk", "no-such-skill"] });
@@ -170,7 +170,7 @@ describe("skills api", () => {
     expect(list.skills).toEqual([]);
   });
 
-  it("请求体校验 400：names 缺失/空数组/含非字符串", async () => {
+  it("request body validation 400: names missing / empty array / non-string entries", async () => {
     await createPlainAgent("valid_agent");
     const url = base("valid_agent");
     for (const body of [{}, { names: [] }, { names: ["penguin-sdk", 1] }, { names: [""] }]) {
@@ -178,7 +178,7 @@ describe("skills api", () => {
     }
   });
 
-  it("外人一律 404（读取、安装、卸载）；Agent 不存在 404", async () => {
+  it("outsiders always get 404 (read, install, uninstall); a missing Agent is 404", async () => {
     const url = base("default_agent");
     expect((await outsider.get(url)).status).toBe(404);
     expect((await outsider.post(url, { names: ["penguin-sdk"] })).status).toBe(404);
@@ -189,7 +189,7 @@ describe("skills api", () => {
     expect((await member.get(base("no_such_agent"))).status).toBe(404);
   });
 
-  it("default_agent 初始即装库内全部技能；新建普通 Agent 技能为空", async () => {
+  it("default_agent starts with every library skill installed; a new plain Agent has none", async () => {
     const res = await member.get(base("default_agent"));
     expect(res.status).toBe(200);
     const body = (await res.json()) as AgentSkillsResponse;

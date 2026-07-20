@@ -126,7 +126,7 @@ export function defaultProjectConfig(): ProjectConfig {
 
 /** The old format (concatenated storage id / string reference) is never migrated: reading it reports a clear error immediately (the product hasn't shipped yet). */
 const OLD_FORMAT_HINT =
-  "产品未发布不做迁移：请删除该配置文件后用 `penguin config model add/default` 重建。";
+  "No migration since the product hasn't shipped yet: delete this config file and rebuild it with `penguin config model add/default`.";
 
 /** Validates the default_model / vision_model fields: must be a { provider, model_id } paired reference. */
 function parseRefField(file: string, name: string, value: unknown): ModelRef | undefined {
@@ -139,7 +139,7 @@ function parseRefField(file: string, name: string, value: unknown): ModelRef | u
     typeof ref.model_id !== "string"
   ) {
     throw new Error(
-      `.project_config.toml 的 ${name} 是旧版本/非法格式（须为 { provider = "...", model_id = "..." } 成对引用）：${file}。${OLD_FORMAT_HINT}`,
+      `${name} in .project_config.toml is in a legacy/invalid format (must be a { provider = "...", model_id = "..." } paired reference): ${file}. ${OLD_FORMAT_HINT}`,
     );
   }
   return { provider: ref.provider, model_id: ref.model_id };
@@ -155,7 +155,7 @@ function assertModelEntry(file: string, entry: unknown): ModelEntry {
     typeof m.model_id !== "string"
   ) {
     throw new Error(
-      `.project_config.toml 的 models 条目是旧版本/非法格式（provider 与 model_id 须为两个独立字段）：${file}。${OLD_FORMAT_HINT}`,
+      `A models entry in .project_config.toml is in a legacy/invalid format (provider and model_id must be two separate fields): ${file}. ${OLD_FORMAT_HINT}`,
     );
   }
   return entry as ModelEntry;
@@ -359,7 +359,7 @@ export async function setDefaultModel(
   const cfg = await loadProjectConfig(root, projectId);
   if (!getModel(cfg, ref)) {
     throw new Error(
-      `default_model 必须指向已配置的模型：${formatModelRef(ref)} 不在 models 中。用 \`penguin config model list\` 查看已配置的模型。`,
+      `default_model must point to a configured model: ${formatModelRef(ref)} is not in models. Use \`penguin config model list\` to see the configured models.`,
     );
   }
   cfg.default_model = { provider: ref.provider, model_id: ref.model_id };
@@ -381,11 +381,13 @@ export async function setVisionModel(
   const entry = getModel(cfg, ref);
   if (!entry) {
     throw new Error(
-      `vision_model 必须指向已配置的模型：${formatModelRef(ref)} 不在 models 中。用 \`penguin config model list\` 查看已配置的模型。`,
+      `vision_model must point to a configured model: ${formatModelRef(ref)} is not in models. Use \`penguin config model list\` to see the configured models.`,
     );
   }
   if (entry.vision === false) {
-    throw new Error(`vision_model 不能指向标注为不支持图片的模型：${formatModelRef(ref)}。`);
+    throw new Error(
+      `vision_model cannot point to a model tagged as not supporting images: ${formatModelRef(ref)}.`,
+    );
   }
   cfg.vision_model = { provider: ref.provider, model_id: ref.model_id };
   await saveProjectConfig(root, projectId, cfg);
@@ -410,7 +412,7 @@ export function resolveModelRef(cfg: ProjectConfig, modelId: string, provider?: 
     const ref: ModelRef = { provider, model_id: modelId };
     if (!getModel(cfg, ref)) {
       throw new Error(
-        `Model 不在 Project 配置中：${formatModelRef(ref)}。请用 \`penguin config model list\` 查看已配置的模型，或用 \`penguin config model add\` 添加。`,
+        `Model is not in the Project config: ${formatModelRef(ref)}. Use \`penguin config model list\` to see the configured models, or \`penguin config model add\` to add one.`,
       );
     }
     return ref;
@@ -421,12 +423,12 @@ export function resolveModelRef(cfg: ProjectConfig, modelId: string, provider?: 
   }
   if (candidates.length === 0) {
     throw new Error(
-      `Model 不在 Project 配置中：没有 model_id 为 ${modelId} 的条目。请用 \`penguin config model list\` 查看已配置的模型，或用 \`penguin config model add\` 添加。`,
+      `Model is not in the Project config: no entry has model_id ${modelId}. Use \`penguin config model list\` to see the configured models, or \`penguin config model add\` to add one.`,
     );
   }
   throw new Error(
-    `模型引用有歧义：model_id ${modelId} 命中多个条目——${candidates
+    `Ambiguous model reference: model_id ${modelId} matches multiple entries: ${candidates
       .map((m) => formatModelRef({ provider: m.provider, model_id: m.model_id }))
-      .join("、")}。请补充 provider 以给出成对引用。`,
+      .join(", ")}. Specify provider to give a paired reference.`,
   );
 }

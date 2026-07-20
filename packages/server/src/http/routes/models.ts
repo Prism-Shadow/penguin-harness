@@ -18,7 +18,7 @@ import type { AppDeps } from "../../app.js";
 /** Validate a paired reference object ({ provider, modelId }); shape mismatch throws 400. */
 function parseRef(value: unknown, label: string): ModelRefDto {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    throw badRequest(`${label} 必须是 { provider, modelId } 对象。`);
+    throw badRequest(`${label} must be a { provider, modelId } object.`);
   }
   const r = value as Record<string, unknown>;
   return {
@@ -29,10 +29,10 @@ function parseRef(value: unknown, label: string): ModelRefDto {
 
 /** Validate the PUT request body and shape it into a ModelsUpdateRequest (rejects any shape errors). */
 function parseModelsUpdate(body: Record<string, unknown>): ModelsUpdateRequest {
-  if (!Array.isArray(body.models)) throw badRequest("models 必须是数组。");
+  if (!Array.isArray(body.models)) throw badRequest("models must be an array.");
   const models: ModelUpdateEntry[] = body.models.map((item, i) => {
     if (item === null || typeof item !== "object" || Array.isArray(item)) {
-      throw badRequest(`models[${i}] 必须是对象。`);
+      throw badRequest(`models[${i}] must be an object.`);
     }
     const m = item as Record<string, unknown>;
     const entry: ModelUpdateEntry = {
@@ -49,7 +49,7 @@ function parseModelsUpdate(body: Record<string, unknown>): ModelsUpdateRequest {
     };
     if (m.displayName !== undefined) {
       if (typeof m.displayName !== "string" || m.displayName.length > 100) {
-        throw badRequest(`models[${i}].displayName 必须是长度不超过 100 的字符串。`);
+        throw badRequest(`models[${i}].displayName must be a string of at most 100 characters.`);
       }
       if (m.displayName) entry.displayName = m.displayName;
     }
@@ -59,32 +59,32 @@ function parseModelsUpdate(body: Record<string, unknown>): ModelsUpdateRequest {
     }
     if (m.contextWindow !== undefined) {
       if (typeof m.contextWindow !== "number" || !(m.contextWindow > 0)) {
-        throw badRequest(`models[${i}].contextWindow 必须是正数。`);
+        throw badRequest(`models[${i}].contextWindow must be a positive number.`);
       }
       entry.contextWindow = m.contextWindow;
     }
     if (m.clientType !== undefined) {
       if (typeof m.clientType !== "string" || m.clientType.length > 64) {
-        throw badRequest(`models[${i}].clientType 必须是长度不超过 64 的字符串。`);
+        throw badRequest(`models[${i}].clientType must be a string of at most 64 characters.`);
       }
       // An empty string is treated as "unspecified", leaving AgentHub to infer it from modelId.
       if (m.clientType) entry.clientType = m.clientType;
     }
     if (m.vision !== undefined) {
       if (typeof m.vision !== "boolean") {
-        throw badRequest(`models[${i}].vision 必须是布尔值。`);
+        throw badRequest(`models[${i}].vision must be a boolean.`);
       }
       entry.vision = m.vision;
     }
     if (m.pricing !== undefined) {
       const p = m.pricing as Record<string, unknown>;
       if (p === null || typeof p !== "object" || Array.isArray(p)) {
-        throw badRequest(`models[${i}].pricing 必须是对象。`);
+        throw badRequest(`models[${i}].pricing must be an object.`);
       }
       for (const key of ["cacheRead", "cacheWrite", "output"] as const) {
         const v = p[key];
         if (typeof v !== "number" || !Number.isFinite(v) || v < 0) {
-          throw badRequest(`models[${i}].pricing.${key} 必须是非负数字。`);
+          throw badRequest(`models[${i}].pricing.${key} must be a non-negative number.`);
         }
       }
       entry.pricing = {
@@ -95,19 +95,19 @@ function parseModelsUpdate(body: Record<string, unknown>): ModelsUpdateRequest {
     }
     if (m.apiKey !== undefined) {
       if (typeof m.apiKey !== "string" || m.apiKey.length === 0) {
-        throw badRequest(`models[${i}].apiKey 必须是非空字符串。`);
+        throw badRequest(`models[${i}].apiKey must be a non-empty string.`);
       }
       entry.apiKey = m.apiKey;
     }
     if (m.clearApiKey !== undefined) {
       if (typeof m.clearApiKey !== "boolean") {
-        throw badRequest(`models[${i}].clearApiKey 必须是布尔值。`);
+        throw badRequest(`models[${i}].clearApiKey must be a boolean.`);
       }
       entry.clearApiKey = m.clearApiKey;
     }
     if (m.baseUrl !== undefined) {
       if (m.baseUrl !== null && typeof m.baseUrl !== "string") {
-        throw badRequest(`models[${i}].baseUrl 必须是字符串或 null。`);
+        throw badRequest(`models[${i}].baseUrl must be a string or null.`);
       }
       entry.baseUrl = m.baseUrl as string | null;
     }
@@ -153,22 +153,22 @@ export function modelsRoutes(deps: AppDeps): Hono<AppEnv> {
       modelId: requireString(body, "modelId", { minLen: 1, maxLen: 200 }),
     };
     if (body.apiKey !== undefined) {
-      if (typeof body.apiKey !== "string") throw badRequest("apiKey 必须是字符串。");
+      if (typeof body.apiKey !== "string") throw badRequest("apiKey must be a string.");
       if (body.apiKey) req.apiKey = body.apiKey;
     }
     if (body.clearApiKey !== undefined) {
-      if (typeof body.clearApiKey !== "boolean") throw badRequest("clearApiKey 必须是布尔值。");
+      if (typeof body.clearApiKey !== "boolean") throw badRequest("clearApiKey must be a boolean.");
       req.clearApiKey = body.clearApiKey;
     }
     // null = explicit clear (test against the draft, don't fall back to the stored value); empty string is treated as null.
     if (body.baseUrl !== undefined) {
       if (body.baseUrl !== null && typeof body.baseUrl !== "string") {
-        throw badRequest("baseUrl 必须是字符串或 null。");
+        throw badRequest("baseUrl must be a string or null.");
       }
       req.baseUrl = body.baseUrl ? body.baseUrl : null;
     }
     if (body.clientType !== undefined) {
-      if (typeof body.clientType !== "string") throw badRequest("clientType 必须是字符串。");
+      if (typeof body.clientType !== "string") throw badRequest("clientType must be a string.");
       if (body.clientType) req.clientType = body.clientType;
     }
     return c.json(await deps.projectConfigService.testModel(projectId, req));

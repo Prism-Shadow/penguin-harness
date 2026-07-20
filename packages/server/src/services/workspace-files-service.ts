@@ -56,7 +56,7 @@ export class WorkspaceFilesService {
     try {
       return await fs.realpath(path.resolve(workspace));
     } catch {
-      throw new HttpError(404, "workspace_missing", "该 Session 的 Workspace 已不存在。");
+      throw new HttpError(404, "workspace_missing", "This Session's Workspace no longer exists.");
     }
   }
 
@@ -74,17 +74,17 @@ export class WorkspaceFilesService {
 
   /** Lexical prefix check (a relative path, once resolved, must still be inside the Workspace); returns the absolute target path. */
   private lexicalTarget(base: string, rel: string): string {
-    if (rel.includes("\0")) throw badRequest("path 非法。");
+    if (rel.includes("\0")) throw badRequest("path is invalid.");
     const target = path.resolve(base, rel === "" ? "." : rel);
     if (!this.isInside(target, base)) {
-      throw badRequest("path 必须位于 Workspace 内。");
+      throw badRequest("path must be inside the Workspace.");
     }
     return target;
   }
 
   private assertInside(real: string, realBase: string): void {
     if (!this.isInside(real, realBase)) {
-      throw badRequest("path 必须位于 Workspace 内。");
+      throw badRequest("path must be inside the Workspace.");
     }
   }
 
@@ -103,7 +103,7 @@ export class WorkspaceFilesService {
       canonical = await fs.realpath(target);
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-        throw new HttpError(404, "path_not_found", "文件不存在。");
+        throw new HttpError(404, "path_not_found", "File does not exist.");
       }
       throw err;
     }
@@ -132,7 +132,7 @@ export class WorkspaceFilesService {
     const realBase = await this.realBase(workspace);
     const target = this.lexicalTarget(path.resolve(workspace), rel);
     const name = path.basename(target);
-    if (name === "" || name === "." || name === "..") throw badRequest("path 必须是文件路径。");
+    if (name === "" || name === "." || name === "..") throw badRequest("path must be a file path.");
     const parent = path.dirname(target);
     let canonicalParent: string;
     try {
@@ -147,7 +147,7 @@ export class WorkspaceFilesService {
         } catch (probeErr) {
           if ((probeErr as NodeJS.ErrnoException).code !== "ENOENT") throw probeErr;
           const up = path.dirname(probe);
-          if (up === probe) throw badRequest("path 非法。");
+          if (up === probe) throw badRequest("path is invalid.");
           probe = up;
         }
       }
@@ -189,10 +189,10 @@ export class WorkspaceFilesService {
       dirents = await fs.readdir(dir, { withFileTypes: true });
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-        throw new HttpError(404, "path_not_found", "目录不存在。");
+        throw new HttpError(404, "path_not_found", "Directory does not exist.");
       }
       if ((err as NodeJS.ErrnoException).code === "ENOTDIR") {
-        throw badRequest("path 不是目录。");
+        throw badRequest("path is not a directory.");
       }
       throw err;
     }
@@ -231,11 +231,11 @@ export class WorkspaceFilesService {
     try {
       stat = await fs.stat(file);
     } catch {
-      throw new HttpError(404, "path_not_found", "文件不存在。");
+      throw new HttpError(404, "path_not_found", "File does not exist.");
     }
-    if (stat.isDirectory()) throw badRequest("path 是目录。");
+    if (stat.isDirectory()) throw badRequest("path is a directory.");
     if (stat.size > MAX_READ_BYTES) {
-      throw new HttpError(413, "file_too_large", "文件超过 50MB 读取上限。");
+      throw new HttpError(413, "file_too_large", "File exceeds the 50MB read limit.");
     }
     const data = await fs.readFile(file);
     const ext = path.extname(file).toLowerCase();
@@ -256,9 +256,9 @@ export class WorkspaceFilesService {
    * sandbox escapes).
    */
   async write(workspace: string, rel: string, data: Buffer): Promise<void> {
-    if (rel === "" || rel.endsWith("/")) throw badRequest("path 必须是文件路径。");
+    if (rel === "" || rel.endsWith("/")) throw badRequest("path must be a file path.");
     if (data.length > MAX_UPLOAD_BYTES) {
-      throw new HttpError(413, "file_too_large", "上传文件超过 14MB 上限。");
+      throw new HttpError(413, "file_too_large", "Uploaded file exceeds the 14MB limit.");
     }
     const { dir, name } = await this.resolveWriteParent(workspace, rel);
     const file = path.join(dir, name);
@@ -269,9 +269,10 @@ export class WorkspaceFilesService {
       handle = await fs.open(file, flags, 0o644);
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
-      if (code === "ELOOP") throw badRequest("path 不能是符号链接。");
-      if (code === "ENOENT") throw new HttpError(404, "path_not_found", "父目录不存在。");
-      if (code === "EISDIR") throw badRequest("path 是目录。");
+      if (code === "ELOOP") throw badRequest("path must not be a symlink.");
+      if (code === "ENOENT")
+        throw new HttpError(404, "path_not_found", "Parent directory does not exist.");
+      if (code === "EISDIR") throw badRequest("path is a directory.");
       throw err;
     }
     try {

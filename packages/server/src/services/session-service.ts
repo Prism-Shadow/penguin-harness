@@ -168,7 +168,7 @@ export class SessionService {
         throw new HttpError(
           400,
           "no_default_model",
-          "该 Project 尚未配置默认模型，请先在「模型」页添加模型并设为默认。",
+          "This Project has no default model yet. Add a model on the Models page and set it as the default first.",
         );
       }
       modelId = def.model_id;

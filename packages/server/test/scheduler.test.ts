@@ -131,10 +131,10 @@ describe("scheduler", () => {
     return new Date(ms).toISOString();
   }
 
-  it("周期任务：登记消化过去时刻（错过不补），到点触发一次且不重复", async () => {
+  it("periodic task: registration consumes past slots (missed, not backfilled); fires once on time, never twice", async () => {
     insertSession("session-1");
     await writeFile("report", [
-      `prompt = "报告"`,
+      `prompt = "Write the daily report"`,
       `enabled = true`,
       `start_at = "${iso(T0 - 60 * MIN)}"`,
       `period = "30m"`,
@@ -150,7 +150,7 @@ describe("scheduler", () => {
     // Trigger input = <scheduled_task> source block + the prompt body (tells the model this is a scheduled task).
     expect(started[0]?.text).toContain("<scheduled_task>");
     expect(started[0]?.text).toContain("schedule: report");
-    expect(started[0]?.text).toContain("报告");
+    expect(started[0]?.text).toContain("Write the daily report");
     expect(events.map((e) => e.event.type)).toContain("schedule_fired");
     expect(events[0]?.userId).toBe("owner_a");
 
@@ -161,7 +161,7 @@ describe("scheduler", () => {
     expect(state?.lastFiredAt).toBe(iso(T0 + 30 * MIN));
   });
 
-  it("一次性任务：未来到点触发一次；登记时已过期则标记错过且永不触发", async () => {
+  it("one-shot task: fires once when the future slot arrives; already expired at registration is marked missed and never fires", async () => {
     insertSession("session-1");
     await writeFile("future", [
       `prompt = "f"`,
@@ -189,11 +189,11 @@ describe("scheduler", () => {
     expect(started).toHaveLength(1);
   });
 
-  it("忙时排队：目标运行中先排队并通知，空闲后补发；重复到点不叠加", async () => {
+  it("busy queueing: a running target queues and notifies, sends once idle; repeated slots don't stack", async () => {
     insertSession("session-1");
     busy.add("session-1");
     await writeFile("q", [
-      `prompt = "排队"`,
+      `prompt = "queued"`,
       `enabled = true`,
       `start_at = "${iso(T0)}"`,
       `period = "5m"`,
@@ -219,7 +219,7 @@ describe("scheduler", () => {
     expect(events.map((e) => e.event.type)).toEqual(["schedule_queued", "schedule_fired"]);
   });
 
-  it("绑定 Session 不存在：记异常并标记失效；文件修改后恢复", async () => {
+  it("missing bound Session: records an error and marks invalid; recovers after the file is edited", async () => {
     await writeFile("ghost", [
       `prompt = "g"`,
       `enabled = true`,
@@ -253,7 +253,7 @@ describe("scheduler", () => {
     expect(started.map((s) => s.sessionId)).toEqual(["session-2"]);
   });
 
-  it("enabled=false 不触发；文件删除即清理运行状态", async () => {
+  it("enabled=false never fires; deleting the file clears the run state", async () => {
     insertSession("session-1");
     await writeFile("off", [
       `prompt = "o"`,
@@ -272,9 +272,9 @@ describe("scheduler", () => {
     expect(repo.find(P, A, "off")).toBeNull();
   });
 
-  it("新建 Session 模式：每次触发开新会话并发送（透传 workspace）", async () => {
+  it("new-Session mode: every trigger opens a fresh session and sends (passing workspace through)", async () => {
     await writeFile("fresh", [
-      `prompt = "新会话"`,
+      `prompt = "fresh session"`,
       `enabled = true`,
       `start_at = "${iso(T0 + MIN)}"`,
       `period = "5m"`,
@@ -299,9 +299,9 @@ describe("scheduler", () => {
     expect(started.map((s) => s.sessionId)).toEqual(["session-new-1", "session-new-2"]);
   });
 
-  it("新建 Session 模式：文件给出 provider 时成对透传", async () => {
+  it("new-Session mode: when the file gives provider, it is passed through as a pair", async () => {
     await writeFile("paired", [
-      `prompt = "成对"`,
+      `prompt = "paired"`,
       `enabled = true`,
       `start_at = "${iso(T0 + MIN)}"`,
       `provider = "custom"`,
@@ -314,7 +314,7 @@ describe("scheduler", () => {
     expect(created[0]).toMatchObject({ provider: "custom", modelId: "m-bench" });
   });
 
-  it("非法文件跳过并记异常，不影响其余任务", async () => {
+  it("invalid files are skipped with an error recorded, without affecting other tasks", async () => {
     insertSession("session-1");
     await writeFile("bad", [`prompt = "x"`, `enabled = true`, `start_at = "nonsense"`]);
     await writeFile("good", [

@@ -37,7 +37,7 @@ describe("benchmarks api", () => {
     member = apiClient(t.app, b.cookie);
     outsider = apiClient(t.app, c.cookie);
     const created = (await (
-      await owner.post("/api/projects", { projectId: "owner_a-bench", name: "评测项目" })
+      await owner.post("/api/projects", { projectId: "owner_a-bench", name: "Bench project" })
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
     // A plain Agent has no sample Benchmark pre-installed (only default_agent provides one).
@@ -53,19 +53,19 @@ describe("benchmarks api", () => {
     await t.cleanup();
   });
 
-  it("未配置时返回空列表", async () => {
+  it("returns an empty list when unconfigured", async () => {
     expect((await (await owner.get(base)).json()) as BenchmarksResponse).toEqual({
       benchmarks: [],
     });
   });
 
-  it("scoreboard v2：summary 与题级 runs 透传，三指标信任文件、缺失由 runs 平均", async () => {
+  it("scoreboard v2: summary/runs pass through; metrics trust file or average runs", async () => {
     const dir = path.join(benchmarksDir(t.root, projectId, AGENT), "swe-bench-v2");
     await fs.mkdir(path.join(dir, "CASE-001-excel-task", "statement"), { recursive: true });
     await fs.mkdir(path.join(dir, "CASE-002-web-task", "rubric"), { recursive: true });
     await fs.writeFile(
       path.join(dir, "benchmark_config.toml"),
-      `title = "SWE Bench v2"\ndescription = "示例"\nruns = 2\n`,
+      `title = "SWE Bench v2"\ndescription = "Example"\nruns = 2\n`,
       "utf8",
     );
     await fs.writeFile(
@@ -76,8 +76,8 @@ describe("benchmarks api", () => {
         "    version: 3",
         '    provider: "deepseek"',
         '    model_id: "deepseek-v4-pro"',
-        '    summary_title: "系统 Prompt 增加计划步骤"',
-        '    summary: "两题各跑两次取平均；本轮为系统 Prompt 增加了计划步骤。"',
+        '    summary_title: "Added planning steps to the system Prompt"',
+        '    summary: "Each case run twice and averaged; added planning steps."',
         "    score: 8.0",
         "    cost: 0.05",
         "    duration_ms: 120000",
@@ -116,7 +116,7 @@ describe("benchmarks api", () => {
     expect(bench).toMatchObject({
       id: "swe-bench-v2",
       title: "SWE Bench v2",
-      description: "示例",
+      description: "Example",
       runs: 2,
       caseCount: 2,
     });
@@ -127,8 +127,8 @@ describe("benchmarks api", () => {
     // The evaluation entry carries this run's model (as a pair) and a summary title (curve series / title-body are displayed separately).
     expect(evaluation.provider).toBe("deepseek");
     expect(evaluation.modelId).toBe("deepseek-v4-pro");
-    expect(evaluation.summaryTitle).toBe("系统 Prompt 增加计划步骤");
-    expect(evaluation.summary).toBe("两题各跑两次取平均；本轮为系统 Prompt 增加了计划步骤。");
+    expect(evaluation.summaryTitle).toBe("Added planning steps to the system Prompt");
+    expect(evaluation.summary).toBe("Each case run twice and averaged; added planning steps.");
     expect(evaluation.score).toBe(8.0);
     // Per-case metrics are all present: trust the file (4.2, not the runs average of 4.25).
     const full = evaluation.cases.find((c) => c.case === "CASE-001-excel-task")!;
@@ -148,7 +148,7 @@ describe("benchmarks api", () => {
     expect(derived.sessionId).toBeUndefined();
   });
 
-  it("旧格式（题级单 session_id）按单次运行解析补一条 run；坏条目丢弃；外人 404", async () => {
+  it("legacy per-case session_id parsed as one backfilled run; bad entries dropped", async () => {
     const dir = path.join(benchmarksDir(t.root, projectId, AGENT), "swe-bench-v1");
     await fs.mkdir(path.join(dir, "CASE-001-excel-task", "statement"), { recursive: true });
     await fs.writeFile(path.join(dir, "benchmark_config.toml"), `title = "SWE Bench v1"\n`, "utf8");

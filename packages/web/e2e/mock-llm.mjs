@@ -2,16 +2,16 @@
  * Mock Anthropic Messages API (streaming SSE) for E2E.
  * Branches on request body:
  *  - title request (prompt contains "concise title") -> short text
- *  - files-card probe ("文件卡测试") -> text with two backtick paths (one real, one missing)
+ *  - files-card probe ("files card test") -> text with two backtick paths (one real, one missing)
  *  - subagent's own turn (its prompt is the only user text) -> final text
- *  - parent asked to delegate ("跑子agent") -> tool_use(run_subagent)
+ *  - parent asked to delegate ("run a subagent") -> tool_use(run_subagent)
  *  - last message has tool_result -> final text (turn 2)
  *  - otherwise (first user turn) -> thinking + text + tool_use(exec_command)
  */
 import http from "node:http";
 
 /** The run_subagent prompt; also the marker the mock uses to detect "this is the child session's own request". */
-const SUBAGENT_PROMPT = "统计仓库里的 TODO 数量";
+const SUBAGENT_PROMPT = "Count the TODO items in the repository";
 
 const PORT = Number(process.env.MOCK_PORT || 8931);
 
@@ -87,15 +87,15 @@ const server = http.createServer((req, res) => {
     const msgCount = messages.length;
     const hasToolResult = flat.includes("tool_result");
     // Child-session request: the context has only the prompt handed down by run_subagent, no parent user input.
-    const isSubagentTurn = flat.includes(SUBAGENT_PROMPT) && !flat.includes("跑子agent");
-    const wantsSubagent = flat.includes("跑子agent");
+    const isSubagentTurn = flat.includes(SUBAGENT_PROMPT) && !flat.includes("run a subagent");
+    const wantsSubagent = flat.includes("run a subagent");
     // "Bad stream" test case: the first request streams half the tool_use arguments then cuts
     // the connection (no message_stop), so AgentHub reports "stream incomplete" -> GenerativeModel
     // resolves it as malformed. On reconnect the engine **resends the input verbatim** — in this
     // scenario the failed attempt only has a half tool_call (never committed to the ledger), so
     // the retry request carries no <turn_retried> block and is byte-for-byte identical to the
     // first request; the mock can only tell them apart by request count (see the malformedTurns counter).
-    const wantsMalformed = flat.includes("坏流测试");
+    const wantsMalformed = flat.includes("bad stream test");
 
     res.writeHead(200, {
       "content-type": "text/event-stream",
@@ -109,9 +109,12 @@ const server = http.createServer((req, res) => {
       // assistant material; respond with a distinguishable title based on that, so the E2E
       // test can prove the child session's title really comes from its own conversation,
       // not from the run_subagent prompt.
-      const forSubagent = flat.includes("子 agent 报告");
+      const forSubagent = flat.includes("Subagent report");
       block(res, 0, { type: "text", text: "" }, [
-        { type: "text_delta", text: forSubagent ? "子 agent 的 TODO 统计" : "配置 Tailwind 主题" },
+        {
+          type: "text_delta",
+          text: forSubagent ? "Subagent TODO summary" : "Configure Tailwind theme",
+        },
       ]);
       messageStop(res, "end_turn", 8);
       return;
@@ -122,11 +125,11 @@ const server = http.createServer((req, res) => {
     // missing-report.pdf doesn't exist; the card should only list the former. This branch
     // must be checked before hasToolResult (the same session's history already has a
     // first-round tool_result).
-    if (flat.includes("文件卡测试")) {
+    if (flat.includes("files card test")) {
       block(res, 0, { type: "text", text: "" }, [
         {
           type: "text_delta",
-          text: "报告已生成：`demo.html`；另一个文件 `missing-report.pdf` 并不存在。",
+          text: "Report generated: `demo.html`; the other file `missing-report.pdf` does not exist.",
         },
       ]);
       messageStop(res, "end_turn", 18);
@@ -166,7 +169,7 @@ const server = http.createServer((req, res) => {
 
     if (isSubagentTurn) {
       block(res, 0, { type: "text", text: "" }, [
-        { type: "text_delta", text: "子 agent 报告：3 处 TODO" },
+        { type: "text_delta", text: "Subagent report: 3 TODOs" },
       ]);
       messageStop(res, "end_turn", 12);
       return;
@@ -184,8 +187,8 @@ const server = http.createServer((req, res) => {
     if (hasToolResult) {
       // Turn 2: final answer text.
       block(res, 0, { type: "text", text: "" }, [
-        { type: "text_delta", text: "命令已执行完成，" },
-        { type: "text_delta", text: "结果符合预期。" },
+        { type: "text_delta", text: "Command finished; " },
+        { type: "text_delta", text: "the result looks as expected." },
       ]);
       messageStop(res, "end_turn", 20);
       return;
@@ -199,15 +202,15 @@ const server = http.createServer((req, res) => {
         0,
         { type: "thinking", thinking: "" },
         [
-          { type: "thinking_delta", thinking: "先看看" },
-          { type: "thinking_delta", thinking: "目录结构" },
+          { type: "thinking_delta", thinking: "Let me look at " },
+          { type: "thinking_delta", thinking: "the directory structure" },
         ],
         { type: "signature_delta", signature: "sig_mock_abc" },
       ),
     );
     steps.push(() =>
       block(res, 1, { type: "text", text: "" }, [
-        { type: "text_delta", text: "我来运行一个命令查看。" },
+        { type: "text_delta", text: "I'll run a command to check." },
       ]),
     );
     steps.push(() =>

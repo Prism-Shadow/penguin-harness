@@ -60,7 +60,7 @@ const META: SessionMetaPayload = {
 };
 
 describe("session-title", () => {
-  it("generateTitleWithLLM：收集模型 text 与用量，清洗后返回", async () => {
+  it("generateTitleWithLLM: collects model text and usage, returns the sanitized result", async () => {
     const seen: string[] = [];
     const result = await generateTitleWithLLM(
       fakeLLM(
@@ -80,7 +80,7 @@ describe("session-title", () => {
     expect(seen[0]).toContain("SAME language");
   });
 
-  it("素材为空不发请求；outcome 非 completed 时 title 为 null（usage 保留）", async () => {
+  it("sends no request when material is empty; title is null when the outcome is not completed (usage kept)", async () => {
     const seen: string[] = [];
     const empty = await generateTitleWithLLM(fakeLLM([], { status: "completed" }, seen), {
       userText: "  ",
@@ -92,7 +92,7 @@ describe("session-title", () => {
     const failed = await generateTitleWithLLM(
       fakeLLM(
         [
-          assistantText("半截"),
+          assistantText("partial"),
           tokenUsage(emptyTokenCounts(), { cache_read: 0, cache_write: 0, output: 1, total: 1 }),
         ],
         { status: "failed", message: "401" },
@@ -103,7 +103,7 @@ describe("session-title", () => {
     expect(failed.usage?.total).toBe(1);
   });
 
-  it("助手素材为空也生成（纯工具轮次）：只据用户请求，prompt 省去助手段", async () => {
+  it("still generates with empty assistant material (tool-only turn): uses only the user request, prompt omits the assistant section", async () => {
     const seen: string[] = [];
     const result = await generateTitleWithLLM(
       fakeLLM([assistantText("配置 Tailwind 主题")], { status: "completed" }, seen),
@@ -114,24 +114,24 @@ describe("session-title", () => {
     expect(seen[0]).not.toContain("[Assistant]");
   });
 
-  it("sanitizeTitle：剥引号与句读到稳定、折叠空白、超长截断、空返回 null", () => {
+  it("sanitizeTitle: strips quotes/punctuation to a fixed point, collapses whitespace, truncates overlong input, returns null for empty", () => {
     expect(sanitizeTitle("“ 构建配置 说明 。”")).toBe("构建配置 说明");
     expect(sanitizeTitle("『标题』！")).toBe("标题");
     expect(sanitizeTitle("  \n ")).toBeNull();
     expect(sanitizeTitle("x".repeat(50))).toHaveLength(30);
   });
 
-  it("Session.generateTitle：经 createBareLLM 发起；未提供工厂时返回 null", async () => {
+  it("Session.generateTitle: sends via createBareLLM; returns null when no factory is provided", async () => {
     const withFactory = new Session({
       meta: META,
       llm: fakeLLM([]),
       environment: fakeEnvironment,
-      createBareLLM: () => fakeLLM([assistantText("标题 A")]),
+      createBareLLM: () => fakeLLM([assistantText("Title A")]),
     });
     expect(
       await withFactory.generateTitle({ material: { userText: "u", assistantText: "a" } }),
     ).toEqual({
-      title: "标题 A",
+      title: "Title A",
       usage: null,
     });
 
@@ -146,29 +146,29 @@ describe("session-title", () => {
     });
   });
 
-  it("Session.generateTitle：素材自采（run 收集用户输入与模型正文），无需调用方提供", async () => {
+  it("Session.generateTitle: self-collects material (run gathers the user input and model text), none needed from the caller", async () => {
     const seen: string[] = [];
     const session = new Session({
       meta: META,
-      llm: fakeLLM([thinkingMessage("想想"), assistantText("答案正文")]),
+      llm: fakeLLM([thinkingMessage("thinking"), assistantText("answer body")]),
       environment: fakeEnvironment,
-      createBareLLM: () => fakeLLM([assistantText("标题 B")], { status: "completed" }, seen),
+      createBareLLM: () => fakeLLM([assistantText("Title B")], { status: "completed" }, seen),
     });
-    for await (const _ of session.run([userText("用户问题")])) {
+    for await (const _ of session.run([userText("user question")])) {
       void _; // Drains the output stream; once run finishes, the material is settled
     }
     const res = await session.generateTitle();
-    expect(res.title).toBe("标题 B");
+    expect(res.title).toBe("Title B");
     // Material = the first Task's user text + model text (thinking does not count), matching
     // buildTitlePrompt's shape.
-    expect(seen[0]).toBe(buildTitlePrompt("用户问题", "答案正文"));
+    expect(seen[0]).toBe(buildTitlePrompt("user question", "answer body"));
 
     // No request is sent when no material has been collected (run was never called).
     const idle = new Session({
       meta: META,
       llm: fakeLLM([]),
       environment: fakeEnvironment,
-      createBareLLM: () => fakeLLM([assistantText("不应产生")]),
+      createBareLLM: () => fakeLLM([assistantText("must not be produced")]),
     });
     expect(await idle.generateTitle()).toEqual({ title: null, usage: null });
   });

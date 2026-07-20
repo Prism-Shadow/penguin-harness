@@ -30,7 +30,7 @@ describe("authz", () => {
     member = apiClient(t.app, b.cookie);
     outsider = apiClient(t.app, c.cookie);
     const created = (await (
-      await owner.post("/api/projects", { projectId: "owner_a-shared", name: "共享项目" })
+      await owner.post("/api/projects", { projectId: "owner_a-shared", name: "Shared project" })
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
     const add = await owner.post(`/api/projects/${projectId}/members`, { userId: "member_b" });
@@ -40,14 +40,14 @@ describe("authz", () => {
     await t.cleanup();
   });
 
-  it("非成员访问返回 404（不泄露存在性）", async () => {
+  it("non-member access returns 404 (does not leak existence)", async () => {
     expect((await outsider.get(`/api/projects/${projectId}/models`)).status).toBe(404);
     expect((await outsider.get(`/api/projects/${projectId}/agents`)).status).toBe(404);
     expect((await outsider.get(`/api/projects/${projectId}/members`)).status).toBe(404);
     expect((await outsider.get(`/api/projects/${projectId}/usage`)).status).toBe(404);
   });
 
-  it("member 可读模型（掩码）但不可写；owner 可写", async () => {
+  it("member can read models (masked) but not write; owner can write", async () => {
     const put = await owner.put(`/api/projects/${projectId}/models`, {
       defaultModel: { provider: "custom", modelId: "m-1" },
       models: [{ provider: "custom", modelId: "m-1", apiKey: "sk-super-secret-key-123456" }],
@@ -68,7 +68,7 @@ describe("authz", () => {
     expect(denied.status).toBe(403);
   });
 
-  it("成员管理仅 owner：列表包含 owner 与 member；重复与自授权 409；未知用户 404", async () => {
+  it("member management owner-only: duplicate and self-grant 409; unknown user 404", async () => {
     const list = (await (
       await member.get(`/api/projects/${projectId}/members`)
     ).json()) as MembersResponse;
@@ -95,7 +95,7 @@ describe("authz", () => {
     expect((await member.get(`/api/projects/${projectId}/models`)).status).toBe(404);
   });
 
-  it("Session 级路由经索引反查授权：member 可见、外人 404", async () => {
+  it("Session-level routes authorize via index lookup: member can see, outsider 404", async () => {
     await owner.put(`/api/projects/${projectId}/models`, {
       defaultModel: { provider: "anthropic", modelId: "claude-sonnet-4-6" },
       models: [{ provider: "anthropic", modelId: "claude-sonnet-4-6" }],
@@ -113,7 +113,7 @@ describe("authz", () => {
     expect((await owner.get("/api/sessions/session-unknown")).status).toBe(404);
   });
 
-  it("删除 Project 仅 owner；default_project 与最后一个可访问 Project 拒绝删除", async () => {
+  it("deleting Projects: owner-only; default_project and the last accessible refuse", async () => {
     expect((await member.delete(`/api/projects/${projectId}`)).status).toBe(403);
     expect((await outsider.delete(`/api/projects/${projectId}`)).status).toBe(404);
     // default_project is managed by admin: non-owners always get 404, and the owner (admin) is refused with 409.
@@ -134,7 +134,7 @@ describe("authz", () => {
     expect((await owner.get(`/api/projects/${projectId}/models`)).status).toBe(404);
   });
 
-  it("PUT models 整表替换：省略 apiKey 保留、clearApiKey 清除、defaultModel 必须在 models 内", async () => {
+  it("PUT models is a full replace: omitted apiKey kept, clearApiKey clears", async () => {
     await owner.put(`/api/projects/${projectId}/models`, {
       defaultModel: { provider: "custom", modelId: "m-1" },
       models: [

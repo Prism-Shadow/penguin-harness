@@ -31,7 +31,7 @@ describe("schedules api", () => {
     member = apiClient(t.app, b.cookie);
     outsider = apiClient(t.app, c.cookie);
     const created = (await (
-      await owner.post("/api/projects", { projectId: "owner_a-sched", name: "定时任务项目" })
+      await owner.post("/api/projects", { projectId: "owner_a-sched", name: "schedule project" })
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
     base = `/api/projects/${projectId}/agents/default_agent/schedules`;
@@ -43,10 +43,10 @@ describe("schedules api", () => {
     await t.cleanup();
   });
 
-  it("POST 创建（仅 owner）并落盘 TOML；GET 列表与单条；DELETE 清理", async () => {
+  it("POST creates (owner only) and lands TOML on disk; GET list and single item; DELETE cleans up", async () => {
     const body = {
       name: "daily-report",
-      prompt: "写日报",
+      prompt: "Write the daily report",
       enabled: true,
       startAt: FUTURE,
       period: "30m",
@@ -57,7 +57,7 @@ describe("schedules api", () => {
     const item = (await createdRes.json()) as ScheduleItem;
     expect(item).toMatchObject({
       name: "daily-report",
-      prompt: "写日报",
+      prompt: "Write the daily report",
       enabled: true,
       period: "30m",
       status: "active",
@@ -69,7 +69,7 @@ describe("schedules api", () => {
     // The filename is the identifier; the TOML lands under agent_state/schedule/.
     const file = path.join(scheduleDir(t.root, projectId, "default_agent"), "daily-report.toml");
     const raw = await fs.readFile(file, "utf8");
-    expect(raw).toContain('prompt = "写日报"');
+    expect(raw).toContain('prompt = "Write the daily report"');
     expect(raw).toContain('period = "30m"');
 
     // Any member can read; outsiders get 404.
@@ -89,7 +89,7 @@ describe("schedules api", () => {
     expect((await owner.delete(`${base}/daily-report`)).status).toBe(404);
   });
 
-  it("新建 Session 模式可指定 workspace 与成对模型引用并回显", async () => {
+  it("new-Session mode can specify workspace and a paired model reference, echoed back", async () => {
     // The model reference is given as a pair (provider + modelId), and it must
     // resolve within the Project config.
     const res = await owner.post(base, {
@@ -109,7 +109,7 @@ describe("schedules api", () => {
     });
   });
 
-  it("模型引用不可解析（配置里没有）即 400，不落盘", async () => {
+  it("an unresolvable model reference (absent from config) is 400 and writes nothing", async () => {
     const res = await owner.post(base, {
       name: "bad-model",
       prompt: "p",
@@ -122,7 +122,7 @@ describe("schedules api", () => {
     expect((await owner.get(`${base}/bad-model`)).status).toBe(404);
   });
 
-  it("PUT 整文件替换（仅 owner）；不存在 404", async () => {
+  it("PUT replaces the whole file (owner only); missing is 404", async () => {
     const body = { name: "job", prompt: "p1", enabled: false, startAt: FUTURE };
     expect((await owner.post(base, body)).status).toBe(201);
     expect(
@@ -146,7 +146,7 @@ describe("schedules api", () => {
     ).toBe(404);
   });
 
-  it("校验 400：period 低于下限、时刻非法、目标二选一、任务名非法", async () => {
+  it("validation 400: period below the minimum, invalid instant, pick-one target, invalid task name", async () => {
     const ok = { prompt: "p", enabled: false, startAt: FUTURE };
     const cases = [
       { name: "j1", ...ok, period: "4m" },
@@ -159,7 +159,7 @@ describe("schedules api", () => {
     }
   });
 
-  it("手编文件：非法进 invalidFiles；过期一次性任务对账标记 missed", async () => {
+  it("hand-edited files: invalid ones land in invalidFiles; expired one-shots are marked missed during reconciliation", async () => {
     const dir = scheduleDir(t.root, projectId, "default_agent");
     await fs.mkdir(dir, { recursive: true });
     await fs.writeFile(path.join(dir, "broken.toml"), "not = toml =", "utf8");

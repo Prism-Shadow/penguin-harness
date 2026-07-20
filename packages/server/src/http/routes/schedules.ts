@@ -48,7 +48,7 @@ function parseUpsertBody(body: Record<string, unknown>): {
   modelId?: string;
   provider?: string;
 } {
-  if (typeof body.enabled !== "boolean") throw badRequest("enabled 必须是布尔值。");
+  if (typeof body.enabled !== "boolean") throw badRequest("enabled must be a boolean.");
   const prompt = requireString(body, "prompt", { minLen: 1, maxLen: 100_000 });
   const startAt = requireString(body, "startAt", { minLen: 1, maxLen: 100 });
   const period = optionalString(body, "period", { minLen: 1, maxLen: 20 });
@@ -128,7 +128,7 @@ function toItem(
 
 /** Schedule name in the path: same character rules as directories/files, validated before any path construction. */
 function requireScheduleName(raw: string | undefined): string {
-  if (!raw || !isValidId(raw)) throw badRequest("定时任务名非法。");
+  if (!raw || !isValidId(raw)) throw badRequest("Invalid schedule name.");
   return raw;
 }
 
@@ -157,7 +157,7 @@ export function scheduleRoutes(deps: AppDeps): Hono<AppEnv> {
     const body = await readJson(c);
     const name = requireScheduleName(requireString(body, "name", { minLen: 1, maxLen: 100 }));
     if (await readScheduleFile(deps.config.root, projectId, agentId, name)) {
-      throw new HttpError(409, "schedule_exists", `定时任务已存在：${name}`);
+      throw new HttpError(409, "schedule_exists", `Schedule already exists: ${name}`);
     }
     await upsert(deps, c.var.user.userId, projectId, agentId, name, body);
     return c.json(await readItem(deps, projectId, agentId, name), 201);
@@ -178,7 +178,7 @@ export function scheduleRoutes(deps: AppDeps): Hono<AppEnv> {
     deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
     const name = requireScheduleName(c.req.param("name"));
     if (!(await readScheduleFile(deps.config.root, projectId, agentId, name))) {
-      throw new HttpError(404, "schedule_not_found", `定时任务不存在：${name}`);
+      throw new HttpError(404, "schedule_not_found", `Schedule does not exist: ${name}`);
     }
     const body = await readJson(c);
     await upsert(deps, c.var.user.userId, projectId, agentId, name, body);
@@ -191,7 +191,8 @@ export function scheduleRoutes(deps: AppDeps): Hono<AppEnv> {
     deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
     const name = requireScheduleName(c.req.param("name"));
     const removed = await deleteScheduleFile(deps.config.root, projectId, agentId, name);
-    if (!removed) throw new HttpError(404, "schedule_not_found", `定时任务不存在：${name}`);
+    if (!removed)
+      throw new HttpError(404, "schedule_not_found", `Schedule does not exist: ${name}`);
     deps.scheduler.dropEntry(projectId, agentId, name);
     return c.body(null, 204);
   });
@@ -211,10 +212,10 @@ async function upsert(
   const fields = parseUpsertBody(body);
   const raw = serializeSchedule(fields);
   const parsed = parseScheduleFile(name, raw);
-  if (!parsed.ok) throw badRequest(`定时任务配置非法：${parsed.error}`);
+  if (!parsed.ok) throw badRequest(`Invalid schedule configuration: ${parsed.error}`);
   // At save time, verify the model reference resolves (resolveModelRef semantics; same rules as reconciliation) so we never persist a broken file.
   const refError = await validateScheduleModelRef(deps.config.root, projectId, parsed.def);
-  if (refError !== null) throw badRequest(`定时任务配置非法：${refError}`);
+  if (refError !== null) throw badRequest(`Invalid schedule configuration: ${refError}`);
   await writeScheduleFile(deps.config.root, projectId, agentId, name, raw);
   // Creator attribution: the API writer is the creator (falls back to the Project owner only for hand-edited files).
   deps.schedulesRepo.registerOrSync({
@@ -238,6 +239,6 @@ async function readItem(
   const entry = entries.find((e) => e.def.name === name);
   if (entry) return toItem(entry.def, entry.state, entry.queued, Date.now());
   const bad = invalid.find((i) => i.name === name);
-  if (bad) throw badRequest(`定时任务文件非法：${bad.error}`);
-  throw new HttpError(404, "schedule_not_found", `定时任务不存在：${name}`);
+  if (bad) throw badRequest(`Invalid schedule file: ${bad.error}`);
+  throw new HttpError(404, "schedule_not_found", `Schedule does not exist: ${name}`);
 }

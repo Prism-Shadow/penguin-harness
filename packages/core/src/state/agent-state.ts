@@ -130,7 +130,9 @@ export async function loadOrInitAgentState(opts?: {
       typeof parsed !== "object" ||
       typeof (parsed as SystemConfig).system_prompt !== "string"
     ) {
-      throw new Error(`Agent State 配置非法：${configPath} 为空、损坏或缺少 system_prompt 字段。`);
+      throw new Error(
+        `Invalid Agent State config: ${configPath} is empty, corrupted, or missing the system_prompt field.`,
+      );
     }
     systemConfig = parsed as SystemConfig;
     agentsMd = (await fileExists(mdPath)) ? await fs.readFile(mdPath, "utf8") : defaultAgentsMd();

@@ -817,7 +817,7 @@ describe("Environment structure invariant on tool throw (PRN-012)", () => {
   });
 });
 
-describe("Environment abort handling (打断 → aborted, PRN-012)", () => {
+describe("Environment abort handling (interrupt -> aborted, PRN-012)", () => {
   it("labels a thrown error as aborted (not failed) when the signal is aborted", async () => {
     const NAME = "__abort_throw_tool__";
     BUILTIN_TOOL_FACTORIES[NAME] = (definition) => ({

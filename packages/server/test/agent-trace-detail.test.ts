@@ -48,12 +48,12 @@ describe("agent-trace-detail", () => {
     owner = apiClient(t.app, a.cookie);
     outsider = apiClient(t.app, b.cookie);
     const created = (await (
-      await owner.post("/api/projects", { projectId: "owner-trace", name: "项目" })
+      await owner.post("/api/projects", { projectId: "owner-trace", name: "Project" })
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
     await writeTraceFile(t.root, projectId, "default_agent", "2026-07-06", UNMANAGED, 1, [
       sessionMeta(metaPayload()),
-      userText("子会话输入"),
+      userText("child session input"),
       requestBegin(),
       requestEnd("completed"),
     ]);
@@ -62,7 +62,7 @@ describe("agent-trace-detail", () => {
     await t.cleanup();
   });
 
-  it("未纳管 Session 经 Session 级端点 404，经 Agent 级明细端点可读", async () => {
+  it("unmanaged Session: 404 via the Session-level endpoint, readable at Agent level", async () => {
     // Session-level: no such row in the sessions table -> 404.
     expect((await owner.get(`/api/sessions/${UNMANAGED}/traces/1`)).status).toBe(404);
     // Agent-level detail: locates the Trace file directly -> 200.
@@ -70,10 +70,10 @@ describe("agent-trace-detail", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as TraceEventsResponse;
     expect(body.total).toBe(4);
-    expect((body.events[1]!.payload as { text: string }).text).toBe("子会话输入");
+    expect((body.events[1]!.payload as { text: string }).text).toBe("child session input");
   });
 
-  it("Agent 级明细分页参数生效", async () => {
+  it("Agent-level detail pagination params take effect", async () => {
     const res = await owner.get(`${base()}/${UNMANAGED}/1?offset=1&limit=2`);
     expect(res.status).toBe(200);
     const body = (await res.json()) as TraceEventsResponse;
@@ -85,7 +85,7 @@ describe("agent-trace-detail", () => {
     expect((await owner.get(`${base()}/${UNMANAGED}/1?limit=5000`)).status).toBe(400);
   });
 
-  it("Agent 级性能分析端点派生 Request 配对", async () => {
+  it("Agent-level analysis endpoint derives Request pairings", async () => {
     const res = await owner.get(`${base()}/${UNMANAGED}/1/analysis`);
     expect(res.status).toBe(200);
     const body = (await res.json()) as TraceAnalysisResponse;
@@ -93,11 +93,11 @@ describe("agent-trace-detail", () => {
     expect(body.requests[0]!.status).toBe("completed");
   });
 
-  it("不存在的 index → 404 trace_not_found", async () => {
+  it("nonexistent index → 404 trace_not_found", async () => {
     expect((await owner.get(`${base()}/${UNMANAGED}/9`)).status).toBe(404);
   });
 
-  it("无访问权的用户 → 404（requireProjectAccess）", async () => {
+  it("user without access → 404 (requireProjectAccess)", async () => {
     expect((await outsider.get(`${base()}/${UNMANAGED}/1`)).status).toBe(404);
     expect((await outsider.get(`${base()}/${UNMANAGED}/1/analysis`)).status).toBe(404);
   });

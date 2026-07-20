@@ -154,6 +154,6 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
 
 export function useProject(): ProjectContextValue {
   const ctx = useContext(ProjectContext);
-  if (!ctx) throw new Error("useProject 必须在 ProjectProvider 内使用");
+  if (!ctx) throw new Error("useProject must be used within a ProjectProvider");
   return ctx;
 }

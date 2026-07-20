@@ -42,10 +42,11 @@ export function agentTransferRoutes(deps: AppDeps): Hono<AppEnv> {
     try {
       archive = Buffer.from(dataBase64, "base64");
     } catch {
-      throw badRequest("dataBase64 不是合法的 base64。");
+      throw badRequest("dataBase64 is not valid base64.");
     }
-    if (archive.byteLength === 0) throw badRequest("导入包为空。");
-    if (archive.byteLength > MAX_ARCHIVE_BYTES) throw badRequest("导入包超过 14MB 上限。");
+    if (archive.byteLength === 0) throw badRequest("Import package is empty.");
+    if (archive.byteLength > MAX_ARCHIVE_BYTES)
+      throw badRequest("Import package exceeds the 14MB limit.");
     const { version } = await deps.snapshots.importArchive(projectId, agentId, archive, confirm);
     const res: AgentImportResponse = { version };
     return c.json(res);

@@ -12,7 +12,7 @@ import { createStreamFollow } from "../src/features/chat/stream-follow";
 const SHORT = { scrollHeight: 500, clientHeight: 460 };
 
 describe("createStreamFollow", () => {
-  it("短滚动区：wheel 上滚立即退出跟随，即使已在顶部（位置不再变化）", () => {
+  it("short scroll area: wheel-up exits following immediately, even at the top (position no longer changes)", () => {
     const f = createStreamFollow();
     expect(f.stick).toBe(true);
     f.scrolled({ ...SHORT, scrollTop: 40 }); // scroll event from the program sticking to bottom: still following.
@@ -21,14 +21,14 @@ describe("createStreamFollow", () => {
     expect(f.stick).toBe(false);
   });
 
-  it("短滚动区：滚动条/键盘上移（scrollTop 回退）同样退出", () => {
+  it("short scroll area: scrollbar/keyboard up-moves (scrollTop decreasing) exit too", () => {
     const f = createStreamFollow();
     f.scrolled({ ...SHORT, scrollTop: 40 });
     f.scrolled({ ...SHORT, scrollTop: 20 }); // moved up, 20px from bottom (> the 1px clamp margin).
     expect(f.stick).toBe(false);
   });
 
-  it("触摸下拉（手指向下移动）退出；上推不退出", () => {
+  it("touch pull-down (finger moving down) exits; pushing up does not", () => {
     const f = createStreamFollow();
     f.touchStart(100);
     f.touchMove(90); // finger pushes up = content scrolls down, stays following.
@@ -38,7 +38,7 @@ describe("createStreamFollow", () => {
     f.touchEnd();
   });
 
-  it("停留历史位置时，流式增量（scrollTop 不动、内容变高）不改变意图", () => {
+  it("staying at a historical position: streaming increments (scrollTop unchanged, content taller) do not change the intent", () => {
     const f = createStreamFollow();
     f.scrolled({ ...SHORT, scrollTop: 40 });
     f.wheel(-3);
@@ -50,7 +50,7 @@ describe("createStreamFollow", () => {
     expect(f.stick).toBe(false);
   });
 
-  it("用户主动滚回底部附近（80px 内）恢复跟随", () => {
+  it("the user scrolling back near the bottom (within 80px) resumes following", () => {
     const f = createStreamFollow();
     f.scrolled({ scrollHeight: 2000, clientHeight: 460, scrollTop: 1540 });
     f.scrolled({ scrollHeight: 2000, clientHeight: 460, scrollTop: 800 }); // dragged up, exits.
@@ -59,7 +59,7 @@ describe("createStreamFollow", () => {
     expect(f.stick).toBe(true);
   });
 
-  it("内容收缩把 scrollTop 向下钳位（仍贴底）不算上滑", () => {
+  it("content shrink clamping scrollTop down (still at the bottom) does not count as scrolling up", () => {
     const f = createStreamFollow();
     f.scrolled({ scrollHeight: 2000, clientHeight: 460, scrollTop: 1540 }); // stuck to bottom, following.
     // Group collapse shrinks content height; the browser clamps scrollTop to the new
@@ -68,7 +68,7 @@ describe("createStreamFollow", () => {
     expect(f.stick).toBe(true);
   });
 
-  it("首个滚动事件即处于历史位置（离底 ≥ 80px）：按位置初始化为不跟随", () => {
+  it("the first scroll event already at a historical position (≥ 80px from bottom): initialized as not following by position", () => {
     const f = createStreamFollow();
     // The first event has no direction to judge from (e.g. a restored scroll position),
     // and is 540px from the bottom: it shouldn't wait for a subsequent scroll-up to exit.

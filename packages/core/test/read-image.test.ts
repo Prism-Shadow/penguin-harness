@@ -61,8 +61,8 @@ afterEach(async () => {
   await rm(tmp, { recursive: true, force: true });
 });
 
-describe("read_image — 本地文件", () => {
-  it("按相对路径读取 png，输出 data URL 与一行 mime/大小说明", async () => {
+describe("read_image — local files", () => {
+  it("reads a png by relative path, outputs a data URL plus a one-line mime/size note", async () => {
     await writeFile(path.join(tmp, "img.png"), PNG_1X1);
     const { result, text } = await run({ source: "img.png" }, tmp);
     expect(result?.stopReason).toBeUndefined(); // Defaults to completed
@@ -70,20 +70,20 @@ describe("read_image — 本地文件", () => {
     expect(text).toBe(`image/png, ${PNG_1X1.length} B`);
   });
 
-  it("扩展名与内容不符时以魔数嗅探为准", async () => {
+  it("magic-number sniffing wins when the extension disagrees with the content", async () => {
     await writeFile(path.join(tmp, "photo.jpg"), PNG_1X1); // Content is actually PNG
     const { result } = await run({ source: "photo.jpg" }, tmp);
     expect(result?.images?.[0]).toMatch(/^data:image\/png;base64,/);
   });
 
-  it("文件不存在时以 failed 收尾并输出解释", async () => {
+  it("finishes as failed with an explanation when the file does not exist", async () => {
     const { result, text } = await run({ source: "missing.png" }, tmp);
     expect(result?.stopReason).toBe("failed");
     expect(result?.images).toBeUndefined();
     expect(text).toContain("missing.png");
   });
 
-  it("超过大小上限时以 failed 收尾", async () => {
+  it("finishes as failed when the size limit is exceeded", async () => {
     const big = Buffer.alloc(MAX_IMAGE_BYTES + 1);
     PNG_1X1.copy(big); // Header carries the PNG magic number, ensuring the failure is due to size, not type
     await writeFile(path.join(tmp, "big.png"), big);
@@ -92,14 +92,14 @@ describe("read_image — 本地文件", () => {
     expect(text).toContain("too large");
   });
 
-  it("不支持的图片类型以 failed 收尾", async () => {
+  it("finishes as failed for an unsupported image type", async () => {
     await writeFile(path.join(tmp, "img.bmp"), Buffer.from("BM not really an image"));
     const { result, text } = await run({ source: "img.bmp" }, tmp);
     expect(result?.stopReason).toBe("failed");
     expect(text).toContain("Unsupported image type");
   });
 
-  it("source 指向目录时以 failed 收尾并明确说明（不透传 EISDIR）", async () => {
+  it("finishes as failed with a clear note when source points to a directory (no raw EISDIR passthrough)", async () => {
     await mkdir(path.join(tmp, "subdir"));
     const { result, text } = await run({ source: "subdir" }, tmp);
     expect(result?.stopReason).toBe("failed");
@@ -107,14 +107,14 @@ describe("read_image — 本地文件", () => {
     expect(text).not.toContain("EISDIR");
   });
 
-  it("空文件以 failed 收尾（扩展名兜底不得放行空 base64）", async () => {
+  it("finishes as failed for an empty file (the extension fallback must not let empty base64 through)", async () => {
     await writeFile(path.join(tmp, "empty.png"), Buffer.alloc(0));
     const { result, text } = await run({ source: "empty.png" }, tmp);
     expect(result?.stopReason).toBe("failed");
     expect(text).toContain("empty");
   });
 
-  it("缺少 source 参数以 failed 收尾", async () => {
+  it("finishes as failed when the source argument is missing", async () => {
     const { result, text } = await run({}, tmp);
     expect(result?.stopReason).toBe("failed");
     expect(text).toContain('"source"');
@@ -122,7 +122,7 @@ describe("read_image — 本地文件", () => {
 });
 
 describe("read_image — http(s) URL", () => {
-  it("经全局 fetch 下载并取响应头 content-type 作为 mime", async () => {
+  it("downloads via global fetch and takes the content-type response header as the mime", async () => {
     const fetchMock = vi.fn(
       async (_input: unknown) =>
         new Response(PNG_1X1, { status: 200, headers: { "content-type": "image/png" } }),
@@ -135,7 +135,7 @@ describe("read_image — http(s) URL", () => {
     expect(text).toContain("image/png");
   });
 
-  it("非 2xx 响应以 failed 收尾并带状态码", async () => {
+  it("finishes as failed with the status code on a non-2xx response", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => new Response("nope", { status: 404 })),

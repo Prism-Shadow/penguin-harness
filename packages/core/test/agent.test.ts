@@ -43,7 +43,7 @@ afterEach(async () => {
   await fs.rm(tmpRoot, { recursive: true, force: true });
 });
 
-describe("effectiveMaxContextLength (压缩阈值按模型窗口钳制)", () => {
+describe("effectiveMaxContextLength (compaction threshold clamped to the model window)", () => {
   it("clamps to 75% of a small model window; leaves big/unknown windows and off untouched", () => {
     expect(effectiveMaxContextLength(128000, 32768)).toBe(24576); // small window: clamp to 75%
     expect(effectiveMaxContextLength(128000, 200000)).toBe(128000); // ample window: unchanged
@@ -57,7 +57,7 @@ describe("Agent.createSession workspace handling", () => {
   it("throws a clear error when the given workspace does not exist (no auto-create)", async () => {
     const agent = await createAgent();
     const ws = path.join(tmpRoot, "nested", "does-not-exist");
-    await expect(agent.createSession({ workspaceDir: ws })).rejects.toThrow(/不存在/);
+    await expect(agent.createSession({ workspaceDir: ws })).rejects.toThrow(/does not exist/);
     // Must not be auto-created.
     await expect(fs.stat(ws)).rejects.toThrow();
   });
@@ -66,7 +66,9 @@ describe("Agent.createSession workspace handling", () => {
     const agent = await createAgent();
     const filePath = path.join(tmpRoot, "a-file");
     await fs.writeFile(filePath, "x", "utf8");
-    await expect(agent.createSession({ workspaceDir: filePath })).rejects.toThrow(/不是目录/);
+    await expect(agent.createSession({ workspaceDir: filePath })).rejects.toThrow(
+      /is not a directory/,
+    );
   });
 
   it("accepts an existing directory and resolves it to an absolute path", async () => {
@@ -86,7 +88,7 @@ describe("Agent.createSession workspace handling", () => {
     // model_id); the error is thrown before creating the temp Workspace.
     await expect(
       agent.createSession({ workspaceDir: ws, modelId: "not-configured-model" }),
-    ).rejects.toThrow(/不在 Project 配置中/);
+    ).rejects.toThrow(/is not in the Project config/);
     await expect(
       agent.createSession({ workspaceDir: ws, modelId: "deepseek-v4-pro", provider: "openai" }),
     ).rejects.toThrow(/\(provider=openai, model_id=deepseek-v4-pro\)/);
@@ -108,7 +110,7 @@ describe("Agent.createSession workspace handling", () => {
   });
 });
 
-describe("Agent.createSession model reference（(provider, model_id) 成对）", () => {
+describe("Agent.createSession model reference ((provider, model_id) pair)", () => {
   it("records the pair reference in session_meta (default_model when unspecified)", async () => {
     const agent = await createAgent();
     const ws = path.join(tmpRoot, "ws-ref-default");
@@ -164,7 +166,7 @@ describe("Agent.createSession model reference（(provider, model_id) 成对）",
     await fs.mkdir(ws, { recursive: true });
     await expect(
       agent.createSession({ workspaceDir: ws, modelId: "claude-sonnet-4-6" }),
-    ).rejects.toThrow(/歧义.*\(provider=anthropic, model_id=claude-sonnet-4-6\)/);
+    ).rejects.toThrow(/Ambiguous.*\(provider=anthropic, model_id=claude-sonnet-4-6\)/);
     // Adding provider resolves it.
     const session = await agent.createSession({
       workspaceDir: ws,
@@ -178,7 +180,7 @@ describe("Agent.createSession model reference（(provider, model_id) 成对）",
     }
     // provider cannot be used alone (the reference must be a pair).
     await expect(agent.createSession({ workspaceDir: ws, provider: "anthropic" })).rejects.toThrow(
-      /provider 不能单独使用/,
+      /provider cannot be used alone/,
     );
   });
 });

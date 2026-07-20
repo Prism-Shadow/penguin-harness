@@ -64,7 +64,7 @@ describe("session-loader", () => {
     await fs.rm(root, { recursive: true, force: true });
   });
 
-  it("有 Trace 但 Workspace 已删 → 409 session_unrecoverable，保留原文", async () => {
+  it("Trace exists but the Workspace was deleted → 409 session_unrecoverable, original message preserved", async () => {
     await writeTraceFile(root, PROJECT, AGENT, "2026-07-06", SID, 1, [
       sessionMeta(meta()), // workspace points to a nonexistent directory
       userText("hi"),
@@ -74,10 +74,10 @@ describe("session-loader", () => {
     expect(err).toBeInstanceOf(HttpError);
     expect((err as HttpError).status).toBe(409);
     expect((err as HttpError).code).toBe("session_unrecoverable");
-    expect((err as HttpError).message).toContain("Workspace 已不存在");
+    expect((err as HttpError).message).toContain("Workspace no longer exists");
   });
 
-  it("有 Trace 但 Model 已从配置移除 → 409 session_unrecoverable", async () => {
+  it("Trace exists but the Model was removed from config → 409 session_unrecoverable", async () => {
     const ws = path.join(root, "ws");
     await fs.mkdir(ws, { recursive: true });
     await writeTraceFile(root, PROJECT, AGENT, "2026-07-06", SID, 1, [
@@ -89,10 +89,10 @@ describe("session-loader", () => {
     expect(err).toBeInstanceOf(HttpError);
     expect((err as HttpError).status).toBe(409);
     expect((err as HttpError).code).toBe("session_unrecoverable");
-    expect((err as HttpError).message).toContain("Model 不在 Project 配置中");
+    expect((err as HttpError).message).toContain("Model is not in the Project config");
   });
 
-  it("无 Trace 且 Workspace 已删（自愈分支）→ 409 workspace_missing", async () => {
+  it("no Trace and the Workspace deleted (self-heal branch) → 409 workspace_missing", async () => {
     const loader = createCoreSessionLoader(root);
     const err = await loader.load(row("/tmp/gone-workspace-abc")).catch((e) => e);
     expect(err).toBeInstanceOf(HttpError);

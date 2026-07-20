@@ -33,7 +33,7 @@ export function authMiddleware(auth: AuthService): MiddlewareHandler<AppEnv> {
     const token = getCookie(c, SESSION_COOKIE);
     const user = token ? auth.authenticate(token) : null;
     if (!user) {
-      throw new HttpError(401, "unauthorized", "未登录或登录已过期。");
+      throw new HttpError(401, "unauthorized", "Not signed in or the sign-in has expired.");
     }
     c.set("user", user);
     await next();
@@ -51,7 +51,11 @@ export const jsonOnlyWrites: MiddlewareHandler = async (c, next) => {
   if (WRITE_METHODS.has(c.req.method)) {
     const contentType = c.req.header("content-type");
     if (contentType && !contentType.toLowerCase().startsWith("application/json")) {
-      throw new HttpError(415, "unsupported_media_type", "写请求仅接受 application/json。");
+      throw new HttpError(
+        415,
+        "unsupported_media_type",
+        "Write requests only accept application/json.",
+      );
     }
   }
   await next();

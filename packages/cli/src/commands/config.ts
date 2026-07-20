@@ -354,7 +354,7 @@ function confirmYes(prompt: string): Promise<boolean> {
 function parseIntArg(value: string): number {
   const n = Number.parseInt(value, 10);
   if (Number.isNaN(n)) {
-    throw new Error(`无效的整数：${value}`);
+    throw new Error(`Invalid integer: ${value}`);
   }
   return n;
 }
@@ -362,7 +362,7 @@ function parseIntArg(value: string): number {
 function parseFloatArg(value: string): number {
   const n = Number.parseFloat(value);
   if (Number.isNaN(n)) {
-    throw new Error(`无效的数值：${value}`);
+    throw new Error(`Invalid number: ${value}`);
   }
   return n;
 }

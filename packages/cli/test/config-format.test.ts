@@ -29,7 +29,7 @@ describe("formatModelRows", () => {
     ],
   };
 
-  it("provider 与 model_id 双列展示；预置模型 vision 经目录成对匹配，默认模型以 * 标记", () => {
+  it("provider and model_id shown as two columns; preset model vision resolved by catalog pair match, default model marked with *", () => {
     const lines = formatModelRows(cfg);
     expect(lines).toHaveLength(2);
     expect(lines[0]).toMatch(/^\* anthropic\s+claude-sonnet-4-6\s+vision=Y/);
@@ -39,7 +39,7 @@ describe("formatModelRows", () => {
     expect(lines[0]).not.toContain("anthropic/claude-sonnet-4-6");
   });
 
-  it("自定义模型 vision 按标注（显式 false 记 -）；内联 api_key 掩码显示", () => {
+  it("custom model vision follows its annotation (explicit false shown as -); inline api_key displayed masked", () => {
     const lines = formatModelRows(cfg);
     expect(lines[1]).toMatch(/^ {2}custom\s+my-proxy-model\s+vision=-/);
     expect(lines[1]).toContain("client_type=openai");
@@ -47,7 +47,7 @@ describe("formatModelRows", () => {
     expect(lines[1]).not.toContain("sk-test-abcd-1234");
   });
 
-  it("同名 model_id 双 provider 并存时各占一行，默认标记只落在成对命中的那行", () => {
+  it("two providers sharing a model_id each get their own row; the default marker lands only on the exact pair match", () => {
     const lines = formatModelRows({
       default_model: { provider: "deepseek", model_id: "m1" },
       models: [
@@ -59,7 +59,7 @@ describe("formatModelRows", () => {
     expect(lines[1]).toMatch(/^ {2}siliconflow\s+m1\s+vision=Y/);
   });
 
-  it("无标注按「缺省=支持」记 Y；全空列省略", () => {
+  it('unannotated vision defaults to "supported" and shows Y; fully empty columns are omitted', () => {
     const lines = formatModelRows({
       models: [{ provider: "custom", model_id: "m1" }],
     });

@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "PenguinHarness Web 前端 SPA：React + Vite + Tailwind CSS，按 OmniMessage 协议流式渲染对话、Agent 配置、模型配置、统计与 Trace。",
+  "description": "PenguinHarness web frontend SPA: React + Vite + Tailwind CSS, rendering conversations streamed over the OmniMessage protocol, plus Agent configuration, model configuration, usage stats, and Traces.",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

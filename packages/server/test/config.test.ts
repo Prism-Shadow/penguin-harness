@@ -10,20 +10,20 @@ import { resolveServerConfig } from "../src/config.js";
 
 const base = { PENGUIN_HOME: "/tmp/penguin-config-test" };
 
-describe("resolveServerConfig：PORT 解析", () => {
-  it("缺省 7364；空串视为未设置（不落到端口 0）", () => {
+describe("resolveServerConfig: PORT parsing", () => {
+  it("defaults to 7364; empty string treated as unset (does not fall to port 0)", () => {
     expect(resolveServerConfig({ ...base }).port).toBe(7364);
     expect(resolveServerConfig({ ...base, PORT: "" }).port).toBe(7364);
   });
 
-  it('显式数值生效；显式 "0" 保留（绑随机可用端口）', () => {
+  it('explicit value takes effect; "0" is preserved (binds a random available port)', () => {
     expect(resolveServerConfig({ ...base, PORT: "8930" }).port).toBe(8930);
     expect(resolveServerConfig({ ...base, PORT: "0" }).port).toBe(0);
   });
 
-  it("非整数或超界抛错", () => {
+  it("non-integer or out-of-range values throw", () => {
     for (const bad of ["abc", "3.14", "-1", "65536"]) {
-      expect(() => resolveServerConfig({ ...base, PORT: bad }), bad).toThrow(/非法端口/);
+      expect(() => resolveServerConfig({ ...base, PORT: bad }), bad).toThrow(/Invalid port/);
     }
   });
 });

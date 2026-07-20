@@ -7,17 +7,17 @@ import { describe, expect, it } from "vitest";
 import { splitImageAttachments } from "../src/lib/attachments";
 
 describe("splitImageAttachments", () => {
-  it("scratchpad 路径行 → 会话文件端点，正文保留", () => {
+  it("scratchpad path lines → session file endpoint, body kept", () => {
     const { text, images } = splitImageAttachments(
-      "看看这张图\n\n[attached image: /home/u/.penguin/data/p1/agents/a1/scratchpad/session-20260712-abc/upload-1752300000000-0.png]",
+      "Look at this image\n\n[attached image: /home/u/.penguin/data/p1/agents/a1/scratchpad/session-20260712-abc/upload-1752300000000-0.png]",
     );
-    expect(text).toBe("看看这张图");
+    expect(text).toBe("Look at this image");
     expect(images).toEqual([
       "/api/sessions/session-20260712-abc/scratchpad/upload-1752300000000-0.png",
     ]);
   });
 
-  it("http(s) URL 直引；多附件按顺序", () => {
+  it("http(s) URLs quoted as-is; multiple attachments in order", () => {
     const { text, images } = splitImageAttachments(
       "[attached image: https://example.com/a.png]\n[attached image: /x/scratchpad/s1/b.png]",
     );
@@ -25,7 +25,7 @@ describe("splitImageAttachments", () => {
     expect(images).toEqual(["https://example.com/a.png", "/api/sessions/s1/scratchpad/b.png"]);
   });
 
-  it("识别不出的行保留在文本（说明行 / 非本系统路径）", () => {
+  it("unrecognized lines stay in the text (notice lines / paths outside this system)", () => {
     const { text, images } = splitImageAttachments(
       "hi\n\n[an attached image could not be saved and was dropped]\n[attached image: /etc/passwd]",
     );
@@ -34,9 +34,9 @@ describe("splitImageAttachments", () => {
     expect(text).toContain("[attached image: /etc/passwd]");
   });
 
-  it("无附件行原样返回", () => {
-    const { text, images } = splitImageAttachments("普通消息");
-    expect(text).toBe("普通消息");
+  it("no attachment lines returns unchanged", () => {
+    const { text, images } = splitImageAttachments("plain message");
+    expect(text).toBe("plain message");
     expect(images).toEqual([]);
   });
 });
