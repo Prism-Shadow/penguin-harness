@@ -34,3 +34,4 @@ One line per change, linking its detail file; oldest first.
 - [The launch post settles on the numbered three-reasons structure](2026-07-20-launch-post-numbered-structure.md) — GDPevo story plus numbered reasons, with a Web-only usage section.
 - [Announcement carousel: one-direction slide, arrow kept, dots removed](2026-07-20-announcement-one-direction.md) — click-through arrows stay, manual dots go, and rotation always slides the same way via a clone-and-snap loop.
 - [Trend value labels carry units with animated decimals](2026-07-20-trend-labels-units.md) — score as 79.0%, cost as $0.25, time as 83.0s, decimals animating with the curve.
+- [Feature tabs drop the description card](2026-07-20-feature-tab-centered-text.md) — centered one-line text above the screenshot instead of an icon card.
