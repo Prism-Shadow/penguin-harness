@@ -434,6 +434,10 @@ export const zh = {
     usedByAgents: (n: number): string => (n === 0 ? "未被使用" : `${n} 个 Agent 在用`),
     /** Top toast shown on successful install / uninstall. */
     installedToast: (skill: string, agent: string): string => `已将 ${skill} 安装到 ${agent}`,
+    updateOutdated: (n: number): string => `有新版本：更新 ${n} 个 Agent 的安装`,
+    updateAction: "更新",
+    updatedToast: (skill: string, n: number): string =>
+      `已将 ${skill} 更新到最新版（${n} 个 Agent）`,
     uninstalledToast: (skill: string, agent: string): string => `已从 ${agent} 卸载 ${skill}`,
   },
 
