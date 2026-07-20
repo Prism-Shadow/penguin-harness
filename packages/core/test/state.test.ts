@@ -706,7 +706,10 @@ describe("project-config round trip", () => {
         (c) => c.provider === entry.provider && c.modelId === entry.model_id,
       )!;
       expect(entry.vision).toBe(cat.supportsVision ? undefined : false);
-      expect(entry.pricing?.unit).toBe("usd_per_mtok");
+      // Subscription-gateway entries (Qwen Token Plan) carry no per-token pricing; every
+      // other catalog entry stores USD pricing.
+      if (cat.pricing === undefined) expect(entry.pricing).toBeUndefined();
+      else expect(entry.pricing?.unit).toBe("usd_per_mtok");
       // A model that auto-routes leaves client_type unset; a gateway model (OpenRouter)
       // explicitly sets it to openai.
       expect(entry.client_type).toBe(cat.clientType);

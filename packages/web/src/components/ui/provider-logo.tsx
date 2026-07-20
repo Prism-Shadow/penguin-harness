@@ -4,9 +4,10 @@
  *
  * Anthropic / OpenAI / Google Gemini / DeepSeek / Moonshot AI / OpenRouter /
  * SiliconFlow use each vendor's brand mark (for recognition purposes, not under
- * trademark license); Z.AI uses a simplified geometric approximation of its
- * branded glyph (not an exact reproduction of the trademark); unknown vendors and
- * custom models use a generic cube. All are pure paths, no external image assets.
+ * trademark license); Z.AI and Qwen Token Plan use simplified geometric
+ * approximations of their branded glyphs (not exact reproductions of the
+ * trademarks); unknown vendors and custom models use a generic cube. All are
+ * pure paths, no external image assets.
  */
 import type { ReactNode } from "react";
 
@@ -58,6 +59,13 @@ const GLYPHS: Record<string, Glyph> = {
     viewBox: "0 0 53.021 25.354",
     path: (
       <path d="M50.7172 0H27.6622C26.3877 0 25.3586 1.03397 25.3586 2.30358V9.21911C25.3586 10.4935 24.3294 11.5227 23.055 11.5227H2.30357C1.02914 11.5227 0 12.5567 0 13.8263V23.0502C0 24.3246 1.03395 25.3538 2.30357 25.3538H25.3586C26.633 25.3538 27.6622 24.3198 27.6622 23.0502V16.1347C27.6622 14.8602 28.6913 13.8311 29.9657 13.8311H50.7172C51.9916 13.8311 53.0207 12.7971 53.0207 11.5275V2.30358C53.0207 1.02916 51.9868 0 50.7172 0Z" />
+    ),
+  },
+  "qwen-token-plan": {
+    // Six separated petals radiating hexagonally — a simplified geometric approximation of
+    // the faceted Qwen emblem.
+    path: (
+      <path d="M14.2 12 20.68 8.14v7.72L14.2 12ZM13.1 13.9l6.59 3.68-6.7 3.87-.01-7.55ZM10.9 13.9l.11 7.55-6.7-3.87 6.59-3.68ZM9.8 12 3.32 15.86V8.14L9.8 12ZM10.9 10.1 4.31 6.42l6.7-3.87-.11 7.55ZM13.1 10.1l-.11-7.55 6.7 3.87-6.59 3.68Z" />
     ),
   },
   custom: {

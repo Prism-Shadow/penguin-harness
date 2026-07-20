@@ -65,6 +65,7 @@ describe("groupModelRows", () => {
       "deepseek",
       "openrouter",
       "siliconflow",
+      "qwen-token-plan",
       "google",
       "anthropic",
       "openai",

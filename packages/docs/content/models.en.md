@@ -58,6 +58,7 @@ Built-in groups and their env-var fallbacks (catalog source: `packages/core/src/
 | deepseek | `DEEPSEEK_API_KEY` | Group of the default model |
 | openrouter | `OPENAI_API_KEY` | OpenAI-compatible gateway, preset base URL `https://openrouter.ai/api/v1` |
 | siliconflow | `OPENAI_API_KEY` | OpenAI-compatible gateway, preset base URL `https://api.siliconflow.cn/v1` |
+| qwen-token-plan | `OPENAI_API_KEY` | Qwen Token Plan subscription gateway (usage deducts plan quota; no per-token price), preset base URL `https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1` |
 | google | `GEMINI_API_KEY` | |
 | anthropic | `ANTHROPIC_API_KEY` | |
 | openai | `OPENAI_API_KEY` | |
@@ -65,9 +66,9 @@ Built-in groups and their env-var fallbacks (catalog source: `packages/core/src/
 | moonshot | `MOONSHOT_API_KEY` | |
 | custom | `OPENAI_API_KEY` | Any OpenAI-protocol endpoint |
 
-The gateway groups (openrouter / siliconflow) go through AgentHub's OpenAI client, so with blank credentials they read `OPENAI_API_KEY` — not a gateway-specific variable.
+The gateway groups (openrouter / siliconflow / qwen-token-plan) go through AgentHub's OpenAI client, so with blank credentials they read `OPENAI_API_KEY` — not a gateway-specific variable.
 
-Some models in the preset catalog: deepseek-v4-pro / deepseek-v4-flash, gemini-3.1-pro-preview, claude-opus-4-8 / claude-sonnet-4-6, gpt-5.5, glm-5.2, kimi-k2.6 (not exhaustive).
+Some models in the preset catalog: deepseek-v4-pro / deepseek-v4-flash, gemini-3.1-pro-preview, claude-opus-4-8 / claude-sonnet-4-6, gpt-5.5, glm-5.2, kimi-k2.6, qwen3.8-max-preview (not exhaustive).
 
 ## Thinking levels
 
