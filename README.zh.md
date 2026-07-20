@@ -48,13 +48,15 @@
 输入一句话，Agent 为你构建完整的 Agent 应用——脚手架、代码、运行说明，一步到位：
 
 ```text
-Build a RAG app that answers questions over the Markdown files in docs/ with citations.
+收集 https://github.com/ericbuess/claude-code-docs 的文档,做一个化身 Claude Code 配置专家、回答带来源引用的 RAG 问答应用。
 ```
+
+这是做出来的成品——一个文档专家:检索增强、引用可点击直达原文、内置示例问题:
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/readme/rag-demo-dark.webp" />
-    <img src="assets/readme/rag-demo-light.webp" alt="一句话输入，产出可运行的 RAG 应用：脚手架、带引用的检索入口与运行说明" width="920" />
+    <source media="(prefers-color-scheme: dark)" srcset="assets/readme/rag-app-zh-dark.webp" />
+    <img src="assets/readme/rag-app-zh-light.webp" alt="生成的 RAG 应用成品:Claude Code 配置专家,回答带可点击的来源引用与示例问题" width="920" />
   </picture>
 </p>
 
