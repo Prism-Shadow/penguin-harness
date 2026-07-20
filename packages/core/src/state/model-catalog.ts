@@ -391,6 +391,8 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // The entries below (added 2026-07-20) list no cache pricing on their OpenRouter pages, so
   // cache_read carries the standard input price (no discount); ordered by output price. The
   // :free tier stores a genuine $0 price (not "unknown"), so costs correctly compute to 0.
+  // GPT models are uniformly vision-capable (OpenAI product-line policy) even where the
+  // gateway page omits the modality.
   {
     modelId: "anthropic/claude-fable-5",
     displayName: "Claude Fable 5",
@@ -407,7 +409,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     provider: "openrouter",
     contextWindow: 1000000,
     pricing: usd(5, 5, 30),
-    supportsVision: false,
+    supportsVision: true,
     clientType: "openai",
     baseUrl: OPENROUTER_BASE_URL,
   },
@@ -457,7 +459,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     provider: "openrouter",
     contextWindow: 1000000,
     pricing: usd(2.5, 2.5, 15),
-    supportsVision: false,
+    supportsVision: true,
     clientType: "openai",
     baseUrl: OPENROUTER_BASE_URL,
   },
@@ -677,4 +679,22 @@ export function presetModelEntries(): ModelEntry[] {
     ...(m.supportsVision ? {} : { vision: false }),
     ...(m.baseUrl !== undefined ? { base_url: m.baseUrl } : {}),
   }));
+}
+
+/**
+ * The model's own homepage/detail page for the frontend's model-card link. Gateway groups
+ * have a stable per-model URL pattern (works for user-added ids in those groups too);
+ * direct-vendor models link to the vendor's model list/docs page; the Token Plan preview
+ * model has no dedicated page and links to the plan's model overview; custom and
+ * user-defined groups have no page to vouch for.
+ */
+export function modelHomepageUrl(provider: string, modelId: string): string | undefined {
+  if (provider === "openrouter") return `https://openrouter.ai/${modelId}`;
+  if (provider === "qwen-token-plan") {
+    return modelId === "qwen3.8-max-preview"
+      ? providerInfo(provider)?.modelsUrl
+      : `https://www.qianwenai.com/models/${modelId}`;
+  }
+  if (provider === "custom") return undefined;
+  return providerInfo(provider)?.modelsUrl;
 }

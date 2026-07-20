@@ -267,6 +267,7 @@ export const zh = {
       "用内置目录更新预置模型：新增缺失条目、以目录字段为准刷新差异；本地新增模型与 API key 保持不变",
     syncDone: (added: number, updated: number) => `预置模型已同步：新增 ${added}、更新 ${updated}`,
     syncUpToDate: "预置模型已是最新",
+    homepage: "模型主页",
     modelCount: (n: number): string => `${n} 个模型`,
     modelId: "模型 ID",
     modelIdHint: "上游 API 使用的模型 id，如 gpt-5.5",

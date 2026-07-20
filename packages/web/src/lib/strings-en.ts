@@ -292,6 +292,7 @@ export const en: Strings = {
     syncDone: (added: number, updated: number) =>
       `Presets synced: ${added} added, ${updated} updated`,
     syncUpToDate: "Presets are already up to date",
+    homepage: "Model page",
     modelCount: (n: number): string => `${n} model${n === 1 ? "" : "s"}`,
     modelId: "Model ID",
     modelIdHint: "The upstream API model id, e.g. gpt-5.5",

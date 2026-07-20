@@ -54,7 +54,7 @@ import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { SkillIcon } from "../skills/skill-icon-view";
 import { ZoomableImage } from "../../components/ui/image-zoom";
 import { ProviderLogo } from "../../components/ui/provider-logo";
-import { matchesQuery, sameModelRef } from "../models/model-grouping";
+import { matchesQuery, orderModelsLikeLibrary, sameModelRef } from "../models/model-grouping";
 import { filterAgents, matchMention, splitLeadingMention } from "./agent-mentions";
 import {
   BOOK_ICON,
@@ -231,7 +231,9 @@ function ModelSelect({
   const current = models.find((m) => sameModelRef(m, value));
   // Display rule matches the model page's card: display name, or falls back to the upstream id (grouping is already conveyed by the provider logo).
   const label = current ? modelLabel(current) : (value?.modelId ?? "…");
-  const filtered = models.filter((m) => matchesQuery(m, query));
+  // Dropdown order mirrors the model library page: provider groups in MODEL_PROVIDERS order
+  // (user-defined groups after, custom last), in-group order preserved.
+  const filtered = orderModelsLikeLibrary(models).filter((m) => matchesQuery(m, query));
   return (
     <Dropdown
       open={open}
