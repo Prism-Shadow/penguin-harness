@@ -197,6 +197,13 @@ const ENTRY_SWEEP_INTERVAL_MS = 60 * 1000;
 
 /** Cap on collected model text for title material (accumulation stops beyond this; the generator side also truncates further). */
 const TITLE_EXCERPT_LIMIT = 4000;
+/**
+ * Early title trigger: once this many characters of main-session body text have streamed,
+ * title generation starts right away instead of waiting for the Task to finish — the core
+ * Session has captured its (capped) material by then, and a long answer would only overrun
+ * it. Short conversations are still covered by the completion trigger in drive's finally.
+ */
+const EARLY_TITLE_BODY_CHARS = 1000;
 
 /** Composite Agent key (used as a Set key, avoiding projectId/agentId concatenation ambiguity). */
 function agentKey(projectId: string, agentId: string): string {
@@ -630,6 +637,8 @@ export class SessionManager {
     gen: AsyncGenerator<OmniMessage>,
     titleSource?: { userExcerpt: string },
   ): Promise<void> {
+    let earlyTitleFired = false;
+    let mainBodyChars = 0;
     const ctx: UsageContext = {
       projectId: entry.projectId,
       agentId: entry.agentId,
@@ -713,6 +722,27 @@ export class SessionManager {
           const child = nested ? children.get(nested.sessionId) : undefined;
           if (nested && child && child.assistantExcerpt.length < TITLE_EXCERPT_LIMIT) {
             child.assistantExcerpt += (child.assistantExcerpt ? "\n" : "") + nested.text;
+          }
+        }
+        // Early title trigger (see EARLY_TITLE_BODY_CHARS): fire as soon as enough main-
+        // session body text has streamed; maybeGenerate self-guards (NULL title, single
+        // flight), so the completion trigger in finally stays as the short-answer fallback.
+        if (!earlyTitleFired && titleSource?.userExcerpt.trim()) {
+          const p = msg.payload as { type?: string; role?: string; text?: string };
+          if (
+            (!msg.origin || msg.origin.length === 0) &&
+            msg.type === "model_msg" &&
+            p.type === "text" &&
+            p.role === "assistant" &&
+            p.text
+          ) {
+            mainBodyChars += p.text.length;
+            if (mainBodyChars >= EARLY_TITLE_BODY_CHARS) {
+              earlyTitleFired = true;
+              this.deps.titles?.maybeGenerate(ctx, entry.session, {
+                fallbackText: titleSource.userExcerpt,
+              });
+            }
           }
         }
         // Re-fetch the channel before every publish (matches publishEvent): the channel

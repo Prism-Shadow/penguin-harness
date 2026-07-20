@@ -65,15 +65,26 @@ export interface SessionConfig {
   inputImagesDir?: string;
 }
 
-/** Cap on captured title material (chars per side, matching buildTitlePrompt's truncation); stops accumulating once exceeded. */
-const TITLE_MATERIAL_LIMIT = 2000;
+/**
+ * Caps on captured title material (chars per side); accumulation stops once exceeded. The
+ * assistant body is capped tighter: a title only needs the opening of the answer, and hosts
+ * may start generating as soon as this much body text has streamed (see the Web server's
+ * early trigger) — a long answer would otherwise overrun the material.
+ */
+const TITLE_USER_MATERIAL_LIMIT = 2000;
+const TITLE_ASSISTANT_MATERIAL_LIMIT = 1000;
 
 /**
  * Accumulates title material: the body text of complete text messages from the main session
  * (no origin) — thinking and tool calls naturally don't count — and stops once the cap is hit.
  */
-function appendTitleText(base: string, msg: OmniMessage, role: "user" | "assistant"): string {
-  if (base.length >= TITLE_MATERIAL_LIMIT) return base;
+function appendTitleText(
+  base: string,
+  msg: OmniMessage,
+  role: "user" | "assistant",
+  limit: number,
+): string {
+  if (base.length >= limit) return base;
   if (msg.origin && msg.origin.length > 0) return base;
   const p = msg.payload as { type?: string; role?: string; text?: string };
   if (msg.type !== "model_msg" || p.type !== "text" || p.role !== role || !p.text) return base;
@@ -153,12 +164,22 @@ export class Session {
     const capture = !this.titleMaterialFrozen;
     if (capture) {
       for (const m of newMessages) {
-        this.titleUserText = appendTitleText(this.titleUserText, m, "user");
+        this.titleUserText = appendTitleText(
+          this.titleUserText,
+          m,
+          "user",
+          TITLE_USER_MATERIAL_LIMIT,
+        );
       }
     }
     for await (const msg of this.engine.run(newMessages, opts)) {
       if (capture) {
-        this.titleAssistantText = appendTitleText(this.titleAssistantText, msg, "assistant");
+        this.titleAssistantText = appendTitleText(
+          this.titleAssistantText,
+          msg,
+          "assistant",
+          TITLE_ASSISTANT_MATERIAL_LIMIT,
+        );
       }
       yield msg;
     }

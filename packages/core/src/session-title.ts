@@ -44,6 +44,7 @@ export function buildTitlePrompt(userExcerpt: string, assistantExcerpt: string):
     "- Write the title in the SAME language the user is using.",
     "- Keep it short: at most 6 words, or ~16 characters for CJK.",
     "- Output ONLY the title text — no quotes, no trailing punctuation, no explanation.",
+    "- Answer immediately — do not think aloud or produce chain-of-thought.",
     "",
     "[User]",
     clip(userExcerpt),
@@ -51,6 +52,9 @@ export function buildTitlePrompt(userExcerpt: string, assistantExcerpt: string):
   if (assistantExcerpt.trim()) {
     lines.push("", "[Assistant]", clip(assistantExcerpt));
   }
+  // The trailing empty think block makes many reasoning models treat their thinking phase
+  // as already closed, so the one-off request spends its budget on the title itself.
+  lines.push("", "<think></think>");
   return lines.join("\n");
 }
 

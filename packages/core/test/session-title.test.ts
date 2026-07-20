@@ -162,6 +162,10 @@ describe("session-title", () => {
     // Material = the first Task's user text + model text (thinking does not count), matching
     // buildTitlePrompt's shape.
     expect(seen[0]).toBe(buildTitlePrompt("user question", "answer body"));
+    // Anti-CoT shape: an explicit no-thinking rule, and the prompt ends with an empty think
+    // block so reasoning models treat their thinking phase as already closed.
+    expect(seen[0]).toContain("do not think aloud");
+    expect(seen[0]!.endsWith("<think></think>")).toBe(true);
 
     // No request is sent when no material has been collected (run was never called).
     const idle = new Session({
