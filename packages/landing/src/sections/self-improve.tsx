@@ -210,7 +210,7 @@ function TrendChart({
       const y = py(v);
       head.setAttribute("transform", `translate(${x}, ${y})`);
       value.textContent = format(v);
-      value.setAttribute("x", String(Math.min(W - M.right - 4, Math.max(M.left + 10, x))));
+      value.setAttribute("x", String(Math.min(W - M.right - 10, Math.max(M.left + 12, x))));
       value.setAttribute("y", String(Math.max(10, y - 9)));
       fade.style.opacity = String(opacity);
     };
@@ -330,7 +330,7 @@ const TRENDS: Array<{
       { at: 3, text: "v4" },
       { at: 6, text: "v7" },
     ],
-    format: (v) => v.toFixed(0),
+    format: (v) => `${v.toFixed(1)}%`,
   },
   {
     points: [0.42, 0.38, 0.39, 0.33, 0.3, 0.27, 0.25],
@@ -340,7 +340,7 @@ const TRENDS: Array<{
       { at: 3, text: "v4" },
       { at: 6, text: "v7" },
     ],
-    format: (v) => v.toFixed(2),
+    format: (v) => `$${v.toFixed(2)}`,
   },
   {
     points: [115, 107, 109, 98, 92, 87, 83],
@@ -350,7 +350,7 @@ const TRENDS: Array<{
       { at: 3, text: "v4" },
       { at: 6, text: "v7" },
     ],
-    format: (v) => v.toFixed(0),
+    format: (v) => `${v.toFixed(1)}s`,
   },
 ];
 
