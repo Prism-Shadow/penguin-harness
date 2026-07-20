@@ -1,45 +1,34 @@
 /**
  * Rotating announcement bar above the sticky nav (it scrolls away with the page).
- * Auto-advances on a timer (paused while hovered), with prev/next chevrons for
- * manual switching; each announcement is one full-width link. Internal targets go
- * through the router, the docs SPA is a plain anchor.
+ * Light brand-tinted background; announcements SLIDE horizontally between each
+ * other (auto-advance on a timer, paused while hovered) with dot indicators for
+ * manual switching — no arrows. Every announcement links to a blog post.
  */
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { S } from "../lib/strings";
-import { DOCS_URL } from "../lib/links";
-import { ArrowRightIcon, ChevronLeftIcon, ChevronRightIcon } from "./icons";
 
 const ROTATE_MS = 6000;
 
-/** The fireworks-credits campaign post (content/blog/fireworks-credits-amd.*.md). */
-const FIREWORKS_POST_PATH = "/blog/fireworks-credits-amd";
+/** Both announcements point at blog posts (content/blog/<slug>.*.md). */
+const ITEMS = [
+  { key: "models", to: "/blog/introducing-penguinharness" },
+  { key: "fireworks", to: "/blog/fireworks-credits-amd" },
+] as const;
 
 export function AnnouncementBar() {
-  const items = [
-    { key: "models", text: S.announcement.models, href: `${DOCS_URL}models` },
-    { key: "fireworks", text: S.announcement.fireworks, to: FIREWORKS_POST_PATH },
-  ];
+  const texts: Record<(typeof ITEMS)[number]["key"], string> = {
+    models: S.announcement.models,
+    fireworks: S.announcement.fireworks,
+  };
   const [active, setActive] = useState(0);
   const [paused, setPaused] = useState(false);
 
   useEffect(() => {
     if (paused) return;
-    const timer = setInterval(() => setActive((i) => (i + 1) % items.length), ROTATE_MS);
+    const timer = setInterval(() => setActive((i) => (i + 1) % ITEMS.length), ROTATE_MS);
     return () => clearInterval(timer);
-  }, [paused, items.length]);
-
-  const item = items[active]!;
-  const linkCls =
-    "anim-fade inline-flex min-w-0 items-center gap-1.5 text-[13px] font-medium text-white hover:underline underline-offset-2";
-  const chevronCls =
-    "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-white/70 transition-colors hover:bg-white/15 hover:text-white";
-  const content = (
-    <>
-      <span className="truncate">{item.text}</span>
-      <ArrowRightIcon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-    </>
-  );
+  }, [paused]);
 
   return (
     <div
@@ -47,34 +36,48 @@ export function AnnouncementBar() {
       aria-label={S.announcement.label}
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
-      className="bg-brand-600 dark:bg-brand-500/20"
+      className="border-b border-brand-100 bg-brand-50 dark:border-brand-950 dark:bg-brand-950/50"
     >
-      <div className="mx-auto flex h-9 max-w-6xl items-center justify-center gap-2 px-4 sm:px-6">
-        <button
-          type="button"
-          onClick={() => setActive((i) => (i + items.length - 1) % items.length)}
-          aria-label={S.announcement.prev}
-          className={chevronCls}
-        >
-          <ChevronLeftIcon className="h-3.5 w-3.5" />
-        </button>
-        {"to" in item && item.to ? (
-          <Link key={item.key} to={item.to} className={linkCls}>
-            {content}
-          </Link>
-        ) : (
-          <a key={item.key} href={item.href} className={linkCls}>
-            {content}
-          </a>
-        )}
-        <button
-          type="button"
-          onClick={() => setActive((i) => (i + 1) % items.length)}
-          aria-label={S.announcement.next}
-          className={chevronCls}
-        >
-          <ChevronRightIcon className="h-3.5 w-3.5" />
-        </button>
+      <div className="mx-auto flex h-9 max-w-6xl items-center gap-3 px-4 sm:px-6">
+        {/* Sliding track: one full-width slide per announcement. */}
+        <div className="min-w-0 flex-1 overflow-hidden">
+          <div
+            className="flex transition-transform duration-500 ease-out"
+            style={{ transform: `translateX(-${active * 100}%)` }}
+          >
+            {ITEMS.map((item, i) => (
+              <div
+                key={item.key}
+                aria-hidden={i !== active}
+                className="flex w-full shrink-0 justify-center"
+              >
+                <Link
+                  to={item.to}
+                  tabIndex={i === active ? 0 : -1}
+                  className="truncate text-[13px] font-medium text-brand-800 underline-offset-2 hover:underline dark:text-brand-200"
+                >
+                  {texts[item.key]}
+                </Link>
+              </div>
+            ))}
+          </div>
+        </div>
+        <span className="flex shrink-0 items-center gap-1.5">
+          {ITEMS.map((item, i) => (
+            <button
+              key={item.key}
+              type="button"
+              onClick={() => setActive(i)}
+              aria-label={texts[item.key]}
+              aria-current={i === active}
+              className={`h-1.5 rounded-full transition-all ${
+                i === active
+                  ? "w-4 bg-brand-600 dark:bg-brand-300"
+                  : "w-1.5 bg-brand-300 hover:bg-brand-400 dark:bg-brand-800 dark:hover:bg-brand-700"
+              }`}
+            />
+          ))}
+        </span>
       </div>
     </div>
   );

@@ -89,19 +89,14 @@ Any OpenAI-protocol endpoint is supported: pick a preset above, or point a custo
 
 ## Start right now
 
-Install with one command (Linux / macOS, x64 / arm64, bundled Node runtime):
+Install with one command (Linux / macOS, x64 / arm64, bundled Node runtime), then launch the Web UI:
 
 ```bash
 curl -fsSL https://penguin.ooo/install.sh | sh
+penguin web        # opens http://127.0.0.1:7364 (first login: admin / admin123)
 ```
 
-Configure a model (DeepSeek as the example) and run your first task, or open the desktop-grade Web UI with `penguin web`:
-
-```bash
-penguin config model add --model-id deepseek-v4-pro --api-key sk-your-key --set-default
-penguin run --approve allow-all --message "Analyze data.csv and summarize quarterly sales"
-penguin web
-```
+Open the Models page, paste an API key under the DeepSeek or OpenRouter group and set it as default; then head back to Chat and hand the Agent its first task — e.g. "Analyze data.csv and summarize quarterly sales".
 
 PenguinHarness supports 1000+ online and local models and multi-agent collaborative evolution, and runs on as little as a single CPU. Through continuous evolution it makes complex AI development ever simpler — a more efficient, more reliable, lower-hallucination and lower-cost Agent productivity engine.
 

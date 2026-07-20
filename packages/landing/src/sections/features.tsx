@@ -1,8 +1,8 @@
 /**
- * Feature explorer as switchable tabs mirroring the Web App's menu: every feature
- * keeps its icon + one-line description, and the three views we have real captures
- * for (multi-session chat, trace view, agent evaluation) show their screenshot in
- * the active panel — matched to the visitor's locale and theme.
+ * Feature section in two layers: the three features with real captures
+ * (multi-session chat, trace view, agent evaluation) form switchable tabs whose
+ * active panel embeds the locale/theme-matched screenshot; the remaining
+ * features sit below as a plain card grid, closed by an "and more…" card.
  */
 import { useState } from "react";
 import { S } from "../lib/strings";
@@ -91,18 +91,21 @@ const ICONS = [
   UsersIcon,
 ];
 
-/** Features with a real capture: item index -> shot set. */
-const SHOT_KEYS: Partial<Record<number, keyof typeof SHOTS>> = {
-  0: "chat",
-  6: "traces",
-  7: "benchmark",
-};
+/** Item indexes with a real capture, in tab order. */
+const SHOT_TABS: Array<{ index: number; shot: keyof typeof SHOTS }> = [
+  { index: 0, shot: "chat" },
+  { index: 6, shot: "traces" },
+  { index: 7, shot: "benchmark" },
+];
+
+/** The rest of the grid, in the original item order. */
+const PLAIN_INDEXES = [1, 2, 3, 4, 5, 8];
 
 export function Features() {
   const [active, setActive] = useState(0);
-  const item = S.features.items[active] ?? S.features.items[0]!;
-  const ActiveIcon = ICONS[active] ?? SparklesIcon;
-  const shotKey = SHOT_KEYS[active];
+  const tab = SHOT_TABS[active] ?? SHOT_TABS[0]!;
+  const item = S.features.items[tab.index]!;
+  const ActiveIcon = ICONS[tab.index] ?? SparklesIcon;
 
   return (
     <Section
@@ -114,32 +117,33 @@ export function Features() {
       <div
         role="tablist"
         aria-label={S.features.eyebrow}
-        className="mx-auto flex max-w-4xl flex-wrap justify-center gap-2"
+        className="flex flex-wrap justify-center gap-2"
       >
-        {S.features.items.map((it, i) => {
-          const TabIcon = ICONS[i] ?? SparklesIcon;
+        {SHOT_TABS.map((t, i) => {
+          const tabItem = S.features.items[t.index]!;
+          const TabIcon = ICONS[t.index] ?? SparklesIcon;
           const activeTab = i === active;
           return (
             <button
-              key={it.title}
+              key={t.shot}
               type="button"
               role="tab"
               aria-selected={activeTab}
               onClick={() => setActive(i)}
-              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-colors ${
+              className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-sm transition-colors ${
                 activeTab
                   ? "border-gray-900 bg-gray-900 text-white dark:border-gray-100 dark:bg-gray-100 dark:text-gray-900"
                   : "border-gray-200 text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-400 dark:hover:bg-gray-900"
               }`}
             >
               <TabIcon className="h-3.5 w-3.5 shrink-0" />
-              {it.title}
+              {tabItem.title}
             </button>
           );
         })}
       </div>
 
-      <div role="tabpanel" className="anim-fade mx-auto mt-8 max-w-5xl" key={item.title}>
+      <div role="tabpanel" className="anim-fade mx-auto mt-8 max-w-5xl" key={tab.shot}>
         <div className="flex items-start gap-4 rounded-xl border border-gray-200 bg-white p-5 sm:p-6 dark:border-gray-800 dark:bg-gray-900">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600 dark:bg-brand-950 dark:text-brand-300">
             <ActiveIcon className="h-5 w-5" />
@@ -149,13 +153,38 @@ export function Features() {
             <p className="mt-1 text-sm leading-6 text-gray-600 dark:text-gray-400">{item.desc}</p>
           </div>
         </div>
-        {shotKey && (
-          <div className="mt-6">
-            <BrowserFrame>
-              <ThemedShot set={SHOTS[shotKey]} alt={item.title} />
-            </BrowserFrame>
-          </div>
-        )}
+        <div className="mt-6">
+          <BrowserFrame>
+            <ThemedShot set={SHOTS[tab.shot]} alt={item.title} />
+          </BrowserFrame>
+        </div>
+      </div>
+
+      {/* Features without a capture: the classic card grid, closed by "and more…". */}
+      <div className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        {PLAIN_INDEXES.map((index) => {
+          const plain = S.features.items[index]!;
+          const IconCmp = ICONS[index] ?? SparklesIcon;
+          return (
+            <article
+              key={plain.title}
+              className="relative overflow-hidden rounded-xl border border-gray-200 bg-white p-5 transition-colors hover:border-gray-300 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-gray-700"
+            >
+              {/* Oversized faint icon as the card backdrop (decorative). */}
+              <IconCmp
+                strokeWidth={1.25}
+                className="pointer-events-none absolute -right-5 -bottom-5 h-26 w-26 text-gray-100 dark:text-gray-800"
+              />
+              <h3 className="relative text-[15px] font-semibold tracking-tight">{plain.title}</h3>
+              <p className="relative mt-2 text-sm leading-6 text-gray-600 dark:text-gray-400">
+                {plain.desc}
+              </p>
+            </article>
+          );
+        })}
+        <article className="flex items-center justify-center rounded-xl border border-dashed border-gray-300 p-5 text-sm text-gray-400 dark:border-gray-700 dark:text-gray-500">
+          {S.features.more}
+        </article>
       </div>
     </Section>
   );

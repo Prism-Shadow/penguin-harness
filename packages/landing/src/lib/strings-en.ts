@@ -278,6 +278,7 @@ export const en: Strings = {
     eyebrow: "Features",
     title: "The full capability set, one desktop-grade UI",
     subtitle: "One-to-one with the web interface's menu — installed means ready.",
+    more: "and more…",
     items: [
       {
         title: "Multi-session chat",

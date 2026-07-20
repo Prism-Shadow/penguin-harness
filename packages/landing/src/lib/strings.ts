@@ -272,6 +272,7 @@ export const zh = {
     eyebrow: "主要功能",
     title: "桌面级界面里的完整能力",
     subtitle: "与 Web 界面的菜单一一对应，装好即用。",
+    more: "以及更多……",
     items: [
       {
         title: "多 Session 会话",
