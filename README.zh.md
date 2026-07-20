@@ -80,18 +80,18 @@ Build a RAG app that answers questions over the Markdown files in docs/ with cit
 
 ## 支持的模型
 
-| 模型             | 供应商      |
-| ---------------- | ----------- |
-| DeepSeek V4      | DeepSeek    |
-| Kimi K3          | Moonshot AI |
-| GLM 5.2          | Z.AI        |
-| Hunyuan 3        | 腾讯        |
-| Qwen 3.8 Max     | 阿里        |
-| GPT 5.5          | OpenAI      |
-| Gemini 3.5 Flash | Google      |
-| Claude Opus 4.8  | Anthropic   |
+| 模型             | 供应商      | 预置于                                                                                |
+| ---------------- | ----------- | ------------------------------------------------------------------------------------- |
+| DeepSeek V4      | DeepSeek    | DeepSeek · OpenRouter · Fireworks AI · SiliconFlow · Qwen Token Plan                  |
+| Kimi K3          | Moonshot AI | OpenRouter · Qwen Pay-As-You-Go                                                       |
+| GLM 5.2          | Z.AI        | Z.AI · OpenRouter · Fireworks AI · SiliconFlow · Qwen Token Plan · Qwen Pay-As-You-Go |
+| Hunyuan 3        | 腾讯        | OpenRouter                                                                            |
+| Qwen 3.8 Max     | 阿里        | Qwen Token Plan(预览)                                                               |
+| GPT 5.5          | OpenAI      | OpenAI · OpenRouter                                                                   |
+| Gemini 3.5 Flash | Google      | Google Gemini                                                                         |
+| Claude Opus 4.8  | Anthropic   | Anthropic · OpenRouter                                                                |
 
-模型即 `(provider, model_id)` 二元组加一个 API key:内置供应商分组(DeepSeek、Anthropic、OpenAI、Google Gemini、Z.AI、Moonshot)自动路由,另有 1000+ 在线与本地模型可经 OpenAI 兼容网关(OpenRouter、SiliconFlow 等)或任意自定义端点接入。
+模型即 `(provider, model_id)` 二元组加一个 API key:一方厂商分组(DeepSeek、Anthropic、OpenAI、Google Gemini、Z.AI、Moonshot)自动路由,五个 OpenAI 兼容网关(OpenRouter、Fireworks AI、SiliconFlow、Qwen Token Plan、Qwen Pay-As-You-Go)自带预置端点,另有 1000+ 在线与本地模型可经这些网关或任意自定义端点接入。
 
 ## 系统需求与安装
 
