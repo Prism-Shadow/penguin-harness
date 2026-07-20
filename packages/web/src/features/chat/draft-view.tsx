@@ -434,11 +434,11 @@ export function DraftView({
           <WorkspaceSelect projectId={projectId} workspace={workspace} onChange={setWorkspace} />
         </div>
 
-        {/* Example tasks: one-click canned builds showing off the one-sentence → app flow
-            (game card first, RAG build second — stacked on mobile, side by side from sm up).
-            Disabled until agents/models/skills are resolved (onSend would silently no-op
-            without an Agent); hover only darkens the border, per the card convention. */}
-        <div className="mt-6 flex flex-col items-stretch justify-center gap-2 sm:flex-row">
+        {/* Example tasks: one-click canned builds showing off the one-sentence → app flow,
+            stacked vertically in display order on every viewport. Disabled until
+            agents/models/skills are resolved (onSend would silently no-op without an Agent);
+            hover only darkens the border, per the card convention. */}
+        <div className="mt-6 flex flex-col items-stretch gap-2">
           {EXAMPLE_TASKS.map((task) => {
             const copy = S.chat.exampleTasks[task.id];
             return (
@@ -448,7 +448,7 @@ export function DraftView({
                 disabled={exampleBusy !== null || sending || !skillsLoaded || !agentId || !models}
                 onClick={() => void runExample(task)}
                 title={copy.desc}
-                className="group flex min-w-0 items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 text-left transition-colors duration-150 hover:border-gray-300 disabled:cursor-default disabled:opacity-60 sm:max-w-sm sm:flex-1 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-gray-700"
+                className="group flex min-w-0 items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 text-left transition-colors duration-150 hover:border-gray-300 disabled:cursor-default disabled:opacity-60 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-gray-700"
               >
                 {/* 24×24 line icons (gamepad / music note / sparkle), consistent with the icon convention */}
                 {task.id === "lol" ? (
