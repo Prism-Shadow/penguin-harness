@@ -286,6 +286,12 @@ export const en: Strings = {
     groupEmptyHint: "No models in this group yet; use “Add model” to create one",
     searchPlaceholder: "Search models: id / name / provider",
     noSearchResults: "No matching models",
+    syncCatalog: "Sync presets",
+    syncCatalogHint:
+      "Update preset models from the built-in catalog: add missing entries and reset differing ones to the catalog's fields; locally added models and API keys are left untouched",
+    syncDone: (added: number, updated: number) =>
+      `Presets synced: ${added} added, ${updated} updated`,
+    syncUpToDate: "Presets are already up to date",
     modelCount: (n: number): string => `${n} model${n === 1 ? "" : "s"}`,
     modelId: "Model ID",
     modelIdHint: "The upstream API model id, e.g. gpt-5.5",
