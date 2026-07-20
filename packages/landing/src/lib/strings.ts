@@ -18,8 +18,9 @@ export const zh = {
   },
 
   nav: {
-    why: "为什么选择",
+    highlights: "特色",
     quickstart: "快速开始",
+    benchmark: "评测",
     contract: "CONTRACT.md",
     features: "功能",
     blog: "博客",
@@ -46,15 +47,14 @@ export const zh = {
   hero: {
     badge: "让 Agent 为你构建 Agent",
     /**
-     * Two-line story headline (same story as the README): a muted LangChain line,
-     * then the PenguinHarness line with {storyPre}{storyEmph}{storyPost} — the
-     * emphasized fragment ("100 倍速度") wears the brand color.
+     * Rotating headline: {titlePrefix}{word}{titleSuffix}{titleSuffixNoWrap} — the
+     * word cycles through titleWords with a gaussian-blur crossfade; titleSuffixNoWrap
+     * renders as an unbreakable span so CJK line-breaking lands on the phrase boundary.
      */
-    storyMuted: "使用 LangChain，以 1 倍速度人工构建 Agent；",
-    storyPre: "使用 PenguinHarness，以 ",
-    storyEmph: "100 倍速度",
-    storyPost: "用 Agent 构建 Agent。",
-    subtitle: "零代码 Harness CLI 与 Web UI，连接 1000+ 模型。",
+    titlePrefix: "专为",
+    titleWords: ["开发者", "企业"],
+    titleSuffix: "设计的",
+    titleSuffixNoWrap: "高效自进化 Harness",
     keywords: ["轻量", "高效", "开源"],
     ctaPrimary: "快速开始",
     ctaGithub: "GitHub",
@@ -72,24 +72,58 @@ export const zh = {
     copied: "已复制",
   },
 
-  why: {
-    eyebrow: "为什么选择 PenguinHarness",
-    title: "三个递进的理由",
-    subtitle: "从任务效果，到构建方式，再到进化能力——看完这三点，把下一个 Agent 交给 Agent。",
-    reason1Title: "复杂任务表现更好，成本更低",
-    reason1Desc:
-      "同一 DeepSeek V4 Pro 模型，与 Claude Code、OpenAI Codex 在两套题库上正面对比：准确率同级或更高，Token 与成本更低——对 DeepSeek 等开放模型深度适配。",
-    reason2Title: "一句话，让 Agent 构建 Agent 应用",
-    reason2Desc:
-      "把一句需求交给 PenguinHarness，Agent 端到端产出可运行的 Agent 应用：脚手架、代码与运行说明，一步到位。",
-    reason2Caption: "一句话输入，产出可运行的 RAG 应用：脚手架、带引用的检索入口与运行说明",
-    reason3Title: "自进化，越用越强",
-    reason3Desc:
-      "Optimizer 组织多个 Evaluator 为 Target Agent 并行打分，依据分数与运行轨迹定位失分原因，把 Agent 从版本 N 优化到版本 N+1——每一轮都有快照，随时可回退。",
-    videoSoon: "演示视频即将上线",
+  pillars: {
+    eyebrow: "三大特色",
+    title: "为构建与进化 Agent 而生",
+    subtitle: "PenguinHarness 率先把「Agent 构建 Agent」与「递归自我进化」带入开源 Harness。",
+    root: "PenguinHarness",
+    concepts: ["Penguin Message", "Penguin SDK", "Penguin Skills"],
+    diagramLabel:
+      "PenguinHarness 辐射出 Penguin Message、Penguin SDK 与 Penguin Skills，分别延展出三大特色",
+    items: [
+      {
+        title: "Simplest Is the Best",
+        tag: "",
+        desc: "坚持最小化工具集与简洁的底层接口，以更少的工具调用与 Token 消耗，高效完成复杂任务。",
+      },
+      {
+        title: "Harness for Building Agents",
+        tag: "",
+        desc: "通过 PenguinHarness SDK，让 Agent 从零自主完成 Agent 应用的构建。",
+      },
+      {
+        title: "Harness for Recursive Self-Improvement",
+        tag: "",
+        desc: "通过 PenguinHarness Skills，Agent 以自我评估与自我优化实现递归式自我提升。",
+      },
+    ],
+  },
+
+  compare: {
+    eyebrow: "对比 LangChain",
+    title: "1× 与 100× 的差距",
+    subtitle:
+      "使用 LangChain，以 1 倍速度人工构建 Agent；使用 PenguinHarness，以 100 倍速度用 Agent 构建 Agent。",
+    langchain: {
+      name: "LangChain",
+      speed: "1×",
+      mode: "人工构建 Agent",
+      note: "逐行编写链路、工具与提示词，每个应用都从零开始。",
+    },
+    penguin: {
+      name: "PenguinHarness",
+      speed: "100×",
+      mode: "Agent 构建 Agent",
+      note: "一句话需求，Agent 端到端交付脚手架、代码与运行说明。",
+    },
   },
 
   selfImprove: {
+    eyebrow: "自我提升循环",
+    title: "多 Agent 协作，进化自动发生",
+    subtitle:
+      "Optimizer 组织多个 Evaluator 为 Target Agent 并行打分，依据分数与运行轨迹定位失分原因，把 Agent 从版本 N 优化到版本 N+1——每一轮都有快照，随时可回退。",
+    videoSoon: "演示视频即将上线",
     nodeOptimizer: "Optimizer",
     nodeEvaluator: "Evaluator × N",
     nodeTarget: "Target Agent",
@@ -149,6 +183,18 @@ export const zh = {
   --message "分析 data.csv，输出各季度销售额汇总"`,
   },
 
+  cases: {
+    eyebrow: "案例",
+    title: "从一句话到可运行的应用",
+    subtitle: "把需求交给 Agent，端到端拿到可运行的结果；更多案例陆续加入。",
+    tabs: [
+      {
+        label: "RAG 应用",
+        caption: "一句话输入，产出可运行的 RAG 应用：脚手架、带引用的检索入口与运行说明",
+      },
+    ],
+  },
+
   contract: {
     eyebrow: "稳定进化的契约",
     title: "CONTRACT.md",
@@ -200,6 +246,10 @@ export const zh = {
   },
 
   benchmark: {
+    eyebrow: "Benchmark",
+    title: "同一模型，效果同级或更好，消耗更低",
+    subtitle:
+      "全部使用同一 DeepSeek V4 Pro 模型，与 Claude Code、OpenAI Codex 在两套题库上正面对比。",
     higherBetter: "越高越好",
     lowerBetter: "越低越好",
     dimScore: "准确率",
@@ -284,6 +334,18 @@ export const zh = {
         desc: "credential 以 0600 隐藏文件落盘，系统 Prompt 禁读，界面全程掩码。",
       },
     ],
+  },
+
+  community: {
+    eyebrow: "社区",
+    title: "加入社区，一起共建",
+    subtitle: "讨论、提问、贡献——你的第一个 Issue 就是最好的开始。",
+    items: {
+      discord: { name: "Discord", desc: "与我们和其他开发者实时交流。" },
+      x: { name: "X（Twitter）", desc: "关注产品与团队的最新动态。" },
+      wechat: { name: "微信群", desc: "中文社区讨论与互助。" },
+      github: { name: "GitHub", desc: "Star、Issue 与 PR 都欢迎。" },
+    },
   },
 
   cta: {
