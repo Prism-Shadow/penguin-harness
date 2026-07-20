@@ -72,23 +72,9 @@ penguin web        # opens http://127.0.0.1:7364 (first login: admin / admin123)
 
 Open the Models page and find the **Fireworks AI** group, then use its bulk key button to paste the API key you just created. The group presets five models — GLM 5.2, Kimi K2.7 Code, DeepSeek V4 Pro, MiniMax M3, and DeepSeek V4 Flash — with base URLs and pricing pre-filled; set any of them as the default. You can also hit the group's speed-test button to measure real TTFT and TPS before choosing.
 
-Prefer the CLI? One command does the same:
-
-```bash
-penguin config model add \
-  --provider fireworks \
-  --model-id accounts/fireworks/models/deepseek-v4-pro \
-  --api-key fw-your-key \
-  --set-default
-```
-
 **3. Start working**
 
-```bash
-penguin run --approve allow-all --message "Analyze data.csv and summarize quarterly sales"
-```
-
-Or chat in the Web UI and hand the Agent its first task.
+Head back to Chat and hand the Agent its first task — e.g. "Analyze data.csv and summarize quarterly sales".
 
 ## References
 

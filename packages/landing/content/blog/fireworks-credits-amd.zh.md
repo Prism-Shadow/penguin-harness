@@ -72,23 +72,9 @@ penguin web        # 打开 http://127.0.0.1:7364（首次登录：admin / admin
 
 进入「模型仓库」页，找到 **Fireworks AI** 分组，点击「统一配置 key」粘贴刚创建的 API key。分组预置了五个模型——GLM 5.2、Kimi K2.7 Code、DeepSeek V4 Pro、MiniMax M3、DeepSeek V4 Flash——base URL 与价格已填好，任选一个设为默认即可；也可以点组头的「测速」，实测各模型的 TTFT 与 TPS 再决定。
 
-偏好命令行的话，一条命令等价完成：
-
-```bash
-penguin config model add \
-  --provider fireworks \
-  --model-id accounts/fireworks/models/deepseek-v4-pro \
-  --api-key fw-your-key \
-  --set-default
-```
-
 **3. 开始使用**
 
-```bash
-penguin run --approve allow-all --message "分析 data.csv，输出各季度销售额汇总"
-```
-
-或直接在 Web 界面对话，把第一个任务交给 Agent。
+回到对话页，把第一个任务交给 Agent——例如「分析 data.csv，输出各季度销售额汇总」。
 
 ## 参考链接
 

@@ -89,19 +89,14 @@ Build a RAG app that answers questions over the Markdown files in docs/ with cit
 
 ## 现在就可以开始
 
-一行命令安装（Linux / macOS，x64 / arm64，内嵌 Node 运行时）：
+一行命令安装（Linux / macOS，x64 / arm64，内嵌 Node 运行时），然后启动 Web 界面：
 
 ```bash
 curl -fsSL https://penguin.ooo/install.sh | sh
+penguin web        # 打开 http://127.0.0.1:7364（首次登录：admin / admin123）
 ```
 
-配置模型（以 DeepSeek 为例）后即可运行第一个任务，或用 `penguin web` 打开桌面级 Web 界面：
-
-```bash
-penguin config model add --model-id deepseek-v4-pro --api-key sk-your-key --set-default
-penguin run --approve allow-all --message "分析 data.csv，输出各季度销售额汇总"
-penguin web
-```
+进入「模型仓库」页，在 DeepSeek 或 OpenRouter 分组里粘贴 API key 并设为默认；回到对话页，把第一个任务交给 Agent——例如「分析 data.csv，输出各季度销售额汇总」。
 
 PenguinHarness 支持 1000 多种在线与本地模型、多智能体协作进化，最低单 CPU 即可运行。通过不断进化，它会让复杂的 AI 开发越来越简单——为你提供更高效、更可靠、更低幻觉、更低成本的 Agent 生产力引擎。
 
