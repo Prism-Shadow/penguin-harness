@@ -297,18 +297,23 @@ export interface TaskStatsLabels {
   cached: string;
   /** Output-tokens label, e.g. "Output tokens" / "输出 tokens". */
   output: string;
+  /** Opening wrapper before the cached amount — keeps per-locale typography (e.g. " (" / "（"). */
+  parenOpen: string;
+  /** Closing wrapper after the cached amount (e.g. ")" / "）"). */
+  parenClose: string;
 }
 
 /**
  * Stats row text (copy fallback / used when there's no body text): same basis as the stats row —
  * this round's usage "input tokens (including cached amount) · output tokens · output TPS", e.g.
- * `[Stats] Input tokens 4k (cached 3k) · Output tokens 1.2k · 42.5 tok/s`. Labels come from the
- * caller's active locale dictionary so the copied text matches the UI language.
+ * `[Stats] Input tokens 4k (cached 3k) · Output tokens 1.2k · 42.5 tok/s`. Labels (including the
+ * parenthesis wrappers) come from the caller's active locale dictionary, so the copied text keeps
+ * per-locale typography — ASCII `(…)` in English, fullwidth `（…）` in Chinese.
  */
 export function formatTaskStats(s: TaskStats, labels: TaskStatsLabels): string {
   const b = s.tokensByBucket;
   return (
-    `[${labels.stats}] ${labels.input} ${humanizeTokens(b.cacheRead + b.cacheWrite)} (${labels.cached} ${humanizeTokens(b.cacheRead)})` +
+    `[${labels.stats}] ${labels.input} ${humanizeTokens(b.cacheRead + b.cacheWrite)}${labels.parenOpen}${labels.cached} ${humanizeTokens(b.cacheRead)}${labels.parenClose}` +
     ` · ${labels.output} ${humanizeTokens(b.output)}` +
     ` · ${formatTps(s.outputTps)}`
   );

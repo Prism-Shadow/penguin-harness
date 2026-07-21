@@ -531,6 +531,9 @@ export const en: Strings = {
     statCached: "cached",
     statOutput: "Output tokens",
     statTps: "Output TPS",
+    /** Copied-stats-line parenthesis wrappers around the cached amount (ASCII with a leading space for en). */
+    statParenOpen: " (",
+    statParenClose: ")",
     noSessions: "No Sessions yet",
     emptyStream: "Send a message to start the conversation",
     historyLoadFailed: "Failed to load history",

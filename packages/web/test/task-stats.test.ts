@@ -200,12 +200,16 @@ describe("formatTaskStats", () => {
     input: "Input tokens",
     cached: "cached",
     output: "Output tokens",
+    parenOpen: " (",
+    parenClose: ")",
   };
   const ZH_LABELS = {
     stats: "统计信息",
     input: "输入 tokens",
     cached: "已缓存",
     output: "输出 tokens",
+    parenOpen: "（",
+    parenClose: "）",
   };
 
   it("the convention is this round's usage \"input (cached) · output · output TPS\", taking this Task's three-bucket usage + this Task's TPS", () => {
@@ -259,6 +263,6 @@ describe("formatTaskStats", () => {
         },
         ZH_LABELS,
       ),
-    ).toBe("[统计信息] 输入 tokens 4k (已缓存 3k) · 输出 tokens 1.2k · 42.5 tok/s");
+    ).toBe("[统计信息] 输入 tokens 4k（已缓存 3k） · 输出 tokens 1.2k · 42.5 tok/s");
   });
 });

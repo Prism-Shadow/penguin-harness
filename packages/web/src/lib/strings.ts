@@ -509,6 +509,9 @@ export const zh = {
     statCached: "已缓存",
     statOutput: "输出 tokens",
     statTps: "输出 TPS",
+    /** Copied-stats-line parenthesis wrappers around the cached amount (fullwidth for zh typography). */
+    statParenOpen: "（",
+    statParenClose: "）",
     noSessions: "还没有 Session",
     emptyStream: "发送一条消息开始对话",
     historyLoadFailed: "历史消息加载失败",

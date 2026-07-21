@@ -78,6 +78,8 @@ export function TaskStatsLine({
             input: S.chat.statInput,
             cached: S.chat.statCached,
             output: S.chat.statOutput,
+            parenOpen: S.chat.statParenOpen,
+            parenClose: S.chat.statParenClose,
           });
     void navigator.clipboard?.writeText(text).then(() => {
       setCopied(true);
