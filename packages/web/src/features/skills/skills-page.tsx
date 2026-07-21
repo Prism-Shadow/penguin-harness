@@ -50,7 +50,7 @@ import { toastError, toastSuccess } from "../../components/ui/toast";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
 import { draftKey, loadDraft, saveDraft } from "../chat/draft-cache";
 import { localizedShortText, localizedText } from "../chat/skill-use";
-import { SkillIcon } from "./skill-icon-view";
+import { SkillIcon, skillTileColor } from "./skill-icon-view";
 
 /** agentId → (installed skill name → installed copy's version); in-page install-state snapshot, rewritten in place by optimistic updates. */
 export type InstalledMap = ReadonlyMap<string, ReadonlyMap<string, number>>;
@@ -254,7 +254,7 @@ export function SkillsPage() {
             </Button>
           </div>
         ) : groups === null ? (
-          <div className="mt-6 grid gap-2.5 md:grid-cols-2 xl:grid-cols-3">
+          <div className="mt-6 grid gap-2.5 sm:grid-cols-2">
             {Array.from({ length: 4 }, (_, i) => (
               <SkeletonCard key={i} className="p-4">
                 <Skeleton className="h-4 w-32" />
@@ -309,7 +309,7 @@ export function SkillsPage() {
                     <div className="overflow-hidden" inert={!open}>
                       {/* Up to three cards per row, generously sized (3 columns ≥xl, 2 columns ≥md, 1 column on narrow screens). */}
                       <div
-                        className={`grid gap-2.5 p-2.5 transition-opacity duration-200 md:grid-cols-2 xl:grid-cols-3 ${open ? "opacity-100" : "opacity-0"}`}
+                        className={`grid gap-2.5 p-2.5 transition-opacity duration-200 sm:grid-cols-2 ${open ? "opacity-100" : "opacity-0"}`}
                       >
                         {group.skills.map((skill) => (
                           <SkillCard
@@ -375,12 +375,14 @@ function SkillCard({
     .join(" · ");
   return (
     <div className="flex h-full flex-col rounded-md border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
-      {/* Header: an enlarged skill icon spanning two rows (rounded, accent-colored background
-          following the theme-color setting), with the name and short description on one line
-          each to the right. */}
+      {/* Header: the skill icon centered across the two text rows (rounded tile in the skill's
+          own palette color — see skillTileColor; deliberately a bit smaller than the two rows),
+          with the name and short description on one line each to the right. */}
       <div className="flex items-center gap-3">
-        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-[var(--accent-bg)] text-[var(--accent-fg)]">
-          <SkillIcon icon={skill.icon} size={26} />
+        <span
+          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${skillTileColor(skill.name)}`}
+        >
+          <SkillIcon icon={skill.icon} size={20} />
         </span>
         <div className="min-w-0 flex-1">
           <span className="block truncate font-mono text-[13px] font-semibold" title={skill.name}>
@@ -404,16 +406,17 @@ function SkillCard({
         >
           {meta}
         </span>
+        {/* Light (secondary) and a notch smaller than its neighbors: an update nudge, not the card's primary action. */}
         {outdated.length > 0 && (
           <Button
             size="sm"
-            variant="primary"
-            className="shrink-0 px-1.5"
+            variant="secondary"
+            className="shrink-0 px-1 py-0.5"
             aria-label={`${S.skills.updateOutdated(outdated.length)} ${skill.name}`}
             title={S.skills.updateOutdated(outdated.length)}
             onClick={() => void onUpdateOutdated(skill.name, outdated)}
           >
-            <GlyphIcon d={UPDATE_ICON} size={15} />
+            <GlyphIcon d={UPDATE_ICON} size={13} />
           </Button>
         )}
         <Button
@@ -496,7 +499,7 @@ function InstallRow({
       {installed && outdated && (
         <Button
           size="sm"
-          variant="primary"
+          variant="secondary"
           className="shrink-0"
           aria-label={`${S.skills.updateAction} ${agentId}`}
           onClick={onUpdate}

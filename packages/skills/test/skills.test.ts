@@ -40,8 +40,9 @@ describe("loadLibrarySkills", () => {
       expect(skill.shortDescriptionZh, skill.name).toBeTruthy();
       expect(skill.shortDescription!.length, skill.name).toBeLessThan(skill.description.length);
       expect(skill.shortDescriptionZh!.length, skill.name).toBeLessThan(skill.description.length);
-      // Pre-release, version is always 1.
-      expect(skill.version).toBe(1);
+      // version is a natural number, bumped on every content change (updated moves with it).
+      expect(Number.isInteger(skill.version), skill.name).toBe(true);
+      expect(skill.version, skill.name).toBeGreaterThanOrEqual(1);
       expect(skill.updated).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/);
       // content is the full SKILL.md text including frontmatter (written as-is on install).
       expect(skill.content.startsWith("---\n")).toBe(true);
@@ -92,6 +93,7 @@ describe("loadSkillGroups / groupSkills", () => {
       "data-analysis",
       "penguin-development",
       "web-development",
+      "web-research",
       "software-engineering",
     ]);
     expect(groups[0]!.skills.map((s) => s.name)).toEqual([
@@ -107,14 +109,16 @@ describe("loadSkillGroups / groupSkills", () => {
       "penguin-sdk",
       "penguin-cli",
       "agenthub-models",
-      "agenthub-dev",
     ]);
     expect(groups[3]!.skills.map((s) => s.name)).toEqual(["web-design"]);
     expect(groups[3]!.title).toBe("Web Development");
     expect(groups[3]!.titleZh).toBe("网页开发");
-    expect(groups[4]!.skills.map((s) => s.name)).toEqual(["software-engineering"]);
-    expect(groups[4]!.title).toBe("Software Engineering");
-    expect(groups[4]!.titleZh).toBe("软件工程");
+    expect(groups[4]!.skills.map((s) => s.name)).toEqual(["firecrawl"]);
+    expect(groups[4]!.title).toBe("Web Research");
+    expect(groups[4]!.titleZh).toBe("网络调研");
+    expect(groups[5]!.skills.map((s) => s.name)).toEqual(["software-engineering"]);
+    expect(groups[5]!.title).toBe("Software Engineering");
+    expect(groups[5]!.titleZh).toBe("软件工程");
     for (const group of groups) {
       expect(group.title).toBeTruthy();
       expect(group.titleZh).toBeTruthy();
@@ -131,10 +135,11 @@ describe("loadSkillGroups / groupSkills", () => {
       "data-analysis",
       "penguin-development",
       "web-development",
+      "web-research",
       "software-engineering",
       "other",
     ]);
-    const other = groups[5]!;
+    const other = groups[6]!;
     expect(other.title).toBe("Other");
     expect(other.titleZh).toBe("其他");
     expect(other.skills).toEqual([stray]);
@@ -147,6 +152,7 @@ describe("loadSkillGroups / groupSkills", () => {
       "data-analysis",
       "penguin-development",
       "web-development",
+      "web-research",
       "software-engineering",
     ]);
     expect(groups[0]!.skills).toEqual([]);
@@ -154,6 +160,7 @@ describe("loadSkillGroups / groupSkills", () => {
     expect(groups[2]!.skills.map((s) => s.name)).toEqual(["penguin-cli"]);
     expect(groups[3]!.skills).toEqual([]);
     expect(groups[4]!.skills).toEqual([]);
+    expect(groups[5]!.skills).toEqual([]);
   });
 
   it("SKILL_GROUPS hardcodes member names (sole group info source outside library files)", () => {
@@ -165,9 +172,10 @@ describe("loadSkillGroups / groupSkills", () => {
       { id: "data-analysis", skills: ["data-analysis"] },
       {
         id: "penguin-development",
-        skills: ["penguin-sdk", "penguin-cli", "agenthub-models", "agenthub-dev"],
+        skills: ["penguin-sdk", "penguin-cli", "agenthub-models"],
       },
       { id: "web-development", skills: ["web-design"] },
+      { id: "web-research", skills: ["firecrawl"] },
       { id: "software-engineering", skills: ["software-engineering"] },
     ]);
   });

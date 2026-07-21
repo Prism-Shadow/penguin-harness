@@ -61,6 +61,7 @@ describe("skills api", () => {
       "data-analysis",
       "penguin-development",
       "web-development",
+      "web-research",
       "software-engineering",
     ]);
     for (const group of body.groups) {
@@ -82,10 +83,10 @@ describe("skills api", () => {
       "penguin-sdk",
       "penguin-cli",
       "agenthub-models",
-      "agenthub-dev",
     ]);
     expect(body.groups[3]!.skills.map((s) => s.name)).toEqual(["web-design"]);
-    expect(body.groups[4]!.skills.map((s) => s.name)).toEqual(["software-engineering"]);
+    expect(body.groups[4]!.skills.map((s) => s.name)).toEqual(["firecrawl"]);
+    expect(body.groups[5]!.skills.map((s) => s.name)).toEqual(["software-engineering"]);
     const skills = body.groups.flatMap((g) => g.skills);
     for (const skill of skills) {
       expect(skill.name.length).toBeGreaterThan(0);

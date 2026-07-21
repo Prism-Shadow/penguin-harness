@@ -4,8 +4,6 @@
  * style and set of running-state icons (in progress / done / failed) as tool cards.
  */
 import { useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { S } from "../../lib/strings";
 import { humanizeDuration } from "../../lib/format";
 import type { ThinkingItem } from "../../lib/omni/stream-model";
@@ -13,6 +11,7 @@ import { Chevron } from "../../components/ui/chevron";
 import { StatusIcon } from "../../components/ui/status-icon";
 import type { RunState } from "../../components/ui/status-icon";
 import { LiveDuration } from "./live-duration";
+import { Md } from "./md";
 
 export function ThinkingBlock({ item }: { item: ThinkingItem }) {
   const [open, setOpen] = useState(false);
@@ -47,7 +46,7 @@ export function ThinkingBlock({ item }: { item: ThinkingItem }) {
       </button>
       {open && (
         <div className="md-body anim-fade mx-3 mb-2 rounded-md bg-gray-50 px-3 py-2 text-sm leading-relaxed text-gray-600 dark:bg-gray-900/60 dark:text-gray-400">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{item.thinking}</ReactMarkdown>
+          <Md text={item.thinking} streaming={item.streaming} />
         </div>
       )}
     </div>

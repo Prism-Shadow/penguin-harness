@@ -63,11 +63,11 @@ The built-in Skills, by group (the group manifest is `SKILL_GROUPS` in `packages
 | | `agent-evaluation` | Run and score exactly one Benchmark Case run, with CLI execution, Trace provenance checks and private Rubric isolation |
 | | `agent-optimization` | Improve an Agent State from direct feedback or versioned multi-Case Benchmark scores and score-linked Traces |
 | Data Analysis | `data-analysis` | Complete data-analysis tasks with bounded evidence inspection, explicit answer-changing decisions, native artifact handling and final output verification |
-| Penguin Development | `penguin-sdk` | Build AI apps on the SDK (the createSession/run streaming loop) |
+| Penguin Development | `penguin-sdk` | Build AI and RAG apps on the SDK: the createSession/run streaming loop plus a complete retrieval recipe with chunk-revealing citations |
 | | `penguin-cli` | Manage model API keys, default models and per-agent Vault secrets with the penguin CLI |
 | | `agenthub-models` | Call model APIs through `@prismshadow/agenthub`: streaming text, image generation, speech synthesis and embeddings |
-| | `agenthub-dev` | Add or update model support in AgentHub itself: doc syncing, live API capture, paired Python/TypeScript implementation and model-scoped e2e testing |
-| Web Development | `web-design` | Default visual language for generated web pages: minimal black-white-gray |
+| Web Development | `web-design` | Penguin visual language for generated web pages and app UIs: design tokens, components, light/dark themes and chat layouts |
+| Web Research | `firecrawl` | Web search and page scraping into clean markdown via the Firecrawl API |
 | Software Engineering | `software-engineering` | Complete software-engineering tasks: investigate and review code, implement fixes, features and refactors with minimal scope, validate changes, and report verified outcomes |
 
 ## Writing and optimizing Skills

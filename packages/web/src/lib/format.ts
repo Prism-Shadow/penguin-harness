@@ -31,6 +31,17 @@ export function humanizeDuration(ms: number): string {
   return `${m}m${Math.round(s % 60)}s`;
 }
 
+/**
+ * Duration format for a still-running timer: whole seconds only (`0s`, `7s`, `1m3s`),
+ * counting up (floor, never showing a second early). Decimals are reserved for settled
+ * durations (humanizeDuration above) — a live timer showing tenths reads as jitter.
+ */
+export function humanizeDurationLive(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  if (s < 60) return `${s}s`;
+  return `${Math.floor(s / 60)}m${s % 60}s`;
+}
+
 /** Add an explicit sign to a delta string: non-negative gets `+`, negative already has `-` (negative when context shrinks after compaction). */
 export function signedDelta(formatted: string): string {
   return formatted.startsWith("-") ? formatted : `+${formatted}`;

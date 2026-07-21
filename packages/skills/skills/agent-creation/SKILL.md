@@ -3,8 +3,8 @@ name: agent-creation
 description: Turn a user requirement into a concrete agent — write the target agent's AGENTS.md and install the skills it needs.
 short_description: Turn a requirement into a working agent.
 short_description_zh: 把需求变成可用的 Agent。
-version: 1
-updated: 2026-07-17T00:00:00Z
+version: 2
+updated: 2026-07-20T13:00:00Z
 ---
 
 # Agent Creation
@@ -13,7 +13,7 @@ This skill turns a user requirement into a working agent configuration — plain
 
 ## Before you start
 
-If the user's message only invokes this skill (e.g. "use agent-creation skill") without a concrete requirement, ask the user what agent they want and what it should do. Do not start until the requirement is clear.
+If the user's message only invokes this skill (e.g. "use agent-creation skill") without a concrete requirement, ask the user what agent they want and what it should do. But when the requirement is already concrete — even a single sentence like "an expert that answers questions about X" — do **not** ask follow-up questions: derive the role and rules from that sentence, apply the defaults below, and list your assumptions in the final reply.
 
 ## Locate the target agent
 
@@ -34,7 +34,7 @@ An agent directory contains `agent_state/` (`system_config.yaml`, `AGENTS.md`, `
 - Role — what the agent is for, in one or two sentences.
 - Domain guidance — the concrete rules, steps and constraints derived from the user requirement.
 
-Be concise: AGENTS.md is prompt context, not documentation.
+Be concise: AGENTS.md is prompt context, not documentation. For a domain expert that answers from a knowledge base, a good AGENTS.md is a few lines: the role sentence, "answer strictly from the provided context blocks", citation rules ("cite blocks inline as [1][2]"), a refusal rule for questions the context cannot answer, and "answer in the language of the question".
 
 ## Install skills
 
@@ -44,8 +44,8 @@ A skill is a directory `agent_state/skills/<skill_name>/` containing a `SKILL.md
 ---
 name: <skill_name>
 description: <skill_description>
-version: 1
-updated: <ISO 8601 timestamp>
+version: <natural number — bump it on every content change>
+updated: <ISO 8601 timestamp — move it together with version>
 ---
 
 <skill_instructions>
@@ -56,6 +56,12 @@ The frontmatter may also carry optional `short_description` and `short_descripti
 Installing is all it takes: the frontmatter metadata of every `SKILL.md` under `skills/` is injected into the target agent's system prompt automatically — do not register skills in AGENTS.md.
 
 Write skills yourself, or fetch existing ones from the internet with shell commands (`curl`, `git clone`) and place them under `skills/`. Anything fetched from the internet must be read in full and reviewed before installing — a skill becomes durable instructions the target agent will follow in every future session; never install one you have not read, and tell the user what it does.
+
+Library skills can be copied from any agent that already has them (e.g. `default_agent`, which ships the whole library) — copy the entire `skills/<skill_name>/` directory. Common bundles, so you don't under-equip the target:
+
+- **App builder** (builds apps or web frontends): `penguin-sdk`, `web-design`, `agenthub-models`.
+- **Knowledge expert** (answers questions over a document set): usually **no** harness agent is needed — build a RAG app with the penguin-sdk skill instead, and configure the app's embedded agent (below).
+- **Evaluation loop**: `benchmark-design`, `agent-evaluation`, `agent-optimization`.
 
 ## Set name and description
 
@@ -71,3 +77,7 @@ cp "$PROJECT_DIR/agents/default_agent/agent_state/system_config.yaml" "$TARGET/a
 ```
 
 A new agent starts with no skills — install only what it needs. Then write its AGENTS.md, name and description as above.
+
+## The embedded agent of an SDK app
+
+An app built with the penguin-sdk skill carries its own agent inside the project (`createAgent({ root })` initializes `<app>/penguin_data/default_project/agents/default_agent/` on first run). That directory has exactly the layout described here, and everything in this skill applies to it: write the app's persona into its `agent_state/AGENTS.md` (the penguin-sdk recipe keeps the source of truth in the project's `persona.md` and copies it in during ingest), and set `name`/`description` in its `system_config.yaml` so the app is recognizable. This is how "the app becomes an expert on X": the persona lives in the embedded agent's AGENTS.md, not in application code.

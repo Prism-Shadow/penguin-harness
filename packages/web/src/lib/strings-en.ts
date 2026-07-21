@@ -484,6 +484,60 @@ export const en: Strings = {
     workspaceClear: "Use auto temp directory instead",
     workspaceDirInvalid: "Directory does not exist or is inaccessible; reverted",
     draftSubtitle: "The self-evolving agent that excels at AI development tasks",
+    exampleTasks: {
+      game: {
+        label: "Example: 2D motocross game",
+        desc: "Space to jump over obstacles, easy start with rising difficulty — a pure-frontend mini game",
+        prompt:
+          "Build a 2D motocross game: press Space to jump over oncoming obstacles; " +
+          "start easy, with speed and difficulty ramping up over time, live scoring, " +
+          "and a collision ending the run with one-click restart. " +
+          "Pure frontend (a single HTML file is fine), styled per the web-design skill. " +
+          "When done, test it in a browser once and tell me how to open it and how to play.",
+      },
+      lol: {
+        label: "Example: League of Legends music player",
+        desc: "Worlds anthems on the SoundCloud Widget API — a single file that opens from file://",
+        prompt: `Build a League of Legends Worlds anthem player with the SoundCloud Widget API (see https://developers.soundcloud.com/docs/api/html5-widget): a single index.html that works when opened from file://.
+
+## Technical constraints
+- Use the SC.Widget JS API (widget.load / widget.toggle / widget.setVolume / widget.seekTo), loading https://w.soundcloud.com/player/api.js
+- The iframe must stay visible (180px tall), with visual=true color=f0b90b single_active=true
+- Include ONLY these 8 tracks confirmed playable (oEmbed-verified); do not add tracks that are not oEmbed-verified:
+  - Warriors (S4) — soundcloud.com/leagueoflegends/warriors
+  - Worlds Collide (S5) — soundcloud.com/leagueoflegends/worlds-collide
+  - Legends Never Die (S7) — soundcloud.com/leagueoflegends/legends-never-die
+  - Phoenix (S9) — soundcloud.com/leagueoflegends/phoenix
+  - Burn It All Down (S11) — soundcloud.com/leagueoflegends/burn-it-all-down
+  - GODS (S13) — soundcloud.com/leagueoflegends/gods
+  - Heavy Is The Crown (S14) — soundcloud.com/linkinpark/heavy-is-the-crown
+  - Sacrifice (S15) — soundcloud.com/leagueoflegends/sacrifice
+
+## Layout
+- Left 260px sticky sidebar: the track list (S4/S5/… badge + emoji + title + year); clicking highlights with a gold border and switches tracks via SC.Widget.load() with auto_play
+- Right main area: hero title + a desktop clock (80px monospace gold HH:MM:SS, refreshed every second, blinking colons) + a mood tag
+- Player card: the SoundCloud iframe + a custom control bar (⏮ ▶/⏸ ⏭ + track info + a volume slider; clicking the speaker icon toggles mute)
+- Mood-wave section: 15 gold animated bars, re-randomized on every track switch
+- Keyboard shortcuts: Space play/pause, ← → previous/next, ↑ ↓ volume
+
+## Design
+Penguin visual style (see the web-design skill), dark/light themes via <html data-theme>, dark by default, remembered in localStorage. Responsive: on phones the sidebar becomes a horizontally scrolling top bar.
+
+When done, open index.html in a browser and self-test once.`,
+      },
+      rag: {
+        label: "Example: build a Claude Code docs expert",
+        desc: "Collect the claude-code-docs repo into a conversational RAG knowledge app with source citations",
+        prompt:
+          "Collect the docs from https://github.com/ericbuess/claude-code-docs and build a RAG knowledge app: " +
+          "clone the repo and prepare the corpus, then build a retrieval index; " +
+          "the app acts as a Claude Code configuration expert, answering Claude Code questions " +
+          "with retrieval-augmented replies and clickable citations that reveal the matched " +
+          "original text chunk and link to the real documents; " +
+          "give it a beautiful web chat UI following the web-design skill, with a few example questions in the empty state. " +
+          "When done, run the app, verify one streamed answer yourself, and tell me how to access it.",
+      },
+    },
     sessionList: "Sessions",
     defaultSessionTitle: "New chat",
     model: "Model",
@@ -507,6 +561,7 @@ export const en: Strings = {
     statusRunning: "Running",
     statusCompacting: "Compacting",
     pendingApprovals: (n: number) => `${n} pending approval${n > 1 ? "s" : ""}`,
+    jumpToLatest: "Jump to latest",
     inputPlaceholder: "Type a message. Enter to send, Shift+Enter for newline, paste images",
     inputPlaceholderShort: "Type a message…",
     send: "Send",
@@ -619,6 +674,7 @@ export const en: Strings = {
     title: "Files",
     upload: "Upload",
     download: "Download",
+    openInNewTab: "Open in new tab",
     refresh: "Refresh",
     root: "Workspace root",
     empty: "Empty directory",

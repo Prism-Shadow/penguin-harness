@@ -361,6 +361,11 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     const row = resolveSession(c);
     const rel = c.req.query("path") ?? "";
     const download = c.req.query("download") === "1";
+    // Sandboxed top-level preview ("open in a new tab" for html): the document keeps its REAL
+    // content type but carries a CSP sandbox WITHOUT allow-same-origin — it renders and runs
+    // fully in an opaque origin, so agent-generated markup cannot reach this origin's cookies
+    // or API. The request itself still authenticates (top-level GET sends the Lax cookie).
+    const preview = !download && c.req.query("preview") === "1";
     const { data, fileName, contentType, scriptable } = await deps.workspaceFiles.read(
       row.workspace,
       rel,
@@ -368,15 +373,22 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     const disposition = download ? "attachment" : "inline";
     // Same-origin XSS defense: html/svg inline previews are always returned as plain
     // text (Workspace files may be Agent-generated and untrusted); downloads
-    // (attachment) keep the real content type. Paired with nosniff to prevent MIME
-    // sniffing from undoing this.
-    const effectiveType = !download && scriptable ? "text/plain; charset=utf-8" : contentType;
+    // (attachment) keep the real content type, and sandboxed previews keep it under the
+    // CSP above. Paired with nosniff to prevent MIME sniffing from undoing this.
+    const effectiveType =
+      !download && scriptable && !preview ? "text/plain; charset=utf-8" : contentType;
     return new Response(new Uint8Array(data), {
       status: 200,
       headers: {
         "Content-Type": effectiveType,
         "Content-Disposition": `${disposition}; filename*=UTF-8''${encodeURIComponent(fileName)}`,
         "X-Content-Type-Options": "nosniff",
+        ...(preview && scriptable
+          ? {
+              "Content-Security-Policy":
+                "sandbox allow-scripts allow-popups allow-modals allow-forms",
+            }
+          : {}),
       },
     });
   });

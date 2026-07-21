@@ -24,6 +24,7 @@ import { Chevron } from "../../components/ui/chevron";
 import { StatusIcon } from "../../components/ui/status-icon";
 import { approvalKey } from "../../lib/omni/stream-model";
 import type { ChatItem } from "../../lib/omni/stream-model";
+import { LiveDuration } from "./live-duration";
 import { MessageItem } from "./message-item";
 import type { StreamRenderContext } from "./message-stream";
 import { summarizeWork } from "./work-summary";
@@ -79,7 +80,7 @@ export function WorkGroup({
 
   // A pending approval must stay actionable: expand the group body regardless of collapsed state (the approval row lives inside it).
   const shown = open || pending;
-  const { steps, durationMs } = summarizeWork(items);
+  const { steps, durationMs, startMs } = summarizeWork(items);
 
   return (
     <div className="anim-msg my-2 overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
@@ -106,11 +107,19 @@ export function WorkGroup({
             {S.chat.workGroupSteps(steps)}
           </span>
         )}
-        {durationMs > 0 && (
-          <span className="shrink-0 font-mono text-xs text-gray-400">
-            {humanizeDuration(durationMs)}
-          </span>
-        )}
+        {/* Running: tick real wall time from group open (whole seconds — approval waits and
+            inter-step gaps included). Done: the settled open-to-close span, with decimals. */}
+        {active
+          ? startMs !== undefined && (
+              <span className="shrink-0 font-mono text-xs text-gray-400">
+                <LiveDuration sinceMs={startMs} />
+              </span>
+            )
+          : durationMs > 0 && (
+              <span className="shrink-0 font-mono text-xs text-gray-400">
+                {humanizeDuration(durationMs)}
+              </span>
+            )}
         {pending && !shown && (
           <span className="shrink-0 rounded bg-amber-100 px-1 text-[10px] font-medium text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
             {S.chat.approvalWaiting}

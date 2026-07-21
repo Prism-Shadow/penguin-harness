@@ -462,6 +462,65 @@ export const zh = {
     workspaceClear: "改用自动临时目录",
     workspaceDirInvalid: "目录不存在或无法访问，已回退",
     draftSubtitle: "最擅长 AI 开发任务的自进化 Agent",
+    /**
+     * Example task cards on the draft screen: one click auto-submits the canned prompt (game
+     * card first, RAG card below/after it). These are the FULL working prompts — the README and
+     * landing page show a condensed one-sentence version of the RAG example for reading, and
+     * the cards' own desc lines stay short, but what actually gets submitted stays detailed:
+     * build quality depends on it.
+     */
+    exampleTasks: {
+      game: {
+        label: "示例：2D 摩托车越野游戏",
+        desc: "空格起跳躲避障碍，难度由易到难，纯前端小游戏",
+        prompt:
+          "做一个 2D 摩托车越野游戏：按空格键起跳，躲避迎面而来的障碍物；" +
+          "开局简单，车速与难度随时间逐渐上升，实时计分，碰撞即结束并可一键重新开始。" +
+          "纯前端实现（单个 HTML 文件即可），界面遵循 web-design 技能。" +
+          "完成后在浏览器里自测一次，并告诉我怎么打开和怎么玩。",
+      },
+      lol: {
+        label: "示例：英雄联盟音乐播放器",
+        desc: "用 SoundCloud Widget API 播放历届 Worlds 主题曲，单文件即开即用",
+        prompt: `用 SoundCloud Widget API（见 https://developers.soundcloud.com/docs/api/html5-widget）做一个英雄联盟 Worlds 主题曲播放器，单文件 index.html，file:// 打开即用。
+
+## 技术约束
+- 使用 SC.Widget JS API（widget.load / widget.toggle / widget.setVolume / widget.seekTo），引入 https://w.soundcloud.com/player/api.js
+- iframe 必须可见（180px 高），visual=true color=f0b90b single_active=true
+- 仅包含以下 8 首已确认可播曲目（oEmbed 验证通过），不要添加未经 oEmbed 验证的曲目：
+  - Warriors (S4) — soundcloud.com/leagueoflegends/warriors
+  - Worlds Collide (S5) — soundcloud.com/leagueoflegends/worlds-collide
+  - Legends Never Die (S7) — soundcloud.com/leagueoflegends/legends-never-die
+  - Phoenix (S9) — soundcloud.com/leagueoflegends/phoenix
+  - Burn It All Down (S11) — soundcloud.com/leagueoflegends/burn-it-all-down
+  - GODS (S13) — soundcloud.com/leagueoflegends/gods
+  - Heavy Is The Crown (S14) — soundcloud.com/linkinpark/heavy-is-the-crown
+  - Sacrifice (S15) — soundcloud.com/leagueoflegends/sacrifice
+
+## 布局
+- 左侧 260px 粘性侧边栏：曲目列表（S4/S5/… 标签 + emoji + 曲名 + 年份），点击高亮金色边框，SC.Widget.load() 切歌 + auto_play
+- 右侧主区域：Hero 标题 + 桌面时钟（80px 等宽金色 HH:MM:SS，每秒刷新，冒号闪烁）+ 心情标签
+- 播放器卡片：SoundCloud iframe + 自定义控制栏（⏮ ▶/⏸ ⏭ + 曲目信息 + 音量滑块，点击喇叭图标静音切换）
+- 心情波动区：15 根金色动画柱，切歌时重新随机生成
+- 键盘快捷键：空格播放暂停、← → 切歌、↑ ↓ 调音量
+
+## 设计
+Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html data-theme>），默认深色，localStorage 记忆。响应式：手机端侧边栏变为顶部横向滚动。
+
+完成后在浏览器打开 index.html 自测一次。`,
+      },
+      rag: {
+        label: "示例：构建 Claude Code 文档专家",
+        desc: "收集 claude-code-docs 仓库，生成可对话、带来源引用的 RAG 知识应用",
+        prompt:
+          "收集 https://github.com/ericbuess/claude-code-docs 的文档，构建一个 RAG 知识应用：" +
+          "克隆仓库并整理语料，建立检索索引；应用化身 Claude Code 配置专家，" +
+          "检索增强回答 Claude Code 相关问题并标注可点击的来源引用——" +
+          "引用要能展示命中的原文片段，并链接到真实文档；" +
+          "按 web-design 技能提供美观的 Web 聊天界面，空态展示几个示例问题。" +
+          "完成后运行应用、自测一个问题验证流式回答，并告诉我访问方式。",
+      },
+    },
     sessionList: "Session",
     defaultSessionTitle: "新对话",
     model: "Model",
@@ -485,6 +544,7 @@ export const zh = {
     statusRunning: "运行中",
     statusCompacting: "压缩中",
     pendingApprovals: (n: number) => `${n} 个待审批`,
+    jumpToLatest: "回到最新消息",
     inputPlaceholder: "输入消息，Enter 发送，Shift+Enter 换行，可粘贴图片",
     inputPlaceholderShort: "输入消息…",
     send: "发送",
@@ -594,6 +654,7 @@ export const zh = {
     title: "文件",
     upload: "上传",
     download: "下载",
+    openInNewTab: "新页面打开",
     refresh: "刷新",
     root: "根目录",
     empty: "空目录",

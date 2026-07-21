@@ -231,11 +231,14 @@ describe("resync rebuild", () => {
     h.resolveLoad([at(userText("question"), "2026-07-05T00:00:00.000Z")]);
     await p;
     expect(h.loadCalls()).toBe(2);
-    // The old replay must not reset phase back to live: events arriving during rebuild
-    // should still be buffered, not fed to the new model.
+    // The old replay must not reset phase back to live: events arriving during rebuild are still
+    // buffered, not fed to a model. And with the atomic swap the OLD transcript stays visible until
+    // the rebuild's history load returns — mid-rebuild the model still shows the pre-resync content
+    // (the question + "old event A"), never a blank, and the live event is not yet in it (feeding it
+    // here as a third item would fail this assertion).
     const live = at(assistantText("output during rebuild"), "2026-07-05T00:00:02.000Z");
     h.controller.handleOmni(live);
-    expect(h.controller.model.items).toHaveLength(0);
+    expect(h.controller.model.items.map((i) => i.kind)).toEqual(["user_text", "assistant_text"]);
     // Second round of history (authoritative) returns: the transferred task_state and
     // buffered events replay in order.
     h.resolveLoad([
@@ -277,5 +280,38 @@ describe("history load failure and retry (#6)", () => {
     await p;
     await h.controller.retry();
     expect(h.loadCalls()).toBe(1);
+  });
+
+  it("retry after a FAILED resync rebuild rebuilds into a fresh model (no transcript duplication)", async () => {
+    // A successful initial load leaves the transcript populated; a mid-stream resync whose refetch
+    // then fails deliberately keeps that old transcript on screen (the atomic swap only replaces it
+    // on success). Retry must therefore push the refetched history into a FRESH model — pushing it
+    // onto the retained one would duplicate the whole conversation (regression guard).
+    const h = createHarness();
+    const p = h.controller.load();
+    h.resolveLoad([
+      at(userText("q1"), "2026-07-05T00:00:00.000Z"),
+      at(assistantText("a1"), "2026-07-05T00:00:01.000Z"),
+    ]);
+    await p;
+    expect(h.controller.model.items.map((i) => i.kind)).toEqual(["user_text", "assistant_text"]);
+
+    // Resync mid-session, but the rebuild's history refetch fails.
+    h.controller.handleServer({ type: "resync_required" });
+    h.rejectLoad(new Error("network error"));
+    await flush();
+    expect(h.errors[h.errors.length - 1]).toBe("network error");
+    // The old transcript is retained (not blanked) while the error/Retry state is shown.
+    expect(h.controller.model.items.map((i) => i.kind)).toEqual(["user_text", "assistant_text"]);
+
+    // Retry succeeds: the identical history must land in a fresh model, not be appended onto the retained one.
+    const retryP = h.controller.retry();
+    h.resolveLoad([
+      at(userText("q1"), "2026-07-05T00:00:00.000Z"),
+      at(assistantText("a1"), "2026-07-05T00:00:01.000Z"),
+    ]);
+    await retryP;
+    expect(h.controller.model.items.map((i) => i.kind)).toEqual(["user_text", "assistant_text"]);
+    expect(h.controller.model.items.filter((i) => i.kind === "user_text")).toHaveLength(1);
   });
 });

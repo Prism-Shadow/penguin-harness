@@ -154,13 +154,19 @@ export const SKILL_GROUPS: SkillGroupInfo[] = [
     id: "penguin-development",
     title: "Penguin Development",
     titleZh: "Penguin 开发",
-    skills: ["penguin-sdk", "penguin-cli", "agenthub-models", "agenthub-dev"],
+    skills: ["penguin-sdk", "penguin-cli", "agenthub-models"],
   },
   {
     id: "web-development",
     title: "Web Development",
     titleZh: "网页开发",
     skills: ["web-design"],
+  },
+  {
+    id: "web-research",
+    title: "Web Research",
+    titleZh: "网络调研",
+    skills: ["firecrawl"],
   },
   {
     id: "software-engineering",

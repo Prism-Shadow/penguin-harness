@@ -8,7 +8,7 @@
  *     recycled/recreated or the process restarts, so a stale Last-Event-ID always misses
  *     and falls through to resync — this prevents a silent false-hit event loss when the
  *     new epoch's event count happens to exceed the old id;
- *   - A bounded ring buffer (most recent 1000 entries or 2MB, whichever comes first,
+ *   - A bounded ring buffer (most recent 10,000 entries or 8MB, whichever comes first,
  *     evicting the oldest on overflow) serves replay-on-reconnect via `Last-Event-ID`;
  *     an evicted/unknown id is handled by the caller sending `resync_required`;
  *   - Unicast (sendTo) is used for one-off replay at subscribe time (pending approvals /
@@ -37,8 +37,12 @@ export interface ChannelOptions {
   maxBufferBytes?: number;
 }
 
-const DEFAULT_MAX_COUNT = 1000;
-const DEFAULT_MAX_BYTES = 2 * 1024 * 1024;
+// Sized so a mid-stream reconnect during a fast large-code reply still hits replay instead of
+// resync_required: the server publishes one event per provider delta (a 240KB reply ≈ 5k events
+// / 1.4MB), and 1000 events covered only ~6s of such a stream — every longer blip forced a full
+// client-side history rebuild.
+const DEFAULT_MAX_COUNT = 10_000;
+const DEFAULT_MAX_BYTES = 8 * 1024 * 1024;
 
 /** Buffered entry: seq is stored separately so hit checks never need to parse the string id. */
 interface BufferedEvent {

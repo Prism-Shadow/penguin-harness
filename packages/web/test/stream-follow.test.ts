@@ -75,4 +75,20 @@ describe("createStreamFollow", () => {
     f.scrolled({ scrollHeight: 2000, clientHeight: 460, scrollTop: 1000 });
     expect(f.stick).toBe(false);
   });
+
+  it("resume (back-to-bottom button) re-enters follow, and the programmatic jump to the bottom keeps it stuck", () => {
+    const f = createStreamFollow();
+    f.scrolled({ scrollHeight: 2000, clientHeight: 460, scrollTop: 1540 });
+    f.scrolled({ scrollHeight: 2000, clientHeight: 460, scrollTop: 200 }); // dragged far up, exits.
+    expect(f.stick).toBe(false);
+    f.resume();
+    expect(f.stick).toBe(true);
+    // The caller sets scrollTop = scrollHeight right after; the resulting scroll event lands
+    // at the bottom and must not be judged against the stale scrollTop=200 as "moved down then
+    // wherever" — following continues, and streaming growth keeps sticking.
+    f.scrolled({ scrollHeight: 2000, clientHeight: 460, scrollTop: 1540 });
+    expect(f.stick).toBe(true);
+    f.scrolled({ scrollHeight: 2400, clientHeight: 460, scrollTop: 1940 }); // next streamed stick.
+    expect(f.stick).toBe(true);
+  });
 });
