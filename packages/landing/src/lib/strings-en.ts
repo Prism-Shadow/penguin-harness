@@ -195,6 +195,15 @@ export const en: Strings = {
           "Collect the docs from https://github.com/ericbuess/claude-code-docs and build a RAG app that answers Claude Code questions as a configuration expert, citing its sources.",
         caption:
           "The generated RAG app: a Claude Code docs expert answering with cited, clickable sources and example questions",
+        cost: "And generating this entire RAG app burned just $0.02 (¥0.2) of tokens — on DeepSeek V4 Pro.",
+      },
+      {
+        label: "Penguin sled game",
+        prompt:
+          "Build a cute Antarctic penguin sledding game: Space to jump the rocks, with speed and difficulty ramping up over time.",
+        caption:
+          "The generated mini game: an Antarctic penguin sleds and jumps rocks, with live scoring and rising difficulty",
+        cost: "",
       },
     ],
   },

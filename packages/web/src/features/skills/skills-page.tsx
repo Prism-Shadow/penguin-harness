@@ -403,9 +403,9 @@ function SkillCard({
           {meta}
         </p>
       </div>
-      {/* Actions: equal-square icon buttons in a single column, vertically centered at the
+      {/* Actions: equal-square light icon buttons in a single row, vertically centered at the
           card's right edge (copy goes into aria-label and title). */}
-      <div className="flex shrink-0 flex-col items-center justify-center gap-1.5">
+      <div className="flex shrink-0 items-center justify-center gap-1.5">
         {/* Light (secondary): an update nudge, not the card's primary action. */}
         {outdated.length > 0 && (
           <Button
@@ -430,7 +430,6 @@ function SkillCard({
         </Button>
         <Button
           size="sm"
-          variant="primary"
           className="h-8 w-8 shrink-0 justify-center p-0"
           aria-label={`${S.skills.manageInstall} ${skill.name}`}
           title={S.skills.manageInstall}

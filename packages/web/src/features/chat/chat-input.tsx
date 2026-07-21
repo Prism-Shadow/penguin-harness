@@ -924,13 +924,16 @@ export function ChatInput({
 
   return (
     <div className="relative">
-      {/* Slash command menu (triggered by typing /; /compact plus one entry per installed skill) */}
+      {/* Slash command menu (triggered by typing /; /compact plus one entry per installed skill).
+          Height is viewport-capped with internal scrolling so a long skill list never pushes the
+          menu's top edge past the screen; the active row keeps itself scrolled into view. */}
       {slashOpen && (
-        <div className="anim-pop absolute bottom-full left-0 z-40 mb-1.5 w-80 max-w-[calc(100vw-2rem)] rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900">
+        <div className="anim-pop absolute bottom-full left-0 z-40 mb-1.5 max-h-[min(20rem,40vh)] w-80 max-w-[calc(100vw-2rem)] overflow-y-auto overscroll-contain rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900">
           {slashMatches.map((c, i) => (
             <button
               key={c.cmd}
               type="button"
+              ref={c === activeSlash ? (el) => el?.scrollIntoView({ block: "nearest" }) : undefined}
               onMouseEnter={() => setSlashIndex(i)}
               onClick={() => c.run()}
               className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm ${

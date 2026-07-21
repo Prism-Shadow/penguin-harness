@@ -1,0 +1,313 @@
+<!doctype html>
+<!--
+  Static, dependency-free mockup of the "penguin sled" example game's play screen —
+  the FINISHED PRODUCT of the draft-screen game example, captured by
+  capture-game-mockup.mjs per language (?lang=zh|en) and theme (?theme=light|dark;
+  light = polar day, dark = polar night with an aurora). A cute cartoon scene:
+  an Antarctic penguin on a wooden sled mid-jump over snow-capped rocks, with a
+  score/distance/speed HUD and a "Space to jump" hint.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Penguin Sled Run</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        font-family:
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          Roboto,
+          "PingFang SC",
+          "Microsoft YaHei",
+          sans-serif;
+      }
+      .stage {
+        position: relative;
+        width: 1280px;
+        height: 760px;
+        overflow: hidden;
+        background: linear-gradient(#bfdbfe 0%, #e0f2fe 55%, #f8fafc 100%);
+      }
+      body.dark .stage {
+        background: linear-gradient(#0b1220 0%, #16233b 60%, #1e293b 100%);
+      }
+      .hud {
+        position: absolute;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 16px;
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.82);
+        border: 1px solid rgba(15, 23, 42, 0.08);
+        color: #0f172a;
+        font-weight: 700;
+        box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
+      }
+      body.dark .hud {
+        background: rgba(15, 23, 42, 0.72);
+        border-color: rgba(148, 163, 184, 0.25);
+        color: #e2e8f0;
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+      }
+      .hud .label {
+        font-size: 13px;
+        font-weight: 600;
+        opacity: 0.62;
+        letter-spacing: 0.04em;
+      }
+      .hud .value {
+        font-size: 24px;
+        font-variant-numeric: tabular-nums;
+      }
+      #hud-score {
+        top: 22px;
+        left: 24px;
+      }
+      #hud-dist {
+        top: 22px;
+        left: 218px;
+      }
+      #hud-speed {
+        top: 22px;
+        right: 24px;
+        color: #1d4ed8;
+      }
+      body.dark #hud-speed {
+        color: #93c5fd;
+      }
+      .hint {
+        position: absolute;
+        left: 50%;
+        bottom: 26px;
+        transform: translateX(-50%);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 18px;
+        border-radius: 999px;
+        font-size: 15px;
+        font-weight: 600;
+        background: rgba(255, 255, 255, 0.85);
+        border: 1px solid rgba(15, 23, 42, 0.08);
+        color: #334155;
+      }
+      body.dark .hint {
+        background: rgba(15, 23, 42, 0.75);
+        border-color: rgba(148, 163, 184, 0.25);
+        color: #cbd5e1;
+      }
+      .hint kbd {
+        padding: 3px 12px;
+        border-radius: 8px;
+        border: 1px solid #94a3b8;
+        border-bottom-width: 3px;
+        background: #fff;
+        font: inherit;
+        color: #0f172a;
+      }
+      body.dark .hint kbd {
+        background: #1e293b;
+        border-color: #64748b;
+        color: #e2e8f0;
+      }
+      .title {
+        position: absolute;
+        top: 26px;
+        left: 50%;
+        transform: translateX(-50%);
+        font-size: 17px;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+        color: rgba(15, 23, 42, 0.55);
+      }
+      body.dark .title {
+        color: rgba(226, 232, 240, 0.65);
+      }
+      .day-only {
+        display: initial;
+      }
+      .night-only {
+        display: none;
+      }
+      body.dark .day-only {
+        display: none;
+      }
+      body.dark .night-only {
+        display: initial;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="stage">
+      <svg viewBox="0 0 1280 760" width="1280" height="760" aria-hidden="true">
+        <!-- Polar day: sun; polar night: moon, stars and an aurora ribbon. -->
+        <g class="day-only">
+          <circle cx="1084" cy="150" r="58" fill="#fde68a" />
+          <circle cx="1084" cy="150" r="44" fill="#fcd34d" />
+        </g>
+        <g class="night-only">
+          <path
+            d="M60 60 C 320 190, 680 30, 1020 150 C 1120 185, 1220 140, 1268 100 L 1268 20 L 60 20 Z"
+            fill="#34d399"
+            opacity="0.16"
+          />
+          <path
+            d="M100 100 C 360 220, 700 80, 1040 190 C 1130 218, 1210 180, 1260 150 L 1260 60 C 1000 160, 420 40, 100 100 Z"
+            fill="#6ee7b7"
+            opacity="0.12"
+          />
+          <circle cx="1084" cy="140" r="46" fill="#e2e8f0" opacity="0.92" />
+          <circle cx="1066" cy="128" r="12" fill="#cbd5e1" opacity="0.8" />
+          <circle cx="1102" cy="156" r="8" fill="#cbd5e1" opacity="0.8" />
+          <g fill="#e2e8f0">
+            <circle cx="180" cy="120" r="3" />
+            <circle cx="330" cy="70" r="2.4" />
+            <circle cx="520" cy="130" r="2.8" />
+            <circle cx="760" cy="64" r="2.4" />
+            <circle cx="900" cy="120" r="3" />
+            <circle cx="240" cy="220" r="2" />
+            <circle cx="640" cy="200" r="2.2" />
+          </g>
+        </g>
+
+        <!-- Distant snow hills. -->
+        <path
+          d="M0 430 Q 200 330 420 420 T 860 410 T 1280 400 L 1280 760 L 0 760 Z"
+          class="hill-far"
+          fill="#e2e8f0"
+        />
+        <path
+          d="M0 500 Q 260 400 560 490 T 1280 470 L 1280 760 L 0 760 Z"
+          class="hill-near"
+          fill="#f1f5f9"
+        />
+
+        <!-- Ice track. -->
+        <rect x="0" y="560" width="1280" height="200" fill="#ffffff" />
+        <rect x="0" y="560" width="1280" height="12" fill="#bae6fd" opacity="0.7" />
+        <path
+          d="M0 640 H 300 M420 640 H 700 M820 640 H 1100"
+          stroke="#dbeafe"
+          stroke-width="6"
+          stroke-linecap="round"
+        />
+
+        <!-- Rocks ahead on the track (snow-capped). -->
+        <g>
+          <path d="M760 560 q 26 -52 62 -2 q 20 30 -8 30 l -60 0 q -14 -6 6 -28 Z" fill="#94a3b8" />
+          <path d="M770 548 q 18 -26 40 -4 q -20 -10 -40 4 Z" fill="#f8fafc" />
+          <path
+            d="M980 560 q 34 -70 84 -4 q 24 36 -10 36 l -80 0 q -18 -8 6 -32 Z"
+            fill="#64748b"
+          />
+          <path d="M994 540 q 26 -34 54 -6 q -28 -14 -54 6 Z" fill="#f8fafc" />
+          <path
+            d="M1180 560 q 22 -44 52 -2 q 16 26 -6 26 l -52 0 q -12 -6 6 -24 Z"
+            fill="#94a3b8"
+          />
+        </g>
+
+        <!-- The star: a cute penguin on a wooden sled, mid-jump over the first rock. -->
+        <g transform="translate(430 300) rotate(-10)">
+          <!-- motion lines -->
+          <path
+            d="M-150 150 h 74 M-170 190 h 60 M-140 230 h 70"
+            stroke="#93c5fd"
+            stroke-width="8"
+            stroke-linecap="round"
+            opacity="0.75"
+          />
+          <!-- snow spray -->
+          <g fill="#e0f2fe">
+            <circle cx="-96" cy="252" r="9" />
+            <circle cx="-120" cy="268" r="6" />
+            <circle cx="-74" cy="272" r="5" />
+          </g>
+          <!-- sled -->
+          <rect x="-64" y="196" width="248" height="26" rx="13" fill="#b45309" />
+          <rect x="-52" y="176" width="224" height="24" rx="12" fill="#d97706" />
+          <path
+            d="M-84 246 q -20 0 -18 -22 q 2 -14 18 -14 h 260 q 26 2 26 22 q 0 14 -22 14 Z"
+            fill="none"
+            stroke="#475569"
+            stroke-width="10"
+            stroke-linecap="round"
+          />
+          <!-- penguin body -->
+          <ellipse cx="60" cy="86" rx="86" ry="102" fill="#0f172a" />
+          <ellipse cx="60" cy="108" rx="60" ry="74" fill="#f8fafc" />
+          <!-- wing raised (whee!) -->
+          <path d="M-20 40 q -66 -34 -84 -86 q 44 6 76 40 q 20 20 8 46 Z" fill="#0f172a" />
+          <!-- face -->
+          <circle cx="88" cy="34" r="10" fill="#f8fafc" />
+          <circle cx="90" cy="32" r="4.6" fill="#0f172a" />
+          <circle cx="92" cy="30" r="1.6" fill="#f8fafc" />
+          <circle cx="52" cy="52" r="9" fill="#fda4af" opacity="0.85" />
+          <path d="M104 44 q 34 8 40 20 q -20 12 -44 2 Z" fill="#f59e0b" />
+          <!-- scarf, flying -->
+          <path d="M20 6 q 44 -14 84 4 q -4 20 -26 24 q -36 6 -62 -10 Z" fill="#ef4444" />
+          <path d="M28 16 q -44 6 -74 -14 q 8 -18 34 -14 q 26 4 40 28 Z" fill="#f87171" />
+          <!-- feet on the sled -->
+          <path d="M18 172 q -18 14 2 22 q 22 6 30 -10 Z" fill="#fb923c" />
+          <path d="M92 172 q -16 16 4 22 q 22 6 28 -12 Z" fill="#fb923c" />
+        </g>
+      </svg>
+
+      <div class="title" id="title"></div>
+      <div class="hud" id="hud-score">
+        <span class="label" id="score-label"></span><span class="value">1280</span>
+      </div>
+      <div class="hud" id="hud-dist">
+        <span class="label" id="dist-label"></span><span class="value">512 m</span>
+      </div>
+      <div class="hud" id="hud-speed"><span class="value">×2.4</span></div>
+      <div class="hint"><kbd id="key"></kbd><span id="hint"></span></div>
+    </div>
+
+    <script>
+      const params = new URLSearchParams(location.search);
+      const lang = params.get("lang") === "zh" ? "zh" : "en";
+      if (params.get("theme") === "dark") document.body.classList.add("dark");
+      const T = {
+        zh: {
+          title: "企 鹅 雪 橇 越 野",
+          score: "得分",
+          dist: "里程",
+          key: "空格",
+          hint: "起跳，跃过石头！",
+        },
+        en: {
+          title: "P E N G U I N · S L E D · R U N",
+          score: "SCORE",
+          dist: "DISTANCE",
+          key: "Space",
+          hint: "jump the rocks!",
+        },
+      }[lang];
+      document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
+      document.getElementById("title").textContent = T.title;
+      document.getElementById("score-label").textContent = T.score;
+      document.getElementById("dist-label").textContent = T.dist;
+      document.getElementById("key").textContent = T.key;
+      document.getElementById("hint").textContent = T.hint;
+      const dark = document.body.classList.contains("dark");
+      if (dark) {
+        for (const [sel, fill] of [
+          [".hill-far", "#243b55"],
+          [".hill-near", "#2c476b"],
+        ]) {
+          document.querySelector(sel).setAttribute("fill", fill);
+        }
+        for (const rect of document.querySelectorAll("svg rect")) {
+          if (rect.getAttribute("fill") === "#ffffff") rect.setAttribute("fill", "#dbeafe");
+        }
+      }
+    </script>
+  </body>
+</html>

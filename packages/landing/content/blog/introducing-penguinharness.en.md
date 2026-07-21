@@ -55,6 +55,8 @@ And this is the finished product — a docs expert with retrieval, cited sources
 
 ![The generated RAG app: a Claude Code docs expert answering with cited, clickable sources and example questions](/blog-assets/rag-app-en-light.webp)
 
+**And generating this entire RAG app burned just $0.02 (¥0.2) of tokens — on DeepSeek V4 Pro.**
+
 ### 3. Self-evolution: it gets stronger with use
 
 With PenguinHarness Skills, an Agent evaluates and optimizes itself: the Optimizer orchestrates multiple Evaluators to score in parallel, uses the scores and run traces to find where points were lost, and upgrades the Agent from version N to N+1 — with a snapshot before every round, and every request replayable in the Trace view. A self-evolution demo video is coming soon.

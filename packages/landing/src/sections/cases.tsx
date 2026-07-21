@@ -1,8 +1,9 @@
 /**
- * Use-case gallery as switchable tabs — one tab per case, RAG only for now
- * (the tab bar is already plural so future cases just append). The RAG tab
- * shows the condensed one-sentence prompt and the FINISHED PRODUCT — the
- * generated docs-expert app itself, matched to the visitor's locale and theme.
+ * Use-case gallery as switchable tabs — the RAG docs expert and the penguin sled
+ * game, each shown as its FINISHED PRODUCT (mockup shots matched to the visitor's
+ * locale and theme) under its condensed one-sentence prompt. Tab order follows
+ * S.cases.tabs; CASE_SHOTS is index-aligned with it. A tab may carry a `cost`
+ * line (the RAG one does) — an emphasized token-cost hook under the caption.
  */
 import { useState } from "react";
 import { S } from "../lib/strings";
@@ -14,18 +15,31 @@ import ragAppZhLight from "../assets/rag-app-zh-light.webp";
 import ragAppZhDark from "../assets/rag-app-zh-dark.webp";
 import ragAppEnLight from "../assets/rag-app-en-light.webp";
 import ragAppEnDark from "../assets/rag-app-en-dark.webp";
+import gameZhLight from "../assets/game-zh-light.webp";
+import gameZhDark from "../assets/game-zh-dark.webp";
+import gameEnLight from "../assets/game-en-light.webp";
+import gameEnDark from "../assets/game-en-dark.webp";
 
-const RAG_APP_SHOTS: Record<Locale, { light: string; dark: string }> = {
-  zh: { light: ragAppZhLight, dark: ragAppZhDark },
-  en: { light: ragAppEnLight, dark: ragAppEnDark },
-};
+type ShotSet = Record<Locale, { light: string; dark: string }>;
+
+/** Finished-product shots, index-aligned with S.cases.tabs. */
+const CASE_SHOTS: ShotSet[] = [
+  {
+    zh: { light: ragAppZhLight, dark: ragAppZhDark },
+    en: { light: ragAppEnLight, dark: ragAppEnDark },
+  },
+  {
+    zh: { light: gameZhLight, dark: gameZhDark },
+    en: { light: gameEnLight, dark: gameEnDark },
+  },
+];
 
 export function Cases() {
   const { locale } = useLocale();
   const tabs = S.cases.tabs;
   const [active, setActive] = useState(0);
   const tab = tabs[active] ?? tabs[0]!;
-  const shots = RAG_APP_SHOTS[locale];
+  const shots = (CASE_SHOTS[active] ?? CASE_SHOTS[0]!)[locale];
 
   return (
     <Section id="cases" eyebrow={S.cases.eyebrow} title={S.cases.title} subtitle={S.cases.subtitle}>
@@ -76,6 +90,11 @@ export function Cases() {
         <figcaption className="mt-3 text-center text-xs text-gray-500 dark:text-gray-400">
           {tab.caption}
         </figcaption>
+        {tab.cost && (
+          <p className="mt-2 text-center text-[13px] font-semibold text-brand-700 dark:text-brand-300">
+            {tab.cost}
+          </p>
+        )}
       </figure>
     </Section>
   );

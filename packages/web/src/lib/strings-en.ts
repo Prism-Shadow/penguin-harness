@@ -486,13 +486,14 @@ export const en: Strings = {
     draftSubtitle: "The self-evolving agent that excels at AI development tasks",
     exampleTasks: {
       game: {
-        label: "Example: 2D motocross game",
-        desc: "Space to jump over obstacles, easy start with rising difficulty — a pure-frontend mini game",
+        label: "Example: penguin sled game",
+        desc: "A cute Antarctic penguin sleds over rocks, easy start with rising difficulty — a pure-frontend mini game",
         prompt:
-          "Build a 2D motocross game: press Space to jump over oncoming obstacles; " +
-          "start easy, with speed and difficulty ramping up over time, live scoring, " +
-          "and a collision ending the run with one-click restart. " +
-          "Pure frontend (a single HTML file is fine), styled per the web-design skill. " +
+          "Build a cute Antarctic penguin sledding game: press Space to jump over the rocks " +
+          "coming up on the ice; start easy, with sled speed and difficulty ramping up over " +
+          "time, live scoring, and hitting a rock ending the run with one-click restart. " +
+          "Pure frontend (a single HTML file is fine), with a cute cartoon look styled per " +
+          "the web-design skill. " +
           "When done, test it in a browser once and tell me how to open it and how to play.",
       },
       lol: {
