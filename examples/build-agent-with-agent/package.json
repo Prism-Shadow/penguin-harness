@@ -1,0 +1,14 @@
+{
+  "name": "@prismshadow/example-build-agent-with-agent",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx build-agent.ts"
+  },
+  "dependencies": {
+    "@prismshadow/penguin-core": "workspace:*"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.0"
+  }
+}
