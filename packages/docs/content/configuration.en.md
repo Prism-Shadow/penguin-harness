@@ -159,6 +159,7 @@ compaction:
 - Key names must match `^[A-Za-z_][A-Za-z0-9_]*$` (shell environment variable naming rules);
 - Values are injected only into tool subprocess environments and never enter the model context or the Trace;
 - Only key names are disclosed in the system prompt via `{{VAULT_KEYS}}`;
+- Saving through the Web/API invalidates the Agent's cached Session runtimes: the next Task on any of its Sessions re-resumes and runs with the new values; a Task already in flight keeps the values it started with (a direct CLI file edit reaches a running server only when a Session is next created or resumed);
 - Managed via `penguin config vault set/list/remove` or the Web Vault tab.
 
 ## Schedules

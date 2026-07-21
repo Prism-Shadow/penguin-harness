@@ -3,8 +3,8 @@ name: penguin-sdk
 description: Build AI apps on the Penguin Harness SDK — self-contained projects, the createSession/run streaming loop, and a complete RAG recipe that ingests documents into a knowledge base and answers with citations behind a web UI.
 short_description: Build AI and RAG apps on the Penguin Harness SDK.
 short_description_zh: 基于 Penguin SDK 构建 AI 与 RAG 应用。
-version: 8
-updated: 2026-07-20T17:00:00Z
+version: 9
+updated: 2026-07-20T19:30:00Z
 ---
 
 # Penguin Harness SDK
@@ -45,7 +45,9 @@ Before writing any code, verify a usable model credential exists — a finished 
 env | grep -oE "(DEEPSEEK|OPENAI|ANTHROPIC|GEMINI)_API_KEY" || echo none
 ```
 
-Vault keys also appear in your Vault Keys section. If nothing is usable, **stop immediately and ask the user for help — do not keep calling tools to retry**: ask them to open the agent's settings via the **gear icon** on its card (left side, Agents page) and add a model API key (e.g. `DEEPSEEK_API_KEY`) in the **key vault** tab — vault values reach your shell environment on the next task. Re-running `env`, re-checking the vault, or attempting the build in a loop wastes turns and money; one clear check, then hand back to the user. Build only after a credential is confirmed, or clearly agree with the user to build now and verify later.
+Vault keys also appear in your Vault Keys section. **Only two sources count as a usable credential**: a vault-injected environment variable (the check above), or a key already configured in the app's own data root (`penguin config model list --root <data_dir>`). Keys living in the global `~/.penguin` or any other `.penguin` directory do **not** count — a bare `penguin config model list` (no `--root`) reads the global store, because the CLI defaults to the global root unless `--root` is given, so a key showing up there proves nothing for the app and must never be used or copied.
+
+If neither counted source yields a usable key, **stop immediately and ask the user to configure one — do not start building, and do not keep calling tools to retry**: ask them to open the agent's settings via the **gear icon** on its card (left side, Agents page) and add a model API key (e.g. `DEEPSEEK_API_KEY`) in the **key vault** tab — vault values reach your shell environment on the next task. Re-running `env`, re-checking the vault, or attempting the build in a loop wastes turns and money; one clear check, then hand back to the user. Build only after a credential is confirmed, or clearly agree with the user to build now and verify later.
 
 ## Setup
 

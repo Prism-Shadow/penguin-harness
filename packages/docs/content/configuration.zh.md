@@ -159,6 +159,7 @@ compaction:
 - 键名须匹配 `^[A-Za-z_][A-Za-z0-9_]*$`（shell 环境变量命名规则）；
 - 值只注入工具子进程的环境变量，永远不进入模型上下文与 Trace；
 - 系统提示词中经 `{{VAULT_KEYS}}` 只披露键名；
+- 经 Web/API 保存会使该 Agent 已缓存的 Session 运行时失效：其任意 Session 的下一个任务会重新恢复（resume）并使用新值；进行中的任务保持其启动时的值（CLI 直接改文件对运行中的 server 则要等 Session 下次创建或恢复时生效）；
 - 通过 CLI `penguin config vault set/list/remove` 或 Web 的 Vault 标签页管理。
 
 ## 定时任务
