@@ -48,6 +48,7 @@ import { USD_TO_CNY, useTheme } from "../../state/theme";
 import type { Currency } from "../../state/theme";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
+import { PasswordInput } from "../../components/ui/password-input";
 import { Modal } from "../../components/ui/modal";
 import { Select } from "../../components/ui/select";
 import { toastError, toastSuccess } from "../../components/ui/toast";
@@ -1421,8 +1422,10 @@ function ModelDialog({
           </div>
         )}
 
-        {/* 1) API key — the most commonly used, placed first in the field section; "get API key" link next to the label. */}
-        <label className="block">
+        {/* 1) API key — the most commonly used, placed first in the field section; "get API key"
+            link next to the label. PasswordInput carries its own show/hide toggle and brings its
+            own <label> wrapper, so this outer container is a <div> (a nested <label> is invalid). */}
+        <div className="block">
           <span className="mb-1 flex items-baseline justify-between gap-2">
             <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
               {S.models.apiKey}
@@ -1438,9 +1441,8 @@ function ModelDialog({
               </a>
             )}
           </span>
-          <Input
+          <PasswordInput
             size="sm"
-            type="password"
             value={form.apiKeyInput}
             disabled={!canEdit}
             onChange={(e) => set({ apiKeyInput: e.target.value, clearApiKey: false })}
@@ -1449,7 +1451,7 @@ function ModelDialog({
             autoFocus={!isNew}
             placeholder={apiKeyHint}
           />
-        </label>
+        </div>
         {envNote && <p className="text-xs text-gray-400 dark:text-gray-500">{envNote}</p>}
         {form.credential?.apiKeyMasked && !form.apiKeyInput && (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400">

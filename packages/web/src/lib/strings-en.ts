@@ -86,6 +86,7 @@ export const en: Strings = {
   account: {
     changePassword: "Change password",
     oldPassword: "Current password",
+    oldPasswordHint: "The built-in admin's default initial password is penguin-2026",
     newPassword: "New password",
     confirmPassword: "Confirm new password",
     passwordMismatch: "New passwords do not match",
@@ -486,15 +487,17 @@ export const en: Strings = {
     draftSubtitle: "The self-evolving agent that excels at AI development tasks",
     exampleTasks: {
       game: {
-        label: "Example: penguin sled game",
-        desc: "A cute Antarctic penguin sleds over rocks, easy start with rising difficulty — a pure-frontend mini game",
+        label: "Example: 2D penguin sled game",
+        desc: "A cute Antarctic penguin sleds over rocks, easy start with a gentle difficulty ramp — a 2D pure-frontend mini game",
         prompt:
-          "Build a cute Antarctic penguin sledding game: press Space to jump over the rocks " +
-          "coming up on the ice; start easy, with sled speed and difficulty ramping up over " +
-          "time, live scoring, and hitting a rock ending the run with one-click restart. " +
-          "Pure frontend (a single HTML file is fine), with a cute cartoon look styled per " +
-          "the web-design skill. " +
-          "When done, test it in a browser once and tell me how to open it and how to play.",
+          "Build a cute Antarctic penguin sledding 2D game: press Space to jump over the rocks " +
+          "coming up on the ice; start easy and forgiving, with sled speed and obstacle density " +
+          "ramping up smoothly and gradually over time (no sudden spikes), live scoring, and " +
+          "hitting a rock ending the run with one-click restart. " +
+          "A 2D side-scroller with a cute cartoon look, pure frontend (a single HTML file is " +
+          "fine), styled per the web-design skill. " +
+          "When done, test it in a browser once, confirm the first few seconds are easy to " +
+          "clear, and tell me how to open it and how to play.",
       },
       lol: {
         label: "Example: League of Legends music player",

@@ -198,7 +198,7 @@ export const en: Strings = {
         cost: "And generating this entire RAG app burned just $0.02 (¥0.2) of tokens — on DeepSeek V4 Pro.",
       },
       {
-        label: "Penguin sled game",
+        label: "2D penguin sled game",
         prompt:
           "Build a cute Antarctic penguin sledding game: Space to jump the rocks, with speed and difficulty ramping up over time.",
         caption:

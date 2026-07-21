@@ -374,7 +374,7 @@ function SkillCard({
     .filter((v): v is string => v !== null)
     .join(" · ");
   return (
-    <div className="flex h-full items-center gap-3 rounded-md border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+    <div className="flex h-full items-center gap-3 rounded-md p-4 transition-colors hover:bg-gray-100/70 dark:hover:bg-gray-800/60">
       <div className="min-w-0 flex-1">
         {/* Header: the skill icon centered across the two text rows (rounded tile in the skill's
             own palette color — see skillTileColor; deliberately a bit smaller than the two rows),
