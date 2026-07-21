@@ -56,12 +56,7 @@
 
 这是做出来的成品——一个文档专家：检索增强、引用可点击直达原文、内置示例问题：
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/readme/rag-app-zh-dark.webp" />
-    <img src="assets/readme/rag-app-zh-light.webp" alt="生成的 RAG 应用成品：Claude Code 配置专家，回答带可点击的来源引用与示例问题" width="920" />
-  </picture>
-</p>
+https://github.com/user-attachments/assets/604eb626-0a5d-4a62-87e3-14ebade1cd5f
 
 **而生成整个 RAG 应用，仅消耗了 0.2 元（$0.02）的 token——使用 DeepSeek V4 Pro 模型。**
 
@@ -69,7 +64,7 @@
 
 借助 PenguinHarness 技能库，Agent 自己评估、自己优化：跑 Benchmark、找失分点、发布 N+1 版——每轮之前自动快照，每个请求都可在轨迹观测中回放。
 
-<!-- TODO: 自进化演示视频——即将提供。 -->
+https://github.com/user-attachments/assets/aec49ae9-b743-467b-b247-37bedfeaa36e
 
 ## 支持的模型
 
