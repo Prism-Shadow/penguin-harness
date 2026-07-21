@@ -1,9 +1,9 @@
 /**
- * Benchmark section: two suites (complex data analysis + coding tasks), same model
- * everywhere, rendered in one identical format — three small multiples (accuracy /
- * Tokens / cost, one measure per axis) plus a five-column table of per-run means
- * (framework / model / accuracy % / Tokens M / cost $). Suite specifics (case count,
- * runs, thinking level, timeout, pricing) sit in a small footnote under each table.
+ * Benchmark section: two suites (complex data analysis + coding tasks), each harness on
+ * the model it is normally paired with, rendered in one identical format — three small
+ * multiples (accuracy / Tokens / cost, one measure per axis) plus a five-column table of
+ * suite totals (framework / model / accuracy % / Tokens M / cost $). Suite specifics
+ * (case count, runs, thinking level, timeout, pricing) sit in a footnote under each table.
  * Emphasis form: PenguinHarness wears the brand hue, competitors the de-emphasis
  * gray; per-bar identity comes from logo+name labels, every cap is value-labeled,
  * and the exact table relieves the sub-3:1 gray fills.
@@ -248,9 +248,9 @@ export function Benchmark() {
           title={S.benchmark.dataTitle}
           desc={S.benchmark.dataDesc}
           rows={DATA_BENCH}
-          accDp={1}
+          accDp={2}
           tokenDp={2}
-          costDp={3}
+          costDp={2}
           footnote={S.benchmark.dataFootnote}
         />
         <SuiteBlock
@@ -259,7 +259,7 @@ export function Benchmark() {
           rows={CODE_BENCH}
           accDp={2}
           tokenDp={2}
-          costDp={3}
+          costDp={2}
           footnote={S.benchmark.codeFootnote}
         />
       </div>

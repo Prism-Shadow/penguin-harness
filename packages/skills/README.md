@@ -4,18 +4,16 @@ The PenguinHarness built-in skill library. A Skill is a directory with a `SKILL.
 
 Skills follow the "index first, body on demand" design: only their metadata is injected into an Agent's system prompt; the Agent reads the full `SKILL.md` via shell when it actually needs it.
 
-Included skills:
+Included skills, in the order of the `SKILL_GROUPS` manifest in `src/index.ts` (a skill directory missing from the manifest is still loaded, and lands in an "Other" group):
 
 | Group | Skills |
 | --- | --- |
-| Agent Development | `agent-creation`, `benchmark-design`, `agent-evaluation`, `agent-optimization` |
-| Data Analysis | `data-analysis` |
-| Penguin Development | `penguin-sdk`, `penguin-cli`, `agenthub-models` |
-| Web Development | `web-design` |
-| Web Research | `firecrawl` |
-| Software Engineering | `software-engineering` |
+| Office Productivity | `data-analysis`, `firecrawl` |
+| Software Development | `web-design`, `software-engineering` |
+| AI App Development | `penguin-sdk`, `penguin-cli`, `agenthub-models` |
+| Agent Tuning | `agent-creation`, `benchmark-design`, `agent-evaluation`, `agent-optimization` |
 
-The first group powers the self-improvement loop: design a Benchmark, evaluate the Target Agent, optimize it to version N+1 with a snapshot before every round.
+Agent Tuning powers the self-improvement loop: create the Target Agent, design a Benchmark, evaluate it, optimize it to version N+1 with a snapshot before every round.
 
 ## Documentation
 

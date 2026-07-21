@@ -12,7 +12,9 @@
  * logo + name display;
  * `/` opens the slash command menu (`/compact` compresses context, replacing the button; each
  * installed skill gets its own entry; pressing Enter on `/<skill_name>` toggles that skill's
- * selection and clears the input, without sending);
+ * selection without sending). Matching is positional like `@`: a slash opens the menu from any
+ * caret position, running a command removes just that token, and Escape only dismisses the menu —
+ * the rest of the draft is never touched;
  * `@` opens the agent selection menu; once picked it becomes a fixed highlighted target chip
  * above the text body (only one allowed, picking again replaces it; removed via backspace or the
  * x button); only a leading `@` at the start of the text counts — typing or pasting text starting
@@ -627,6 +629,11 @@ export function ChatInput({
   const [images, setImages] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [slashIndex, setSlashIndex] = useState(0);
+  // Slash token start where Escape closed the menu (mirrors mentionDismissed: the menu stays shut for that one token).
+  const [slashDismissed, setSlashDismissed] = useState<number | null>(null);
+  // Anchor for the popups that open upward, and the room actually available above them.
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const [upwardMaxH, setUpwardMaxH] = useState<number>();
   // @ handoff target (chip, fixed at the front of the input); only one allowed, picking again replaces it directly.
   const [target, setTarget] = useState<AgentSummary | null>(null);
   // Selected skills (dropdown checklist, multi-select): initial value comes from draft restore (quick-invoke pre-selection), cleared on successful send.
@@ -694,12 +701,14 @@ export function ChatInput({
     ];
   }, [onCompact, onTextChange, skills, locale, toggleSkill]);
   // Positional matching (like @ mentions): a slash opens the menu from any caret position;
-  // running a command removes just the token, leaving the rest of the text intact.
+  // running a command removes just the token, leaving the rest of the text intact. Doesn't
+  // reopen after Escape until the caret sits on a different token.
   const slashTok = !running && !compacting ? matchSlash(text, caret) : null;
   slashMatchRef.current = slashTok;
-  const slashMatches = slashTok
-    ? commands.filter((c) => c.cmd.startsWith(`/${slashTok.query}`))
-    : [];
+  const slashMatches =
+    slashTok && slashTok.start !== slashDismissed
+      ? commands.filter((c) => c.cmd.startsWith(`/${slashTok.query}`))
+      : [];
   const slashOpen = slashMatches.length > 0;
   const activeSlash = slashMatches[Math.min(slashIndex, slashMatches.length - 1)];
 
@@ -709,6 +718,31 @@ export function ChatInput({
     mention && mention.start !== mentionDismissed ? filterAgents(agents, mention.query) : [];
   const mentionOpen = mentionMatches.length > 0;
   const activeMention = mentionMatches[Math.min(mentionIndex, mentionMatches.length - 1)];
+
+  // Both menus above are drawn upward (`bottom-full`) from the composer, so their ceiling is
+  // whatever ancestor clips overflow — on the draft page that's the centered scroll area, whose
+  // top edge sits well below the viewport's. A static `40vh` cap can't know that distance and
+  // clipped the first rows on shorter windows, so measure the real gap when a menu opens.
+  useEffect(() => {
+    if (!slashOpen && !mentionOpen) return;
+    const measure = () => {
+      const el = anchorRef.current;
+      if (!el) return;
+      let ceiling = 0;
+      for (let p = el.parentElement; p; p = p.parentElement) {
+        if (getComputedStyle(p).overflowY !== "visible") {
+          ceiling = p.getBoundingClientRect().top;
+          break;
+        }
+      }
+      // Less the menu's own 6px offset from the composer, plus a little breathing room.
+      const room = el.getBoundingClientRect().top - ceiling - 14;
+      setUpwardMaxH(Math.max(96, Math.min(320, Math.round(room))));
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [slashOpen, mentionOpen]);
 
   /** Auto-grow the textarea (caps at roughly 6 lines, scrolls internally beyond that). */
   const autoGrow = () => {
@@ -843,10 +877,10 @@ export function ChatInput({
         return;
       }
       if (e.key === "Escape") {
-        setText("");
-        onTextChange?.("");
-        // setText is async: wait for the DOM value to update before measuring height (measuring synchronously would read the pre-clear content).
-        requestAnimationFrame(autoGrow);
+        // Only closes the popup, doesn't clear the input: with positional matching the `/token`
+        // is part of the text body like any other word, and wiping a controlled textarea is not
+        // undoable with Ctrl+Z. Reopens if the user keeps typing on another token.
+        setSlashDismissed(slashTok?.start ?? null);
         return;
       }
     }
@@ -867,7 +901,7 @@ export function ChatInput({
         return;
       }
       if (e.key === "Escape") {
-        // Only closes the popup, doesn't clear the input (unlike slash: the @ prefix is part of the text body), reopens if the user keeps typing.
+        // Only closes the popup, doesn't clear the input (the `@token` is part of the text body), reopens if the user keeps typing.
         setMentionDismissed(mention?.start ?? null);
         return;
       }
@@ -923,12 +957,16 @@ export function ChatInput({
   };
 
   return (
-    <div className="relative">
+    <div className="relative" ref={anchorRef}>
       {/* Slash command menu (triggered by typing /; /compact plus one entry per installed skill).
-          Height is viewport-capped with internal scrolling so a long skill list never pushes the
-          menu's top edge past the screen; the active row keeps itself scrolled into view. */}
+          Height is capped to the room measured above the composer (see upwardMaxH) with internal
+          scrolling, so a long skill list never pushes the menu's top edge out of view; the active
+          row keeps itself scrolled into view. */}
       {slashOpen && (
-        <div className="anim-pop absolute bottom-full left-0 z-40 mb-1.5 max-h-[min(20rem,40vh)] w-80 max-w-[calc(100vw-2rem)] overflow-y-auto overscroll-contain rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900">
+        <div
+          style={{ maxHeight: upwardMaxH }}
+          className="anim-pop absolute bottom-full left-0 z-40 mb-1.5 w-80 max-w-[calc(100vw-2rem)] overflow-y-auto overscroll-contain rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900"
+        >
           {slashMatches.map((c, i) => (
             <button
               key={c.cmd}
@@ -955,7 +993,10 @@ export function ChatInput({
 
       {/* @ subagent menu (triggered by typing @; interaction matches the slash menu) */}
       {mentionOpen && (
-        <div className="anim-pop absolute bottom-full left-0 z-40 mb-1.5 max-h-64 w-72 overflow-y-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900">
+        <div
+          style={{ maxHeight: Math.min(256, upwardMaxH ?? 256) }}
+          className="anim-pop absolute bottom-full left-0 z-40 mb-1.5 w-72 overflow-y-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900"
+        >
           {mentionMatches.map((a, i) => (
             <button
               key={a.agentId}
@@ -1085,9 +1126,14 @@ export function ChatInput({
             setCaret(caretNow);
             setSlashIndex(0);
             setMentionIndex(0);
-            // Closing via Escape only persists for "the same @ mention": continuing to type
-            // within that mention won't reopen the menu; it re-opens once the cursor is no
-            // longer on that mention (deleted, moved away, or replaced by a new one).
+            // Closing via Escape only persists for "the same token": continuing to type within
+            // that slash command / mention won't reopen the menu; it re-opens once the cursor is
+            // no longer on that token (deleted, moved away, or replaced by a new one).
+            setSlashDismissed((d) => {
+              if (d === null) return null;
+              const m = matchSlash(value, caretNow);
+              return m && m.start === d ? d : null;
+            });
             setMentionDismissed((d) => {
               if (d === null) return null;
               const m = matchMention(value, caretNow);

@@ -79,12 +79,14 @@ export interface CreateAgentOptions {
 export interface CreateSessionOptions {
   /** Workspace for this run; if unspecified, a temporary Workspace is created under the Agent directory. */
   workspaceDir?: string;
-  /** Model used for this Session (upstream model_id); if unspecified, uses the Project's default Model. */
+  /**
+   * Model used for this Session (upstream model_id); must be given together with `provider`.
+   * Omit both to use the Project's default Model.
+   */
   modelId?: string;
   /**
-   * Provider grouping for `modelId` (a paired reference); if omitted, resolved via
-   * `resolveModelRef` semantics — `model_id` only resolves if it is a globally unique
-   * exact match in the config; zero or multiple matches produce a clear error.
+   * Provider grouping for `modelId`: the two together form the paired reference. It is never
+   * inferred, so it's "both or neither" — either half alone is an error, not a lookup.
    */
   provider?: string;
   /** Explicit credentials; if unspecified, falls back to credentials in the Project config, then to AgentHub reading environment variables. */
@@ -134,18 +136,20 @@ export class Agent {
    */
   async createSession(opts: CreateSessionOptions = {}): Promise<Session> {
     // Model is validated first (before creating the Workspace, so failure leaves no
-    // temp directory behind): the reference must resolve to an entry in the Project
-    // config (the (provider, model_id) pair is the unique key); a reference
-    // outside the config throws immediately rather than passing silently — otherwise
-    // credentials, pricing, and the context window would all be unavailable.
-    if (opts.modelId === undefined && opts.provider !== undefined) {
+    // temp directory behind): the reference must be the complete (provider, model_id)
+    // pair — the config's unique key — and must name an entry in the Project config; a
+    // reference outside the config throws immediately rather than passing silently,
+    // otherwise credentials, pricing, and the context window would all be unavailable.
+    // Half a reference is always an error: the missing half is never inferred, since a
+    // guessed provider would send the entry's credential to a vendor nobody named.
+    if ((opts.modelId === undefined) !== (opts.provider === undefined)) {
       throw new Error(
-        "provider was specified without modelId: a model reference must be given as a pair (provider cannot be used alone).",
+        "A model reference must be given as a (provider, model_id) pair: both must be specified, or neither (to use the Project's default model).",
       );
     }
     let ref: ModelRef;
-    if (opts.modelId !== undefined) {
-      // The only entry point for resolving an "omitted provider" reference (resolveModelRef): three branches — unique match / zero matches / ambiguous.
+    if (opts.modelId !== undefined && opts.provider !== undefined) {
+      // Pair validation only (resolveModelRef): the pair either names a configured entry or errors.
       ref = resolveModelRef(this.projectConfig, opts.modelId, opts.provider);
     } else if (this.projectConfig.default_model) {
       ref = this.projectConfig.default_model;
@@ -447,9 +451,12 @@ export class Agent {
     const { workspaceDir, modelEntry, apiKey, baseUrl, systemPrompt, subagentDepth, vault } = args;
     // Child-Agent runner: injected into the run_subagent tool so it doesn't need to
     // depend on Agent/Session (breaking a circular dependency). The model can
-    // optionally choose agentId (omitted = call the current Agent) and modelId
-    // (omitted = Project default). Precheck errors (depth limit exceeded / agent
-    // doesn't exist) are expressed as throws, which the Environment collapses to failed.
+    // optionally choose agentId (omitted = call the current Agent) and the child
+    // Session's model (omitted = Project default); the model reference is forwarded to
+    // createSession as-is and must be a complete (provider, model_id) pair — half a
+    // reference is rejected there rather than being guessed here. Precheck errors (depth
+    // limit exceeded / agent doesn't exist) are expressed as throws, which the
+    // Environment collapses to failed.
     // Docs: /docs/interfaces § "Subagent interfaces"
     const parentAgent = this;
     const { root, projectId, agentId: parentAgentId } = this.state;
@@ -457,7 +464,7 @@ export class Agent {
       // Spawn and run are separate: the same child Session can run for multiple turns
       // (continuing via input_subagent appending a prompt); resource cleanup is
       // consolidated in handle.dispose (called by the managing ManagedSubagentSession).
-      async spawn({ agentId, modelId }) {
+      async spawn({ agentId, modelId, provider }) {
         if (subagentDepth >= MAX_SUBAGENT_DEPTH) {
           throw new Error(
             `subagent depth limit ${MAX_SUBAGENT_DEPTH} reached; not spawning another subagent`,
@@ -477,9 +484,12 @@ export class Agent {
           agentId !== undefined && agentId !== parentAgentId
             ? await createAgent({ root, projectId, agentId })
             : parentAgent;
+        // The model reference is forwarded as a whole: createSession rejects half a pair, so a
+        // caller that named only one side gets the same error the CLI and HTTP layers give.
         const childSession = await childAgent.createSession({
           workspaceDir,
           ...(modelId !== undefined ? { modelId } : {}),
+          ...(provider !== undefined ? { provider } : {}),
           subagentDepth: subagentDepth + 1,
         });
         // All child-session messages are tagged with an origin (the child Session id,

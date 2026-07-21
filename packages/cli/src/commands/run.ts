@@ -1,14 +1,14 @@
 /**
  * `penguin run` — send a single Task in one shot.
  *
- *   penguin run -m <msg> [--model-id <id>] [--provider <group>] [--workspace <path>]
+ *   penguin run -m <msg> [--model-id <id> --provider <group>] [--workspace <path>]
  *               [--project-id <id>] [--agent-id <id>]
  *               [--approve <allow-all|deny-all|read-only|always-ask>]
  *
  * Uses the current directory when Workspace is unspecified; uses the Project's default model
- * when model is unspecified. `--provider` is optional: when omitted, `--model-id` is resolved
- * via resolveModelRef semantics (only matches when the exact value is globally unique in the
- * config; ambiguity is an error). Defaults to interactive per-call approval; `--approve`
+ * when model is unspecified. A model reference is always an explicit `(provider, model_id)`
+ * pair, so `--model-id` and `--provider` must be given together — giving only one of them is
+ * an error, never a lookup. Defaults to interactive per-call approval; `--approve`
  * selects the permission mode.
  * Docs: /docs/cli § "penguin run".
  */
@@ -31,6 +31,14 @@ export function registerRunCommand(program: Command, t: Messages): void {
     .option("--workspace <path>", t.common.workspace)
     .option("--approve <mode>", t.common.approve)
     .action(async (opts) => {
+      // The model reference is a pair: commander can only require each option on its own,
+      // so the "both or neither" rule is enforced here. Giving neither is the normal case
+      // and falls back to the Project's default model.
+      if (Boolean(opts.modelId) !== Boolean(opts.provider)) {
+        process.stderr.write(`${t.error(t.modelRefIncomplete())}\n`);
+        process.exitCode = 1;
+        return;
+      }
       const mode = resolveApprovalMode(opts.approve, t);
 
       const agent = await createAgent({

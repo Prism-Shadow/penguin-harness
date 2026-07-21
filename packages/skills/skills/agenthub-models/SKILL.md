@@ -3,8 +3,8 @@ name: agenthub-models
 description: Call model APIs through @prismshadow/agenthub — streaming text generation, image generation, speech synthesis and embeddings with one client.
 short_description: Call model APIs with one AgentHub client.
 short_description_zh: 用一个 AgentHub 客户端调用模型 API。
-version: 6
-updated: 2026-07-20T19:30:00Z
+version: 7
+updated: 2026-07-21T00:00:00Z
 ---
 
 # AgentHub Model APIs
@@ -41,7 +41,7 @@ Vault keys also appear in your Vault Keys section. **Only two sources count as a
 
 If neither counted source yields a usable key, **stop immediately and ask the user to configure one — do not write code, and do not keep calling tools to retry**: ask them to add one in the agent's **key vault** (gear icon on the agent's card, Agents page → settings → key vault tab); vault values reach your shell environment on the next task. Re-checking the environment or the vault in a loop just wastes turns — one clear check, then hand back to the user.
 
-Keep model API keys **project-local**: for an app that stores its own model config, write the key into the project under the working directory with the penguin CLI, **always passing `--root <data_dir>` for a directory inside the current working directory** (`penguin config model add --root ./penguin_data --model-id <id> --api-key <key>`) — without `--root` it writes to the global `~/.penguin/data` instead. Otherwise rely on vault-injected environment variables. Never read, copy or fall back to model keys stored in the user's global `~/.penguin` directory — that config belongs to the person running Penguin, not to your script.
+Keep model API keys **project-local**: for an app that stores its own model config, write the key into the project under the working directory with the penguin CLI, **always passing `--root <data_dir>` for a directory inside the current working directory** (`penguin config model add --root ./penguin_data --provider <group> --model-id <id> --api-key <key>`) — without `--root` it writes to the global `~/.penguin/data` instead. `--provider` is required alongside `--model-id`: a model entry is the `(provider, model_id)` pair and the group is never inferred (use `custom` for an endpoint outside the built-in groups). Otherwise rely on vault-injected environment variables. Never read, copy or fall back to model keys stored in the user's global `~/.penguin` directory — that config belongs to the person running Penguin, not to your script.
 
 ## Model IDs
 

@@ -295,7 +295,12 @@ export interface ModelTestResponse {
   latencyMs?: number;
   /** Time from request start to the first streamed content (thinking or text), ms. */
   ttftMs?: number;
-  /** Output tokens per second over the streaming window (first content -> stream end), 1dp. */
+  /**
+   * Output tokens per second over the streaming window (first content -> stream end), 1dp.
+   * Omitted unless the sample is large enough to mean anything: a reply of a few tokens is
+   * dominated by the final chunk's round trip, so the rate it yields tracks network jitter
+   * rather than the model. Callers render TTFT alone in that case.
+   */
   tps?: number;
   message?: string;
 }
@@ -472,12 +477,12 @@ export interface DirListResponse {
 }
 
 export interface SessionCreateRequest {
-  /** Upstream id of the session's model (paired with provider); defaults to the Project's default Model. */
+  /** Upstream id of the session's model; always sent together with provider. Omit both for the Project's default Model. */
   modelId?: string;
   /**
-   * Provider group for `modelId`; when omitted, resolved via resolveModelRef semantics —
-   * modelId can only be resolved if it's globally unique by exact match in the config;
-   * 0 or multiple matches return 400.
+   * Provider group for `modelId`. A model reference is always a complete
+   * (provider, modelId) pair — the provider is never inferred, so sending one field
+   * without the other returns 400 instead of being resolved.
    */
   provider?: string;
   /** Any existing directory on the server; defaults to auto-creating a temporary Workspace. */
@@ -942,9 +947,9 @@ export interface ScheduleItem {
   /** Bound target Session; defaults to creating a new Session each time. */
   sessionId?: string;
   workspace?: string;
-  /** Model for new-Session mode (upstream id, paired with provider); defaults to the Project's default reference. */
+  /** Model for new-Session mode (upstream id, always paired with provider); absent means the Project's default reference. */
   modelId?: string;
-  /** Provider group for `modelId`; when omitted, resolved via resolveModelRef semantics (resolvable only on a unique match). */
+  /** Provider group for `modelId`; present exactly when `modelId` is — a model reference is always a pair. */
   provider?: string;
   status: ScheduleStatus;
   invalidReason?: string;
@@ -971,9 +976,12 @@ export interface ScheduleUpsertRequest {
   endAt?: string;
   sessionId?: string;
   workspace?: string;
-  /** Model for new-Session mode (upstream id); defaults to the Project's default reference. */
+  /** Model for new-Session mode (upstream id); always sent together with provider, omit both for the Project's default reference. */
   modelId?: string;
-  /** Provider group for `modelId`; when omitted, validated as uniquely resolvable via resolveModelRef semantics at save/reconciliation time. */
+  /**
+   * Provider group for `modelId`. Both fields are sent as a pair (400 otherwise); the
+   * pair is checked against the Project config at save/reconciliation time.
+   */
   provider?: string;
 }
 

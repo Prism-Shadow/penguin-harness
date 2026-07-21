@@ -34,7 +34,7 @@ penguin -v
 | Integrity check | Downloads are sha256-verified when the Release ships checksum assets |
 | Upgrade | Re-run the install script; files are swapped atomically |
 
-Script flags are passed as `curl ... | sh -s -- --universal`.
+Script flags go after `sh -s --`, e.g. `curl -fsSL https://penguin.ooo/install.sh | sh -s -- --universal`.
 
 ### Data directory
 

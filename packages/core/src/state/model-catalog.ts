@@ -512,7 +512,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // -- Qwen Token Plan (subscription gateway; vision flags per the plan's supported-model
   // table). Pricing and context windows from each model's page at
   // www.qianwenai.com/models/<id> (official CNY list prices; limited-time promotions such as
-  // the 8折/5折 discounts are not stored). qwen3.8-max-preview is preview-only with a
+  // the 20%/50% off discounts are not stored). qwen3.8-max-preview is preview-only with a
   // quota-multiplier promotion and publishes no per-token list price nor a context window, so
   // it carries no pricing and uses its family's 1M window. --
   {
@@ -767,15 +767,6 @@ export function catalogEntryFor(
   upstreamId: string,
 ): ModelCatalogEntry | undefined {
   return MODEL_CATALOG.find((m) => m.provider === provider && m.modelId === upstreamId);
-}
-
-/**
- * Infers the provider for an upstream id from the built-in catalog (used to default
- * `provider` on `model add`): if it matches a catalog entry, use that entry's provider
- * (upstream ids are globally unique within the catalog); otherwise custom.
- */
-export function inferProviderForUpstream(upstreamId: string): string {
-  return MODEL_CATALOG.find((m) => m.modelId === upstreamId)?.provider ?? "custom";
 }
 
 /** Looks up provider info by provider id; returns undefined for an unknown id. */

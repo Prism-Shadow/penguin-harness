@@ -1491,6 +1491,46 @@ describe("provider fidelity payloads (opaque, AgentHub 0.4 semantics)", () => {
     ]);
   });
 
+  it("closes a text segment on fidelity.signature: later text becomes its own segment (the signature must not cover unsigned text)", () => {
+    const { messages } = translateEvents([
+      // Gemini stamps a thoughtSignature on the text part it signed; whatever follows is
+      // unsigned. Merging them would replay a signature covering text the provider never
+      // signed, and the provider rejects the resumed turn.
+      ev({ content_items: [{ type: "text", text: "part one", fidelity: { signature: "sigA" } }] }),
+      ev({ content_items: [{ type: "text", text: "part two" }] }),
+      ev({ event_type: "stop", content_items: [], finish_reason: "stop" }),
+    ]);
+    const texts = complete(messages).filter((m) => (m.payload as { type: string }).type === "text");
+    expect(
+      texts.map((m) => {
+        const p = m.payload as { text: string; fidelity?: Record<string, unknown> };
+        return [p.text, p.fidelity];
+      }),
+    ).toEqual([
+      ["part one", { signature: "sigA" }],
+      ["part two", undefined],
+    ]);
+  });
+
+  it("accumulates fidelity keys across deltas of one text segment (phase marker + trailing signature)", () => {
+    const { messages } = translateEvents([
+      // GPT-5 opens the segment with a bare phase marker and signs it only at the end; a
+      // replacing (rather than merging) assignment would drop the phase and lose the
+      // segmentation on replay.
+      ev({ content_items: [{ type: "text", text: "", fidelity: { phase: "answer" } }] }),
+      ev({ content_items: [{ type: "text", text: "final" }] }),
+      ev({ content_items: [{ type: "text", text: "", fidelity: { signature: "sigB" } }] }),
+      ev({ event_type: "stop", content_items: [], finish_reason: "stop" }),
+    ]);
+    const texts = complete(messages).filter((m) => (m.payload as { type: string }).type === "text");
+    expect(
+      texts.map((m) => {
+        const p = m.payload as { text: string; fidelity?: Record<string, unknown> };
+        return [p.text, p.fidelity];
+      }),
+    ).toEqual([["final", { phase: "answer", signature: "sigB" }]]);
+  });
+
   it("carries the tool_call fidelity through to the complete message", () => {
     const { messages } = translateEvents([
       ev({

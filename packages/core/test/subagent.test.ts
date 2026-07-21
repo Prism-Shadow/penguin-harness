@@ -56,7 +56,7 @@ type RunInput = { prompt: string; signal?: AbortSignal; approve?: ApproveFn };
 /** Builds a SubagentRunner from a run implementation (spawn arguments observed via a spy). */
 function runnerOf(
   run: (input: RunInput) => AsyncGenerator<OmniMessage>,
-  spawnSpy?: (input: { agentId?: string; modelId?: string }) => void,
+  spawnSpy?: (input: { agentId?: string; modelId?: string; provider?: string }) => void,
 ): SubagentRunner {
   return {
     async spawn(input) {
@@ -136,7 +136,8 @@ afterEach(() => {
 
 describe("run_subagent tool (foreground)", () => {
   it("forwards stamped child messages and mirrors child text as its own output deltas", async () => {
-    const seen: Array<{ prompt?: string; agentId?: string; modelId?: string }> = [];
+    const seen: Array<{ prompt?: string; agentId?: string; modelId?: string; provider?: string }> =
+      [];
     const runner = runnerOf(
       async function* (input) {
         seen[0] = { ...seen[0], prompt: input.prompt };
@@ -150,7 +151,10 @@ describe("run_subagent tool (foreground)", () => {
     const { services } = makeServices(runner);
     const tool = createSubagentTool(DEF, services);
     const { out, result } = await collectWithReturn(
-      tool.execute({ prompt: "world", agent_id: "researcher", model_id: "m1" }, CTX),
+      tool.execute(
+        { prompt: "world", agent_id: "researcher", model_id: "m1", provider: "p1" },
+        CTX,
+      ),
     );
 
     // Child session messages pass through verbatim (with origin).
@@ -163,7 +167,49 @@ describe("run_subagent tool (foreground)", () => {
     expect(result?.stopReason).toBe("completed");
     // The model is free to choose the agent and model (spawn arguments); the prompt is
     // handed to run.
-    expect(seen[0]).toEqual({ prompt: "world", agentId: "researcher", modelId: "m1" });
+    expect(seen[0]).toEqual({
+      prompt: "world",
+      agentId: "researcher",
+      modelId: "m1",
+      provider: "p1",
+    });
+  });
+
+  it("rejects half a model reference in either direction, and never spawns", async () => {
+    // A model is referenced by the (provider, model_id) pair; the tool refuses half of one
+    // rather than letting the session layer guess a group for a bare upstream id.
+    for (const args of [
+      { prompt: "x", model_id: "m1" },
+      { prompt: "x", provider: "p1" },
+    ]) {
+      const spawned: unknown[] = [];
+      const runner = runnerOf(
+        async function* () {},
+        (input) => spawned.push(input),
+      );
+      const { services } = makeServices(runner);
+      const tool = createSubagentTool(DEF, services);
+      const { out, result } = await collectWithReturn(tool.execute(args, CTX));
+      expect(result?.stopReason).toBe("failed");
+      expect(ownDeltas(out)).toContain("must be given together");
+      expect(spawned).toHaveLength(0);
+    }
+  });
+
+  it("uses the Project default model when neither half of the reference is given", async () => {
+    const seen: Array<{ modelId?: string; provider?: string }> = [];
+    const runner = runnerOf(
+      async function* () {
+        yield withOrigin(partialText("delta", "ok"), HOP);
+      },
+      (input) => seen.push(input),
+    );
+    const { services } = makeServices(runner);
+    const tool = createSubagentTool(DEF, services);
+    const { result } = await collectWithReturn(tool.execute({ prompt: "x" }, CTX));
+    expect(result?.stopReason).toBe("completed");
+    expect(seen[0]?.modelId).toBeUndefined();
+    expect(seen[0]?.provider).toBeUndefined();
   });
 
   it("does not mirror deeper-nested (origin.length > 1) text into its own output", async () => {

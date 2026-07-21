@@ -32,5 +32,11 @@ export function matchSlash(text: string, caret: number): SlashMatch | null {
 export function removeSlashToken(text: string, match: SlashMatch): string {
   const before = text.slice(0, match.start);
   const after = text.slice(match.end);
-  return (before + after).replace(/  +/g, " ").replace(/^\s+$/, "");
+  // Only the seam is touched: the token used to separate its two neighbours, so dropping it would
+  // leave `a  b` — one of those two spaces goes. The rest of the draft stays byte-for-byte (a
+  // global collapse would silently reflow pasted code, YAML, aligned tables and indentation).
+  const joined =
+    before.endsWith(" ") && after.startsWith(" ") ? before + after.slice(1) : before + after;
+  // The token was the entire content (possibly padded with whitespace): leave a truly empty input.
+  return /^\s*$/.test(joined) ? "" : joined;
 }

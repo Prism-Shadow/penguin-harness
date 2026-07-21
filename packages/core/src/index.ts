@@ -9,7 +9,8 @@
  *
  * ```ts
  * const agent = await createAgent({ agentId: "default_agent" });
- * const session = await agent.createSession({ workspaceDir, modelId });
+ * // A model reference is always the (provider, model_id) pair; omit both for the Project default.
+ * const session = await agent.createSession({ workspaceDir, provider, modelId });
  * for await (const output of session.run([userText("...")])) { ... }
  * ```
  */

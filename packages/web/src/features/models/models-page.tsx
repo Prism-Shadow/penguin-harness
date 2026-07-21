@@ -329,7 +329,7 @@ export function ModelsPage() {
   const projectId = currentProject?.projectId ?? null;
   const isOwner = currentProject?.role === "owner";
   const userId = useAuth().user?.userId ?? null;
-  /** Per-model speed results (session-scoped; "pending" while that model's turn is running). */
+  /** Per-model speed results (in-memory, reset on every project switch; "pending" while that model's turn is running). */
   const [speedResults, setSpeedResults] = useState<Map<string, SpeedResult | "pending">>(new Map());
   /** Group whose speed-test confirmation dialog is open (provider id). */
   const [speedFor, setSpeedFor] = useState<string | null>(null);
@@ -363,6 +363,10 @@ export function ModelsPage() {
     if (!projectId) return;
     setRows(null);
     setLoadError(null);
+    // Speed results are keyed by (provider, model_id) only, so another Project's identically
+    // named model would inherit a timing measured against a different endpoint and key —
+    // drop them along with the rows they annotate whenever the active Project changes.
+    setSpeedResults(new Map());
     try {
       const res = await api.getModels(projectId);
       setRows(res.models.map(toRow));

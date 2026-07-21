@@ -15,6 +15,7 @@
 import { isValidElement, memo } from "react";
 import type { ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
+import type { Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { CodeBlock } from "./code-block";
 
@@ -41,6 +42,22 @@ function MdPre({ children, streaming }: { children?: ReactNode; streaming: boole
   return <pre>{children}</pre>;
 }
 
+/**
+ * The two `components` maps, built once at module scope instead of inline per render.
+ * react-markdown uses `components.pre` as the element **type**, so a fresh arrow each render is
+ * a new type on every commit: React unmounts and remounts every code block, dropping the user's
+ * text selection and resetting each block's Copy-button state — ~8 times a second while a reply
+ * streams, including for blocks that closed long ago. `streaming` is the only thing the adapter
+ * closes over, so one frozen map per value is enough; the single flip between them happens on
+ * the settle render, which re-parses the message anyway.
+ */
+const STREAMING_COMPONENTS: Components = {
+  pre: (props) => <MdPre streaming>{props.children}</MdPre>,
+};
+const SETTLED_COMPONENTS: Components = {
+  pre: (props) => <MdPre streaming={false}>{props.children}</MdPre>,
+};
+
 export const Md = memo(function Md({
   text,
   streaming = false,
@@ -51,7 +68,7 @@ export const Md = memo(function Md({
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
-      components={{ pre: (p) => <MdPre streaming={streaming}>{p.children}</MdPre> }}
+      components={streaming ? STREAMING_COMPONENTS : SETTLED_COMPONENTS}
     >
       {text}
     </ReactMarkdown>

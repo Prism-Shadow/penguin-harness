@@ -3,14 +3,16 @@
  * Skill library, shown sectioned by skill group. Groups are borderless — the
  * group header (group name + skill count, no icon) is collapsible, highlights
  * on hover, and animates height on expand/collapse; expanded by default. Cards
- * within a group form a grid (up to three per row on wide screens, generously
- * sized). Each card = an enlarged skill icon spanning two rows (rounded,
- * accent-colored background — --accent-bg/--accent-fg follow the theme-color
- * setting; DTO icon = the raw icon.svg from the catalog, rendered inline once
- * it passes sanitize, otherwise falls back to a default book icon) + a name
- * (monospace) and short description on the right, one line each (single-line
- * truncation, falling back to the full description when missing) + a metadata
- * line (version · semantic update time · usage count "used by N Agents");
+ * within a group form a grid, generously sized: two per row from the sm
+ * breakpoint up, one per row on narrow screens. Each card = a rounded icon
+ * tile centered against the two text rows (its color comes from
+ * skillTileColor — a per-skill palette hashed from the name, which replaced
+ * the theme-accent tile that painted every skill the same; DTO icon = the raw
+ * icon.svg from the catalog, rendered inline once it passes sanitize,
+ * otherwise falls back to a default book icon) + a name (monospace) and short
+ * description on the right, one line each (single-line truncation, falling
+ * back to the full description when missing) + a metadata line below both
+ * (version · semantic update time · usage count "used by N Agents");
  * group and card copy follow the UI language (localizedText /
  * localizedShortText), and groups have no description. Icon buttons for
  * actions (copy goes into aria-label and title) —
@@ -307,7 +309,7 @@ export function SkillsPage() {
                   >
                     {/* inert while collapsed: cards at zero height shouldn't still be Tab-focusable or clickable. */}
                     <div className="overflow-hidden" inert={!open}>
-                      {/* Up to three cards per row, generously sized (3 columns ≥xl, 2 columns ≥md, 1 column on narrow screens). */}
+                      {/* Generously sized cards: 2 columns ≥sm, 1 column on narrow screens. */}
                       <div
                         className={`grid gap-2.5 p-2.5 transition-opacity duration-200 sm:grid-cols-2 ${open ? "opacity-100" : "opacity-0"}`}
                       >
@@ -398,7 +400,7 @@ function SkillCard({
             </p>
           </div>
         </div>
-        {/* Metadata line under the header (e.g. `v1 · 今天更新 · N 个 Agent 在用`). */}
+        {/* Metadata line under the header (e.g. `v1 · updated today · used by N Agents`). */}
         <p className="mt-2.5 truncate text-[11px] text-gray-400 dark:text-gray-500" title={meta}>
           {meta}
         </p>

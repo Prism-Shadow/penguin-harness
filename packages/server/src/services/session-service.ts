@@ -7,9 +7,9 @@
  * (provider, model_id) / workspace, which is backfilled into a DB row
  * (approval_mode defaults, createdAt is taken from the timestamp embedded in
  * session_id).
- * Create: via core's `agent.createSession` (model reference as a provider + modelId
- * pair; defaults to the Project's default reference, 400 if there is none; omitting
- * provider goes through resolveModelRef for unique resolution); the new Session is
+ * Create: via core's `agent.createSession` (the model reference is always a complete
+ * (provider, modelId) pair — both or neither; omitting both falls back to the
+ * Project's default reference, 400 if there is none); the new Session is
  * added to session-manager's active table (state idle).
  */
 import path from "node:path";
@@ -22,6 +22,7 @@ import {
 } from "@prismshadow/penguin-core";
 import type { ApprovalMode, SessionInfo } from "../api/types.js";
 import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/errors.js";
+import { badRequest } from "../http/validate.js";
 import type { SessionRow, SessionsRepo } from "../db/repos/sessions.js";
 import type { SessionManager } from "../runtime/session-manager.js";
 import type { ProjectConfigService } from "./project-config-service.js";
@@ -141,28 +142,38 @@ export class SessionService {
   }
 
   /**
-   * Create a Session: model reference `(provider, modelId)` as a pair; defaults to
-   * the Project's default reference (400 prompting to configure a model first if
-   * there is none); when provider is omitted, core's resolveModelRef performs
-   * unique resolution (400 on zero matches / ambiguity). `workspace` is already
+   * Create a Session: the model reference is a complete `(provider, modelId)` pair.
+   * Half a reference is a client error, never something to resolve — the missing half
+   * is never guessed, since a guessed provider would send an entry's credential to a
+   * vendor nobody named. Omitting both falls back to the Project's default reference
+   * (400 prompting to configure a model first if there is none). `workspace` is already
    * validated by the route guard. The new Session is added to the active table
    * (idle).
    */
   async createSession(args: {
     projectId: string;
     agentId: string;
-    /** Upstream id of the session's model (paired with provider); defaults to the Project's default reference. */
+    /** Upstream id of the session's model; always paired with provider. Omit both for the Project's default reference. */
     modelId?: string;
-    /** The provider group for `modelId`; if omitted, resolveModelRef performs unique resolution. */
+    /** The provider group for `modelId`; always paired with modelId, never inferred. */
     provider?: string;
     workspace?: string;
     approvalMode?: ApprovalMode;
     /** Session source marker (schedule when triggered by a scheduled task; defaults to user-created). */
     source?: "schedule";
   }): Promise<SessionInfo> {
-    let modelId = args.modelId;
-    let provider = args.provider;
-    if (modelId === undefined) {
+    if ((args.modelId === undefined) !== (args.provider === undefined)) {
+      throw badRequest(
+        "modelId and provider must be given together as a (provider, modelId) pair: specify both, or neither to use the Project's default model.",
+      );
+    }
+    let modelId: string;
+    let provider: string;
+    if (args.modelId !== undefined && args.provider !== undefined) {
+      modelId = args.modelId;
+      provider = args.provider;
+    } else {
+      // The guard above leaves only "both omitted" here: fall back to the Project default.
       const def = await this.deps.projectConfig.getDefaultModelRef(args.projectId);
       if (def === undefined) {
         throw new HttpError(
@@ -183,12 +194,12 @@ export class SessionService {
     try {
       session = await agent.createSession({
         modelId,
-        ...(provider !== undefined ? { provider } : {}),
+        provider,
         ...(args.workspace !== undefined ? { workspaceDir: args.workspace } : {}),
       });
     } catch (err) {
       // A missing credential is its own category (the frontend shows localized text
-      // by code); other core errors (zero matches / ambiguous reference, Workspace
+      // by code); other core errors (the pair naming no configured entry, Workspace
       // not existing, etc.) are collapsed to 400 — the guard already blocks most cases.
       if (isMissingCredential(err)) throw modelCredentialMissing(modelId);
       throw new HttpError(

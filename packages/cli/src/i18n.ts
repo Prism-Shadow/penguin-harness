@@ -23,7 +23,7 @@ export interface Messages {
     projectId: string;
     agentId: string;
     modelId: string;
-    /** run/chat's --provider: pairs with --model-id; when omitted, resolved by unique match (ambiguity is an error). */
+    /** run/chat's --provider: must be given together with --model-id (the group is never inferred). */
     provider: string;
     /** Data root directory option (priority: --root > PENGUIN_HOME > ~/.penguin/data). */
     root: string;
@@ -113,6 +113,8 @@ export interface Messages {
   approveModeInvalid(value: string): string;
   /** Render label for an approval decision (frontend renders the approval_decision event; one label each for allow/deny). */
   approvalDecision(decision: "allow" | "deny"): string;
+  /** run/chat given only one of --model-id / --provider: a model reference is always an explicit pair, never a lookup. */
+  modelRefIncomplete(): string;
   /** --resume is mutually exclusive with --workspace/--model-id (neither can change once the Session is created). */
   resumeNoOverride(): string;
   /** --resume given without a session id, and the current Agent has no Session at all. */
@@ -156,7 +158,7 @@ const en: Messages = {
     agentId: "Agent id",
     modelId: "Model to use (upstream model id; defaults to the Project default model)",
     provider:
-      "Provider of --model-id; when omitted, the model id must match exactly one configured entry (ambiguity is an error)",
+      "Provider group of --model-id; required whenever --model-id is given (the group is never inferred)",
     root: "Data root directory (overrides PENGUIN_HOME and ~/.penguin/data)",
     workspace: "Workspace directory; must already exist (defaults to the current directory)",
     approve:
@@ -168,11 +170,11 @@ const en: Messages = {
     addDesc: "Add or update a model, optionally writing a credential",
     addModelId: "Upstream model id sent to AgentHub as-is (e.g. claude-sonnet-4-6)",
     addProvider:
-      "Provider group stored alongside model_id; inferred from the builtin catalog when omitted, else custom",
+      "Provider group stored alongside model_id; required, never inferred (use custom for anything without a vendor group)",
     addApiKey: "API key, stored inline in the Project's hidden .project_config.toml",
     addBaseUrl: "Custom base URL",
     addContextWindow: "Context window size (tokens)",
-    addClientType: "AgentHub client type (e.g. openai); inferred from model id when omitted",
+    addClientType: "AgentHub client type (e.g. openai); defaults by provider group when omitted",
     addVision: "Mark the model as supporting image input (vision)",
     addNoVision: "Mark the model as NOT supporting image input; omit both to keep current",
     addPriceCacheRead: "Price per 1M tokens: cache read (USD)",
@@ -235,6 +237,8 @@ const en: Messages = {
   approveModeInvalid: (value) =>
     `Invalid approval mode "${value}". Use allow-all, deny-all, read-only, or always-ask.`,
   approvalDecision: (decision) => (decision === "allow" ? "✓ [approved]" : "× [denied]"),
+  modelRefIncomplete: () =>
+    "--model-id and --provider must be given together: a model reference is always an explicit (provider, model_id) pair. Omit both to use the Project default model.",
   resumeNoOverride: () =>
     "--resume does not accept --workspace, --model-id or --provider: they follow the original Session and cannot change.",
   resumeNoSession: () => "No session to resume: this agent has no recorded sessions yet.",
@@ -268,7 +272,7 @@ const zh: Messages = {
     projectId: "Project id",
     agentId: "Agent id",
     modelId: "本次使用的模型（上游模型 id；默认 Project 默认模型）",
-    provider: "--model-id 的 provider 分组；省略时 model id 须在配置中精确唯一命中（歧义报错）",
+    provider: "--model-id 的 provider 分组；给出 --model-id 时必须一并给出（分组不作任何推断）",
     root: "数据根目录（优先于 PENGUIN_HOME 与 ~/.penguin/data）",
     workspace: "Workspace 目录，须为已存在目录（默认当前目录）",
     approve:
@@ -279,11 +283,11 @@ const zh: Messages = {
     modelDesc: "管理模型 credential 与默认模型",
     addDesc: "新增或更新一个模型，并可写入 credential",
     addModelId: "上游模型 id（如 claude-sonnet-4-6，原样发给 AgentHub）",
-    addProvider: "与 model_id 分列存储的 provider 分组；缺省按内置目录推断，推断不出为 custom",
+    addProvider: "与 model_id 分列存储的 provider 分组；必填，不作推断（无厂商分组时填 custom）",
     addApiKey: "API key，内联存入 Project 的隐藏文件 .project_config.toml",
     addBaseUrl: "自定义 base url",
     addContextWindow: "上下文窗口大小（token 数）",
-    addClientType: "AgentHub 客户端协议（如 openai）；缺省由 model id 推断",
+    addClientType: "AgentHub 客户端协议（如 openai）；缺省按 provider 分组的语义取值",
     addVision: "标注该模型支持图片输入（视觉）",
     addNoVision: "标注该模型不支持图片输入；两者都不给则保留原值",
     addPriceCacheRead: "每百万 token 价格：缓存读取（USD）",
@@ -345,6 +349,8 @@ const zh: Messages = {
   approveModeInvalid: (value) =>
     `无效的审批模式 "${value}"。请使用 allow-all、deny-all、read-only 或 always-ask。`,
   approvalDecision: (decision) => (decision === "allow" ? "✓ [已批准]" : "× [已拒绝]"),
+  modelRefIncomplete: () =>
+    "--model-id 与 --provider 必须成对给出：模型引用始终是显式的 (provider, model_id) 组合。两者都不给则使用 Project 默认模型。",
   resumeNoOverride: () =>
     "--resume 不接受 --workspace、--model-id 与 --provider：均沿用原 Session，创建后不可更换。",
   resumeNoSession: () => "没有可恢复的 Session：当前 Agent 还没有任何会话记录。",

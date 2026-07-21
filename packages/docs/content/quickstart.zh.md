@@ -18,10 +18,10 @@ curl -fsSL https://penguin.ooo/install.sh | sh
 PenguinHarness 不内置任何模型凭据，使用前需要先配置一个模型。可以在 Web UI 的 Models 页面完成，也可以用 CLI：
 
 ```bash
-penguin config model add --model-id deepseek-v4-pro --api-key sk-... --set-default
+penguin config model add --provider deepseek --model-id deepseek-v4-pro --api-key sk-... --set-default
 ```
 
-- 省略 `--provider` 时，根据内置目录自动推断 Provider。
+- 模型引用始终是 `(provider, model_id)` 二元组，因此 `--provider` 与 `--model-id` 均为必填——Provider 绝不由模型 id 推断。内置分组见[模型与 Provider](/models)。
 - API Key 也可以来自环境变量：当模型条目没有内联 api_key 时，LLM 网关库 AgentHub 会读取 `DEEPSEEK_API_KEY`、`ANTHROPIC_API_KEY`、`OPENAI_API_KEY`、`GEMINI_API_KEY` 等变量；工作目录下的 `.env` 会被自动加载。
 
 ## 启动 Web App

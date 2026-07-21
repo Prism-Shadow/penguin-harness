@@ -379,15 +379,21 @@ export function DraftView({
   const vision = modelInfo?.vision !== false;
 
   return (
-    <div className="anim-fade flex min-h-0 flex-1 flex-col overflow-y-auto px-3 md:px-4">
+    <div className="anim-fade flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-6 md:px-4">
       {/*
-       * Vertical layout: two symmetric flex-1 spaces above and below, so **the input card lands
-       * exactly on the viewport's centerline**; the brand area sits at the bottom of the upper
-       * space (right above the input card). When the viewport is too short, the upper space
-       * shrinks to the brand area's height, the lower space compresses to padding, and the whole
-       * page falls back to natural document-flow scrolling (without clipping the top).
+       * Vertical layout: everything visible — brand, input card, ownership pills, example tasks —
+       * lives in ONE block between two empty flex-1 spacers, so the block is centred and the free
+       * space above and below it is exactly equal. The brand deliberately sits inside that block
+       * rather than in the upper spacer: keeping it in the spacer made the upper gap shorter than
+       * the lower one by the brand's own height, which pushed the card up the viewport and left
+       * the slash menu — it opens upward, `bottom-full` — too little room, so it clipped against
+       * the top of this scroll container. When the viewport is too short the spacers collapse to
+       * nothing, the container's own py-6 keeps the content off the edges, and the page falls back
+       * to natural scrolling.
        */}
-      <div className="flex flex-1 flex-col justify-end pt-6">
+      <div className="flex-1" />
+
+      <div className="mx-auto w-full max-w-3xl">
         {/* Large brand logo + brand name + subtitle (e2e tests identify the draft page by this
             heading). The asset is square-cropped and the graphic already has a bit of built-in
             padding, so a small margin is enough to sit visually close to the title. */}
@@ -398,9 +404,7 @@ export function DraftView({
           </h1>
           <p className="mt-2 text-base text-gray-400 dark:text-gray-500">{S.chat.draftSubtitle}</p>
         </div>
-      </div>
 
-      <div className="mx-auto w-full max-w-3xl">
         <ChatInput
           status="idle"
           onSend={onSend}
@@ -546,8 +550,8 @@ export function DraftView({
         </div>
       </div>
 
-      {/* Lower symmetric space (compresses to padding at minimum height) */}
-      <div className="flex-1 pb-6" />
+      {/* Lower symmetric space — empty, so it matches the upper one exactly */}
+      <div className="flex-1" />
     </div>
   );
 }

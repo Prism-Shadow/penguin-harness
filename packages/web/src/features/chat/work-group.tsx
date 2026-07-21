@@ -63,8 +63,11 @@ export function WorkGroup({
   /** Whether this group is the last segment of the message stream (current turn still in progress): decides the default expanded/collapsed state. */
   isLast: boolean;
 }) {
+  // Whether any item is in flight right now — also the only window in which the group's span is
+  // still growing, which the duration display below depends on.
+  const itemsRunning = items.some((it) => itemActive(it, ctx));
   // Last segment + Task running = the model might still call another tool → show Running (even if there's no active item right now).
-  const active = (isLast && ctx.taskRunning) || items.some((it) => itemActive(it, ctx));
+  const active = (isLast && ctx.taskRunning) || itemsRunning;
   const pending = hasPendingApproval(items, ctx);
   const [open, setOpen] = useState(isLast);
   const userToggled = useRef(false);
@@ -107,9 +110,17 @@ export function WorkGroup({
             {S.chat.workGroupSteps(steps)}
           </span>
         )}
-        {/* Running: tick real wall time from group open (whole seconds — approval waits and
-            inter-step gaps included). Done: the settled open-to-close span, with decimals. */}
-        {active
+        {/* Both states show the same quantity: the summarizeWork span (earliest item start →
+            latest item end). That's the canonical definition here — it's what work-summary.ts
+            documents, and unlike a group-open→now wall clock it is reconstructible from the
+            stored timestamps, so reloading the transcript reproduces the same number. While an
+            item is in flight its end isn't known yet, so the tick extends the span to *now*
+            (whole seconds); with nothing in flight the value freezes at the computed span, with
+            decimals — the same "don't tick through a wait we don't count" idiom as a tool card
+            parked on an approval. Ticking on while the group merely stays Running (the model
+            thinking between steps, or streaming its answer) would climb past the span and then
+            snap backwards the moment the group settles. */}
+        {itemsRunning
           ? startMs !== undefined && (
               <span className="shrink-0 font-mono text-xs text-gray-400">
                 <LiveDuration sinceMs={startMs} />

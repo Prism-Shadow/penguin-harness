@@ -33,18 +33,18 @@
 
 Three reasons, in deliberate order — from task quality, to how agents get built, to how they keep improving.
 
-### 1. 🏆 Better on complex tasks, at lower cost
+### 1. 🏆 Comparable quality, one to two orders of magnitude cheaper
 
-A deliberately minimal toolset over clean low-level interfaces: fewer tool calls, fewer tokens — better results at lower cost, deeply tuned for open models like DeepSeek. Same model, same tasks, head-to-head:
+A deliberately minimal toolset over clean low-level interfaces: fewer tool calls, fewer tokens — deeply tuned for open models like DeepSeek. Each harness on the model it is normally paired with, same tasks, head-to-head:
 
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/readme/benchmark-dark.svg" />
-    <img src="assets/readme/benchmark-light.svg" alt="Benchmark: PenguinHarness matches Claude Code on accuracy at lower cost, and beats OpenAI Codex on both suites" width="920" />
+    <img src="assets/readme/benchmark-light.svg" alt="Benchmark: PenguinHarness leads the data-analysis suite and ties OpenAI Codex on coding, at a small fraction of both rivals' cost" width="920" />
   </picture>
 </p>
 
-<sub>Data analysis: 15 tasks, single run, USD pricing. Coding: 40 tasks × 2 runs averaged, official CNY pricing converted at $1 = ¥7. Full breakdown on the <a href="https://penguin.ooo/">website</a>.</sub>
+<sub>Data analysis: best accuracy of the three (66.67% vs 53.33%), at 1/35 of Codex's spend and 1/70 of Claude Code's. Coding: ties Codex at 71.25% and trails Claude Code's 86.25%, for $3.81 against $220.08 and $146.97. 15 tasks single run / 40 tasks × 2 runs; Tokens and cost are suite totals at official pricing. Full breakdown on the <a href="https://penguin.ooo/">website</a>.</sub>
 
 ### 2. ⚡ One sentence, and an Agent builds your Agent app
 
@@ -76,7 +76,8 @@ With PenguinHarness Skills, an Agent evaluates and optimizes itself: run the ben
 | Model            | Providers                                                                        |
 | ---------------- | -------------------------------------------------------------------------------- |
 | DeepSeek V4      | DeepSeek, OpenRouter, Fireworks AI, SiliconFlow, Qwen Token Plan                 |
-| Kimi K3          | Moonshot AI, OpenRouter, Qwen Pay-As-You-Go                                      |
+| Kimi K3          | OpenRouter, Qwen Pay-As-You-Go                                                   |
+| Kimi K2.6        | Moonshot AI                                                                      |
 | GLM 5.2          | Z.AI, OpenRouter, Fireworks AI, SiliconFlow, Qwen Token Plan, Qwen Pay-As-You-Go |
 | Hunyuan 3        | OpenRouter                                                                       |
 | Qwen 3.8 Max     | Qwen Token Plan (preview)                                                        |
@@ -113,7 +114,7 @@ penguin web        # start the service and open http://127.0.0.1:7364 (first log
 The same engine, scriptable — made to be driven by agents (and agents building agents):
 
 ```bash
-penguin config model add --model-id deepseek-v4-pro --api-key sk-... --set-default
+penguin config model add --provider deepseek --model-id deepseek-v4-pro --api-key sk-... --set-default
 penguin run -m "Create hello.txt containing Hello, Penguin"   # one-shot task
 penguin chat       # interactive REPL (/compact, /exit, Ctrl-C to interrupt)
 penguin server     # headless service (same API the Web App uses)

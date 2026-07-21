@@ -35,7 +35,7 @@ openrouter、siliconflow 与 custom 分组走 OpenAI 兼容协议，因此复用
 
 ## Project 配置
 
-`<root>/<project>/.project_config.toml` 是 Project 唯一的配置文件：隐藏文件，落盘权限 0600，凭证内联在模型条目上。模型身份始终是 `(provider, model_id)` 成对引用，禁止任何形式的字符串拼接。
+`<root>/<project>/.project_config.toml` 是 Project 唯一的配置文件：隐藏文件，落盘权限 0600，凭证内联在模型条目上。模型身份始终是 `(provider, model_id)` 成对引用，禁止任何形式的字符串拼接；指向本文件的每一处引用都要带上两半，provider 绝不由裸 `model_id` 推断。
 
 | 字段 | 说明 |
 | --- | --- |
@@ -175,7 +175,7 @@ compaction:
 | `end_at` | 否 | 结束时刻，须晚于 `start_at` |
 | `session_id` | 否 | 绑定既有 Session；与下列三项互斥 |
 | `workspace` | 否 | 新建 Session 模式的 Workspace |
-| `provider` / `model_id` | 否 | 新建 Session 模式的模型成对引用 |
+| `provider` / `model_id` | 否 | 新建 Session 模式的模型成对引用；要写就两个都写，只写 `model_id` 会被拒绝，两个都不写则使用 Project 默认模型 |
 
 ```toml
 prompt = "检查昨日构建结果并汇总失败原因"
