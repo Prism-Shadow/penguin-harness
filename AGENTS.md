@@ -18,6 +18,6 @@
 
 ## Changelog
 
-- `changelog/` records every update in English, grouped by release version and, inside each version folder, by TOPIC: for every change you make, append an H2 section (title, then a one-sentence summary paragraph, then details) to the matching topic file `changelog/<version>/<topic>.md` (short kebab-case topic id, e.g. `models-and-catalog.md`, `landing-site.md`). Create a new topic file only when no existing topic fits. `<version>` is the next unreleased version — if the latest release tag is vX.Y.Z, entries go in the following version's folder (e.g. v0.0.1 released → entries go in `0.0.2/`). Released versions' folders are frozen.
-- Topic file format: an H1 topic title and a one-line scope, then one H2 per change.
-- The version folder's index `changelog/<version>/README.md` lists the TOPIC files (one line each: topic title link + scope) — keep it in sync when adding a topic. The top-level `changelog/README.md` documents only the layout.
+- `changelog/` records every update in English, grouped by release version. For every change you make, add an entry file `changelog/<version>/YYYY-MM-DD-<semantic-id>.md` (date first, then a short kebab-case semantic id), where `<version>` is the next unreleased version — if the latest release tag is vX.Y.Z, entries go in the following version's folder (e.g. v0.0.1 released → entries go in `0.0.2/`). Released versions' folders are frozen. Related changes may share one entry file (extend its details) instead of opening a new file per small change.
+- Entry format: an H1 title, then a one-sentence summary paragraph, then details.
+- Every new entry must also be added to its version folder's index `changelog/<version>/README.md`, as a link with the entry's title followed by its one-sentence summary — keep that README in sync with the folder's entry files. The top-level `changelog/README.md` documents only the layout.

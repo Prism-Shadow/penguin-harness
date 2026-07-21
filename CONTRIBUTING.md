@@ -79,11 +79,13 @@ pnpm test:e2e                                        # core live-model e2e, need
   where it is the content itself: zh i18n catalogs and fields (`strings.ts` dictionaries,
   CLI `i18n.ts`, `titleZh`, `short_description_zh`), `*.zh.md` documents, and test
   literals that assert zh i18n output or exercise CJK-specific behavior.
-- **Every change ships with a changelog entry**: append an H2 (title + one-sentence
-  summary + details) to the matching TOPIC file `changelog/<version>/<topic>.md` under
-  the next unreleased version (released versions' folders are frozen); create a new
-  topic file only when none fits, and keep that version's `README.md` topic list in
-  sync. The layout is documented in [`changelog/README.md`](changelog/README.md).
+- **Every change ships with a changelog entry**: add
+  `changelog/<version>/YYYY-MM-DD-<semantic-id>.md` under the next unreleased version
+  (released versions' folders are frozen) — an H1 title, a one-sentence summary
+  paragraph, then details — and add a one-line link for it to that version's index,
+  `changelog/<version>/README.md`. The layout is documented in
+  [`changelog/README.md`](changelog/README.md). Related changes may share one entry
+  file (extending its details) instead of opening a new file per small change.
 - README assets under `assets/readme/` are generated — the benchmark charts from the
   landing benchmark data, and the demo screenshots via
   `node packages/landing/scripts/capture-readme-demo.mjs` (build first; needs Playwright
