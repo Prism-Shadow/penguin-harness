@@ -36,7 +36,12 @@ export type {
 } from "./engine/context-engine.js";
 export { Session } from "./session.js";
 export type { SessionConfig } from "./session.js";
-export { buildTitlePrompt, generateTitleWithLLM, sanitizeTitle } from "./session-title.js";
+export {
+  buildTitlePrompt,
+  generateTitleWithLLM,
+  sanitizeTitle,
+  stripConversationMarkers,
+} from "./session-title.js";
 export type { SessionTitleResult } from "./session-title.js";
 export { Agent, createAgent } from "./agent.js";
 export type { CreateAgentOptions, CreateSessionOptions, ResumeSessionOptions } from "./agent.js";

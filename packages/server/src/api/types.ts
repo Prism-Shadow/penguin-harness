@@ -352,6 +352,8 @@ export interface AgentSummary {
   vaultKeyCount: number;
   /** Schedule count (number of .toml files under agent_state/schedule/, including invalid ones). */
   scheduleCount: number;
+  /** Installed Skill count (number of agent_state/skills/<name>/ directories with a SKILL.md). */
+  skillCount: number;
 }
 
 export interface AgentsResponse {

@@ -22,6 +22,31 @@ const EXCERPT_MAX_CHARS = 2000;
 /** Cap on title length (fallback truncation for when the model occasionally ignores the constraint). */
 const TITLE_MAX_CHARS = 30;
 
+/**
+ * Special message markers that must never leak into a title. These are machine-inserted
+ * XML-ish blocks (a skill invocation wraps the body in `<use_skills>…</use_skills>`, a
+ * subagent handoff / scheduled task prepend their own blocks) — meaningful to the runtime,
+ * noise in a title. The list is a fixed allowlist so ordinary angle-bracket text (e.g. a
+ * user pasting `<div>`) is left untouched.
+ */
+const MARKER_TAGS = ["use_skills", "handoff_from", "scheduled_task"];
+
+/**
+ * Strips machine-inserted marker blocks (see MARKER_TAGS) from conversation text so titles are
+ * built from the human-meaningful body only — both the material sent to the model and the
+ * fallback derived from the raw first message. Removes the paired `<tag>…</tag>` block (any
+ * inner content, across lines) and any stray unpaired `<tag>` / `</tag>` left behind.
+ */
+export function stripConversationMarkers(text: string): string {
+  let out = text;
+  for (const tag of MARKER_TAGS) {
+    out = out
+      .replace(new RegExp(`<${tag}>[\\s\\S]*?</${tag}>`, "g"), "")
+      .replace(new RegExp(`</?${tag}>`, "g"), "");
+  }
+  return out.trim();
+}
+
 export interface SessionTitleResult {
   /** The sanitized title; null when material is insufficient, the request fails, or the output is empty. */
   title: string | null;
@@ -58,9 +83,9 @@ export function buildTitlePrompt(userExcerpt: string, assistantExcerpt: string):
   return lines.join("\n");
 }
 
-/** Sanitizes model output into a title: strips leading/trailing quotes/brackets and trailing punctuation (until stable), collapses whitespace, and truncates if too long; returns null for an empty result. */
+/** Sanitizes model output into a title: strips any leaked marker blocks and leading/trailing quotes/brackets and trailing punctuation (until stable), collapses whitespace, and truncates if too long; returns null for an empty result. */
 export function sanitizeTitle(raw: string): string | null {
-  let t = raw.replace(/\s+/g, " ").trim();
+  let t = stripConversationMarkers(raw).replace(/\s+/g, " ").trim();
   // Stripping quotes can expose more punctuation underneath (or vice versa), so strip repeatedly until stable.
   for (let prev = ""; prev !== t;) {
     prev = t;
@@ -85,10 +110,14 @@ export async function generateTitleWithLLM(
   llm: LLMInterface,
   args: { userText: string; assistantText: string; signal?: AbortSignal },
 ): Promise<SessionTitleResult> {
-  if (!args.userText.trim()) {
+  // Strip machine markers before the model ever sees the material, so a skill-invocation
+  // block (or handoff / scheduled-task marker) can't bleed into the generated title.
+  const userMaterial = stripConversationMarkers(args.userText);
+  const assistantMaterial = stripConversationMarkers(args.assistantText);
+  if (!userMaterial.trim()) {
     return { title: null, usage: null };
   }
-  const prompt = buildTitlePrompt(args.userText, args.assistantText);
+  const prompt = buildTitlePrompt(userMaterial, assistantMaterial);
   const gen = llm.streamGenerate({
     newMessages: [userText(prompt)],
     ...(args.signal ? { signal: args.signal } : {}),
