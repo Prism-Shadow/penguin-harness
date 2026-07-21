@@ -1,6 +1,6 @@
 {
   "name": "@prismshadow/penguin-cli",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "type": "module",
   "description": "PenguinHarness CLI: interactive REPL and single-task runner over @prismshadow/penguin-core.",
   "license": "Apache-2.0",

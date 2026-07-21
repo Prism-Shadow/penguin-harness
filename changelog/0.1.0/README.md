@@ -1,6 +1,8 @@
-# Version 0.0.2
+# Version 0.1.0
 
-Unreleased.
+Released on 2026-07-21.
+
+- [2026-07-21] Language and theme are shared between the landing page and the docs site, so a choice made on one carries across to the other. ([details](2026-07-21-site-preferences-sync.md))
 
 - [2026-07-21] A model is always referenced by an explicit `(provider, model_id)` pair — the provider is never inferred, guessed, or defaulted — together with the fixes from a full review of the release branch, refreshed benchmark results, and the demo videos on the landing page. ([details](2026-07-21-model-reference-and-review-fixes.md))
 

@@ -18,6 +18,19 @@
     <meta name="twitter:card" content="summary" />
     <link rel="icon" type="image/svg+xml" href="./penguin-logo.svg" />
     <title>PenguinHarness — Efficient Self-Improving Harness for Everyone</title>
+    <!-- Apply the stored/system theme before first paint so the page doesn't flash the
+         wrong background while React boots. Reads the key shared with the sibling site
+         (see src/state/site-prefs.ts), falling back to the retired per-site keys. -->
+    <script>
+      try {
+        var m =
+          localStorage.getItem("penguin-site.theme") ||
+          localStorage.getItem("penguin-landing.theme") ||
+          localStorage.getItem("penguin-docs.theme");
+        if (m === "dark" || (m !== "light" && matchMedia("(prefers-color-scheme: dark)").matches))
+          document.documentElement.classList.add("dark");
+      } catch {}
+    </script>
   </head>
   <body>
     <div id="root"></div>
