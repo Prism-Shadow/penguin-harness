@@ -74,7 +74,10 @@ function agentStateDir(): string {
 }
 
 /** Deterministic rubric — 5 independent points, all checkable in code. Returns {score, detail}. */
-function score(summaryPath: string, summaryText: string | null): { score: number; detail: string[] } {
+function score(
+  summaryPath: string,
+  summaryText: string | null,
+): { score: number; detail: string[] } {
   const detail: string[] = [];
   let s = 0;
   const exists = summaryText !== null;

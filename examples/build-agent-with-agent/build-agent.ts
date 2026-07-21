@@ -49,16 +49,16 @@ Touched packages/core/src/payment/client.ts.`;
 
 async function main(): Promise<void> {
   // --- Phase 1: an Agent builds an Agent ------------------------------------------------
-  console.log("=== Phase 1: default_agent is building a new agent via the agent-creation skill ===\n");
+  console.log(
+    "=== Phase 1: default_agent is building a new agent via the agent-creation skill ===\n",
+  );
   const builder = await createAgent({ agentId: "default_agent" });
   const buildSession = await builder.createSession({ workspaceDir: process.cwd() });
 
   // approve: () => "allow" lets the builder run its shell tool calls unattended. In a real
   // integration you would inspect each tool_call and decide — that is the whole point of the
   // per-call approval callback.
-  await runToStdout(
-    buildSession.run([userText(BUILD_REQUEST)], { approve: async () => "allow" }),
-  );
+  await runToStdout(buildSession.run([userText(BUILD_REQUEST)], { approve: async () => "allow" }));
 
   // --- Phase 2: run the agent that was just built ---------------------------------------
   console.log("\n=== Phase 2: running the freshly-created commit-helper agent ===\n");
