@@ -13,3 +13,7 @@ The site gains a rotating announcement bar, a new campaign post, and a launch po
 ## The launch post settles on the numbered three-reasons structure
 
 The launch blog post (en/zh) keeps the GDPevo origin story and the numbered "Why PenguinHarness" structure — ### 1 better on complex tasks at lower cost (benchmark chart + tables), ### 2 one-sentence Agent-builds-your-app (prompt + demo shot), ### 3 self-evolution — followed by the security contract, the models table, a Web-only "How to use it" (install + penguin web + Models page; no CLI commands), the roadmap, and the community call-to-action.
+
+## The launch post shows the finished RAG app with the condensed prompt
+
+The one-sentence build section now uses the condensed claude-code-docs configuration-expert prompt (Chinese in the zh post) and the finished-product screenshot of the generated docs-expert app (per-language, served from /blog-assets/), replacing the PenguinHarness chat capture.

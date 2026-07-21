@@ -70,3 +70,7 @@ The branch predated main's PR #6 ("correct navigation state and anchor scrolling
 ## Nav highlight follows the live scroll position
 
 The nav's black current-item chip previously updated only from the URL hash (i.e. on click); while scrolling, it stayed stale. A scroll-spy hook now measures the five section anchors on every scroll frame (rAF-throttled, document-level capture so any scrolling container works) and lights up the LAST section whose top has crossed the activation line under the sticky header — null above the first section, and in-between sections keep the previous anchor lit. On the home page the highlight is fully live; other routes keep route-based state (Blog).
+
+## The Cases tab shows the finished RAG app with a localized prompt
+
+The RAG case now displays the condensed claude-code-docs configuration-expert prompt from the strings catalog (localized zh/en) and the finished-product app screenshot matched to the visitor's locale and theme, replacing the shared English prompt and the PenguinHarness chat capture.

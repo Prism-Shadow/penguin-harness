@@ -190,7 +190,9 @@ export const zh = {
     tabs: [
       {
         label: "RAG 应用",
-        caption: "一句话输入，产出可运行的 RAG 应用：脚手架、带引用的检索入口与运行说明",
+        prompt:
+          "收集 https://github.com/ericbuess/claude-code-docs 的文档，做一个化身 Claude Code 配置专家、回答带来源引用的 RAG 问答应用。",
+        caption: "生成的 RAG 应用成品：Claude Code 配置专家，回答带可点击的来源引用与示例问题",
       },
     ],
   },

@@ -48,10 +48,12 @@ On the data-analysis suite we tie Claude Code on accuracy and clearly beat OpenA
 Type one sentence, and an Agent builds the complete Agent application for you — scaffold, code, and run instructions, end to end:
 
 ```text
-Build a RAG app that answers questions over the Markdown files in docs/ with citations.
+Collect the docs from https://github.com/ericbuess/claude-code-docs and build a RAG app that answers Claude Code questions as a configuration expert, citing its sources.
 ```
 
-![One sentence in, a working RAG app out: scaffold, retrieval entry with citations, and run instructions](/blog-assets/rag-demo-light.webp)
+And this is the finished product — a docs expert with retrieval, cited sources that link to the original files, and example questions built in:
+
+![The generated RAG app: a Claude Code docs expert answering with cited, clickable sources and example questions](/blog-assets/rag-app-en-light.webp)
 
 ### 3. Self-evolution: it gets stronger with use
 

@@ -19,6 +19,9 @@
   <a href="https://penguin.ooo/"><img src="https://img.shields.io/badge/Website-penguin.ooo-1f6feb?logo=googlechrome&logoColor=white" alt="Website" /></a>
   <a href="https://penguin.ooo/docs/"><img src="https://img.shields.io/badge/Docs-penguin.ooo%2Fdocs-1f6feb?logo=readthedocs&logoColor=white" alt="Docs" /></a>
   <a href="https://penguin.ooo/blog"><img src="https://img.shields.io/badge/Blog-penguin.ooo%2Fblog-1f6feb?logo=rss&logoColor=white" alt="Blog" /></a>
+</p>
+
+<p align="center">
   <a href="https://discord.gg/eFHKqqcU3D"><img src="https://img.shields.io/badge/Discord-join%20chat-5865F2?logo=discord&logoColor=white" alt="Discord" /></a>
   <a href="https://x.com/code_hiyouga"><img src="https://img.shields.io/badge/X-code%5Fhiyouga-000000?logo=x&logoColor=white" alt="X (Twitter)" /></a>
   <a href="https://github.com/Prism-Shadow/penguin-harness-community/blob/main/wechat/group.jpg"><img src="https://img.shields.io/badge/WeChat-user%20group-07C160?logo=wechat&logoColor=white" alt="WeChat" /></a>
@@ -48,13 +51,15 @@ A deliberately minimal toolset over clean low-level interfaces: fewer tool calls
 Type one sentence, and an Agent builds the complete Agent application for you — scaffold, code, and run instructions, end to end:
 
 ```text
-Build a RAG app that answers questions over the Markdown files in docs/ with citations.
+Collect the docs from https://github.com/ericbuess/claude-code-docs and build a RAG app that answers Claude Code questions as a configuration expert, citing its sources.
 ```
+
+And this is the finished product — a docs expert with retrieval, cited sources that link to the original files, and example questions built in:
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/readme/rag-demo-dark.webp" />
-    <img src="assets/readme/rag-demo-light.webp" alt="One sentence in, a working RAG app out: scaffold, retrieval entry with citations, and run instructions" width="920" />
+    <source media="(prefers-color-scheme: dark)" srcset="assets/readme/rag-app-en-dark.webp" />
+    <img src="assets/readme/rag-app-en-light.webp" alt="The generated RAG app: a Claude Code docs expert answering with cited, clickable sources and example questions" width="920" />
   </picture>
 </p>
 

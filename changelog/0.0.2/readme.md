@@ -46,3 +46,7 @@ left, the comma-separated providers it's available from on the right (per today'
   Claude Opus 4.8 native + OpenRouter, Hunyuan 3 via OpenRouter, Gemini 3.5 Flash native.
 - The gateway note lists OpenRouter, Fireworks AI, SiliconFlow, Qwen Token Plan, and
   Qwen Pay-As-You-Go. README.zh.md mirrors.
+
+## Split badge rows and showcase the finished RAG app
+
+The site badges (Website / Docs / Blog) and the community badges (Discord / X / WeChat) now sit on separate lines. The one-sentence example becomes the condensed claude-code-docs configuration-expert prompt (the chat page's example task carries the full version), and the demo image shows the FINISHED PRODUCT — the generated docs-expert app with cited clickable sources and example questions (`assets/readme/rag-app-<lang>-<theme>.webp`, per-language shots; the zh README shows the Chinese prompt and shots) — instead of the PenguinHarness chat UI. The mockup renderer (`rag-app-mockup.html` + rewritten `capture-readme-demo.mjs`, no server needed) comes along so the assets stay regenerable.

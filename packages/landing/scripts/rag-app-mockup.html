@@ -1,0 +1,439 @@
+<!doctype html>
+<html lang="en">
+  <!--
+    Finished-product mockup of the "one sentence → RAG app" example (a Claude Code docs
+    expert), rendered by capture-readme-demo.mjs into assets/readme/rag-app-<lang>-<theme>.webp.
+    Pure static page — no build, no server; ?lang=zh|en&theme=light|dark picks the variant.
+    Styling follows the web-design skill's Penguin visual language: solid backgrounds,
+    1px hairlines, system fonts, one brand-blue accent, pure-black dark mode.
+  -->
+  <head>
+    <meta charset="utf-8" />
+    <title>Claude Code Docs Expert</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --brand-50: #e8f0fe;
+        --brand-100: #d2e3fc;
+        --brand-300: #8ab4f8;
+        --brand-500: #4285f4;
+        --brand-600: #1a73e8;
+        --brand-700: #0b57d0;
+        --bg: #ffffff;
+        --surface: #ffffff;
+        --surface-2: #f9fafb;
+        --border: #e5e7eb;
+        --control-border: #d1d5db;
+        --fg: #111827;
+        --fg-muted: #4b5563;
+        --fg-faint: #6b7280;
+        --accent-bg: #111827;
+        --accent-fg: #ffffff;
+        --bubble: #f3f4f6;
+        --code-bg: #f9fafb;
+        --chip-bg: #e8f0fe;
+        --chip-fg: #0b57d0;
+        --chip-border: #d2e3fc;
+        --dots: rgb(26 115 232 / 0.14);
+      }
+      .dark {
+        color-scheme: dark;
+        --bg: #000000;
+        --surface: #0d0d0d;
+        --surface-2: #0d0d0d;
+        --border: #1f1f1f;
+        --control-border: #303030;
+        --fg: #f3f4f6;
+        --fg-muted: #9ca3af;
+        --fg-faint: #6b7280;
+        --accent-bg: #f3f4f6;
+        --accent-fg: #111827;
+        --bubble: #1f1f1f;
+        --code-bg: #0d0d0d;
+        --chip-bg: #041e49;
+        --chip-fg: #8ab4f8;
+        --chip-border: #062e6f;
+        --dots: rgb(138 180 248 / 0.16);
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+      }
+      body {
+        font-family:
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          Roboto,
+          "PingFang SC",
+          "Microsoft YaHei",
+          sans-serif;
+        -webkit-font-smoothing: antialiased;
+        background: var(--bg);
+        color: var(--fg);
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      code,
+      pre {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+
+      nav {
+        height: 56px;
+        flex: none;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 0 24px;
+        border-bottom: 1px solid var(--border);
+        background: color-mix(in srgb, var(--bg) 85%, transparent);
+      }
+      .logo {
+        width: 28px;
+        height: 28px;
+        border-radius: 8px;
+        background: var(--accent-bg);
+        color: var(--accent-fg);
+        display: grid;
+        place-items: center;
+        flex: none;
+      }
+      .logo svg {
+        width: 16px;
+        height: 16px;
+      }
+      .app-name {
+        font-size: 15px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+      }
+      .nav-chip {
+        font-size: 11px;
+        font-weight: 500;
+        color: var(--chip-fg);
+        background: var(--chip-bg);
+        border: 1px solid var(--chip-border);
+        border-radius: 9999px;
+        padding: 2px 10px;
+      }
+      .nav-right {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        color: var(--fg-faint);
+      }
+      .dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 9999px;
+        background: #10b981;
+      }
+
+      main {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        max-width: 48rem;
+        margin: 0 auto;
+        padding: 0 24px;
+      }
+      /* Decorative dot grid fading out below the nav — the one flourish the design language
+         allows. The ::after overlay fades to the page background, so the tail disappears
+         cleanly in dark mode too (light dots on black stay visible far longer under a mask). */
+      .dots-band {
+        position: absolute;
+        inset: 56px 0 auto 0;
+        height: 150px;
+        background-image: radial-gradient(var(--dots) 1px, transparent 1px);
+        background-size: 22px 22px;
+        pointer-events: none;
+      }
+      .dots-band::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(
+          to bottom,
+          transparent 0%,
+          color-mix(in srgb, var(--bg) 55%, transparent) 55%,
+          var(--bg) 100%
+        );
+      }
+
+      .chat {
+        flex: 1;
+        min-height: 0;
+        overflow: hidden;
+        padding-top: 28px;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        position: relative;
+      }
+      .msg-user {
+        align-self: flex-end;
+        max-width: 85%;
+        background: var(--bubble);
+        border-radius: 12px;
+        padding: 9px 14px;
+        font-size: 14px;
+        line-height: 1.55;
+      }
+      .msg-assistant {
+        font-size: 14px;
+        line-height: 1.65;
+        color: var(--fg);
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .msg-assistant p {
+        max-width: 65ch;
+      }
+      .cite {
+        color: var(--brand-600);
+        font-size: 0.8em;
+        vertical-align: super;
+        font-weight: 600;
+        text-decoration: none;
+      }
+      .dark .cite {
+        color: var(--brand-300);
+      }
+      pre.block {
+        background: var(--code-bg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 12px 14px;
+        font-size: 13px;
+        line-height: 1.85;
+        overflow-x: auto;
+      }
+      pre.block .c {
+        color: var(--fg-faint);
+      }
+      .sources {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 2px;
+      }
+      .sources-label {
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--fg-faint);
+      }
+      .source-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        color: var(--chip-fg);
+        background: var(--chip-bg);
+        border: 1px solid var(--chip-border);
+        border-radius: 9999px;
+        padding: 3px 11px;
+        text-decoration: none;
+      }
+      .source-chip .n {
+        font-weight: 600;
+      }
+      .source-chip .path {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 11px;
+      }
+
+      .bottom {
+        flex: none;
+        padding: 14px 0 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .suggests {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .suggest {
+        font-size: 12px;
+        color: var(--fg-muted);
+        border: 1px solid var(--border);
+        background: var(--surface);
+        border-radius: 9999px;
+        padding: 5px 12px;
+      }
+      .composer {
+        border: 1px solid var(--control-border);
+        background: var(--surface);
+        border-radius: 12px;
+        padding: 12px 12px 10px 14px;
+        display: flex;
+        align-items: flex-end;
+        gap: 10px;
+      }
+      .composer .ph {
+        flex: 1;
+        font-size: 14px;
+        color: var(--fg-faint);
+        padding: 4px 0 6px;
+      }
+      .send {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        border: none;
+        background: var(--accent-bg);
+        color: var(--accent-fg);
+        display: grid;
+        place-items: center;
+        flex: none;
+      }
+      .hint {
+        font-size: 11px;
+        color: var(--fg-faint);
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="dots-band"></div>
+    <nav>
+      <div class="logo" aria-hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <path d="M4 19.5V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v13.5" stroke="none" />
+          <path
+            d="M12 3c3.5 0 5.5 2.6 5.5 6.2 0 4.4 1.6 6.3 2.5 7.1-1.6 2.9-4.6 4.7-8 4.7s-6.4-1.8-8-4.7c.9-.8 2.5-2.7 2.5-7.1C6.5 5.6 8.5 3 12 3z"
+          />
+          <circle cx="9.8" cy="8.6" r="0.6" fill="currentColor" stroke="none" />
+          <circle cx="14.2" cy="8.6" r="0.6" fill="currentColor" stroke="none" />
+          <path d="M10.6 11h2.8l-1.4 1.6z" fill="currentColor" stroke="none" />
+        </svg>
+      </div>
+      <span class="app-name" data-t="appName"></span>
+      <span class="nav-chip">RAG · claude-code-docs</span>
+      <div class="nav-right"><span class="dot"></span><span data-t="corpus"></span></div>
+    </nav>
+
+    <main>
+      <div class="chat">
+        <div class="msg-user" data-t="question"></div>
+        <div class="msg-assistant">
+          <p>
+            <span data-t="a1"></span>
+            <a class="cite" href="#">[1]</a><span data-t="a1b"></span>
+          </p>
+          <pre class="block"><span class="c" data-t="codeC1"></span>
+claude mcp add github -- npx -y @modelcontextprotocol/server-github
+
+<span class="c" data-t="codeC2"></span>
+claude mcp list</pre>
+          <p>
+            <span data-t="a2"></span>
+            <a class="cite" href="#">[2]</a><span data-t="a2b"></span>
+          </p>
+          <div class="sources">
+            <span class="sources-label" data-t="sources"></span>
+            <a class="source-chip" href="#"
+              ><span class="n">[1]</span><span class="path">docs/mcp.md</span
+              ><span data-t="s1"></span
+            ></a>
+            <a class="source-chip" href="#"
+              ><span class="n">[2]</span><span class="path">docs/settings.md</span
+              ><span data-t="s2"></span
+            ></a>
+          </div>
+        </div>
+      </div>
+
+      <div class="bottom">
+        <div class="suggests">
+          <span class="suggest" data-t="q1"></span>
+          <span class="suggest" data-t="q2"></span>
+          <span class="suggest" data-t="q3"></span>
+        </div>
+        <div class="composer">
+          <div class="ph" data-t="placeholder"></div>
+          <button class="send" aria-hidden>
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M12 19V5M6 11l6-6 6 6" />
+            </svg>
+          </button>
+        </div>
+        <div class="hint" data-t="hint"></div>
+      </div>
+    </main>
+
+    <script>
+      const T = {
+        en: {
+          appName: "Claude Code Docs Expert",
+          corpus: "674 chunks · BM25",
+          question: "How do I configure an MCP server for Claude Code?",
+          a1: "Add the server with the CLI, then verify it from inside Claude Code ",
+          a1b: ":",
+          codeC1: "# add a server (local scope by default)",
+          codeC2: "# verify",
+          a2: "Project-scoped servers live in .mcp.json at the project root and are shared with your team; user scope makes a server available across all your projects ",
+          a2b: ". Inside a session, /mcp shows each server's connection status.",
+          sources: "Sources",
+          s1: "— Add an MCP server",
+          s2: "— Settings & scopes",
+          q1: "What does CLAUDE.md do?",
+          q2: "How do I create a custom slash command?",
+          q3: "Where do hooks go?",
+          placeholder: "Ask about Claude Code…",
+          hint: "Answers cite the collected docs — click a source to open the original file.",
+        },
+        zh: {
+          appName: "Claude Code 配置专家",
+          corpus: "674 个片段 · BM25",
+          question: "如何为 Claude Code 配置 MCP 服务器？",
+          a1: "用 CLI 添加服务器，然后在 Claude Code 里验证 ",
+          a1b: "：",
+          codeC1: "# 添加服务器（默认 local 作用域）",
+          codeC2: "# 验证",
+          a2: "项目级服务器保存在项目根目录的 .mcp.json，可随仓库共享给团队；user 作用域则让服务器在你的所有项目中可用 ",
+          a2b: "。会话内可用 /mcp 查看各服务器的连接状态。",
+          sources: "来源",
+          s1: "— 添加 MCP 服务器",
+          s2: "— 设置与作用域",
+          q1: "CLAUDE.md 是做什么的？",
+          q2: "怎么创建自定义斜杠命令？",
+          q3: "Hooks 配置放在哪里？",
+          placeholder: "向 Claude Code 专家提问…",
+          hint: "回答引用采集的文档——点击来源即可打开原文。",
+        },
+      };
+      const params = new URLSearchParams(location.search);
+      const lang = params.get("lang") === "zh" ? "zh" : "en";
+      const theme = params.get("theme") === "dark" ? "dark" : "light";
+      document.documentElement.lang = lang === "zh" ? "zh" : "en";
+      if (theme === "dark") document.documentElement.classList.add("dark");
+      for (const el of document.querySelectorAll("[data-t]")) {
+        el.textContent = T[lang][el.dataset.t];
+      }
+      document.title = T[lang].appName;
+    </script>
+  </body>
+</html>

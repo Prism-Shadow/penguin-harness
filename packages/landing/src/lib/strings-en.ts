@@ -191,8 +191,10 @@ export const en: Strings = {
     tabs: [
       {
         label: "RAG app",
+        prompt:
+          "Collect the docs from https://github.com/ericbuess/claude-code-docs and build a RAG app that answers Claude Code questions as a configuration expert, citing its sources.",
         caption:
-          "One sentence in, a working RAG app out: scaffold, retrieval entry with citations, and run instructions",
+          "The generated RAG app: a Claude Code docs expert answering with cited, clickable sources and example questions",
       },
     ],
   },

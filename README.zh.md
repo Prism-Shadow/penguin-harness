@@ -19,6 +19,9 @@
   <a href="https://penguin.ooo/"><img src="https://img.shields.io/badge/%E5%AE%98%E7%BD%91-penguin.ooo-1f6feb?logo=googlechrome&logoColor=white" alt="官网" /></a>
   <a href="https://penguin.ooo/docs/"><img src="https://img.shields.io/badge/%E6%96%87%E6%A1%A3-penguin.ooo%2Fdocs-1f6feb?logo=readthedocs&logoColor=white" alt="文档" /></a>
   <a href="https://penguin.ooo/blog"><img src="https://img.shields.io/badge/%E5%8D%9A%E5%AE%A2-penguin.ooo%2Fblog-1f6feb?logo=rss&logoColor=white" alt="博客" /></a>
+</p>
+
+<p align="center">
   <a href="https://discord.gg/eFHKqqcU3D"><img src="https://img.shields.io/badge/Discord-%E5%8A%A0%E5%85%A5%E8%AE%A8%E8%AE%BA-5865F2?logo=discord&logoColor=white" alt="Discord" /></a>
   <a href="https://x.com/code_hiyouga"><img src="https://img.shields.io/badge/X-code%5Fhiyouga-000000?logo=x&logoColor=white" alt="X（Twitter）" /></a>
   <a href="https://github.com/Prism-Shadow/penguin-harness-community/blob/main/wechat/group.jpg"><img src="https://img.shields.io/badge/%E5%BE%AE%E4%BF%A1-%E4%BA%A4%E6%B5%81%E7%BE%A4-07C160?logo=wechat&logoColor=white" alt="微信群" /></a>
@@ -48,13 +51,15 @@
 输入一句话，Agent 为你构建完整的 Agent 应用——脚手架、代码、运行说明，一步到位：
 
 ```text
-Build a RAG app that answers questions over the Markdown files in docs/ with citations.
+收集 https://github.com/ericbuess/claude-code-docs 的文档，做一个化身 Claude Code 配置专家、回答带来源引用的 RAG 问答应用。
 ```
+
+这是做出来的成品——一个文档专家：检索增强、引用可点击直达原文、内置示例问题：
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/readme/rag-demo-dark.webp" />
-    <img src="assets/readme/rag-demo-light.webp" alt="一句话输入，产出可运行的 RAG 应用：脚手架、带引用的检索入口与运行说明" width="920" />
+    <source media="(prefers-color-scheme: dark)" srcset="assets/readme/rag-app-zh-dark.webp" />
+    <img src="assets/readme/rag-app-zh-light.webp" alt="生成的 RAG 应用成品：Claude Code 配置专家，回答带可点击的来源引用与示例问题" width="920" />
   </picture>
 </p>
 
