@@ -20,7 +20,7 @@ PenguinHarness 是一个开源的 AI Agent Harness——一套用于*构建*和*
 | 支柱 | 含义 |
 | --- | --- |
 | **Simplest Is the Best（大道至简）** | 在干净的底层接口之上，提供刻意精简的工具集：更少的工具调用、更少的 Token、复杂任务高效完成。 |
-| **构建 Agent 的 Harness** | 一是通过 SDK 编程接入（`createAgent` → `createSession` → `run`）；二是更惊艳的——一个 Agent 直接根据一句大白话需求，为你构建出一个全新的 Agent。 |
+| **构建 Agent 的 Harness** | 既可用 SDK 编程构建（`createAgent` → `createSession` → `run`），也可由一个 Agent 根据一句需求描述，自动造出一个全新 Agent。 |
 | **递归自我进化的 Harness** | 借助 Skills，一个 Agent 能评估并优化*它自己*，随时间递归改进。 |
 
 后两点，PenguinHarness 是业界首个开源实现。
