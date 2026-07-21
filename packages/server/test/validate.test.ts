@@ -22,13 +22,23 @@ describe("positiveIntParam", () => {
   });
 
   it("rejects a leading sign, whitespace, and non-digits", () => {
-    for (const bad of ["+1", " 1", "1 ", "1.5", "0x10", ""]) {
+    for (const bad of ["+1", " 1", "1 ", "1.5", "0x10"]) {
       expect(() => positiveIntParam(ctxWithParam("idx", bad), "idx")).toThrow(HttpError);
     }
   });
 
   it("rejects zero (must be >= 1)", () => {
     expect(() => positiveIntParam(ctxWithParam("idx", "0"), "idx")).toThrow(HttpError);
+  });
+
+  it("rejects overlong indices that would parse to an imprecise float", () => {
+    // "99999999999999999999" parses to 1e20 — isSafeInteger rejects it, isInteger would not.
+    expect(() => positiveIntParam(ctxWithParam("idx", "9".repeat(20)), "idx")).toThrow(HttpError);
+  });
+
+  it("an empty/missing path param is rejected upstream by pathParam (404), not the digits guard", () => {
+    expect(() => positiveIntParam(ctxWithParam("idx", ""), "idx")).toThrow(HttpError);
+    expect(() => positiveIntParam(ctxWithParam("idx", undefined), "idx")).toThrow(HttpError);
   });
 });
 

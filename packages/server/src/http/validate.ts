@@ -46,7 +46,9 @@ export function positiveIntParam(c: Context, name: string): number {
   const raw = pathParam(c, name);
   if (!/^\d+$/.test(raw)) throw badRequest(`${name} must be a positive integer.`);
   const v = Number.parseInt(raw, 10);
-  if (!Number.isInteger(v) || v < 1) throw badRequest(`${name} must be a positive integer.`);
+  // isSafeInteger (not isInteger) also rejects overlong indices like "99999999999999999999"
+  // that would otherwise parse to an imprecise float (1e20).
+  if (!Number.isSafeInteger(v) || v < 1) throw badRequest(`${name} must be a positive integer.`);
   return v;
 }
 
