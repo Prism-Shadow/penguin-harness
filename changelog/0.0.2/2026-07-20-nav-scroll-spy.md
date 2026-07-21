@@ -1,3 +1,0 @@
-# Nav highlight follows the live scroll position
-
-The nav's black current-item chip previously updated only from the URL hash (i.e. on click); while scrolling, it stayed stale. A scroll-spy hook now measures the five section anchors on every scroll frame (rAF-throttled, document-level capture so any scrolling container works) and lights up the LAST section whose top has crossed the activation line under the sticky header — null above the first section, and in-between sections keep the previous anchor lit. On the home page the highlight is fully live; other routes keep route-based state (Blog).
