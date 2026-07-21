@@ -80,7 +80,7 @@ export const en: Strings = {
     logout: "Sign out",
     admin: "Admin",
     defaultAdminNote:
-      "First run: sign in as the built-in admin (admin / admin123), then change the password soon",
+      "First run: sign in as the built-in admin (admin / penguin-2026), then change the password soon",
   },
 
   account: {

@@ -30,7 +30,7 @@ penguin config model add --model-id deepseek-v4-pro --api-key sk-... --set-defau
 penguin web
 ```
 
-The service runs at http://127.0.0.1:7364 and opens your browser (`--no-open` to skip). First login is `admin` / `admin123` — change it right away. `penguin server` starts the same process headless.
+The service runs at http://127.0.0.1:7364 and opens your browser (`--no-open` to skip). First login is `admin` / `penguin-2026` — change it right away. `penguin server` starts the same process headless.
 
 ## One-shot run
 

@@ -65,7 +65,7 @@ With the API key in hand, three steps:
 
 ```bash
 curl -fsSL https://penguin.ooo/install.sh | sh
-penguin web        # opens http://127.0.0.1:7364 (first login: admin / admin123)
+penguin web        # opens http://127.0.0.1:7364 (first login: admin / penguin-2026)
 ```
 
 **2. Configure a Fireworks model**

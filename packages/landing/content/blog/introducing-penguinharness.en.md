@@ -89,7 +89,7 @@ Install with one command (Linux / macOS, x64 / arm64, bundled Node runtime), the
 
 ```bash
 curl -fsSL https://penguin.ooo/install.sh | sh
-penguin web        # opens http://127.0.0.1:7364 (first login: admin / admin123)
+penguin web        # opens http://127.0.0.1:7364 (first login: admin / penguin-2026)
 ```
 
 Open the Models page, paste an API key under the DeepSeek or OpenRouter group and set it as default; then head back to Chat and hand the Agent its first task — e.g. "Analyze data.csv and summarize quarterly sales".

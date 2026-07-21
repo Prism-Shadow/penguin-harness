@@ -374,44 +374,44 @@ function SkillCard({
     .filter((v): v is string => v !== null)
     .join(" · ");
   return (
-    <div className="flex h-full flex-col rounded-md border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
-      {/* Header: the skill icon centered across the two text rows (rounded tile in the skill's
-          own palette color — see skillTileColor; deliberately a bit smaller than the two rows),
-          with the name and short description on one line each to the right. */}
-      <div className="flex items-center gap-3">
-        <span
-          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${skillTileColor(skill.name)}`}
-        >
-          <SkillIcon icon={skill.icon} size={20} />
-        </span>
-        <div className="min-w-0 flex-1">
-          <span className="block truncate font-mono text-[13px] font-semibold" title={skill.name}>
-            {skill.name}
-          </span>
-          {/* Short description truncates to one line (full description goes into title for hover reading). */}
-          <p
-            className="mt-0.5 truncate text-xs leading-5 text-gray-500 dark:text-gray-400"
-            title={fullDescription}
+    <div className="flex h-full items-center gap-3 rounded-md border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+      <div className="min-w-0 flex-1">
+        {/* Header: the skill icon centered across the two text rows (rounded tile in the skill's
+            own palette color — see skillTileColor; deliberately a bit smaller than the two rows),
+            with the name and short description on one line each to the right. */}
+        <div className="flex items-center gap-3">
+          <span
+            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${skillTileColor(skill.name)}`}
           >
-            {description}
-          </p>
+            <SkillIcon icon={skill.icon} size={20} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <span className="block truncate font-mono text-[13px] font-semibold" title={skill.name}>
+              {skill.name}
+            </span>
+            {/* Short description truncates to one line (full description goes into title for hover reading). */}
+            <p
+              className="mt-0.5 truncate text-xs leading-5 text-gray-500 dark:text-gray-400"
+              title={fullDescription}
+            >
+              {description}
+            </p>
+          </div>
         </div>
-      </div>
-      {/* Footer row: metadata on the left (e.g. `v1 · 今天更新 · N 个 Agent 在用`) +
-          icon buttons on the right (copy goes into aria-label and title), pinned to the card's bottom with mt-auto. */}
-      <div className="mt-auto flex items-center gap-1.5 pt-3">
-        <span
-          className="min-w-0 flex-1 truncate text-[11px] text-gray-400 dark:text-gray-500"
-          title={meta}
-        >
+        {/* Metadata line under the header (e.g. `v1 · 今天更新 · N 个 Agent 在用`). */}
+        <p className="mt-2.5 truncate text-[11px] text-gray-400 dark:text-gray-500" title={meta}>
           {meta}
-        </span>
-        {/* Light (secondary) and a notch smaller than its neighbors: an update nudge, not the card's primary action. */}
+        </p>
+      </div>
+      {/* Actions: equal-square icon buttons in a single column, vertically centered at the
+          card's right edge (copy goes into aria-label and title). */}
+      <div className="flex shrink-0 flex-col items-center justify-center gap-1.5">
+        {/* Light (secondary): an update nudge, not the card's primary action. */}
         {outdated.length > 0 && (
           <Button
             size="sm"
             variant="secondary"
-            className="shrink-0 px-1 py-0.5"
+            className="h-8 w-8 shrink-0 justify-center p-0"
             aria-label={`${S.skills.updateOutdated(outdated.length)} ${skill.name}`}
             title={S.skills.updateOutdated(outdated.length)}
             onClick={() => void onUpdateOutdated(skill.name, outdated)}
@@ -421,7 +421,7 @@ function SkillCard({
         )}
         <Button
           size="sm"
-          className="shrink-0 px-1.5"
+          className="h-8 w-8 shrink-0 justify-center p-0"
           aria-label={`${S.skills.quickInvoke} ${skill.name}`}
           title={S.skills.quickInvoke}
           onClick={() => onQuickInvoke(skill.name)}
@@ -431,7 +431,7 @@ function SkillCard({
         <Button
           size="sm"
           variant="primary"
-          className="shrink-0 px-1.5"
+          className="h-8 w-8 shrink-0 justify-center p-0"
           aria-label={`${S.skills.manageInstall} ${skill.name}`}
           title={S.skills.manageInstall}
           onClick={() => setInstallOpen(true)}

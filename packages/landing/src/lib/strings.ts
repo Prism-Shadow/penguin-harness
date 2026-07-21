@@ -154,7 +154,7 @@ export const zh = {
     tabCli: "命令行",
     webStep2: "启动 Web 界面",
     webStep2Desc:
-      "penguin web 启动本地服务并打开浏览器，用内置管理员 admin / admin123 登录（登录后请尽快修改密码）。",
+      "penguin web 启动本地服务并打开浏览器，用内置管理员 admin / penguin-2026 登录（登录后请尽快修改密码）。",
     webCmd: "penguin web   # 打开 http://127.0.0.1:7364",
     webStep3: "在界面里配置模型，开始对话",
     webStep3Desc:

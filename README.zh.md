@@ -101,7 +101,7 @@
 
 ```bash
 curl -fsSL https://penguin.ooo/install.sh | sh
-penguin web        # 启动服务并打开 http://127.0.0.1:7364（首次登录：admin / admin123）
+penguin web        # 启动服务并打开 http://127.0.0.1:7364（首次登录：admin / penguin-2026）
 ```
 
 📦 或经 npm 安装：`npm install -g @prismshadow/penguin-cli`。在应用内模型页配置模型后即可对话。

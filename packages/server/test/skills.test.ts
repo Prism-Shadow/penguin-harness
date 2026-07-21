@@ -57,12 +57,10 @@ describe("skills api", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as SkillLibraryResponse;
     expect(body.groups.map((g) => g.id)).toEqual([
-      "agent-development",
-      "data-analysis",
-      "penguin-development",
-      "web-development",
-      "web-research",
-      "software-engineering",
+      "office-productivity",
+      "software-development",
+      "ai-app-development",
+      "agent-tuning",
     ]);
     for (const group of body.groups) {
       expect(group.title.length).toBeGreaterThan(0);
@@ -72,21 +70,22 @@ describe("skills api", () => {
       expect("description" in group).toBe(false);
     }
     // Members within a group follow the SKILL_GROUPS list order (as ungrouped by loadSkillGroups).
-    expect(body.groups[0]!.skills.map((s) => s.name)).toEqual([
-      "agent-creation",
-      "benchmark-design",
-      "agent-evaluation",
-      "agent-optimization",
+    expect(body.groups[0]!.skills.map((s) => s.name)).toEqual(["data-analysis", "firecrawl"]);
+    expect(body.groups[1]!.skills.map((s) => s.name)).toEqual([
+      "web-design",
+      "software-engineering",
     ]);
-    expect(body.groups[1]!.skills.map((s) => s.name)).toEqual(["data-analysis"]);
     expect(body.groups[2]!.skills.map((s) => s.name)).toEqual([
       "penguin-sdk",
       "penguin-cli",
       "agenthub-models",
     ]);
-    expect(body.groups[3]!.skills.map((s) => s.name)).toEqual(["web-design"]);
-    expect(body.groups[4]!.skills.map((s) => s.name)).toEqual(["firecrawl"]);
-    expect(body.groups[5]!.skills.map((s) => s.name)).toEqual(["software-engineering"]);
+    expect(body.groups[3]!.skills.map((s) => s.name)).toEqual([
+      "agent-creation",
+      "benchmark-design",
+      "agent-evaluation",
+      "agent-optimization",
+    ]);
     const skills = body.groups.flatMap((g) => g.skills);
     for (const skill of skills) {
       expect(skill.name.length).toBeGreaterThan(0);

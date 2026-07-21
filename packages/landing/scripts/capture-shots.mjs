@@ -542,7 +542,7 @@ try {
   await waitFor(`${BASE}/`);
   console.log(`[shots] server ready on ${BASE}`);
 
-  const admin = await login("admin", "admin123");
+  const admin = await login("admin", "penguin-2026");
   const browser = await chromium.launch();
 
   // WebP encoder: Chromium re-encodes the PNG screenshot buffer via canvas, which

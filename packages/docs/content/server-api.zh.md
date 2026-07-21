@@ -35,12 +35,12 @@ packages/server/src
 
 - Cookie 会话：`penguin_session`（HttpOnly、SameSite=Lax），有效期 7 天，滑动续期；
 - 密码以 scrypt 哈希存储；服务端只保存会话 Token 的 sha256，不落明文；
-- 不开放注册：启动时种子化内置管理员 `admin` / `admin123`，其余账号由管理员创建；
+- 不开放注册：启动时种子化内置管理员 `admin` / `penguin-2026`，其余账号由管理员创建；
 - 仅限同源访问，未启用 CORS 中间件。
 
 ```bash
 curl -c cookies.txt -H "Content-Type: application/json" \
-  -d '{"userId":"admin","password":"admin123"}' \
+  -d '{"userId":"admin","password":"penguin-2026"}' \
   http://127.0.0.1:7364/api/auth/login
 ```
 

@@ -101,7 +101,7 @@ Any OpenAI-protocol endpoint is supported: pick a preset above, or point a custo
 
 ```bash
 curl -fsSL https://penguin.ooo/install.sh | sh
-penguin web        # start the service and open http://127.0.0.1:7364 (first login: admin / admin123)
+penguin web        # start the service and open http://127.0.0.1:7364 (first login: admin / penguin-2026)
 ```
 
 📦 Or via npm: `npm install -g @prismshadow/penguin-cli`. Configure models on the in-app Models page, then chat.

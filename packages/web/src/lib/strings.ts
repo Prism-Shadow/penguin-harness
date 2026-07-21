@@ -80,7 +80,7 @@ export const zh = {
     login: "登录",
     logout: "登出",
     admin: "管理员",
-    defaultAdminNote: "首次使用请以内置管理员登录：admin / admin123，登录后请尽快修改密码",
+    defaultAdminNote: "首次使用请以内置管理员登录：admin / penguin-2026，登录后请尽快修改密码",
   },
 
   account: {
