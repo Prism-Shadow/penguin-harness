@@ -139,6 +139,8 @@ for await (const output of session.run([userText("Create hello.txt containing hi
 - [ ] Public release of the benchmark suite
 - [ ] Desktop app
 - [ ] Windows support
+- [ ] Agent company and templates
+- [ ] Company-level self evolving
 - More to come…
 
 ## Development
