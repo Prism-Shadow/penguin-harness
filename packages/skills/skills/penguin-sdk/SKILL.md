@@ -3,7 +3,7 @@ name: penguin-sdk
 description: Build AI apps on the Penguin Harness SDK — self-contained projects, the createSession/run streaming loop, and a complete RAG recipe that ingests documents into a knowledge base and answers with citations behind a web UI.
 short_description: Build AI and RAG apps on the Penguin Harness SDK.
 short_description_zh: 基于 Penguin SDK 构建 AI 与 RAG 应用。
-version: 5
+version: 6
 updated: 2026-07-20T17:00:00Z
 ---
 
@@ -53,6 +53,8 @@ Configure a model for the app's data root, in this order — stop at the first t
 
 1. `penguin config model add --root <data_dir> --model-id <id> --api-key <key> [--base-url <url>] [--client-type openai] --set-default` — prefer `--client-type openai --base-url <endpoint>` (works with any OpenAI-compatible endpoint; exact ids in the agenthub-models skill).
 2. Environment variables cover the **credential only** (`DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, …) — model selection still comes from the project config, whose preset default is `deepseek-v4-pro`. Env-only setup therefore works out of the box only with `DEEPSEEK_API_KEY`; for another vendor either run the CLI command above or pass a catalog `modelId` to `createSession`.
+
+Keep model API keys **project-local**: configure them with the penguin CLI into the app's own data root under the working directory (the `--root <data_dir>` above), so the project stays self-contained and movable. Never read, copy or fall back to model keys stored in the user's global `~/.penguin` directory — that config belongs to the person running Penguin, not to the app you are building.
 
 Model config lives in one hidden file under the data root's project directory: `.project_config.toml`. It is CLI-only — never read, print or edit it.
 
