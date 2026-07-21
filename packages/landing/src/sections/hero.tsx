@@ -5,6 +5,7 @@
  * The rotating word is a stacked inline-grid so line width never jumps.
  */
 import { Fragment, useEffect, useState } from "react";
+import { Link } from "react-router";
 import { S } from "../lib/strings";
 import { INSTALL_CMD, REPO_URL } from "../lib/links";
 import { CopyButton } from "../components/copy-button";

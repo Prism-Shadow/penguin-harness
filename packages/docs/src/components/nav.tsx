@@ -31,6 +31,9 @@ export function Nav({ menuOpen, onToggleMenu }: { menuOpen: boolean; onToggleMen
 
   const linkCls =
     "relative z-10 rounded-md px-2.5 py-1.5 text-sm text-gray-600 transition-colors hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100";
+  // Landing-parity active style: on the docs site, the "Docs" link is the current page.
+  const activeLinkCls =
+    "relative z-10 rounded-md px-2.5 py-1.5 text-sm transition-colors bg-black text-white hover:bg-black hover:text-white dark:bg-black dark:text-white dark:ring-1 dark:ring-gray-600 dark:hover:bg-black dark:hover:text-white";
 
   /**
    * The hover pill appears IN PLACE under the first link it lands on (position
@@ -102,7 +105,7 @@ export function Nav({ menuOpen, onToggleMenu }: { menuOpen: boolean; onToggleMen
           <a href={`${SITE_URL}blog`} className={linkCls} onMouseEnter={slideTo}>
             {S.nav.blog}
           </a>
-          <Link to="/" className={linkCls} onMouseEnter={slideTo}>
+          <Link to="/" className={activeLinkCls} onMouseEnter={slideTo} aria-current="page">
             {S.nav.docs}
           </Link>
         </nav>

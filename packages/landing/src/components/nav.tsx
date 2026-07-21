@@ -152,7 +152,7 @@ export function Nav() {
           aria-label="Primary"
           onMouseLeave={hidePill}
         >
-          {/* Sliding hover pill: appears in place, slides between links, fades out in place. */}
+          {/* Sliding hover pill: appears in place, slides between links, fades out in place; active links retain their own background. */}
           <span
             ref={pillRef}
             aria-hidden="true"
