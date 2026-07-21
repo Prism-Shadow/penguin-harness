@@ -1,6 +1,6 @@
 {
   "name": "penguin-harness",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "PenguinHarness — TypeScript AI Agent (SDK + CLI).",
