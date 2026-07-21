@@ -3,7 +3,7 @@ name: penguin-sdk
 description: Build AI apps on the Penguin Harness SDK — self-contained projects, the createSession/run streaming loop, and a complete RAG recipe that ingests documents into a knowledge base and answers with citations behind a web UI.
 short_description: Build AI and RAG apps on the Penguin Harness SDK.
 short_description_zh: 基于 Penguin SDK 构建 AI 与 RAG 应用。
-version: 7
+version: 8
 updated: 2026-07-20T17:00:00Z
 ---
 
@@ -30,6 +30,12 @@ const agent = await createAgent({ root: path.join(import.meta.dirname, "penguin_
 ```
 
 With every reference relative to the project, the user can move or copy the folder anywhere and it still runs.
+
+## Before you build: keys and the data root
+
+**Important prerequisite — set the key up first, then develop.** For AI-app development, have the user add the model API key in **this agent's key vault** (gear icon on its card, Agents page → settings → key vault tab) *before* you start building, so the credential is in your shell environment when you configure and test the app. Model ids to offer the user can come straight from the penguin CLI catalog (`penguin config model add --help`, and the agenthub-models skill's id table).
+
+**The app's Penguin data root must live inside the CWD workspace — never `~/.penguin`.** Point `createAgent({ root })` and every `penguin config ... --root <dir>` at a directory under the current working directory (e.g. `./penguin_data`); the global `~/.penguin` directory belongs to the person running Penguin and must never hold the app's config or keys.
 
 ## Check the model first
 

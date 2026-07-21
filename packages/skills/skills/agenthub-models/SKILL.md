@@ -3,7 +3,7 @@ name: agenthub-models
 description: Call model APIs through @prismshadow/agenthub — streaming text generation, image generation, speech synthesis and embeddings with one client.
 short_description: Call model APIs with one AgentHub client.
 short_description_zh: 用一个 AgentHub 客户端调用模型 API。
-version: 4
+version: 5
 updated: 2026-07-20T15:00:00Z
 ---
 
@@ -28,6 +28,8 @@ const client = new AutoLLMClient({ model: "<model_id>", apiKey: "<key>", baseUrl
 ## Before you start
 
 If the user's message only invokes this skill (e.g. "use agenthub-models skill") without a concrete task, ask the user what they want to build. Do not write code until the requirement is clear.
+
+**Important prerequisite — set the key up first, then develop.** When the script is an AI app you are building for the user, have them add the model API key in **this agent's key vault** (gear icon on its card, Agents page → settings → key vault tab) *before* you start, so the credential is in your shell environment. If the app stores its own model config, keep its Penguin data root **inside the CWD workspace** (`--root ./penguin_data`), never `~/.penguin`. Model ids can come from the penguin CLI catalog and the id table below.
 
 Check for a usable API key before writing code — the client needs one for whichever provider you target:
 

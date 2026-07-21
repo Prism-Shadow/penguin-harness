@@ -211,6 +211,8 @@ export class Agent {
       sessionEnvironment(workspaceDir, sessionId, {
         agentId: this.state.agentId,
         projectDir: projectDir(this.state.root, this.state.projectId),
+        provider: modelEntry.provider,
+        modelId: modelEntry.model_id,
       }),
       Object.keys(vault),
       installedSkills,

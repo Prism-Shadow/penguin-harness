@@ -28,6 +28,8 @@ export const SESSION_ID_PLACEHOLDER = "{{SESSION_ID}}";
 export const CWD_PLACEHOLDER = "{{CWD}}";
 export const AGENT_ID_PLACEHOLDER = "{{AGENT_ID}}";
 export const PROJECT_DIR_PLACEHOLDER = "{{PROJECT_DIR}}";
+export const PROVIDER_PLACEHOLDER = "{{PROVIDER}}";
+export const MODEL_ID_PLACEHOLDER = "{{MODEL_ID}}";
 export const PLATFORM_PLACEHOLDER = "{{PLATFORM}}";
 export const OS_VERSION_PLACEHOLDER = "{{OS_VERSION}}";
 export const DATE_PLACEHOLDER = "{{DATE}}";
@@ -141,9 +143,11 @@ Skills are reusable instruction packages stored under <project_dir>/agents/<agen
 - Platform: {{PLATFORM}}
 - OS Version: {{OS_VERSION}}
 - Date: {{DATE}}
-- CWD: {{CWD}}
-- Agent ID: {{AGENT_ID}}
 - Project Dir: {{PROJECT_DIR}}
+- Agent ID: {{AGENT_ID}}
+- CWD: {{CWD}}
+- Provider: {{PROVIDER}}
+- Model ID: {{MODEL_ID}}
 - Session ID: {{SESSION_ID}}`;
 
 /**

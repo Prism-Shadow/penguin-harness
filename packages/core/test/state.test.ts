@@ -288,6 +288,8 @@ describe("assembleSystemPrompt", () => {
       sessionEnvironment("/tmp/penguin-ws", "session-test-1", {
         agentId: DEFAULT_AGENT_ID,
         projectDir: "/tmp/proj",
+        provider: "deepseek",
+        modelId: "deepseek-v4-pro",
       }),
     );
     expect(prompt).toContain("AGENTS.md");
@@ -341,6 +343,8 @@ describe("assembleSystemPrompt", () => {
       cwd: "/tmp/ws",
       agentId: "agent-x",
       projectDir: "/tmp/proj",
+      provider: "deepseek",
+      modelId: "deepseek-v4-pro",
       platform: "darwin",
       osVersion: "Darwin 25.0.0",
       date: "2026-06-30",
@@ -393,6 +397,8 @@ describe("assembleSystemPrompt", () => {
       cwd: "/tmp/ws",
       agentId: "agent-x",
       projectDir: "/tmp/proj",
+      provider: "deepseek",
+      modelId: "deepseek-v4-pro",
       platform: "darwin",
       osVersion: "Darwin 25.0.0",
       date: "2026-06-30",
@@ -466,7 +472,7 @@ describe("assembleSystemPrompt", () => {
     const env = sessionEnvironment(
       "/tmp/penguin-ws",
       "session-test-1",
-      { agentId: "agent-x", projectDir: "/tmp/proj" },
+      { agentId: "agent-x", projectDir: "/tmp/proj", provider: "openai", modelId: "gpt-5.5" },
       new Date("2026-06-30T00:00:00"),
     );
     const prompt = assembleSystemPrompt(state, env);
@@ -476,15 +482,19 @@ describe("assembleSystemPrompt", () => {
     expect(prompt).toContain("CWD: /tmp/penguin-ws");
     expect(prompt).toContain("Agent ID: agent-x");
     expect(prompt).toContain("Project Dir: /tmp/proj");
+    expect(prompt).toContain("Provider: openai");
+    expect(prompt).toContain("Model ID: gpt-5.5");
     expect(prompt).toContain("Platform:");
     expect(prompt).toContain("OS Version:");
     expect(prompt).toContain("Date: 2026-06-30");
     expect(prompt.indexOf("Platform:")).toBeLessThan(prompt.indexOf("OS Version:"));
     expect(prompt.indexOf("OS Version:")).toBeLessThan(prompt.indexOf("Date:"));
-    expect(prompt.indexOf("Date:")).toBeLessThan(prompt.indexOf("CWD:"));
-    expect(prompt.indexOf("CWD:")).toBeLessThan(prompt.indexOf("Agent ID:"));
-    expect(prompt.indexOf("Agent ID:")).toBeLessThan(prompt.indexOf("Project Dir:"));
-    expect(prompt.indexOf("Project Dir:")).toBeLessThan(prompt.indexOf("Session ID:"));
+    expect(prompt.indexOf("Date:")).toBeLessThan(prompt.indexOf("Project Dir:"));
+    expect(prompt.indexOf("Project Dir:")).toBeLessThan(prompt.indexOf("Agent ID:"));
+    expect(prompt.indexOf("Agent ID:")).toBeLessThan(prompt.indexOf("CWD:"));
+    expect(prompt.indexOf("CWD:")).toBeLessThan(prompt.indexOf("Provider:"));
+    expect(prompt.indexOf("Provider:")).toBeLessThan(prompt.indexOf("Model ID:"));
+    expect(prompt.indexOf("Model ID:")).toBeLessThan(prompt.indexOf("Session ID:"));
   });
 });
 

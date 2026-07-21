@@ -143,9 +143,11 @@ compaction:
 | `{{PLATFORM}}` | Runtime platform |
 | `{{OS_VERSION}}` | Operating system version |
 | `{{DATE}}` | Current date |
-| `{{CWD}}` | Workspace path |
-| `{{AGENT_ID}}` | Agent id |
 | `{{PROJECT_DIR}}` | Project directory |
+| `{{AGENT_ID}}` | Agent id |
+| `{{CWD}}` | Workspace path |
+| `{{PROVIDER}}` | Model provider group |
+| `{{MODEL_ID}}` | Upstream model id |
 | `{{SESSION_ID}}` | Session id |
 
 `agent_state/AGENTS.md` is the developer-editable instruction file, injected via `{{AGENTS_MD}}` and empty by default — it is also the file an optimizer edits most (see [Self-Improvement](/self-improvement)).

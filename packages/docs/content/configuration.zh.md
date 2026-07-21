@@ -143,9 +143,11 @@ compaction:
 | `{{PLATFORM}}` | 运行平台 |
 | `{{OS_VERSION}}` | 操作系统版本 |
 | `{{DATE}}` | 当前日期 |
-| `{{CWD}}` | Workspace 路径 |
-| `{{AGENT_ID}}` | Agent id |
 | `{{PROJECT_DIR}}` | Project 目录 |
+| `{{AGENT_ID}}` | Agent id |
+| `{{CWD}}` | Workspace 路径 |
+| `{{PROVIDER}}` | 模型 provider 分组 |
+| `{{MODEL_ID}}` | 上游模型 id |
 | `{{SESSION_ID}}` | Session id |
 
 `agent_state/AGENTS.md` 是开发者可编辑的指令文件，经 `{{AGENTS_MD}}` 注入系统提示词，缺省为空——它也是优化器最常改动的文件（见[自我进化](/self-improvement)）。
