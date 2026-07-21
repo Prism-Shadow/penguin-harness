@@ -119,7 +119,9 @@ export const en: Strings = {
     title: "Multi-agent collaboration makes evolution automatic",
     subtitle:
       "The Optimizer orchestrates multiple Evaluators to score the Target Agent in parallel, uses the scores and run traces to find where points were lost, and upgrades the Agent from version N to N+1 — with a snapshot before every round.",
-    videoSoon: "Demo video coming soon",
+    videoLabel: "Self-improvement demo video",
+    videoCaption:
+      "The self-improvement loop end to end: run the benchmark, find the lost points, ship the next version.",
     nodeOptimizer: "Optimizer",
     nodeEvaluator: "Evaluator × N",
     nodeTarget: "Target Agent",

@@ -44,7 +44,7 @@ A deliberately minimal toolset over clean low-level interfaces: fewer tool calls
   </picture>
 </p>
 
-<sub>Data analysis: best accuracy of the three (66.67% vs 53.33%), at 1/35 of Codex's spend and 1/70 of Claude Code's. Coding: ties Codex at 71.25% and trails Claude Code's 86.25%, for $3.81 against $220.08 and $146.97. 15 tasks single run / 40 tasks × 2 runs; Tokens and cost are suite totals at official pricing. Full breakdown on the <a href="https://penguin.ooo/">website</a>.</sub>
+**Best accuracy on data analysis — at 1/70 of Claude Code's cost.**
 
 ### 2. ⚡ One sentence, and an Agent builds your Agent app
 

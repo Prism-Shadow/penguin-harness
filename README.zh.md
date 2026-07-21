@@ -44,7 +44,7 @@
   </picture>
 </p>
 
-<sub>数据分析：三者中准确率最高（66.67% vs 53.33%），成本为 Codex 的 1/35、Claude Code 的 1/70。编程：与 Codex 同为 71.25%、低于 Claude Code 的 86.25%，但花费 $3.81 对 $220.08 与 $146.97。15 题单次运行 / 40 题 × 2 次；Token 与成本为全套题目合计，按官方计价估算。完整数据见<a href="https://penguin.ooo/">官网</a>。</sub>
+**数据分析准确率最高——成本只有 Claude Code 的 1/70。**
 
 ### 2. ⚡ 一句话，让 Agent 构建 Agent 应用
 

@@ -40,6 +40,13 @@ const VIEW_H = 210;
 const PLOT_TOP = 28;
 const BASELINE = 168;
 const BAR_W = 24;
+/**
+ * Shortest a bar may render. At true scale the cost panels put PenguinHarness at ~1.6px
+ * against a 140px plot (the spread is ~70x), which reads as an empty slot rather than a
+ * winning series. The floor keeps it visible while still plainly the smallest bar, and
+ * every cap carries its exact value.
+ */
+const MIN_BAR_H = 12;
 
 function BarPanel({
   title,
@@ -77,7 +84,7 @@ function BarPanel({
       >
         {rows.map((row, i) => {
           const v = values[i] ?? 0;
-          const h = ((v - lo) / (hi - lo)) * (BASELINE - PLOT_TOP);
+          const h = Math.max(MIN_BAR_H, ((v - lo) / (hi - lo)) * (BASELINE - PLOT_TOP));
           const yTop = BASELINE - h;
           const cx = slot * i + slot / 2;
           return (

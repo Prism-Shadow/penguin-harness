@@ -7,9 +7,11 @@
  *   packages/landing/public/blog-assets/benchmark-light.svg
  *
  * Two panels per suite (accuracy, cost), horizontal bars scaled linearly from zero — the
- * cost spread is ~70x, so PenguinHarness renders as a sliver next to its rivals. That is
- * the result, not a defect; a zoomed baseline would flatter everyone else. Every bar keeps
- * a 2px minimum so a near-zero value is still visibly a bar, and each value is labelled.
+ * cost spread is ~70x, so the PenguinHarness bar is by far the shortest. That is the
+ * result, not a defect; a zoomed baseline would flatter everyone else. Bars are floored at
+ * MIN_BAR, though: at true scale the cost bar comes out ~2.5px, which reads as "no bar" and
+ * loses the series entirely. The floor keeps it visible and unmistakably smallest, and the
+ * exact figure is printed beside every bar, so nothing is overstated.
  *
  * Run: node packages/landing/scripts/render-benchmark-svg.mjs
  */
@@ -89,6 +91,8 @@ const H = 368;
 const BAR_H = 16;
 const ROW_H = 30;
 const MAX_BAR = 176;
+/** Shortest a bar may render, so a near-zero value still reads as a bar (~8% of full). */
+const MIN_BAR = 14;
 
 const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
@@ -111,7 +115,7 @@ function panel(t, x0, yTop, rows, value, format) {
   ];
   rows.forEach((row, i) => {
     const y = yTop + 4 + i * ROW_H;
-    const w = Math.max(2, (value(row) / max) * MAX_BAR);
+    const w = Math.max(MIN_BAR, (value(row) / max) * MAX_BAR);
     const weight = row.emphasized ? 600 : 400;
     out.push(
       text(axis - 12, y + 12.5, row.framework, {

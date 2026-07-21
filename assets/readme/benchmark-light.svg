@@ -14,8 +14,8 @@
 <text x="301.7841607919604" y="154.5" font-size="12" font-weight="400" fill="#1f2328" text-anchor="start" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">53.33%</text>
 <rect x="595" y="78" width="1" height="92" fill="#c3c2b7"/>
 <text x="584" y="94.5" font-size="12" font-weight="600" fill="#1f2328" text-anchor="end" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">PenguinHarness</text>
-<path d="M597 82 h1.3 a1.2632993654491718 1.2632993654491718 0 0 1 1.2632993654491718 1.2632993654491718 v13.473401269101657 a1.2632993654491718 1.2632993654491718 0 0 1 -1.2632993654491718 1.2632993654491718 h-1.3 z" fill="#2a78d6"/>
-<text x="611.5265987308984" y="94.5" font-size="12" font-weight="600" fill="#1f2328" text-anchor="start" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">$0.55</text>
+<path d="M597 82 h10.0 a4 4 0 0 1 4 4 v8 a4 4 0 0 1 -4 4 h-10.0 z" fill="#2a78d6"/>
+<text x="623" y="94.5" font-size="12" font-weight="600" fill="#1f2328" text-anchor="start" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">$0.55</text>
 <text x="584" y="124.5" font-size="12" font-weight="400" fill="#52514e" text-anchor="end" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">Claude Code</text>
 <path d="M597 112 h172.0 a4 4 0 0 1 4 4 v8 a4 4 0 0 1 -4 4 h-172.0 z" fill="#898781"/>
 <text x="785" y="124.5" font-size="12" font-weight="400" fill="#1f2328" text-anchor="start" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">$38.48</text>
@@ -35,8 +35,8 @@
 <text x="306.3913043478261" y="296.5" font-size="12" font-weight="400" fill="#1f2328" text-anchor="start" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">71.25%</text>
 <rect x="595" y="220" width="1" height="92" fill="#c3c2b7"/>
 <text x="584" y="236.5" font-size="12" font-weight="600" fill="#1f2328" text-anchor="end" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">PenguinHarness</text>
-<path d="M597 224 h1.5 a1.5242457288258815 1.5242457288258815 0 0 1 1.5242457288258815 1.5242457288258815 v12.951508542348236 a1.5242457288258815 1.5242457288258815 0 0 1 -1.5242457288258815 1.5242457288258815 h-1.5 z" fill="#2a78d6"/>
-<text x="612.0484914576517" y="236.5" font-size="12" font-weight="600" fill="#1f2328" text-anchor="start" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">$3.81</text>
+<path d="M597 224 h10.0 a4 4 0 0 1 4 4 v8 a4 4 0 0 1 -4 4 h-10.0 z" fill="#2a78d6"/>
+<text x="623" y="236.5" font-size="12" font-weight="600" fill="#1f2328" text-anchor="start" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">$3.81</text>
 <text x="584" y="266.5" font-size="12" font-weight="400" fill="#52514e" text-anchor="end" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">Claude Code</text>
 <path d="M597 254 h113.5 a4 4 0 0 1 4 4 v8 a4 4 0 0 1 -4 4 h-113.5 z" fill="#898781"/>
 <text x="726.5332606324973" y="266.5" font-size="12" font-weight="400" fill="#1f2328" text-anchor="start" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">$146.97</text>

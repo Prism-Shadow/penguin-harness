@@ -123,7 +123,8 @@ export const zh = {
     title: "多 Agent 协作，进化自动发生",
     subtitle:
       "Optimizer 组织多个 Evaluator 为 Target Agent 并行打分，依据分数与运行轨迹定位失分原因，把 Agent 从版本 N 优化到版本 N+1——每一轮都有快照，随时可回退。",
-    videoSoon: "演示视频即将上线",
+    videoLabel: "自我进化演示视频",
+    videoCaption: "自我进化演示：Agent 跑评测、定位失分点、发布下一版——完整一轮。",
     nodeOptimizer: "Optimizer",
     nodeEvaluator: "Evaluator × N",
     nodeTarget: "Target Agent",
