@@ -56,12 +56,7 @@ Collect the docs from https://github.com/ericbuess/claude-code-docs and build a 
 
 And this is the finished product — a docs expert with retrieval, cited sources that link to the original files, and example questions built in:
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/readme/rag-app-en-dark.webp" />
-    <img src="assets/readme/rag-app-en-light.webp" alt="The generated RAG app: a Claude Code docs expert answering with cited, clickable sources and example questions" width="920" />
-  </picture>
-</p>
+https://github.com/user-attachments/assets/9b7033e8-f08a-4c3f-bd33-547896664e6e
 
 **And generating this entire RAG app burned just $0.02 (¥0.2) of tokens — on DeepSeek V4 Pro.**
 
@@ -69,7 +64,7 @@ And this is the finished product — a docs expert with retrieval, cited sources
 
 With PenguinHarness Skills, an Agent evaluates and optimizes itself: run the benchmark, find the lost points, ship version N+1 — with a snapshot before every round, and every request observable in the Trace view.
 
-<!-- TODO: self-evolution demo video — coming soon. -->
+https://github.com/user-attachments/assets/922d13a6-5ffc-4685-9a39-352f02f9afc0
 
 ## Supported Models
 
