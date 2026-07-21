@@ -8,6 +8,9 @@
  *     createSession using the index row's workspace/modelId, yielding a new session_id
  *     and updating the index's primary key; the Task response body always returns the
  *     current actual id;
+ *   - Vault effectiveness: a vault update bumps the Agent's config generation
+ *     (invalidateAgentRuntimes); runtimes built earlier are discarded on their next
+ *     idle access and re-resumed, so the next Task always runs with current values;
  *   - Per-Session mutual exclusion: only one Task/compaction may be in progress at a
  *     time;
  *   - run/compact drive: consumes the output stream in the background, publishing each
@@ -187,6 +190,12 @@ interface RuntimeEntry {
   abort: AbortController | null;
   /** The in-flight drive Promise (awaited during graceful shutdown). */
   running: Promise<void> | null;
+  /**
+   * Agent config generation this runtime was built under (see
+   * invalidateAgentRuntimes): once it falls behind the Agent's current generation,
+   * the entry is discarded on its next idle access and re-resumed via the loader.
+   */
+  generation: number;
   /** Timestamp of last activity (refreshed on load / status flip / drive completion), used for idle-eviction checks. */
   lastActivityMs: number;
 }
@@ -197,6 +206,13 @@ const ENTRY_SWEEP_INTERVAL_MS = 60 * 1000;
 
 /** Cap on collected model text for title material (accumulation stops beyond this; the generator side also truncates further). */
 const TITLE_EXCERPT_LIMIT = 4000;
+/**
+ * Early title trigger: once this many characters of main-session body text have streamed,
+ * title generation starts right away instead of waiting for the Task to finish — the core
+ * Session has captured its (capped) material by then, and a long answer would only overrun
+ * it. Short conversations are still covered by the completion trigger in drive's finally.
+ */
+const EARLY_TITLE_BODY_CHARS = 1000;
 
 /** Composite Agent key (used as a Set key, avoiding projectId/agentId concatenation ambiguity). */
 function agentKey(projectId: string, agentId: string): string {
@@ -280,6 +296,8 @@ export class SessionManager {
   private readonly deletingAgents = new Set<string>();
   /** Sessions currently being deleted (guards against the entry/Trace file being rebuilt and reviving it inside the deletion race window). */
   private readonly deletingSessions = new Set<string>();
+  /** Per-Agent config generation (key = agentKey), bumped by invalidateAgentRuntimes on vault updates. */
+  private readonly agentGenerations = new Map<string, number>();
   private readonly sweepTimer: NodeJS.Timeout;
 
   constructor(private readonly deps: SessionManagerDeps) {
@@ -324,8 +342,23 @@ export class SessionManager {
       approvals: new ApprovalRegistry(),
       abort: null,
       running: null,
+      generation: this.generationOf(row.projectId, row.agentId),
       lastActivityMs: Date.now(),
     });
+  }
+
+  /**
+   * After an Agent's vault is updated: bump the Agent's config generation so every
+   * runtime built before the update is discarded on its next idle access and
+   * re-resumed via the loader — resume re-reads agent_state/.vault.toml, so the next
+   * Task on any of this Agent's Sessions runs with the new values (history is
+   * preserved through the Trace). A Task already in flight is neither aborted nor
+   * hot-swapped: it keeps the values it started with, and its entry is rebuilt on
+   * the first access after it returns to idle (see ensureEntry).
+   */
+  invalidateAgentRuntimes(projectId: string, agentId: string): void {
+    const key = agentKey(projectId, agentId);
+    this.agentGenerations.set(key, this.generationOf(projectId, agentId) + 1);
   }
 
   // —— Task / compaction drive ——
@@ -578,10 +611,30 @@ export class SessionManager {
     }
   }
 
+  private generationOf(projectId: string, agentId: string): number {
+    return this.agentGenerations.get(agentKey(projectId, agentId)) ?? 0;
+  }
+
   /** get-or-resume-or-heal: use directly on an active-table hit; otherwise load via the loader, updating the index's primary key on self-heal. */
   private async ensureEntry(sessionId: string): Promise<RuntimeEntry> {
     const existing = this.entries.get(sessionId);
-    if (existing) return existing;
+    if (existing) {
+      if (existing.generation === this.generationOf(existing.projectId, existing.agentId)) {
+        return existing;
+      }
+      // Built before the last vault update: discard once idle and fall through to a
+      // fresh load (resume re-reads the vault). A busy entry is returned as-is — the
+      // in-flight run keeps its values and assertIdle rejects the new Task anyway;
+      // it is rebuilt on the first access after it finishes.
+      if (
+        existing.status !== "idle" ||
+        existing.running !== null ||
+        existing.approvals.size !== 0
+      ) {
+        return existing;
+      }
+      this.entries.delete(sessionId);
+    }
     const row = this.deps.sessions.findById(sessionId);
     if (!row) {
       throw new HttpError(
@@ -590,6 +643,9 @@ export class SessionManager {
         "Session does not exist or you do not have access.",
       );
     }
+    // Captured before the (awaited) load: a vault update racing with the load leaves
+    // this entry stale, so the access after next rebuilds it with the new values.
+    const generation = this.generationOf(row.projectId, row.agentId);
     const session = await this.deps.loader.load(row);
     // The Session/Agent was marked for deletion while loading: discard the load result,
     // don't rebuild the entry (avoids reviving an orphaned Trace).
@@ -613,6 +669,7 @@ export class SessionManager {
       approvals: new ApprovalRegistry(),
       abort: null,
       running: null,
+      generation,
       lastActivityMs: Date.now(),
     };
     this.entries.set(currentId, entry);
@@ -630,6 +687,8 @@ export class SessionManager {
     gen: AsyncGenerator<OmniMessage>,
     titleSource?: { userExcerpt: string },
   ): Promise<void> {
+    let earlyTitleFired = false;
+    let mainBodyChars = 0;
     const ctx: UsageContext = {
       projectId: entry.projectId,
       agentId: entry.agentId,
@@ -713,6 +772,27 @@ export class SessionManager {
           const child = nested ? children.get(nested.sessionId) : undefined;
           if (nested && child && child.assistantExcerpt.length < TITLE_EXCERPT_LIMIT) {
             child.assistantExcerpt += (child.assistantExcerpt ? "\n" : "") + nested.text;
+          }
+        }
+        // Early title trigger (see EARLY_TITLE_BODY_CHARS): fire as soon as enough main-
+        // session body text has streamed; maybeGenerate self-guards (NULL title, single
+        // flight), so the completion trigger in finally stays as the short-answer fallback.
+        if (!earlyTitleFired && titleSource?.userExcerpt.trim()) {
+          const p = msg.payload as { type?: string; role?: string; text?: string };
+          if (
+            (!msg.origin || msg.origin.length === 0) &&
+            msg.type === "model_msg" &&
+            p.type === "text" &&
+            p.role === "assistant" &&
+            p.text
+          ) {
+            mainBodyChars += p.text.length;
+            if (mainBodyChars >= EARLY_TITLE_BODY_CHARS) {
+              earlyTitleFired = true;
+              this.deps.titles?.maybeGenerate(ctx, entry.session, {
+                fallbackText: titleSource.userExcerpt,
+              });
+            }
           }
         }
         // Re-fetch the channel before every publish (matches publishEvent): the channel

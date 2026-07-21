@@ -46,6 +46,8 @@ export function PasswordInput({
           type="button"
           aria-label={toggleLabel}
           title={toggleLabel}
+          // Skip in the tab order: Tab should move between fields, not land on the reveal toggle.
+          tabIndex={-1}
           onClick={() => setVisible((v) => !v)}
           className={`absolute inset-y-0 right-0 flex items-center justify-center text-gray-400 transition-colors duration-150 hover:text-gray-600 dark:hover:text-gray-300 ${
             size === "sm" ? "w-8" : "w-10"

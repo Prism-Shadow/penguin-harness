@@ -35,12 +35,12 @@ packages/server/src
 
 - Cookie 会话：`penguin_session`（HttpOnly、SameSite=Lax），有效期 7 天，滑动续期；
 - 密码以 scrypt 哈希存储；服务端只保存会话 Token 的 sha256，不落明文；
-- 不开放注册：启动时种子化内置管理员 `admin` / `admin123`，其余账号由管理员创建；
+- 不开放注册：启动时种子化内置管理员 `admin` / `penguin-2026`，其余账号由管理员创建；
 - 仅限同源访问，未启用 CORS 中间件。
 
 ```bash
 curl -c cookies.txt -H "Content-Type: application/json" \
-  -d '{"userId":"admin","password":"admin123"}' \
+  -d '{"userId":"admin","password":"penguin-2026"}' \
   http://127.0.0.1:7364/api/auth/login
 ```
 
@@ -87,6 +87,8 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 | PUT | /api/projects/:projectId/models | 全表替换，条目以 `(provider, modelId)` 为键 |
 | POST | /api/projects/:projectId/models/test | 连通性测试：`{provider, modelId, …}` → `{ok, latencyMs?, message?}` |
 
+所有涉及模型的接口都要求完整的 `(provider, modelId)` 二元组，不做任何推断：只带一半的请求一律 400，绝不会退化为一次查找。模型引用本身可省略的场景（创建 Session、定时任务）省略的是整对，两半都不给即选用 Project 默认模型。
+
 ### Agent
 
 以下路径均省略前缀 `/api/projects/:projectId`。
@@ -110,7 +112,7 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 | GET / POST | /agents/:agentId/schedules | 定时任务列表 / 创建（重名返回 409） |
 | GET / PUT / DELETE | /agents/:agentId/schedules/:name | 读取 / 更新 / 删除单个任务 |
 
-Schedule 写操作仅限 Owner。
+Schedule 写操作仅限 Owner。新建 Session 模式的任务，`modelId` 与 `provider` 要么成对给出、要么都不给；该二元组会在任务保存时以及调度器对账时对照 Project 模型表校验。
 
 ### Session 创建与目录浏览
 
@@ -120,7 +122,7 @@ Schedule 写操作仅限 Owner。
 | POST | /agents/:agentId/sessions | 创建 Session：`{modelId?, provider?, workspace?, approvalMode?}` → 201 |
 | GET | /dirs?path= | 服务器端目录浏览（Workspace 选择器数据源） |
 
-创建 Session 时，模型默认取 Project 默认模型，Workspace 默认自动创建临时目录，审批模式默认 `allow-all`。
+创建 Session 时，`modelId` 与 `provider` 要么成对给出、要么都不给：给出完整二元组即指定模型，两个都省略则取 Project 默认模型，只给一个返回 400。Workspace 默认自动创建临时目录，审批模式默认 `allow-all`。
 
 ### 用量与 Trace（Agent 级）
 
@@ -147,7 +149,7 @@ Schedule 写操作仅限 Owner。
 | POST | /abort | 中断当前 Task：已触发返回 202，无任务返回 204 |
 | POST | /compact | 触发上下文压缩：202；无可压缩内容返回 409 `nothing_to_compact` |
 | GET | /files?path= | 浏览 Workspace 目录 |
-| GET | /files/content?path=&download= | 读取 Workspace 文件（`download=1` 时作为附件下载） |
+| GET | /files/content?path=&download=&preview= | 读取 Workspace 文件（`download=1` 时作为附件下载，`preview=1` 以沙箱方式预览 —— 见下） |
 | POST | /files/stat | 批量存在性检查：`{paths}` |
 | PUT | /files/content?path= | 上传文件：`{dataBase64}`，上限 14MB |
 | GET | /traces | 本 Session 的 Trace 文件列表 |
@@ -156,6 +158,16 @@ Schedule 写操作仅限 Owner。
 | GET | /scratchpad/:fileName | 读取会话暂存文件（如输入图片） |
 
 通用约定：无权访问的 Session 一律返回 404，不泄露其存在性；每个 Session 同时只允许一个 Task 或压缩在运行，冲突时返回 409（`task_in_progress` / `compacting`）。
+
+Workspace 文件可能由 Agent 生成，`GET /files/content` 一律按不可信内容处理：所有响应都带 `X-Content-Type-Options: nosniff`，其余响应头取决于两个开关（`download=1` 优先于 `preview=1`）：
+
+| 查询参数 | Content-Type | Content-Disposition | Content-Security-Policy |
+| --- | --- | --- | --- |
+| 都不带 | `.html` / `.htm` / `.svg` 降级为 `text/plain; charset=utf-8`，其余为真实类型 | `inline` | 无 |
+| `preview=1` | 真实类型（`text/html`、`image/svg+xml` 等） | `inline` | `sandbox allow-scripts allow-popups allow-modals allow-forms`，仅对 `.html` / `.htm` / `.svg` 下发 |
+| `download=1` | 真实类型 | `attachment` | 无 |
+
+文件名始终以 `filename*=UTF-8''` 形式携带（百分号编码）。`preview=1` 支撑的是“在新标签页打开”：文档保留真实类型，可以正常渲染并执行脚本，但沙箱刻意不含 `allow-same-origin`，因此它落在一个不透明源里，既拿不到本源的 Cookie，也调不动 API；而请求本身仍然要鉴权 —— 顶层 GET 会带上 SameSite=Lax 的会话 Cookie。
 
 关键请求体（明确键名）：
 

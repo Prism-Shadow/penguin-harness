@@ -331,6 +331,31 @@
   }
 }
 
+/* ---------- Building-blocks loop (LangChain comparison): each block pops in at its
+   negative delay within the shared cycle, holds while the rest of the tower lands,
+   then the whole skyline fades and rebuilds. Reduced-motion shows towers complete. */
+.anim-block {
+  animation: block-build var(--cycle, 7.2s) linear infinite;
+}
+@keyframes block-build {
+  0% {
+    opacity: 0;
+    transform: translateY(5px) scale(0.92);
+  }
+  3% {
+    opacity: 1;
+    transform: none;
+  }
+  93% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+    transform: none;
+  }
+}
+
 /* Printing never scrolls, so scroll-reveal must not hide content on paper/PDF. */
 @media print {
   .reveal {

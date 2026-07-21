@@ -88,3 +88,13 @@ export function groupModelRows<T extends ModelRowLike>(
     (g) => g.rows.length > 0 || (!searching && g.provider.id === "custom"),
   );
 }
+
+/**
+ * Flattens the library grouping into one ordered list (the chat model dropdown uses this):
+ * rows ordered exactly as the model page shows them — built-in provider groups in
+ * MODEL_PROVIDERS order, then user-defined groups, custom last; in-group row order
+ * preserved.
+ */
+export function orderModelsLikeLibrary<T extends ModelRowLike>(rows: T[]): T[] {
+  return groupModelRows(rows, "").flatMap((g) => g.rows);
+}

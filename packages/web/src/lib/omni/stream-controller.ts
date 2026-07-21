@@ -176,15 +176,25 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
     // disconnected shouldn't leave a lingering button; the server will
     // resend still-pending approval_request events on the same connection afterward, naturally rebuilding it.
     clearPending();
-    // Swap in a new model, injecting the shared localDecisions: approvals decided on this end are still labeled "manual" after the rebuild.
-    model = createStreamModel(localDecisions);
-    await load(epoch);
+    // Atomic swap — deliberately NOT `onLoading(true)`. The fresh model (shared localDecisions
+    // injected, so approvals decided on this end stay labeled "manual") is handed to load(), which
+    // makes it the visible model only once history is back in hand. Until then the OLD transcript
+    // stays mounted and on screen: a mid-stream resync never blanks the conversation nor unmounts
+    // the composer. (Flipping loading=true here drove the consumer to swap both the message list and
+    // the input for a skeleton, losing scroll position, expanded tool cards, and composer
+    // focus/draft.) Deltas arriving during the refetch are buffered and replayed on swap; the brief
+    // no-new-text pause is invisible next to a full teardown.
+    await load(epoch, createStreamModel(localDecisions));
   };
 
-  const load = async (currentEpoch: number): Promise<void> => {
+  const load = async (currentEpoch: number, freshModel?: StreamModel): Promise<void> => {
     try {
       const messages = await deps.loadMessages();
       if (disposed || currentEpoch !== epoch) return;
+      // Rebuild path: make the freshly-built model visible only now, atomically — the old model
+      // stayed on screen throughout the refetch above (see rebuild). Initial load / retry pass no
+      // freshModel and keep operating on the current model.
+      if (freshModel) model = freshModel;
       const target = model;
       pushMessages(target, messages, now());
       const dedup = buildDedupIndex(messages, 100);
@@ -235,11 +245,16 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
     },
     retry: async () => {
       if (disposed || !failed) return;
-      // On failure the model was never written to and the buffer kept accumulating: keep both, just refetch history and replay again.
+      // Retry always rebuilds into a FRESH model. After an initial-load failure the model was
+      // never written, but after a failed *resync* rebuild the OLD populated model is deliberately
+      // left in place (so the transcript didn't blank during the refetch) — pushing the refetched
+      // history straight onto it would duplicate the entire conversation (pushMessages appends with
+      // no id-dedup). load() swaps the fresh model in only once the refetch succeeds, then replays
+      // the still-accumulating buffer into it; localDecisions carry over via the shared set.
       deps.onError(null);
       deps.onLoading(true);
       epoch += 1;
-      await load(epoch);
+      await load(epoch, createStreamModel(localDecisions));
     },
     handleOmni: (msg) => {
       if (disposed) return;

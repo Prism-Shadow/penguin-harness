@@ -2,8 +2,9 @@
  * Unit tests for the Session runtime (a fake Session / Loader is injected; no
  * real LLM requests are made): driving and state transitions, 409 mutual
  * exclusion, the four approval modes and taking effect immediately on change,
- * abort collapsing to deny, self-healing id swaps, and LLM / tool errors in the
- * message stream being persisted (core doesn't throw, so try/catch can't catch them).
+ * abort collapsing to deny, self-healing id swaps, vault invalidation re-resuming
+ * stale runtimes, and LLM / tool errors in the message stream being persisted
+ * (core doesn't throw, so try/catch can't catch them).
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { DatabaseSync } from "node:sqlite";
@@ -475,6 +476,62 @@ describe("session-manager", () => {
     expect(loads).toBe(1);
   });
 
+  it("invalidateAgentRuntimes: an idle entry is discarded and re-resumed on next access; other Agents unaffected", async () => {
+    let loads = 0;
+    const loader: SessionLoader = {
+      load: async () => {
+        loads++;
+        return approvalFakeSession("session-1");
+      },
+    };
+    const manager = makeManager(loader);
+    sessions.updateApprovalMode("session-1", "allow-all");
+    // Adopted after creation: records the current generation, so Tasks reuse it without loading.
+    manager.adopt(ROW, approvalFakeSession("session-1"));
+
+    // Another Agent's vault update leaves this entry alone.
+    manager.invalidateAgentRuntimes("p1", "other_agent");
+    await manager.startTask("session-1", [userText("a")]);
+    await waitFor(() => manager.statusOf("session-1") === "idle");
+    expect(loads).toBe(0);
+
+    // This Agent's vault update: the next Task rebuilds the runtime via the loader.
+    manager.invalidateAgentRuntimes("p1", "a1");
+    await manager.startTask("session-1", [userText("b")]);
+    await waitFor(() => manager.statusOf("session-1") === "idle");
+    expect(loads).toBe(1);
+
+    // Rebuilt once only: the fresh entry is current again.
+    await manager.startTask("session-1", [userText("c")]);
+    await waitFor(() => manager.statusOf("session-1") === "idle");
+    expect(loads).toBe(1);
+  });
+
+  it("invalidateAgentRuntimes mid-run: the in-flight Task keeps its runtime; the first Task after it finishes re-resumes", async () => {
+    let loads = 0;
+    const loader: SessionLoader = {
+      load: async () => {
+        loads++;
+        return approvalFakeSession("session-1");
+      },
+    };
+    const manager = makeManager(loader);
+    await manager.startTask("session-1", [userText("go")]); // built here: load #1
+    await waitFor(() => manager.pendingApprovalCount("session-1") === 1);
+
+    manager.invalidateAgentRuntimes("p1", "a1"); // vault updated while the Task waits on approval
+    // The pending approval still targets the live entry: the run completes on the old runtime.
+    expect(manager.decideApproval("session-1", "tc-1", "allow")).toBe(true);
+    await waitFor(() => manager.statusOf("session-1") === "idle");
+    expect(loads).toBe(1);
+
+    // First Task after it finished: the stale entry is discarded and re-resumed with current values.
+    sessions.updateApprovalMode("session-1", "allow-all");
+    await manager.startTask("session-1", [userText("next")]);
+    await waitFor(() => manager.statusOf("session-1") === "idle");
+    expect(loads).toBe(2);
+  });
+
   it("sweepIdle: entries that are running / have pending approvals are not evicted", async () => {
     const manager = makeManager(loaderOf(approvalFakeSession("session-1")));
     await manager.startTask("session-1", [userText("go")]);
@@ -546,5 +603,122 @@ describe("session-manager", () => {
     await waitFor(() => manager.statusOf("session-1") === "idle");
     await new Promise((r) => setTimeout(r, 10));
     expect(notified.length).toBe(1);
+  });
+
+  it("fires title generation early once 1000 chars of body text have streamed (mid-run, before the Task finishes)", async () => {
+    const notified: { ctx: UsageContext; req: TitleRequest }[] = [];
+    // Gate the run after the big body text so the early trigger provably happens mid-run.
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const longSession: RuntimeSession = {
+      sessionId: "session-1",
+      toolPermission: () => "rw",
+      generateTitle: async () => ({ title: null, usage: null }),
+      compactability: () => "ok" as const,
+      async *run() {
+        yield assistantText("x".repeat(600));
+        // Sub-session text doesn't count toward the main-session body threshold
+        // (asserted on its own in the next test).
+        yield withOrigin(assistantText("z".repeat(2000)), "session-sub");
+        yield assistantText("y".repeat(600)); // crosses the 1000-char threshold
+        await gate;
+        yield assistantText("tail");
+      },
+      async *compact() {},
+    };
+    const manager = new SessionManager({
+      sessions,
+      channels,
+      loader: loaderOf(longSession),
+      recorder: { record: async () => {} },
+      titles: {
+        maybeGenerate: (ctx, _session, req) => notified.push({ ctx, req }),
+      },
+      log: () => {},
+    });
+
+    await manager.startTask("session-1", [userText("long question")]);
+    // The early trigger fires while the run is still in flight (gated before completion).
+    await waitFor(() => notified.length === 1);
+    expect(manager.statusOf("session-1")).toBe("running");
+    expect(notified[0]!.req.fallbackText).toBe("long question");
+    expect(notified[0]!.req.material).toBeUndefined();
+
+    // Completion still notifies as the short-answer fallback path (the generator itself dedups).
+    release();
+    await waitFor(() => manager.statusOf("session-1") === "idle");
+    await waitFor(() => notified.length === 2);
+  });
+
+  it("a subagent's output never fires the early title: only main-session body text counts toward the 1000 chars", async () => {
+    const notified: { ctx: UsageContext; req: TitleRequest }[] = [];
+    const driven: OmniMessage[] = [];
+    // Gate the run right after the sub-session's long output: while the parent is parked
+    // here the completion trigger hasn't run yet, so an empty `notified` proves the child's
+    // text alone never crossed the threshold (without the gate an early fire would be
+    // indistinguishable from the completion one).
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const delegating: RuntimeSession = {
+      sessionId: "session-1",
+      toolPermission: () => "rw",
+      generateTitle: async () => ({ title: null, usage: null }),
+      compactability: () => "ok" as const,
+      async *run() {
+        yield toolCall({
+          name: "run_subagent",
+          arguments: JSON.stringify({ prompt: "Research the background of this question" }),
+          toolCallId: "sub-1",
+        });
+        const hop = "child-1";
+        yield withOrigin(
+          sessionMeta({
+            session_id: "child-1",
+            model_id: "m-child",
+            provider: "custom",
+            model_context_window: 1000,
+            system_prompt: "sys",
+            tools: [],
+            thinking_level: "default",
+            agent_state: "/root/p1/child_agent/agent_state",
+            workspace: "/tmp/w-child",
+          }),
+          hop,
+        );
+        // Far past the threshold, but it belongs to the sub-session's own conversation.
+        yield withOrigin(assistantText("z".repeat(3000)), hop);
+        await gate;
+        yield assistantText("short answer"); // the parent's whole body, well under 1000 chars
+      },
+      async *compact() {},
+    };
+    const manager = new SessionManager({
+      sessions,
+      channels,
+      loader: loaderOf(delegating),
+      recorder: {
+        record: async (_ctx, msg) => {
+          driven.push(msg);
+        },
+      },
+      titles: {
+        maybeGenerate: (ctx, _session, req) => notified.push({ ctx, req }),
+      },
+      log: () => {},
+    });
+
+    await manager.startTask("session-1", [userText("delegate this")]);
+    // Recording happens after the early-title check, so once the sub-session's 3000 chars
+    // have been driven through the parent's counter has already seen everything it will
+    // ever see from the child — and it must still be at zero.
+    await waitFor(() => driven.length === 3);
+    expect(manager.statusOf("session-1")).toBe("running");
+    expect(notified.length).toBe(0);
+
+    // Only the completion path notifies: once for the parent, once for the sub-session's own title.
+    release();
+    await waitFor(() => manager.statusOf("session-1") === "idle");
+    await waitFor(() => notified.length === 2);
+    expect(notified.map((n) => n.ctx.sessionId)).toEqual(["session-1", "child-1"]);
   });
 });

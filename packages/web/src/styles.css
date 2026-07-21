@@ -359,6 +359,12 @@
 }
 .md-body pre {
   @apply overflow-x-auto rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm dark:border-gray-800 dark:bg-gray-900;
+  /* Off-screen code blocks skip layout/paint: with several settled 200KB+ replies in the
+     transcript, their <pre> layout dominated every streaming commit (profiled ~90% native
+     layout) and froze the chat while large code streamed in. auto keeps the measured size for
+     stable scrollbar geometry; on-screen blocks render normally and stay find-in-page searchable. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 400px;
 }
 .md-body pre code {
   background: transparent;

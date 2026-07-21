@@ -20,7 +20,7 @@ const config = resolveServerConfig();
 const deps = buildAppDeps(config);
 const app = createApp(deps);
 
-// Built-in admin seed (idempotent): creates admin (initial password admin123) and adopts default_project when the users table is empty.
+// Built-in admin seed (idempotent): creates admin (initial password penguin-2026) and adopts default_project when the users table is empty.
 await deps.authService.seedAdmin();
 
 // Schedule scheduler: startup reconciliation (missed, don't backfill) + periodic scan; only active while the server is running.

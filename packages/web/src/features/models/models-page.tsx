@@ -18,12 +18,13 @@
  * the protocol follows group semantics: a first-party vendor group doesn't persist
  * client_type (AgentHub auto-routes by upstream id, with env fallback resolved live from the
  * id), while custom / user-defined groups / gateways use a fixed OpenAI protocol, and
- * gateways (OpenRouter / SiliconFlow) additionally pre-fill their endpoint base URL; the
- * "get model id / API key" external links sit next to the corresponding input's label
- * (shown in both add and edit dialogs). The group list ends with an "add group" action
- * (user-defined groups share custom's semantics; the group appears once the first model
- * saves successfully — groups are carried by the model entry's provider field, not
- * persisted separately).
+ * gateways (OpenRouter / SiliconFlow / Qwen Token Plan) additionally pre-fill their endpoint
+ * base URL; the "get model id / API key" external links sit next to the corresponding
+ * input's label (shown in both add and edit dialogs). The group list ends with an "add
+ * group" action (user-defined groups share custom's semantics; the group appears once the
+ * first model saves successfully — groups are carried by the model entry's provider field,
+ * not persisted separately). The header also holds an owner-only "sync presets" action next
+ * to the search box (union-merge with the built-in catalog, see catalog-sync.ts).
  *
  * Saving does a PUT full-table replace (models not present are deleted; an empty apiKey
  * means keep the existing value); only the owner can edit.
@@ -42,15 +43,18 @@ import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useProject } from "../../state/project";
+import { useAuth } from "../../state/auth";
 import { USD_TO_CNY, useTheme } from "../../state/theme";
 import type { Currency } from "../../state/theme";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
+import { PasswordInput } from "../../components/ui/password-input";
 import { Modal } from "../../components/ui/modal";
 import { Select } from "../../components/ui/select";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { Badge } from "../../components/ui/badge";
 import { Chevron } from "../../components/ui/chevron";
+import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { ProviderLogo } from "../../components/ui/provider-logo";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { EmptyState } from "../../components/ui/empty-state";
@@ -58,11 +62,16 @@ import { formatDateTime, humanizeTokens } from "../../lib/format";
 import {
   MODEL_PROVIDERS,
   catalogEntryFor,
+  modelHomepageUrl,
   providerInfo,
   resolveModelEnv,
 } from "@prismshadow/penguin-core/model-catalog";
 import type { ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
 import { groupModelRows, sameModelRef, userProviderInfo } from "./model-grouping";
+import { draftKey, loadDraft, saveDraft } from "../chat/draft-cache";
+import { syncRowsWithCatalog } from "./catalog-sync";
+import { tpsTone, ttftTone } from "./speed-test";
+import type { SpeedResult, SpeedTone } from "./speed-test";
 
 /** Display currency follows the user setting (pricing is always stored in USD/million tokens; conversion happens only for display and input). */
 const CURRENCY_SYMBOL: Record<Currency, string> = { USD: "$", CNY: "¥" };
@@ -103,6 +112,26 @@ function inputToUsd(inputStr: string, currency: Currency): string {
   if (!Number.isFinite(n)) return t;
   return currency === "CNY" ? trimNum(n / USD_TO_CNY) : trimNum(n);
 }
+
+/** Group-header action glyphs (24x24 line paths): add, bulk key, gauge for speed test. */
+const PLUS_ICON = "M12 5v14M5 12h14";
+const KEY_ICON =
+  "M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4";
+
+/** Speed-test glyphs (24x24 line paths): gauge for the group action, clock = TTFT, zap = TPS. */
+const GAUGE_ICON = "M12 14l3.5-3.5M20.49 17A10 10 0 1 0 3.5 17";
+const CLOCK_ICON = "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20ZM12 7v5l3.5 2";
+const ZAP_ICON = "M13 2 3 14h9l-1 8 10-12h-9l1-8Z";
+
+/** Metric tone -> text color classes for the card speed badges. */
+const TONE_CLASS: Record<SpeedTone, string> = {
+  green: "text-green-600 dark:text-green-400",
+  yellow: "text-amber-600 dark:text-amber-400",
+  red: "text-red-600 dark:text-red-400",
+};
+
+/** In-page key for one model's speed result. */
+const speedKey = (provider: string, modelId: string) => `${provider}\u0000${modelId}`;
 
 /** Default context window (tokens) for custom models when left unset. */
 const CUSTOM_CONTEXT_DEFAULT = 128000;
@@ -299,6 +328,13 @@ export function ModelsPage() {
   const { currentProject } = useProject();
   const projectId = currentProject?.projectId ?? null;
   const isOwner = currentProject?.role === "owner";
+  const userId = useAuth().user?.userId ?? null;
+  /** Per-model speed results (in-memory, reset on every project switch; "pending" while that model's turn is running). */
+  const [speedResults, setSpeedResults] = useState<Map<string, SpeedResult | "pending">>(new Map());
+  /** Group whose speed-test confirmation dialog is open (provider id). */
+  const [speedFor, setSpeedFor] = useState<string | null>(null);
+  /** Group currently being speed-tested (provider id); tests run strictly one model at a time. */
+  const [speedRunning, setSpeedRunning] = useState<string | null>(null);
 
   const [rows, setRows] = useState<RowState[] | null>(null);
   const [defaultModel, setDefaultModel] = useState<ModelRefDto | undefined>(undefined);
@@ -327,6 +363,10 @@ export function ModelsPage() {
     if (!projectId) return;
     setRows(null);
     setLoadError(null);
+    // Speed results are keyed by (provider, model_id) only, so another Project's identically
+    // named model would inherit a timing measured against a different endpoint and key —
+    // drop them along with the rows they annotate whenever the active Project changes.
+    setSpeedResults(new Map());
     try {
       const res = await api.getModels(projectId);
       setRows(res.models.map(toRow));
@@ -368,6 +408,13 @@ export function ModelsPage() {
       setRows(res.models.map(toRow));
       setDefaultModel(res.defaultModel);
       setVisionModel(res.visionModel);
+      // Default model changed: drop the stored draft's model selection so the draft chat
+      // follows the new default (a stored pick would otherwise pin the old model forever).
+      if (userId && res.defaultModel && !sameModelRef(res.defaultModel, defaultModel)) {
+        const key = draftKey(userId, projectId);
+        const draft = loadDraft(key);
+        if (draft.modelRef) saveDraft(key, { ...draft, modelRef: undefined });
+      }
       toastSuccess(successText ?? S.common.saved);
       return true;
     } catch (e) {
@@ -382,6 +429,60 @@ export function ModelsPage() {
   };
 
   const groups = useMemo(() => (rows ? groupModelRows(rows, query) : []), [rows, query]);
+
+  /**
+   * "Sync presets": merge the built-in catalog into the current table (union; the catalog
+   * wins on differing preset entries, local additions and API keys stay untouched — see
+   * catalog-sync.ts). No-op with a toast when everything is already up to date.
+   */
+  const syncPresets = async () => {
+    if (!rows) return;
+    const merged = syncRowsWithCatalog(rows);
+    if (merged.added === 0 && merged.updated === 0) {
+      toastSuccess(S.models.syncUpToDate);
+      return;
+    }
+    await persist(
+      merged.rows,
+      defaultModel,
+      visionModel,
+      S.models.syncDone(merged.added, merged.updated),
+    );
+  };
+
+  /**
+   * Group speed test: one real request per model, strictly sequential (concurrent probes
+   * trip provider rate limits), each result written to the card as it lands. The
+   * confirmation dialog (speedFor) has already warned about quota by the time this runs.
+   */
+  const runSpeedTest = async (providerId: string) => {
+    if (!projectId || !rows) return;
+    const targets = rows.filter((r) => r.provider === providerId);
+    setSpeedRunning(providerId);
+    try {
+      for (const row of targets) {
+        const key = speedKey(row.provider, row.modelId);
+        setSpeedResults((prev) => new Map(prev).set(key, "pending"));
+        try {
+          const res = await api.testModel(projectId, {
+            provider: row.provider,
+            modelId: row.modelId,
+            speed: true,
+          });
+          setSpeedResults((prev) => new Map(prev).set(key, res));
+        } catch (e) {
+          setSpeedResults((prev) =>
+            new Map(prev).set(key, {
+              ok: false,
+              message: e instanceof ApiError ? e.message : S.common.unknownError,
+            }),
+          );
+        }
+      }
+    } finally {
+      setSpeedRunning(null);
+    }
+  };
 
   /**
    * "Add group" confirm: a valid name that doesn't conflict with a built-in group or an
@@ -426,9 +527,9 @@ export function ModelsPage() {
               <p className="text-xs text-gray-500 dark:text-gray-400">{S.models.readOnlyHint}</p>
             )}
           </div>
-          {/* The header only holds search (add-model entry points live in each group header);
-              on narrow screens (flex-wrap wraps it to its own line) the search box shrinks
-              flexibly, fixed width at >=sm. */}
+          {/* The header holds search plus the owner-only "sync presets" action (add-model
+              entry points live in each group header); on narrow screens (flex-wrap wraps it
+              to its own line) the search box shrinks flexibly, fixed width at >=sm. */}
           <div className="flex min-w-0 max-w-full grow items-center gap-2 sm:grow-0">
             <div className="min-w-0 flex-1 sm:w-56 sm:flex-none">
               <Input
@@ -438,6 +539,16 @@ export function ModelsPage() {
                 placeholder={S.models.searchPlaceholder}
               />
             </div>
+            {isOwner && (
+              <Button
+                size="sm"
+                onClick={() => void syncPresets()}
+                disabled={busy || rows === null}
+                title={S.models.syncCatalogHint}
+              >
+                {S.models.syncCatalog}
+              </Button>
+            )}
           </div>
         </div>
 
@@ -498,6 +609,7 @@ export function ModelsPage() {
                           disabled={busy}
                           onClick={() => setAddingTo(group.provider.id)}
                         >
+                          <GlyphIcon d={PLUS_ICON} size={13} />
                           {S.models.addToGroup}
                         </Button>
                       </span>
@@ -514,9 +626,33 @@ export function ModelsPage() {
                           disabled={busy}
                           onClick={() => setGroupKeyFor(group.provider.id)}
                         >
+                          <GlyphIcon d={KEY_ICON} size={13} />
                           {S.models.groupApiKey}
                         </Button>
                       </span>
+                    )}
+                    {isOwner && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="shrink-0"
+                        disabled={busy || speedRunning !== null}
+                        aria-label={`${S.models.speedTest} ${group.provider.label}`}
+                        title={
+                          speedRunning === group.provider.id
+                            ? S.models.speedPending
+                            : S.models.speedTest
+                        }
+                        onClick={() => setSpeedFor(group.provider.id)}
+                      >
+                        <GlyphIcon d={GAUGE_ICON} size={13} />
+                        {/* Phone width: icon only (the header can't fit three labeled actions at 390px). */}
+                        <span className="hidden sm:inline">
+                          {speedRunning === group.provider.id
+                            ? S.models.speedPending
+                            : S.models.speedTest}
+                        </span>
+                      </Button>
                     )}
                     {group.provider.apiKeyUrl && (
                       // Not enough room on phone width for all group-level actions: collapse
@@ -568,6 +704,7 @@ export function ModelsPage() {
                               currency={currency}
                               isDefault={sameModelRef(rowRef(row), defaultModel)}
                               isVisionModel={sameModelRef(rowRef(row), visionModel)}
+                              speed={speedResults.get(speedKey(row.provider, row.modelId))}
                               onOpen={() => setEditing(rowRef(row))}
                             />
                           ))
@@ -627,6 +764,26 @@ export function ModelsPage() {
         />
       )}
 
+      {speedFor !== null && (
+        <Modal open title={S.models.speedTestTitle} onClose={() => setSpeedFor(null)}>
+          <p className="text-sm text-gray-600 dark:text-gray-300">
+            {S.models.speedTestConfirm(rows?.filter((r) => r.provider === speedFor).length ?? 0)}
+          </p>
+          <div className="mt-4 flex justify-end gap-2">
+            <Button onClick={() => setSpeedFor(null)}>{S.common.cancel}</Button>
+            <Button
+              variant="primary"
+              onClick={() => {
+                const id = speedFor;
+                setSpeedFor(null);
+                if (id) void runSpeedTest(id);
+              }}
+            >
+              {S.models.speedTestStart}
+            </Button>
+          </div>
+        </Modal>
+      )}
       {addGroupOpen && (
         <Modal
           open
@@ -718,18 +875,25 @@ export function ModelsPage() {
 // Model card
 // ---------------------------------------------------------------------------
 
-/** Card: display name + upstream id + status badges; context / pricing / key status folded into one line of small text. The whole card is clickable. */
+/**
+ * Card: display name + upstream id + status badges; context / pricing / key status folded
+ * into one line of small text; group speed-test results (TTFT / TPS, tone-colored) ride the
+ * title row's right edge. The whole card is clickable (the model homepage link lives in the
+ * config dialog).
+ */
 function ModelCard({
   row,
   currency,
   isDefault,
   isVisionModel,
+  speed,
   onOpen,
 }: {
   row: RowState;
   currency: Currency;
   isDefault: boolean;
   isVisionModel: boolean;
+  speed?: SpeedResult | "pending";
   onOpen: () => void;
 }) {
   const priced = row.cacheRead || row.cacheWrite || row.output;
@@ -747,6 +911,40 @@ function ModelCard({
         : S.models.noKey,
   ].filter((v): v is string => v !== null);
 
+  const speedBadges =
+    speed === "pending" ? (
+      <span className="shrink-0 text-[11px] text-gray-400">{S.models.speedPending}</span>
+    ) : speed ? (
+      speed.ok ? (
+        <span className="flex shrink-0 items-center gap-1.5 text-[11px] font-medium">
+          {speed.ttftMs !== undefined && (
+            <span
+              className={`flex items-center gap-0.5 ${TONE_CLASS[ttftTone(speed.ttftMs)]}`}
+              title={S.models.ttftTitle}
+            >
+              <GlyphIcon d={CLOCK_ICON} size={11} />
+              {Math.round(speed.ttftMs)}ms
+            </span>
+          )}
+          {speed.tps !== undefined && (
+            <span
+              className={`flex items-center gap-0.5 ${TONE_CLASS[tpsTone(speed.tps)]}`}
+              title={S.models.tpsTitle}
+            >
+              <GlyphIcon d={ZAP_ICON} size={11} />
+              {speed.tps} tok/s
+            </span>
+          )}
+        </span>
+      ) : (
+        <span
+          className="shrink-0 text-[11px] font-medium text-red-600 dark:text-red-400"
+          title={speed.message}
+        >
+          {S.models.speedFailed}
+        </span>
+      )
+    ) : null;
   return (
     <button
       type="button"
@@ -767,8 +965,13 @@ function ModelCard({
           {row.modelId}
         </span>
       )}
-      <span className="truncate text-[11px] text-gray-400 dark:text-gray-500">
-        {meta.join(" · ")}
+      {/* Meta line: the truncating text takes the flexible space; speed badges keep their own
+          non-shrinking slot on the right so the numbers never wrap or get pushed out. */}
+      <span className="flex w-full items-center gap-1.5">
+        <span className="min-w-0 flex-1 truncate text-[11px] text-gray-400 dark:text-gray-500">
+          {meta.join(" · ")}
+        </span>
+        {speedBadges}
       </span>
     </button>
   );
@@ -1020,16 +1223,29 @@ function ModelDialog({
           <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
             {S.models.modelId}
           </span>
-          {dialogProvider?.modelsUrl && (
-            <a
-              href={dialogProvider.modelsUrl}
-              target="_blank"
-              rel="noreferrer noopener"
-              className="shrink-0 text-xs text-brand-600 underline-offset-2 hover:underline dark:text-brand-300"
-            >
-              {S.models.getModelIds} ↗
-            </a>
-          )}
+          <span className="flex shrink-0 items-baseline gap-2.5">
+            {/* Model homepage (the model's own page; gateway groups have per-model URLs) — only for existing rows, whose identity is settled. */}
+            {row && modelHomepageUrl(row.provider, row.modelId) && (
+              <a
+                href={modelHomepageUrl(row.provider, row.modelId)}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="shrink-0 text-xs text-brand-600 underline-offset-2 hover:underline dark:text-brand-300"
+              >
+                {S.models.homepage} ↗
+              </a>
+            )}
+            {dialogProvider?.modelsUrl && (
+              <a
+                href={dialogProvider.modelsUrl}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="shrink-0 text-xs text-brand-600 underline-offset-2 hover:underline dark:text-brand-300"
+              >
+                {S.models.getModelIds} ↗
+              </a>
+            )}
+          </span>
         </span>
         <Input
           size="sm"
@@ -1210,8 +1426,10 @@ function ModelDialog({
           </div>
         )}
 
-        {/* 1) API key — the most commonly used, placed first in the field section; "get API key" link next to the label. */}
-        <label className="block">
+        {/* 1) API key — the most commonly used, placed first in the field section; "get API key"
+            link next to the label. PasswordInput carries its own show/hide toggle and brings its
+            own <label> wrapper, so this outer container is a <div> (a nested <label> is invalid). */}
+        <div className="block">
           <span className="mb-1 flex items-baseline justify-between gap-2">
             <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
               {S.models.apiKey}
@@ -1227,9 +1445,8 @@ function ModelDialog({
               </a>
             )}
           </span>
-          <Input
+          <PasswordInput
             size="sm"
-            type="password"
             value={form.apiKeyInput}
             disabled={!canEdit}
             onChange={(e) => set({ apiKeyInput: e.target.value, clearApiKey: false })}
@@ -1238,7 +1455,7 @@ function ModelDialog({
             autoFocus={!isNew}
             placeholder={apiKeyHint}
           />
-        </label>
+        </div>
         {envNote && <p className="text-xs text-gray-400 dark:text-gray-500">{envNote}</p>}
         {form.credential?.apiKeyMasked && !form.apiKeyInput && (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400">

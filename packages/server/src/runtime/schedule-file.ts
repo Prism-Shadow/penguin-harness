@@ -35,13 +35,13 @@ export interface ScheduleDefinition {
   sessionId?: string;
   /** Workspace for new-Session mode (same semantics as manually starting a session; auto-creates a temp directory if unspecified). */
   workspace?: string;
-  /** Model for new-Session mode (upstream id, paired with provider; defaults to the Project's default reference). */
+  /** Model for new-Session mode (upstream id, always paired with provider; omit both for the Project's default reference). */
   modelId?: string;
   /**
-   * Vendor grouping for `model_id` (paired reference); when omitted, resolved per
-   * resolveModelRef semantics — whether the reference is resolvable is validated by the
-   * caller against config at reconciliation/save time (this module does pure parsing
-   * and never touches config).
+   * Vendor grouping for `model_id`; always present when `model_id` is (the pairing rule
+   * is enforced here). Whether that pair names a configured model is validated by the
+   * caller against config at reconciliation/save time — this module does pure parsing
+   * and never touches config.
    */
   provider?: string;
 }
@@ -148,13 +148,8 @@ export function parseScheduleFile(name: string, raw: string): ScheduleParseResul
     }
     provider = t["provider"];
   }
-  if (provider !== undefined && modelId === undefined) {
-    return {
-      ok: false,
-      error:
-        "provider is only used together with model_id (a model reference must be given as a pair)",
-    };
-  }
+  // Target conflicts are reported first: when session_id is set the whole model reference
+  // is out of place, so complaining about its shape would point at the wrong fix.
   if (
     sessionId !== undefined &&
     (workspace !== undefined || modelId !== undefined || provider !== undefined)
@@ -162,6 +157,18 @@ export function parseScheduleFile(name: string, raw: string): ScheduleParseResul
     return {
       ok: false,
       error: "Pick one target: workspace and provider / model_id are only for new-Session mode",
+    };
+  }
+  // A model reference is always a complete (provider, model_id) pair: neither half is
+  // ever inferred from the other, so a file carrying only one of them is invalid rather
+  // than something to resolve later. Omit both to run on the Project's default model.
+  // A file written before this rule existed (model_id alone) therefore parses as
+  // invalid: it is listed in invalidFiles and skipped, never scheduled.
+  if ((modelId === undefined) !== (provider === undefined)) {
+    return {
+      ok: false,
+      error:
+        "provider and model_id must be given together (a model reference is always a pair); omit both to use the Project's default model",
     };
   }
 

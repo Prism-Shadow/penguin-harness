@@ -35,7 +35,7 @@ The openrouter, siliconflow, and custom groups speak the OpenAI-compatible proto
 
 ## Project config
 
-`<root>/<project>/.project_config.toml` is the Project's single config file: a hidden file written with mode 0600, with credentials inlined on the model entries. Model identity is always the `(provider, model_id)` pair — string concatenation is forbidden everywhere.
+`<root>/<project>/.project_config.toml` is the Project's single config file: a hidden file written with mode 0600, with credentials inlined on the model entries. Model identity is always the `(provider, model_id)` pair — string concatenation is forbidden everywhere, and every reference into this file carries both halves: the provider is never inferred from a bare `model_id`.
 
 | Field | Description |
 | --- | --- |
@@ -143,9 +143,11 @@ compaction:
 | `{{PLATFORM}}` | Runtime platform |
 | `{{OS_VERSION}}` | Operating system version |
 | `{{DATE}}` | Current date |
-| `{{CWD}}` | Workspace path |
-| `{{AGENT_ID}}` | Agent id |
 | `{{PROJECT_DIR}}` | Project directory |
+| `{{AGENT_ID}}` | Agent id |
+| `{{CWD}}` | Workspace path |
+| `{{PROVIDER}}` | Model provider group |
+| `{{MODEL_ID}}` | Upstream model id |
 | `{{SESSION_ID}}` | Session id |
 
 `agent_state/AGENTS.md` is the developer-editable instruction file, injected via `{{AGENTS_MD}}` and empty by default — it is also the file an optimizer edits most (see [Self-Improvement](/self-improvement)).
@@ -157,6 +159,7 @@ compaction:
 - Key names must match `^[A-Za-z_][A-Za-z0-9_]*$` (shell environment variable naming rules);
 - Values are injected only into tool subprocess environments and never enter the model context or the Trace;
 - Only key names are disclosed in the system prompt via `{{VAULT_KEYS}}`;
+- Saving through the Web/API invalidates the Agent's cached Session runtimes: the next Task on any of its Sessions re-resumes and runs with the new values; a Task already in flight keeps the values it started with (a direct CLI file edit reaches a running server only when a Session is next created or resumed);
 - Managed via `penguin config vault set/list/remove` or the Web Vault tab.
 
 ## Schedules
@@ -172,7 +175,7 @@ Each file `agent_state/schedule/<name>.toml` describes one scheduled task (the f
 | `end_at` | no | End time; must be later than `start_at` |
 | `session_id` | no | Bind to an existing Session; mutually exclusive with the three fields below |
 | `workspace` | no | Workspace for new-Session mode |
-| `provider` / `model_id` | no | Paired model reference for new-Session mode |
+| `provider` / `model_id` | no | Paired model reference for new-Session mode; write both or neither — a lone `model_id` is rejected, and with neither the Project's default model is used |
 
 ```toml
 prompt = "Check yesterday's builds and summarize the failures"

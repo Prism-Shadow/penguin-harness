@@ -13,7 +13,7 @@ description: 通过安装脚本、npm 或源码安装 PenguinHarness。
 在 Linux / macOS 上执行：
 
 ```bash
-curl -fsSL https://github.com/Prism-Shadow/penguin-harness/releases/latest/download/install.sh | sh
+curl -fsSL https://penguin.ooo/install.sh | sh
 ```
 
 脚本按平台下载 `penguin-{linux,darwin}-{x64,arm64}.tar.gz`，其中捆绑了官方 Node.js 运行时。其他平台**不会自动回退**：脚本会退出并提示先安装 Node.js >= 24、再携带 `--universal` 重新执行，改用不含运行时的 `penguin-universal.tar.gz`。
@@ -34,7 +34,7 @@ penguin -v
 | 完整性校验 | Release 提供 checksum 资产时自动进行 sha256 校验 |
 | 升级 | 重新执行安装脚本即可，文件原子替换 |
 
-脚本参数通过 `curl ... | sh -s -- --universal` 的形式传入。
+脚本参数写在 `sh -s --` 之后，例如 `curl -fsSL https://penguin.ooo/install.sh | sh -s -- --universal`。
 
 ### 数据目录
 

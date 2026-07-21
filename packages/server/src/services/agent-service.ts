@@ -10,6 +10,8 @@
  * template's comments).
  */
 import fs from "node:fs/promises";
+import type { Dirent } from "node:fs";
+import path from "node:path";
 import { HttpError } from "../http/errors.js";
 import {
   agentDir,
@@ -20,6 +22,7 @@ import {
   isValidId,
   loadAgentVault,
   scheduleDir,
+  skillsDir,
   systemConfigPath,
 } from "@prismshadow/penguin-core";
 import type { AgentsRepo } from "../db/repos/agents.js";
@@ -41,6 +44,8 @@ export interface AgentListItem {
   vaultKeyCount: number;
   /** Number of scheduled tasks (count of .toml files under schedule/, including invalid ones). */
   scheduleCount: number;
+  /** Number of installed Skills (count of skills/<name>/ directories that contain a SKILL.md). */
+  skillCount: number;
 }
 
 export class AgentService {
@@ -86,11 +91,12 @@ export class AgentService {
     );
     return Promise.all(
       sorted.map(async (row) => {
-        const [meta, updatedAt, vaultKeyCount, scheduleCount] = await Promise.all([
+        const [meta, updatedAt, vaultKeyCount, scheduleCount, skillCount] = await Promise.all([
           this.agentConfig.readCardMeta(projectId, row.agentId),
           this.configUpdatedAt(projectId, row.agentId),
           this.vaultKeyCount(projectId, row.agentId),
           this.scheduleCount(projectId, row.agentId),
+          this.skillCount(projectId, row.agentId),
         ]);
         return {
           agentId: row.agentId,
@@ -99,6 +105,7 @@ export class AgentService {
           ...(updatedAt !== undefined ? { updatedAt } : {}),
           vaultKeyCount,
           scheduleCount,
+          skillCount,
         };
       }),
     );
@@ -121,6 +128,30 @@ export class AgentService {
     } catch {
       return 0;
     }
+  }
+
+  /** Number of installed Skills: count of skills/<name>/ directories containing a SKILL.md (0 if the directory doesn't exist). */
+  private async skillCount(projectId: string, agentId: string): Promise<number> {
+    const base = skillsDir(this.root, projectId, agentId);
+    let dirents: Dirent[];
+    try {
+      dirents = await fs.readdir(base, { withFileTypes: true });
+    } catch {
+      return 0;
+    }
+    const present = await Promise.all(
+      dirents
+        .filter((d) => d.isDirectory())
+        .map(async (d) => {
+          try {
+            await fs.access(path.join(base, d.name, "SKILL.md"));
+            return true;
+          } catch {
+            return false;
+          }
+        }),
+    );
+    return present.filter(Boolean).length;
   }
 
   /** Last config modification time: the later of system_config.yaml and AGENTS.md mtime; omitted if neither is readable. */
@@ -218,6 +249,8 @@ export class AgentService {
       version: meta.version,
       vaultKeyCount: 0,
       scheduleCount: 0,
+      // Read the real count: coreCreateAgent seeds the default skill set for default_agent.
+      skillCount: await this.skillCount(projectId, agentId),
     };
   }
 }

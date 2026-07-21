@@ -6,7 +6,13 @@ export const en: Strings = {
   docsBadge: "Docs",
 
   nav: {
-    home: "Website",
+    highlights: "Highlights",
+    quickstart: "Quick start",
+    benchmark: "Benchmark",
+    contract: "CONTRACT.md",
+    features: "Features",
+    blog: "Blog",
+    docs: "Docs",
     github: "GitHub",
     openMenu: "Open navigation",
     closeMenu: "Close navigation",

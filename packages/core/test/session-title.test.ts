@@ -10,6 +10,7 @@ import {
   generateTitleWithLLM,
   sanitizeTitle,
   Session,
+  stripConversationMarkers,
   thinkingMessage,
   tokenUsage,
   userText,
@@ -119,6 +120,24 @@ describe("session-title", () => {
     expect(sanitizeTitle("『标题』！")).toBe("标题");
     expect(sanitizeTitle("  \n ")).toBeNull();
     expect(sanitizeTitle("x".repeat(50))).toHaveLength(30);
+    // A leaked <use_skills> block is stripped from the model output.
+    expect(sanitizeTitle("<use_skills>\nskills: web-design\n</use_skills>\n构建落地页")).toBe(
+      "构建落地页",
+    );
+  });
+
+  it("stripConversationMarkers: removes machine marker blocks, keeps the human body", () => {
+    // The skill-invocation block that wraps a first user message must not reach the title.
+    expect(
+      stripConversationMarkers(
+        "<use_skills>\nskills: penguin-sdk, web-design\n</use_skills>\n做一个 RAG 应用",
+      ),
+    ).toBe("做一个 RAG 应用");
+    // Handoff and scheduled-task markers are stripped too; ordinary angle-bracket text stays.
+    expect(stripConversationMarkers("<handoff_from>data_analyst</handoff_from>继续分析")).toBe(
+      "继续分析",
+    );
+    expect(stripConversationMarkers("render a <div> element")).toBe("render a <div> element");
   });
 
   it("Session.generateTitle: sends via createBareLLM; returns null when no factory is provided", async () => {
@@ -162,6 +181,10 @@ describe("session-title", () => {
     // Material = the first Task's user text + model text (thinking does not count), matching
     // buildTitlePrompt's shape.
     expect(seen[0]).toBe(buildTitlePrompt("user question", "answer body"));
+    // Anti-CoT shape: an explicit no-thinking rule, and the prompt ends with an empty think
+    // block so reasoning models treat their thinking phase as already closed.
+    expect(seen[0]).toContain("do not think aloud");
+    expect(seen[0]!.endsWith("<think></think>")).toBe(true);
 
     // No request is sent when no material has been collected (run was never called).
     const idle = new Session({

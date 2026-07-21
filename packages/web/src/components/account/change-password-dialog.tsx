@@ -73,6 +73,7 @@ export function ChangePasswordDialog({ open, onClose }: { open: boolean; onClose
           value={oldPassword}
           onChange={(e) => setOldPassword(e.target.value)}
           autoComplete="current-password"
+          hint={S.account.oldPasswordHint}
           autoFocus
         />
         <PasswordInput

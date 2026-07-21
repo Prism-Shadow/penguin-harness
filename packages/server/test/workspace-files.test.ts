@@ -122,6 +122,7 @@ describe("files/stat route (batch existence check)", () => {
   let owner: ReturnType<typeof apiClient>;
   let outsider: ReturnType<typeof apiClient>;
   let sessionId: string;
+  let workspace: string;
 
   beforeEach(async () => {
     t = await createTestApp();
@@ -141,12 +142,42 @@ describe("files/stat route (batch existence check)", () => {
       await owner.post(`/api/projects/${projectId}/agents/default_agent/sessions`, {})
     ).json()) as SessionCreateResponse;
     sessionId = sess.session.sessionId;
+    workspace = sess.session.workspace;
     await fs.mkdir(path.join(sess.session.workspace, "sub"));
     await fs.writeFile(path.join(sess.session.workspace, "a.txt"), "A");
     await fs.writeFile(path.join(sess.session.workspace, "sub", "b.md"), "B");
   });
   afterEach(async () => {
     await t.cleanup();
+  });
+
+  it("files/content on html: inline stays text/plain; preview=1 keeps text/html under a CSP sandbox; download keeps the real type with no CSP", async () => {
+    await fs.writeFile(path.join(workspace, "page.html"), "<!doctype html><script>1</script>");
+    const url = `/api/sessions/${sessionId}/files/content?path=page.html`;
+
+    const inline = await owner.get(url);
+    expect(inline.status).toBe(200);
+    expect(inline.headers.get("content-type")).toContain("text/plain");
+    expect(inline.headers.get("content-security-policy")).toBeNull();
+
+    const preview = await owner.get(`${url}&preview=1`);
+    expect(preview.status).toBe(200);
+    expect(preview.headers.get("content-type")).toContain("text/html");
+    const csp = preview.headers.get("content-security-policy") ?? "";
+    expect(csp).toContain("sandbox");
+    expect(csp).not.toContain("allow-same-origin");
+    expect(preview.headers.get("content-disposition")).toContain("inline");
+
+    // download wins over preview: attachment + real type, no CSP needed.
+    const download = await owner.get(`${url}&download=1&preview=1`);
+    expect(download.headers.get("content-type")).toContain("text/html");
+    expect(download.headers.get("content-disposition")).toContain("attachment");
+    expect(download.headers.get("content-security-policy")).toBeNull();
+
+    // Non-scriptable files are unaffected by preview.
+    const txt = await owner.get(`/api/sessions/${sessionId}/files/content?path=a.txt&preview=1`);
+    expect(txt.headers.get("content-type")).toContain("text/plain");
+    expect(txt.headers.get("content-security-policy")).toBeNull();
   });
 
   it("existing files return in order, deduplicated; missing / directory / out-of-bounds all count as nonexistent, always 200", async () => {

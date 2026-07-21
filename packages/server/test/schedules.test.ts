@@ -146,17 +146,24 @@ describe("schedules api", () => {
     ).toBe(404);
   });
 
-  it("validation 400: period below the minimum, invalid instant, pick-one target, invalid task name", async () => {
+  it("validation 400: period below the minimum, invalid instant, pick-one target, half a model reference, invalid task name", async () => {
     const ok = { prompt: "p", enabled: false, startAt: FUTURE };
     const cases = [
       { name: "j1", ...ok, period: "4m" },
       { name: "j2", ...ok, startAt: "someday" },
       { name: "j3", ...ok, sessionId: "s", workspace: "/w" },
+      // A model reference is a pair: neither half alone is accepted (nothing is inferred).
+      { name: "j4", ...ok, modelId: "deepseek-v4-pro" },
+      { name: "j5", ...ok, provider: "deepseek" },
       { name: "bad.name", ...ok },
     ];
     for (const body of cases) {
       expect((await owner.post(base, body)).status, JSON.stringify(body)).toBe(400);
     }
+    // Nothing was persisted for any of them.
+    const list = (await (await owner.get(base)).json()) as SchedulesResponse;
+    expect(list.schedules).toEqual([]);
+    expect(list.invalidFiles).toEqual([]);
   });
 
   it("hand-edited files: invalid ones land in invalidFiles; expired one-shots are marked missed during reconciliation", async () => {
@@ -174,5 +181,23 @@ describe("schedules api", () => {
     expect(stale?.status).toBe("missed");
     // For a hand-edited file, the creator falls back to the Project owner.
     expect(stale?.creatorUserId).toBe("owner_a");
+  });
+
+  it("a file holding model_id without provider lands in invalidFiles instead of being scheduled", async () => {
+    // What a schedule file persisted before the pairing rule looks like: the provider is
+    // never filled in for it, the file is simply reported invalid and skipped.
+    const dir = scheduleDir(t.root, projectId, "default_agent");
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(
+      path.join(dir, "legacy.toml"),
+      `prompt = "p"\nenabled = true\nstart_at = "${FUTURE}"\nmodel_id = "deepseek-v4-pro"\n`,
+      "utf8",
+    );
+    const list = (await (await owner.get(base)).json()) as SchedulesResponse;
+    expect(list.schedules).toEqual([]);
+    expect(list.invalidFiles.map((f) => f.name)).toEqual(["legacy"]);
+    expect(list.invalidFiles[0]?.error).toContain("given together");
+    // Reading it by name reports the same error rather than 404 or a 500.
+    expect((await owner.get(`${base}/legacy`)).status).toBe(400);
   });
 });

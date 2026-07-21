@@ -41,6 +41,7 @@ import {
   skillsDir,
   systemConfigPath,
   toolsDir,
+  type ModelRef,
   type ProjectConfig,
 } from "../src/state/index.js";
 import { sessionEnvironment } from "../src/internal/session-support.js";
@@ -288,6 +289,8 @@ describe("assembleSystemPrompt", () => {
       sessionEnvironment("/tmp/penguin-ws", "session-test-1", {
         agentId: DEFAULT_AGENT_ID,
         projectDir: "/tmp/proj",
+        provider: "deepseek",
+        modelId: "deepseek-v4-pro",
       }),
     );
     expect(prompt).toContain("AGENTS.md");
@@ -341,6 +344,8 @@ describe("assembleSystemPrompt", () => {
       cwd: "/tmp/ws",
       agentId: "agent-x",
       projectDir: "/tmp/proj",
+      provider: "deepseek",
+      modelId: "deepseek-v4-pro",
       platform: "darwin",
       osVersion: "Darwin 25.0.0",
       date: "2026-06-30",
@@ -393,6 +398,8 @@ describe("assembleSystemPrompt", () => {
       cwd: "/tmp/ws",
       agentId: "agent-x",
       projectDir: "/tmp/proj",
+      provider: "deepseek",
+      modelId: "deepseek-v4-pro",
       platform: "darwin",
       osVersion: "Darwin 25.0.0",
       date: "2026-06-30",
@@ -466,7 +473,7 @@ describe("assembleSystemPrompt", () => {
     const env = sessionEnvironment(
       "/tmp/penguin-ws",
       "session-test-1",
-      { agentId: "agent-x", projectDir: "/tmp/proj" },
+      { agentId: "agent-x", projectDir: "/tmp/proj", provider: "openai", modelId: "gpt-5.5" },
       new Date("2026-06-30T00:00:00"),
     );
     const prompt = assembleSystemPrompt(state, env);
@@ -476,15 +483,19 @@ describe("assembleSystemPrompt", () => {
     expect(prompt).toContain("CWD: /tmp/penguin-ws");
     expect(prompt).toContain("Agent ID: agent-x");
     expect(prompt).toContain("Project Dir: /tmp/proj");
+    expect(prompt).toContain("Provider: openai");
+    expect(prompt).toContain("Model ID: gpt-5.5");
     expect(prompt).toContain("Platform:");
     expect(prompt).toContain("OS Version:");
     expect(prompt).toContain("Date: 2026-06-30");
     expect(prompt.indexOf("Platform:")).toBeLessThan(prompt.indexOf("OS Version:"));
     expect(prompt.indexOf("OS Version:")).toBeLessThan(prompt.indexOf("Date:"));
-    expect(prompt.indexOf("Date:")).toBeLessThan(prompt.indexOf("CWD:"));
-    expect(prompt.indexOf("CWD:")).toBeLessThan(prompt.indexOf("Agent ID:"));
-    expect(prompt.indexOf("Agent ID:")).toBeLessThan(prompt.indexOf("Project Dir:"));
-    expect(prompt.indexOf("Project Dir:")).toBeLessThan(prompt.indexOf("Session ID:"));
+    expect(prompt.indexOf("Date:")).toBeLessThan(prompt.indexOf("Project Dir:"));
+    expect(prompt.indexOf("Project Dir:")).toBeLessThan(prompt.indexOf("Agent ID:"));
+    expect(prompt.indexOf("Agent ID:")).toBeLessThan(prompt.indexOf("CWD:"));
+    expect(prompt.indexOf("CWD:")).toBeLessThan(prompt.indexOf("Provider:"));
+    expect(prompt.indexOf("Provider:")).toBeLessThan(prompt.indexOf("Model ID:"));
+    expect(prompt.indexOf("Model ID:")).toBeLessThan(prompt.indexOf("Session ID:"));
   });
 });
 
@@ -531,15 +542,41 @@ describe("project-config round trip", () => {
     expect(getModel(loaded, { provider: "custom", model_id: "unknown-model" })).toBeUndefined();
   });
 
-  it("infers the provider from the builtin catalog when addModel omits it", async () => {
-    await addModel(tmpRoot, DEFAULT_PROJECT_ID, { model_id: "claude-sonnet-4-6" });
-    await addModel(tmpRoot, DEFAULT_PROJECT_ID, { model_id: "my-own-model" });
+  it("addModel files the entry under the provider it was given, never one of its own choosing", async () => {
+    // provider is a required field: nothing is inferred from the builtin catalog, so a model
+    // outside the known groups is filed under custom only because the caller said so. glm-5.2
+    // is sold by both the Qwen Token Plan gateway and Zhipu — the caller names which one, and
+    // the entry (with its api_key) lands in exactly that group.
+    await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
+      provider: "anthropic",
+      model_id: "claude-sonnet-4-6",
+    });
+    await addModel(tmpRoot, DEFAULT_PROJECT_ID, { provider: "custom", model_id: "my-own-model" });
+    await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
+      provider: "zhipu",
+      model_id: "glm-5.2",
+      api_key: "sk-zhipu",
+    });
     const loaded = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
-    // A catalog hit gets its provider; otherwise it falls back to custom.
     expect(
       getModel(loaded, { provider: "anthropic", model_id: "claude-sonnet-4-6" }),
     ).toBeDefined();
     expect(getModel(loaded, { provider: "custom", model_id: "my-own-model" })).toBeDefined();
+    expect(getModel(loaded, { provider: "zhipu", model_id: "glm-5.2" })?.api_key).toBe("sk-zhipu");
+    // The key never leaks into the other group that resells the same bare id.
+    expect(
+      getModel(loaded, { provider: "qwen-token-plan", model_id: "glm-5.2" })?.api_key,
+    ).toBeUndefined();
+  });
+
+  it("addModel requires an explicit provider: a bare model_id does not type-check", () => {
+    // Compile-time contract (asserted by `pnpm typecheck`, which includes this file): with the
+    // catalog inference gone there is nothing to fall back to, so the entry's provider field is
+    // required rather than optional. vitest only checks that the call expression exists.
+    const bare = { model_id: "glm-5.2" };
+    // @ts-expect-error provider is required: a model reference is always a (provider, model_id) pair.
+    const call = (): Promise<ProjectConfig> => addModel(tmpRoot, DEFAULT_PROJECT_ID, bare);
+    expect(call).toBeTypeOf("function");
   });
 
   it("upserts by the (provider, model_id) pair; same model_id under two providers co-exists", async () => {
@@ -706,7 +743,10 @@ describe("project-config round trip", () => {
         (c) => c.provider === entry.provider && c.modelId === entry.model_id,
       )!;
       expect(entry.vision).toBe(cat.supportsVision ? undefined : false);
-      expect(entry.pricing?.unit).toBe("usd_per_mtok");
+      // A catalog entry without a list price (the Token Plan preview model) presets no
+      // pricing; every other catalog entry stores USD pricing.
+      if (cat.pricing === undefined) expect(entry.pricing).toBeUndefined();
+      else expect(entry.pricing?.unit).toBe("usd_per_mtok");
       // A model that auto-routes leaves client_type unset; a gateway model (OpenRouter)
       // explicitly sets it to openai.
       expect(entry.client_type).toBe(cat.clientType);
@@ -800,7 +840,7 @@ describe("project-config round trip", () => {
   });
 });
 
-describe('resolveModelRef (the single "provider omitted" resolution entry point)', () => {
+describe("resolveModelRef (validates a (provider, model_id) pair against the config)", () => {
   const cfg: ProjectConfig = {
     models: [
       { provider: "deepseek", model_id: "deepseek-v4-pro" },
@@ -809,37 +849,44 @@ describe('resolveModelRef (the single "provider omitted" resolution entry point)
     ],
   };
 
-  it("resolves a globally unique model_id without provider (exact match only)", () => {
-    expect(resolveModelRef(cfg, "deepseek-v4-pro")).toEqual({
+  it("returns the pair when it names a configured entry", () => {
+    expect(resolveModelRef(cfg, "deepseek-v4-pro", "deepseek")).toEqual({
       provider: "deepseek",
       model_id: "deepseek-v4-pro",
     });
-    // Exact-match lookup, no fuzzy/prefix matching.
-    expect(() => resolveModelRef(cfg, "deepseek-v4")).toThrow(/is not in the Project config/);
-  });
-
-  it("validates the exact pair when provider is given", () => {
+    // The same bare model_id under two groups is never ambiguous: each pair names its own entry.
     expect(resolveModelRef(cfg, "shared-id", "siliconflow")).toEqual({
       provider: "siliconflow",
       model_id: "shared-id",
     });
-    // A wrong provider grouping likewise fails: the error includes the pair reference.
+    expect(resolveModelRef(cfg, "shared-id", "openrouter")).toEqual({
+      provider: "openrouter",
+      model_id: "shared-id",
+    });
+  });
+
+  it("throws when the pair is not configured; the error carries the pair reference", () => {
+    // Wrong group for a configured model_id: no fallback to "the entry that happens to have
+    // this id" — a pair the config doesn't have simply isn't a model.
     expect(() => resolveModelRef(cfg, "shared-id", "openai")).toThrow(
-      /\(provider=openai, model_id=shared-id\)/,
+      /is not in the Project config.*\(provider=openai, model_id=shared-id\)/,
+    );
+    // Unknown model_id, and exact matching only (no fuzzy/prefix matching).
+    expect(() => resolveModelRef(cfg, "no-such-model", "deepseek")).toThrow(
+      /\(provider=deepseek, model_id=no-such-model\)/,
+    );
+    expect(() => resolveModelRef(cfg, "deepseek-v4", "deepseek")).toThrow(
+      /is not in the Project config/,
     );
   });
 
-  it("errors clearly on zero matches", () => {
-    expect(() => resolveModelRef(cfg, "no-such-model")).toThrow(
-      /is not in the Project config.*no-such-model/,
-    );
-  });
-
-  it("errors on ambiguity, listing the candidate pair references", () => {
-    expect(() => resolveModelRef(cfg, "shared-id")).toThrow(/Ambiguous/);
-    expect(() => resolveModelRef(cfg, "shared-id")).toThrow(
-      /\(provider=siliconflow, model_id=shared-id\).*\(provider=openrouter, model_id=shared-id\)/,
-    );
+  it("requires provider: a bare model_id does not type-check (no resolution path left)", () => {
+    // The pair is enforced by the type checker — asserted by `pnpm typecheck`, which includes
+    // this file; the unused-directive error is the failure mode if the parameter ever goes
+    // optional again. vitest only checks that the call expression exists.
+    // @ts-expect-error provider is required: a model reference is always a (provider, model_id) pair.
+    const call = (): ModelRef => resolveModelRef(cfg, "deepseek-v4-pro");
+    expect(call).toBeTypeOf("function");
   });
 });
 

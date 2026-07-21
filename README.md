@@ -4,12 +4,9 @@
 
 <h1 align="center">PenguinHarness</h1>
 
-<p align="center"><b>Efficient Self-Improving Harness for Everyone</b></p>
+<p align="center"><b>With LangChain, you build agents by hand — at 1× speed.<br />With PenguinHarness, agents build agents — at 100×.</b></p>
 
-<p align="center">
-  Open-source, local-first infrastructure that builds AI agents for you —
-  from automatic agent construction to recursive self-improvement.
-</p>
+<p align="center">A zero-code Harness CLI and Web UI, connected to 1000+ models.</p>
 
 <p align="center">
   <a href="https://github.com/Prism-Shadow/penguin-harness/actions/workflows/ci.yml"><img src="https://github.com/Prism-Shadow/penguin-harness/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
@@ -19,57 +16,104 @@
 </p>
 
 <p align="center">
-  English | <a href="README.zh.md">简体中文</a> ·
-  <a href="https://penguin.ooo/">Website</a> ·
-  <a href="https://penguin.ooo/docs/">Docs</a> ·
-  <a href="https://penguin.ooo/blog">Blog</a>
+  <a href="https://penguin.ooo/"><img src="https://img.shields.io/badge/Website-penguin.ooo-1f6feb?logo=googlechrome&logoColor=white" alt="Website" /></a>
+  <a href="https://penguin.ooo/docs/"><img src="https://img.shields.io/badge/Docs-penguin.ooo%2Fdocs-1f6feb?logo=readthedocs&logoColor=white" alt="Docs" /></a>
+  <a href="https://penguin.ooo/blog"><img src="https://img.shields.io/badge/Blog-penguin.ooo%2Fblog-1f6feb?logo=rss&logoColor=white" alt="Blog" /></a>
 </p>
 
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="packages/landing/src/assets/shots/chat-en-dark.webp" />
-    <img src="packages/landing/src/assets/shots/chat-en-light.webp" alt="PenguinHarness Web App — multi-session chat with live streaming tool calls" width="920" />
-  </picture>
+  <a href="https://discord.gg/eFHKqqcU3D"><img src="https://img.shields.io/badge/Discord-join%20chat-5865F2?logo=discord&logoColor=white" alt="Discord" /></a>
+  <a href="https://x.com/code_hiyouga"><img src="https://img.shields.io/badge/X-code%5Fhiyouga-000000?logo=x&logoColor=white" alt="X (Twitter)" /></a>
+  <a href="https://github.com/Prism-Shadow/penguin-harness-community/blob/main/wechat/group.jpg"><img src="https://img.shields.io/badge/WeChat-user%20group-07C160?logo=wechat&logoColor=white" alt="WeChat" /></a>
 </p>
 
----
+<p align="center">English | <a href="README.zh.md">简体中文</a></p>
 
 ## Why PenguinHarness
 
-- **Simplest Is the Best** — a deliberately minimal toolset over clean low-level interfaces: fewer tool calls, fewer tokens, complex tasks done efficiently.
-- **Harness for Building Agents** — with the PenguinHarness SDK, an Agent builds complete Agent applications for you, autonomously, from scratch.
-- **Harness for Recursive Self-Improvement** — with PenguinHarness Skills, an Agent evaluates and optimizes itself: benchmark, find the lost points, ship version N+1, snapshot before every round.
-- **Local-first and lightweight** — 100% open source, runs on a single CPU, your data never leaves the machine. 1000+ online and local models reachable through one gateway.
-- **Everything observable** — every request, tool call and approval decision lands in an append-only Trace; any Session can be resumed from it.
+Three reasons, in deliberate order — from task quality, to how agents get built, to how they keep improving.
 
-## Quickstart
+### 1. 🏆 Comparable quality, one to two orders of magnitude cheaper
 
-Install with one command (Linux / macOS, x64 / arm64, bundled Node runtime):
+A deliberately minimal toolset over clean low-level interfaces: fewer tool calls, fewer tokens — deeply tuned for open models like DeepSeek. Each harness on the model it is normally paired with, same tasks, head-to-head:
 
-```bash
-curl -fsSL https://github.com/Prism-Shadow/penguin-harness/releases/latest/download/install.sh | sh
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/readme/benchmark-dark.svg" />
+    <img src="assets/readme/benchmark-light.svg" alt="Benchmark: PenguinHarness leads the data-analysis suite and ties OpenAI Codex on coding, at a small fraction of both rivals' cost" width="920" />
+  </picture>
+</p>
+
+**Best accuracy on data analysis — at 1/70 of Claude Code's cost.**
+
+### 2. ⚡ One sentence, and an Agent builds your Agent app
+
+Type one sentence, and an Agent builds the complete Agent application for you — scaffold, code, and run instructions, end to end:
+
+```text
+Collect the docs from https://github.com/ericbuess/claude-code-docs and build a RAG app that answers Claude Code questions as a configuration expert, citing its sources.
 ```
 
-Or via npm (requires Node >= 24; the command it installs is `penguin`):
+And this is the finished product — a docs expert with retrieval, cited sources that link to the original files, and example questions built in:
+
+https://github.com/user-attachments/assets/9b7033e8-f08a-4c3f-bd33-547896664e6e
+
+**And generating this entire RAG app burned just $0.02 (¥0.2) of tokens — on DeepSeek V4 Pro.**
+
+### 3. 🧬 Self-evolution: it gets stronger with use
+
+With PenguinHarness Skills, an Agent evaluates and optimizes itself: run the benchmark, find the lost points, ship version N+1 — with a snapshot before every round, and every request observable in the Trace view.
+
+https://github.com/user-attachments/assets/922d13a6-5ffc-4685-9a39-352f02f9afc0
+
+## Supported Models
+
+| Model            | Providers                                                                        |
+| ---------------- | -------------------------------------------------------------------------------- |
+| DeepSeek V4      | DeepSeek, OpenRouter, Fireworks AI, SiliconFlow, Qwen Token Plan                 |
+| Kimi K3          | OpenRouter, Qwen Pay-As-You-Go                                                   |
+| Kimi K2.6        | Moonshot AI                                                                      |
+| GLM 5.2          | Z.AI, OpenRouter, Fireworks AI, SiliconFlow, Qwen Token Plan, Qwen Pay-As-You-Go |
+| Hunyuan 3        | OpenRouter                                                                       |
+| Qwen 3.8 Max     | Qwen Token Plan (preview)                                                        |
+| GPT 5.5          | OpenAI, OpenRouter                                                               |
+| Gemini 3.5 Flash | Google Gemini, OpenRouter                                                        |
+| Claude Opus 4.8  | Anthropic, OpenRouter                                                            |
+
+Any OpenAI-protocol endpoint is supported: pick a preset above, or point a custom endpoint at any of the 1000+ online and local models.
+
+## Requirements
+
+| Requirement  | Supported                                                                  |
+| ------------ | -------------------------------------------------------------------------- |
+| OS           | Linux, macOS                                                               |
+| Architecture | x64, arm64                                                                 |
+| Runtime      | bundled by the one-line installer (npm installs need Node >= 24)           |
+| Model        | an API key for at least one model                                          |
+
+## Installation
+
+### 🌐 Web App — for humans
+
+🚀 Install and launch the full experience (multi-session chat, Agent/skill/model management, usage stats, Trace observability, evaluation center):
 
 ```bash
-npm install -g @prismshadow/penguin-cli
+curl -fsSL https://penguin.ooo/install.sh | sh
+penguin web        # start the service and open http://127.0.0.1:7364 (first login: admin / penguin-2026)
 ```
 
-Then launch the Web App — or stay in the terminal:
+📦 Or via npm: `npm install -g @prismshadow/penguin-cli`. Configure models on the in-app Models page, then chat.
+
+### 🤖 CLI & SDK — for agents
+
+The same engine, scriptable — made to be driven by agents (and agents building agents):
 
 ```bash
-penguin web        # start the service and open http://127.0.0.1:7364 (first login: admin / admin123)
-penguin server     # same service, headless
-
-# configure a model once (or use the in-app Models page)
-penguin config model add --model-id deepseek-v4-pro --api-key sk-... --set-default
-
+penguin config model add --provider deepseek --model-id deepseek-v4-pro --api-key sk-... --set-default
 penguin run -m "Create hello.txt containing Hello, Penguin"   # one-shot task
 penguin chat       # interactive REPL (/compact, /exit, Ctrl-C to interrupt)
+penguin server     # headless service (same API the Web App uses)
 ```
-
-Using the SDK directly:
 
 ```ts
 import { createAgent, isCompleteModelMessage, userText } from "@prismshadow/penguin-core";
@@ -86,45 +130,38 @@ for await (const output of session.run([userText("Create hello.txt containing hi
 }
 ```
 
-## What's inside
+## Roadmap
 
-A pnpm monorepo (TypeScript, Node >= 24). One install ships four layers that share a single data directory (`~/.penguin/data`) and a single message protocol (OmniMessage):
-
-| Package | Name | Role |
-| --- | --- | --- |
-| [`packages/core`](packages/core) | `@prismshadow/penguin-core` | SDK & engine: ReAct loop, OmniMessage protocol, LLM/Environment interface contracts, Agent State, Trace |
-| [`packages/cli`](packages/cli) | `@prismshadow/penguin-cli` | The `penguin` command: REPL, one-shot runs, model & vault config, service launcher |
-| [`packages/server`](packages/server) | `@prismshadow/penguin-server` | Web backend: HTTP API + SSE streaming, multi-user auth, Project authorization, usage stats |
-| [`packages/web`](packages/web) | `@prismshadow/penguin-web` | Web App: multi-session chat, Agent/skill/model management, Trace observability, evaluation center |
-| [`packages/skills`](packages/skills) | `@prismshadow/penguin-skills` | Built-in skill library (agent creation, benchmarking, evaluation, optimization, …) |
-| [`packages/landing`](packages/landing) | — | Product landing page (this repo's website) |
-| [`packages/docs`](packages/docs) | — | Documentation site (bilingual, deployed under `/docs/`) |
-
-Responsibilities split by source of truth: the **SDK** owns protocol and execution (message parsing, the agent loop, tools), the **Server** owns the multi-user runtime (auth, SSE streaming, scheduled tasks), and the **file layer** under `~/.penguin/data` owns everything editable and recorded (prompts, Skills, secrets, Traces). The full design-by-design map is in [Architecture → Division of responsibilities](https://penguin.ooo/docs/architecture).
-
-## Documentation
-
-The docs site covers both usage and design: [Introduction](https://penguin.ooo/docs/) · [Quickstart](https://penguin.ooo/docs/quickstart) · [Architecture](https://penguin.ooo/docs/architecture) · [The OmniMessage Protocol](https://penguin.ooo/docs/omni-message) · [Core Interfaces](https://penguin.ooo/docs/interfaces) · [The Agent Loop](https://penguin.ooo/docs/agent-loop) · [CLI Reference](https://penguin.ooo/docs/cli) · [Server API](https://penguin.ooo/docs/server-api) · [Configuration](https://penguin.ooo/docs/configuration)
-
-Every doc page has a "Copy Markdown" button, so you can paste it straight into a model context.
+- [ ] Public release of the benchmark suite
+- [ ] Desktop app
+- [ ] Windows support
+- More to come…
 
 ## Development
 
 ```bash
-pnpm install
-pnpm build       # build first: core's exports point at dist/
-pnpm typecheck
-pnpm test
-
-pnpm dev:server  # backend at 127.0.0.1:7364
-pnpm dev:web     # web app (Vite) at 127.0.0.1:7365, /api proxied
-pnpm dev:docs    # docs site (Vite) at 127.0.0.1:7367
-
-BASE_PATH=/ pnpm build:site   # assemble landing + docs exactly like the Pages deploy
+pnpm install && pnpm build   # build first: core's exports point at dist/
+pnpm dev                     # backend + web app together (prefixed logs, deps built once)
 ```
 
-Copy `.env.example` to `.env` for model credentials in development. E2E tests run against a live model (`pnpm test:e2e`, needs `DEEPSEEK_API_KEY`).
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workspace guide: dev commands, quality gates, repo layout, and the changelog rule.
+
+## Citation
+
+If you use PenguinHarness in your research, please cite:
+
+```bibtex
+@software{penguinharness2026,
+  author  = {{PrismShadow Team}},
+  title   = {PenguinHarness: Efficient Self-Improving Harness for Everyone},
+  year    = {2026},
+  url     = {https://github.com/Prism-Shadow/penguin-harness},
+  license = {Apache-2.0}
+}
+```
 
 ## License
 
 [Apache-2.0](LICENSE) © 2026 Prism Shadow
+
+Built with ❤️ by [Yaowei Zheng](https://github.com/hiyouga) (author of [LlamaFactory](https://github.com/hiyouga/LlamaFactory)), the [PrismShadow AI Team](https://github.com/Prism-Shadow), and [Fable 5](https://www.anthropic.com/news/claude-fable-5-mythos-5).

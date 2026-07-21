@@ -82,6 +82,15 @@ export function createSubagentTool(
       }
       const agentId = typeof args.agent_id === "string" ? args.agent_id : undefined;
       const modelId = typeof args.model_id === "string" ? args.model_id : undefined;
+      const provider = typeof args.provider === "string" ? args.provider : undefined;
+      // A model is referenced by the complete (provider, model_id) pair — never half of one.
+      // Caught here rather than in createSession so the model is told which half it left out.
+      if ((modelId === undefined) !== (provider === undefined)) {
+        yield* fail(
+          "[run_subagent error: `model_id` and `provider` must be given together (a model reference is the pair), or both omitted to use the Project default model]",
+        );
+        return { stopReason: "failed" };
+      }
       const yieldMs = clampYield(
         args.yield_time_ms,
         DEFAULT_SUBAGENT_YIELD_MS,
@@ -106,6 +115,7 @@ export function createSubagentTool(
         const handle = await runner.spawn({
           ...(agentId !== undefined ? { agentId } : {}),
           ...(modelId !== undefined ? { modelId } : {}),
+          ...(provider !== undefined ? { provider } : {}),
         });
         session = new ManagedSubagentSession(handle);
       } catch (err) {

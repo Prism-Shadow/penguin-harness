@@ -1,7 +1,7 @@
 /**
  * e2e auth helper: with signup disabled, test users are always provisioned via
  * the built-in admin account, then logged in. The server seeds an admin
- * (admin / admin123) on startup; a single e2e run shares one data root, and
+ * (admin / penguin-2026) on startup; a single e2e run shares one data root, and
  * provisioning is idempotent (reuses the user if it already exists) so a
  * single spec can be rerun on its own.
  */
@@ -9,7 +9,7 @@ import { request } from "@playwright/test";
 
 const BASE = process.env.BASE_URL;
 export const ADMIN_ID = "admin";
-export const ADMIN_PASSWORD = "admin123";
+export const ADMIN_PASSWORD = "penguin-2026";
 
 /** Log in: the cookie lands in the given request context (page.request is the browser context); returns user. */
 export async function login(ctx, userId, password) {

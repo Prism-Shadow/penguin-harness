@@ -89,7 +89,7 @@ interface GenerativeModelConfig {
 `GenerativeModel`(`packages/core/src/llm/generative-model.ts`)把契约落到模型网关 `@prismshadow/agenthub` 的 `AutoLLMClient` 上：
 
 - 网关**有状态**地维护会话历史，每轮只接收新消息；恢复 Session 时经一次性的 `setHistory` 重放已提交历史；
-- 内部的 `EventTranslator` 把网关流式事件翻译为 `partial_*` 分片 + 完整消息，保留 `signature` / `phase` 保真字段，完整消息按 thinking → text → tool_call 顺序落盘；
+- 内部的 `EventTranslator` 把网关流式事件翻译为 `partial_*` 分片 + 完整消息，逐条原样保留不透明的 `fidelity` 保真负载；分段与网关自身的聚合一致——thinking 块由其 fidelity 负载闭合，连续相同的 fidelity 归为同一块(OpenAI 兼容客户端给每条增量盖同一个 `{ reasoning_field }`，不能因此切块)，text 段遇到不同的 `fidelity.phase` 即切分、遇到 `fidelity.signature` 即闭合，合并时 fidelity 键累积；完整消息按 thinking → text → tool_call 顺序落盘；
 - `ToolCallIdAllocator` 处理个别 Provider 用函数名充当调用 id 的情况(入站追加 `#n`、出站剥离)，作用域覆盖整个 Session;
 - Provider 协议差异(工具调用格式、思考内容、流式事件)全部在网关内抹平，见[模型与 Provider](/models)。
 
@@ -169,7 +169,7 @@ interface ToolDefinitionConfig {
 Human 刻意不设计为接口类。SDK 的调用方就是 Human:
 
 ```ts
-const session = await agent.createSession({ workspaceDir, modelId });
+const session = await agent.createSession({ workspaceDir, provider, modelId });
 
 session.run(
   newMessages: OmniMessage[],                    // 输入:Prompt

@@ -27,7 +27,7 @@ import {
   resolveModelEnv,
   userText,
 } from "@prismshadow/penguin-core";
-import type { ModelRef } from "@prismshadow/penguin-core";
+import type { LLMOutcome, ModelRef, OmniMessage } from "@prismshadow/penguin-core";
 import type {
   ModelInfo,
   ModelPricingDto,
@@ -93,6 +93,26 @@ function refKey(provider: string, modelId: string): string {
 function showRef(provider: string, modelId: string): string {
   return `(provider=${provider}, model_id=${modelId})`;
 }
+
+/**
+ * Connectivity probe prompt: asks for one word, so the whole exchange fits in a
+ * single-digit output budget. The wording discourages reasoning and the trailing empty
+ * <think></think> makes many reasoning models treat their thinking phase as already
+ * closed - keeping the probe's tiny budget on actual output instead of burning it on
+ * thinking.
+ */
+const PROBE_PROMPT =
+  'ping - reply with the single word "pong" and nothing else. Do not think or explain.\n<think></think>';
+
+/**
+ * Speed probe prompt: a one-word answer can't be timed (a compliant model emits 1-3
+ * tokens, and the window is then dominated by the final usage chunk's round trip), so
+ * speed mode asks for something long enough to run into its raised cap. Counting to 50 is
+ * deterministic and needs no knowledge, so every model produces the same token stream at
+ * its own decoding rate. Carries the same anti-thinking hint as the connectivity prompt.
+ */
+const SPEED_PROBE_PROMPT =
+  "Count from 1 to 50 as a comma-separated list, and nothing else. Do not think or explain.\n<think></think>";
 
 export class ProjectConfigService {
   constructor(private readonly root: string) {}
@@ -203,12 +223,19 @@ export class ProjectConfigService {
    * as a pair in the request body; sends one minimal request using that model's
    * config (optionally overridden with an unsaved apiKey / baseUrl) — no tools, no
    * system prompt, thinking disabled, a tiny output cap, 20s timeout — just to see
-   * whether it completes normally. The model id sent to AgentHub is `modelId`
+   * whether the endpoint answers. The model id sent to AgentHub is `modelId`
    * itself (the upstream id verbatim; client_type inference follows it).
+   *
+   * A reasoning-heavy model may ignore the disabled thinking level and burn the
+   * whole tiny output cap on thinking (finish_reason=length with no text — AgentHub
+   * raises EmptyResponseError, collapsed to a malformed outcome): the endpoint
+   * demonstrably streamed model output, which is everything a connectivity test
+   * proves, so that case counts as ok too (see probeVerdict).
    *
    * Never throws: the LLM layer collapses auth/parameter/network errors into an
    * `LLMOutcome`, which is translated here into ok / message. Consumes very few
-   * Tokens (single-digit output), and writes no Trace and records no usage.
+   * Tokens (single-digit output; speed mode spends up to its 64-token cap to have a
+   * window worth timing), and writes no Trace and records no usage.
    */
   async testModel(projectId: string, req: ModelTestRequest): Promise<ModelTestResponse> {
     const raw = await this.readRaw(projectId);
@@ -236,18 +263,43 @@ export class ProjectConfigService {
         ...(clientType ? { clientType } : {}),
         tools: [],
         thinkingLevel: "none",
-        maxTokens: 16,
+        // Speed mode pairs a raised cap with a prompt that keeps generating (see
+        // SPEED_PROBE_PROMPT), so the stream lasts long enough for TTFT/TPS to describe
+        // decoding rather than one round trip; the plain connectivity test keeps the
+        // single-digit-token budget.
+        maxTokens: req.speed ? 64 : 16,
         requestTimeoutMs: 20_000,
       });
-      const gen = llm.streamGenerate({ newMessages: [userText("ping")] });
+      const gen = llm.streamGenerate({
+        newMessages: [userText(req.speed ? SPEED_PROBE_PROMPT : PROBE_PROMPT)],
+      });
+      let sawContent = false;
+      let firstContentAt: number | null = null;
+      let outputTokens = 0;
       for (;;) {
         const step = await gen.next();
         if (step.done) {
-          const outcome = step.value;
-          if (outcome.status === "completed")
-            return { ok: true, latencyMs: Date.now() - startedAt };
-          const detail = "message" in outcome && outcome.message ? outcome.message : outcome.status;
-          return { ok: false, message: String(detail).slice(0, 300) };
+          const verdict = probeVerdict(step.value, sawContent);
+          if (!verdict.ok) return verdict;
+          const res: ModelTestResponse = { ok: true, latencyMs: Date.now() - startedAt };
+          if (firstContentAt !== null) {
+            res.ttftMs = firstContentAt - startedAt;
+            // Output rate over the streaming window (first content -> stream end), dropped
+            // when the sample is too small to mean anything (see probeTps): usage is only
+            // reported on completed streams, so thinking-only malformed endings carry TTFT
+            // but no rate, and so does a model that answers in a couple of tokens.
+            const tps = probeTps(outputTokens, Date.now() - firstContentAt);
+            if (tps !== undefined) res.tps = tps;
+          }
+          return res;
+        }
+        if (isProbeContent(step.value)) {
+          sawContent = true;
+          if (firstContentAt === null) firstContentAt = Date.now();
+        }
+        const p = step.value.payload as { type?: string; request?: { output?: number } };
+        if (p.type === "token_usage" && typeof p.request?.output === "number") {
+          outputTokens = p.request.output;
         }
       }
     } catch (err) {
@@ -495,4 +547,57 @@ export class ProjectConfigService {
     await this.writeRaw(projectId, next);
     return this.getModels(projectId);
   }
+}
+
+/**
+ * Whether a streamed message carries genuine model content (thinking or text, partial delta
+ * or complete backfill) — the probe's "the endpoint really answered" signal. Tool calls and
+ * event messages don't count (the probe declares no tools).
+ */
+export function isProbeContent(msg: OmniMessage): boolean {
+  const p = msg.payload as { type?: string; thinking?: string; text?: string };
+  if (p.type === "partial_thinking" || p.type === "thinking") return Boolean(p.thinking);
+  if (p.type === "partial_text" || p.type === "text") return Boolean(p.text);
+  return false;
+}
+
+/**
+ * Probe verdict from the terminal LLM outcome. `completed` always passes. A `malformed`
+ * ending after genuine streamed content also passes: the typical case is a reasoning-heavy
+ * model that ignores the disabled thinking level and burns the probe's tiny max_tokens
+ * entirely on thinking (finish_reason=length -> AgentHub's EmptyResponseError) — the
+ * endpoint, credential, and model id all demonstrably work, which is what a connectivity
+ * test measures. Everything else (auth/parameter failures, timeouts, malformed with nothing
+ * received) fails with the outcome's message.
+ */
+export function probeVerdict(
+  outcome: LLMOutcome,
+  sawContent: boolean,
+): { ok: true } | { ok: false; message: string } {
+  if (outcome.status === "completed") return { ok: true };
+  if (outcome.status === "malformed" && sawContent) return { ok: true };
+  const detail = "message" in outcome && outcome.message ? outcome.message : outcome.status;
+  return { ok: false, message: String(detail).slice(0, 300) };
+}
+
+/**
+ * Sample floors below which the streaming window says nothing about decoding rate. The
+ * speed probe's 64-token cap clears both by a wide margin, so hitting a floor means the
+ * model didn't really stream (a one-word answer, or usage that never arrived).
+ */
+const PROBE_TPS_MIN_TOKENS = 16;
+const PROBE_TPS_MIN_WINDOW_MS = 100;
+
+/**
+ * Output rate (tokens/s) over the probe's streaming window (first content -> stream end),
+ * rounded to 1dp; undefined when the sample is too small to be meaningful. A stream's
+ * closing usage chunk costs a round trip on its own, so a two-token answer measures network
+ * jitter and nothing else — 2 tokens in 30ms reads as 66.7 tok/s and the same model 30ms
+ * later reads as 33.3, which the card badges would paint green vs yellow. Callers report
+ * TTFT alone rather than a fabricated rate; a malformed ending carries no usage at all and
+ * lands here as 0 tokens.
+ */
+export function probeTps(outputTokens: number, windowMs: number): number | undefined {
+  if (outputTokens < PROBE_TPS_MIN_TOKENS || windowMs <= PROBE_TPS_MIN_WINDOW_MS) return undefined;
+  return Math.round((outputTokens / (windowMs / 1000)) * 10) / 10;
 }

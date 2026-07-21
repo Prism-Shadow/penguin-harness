@@ -7,7 +7,7 @@ The CLI ships as the npm package `@prismshadow/penguin-cli`; the command is `pen
 
 ## Global conventions
 
-- Model references: a model's identity is always the `(provider, model_id)` pair. `--model-id` takes the upstream model id and pairs with `--provider`. When `run` / `chat` omit `--provider`, the `--model-id` matches only if it is globally unique in the configuration; ambiguity is an error.
+- Model references: a model's identity is always the `(provider, model_id)` pair. `--model-id` takes the upstream model id and `--provider` the group it belongs to; the provider is never inferred, guessed, or defaulted. On `run` / `chat` the pair as a whole is optional — pass both to pick a model, or neither to use the Project's default model — but passing one without the other is an error.
 - Data root: `--root <dir>` overrides the data root directory. Priority: `--root` > the `PENGUIN_HOME` env var > `~/.penguin/data`.
 
 ## penguin run
@@ -21,8 +21,8 @@ penguin run -m "Summarize the code structure of this directory"
 | Option | Description |
 | --- | --- |
 | `-m, --message <message>` | Required; the message to send |
-| `--model-id <id>` | Model to use; defaults to the Project's default model |
-| `--provider <group>` | Provider group of the model |
+| `--model-id <id>` | Upstream id of the model to use; requires `--provider`. Omit both to use the Project's default model |
+| `--provider <group>` | Provider group of the model; required whenever `--model-id` is given |
 | `--project-id <id>` | Project to use |
 | `--agent-id <id>` | Agent to use |
 | `--workspace <path>` | Workspace directory; defaults to the current directory and must exist |
@@ -74,13 +74,13 @@ Manages a Project's model configuration, per-Agent vault environment variables, 
 Add or update a model entry:
 
 ```bash
-penguin config model add --model-id deepseek-v4-pro --api-key sk-... --set-default
+penguin config model add --provider deepseek --model-id deepseek-v4-pro --api-key sk-... --set-default
 ```
 
 | Option | Description |
 | --- | --- |
 | `--model-id <id>` | Required; the upstream model id |
-| `--provider <group>` | Provider group; inferred from the built-in catalog when omitted |
+| `--provider <group>` | Required; the provider group the entry belongs to. It is never derived from the model id: gateways resell vendor models under their upstream ids, so a guessed group would write the credential onto another vendor's endpoint. Use `custom` for any endpoint outside the built-in groups. |
 | `--api-key <key>` | API key, stored inline in the Project's hidden `.project_config.toml` |
 | `--base-url <url>` | Custom endpoint base URL |
 | `--context-window <n>` | Context window size |

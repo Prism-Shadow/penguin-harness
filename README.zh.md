@@ -4,11 +4,9 @@
 
 <h1 align="center">PenguinHarness</h1>
 
-<p align="center"><b>Efficient Self-Improving Harness for Everyone</b></p>
+<p align="center"><b>使用 LangChain，以 1 倍速度人工构建 Agent；<br />使用 PenguinHarness，以 100 倍速度用 Agent 构建 Agent。</b></p>
 
-<p align="center">
-  开源、本地优先的 AI Agent 基础设施——从自动构建 Agent 到递归自我进化。
-</p>
+<p align="center">零代码 Harness CLI 与 Web UI，连接 1000+ 模型。</p>
 
 <p align="center">
   <a href="https://github.com/Prism-Shadow/penguin-harness/actions/workflows/ci.yml"><img src="https://github.com/Prism-Shadow/penguin-harness/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
@@ -18,57 +16,104 @@
 </p>
 
 <p align="center">
-  <a href="README.md">English</a> | 简体中文 ·
-  <a href="https://penguin.ooo/">官网</a> ·
-  <a href="https://penguin.ooo/docs/">文档</a> ·
-  <a href="https://penguin.ooo/blog">博客</a>
+  <a href="https://penguin.ooo/"><img src="https://img.shields.io/badge/%E5%AE%98%E7%BD%91-penguin.ooo-1f6feb?logo=googlechrome&logoColor=white" alt="官网" /></a>
+  <a href="https://penguin.ooo/docs/"><img src="https://img.shields.io/badge/%E6%96%87%E6%A1%A3-penguin.ooo%2Fdocs-1f6feb?logo=readthedocs&logoColor=white" alt="文档" /></a>
+  <a href="https://penguin.ooo/blog"><img src="https://img.shields.io/badge/%E5%8D%9A%E5%AE%A2-penguin.ooo%2Fblog-1f6feb?logo=rss&logoColor=white" alt="博客" /></a>
 </p>
 
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="packages/landing/src/assets/shots/chat-zh-dark.webp" />
-    <img src="packages/landing/src/assets/shots/chat-zh-light.webp" alt="PenguinHarness Web App——多 Session 对话与实时流式工具调用" width="920" />
-  </picture>
+  <a href="https://discord.gg/eFHKqqcU3D"><img src="https://img.shields.io/badge/Discord-%E5%8A%A0%E5%85%A5%E8%AE%A8%E8%AE%BA-5865F2?logo=discord&logoColor=white" alt="Discord" /></a>
+  <a href="https://x.com/code_hiyouga"><img src="https://img.shields.io/badge/X-code%5Fhiyouga-000000?logo=x&logoColor=white" alt="X（Twitter）" /></a>
+  <a href="https://github.com/Prism-Shadow/penguin-harness-community/blob/main/wechat/group.jpg"><img src="https://img.shields.io/badge/%E5%BE%AE%E4%BF%A1-%E4%BA%A4%E6%B5%81%E7%BE%A4-07C160?logo=wechat&logoColor=white" alt="微信群" /></a>
 </p>
 
----
+<p align="center"><a href="README.md">English</a> | 简体中文</p>
 
 ## 为什么选择 PenguinHarness
 
-- **Simplest Is the Best**——在干净的底层接口之上刻意保持极简的工具集:更少的工具调用、更少的 Token,高效完成复杂任务。
-- **Harness for Building Agents**——基于 PenguinHarness SDK,由一个 Agent 从零开始为你自主构建完整的 Agent 应用。
-- **Harness for Recursive Self-Improvement**——基于 PenguinHarness Skills,Agent 评估并优化自己:跑 Benchmark、找失分点、产出 N+1 版本,每轮之前先做快照。
-- **本地优先且轻量**——100% 开源,一颗 CPU 即可运行,数据不出机器;经统一网关可接入 1000+ 在线与本地模型。
-- **全量可观测**——每次请求、工具调用与审批决策都以追加方式写入 Trace,任何 Session 均可从 Trace 恢复。
+三个递进的理由——从任务效果，到构建方式，再到进化能力。
 
-## 快速开始
+### 1. 🏆 效果同级，成本低一到两个数量级
 
-一行命令安装(Linux / macOS,x64 / arm64,内嵌 Node 运行时,解压即用):
+刻意精简的工具集配合干净的底层接口：更少的工具调用、更少的 Token，对 DeepSeek 等开放模型深度适配。各自搭配常用模型、同一批任务，正面对比：
 
-```bash
-curl -fsSL https://github.com/Prism-Shadow/penguin-harness/releases/latest/download/install.sh | sh
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/readme/benchmark-dark.svg" />
+    <img src="assets/readme/benchmark-light.svg" alt="Benchmark：PenguinHarness 在数据分析题库准确率最高、编程题库与 OpenAI Codex 持平，成本仅为两者的零头" width="920" />
+  </picture>
+</p>
+
+**数据分析准确率最高——成本只有 Claude Code 的 1/70。**
+
+### 2. ⚡ 一句话，让 Agent 构建 Agent 应用
+
+输入一句话，Agent 为你构建完整的 Agent 应用——脚手架、代码、运行说明，一步到位：
+
+```text
+收集 https://github.com/ericbuess/claude-code-docs 的文档，做一个化身 Claude Code 配置专家、回答带来源引用的 RAG 问答应用。
 ```
 
-或经 npm 安装(需系统 Node >= 24,安装后的命令为 `penguin`):
+这是做出来的成品——一个文档专家：检索增强、引用可点击直达原文、内置示例问题：
+
+https://github.com/user-attachments/assets/604eb626-0a5d-4a62-87e3-14ebade1cd5f
+
+**而生成整个 RAG 应用，仅消耗了 0.2 元（$0.02）的 token——使用 DeepSeek V4 Pro 模型。**
+
+### 3. 🧬 自进化，越用越强
+
+借助 PenguinHarness 技能库，Agent 自己评估、自己优化：跑 Benchmark、找失分点、发布 N+1 版——每轮之前自动快照，每个请求都可在轨迹观测中回放。
+
+https://github.com/user-attachments/assets/aec49ae9-b743-467b-b247-37bedfeaa36e
+
+## 支持的模型
+
+| 模型             | 可用供应商                                                                       |
+| ---------------- | -------------------------------------------------------------------------------- |
+| DeepSeek V4      | DeepSeek, OpenRouter, Fireworks AI, SiliconFlow, Qwen Token Plan                 |
+| Kimi K3          | OpenRouter, Qwen Pay-As-You-Go                                                   |
+| Kimi K2.6        | Moonshot AI                                                                      |
+| GLM 5.2          | Z.AI, OpenRouter, Fireworks AI, SiliconFlow, Qwen Token Plan, Qwen Pay-As-You-Go |
+| Hunyuan 3        | OpenRouter                                                                       |
+| Qwen 3.8 Max     | Qwen Token Plan（预览）                                                          |
+| GPT 5.5          | OpenAI, OpenRouter                                                               |
+| Gemini 3.5 Flash | Google Gemini, OpenRouter                                                        |
+| Claude Opus 4.8  | Anthropic, OpenRouter                                                            |
+
+只要是 OpenAI 协议的端点都可以接入：从上表选择预置，或用自定义端点连接 1000+ 在线与本地模型。
+
+## 系统需求
+
+| 需求项   | 支持情况                                          |
+| -------- | ------------------------------------------------- |
+| 操作系统 | Linux、macOS                                      |
+| 架构     | x64、arm64                                        |
+| 运行时   | 一行安装器自带（经 npm 安装需 Node >= 24）        |
+| 模型     | 至少一个模型的 API key                            |
+
+## 安装
+
+### 🌐 Web 应用——面向人
+
+🚀 一行安装，启动完整体验（多会话对话、Agent / 技能 / 模型管理、用量统计、轨迹观测、评估中心）：
 
 ```bash
-npm install -g @prismshadow/penguin-cli
+curl -fsSL https://penguin.ooo/install.sh | sh
+penguin web        # 启动服务并打开 http://127.0.0.1:7364（首次登录：admin / penguin-2026）
 ```
 
-然后启动 Web App,或直接留在终端:
+📦 或经 npm 安装：`npm install -g @prismshadow/penguin-cli`。在应用内模型页配置模型后即可对话。
+
+### 🤖 CLI 与 SDK——面向 Agent
+
+同一引擎、可脚本化——为被 Agent 驱动而生（以及让 Agent 构建 Agent）：
 
 ```bash
-penguin web        # 启动服务并打开 http://127.0.0.1:7364(初始账号 admin / admin123)
-penguin server     # 同一服务,无头运行
-
-# 先配置一次模型(也可在 Web 的模型页完成)
-penguin config model add --model-id deepseek-v4-pro --api-key sk-... --set-default
-
-penguin run -m "创建 hello.txt,内容为 Hello, Penguin"   # 单次任务
-penguin chat       # 交互式 REPL(/compact、/exit,Ctrl-C 中断)
+penguin config model add --provider deepseek --model-id deepseek-v4-pro --api-key sk-... --set-default
+penguin run -m "Create hello.txt containing Hello, Penguin"   # 单次任务
+penguin chat       # 交互式 REPL（/compact、/exit、Ctrl-C 中断）
+penguin server     # 无界面服务（与 Web 应用同一套 API）
 ```
-
-直接使用 SDK:
 
 ```ts
 import { createAgent, isCompleteModelMessage, userText } from "@prismshadow/penguin-core";
@@ -76,8 +121,8 @@ import { createAgent, isCompleteModelMessage, userText } from "@prismshadow/peng
 const agent = await createAgent({ agentId: "default_agent" });
 const session = await agent.createSession({ workspaceDir: process.cwd() });
 
-for await (const output of session.run([userText("创建 hello.txt 并写入 hi")], {
-  approve: async () => "allow", // 逐个工具审批
+for await (const output of session.run([userText("Create hello.txt containing hi")], {
+  approve: async () => "allow", // 按工具调用逐个审批
 })) {
   if (isCompleteModelMessage(output) && output.payload.type === "text") {
     console.log(output.payload.text);
@@ -85,45 +130,38 @@ for await (const output of session.run([userText("创建 hello.txt 并写入 hi"
 }
 ```
 
-## 仓库结构
+## 路线图
 
-pnpm monorepo(TypeScript,Node >= 24)。一次安装交付四层组件,共享同一数据目录(`~/.penguin/data`)与同一消息协议(OmniMessage):
+- [ ] Benchmark 套件正式发布
+- [ ] 桌面端应用
+- [ ] Windows 系统支持
+- 更多规划，敬请期待……
 
-| 目录 | 包名 | 职责 |
-| --- | --- | --- |
-| [`packages/core`](packages/core) | `@prismshadow/penguin-core` | SDK 与引擎:ReAct 循环、OmniMessage 协议、LLM/Environment 接口契约、Agent State、Trace |
-| [`packages/cli`](packages/cli) | `@prismshadow/penguin-cli` | `penguin` 命令:REPL、单次运行、模型与 Vault 配置、服务启动 |
-| [`packages/server`](packages/server) | `@prismshadow/penguin-server` | Web 服务端:HTTP API + SSE 流式、多用户认证、Project 授权、用量统计 |
-| [`packages/web`](packages/web) | `@prismshadow/penguin-web` | Web App:多 Session 对话、Agent/技能/模型管理、Trace 观测、评估中心 |
-| [`packages/skills`](packages/skills) | `@prismshadow/penguin-skills` | 内置技能库(Agent 创建、Benchmark 设计、评估、优化等) |
-| [`packages/landing`](packages/landing) | — | 产品落地页(本仓库官网) |
-| [`packages/docs`](packages/docs) | — | 文档站(双语,部署于 `/docs/` 路径) |
-
-职责按事实来源划分:**SDK** 负责协议与执行(消息解析、运行循环、工具),**Server** 负责多用户运行时(认证、SSE 流式、定时任务),`~/.penguin/data` 下的**文件层**承载一切可编辑与被记录的状态(Prompt、Skill、密钥、Trace)。逐项对应表见[架构总览 → 职责划分](https://penguin.ooo/docs/architecture)。
-
-## 文档
-
-文档站覆盖使用与设计两个层面:[产品介绍](https://penguin.ooo/docs/) · [快速开始](https://penguin.ooo/docs/quickstart) · [架构总览](https://penguin.ooo/docs/architecture) · [OmniMessage 协议](https://penguin.ooo/docs/omni-message) · [接口契约](https://penguin.ooo/docs/interfaces) · [Agent 运行循环](https://penguin.ooo/docs/agent-loop) · [CLI 参考](https://penguin.ooo/docs/cli) · [Server API](https://penguin.ooo/docs/server-api) · [配置参考](https://penguin.ooo/docs/configuration)
-
-每页文档都带「复制 Markdown」按钮,可直接粘贴进模型上下文。
-
-## 本地开发
+## 参与开发
 
 ```bash
-pnpm install
-pnpm build       # 先构建:core 的导出指向 dist/
-pnpm typecheck
-pnpm test
-
-pnpm dev:server  # 服务端 127.0.0.1:7364
-pnpm dev:web     # Web App(Vite)127.0.0.1:7365,/api 代理到服务端
-pnpm dev:docs    # 文档站(Vite)127.0.0.1:7367
-
-BASE_PATH=/ pnpm build:site   # 按 Pages 部署的方式组装 落地页 + 文档
+pnpm install && pnpm build   # 先构建：core 的导出指向 dist/
+pnpm dev                     # 服务端 + Web 一起启动（带前缀日志，依赖只构建一次）
 ```
 
-开发态模型凭据可复制 `.env.example` 为 `.env` 填写。E2E 测试走真实模型(`pnpm test:e2e`,需要 `DEEPSEEK_API_KEY`)。
+完整工作区指南见 [CONTRIBUTING.md](CONTRIBUTING.md)：开发命令、质量门禁、仓库结构与 changelog 规则。
 
-## 许可证
+## 引用
+
+如果 PenguinHarness 对你的研究有帮助，请引用：
+
+```bibtex
+@software{penguinharness2026,
+  author  = {{PrismShadow Team}},
+  title   = {PenguinHarness: Efficient Self-Improving Harness for Everyone},
+  year    = {2026},
+  url     = {https://github.com/Prism-Shadow/penguin-harness},
+  license = {Apache-2.0}
+}
+```
+
+## 协议
 
 [Apache-2.0](LICENSE) © 2026 Prism Shadow
+
+由 [LlamaFactory](https://github.com/hiyouga/LlamaFactory) 作者 [Yaowei Zheng](https://github.com/hiyouga)、[PrismShadow AI Team](https://github.com/Prism-Shadow) 与 [Fable 5](https://www.anthropic.com/news/claude-fable-5-mythos-5) 共同用 ❤️ 构建。

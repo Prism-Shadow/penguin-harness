@@ -35,7 +35,7 @@ openrouter、siliconflow 与 custom 分组走 OpenAI 兼容协议，因此复用
 
 ## Project 配置
 
-`<root>/<project>/.project_config.toml` 是 Project 唯一的配置文件：隐藏文件，落盘权限 0600，凭证内联在模型条目上。模型身份始终是 `(provider, model_id)` 成对引用，禁止任何形式的字符串拼接。
+`<root>/<project>/.project_config.toml` 是 Project 唯一的配置文件：隐藏文件，落盘权限 0600，凭证内联在模型条目上。模型身份始终是 `(provider, model_id)` 成对引用，禁止任何形式的字符串拼接；指向本文件的每一处引用都要带上两半，provider 绝不由裸 `model_id` 推断。
 
 | 字段 | 说明 |
 | --- | --- |
@@ -143,9 +143,11 @@ compaction:
 | `{{PLATFORM}}` | 运行平台 |
 | `{{OS_VERSION}}` | 操作系统版本 |
 | `{{DATE}}` | 当前日期 |
-| `{{CWD}}` | Workspace 路径 |
-| `{{AGENT_ID}}` | Agent id |
 | `{{PROJECT_DIR}}` | Project 目录 |
+| `{{AGENT_ID}}` | Agent id |
+| `{{CWD}}` | Workspace 路径 |
+| `{{PROVIDER}}` | 模型 provider 分组 |
+| `{{MODEL_ID}}` | 上游模型 id |
 | `{{SESSION_ID}}` | Session id |
 
 `agent_state/AGENTS.md` 是开发者可编辑的指令文件，经 `{{AGENTS_MD}}` 注入系统提示词，缺省为空——它也是优化器最常改动的文件（见[自我进化](/self-improvement)）。
@@ -157,6 +159,7 @@ compaction:
 - 键名须匹配 `^[A-Za-z_][A-Za-z0-9_]*$`（shell 环境变量命名规则）；
 - 值只注入工具子进程的环境变量，永远不进入模型上下文与 Trace；
 - 系统提示词中经 `{{VAULT_KEYS}}` 只披露键名；
+- 经 Web/API 保存会使该 Agent 已缓存的 Session 运行时失效：其任意 Session 的下一个任务会重新恢复（resume）并使用新值；进行中的任务保持其启动时的值（CLI 直接改文件对运行中的 server 则要等 Session 下次创建或恢复时生效）；
 - 通过 CLI `penguin config vault set/list/remove` 或 Web 的 Vault 标签页管理。
 
 ## 定时任务
@@ -172,7 +175,7 @@ compaction:
 | `end_at` | 否 | 结束时刻，须晚于 `start_at` |
 | `session_id` | 否 | 绑定既有 Session；与下列三项互斥 |
 | `workspace` | 否 | 新建 Session 模式的 Workspace |
-| `provider` / `model_id` | 否 | 新建 Session 模式的模型成对引用 |
+| `provider` / `model_id` | 否 | 新建 Session 模式的模型成对引用；要写就两个都写，只写 `model_id` 会被拒绝，两个都不写则使用 Project 默认模型 |
 
 ```toml
 prompt = "检查昨日构建结果并汇总失败原因"

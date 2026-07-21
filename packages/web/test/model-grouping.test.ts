@@ -10,7 +10,11 @@
  */
 import { describe, expect, it } from "vitest";
 import { MODEL_PROVIDERS } from "@prismshadow/penguin-core/model-catalog";
-import { groupModelRows, matchesQuery } from "../src/features/models/model-grouping";
+import {
+  groupModelRows,
+  orderModelsLikeLibrary,
+  matchesQuery,
+} from "../src/features/models/model-grouping";
 import type { ModelRowLike } from "../src/features/models/model-grouping";
 
 const rows: ModelRowLike[] = [
@@ -64,7 +68,10 @@ describe("groupModelRows", () => {
     expect(MODEL_PROVIDERS.map((p) => p.id)).toEqual([
       "deepseek",
       "openrouter",
+      "fireworks",
       "siliconflow",
+      "qwen-token-plan",
+      "qwen-pay-as-you-go",
       "google",
       "anthropic",
       "openai",
@@ -121,5 +128,28 @@ describe("groupModelRows", () => {
     expect(groups.map((g) => g.provider.id)).toEqual(["custom", "alpha-proxy", "zeta-lab"]);
     // Search matches a custom-built group's name: only that group is kept.
     expect(groupModelRows(mixed, "zeta").map((g) => g.provider.id)).toEqual(["zeta-lab"]);
+  });
+});
+
+describe("orderModelsLikeLibrary", () => {
+  it("flattens to the library page's order: built-in provider order, user groups after, custom last", () => {
+    const rows: ModelRowLike[] = [
+      { provider: "custom", modelId: "my-proxy" },
+      { provider: "my-gateway", modelId: "own-1" },
+      { provider: "moonshot", modelId: "kimi-k3" },
+      { provider: "deepseek", modelId: "deepseek-v4-flash" },
+      { provider: "openrouter", modelId: "anthropic/claude-fable-5" },
+      { provider: "deepseek", modelId: "deepseek-v4-pro" },
+    ];
+    expect(orderModelsLikeLibrary(rows).map((r) => `${r.provider} ${r.modelId}`)).toEqual([
+      // deepseek first (in-group order preserved), then the openrouter gateway, then moonshot,
+      // then custom, then the user-defined group appended after the built-ins.
+      "deepseek deepseek-v4-flash",
+      "deepseek deepseek-v4-pro",
+      "openrouter anthropic/claude-fable-5",
+      "moonshot kimi-k3",
+      "custom my-proxy",
+      "my-gateway own-1",
+    ]);
   });
 });

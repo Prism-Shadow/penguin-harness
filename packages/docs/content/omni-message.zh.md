@@ -54,15 +54,16 @@ interface ToolDefinition {
 
 ## model_msg：完整消息
 
-七种内容 payload，以 `payload.type` 判别。公共可选字段：`stop_reason`(非正常收尾时标注终态)与 `signature`(Provider 保真字段，见下文):
+七种内容 payload，以 `payload.type` 判别。公共可选字段：`stop_reason`(非正常收尾时标注终态)与 `fidelity`(不透明的 Provider 保真负载，见下文):
 
 ```ts
+type Fidelity = Record<string, unknown>;  // 不透明的 Provider 保真负载(见下文)
+
 interface TextPayload {
   type: "text";
   role: "user" | "assistant";
   text: string;
-  phase?: string | null;      // 分段标记(如 GPT-5 的 phase)
-  signature?: string;
+  fidelity?: Fidelity;        // 如 { phase } 分段标记(GPT-5)、{ signature }
   stop_reason?: StopReason;
 }
 
@@ -70,7 +71,7 @@ interface ThinkingPayload {
   type: "thinking";
   role: "assistant";
   thinking: string;
-  signature?: string;         // 部分模型历史回放所必需
+  fidelity?: Fidelity;        // 部分模型历史回放所必需
   stop_reason?: StopReason;
 }
 
@@ -79,7 +80,7 @@ interface InlineThinkingPayload {
   role: "assistant";
   data: string;               // 二进制形态的思考内容
   mime_type: string;
-  signature?: string;
+  fidelity?: Fidelity;
   stop_reason?: StopReason;
 }
 
@@ -89,7 +90,7 @@ interface ToolCallPayload {
   name: string;
   arguments: string;          // 参数 JSON 字符串
   tool_call_id: string;
-  signature?: string;
+  fidelity?: Fidelity;
   stop_reason?: StopReason;
 }
 
@@ -114,7 +115,7 @@ interface InlineDataPayload {
   role: "user" | "assistant";
   data: string;               // 其他二进制内容
   mime_type: string;
-  signature?: string;
+  fidelity?: Fidelity;
   stop_reason?: StopReason;
 }
 ```
@@ -272,7 +273,20 @@ type StopReason = "completed" | "failed" | "aborted" | "timeout" | "malformed";
 
 ## 保真字段
 
-`signature` 与 `phase` 等 Provider 专有字段在整条链路上原样透传、原样存储——部分模型在历史回放时要求逐字一致，任何转写都会破坏兼容性。这是 Trace 能够无损恢复 Session 的前提之一。
+Provider 专有的线上数据统一收拢在一个可选字段 `fidelity` 中——LLM 客户端为历史回放记录的任意 JSON 对象:思考签名、`phase` 分段标记、GPT-5 加密推理、OpenAI 兼容上游的推理字段名:
+
+```ts
+// Claude:由签名闭合的 thinking 块
+{ type: "thinking", thinking: "…", fidelity: { signature: "EqQBCkYIBxgCKkB…" } }
+
+// GPT-5:加密推理(thinking 文本为空,仅有 fidelity)
+{ type: "thinking", thinking: "", fidelity: { id: "rs_0d3…", encrypted_content: "gAAAA…" } }
+
+// OpenAI 兼容:思考内容来自上游哪个字段
+{ type: "thinking", thinking: "…", fidelity: { reasoning_field: "reasoning_content" } }
+```
+
+该负载对 PenguinHarness 完全不透明:在整条链路上原样透传、原样存储——部分模型在历史回放时要求逐字一致，任何转写或丢失都会破坏兼容性。这是 Trace 能够无损恢复 Session 的前提之一。
 
 ## 协议的三种职责
 

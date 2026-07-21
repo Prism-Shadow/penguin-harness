@@ -8,6 +8,14 @@ import type { Strings } from "./strings";
 export const en: Strings = {
   siteName: "PenguinHarness",
 
+  announcement: {
+    label: "Announcements",
+    prev: "Previous announcement",
+    next: "Next announcement",
+    models: "Kimi K3 and Qwen 3.8 Max are now available in PenguinHarness",
+    fireworks: "Claim $50 in Fireworks API credits with the AMD Developer Program",
+  },
+
   nav: {
     highlights: "Highlights",
     quickstart: "Quick start",
@@ -87,11 +95,33 @@ export const en: Strings = {
     ],
   },
 
+  compare: {
+    eyebrow: "vs. LangChain",
+    title: "The gap between 1× and 100×",
+    subtitle:
+      "With LangChain, you build agents by hand — at 1× speed. With PenguinHarness, agents build agents — at 100×.",
+    langchain: {
+      name: "LangChain",
+      speed: "1×",
+      mode: "Agents built by hand",
+      note: "Chains, tools and prompts written line by line — every app starts from zero.",
+    },
+    penguin: {
+      name: "PenguinHarness",
+      speed: "100×",
+      mode: "Agents built by agents",
+      note: "One sentence in — an Agent delivers scaffold, code and run instructions end to end.",
+    },
+  },
+
   selfImprove: {
     eyebrow: "The self-improvement loop",
     title: "Multi-agent collaboration makes evolution automatic",
     subtitle:
       "The Optimizer orchestrates multiple Evaluators to score the Target Agent in parallel, uses the scores and run traces to find where points were lost, and upgrades the Agent from version N to N+1 — with a snapshot before every round.",
+    videoLabel: "Self-improvement demo video",
+    videoCaption:
+      "The self-improvement loop end to end: run the benchmark, find the lost points, ship the next version.",
     nodeOptimizer: "Optimizer",
     nodeEvaluator: "Evaluator × N",
     nodeTarget: "Target Agent",
@@ -122,7 +152,7 @@ export const en: Strings = {
     tabCli: "CLI",
     webStep2: "Open the web interface",
     webStep2Desc:
-      "penguin web starts the local service and opens your browser; sign in with the built-in admin account admin / admin123 (change the password right after).",
+      "penguin web starts the local service and opens your browser; sign in with the built-in admin account admin / penguin-2026 (change the password right after).",
     webCmd: "penguin web   # opens http://127.0.0.1:7364",
     webStep3: "Configure a model in the UI and start chatting",
     webStep3Desc:
@@ -136,11 +166,12 @@ export const en: Strings = {
     tabDeepseek: "DeepSeek",
     tabOpenrouter: "OpenRouter",
     deepseekCmd: `penguin config model add \\
+  --provider deepseek \\
   --model-id deepseek-v4-pro \\
   --api-key sk-your-deepseek-key \\
   --set-default`,
     deepseekNote:
-      "The provider is inferred as deepseek automatically; omit --api-key to fall back to the DEEPSEEK_API_KEY environment variable.",
+      "A model is always referenced by the (provider, model_id) pair, so --provider is required; omit --api-key to fall back to the DEEPSEEK_API_KEY environment variable.",
     openrouterCmd: `penguin config model add \\
   --provider openrouter \\
   --model-id deepseek/deepseek-v4-pro \\
@@ -155,19 +186,29 @@ export const en: Strings = {
   --message "Analyze data.csv and summarize quarterly sales"`,
   },
 
-  showcase: {
-    eyebrow: "Use cases",
-    title: "Daily tasks + zero-code AI development",
+  cases: {
+    eyebrow: "Cases",
+    title: "From one sentence to a running app",
     subtitle:
-      "Hand recurring chores to an Agent that runs around the clock — and go from a one-sentence request to a runnable Agent app without writing a line of code.",
-    tagChat: "Zero-code AI development",
-    captionChat:
-      "Development by conversation: the Agent builds an Agent app from scratch, tools really execute",
-    tagTraces: "Daily tasks",
-    captionTraces:
-      "Autonomous runs, fully replayable: every request and tool call with usage and timing",
-    tagBenchmark: "Continuous evolution",
-    captionBenchmark: "Built-in Benchmark scoreboards — scores climb with every round",
+      "Hand the requirement to an Agent and get a runnable result end to end — more cases are on the way.",
+    tabs: [
+      {
+        label: "RAG app",
+        prompt:
+          "Collect the docs from https://github.com/ericbuess/claude-code-docs and build a RAG app that answers Claude Code questions as a configuration expert, citing its sources.",
+        caption:
+          "The generated RAG app: a Claude Code docs expert answering with cited, clickable sources and example questions",
+        cost: "And generating this entire RAG app burned just $0.02 (¥0.2) of tokens — on DeepSeek V4 Pro.",
+      },
+      {
+        label: "2D penguin sled game",
+        prompt:
+          "Build a cute Antarctic penguin sledding game: Space to jump the rocks, with speed and difficulty ramping up over time.",
+        caption:
+          "The generated mini game: an Antarctic penguin sleds and jumps rocks, with live scoring and rising difficulty",
+        cost: "",
+      },
+    ],
   },
 
   contract: {
@@ -224,9 +265,9 @@ export const en: Strings = {
 
   benchmark: {
     eyebrow: "Benchmark",
-    title: "Same model, equal or better quality, lower cost",
+    title: "Each with its flagship model — comparable quality, 1-2 orders of magnitude cheaper",
     subtitle:
-      "All runs use the same DeepSeek V4 Pro model — head-to-head against Claude Code and OpenAI Codex on two suites.",
+      "Every product runs the model it is normally paired with, head-to-head against Claude Code and OpenAI Codex on two suites: comparable accuracy, tens of times the difference in spend.",
     higherBetter: "higher is better",
     lowerBetter: "lower is better",
     dimScore: "Accuracy",
@@ -234,12 +275,14 @@ export const en: Strings = {
     dimCost: "Cost",
     dataTitle: "Complex data analysis",
     dataDesc:
-      "Ties Claude Code on accuracy and clearly beats OpenAI Codex — with fewer Tokens at lower cost.",
+      "Best accuracy of the three (66.67%, against 53.33% for both rivals), at 1/35 of OpenAI Codex's cost and 1/70 of Claude Code's.",
     dataFootnote:
-      "15 complex data-analysis tasks · averaged over 1 run · cost estimated at official pricing.",
+      "15 complex data-analysis tasks · single run · Tokens and cost are suite totals · estimated at official pricing.",
     codeTitle: "Coding tasks",
-    codeDesc: "Highest accuracy of the three at the lowest per-run cost.",
-    codeFootnote: "40 coding tasks · averaged over 2 runs · cost estimated at official pricing.",
+    codeDesc:
+      "Ties OpenAI Codex on accuracy (71.25%) and trails Claude Code (86.25%) — at 1/58 and 1/39 of their cost.",
+    codeFootnote:
+      "40 coding tasks × 2 runs (accuracy over all 80 outcomes) · Tokens and cost are suite totals · estimated at official pricing.",
     colFramework: "Framework",
     colModel: "Model",
     colAccuracy: "Accuracy (%)",
@@ -251,6 +294,7 @@ export const en: Strings = {
     eyebrow: "Features",
     title: "The full capability set, one desktop-grade UI",
     subtitle: "One-to-one with the web interface's menu — installed means ready.",
+    more: "and more…",
     items: [
       {
         title: "Multi-session chat",
@@ -313,6 +357,18 @@ export const en: Strings = {
         desc: "Credentials land as hidden 0600 files, are barred from the system prompt, and stay masked throughout the UI.",
       },
     ],
+  },
+
+  community: {
+    eyebrow: "Community",
+    title: "Join the community and build with us",
+    subtitle: "Discuss, ask, contribute — your first Issue is the best way to start.",
+    items: {
+      discord: { name: "Discord", desc: "Chat with us and other developers in real time." },
+      x: { name: "X (Twitter)", desc: "Follow the latest product and team updates." },
+      wechat: { name: "WeChat group", desc: "Chinese community discussions and support." },
+      github: { name: "GitHub", desc: "Stars, Issues, and PRs all welcome." },
+    },
   },
 
   cta: {

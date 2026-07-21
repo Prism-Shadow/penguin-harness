@@ -10,7 +10,15 @@ export const zh = {
   docsBadge: "Docs",
 
   nav: {
-    home: "产品主页",
+    // Landing-parity labels: the top bar mirrors the landing page's nav exactly
+    // (same items, same order) so the two sites link into each other seamlessly.
+    highlights: "特色",
+    quickstart: "快速开始",
+    benchmark: "评测",
+    contract: "CONTRACT.md",
+    features: "功能",
+    blog: "博客",
+    docs: "文档",
     github: "GitHub",
     openMenu: "打开目录",
     closeMenu: "关闭目录",

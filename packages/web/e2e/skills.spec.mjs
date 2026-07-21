@@ -3,7 +3,7 @@
  * - the sidebar nav shows "技能库" ("Skill Library"), and the page renders the library's skill
  *   cards across group sections (a collapsible group header: group name + skill count,
  *   **no icon**; the group name follows the UI language — when the server ships a Chinese
- *   group name it's "Agent 开发 / 数据分析 / Penguin 开发 / 网页开发 / 软件工程", falling back to
+ *   group name it's "办公效率 / 软件开发 / AI 应用开发 / Agent 调优", falling back to
  *   English by default); cards carry a custom icon (icon.svg sanitized then inlined, not the book
  *   fallback), with metadata showing version and usage count (worded semantically, not a bare
  *   number badge);
@@ -35,11 +35,10 @@ const P = "password123";
 // falling back to English (both states are asserted).
 // The group header is a collapsible button (group name + skill count); matched by a substring of its accessible name.
 const GROUPS = [
-  /Agent Development|Agent 开发/,
-  /Data Analysis|数据分析/,
-  /Penguin Development|Penguin 开发/,
-  /Web Development|网页开发/,
-  /Software Engineering|软件工程/,
+  /Office Productivity|办公效率/,
+  /Software Development|软件开发/,
+  /AI App Development|AI 应用开发/,
+  /Agent Tuning|Agent 调优/,
 ];
 const SKILLS = [
   "agent-creation",

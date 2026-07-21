@@ -3,8 +3,8 @@ name: agenthub-models
 description: Call model APIs through @prismshadow/agenthub — streaming text generation, image generation, speech synthesis and embeddings with one client.
 short_description: Call model APIs with one AgentHub client.
 short_description_zh: 用一个 AgentHub 客户端调用模型 API。
-version: 1
-updated: 2026-07-17T00:00:00Z
+version: 7
+updated: 2026-07-21T00:00:00Z
 ---
 
 # AgentHub Model APIs
@@ -28,6 +28,20 @@ const client = new AutoLLMClient({ model: "<model_id>", apiKey: "<key>", baseUrl
 ## Before you start
 
 If the user's message only invokes this skill (e.g. "use agenthub-models skill") without a concrete task, ask the user what they want to build. Do not write code until the requirement is clear.
+
+**Important prerequisite — set the key up first, then develop.** When the script is an AI app you are building for the user, have them add the model API key in **this agent's key vault** (gear icon on its card, Agents page → settings → key vault tab) *before* you start, so the credential is in your shell environment. If the app stores its own model config, keep its Penguin data root **inside the CWD workspace** (`--root ./penguin_data`), never `~/.penguin`. Model ids can come from the penguin CLI catalog and the id table below.
+
+Check for a usable API key before writing code — the client needs one for whichever provider you target:
+
+```bash
+env | grep -oE "(DEEPSEEK|OPENAI|ANTHROPIC|GEMINI)_API_KEY" || echo none
+```
+
+Vault keys also appear in your Vault Keys section. **Only two sources count as a usable key**: a vault-injected environment variable (the check above), or — when the app stores its own model config — a key already configured in the app's own data root (`penguin config model list --root <data_dir>`). Keys living in the global `~/.penguin` or any other `.penguin` directory do **not** count — a bare `penguin config model list` (no `--root`) reads the global store, because the CLI defaults to the global root unless `--root` is given, so a key showing up there proves nothing for your script and must never be used or copied.
+
+If neither counted source yields a usable key, **stop immediately and ask the user to configure one — do not write code, and do not keep calling tools to retry**: ask them to add one in the agent's **key vault** (gear icon on the agent's card, Agents page → settings → key vault tab); vault values reach your shell environment on the next task. Re-checking the environment or the vault in a loop just wastes turns — one clear check, then hand back to the user.
+
+Keep model API keys **project-local**: for an app that stores its own model config, write the key into the project under the working directory with the penguin CLI, **always passing `--root <data_dir>` for a directory inside the current working directory** (`penguin config model add --root ./penguin_data --provider <group> --model-id <id> --api-key <key>`) — without `--root` it writes to the global `~/.penguin/data` instead. `--provider` is required alongside `--model-id`: a model entry is the `(provider, model_id)` pair and the group is never inferred (use `custom` for an endpoint outside the built-in groups). Otherwise rely on vault-injected environment variables. Never read, copy or fall back to model keys stored in the user's global `~/.penguin` directory — that config belongs to the person running Penguin, not to your script.
 
 ## Model IDs
 

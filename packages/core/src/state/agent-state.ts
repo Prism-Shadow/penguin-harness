@@ -26,6 +26,8 @@ import {
   VAULT_KEYS_PLACEHOLDER,
   SKILL_METADATA_PLACEHOLDER,
   CWD_PLACEHOLDER,
+  PROVIDER_PLACEHOLDER,
+  MODEL_ID_PLACEHOLDER,
   DATE_PLACEHOLDER,
   defaultAgentsMd,
   defaultSystemConfig,
@@ -83,6 +85,10 @@ export interface SessionEnvironmentValues {
   agentId: string;
   /** Absolute path to this Project's directory (system Prompt placeholder {{PROJECT_DIR}}; Agent State/scratchpad paths are derived from it). */
   projectDir: string;
+  /** The session model's provider group (system Prompt placeholder {{PROVIDER}}; paired with modelId to form the model reference). */
+  provider: string;
+  /** The session model's upstream model id (system Prompt placeholder {{MODEL_ID}}). */
+  modelId: string;
   platform: string;
   osVersion: string;
   date: string;
@@ -371,6 +377,10 @@ export function assembleSystemPrompt(
     .join(sessionEnvironment?.sessionId ?? "")
     .split(CWD_PLACEHOLDER)
     .join(sessionEnvironment?.cwd ?? "")
+    .split(PROVIDER_PLACEHOLDER)
+    .join(sessionEnvironment?.provider ?? "")
+    .split(MODEL_ID_PLACEHOLDER)
+    .join(sessionEnvironment?.modelId ?? "")
     .split(PLATFORM_PLACEHOLDER)
     .join(sessionEnvironment?.platform ?? "")
     .split(OS_VERSION_PLACEHOLDER)

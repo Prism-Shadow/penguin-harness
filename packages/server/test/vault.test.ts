@@ -3,13 +3,28 @@
  * agent_state/.vault.toml): GET masks values (plaintext
  * is never sent), PUT is owner-only, whole-table replace semantics (omitting
  * value keeps the original, an absent key is deleted, a new key must supply a
- * value), 400 on key/shape validation, 404 for a nonexistent Agent, and vaults
- * of different Agents are independent of each other.
+ * value), 400 on key/shape validation, 404 for a nonexistent Agent, vaults of
+ * different Agents are independent of each other, and PUT invalidates the Agent's
+ * cached Session runtimes (the next Task re-resumes and sees the new values).
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { userText } from "@prismshadow/penguin-core";
 import type { ProjectCreateResponse, VaultResponse } from "../src/api/types.js";
-import { apiClient, createTestApp, provisionUser } from "./helpers.js";
+import type { RuntimeSession } from "../src/runtime/session-manager.js";
+import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
+
+/** Minimal fake runtime Session: one assistant reply, no approvals (keeps the loader-count test free of LLM calls). */
+function fakeRuntimeSession(sessionId: string): RuntimeSession {
+  return {
+    sessionId,
+    toolPermission: () => "rw",
+    generateTitle: async () => ({ title: null, usage: null }),
+    compactability: () => "ok" as const,
+    async *run() {},
+    async *compact() {},
+  };
+}
 
 describe("vault api", () => {
   let t: TestApp;
@@ -18,9 +33,19 @@ describe("vault api", () => {
   let outsider: ReturnType<typeof apiClient>;
   let projectId: string;
   let vaultPath: string;
+  /** Loader call count: how many times the manager (re)built a runtime from the index. */
+  let loads: number;
 
   beforeEach(async () => {
-    t = await createTestApp();
+    loads = 0;
+    t = await createTestApp({
+      loader: {
+        load: async (row) => {
+          loads++;
+          return fakeRuntimeSession(row.sessionId);
+        },
+      },
+    });
     const a = await provisionUser(t.app, "owner_a");
     const b = await provisionUser(t.app, "member_b");
     const c = await provisionUser(t.app, "outsider_c");
@@ -110,6 +135,42 @@ describe("vault api", () => {
     const modelsBody = (await models.json()) as { models: { credential?: unknown }[] };
     expect(modelsBody.models).toHaveLength(1);
     expect(modelsBody.models[0]!.credential).toBeTruthy();
+  });
+
+  it("PUT invalidates the Agent's cached Session runtimes: the next Task re-resumes and picks up the new vault", async () => {
+    t.deps.sessionsRepo.insert({
+      sessionId: "vault-sess-1",
+      projectId,
+      agentId: "default_agent",
+      modelId: "m1",
+      provider: "custom",
+      workspace: t.root,
+      approvalMode: "allow-all",
+      title: null,
+      createdAt: new Date().toISOString(),
+    });
+    const idle = () => t.deps.manager.statusOf("vault-sess-1") === "idle";
+
+    // First Task builds the runtime (load #1); the second reuses the active-table entry.
+    await t.deps.manager.startTask("vault-sess-1", [userText("a")]);
+    await waitFor(idle);
+    await t.deps.manager.startTask("vault-sess-1", [userText("b")]);
+    await waitFor(idle);
+    expect(loads).toBe(1);
+
+    // Vault update via the API: the cached runtime is stale, so the next Task re-resumes
+    // (the loader re-reads .vault.toml — the new value reaches the next Task's environment).
+    const put = await owner.put(vaultPath, { entries: [{ key: "NEW_KEY", value: "v-secret-1" }] });
+    expect(put.status).toBe(200);
+    await t.deps.manager.startTask("vault-sess-1", [userText("c")]);
+    await waitFor(idle);
+    expect(loads).toBe(2);
+
+    // Reads don't invalidate: the rebuilt runtime is reused.
+    expect((await owner.get(vaultPath)).status).toBe(200);
+    await t.deps.manager.startTask("vault-sess-1", [userText("d")]);
+    await waitFor(idle);
+    expect(loads).toBe(2);
   });
 
   it("Agent-level isolation: different Agents' vaults are independent; a nonexistent Agent 404", async () => {

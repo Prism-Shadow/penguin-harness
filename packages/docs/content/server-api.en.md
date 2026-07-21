@@ -35,12 +35,12 @@ packages/server/src
 
 - Cookie session: `penguin_session` (HttpOnly, SameSite=Lax), valid for 7 days with sliding renewal;
 - Passwords are stored as scrypt hashes; the server keeps only the sha256 of the session token, never the plaintext;
-- No open registration: the built-in admin `admin` / `admin123` is seeded at startup, and all other accounts are created by an admin;
+- No open registration: the built-in admin `admin` / `penguin-2026` is seeded at startup, and all other accounts are created by an admin;
 - Same-origin only — no CORS middleware is enabled.
 
 ```bash
 curl -c cookies.txt -H "Content-Type: application/json" \
-  -d '{"userId":"admin","password":"admin123"}' \
+  -d '{"userId":"admin","password":"penguin-2026"}' \
   http://127.0.0.1:7364/api/auth/login
 ```
 
@@ -87,6 +87,8 @@ Member writes are owner-only.
 | PUT | /api/projects/:projectId/models | Full-table replace, keyed by `(provider, modelId)` |
 | POST | /api/projects/:projectId/models/test | Connectivity test: `{provider, modelId, …}` → `{ok, latencyMs?, message?}` |
 
+Every endpoint that names a model takes the complete `(provider, modelId)` pair. Nothing is inferred: a request carrying only one half is a 400, never a lookup. Where the reference itself is optional (Session creation, Schedules), omitting both halves selects the Project's default model.
+
 ### Agents
 
 The paths below omit the `/api/projects/:projectId` prefix.
@@ -110,7 +112,7 @@ The paths below omit the `/api/projects/:projectId` prefix.
 | GET / POST | /agents/:agentId/schedules | List scheduled tasks / create one (409 if the name exists) |
 | GET / PUT / DELETE | /agents/:agentId/schedules/:name | Read / update / delete a single task |
 
-Schedule writes are owner-only.
+Schedule writes are owner-only. A task in new-Session mode carries `modelId` and `provider` together or not at all; the pair is checked against the Project's model table when the task is saved and again when the scheduler reconciles it.
 
 ### Session Creation and Directory Browsing
 
@@ -120,7 +122,7 @@ Schedule writes are owner-only.
 | POST | /agents/:agentId/sessions | Create a Session: `{modelId?, provider?, workspace?, approvalMode?}` → 201 |
 | GET | /dirs?path= | Server-side directory browser (backs the Workspace picker) |
 
-On Session creation, the model defaults to the Project's default model, the Workspace defaults to an auto-created temporary directory, and the approval mode defaults to `allow-all`.
+On Session creation, `modelId` and `provider` are both-or-neither: send the complete pair to pick a model, or omit both to take the Project's default model — one without the other is a 400. The Workspace defaults to an auto-created temporary directory, and the approval mode defaults to `allow-all`.
 
 ### Usage and Traces (Agent Level)
 
@@ -147,7 +149,7 @@ The paths below omit the `/api/sessions/:sessionId` prefix. For the storage mode
 | POST | /abort | Interrupt the current Task: 202 when triggered, 204 when idle |
 | POST | /compact | Trigger context compaction: 202; 409 `nothing_to_compact` when there is nothing to compact |
 | GET | /files?path= | Browse the Workspace directory |
-| GET | /files/content?path=&download= | Read a Workspace file (`download=1` serves it as an attachment) |
+| GET | /files/content?path=&download=&preview= | Read a Workspace file (`download=1` serves it as an attachment, `preview=1` renders it in a sandbox — see below) |
 | POST | /files/stat | Batch existence check: `{paths}` |
 | PUT | /files/content?path= | Upload a file: `{dataBase64}`, capped at 14MB |
 | GET | /traces | List this Session's Trace files |
@@ -156,6 +158,16 @@ The paths below omit the `/api/sessions/:sessionId` prefix. For the storage mode
 | GET | /scratchpad/:fileName | Read a session scratch file (e.g. input images) |
 
 General conventions: Sessions the user cannot access always return 404 — their existence is never leaked; only one Task or compaction runs per Session at a time, and conflicts return 409 (`task_in_progress` / `compacting`).
+
+Workspace files may be Agent-generated, so `GET /files/content` treats them as untrusted: every response carries `X-Content-Type-Options: nosniff`, and the rest of the headers depend on the two flags (`download=1` wins over `preview=1`):
+
+| Query | Content-Type | Content-Disposition | Content-Security-Policy |
+| --- | --- | --- | --- |
+| neither | `text/plain; charset=utf-8` for `.html` / `.htm` / `.svg`, the real type otherwise | `inline` | — |
+| `preview=1` | the real type (`text/html`, `image/svg+xml`, …) | `inline` | `sandbox allow-scripts allow-popups allow-modals allow-forms`, sent only for `.html` / `.htm` / `.svg` |
+| `download=1` | the real type | `attachment` | — |
+
+The filename always rides along as `filename*=UTF-8''` with percent-encoding. `preview=1` is what backs "open in a new tab": the document keeps its real type and does render and run, but the sandbox deliberately omits `allow-same-origin`, so it lands in an opaque origin and can reach neither this origin's cookies nor the API — while the request itself still authenticates, because a top-level GET sends the SameSite=Lax session cookie.
 
 Key request bodies (explicit keys):
 

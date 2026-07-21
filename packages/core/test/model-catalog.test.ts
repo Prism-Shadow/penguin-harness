@@ -6,24 +6,31 @@ import { describe, expect, it } from "vitest";
 import {
   MODEL_CATALOG,
   MODEL_PROVIDERS,
+  modelHomepageUrl,
   catalogEntryFor,
-  inferProviderForUpstream,
   presetModelEntries,
   providerInfo,
   resolveModelEnv,
 } from "../src/state/index.js";
 
 describe("model-catalog", () => {
-  it("model ids are globally unique; DeepSeek comes first (the default model's provider)", () => {
+  it("(provider, model_id) pairs are unique; DeepSeek comes first (the default model's provider)", () => {
+    // Bare model ids may repeat across providers (a gateway reselling a vendor model keeps the
+    // vendor's upstream id, e.g. Qwen Token Plan's glm-5.2 / deepseek-v4-pro) — uniqueness is
+    // the (provider, model_id) pair, matching the catalog's sole lookup key (catalogEntryFor).
+    const pairs = MODEL_CATALOG.map((m) => `${m.provider}\0${m.modelId}`);
+    expect(new Set(pairs).size).toBe(pairs.length);
     const ids = MODEL_CATALOG.map((m) => m.modelId);
-    expect(new Set(ids).size).toBe(ids.length);
     expect(MODEL_CATALOG[0]!.provider).toBe("deepseek");
-    // Group order: DeepSeek first, followed by the OpenRouter and SiliconFlow gateways,
-    // then Google Gemini before Anthropic, with custom last.
+    // Group order: DeepSeek first, followed by the OpenRouter, SiliconFlow, and Qwen Token
+    // Plan gateways, then Google Gemini before Anthropic, with custom last.
     expect(MODEL_PROVIDERS.map((p) => p.id)).toEqual([
       "deepseek",
       "openrouter",
+      "fireworks",
       "siliconflow",
+      "qwen-token-plan",
+      "qwen-pay-as-you-go",
       "google",
       "anthropic",
       "openai",
@@ -61,13 +68,26 @@ describe("model-catalog", () => {
     }
   });
 
-  it("all three price buckets are positive; context_window is a positive integer", () => {
+  it("price buckets are positive (preview models without a list price omit pricing); context_window is a positive integer", () => {
     for (const m of MODEL_CATALOG) {
-      expect(m.pricing, m.modelId).toBeDefined();
-      expect(m.pricing!.unit).toBe("usd_per_mtok");
-      expect(m.pricing!.cache_read).toBeGreaterThan(0);
-      expect(m.pricing!.cache_write).toBeGreaterThan(0);
-      expect(m.pricing!.output).toBeGreaterThan(0);
+      if (m.provider === "qwen-token-plan" && m.modelId === "qwen3.8-max-preview") {
+        // Preview-only model: the plan runs a quota-multiplier promotion and publishes no
+        // per-token list price, so the entry carries none and costs read as 0 (same as
+        // unpriced user models).
+        expect(m.pricing, m.modelId).toBeUndefined();
+      } else if (m.modelId.endsWith(":free")) {
+        // Free-tier gateway model: a genuine $0 price (not "unknown"), so costs compute to 0.
+        expect(m.pricing, m.modelId).toBeDefined();
+        expect([m.pricing!.cache_read, m.pricing!.cache_write, m.pricing!.output]).toEqual([
+          0, 0, 0,
+        ]);
+      } else {
+        expect(m.pricing, m.modelId).toBeDefined();
+        expect(m.pricing!.unit).toBe("usd_per_mtok");
+        expect(m.pricing!.cache_read).toBeGreaterThan(0);
+        expect(m.pricing!.cache_write).toBeGreaterThan(0);
+        expect(m.pricing!.output).toBeGreaterThan(0);
+      }
       expect(Number.isInteger(m.contextWindow)).toBe(true);
       expect(m.contextWindow!).toBeGreaterThan(0);
     }
@@ -78,9 +98,12 @@ describe("model-catalog", () => {
     expect(providerInfo("nonexistent")).toBeUndefined();
   });
 
-  it("pair matching and provider-grouping inference: catalogEntryFor / inferProviderForUpstream", () => {
-    // catalogEntryFor is the sole catalog lookup entry point: it matches on (group, upstream id)
-    // pairs, so an identically named upstream id never matches across the wrong group.
+  it("catalogEntryFor is the sole lookup and always takes the (provider, model_id) pair", () => {
+    // It matches on (group, upstream id) pairs, so an identically named upstream id never
+    // matches across the wrong group. There is no bare-id lookup at all: a gateway reselling a
+    // vendor model keeps the vendor's upstream id, so a bare id names no single catalog entry
+    // and the catalog never offers to pick one (`glm-5.2`, `qwen3.7-max`, `qwen3.7-plus` and
+    // `deepseek-v4-pro` each appear under two groups).
     expect(catalogEntryFor("anthropic", "claude-sonnet-4-6")?.displayName).toBe(
       "Claude Sonnet 4.6",
     );
@@ -88,11 +111,11 @@ describe("model-catalog", () => {
     // The upstream id itself may contain / (gateway models); it is never split apart.
     expect(catalogEntryFor("openrouter", "xiaomi/mimo-v2.5")?.displayName).toBe("MiMo-V2.5");
     expect(catalogEntryFor("custom", "my-own")).toBeUndefined();
-
-    // Inference for `model add` when --provider is omitted: a catalog hit yields its provider, otherwise custom.
-    expect(inferProviderForUpstream("deepseek-v4-pro")).toBe("deepseek");
-    expect(inferProviderForUpstream("xiaomi/mimo-v2.5")).toBe("openrouter");
-    expect(inferProviderForUpstream("my-own-model")).toBe("custom");
+    // Each group's entry for a resold id is reached only through that group.
+    expect(catalogEntryFor("zhipu", "glm-5.2")?.contextWindow).toBe(1000000);
+    expect(catalogEntryFor("qwen-token-plan", "glm-5.2")?.contextWindow).toBe(1048576);
+    expect(catalogEntryFor("deepseek", "deepseek-v4-pro")?.provider).toBe("deepseek");
+    expect(catalogEntryFor("qwen-token-plan", "deepseek-v4-pro")?.provider).toBe("qwen-token-plan");
   });
 
   it("presetModelEntries: provider and bare upstream model_id are separate fields; gateway models inline base_url", () => {
@@ -115,42 +138,124 @@ describe("model-catalog", () => {
     }
   });
 
-  it("gateway models (OpenRouter / SiliconFlow): openai protocol + preset base URL; env fallback is OPENAI_API_KEY", () => {
+  it("gateway models (OpenRouter / SiliconFlow / Qwen Token Plan): openai protocol + preset base URL; env fallback is OPENAI_API_KEY", () => {
     const or = MODEL_CATALOG.filter((m) => m.provider === "openrouter");
+    // Dictionary order, newer versions of a series first (gpt-5.6-* before gpt-5.5,
+    // opus-4.8 before 4.7) — precomputed in the catalog, no runtime sorting.
     expect(or.map((m) => m.modelId)).toEqual([
-      "xiaomi/mimo-v2.5",
-      "tencent/hy3",
+      "anthropic/claude-fable-5",
+      "anthropic/claude-opus-4.8",
+      "anthropic/claude-opus-4.7",
+      "anthropic/claude-sonnet-5",
+      "deepseek/deepseek-v4-flash",
+      "deepseek/deepseek-v4-pro",
+      "google/gemini-3.5-flash",
       "minimax/minimax-m3",
+      "moonshotai/kimi-k3",
+      "nvidia/nemotron-3-ultra-550b-a55b:free",
+      "openai/gpt-5.6-sol",
+      "openai/gpt-5.6-terra",
+      "openai/gpt-5.5",
       "stepfun/step-3.7-flash",
+      "tencent/hy3",
+      "x-ai/grok-4.5",
+      "xiaomi/mimo-v2.5",
+      "z-ai/glm-5.2",
     ]);
     for (const m of or) {
       expect(m.clientType).toBe("openai");
       expect(m.baseUrl).toBe("https://openrouter.ai/api/v1");
     }
+    const fw = MODEL_CATALOG.filter((m) => m.provider === "fireworks");
+    expect(fw.map((m) => [m.modelId, m.supportsVision])).toEqual([
+      ["accounts/fireworks/models/deepseek-v4-flash", false],
+      ["accounts/fireworks/models/deepseek-v4-pro", false],
+      ["accounts/fireworks/models/glm-5p2", false],
+      ["accounts/fireworks/models/kimi-k2p7-code", true],
+      ["accounts/fireworks/models/minimax-m3", true],
+    ]);
+    for (const m of fw) {
+      expect(m.clientType).toBe("openai");
+      expect(m.baseUrl).toBe("https://api.fireworks.ai/inference/v1");
+    }
     const sf = MODEL_CATALOG.filter((m) => m.provider === "siliconflow");
     expect(sf.map((m) => m.modelId)).toEqual([
-      "zai-org/GLM-5.2",
+      "deepseek-ai/DeepSeek-V4-Flash",
       "deepseek-ai/DeepSeek-V4-Pro",
       "meituan-longcat/LongCat-2.0",
+      "moonshotai/Kimi-K2.7-Code",
+      "zai-org/GLM-5.2",
     ]);
     for (const m of sf) {
       expect(m.clientType).toBe("openai");
       expect(m.baseUrl).toBe("https://api.siliconflow.cn/v1");
     }
+    const qtp = MODEL_CATALOG.filter((m) => m.provider === "qwen-token-plan");
+    expect(qtp.map((m) => m.modelId)).toEqual([
+      "deepseek-v4-pro",
+      "glm-5.2",
+      "qwen3.8-max-preview",
+      "qwen3.7-max",
+      "qwen3.7-plus",
+    ]);
+    for (const m of qtp) {
+      expect(m.clientType).toBe("openai");
+      expect(m.baseUrl).toBe("https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1");
+    }
+    // Vision flags per the plan's supported-model table: 3.8-max-preview and 3.7-plus see images.
+    expect(qtp.map((m) => [m.modelId, m.supportsVision])).toEqual([
+      ["deepseek-v4-pro", false],
+      ["glm-5.2", false],
+      ["qwen3.8-max-preview", true],
+      ["qwen3.7-max", false],
+      ["qwen3.7-plus", true],
+    ]);
+    const qpayg = MODEL_CATALOG.filter((m) => m.provider === "qwen-pay-as-you-go");
+    expect(qpayg.map((m) => [m.modelId, m.supportsVision])).toEqual([
+      ["kimi/kimi-k3", true],
+      ["qwen3.7-max", false],
+      ["qwen3.7-plus", true],
+      ["ZHIPU/GLM-5.2", false],
+    ]);
+    for (const m of qpayg) {
+      expect(m.clientType).toBe("openai");
+      expect(m.baseUrl).toBe("https://dashscope.aliyuncs.com/compatible-mode/v1");
+    }
     // Routed through AgentHub's OpenAI client -> when the credential is left blank it reads OPENAI_API_KEY (not the provider's own env var name).
-    for (const id of ["openrouter", "siliconflow", "custom"]) {
+    for (const id of [
+      "openrouter",
+      "fireworks",
+      "siliconflow",
+      "qwen-token-plan",
+      "qwen-pay-as-you-go",
+      "custom",
+    ]) {
       expect(providerInfo(id)!.envKey).toBe("OPENAI_API_KEY");
       expect(providerInfo(id)!.envBaseUrlKey).toBe("OPENAI_BASE_URL");
     }
-    // gatewayBaseUrl (prefilled by group in the frontend's "add model" dialog) is only carried by the two gateway providers.
+    // gatewayBaseUrl (prefilled by group in the frontend's "add model" dialog) is only carried by the gateway providers.
     expect(providerInfo("openrouter")!.gatewayBaseUrl).toBe("https://openrouter.ai/api/v1");
     expect(providerInfo("siliconflow")!.gatewayBaseUrl).toBe("https://api.siliconflow.cn/v1");
+    expect(providerInfo("qwen-token-plan")!.gatewayBaseUrl).toBe(
+      "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+    );
+    expect(providerInfo("qwen-pay-as-you-go")!.gatewayBaseUrl).toBe(
+      "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    );
+    expect(providerInfo("fireworks")!.gatewayBaseUrl).toBe("https://api.fireworks.ai/inference/v1");
+    const GATEWAYS = [
+      "openrouter",
+      "fireworks",
+      "siliconflow",
+      "qwen-token-plan",
+      "qwen-pay-as-you-go",
+    ];
     for (const p of MODEL_PROVIDERS) {
-      if (p.id !== "openrouter" && p.id !== "siliconflow") {
+      if (!GATEWAYS.includes(p.id)) {
         expect(p.gatewayBaseUrl, p.id).toBeUndefined();
       }
     }
-    const gateway = [...or, ...sf];
+    const gateway = [...or, ...fw, ...sf, ...qtp, ...qpayg];
     // Pricing (USD): MiMo v2.5 and Hy3.
     const mimo = MODEL_CATALOG.find((m) => m.modelId === "xiaomi/mimo-v2.5")!.pricing!;
     expect([mimo.cache_read, mimo.cache_write, mimo.output]).toEqual([0.0028, 0.14, 0.28]);
@@ -208,5 +313,48 @@ describe("resolveModelEnv (PRN-021: env fallback resolved by AgentHub routing ru
         expect(env!.envKey, m.modelId).toBe("OPENAI_API_KEY");
       }
     }
+  });
+
+  it("modelHomepageUrl: gateway per-model pages, vendor docs fallback, none for custom groups", () => {
+    // Gateway URL patterns work for user-added ids in those groups too (not catalog-gated).
+    expect(modelHomepageUrl("openrouter", "anthropic/claude-fable-5")).toBe(
+      "https://openrouter.ai/anthropic/claude-fable-5",
+    );
+    expect(modelHomepageUrl("openrouter", "someone/new-model")).toBe(
+      "https://openrouter.ai/someone/new-model",
+    );
+    expect(modelHomepageUrl("qwen-token-plan", "qwen3.7-plus")).toBe(
+      "https://www.qianwenai.com/models/qwen3.7-plus",
+    );
+    // Fireworks maps the accounts/<owner>/models/<slug> API id to its page path; other ids
+    // fall back to the models listing.
+    expect(modelHomepageUrl("fireworks", "accounts/fireworks/models/glm-5p2")).toBe(
+      "https://app.fireworks.ai/models/fireworks/glm-5p2",
+    );
+    expect(modelHomepageUrl("fireworks", "my-own-id")).toBe("https://app.fireworks.ai/models");
+    // Pay-as-you-go resells third-party models under slash-prefixed ids: the id is URL-encoded.
+    expect(modelHomepageUrl("qwen-pay-as-you-go", "ZHIPU/GLM-5.2")).toBe(
+      "https://www.qianwenai.com/models/ZHIPU%2FGLM-5.2",
+    );
+    // The preview model has no dedicated page: falls back to the plan's model overview.
+    expect(modelHomepageUrl("qwen-token-plan", "qwen3.8-max-preview")).toBe(
+      providerInfo("qwen-token-plan")!.modelsUrl,
+    );
+    // Direct vendors link to the vendor's model docs page.
+    expect(modelHomepageUrl("deepseek", "deepseek-v4-pro")).toBe(
+      "https://api-docs.deepseek.com/quick_start/pricing",
+    );
+    // Z.AI and Moonshot have per-model pages (Moonshot drops the dot: kimi-k2.6 -> chat-k26).
+    expect(modelHomepageUrl("zhipu", "glm-5.2")).toBe("https://docs.z.ai/guides/llm/glm-5.2");
+    expect(modelHomepageUrl("moonshot", "kimi-k2.6")).toBe(
+      "https://platform.kimi.com/docs/pricing/chat-k26",
+    );
+    expect(modelHomepageUrl("moonshot", "kimi-k2.5")).toBe(
+      "https://platform.kimi.com/docs/pricing/chat-k25",
+    );
+    expect(modelHomepageUrl("moonshot", "my-own")).toBe("https://platform.kimi.com/docs/pricing");
+    // Custom and user-defined groups have no page to vouch for.
+    expect(modelHomepageUrl("custom", "my-model")).toBeUndefined();
+    expect(modelHomepageUrl("my-own-gateway", "x")).toBeUndefined();
   });
 });

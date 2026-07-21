@@ -17,11 +17,17 @@
  * the unique key — string concatenation like `<provider>/<id>` is forbidden anywhere in the
  * pipeline. `model_id` is the upstream request id, sent to AgentHub unchanged; `default_model` /
  * `vision_model` are paired `{ provider, model_id }` references (a TOML inline table).
+ *
+ * A caller always supplies the **complete pair**: `provider` is never guessed from the builtin
+ * catalog and never derived from whichever configured entry happens to carry the same
+ * `model_id`. Both halves or neither — a `model_id` without a `provider` is an error, not a
+ * lookup, because resolving it would silently point credentials and pricing at a vendor the
+ * caller never named.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
-import { inferProviderForUpstream, presetModelEntries } from "./model-catalog.js";
+import { presetModelEntries } from "./model-catalog.js";
 import { projectConfigPath } from "./paths.js";
 
 /** Model reference: a `(provider, model_id)` pair (never string-concatenated anywhere). */
@@ -247,9 +253,11 @@ export async function saveProjectConfig(
 
 /**
  * Adds or updates a Model:
- * - Upserts into `models`, deduplicated by the `(provider, model_id)` pair (provider may be
- *   omitted — the builtin catalog is used to infer the upstream id's group, falling back to
- *   custom if it can't be inferred);
+ * - Upserts into `models`, deduplicated by the `(provider, model_id)` pair — both halves are
+ *   supplied by the caller, since the group is never guessed from the builtin catalog (a
+ *   gateway reselling a vendor model keeps the vendor's upstream id, so a bare id names no
+ *   single group, and guessing wrong files the caller's api_key under a vendor they never
+ *   picked); a model outside every known group is added under `"custom"` explicitly;
  * - If `api_key`/`base_url` are provided, they're written inline into the entry;
  * - Set as the default Model (a paired reference) when `opts.setDefault` is true.
  * Reads the existing config (or the default), saves after the change, and returns the updated
@@ -259,8 +267,8 @@ export async function addModel(
   root: string,
   projectId: string,
   entry: {
-    /** provider group; inferred from the builtin catalog when omitted (`inferProviderForUpstream`, falling back to custom if it can't be inferred). */
-    provider?: string;
+    /** provider group (required; never inferred — pass `"custom"` for a model outside the known groups). */
+    provider: string;
     /** Upstream model id (sent to AgentHub unchanged). */
     model_id: string;
     context_window?: number;
@@ -275,7 +283,7 @@ export async function addModel(
   opts?: { setDefault?: boolean },
 ): Promise<ProjectConfig> {
   const cfg = await loadProjectConfig(root, projectId);
-  const provider = entry.provider ?? inferProviderForUpstream(entry.model_id);
+  const { provider } = entry;
 
   // upsert: layers new fields on top of the existing entry; fields not explicitly provided
   // (e.g. context_window) keep their existing value, so a call like "just add an api_key"
@@ -400,35 +408,19 @@ export function getModel(cfg: ProjectConfig, ref: ModelRef): ModelEntry | undefi
 }
 
 /**
- * Resolves a model reference (the **single entry point for "provider omitted"**, shared by core
- * and CLI/server — never set up a second one):
- * - `provider` given: validated for existence by exact paired reference;
- * - `provider` omitted: an exact-match lookup on `model_id` (no fuzzy matching of any kind) —
- *   resolvable only when **exactly one** entry matches; 0 or multiple matches always report a
- *   clear error (an ambiguity error lists the candidate paired references).
+ * Validates a `(provider, model_id)` pair against the Project config and returns it as a
+ * `ModelRef` (the **single validation entry point**, shared by core and CLI/server — never set
+ * up a second one). Both halves are required: this only ever checks that the exact pair is
+ * configured, it never searches for a group to attach to a bare `model_id`. A pair the config
+ * doesn't have throws — a reference outside the config would leave credentials, pricing, and
+ * the context window unavailable at request time.
  */
-export function resolveModelRef(cfg: ProjectConfig, modelId: string, provider?: string): ModelRef {
-  if (provider !== undefined) {
-    const ref: ModelRef = { provider, model_id: modelId };
-    if (!getModel(cfg, ref)) {
-      throw new Error(
-        `Model is not in the Project config: ${formatModelRef(ref)}. Use \`penguin config model list\` to see the configured models, or \`penguin config model add\` to add one.`,
-      );
-    }
-    return ref;
-  }
-  const candidates = cfg.models.filter((m) => m.model_id === modelId);
-  if (candidates.length === 1) {
-    return { provider: candidates[0]!.provider, model_id: modelId };
-  }
-  if (candidates.length === 0) {
+export function resolveModelRef(cfg: ProjectConfig, modelId: string, provider: string): ModelRef {
+  const ref: ModelRef = { provider, model_id: modelId };
+  if (!getModel(cfg, ref)) {
     throw new Error(
-      `Model is not in the Project config: no entry has model_id ${modelId}. Use \`penguin config model list\` to see the configured models, or \`penguin config model add\` to add one.`,
+      `Model is not in the Project config: ${formatModelRef(ref)}. Use \`penguin config model list\` to see the configured models, or \`penguin config model add\` to add one.`,
     );
   }
-  throw new Error(
-    `Ambiguous model reference: model_id ${modelId} matches multiple entries: ${candidates
-      .map((m) => formatModelRef({ provider: m.provider, model_id: m.model_id }))
-      .join(", ")}. Specify provider to give a paired reference.`,
-  );
+  return ref;
 }

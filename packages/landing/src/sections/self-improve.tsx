@@ -6,8 +6,14 @@
  * real axes and ticks, each line growing from zero rightwards on a slow loop.
  * Illustrative; all colors are theme-aware Tailwind fill/stroke classes.
  */
+import { useEffect, useRef } from "react";
 import { S } from "../lib/strings";
 import { Section } from "../components/section";
+import { DemoVideo } from "../components/demo-video";
+import { demoVideoUrl } from "../lib/links";
+import { useLocale } from "../state/locale";
+import evoPosterZh from "../assets/evo-poster-zh.webp";
+import evoPosterEn from "../assets/evo-poster-en.webp";
 
 /** Rounded node with a centered label and an optional version pill. */
 function Node({
@@ -146,9 +152,17 @@ const EDGE_BENCH_OLD = "M295,208 L163,294";
 const EDGE_BENCH_NEW = "M425,208 L557,294";
 const EDGE_EVOLVE = "M216,324 L504,324";
 
+/** Draw-loop timing, mirroring the old CSS keyframes: grow, hold, fade, repeat. */
+const CYCLE_S = 4.6;
+const DRAW_END = 0.55;
+const HOLD_END = 0.84;
+const easeInOut = (t: number) => (t < 0.5 ? 2 * t * t : 1 - 2 * (1 - t) * (1 - t));
+
 /**
- * Outcome trend chart with proper axes and ticks; the line grows from zero
- * rightwards (pathLength-normalized draw animation looping in styles.css).
+ * Outcome trend chart with proper axes and ticks; a single rAF clock grows the
+ * line from zero rightwards and carries a value label on the moving head — the
+ * number changes as the curve climbs (or falls), so the trend reads at a glance.
+ * Reduced-motion users see the finished line with its final value.
  */
 function TrendChart({
   label,
@@ -156,27 +170,74 @@ function TrendChart({
   points,
   yTicks,
   xTicks,
-  delay,
+  phase,
+  format,
 }: {
   label: string;
   hint: string;
   points: number[];
   yTicks: number[];
   xTicks: Array<{ at: number; text: string }>;
-  delay: string;
+  /** Seconds this chart runs ahead of the shared cycle (staggers the trio). */
+  phase: number;
+  format: (v: number) => string;
 }) {
   const W = 210;
   const H = 112;
-  const M = { left: 34, right: 10, top: 10, bottom: 20 };
+  const M = { left: 34, right: 10, top: 16, bottom: 20 };
   const yMax = Math.max(...yTicks);
   const yMin = Math.min(...yTicks);
   const px = (i: number) => M.left + (i / (points.length - 1)) * (W - M.left - M.right);
   const py = (v: number) => M.top + ((yMax - v) / (yMax - yMin || 1)) * (H - M.top - M.bottom);
   const path = points.map((v, i) => `${i === 0 ? "M" : "L"}${px(i)},${py(v)}`).join(" ");
-  const lastX = px(points.length - 1);
-  const lastY = py(points[points.length - 1] ?? 0);
   const axis = "stroke-gray-200 dark:stroke-gray-800";
   const tickText = "fill-gray-400 text-[8.5px] tabular-nums dark:fill-gray-500";
+
+  const fadeRef = useRef<SVGGElement>(null);
+  const pathRef = useRef<SVGPathElement>(null);
+  const headRef = useRef<SVGGElement>(null);
+  const labelRef = useRef<SVGTextElement>(null);
+
+  useEffect(() => {
+    const fade = fadeRef.current;
+    const line = pathRef.current;
+    const head = headRef.current;
+    const value = labelRef.current;
+    if (!fade || !line || !head || !value) return;
+
+    const apply = (p: number, opacity: number) => {
+      line.style.strokeDashoffset = String(1 - p);
+      const f = p * (points.length - 1);
+      const i0 = Math.floor(f);
+      const i1 = Math.min(points.length - 1, i0 + 1);
+      const v = (points[i0] ?? 0) + ((points[i1] ?? 0) - (points[i0] ?? 0)) * (f - i0);
+      const x = px(f);
+      const y = py(v);
+      head.setAttribute("transform", `translate(${x}, ${y})`);
+      value.textContent = format(v);
+      value.setAttribute("x", String(Math.min(W - M.right - 10, Math.max(M.left + 12, x))));
+      value.setAttribute("y", String(Math.max(10, y - 9)));
+      fade.style.opacity = String(opacity);
+    };
+
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      apply(1, 1);
+      return;
+    }
+    let raf = 0;
+    const t0 = performance.now();
+    const tick = (now: number) => {
+      const t = (((now - t0) / 1000 + phase) % CYCLE_S) / CYCLE_S;
+      if (t < DRAW_END) apply(easeInOut(t / DRAW_END), 1);
+      else if (t < HOLD_END) apply(1, 1);
+      else apply(1, 1 - (t - HOLD_END) / (1 - HOLD_END));
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+    // px/py are pure functions of the props below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [points, phase, format]);
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 dark:border-gray-800 dark:bg-gray-900">
@@ -232,19 +293,28 @@ function TrendChart({
             </text>
           </g>
         ))}
-        <path
-          d={path}
-          pathLength={1}
-          fill="none"
-          strokeWidth={2}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="anim-line-draw stroke-brand-600 dark:stroke-brand-400"
-          style={{ animationDelay: delay }}
-        />
-        <g className="anim-line-dot" style={{ animationDelay: delay }}>
-          <circle cx={lastX} cy={lastY} r={5} className="fill-white dark:fill-gray-900" />
-          <circle cx={lastX} cy={lastY} r={3.5} className="fill-brand-600 dark:fill-brand-400" />
+        <g ref={fadeRef}>
+          <path
+            ref={pathRef}
+            d={path}
+            pathLength={1}
+            fill="none"
+            strokeWidth={2}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="stroke-brand-600 dark:stroke-brand-400"
+            style={{ strokeDasharray: 1, strokeDashoffset: 1 }}
+          />
+          <g ref={headRef}>
+            <circle r={5} className="fill-white dark:fill-gray-900" />
+            <circle r={3.5} className="fill-brand-600 dark:fill-brand-400" />
+          </g>
+          {/* The moving value label riding the curve head. */}
+          <text
+            ref={labelRef}
+            textAnchor="middle"
+            className="fill-brand-700 text-[10px] font-semibold tabular-nums dark:fill-brand-300"
+          />
         </g>
       </svg>
     </div>
@@ -255,6 +325,7 @@ const TRENDS: Array<{
   points: number[];
   yTicks: number[];
   xTicks: Array<{ at: number; text: string }>;
+  format: (v: number) => string;
 }> = [
   {
     points: [52, 58, 56, 64, 70, 75, 79],
@@ -264,6 +335,7 @@ const TRENDS: Array<{
       { at: 3, text: "v4" },
       { at: 6, text: "v7" },
     ],
+    format: (v) => `${v.toFixed(1)}%`,
   },
   {
     points: [0.42, 0.38, 0.39, 0.33, 0.3, 0.27, 0.25],
@@ -273,6 +345,7 @@ const TRENDS: Array<{
       { at: 3, text: "v4" },
       { at: 6, text: "v7" },
     ],
+    format: (v) => `$${v.toFixed(2)}`,
   },
   {
     points: [115, 107, 109, 98, 92, 87, 83],
@@ -282,10 +355,12 @@ const TRENDS: Array<{
       { at: 3, text: "v4" },
       { at: 6, text: "v7" },
     ],
+    format: (v) => `${v.toFixed(1)}s`,
   },
 ];
 
 export function SelfImprove() {
+  const { locale } = useLocale();
   return (
     <Section
       id="self-improvement"
@@ -416,10 +491,21 @@ export function SelfImprove() {
               points={TRENDS[i]?.points ?? []}
               yTicks={TRENDS[i]?.yTicks ?? [0, 1]}
               xTicks={TRENDS[i]?.xTicks ?? []}
-              delay={`${-i * 1.4}s`}
+              phase={i * 1.4}
+              format={TRENDS[i]?.format ?? ((v) => v.toFixed(0))}
             />
           ))}
         </div>
+      </div>
+      {/* The loop above is a diagram; this is the same loop actually running. Replaces the
+          "demo video coming soon" pill that stood here while the recording was in progress. */}
+      <div className="mt-10">
+        <DemoVideo
+          src={demoVideoUrl(locale === "zh" ? "evo_zh" : "evo_en")}
+          poster={locale === "zh" ? evoPosterZh : evoPosterEn}
+          label={S.selfImprove.videoLabel}
+          caption={S.selfImprove.videoCaption}
+        />
       </div>
     </Section>
   );

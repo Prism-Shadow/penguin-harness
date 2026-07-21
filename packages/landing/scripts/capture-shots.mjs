@@ -34,96 +34,172 @@ const MOCK = `http://127.0.0.1:${MOCK_PORT}`;
 // Commands are shared across languages (code is code) and really execute.
 // ---------------------------------------------------------------------------
 
-const CMD_SCAFFOLD = `mkdir -p csv-analyst/src && cat > csv-analyst/package.json <<'EOF'
+const CMD_COLLECT = `git clone --depth 1 https://github.com/ericbuess/claude-code-docs \\
+  claude-code-expert/corpus/claude-code-docs
+find claude-code-expert/corpus -type f ! -name '*.md' -delete
+rm -rf claude-code-expert/corpus/claude-code-docs/.git
+ls claude-code-expert/corpus/claude-code-docs | head -6`;
+
+const CMD_APP = `mkdir -p claude-code-expert/src claude-code-expert/public
+cat > claude-code-expert/package.json <<'EOF'
 {
-  "name": "csv-analyst",
+  "name": "claude-code-expert",
   "private": true,
   "type": "module",
-  "scripts": { "start": "tsx src/agent.ts" },
-  "dependencies": { "@prismshadow/penguin-core": "^0.1.0" }
+  "scripts": { "start": "tsx src/rag.ts" },
+  "dependencies": { "@prismshadow/penguin-core": "^0.1.0", "tsx": "^4" }
 }
 EOF
-ls -R csv-analyst`;
+cat > claude-code-expert/src/rag.ts <<'EOF'
+// BM25 retrieval over corpus/ + a Session that answers with clickable [n] citations.
+import fs from "node:fs";
+import http from "node:http";
+import path from "node:path";
+import { createAgent, isModelMessage, userText } from "@prismshadow/penguin-core";
 
-const CMD_ENTRY = `cat > csv-analyst/src/agent.ts <<'EOF'
-import { createAgent, isCompleteModelMessage, userText } from "@prismshadow/penguin-core";
+const walk = (d) =>
+  fs.readdirSync(d, { withFileTypes: true }).flatMap((e) =>
+    e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)]);
+const chunks = walk("corpus").flatMap((f) =>
+  fs.readFileSync(f, "utf8").split(/\\n(?=#{1,3} )/).map((text) => ({ source: f, text })));
 
-const agent = await createAgent({ agentId: "csv_analyst" });
-const session = await agent.createSession({ workspaceDir: process.cwd() });
-
-for await (const out of session.run([userText("Analyze data.csv and write summary.md")], {
-  approve: async () => "allow",
-})) {
-  if (isCompleteModelMessage(out) && out.payload.type === "text") {
-    console.log(out.payload.text);
+const tok = (s) => s.toLowerCase().match(/[a-z0-9]+|[一-鿿]/g) ?? [];
+const docs = chunks.map((c) => tok(c.text));
+const avg = docs.reduce((n, d) => n + d.length, 0) / Math.max(docs.length, 1);
+const df = new Map();
+for (const d of docs) for (const w of new Set(d)) df.set(w, (df.get(w) ?? 0) + 1);
+// BM25 (k1=1.2, b=0.75): idf weights rare terms, term frequency saturates, long chunks are penalized.
+const score = (q, i) => {
+  const d = docs[i];
+  let s = 0;
+  for (const w of new Set(tok(q))) {
+    const f = d.filter((x) => x === w).length;
+    if (!f) continue;
+    const n = df.get(w) ?? 0;
+    s += Math.log(1 + (docs.length - n + 0.5) / (n + 0.5)) * (f * 2.2) / (f + 1.2 * (0.25 + 0.75 * d.length / avg));
   }
-}
+  return s;
+};
+const agent = await createAgent({ root: "penguin_data" });
+
+http.createServer(async (req, res) => {
+  if (req.method !== "POST") { res.end(fs.readFileSync("public/index.html")); return; }
+  let body = "";
+  for await (const p of req) body += p;
+  const { question } = JSON.parse(body);
+  const hits = chunks.map((c, i) => [score(question, i), c]).filter(([s]) => s > 0)
+    .sort((a, b) => b[0] - a[0]).slice(0, 6).map(([, c]) => c);
+  res.writeHead(200, { "content-type": "text/event-stream" });
+  const ctx = hits.map((c, i) => "[" + (i + 1) + "] " + c.source + "\\n" + c.text).join("\\n\\n");
+  const session = await agent.createSession({ workspaceDir: process.cwd() });
+  for await (const m of session.run([userText(ctx + "\\n\\nQ: " + question)], {
+    approve: async () => "deny",
+  })) {
+    if (isModelMessage(m) && m.payload.type === "partial_text" && m.payload.event_type === "delta")
+      res.write("data: " + JSON.stringify({ delta: m.payload.text }) + "\\n\\n");
+  }
+  res.write("data: " + JSON.stringify({ sources: hits.map((c) => c.source) }) + "\\n\\n");
+  session.dispose();
+  res.end();
+}).listen(4630);
 EOF
-wc -l csv-analyst/src/agent.ts`;
+cat > claude-code-expert/public/index.html <<'EOF'
+<!doctype html>
+<meta charset="utf-8" />
+<title>Claude Code docs expert</title>
+<body style="max-width:640px;margin:3rem auto;font-family:system-ui;line-height:1.5">
+<h3>Claude Code docs expert</h3>
+<div id="log"></div>
+<input id="q" style="width:100%;padding:.5rem" placeholder="Ask about Claude Code…" autofocus />
+<script>
+q.addEventListener("keydown", async (e) => {
+  if (e.key !== "Enter" || !q.value.trim()) return;
+  const question = q.value; q.value = "";
+  const p = document.createElement("p"); log.append(p);
+  const res = await fetch("/api/ask", { method: "POST", body: JSON.stringify({ question }) });
+  const reader = res.body.getReader(), dec = new TextDecoder();
+  for (let r; !(r = await reader.read()).done; )
+    for (const chunk of dec.decode(r.value).split("\\n\\n")) {
+      if (!chunk.startsWith("data:")) continue;
+      const d = JSON.parse(chunk.slice(5));
+      if (d.delta) p.textContent += d.delta;
+      if (d.sources) p.textContent += "  Sources: " + d.sources.join(", ");
+    }
+});
+</script>
+</body>
+EOF
+wc -l claude-code-expert/src/rag.ts`;
 
 const TREE = `\`\`\`text
-csv-analyst/
+claude-code-expert/
 ├── package.json
-└── src/
-    └── agent.ts
+├── corpus/claude-code-docs/   # the collected docs
+├── src/rag.ts
+└── public/index.html
 \`\`\``;
 
 /** Per-language script: user prompt marker -> turns + session title. */
 const SCRIPTS = {
   zh: {
-    marker: "数据分析 Agent 应用",
-    prompt: "用 PenguinHarness SDK 创建一个数据分析 Agent 应用：读取 CSV 并输出汇总报告",
-    title: "构建数据分析 Agent 应用",
+    marker: "配置专家",
+    prompt:
+      "收集 https://github.com/ericbuess/claude-code-docs 的文档，做一个化身 Claude Code 配置专家、回答带来源引用的 RAG 问答应用。",
+    title: "构建 Claude Code 文档专家",
     turns: [
       {
         thinking:
-          "需求是基于 penguin-core 的数据分析 Agent 应用。先创建项目骨架：package.json 与源码目录。",
-        text: "我来创建应用骨架：",
-        cmd: CMD_SCAFFOLD,
+          "一句话需求，penguin-sdk 技能给出了完整配方：先采集语料，再建 BM25 索引，回答经 Session 流式生成并带 [n] 引用直达原文。",
+        text: "先把文档采集进语料库：",
+        cmd: CMD_COLLECT,
       },
       {
         thinking:
-          "骨架已建好。入口代码用 createAgent + createSession，把 CSV 分析任务交给 session.run。",
-        text: "骨架就绪，写入 Agent 入口代码：创建 Session，把 CSV 分析任务交给 session.run 并流式输出。",
-        cmd: CMD_ENTRY,
+          "语料就绪。写应用：本地 BM25 检索（零 embedding 依赖）+ 引用回答 + Penguin 风格聊天界面，引用链接到 /corpus 原文。",
+        text: "语料就绪，写检索与引用回答的应用入口：",
+        cmd: CMD_APP,
       },
       {
-        text: `数据分析 Agent 应用已创建完成：
+        text: `Claude Code 文档专家已就绪：
 
 ${TREE}
 
-- 入口 \`csv-analyst/src/agent.ts\`：创建 Agent 与 Session，任务经 \`session.run\` 流式执行，工具调用逐个审批；
-- 运行方式：\`cd csv-analyst && npm install && npm start\`；
-- 建议下一步：在评估中心为它配一组 CSV 任务 Benchmark，交给 Optimizer 持续优化。`,
+- 检索：本地 BM25 索引全部文档片段，中文提问同样支持；
+- 回答：每次提问经 Session 流式生成，引用 [1][2] 可点击直达 \`corpus/\` 原文；
+- 界面：Penguin 风格聊天页，空态内置示例问题；
+- 运行：\`cd claude-code-expert && npm install && npm start\`，浏览器打开 http://localhost:4630。`,
       },
     ],
   },
   en: {
-    marker: "data-analysis Agent app",
+    marker: "configuration expert",
     prompt:
-      "Use the PenguinHarness SDK to create a data-analysis Agent app that reads CSV files and writes a summary report",
-    title: "Build a data-analysis Agent app",
+      "Collect the docs from https://github.com/ericbuess/claude-code-docs and build a RAG app that answers Claude Code questions as a configuration expert, citing its sources.",
+    // Stay under core's TITLE_MAX_CHARS (30): a longer title gets hard-clipped
+    // mid-word in the shots (e.g. "…docs exper").
+    title: "Build Claude Code docs expert",
     turns: [
       {
         thinking:
-          "They want a data-analysis Agent app on penguin-core. Start with the project skeleton: package.json plus the source directory.",
-        text: "Let me scaffold the app first:",
-        cmd: CMD_SCAFFOLD,
+          "One sentence is enough — the penguin-sdk skill has the full recipe: collect the corpus, build a BM25 index, answer through a Session with [n] citations linking to the originals.",
+        text: "Collecting the docs into the corpus first:",
+        cmd: CMD_COLLECT,
       },
       {
         thinking:
-          "Skeleton is in place. The entry uses createAgent + createSession and hands the CSV task to session.run.",
-        text: "Skeleton ready — now the Agent entry point: create a Session and hand the CSV analysis task to session.run, streaming the output.",
-        cmd: CMD_ENTRY,
+          "Corpus in place. Now the app: local BM25 retrieval (no embedding credential), cited answers, and a Penguin-style chat UI with citations linking to /corpus originals.",
+        text: "Corpus ready — now the retrieval and cited-answer entry:",
+        cmd: CMD_APP,
       },
       {
-        text: `The data-analysis Agent app is ready:
+        text: `The Claude Code docs expert is ready:
 
 ${TREE}
 
-- Entry \`csv-analyst/src/agent.ts\`: creates the Agent and a Session; the task runs through \`session.run\` with per-tool approval;
-- Run it with \`cd csv-analyst && npm install && npm start\`;
-- Suggested next step: give it a CSV Benchmark suite in the evaluation center and let an Optimizer keep improving it.`,
+- Retrieval: a local BM25 index over every doc chunk, Chinese questions included;
+- Answers: each question streams through a Session, with [1][2] citations that link straight to the \`corpus/\` originals;
+- UI: a Penguin-style chat page with example questions in the empty state;
+- Run: \`cd claude-code-expert && npm install && npm start\`, then open http://localhost:4630.`,
       },
     ],
   },
@@ -466,7 +542,7 @@ try {
   await waitFor(`${BASE}/`);
   console.log(`[shots] server ready on ${BASE}`);
 
-  const admin = await login("admin", "admin123");
+  const admin = await login("admin", "penguin-2026");
   const browser = await chromium.launch();
 
   // WebP encoder: Chromium re-encodes the PNG screenshot buffer via canvas, which
@@ -549,17 +625,15 @@ try {
       await page.waitForTimeout(2000);
       await saveWebp(await page.screenshot(), `chat-${lang}-${theme}.webp`);
 
-      // Trace view: select the session in the list (deep-link selection is unreliable
-      // right after a fresh navigation, so click explicitly — sidebar shows the same
-      // title first in DOM order, hence .last()).
-      await page.goto(`${BASE}/traces?sessionId=${sessionId}`);
-      await page.waitForTimeout(1500);
-      await page
-        .getByText(script.title)
-        .last()
-        .click()
-        .catch(() => {});
-      await page.waitForTimeout(2500);
+      // Trace view: the product's canonical deep link carries BOTH agentId and
+      // sessionId (?sessionId= alone is ignored by TracesPage's focus wiring), and
+      // auto-selects the Session once its trace list loads. Waiting for the
+      // execution timeline's exec_command lanes guarantees every language captures
+      // the same opened trace — stats + a timeline with tool calls — never the
+      // empty "select a Session" state.
+      await page.goto(`${BASE}/traces?agentId=default_agent&sessionId=${sessionId}`);
+      await page.getByText("exec_command").first().waitFor({ timeout: 20000 });
+      await page.waitForTimeout(2000);
       await saveWebp(await page.screenshot(), `traces-${lang}-${theme}.webp`);
 
       // Evaluation center: open the pre-provisioned example Benchmark scoreboard.

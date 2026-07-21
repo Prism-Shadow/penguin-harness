@@ -401,10 +401,21 @@ export function WorkspaceBrowser({
               ))}
             </div>
           )}
+          {/* Ghost style, matching the toolbar's upload label (text-xs, transparent until hover) — the bordered secondary look stood out from every neighbor. */}
+          {/\.html?$/i.test(preview.name) && (
+            <a
+              href={api.workspaceFilePreviewUrl(session.sessionId, preview.path)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex shrink-0 items-center rounded-md border border-transparent bg-transparent px-2.5 py-1 text-xs font-medium text-gray-600 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100"
+            >
+              {S.files.openInNewTab}
+            </a>
+          )}
           <a
             href={api.workspaceFileUrl(session.sessionId, preview.path, true)}
             download={preview.name}
-            className="inline-flex shrink-0 items-center rounded-md border border-gray-300 bg-white px-2.5 py-1 text-sm font-medium transition-colors duration-150 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:hover:bg-gray-800"
+            className="inline-flex shrink-0 items-center rounded-md border border-transparent bg-transparent px-2.5 py-1 text-xs font-medium text-gray-600 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100"
           >
             {S.files.download}
           </a>

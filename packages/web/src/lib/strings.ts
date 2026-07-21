@@ -80,12 +80,13 @@ export const zh = {
     login: "登录",
     logout: "登出",
     admin: "管理员",
-    defaultAdminNote: "首次使用请以内置管理员登录：admin / admin123，登录后请尽快修改密码",
+    defaultAdminNote: "首次使用请以内置管理员登录：admin / penguin-2026，登录后请尽快修改密码",
   },
 
   account: {
     changePassword: "修改密码",
     oldPassword: "当前密码",
+    oldPasswordHint: "内置管理员的默认初始密码为 penguin-2026",
     newPassword: "新密码",
     confirmPassword: "确认新密码",
     passwordMismatch: "两次输入的新密码不一致",
@@ -262,6 +263,21 @@ export const zh = {
     groupEmptyHint: "该分组暂无模型，点「新增模型」添加",
     searchPlaceholder: "搜索模型：id / 名称 / 厂商",
     noSearchResults: "没有匹配的模型",
+    syncCatalog: "同步预置",
+    syncCatalogHint:
+      "用内置目录更新预置模型：新增缺失条目、以目录字段为准刷新差异；本地新增模型与 API key 保持不变",
+    syncDone: (added: number, updated: number) => `预置模型已同步：新增 ${added}、更新 ${updated}`,
+    syncUpToDate: "预置模型已是最新",
+    homepage: "模型主页",
+    speedTest: "测速",
+    speedTestTitle: "分组测速",
+    speedTestConfirm: (n: number): string =>
+      `将对该分组的 ${n} 个模型逐个发起一次真实请求,测量首 token 延迟(TTFT)与输出速率(TPS),会消耗少量 API 额度。是否继续?`,
+    speedTestStart: "开始测速",
+    speedPending: "测速中…",
+    speedFailed: "测速失败",
+    ttftTitle: "首 token 延迟(TTFT)",
+    tpsTitle: "输出速率(TPS)",
     modelCount: (n: number): string => `${n} 个模型`,
     modelId: "模型 ID",
     modelIdHint: "上游 API 使用的模型 id，如 gpt-5.5",
@@ -351,7 +367,7 @@ export const zh = {
   },
 
   vault: {
-    desc: "本 Agent 专属的环境变量（存于 agent_state/.vault.toml）：键值对注入其 shell 命令（exec_command）的子进程环境；键名会告知模型，值不进入模型上下文。子 Agent 使用各自的保险柜，不继承。",
+    desc: "本 Agent 专属的环境变量（存于 agent_state/.vault.toml）：键值对注入其 shell 命令（exec_command）的子进程环境；键名会告知模型，值不进入模型上下文。子 Agent 使用各自的保险柜，不继承。保存后自下一个任务起生效（进行中的任务不受影响）。",
     key: "键名",
     value: "值",
     valueMasked: "值（掩码）",
@@ -429,6 +445,10 @@ export const zh = {
     usedByAgents: (n: number): string => (n === 0 ? "未被使用" : `${n} 个 Agent 在用`),
     /** Top toast shown on successful install / uninstall. */
     installedToast: (skill: string, agent: string): string => `已将 ${skill} 安装到 ${agent}`,
+    updateOutdated: (n: number): string => `有新版本：更新 ${n} 个 Agent 的安装`,
+    updateAction: "更新",
+    updatedToast: (skill: string, n: number): string =>
+      `已将 ${skill} 更新到最新版（${n} 个 Agent）`,
     uninstalledToast: (skill: string, agent: string): string => `已从 ${agent} 卸载 ${skill}`,
   },
 
@@ -443,6 +463,66 @@ export const zh = {
     workspaceClear: "改用自动临时目录",
     workspaceDirInvalid: "目录不存在或无法访问，已回退",
     draftSubtitle: "最擅长 AI 开发任务的自进化 Agent",
+    /**
+     * Example task cards on the draft screen: one click auto-submits the canned prompt (game
+     * card first, RAG card below/after it). These are the FULL working prompts — the README and
+     * landing page show a condensed one-sentence version of the RAG example for reading, and
+     * the cards' own desc lines stay short, but what actually gets submitted stays detailed:
+     * build quality depends on it.
+     */
+    exampleTasks: {
+      game: {
+        label: "示例：2D 企鹅雪橇越野小游戏",
+        desc: "可爱南极企鹅滑雪橇跳石头，难度由易到难的 2D 纯前端小游戏",
+        prompt:
+          "做一个可爱的南极企鹅滑雪橇越野 2D 小游戏：按空格键起跳，跃过冰面上迎面而来的石头；" +
+          "开局要足够简单、上手无压力，滑行速度与障碍密度随时间平滑、循序渐进地上升，避免突然变难，" +
+          "实时计分，撞上石头即结束并可一键重新开始。" +
+          "2D 横版画面、可爱卡通风，纯前端实现（单个 HTML 文件即可），界面遵循 web-design 技能。" +
+          "完成后在浏览器里自测一次，确认开局能轻松玩过几秒，并告诉我怎么打开和怎么玩。",
+      },
+      lol: {
+        label: "示例：英雄联盟音乐播放器",
+        desc: "用 SoundCloud Widget API 播放历届 Worlds 主题曲，单文件即开即用",
+        prompt: `用 SoundCloud Widget API（见 https://developers.soundcloud.com/docs/api/html5-widget）做一个英雄联盟 Worlds 主题曲播放器，单文件 index.html，file:// 打开即用。
+
+## 技术约束
+- 使用 SC.Widget JS API（widget.load / widget.toggle / widget.setVolume / widget.seekTo），引入 https://w.soundcloud.com/player/api.js
+- iframe 必须可见（180px 高），visual=true color=f0b90b single_active=true
+- 仅包含以下 8 首已确认可播曲目（oEmbed 验证通过），不要添加未经 oEmbed 验证的曲目：
+  - Warriors (S4) — soundcloud.com/leagueoflegends/warriors
+  - Worlds Collide (S5) — soundcloud.com/leagueoflegends/worlds-collide
+  - Legends Never Die (S7) — soundcloud.com/leagueoflegends/legends-never-die
+  - Phoenix (S9) — soundcloud.com/leagueoflegends/phoenix
+  - Burn It All Down (S11) — soundcloud.com/leagueoflegends/burn-it-all-down
+  - GODS (S13) — soundcloud.com/leagueoflegends/gods
+  - Heavy Is The Crown (S14) — soundcloud.com/linkinpark/heavy-is-the-crown
+  - Sacrifice (S15) — soundcloud.com/leagueoflegends/sacrifice
+
+## 布局
+- 左侧 260px 粘性侧边栏：曲目列表（S4/S5/… 标签 + emoji + 曲名 + 年份），点击高亮金色边框，SC.Widget.load() 切歌 + auto_play
+- 右侧主区域：Hero 标题 + 桌面时钟（80px 等宽金色 HH:MM:SS，每秒刷新，冒号闪烁）+ 心情标签
+- 播放器卡片：SoundCloud iframe + 自定义控制栏（⏮ ▶/⏸ ⏭ + 曲目信息 + 音量滑块，点击喇叭图标静音切换）
+- 心情波动区：15 根金色动画柱，切歌时重新随机生成
+- 键盘快捷键：空格播放暂停、← → 切歌、↑ ↓ 调音量
+
+## 设计
+Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html data-theme>），默认深色，localStorage 记忆。响应式：手机端侧边栏变为顶部横向滚动。
+
+完成后在浏览器打开 index.html 自测一次。`,
+      },
+      rag: {
+        label: "示例：构建 Claude Code 文档专家",
+        desc: "收集 claude-code-docs 仓库，生成可对话、带来源引用的 RAG 知识应用",
+        prompt:
+          "收集 https://github.com/ericbuess/claude-code-docs 的文档，构建一个 RAG 知识应用：" +
+          "克隆仓库并整理语料，建立检索索引；应用化身 Claude Code 配置专家，" +
+          "检索增强回答 Claude Code 相关问题并标注可点击的来源引用——" +
+          "引用要能展示命中的原文片段，并链接到真实文档；" +
+          "按 web-design 技能提供美观的 Web 聊天界面，空态展示几个示例问题。" +
+          "完成后运行应用、自测一个问题验证流式回答，并告诉我访问方式。",
+      },
+    },
     sessionList: "Session",
     defaultSessionTitle: "新对话",
     model: "Model",
@@ -466,6 +546,7 @@ export const zh = {
     statusRunning: "运行中",
     statusCompacting: "压缩中",
     pendingApprovals: (n: number) => `${n} 个待审批`,
+    jumpToLatest: "回到最新消息",
     inputPlaceholder: "输入消息，Enter 发送，Shift+Enter 换行，可粘贴图片",
     inputPlaceholderShort: "输入消息…",
     send: "发送",
@@ -527,6 +608,7 @@ export const zh = {
     mentionRemove: "移除 @ 目标",
     /** Skill multi-select dropdown (input toolbar): button text, search box, empty state, and no-match hint. */
     skillsSelect: "技能",
+    skillRemove: "移除技能",
     skillsSearchPlaceholder: "搜索技能",
     skillsNoMatch: "没有匹配的技能",
     skillsEmptyHint: "暂无已装技能，去技能库添加",
@@ -574,6 +656,7 @@ export const zh = {
     title: "文件",
     upload: "上传",
     download: "下载",
+    openInNewTab: "新页面打开",
     refresh: "刷新",
     root: "根目录",
     empty: "空目录",

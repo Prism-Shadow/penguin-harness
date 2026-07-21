@@ -9,6 +9,14 @@
 export const zh = {
   siteName: "PenguinHarness",
 
+  announcement: {
+    label: "公告",
+    prev: "上一条公告",
+    next: "下一条公告",
+    models: "Kimi K3 与 Qwen 3.8 Max 模型现已在 PenguinHarness 可用",
+    fireworks: "携手 AMD 开发者计划：$50 Fireworks API 额度免费领取中",
+  },
+
   nav: {
     highlights: "特色",
     quickstart: "快速开始",
@@ -91,11 +99,32 @@ export const zh = {
     ],
   },
 
+  compare: {
+    eyebrow: "对比 LangChain",
+    title: "1× 与 100× 的差距",
+    subtitle:
+      "使用 LangChain，以 1 倍速度人工构建 Agent；使用 PenguinHarness，以 100 倍速度用 Agent 构建 Agent。",
+    langchain: {
+      name: "LangChain",
+      speed: "1×",
+      mode: "人工构建 Agent",
+      note: "逐行编写链路、工具与提示词，每个应用都从零开始。",
+    },
+    penguin: {
+      name: "PenguinHarness",
+      speed: "100×",
+      mode: "Agent 构建 Agent",
+      note: "一句话需求，Agent 端到端交付脚手架、代码与运行说明。",
+    },
+  },
+
   selfImprove: {
     eyebrow: "自我提升循环",
     title: "多 Agent 协作，进化自动发生",
     subtitle:
       "Optimizer 组织多个 Evaluator 为 Target Agent 并行打分，依据分数与运行轨迹定位失分原因，把 Agent 从版本 N 优化到版本 N+1——每一轮都有快照，随时可回退。",
+    videoLabel: "自我进化演示视频",
+    videoCaption: "自我进化演示：Agent 跑评测、定位失分点、发布下一版——完整一轮。",
     nodeOptimizer: "Optimizer",
     nodeEvaluator: "Evaluator × N",
     nodeTarget: "Target Agent",
@@ -126,7 +155,7 @@ export const zh = {
     tabCli: "命令行",
     webStep2: "启动 Web 界面",
     webStep2Desc:
-      "penguin web 启动本地服务并打开浏览器，用内置管理员 admin / admin123 登录（登录后请尽快修改密码）。",
+      "penguin web 启动本地服务并打开浏览器，用内置管理员 admin / penguin-2026 登录（登录后请尽快修改密码）。",
     webCmd: "penguin web   # 打开 http://127.0.0.1:7364",
     webStep3: "在界面里配置模型，开始对话",
     webStep3Desc:
@@ -139,10 +168,12 @@ export const zh = {
     tabDeepseek: "DeepSeek",
     tabOpenrouter: "OpenRouter",
     deepseekCmd: `penguin config model add \\
+  --provider deepseek \\
   --model-id deepseek-v4-pro \\
   --api-key sk-your-deepseek-key \\
   --set-default`,
-    deepseekNote: "provider 自动推断为 deepseek；省略 --api-key 时回退环境变量 DEEPSEEK_API_KEY。",
+    deepseekNote:
+      "模型引用始终是 (provider, model_id) 二元组，--provider 必填；省略 --api-key 时回退环境变量 DEEPSEEK_API_KEY。",
     openrouterCmd: `penguin config model add \\
   --provider openrouter \\
   --model-id deepseek/deepseek-v4-pro \\
@@ -155,17 +186,25 @@ export const zh = {
   --message "分析 data.csv，输出各季度销售额汇总"`,
   },
 
-  showcase: {
-    eyebrow: "使用场景",
-    title: "日常任务 + 零代码 AI 研发",
-    subtitle:
-      "把重复琐事交给 Agent 全天候自主执行；不写一行代码，从一句需求到可运行的 Agent 应用。",
-    tagChat: "零代码 AI 研发",
-    captionChat: "对话即开发：Agent 从零构建一个 Agent 应用，工具真实执行",
-    tagTraces: "日常任务",
-    captionTraces: "自主执行全程可回放：每次请求与工具调用、用量与耗时全量可查",
-    tagBenchmark: "持续进化",
-    captionBenchmark: "内建 Benchmark 记分板，分数随进化不断上升",
+  cases: {
+    eyebrow: "案例",
+    title: "从一句话到可运行的应用",
+    subtitle: "把需求交给 Agent，端到端拿到可运行的结果；更多案例陆续加入。",
+    tabs: [
+      {
+        label: "RAG 应用",
+        prompt:
+          "收集 https://github.com/ericbuess/claude-code-docs 的文档，做一个化身 Claude Code 配置专家、回答带来源引用的 RAG 问答应用。",
+        caption: "生成的 RAG 应用成品：Claude Code 配置专家，回答带可点击的来源引用与示例问题",
+        cost: "而生成整个 RAG 应用，仅消耗了 0.2 元（$0.02）的 token——使用 DeepSeek V4 Pro 模型。",
+      },
+      {
+        label: "2D 企鹅雪橇小游戏",
+        prompt: "做一个可爱的南极企鹅滑雪橇越野小游戏：空格起跳跃过石头，速度与难度随时间上升。",
+        caption: "生成的小游戏成品：南极企鹅滑雪橇跳石头越野，实时计分，难度渐进",
+        cost: "",
+      },
+    ],
   },
 
   contract: {
@@ -220,20 +259,24 @@ export const zh = {
 
   benchmark: {
     eyebrow: "Benchmark",
-    title: "同一模型，效果同级或更好，消耗更低",
+    title: "各用各的旗舰模型，效果同级，成本低一到两个数量级",
     subtitle:
-      "全部使用同一 DeepSeek V4 Pro 模型，与 Claude Code、OpenAI Codex 在两套题库上正面对比。",
+      "每个产品搭配它常用的模型，与 Claude Code、OpenAI Codex 在两套题库上正面对比：准确率同级，花的钱差出几十倍。",
     higherBetter: "越高越好",
     lowerBetter: "越低越好",
     dimScore: "准确率",
     dimTokens: "Token 用量",
     dimCost: "成本",
     dataTitle: "复杂数据分析",
-    dataDesc: "与 Claude Code 准确率持平、显著超过 OpenAI Codex，同时 Token 与成本更低。",
-    dataFootnote: "15 道复杂数据分析任务 · 1 次运行取均值 · 成本按官方计价估算。",
+    dataDesc:
+      "三者中准确率最高（66.67%，另两者均为 53.33%），成本只有 OpenAI Codex 的 1/35、Claude Code 的 1/70。",
+    dataFootnote:
+      "15 道复杂数据分析任务 · 单次运行 · Token 与成本为全套题目合计 · 按官方计价估算。",
     codeTitle: "代码任务",
-    codeDesc: "三者中准确率最高、单次成本最低。",
-    codeFootnote: "40 道代码任务 · 2 次运行取均值 · 成本按官方计价估算。",
+    codeDesc:
+      "准确率与 OpenAI Codex 持平（71.25%）、低于 Claude Code（86.25%），但成本只有前者的 1/58、后者的 1/39。",
+    codeFootnote:
+      "40 道代码任务 × 2 次运行（准确率取全部 80 次结果）· Token 与成本为全套题目合计 · 按官方计价估算。",
     colFramework: "实验框架",
     colModel: "模型名称",
     colAccuracy: "准确率（%）",
@@ -245,6 +288,7 @@ export const zh = {
     eyebrow: "主要功能",
     title: "桌面级界面里的完整能力",
     subtitle: "与 Web 界面的菜单一一对应，装好即用。",
+    more: "以及更多……",
     items: [
       {
         title: "多 Session 会话",
@@ -307,6 +351,18 @@ export const zh = {
         desc: "credential 以 0600 隐藏文件落盘，系统 Prompt 禁读，界面全程掩码。",
       },
     ],
+  },
+
+  community: {
+    eyebrow: "社区",
+    title: "加入社区，一起共建",
+    subtitle: "讨论、提问、贡献——你的第一个 Issue 就是最好的开始。",
+    items: {
+      discord: { name: "Discord", desc: "与我们和其他开发者实时交流。" },
+      x: { name: "X（Twitter）", desc: "关注产品与团队的最新动态。" },
+      wechat: { name: "微信群", desc: "中文社区讨论与互助。" },
+      github: { name: "GitHub", desc: "Star、Issue 与 PR 都欢迎。" },
+    },
   },
 
   cta: {

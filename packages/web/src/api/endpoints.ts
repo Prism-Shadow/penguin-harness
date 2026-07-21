@@ -302,7 +302,7 @@ export const getUsage = (
     to?: string;
     groupBy: UsageGroupBy;
     agentId?: string;
-    /** Model filters are given as a pair (only takes effect when both provider and modelId are supplied). */
+    /** Model filter is always a whole pair — both fields or neither; a model is never referenced by id alone. */
     provider?: string;
     modelId?: string;
   },
@@ -329,6 +329,10 @@ export const listWorkspaceFiles = (sessionId: string, path: string) =>
 /** File content URL (inline preview / download=1 triggers download; usable directly in <a>/<img>/fetch). */
 export const workspaceFileUrl = (sessionId: string, path: string, download = false): string =>
   `/api/sessions/${sessionId}/files/content?path=${encodeURIComponent(path)}${download ? "&download=1" : ""}`;
+
+/** Sandboxed top-level preview URL (open an html file in a new tab): real content type under a CSP sandbox, see the server route. */
+export const workspaceFilePreviewUrl = (sessionId: string, path: string): string =>
+  `/api/sessions/${sessionId}/files/content?path=${encodeURIComponent(path)}&preview=1`;
 
 export const uploadWorkspaceFile = (sessionId: string, path: string, dataBase64: string) =>
   apiFetch<void>(`/api/sessions/${sessionId}/files/content`, {

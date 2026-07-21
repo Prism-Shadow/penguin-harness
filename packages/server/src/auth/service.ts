@@ -3,7 +3,7 @@
  * login / logout / password change / session validation.
  *
  * - No open registration: on startup, if there are no users at all, the built-in
- *   admin `admin` is seeded (initial password admin123), and it adopts
+ *   admin `admin` is seeded (initial password penguin-2026), and it adopts
  *   `default_project`; all other users are created by an admin via the user
  *   backend (admin-service).
  * - An initial password (whether seeded or set by an admin) is flagged with
@@ -22,7 +22,7 @@ export const MIN_PASSWORD_LENGTH = 8;
 
 /** Built-in admin: user_id and initial password (matches the README and login-page hint). */
 export const ADMIN_USER_ID = "admin";
-export const ADMIN_INITIAL_PASSWORD = "admin123";
+export const ADMIN_INITIAL_PASSWORD = "penguin-2026";
 
 function sha256Hex(value: string): string {
   return createHash("sha256").update(value).digest("hex");

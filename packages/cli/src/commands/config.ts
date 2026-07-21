@@ -2,7 +2,7 @@
  * `penguin config` — manages a Project's model credentials, default model, model list,
  * Agent-level vault environment variables, and UI language.
  *
- *   penguin config model add --model-id <upstream id> [--provider <group>] [--api-key <key>] [--context-window <n>] [--set-default] [--root <dir>]
+ *   penguin config model add --model-id <upstream id> --provider <group> [--api-key <key>] [--context-window <n>] [--set-default] [--root <dir>]
  *   penguin config model default --model-id <upstream id> --provider <group> [--root <dir>]
  *   penguin config model vision --model-id <upstream id> --provider <group> [--root <dir>]
  *   penguin config model list [--root <dir>]
@@ -13,12 +13,12 @@
  *
  * `--model-id` always takes the **upstream id** (the request id sent to AgentHub verbatim),
  * which together with `--provider` forms a `(provider, model_id)` paired reference —
- * **no string concatenation is ever performed**. For `model add`, --provider defaults to
- * an inference from the built-in catalog (falling back to custom when inference fails);
- * a new entry's client_type defaults according to the group's semantics (not set for
- * first-party vendors; openai for custom / self-hosted groups / gateways, with the
- * gateway's endpoint base URL pre-filled). For `model default` / `model vision`,
- * --provider is **required**; core validation raises an error when the reference is not
+ * **no string concatenation is ever performed**. `--provider` is **required** on all three
+ * model subcommands: the group is never guessed, so `--api-key` can never land on a vendor
+ * the user did not name. For `model add`, a new entry's client_type defaults according to
+ * the group's semantics (not set for first-party vendors; openai for custom / self-hosted
+ * groups / gateways, with the gateway's endpoint base URL pre-filled). For `model default`
+ * / `model vision`, core validation raises an error when the reference is not
  * found in models. `--root` specifies the data root directory (priority: option >
  * PENGUIN_HOME > ~/.penguin/data). The UI language is controlled by the PENGUIN_LANG
  * environment variable; `config lang` writes it into the shell startup file and restarts
@@ -39,7 +39,6 @@ import {
   catalogEntryFor,
   formatModelRef,
   getModel,
-  inferProviderForUpstream,
   loadAgentVault,
   loadProjectConfig,
   providerInfo,
@@ -117,7 +116,7 @@ export function registerConfigCommand(program: Command, t: Messages): void {
     .command("add")
     .description(t.config.addDesc)
     .requiredOption("--model-id <id>", t.config.addModelId)
-    .option("--provider <group>", t.config.addProvider)
+    .requiredOption("--provider <group>", t.config.addProvider)
     .option("--api-key <key>", t.config.addApiKey)
     .option("--base-url <url>", t.config.addBaseUrl)
     .option("--context-window <n>", t.config.addContextWindow, parseIntArg)
@@ -133,11 +132,11 @@ export function registerConfigCommand(program: Command, t: Messages): void {
     .option("--root <dir>", t.common.root)
     .action(async (opts) => {
       const root = resolveRootOption(opts.root);
-      // --model-id takes the upstream id, paired with --provider as a reference
-      // (--provider defaults to catalog-based inference, falling back to custom); no
-      // concatenation is performed.
+      // --model-id takes the upstream id, paired with the required --provider as a
+      // reference; the group is never guessed, so --api-key can only ever land on the
+      // vendor the user named. No concatenation is performed.
       const modelId: string = opts.modelId;
-      const provider: string = opts.provider ?? inferProviderForUpstream(modelId);
+      const provider: string = opts.provider;
       const ref: ModelRef = { provider, model_id: modelId };
       const before = await loadProjectConfig(root, opts.projectId);
       const existed = getModel(before, ref) !== undefined;

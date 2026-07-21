@@ -1,12 +1,14 @@
 /**
  * `penguin chat` — interactive REPL.
  *
- *   penguin chat [--model-id <id>] [--provider <group>] [--project-id <id>] [--agent-id <id>]
+ *   penguin chat [--model-id <id> --provider <group>] [--project-id <id>] [--agent-id <id>]
  *                [--workspace <path>] [--approve <allow-all|deny-all|read-only|always-ask>]
  *
  * Each line of input starts one conversation turn; `/compact` proactively compacts the
  * context (reason=manual); `/exit` or `/quit` exits.
- * Uses the current directory when no Workspace is specified.
+ * Uses the current directory when no Workspace is specified. A model reference is always an
+ * explicit `(provider, model_id)` pair, so `--model-id` and `--provider` must be given
+ * together; giving neither uses the Project's default model.
  *
  * Multi-line input: trailing `\` continues the line; when the terminal supports bracketed
  * paste, a multi-line paste is treated as a single message (sent on Enter).
@@ -65,6 +67,17 @@ export function registerChatCommand(program: Command, t: Messages): void {
     .option("--approve <mode>", t.common.approve)
     .option("--resume [sessionId]", t.chat.resume)
     .action(async (opts) => {
+      // The model reference is a pair: commander can only require each option on its own,
+      // so the "both or neither" rule is enforced here. Giving neither is the normal case
+      // and falls back to the Project's default model. Skipped under --resume, which
+      // rejects both options outright further down with a more specific message.
+      // Usage errors go to stderr (as in `run` and `config model add`), unlike this file's
+      // informational messages, which the REPL writes to stdout.
+      if (opts.resume === undefined && Boolean(opts.modelId) !== Boolean(opts.provider)) {
+        process.stderr.write(`${t.error(t.modelRefIncomplete())}\n`);
+        process.exitCode = 1;
+        return;
+      }
       const mode = resolveApprovalMode(opts.approve, t);
       const out = process.stdout;
 

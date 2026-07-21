@@ -103,6 +103,21 @@ describe("session-index", () => {
     expect(list.sessions.map((s) => s.sessionId)).toContain(session.sessionId);
   });
 
+  it("half a model reference is 400: the missing half is never inferred", async () => {
+    await configureModels();
+    // Only modelId: even though it names the one configured model, the provider is never
+    // filled in for the caller — a reference is submitted as a pair or not at all.
+    const onlyModel = await api.post(base(), { modelId: "claude-sonnet-4-6" });
+    expect(onlyModel.status).toBe(400);
+    const onlyProvider = await api.post(base(), { provider: "anthropic" });
+    expect(onlyProvider.status).toBe(400);
+    // The complete pair works, and so does omitting both (Project default).
+    expect(
+      (await api.post(base(), { provider: "anthropic", modelId: "claude-sonnet-4-6" })).status,
+    ).toBe(201);
+    expect((await api.post(base(), {})).status).toBe(201);
+  });
+
   it("an explicit Workspace only needs to exist; it may live outside the Project directory", async () => {
     await configureModels();
     const inside = path.join(t.root, projectId, "my-workdir");

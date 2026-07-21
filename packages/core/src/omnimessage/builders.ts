@@ -13,6 +13,7 @@ import type {
   CompactionMode,
   CompactionReason,
   EventMessage,
+  Fidelity,
   ImageUrlPayload,
   InlineDataPayload,
   InlineThinkingPayload,
@@ -61,30 +62,28 @@ export function sessionMeta(payload: SessionMetaPayload): SessionMetaMessage {
 // Complete model_msg -----------------------------------------------------------
 
 /**
- * Provider fidelity fields: kept as-is and restored verbatim on replay.
- * Builder convention: positional-argument-style builders carry these in a trailing `fidelity`
- * object (narrowed via Pick per payload type — e.g. thinking only has signature); object-argument-
- * style builders (toolCall) flatten `fidelity` fields into the parameter object alongside
- * `stopReason`, mirroring the payload structure directly.
+ * Provider-fidelity payload (opaque, see `Fidelity` in types.ts): kept as-is and restored
+ * verbatim on replay. Builder convention: positional-argument-style builders take it as a
+ * trailing `fidelity` object; object-argument-style builders (toolCall) carry it in the
+ * parameter object alongside `stopReason`. An empty object is treated as absent — the
+ * payload field is only set when the fidelity carries at least one key.
  */
-export interface FidelityFields {
-  phase?: string | null;
-  signature?: string;
+function fidelityProp(fidelity?: Fidelity): { fidelity?: Fidelity } {
+  return fidelity !== undefined && Object.keys(fidelity).length > 0 ? { fidelity } : {};
 }
 
 export function textMessage(
   role: Role,
   text: string,
   stopReason: StopReason = "completed",
-  fidelity?: FidelityFields,
+  fidelity?: Fidelity,
 ): OmniMessage<TextPayload> {
   return model({
     type: "text",
     role,
     text,
     stop_reason: stopReason,
-    ...(fidelity?.phase != null ? { phase: fidelity.phase } : {}),
-    ...(fidelity?.signature !== undefined ? { signature: fidelity.signature } : {}),
+    ...fidelityProp(fidelity),
   });
 }
 
@@ -93,7 +92,7 @@ export const userText = (text: string): OmniMessage<TextPayload> => textMessage(
 export const assistantText = (
   text: string,
   stopReason: StopReason = "completed",
-  fidelity?: FidelityFields,
+  fidelity?: Fidelity,
 ): OmniMessage<TextPayload> => textMessage("assistant", text, stopReason, fidelity);
 
 export function imageUrlMessage(imageUrl: string): OmniMessage<ImageUrlPayload> {
@@ -109,7 +108,7 @@ export function inlineData(
   role: Role,
   data: string,
   mimeType: string,
-  fidelity?: Pick<FidelityFields, "signature">,
+  fidelity?: Fidelity,
 ): OmniMessage<InlineDataPayload> {
   return model({
     type: "inline_data",
@@ -117,28 +116,28 @@ export function inlineData(
     data,
     mime_type: mimeType,
     stop_reason: "completed",
-    ...(fidelity?.signature !== undefined ? { signature: fidelity.signature } : {}),
+    ...fidelityProp(fidelity),
   });
 }
 
 export function thinkingMessage(
   thinking: string,
   stopReason: StopReason = "completed",
-  fidelity?: Pick<FidelityFields, "signature">,
+  fidelity?: Fidelity,
 ): OmniMessage<ThinkingPayload> {
   return model({
     type: "thinking",
     role: "assistant",
     thinking,
     stop_reason: stopReason,
-    ...(fidelity?.signature !== undefined ? { signature: fidelity.signature } : {}),
+    ...fidelityProp(fidelity),
   });
 }
 
 export function inlineThinking(
   data: string,
   mimeType: string,
-  fidelity?: Pick<FidelityFields, "signature">,
+  fidelity?: Fidelity,
 ): OmniMessage<InlineThinkingPayload> {
   return model({
     type: "inline_thinking",
@@ -146,7 +145,7 @@ export function inlineThinking(
     data,
     mime_type: mimeType,
     stop_reason: "completed",
-    ...(fidelity?.signature !== undefined ? { signature: fidelity.signature } : {}),
+    ...fidelityProp(fidelity),
   });
 }
 
@@ -155,7 +154,7 @@ export function toolCall(args: {
   arguments: string;
   toolCallId: string;
   stopReason?: StopReason;
-  signature?: string;
+  fidelity?: Fidelity;
 }): OmniMessage<ToolCallPayload> {
   return model({
     type: "tool_call",
@@ -164,7 +163,7 @@ export function toolCall(args: {
     arguments: args.arguments,
     tool_call_id: args.toolCallId,
     stop_reason: args.stopReason ?? "completed",
-    ...(args.signature !== undefined ? { signature: args.signature } : {}),
+    ...fidelityProp(args.fidelity),
   });
 }
 

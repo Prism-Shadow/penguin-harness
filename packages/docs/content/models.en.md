@@ -11,6 +11,8 @@ All model access goes through one gateway library: `@prismshadow/agenthub` (Auto
 
 A model's identity is always the `(provider, model_id)` pair: `provider` is a config group name, `model_id` the upstream request id sent to AgentHub unchanged. The two are independent fields — concatenating them into one string is forbidden anywhere in the pipeline.
 
+Every interface that names a model takes the complete pair: the CLI, the HTTP API, and the SDK all reject half a reference instead of completing it. The provider is never inferred from the model id and has no default, because gateways resell vendor models under their upstream ids — a guessed group would send the entry's credential to a vendor nobody named. Where a model reference is optional at all (`penguin run` / `chat`, Session creation, Schedules), the choice is between the whole pair and nothing: omit both halves to take the Project's default model.
+
 ## The per-Project model table
 
 Each Project's available models are recorded in the hidden `.project_config.toml`, maintained via the CLI (`penguin config model add / default / list`, see [CLI Reference](/cli)) or the Web UI — never hand-edited. `ModelEntry` fields:
@@ -57,7 +59,10 @@ Built-in groups and their env-var fallbacks (catalog source: `packages/core/src/
 | --- | --- | --- |
 | deepseek | `DEEPSEEK_API_KEY` | Group of the default model |
 | openrouter | `OPENAI_API_KEY` | OpenAI-compatible gateway, preset base URL `https://openrouter.ai/api/v1` |
+| fireworks | `OPENAI_API_KEY` | Fireworks AI (OpenAI-compatible), preset base URL `https://api.fireworks.ai/inference/v1`; API model ids look like `accounts/fireworks/models/<slug>` |
 | siliconflow | `OPENAI_API_KEY` | OpenAI-compatible gateway, preset base URL `https://api.siliconflow.cn/v1` |
+| qwen-token-plan | `OPENAI_API_KEY` | Qwen Token Plan subscription gateway, preset base URL `https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1`; pricing from each model page's official list price (the preview model has only a quota-multiplier promo, no list price) |
+| qwen-pay-as-you-go | `OPENAI_API_KEY` | Qwen pay-as-you-go (DashScope's OpenAI-compatible endpoint), preset base URL `https://dashscope.aliyuncs.com/compatible-mode/v1`; resold third-party models keep vendor-prefixed ids (e.g. `kimi/kimi-k3`) |
 | google | `GEMINI_API_KEY` | |
 | anthropic | `ANTHROPIC_API_KEY` | |
 | openai | `OPENAI_API_KEY` | |
@@ -65,9 +70,9 @@ Built-in groups and their env-var fallbacks (catalog source: `packages/core/src/
 | moonshot | `MOONSHOT_API_KEY` | |
 | custom | `OPENAI_API_KEY` | Any OpenAI-protocol endpoint |
 
-The gateway groups (openrouter / siliconflow) go through AgentHub's OpenAI client, so with blank credentials they read `OPENAI_API_KEY` — not a gateway-specific variable.
+The gateway groups (openrouter / fireworks / siliconflow / qwen-token-plan / qwen-pay-as-you-go) go through AgentHub's OpenAI client, so with blank credentials they read `OPENAI_API_KEY` — not a gateway-specific variable.
 
-Some models in the preset catalog: deepseek-v4-pro / deepseek-v4-flash, gemini-3.1-pro-preview, claude-opus-4-8 / claude-sonnet-4-6, gpt-5.5, glm-5.2, kimi-k2.6 (not exhaustive).
+Some models in the preset catalog: deepseek-v4-pro / deepseek-v4-flash, gemini-3.1-pro-preview, claude-opus-4-8 / claude-sonnet-4-6, gpt-5.5, glm-5.2, kimi-k2.6, qwen3.8-max-preview (not exhaustive).
 
 ## Thinking levels
 

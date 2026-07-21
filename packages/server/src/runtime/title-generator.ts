@@ -14,7 +14,12 @@
  *   - Silent failure (logged): the title stays NULL and naturally retries after the next
  *     Task completes.
  */
-import { emptyTokenCounts, sanitizeTitle, tokenUsage } from "@prismshadow/penguin-core";
+import {
+  emptyTokenCounts,
+  sanitizeTitle,
+  stripConversationMarkers,
+  tokenUsage,
+} from "@prismshadow/penguin-core";
 import type { SessionsRepo } from "../db/repos/sessions.js";
 import type { ChannelHub } from "./channel.js";
 import type { ErrorSink } from "./error-recorder.js";
@@ -132,7 +137,11 @@ export class TitleGenerator implements TitleNotifier {
 
 /** Fallback title: take the material's first non-empty line, sanitize and truncate; if sanitizing empties it out (pure punctuation, etc.) fall back to the truncated original text; returns null if all-whitespace. */
 function fallbackTitle(text: string): string | null {
-  const firstLine = text.split("\n").find((l) => l.trim().length > 0);
+  // Strip machine markers first: a skill invocation prepends a `<use_skills>` block, so the
+  // raw first non-empty line would otherwise be that marker rather than the user's request.
+  const firstLine = stripConversationMarkers(text)
+    .split("\n")
+    .find((l) => l.trim().length > 0);
   if (!firstLine) return null;
   // sanitizeTitle strips a pure-punctuation line down to empty — in that case keep the truncated original text, guaranteeing "a title is always obtained".
   return sanitizeTitle(firstLine) ?? firstLine.trim().slice(0, 30);

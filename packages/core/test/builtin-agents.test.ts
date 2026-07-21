@@ -122,6 +122,8 @@ describe("Project Dir / Agent ID placeholders", () => {
       cwd: "/tmp/ws",
       agentId: "env_agent",
       projectDir: "/tmp/proj",
+      provider: "deepseek",
+      modelId: "deepseek-v4-pro",
       platform: "linux",
       osVersion: "test",
       date: "2026-07-08",

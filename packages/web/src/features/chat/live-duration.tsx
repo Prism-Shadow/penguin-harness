@@ -1,12 +1,13 @@
 /**
- * Live duration (inline display on running thinking/tool cards): ticks every second. sinceMs
+ * Live duration (inline display on running thinking/tool cards): ticks every second, showing
+ * whole seconds only — decimals appear only on the settled value once the item finishes. sinceMs
  * comes from the server-side message timestamp and may drift from the local clock; negative
  * values are shown as 0; a pulsing ellipsis is shown when missing.
  * `offsetMs` is the already-settled duration of a prior segment (e.g. a tool call's argument
  * generation phase), added on top of the live segment as it ticks.
  */
 import { useEffect, useState } from "react";
-import { humanizeDuration } from "../../lib/format";
+import { humanizeDurationLive } from "../../lib/format";
 
 export function LiveDuration({ sinceMs, offsetMs = 0 }: { sinceMs?: number; offsetMs?: number }) {
   const [now, setNow] = useState(() => Date.now());
@@ -15,5 +16,5 @@ export function LiveDuration({ sinceMs, offsetMs = 0 }: { sinceMs?: number; offs
     return () => clearInterval(id);
   }, []);
   if (sinceMs === undefined) return <span className="animate-pulse">…</span>;
-  return <>{humanizeDuration(Math.max(0, offsetMs) + Math.max(0, now - sinceMs))}</>;
+  return <>{humanizeDurationLive(Math.max(0, offsetMs) + Math.max(0, now - sinceMs))}</>;
 }

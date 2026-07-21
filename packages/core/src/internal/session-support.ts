@@ -35,7 +35,7 @@ export function formatSessionId(date: Date = new Date()): string {
 export function sessionEnvironment(
   workspaceDir: string,
   sessionId: string,
-  ids: { agentId: string; projectDir: string },
+  ids: { agentId: string; projectDir: string; provider: string; modelId: string },
   date = new Date(),
 ): SessionEnvironment {
   return {
@@ -43,6 +43,8 @@ export function sessionEnvironment(
     cwd: workspaceDir,
     agentId: ids.agentId,
     projectDir: ids.projectDir,
+    provider: ids.provider,
+    modelId: ids.modelId,
     platform: process.platform,
     osVersion: getOsVersion(),
     date: formatLocalDate(date),

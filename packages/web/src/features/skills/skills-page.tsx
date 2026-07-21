@@ -1,18 +1,26 @@
 /**
  * Skill library page: the @prismshadow/penguin-skills
- * Skill library, shown sectioned by skill group. Group styling matches the model
- * config page — the group header (group name + skill count, no icon) is
- * collapsible, highlights on hover, and animates height on expand/collapse;
- * expanded by default. Cards within a group form a grid (up to three per row on
- * wide screens, generously sized). Each card = an enlarged skill icon spanning
- * two rows (rounded border + light background; DTO icon = the raw icon.svg from
- * the catalog, rendered inline once it passes sanitize, otherwise falls back to
- * a default book icon) + a name (monospace) and short description on the right,
- * one line each (single-line truncation, falling back to the full description
- * when missing) + a metadata line (version · semantic update time · usage count
- * "used by N Agents"); group and card copy follow the UI language (localizedText /
- * localizedShortText), and groups have no description. Two **icon buttons** for
+ * Skill library, shown sectioned by skill group. Groups are borderless — the
+ * group header (group name + skill count, no icon) is collapsible, highlights
+ * on hover, and animates height on expand/collapse; expanded by default. Cards
+ * within a group form a grid, generously sized: two per row from the sm
+ * breakpoint up, one per row on narrow screens. Each card = a rounded icon
+ * tile centered against the two text rows (its color comes from
+ * skillTileColor — a per-skill palette hashed from the name, which replaced
+ * the theme-accent tile that painted every skill the same; DTO icon = the raw
+ * icon.svg from the catalog, rendered inline once it passes sanitize,
+ * otherwise falls back to a default book icon) + a name (monospace) and short
+ * description on the right, one line each (single-line truncation, falling
+ * back to the full description when missing) + a metadata line below both
+ * (version · semantic update time · usage count "used by N Agents");
+ * group and card copy follow the UI language (localizedText /
+ * localizedShortText), and groups have no description. Icon buttons for
  * actions (copy goes into aria-label and title) —
+ * - Rotate "update installs" (shown only when some Agent's installed copy has
+ *   a lower version than the library): one click reinstalls the current
+ *   library copy on every outdated Agent (install-again-is-update semantics),
+ *   with a single success toast; the manage-installs Modal marks outdated
+ *   rows with an accent "更新"/"Update" button doing the same per Agent;
  * - Paper plane "quick invoke": enters /chat/new draft mode with default_agent,
  *   pre-selects the skill, and pre-fills the invocation text per UI language
  *   (zh "使用 X 技能" / en "use the X skill", overwriting any existing draft body);
@@ -44,15 +52,35 @@ import { toastError, toastSuccess } from "../../components/ui/toast";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
 import { draftKey, loadDraft, saveDraft } from "../chat/draft-cache";
 import { localizedShortText, localizedText } from "../chat/skill-use";
-import { SkillIcon } from "./skill-icon-view";
+import { SkillIcon, skillTileColor } from "./skill-icon-view";
 
-/** agentId → set of installed skill names (in-page install-state snapshot, rewritten in place by optimistic updates). */
-type InstalledMap = ReadonlyMap<string, ReadonlySet<string>>;
+/** agentId → (installed skill name → installed copy's version); in-page install-state snapshot, rewritten in place by optimistic updates. */
+export type InstalledMap = ReadonlyMap<string, ReadonlyMap<string, number>>;
 
 /** "Quick invoke" button icon (paper plane, 24×24 line path; button shows only the icon, copy goes into aria/title). */
 const SEND_ICON = "M22 2 11 13M22 2 15 22 11 13 2 9 22 2";
 /** "Manage installs" button icon (download into tray, 24×24 line path). */
 const INSTALL_ICON = "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3";
+/** "Update installs" button icon (rotate-cw, 24×24 line path). */
+const UPDATE_ICON = "M23 4v6h-6M20.49 15a9 9 0 1 1-2.12-9.36L23 10";
+
+/**
+ * Agents whose installed copy of `name` is older than the library's version (the update
+ * reminder's data source): not-installed Agents never count, and a locally *newer* copy
+ * (e.g. a hand-edited install) doesn't either — reminders fire only on a strictly lower
+ * version.
+ */
+export function outdatedAgentIds(
+  agentIds: readonly string[],
+  installed: InstalledMap,
+  name: string,
+  libraryVersion: number,
+): string[] {
+  return agentIds.filter((agentId) => {
+    const v = installed.get(agentId)?.get(name);
+    return v !== undefined && v < libraryVersion;
+  });
+}
 
 export function SkillsPage() {
   useDocumentTitle(S.nav.skills);
@@ -102,9 +130,9 @@ export function SkillsPage() {
       ids.map(async (agentId) => {
         try {
           const res = await api.getAgentSkills(projectId, agentId);
-          return [agentId, new Set(res.skills.map((s) => s.name))] as const;
+          return [agentId, new Map(res.skills.map((s) => [s.name, s.version]))] as const;
         } catch {
-          return [agentId, new Set<string>()] as const;
+          return [agentId, new Map<string, number>()] as const;
         }
       }),
     ).then((entries) => {
@@ -115,8 +143,8 @@ export function SkillsPage() {
       // regresses the UI.
       if (!cancelled)
         setInstalled((prev) => {
-          const next = new Map<string, ReadonlySet<string>>(entries);
-          for (const [agentId, set] of prev) next.set(agentId, set);
+          const next = new Map<string, ReadonlyMap<string, number>>(entries);
+          for (const [agentId, m] of prev) next.set(agentId, m);
           return next;
         });
     });
@@ -125,28 +153,34 @@ export function SkillsPage() {
     };
   }, [projectId, agentIdsKey]);
 
-  /** Rewrite one Agent's install state in place (shared by optimistic updates and failure rollback). */
-  const setAgentSkill = (agentId: string, name: string, on: boolean) =>
+  /** Rewrite one Agent's install state in place (shared by optimistic updates and failure rollback); `version` is the entry's value when setting. */
+  const setAgentSkill = (agentId: string, name: string, version: number | undefined) =>
     setInstalled((prev) => {
       const next = new Map(prev);
-      const set = new Set(next.get(agentId) ?? []);
-      if (on) set.add(name);
-      else set.delete(name);
-      next.set(agentId, set);
+      const m = new Map(next.get(agentId) ?? []);
+      if (version !== undefined) m.set(name, version);
+      else m.delete(name);
+      next.set(agentId, m);
       return next;
     });
 
+  /** Calibrate one Agent from an install response's list (concurrent install/uninstall also converges to the server's truth). */
+  const calibrateAgent = (agentId: string, skills: { name: string; version: number }[]) =>
+    setInstalled((prev) =>
+      new Map(prev).set(agentId, new Map(skills.map((s) => [s.name, s.version]))),
+    );
+
   /** Check to install / uncheck to uninstall (any member can do this): optimistic update, a confirmation toast on success, rollback plus a toast on failure. */
-  const toggleInstall = async (agentId: string, name: string, on: boolean) => {
+  const toggleInstall = async (agentId: string, name: string, on: boolean, version: number) => {
     if (!projectId) return;
-    setAgentSkill(agentId, name, on);
+    const prevVersion = installed.get(agentId)?.get(name);
+    setAgentSkill(agentId, name, on ? version : undefined);
     const target = agents.find((a) => a.agentId === agentId);
     const agentName = target ? agentDisplayName(target) : agentId;
     try {
       if (on) {
-        // On a successful install, calibrate the whole Agent from the list the response carries (concurrent install/uninstall also converges to the server's truth).
         const res = await api.installAgentSkills(projectId, agentId, [name]);
-        setInstalled((prev) => new Map(prev).set(agentId, new Set(res.skills.map((s) => s.name))));
+        calibrateAgent(agentId, res.skills);
         toastSuccess(S.skills.installedToast(name, agentName));
       } else {
         await api.removeAgentSkill(projectId, agentId, name);
@@ -158,9 +192,27 @@ export function SkillsPage() {
       // or erroring (otherwise the checkbox would be stuck permanently
       // checked whenever this page's snapshot is stale).
       if (!on && e instanceof ApiError && e.status === 404) return;
-      setAgentSkill(agentId, name, !on);
+      setAgentSkill(agentId, name, prevVersion);
       toastError(apiErrorText(e));
     }
+  };
+
+  /**
+   * Update reminder action: reinstall the current library copy on every outdated Agent
+   * (install-again-is-update semantics). One success toast for the whole batch; on partial
+   * failure the succeeded Agents keep their calibrated state and the first error is toasted.
+   */
+  const updateOutdated = async (name: string, agentIds: string[]) => {
+    if (!projectId || agentIds.length === 0) return;
+    const results = await Promise.allSettled(
+      agentIds.map(async (agentId) => {
+        const res = await api.installAgentSkills(projectId, agentId, [name]);
+        calibrateAgent(agentId, res.skills);
+      }),
+    );
+    const failed = results.find((r): r is PromiseRejectedResult => r.status === "rejected");
+    if (!failed) toastSuccess(S.skills.updatedToast(name, agentIds.length));
+    else toastError(apiErrorText(failed.reason));
   };
 
   /**
@@ -204,7 +256,7 @@ export function SkillsPage() {
             </Button>
           </div>
         ) : groups === null ? (
-          <div className="mt-6 grid gap-2.5 md:grid-cols-2 xl:grid-cols-3">
+          <div className="mt-6 grid gap-2.5 sm:grid-cols-2">
             {Array.from({ length: 4 }, (_, i) => (
               <SkeletonCard key={i} className="p-4">
                 <Skeleton className="h-4 w-32" />
@@ -220,7 +272,7 @@ export function SkillsPage() {
               return (
                 <section
                   key={group.id}
-                  className="overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900"
+                  className="overflow-hidden rounded-md bg-white dark:bg-gray-900"
                 >
                   {/* Group header (styled like the model page's provider groups): group name +
                       skill count (no icon, no description); the whole row toggles
@@ -257,9 +309,9 @@ export function SkillsPage() {
                   >
                     {/* inert while collapsed: cards at zero height shouldn't still be Tab-focusable or clickable. */}
                     <div className="overflow-hidden" inert={!open}>
-                      {/* Up to three cards per row, generously sized (3 columns ≥xl, 2 columns ≥md, 1 column on narrow screens). */}
+                      {/* Generously sized cards: 2 columns ≥sm, 1 column on narrow screens. */}
                       <div
-                        className={`grid gap-2.5 border-t border-gray-200 p-2.5 transition-opacity duration-200 md:grid-cols-2 xl:grid-cols-3 dark:border-gray-800 ${open ? "opacity-100" : "opacity-0"}`}
+                        className={`grid gap-2.5 p-2.5 transition-opacity duration-200 sm:grid-cols-2 ${open ? "opacity-100" : "opacity-0"}`}
                       >
                         {group.skills.map((skill) => (
                           <SkillCard
@@ -268,6 +320,7 @@ export function SkillsPage() {
                             installed={installed}
                             onQuickInvoke={quickInvoke}
                             onToggleInstall={toggleInstall}
+                            onUpdateOutdated={updateOutdated}
                           />
                         ))}
                       </div>
@@ -283,23 +336,31 @@ export function SkillsPage() {
   );
 }
 
-/** A single skill card: metadata display (including a semantic metadata line) + quick invoke + "manage installs" Modal. */
+/** A single skill card: metadata display (including a semantic metadata line) + update reminder + quick invoke + "manage installs" Modal. */
 function SkillCard({
   skill,
   installed,
   onQuickInvoke,
   onToggleInstall,
+  onUpdateOutdated,
 }: {
   skill: SkillMetadataItem;
   installed: InstalledMap;
   onQuickInvoke: (name: string) => void;
-  onToggleInstall: (agentId: string, name: string, on: boolean) => Promise<void>;
+  onToggleInstall: (agentId: string, name: string, on: boolean, version: number) => Promise<void>;
+  onUpdateOutdated: (name: string, agentIds: string[]) => Promise<void>;
 }) {
   const { locale } = useLocale();
   const { agents } = useProject();
   const [installOpen, setInstallOpen] = useState(false);
   let installedCount = 0;
-  for (const set of installed.values()) if (set.has(skill.name)) installedCount += 1;
+  for (const m of installed.values()) if (m.has(skill.name)) installedCount += 1;
+  const outdated = outdatedAgentIds(
+    agents.map((a) => a.agentId),
+    installed,
+    skill.name,
+    skill.version,
+  );
 
   // Short description takes priority, falling back to the full description
   // when missing (per UI language); title carries the full description for hover reading.
@@ -315,37 +376,54 @@ function SkillCard({
     .filter((v): v is string => v !== null)
     .join(" · ");
   return (
-    <div className="flex h-full flex-col rounded-md border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
-      {/* Header: an enlarged skill icon spanning two rows (rounded border + light background), with the name and short description on one line each to the right. */}
-      <div className="flex items-center gap-3">
-        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-gray-50 text-gray-600 dark:border-gray-700 dark:bg-gray-800/60 dark:text-gray-300">
-          <SkillIcon icon={skill.icon} size={26} />
-        </span>
-        <div className="min-w-0 flex-1">
-          <span className="block truncate font-mono text-[13px] font-semibold" title={skill.name}>
-            {skill.name}
-          </span>
-          {/* Short description truncates to one line (full description goes into title for hover reading). */}
-          <p
-            className="mt-0.5 truncate text-xs leading-5 text-gray-500 dark:text-gray-400"
-            title={fullDescription}
+    <div className="flex h-full items-center gap-3 rounded-md p-4 transition-colors hover:bg-gray-100/70 dark:hover:bg-gray-800/60">
+      <div className="min-w-0 flex-1">
+        {/* Header: the skill icon centered across the two text rows (rounded tile in the skill's
+            own palette color — see skillTileColor; deliberately a bit smaller than the two rows),
+            with the name and short description on one line each to the right. */}
+        <div className="flex items-center gap-3">
+          <span
+            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${skillTileColor(skill.name)}`}
           >
-            {description}
-          </p>
+            <SkillIcon icon={skill.icon} size={20} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <span className="block truncate font-mono text-[13px] font-semibold" title={skill.name}>
+              {skill.name}
+            </span>
+            {/* Short description truncates to one line (full description goes into title for hover reading). */}
+            <p
+              className="mt-0.5 truncate text-xs leading-5 text-gray-500 dark:text-gray-400"
+              title={fullDescription}
+            >
+              {description}
+            </p>
+          </div>
         </div>
-      </div>
-      {/* Footer row: metadata on the left (e.g. `v1 · 今天更新 · N 个 Agent 在用`) +
-          icon buttons on the right (copy goes into aria-label and title), pinned to the card's bottom with mt-auto. */}
-      <div className="mt-auto flex items-center gap-1.5 pt-3">
-        <span
-          className="min-w-0 flex-1 truncate text-[11px] text-gray-400 dark:text-gray-500"
-          title={meta}
-        >
+        {/* Metadata line under the header (e.g. `v1 · updated today · used by N Agents`). */}
+        <p className="mt-2.5 truncate text-[11px] text-gray-400 dark:text-gray-500" title={meta}>
           {meta}
-        </span>
+        </p>
+      </div>
+      {/* Actions: equal-square light icon buttons in a single row, vertically centered at the
+          card's right edge (copy goes into aria-label and title). */}
+      <div className="flex shrink-0 items-center justify-center gap-1.5">
+        {/* Light (secondary): an update nudge, not the card's primary action. */}
+        {outdated.length > 0 && (
+          <Button
+            size="sm"
+            variant="secondary"
+            className="h-8 w-8 shrink-0 justify-center p-0"
+            aria-label={`${S.skills.updateOutdated(outdated.length)} ${skill.name}`}
+            title={S.skills.updateOutdated(outdated.length)}
+            onClick={() => void onUpdateOutdated(skill.name, outdated)}
+          >
+            <GlyphIcon d={UPDATE_ICON} size={13} />
+          </Button>
+        )}
         <Button
           size="sm"
-          className="shrink-0 px-1.5"
+          className="h-8 w-8 shrink-0 justify-center p-0"
           aria-label={`${S.skills.quickInvoke} ${skill.name}`}
           title={S.skills.quickInvoke}
           onClick={() => onQuickInvoke(skill.name)}
@@ -354,8 +432,7 @@ function SkillCard({
         </Button>
         <Button
           size="sm"
-          variant="primary"
-          className="shrink-0 px-1.5"
+          className="h-8 w-8 shrink-0 justify-center p-0"
           aria-label={`${S.skills.manageInstall} ${skill.name}`}
           title={S.skills.manageInstall}
           onClick={() => setInstallOpen(true)}
@@ -379,7 +456,9 @@ function SkillCard({
                 agentId={a.agentId}
                 name={agentDisplayName(a)}
                 installed={installed.get(a.agentId)?.has(skill.name) ?? false}
-                onToggle={(on) => void onToggleInstall(a.agentId, skill.name, on)}
+                outdated={outdated.includes(a.agentId)}
+                onToggle={(on) => void onToggleInstall(a.agentId, skill.name, on, skill.version)}
+                onUpdate={() => void onUpdateOutdated(skill.name, [a.agentId])}
               />
             ))}
           </div>
@@ -392,19 +471,25 @@ function SkillCard({
 /**
  * One Agent row in the "manage installs" Modal: not-installed shows
  * "安装"/"Install"; installed shows "已安装"/"Installed", switching to
- * "卸载"/"Uninstall" on hover (same button, click to uninstall). Both
- * install and uninstall go through optimistic updates (toggleInstall), rolling back on failure.
+ * "卸载"/"Uninstall" on hover (same button, click to uninstall); an installed
+ * copy older than the library additionally shows an accent "更新"/"Update"
+ * button (reinstall = update). Install and uninstall go through optimistic
+ * updates (toggleInstall), rolling back on failure.
  */
 function InstallRow({
   agentId,
   name,
   installed,
+  outdated,
   onToggle,
+  onUpdate,
 }: {
   agentId: string;
   name: string;
   installed: boolean;
+  outdated: boolean;
   onToggle: (on: boolean) => void;
+  onUpdate: () => void;
 }) {
   return (
     <div className="flex items-center gap-2 rounded-md px-1.5 py-1.5 transition-colors duration-150 hover:bg-gray-50 dark:hover:bg-gray-800/60">
@@ -412,6 +497,17 @@ function InstallRow({
       <span className="min-w-0 flex-1 truncate text-sm" title={agentId}>
         {name}
       </span>
+      {installed && outdated && (
+        <Button
+          size="sm"
+          variant="secondary"
+          className="shrink-0"
+          aria-label={`${S.skills.updateAction} ${agentId}`}
+          onClick={onUpdate}
+        >
+          {S.skills.updateAction}
+        </Button>
+      )}
       {installed ? (
         // group: on hover the button's copy switches "已安装"/"Installed" → "卸载"/"Uninstall" (the same button carries the uninstall action).
         <Button

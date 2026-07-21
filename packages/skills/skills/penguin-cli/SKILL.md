@@ -3,8 +3,8 @@ name: penguin-cli
 description: Manage model API keys, default models and per-agent vault secrets with the penguin CLI.
 short_description: Manage models and secrets with the penguin CLI.
 short_description_zh: 用 penguin CLI 管理模型与密钥。
-version: 1
-updated: 2026-07-17T00:00:00Z
+version: 3
+updated: 2026-07-21T00:00:00Z
 ---
 
 # Penguin CLI
@@ -17,20 +17,20 @@ If the user's message only invokes this skill (e.g. "use penguin-cli skill") wit
 
 ## Models
 
-Add or update a model (upsert by the stored model id; re-run with more options to amend an entry):
+Add or update a model (upsert by the `(provider, model_id)` pair; re-run with more options to amend an entry):
 
 ```bash
-penguin config model add --model-id <upstream_id> [--provider <group>] [--api-key <key>] [--base-url <url>] \
+penguin config model add --provider <group> --model-id <upstream_id> [--api-key <key>] [--base-url <url>] \
   [--client-type <type>] [--context-window <n>] [--vision | --no-vision] \
   [--price-cache-read <n>] [--price-cache-write <n>] [--price-output <n>] \
   [--project-id <id>] [--root <dir>] [--set-default]
 ```
 
-- `--model-id` takes the provider's upstream model id (what the API expects). The stored id is always `<provider>/<upstream_id>`: `--provider` picks the provider group, and when omitted it is inferred from the built-in catalog (unrecognized ids fall back to `custom`). The upstream id is persisted automatically as the entry's request id, so nothing extra is needed for it to reach the API unchanged.
+- A model is identified by the `(provider, model_id)` pair, so `--provider` and `--model-id` are **both required** — the group is never inferred from the model id, because gateways resell vendor models under their upstream ids and a wrong guess would send the key to another vendor's endpoint. `--model-id` takes the provider's upstream model id (what the API expects) and is persisted as the entry's request id, so it reaches the API unchanged; `--provider` names the group (`deepseek`, `openai`, `anthropic`, `google`, `openrouter`, `siliconflow`, … — `custom` for any other endpoint).
 - For any OpenAI chat-completion compatible endpoint use `--client-type openai --base-url <endpoint>`; omit `--client-type` to auto-route by model id.
 - Prices are USD per million tokens (cache read / cache write / output).
 - `--vision` / `--no-vision` mark whether the model accepts images; omitting both keeps the current value (default is vision-capable).
-- All `penguin config model ...` and `penguin config vault ...` commands accept `--root <dir>` to target another data root (default `PENGUIN_HOME`, then `~/.penguin/data`).
+- All `penguin config model ...` and `penguin config vault ...` commands accept `--root <dir>` to target another data root (default `PENGUIN_HOME`, then `~/.penguin/data`). **When configuring models for an AI app you are building, always pass `--root <dir>` pointing at the app's own data directory inside the current working directory** (e.g. `--root ./penguin_data`, the same path the app gives `createAgent({ root })`); running without `--root` writes to the global `~/.penguin/data`, which belongs to the person running Penguin — not to the app.
 
 Other model commands:
 
@@ -61,7 +61,7 @@ penguin config lang <en|zh>   # persist the CLI language via PENGUIN_LANG in you
 
 ## Running agents
 
-`penguin run -m "<task>" [--model-id <id>] [--agent-id <id>] [--workspace <path>] [--approve <mode>]` runs one task; `penguin chat [--resume [session_id]]` starts or resumes an interactive chat with the same options.
+`penguin run -m "<task>" [--provider <group> --model-id <id>] [--agent-id <id>] [--workspace <path>] [--approve <mode>]` runs one task; `penguin chat [--resume [session_id]]` starts or resumes an interactive chat with the same options. The model reference stays a pair here too: pass `--provider` and `--model-id` together, or neither to run on the project's default model — one without the other is rejected.
 
 ## Storage
 

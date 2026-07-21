@@ -213,7 +213,8 @@ async function upsert(
   const raw = serializeSchedule(fields);
   const parsed = parseScheduleFile(name, raw);
   if (!parsed.ok) throw badRequest(`Invalid schedule configuration: ${parsed.error}`);
-  // At save time, verify the model reference resolves (resolveModelRef semantics; same rules as reconciliation) so we never persist a broken file.
+  // At save time, verify the (provider, modelId) pair names a configured model (same rules as reconciliation) so we never persist a broken file.
+  // The pairing rule itself is enforced by parseScheduleFile above, which rejects half a reference.
   const refError = await validateScheduleModelRef(deps.config.root, projectId, parsed.def);
   if (refError !== null) throw badRequest(`Invalid schedule configuration: ${refError}`);
   await writeScheduleFile(deps.config.root, projectId, agentId, name, raw);

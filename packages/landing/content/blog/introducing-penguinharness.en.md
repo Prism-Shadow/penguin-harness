@@ -2,70 +2,114 @@
 title: "Introducing PenguinHarness: agents that build agents"
 date: 2026-07-17
 category: news
-excerpt: The first open-source harness with recursive self-improvement is here — lightweight, efficient and secure infrastructure covering everything from automatic agent construction to continuous self-evolution.
+excerpt: We proved agents can self-evolve in our GDPevo Benchmark — now we are bringing that capability to everyone. The first open-source harness with recursive self-improvement covers everything from one-sentence agent construction to continuous self-evolution.
 ---
 
-Today we are releasing **PenguinHarness** — an open-source harness built for constructing and evolving agents. Its purpose fits in one line:
+Today we are releasing **PenguinHarness** — an open-source harness built for constructing and evolving agents: a zero-code Harness CLI and Web UI, connected to 1000+ models. The story it tells fits in one line:
 
-> Efficient Self-Improving Harness for Everyone.
+> With LangChain, you build agents by hand — at 1× speed. With PenguinHarness, agents build agents — at 100×.
+
+## From GDPevo to PenguinHarness: why we built this
+
+Before PenguinHarness, our team published the [GDPevo Benchmark](https://prism-shadow.github.io/GDPevo/). In GDPevo we systematically verified one thing: **agents can self-evolve** — an Agent can score its own performance, find where the points were lost, rewrite its own prompts and Skills, and climb version after version.
+
+With the capability proven, the question became: how does everyone get to use it? Self-evolution should not stay a curve in a paper — it should be infrastructure that works out of the box on every developer's desk. **Bringing an efficient self-improving harness to everyone is why we built PenguinHarness** — and it is right there in the name: Efficient Self-Improving Harness for Everyone.
 
 ## Why PenguinHarness
 
-Over the past year the way agent applications are built has been converging fast: what really decides quality is not a heavyweight framework but a simple, reliable, observable harness. PenguinHarness is rebuilt from the ground up — no dependency on any agent framework, a fully open-source self-developed kernel — and it brings three things to the open-source world first:
+Three reasons, in deliberate order — from task quality, to how agents get built, to how they keep improving.
 
-- **Simplest Is the Best**: a deliberately minimal toolset over clean low-level interfaces — fewer tool calls, fewer Tokens, complex tasks done efficiently.
-- **Harness for Building Agents**: with the PenguinHarness SDK, an Agent builds complete Agent applications for you, autonomously, from scratch.
-- **Harness for Recursive Self-Improvement**: with PenguinHarness Skills, an Agent evaluates and optimizes itself, improving recursively over time.
+### 1. Better on complex tasks, at lower cost
 
-For the latter two, PenguinHarness is the first open-source implementation in the industry.
+A deliberately minimal toolset over clean low-level interfaces: fewer tool calls, fewer Tokens, deeply tuned for open models like DeepSeek. Each harness runs the model it is normally paired with — the comparison is between the products as people actually use them — head-to-head on two suites:
 
-## Same model, equal or better quality, lower cost
+![Benchmark: PenguinHarness leads the data-analysis suite and ties OpenAI Codex on coding, at a small fraction of both rivals' cost](/blog-assets/benchmark-light.svg)
 
-All runs use the same DeepSeek V4 Pro model, head-to-head against Claude Code and OpenAI Codex on two suites (per-run means below).
+Complex data analysis (15 tasks, single run; PenguinHarness and Codex at thinking xhigh, Claude Code at max):
 
-Complex data analysis (15 tasks, single run):
+| Framework      | Model           | Accuracy (%) | Tokens (M) | Cost ($) |
+| -------------- | --------------- | -----------: | ---------: | -------: |
+| PenguinHarness | DeepSeek V4 Pro |        66.67 |      18.04 |     0.55 |
+| Claude Code    | Claude Opus 4.8 |        53.33 |      22.20 |    38.48 |
+| OpenAI Codex   | GPT-5.5         |        53.33 |      13.72 |    19.41 |
 
-| Framework | Model | Accuracy (%) | Tokens (M) | Cost ($) |
-| --- | --- | ---: | ---: | ---: |
-| PenguinHarness | DeepSeek V4 Pro | 66.7 | 18.04 | 0.552 |
-| Claude Code | DeepSeek V4 Pro | 66.7 | 21.17 | 0.641 |
-| OpenAI Codex | DeepSeek V4 Pro | 46.7 | 13.36 | 0.427 |
+Coding tasks (40 tasks × 2 runs; accuracy is over all 80 outcomes):
 
-Coding tasks (40 tasks × 2 runs averaged, thinking high, 30 min per-case timeout, CNY pricing converted at $1 = ¥7):
+| Framework      | Model           | Accuracy (%) | Tokens (M) | Cost ($) |
+| -------------- | --------------- | -----------: | ---------: | -------: |
+| PenguinHarness | DeepSeek V4 Pro |        71.25 |     200.00 |     3.81 |
+| Claude Code    | Claude Opus 4.8 |        86.25 |     151.61 |   146.97 |
+| OpenAI Codex   | GPT-5.5         |        71.25 |     251.20 |   220.08 |
 
-| Framework | Model | Accuracy (%) | Tokens (M) | Cost ($) |
-| --- | --- | ---: | ---: | ---: |
-| PenguinHarness | DeepSeek V4 Pro | 50.00 | 2.10 | 0.041 |
-| Claude Code | DeepSeek V4 Pro | 48.75 | 2.00 | 0.048 |
-| OpenAI Codex | DeepSeek V4 Pro | 42.50 | 2.65 | 0.043 |
+Tokens and cost are suite totals, not per-run means. On data analysis we take the highest accuracy of the three — 66.67% against 53.33% for both — while spending 1/35 of what Codex spent and 1/70 of Claude Code's. On coding we tie Codex at 71.25% and trail Claude Code's 86.25%, but the whole suite cost us $3.81 against their $220.08 and $146.97: comparable work, one to two orders of magnitude apart on the bill.
 
-On the data-analysis suite PenguinHarness ties Claude Code on accuracy and clearly beats OpenAI Codex while using 14.8% fewer Tokens at 13.8% lower cost; on the coding suite it scores highest of the three at the lowest per-run cost.
+### 2. One sentence, and an Agent builds your Agent app
+
+Type one sentence, and an Agent builds the complete Agent application for you — scaffold, code, and run instructions, end to end:
+
+```text
+Collect the docs from https://github.com/ericbuess/claude-code-docs and build a RAG app that answers Claude Code questions as a configuration expert, citing its sources.
+```
+
+And this is the finished product — a docs expert with retrieval, cited sources that link to the original files, and example questions built in:
+
+![The generated RAG app: a Claude Code docs expert answering with cited, clickable sources and example questions](/blog-assets/rag-app-en-light.webp)
+
+**And generating this entire RAG app burned just $0.02 (¥0.2) of tokens — on DeepSeek V4 Pro.**
+
+### 3. Self-evolution: it gets stronger with use
+
+With PenguinHarness Skills, an Agent evaluates and optimizes itself: the Optimizer orchestrates multiple Evaluators to score in parallel, uses the scores and run traces to find where points were lost, and upgrades the Agent from version N to N+1 — with a snapshot before every round, and every request replayable in the Trace view. A self-evolution demo video is coming soon.
 
 ## Evolution within bounds, security first
 
-The biggest worry about self-improvement is losing control. PenguinHarness answers with a contract — CONTRACT.md:
+The biggest worry about self-evolution is losing control. PenguinHarness answers with a contract (CONTRACT.md):
 
-- Evolution is strictly confined to Workspace and Skills; the harness core security boundary is never modified.
-- Tool calls run only after approval, and every approval is audited.
-- Risky changes snapshot first — every step of evolution can be rolled back.
-- Fully open source and locally deployable: data never leaves your machine, meeting enterprise security requirements.
+- Evolution is strictly confined to Workspace and Skills — the harness core security boundary is never modified;
+- Tool calls require approval first, and every approval leaves an audit record;
+- Risky changes are preceded by version snapshots, so any round of evolution can be rolled back;
+- Fully open source and locally deployed — data never leaves your machine, meeting enterprise data-security requirements.
 
-## Get started now
+## Supported models
 
-Install with one command (Linux / macOS, x64 / arm64, bundled Node runtime):
+| Model            | Providers                                                                        |
+| ---------------- | -------------------------------------------------------------------------------- |
+| DeepSeek V4      | DeepSeek, OpenRouter, Fireworks AI, SiliconFlow, Qwen Token Plan                 |
+| Kimi K3          | Moonshot AI, OpenRouter, Qwen Pay-As-You-Go                                      |
+| GLM 5.2          | Z.AI, OpenRouter, Fireworks AI, SiliconFlow, Qwen Token Plan, Qwen Pay-As-You-Go |
+| Hunyuan 3        | OpenRouter                                                                       |
+| Qwen 3.8 Max     | Qwen Token Plan (preview)                                                        |
+| GPT 5.5          | OpenAI, OpenRouter                                                               |
+| Gemini 3.5 Flash | Google Gemini, OpenRouter                                                        |
+| Claude Opus 4.8  | Anthropic, OpenRouter                                                            |
+
+Any OpenAI-protocol endpoint is supported: pick a preset above, or point a custom endpoint at any of the 1000+ online and local models.
+
+## How to use it
+
+Install with one command (Linux / macOS, x64 / arm64, bundled Node runtime), then launch the Web UI:
 
 ```bash
-curl -fsSL https://github.com/Prism-Shadow/penguin-harness/releases/latest/download/install.sh | sh
+curl -fsSL https://penguin.ooo/install.sh | sh
+penguin web        # opens http://127.0.0.1:7364 (first login: admin / penguin-2026)
 ```
 
-Configure a model (DeepSeek as an example), run your first task, or open the desktop-grade web interface with `penguin web`:
+Open the Models page, paste an API key under the DeepSeek or OpenRouter group and set it as default; then head back to Chat and hand the Agent its first task — e.g. "Analyze data.csv and summarize quarterly sales".
 
-```bash
-penguin config model add --model-id deepseek-v4-pro --api-key sk-your-key --set-default
-penguin run --approve allow-all --message "Analyze data.csv and summarize quarterly sales"
-penguin web
-```
+## What's next
 
-PenguinHarness supports 1000+ online and local models and multi-agent collaborative evolution, and runs on as little as a single CPU. Through continuous evolution it makes complex AI development ever simpler — a more efficient, more reliable, lower-hallucination and lower-cost Agent productivity engine.
+- Public release of the benchmark suite;
+- A desktop app;
+- Windows support;
+- More to come.
 
-Follow us on [GitHub](https://github.com/Prism-Shadow/penguin-harness) and open your first issue.
+## Join the community and build with us
+
+A self-improving harness needs a community that improves with it. Come discuss, request, and contribute — your first Issue is the best way to start:
+
+- [Discord](https://discord.gg/eFHKqqcU3D): chat with us and other developers in real time;
+- [X (Twitter)](https://x.com/code_hiyouga): follow the latest updates;
+- [WeChat group](https://github.com/Prism-Shadow/penguin-harness-community/blob/main/wechat/group.jpg): Chinese community discussions;
+- [GitHub](https://github.com/Prism-Shadow/penguin-harness): stars, Issues, and PRs all welcome.
+
+Self-evolving agent infrastructure, for everyone — starting today.

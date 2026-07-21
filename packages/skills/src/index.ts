@@ -139,34 +139,28 @@ export function loadLibrarySkills(): LibrarySkill[] {
  */
 export const SKILL_GROUPS: SkillGroupInfo[] = [
   {
-    id: "agent-development",
-    title: "Agent Development",
-    titleZh: "Agent 开发",
-    skills: ["agent-creation", "benchmark-design", "agent-evaluation", "agent-optimization"],
+    id: "office-productivity",
+    title: "Office Productivity",
+    titleZh: "办公效率",
+    skills: ["data-analysis", "firecrawl"],
   },
   {
-    id: "data-analysis",
-    title: "Data Analysis",
-    titleZh: "数据分析",
-    skills: ["data-analysis"],
+    id: "software-development",
+    title: "Software Development",
+    titleZh: "软件开发",
+    skills: ["web-design", "software-engineering"],
   },
   {
-    id: "penguin-development",
-    title: "Penguin Development",
-    titleZh: "Penguin 开发",
+    id: "ai-app-development",
+    title: "AI App Development",
+    titleZh: "AI 应用开发",
     skills: ["penguin-sdk", "penguin-cli", "agenthub-models"],
   },
   {
-    id: "web-development",
-    title: "Web Development",
-    titleZh: "网页开发",
-    skills: ["web-design"],
-  },
-  {
-    id: "software-engineering",
-    title: "Software Engineering",
-    titleZh: "软件工程",
-    skills: ["software-engineering"],
+    id: "agent-tuning",
+    title: "Agent Tuning",
+    titleZh: "Agent 调优",
+    skills: ["agent-creation", "benchmark-design", "agent-evaluation", "agent-optimization"],
   },
 ];
 

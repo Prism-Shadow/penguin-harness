@@ -80,12 +80,13 @@ export const en: Strings = {
     logout: "Sign out",
     admin: "Admin",
     defaultAdminNote:
-      "First run: sign in as the built-in admin (admin / admin123), then change the password soon",
+      "First run: sign in as the built-in admin (admin / penguin-2026), then change the password soon",
   },
 
   account: {
     changePassword: "Change password",
     oldPassword: "Current password",
+    oldPasswordHint: "The built-in admin's default initial password is penguin-2026",
     newPassword: "New password",
     confirmPassword: "Confirm new password",
     passwordMismatch: "New passwords do not match",
@@ -286,6 +287,22 @@ export const en: Strings = {
     groupEmptyHint: "No models in this group yet; use “Add model” to create one",
     searchPlaceholder: "Search models: id / name / provider",
     noSearchResults: "No matching models",
+    syncCatalog: "Sync presets",
+    syncCatalogHint:
+      "Update preset models from the built-in catalog: add missing entries and reset differing ones to the catalog's fields; locally added models and API keys are left untouched",
+    syncDone: (added: number, updated: number) =>
+      `Presets synced: ${added} added, ${updated} updated`,
+    syncUpToDate: "Presets are already up to date",
+    homepage: "Model page",
+    speedTest: "Speed test",
+    speedTestTitle: "Speed test",
+    speedTestConfirm: (n: number): string =>
+      `This sends one real request to each of the ${n} models in this group, one at a time, to measure time-to-first-token (TTFT) and output rate (TPS). It consumes a small amount of API quota. Continue?`,
+    speedTestStart: "Start",
+    speedPending: "Testing…",
+    speedFailed: "Test failed",
+    ttftTitle: "Time to first token (TTFT)",
+    tpsTitle: "Output rate (TPS)",
     modelCount: (n: number): string => `${n} model${n === 1 ? "" : "s"}`,
     modelId: "Model ID",
     modelIdHint: "The upstream API model id, e.g. gpt-5.5",
@@ -373,7 +390,7 @@ export const en: Strings = {
   },
 
   vault: {
-    desc: "Environment variables owned by this Agent (stored in agent_state/.vault.toml), injected into the environment of its shell commands (exec_command); key names are shared with the model, values never enter the model context. Subagents use their own vaults and do not inherit this one.",
+    desc: "Environment variables owned by this Agent (stored in agent_state/.vault.toml), injected into the environment of its shell commands (exec_command); key names are shared with the model, values never enter the model context. Subagents use their own vaults and do not inherit this one. Saved changes take effect from the next task (a task already running is unaffected).",
     key: "Name",
     value: "Value",
     valueMasked: "Value (masked)",
@@ -449,6 +466,10 @@ export const en: Strings = {
     usedByAgents: (n: number): string =>
       n === 0 ? "not used yet" : n === 1 ? "used by 1 agent" : `used by ${n} agents`,
     installedToast: (skill: string, agent: string): string => `Installed ${skill} to ${agent}`,
+    updateOutdated: (n: number): string => `Update available: update ${n} Agent install(s)`,
+    updateAction: "Update",
+    updatedToast: (skill: string, n: number): string =>
+      `Updated ${skill} to the latest version (${n} Agent(s))`,
     uninstalledToast: (skill: string, agent: string): string =>
       `Uninstalled ${skill} from ${agent}`,
   },
@@ -464,6 +485,63 @@ export const en: Strings = {
     workspaceClear: "Use auto temp directory instead",
     workspaceDirInvalid: "Directory does not exist or is inaccessible; reverted",
     draftSubtitle: "The self-evolving agent that excels at AI development tasks",
+    exampleTasks: {
+      game: {
+        label: "Example: 2D penguin sled game",
+        desc: "A cute Antarctic penguin sleds over rocks, easy start with a gentle difficulty ramp — a 2D pure-frontend mini game",
+        prompt:
+          "Build a cute Antarctic penguin sledding 2D game: press Space to jump over the rocks " +
+          "coming up on the ice; start easy and forgiving, with sled speed and obstacle density " +
+          "ramping up smoothly and gradually over time (no sudden spikes), live scoring, and " +
+          "hitting a rock ending the run with one-click restart. " +
+          "A 2D side-scroller with a cute cartoon look, pure frontend (a single HTML file is " +
+          "fine), styled per the web-design skill. " +
+          "When done, test it in a browser once, confirm the first few seconds are easy to " +
+          "clear, and tell me how to open it and how to play.",
+      },
+      lol: {
+        label: "Example: League of Legends music player",
+        desc: "Worlds anthems on the SoundCloud Widget API — a single file that opens from file://",
+        prompt: `Build a League of Legends Worlds anthem player with the SoundCloud Widget API (see https://developers.soundcloud.com/docs/api/html5-widget): a single index.html that works when opened from file://.
+
+## Technical constraints
+- Use the SC.Widget JS API (widget.load / widget.toggle / widget.setVolume / widget.seekTo), loading https://w.soundcloud.com/player/api.js
+- The iframe must stay visible (180px tall), with visual=true color=f0b90b single_active=true
+- Include ONLY these 8 tracks confirmed playable (oEmbed-verified); do not add tracks that are not oEmbed-verified:
+  - Warriors (S4) — soundcloud.com/leagueoflegends/warriors
+  - Worlds Collide (S5) — soundcloud.com/leagueoflegends/worlds-collide
+  - Legends Never Die (S7) — soundcloud.com/leagueoflegends/legends-never-die
+  - Phoenix (S9) — soundcloud.com/leagueoflegends/phoenix
+  - Burn It All Down (S11) — soundcloud.com/leagueoflegends/burn-it-all-down
+  - GODS (S13) — soundcloud.com/leagueoflegends/gods
+  - Heavy Is The Crown (S14) — soundcloud.com/linkinpark/heavy-is-the-crown
+  - Sacrifice (S15) — soundcloud.com/leagueoflegends/sacrifice
+
+## Layout
+- Left 260px sticky sidebar: the track list (S4/S5/… badge + emoji + title + year); clicking highlights with a gold border and switches tracks via SC.Widget.load() with auto_play
+- Right main area: hero title + a desktop clock (80px monospace gold HH:MM:SS, refreshed every second, blinking colons) + a mood tag
+- Player card: the SoundCloud iframe + a custom control bar (⏮ ▶/⏸ ⏭ + track info + a volume slider; clicking the speaker icon toggles mute)
+- Mood-wave section: 15 gold animated bars, re-randomized on every track switch
+- Keyboard shortcuts: Space play/pause, ← → previous/next, ↑ ↓ volume
+
+## Design
+Penguin visual style (see the web-design skill), dark/light themes via <html data-theme>, dark by default, remembered in localStorage. Responsive: on phones the sidebar becomes a horizontally scrolling top bar.
+
+When done, open index.html in a browser and self-test once.`,
+      },
+      rag: {
+        label: "Example: build a Claude Code docs expert",
+        desc: "Collect the claude-code-docs repo into a conversational RAG knowledge app with source citations",
+        prompt:
+          "Collect the docs from https://github.com/ericbuess/claude-code-docs and build a RAG knowledge app: " +
+          "clone the repo and prepare the corpus, then build a retrieval index; " +
+          "the app acts as a Claude Code configuration expert, answering Claude Code questions " +
+          "with retrieval-augmented replies and clickable citations that reveal the matched " +
+          "original text chunk and link to the real documents; " +
+          "give it a beautiful web chat UI following the web-design skill, with a few example questions in the empty state. " +
+          "When done, run the app, verify one streamed answer yourself, and tell me how to access it.",
+      },
+    },
     sessionList: "Sessions",
     defaultSessionTitle: "New chat",
     model: "Model",
@@ -487,6 +565,7 @@ export const en: Strings = {
     statusRunning: "Running",
     statusCompacting: "Compacting",
     pendingApprovals: (n: number) => `${n} pending approval${n > 1 ? "s" : ""}`,
+    jumpToLatest: "Jump to latest",
     inputPlaceholder: "Type a message. Enter to send, Shift+Enter for newline, paste images",
     inputPlaceholderShort: "Type a message…",
     send: "Send",
@@ -547,6 +626,7 @@ export const en: Strings = {
     mentionHint: "@ to handoff to another agent",
     mentionRemove: "Remove @ target",
     skillsSelect: "Skills",
+    skillRemove: "Remove skill",
     skillsSearchPlaceholder: "Search skills",
     skillsNoMatch: "No matching skills",
     skillsEmptyHint: "No skills installed yet — add some from the skill library",
@@ -598,6 +678,7 @@ export const en: Strings = {
     title: "Files",
     upload: "Upload",
     download: "Download",
+    openInNewTab: "Open in new tab",
     refresh: "Refresh",
     root: "Workspace root",
     empty: "Empty directory",
