@@ -1,4 +1,4 @@
-# A model reference is always an explicit pair, plus a batch of review fixes
+# Explicit model reference pairs, and a batch of review fixes
 
 The provider group is no longer resolved automatically anywhere — a model is referenced by the complete `(provider, model_id)` pair or not at all — and a code review of the release branch turned up a further set of correctness, accessibility and documentation defects, all fixed here.
 
