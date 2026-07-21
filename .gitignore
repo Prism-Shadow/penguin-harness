@@ -29,3 +29,8 @@ cache/
 # playwright e2e artifacts
 packages/web/test-results/
 packages/web/playwright-report/
+
+# local design-doc symlink and agent instructions
+/design
+/AGENTS.md
+/CLAUDE.md
