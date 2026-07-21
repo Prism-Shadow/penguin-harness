@@ -3,7 +3,7 @@ name: penguin-sdk
 description: Build AI apps on the Penguin Harness SDK — self-contained projects, the createSession/run streaming loop, and a complete RAG recipe that ingests documents into a knowledge base and answers with citations behind a web UI.
 short_description: Build AI and RAG apps on the Penguin Harness SDK.
 short_description_zh: 基于 Penguin SDK 构建 AI 与 RAG 应用。
-version: 6
+version: 7
 updated: 2026-07-20T17:00:00Z
 ---
 
@@ -39,7 +39,7 @@ Before writing any code, verify a usable model credential exists — a finished 
 env | grep -oE "(DEEPSEEK|OPENAI|ANTHROPIC|GEMINI)_API_KEY" || echo none
 ```
 
-Vault keys also appear in your Vault Keys section. If nothing is usable, **stop and tell the user first**: ask them to open the agent's settings via the **gear icon** on its card (left side, Agents page) and add a model API key (e.g. `DEEPSEEK_API_KEY`) in the **key vault** tab — vault values reach your shell environment on the next task. Build only after a credential is confirmed, or clearly agree with the user to build now and verify later.
+Vault keys also appear in your Vault Keys section. If nothing is usable, **stop immediately and ask the user for help — do not keep calling tools to retry**: ask them to open the agent's settings via the **gear icon** on its card (left side, Agents page) and add a model API key (e.g. `DEEPSEEK_API_KEY`) in the **key vault** tab — vault values reach your shell environment on the next task. Re-running `env`, re-checking the vault, or attempting the build in a loop wastes turns and money; one clear check, then hand back to the user. Build only after a credential is confirmed, or clearly agree with the user to build now and verify later.
 
 ## Setup
 
@@ -54,7 +54,7 @@ Configure a model for the app's data root, in this order — stop at the first t
 1. `penguin config model add --root <data_dir> --model-id <id> --api-key <key> [--base-url <url>] [--client-type openai] --set-default` — prefer `--client-type openai --base-url <endpoint>` (works with any OpenAI-compatible endpoint; exact ids in the agenthub-models skill).
 2. Environment variables cover the **credential only** (`DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, …) — model selection still comes from the project config, whose preset default is `deepseek-v4-pro`. Env-only setup therefore works out of the box only with `DEEPSEEK_API_KEY`; for another vendor either run the CLI command above or pass a catalog `modelId` to `createSession`.
 
-Keep model API keys **project-local**: configure them with the penguin CLI into the app's own data root under the working directory (the `--root <data_dir>` above), so the project stays self-contained and movable. Never read, copy or fall back to model keys stored in the user's global `~/.penguin` directory — that config belongs to the person running Penguin, not to the app you are building.
+Keep model API keys **project-local**: configure them with the penguin CLI into the app's own data root under the working directory, so the project stays self-contained and movable. When building an AI app, **always pass `--root <data_dir>` pointing at the app's data directory inside the current working directory** (the same path you give `createAgent({ root })`, e.g. `./penguin_data`) — never run `penguin config ...` without `--root`, or it writes to the global `~/.penguin/data` instead of the project. Never read, copy or fall back to model keys stored in the user's global `~/.penguin` directory — that config belongs to the person running Penguin, not to the app you are building.
 
 Model config lives in one hidden file under the data root's project directory: `.project_config.toml`. It is CLI-only — never read, print or edit it.
 

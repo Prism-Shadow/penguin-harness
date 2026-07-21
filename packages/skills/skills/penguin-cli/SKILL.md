@@ -3,7 +3,7 @@ name: penguin-cli
 description: Manage model API keys, default models and per-agent vault secrets with the penguin CLI.
 short_description: Manage models and secrets with the penguin CLI.
 short_description_zh: 用 penguin CLI 管理模型与密钥。
-version: 1
+version: 2
 updated: 2026-07-17T00:00:00Z
 ---
 
@@ -30,7 +30,7 @@ penguin config model add --model-id <upstream_id> [--provider <group>] [--api-ke
 - For any OpenAI chat-completion compatible endpoint use `--client-type openai --base-url <endpoint>`; omit `--client-type` to auto-route by model id.
 - Prices are USD per million tokens (cache read / cache write / output).
 - `--vision` / `--no-vision` mark whether the model accepts images; omitting both keeps the current value (default is vision-capable).
-- All `penguin config model ...` and `penguin config vault ...` commands accept `--root <dir>` to target another data root (default `PENGUIN_HOME`, then `~/.penguin/data`).
+- All `penguin config model ...` and `penguin config vault ...` commands accept `--root <dir>` to target another data root (default `PENGUIN_HOME`, then `~/.penguin/data`). **When configuring models for an AI app you are building, always pass `--root <dir>` pointing at the app's own data directory inside the current working directory** (e.g. `--root ./penguin_data`, the same path the app gives `createAgent({ root })`); running without `--root` writes to the global `~/.penguin/data`, which belongs to the person running Penguin — not to the app.
 
 Other model commands:
 

@@ -3,7 +3,7 @@ name: agenthub-models
 description: Call model APIs through @prismshadow/agenthub — streaming text generation, image generation, speech synthesis and embeddings with one client.
 short_description: Call model APIs with one AgentHub client.
 short_description_zh: 用一个 AgentHub 客户端调用模型 API。
-version: 3
+version: 4
 updated: 2026-07-20T15:00:00Z
 ---
 
@@ -35,9 +35,9 @@ Check for a usable API key before writing code — the client needs one for whic
 env | grep -oE "(DEEPSEEK|OPENAI|ANTHROPIC|GEMINI)_API_KEY" || echo none
 ```
 
-Vault keys also appear in your Vault Keys section. If none is usable, stop and ask the user to add one in the agent's **key vault**: gear icon on the agent's card (Agents page) → settings → key vault tab; vault values reach your shell environment on the next task.
+Vault keys also appear in your Vault Keys section. If none is usable, **stop immediately and ask the user for help — do not keep calling tools to retry**: ask them to add one in the agent's **key vault** (gear icon on the agent's card, Agents page → settings → key vault tab); vault values reach your shell environment on the next task. Re-checking the environment or the vault in a loop just wastes turns — one clear check, then hand back to the user.
 
-Keep model API keys **project-local**: for an app that stores its own model config, write the key into the project under the working directory with the penguin CLI (`penguin config model add --root <data_dir> --model-id <id> --api-key <key>`); otherwise rely on vault-injected environment variables. Never read, copy or fall back to model keys stored in the user's global `~/.penguin` directory — that config belongs to the person running Penguin, not to your script.
+Keep model API keys **project-local**: for an app that stores its own model config, write the key into the project under the working directory with the penguin CLI, **always passing `--root <data_dir>` for a directory inside the current working directory** (`penguin config model add --root ./penguin_data --model-id <id> --api-key <key>`) — without `--root` it writes to the global `~/.penguin/data` instead. Otherwise rely on vault-injected environment variables. Never read, copy or fall back to model keys stored in the user's global `~/.penguin` directory — that config belongs to the person running Penguin, not to your script.
 
 ## Model IDs
 
