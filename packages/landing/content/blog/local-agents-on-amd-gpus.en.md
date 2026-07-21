@@ -5,7 +5,7 @@ category: news
 excerpt: What PenguinHarness actually is, the ideas behind its architecture, and a real end-to-end run — a local open-weight model on an AMD GPU that fails a scored task, then improves itself from 0 to 4 out of 5 by editing its own files, entirely on-device.
 ---
 
-*A joint post by AMD × PrismShadow — Ning Zhang, Yuyang Gao (AMD) and Yaowei Zheng (PrismShadow).*
+*AMD × PrismShadow — by Ning Zhang, Yuyang Gao (AMD) and Yaowei Zheng (PrismShadow).*
 
 If you are new to PenguinHarness, this post is a guided tour: what the project is, the ideas that shape its architecture, and — to make it concrete — a real run where a fully local open-weight model on an AMD GPU *fails* a scored task and then *improves itself* from 0 to 4 out of 5 by editing its own files, without a single byte leaving the machine.
 
