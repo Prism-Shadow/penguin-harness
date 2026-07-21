@@ -1,23 +1,37 @@
 /**
  * Use-case gallery as switchable tabs — one tab per case, RAG only for now
- * (the tab bar is already plural so future cases just append). The RAG tab
- * shows the one-sentence prompt and the real captured result shot.
+ * (the tab bar is already plural so future cases just append). The RAG tab shows the
+ * one-sentence example prompt and the finished-app shot, both in the active language.
  */
 import { useState } from "react";
 import { S } from "../lib/strings";
+import { useLocale } from "../state/locale";
+import type { Locale } from "../state/locale";
 import { Section } from "../components/section";
 import { BrowserFrame } from "../components/browser-frame";
-import ragDemoLight from "../assets/rag-demo-light.webp";
-import ragDemoDark from "../assets/rag-demo-dark.webp";
+import ragAppEnLight from "../assets/rag-app-en-light.webp";
+import ragAppEnDark from "../assets/rag-app-en-dark.webp";
+import ragAppZhLight from "../assets/rag-app-zh-light.webp";
+import ragAppZhDark from "../assets/rag-app-zh-dark.webp";
 
-/** One-sentence demo prompt (code is code — shared across languages). */
-const DEMO_PROMPT =
-  "Build a RAG app that answers questions over the Markdown files in docs/ with citations.";
+/** The real one-sentence example task, per UI language (matches the README + draft-screen card). */
+const DEMO_PROMPT: Record<Locale, string> = {
+  en: "Collect the docs from https://github.com/ericbuess/claude-code-docs and build a RAG app that answers Claude Code questions as a configuration expert, citing its sources.",
+  zh: "收集 https://github.com/ericbuess/claude-code-docs 的文档，做一个化身 Claude Code 配置专家、回答带来源引用的 RAG 问答应用。",
+};
+
+/** Finished-app shot per language × theme. */
+const RAG_SHOT: Record<Locale, { light: string; dark: string }> = {
+  en: { light: ragAppEnLight, dark: ragAppEnDark },
+  zh: { light: ragAppZhLight, dark: ragAppZhDark },
+};
 
 export function Cases() {
+  const { locale } = useLocale();
   const tabs = S.cases.tabs;
   const [active, setActive] = useState(0);
   const tab = tabs[active] ?? tabs[0]!;
+  const shot = RAG_SHOT[locale];
 
   return (
     <Section id="cases" eyebrow={S.cases.eyebrow} title={S.cases.title} subtitle={S.cases.subtitle}>
@@ -48,18 +62,18 @@ export function Cases() {
         <div className="mx-auto mb-5 w-fit max-w-full overflow-x-auto rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 dark:border-gray-800 dark:bg-gray-900">
           <code className="font-mono text-[13px] whitespace-nowrap text-gray-800 dark:text-gray-200">
             <span className="mr-2 text-gray-400 select-none dark:text-gray-500">&gt;</span>
-            {DEMO_PROMPT}
+            {DEMO_PROMPT[locale]}
           </code>
         </div>
         <BrowserFrame>
           <img
-            src={ragDemoLight}
+            src={shot.light}
             alt={tab.caption}
             loading="lazy"
             className="block h-auto w-full dark:hidden"
           />
           <img
-            src={ragDemoDark}
+            src={shot.dark}
             alt={tab.caption}
             loading="lazy"
             className="hidden h-auto w-full dark:block"

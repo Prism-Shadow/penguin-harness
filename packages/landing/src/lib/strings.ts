@@ -190,7 +190,8 @@ export const zh = {
     tabs: [
       {
         label: "RAG 应用",
-        caption: "一句话输入，产出可运行的 RAG 应用：脚手架、带引用的检索入口与运行说明",
+        caption:
+          "一句话输入，产出成品 Claude Code 文档专家：检索增强、可点击的来源引用与内置示例问题",
       },
     ],
   },

@@ -192,7 +192,7 @@ export const en: Strings = {
       {
         label: "RAG app",
         caption:
-          "One sentence in, a working RAG app out: scaffold, retrieval entry with citations, and run instructions",
+          "One sentence in, a finished Claude Code docs expert: retrieval with clickable cited sources and built-in example questions",
       },
     ],
   },
