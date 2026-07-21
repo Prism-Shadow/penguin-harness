@@ -8,3 +8,4 @@ One line per entry, linking its detail file (related changes share one entry fil
 - [Blog and docs site](2026-07-20-blog-and-docs.md) — Blog posts and the docs site.
 - [READMEs](2026-07-20-readme.md) — The repository READMEs (en/zh).
 - [Tooling, language, and infrastructure](2026-07-20-tooling.md) — Repository language, dev commands, the changelog layout itself, and dependency upgrades.
+- [One-shot RAG app flow: skills rewrite and a draft-screen example task](2026-07-20-one-shot-rag-flow.md) — PR #11's squash restored after a force-push race: one-shot RAG skills, draft-screen example cards, and the finished-product showcase pipeline.
