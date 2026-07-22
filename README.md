@@ -60,13 +60,22 @@ https://github.com/user-attachments/assets/9b7033e8-f08a-4c3f-bd33-547896664e6e
 
 **And generating this entire RAG app burned just $0.02 (¥0.2) of tokens — on DeepSeek V4 Pro.**
 
-Powering this is the built-in **AI App Development** Skill group — Penguin SDK, Penguin CLI and AgentHub model APIs, plus local model serving and fine-tuning (vLLM, Ollama, LLaMA-Factory) — so PenguinHarness can **build and tune AI applications** end to end, fully automatically.
-
 ### 3. 🧬 Self-evolution: it gets stronger with use
 
 With PenguinHarness Skills, an Agent evaluates and optimizes itself: run the benchmark, find the lost points, ship version N+1 — with a snapshot before every round, and every request observable in the Trace view.
 
 https://github.com/user-attachments/assets/922d13a6-5ffc-4685-9a39-352f02f9afc0
+
+## Built-in Skills
+
+Four Skill groups ship in the box ([docs](https://penguin.ooo/docs/skills)); Agents can also write and optimize their own:
+
+| Group                | Skills                                                                            |
+| -------------------- | --------------------------------------------------------------------------------- |
+| Office Productivity  | `data-analysis`, `firecrawl`                                                      |
+| Software Development | `web-design`, `software-engineering`                                              |
+| AI App Development   | `penguin-sdk`, `penguin-cli`, `agenthub-models`                                   |
+| Agent Tuning         | `agent-creation`, `benchmark-design`, `agent-evaluation`, `agent-optimization`    |
 
 ## Supported Models
 

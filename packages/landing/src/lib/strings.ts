@@ -89,7 +89,7 @@ export const zh = {
       {
         title: "Harness for Building Agents",
         tag: "",
-        desc: "通过 PenguinHarness SDK，让 Agent 从零自主完成 Agent 应用的构建；「AI 应用开发」Skill 组让构建和调优全自动。",
+        desc: "通过 PenguinHarness SDK，让 Agent 从零自主完成 Agent 应用的构建。",
       },
       {
         title: "Harness for Recursive Self-Improvement",
@@ -300,7 +300,7 @@ export const zh = {
       },
       {
         title: "技能库",
-        desc: "内置「AI 应用开发」Skill 组，全自动构建和调优 AI 应用——vLLM / Ollama 部署、LLaMA-Factory 微调。",
+        desc: "浏览、安装、快捷调用 Skill，Agent 也能编写并优化自己的技能。",
       },
       {
         title: "定时任务",
@@ -325,6 +325,21 @@ export const zh = {
       {
         title: "多用户管理",
         desc: "管理员创建用户，各自拥有独立 Project，数据相互隔离。",
+      },
+    ],
+  },
+
+  skills: {
+    eyebrow: "内置 Skill",
+    title: "内置 Skill 库一览",
+    subtitle: "四组 Skill 开箱即用，Agent 也能编写并优化自己的 Skill。",
+    groups: [
+      { title: "办公效率", skills: ["data-analysis", "firecrawl"] },
+      { title: "软件开发", skills: ["web-design", "software-engineering"] },
+      { title: "AI 应用开发", skills: ["penguin-sdk", "penguin-cli", "agenthub-models"] },
+      {
+        title: "Agent 调优",
+        skills: ["agent-creation", "benchmark-design", "agent-evaluation", "agent-optimization"],
       },
     ],
   },
