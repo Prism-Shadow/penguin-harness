@@ -693,6 +693,8 @@ When done, open index.html in a browser and self-test once.`,
     archiveSession: "Archive",
     unarchiveSession: "Unarchive",
     archivedGroup: (n: number) => `Archived (${n})`,
+    /** Sidebar group "reveal/load next page" row (display cap + server paging). */
+    loadMore: "More",
     /** Sidebar folders for automation-created sessions (one per origin), parallel to Archived; wording matches the sourceNames badges. */
     sourceGroups: {
       subagent: (n: number) => `Subagents (${n})`,

@@ -11,10 +11,13 @@
 import { describe, expect, it } from "vitest";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import {
+  SIDEBAR_PAGE_SIZE,
   TEMP_WORKSPACE_GROUP_KEY,
+  groupAgentsWithMore,
   groupSessionsByWorkspace,
   isTempWorkspace,
   partitionSessions,
+  splitPage,
   workspaceGroupKey,
   workspaceLabel,
 } from "../src/lib/session-grouping";
@@ -182,5 +185,36 @@ describe("partitionSessions (per-group user / subagent / scheduled / archived sp
       schedule: [],
       archived: [],
     });
+  });
+});
+
+describe("splitPage (limit+1 fetch trick)", () => {
+  it("an overflow row proves the server has more and is never shown", () => {
+    const fetched = [1, 2, 3, 4];
+    expect(splitPage(fetched, 3)).toEqual({ items: [1, 2, 3], hasMore: true });
+  });
+
+  it("a short or exactly-full page means the server is exhausted", () => {
+    expect(splitPage([1, 2], 3)).toEqual({ items: [1, 2], hasMore: false });
+    expect(splitPage([1, 2, 3], 3)).toEqual({ items: [1, 2, 3], hasMore: false });
+    expect(splitPage([], SIDEBAR_PAGE_SIZE)).toEqual({ items: [], hasMore: false });
+  });
+});
+
+describe("groupAgentsWithMore (workspace groups span Agents)", () => {
+  it("returns each contributing Agent with unfetched pages once; others are skipped", () => {
+    const rows = [
+      session("/srv/alpha", "2026-07-03T10:00:00.000Z", { agentId: "agent_a" }),
+      session("/srv/alpha", "2026-07-02T10:00:00.000Z", { agentId: "agent_b" }),
+      session("/srv/alpha", "2026-07-01T10:00:00.000Z", { agentId: "agent_a" }),
+    ];
+    const hasMore = new Map([
+      ["agent_a", true],
+      ["agent_b", false],
+      ["agent_c", true], // not contributing to this group
+    ]);
+    expect(groupAgentsWithMore(rows, hasMore)).toEqual(["agent_a"]);
+    expect(groupAgentsWithMore(rows, new Map())).toEqual([]);
+    expect(groupAgentsWithMore([], hasMore)).toEqual([]);
   });
 });

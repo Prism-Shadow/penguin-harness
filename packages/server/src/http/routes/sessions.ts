@@ -30,6 +30,7 @@ import { sseEndpoint } from "../sse.js";
 import {
   badRequest,
   optionalEnum,
+  optionalPagingQuery,
   optionalString,
   paginationQuery,
   pathParam,
@@ -96,7 +97,14 @@ export function agentSessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     const agentId = requireValidId(c, "agentId");
     deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
     await deps.agentConfigService.requireExists(projectId, agentId);
-    const sessions = await deps.sessionService.listSessions(projectId, agentId);
+    // Optional paging (absent = full list, the pre-paging contract): the sidebar requests
+    // limit+1 and shows limit, detecting "has more" without a response-envelope change.
+    const paging = optionalPagingQuery(c);
+    const sessions = await deps.sessionService.listSessions(
+      projectId,
+      agentId,
+      ...(paging ? [paging] : []),
+    );
     return c.json({ sessions } satisfies SessionsResponse);
   });
 

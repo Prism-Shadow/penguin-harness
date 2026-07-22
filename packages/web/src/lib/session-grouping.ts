@@ -41,6 +41,40 @@ export function workspaceLabel(workspace: string): string {
   return parts[parts.length - 1] ?? "/";
 }
 
+/**
+ * Sidebar page size: sessions fetched per Agent per page, and the per-group display cap
+ * step for active rows. Fetches use limit = SIDEBAR_PAGE_SIZE + 1 (see splitPage) so one
+ * request both fills a page and answers "is there more" without a response-envelope change.
+ */
+export const SIDEBAR_PAGE_SIZE = 20;
+
+/**
+ * Applies the limit+1 fetch trick: `fetched` came from a request with `limit = pageSize + 1`;
+ * the visible page is the first `pageSize` items, and an overflow item (never shown) proves
+ * the server has more.
+ */
+export function splitPage<T>(fetched: T[], pageSize: number): { items: T[]; hasMore: boolean } {
+  return fetched.length > pageSize
+    ? { items: fetched.slice(0, pageSize), hasMore: true }
+    : { items: fetched, hasMore: false };
+}
+
+/**
+ * The distinct Agents contributing to a group that still have unfetched server pages —
+ * a workspace-mode group can span Agents, so "load more" for the group fans out to every
+ * contributing Agent with more (agent-mode groups are single-Agent and get 0..1 entries).
+ */
+export function groupAgentsWithMore(
+  sessions: SessionInfo[],
+  hasMoreByAgent: ReadonlyMap<string, boolean>,
+): string[] {
+  const out: string[] = [];
+  for (const s of sessions) {
+    if (hasMoreByAgent.get(s.agentId) === true && !out.includes(s.agentId)) out.push(s.agentId);
+  }
+  return out;
+}
+
 /** Four-way split of one sidebar group's Sessions (rendered top to bottom in this order). */
 export interface SessionPartition {
   /** User-created, not archived: rendered directly in the group body. */

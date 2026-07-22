@@ -104,8 +104,18 @@ export class SessionService {
     return ids.has(row.sessionId);
   }
 
-  /** List: DB ∪ Trace directory discovery, sorted by createdAt descending. */
-  async listSessions(projectId: string, agentId: string): Promise<SessionInfo[]> {
+  /**
+   * List: DB ∪ Trace directory discovery, sorted by createdAt descending. Optional
+   * `paging` returns just that slice (the sidebar pages with limit+1 to detect "has
+   * more"); slicing happens before toInfo, so per-request source derivation (lazy
+   * Trace-head reads) stays bounded by the page size. Discovery/adoption still scans
+   * the whole directory — the union and global ordering need every id.
+   */
+  async listSessions(
+    projectId: string,
+    agentId: string,
+    paging?: { offset: number; limit: number },
+  ): Promise<SessionInfo[]> {
     const traceIds = await this.discoverTraceSessionIds(projectId, agentId);
     const rows = new Map(
       this.deps.sessions.listByAgent(projectId, agentId).map((r) => [r.sessionId, r]),
@@ -121,7 +131,8 @@ export class SessionService {
     const sorted = [...rows.values()].sort(
       (a, b) => b.createdAt.localeCompare(a.createdAt) || b.sessionId.localeCompare(a.sessionId),
     );
-    return Promise.all(sorted.map((row) => this.toInfo(row, traceIds.has(row.sessionId))));
+    const page = paging ? sorted.slice(paging.offset, paging.offset + paging.limit) : sorted;
+    return Promise.all(page.map((row) => this.toInfo(row, traceIds.has(row.sessionId))));
   }
 
   /**

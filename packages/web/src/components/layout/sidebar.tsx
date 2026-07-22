@@ -28,6 +28,8 @@ import type { Accent, Currency, FontScale, ThemeMode } from "../../state/theme";
 import { agentDisplayName, projectDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import {
+  SIDEBAR_PAGE_SIZE,
+  groupAgentsWithMore,
   groupSessionsByWorkspace,
   partitionSessions,
   workspaceGroupKey,
@@ -181,7 +183,8 @@ export function Sidebar({
     currentAgent,
     setCurrentAgentId,
   } = useProject();
-  const { sessions, byAgent, loading, remove, replace } = useSessions();
+  const { sessions, byAgent, hasMoreByAgent, loadMoreFor, loading, remove, replace } =
+    useSessions();
   const chatMatch = useMatch("/chat/:sessionId");
   const activeSessionId = chatMatch?.params.sessionId ?? null;
 
@@ -205,6 +208,8 @@ export function Sidebar({
   const [openArchived, setOpenArchived] = useState<ReadonlySet<string>>(new Set());
   /** Expanded per-origin folders (subagent / scheduled Sessions; collapsed by default), keyed by sourceFolderKey — each folder has its own open state. */
   const [openSourceFolders, setOpenSourceFolders] = useState<ReadonlySet<string>>(new Set());
+  /** Per-group display cap for active rows (keyed by group key; absent = SIDEBAR_PAGE_SIZE). "More" raises it a page at a time. */
+  const [groupCaps, setGroupCaps] = useState<ReadonlyMap<string, number>>(new Map());
   /** Session pending delete confirmation (null = none). */
   const [deletingSession, setDeletingSession] = useState<SessionInfo | null>(null);
   const [deletingBusy, setDeletingBusy] = useState(false);
@@ -428,9 +433,36 @@ export function Sidebar({
     );
   };
 
-  /** Expanded group body shared by both modes: user rows + the collapsed-by-default subagent / scheduled / archived subgroups (keyed by the group key). */
-  const renderGroupBody = (groupKey: string, parts: SessionPartition, withAgentHint: boolean) => {
+  /** "More": reveal one more page of already-loaded active rows AND fetch the next server page for every contributing Agent that still has one. */
+  const showMore = (groupKey: string, moreAgents: string[]) => {
+    setGroupCaps((prev) => {
+      const next = new Map(prev);
+      next.set(groupKey, (prev.get(groupKey) ?? SIDEBAR_PAGE_SIZE) + SIDEBAR_PAGE_SIZE);
+      return next;
+    });
+    if (moreAgents.length > 0) void loadMoreFor(moreAgents);
+  };
+
+  /**
+   * Expanded group body shared by both modes: user rows (display-capped; "More" reveals and
+   * loads further pages) + the collapsed-by-default subagent / scheduled / archived subgroups
+   * (keyed by the group key; rendered uncapped over loaded data — they are collapsed by
+   * default and only ever hold what the pages brought in).
+   */
+  const renderGroupBody = (
+    groupKey: string,
+    parts: SessionPartition,
+    withAgentHint: boolean,
+    /** Agents contributing to this group that still have unfetched server pages. */
+    moreAgents: string[],
+  ) => {
     const archivedOpen = openArchived.has(groupKey);
+    const cap = groupCaps.get(groupKey) ?? SIDEBAR_PAGE_SIZE;
+    const shownActive = parts.active.slice(0, cap);
+    // "More" while hidden loaded rows exist OR any contributing Agent has server-side pages
+    // left; a fetched page can also land rows in the folders below, so one click may grow
+    // the visible list by fewer than a full page — the row simply stays until exhausted.
+    const hasMore = parts.active.length > cap || moreAgents.length > 0;
     const empty =
       parts.active.length === 0 &&
       parts.subagent.length === 0 &&
@@ -443,7 +475,20 @@ export function Sidebar({
             {S.chat.noSessions}
           </p>
         ) : (
-          renderRows(parts.active, withAgentHint)
+          renderRows(shownActive, withAgentHint)
+        )}
+
+        {/* Load/reveal more (kept adjacent to the active list it extends, above the folders) */}
+        {hasMore && (
+          <button
+            type="button"
+            aria-label={S.chat.loadMore}
+            onClick={() => showMore(groupKey, moreAgents)}
+            className={`${folderClass} mt-0.5`}
+          >
+            <span className="w-3" aria-hidden />
+            {S.chat.loadMore}
+          </button>
         )}
 
         {/* Per-origin folders (collapsed by default, above Archived): subagent first — spawned
@@ -698,7 +743,14 @@ export function Sidebar({
                     </button>
                   </div>
 
-                  {collapsed ? null : renderGroupBody(agent.agentId, parts, false)}
+                  {collapsed
+                    ? null
+                    : renderGroupBody(
+                        agent.agentId,
+                        parts,
+                        false,
+                        hasMoreByAgent.get(agent.agentId) === true ? [agent.agentId] : [],
+                      )}
                 </div>
               );
             })
@@ -750,7 +802,15 @@ export function Sidebar({
                   </button>
                 </div>
 
-                {collapsed ? null : renderGroupBody(group.key, parts, true)}
+                {/* A workspace group can span Agents: "More" fans out to every contributing Agent that still has pages. */}
+                {collapsed
+                  ? null
+                  : renderGroupBody(
+                      group.key,
+                      parts,
+                      true,
+                      groupAgentsWithMore(group.sessions, hasMoreByAgent),
+                    )}
               </div>
             );
           })

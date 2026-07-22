@@ -201,6 +201,42 @@ describe("session-index", () => {
     expect(list.sessions.find((s) => s.sessionId === junk)?.source).toBeUndefined();
   });
 
+  it("list paging: limit/offset slice the newest-first list; absent params keep the full list; invalid values 400", async () => {
+    await configureModels();
+    // Three sessions with distinct createdAt ordering (insert directly for deterministic times).
+    const mk = (n: number) => ({
+      sessionId: `session-2026-07-0${n}-08-00-00-aaaa000${n}`,
+      projectId,
+      agentId: "default_agent",
+      provider: "custom",
+      modelId: "m-page",
+      workspace: `/tmp/w-${n}`,
+      approvalMode: "allow-all" as const,
+      title: null,
+      createdAt: `2026-07-0${n}T08:00:00.000Z`,
+    });
+    for (const n of [1, 2, 3]) t.deps.sessionsRepo.insert(mk(n));
+
+    const ids = async (qs: string) => {
+      const res = await api.get(`${base()}${qs}`);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as SessionsResponse;
+      return body.sessions.map((s) => s.sessionId);
+    };
+    const all = await ids("");
+    expect(all).toEqual([mk(3).sessionId, mk(2).sessionId, mk(1).sessionId]); // newest first, unpaged
+    expect(await ids("?limit=2")).toEqual(all.slice(0, 2));
+    expect(await ids("?limit=2&offset=2")).toEqual(all.slice(2));
+    expect(await ids("?limit=2&offset=9")).toEqual([]); // past the end: empty page, not an error
+    // The sidebar's limit+1 trick: one extra row answers "has more" without an envelope change.
+    expect((await ids("?limit=3")).length).toBe(3);
+
+    for (const bad of ["?limit=0", "?limit=-1", "?limit=abc", "?limit=1001", "?offset=1"]) {
+      expect((await api.get(`${base()}${bad}`)).status, bad).toBe(400);
+    }
+    expect((await api.get(`${base()}?limit=2&offset=-1`)).status).toBe(400);
+  });
+
   it("half a model reference is 400: the missing half is never inferred", async () => {
     await configureModels();
     // Only modelId: even though it names the one configured model, the provider is never
