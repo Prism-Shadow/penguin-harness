@@ -31,6 +31,12 @@ The thinking level is no longer a Models-page annotation. The default lives in A
 
 `session_meta` gains an optional `source` field (`"subagent" | "schedule"`, absent = user-created) written at creation, preserved across resume and compaction-driven trace rotation, and treated as the single source of truth: the server derives the session index's origin from the meta (registering children from the forwarded meta, adopting discovered traces, lazily reading the trace head for rows indexed by an earlier process) and no longer stores the type in the database.
 
+## AgentHub 0.4.1 and two more Gemini models
+
+The SDK dependency moves to AgentHub 0.4.1 (core and CLI). The upgrade is type-compatible — the published `UniConfig`, `ThinkingLevel`, message/event types and `AutoLLMClient` declarations are unchanged from 0.4.0, so nothing in core needed adapting. What 0.4.1 adds is additive: a `listSupportedModels(currency)` registry (model / base URL / client triples with modalities, context windows and per-million pricing), a typed `UnsupportedParameterError` for rejected `temperature` / `tool_choice` / `prompt_caching` values, and client support for the Gemini 3.6 generation, Kimi K3 and GLM-5.2. PenguinHarness never sends those three parameters, so the new error cannot fire from here today.
+
+The model catalog gains the two OpenRouter entries that generation covers — `google/gemini-3.6-flash` and `google/gemini-3.5-flash-lite`, both with a 1,048,576-token context and vision — and both READMEs list them.
+
 ## Session-title generation is internal
 
 `session-title.ts` moved into core's `internal/` module. `Session.generateTitle()` remains the public entry point, and `SessionTitleResult`, `stripConversationMarkers` and `sanitizeTitle` (both used by the server's fallback title path) stay importable from the package barrel; the LLM-driving internals (`buildTitlePrompt`, `generateTitleWithLLM`) are no longer part of the public surface.
