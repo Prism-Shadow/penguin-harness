@@ -16,5 +16,7 @@ import { defineConfig } from "vite";
 export default defineConfig({
   base: process.env.BASE_PATH ?? "/",
   plugins: [react(), tailwindcss()],
+  // Reserved PenguinHarness dev port — keep in sync with RESERVED_PORTS in
+  // @prismshadow/penguin-core (src/ports.ts); vite configs cannot import core TS.
   server: { port: 7367 },
 });

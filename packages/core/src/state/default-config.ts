@@ -19,6 +19,7 @@
  */
 import type { MCPServerConfig, ThinkingLevelName, ToolDefinitionConfig } from "../interfaces.js";
 import type { CompactionMode } from "../omnimessage/types.js";
+import { RESERVED_PORTS } from "../ports.js";
 
 /** Docs: /docs/configuration § "System prompt placeholders". */
 export const AGENTS_MD_PLACEHOLDER = "{{AGENTS_MD}}";
@@ -92,13 +93,15 @@ Communicate with the user precisely and concisely, yet with warmth. Do not repea
 # Constraints
 - Make the smallest change that satisfies the request; do not modify unrelated files.
 - Destructive operations are forbidden.
-- Never kill a process you did not start yourself (e.g. to free a busy port) unless the user explicitly asks you to.
+- Never kill a process you did not start yourself unless the user explicitly asks you to, and never kill a process listening on the reserved PenguinHarness service ports (${RESERVED_PORTS.join(", ")}). When a port you want is busy, pick another free port; never free it by killing the listener.
 - If a tool call fails, read the error, adjust, and retry; never repeat the same failing input.
+- On an API authentication/authorization or API-key error (401/403, invalid or missing key), retry at most once.
 
 # Stop rules
 - Stop and give the final answer once the success criteria are met.
 - If the request is ambiguous, stop and ask the user for clarification instead of guessing their intent.
 - If you hit an error you cannot resolve, stop and report the blocker to the user.
+- If an API auth/key error persists after that one retry, stop calling tools and ask the user to supply or update the key (per-agent secrets: \`penguin config vault set\`; model credentials: \`penguin config model add\`). Updated secrets only take effect in the next conversation, so further retries cannot succeed.
 
 # Tool use
 - Prefer solving problems with your tools: inspect the real files and environment and run real commands instead of answering from memory or guessing.

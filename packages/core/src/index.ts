@@ -19,6 +19,9 @@
 export * from "./omnimessage/index.js";
 export * from "./interfaces.js";
 
+// Reserved service ports (shared by CLI / server; interpolated into the default system prompt)
+export * from "./ports.js";
+
 // Submodules
 export * from "./state/index.js";
 export * from "./llm/index.js";

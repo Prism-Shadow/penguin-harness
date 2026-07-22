@@ -44,6 +44,7 @@ import {
   type ModelRef,
   type ProjectConfig,
 } from "../src/state/index.js";
+import { DEFAULT_SERVER_PORT, RESERVED_PORTS } from "../src/ports.js";
 import { sessionEnvironment } from "../src/internal/session-support.js";
 
 let tmpRoot: string;
@@ -313,6 +314,21 @@ describe("assembleSystemPrompt", () => {
     expect(prompt).not.toContain(PLATFORM_PLACEHOLDER);
     expect(prompt).not.toContain(OS_VERSION_PLACEHOLDER);
     expect(prompt).not.toContain(DATE_PLACEHOLDER);
+  });
+
+  it("default prompt carries the reserved-port and API-key guardrails", async () => {
+    const state = await loadOrInitAgentState();
+    const prompt = assembleSystemPrompt(state);
+    // The Constraints bullet interpolates RESERVED_PORTS, so the prompt and the constant cannot drift.
+    expect(RESERVED_PORTS).toContain(DEFAULT_SERVER_PORT);
+    expect(prompt).toContain(`(${RESERVED_PORTS.join(", ")})`);
+    expect(prompt).toContain("pick another free port");
+    // Auth/key failures: retry at most once (Constraints), then stop and ask for the key (Stop rules).
+    expect(prompt).toContain("retry at most once");
+    expect(prompt).toContain("stop calling tools");
+    expect(prompt).toContain("penguin config vault set");
+    expect(prompt).toContain("penguin config model add");
+    expect(prompt).toContain("next conversation");
   });
 
   it("replaces AGENTS.md and specific Session environment fields at template locations", () => {
