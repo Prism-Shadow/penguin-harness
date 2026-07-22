@@ -399,8 +399,12 @@ export class Agent {
         thinking_level: this.state.systemConfig.model?.thinking_level ?? "default",
         agent_state: this.state.stateDir,
         workspace: workspaceDir,
-        // The origin carries over from the original session_meta (a resumed scheduled/subagent Session stays marked).
-        ...(meta.source !== undefined ? { source: meta.source } : {}),
+        // The origin carries over from the original session_meta (a resumed scheduled/subagent
+        // Session stays marked). The on-disk value is untrusted: only the exact known origins
+        // pass; junk written by a third party is dropped rather than cast through.
+        ...(meta.source === "subagent" || meta.source === "schedule"
+          ? { source: meta.source }
+          : {}),
       },
       llm: rt.llm,
       environment: rt.environment,

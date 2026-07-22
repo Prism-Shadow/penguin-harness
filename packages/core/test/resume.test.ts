@@ -144,6 +144,19 @@ describe("agent.resumeSession", () => {
       false,
     );
     plain.dispose();
+
+    // On-disk values are untrusted: a junk source written by a third party is dropped on
+    // resume (only the exact known origins pass), not cast through into the rebuilt meta.
+    const SID3 = "session-2026-07-06-12-00-00-abcdef03";
+    await writeTraceFile(tmpRoot, SID3, [
+      metaFor(SID3, workspace, MODEL, "weird-origin" as unknown as "subagent"),
+      userText("hi"),
+    ]);
+    const junk = await agent.resumeSession({ sessionId: SID3 });
+    expect("source" in (junk.metaMessage.payload as unknown as Record<string, unknown>)).toBe(
+      false,
+    );
+    junk.dispose();
   });
 
   it("keeps abort events in resumed render history", async () => {

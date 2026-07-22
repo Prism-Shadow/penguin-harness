@@ -41,6 +41,7 @@ interface SessionMetaPayload {
   thinking_level: string;                 // 未配置时为 "default"
   agent_state: string;                    // Agent State 绝对路径
   workspace: string;                      // Workspace 绝对路径
+  source?: "subagent" | "schedule";       // Session 来源；缺省 = 用户创建
 }
 
 interface ToolDefinition {

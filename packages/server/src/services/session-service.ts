@@ -20,11 +20,14 @@ import {
   readTraceTolerant,
   tracesDir,
 } from "@prismshadow/penguin-core";
-import type { ApprovalMode, SessionInfo } from "../api/types.js";
+import type { SessionMetaMessage } from "@prismshadow/penguin-core";
+import type { ApprovalMode, SessionInfo, SessionSource } from "../api/types.js";
 import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
 import type { SessionRow, SessionsRepo } from "../db/repos/sessions.js";
 import type { SessionManager } from "../runtime/session-manager.js";
+import { asSessionSource } from "../runtime/session-sources.js";
+import type { SessionSources } from "../runtime/session-sources.js";
 import type { ProjectConfigService } from "./project-config-service.js";
 
 const TRACE_FILE_RE = /^(.+)_(\d{3})\.jsonl$/;
@@ -44,13 +47,20 @@ export interface SessionServiceDeps {
   sessions: SessionsRepo;
   manager: SessionManager;
   projectConfig: ProjectConfigService;
+  /** In-process origin registry derived from session_meta (the DB stores no source column). */
+  sources: SessionSources;
 }
 
 export class SessionService {
   constructor(private readonly deps: SessionServiceDeps) {}
 
-  /** DB row -> SessionInfo (run status and pending approval count come from session-manager). */
-  toInfo(row: SessionRow, hasTrace: boolean): SessionInfo {
+  /**
+   * DB row -> SessionInfo (run status and pending approval count come from session-manager).
+   * Async because `source` is derived from session_meta: a registry miss (Session predating
+   * this process) falls back to reading the Trace head once (see sourceOf).
+   */
+  async toInfo(row: SessionRow, hasTrace: boolean): Promise<SessionInfo> {
+    const source = await this.sourceOf(row, hasTrace);
     return {
       sessionId: row.sessionId,
       projectId: row.projectId,
@@ -60,13 +70,32 @@ export class SessionService {
       workspace: row.workspace,
       approvalMode: row.approvalMode,
       ...(row.title !== null ? { title: row.title } : {}),
-      ...(row.source != null ? { source: row.source } : {}),
+      ...(source !== undefined ? { source } : {}),
       createdAt: row.createdAt,
       status: this.deps.manager.statusOf(row.sessionId),
       pendingApprovalCount: this.deps.manager.pendingApprovalCount(row.sessionId),
       hasTrace,
       archived: (row.archivedAt ?? null) !== null,
     };
+  }
+
+  /**
+   * A Session's origin, with session_meta as the single source of truth: the in-process
+   * registry answers first (populated at creation / subagent registration / adoption);
+   * on a miss (a Session created before this process started) the earliest Trace shard's
+   * session_meta is read once and cached. A Session with no Trace yet stays unknown and
+   * is NOT cached negatively — its meta may appear with the first run.
+   */
+  private async sourceOf(row: SessionRow, hasTrace: boolean): Promise<SessionSource | undefined> {
+    const known = this.deps.sources.get(row.sessionId);
+    if (known !== undefined) return known ?? undefined;
+    if (!hasTrace) return undefined;
+    const meta = await this.readTraceMeta(row.projectId, row.agentId, row.sessionId);
+    if (!meta) return undefined; // Unreadable/corrupt Trace: stay unknown, retry on the next list.
+    // On-disk values are untrusted: only the exact known origins pass, junk = user-created.
+    const source = asSessionSource(meta.payload.source) ?? null;
+    this.deps.sources.set(row.sessionId, source);
+    return source ?? undefined;
   }
 
   /** Whether this Session already has a Trace record (a Task has been run). */
@@ -89,11 +118,10 @@ export class SessionService {
       if (discovered) rows.set(sessionId, discovered);
     }
 
-    return [...rows.values()]
-      .sort(
-        (a, b) => b.createdAt.localeCompare(a.createdAt) || b.sessionId.localeCompare(a.sessionId),
-      )
-      .map((row) => this.toInfo(row, traceIds.has(row.sessionId)));
+    const sorted = [...rows.values()].sort(
+      (a, b) => b.createdAt.localeCompare(a.createdAt) || b.sessionId.localeCompare(a.sessionId),
+    );
+    return Promise.all(sorted.map((row) => this.toInfo(row, traceIds.has(row.sessionId))));
   }
 
   /**
@@ -210,6 +238,14 @@ export class SessionService {
         err instanceof Error ? err.message : String(err),
       );
     }
+    // The origin is derived from the just-created core Session's session_meta (the single
+    // source of truth) rather than echoing args.source back: what the registry serves is
+    // exactly what the Trace will record.
+    const metaMsg = session.metaMessage;
+    this.deps.sources.set(
+      session.sessionId,
+      isSessionMeta(metaMsg) ? (asSessionSource(metaMsg.payload.source) ?? null) : null,
+    );
     const row: SessionRow = {
       sessionId: session.sessionId,
       projectId: args.projectId,
@@ -220,7 +256,6 @@ export class SessionService {
       approvalMode: args.approvalMode ?? "allow-all",
       title: null,
       createdAt: new Date().toISOString(),
-      ...(args.source !== undefined ? { source: args.source } : {}),
     };
     this.deps.sessions.insert(row);
     this.deps.manager.adopt(row, session);
@@ -240,12 +275,16 @@ export class SessionService {
     return ids;
   }
 
-  /** Adopts a Session that exists only in the Trace directory: reads session_meta from the first line of the earliest index file. */
-  private async adoptTraceSession(
+  /**
+   * session_meta from the earliest Trace shard of a Session (the shard whose head carries
+   * the original meta); null when there is no readable Trace or it has no meta. Shared by
+   * adoption backfill and lazy `source` resolution.
+   */
+  private async readTraceMeta(
     projectId: string,
     agentId: string,
     sessionId: string,
-  ): Promise<SessionRow | null> {
+  ): Promise<SessionMetaMessage | null> {
     const dir = tracesDir(this.deps.root, projectId, agentId);
     let earliest: { path: string; index: number } | null = null;
     for (const dateDir of await listDirsSafe(dir)) {
@@ -265,13 +304,25 @@ export class SessionService {
     } catch {
       return null; // Corrupt file: skip (does not block the list)
     }
-    const meta = messages.find(isSessionMeta);
+    return messages.find(isSessionMeta) ?? null;
+  }
+
+  /** Adopts a Session that exists only in the Trace directory: reads session_meta from the first line of the earliest index file. */
+  private async adoptTraceSession(
+    projectId: string,
+    agentId: string,
+    sessionId: string,
+  ): Promise<SessionRow | null> {
+    const meta = await this.readTraceMeta(projectId, agentId, sessionId);
     if (!meta) return null;
     // An older Trace version's session_meta lacks provider (the model reference
     // wasn't split into separate fields yet): no backward compat, skip adoption
     // (core will give a clear error on resume; the product hasn't launched yet, so
     // old data can simply be deleted and recreated).
     if (typeof meta.payload.provider !== "string") return null;
+    // The adoption read already has the meta in hand: record the origin (single source of
+    // truth); on-disk values are narrowed — junk counts as user-created.
+    this.deps.sources.set(sessionId, asSessionSource(meta.payload.source) ?? null);
     const row: SessionRow = {
       sessionId,
       projectId,
@@ -282,8 +333,6 @@ export class SessionService {
       // The approval mode for an unmanaged Session (started via the CLI) isn't in the Trace, so it's backfilled with the default value.
       approvalMode: "allow-all",
       title: null,
-      // session_meta records the origin, so discovery backfill can carry it into the index row.
-      ...(meta.payload.source !== undefined ? { source: meta.payload.source } : {}),
       createdAt: sessionIdCreatedAt(sessionId) ?? meta.timestamp,
     };
     // Idempotent backfill: concurrent list calls may discover the same Session for the first time simultaneously (consistent with AgentsRepo's convention).

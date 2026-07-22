@@ -167,7 +167,9 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
   app.get("/:sessionId", async (c) => {
     const row = resolveSession(c);
     const hasTrace = await deps.sessionService.hasTrace(row);
-    return c.json({ session: deps.sessionService.toInfo(row, hasTrace) } satisfies SessionResponse);
+    return c.json({
+      session: await deps.sessionService.toInfo(row, hasTrace),
+    } satisfies SessionResponse);
   });
 
   app.patch("/:sessionId", async (c) => {
@@ -216,7 +218,7 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     }
     const hasTrace = await deps.sessionService.hasTrace(updated);
     return c.json({
-      session: deps.sessionService.toInfo(updated, hasTrace),
+      session: await deps.sessionService.toInfo(updated, hasTrace),
     } satisfies SessionResponse);
   });
 
@@ -244,6 +246,9 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
         { recursive: true, force: true },
       );
       deps.sessionsRepo.deleteById(row.sessionId);
+      // Drop the derived-origin entry along with the Session (bulk Agent/Project deletion
+      // may leave stale entries; session ids are never reused, so they are never matched).
+      deps.sessionSources.delete(row.sessionId);
     } finally {
       deps.manager.endSessionDeletion(row.sessionId);
     }

@@ -41,27 +41,33 @@ export function workspaceLabel(workspace: string): string {
   return parts[parts.length - 1] ?? "/";
 }
 
-/** Three-way split of one sidebar group's Sessions (rendered top to bottom in this order). */
+/** Four-way split of one sidebar group's Sessions (rendered top to bottom in this order). */
 export interface SessionPartition {
   /** User-created, not archived: rendered directly in the group body. */
   active: SessionInfo[];
-  /** Automation-created (`source` set: schedule / subagent), not archived: the collapsed "Automated" folder. */
-  automated: SessionInfo[];
+  /** Subagent-created (`source === "subagent"`), not archived: the collapsed "Subagents" folder. */
+  subagent: SessionInfo[];
+  /** Schedule-created (`source === "schedule"`), not archived: the collapsed "Scheduled" folder. */
+  schedule: SessionInfo[];
   /** Archived: the collapsed "Archived" folder. Archived wins — an archived Session with a `source` goes here only. */
   archived: SessionInfo[];
 }
 
 /**
- * Partitions a group's Sessions for rendering: archived first (regardless of `source` —
- * archiving is an explicit user action, so the Archived folder must show everything the
- * user put there), then automation-created (schedule / subagent), then plain user Sessions.
- * Input order is preserved within each part.
+ * Partitions a group's Sessions for rendering. Classification precedence: archived wins
+ * regardless of `source` (archiving is an explicit user action, so the Archived folder
+ * must show everything the user put there); otherwise a Session goes to its origin's
+ * bucket, and an unrecognized future source falls through to the user rows (visible,
+ * with its badge) rather than vanishing into the wrong folder. The sidebar renders the
+ * parts top to bottom in the interface's field order — user rows, Subagents folder,
+ * Scheduled folder, Archived folder. Input order is preserved within each part.
  */
 export function partitionSessions(sessions: SessionInfo[]): SessionPartition {
-  const parts: SessionPartition = { active: [], automated: [], archived: [] };
+  const parts: SessionPartition = { active: [], subagent: [], schedule: [], archived: [] };
   for (const s of sessions) {
     if (s.archived) parts.archived.push(s);
-    else if (s.source) parts.automated.push(s);
+    else if (s.source === "subagent") parts.subagent.push(s);
+    else if (s.source === "schedule") parts.schedule.push(s);
     else parts.active.push(s);
   }
   return parts;

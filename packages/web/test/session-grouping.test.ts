@@ -144,31 +144,43 @@ describe("groupSessionsByWorkspace", () => {
   });
 });
 
-describe("partitionSessions (per-group user / automated / archived split)", () => {
-  it("splits user, automation-created (schedule/subagent) and archived rows, preserving order", () => {
-    const user1 = session("/srv/alpha", "2026-07-05T10:00:00.000Z");
-    const sched = session("/srv/alpha", "2026-07-04T10:00:00.000Z", { source: "schedule" });
-    const sub = session("/srv/alpha", "2026-07-03T10:00:00.000Z", { source: "subagent" });
-    const user2 = session("/srv/alpha", "2026-07-02T10:00:00.000Z");
+describe("partitionSessions (per-group user / subagent / scheduled / archived split)", () => {
+  it("splits user rows and one bucket per origin, preserving order within each part", () => {
+    const user1 = session("/srv/alpha", "2026-07-06T10:00:00.000Z");
+    const sched1 = session("/srv/alpha", "2026-07-05T10:00:00.000Z", { source: "schedule" });
+    const sub1 = session("/srv/alpha", "2026-07-04T10:00:00.000Z", { source: "subagent" });
+    const user2 = session("/srv/alpha", "2026-07-03T10:00:00.000Z");
+    const sub2 = session("/srv/alpha", "2026-07-02T10:00:00.000Z", { source: "subagent" });
     const gone = session("/srv/alpha", "2026-07-01T10:00:00.000Z", { archived: true });
-    const parts = partitionSessions([user1, sched, sub, user2, gone]);
+    const parts = partitionSessions([user1, sched1, sub1, user2, sub2, gone]);
     expect(parts.active.map((s) => s.sessionId)).toEqual([user1.sessionId, user2.sessionId]);
-    expect(parts.automated.map((s) => s.sessionId)).toEqual([sched.sessionId, sub.sessionId]);
+    expect(parts.subagent.map((s) => s.sessionId)).toEqual([sub1.sessionId, sub2.sessionId]);
+    expect(parts.schedule.map((s) => s.sessionId)).toEqual([sched1.sessionId]);
     expect(parts.archived.map((s) => s.sessionId)).toEqual([gone.sessionId]);
   });
 
-  it("archived wins over source: an archived automated session goes to the Archived folder only", () => {
-    const both = session("/srv/alpha", "2026-07-01T10:00:00.000Z", {
+  it("archived wins over source: an archived automation-created session goes to the Archived folder only", () => {
+    const sub = session("/srv/alpha", "2026-07-01T10:00:00.000Z", {
       source: "subagent",
       archived: true,
     });
-    const parts = partitionSessions([both]);
-    expect(parts.automated).toEqual([]);
-    expect(parts.archived.map((s) => s.sessionId)).toEqual([both.sessionId]);
+    const sched = session("/srv/alpha", "2026-07-02T10:00:00.000Z", {
+      source: "schedule",
+      archived: true,
+    });
+    const parts = partitionSessions([sub, sched]);
+    expect(parts.subagent).toEqual([]);
+    expect(parts.schedule).toEqual([]);
+    expect(parts.archived.map((s) => s.sessionId)).toEqual([sub.sessionId, sched.sessionId]);
     expect(parts.active).toEqual([]);
   });
 
-  it("empty input yields three empty parts", () => {
-    expect(partitionSessions([])).toEqual({ active: [], automated: [], archived: [] });
+  it("empty input yields four empty parts", () => {
+    expect(partitionSessions([])).toEqual({
+      active: [],
+      subagent: [],
+      schedule: [],
+      archived: [],
+    });
   });
 });

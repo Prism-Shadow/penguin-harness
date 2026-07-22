@@ -693,8 +693,11 @@ When done, open index.html in a browser and self-test once.`,
     archiveSession: "Archive",
     unarchiveSession: "Unarchive",
     archivedGroup: (n: number) => `Archived (${n})`,
-    /** Sidebar folder for automation-created sessions (schedule / subagent), parallel to Archived. */
-    automatedGroup: (n: number) => `Automated (${n})`,
+    /** Sidebar folders for automation-created sessions (one per origin), parallel to Archived; wording matches the sourceNames badges. */
+    sourceGroups: {
+      subagent: (n: number) => `Subagents (${n})`,
+      schedule: (n: number) => `Scheduled (${n})`,
+    },
     skillsBanner: (names: string[]): string =>
       `Using skill${names.length === 1 ? "" : "s"}: ${names.join(", ")}`,
   },

@@ -13,10 +13,10 @@
  * there's no longer a separate "quick / advanced" pair of new-chat dialogs.
  * Color scheme is white/gray-based: active state uses a solid gray fill, running status uses a small color dot, no large blocks of color.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { NavLink, useMatch, useNavigate } from "react-router";
-import type { SessionInfo } from "@prismshadow/penguin-server/api";
+import type { SessionInfo, SessionSource } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
@@ -132,6 +132,13 @@ function saveCollapsedGroups(projectId: string | null, next: ReadonlySet<string>
   }
 }
 
+/**
+ * Open-state key of a per-origin folder (subagent / scheduled) inside a group: each folder
+ * has its own state. "\0" never appears in Agent ids or Workspace paths, so the composite
+ * never collides across groups or with plain group keys.
+ */
+const sourceFolderKey = (groupKey: string, source: SessionSource) => `${source}\0${groupKey}`;
+
 /** Session status dot: running pulses green, compacting shows an amber dot; idle shows nothing. */
 function StatusDot({ session }: { session: SessionInfo }) {
   if (session.status === "running") {
@@ -196,8 +203,8 @@ export function Sidebar({
   }, [currentProjectId]);
   /** Expanded "archived" groups (collapsed by default), keyed like collapsedGroups. */
   const [openArchived, setOpenArchived] = useState<ReadonlySet<string>>(new Set());
-  /** Expanded "automated" groups (schedule/subagent Sessions; collapsed by default), keyed like collapsedGroups. */
-  const [openAutomated, setOpenAutomated] = useState<ReadonlySet<string>>(new Set());
+  /** Expanded per-origin folders (subagent / scheduled Sessions; collapsed by default), keyed by sourceFolderKey — each folder has its own open state. */
+  const [openSourceFolders, setOpenSourceFolders] = useState<ReadonlySet<string>>(new Set());
   /** Session pending delete confirmation (null = none). */
   const [deletingSession, setDeletingSession] = useState<SessionInfo | null>(null);
   const [deletingBusy, setDeletingBusy] = useState(false);
@@ -238,23 +245,34 @@ export function Sidebar({
       return next;
     });
 
-  const toggleAutomatedGroup = (key: string) =>
-    setOpenAutomated((prev) => {
+  const toggleSourceFolder = (groupKey: string, source: SessionSource) =>
+    setOpenSourceFolders((prev) => {
+      const key = sourceFolderKey(groupKey, source);
       const next = new Set(prev);
       if (next.has(key)) next.delete(key);
       else next.add(key);
       return next;
     });
 
-  // The open chat is an automation-created Session: expand its group's "automated" folder so
-  // the active row is never hidden inside a collapsed folder (mirrors the archived expansion
-  // on archiving the open chat; archived wins, so an archived Session is left to that folder).
+  // The open chat is an automation-created Session: expand exactly its origin's folder in its
+  // group, so the active row is never hidden inside a collapsed folder (mirrors the archived
+  // expansion on archiving the open chat; archived wins, so an archived Session is left to
+  // that folder). Auto-expansion fires ONCE per (grouping mode, active session): the ref guard
+  // keeps list mutations (status ticks, reloads) from re-opening a folder the user explicitly
+  // collapsed while that chat stays open. `sessions` must remain a dependency — the active
+  // session may not be in the list yet on first render, and the guard is only set once the
+  // row is actually found and expanded.
+  const lastAutoExpandedRef = useRef<string | null>(null);
   useEffect(() => {
     if (!activeSessionId) return;
     const s = sessions.find((x) => x.sessionId === activeSessionId);
     if (!s || !s.source || s.archived) return;
-    const key = groupMode === "agent" ? s.agentId : workspaceGroupKey(s.workspace);
-    setOpenAutomated((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
+    const guard = `${groupMode}\0${activeSessionId}`;
+    if (lastAutoExpandedRef.current === guard) return;
+    lastAutoExpandedRef.current = guard;
+    const groupKey = groupMode === "agent" ? s.agentId : workspaceGroupKey(s.workspace);
+    const key = sourceFolderKey(groupKey, s.source);
+    setOpenSourceFolders((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
   }, [activeSessionId, sessions, groupMode]);
 
   /** Archive / unarchive: persists immediately and updates in place (fails silently; the next list refresh self-corrects). */
@@ -383,17 +401,44 @@ export function Sidebar({
     </ul>
   );
 
-  /** Expanded group body shared by both modes: user rows + the collapsed-by-default automated and archived subgroups (keyed by the group key). */
+  const folderClass =
+    "flex w-full items-center gap-1 rounded px-1.5 py-1 text-left text-[11px] font-medium text-gray-400 transition-colors duration-150 hover:bg-gray-200/50 dark:text-gray-500 dark:hover:bg-gray-800/50";
+
+  /** Collapsed-by-default per-origin folder (subagent / scheduled), parallel to the archived folder. */
+  const renderSourceFolder = (
+    groupKey: string,
+    source: SessionSource,
+    rows: SessionInfo[],
+    withAgentHint: boolean,
+  ) => {
+    if (rows.length === 0) return null;
+    const open = openSourceFolders.has(sourceFolderKey(groupKey, source));
+    return (
+      <div className="mt-1">
+        <button
+          type="button"
+          onClick={() => toggleSourceFolder(groupKey, source)}
+          className={folderClass}
+        >
+          <Chevron open={open} size={12} />
+          {S.chat.sourceGroups[source](rows.length)}
+        </button>
+        {open && renderRows(rows, withAgentHint)}
+      </div>
+    );
+  };
+
+  /** Expanded group body shared by both modes: user rows + the collapsed-by-default subagent / scheduled / archived subgroups (keyed by the group key). */
   const renderGroupBody = (groupKey: string, parts: SessionPartition, withAgentHint: boolean) => {
-    const automatedOpen = openAutomated.has(groupKey);
     const archivedOpen = openArchived.has(groupKey);
-    const folderClass =
-      "flex w-full items-center gap-1 rounded px-1.5 py-1 text-left text-[11px] font-medium text-gray-400 transition-colors duration-150 hover:bg-gray-200/50 dark:text-gray-500 dark:hover:bg-gray-800/50";
+    const empty =
+      parts.active.length === 0 &&
+      parts.subagent.length === 0 &&
+      parts.schedule.length === 0 &&
+      parts.archived.length === 0;
     return (
       <>
-        {parts.active.length === 0 &&
-        parts.automated.length === 0 &&
-        parts.archived.length === 0 ? (
+        {empty ? (
           <p className="px-2.5 py-1 text-xs text-gray-400 dark:text-gray-600">
             {S.chat.noSessions}
           </p>
@@ -401,22 +446,12 @@ export function Sidebar({
           renderRows(parts.active, withAgentHint)
         )}
 
-        {/* Automated group (schedule / subagent Sessions; collapsed by default, above Archived) */}
-        {parts.automated.length > 0 && (
-          <div className="mt-1">
-            <button
-              type="button"
-              onClick={() => toggleAutomatedGroup(groupKey)}
-              className={folderClass}
-            >
-              <Chevron open={automatedOpen} size={12} />
-              {S.chat.automatedGroup(parts.automated.length)}
-            </button>
-            {automatedOpen && renderRows(parts.automated, withAgentHint)}
-          </div>
-        )}
+        {/* Per-origin folders (collapsed by default, above Archived): subagent first — spawned
+            from the conversations at hand — then scheduled background runs. */}
+        {renderSourceFolder(groupKey, "subagent", parts.subagent, withAgentHint)}
+        {renderSourceFolder(groupKey, "schedule", parts.schedule, withAgentHint)}
 
-        {/* Archived group (collapsed by default; archived wins over automated) */}
+        {/* Archived group (collapsed by default; archived wins over the per-origin folders) */}
         {parts.archived.length > 0 && (
           <div className="mt-1">
             <button
@@ -696,9 +731,9 @@ export function Sidebar({
                     <span className="min-w-0 truncate text-xs font-semibold text-gray-500 dark:text-gray-400">
                       {group.temp ? S.chat.tempWorkspaces : group.label}
                     </span>
-                    {/* Header count = non-archived Sessions (user + automated; unchanged semantics) */}
+                    {/* Header count = non-archived Sessions (user + automation-created; unchanged semantics) */}
                     <span className="shrink-0 text-[11px] text-gray-400 dark:text-gray-500">
-                      {parts.active.length + parts.automated.length}
+                      {parts.active.length + parts.subagent.length + parts.schedule.length}
                     </span>
                     <Chevron open={!collapsed} size={12} className="text-gray-400" />
                     <span className="min-w-0 flex-1" />

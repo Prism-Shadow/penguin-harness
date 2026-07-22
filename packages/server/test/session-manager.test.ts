@@ -33,6 +33,7 @@ import type { ChannelEvent } from "../src/runtime/channel.js";
 import type { ErrorRecordArgs, ErrorSink } from "../src/runtime/error-recorder.js";
 import { SessionManager } from "../src/runtime/session-manager.js";
 import type { RuntimeSession, SessionLoader } from "../src/runtime/session-manager.js";
+import { SessionSources } from "../src/runtime/session-sources.js";
 import type { TitleRequest } from "../src/runtime/title-generator.js";
 import type { UsageContext } from "../src/runtime/usage-recorder.js";
 import { waitFor } from "./helpers.js";
@@ -78,6 +79,7 @@ describe("session-manager", () => {
   let db: DatabaseSync;
   let sessions: SessionsRepo;
   let channels: ChannelHub;
+  let sources: SessionSources;
   let recorded: OmniMessage[];
   let recordedCtx: UsageContext[];
 
@@ -85,6 +87,7 @@ describe("session-manager", () => {
     new SessionManager({
       sessions,
       channels,
+      sources,
       loader,
       recorder: {
         record: async (ctx, msg) => {
@@ -114,6 +117,7 @@ describe("session-manager", () => {
     sessions = new SessionsRepo(db);
     sessions.insert(ROW);
     channels = new ChannelHub();
+    sources = new SessionSources();
     recorded = [];
     recordedCtx = [];
   });
@@ -287,6 +291,7 @@ describe("session-manager", () => {
     const manager = new SessionManager({
       sessions,
       channels,
+      sources,
       loader: loaderOf(fake),
       recorder: { record: async () => {} },
       titles: {
@@ -301,9 +306,11 @@ describe("session-manager", () => {
     expect(child?.agentId).toBe("child_agent");
     expect(child?.modelId).toBe("m-child");
     expect(child?.workspace).toBe("/tmp/w-child");
-    // The row is marked as a subagent session even when the forwarded meta predates the
-    // source field (this fake omits it): the registration path itself is the fallback.
-    expect(child?.source).toBe("subagent");
+    // The origin lands in the in-process registry (session_meta is the single source of
+    // truth; the row stores no source column) — "subagent" even when the forwarded meta
+    // predates the source field (this fake omits it): the registration path is the fallback.
+    expect(sources.get("child-1")).toBe("subagent");
+    expect(child && "source" in child).toBe(false);
     // Title left blank: produced by the title generator from the sub-session's own conversation (falls back to the prompt's first line on failure).
     expect(child?.title).toBeNull();
 
@@ -580,6 +587,7 @@ describe("session-manager", () => {
     const manager = new SessionManager({
       sessions,
       channels,
+      sources,
       loader: loaderOf(plainSession),
       recorder: { record: async () => {} },
       titles: {
@@ -632,6 +640,7 @@ describe("session-manager", () => {
     const manager = new SessionManager({
       sessions,
       channels,
+      sources,
       loader: loaderOf(longSession),
       recorder: { record: async () => {} },
       titles: {
@@ -698,6 +707,7 @@ describe("session-manager", () => {
     const manager = new SessionManager({
       sessions,
       channels,
+      sources,
       loader: loaderOf(delegating),
       recorder: {
         record: async (_ctx, msg) => {

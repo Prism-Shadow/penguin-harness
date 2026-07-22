@@ -103,7 +103,7 @@ describe("session-index", () => {
     expect(list.sessions.map((s) => s.sessionId)).toContain(session.sessionId);
   });
 
-  it("schedule-created Session: source lands on the index row and in the list; user sessions carry none", async () => {
+  it("schedule-created Session: source derives from session_meta (registry), never from the DB row; user sessions carry none", async () => {
     await configureModels();
     // The scheduler goes through SessionService.createSession directly (no HTTP route exposes source).
     const info = await t.deps.sessionService.createSession({
@@ -112,7 +112,10 @@ describe("session-index", () => {
       source: "schedule",
     });
     expect(info.source).toBe("schedule");
-    expect(t.deps.sessionsRepo.findById(info.sessionId)?.source).toBe("schedule");
+    // The index row stores no origin: session_meta is the single source of truth.
+    const row = t.deps.sessionsRepo.findById(info.sessionId);
+    expect(row && "source" in row).toBe(false);
+    expect(t.deps.sessionSources.get(info.sessionId)).toBe("schedule");
 
     // A user-created session (HTTP) has no source, and the list surfaces both accordingly.
     const res = await api.post(base(), {});
@@ -121,6 +124,81 @@ describe("session-index", () => {
     const list = (await (await api.get(base())).json()) as SessionsResponse;
     expect(list.sessions.find((s) => s.sessionId === info.sessionId)?.source).toBe("schedule");
     expect(list.sessions.find((s) => s.sessionId === plain.sessionId)?.source).toBeUndefined();
+  });
+
+  it("source survives a restart via the Trace head: an indexed row unknown to this process derives it lazily from session_meta", async () => {
+    await configureModels();
+    // Simulate a Session created by a previous process: the index row exists, but the
+    // in-process registry has never seen it — only its Trace's session_meta knows the origin.
+    const sid = "session-2026-07-02-09-00-00-feedc0de";
+    t.deps.sessionsRepo.insert({
+      sessionId: sid,
+      projectId,
+      agentId: "default_agent",
+      provider: "custom",
+      modelId: "m-x",
+      workspace: "/tmp/w-restart",
+      approvalMode: "allow-all",
+      title: null,
+      createdAt: "2026-07-02T09:00:00.000Z",
+    });
+    const meta: SessionMetaPayload = {
+      session_id: sid,
+      model_id: "m-x",
+      provider: "custom",
+      model_context_window: 1000,
+      system_prompt: "",
+      tools: [],
+      thinking_level: "default",
+      agent_state: "/tmp/a",
+      workspace: "/tmp/w-restart",
+      source: "subagent",
+    };
+    await writeTraceFile(t.root, projectId, "default_agent", "2026-07-02", sid, 1, [
+      sessionMeta(meta),
+      userText("child work"),
+    ]);
+    const list = (await (await api.get(base())).json()) as SessionsResponse;
+    expect(list.sessions.find((s) => s.sessionId === sid)?.source).toBe("subagent");
+    // The single-session endpoint derives it the same way (and the second read hits the registry).
+    const single = (await (await api.get(`/api/sessions/${sid}`)).json()) as SessionResponse;
+    expect(single.session.source).toBe("subagent");
+  });
+
+  it("adoption derives source from the Trace meta, narrowing junk values to user-created", async () => {
+    await configureModels();
+    // Discovered (no index row) with a valid origin: adoption records it.
+    const adopted = "session-2026-07-03-10-00-00-0badf00d";
+    const sourced: SessionMetaPayload = {
+      session_id: adopted,
+      model_id: "m-cli",
+      provider: "custom",
+      model_context_window: 1000,
+      system_prompt: "",
+      tools: [],
+      thinking_level: "default",
+      agent_state: "/tmp/a",
+      workspace: "/tmp/w-cli",
+      source: "schedule",
+    };
+    await writeTraceFile(t.root, projectId, "default_agent", "2026-07-03", adopted, 1, [
+      sessionMeta(sourced),
+      userText("adopted"),
+    ]);
+    // Discovered with a junk source (untrusted on-disk data): narrowed to user-created.
+    const junk = "session-2026-07-03-11-00-00-0badf00e";
+    const junkMeta = {
+      ...sourced,
+      session_id: junk,
+      source: "weird-origin",
+    } as unknown as SessionMetaPayload;
+    await writeTraceFile(t.root, projectId, "default_agent", "2026-07-03", junk, 1, [
+      sessionMeta(junkMeta),
+      userText("junk"),
+    ]);
+    const list = (await (await api.get(base())).json()) as SessionsResponse;
+    expect(list.sessions.find((s) => s.sessionId === adopted)?.source).toBe("schedule");
+    expect(list.sessions.find((s) => s.sessionId === junk)?.source).toBeUndefined();
   });
 
   it("half a model reference is 400: the missing half is never inferred", async () => {
