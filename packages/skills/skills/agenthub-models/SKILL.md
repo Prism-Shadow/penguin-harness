@@ -54,7 +54,8 @@ Use exact model ids. If an id is not in the table below and the user has not giv
 | Gemini 3 image   | `gemini-3.1-flash-image`, `gemini-3-pro-image-preview`                | —                                                                                                                                               |
 | Gemini 3 TTS     | `gemini-3.1-flash-tts-preview`                                        | —                                                                                                                                               |
 | Gemini embedding | `gemini-embedding-2`                                                  | —                                                                                                                                               |
-| Claude           | `claude-sonnet-4-6`, `claude-opus-4-7`, `claude-opus-4-8`             | —                                                                                                                                               |
+| Claude 5         | `claude-fable-5`, `claude-sonnet-5`                                   | OpenRouter `anthropic/claude-fable-5`, `anthropic/claude-sonnet-5`                                                                              |
+| Claude 4         | `claude-sonnet-4-6`, `claude-opus-4-7`, `claude-opus-4-8`             | OpenRouter `anthropic/claude-opus-4.8`, `anthropic/claude-opus-4.7`                                                                             |
 | GPT              | `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.4-nano`, `gpt-5.5`                  | —                                                                                                                                               |
 | OpenAI embedding | `text-embedding-3-small`, `text-embedding-3-large`                    | —                                                                                                                                               |
 | Kimi K3          | `kimi-k3`                                                             | OpenRouter `moonshotai/kimi-k3`                                                                                                                 |
@@ -62,6 +63,7 @@ Use exact model ids. If an id is not in the table below and the user has not giv
 | DeepSeek V4      | `deepseek-v4-pro`, `deepseek-v4-flash`                                | OpenRouter `deepseek/deepseek-v4-pro`, `deepseek/deepseek-v4-flash`; SiliconFlow `deepseek-ai/DeepSeek-V4-Pro`, `deepseek-ai/DeepSeek-V4-Flash` |
 | GLM 5.2          | `glm-5.2`                                                             | OpenRouter `z-ai/glm-5.2`; SiliconFlow `zai-org/GLM-5.2`                                                                                        |
 | GLM 5.1          | `glm-5.1`                                                             | OpenRouter `z-ai/glm-5.1`; SiliconFlow `Pro/zai-org/GLM-5.1`                                                                                    |
+| Qwen 3.6         | —                                                                     | OpenRouter `qwen/qwen3.6-35b-a3b`; SiliconFlow `Qwen/Qwen3.6-35B-A3B`                                                                           |
 
 The image endpoint dropped its preview suffix: `gemini-3.1-flash-image-preview` is deprecated, use `gemini-3.1-flash-image`.
 

@@ -69,11 +69,19 @@ describe("model-catalog", () => {
   });
 
   it("price buckets are positive (preview models without a list price omit pricing); context_window is a positive integer", () => {
+    // Models with no obtainable published price. qwen3.8-max-preview: the plan runs a
+    // quota-multiplier promotion instead of a per-token list price. The three SiliconFlow
+    // entries: AgentHub's registry publishes no pricing for them and SiliconFlow's price list
+    // is only reachable with an authenticated token, so no number can be sourced. All of them
+    // carry no pricing and their costs read as 0, same as unpriced user models.
+    const UNPRICED = new Set([
+      "qwen-token-plan\0qwen3.8-max-preview",
+      "siliconflow\0Pro/moonshotai/Kimi-K2.6",
+      "siliconflow\0Pro/zai-org/GLM-5.1",
+      "siliconflow\0Qwen/Qwen3.6-35B-A3B",
+    ]);
     for (const m of MODEL_CATALOG) {
-      if (m.provider === "qwen-token-plan" && m.modelId === "qwen3.8-max-preview") {
-        // Preview-only model: the plan runs a quota-multiplier promotion and publishes no
-        // per-token list price, so the entry carries none and costs read as 0 (same as
-        // unpriced user models).
+      if (UNPRICED.has(`${m.provider}\0${m.modelId}`)) {
         expect(m.pricing, m.modelId).toBeUndefined();
       } else if (m.modelId.endsWith(":free")) {
         // Free-tier gateway model: a genuine $0 price (not "unknown"), so costs compute to 0.
@@ -154,15 +162,18 @@ describe("model-catalog", () => {
       "google/gemini-3.5-flash-lite",
       "minimax/minimax-m3",
       "moonshotai/kimi-k3",
+      "moonshotai/kimi-k2.6",
       "nvidia/nemotron-3-ultra-550b-a55b:free",
       "openai/gpt-5.6-sol",
       "openai/gpt-5.6-terra",
       "openai/gpt-5.5",
+      "qwen/qwen3.6-35b-a3b",
       "stepfun/step-3.7-flash",
       "tencent/hy3",
       "x-ai/grok-4.5",
       "xiaomi/mimo-v2.5",
       "z-ai/glm-5.2",
+      "z-ai/glm-5.1",
     ]);
     for (const m of or) {
       expect(m.clientType).toBe("openai");
@@ -181,11 +192,16 @@ describe("model-catalog", () => {
       expect(m.baseUrl).toBe("https://api.fireworks.ai/inference/v1");
     }
     const sf = MODEL_CATALOG.filter((m) => m.provider === "siliconflow");
+    // Dictionary order is case-insensitive (as in qwen-pay-as-you-go, where ZHIPU/GLM-5.2
+    // sorts last): Pro/ and Qwen/ fall between moonshotai/ and zai-org/.
     expect(sf.map((m) => m.modelId)).toEqual([
       "deepseek-ai/DeepSeek-V4-Flash",
       "deepseek-ai/DeepSeek-V4-Pro",
       "meituan-longcat/LongCat-2.0",
       "moonshotai/Kimi-K2.7-Code",
+      "Pro/moonshotai/Kimi-K2.6",
+      "Pro/zai-org/GLM-5.1",
+      "Qwen/Qwen3.6-35B-A3B",
       "zai-org/GLM-5.2",
     ]);
     for (const m of sf) {
@@ -290,12 +306,78 @@ describe("model-catalog", () => {
     );
   });
 
+  it("direct-vendor groups: auto-routed (no client_type / base_url), newest series first", () => {
+    // These groups' ids are auto-routed by AgentHub, so they carry neither client_type nor a
+    // preset base URL — the opposite of the gateway groups above.
+    for (const id of ["google", "anthropic", "moonshot"]) {
+      for (const m of MODEL_CATALOG.filter((e) => e.provider === id)) {
+        expect(m.clientType, m.modelId).toBeUndefined();
+        expect(m.baseUrl, m.modelId).toBeUndefined();
+      }
+    }
+    // Dictionary order by tier with newer versions of a tier first (same rule the OpenRouter
+    // block follows for the identical Claude line-up).
+    expect(MODEL_CATALOG.filter((m) => m.provider === "google").map((m) => m.modelId)).toEqual([
+      "gemini-3.6-flash",
+      "gemini-3.5-flash",
+      "gemini-3.5-flash-lite",
+      "gemini-3.1-flash-lite",
+      "gemini-3.1-pro-preview",
+      "gemini-3-flash-preview",
+    ]);
+    expect(MODEL_CATALOG.filter((m) => m.provider === "anthropic").map((m) => m.modelId)).toEqual([
+      "claude-fable-5",
+      "claude-opus-4-8",
+      "claude-opus-4-7",
+      "claude-sonnet-5",
+      "claude-sonnet-4-6",
+    ]);
+    expect(MODEL_CATALOG.filter((m) => m.provider === "moonshot").map((m) => m.modelId)).toEqual([
+      "kimi-k3",
+      "kimi-k2.6",
+      "kimi-k2.5",
+    ]);
+    // Anthropic keeps its cache_write = 1.25 x input convention for the Claude 5 line too
+    // (registry input 10 and 2 -> 12.5 and 2.5), unlike every other group where cache_write
+    // repeats the input price.
+    const fable = catalogEntryFor("anthropic", "claude-fable-5")!;
+    expect([fable.pricing!.cache_read, fable.pricing!.cache_write, fable.pricing!.output]).toEqual([
+      1, 12.5, 50,
+    ]);
+    const sonnet5 = catalogEntryFor("anthropic", "claude-sonnet-5")!;
+    expect([
+      sonnet5.pricing!.cache_read,
+      sonnet5.pricing!.cache_write,
+      sonnet5.pricing!.output,
+    ]).toEqual([0.2, 2.5, 10]);
+    // The same model resold by a gateway keeps one display name across groups.
+    for (const [directProvider, directId, gatewayProvider, gatewayId] of [
+      ["anthropic", "claude-fable-5", "openrouter", "anthropic/claude-fable-5"],
+      ["anthropic", "claude-sonnet-5", "openrouter", "anthropic/claude-sonnet-5"],
+      ["google", "gemini-3.5-flash-lite", "openrouter", "google/gemini-3.5-flash-lite"],
+      ["moonshot", "kimi-k3", "openrouter", "moonshotai/kimi-k3"],
+      ["moonshot", "kimi-k2.6", "openrouter", "moonshotai/kimi-k2.6"],
+      ["moonshot", "kimi-k2.6", "siliconflow", "Pro/moonshotai/Kimi-K2.6"],
+      ["zhipu", "glm-5.1", "openrouter", "z-ai/glm-5.1"],
+      ["zhipu", "glm-5.1", "siliconflow", "Pro/zai-org/GLM-5.1"],
+    ] as const) {
+      expect(
+        catalogEntryFor(gatewayProvider, gatewayId)!.displayName,
+        `${gatewayProvider}/${gatewayId}`,
+      ).toBe(catalogEntryFor(directProvider, directId)!.displayName);
+    }
+  });
+
   it("DeepSeek and Kimi are initialized from official CNY prices (stored in USD; x7 recovers the official price)", () => {
     const cnyOf = (usdV: number) => Math.round(usdV * 7 * 1000) / 1000;
     const pro = MODEL_CATALOG.find((m) => m.modelId === "deepseek-v4-pro")!.pricing!;
     expect([cnyOf(pro.cache_read), cnyOf(pro.cache_write), cnyOf(pro.output)]).toEqual([
       0.025, 3, 6,
     ]);
+    const k3 = MODEL_CATALOG.find(
+      (m) => m.provider === "moonshot" && m.modelId === "kimi-k3",
+    )!.pricing!;
+    expect([cnyOf(k3.cache_read), cnyOf(k3.cache_write), cnyOf(k3.output)]).toEqual([2, 20, 100]);
     const k26 = MODEL_CATALOG.find((m) => m.modelId === "kimi-k2.6")!.pricing!;
     expect([cnyOf(k26.cache_read), cnyOf(k26.cache_write), cnyOf(k26.output)]).toEqual([
       1.1, 6.5, 27,
@@ -312,6 +394,14 @@ describe("resolveModelEnv (PRN-021: env fallback resolved by AgentHub routing ru
     expect(resolveModelEnv("gpt-5.5-pro")?.envKey).toBe("OPENAI_API_KEY");
     expect(resolveModelEnv("glm-5.2")?.envKey).toBe("ZAI_API_KEY");
     expect(resolveModelEnv("kimi-k2.6")?.envBaseUrlKey).toBe("MOONSHOT_BASE_URL");
+    // agenthub 0.4.1 routes these to their own clients; both read the same env pair as the
+    // family they belong to, so the id must still resolve (kimi-k3 matches no k2.x substring).
+    expect(resolveModelEnv("kimi-k3")?.envKey).toBe("MOONSHOT_API_KEY");
+    expect(resolveModelEnv("kimi-k3")?.envBaseUrlKey).toBe("MOONSHOT_BASE_URL");
+    expect(resolveModelEnv("gemini-3.6-flash")?.envKey).toBe("GEMINI_API_KEY");
+    expect(resolveModelEnv("gemini-3.5-flash-lite")?.envKey).toBe("GEMINI_API_KEY");
+    expect(resolveModelEnv("claude-fable-5")?.envKey).toBe("ANTHROPIC_API_KEY");
+    expect(resolveModelEnv("claude-sonnet-5")?.envKey).toBe("ANTHROPIC_API_KEY");
   });
 
   it("explicit client_type beats id: the openai protocol always uses OPENAI_* (independent of grouping)", () => {
