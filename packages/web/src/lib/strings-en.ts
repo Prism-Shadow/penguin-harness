@@ -313,7 +313,9 @@ export const en: Strings = {
     tokenUnit: "Token",
     contextWindowHint: "Leave empty if unknown",
     maxTokens: "Max output tokens",
-    maxTokensHint: "Leave empty to inherit the agent setting; lower it for small-context models",
+    maxTokensHint: "Empty = inherit agent setting",
+    maxTokensTitle:
+      "Caps output tokens per request; leave empty to inherit the agent setting — lower it for small-context models",
     maxTokensInvalid: "Must be a positive integer",
     clientTypeLocked: (t: string): string => `Protocol: ${t} (kept as configured; not editable)`,
     vision: "Supports image input (vision / multimodal)",

@@ -289,7 +289,10 @@ export const zh = {
     tokenUnit: "Token",
     contextWindowHint: "留空表示未知",
     maxTokens: "最大输出长度",
-    maxTokensHint: "留空沿用 Agent 设置；小上下文模型建议调低",
+    /** 占位符须在半宽输入框内放得下（placeholder 无法滚动）；完整说明放 title 悬停提示。 */
+    maxTokensHint: "留空沿用 Agent 设置",
+    maxTokensTitle:
+      "按模型限制单次请求的最大输出 Token 数；留空沿用 Agent 设置，小上下文模型建议调低",
     maxTokensInvalid: "必须为正整数",
     clientTypeLocked: (t: string): string => `协议：${t}（沿用原配置，不可修改）`,
     vision: "支持图片输入（视觉/多模态）",
