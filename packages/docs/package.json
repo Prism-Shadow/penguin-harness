@@ -1,6 +1,6 @@
 {
   "name": "@prismshadow/penguin-docs",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "PenguinHarness documentation site (React + Vite + Tailwind CSS): bilingual zh/en Markdown pages with light/dark themes and per-page Copy Markdown, deployed to GitHub Pages under /docs/ next to the landing page.",

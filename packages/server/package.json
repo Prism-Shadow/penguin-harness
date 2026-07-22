@@ -1,6 +1,6 @@
 {
   "name": "@prismshadow/penguin-server",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "PenguinHarness web server: multi-user authentication and authorization, Session execution with SSE streaming, and usage accounting, built on @prismshadow/penguin-core.",
   "license": "Apache-2.0",

@@ -96,16 +96,32 @@ describe("frontmatter mapping (author / pinned / category)", () => {
   it("reads the pinned flag and sorts the pinned post first", () => {
     for (const locale of ["en", "zh"] as const) {
       const posts = postsFor(locale);
-      expect(posts.length).toBe(8);
+      expect(posts.length).toBe(10);
+      // The launch post stays the single pinned post; newer posts sort under it by date.
+      expect(posts.filter((p) => p.pinned).map((p) => p.slug)).toEqual([
+        "introducing-penguinharness",
+      ]);
       expect(posts[0]?.slug).toBe("introducing-penguinharness");
-      expect(posts[0]?.pinned).toBe(true);
+      // Pinning beats recency: the runner-up is strictly newer than the pinned post. Asserted
+      // as a relation rather than a slug, because the newest date is shared by several posts
+      // and the slug tie-break makes any single winner churn whenever a post is added.
+      expect(posts[1]!.date > posts[0]!.date).toBe(true);
     }
   });
 
   it("filters by the practice category, newest first", () => {
     expect(postsFor("en", "practice").map((p) => p.slug)).toEqual([
+      "natural-language-training-loop",
       "penguin-harness-self-improvement-with-amd-gpu",
       "local-agents-on-amd-gpus",
+    ]);
+  });
+
+  it("filters by the news category, newest first", () => {
+    expect(postsFor("en", "news").map((p) => p.slug)).toEqual([
+      "introducing-penguinharness",
+      "gemini-3-6-in-penguinharness",
+      "fireworks-credits-amd",
     ]);
   });
 

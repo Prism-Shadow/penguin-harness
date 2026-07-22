@@ -147,6 +147,7 @@ for await (const output of session.run([userText("Create hello.txt containing hi
 - [ ] Windows support
 - [ ] Agent company and templates
 - [ ] Company-level self evolving
+- [ ] OpenShell integration (permission-governed shell)
 - More to come…
 
 ## Development

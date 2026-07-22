@@ -94,7 +94,11 @@ describe("loadSkillGroups / groupSkills", () => {
       "ai-app-development",
       "agent-tuning",
     ]);
-    expect(groups[0]!.skills.map((s) => s.name)).toEqual(["data-analysis", "firecrawl"]);
+    expect(groups[0]!.skills.map((s) => s.name)).toEqual([
+      "data-analysis",
+      "firecrawl",
+      "bento-slides",
+    ]);
     expect(groups[0]!.title).toBe("Office Productivity");
     expect(groups[0]!.titleZh).toBe("办公效率");
     expect(groups[1]!.skills.map((s) => s.name)).toEqual(["web-design", "software-engineering"]);
@@ -158,7 +162,7 @@ describe("loadSkillGroups / groupSkills", () => {
 
   it("SKILL_GROUPS hardcodes member names (sole group info source outside library files)", () => {
     expect(SKILL_GROUPS.map((g) => ({ id: g.id, skills: g.skills }))).toEqual([
-      { id: "office-productivity", skills: ["data-analysis", "firecrawl"] },
+      { id: "office-productivity", skills: ["data-analysis", "firecrawl", "bento-slides"] },
       { id: "software-development", skills: ["web-design", "software-engineering"] },
       {
         id: "ai-app-development",

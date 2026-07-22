@@ -160,9 +160,26 @@
 }
 .md-body a {
   @apply text-brand-700 underline decoration-brand-300 underline-offset-2 transition-colors hover:text-brand-600 dark:text-brand-300 dark:decoration-brand-700;
+  /* `anywhere` rather than `word-break: break-all`: it only breaks a token that would otherwise
+     overflow, so long URLs wrap cleanly (filling each line) while short Latin words in mixed
+     CJK/Latin link text never split mid-word; unlike `break-word` it also counts the break
+     opportunities toward min-content sizing, so a long link can't blow out flex/table layouts. */
+  overflow-wrap: anywhere;
 }
+/* Font size only, so fenced blocks keep the size they have always had; the visible chrome below
+   is scoped to inline code. */
 .md-body code {
-  @apply rounded bg-gray-100 px-1 py-0.5 text-[0.85em] text-gray-800 dark:bg-gray-800 dark:text-gray-200;
+  @apply text-[0.85em];
+}
+/* Inline code: a hairline outline over a barely-there brand wash, replacing the solid gray fill
+   this used to carry — in prose dense with `code` that fill read as a row of heavy blocks. The
+   chrome is scoped to inline code because the `.md-body pre code` reset below strips background,
+   color and padding inside fenced blocks but would not strip a border. Prose often holds long
+   unbroken paths and identifiers, so inline code gets the same `anywhere` treatment as links.
+   Kept identical to the landing site: penguin.ooo and penguin.ooo/docs share one design language. */
+.md-body :not(pre) > code {
+  @apply rounded-md border border-brand-200/60 bg-brand-50/40 px-[0.3em] py-[0.1em] text-[0.875em] text-gray-900 dark:border-brand-900/70 dark:bg-brand-950/50 dark:text-gray-100;
+  overflow-wrap: anywhere;
 }
 .md-body pre {
   @apply overflow-x-auto rounded-lg border border-gray-200 bg-gray-50 p-3 text-[13px] leading-6 dark:border-gray-800 dark:bg-gray-900;

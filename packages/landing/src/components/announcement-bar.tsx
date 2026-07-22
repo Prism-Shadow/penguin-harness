@@ -14,8 +14,13 @@ import { ArrowRightIcon } from "./icons";
 
 const ROTATE_MS = 6000;
 
-/** Both announcements point at blog posts (content/blog/<slug>.*.md). */
+/**
+ * Every announcement points at a blog post (content/blog/<slug>.*.md), newest
+ * first: slide 0 is what a visitor sees before the rotation moves, so the
+ * freshest news goes at the front.
+ */
 const ITEMS = [
+  { key: "gemini", to: "/blog/gemini-3-6-in-penguinharness" },
   { key: "models", to: "/blog/introducing-penguinharness" },
   { key: "fireworks", to: "/blog/fireworks-credits-amd" },
 ] as const;
@@ -28,6 +33,7 @@ function prefersReducedMotion(): boolean {
 
 export function AnnouncementBar() {
   const texts: Record<(typeof ITEMS)[number]["key"], string> = {
+    gemini: S.announcement.gemini,
     models: S.announcement.models,
     fireworks: S.announcement.fireworks,
   };

@@ -12,6 +12,7 @@ export const en: Strings = {
     label: "Announcements",
     prev: "Previous announcement",
     next: "Next announcement",
+    gemini: "Gemini 3.6 Flash is now available in PenguinHarness",
     models: "Kimi K3 and Qwen 3.8 Max are now available in PenguinHarness",
     fireworks: "Claim $50 in Fireworks API credits with the AMD Developer Program",
   },
