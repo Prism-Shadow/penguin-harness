@@ -1,66 +1,26 @@
 /**
- * Agent avatar: a pixel identicon deterministically generated from agentId (the same approach
- * GitHub's default avatars use).
+ * Agent avatar: the Agent's initial on a solid color tile (same letter-tile
+ * style ProviderLogo uses for user-defined model groups).
  *
- * 5x5 grid with left-right mirror symmetry (only the left 3 columns are randomized, the right 2
- * columns mirror back), a single soft-hue foreground, and a very light background of the same
- * color. No external dependencies — seeds mulberry32 with an FNV-1a hash.
+ * The color hashes the agentId — not the display name — so it survives
+ * renames; the initial comes from the display name when the caller has one,
+ * falling back to the id. Solid inline HSL is theme-agnostic (readable under
+ * the white initial in both light and dark).
  */
-
-/** Grid side length (must be odd for left-right symmetry). */
-const N = 5;
-/** Number of columns that need randomizing (including the center column). */
-const HALF = Math.ceil(N / 2);
-
-function hashStr(s: string): number {
-  let h = 2166136261;
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return h >>> 0;
-}
-
-function mulberry32(a: number): () => number {
-  return () => {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-/** Randomly samples points on the left half + center column, mirrored into a full 5x5 boolean grid. */
-function buildGrid(rnd: () => number): boolean[][] {
-  const grid: boolean[][] = Array.from({ length: N }, () => Array.from({ length: N }, () => false));
-  for (let col = 0; col < HALF; col++) {
-    for (let row = 0; row < N; row++) {
-      // The center column has a slightly lower fill rate, to avoid a solid vertical line.
-      const on = rnd() < (col === HALF - 1 ? 0.4 : 0.55);
-      grid[row]![col] = on;
-      grid[row]![N - 1 - col] = on;
-    }
-  }
-  return grid;
-}
+import { avatarColor, avatarInitial } from "../../lib/avatar";
 
 export function AgentAvatar({
   id,
+  name,
   size = 18,
   className,
 }: {
   id: string;
+  /** Display name supplying the initial; omitted, the id's initial is used. */
+  name?: string;
   size?: number;
   className?: string;
 }) {
-  const rnd = mulberry32(hashStr(id || "agent"));
-  const hue = Math.floor(rnd() * 360);
-  const grid = buildGrid(rnd);
-  // 24x24 viewport: 2px margin on each side, 4x4 cells.
-  const cell = 4;
-  const pad = 2;
-  const fg = `hsl(${hue} 52% 46%)`;
   return (
     <svg
       width={size}
@@ -70,21 +30,18 @@ export function AgentAvatar({
       aria-hidden
       role="img"
     >
-      <rect x="0" y="0" width="24" height="24" rx="5" fill={`hsl(${hue} 55% 50% / 0.14)`} />
-      {grid.map((cols, row) =>
-        cols.map((on, col) =>
-          on ? (
-            <rect
-              key={`${row}-${col}`}
-              x={pad + col * cell}
-              y={pad + row * cell}
-              width={cell}
-              height={cell}
-              fill={fg}
-            />
-          ) : null,
-        ),
-      )}
+      <rect x="0" y="0" width="24" height="24" rx="5" fill={avatarColor(id)} />
+      <text
+        x="12"
+        y="12"
+        textAnchor="middle"
+        dominantBaseline="central"
+        fontSize="13"
+        fontWeight="700"
+        fill="white"
+      >
+        {avatarInitial(name ?? "", id)}
+      </text>
     </svg>
   );
 }
