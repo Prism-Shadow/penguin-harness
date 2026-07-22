@@ -1,10 +1,10 @@
 ---
 name: agenthub-models
-description: Call model APIs through @prismshadow/agenthub — streaming text generation, image generation, speech synthesis and embeddings with one client.
+description: Call model APIs through @prismshadow/agenthub — streaming text generation, image generation, speech synthesis, embeddings and the supported-model registry with one client.
 short_description: Call model APIs with one AgentHub client.
 short_description_zh: 用一个 AgentHub 客户端调用模型 API。
-version: 7
-updated: 2026-07-21T00:00:00Z
+version: 8
+updated: 2026-07-22T00:00:00Z
 ---
 
 # AgentHub Model APIs
@@ -15,7 +15,7 @@ updated: 2026-07-21T00:00:00Z
 npm install @prismshadow/agenthub
 ```
 
-The only entry point is `AutoLLMClient`:
+The main entry point is `AutoLLMClient`:
 
 ```ts
 import { AutoLLMClient } from "@prismshadow/agenthub";
@@ -23,7 +23,7 @@ import { AutoLLMClient } from "@prismshadow/agenthub";
 const client = new AutoLLMClient({ model: "<model_id>", apiKey: "<key>", baseUrl: "<url>", clientType: "<type>" });
 ```
 
-`apiKey`, `baseUrl` and `clientType` are optional (see routing below).
+`apiKey`, `baseUrl` and `clientType` are optional (see routing below). The package also exports `listSupportedModels` (the model registry) and the error classes `AgentHubError`, `UnsupportedParameterError`, `EmptyResponseError` and `ToolCallArgumentParseError`.
 
 ## Before you start
 
@@ -49,16 +49,23 @@ Use exact model ids. If an id is not in the table below and the user has not giv
 
 | Family           | Official IDs                                                          | Gateway variants                                                                                                                                |
 | ---------------- | --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Gemini 3.6       | `gemini-3.6-flash`, `gemini-3.5-flash-lite`                           | —                                                                                                                                               |
 | Gemini 3         | `gemini-3.1-pro-preview`, `gemini-3.5-flash`, `gemini-3.1-flash-lite` | —                                                                                                                                               |
-| Gemini 3 image   | `gemini-3.1-flash-image-preview`, `gemini-3-pro-image-preview`        | —                                                                                                                                               |
+| Gemini 3 image   | `gemini-3.1-flash-image`, `gemini-3-pro-image-preview`                | —                                                                                                                                               |
 | Gemini 3 TTS     | `gemini-3.1-flash-tts-preview`                                        | —                                                                                                                                               |
 | Gemini embedding | `gemini-embedding-2`                                                  | —                                                                                                                                               |
-| Claude           | `claude-sonnet-4-6`, `claude-opus-4-7`, `claude-opus-4-8`             | —                                                                                                                                               |
+| Claude 5         | `claude-fable-5`, `claude-sonnet-5`                                   | OpenRouter `anthropic/claude-fable-5`, `anthropic/claude-sonnet-5`                                                                              |
+| Claude 4         | `claude-sonnet-4-6`, `claude-opus-4-7`, `claude-opus-4-8`             | OpenRouter `anthropic/claude-opus-4.8`, `anthropic/claude-opus-4.7`                                                                             |
 | GPT              | `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.4-nano`, `gpt-5.5`                  | —                                                                                                                                               |
 | OpenAI embedding | `text-embedding-3-small`, `text-embedding-3-large`                    | —                                                                                                                                               |
+| Kimi K3          | `kimi-k3`                                                             | OpenRouter `moonshotai/kimi-k3`                                                                                                                 |
 | Kimi K2.6        | `kimi-k2.6`                                                           | OpenRouter `moonshotai/kimi-k2.6`; SiliconFlow `Pro/moonshotai/Kimi-K2.6`                                                                       |
 | DeepSeek V4      | `deepseek-v4-pro`, `deepseek-v4-flash`                                | OpenRouter `deepseek/deepseek-v4-pro`, `deepseek/deepseek-v4-flash`; SiliconFlow `deepseek-ai/DeepSeek-V4-Pro`, `deepseek-ai/DeepSeek-V4-Flash` |
+| GLM 5.2          | `glm-5.2`                                                             | OpenRouter `z-ai/glm-5.2`; SiliconFlow `zai-org/GLM-5.2`                                                                                        |
 | GLM 5.1          | `glm-5.1`                                                             | OpenRouter `z-ai/glm-5.1`; SiliconFlow `Pro/zai-org/GLM-5.1`                                                                                    |
+| Qwen 3.6         | —                                                                     | OpenRouter `qwen/qwen3.6-35b-a3b`; SiliconFlow `Qwen/Qwen3.6-35B-A3B`                                                                           |
+
+The image endpoint dropped its preview suffix: `gemini-3.1-flash-image-preview` is deprecated, use `gemini-3.1-flash-image`.
 
 Gateway model lists can be queried online:
 
@@ -67,9 +74,28 @@ curl https://openrouter.ai/api/v1/models
 curl --request GET --url https://api.siliconflow.cn/v1/models --header 'Authorization: Bearer <token>'
 ```
 
+## Supported-model registry
+
+`listSupportedModels(currency?)` returns the models AgentHub itself knows how to route, so ids, endpoints, modalities, context windows and prices can be read from the package instead of being hardcoded:
+
+```ts
+import { listSupportedModels } from "@prismshadow/agenthub";
+
+for (const m of listSupportedModels()) {
+  console.log(m.model, m.base_url, m.client, m.context_window, m.pricing?.prompt_tokens);
+}
+```
+
+- Each `SupportedModel` is `{ model, base_url, client, input_modalities, output_modalities, context_window?, pricing? }`. The `(model, base_url, client)` triple maps straight onto the constructor: `new AutoLLMClient({ model, baseUrl: base_url, clientType: client })`.
+- Modalities are `"Text" | "Image" | "Video" | "Audio" | "Embed"`. Coverage includes the official vendor endpoints plus the OpenRouter and SiliconFlow gateways; `context_window` and `pricing` are omitted where the platform publishes no authoritative value (image and TTS models, for instance).
+- `pricing` is per million tokens, keyed by the same usage buckets as `usage_metadata`: `prompt_tokens` (non-cached input), `thoughts_tokens` / `response_tokens` (both the output price) and optional `cached_tokens` (cache-hit price). Values are stored in USD; pass `listSupportedModels("CNY")` to convert at 7 CNY/USD.
+
+The registry is the curated current line-up, so prefer it when picking a model or estimating cost. It is narrower than the routing rules: older ids in the table above (`gpt-5.4`, `claude-opus-4-7`, `gemini-3.1-pro-preview`, `gemini-3.1-flash-lite`) still route fine but no longer appear in it.
+
 ## Routing and credentials
 
-- Without `clientType`, the client auto-routes by model id substring: `gemini-3*`, `gemini-embedding`, `claude` 4-6/4-7/4-8, `gpt-5.4`/`gpt-5.5`, `glm-5`, `kimi-k2.5`/`kimi-k2.6`, `deepseek-v4`, `openai`+`embedding` (embeddings), `openai`. Ids matching none of these throw. The gateway variants in the table above hit the same substrings, so they route to the right family — just set `baseUrl` to the gateway endpoint.
+- Without `clientType`, the client auto-routes by model id substring, in this order: `gemini-3.6` / `gemini-3.5-flash-lite`, then `gemini-3*` / `gemini-embedding`, `claude` 4-6/4-7/4-8/-5, `gpt-5.4`/`gpt-5.5`, `glm-5.2`, `glm-5`, `kimi-k3`, `kimi-k2.5`/`kimi-k2.6`, `deepseek-v4`, `openai`+`embedding` (embeddings), `openai`. Ids matching none of these throw. The gateway variants in the table above hit the same substrings, so they route to the right family — just set `baseUrl` to the gateway endpoint.
+- Exception: a Gemini id served by an OpenAI-compatible gateway (e.g. OpenRouter's `google/gemini-3.6-flash`) still matches the Gemini substring and would auto-route to the Google protocol client. Pass `clientType: "openai"` explicitly for those.
 - For any other OpenAI chat-completion compatible model (e.g. Qwen series via OpenRouter or SiliconFlow), pass `clientType: "openai"` plus `baseUrl` (embeddings endpoints use a different client type — see Embeddings below).
 - API key: constructor parameter first, then the provider environment variable — `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `ZAI_API_KEY`, `MOONSHOT_API_KEY`. Base URLs read the same names with `_BASE_URL`.
 
@@ -87,8 +113,29 @@ for await (const event of client.streamingResponseStateful({
 ```
 
 - Each `event` is a `UniEvent`: `event_type` is `start` | `delta` | `stop`, and `content_items` carry the increments.
-- `config` accepts `max_tokens`, `temperature`, `system_prompt`, `thinking_level` (the `ThinkingLevel` enum, `NONE` to `XHIGH`) and `tools`.
+- `config` accepts `max_tokens`, `temperature`, `system_prompt`, `thinking_level` (the `ThinkingLevel` enum, `NONE` to `XHIGH`), `tool_choice`, `prompt_caching` and `tools`.
 - `streamingResponseStateful` keeps conversation history inside the client; manage it with `getHistory()` / `setHistory(history)` / `clearHistory()`. The stateless variant is `streamingResponse({ messages, config })`.
+
+## Config parameters the model may reject
+
+A config value the target client cannot honour throws `UnsupportedParameterError` (an `AgentHubError` carrying `client` and `parameter`) while building the request, before anything reaches the network:
+
+```ts
+import { UnsupportedParameterError } from "@prismshadow/agenthub";
+
+try {
+  // ...
+} catch (err) {
+  if (err instanceof UnsupportedParameterError) console.error(err.parameter, err.message);
+}
+```
+
+- `thinking_level` never throws: every client maps each level onto the closest one the model supports. Kimi K3 reasons unconditionally, so `NONE` degrades to its lowest effort rather than disabling thinking; GLM-5.2 sends `reasoning_effort` alongside its `thinking` block and only `NONE` disables it.
+- `temperature` is rejected outright by Gemini 3.6 — that generation deprecated the sampling parameters, so the client refuses them instead of sending a value the API ignores. GPT-5.5, Claude 4.8/5, DeepSeek V4, Kimi K2.6 and Kimi K3 accept only the protocol default `1.0` and reject any other value. Gemini 3, Claude 4.6, GLM and the generic OpenAI client pass it through.
+- `tool_choice`: `"auto"` is safe everywhere. Claude accepts a single forced tool name; DeepSeek V4 and Kimi K2.6 allow `"auto"` / `"none"`; Kimi K3 adds `"required"` but refuses a specific tool; GLM only accepts `"auto"`.
+- `prompt_caching`: every client accepts `PromptCaching.ENABLE` and rejects the other values — caching is on by default and Kimi K3 caches context automatically.
+
+Leave a parameter unset and the protocol default applies, which is the portable choice when a script must run against several families.
 
 ## Image generation
 
@@ -97,7 +144,7 @@ Use a Gemini image model (see Model IDs) and set `config.image_config` (optional
 ```ts
 import fs from "node:fs";
 
-const client = new AutoLLMClient({ model: "gemini-3.1-flash-image-preview" });
+const client = new AutoLLMClient({ model: "gemini-3.1-flash-image" });
 for await (const event of client.streamingResponseStateful({
   message: { role: "user", content_items: [{ type: "text", text: "A penguin on a glacier" }] },
   config: { image_config: { aspect_ratio: "16:9", image_size: "2K" } },

@@ -222,7 +222,12 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // 2026-07-20 list no cache pricing on their OpenRouter pages, so cache_read carries the
   // standard input price; their :free tier stores a genuine $0 price (not "unknown"), so
   // costs correctly compute to 0. GPT models are uniformly vision-capable (OpenAI
-  // product-line policy) even where the gateway page omits the modality. --
+  // product-line policy) even where the gateway page omits the modality.
+  // Two cache_read conventions coexist in this block: rows whose upstream publishes a
+  // cache-hit price store that real price (the google/gemini-3.6-flash and
+  // google/gemini-3.5-flash-lite entries below), while the 2026-07-20 rows still repeat the
+  // input price. Several of those older rows do have a published cache price upstream and
+  // should be re-read in one pass; until then treat their cache_read as an upper bound. --
   {
     modelId: "anthropic/claude-fable-5",
     displayName: "Claude Fable 5",
@@ -284,11 +289,40 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
+    // Unlike the older OpenRouter entries above, upstream **does** publish a cache-hit price
+    // for the Gemini rows (2026-07-22: $0.15/mtok here, agreed by the OpenRouter models API
+    // and AgentHub's own supported-model registry), so cache_read stores the real discounted
+    // price rather than repeating the input price: cache_read is billed as its own bucket in
+    // the cost center, and an input-priced cache_read overstates cache-heavy spend 10x.
+    // cache_write repeats the input price (no separate per-token cache-write fee), matching
+    // the direct-vendor Gemini rows below.
+    modelId: "google/gemini-3.6-flash",
+    displayName: "Gemini 3.6 Flash",
+    provider: "openrouter",
+    contextWindow: 1048576,
+    pricing: usd(0.15, 1.5, 7.5),
+    supportsVision: true,
+    clientType: "openai",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
     modelId: "google/gemini-3.5-flash",
     displayName: "Gemini 3.5 Flash",
     provider: "openrouter",
-    contextWindow: 1000000,
+    contextWindow: 1048576,
     pricing: usd(1.5, 1.5, 9),
+    supportsVision: true,
+    clientType: "openai",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
+    // Same published-cache-price convention as gemini-3.6-flash above (2026-07-22: $0.03/mtok
+    // cache hit, $0.30 input, $2.50 output).
+    modelId: "google/gemini-3.5-flash-lite",
+    displayName: "Gemini 3.5 Flash-Lite",
+    provider: "openrouter",
+    contextWindow: 1048576,
+    pricing: usd(0.03, 0.3, 2.5),
     supportsVision: true,
     clientType: "openai",
     baseUrl: OPENROUTER_BASE_URL,
@@ -310,6 +344,16 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     provider: "openrouter",
     contextWindow: 1000000,
     pricing: usd(3, 3, 15),
+    supportsVision: true,
+    clientType: "openai",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
+    modelId: "moonshotai/kimi-k2.6",
+    displayName: "Kimi K2.6",
+    provider: "openrouter",
+    contextWindow: 262144,
+    pricing: usd(0.144, 0.684, 3.42),
     supportsVision: true,
     clientType: "openai",
     baseUrl: OPENROUTER_BASE_URL,
@@ -350,6 +394,18 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     provider: "openrouter",
     contextWindow: 1000000,
     pricing: usd(5, 5, 30),
+    supportsVision: true,
+    clientType: "openai",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
+    // Neither the OpenRouter page nor AgentHub's registry publishes a cache price for this
+    // model, so cache_read repeats the input price (no discount assumed).
+    modelId: "qwen/qwen3.6-35b-a3b",
+    displayName: "Qwen 3.6 35B A3B",
+    provider: "openrouter",
+    contextWindow: 262144,
+    pricing: usd(0.14, 0.14, 1),
     supportsVision: true,
     clientType: "openai",
     baseUrl: OPENROUTER_BASE_URL,
@@ -401,6 +457,16 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     provider: "openrouter",
     contextWindow: 1000000,
     pricing: usd(0.93, 0.93, 3),
+    supportsVision: false,
+    clientType: "openai",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
+    modelId: "z-ai/glm-5.1",
+    displayName: "GLM-5.1",
+    provider: "openrouter",
+    contextWindow: 204800,
+    pricing: usd(0.1794, 0.966, 3.036),
     supportsVision: false,
     clientType: "openai",
     baseUrl: OPENROUTER_BASE_URL,
@@ -495,6 +561,38 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     provider: "siliconflow",
     contextWindow: 262144,
     pricing: cny(1.3, 6.5, 27),
+    supportsVision: true,
+    clientType: "openai",
+    baseUrl: SILICONFLOW_BASE_URL,
+  },
+  // The three Pro/ and Qwen/ entries below carry no pricing: AgentHub's registry publishes
+  // none for them, and SiliconFlow's price list sits behind an authenticated API (the public
+  // /v1/models endpoint returns 401 and the console page is client-rendered). Rather than
+  // invent a rate, the entries ship unpriced — the same state as qwen3.8-max-preview, so their
+  // cost reads as 0 until a published price can be filled in.
+  {
+    modelId: "Pro/moonshotai/Kimi-K2.6",
+    displayName: "Kimi K2.6",
+    provider: "siliconflow",
+    contextWindow: 262144,
+    supportsVision: true,
+    clientType: "openai",
+    baseUrl: SILICONFLOW_BASE_URL,
+  },
+  {
+    modelId: "Pro/zai-org/GLM-5.1",
+    displayName: "GLM-5.1",
+    provider: "siliconflow",
+    contextWindow: 200000,
+    supportsVision: false,
+    clientType: "openai",
+    baseUrl: SILICONFLOW_BASE_URL,
+  },
+  {
+    modelId: "Qwen/Qwen3.6-35B-A3B",
+    displayName: "Qwen 3.6 35B A3B",
+    provider: "siliconflow",
+    contextWindow: 262144,
     supportsVision: true,
     clientType: "openai",
     baseUrl: SILICONFLOW_BASE_URL,
@@ -609,11 +707,27 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   },
   // -- Google Gemini (official USD pricing) --
   {
+    modelId: "gemini-3.6-flash",
+    displayName: "Gemini 3.6 Flash",
+    provider: "google",
+    contextWindow: 1048576,
+    pricing: usd(0.15, 1.5, 7.5),
+    supportsVision: true,
+  },
+  {
     modelId: "gemini-3.5-flash",
     displayName: "Gemini 3.5 Flash",
     provider: "google",
     contextWindow: 1048576,
     pricing: usd(0.15, 1.5, 9),
+    supportsVision: true,
+  },
+  {
+    modelId: "gemini-3.5-flash-lite",
+    displayName: "Gemini 3.5 Flash-Lite",
+    provider: "google",
+    contextWindow: 1048576,
+    pricing: usd(0.03, 0.3, 2.5),
     supportsVision: true,
   },
   {
@@ -643,6 +757,14 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   },
   // -- Anthropic (official USD pricing; cache write = 1.25 x input) --
   {
+    modelId: "claude-fable-5",
+    displayName: "Claude Fable 5",
+    provider: "anthropic",
+    contextWindow: 1000000,
+    pricing: usd(1, 12.5, 50),
+    supportsVision: true,
+  },
+  {
     modelId: "claude-opus-4-8",
     displayName: "Claude Opus 4.8",
     provider: "anthropic",
@@ -656,6 +778,14 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     provider: "anthropic",
     contextWindow: 1000000,
     pricing: usd(0.5, 6.25, 25),
+    supportsVision: true,
+  },
+  {
+    modelId: "claude-sonnet-5",
+    displayName: "Claude Sonnet 5",
+    provider: "anthropic",
+    contextWindow: 1000000,
+    pricing: usd(0.2, 2.5, 10),
     supportsVision: true,
   },
   {
@@ -744,6 +874,14 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   },
   // -- Moonshot (Kimi) (official CNY pricing) --
   {
+    modelId: "kimi-k3",
+    displayName: "Kimi K3",
+    provider: "moonshot",
+    contextWindow: 1048576,
+    pricing: cny(2, 20, 100),
+    supportsVision: true,
+  },
+  {
     modelId: "kimi-k2.6",
     displayName: "Kimi K2.6",
     provider: "moonshot",
@@ -782,7 +920,7 @@ export interface ModelEnvInfo {
 
 /**
  * Resolves the env var fallback for a model: mirrors AgentHub's
- * AutoLLMClient routing rules (verified against agenthub v0.3.3 autoClient.ts) - an explicit
+ * AutoLLMClient routing rules (verified against agenthub v0.4.1 autoClient.ts) - an explicit
  * client_type takes priority, otherwise routes to a client by lowercase substring match on
  * model_id, returning the var pair that client reads; branch order matches AutoLLMClient.
  * Returns undefined on no match (AgentHub will reject that id: it needs an explicit
@@ -803,6 +941,8 @@ export function resolveModelEnv(modelId: string, clientType?: string): ModelEnvI
   }
   if (t.includes("gpt-5.4") || t.includes("gpt-5.5")) return env("OPENAI");
   if (t.includes("glm-5")) return env("ZAI");
+  // agenthub 0.4.1 routes kimi-k3 to its own client, which reads the same MOONSHOT_* pair.
+  if (t.includes("kimi-k3")) return env("MOONSHOT");
   if (t.includes("kimi-k2.5") || t.includes("kimi-k2.6")) return env("MOONSHOT");
   if (t.includes("deepseek-v4")) return env("DEEPSEEK");
   if (t.includes("openai")) return env("OPENAI");

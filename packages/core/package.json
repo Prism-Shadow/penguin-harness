@@ -36,7 +36,7 @@
     "build": "tsup"
   },
   "dependencies": {
-    "@prismshadow/agenthub": "^0.4.0",
+    "@prismshadow/agenthub": "^0.4.1",
     "@prismshadow/penguin-skills": "workspace:*",
     "smol-toml": "^1.3.0",
     "yaml": "^2.5.0"
