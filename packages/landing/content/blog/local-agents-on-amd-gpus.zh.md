@@ -2,6 +2,7 @@
 title: 深入了解 PenguinHarness——并在 AMD GPU 上本地跑通一个自我进化的 Agent
 date: 2026-07-20
 category: practice
+author: 张宁（AMD）、高钰洋（AMD）、郑耀威（PrismShadow）
 excerpt: PenguinHarness 到底是什么、它的架构背后有哪些理念，以及一次真实的端到端运行——一个完全本地、运行在 AMD GPU 上的开源权重模型，先在一个打分任务上失败，再通过自己诊断并改写自身文件，把分数从大约半数递归自我提升到接近满分，全程数据不出本机。
 ---
 
