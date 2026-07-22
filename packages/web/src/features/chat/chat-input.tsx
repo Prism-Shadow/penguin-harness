@@ -7,7 +7,8 @@
  * indicator) + Model + send (up arrow);
  * In draft state (Session not yet created), when models/onChangeModel are supplied, the model
  * selector sits to the left of the send button (provider logo + name, popup opens **downward**,
- * with a top quick-search box, and an internal scroll cap to avoid overflowing the screen) — once
+ * with a top quick-search box, an internal scroll cap to avoid overflowing the screen, and a
+ * configured-key-first list with a bottom "show all" row — see ModelSelect) — once
  * the Session is created the model is locked, and the same spot switches to a read-only
  * logo + name display;
  * `/` opens the slash command menu (`/compact` compresses context, replacing the button; each
@@ -56,7 +57,7 @@ import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { SkillIcon } from "../skills/skill-icon-view";
 import { ZoomableImage } from "../../components/ui/image-zoom";
 import { ProviderLogo } from "../../components/ui/provider-logo";
-import { matchesQuery, orderModelsLikeLibrary, sameModelRef } from "../models/model-grouping";
+import { hasConfiguredKey, sameModelRef, visibleChatModels } from "../models/model-grouping";
 import { filterAgents, matchMention, splitLeadingMention } from "./agent-mentions";
 import { matchSlash, removeSlashToken } from "./slash-token";
 import {
@@ -214,6 +215,11 @@ function modelLabel(m: ModelInfo): string {
  * scroll (max-h-56) so it never overflows the browser's viewport height no matter how many models
  * there are. On narrow screens only the logo remains (name hidden); list items mark the project
  * default.
+ * By default only models with a configured API key are listed (stored masked key — the same
+ * standard as the model page's key status; `envKey` is merely the NAME of a fallback env var and
+ * doesn't count), with the selected and the default model always visible even without a key; a
+ * muted bottom row reveals the remaining key-less models (tagged "no key") without closing the
+ * menu or changing the selection. When no model has a key at all, everything is listed directly.
  */
 function ModelSelect({
   models,
@@ -231,12 +237,21 @@ function ModelSelect({
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  // Expanded "show all" state: collapses back to key-configured models on each open.
+  const [showAll, setShowAll] = useState(false);
   const current = models.find((m) => sameModelRef(m, value));
   // Display rule matches the model page's card: display name, or falls back to the upstream id (grouping is already conveyed by the provider logo).
   const label = current ? modelLabel(current) : (value?.modelId ?? "…");
   // Dropdown order mirrors the model library page: provider groups in MODEL_PROVIDERS order
-  // (user-defined groups after, custom last), in-group order preserved.
-  const filtered = orderModelsLikeLibrary(models).filter((m) => matchesQuery(m, query));
+  // (user-defined groups after, custom last), in-group order preserved. By default the list
+  // keeps only key-configured models (selected/default always included; lists everything when
+  // no model has a key); the query filters what's visible.
+  const visible = visibleChatModels(models, { showAll, query, selected: value, defaultModel });
+  // How many models the key filter hides under the current query (0 when expanded): drives the bottom "show all" row.
+  const hiddenCount = showAll
+    ? 0
+    : visibleChatModels(models, { showAll: true, query, selected: value, defaultModel }).length -
+      visible.length;
   return (
     <Dropdown
       open={open}
@@ -251,7 +266,11 @@ function ModelSelect({
           onClick={() => {
             const next = !open;
             setOpen(next);
-            if (next) setQuery(""); // Always start from the full list each time it opens
+            if (next) {
+              // Each open starts from the unsearched, collapsed (configured-only) list.
+              setQuery("");
+              setShowAll(false);
+            }
           }}
           className="flex h-8 max-w-44 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
         >
@@ -292,10 +311,10 @@ function ModelSelect({
         />
       </div>
       <div className="max-h-56 overflow-y-auto">
-        {filtered.length === 0 && (
+        {visible.length === 0 && (
           <p className="px-3 py-1.5 text-xs text-gray-400">{S.models.noSearchResults}</p>
         )}
-        {filtered.map((m) => (
+        {visible.map((m) => (
           <button
             key={`${m.provider}:${m.modelId}`}
             type="button"
@@ -311,6 +330,12 @@ function ModelSelect({
           >
             <ProviderLogo provider={m.provider} className="h-4 w-4 shrink-0" />
             <span className="min-w-0 flex-1 truncate">{modelLabel(m)}</span>
+            {/* Key-less rows (visible via show-all / selected / default / no-key-at-all) carry a subtle "no key" tag. */}
+            {!hasConfiguredKey(m) && (
+              <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
+                {S.models.noKey}
+              </span>
+            )}
             {sameModelRef(m, defaultModel) && (
               <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
                 {S.models.default}
@@ -322,6 +347,20 @@ function ModelSelect({
           </button>
         ))}
       </div>
+      {/* Bottom expander row (pinned below the scroll area, mirroring the search box on top):
+          reveals the models hidden by the configured-key filter in place — the menu stays open
+          and the selection is untouched. */}
+      {hiddenCount > 0 && (
+        <div className="border-t border-gray-100 dark:border-gray-800">
+          <button
+            type="button"
+            onClick={() => setShowAll(true)}
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+          >
+            {S.models.showModelsWithoutKey(hiddenCount)}
+          </button>
+        </div>
+      )}
     </Dropdown>
   );
 }
