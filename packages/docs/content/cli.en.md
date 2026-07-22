@@ -84,6 +84,7 @@ penguin config model add --provider deepseek --model-id deepseek-v4-pro --api-ke
 | `--api-key <key>` | API key, stored inline in the Project's hidden `.project_config.toml` |
 | `--base-url <url>` | Custom endpoint base URL |
 | `--context-window <n>` | Context window size |
+| `--max-tokens <n>` | Per-model max output tokens (positive integer). Overrides the Agent's `model.max_tokens` when set; omit to inherit — lower it for small-context models |
 | `--client-type <type>` | Client protocol type |
 | `--vision` / `--no-vision` | Mark vision input as supported / unsupported |
 | `--price-cache-read <n>` | Cache-read price |

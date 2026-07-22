@@ -1,43 +1,41 @@
 /**
- * thinking-level.ts unit tests: the conversation-time picker's option rows — labels fall back
- * to the default tag for "", and the "" (no override) row is selectable only when it already
- * is the current state (the agent-config API cannot persist a cleared level).
+ * thinking-level.ts unit tests: the conversation-time picker's short-name lookup — the five
+ * levels map to their localized names, while "" (no override yet) and session_meta's
+ * "default" resolve to null (trigger shows a placeholder; the session tag hides).
  */
 import { describe, expect, it } from "vitest";
-import { thinkingLevelChoices } from "../src/features/chat/thinking-level";
+import { THINKING_LEVELS, thinkingLevelLabel } from "../src/features/chat/thinking-level";
 
-/** Mirrors the shape of S.agent.thinkingLevelOptions ([value, description] pairs). */
-const OPTIONS: ReadonlyArray<readonly [string, string]> = [
-  ["", "No override; follow the effective config."],
-  ["none", "Extended reasoning off."],
-  ["low", "Low."],
-  ["medium", "Medium (seeded default)."],
-  ["high", "High."],
-  ["xhigh", "Extra high."],
-];
+/** Mirrors the shape of S.chat.thinkingLevelNames. */
+const NAMES: Readonly<Record<string, string>> = {
+  none: "None",
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "Extreme High",
+};
 
-describe("thinkingLevelChoices", () => {
-  it("maps values and descriptions; '' renders the localized default tag", () => {
-    const rows = thinkingLevelChoices(OPTIONS, "(default)", "medium");
-    expect(rows).toHaveLength(6);
-    expect(rows[0]).toMatchObject({ value: "", label: "(default)" });
-    expect(rows[3]).toMatchObject({
-      value: "medium",
-      label: "medium",
-      description: "Medium (seeded default).",
-    });
+describe("thinkingLevelLabel", () => {
+  it("maps each of the five levels to its localized short name (menu order preserved)", () => {
+    expect(THINKING_LEVELS).toEqual(["none", "low", "medium", "high", "xhigh"]);
+    expect(THINKING_LEVELS.map((l) => thinkingLevelLabel(NAMES, l))).toEqual([
+      "None",
+      "Low",
+      "Medium",
+      "High",
+      "Extreme High",
+    ]);
   });
 
-  it("disables the '' row unless it already is the current state (not persistable via the config API)", () => {
-    // A concrete level is set: "" cannot be picked (the API's enum validator rejects it).
-    const set = thinkingLevelChoices(OPTIONS, "(default)", "medium");
-    expect(set[0]!.disabled).toBe(true);
-    // No override yet: the "" row is the (checkable) current state; clicking it is a no-op.
-    const unset = thinkingLevelChoices(OPTIONS, "(default)", "");
-    expect(unset[0]!.disabled).toBe(false);
-    // Concrete levels are never disabled in either state.
-    for (const rows of [set, unset]) {
-      expect(rows.slice(1).every((r) => !r.disabled)).toBe(true);
-    }
+  it("returns null for non-levels: '' (no override yet), session_meta's 'default', unknown, null", () => {
+    expect(thinkingLevelLabel(NAMES, "")).toBeNull();
+    expect(thinkingLevelLabel(NAMES, "default")).toBeNull();
+    expect(thinkingLevelLabel(NAMES, "ultra")).toBeNull();
+    expect(thinkingLevelLabel(NAMES, null)).toBeNull();
+    expect(thinkingLevelLabel(NAMES, undefined)).toBeNull();
+  });
+
+  it("falls back to the raw value if the name table misses a level (defensive)", () => {
+    expect(thinkingLevelLabel({}, "medium")).toBe("medium");
   });
 });

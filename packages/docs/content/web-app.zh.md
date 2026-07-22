@@ -33,7 +33,7 @@ penguin web
 
 ### 新建会话
 
-新会话从草稿开始：先选择 Agent、Workspace（服务器端目录浏览器选取）、审批模式与模型，再发送第一条消息。Session 在首次发送时才真正创建，此后该会话的模型与 Workspace 即被锁定。
+新会话从草稿开始：先选择 Agent、Workspace（服务器端目录浏览器选取）、审批模式、模型与思考等级，再发送第一条消息。Session 在首次发送时才真正创建，此后该会话的模型与 Workspace 即被锁定。切换思考等级或模型时，切换后的值即成为新的默认：思考等级立即写回所选 Agent 的 `model.thinking_level`，所选模型则作为下一个新会话的默认延续；进行中的会话沿用创建时的档位与模型（输入区只读展示）。
 
 审批模式共四种：`allow-all`（全部放行）、`deny-all`（全部拒绝）、`read-only`（仅放行只读工具）、`always-ask`（每次询问），详见[工具与审批](/tools)。
 
@@ -76,7 +76,7 @@ penguin web
 
 ## 模型配置（/models）
 
-按 Provider 分组展示当前 Project 的模型表格。支持添加与编辑模型：以 `(provider, model_id)` 为唯一标识，凭据以掩码显示，可配置上下文窗口、定价与视觉（vision）标记；可设置默认模型与视觉模型（在会话模型不支持图片输入时代为读图），并对任一模型做连通性测试。仅 Project Owner 可编辑，概念说明见[模型与 Provider](/models)。
+按 Provider 分组展示当前 Project 的模型表格。支持添加与编辑模型：以 `(provider, model_id)` 为唯一标识，凭据以掩码显示，可配置上下文窗口、最大输出长度（按模型的输出上限，覆盖 Agent 的 `model.max_tokens`——小上下文模型建议调低）、定价与视觉（vision）标记；可设置默认模型与视觉模型（在会话模型不支持图片输入时代为读图），并对任一模型做连通性测试。仅 Project Owner 可编辑，概念说明见[模型与 Provider](/models)。
 
 ## 用量统计（/usage）
 

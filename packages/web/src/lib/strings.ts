@@ -460,6 +460,15 @@ export const zh = {
     newSessionMenu: "新建对话",
     chooseAgent: "选择 Agent",
     chooseModel: "选择模型",
+    thinkingLevel: "思考等级",
+    /** 会话前拾取器的档位短名（评审要求：只写短名、不带说明、无“缺省”项）。 */
+    thinkingLevelNames: {
+      none: "无",
+      low: "低",
+      medium: "中",
+      high: "高",
+      xhigh: "极高",
+    } as Readonly<Record<string, string>>,
     workspaceUseThis: "使用此目录",
     workspaceUp: "上级目录",
     workspaceNoSubdirs: "无子目录",

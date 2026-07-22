@@ -3,8 +3,8 @@ name: penguin-cli
 description: Manage model API keys, default models and per-agent vault secrets with the penguin CLI.
 short_description: Manage models and secrets with the penguin CLI.
 short_description_zh: 用 penguin CLI 管理模型与密钥。
-version: 3
-updated: 2026-07-21T00:00:00Z
+version: 4
+updated: 2026-07-22T00:00:00Z
 ---
 
 # Penguin CLI
@@ -21,7 +21,7 @@ Add or update a model (upsert by the `(provider, model_id)` pair; re-run with mo
 
 ```bash
 penguin config model add --provider <group> --model-id <upstream_id> [--api-key <key>] [--base-url <url>] \
-  [--client-type <type>] [--context-window <n>] [--vision | --no-vision] \
+  [--client-type <type>] [--context-window <n>] [--max-tokens <n>] [--vision | --no-vision] \
   [--price-cache-read <n>] [--price-cache-write <n>] [--price-output <n>] \
   [--project-id <id>] [--root <dir>] [--set-default]
 ```
@@ -30,6 +30,7 @@ penguin config model add --provider <group> --model-id <upstream_id> [--api-key 
 - For any OpenAI chat-completion compatible endpoint use `--client-type openai --base-url <endpoint>`; omit `--client-type` to auto-route by model id.
 - Prices are USD per million tokens (cache read / cache write / output).
 - `--vision` / `--no-vision` mark whether the model accepts images; omitting both keeps the current value (default is vision-capable).
+- `--max-tokens <n>` pins a per-model output cap (positive integer), overriding the Agent's `model.max_tokens`; omit to inherit. Lower it for small-context models — the per-Agent default (32000) cannot fit into e.g. a 32k context window together with any prompt.
 - All `penguin config model ...` and `penguin config vault ...` commands accept `--root <dir>` to target another data root (default `PENGUIN_HOME`, then `~/.penguin/data`). **When configuring models for an AI app you are building, always pass `--root <dir>` pointing at the app's own data directory inside the current working directory** (e.g. `--root ./penguin_data`, the same path the app gives `createAgent({ root })`); running without `--root` writes to the global `~/.penguin/data`, which belongs to the person running Penguin — not to the app.
 
 Other model commands:

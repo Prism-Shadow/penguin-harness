@@ -63,7 +63,7 @@ import { ProviderLogo } from "../../components/ui/provider-logo";
 import { matchesQuery, orderModelsLikeLibrary, sameModelRef } from "../models/model-grouping";
 import { filterAgents, matchMention, splitLeadingMention } from "./agent-mentions";
 import { matchSlash, removeSlashToken } from "./slash-token";
-import { thinkingLevelChoices } from "./thinking-level";
+import { THINKING_LEVELS, thinkingLevelLabel } from "./thinking-level";
 import {
   BOOK_ICON,
   buildSkillsMessage,
@@ -338,45 +338,41 @@ const SPARK_ICON = "M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 
  * Conversation-time thinking-level picker (draft state only, docked left of the model
  * selector): shows the **selected Agent's** current `model.thinking_level` and writes a picked
  * level straight through to the Agent settings — llmConfig is assembled once per session, so
- * the level applies to the session created on first send and becomes the Agent's new default.
- * Options reuse the agent-settings dictionary; the "" row (no override = provider default)
- * cannot be persisted through the config API, so it's selectable only when it already is the
- * current state (see thinking-level.ts).
+ * the level applies to the session created on first send and becomes the Agent's new default
+ * (switch-becomes-default). Per review: a title bar names the control, and the menu lists
+ * exactly the five levels with short names only (no descriptions, no "default" row) — an
+ * Agent without an explicit override shows an em dash until a level is picked.
  */
 function ThinkingLevelSelect({
   value,
   onChange,
   disabled,
 }: {
-  /** Current level ("" = no override / provider default); null = the Agent config is still loading. */
+  /** Current level ("" = no override yet); null = the Agent config is still loading. */
   value: string | null;
   onChange: (level: string) => void;
   disabled: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const choices = thinkingLevelChoices(
-    S.agent.thinkingLevelOptions,
-    S.agent.defaultValue,
-    value ?? "",
-  );
-  const label = value === null ? "…" : value || S.agent.defaultValue;
+  const label =
+    value === null ? "…" : (thinkingLevelLabel(S.chat.thinkingLevelNames, value) ?? "—");
   return (
     <Dropdown
       open={open}
       setOpen={setOpen}
-      menuClass="right-0 top-full mt-1 w-[22rem] max-w-[calc(100vw-2rem)] origin-top-right"
+      menuClass="right-0 top-full mt-1 w-36 origin-top-right"
       button={
         <button
           type="button"
-          title={`${S.agent.thinkingLevel}：${label}`}
-          aria-label={S.agent.thinkingLevel}
+          title={`${S.chat.thinkingLevel}：${label}`}
+          aria-label={S.chat.thinkingLevel}
           disabled={disabled || value === null}
           onClick={() => setOpen(!open)}
           className="flex h-8 max-w-36 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
         >
           <GlyphIcon d={SPARK_ICON} size={14} className="shrink-0" />
           {/* When the card is narrower than @md, only the icon remains (title shows the full state). */}
-          <span className="hidden min-w-0 truncate font-mono @md:block">{label}</span>
+          <span className="hidden min-w-0 truncate @md:block">{label}</span>
           <svg
             width="10"
             height="10"
@@ -396,26 +392,28 @@ function ThinkingLevelSelect({
         </button>
       }
     >
-      {choices.map((c) => (
+      {/* Title bar: names the control (the rows themselves are just the five short names). */}
+      <div className="border-b border-gray-100 px-3 pb-1.5 pt-0.5 text-xs font-semibold text-gray-500 dark:border-gray-800 dark:text-gray-400">
+        {S.chat.thinkingLevel}
+      </div>
+      {THINKING_LEVELS.map((level) => (
         <button
-          key={c.value || "default"}
+          key={level}
           type="button"
-          disabled={c.disabled}
           onClick={() => {
-            onChange(c.value);
+            onChange(level);
             setOpen(false);
           }}
-          className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors duration-150 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-gray-800 ${
-            c.value === (value ?? "")
+          className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800 ${
+            level === value
               ? "font-medium text-gray-900 dark:text-gray-100"
               : "text-gray-600 dark:text-gray-400"
           }`}
         >
-          <span className="shrink-0 font-mono">{c.label}</span>
-          <span className="min-w-0 flex-1 truncate text-gray-400 dark:text-gray-500">
-            {c.description}
+          <span className="min-w-0 flex-1 truncate">
+            {S.chat.thinkingLevelNames[level] ?? level}
           </span>
-          <span className="w-3 shrink-0 text-center">{c.value === (value ?? "") ? "✓" : ""}</span>
+          <span className="w-3 shrink-0 text-center">{level === value ? "✓" : ""}</span>
         </button>
       ))}
     </Dropdown>
@@ -1337,16 +1335,23 @@ export function ChatInput({
               disabled={busy}
             />
           )}
-          {/* Session state: the session's fixed thinking level (from session_meta), read-only next to the locked model. */}
-          {!onChangeModel && sessionThinkingLevel && (
-            <span
-              title={`${S.agent.thinkingLevel}：${sessionThinkingLevel}`}
-              className="hidden h-8 shrink-0 items-center gap-1 px-1 font-mono text-xs text-gray-400 @md:flex dark:text-gray-500"
-            >
-              <GlyphIcon d={SPARK_ICON} size={13} className="shrink-0" />
-              {sessionThinkingLevel}
-            </span>
-          )}
+          {/* Session state: the session's fixed thinking level (from session_meta), read-only next
+              to the locked model; hidden when it isn't one of the five levels (e.g. "default"). */}
+          {!onChangeModel &&
+            (() => {
+              const label = thinkingLevelLabel(S.chat.thinkingLevelNames, sessionThinkingLevel);
+              return (
+                label && (
+                  <span
+                    title={`${S.chat.thinkingLevel}：${label}`}
+                    className="hidden h-8 shrink-0 items-center gap-1 px-1 text-xs text-gray-400 @md:flex dark:text-gray-500"
+                  >
+                    <GlyphIcon d={SPARK_ICON} size={13} className="shrink-0" />
+                    {label}
+                  </span>
+                )
+              );
+            })()}
           {/* Left of the send button: model selector in draft state; once the Session is created the model is locked, shown read-only (still with the provider logo). */}
           {models && onChangeModel ? (
             <ModelSelect

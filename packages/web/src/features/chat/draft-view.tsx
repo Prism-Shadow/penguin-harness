@@ -15,7 +15,9 @@
  * "user × Project", #68): the four selections are saved as soon as they change;
  * body text is keystroke-frequent and deferred/coalesced (if there's an unsaved
  * change before unmount, one final write is flushed) — closing and returning to
- * the page resumes where you left off; the cache is cleared on successful send.
+ * the page resumes where you left off; on successful send the cache clears, except
+ * the model selection, which carries over as the next conversation's default
+ * (switch-becomes-default, mirroring the thinking level persisting on the Agent).
  * The sidebar group header "+" / menu "New conversation" explicitly specify an
  * Agent via route state (overriding the cached selection); a direct visit or
  * refresh falls back to the cache.
@@ -293,13 +295,21 @@ export function DraftView({
     [],
   );
 
-  /** Discard the draft after a successful send: first cancels the pending save timer, otherwise it would write the just-cleared draft back. */
+  /**
+   * Discard the draft after a successful send: first cancels the pending save timer, otherwise
+   * it would write the just-cleared draft back. The **model selection carries over** as the
+   * next conversation's default (review: switching the model, like switching the thinking
+   * level, makes the switched-to value the new default — the level persists on the Agent
+   * config, the model here in the per-user draft cache); everything else clears.
+   */
   const discardDraft = useCallback(() => {
     cancelPendingSave();
     // Clear the preselected skills too: any subsequent write (e.g. the unmount flush) must not resurrect a selection that's already been sent.
     skillsRef.current = [];
-    if (userId) clearDraft(draftKey(userId, projectId));
-  }, [cancelPendingSave, userId, projectId]);
+    if (!userId) return;
+    if (modelRef) saveDraft(draftKey(userId, projectId), { modelRef });
+    else clearDraft(draftKey(userId, projectId));
+  }, [cancelPendingSave, userId, projectId, modelRef]);
 
   const selectAgent = (a: AgentSummary) => {
     setAgentId(a.agentId);
