@@ -2,7 +2,7 @@
  * `penguin config` — manages a Project's model credentials, default model, model list,
  * Agent-level vault environment variables, and UI language.
  *
- *   penguin config model add --model-id <upstream id> --provider <group> [--api-key <key>] [--context-window <n>] [--thinking-level <level>] [--set-default] [--root <dir>]
+ *   penguin config model add --model-id <upstream id> --provider <group> [--api-key <key>] [--context-window <n>] [--max-tokens <n>] [--thinking-level <level>] [--set-default] [--root <dir>]
  *   penguin config model default --model-id <upstream id> --provider <group> [--root <dir>]
  *   penguin config model vision --model-id <upstream id> --provider <group> [--root <dir>]
  *   penguin config model list [--root <dir>]
@@ -124,6 +124,7 @@ export function registerConfigCommand(program: Command, t: Messages): void {
     .option("--api-key <key>", t.config.addApiKey)
     .option("--base-url <url>", t.config.addBaseUrl)
     .option("--context-window <n>", t.config.addContextWindow, parseIntArg)
+    .option("--max-tokens <n>", t.config.addMaxTokens, parseIntArg)
     .option("--thinking-level <level>", t.config.addThinkingLevel)
     .option("--client-type <type>", t.config.addClientType)
     // Tri-state: --vision marks it supported / --no-vision marks it unsupported / neither given keeps the existing value (defaults to supported).
@@ -142,6 +143,15 @@ export function registerConfigCommand(program: Command, t: Messages): void {
       if (thinkingLevel !== undefined && !THINKING_LEVELS.includes(thinkingLevel)) {
         process.stderr.write(
           `${t.error(`--thinking-level must be one of ${THINKING_LEVELS.join(" / ")}: got "${thinkingLevel}".`)}\n`,
+        );
+        process.exitCode = 1;
+        return;
+      }
+      // Output cap: parseIntArg already rejects non-numbers; 0/negative must not reach the config either.
+      const maxTokens: number | undefined = opts.maxTokens;
+      if (maxTokens !== undefined && maxTokens <= 0) {
+        process.stderr.write(
+          `${t.error(`--max-tokens must be a positive integer: got "${maxTokens}".`)}\n`,
         );
         process.exitCode = 1;
         return;
@@ -179,6 +189,7 @@ export function registerConfigCommand(program: Command, t: Messages): void {
           provider,
           model_id: modelId,
           ...(opts.contextWindow !== undefined ? { context_window: opts.contextWindow } : {}),
+          ...(maxTokens !== undefined ? { max_tokens: maxTokens } : {}),
           ...(thinkingLevel !== undefined ? { thinking_level: thinkingLevel } : {}),
           ...(clientType !== undefined ? { client_type: clientType } : {}),
           ...(opts.vision !== undefined ? { vision: opts.vision } : {}),

@@ -321,6 +321,10 @@ export const en: Strings = {
       ["high", "High"],
       ["xhigh", "Extra high"],
     ],
+    maxTokens: "Max output tokens",
+    maxTokensHint: "Leave empty to inherit the agent setting",
+    maxTokensCapHint: "Caps output tokens per request; lower it for small-context local models",
+    maxTokensInvalid: "Must be a positive integer",
     clientTypeLocked: (t: string): string => `Protocol: ${t} (kept as configured; not editable)`,
     vision: "Supports image input (vision / multimodal)",
     visionHint:

@@ -23,7 +23,7 @@ import {
   installSkill,
   setVaultEntry,
 } from "../src/index.js";
-import { effectiveMaxContextLength } from "../src/agent.js";
+import { effectiveMaxContextLength, metaMaxTokens } from "../src/agent.js";
 import { stubProviderKeys } from "./provider-keys.js";
 
 let tmpRoot: string;
@@ -51,6 +51,15 @@ describe("effectiveMaxContextLength (compaction threshold clamped to the model w
     expect(effectiveMaxContextLength(-1, 32768)).toBe(-1); // off: no clamping
     expect(effectiveMaxContextLength(0, 32768)).toBe(0); // off: no clamping
     expect(effectiveMaxContextLength(128000, "unknown")).toBe(128000); // unknown window: no clamping
+  });
+});
+
+describe("metaMaxTokens (meta-request budget tightened by the per-model cap)", () => {
+  it("keeps the budget unless the per-model cap is smaller; never raises it", () => {
+    expect(metaMaxTokens(300, undefined)).toBe(300); // no per-model cap: the budget as-is
+    expect(metaMaxTokens(300, 8000)).toBe(300); // ample cap: the small budget stays
+    expect(metaMaxTokens(300, 128)).toBe(128); // pinned below the budget: the cap binds
+    expect(metaMaxTokens(2048, 1024)).toBe(1024); // vision-describer budget, same rule
   });
 });
 
@@ -236,6 +245,93 @@ describe("Agent.createSession thinking level (per-model annotation wins over the
       expect(uniConfig?.thinking_level).toBe(ThinkingLevel.MEDIUM);
     } finally {
       inherited.dispose();
+    }
+  });
+});
+
+describe("Agent.createSession max output tokens (per-model cap wins over the Agent config)", () => {
+  // Reads a constructed GenerativeModel's request config (private; runtime-accessible for assertion).
+  const uniConfigOf = (llm: unknown) =>
+    (llm as { uniConfig?: { max_tokens?: number } }).uniConfig ?? {};
+
+  it("uses the entry's max_tokens in llmConfig, and inherits the seeded 32000 when unset", async () => {
+    // A 32k-context local model: the seeded per-Agent default (32000 output tokens) cannot fit
+    // into its window together with any prompt — the pinned per-model cap must win.
+    await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
+      provider: "custom",
+      model_id: "local-32k",
+      client_type: "openai",
+      context_window: 32768,
+      max_tokens: 8000,
+    });
+    const agent = await createAgent();
+    expect(agent.state.systemConfig.model?.max_tokens).toBe(32000);
+    const ws = path.join(tmpRoot, "ws-max-tokens");
+    await fs.mkdir(ws, { recursive: true });
+
+    const pinned = await agent.createSession({
+      workspaceDir: ws,
+      modelId: "local-32k",
+      provider: "custom",
+    });
+    try {
+      const llm = (pinned as unknown as { engine: { deps: { llm: unknown } } }).engine.deps.llm;
+      expect(uniConfigOf(llm).max_tokens).toBe(8000);
+    } finally {
+      pinned.dispose();
+    }
+
+    // An unannotated entry (the default model) inherits the Agent value, as before.
+    const inherited = await agent.createSession({ workspaceDir: ws });
+    try {
+      const llm = (inherited as unknown as { engine: { deps: { llm: unknown } } }).engine.deps.llm;
+      expect(uniConfigOf(llm).max_tokens).toBe(32000);
+    } finally {
+      inherited.dispose();
+    }
+  });
+
+  it("meta requests keep their small budget, tightened when the per-model cap is even smaller", async () => {
+    await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
+      provider: "custom",
+      model_id: "local-32k",
+      client_type: "openai",
+      max_tokens: 8000,
+    });
+    await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
+      provider: "custom",
+      model_id: "tiny-cap",
+      client_type: "openai",
+      max_tokens: 128,
+    });
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-meta-cap");
+    await fs.mkdir(ws, { recursive: true });
+
+    // Ample per-model cap: the title one-shot keeps its own 300 budget (never raised to the cap).
+    const ample = await agent.createSession({
+      workspaceDir: ws,
+      modelId: "local-32k",
+      provider: "custom",
+    });
+    try {
+      const bare = (ample as unknown as { createBareLLM?: () => unknown }).createBareLLM?.();
+      expect(uniConfigOf(bare).max_tokens).toBe(300);
+    } finally {
+      ample.dispose();
+    }
+
+    // Cap pinned below the budget: the meta request must respect it too.
+    const tiny = await agent.createSession({
+      workspaceDir: ws,
+      modelId: "tiny-cap",
+      provider: "custom",
+    });
+    try {
+      const bare = (tiny as unknown as { createBareLLM?: () => unknown }).createBareLLM?.();
+      expect(uniConfigOf(bare).max_tokens).toBe(128);
+    } finally {
+      tiny.dispose();
     }
   });
 });

@@ -32,9 +32,11 @@ function presetToRow(p: PresetEntry): RowState {
     modelId: p.model_id,
     original: null,
     ...presetFields(p),
-    // The thinking level is user-owned, not catalog-owned (deliberately outside presetFields,
-    // so a sync never clobbers it on existing rows): fresh rows inherit the Agent setting.
+    // Thinking level and output cap are user-owned, not catalog-owned (deliberately outside
+    // presetFields, so a sync never clobbers them on existing rows): fresh rows inherit the
+    // Agent setting.
     thinkingLevel: "",
+    maxTokens: "",
     originalBaseUrl: "",
     apiKeyInput: "",
     clearApiKey: false,

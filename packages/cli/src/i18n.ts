@@ -39,6 +39,7 @@ export interface Messages {
     addApiKey: string;
     addBaseUrl: string;
     addContextWindow: string;
+    addMaxTokens: string;
     addThinkingLevel: string;
     addClientType: string;
     addVision: string;
@@ -175,6 +176,8 @@ const en: Messages = {
     addApiKey: "API key, stored inline in the Project's hidden .project_config.toml",
     addBaseUrl: "Custom base URL",
     addContextWindow: "Context window size (tokens)",
+    addMaxTokens:
+      "Per-model max output tokens (positive integer); when set it overrides the Agent's max_tokens, omit to inherit — lower it for small-context models",
     addThinkingLevel:
       "Per-model thinking level (none|low|medium|high|xhigh); when set it overrides the Agent's thinking_level, omit to inherit",
     addClientType: "AgentHub client type (e.g. openai); defaults by provider group when omitted",
@@ -290,6 +293,8 @@ const zh: Messages = {
     addApiKey: "API key，内联存入 Project 的隐藏文件 .project_config.toml",
     addBaseUrl: "自定义 base url",
     addContextWindow: "上下文窗口大小（token 数）",
+    addMaxTokens:
+      "该模型的最大输出长度（正整数）；设置后覆盖 Agent 的 max_tokens，缺省沿用——小上下文模型建议调低",
     addThinkingLevel:
       "该模型的思考等级（none|low|medium|high|xhigh）；设置后覆盖 Agent 的 thinking_level，缺省沿用",
     addClientType: "AgentHub 客户端协议（如 openai）；缺省按 provider 分组的语义取值",

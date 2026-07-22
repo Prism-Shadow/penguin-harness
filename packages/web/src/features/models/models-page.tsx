@@ -180,6 +180,8 @@ export interface RowState {
   contextWindow: string;
   /** Per-model thinking level ("" = inherit the Agent setting): when set it wins over the Agent config; user-only, never preset by the catalog. */
   thinkingLevel: string;
+  /** Per-model max output tokens ("" = inherit the Agent setting): caps output per request; user-only, never preset by the catalog. */
+  maxTokens: string;
   /** AgentHub client protocol: defaults for preset models (auto-routed), "openai" for new custom models; kept as-is, not user-editable. */
   clientType: string;
   cacheRead: string;
@@ -240,7 +242,10 @@ function FieldError({ text }: { text: string }) {
 
 /** Fields in the config dialog that can be highlighted red on error (keys match RowState field names, so they can be cleared per edit action). */
 type FieldErrors = Partial<
-  Record<"modelId" | "baseUrl" | "contextWindow" | "cacheRead" | "cacheWrite" | "output", string>
+  Record<
+    "modelId" | "baseUrl" | "contextWindow" | "maxTokens" | "cacheRead" | "cacheWrite" | "output",
+    string
+  >
 >;
 
 /**
@@ -274,6 +279,7 @@ export function toRow(m: ModelsResponse["models"][number]): RowState {
     vision: m.vision !== false,
     contextWindow: m.contextWindow !== undefined ? String(m.contextWindow) : "",
     thinkingLevel: m.thinkingLevel ?? "",
+    maxTokens: m.maxTokens !== undefined ? String(m.maxTokens) : "",
     clientType: m.clientType ?? "",
     cacheRead: m.pricing ? String(m.pricing.cacheRead) : "",
     cacheWrite: m.pricing ? String(m.pricing.cacheWrite) : "",
@@ -306,6 +312,8 @@ function rowToEntry(row: RowState): ModelUpdateEntry {
   if (!row.vision) entry.vision = false;
   // Inherit by default ("" = follow the Agent setting): submitted only when explicitly picked; omitting clears the stored annotation.
   if (row.thinkingLevel) entry.thinkingLevel = row.thinkingLevel as ThinkingLevelName;
+  const mt = Number(row.maxTokens.trim());
+  if (row.maxTokens.trim() && Number.isFinite(mt) && mt > 0) entry.maxTokens = mt;
   const cr = Number(row.cacheRead.trim());
   const cwr = Number(row.cacheWrite.trim());
   const out = Number(row.output.trim());
@@ -1054,6 +1062,7 @@ function ModelDialog({
       vision: true,
       contextWindow: "",
       thinkingLevel: "",
+      maxTokens: "",
       clientType: vendorAdd ? "" : "openai",
       cacheRead: "",
       cacheWrite: "",
@@ -1167,6 +1176,14 @@ function ModelDialog({
     const contextWindow = form.contextWindow.trim();
     if (contextWindow && !Number.isFinite(Number(contextWindow))) {
       errs.contextWindow = S.models.contextWindowInvalid;
+    }
+    // Output cap: digits-only input can still hold "0"/pasted junk; the server requires a positive integer.
+    const maxTokensInput = form.maxTokens.trim();
+    if (
+      maxTokensInput &&
+      !(Number.isInteger(Number(maxTokensInput)) && Number(maxTokensInput) > 0)
+    ) {
+      errs.maxTokens = S.models.maxTokensInvalid;
     }
 
     if (Object.keys(errs).length > 0) {
@@ -1541,7 +1558,33 @@ function ModelDialog({
           ))}
         </Select>
 
-        {/* 5) Pricing: three fields side by side; currency and unit (/M tok) both
+        {/* 5) Max output tokens: per-model cap on the request's output — when set it wins
+            over the Agent's system_config value; empty inherits it. Lets a small-context
+            local model stay under its window (the per-Agent default may not fit). */}
+        <label className="block">
+          <span className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-400">
+            {S.models.maxTokens}
+          </span>
+          <Input
+            size="sm"
+            value={form.maxTokens}
+            inputMode="numeric"
+            disabled={!canEdit}
+            invalid={Boolean(fieldErrors.maxTokens)}
+            onChange={(e) => set({ maxTokens: digitsOnly(e.target.value) })}
+            className="font-mono"
+            placeholder={S.models.maxTokensHint}
+          />
+          {fieldErrors.maxTokens ? (
+            <FieldError text={fieldErrors.maxTokens} />
+          ) : (
+            <span className="mt-1 block text-xs text-gray-400 dark:text-gray-500">
+              {S.models.maxTokensCapHint}
+            </span>
+          )}
+        </label>
+
+        {/* 6) Pricing: three fields side by side; currency and unit (/M tok) both
             shown inside the input, no need to repeat in the title. */}
         <div>
           <p className="mb-1.5 text-xs font-semibold text-gray-600 dark:text-gray-400">
@@ -1581,7 +1624,7 @@ function ModelDialog({
           </div>
         </div>
 
-        {/* 6) Identity: model id (renamable) + display name and group (side by side) */}
+        {/* 7) Identity: model id (renamable) + display name and group (side by side) */}
         {!isNew && identityFields}
         {/* Legacy entries carrying a non-openai client_type (historical config): read-only display. */}
         {!isNew && !preset && form.clientType && form.clientType !== "openai" && (

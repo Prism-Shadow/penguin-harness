@@ -297,6 +297,10 @@ export const zh = {
       ["high", "高"],
       ["xhigh", "极高"],
     ] as ReadonlyArray<readonly [string, string]>,
+    maxTokens: "最大输出长度（Token）",
+    maxTokensHint: "留空沿用 Agent 设置",
+    maxTokensCapHint: "限制单次请求的输出 Token 数；小上下文的本地模型建议调低",
+    maxTokensInvalid: "必须为正整数",
     clientTypeLocked: (t: string): string => `协议：${t}（沿用原配置，不可修改）`,
     vision: "支持图片输入（视觉/多模态）",
     visionHint:

@@ -212,6 +212,13 @@ export interface ModelInfo {
    * unset = inherit the Agent value.
    */
   thinkingLevel?: ThinkingLevelName;
+  /**
+   * Per-model max output tokens (TOML `max_tokens` annotation; user-only, never preset by the
+   * built-in catalog): when set it wins over the Agent's `system_config.model.max_tokens`;
+   * unset = inherit the Agent value. Lets a small-context model cap its output below the
+   * seeded per-Agent default (32000), which cannot fit into e.g. a 32k context window.
+   */
+  maxTokens?: number;
   pricing?: ModelPricingDto;
   /** Environment variable name to fall back to when api_key is empty (e.g. ANTHROPIC_API_KEY); unset if no known fallback. */
   envKey?: string;
@@ -249,6 +256,8 @@ export interface ModelUpdateEntry {
   vision?: boolean;
   /** Per-model thinking level (wins over the Agent config); omitted = inherit the Agent value (the annotation is cleared). */
   thinkingLevel?: ThinkingLevelName;
+  /** Per-model max output tokens, a positive integer (wins over the Agent config); omitted = inherit the Agent value (the annotation is cleared). */
+  maxTokens?: number;
   pricing?: ModelPricingDto;
   /** Providing it overwrites and updates createdAt; omitting it keeps the existing value. */
   apiKey?: string;

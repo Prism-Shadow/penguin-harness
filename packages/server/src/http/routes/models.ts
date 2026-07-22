@@ -87,6 +87,12 @@ function parseModelsUpdate(body: Record<string, unknown>): ModelsUpdateRequest {
       `models[${i}].thinkingLevel`,
     );
     if (thinkingLevel !== undefined) entry.thinkingLevel = thinkingLevel;
+    if (m.maxTokens !== undefined) {
+      if (typeof m.maxTokens !== "number" || !Number.isInteger(m.maxTokens) || m.maxTokens <= 0) {
+        throw badRequest(`models[${i}].maxTokens must be a positive integer.`);
+      }
+      entry.maxTokens = m.maxTokens;
+    }
     if (m.pricing !== undefined) {
       const p = m.pricing as Record<string, unknown>;
       if (p === null || typeof p !== "object" || Array.isArray(p)) {

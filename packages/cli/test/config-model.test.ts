@@ -285,6 +285,76 @@ describe("penguin config model add/list (--root plus provider / model_id stored 
     expect((await entryOf())?.thinking_level).toBe("none");
   });
 
+  it("--max-tokens round-trips to the entry's max_tokens; 0/negative/non-number are rejected before anything is written", async () => {
+    const add = await runModel([
+      "add",
+      "--model-id",
+      "local-32k",
+      "--provider",
+      "custom",
+      "--base-url",
+      "http://127.0.0.1:8000/v1",
+      "--max-tokens",
+      "8000",
+      "--root",
+      tmpRoot,
+    ]);
+    expect(add.code).toBe(0);
+    const entryOf = async () => {
+      const parsed = parseToml(
+        await fs.readFile(projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID), "utf8"),
+      ) as { models: Array<Record<string, unknown>> };
+      return parsed.models.find((m) => m.provider === "custom" && m.model_id === "local-32k");
+    };
+    expect((await entryOf())?.max_tokens).toBe(8000);
+
+    // Upsert without --max-tokens keeps the existing annotation (same merge policy as context_window).
+    const update = await runModel([
+      "add",
+      "--model-id",
+      "local-32k",
+      "--provider",
+      "custom",
+      "--context-window",
+      "32768",
+      "--root",
+      tmpRoot,
+    ]);
+    expect(update.code).toBe(0);
+    expect((await entryOf())?.max_tokens).toBe(8000);
+
+    // 0 / negative: rejected with a clear error, and the config is untouched.
+    for (const bad of ["0", "-5"]) {
+      const res = await runModel([
+        "add",
+        "--model-id",
+        "local-32k",
+        "--provider",
+        "custom",
+        "--max-tokens",
+        bad,
+        "--root",
+        tmpRoot,
+      ]);
+      expect(res.code).toBe(1);
+      expect(res.err).toContain("--max-tokens must be a positive integer");
+    }
+    // Non-number: parseIntArg throws a commander usage error (nonzero exit).
+    const nan = await runModel([
+      "add",
+      "--model-id",
+      "local-32k",
+      "--provider",
+      "custom",
+      "--max-tokens",
+      "many",
+      "--root",
+      tmpRoot,
+    ]);
+    expect(nan.code).not.toBe(0);
+    expect((await entryOf())?.max_tokens).toBe(8000);
+  });
+
   it("model default sets the default model under the --root data root (--model-id upstream id + --provider as a pair)", async () => {
     const set = await runModel([
       "default",
