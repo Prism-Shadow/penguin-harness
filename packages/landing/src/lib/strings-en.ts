@@ -342,7 +342,10 @@ export const en: Strings = {
     groups: [
       { title: "Office Productivity", skills: ["data-analysis", "firecrawl"] },
       { title: "Software Development", skills: ["web-design", "software-engineering"] },
-      { title: "AI App Development", skills: ["penguin-sdk", "penguin-cli", "agenthub-models"] },
+      {
+        title: "AI App Development",
+        skills: ["penguin-sdk", "penguin-cli", "agenthub-models", "vllm", "ollama", "llamafactory"],
+      },
       {
         title: "Agent Tuning",
         skills: ["agent-creation", "benchmark-design", "agent-evaluation", "agent-optimization"],

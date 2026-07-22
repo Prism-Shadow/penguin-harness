@@ -336,7 +336,10 @@ export const zh = {
     groups: [
       { title: "办公效率", skills: ["data-analysis", "firecrawl"] },
       { title: "软件开发", skills: ["web-design", "software-engineering"] },
-      { title: "AI 应用开发", skills: ["penguin-sdk", "penguin-cli", "agenthub-models"] },
+      {
+        title: "AI 应用开发",
+        skills: ["penguin-sdk", "penguin-cli", "agenthub-models", "vllm", "ollama", "llamafactory"],
+      },
       {
         title: "Agent 调优",
         skills: ["agent-creation", "benchmark-design", "agent-evaluation", "agent-optimization"],
