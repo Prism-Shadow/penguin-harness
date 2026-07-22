@@ -84,6 +84,22 @@ test("subagent card survives a reload; child session title is generated from its
   // Under live streaming, the child session card is nested inside the run_subagent tool card.
   await openSubagent();
 
+  // --- DOM order: the subagent expansion renders BELOW the tool's own content ---
+  // Expand the run_subagent tool card itself so its arguments block is in the DOM, then assert
+  // the child-session card comes after it in document order (it used to render between the tool
+  // header and the expanded arguments/output).
+  const toolRow = page.locator("button[aria-expanded]").filter({ hasText: "run_subagent" }).first();
+  await toolRow.click();
+  await expect(toolRow).toHaveAttribute("aria-expanded", "true");
+  const argsPre = page.locator("pre", { hasText: '"prompt"' }).first();
+  await expect(argsPre).toBeVisible();
+  const subagentBtn = page.getByRole("button", { name: /子会话/ }).first();
+  const cardFollowsArgs = await argsPre.evaluate(
+    (pre, card) => Boolean(pre.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING),
+    await subagentBtn.elementHandle(),
+  );
+  expect(cardFollowsArgs, "subagent expansion renders below the tool arguments/output").toBe(true);
+
   // --- Must still hold after reload (the fix's goal: parent Trace's child session pointer + server-side expansion) ---
   await page.reload();
   await openSubagent();

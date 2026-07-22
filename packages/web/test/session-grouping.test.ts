@@ -17,6 +17,7 @@ import {
   groupSessionsByWorkspace,
   isTempWorkspace,
   partitionSessions,
+  pinnedFirst,
   splitPage,
   workspaceGroupKey,
   workspaceLabel,
@@ -216,5 +217,59 @@ describe("groupAgentsWithMore (workspace groups span Agents)", () => {
     expect(groupAgentsWithMore(rows, hasMore)).toEqual(["agent_a"]);
     expect(groupAgentsWithMore(rows, new Map())).toEqual([]);
     expect(groupAgentsWithMore([], hasMore)).toEqual([]);
+  });
+});
+
+describe("pinnedFirst (stable pinned-before-unpinned partition)", () => {
+  const items = [{ k: "a" }, { k: "b" }, { k: "c" }, { k: "d" }];
+  const keyOf = (i: { k: string }) => i.k;
+  const keys = (out: { k: string }[]) => out.map((i) => i.k);
+
+  it("empty pinned set keeps the order (and returns a copy, never the input array)", () => {
+    const out = pinnedFirst(items, keyOf, new Set());
+    expect(keys(out)).toEqual(["a", "b", "c", "d"]);
+    expect(out).not.toBe(items);
+  });
+
+  it("pinned items move to the front, each partition preserving the input order", () => {
+    expect(keys(pinnedFirst(items, keyOf, new Set(["c", "a"])))).toEqual(["a", "c", "b", "d"]);
+    expect(keys(pinnedFirst(items, keyOf, new Set(["d"])))).toEqual(["d", "a", "b", "c"]);
+  });
+
+  it("pinned keys with no matching item are ignored; all-pinned keeps the order", () => {
+    expect(keys(pinnedFirst(items, keyOf, new Set(["nope"])))).toEqual(["a", "b", "c", "d"]);
+    expect(keys(pinnedFirst(items, keyOf, new Set(["a", "b", "c", "d"])))).toEqual([
+      "a",
+      "b",
+      "c",
+      "d",
+    ]);
+  });
+
+  it("pinning the merged temp group lifts it above named workspace groups", () => {
+    const groups = groupSessionsByWorkspace([
+      session("/srv/alpha", "2026-07-02T10:00:00.000Z"),
+      session(TEMP_A, "2026-07-01T10:00:00.000Z"),
+    ]);
+    expect(groups.map((g) => g.key)).toEqual(["/srv/alpha", TEMP_WORKSPACE_GROUP_KEY]);
+    const pinned = pinnedFirst(groups, (g) => g.key, new Set([TEMP_WORKSPACE_GROUP_KEY]));
+    expect(pinned.map((g) => g.key)).toEqual([TEMP_WORKSPACE_GROUP_KEY, "/srv/alpha"]);
+  });
+
+  it("agent-mode ordering: pinned agentIds lift agents, the unpinned keep the configured order", () => {
+    // The sidebar's agent mode partitions the Project's Agent list (agentId is the group key).
+    const agents = [{ agentId: "default_agent" }, { agentId: "agent_a" }, { agentId: "agent_b" }];
+    const byId = (a: { agentId: string }) => a.agentId;
+    expect(pinnedFirst(agents, byId, new Set(["agent_b"])).map(byId)).toEqual([
+      "agent_b",
+      "default_agent",
+      "agent_a",
+    ]);
+    // Multiple pinned Agents keep their relative configured order inside the pinned partition.
+    expect(pinnedFirst(agents, byId, new Set(["agent_b", "default_agent"])).map(byId)).toEqual([
+      "default_agent",
+      "agent_b",
+      "agent_a",
+    ]);
   });
 });

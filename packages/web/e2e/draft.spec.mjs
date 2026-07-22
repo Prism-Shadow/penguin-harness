@@ -8,6 +8,8 @@
  *   "临时工作区" group, a named directory groups under its basename, and that group header's
  *   "+" pre-fills the draft's Workspace (via router state, applied once per navigation — a
  *   manual change made afterwards survives a reload instead of being re-overridden);
+ * - the group header's hover pin toggle lifts a group above the unpinned ones in its mode and
+ *   persists per Project (order re-checked after a reload);
  * - after switching the sidebar to agent mode (toggle persisted in localStorage), the agent
  *   group header's "+" creates a draft scoped to that group's Agent (explicitly set via router
  *   state, overriding the cache).
@@ -87,14 +89,16 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   await expect(page.getByRole("button", { name: "审批模式" })).toContainText("放行只读");
 
   // Conversation-time thinking level (backed by the Agent settings): the picker shows the
-  // seeded default (medium, short name 中); the menu carries a title bar and exactly the five
-  // short-name rows (no descriptions, no default row); picking 高 writes straight through to
-  // the Agent config, so the session created on send runs with it and it becomes the Agent's
-  // new default.
+  // seeded default (medium, short name 中); the menu carries a title bar and the short-name
+  // rows 低/中/高/极高 only — no descriptions, no default row, and no 无 (many models cannot
+  // disable thinking); picking 高 writes straight through to the Agent config, so the session
+  // created on send runs with it and it becomes the Agent's new default.
   const thinkingBtn = page.getByRole("button", { name: "思考等级" });
   await expect(thinkingBtn).toContainText("中");
   await thinkingBtn.click();
   await expect(page.getByText("思考等级", { exact: true })).toBeVisible(); // menu title bar
+  await expect(page.getByRole("button", { name: "低", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "无", exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "高", exact: true }).click();
   await expect(thinkingBtn).toContainText("高");
   await expect
@@ -202,6 +206,46 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   await page.reload();
   await expect(page.getByLabel("Workspace")).toContainText(parentLabel);
   await expect(page.getByLabel("Workspace")).not.toContainText(wsLabel);
+
+  // —— Pinning: the header's hover pin toggle lifts a group above the others in its mode and
+  // persists per Project (localStorage penguin.sidebarPinnedGroups.<projectId>); order is
+  // asserted geometrically, like layout.spec does for the login language buttons. ——
+  const tempLabel = page.getByText("临时工作区", { exact: true });
+  const namedLabel = page.getByText(wsLabel, { exact: true });
+  const yOf = async (locator) => (await locator.boundingBox())?.y ?? -1;
+  // Unpinned baseline: the merged temp group sits below the named group.
+  await expect(tempLabel).toBeVisible();
+  expect(await yOf(tempLabel)).toBeGreaterThan(await yOf(namedLabel));
+  const tempHeader = tempLabel.locator("xpath=ancestor::div[contains(@class,'items-center')][1]");
+  await tempHeader.hover();
+  await tempHeader.getByRole("button", { name: "置顶分组" }).click();
+  await expect
+    .poll(() =>
+      page.evaluate((k) => localStorage.getItem(k), `penguin.sidebarPinnedGroups.${projectId}`),
+    )
+    .toContain("temp-workspaces");
+  await expect.poll(async () => (await yOf(tempLabel)) < (await yOf(namedLabel))).toBe(true);
+  // Pinned state and order survive a reload. The pin button's accessible name is STATIC
+  // ("置顶分组"); the state lives in aria-pressed alone (review: a name swapping to 取消置顶
+  // alongside aria-pressed announces the state twice in conflicting ways).
+  await page.reload();
+  await expect(tempLabel).toBeVisible();
+  await expect.poll(async () => (await yOf(tempLabel)) < (await yOf(namedLabel))).toBe(true);
+  const tempPin = tempHeader.getByRole("button", { name: "置顶分组" });
+  await expect(tempPin).toHaveAttribute("aria-pressed", "true");
+  // The pinned pin doubles as the always-visible indicator. toBeVisible() ignores opacity,
+  // so assert computed opacity directly: pinned = 1 with the mouse elsewhere; an unpinned
+  // header's pin stays hover-gated at 0. Park the mouse first — after the reorder the named
+  // header sits where the temp header was clicked, which would otherwise hover-reveal it.
+  await page.mouse.move(640, 500);
+  await expect.poll(() => tempPin.evaluate((el) => getComputedStyle(el).opacity)).toBe("1");
+  await expect
+    .poll(() =>
+      wsHeader
+        .getByRole("button", { name: "置顶分组" })
+        .evaluate((el) => getComputedStyle(el).opacity),
+    )
+    .toBe("0");
 
   // —— Switch the sidebar to agent mode via the section-header toggle (persists in localStorage) ——
   await page.getByRole("button", { name: "按 Agent 分组" }).click();

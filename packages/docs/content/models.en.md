@@ -77,7 +77,7 @@ Some models in the preset catalog: deepseek-v4-pro / deepseek-v4-flash, gemini-3
 
 ## Thinking levels
 
-Five levels: `none | low | medium | high | xhigh`, configured per Agent as `model.thinking_level` in `system_config.yaml`, default medium. The chat draft view offers a quick picker next to the model selector: a picked level is written back to the selected Agent's setting immediately (the switched-to level becomes that Agent's new default and applies from the next session; a running session keeps the level it was created with). See [Configuration](/configuration).
+Five levels: `none | low | medium | high | xhigh`, configured per Agent as `model.thinking_level` in `system_config.yaml`, default medium. The Web pickers offer `low` and above only (many models cannot disable thinking; `none` stays a valid stored value and still displays). The chat draft view offers a quick picker next to the model selector: a picked level is written back to the selected Agent's setting immediately (the switched-to level becomes that Agent's new default and applies from the next session; a running session keeps the level it was created with). See [Configuration](/configuration).
 
 ## Models decoupled from Agents
 

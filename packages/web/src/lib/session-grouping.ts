@@ -155,3 +155,21 @@ export function groupSessionsByWorkspace(sessions: SessionInfo[]): WorkspaceGrou
   });
   return groups;
 }
+
+/**
+ * Stable pinned-first partition for sidebar groups: items whose key is in `pinned`
+ * come first, each partition preserving the input order (recency for Workspace
+ * groups, the configured order for Agents). Pure and mode-agnostic — callers pass
+ * the key extractor; pinned keys with no matching item are simply ignored.
+ */
+export function pinnedFirst<T>(
+  items: readonly T[],
+  keyOf: (item: T) => string,
+  pinned: ReadonlySet<string>,
+): T[] {
+  if (pinned.size === 0) return [...items];
+  const pin: T[] = [];
+  const rest: T[] = [];
+  for (const item of items) (pinned.has(keyOf(item)) ? pin : rest).push(item);
+  return [...pin, ...rest];
+}

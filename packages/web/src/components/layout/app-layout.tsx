@@ -4,35 +4,144 @@
  * - <md: top thin bar (hamburger -> sidebar drawer + brand name) + main content.
  * All chrome uses solid backgrounds and avoids stacking contexts (frosted-glass/transform would trap overlay z-index).
  */
-import { useState } from "react";
-import { NavLink, Outlet } from "react-router";
+import { useMemo, useState } from "react";
+import { NavLink, Outlet, useMatch, useNavigate } from "react-router";
+import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
 import { useAuth } from "../../state/auth";
+import { useProject } from "../../state/project";
+import { useSessions } from "../../state/sessions";
 import { Drawer } from "../ui/drawer";
-import { Sidebar } from "./sidebar";
+import { GlyphIcon } from "../ui/glyph-icon";
+import { NAV_ICONS, NEW_CHAT_ICON, Sidebar } from "./sidebar";
+import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
 import { ChangePasswordDialog } from "../account/change-password-dialog";
 
-/** Narrow-rail nav icons (matches Sidebar NAV_ICONS). */
-const RAIL_NAV: ReadonlyArray<{ to: string; label: string; icon: string }> = [
-  { to: "/chat", label: "chat", icon: "M8 10h8M8 14h5M21 12a9 9 0 1 1-4.2-7.6L21 4v5h-5" },
-  {
-    to: "/agents",
-    label: "agents",
-    icon: "M12 3v3m-6 4a6 6 0 0 1 12 0v5a3 3 0 0 1-3 3H9a3 3 0 0 1-3-3v-5zm3 3h.01M15 13h.01",
-  },
-  {
-    to: "/skills",
-    label: "skills",
-    icon: "M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2zM22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z",
-  },
-  {
-    to: "/models",
-    label: "models",
-    icon: "M7 7h10v10H7zM4 10h3m10 0h3M4 14h3m10 0h3M10 4v3m4-3v3m-4 10v3m4-3v3",
-  },
-  { to: "/usage", label: "usage", icon: "M4 20V10m6 10V4m6 16v-7m4 7H2" },
-  { to: "/traces", label: "traces", icon: "M4 6h16M4 12h10M4 18h13" },
-];
+/** "Last conversation" glyph (chat lines + resume arrow), used only by the rail. */
+const LAST_CHAT_ICON = "M8 10h8M8 14h5M21 12a9 9 0 1 1-4.2-7.6L21 4v5h-5";
+
+/** Shared look of rail entries (icon buttons and NavLinks alike): solid gray fill when active, gray hover otherwise. */
+const railItemClass = (active: boolean) =>
+  `flex h-8 w-8 items-center justify-center rounded-md transition-colors duration-150 ${
+    active
+      ? "bg-gray-200/70 text-gray-900 dark:bg-gray-800 dark:text-gray-100"
+      : "text-gray-500 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+  }`;
+
+/**
+ * Collapsed narrow rail: expand button on top; below it, in product-specified order, last
+ * conversation / new chat / Agents / Skills / Models / Costs / Traces / Benchmark (every entry
+ * carries a localized title + aria-label, so hover tooltips follow the UI language); user
+ * avatar at the bottom. No Logo shown.
+ */
+function CollapsedRail({ onExpand }: { onExpand: () => void }) {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const { agents, setCurrentAgentId } = useProject();
+  const { sessions, loading } = useSessions();
+  const activeSessionId = useMatch("/chat/:sessionId")?.params.sessionId ?? null;
+  /** On some conversation (any non-draft /chat/:id): the "you are here" state of the last-conversation entry. */
+  const onConversation = activeSessionId !== null && activeSessionId !== DRAFT_SESSION_ID;
+
+  /** Newest non-archived Session across the current Project by createdAt (the flat list is only ordered per Agent). */
+  const lastSession = useMemo(
+    () =>
+      sessions.reduce<SessionInfo | null>(
+        (best, s) =>
+          !s.archived && (!best || Date.parse(s.createdAt) > Date.parse(best.createdAt)) ? s : best,
+        null,
+      ),
+    [sessions],
+  );
+
+  /** Mirrors Sidebar.openSession: the current Agent follows the opened Session's Agent. */
+  const openLastSession = () => {
+    if (!lastSession) return;
+    setCurrentAgentId(lastSession.agentId);
+    navigate(`/chat/${lastSession.sessionId}`);
+  };
+
+  /** Mirrors the pinned sidebar's "New chat": default_agent draft, falling back to the first Agent (an unresolved list defers resolution to the draft page). */
+  const newChat = () => {
+    const agentId = (agents.find((a) => a.agentId === "default_agent") ?? agents[0])?.agentId;
+    if (agentId) setCurrentAgentId(agentId);
+    navigate(`/chat/${DRAFT_SESSION_ID}`, agentId ? { state: { agentId } } : undefined);
+  };
+
+  /** Page entries (rail positions 3-8): same routes as the pinned nav; Agents uses the rail-specific short label. */
+  const pages: ReadonlyArray<{ to: string; label: string; icon: string }> = [
+    { to: "/agents", label: S.nav.railAgents, icon: NAV_ICONS.agents },
+    { to: "/skills", label: S.nav.skills, icon: NAV_ICONS.skills },
+    { to: "/models", label: S.nav.models, icon: NAV_ICONS.models },
+    { to: "/usage", label: S.nav.usage, icon: NAV_ICONS.usage },
+    { to: "/traces", label: S.nav.traces, icon: NAV_ICONS.traces },
+    { to: "/benchmark", label: S.nav.benchmark, icon: NAV_ICONS.benchmark },
+  ];
+
+  return (
+    <div className="flex h-full flex-col items-center gap-1 py-2.5">
+      <button
+        type="button"
+        title={S.nav.expandSidebar}
+        aria-label={S.nav.expandSidebar}
+        onClick={onExpand}
+        className="flex h-8 w-8 items-center justify-center rounded-md text-gray-500 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+      >
+        <GlyphIcon d="M9 6l6 6-6 6M20 4v16" size={18} />
+      </button>
+      <nav className="mt-1 flex flex-col items-center gap-1">
+        {/* 1. Last conversation: lit on any non-draft conversation. Dimmed/disabled (tooltip kept) only
+            once the list has settled with no non-archived Session — while it is still loading the
+            entry keeps its normal look (no flash) and a click is a graceful no-op. */}
+        <button
+          type="button"
+          title={S.nav.lastConversation}
+          aria-label={S.nav.lastConversation}
+          disabled={!lastSession && !loading}
+          onClick={openLastSession}
+          className={
+            lastSession || loading
+              ? railItemClass(onConversation)
+              : "flex h-8 w-8 cursor-not-allowed items-center justify-center rounded-md text-gray-300 dark:text-gray-700"
+          }
+        >
+          <GlyphIcon d={LAST_CHAT_ICON} size={18} />
+        </button>
+        {/* 2. New chat: shows the same gray active fill while on the draft page (pinned-sidebar convention). */}
+        <button
+          type="button"
+          title={S.chat.newSessionMenu}
+          aria-label={S.chat.newSessionMenu}
+          onClick={newChat}
+          className={railItemClass(activeSessionId === DRAFT_SESSION_ID)}
+        >
+          <GlyphIcon d={NEW_CHAT_ICON} size={18} />
+        </button>
+        {/* 3-8. Page entries */}
+        {pages.map((item) => (
+          <NavLink
+            key={item.to}
+            to={item.to}
+            title={item.label}
+            aria-label={item.label}
+            className={({ isActive }) => railItemClass(isActive)}
+          >
+            <GlyphIcon d={item.icon} size={18} />
+          </NavLink>
+        ))}
+      </nav>
+      <button
+        type="button"
+        title={`${user?.userId ?? ""} · ${S.nav.expandSidebar}`}
+        aria-label={user?.userId ?? S.auth.admin}
+        onClick={onExpand}
+        className="mt-auto flex h-8 w-8 items-center justify-center rounded-full bg-gray-900 text-xs font-bold text-white dark:bg-gray-200 dark:text-gray-900"
+      >
+        {(user?.userId ?? "?").slice(0, 1).toUpperCase()}
+      </button>
+    </div>
+  );
+}
 
 export function AppLayout() {
   const { user } = useAuth();
@@ -58,69 +167,7 @@ export function AppLayout() {
         }`}
       >
         {collapsed ? (
-          // Collapsed narrow rail: expand button on top, icon nav below, user avatar at the bottom; no Logo shown.
-          <div className="flex h-full flex-col items-center gap-1 py-2.5">
-            <button
-              type="button"
-              title={S.nav.expandSidebar}
-              aria-label={S.nav.expandSidebar}
-              onClick={toggleCollapsed}
-              className="flex h-8 w-8 items-center justify-center rounded-md text-gray-500 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-            >
-              <svg
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.7"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden
-              >
-                <path d="M9 6l6 6-6 6M20 4v16" />
-              </svg>
-            </button>
-            <nav className="mt-1 flex flex-col items-center gap-1">
-              {RAIL_NAV.map((item) => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  title={item.label}
-                  className={({ isActive }) =>
-                    `flex h-8 w-8 items-center justify-center rounded-md transition-colors duration-150 ${
-                      isActive
-                        ? "bg-gray-200/70 text-gray-900 dark:bg-gray-800 dark:text-gray-100"
-                        : "text-gray-500 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-                    }`
-                  }
-                >
-                  <svg
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.7"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden
-                  >
-                    <path d={item.icon} />
-                  </svg>
-                </NavLink>
-              ))}
-            </nav>
-            <button
-              type="button"
-              title={`${user?.userId ?? ""} · ${S.nav.expandSidebar}`}
-              aria-label={user?.userId ?? S.auth.admin}
-              onClick={toggleCollapsed}
-              className="mt-auto flex h-8 w-8 items-center justify-center rounded-full bg-gray-900 text-xs font-bold text-white dark:bg-gray-200 dark:text-gray-900"
-            >
-              {(user?.userId ?? "?").slice(0, 1).toUpperCase()}
-            </button>
-          </div>
+          <CollapsedRail onExpand={toggleCollapsed} />
         ) : (
           <Sidebar onCollapse={toggleCollapsed} />
         )}
