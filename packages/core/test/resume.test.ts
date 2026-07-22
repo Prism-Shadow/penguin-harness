@@ -24,7 +24,7 @@ import {
   userText,
 } from "../src/omnimessage/index.js";
 import type { OmniMessage, TokenCounts } from "../src/omnimessage/index.js";
-import { GenerativeModel, groupHistoryToUniMessages } from "../src/llm/index.js";
+import { GenerativeModel, groupHistoryToUniMessages, mapThinkingLevel } from "../src/llm/index.js";
 import { readTrace } from "../src/trace/index.js";
 import { tracesDir } from "../src/state/paths.js";
 import { stubProviderKeys } from "./provider-keys.js";
@@ -174,6 +174,37 @@ describe("agent.resumeSession", () => {
     expect(
       (session.resumedHistory ?? []).map((m) => (m.payload as { type?: string }).type),
     ).toEqual(["text", "text", "abort"]);
+  });
+
+  it("restores the recorded thinking level; the literal 'default' falls back to the Agent config", async () => {
+    // A resumed subagent session must keep the level it inherited from its parent (recorded
+    // in session_meta, like model/Workspace/system prompt) — never silently re-read this
+    // Agent's own config. The seeded Agent config here pins "medium".
+    const agent = await createAgent({});
+    expect(agent.state.systemConfig.model?.thinking_level).toBe("medium");
+    const levelOf = (session: unknown): unknown =>
+      (
+        (session as { engine: { deps: { llm: { uniConfig?: { thinking_level?: unknown } } } } })
+          .engine.deps.llm.uniConfig ?? {}
+      ).thinking_level;
+
+    const recorded = metaFor(SID, workspace);
+    (recorded.payload as { thinking_level: string }).thinking_level = "xhigh";
+    await writeTraceFile(tmpRoot, SID, [recorded, userText("hello")]);
+    const inherited = await agent.resumeSession({ sessionId: SID });
+    expect((inherited.metaMessage.payload as { thinking_level: string }).thinking_level).toBe(
+      "xhigh",
+    );
+    expect(levelOf(inherited)).toBe(mapThinkingLevel("xhigh"));
+
+    // "default" records "no level": resume falls back to the Agent's current config, as before.
+    const SID2 = "session-2026-07-06-11-00-00-abcdef02";
+    await writeTraceFile(tmpRoot, SID2, [metaFor(SID2, workspace), userText("hi")]);
+    const fallback = await agent.resumeSession({ sessionId: SID2 });
+    expect((fallback.metaMessage.payload as { thinking_level: string }).thinking_level).toBe(
+      "medium",
+    );
+    expect(levelOf(fallback)).toBe(mapThinkingLevel("medium"));
   });
 
   it("does not write pairing placeholders to the trace file (resume is side-effect free)", async () => {

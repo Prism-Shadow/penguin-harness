@@ -112,7 +112,7 @@ exec_command(cmd)
 {
   prompt: string;          // 必填:完整的子任务(含全部上下文与期望的最终产出)
   agent_id?: string;       // 子 Agent;缺省复用当前 Agent
-  model_id?: string;       // 子 Session 模型;缺省用 Project 默认模型
+  model_id?: string;       // 子 Session 模型;缺省继承父 Session 的模型
   yield_time_ms?: number;  // 前台等待时长;默认 300000
 }
 
@@ -125,6 +125,7 @@ exec_command(cmd)
 ```
 
 - 深度上限为 1:Subagent 不能再派生 Subagent。
+- 子 Session 跟随父 Session:模型(除非以 `model_id`/`provider` 显式指定)、thinking level 与 Workspace 均继承父级，而非 Project 默认值。
 - 子 Session 继承父 Agent 的审批回调，审批模式随父生效。
 - 子 Session 拥有独立 Trace，父 Trace 以 `subagent` 指针事件链接；子消息带 `origin` 标记回流到父级消息流。见 [Session 与 Trace](/sessions-and-traces)。
 

@@ -5,7 +5,7 @@
  * The tool itself doesn't depend on Agent/Session, only holding an injected `SubagentRunner`
  * (breaking the circular dependency). The model may freely choose the child Agent (`agent_id`)
  * and model (`model_id`) via arguments; if omitted, it falls back to reusing the current Agent
- * and the Project's default Model respectively. The spawned child session is managed by
+ * and inheriting the parent session's model respectively. The spawned child session is managed by
  * `ManagedSubagentSession` (sharing the `SubagentSessionManager` injected by Environment with
  * `input_subagent`).
  *
@@ -87,7 +87,7 @@ export function createSubagentTool(
       // Caught here rather than in createSession so the model is told which half it left out.
       if ((modelId === undefined) !== (provider === undefined)) {
         yield* fail(
-          "[run_subagent error: `model_id` and `provider` must be given together (a model reference is the pair), or both omitted to use the Project default model]",
+          "[run_subagent error: `model_id` and `provider` must be given together (a model reference is the pair), or both omitted to inherit the parent session's model]",
         );
         return { stopReason: "failed" };
       }
