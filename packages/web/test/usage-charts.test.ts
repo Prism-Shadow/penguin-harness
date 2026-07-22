@@ -2,9 +2,10 @@
  * Cost Center chart pure-function unit tests (chart-geom.ts): coordinate mapping, SVG path
  * assembly, Token bar chart horizontal layout (fixed 25px bar width / spacing ≥ bar width /
  * whether it scrolls horizontally), stacked-bar segment geometry and per-segment hit bands,
- * pie slice arcs, success rate, cache hit rate, hover-bubble placement (pointer lower-right,
- * flipping at the edges). Component interaction isn't covered here (vitest runs in a
- * node environment, no DOM).
+ * pie slice arcs, success rate, hover-bubble placement (pointer lower-right, flipping at
+ * the edges; the cache hit rate shown in the cacheRead bubble is lib/format's shared
+ * cacheHitRate, tested in format.test.ts). Component interaction isn't covered here
+ * (vitest runs in a node environment, no DOM).
  *
  * Canvas width is "measured container pixels" (1 canvas unit = 1 CSS pixel), so each case
  * passes an explicit width; 640 was the original fixed canvas width, and reusing it as the
@@ -19,7 +20,6 @@ import {
   sparseLabelIdx,
   autoLabelIdx,
   successRate,
-  cacheHitRate,
   bubblePosition,
   tokenBarLayout,
   barSegments,
@@ -256,26 +256,6 @@ describe("successRate", () => {
   });
 });
 
-describe("cacheHitRate", () => {
-  it("cacheRead / (cacheRead + cacheWrite) as a one-decimal percentage", () => {
-    expect(cacheHitRate(50, 50)).toBe("50.0%");
-    expect(cacheHitRate(75, 25)).toBe("75.0%");
-    expect(cacheHitRate(100, 0)).toBe("100.0%");
-    expect(cacheHitRate(0, 100)).toBe("0.0%"); // all writes, no hits: 0.0% is a real value, not the guard
-  });
-
-  it("rounds to one decimal", () => {
-    expect(cacheHitRate(1, 2)).toBe("33.3%"); // 33.33… rounds down
-    expect(cacheHitRate(2, 1)).toBe("66.7%"); // 66.66… rounds up
-    expect(cacheHitRate(999, 1)).toBe("99.9%");
-    expect(cacheHitRate(9999, 1)).toBe("100.0%"); // 99.99 shows as 100.0% (standard one-decimal rounding)
-  });
-
-  it("denominator 0 (no cache activity) yields null: the caller omits the line instead of showing 0/0", () => {
-    expect(cacheHitRate(0, 0)).toBeNull();
-  });
-});
-
 describe("bubblePosition", () => {
   // A 640px canvas that fits its card, not scrolled: the visible window is the whole canvas.
   const view = { left: 0, right: 640, bottom: CHART_H };
@@ -326,10 +306,10 @@ describe("bubblePosition", () => {
     expect(bubblePosition(1065, 50, BW, BH, v).left).toBe(1065 + BUBBLE_OFFSET);
   });
 
-  it("degenerate guard: when neither side of the pointer fits, clamp into the window rather than clip", () => {
+  it("degenerate guard: when neither side of the pointer fits, clamp to the window (covering the pointer is then unavoidable)", () => {
     const v = { left: 0, right: 200, bottom: CHART_H };
-    const pos = bubblePosition(100, 100, 180, BH, v); // wider than either side of the pointer
+    const pos = bubblePosition(100, 100, 180, BH, v); // wider than either side of the pointer, still narrower than the window
     expect(pos.left).toBe(0); // flip target would be negative → clamped to the window's left edge
-    expect(pos.left + 180).toBeLessThanOrEqual(v.right);
+    expect(pos.left + 180).toBeLessThanOrEqual(v.right); // a bubble wider than the whole window would still clip on the right — unreachable at real card widths
   });
 });

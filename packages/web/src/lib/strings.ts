@@ -713,7 +713,6 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     colCacheWrite: "cache_write",
     colOutput: "output",
     colCost: "成本",
-    cacheHitRate: "缓存命中率",
     trendTitle: "近 30 天趋势",
     uncostedNote: "* 含未配置 pricing 的记录，成本为不完全统计",
     filterAllAgents: "全部 Agent",

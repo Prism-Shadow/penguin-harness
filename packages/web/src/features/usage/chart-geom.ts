@@ -7,8 +7,8 @@
  * horizontal layout (fixed 25px bar width, spacing ≥ bar width) is computed
  * by tokenBarLayout, and per-segment geometry (including per-segment hit
  * bands) is produced by barSegments; there's also pie-slice geometry (each
- * Agent's call count), success-rate / cache-hit-rate normalization, and
- * hover-bubble placement (pointer lower-right, flipping at the edges). See chart-svg.tsx for the render skeleton.
+ * Agent's call count), success-rate normalization, and hover-bubble
+ * placement (pointer lower-right, flipping at the edges). See chart-svg.tsx for the render skeleton.
  *
  * **Canvas width = the container's measured pixel width (1 canvas unit = 1
  * CSS pixel)**: the SVG no longer stretches/scales via a fixed viewBox —
@@ -113,19 +113,6 @@ export function successRate(completed: number, total: number): number {
   return total > 0 ? completed / total : 1;
 }
 
-/**
- * Cache hit rate: cacheRead / (cacheRead + cacheWrite), formatted as a
- * one-decimal percentage ("66.7%"). Returns null when the denominator is 0
- * (no cache activity — the bubble omits the line rather than showing 0/0).
- * In practice the cacheRead bubble only opens on a segment with value > 0,
- * but this is a public pure function and must not divide by zero.
- */
-export function cacheHitRate(cacheRead: number, cacheWrite: number): string | null {
-  const total = cacheRead + cacheWrite;
-  if (total <= 0) return null;
-  return `${((cacheRead / total) * 100).toFixed(1)}%`;
-}
-
 // —— Hover bubble placement (shared by both daily charts) ——
 
 /** Gap between the pointer and the bubble's near corner: close enough to read as attached, far enough that the bubble never sits under the pointer. */
@@ -145,7 +132,9 @@ export interface BubbleView {
  * corner → upper-left): flipping keeps the bubble out from under the
  * pointer, where pure clamping would slide it back over the hovered mark.
  * The final clamp only guards the degenerate case (a window narrower than
- * the bubble on both sides of the pointer) — covering is then unavoidable, clipping still isn't allowed.
+ * the bubble on both sides of the pointer): the bubble then covers the
+ * pointer, and a window narrower than the bubble itself still clips on the
+ * right — unreachable at real card widths; the clamp just keeps the failure graceful.
  */
 export function bubblePosition(
   px: number,

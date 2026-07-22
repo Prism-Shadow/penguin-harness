@@ -25,14 +25,13 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import { catalogEntryFor, providerInfo } from "@prismshadow/penguin-core/model-catalog";
 import { S } from "../../lib/strings";
-import { humanizeTokens } from "../../lib/format";
+import { cacheHitRate, formatPercent, humanizeTokens } from "../../lib/format";
 import { TOKEN_COLORS } from "../../lib/token-colors";
 import { categoryColor } from "../../lib/category-colors";
 import {
   makeGeom,
   autoLabelIdx,
   barSegments,
-  cacheHitRate,
   tokenBarLayout,
   pieSlices,
   successRate,
@@ -307,7 +306,9 @@ export function TokenBarChart({
             const key = hover?.key;
             if (!key) return null;
             // The cacheRead bubble additionally reports that day's cache hit
-            // rate, cacheRead / (cacheRead + cacheWrite); null (denominator 0) omits the line instead of showing 0/0.
+            // rate, via the formula/format/label shared with the Trace page
+            // (lib/format.ts cacheHitRate + formatPercent, S.traces.hitRate),
+            // so the metric reads identically everywhere; null (denominator 0) omits the line instead of showing 0/0.
             const hitRate = key === "cacheRead" ? cacheHitRate(p.cacheRead, p.cacheWrite) : null;
             return (
               <>
@@ -317,7 +318,7 @@ export function TokenBarChart({
                 </p>
                 {hitRate !== null && (
                   <p className="font-mono">
-                    {S.usage.cacheHitRate} {hitRate}
+                    {S.traces.hitRate} {formatPercent(hitRate)}
                   </p>
                 )}
               </>
