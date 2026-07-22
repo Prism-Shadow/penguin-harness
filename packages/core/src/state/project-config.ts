@@ -27,6 +27,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
+import type { ThinkingLevelName } from "../interfaces.js";
 import { presetModelEntries } from "./model-catalog.js";
 import { projectConfigPath } from "./paths.js";
 
@@ -88,6 +89,13 @@ export interface ModelEntry {
    * enters that session's history.
    */
   vision?: boolean;
+  /**
+   * Per-model thinking level: when set it wins over the Agent's
+   * `system_config.model.thinking_level` (thinking capability is a model trait — e.g. a local
+   * model served without thinking, or a dedicated reasoner). Unset = inherit the Agent value.
+   * User-only, never preset by the builtin catalog.
+   */
+  thinking_level?: ThinkingLevelName;
   /** Pricing info; absent means this Model's cost isn't counted. */
   pricing?: ModelPricing;
   /** API key (inlined credential); left empty falls back to the vendor's environment variable. */
@@ -275,6 +283,8 @@ export async function addModel(
     client_type?: string;
     /** Whether image input is supported (vision/multimodal); keeps the existing value by default (treated as supported if never set). */
     vision?: boolean;
+    /** Per-model thinking level (wins over the Agent config); keeps the existing value by default (unset = inherit the Agent value). */
+    thinking_level?: ThinkingLevelName;
     /** Price input may cover only some buckets; merged and written as a complete `ModelPricing`. */
     pricing?: Partial<ModelPricing>;
     api_key?: string;
@@ -309,6 +319,10 @@ export async function addModel(
   const vision = entry.vision ?? existing?.vision;
   if (vision !== undefined) {
     modelEntry.vision = vision;
+  }
+  const thinkingLevel = entry.thinking_level ?? existing?.thinking_level;
+  if (thinkingLevel !== undefined) {
+    modelEntry.thinking_level = thinkingLevel;
   }
   // The three price buckets are merged field by field: an unspecified bucket keeps its existing
   // value (the same policy as context_window/credential); the unit is fixed to usd_per_mtok, and

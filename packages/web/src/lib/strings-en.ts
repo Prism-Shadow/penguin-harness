@@ -312,6 +312,15 @@ export const en: Strings = {
     contextWindow: "Context window",
     contextWindowUnit: "tokens",
     contextWindowHint: "Leave empty if unknown",
+    thinkingLevel: "Thinking level",
+    thinkingLevelOptions: [
+      ["", "Default (inherit agent setting)"],
+      ["none", "Off"],
+      ["low", "Low"],
+      ["medium", "Medium"],
+      ["high", "High"],
+      ["xhigh", "Extra high"],
+    ],
     clientTypeLocked: (t: string): string => `Protocol: ${t} (kept as configured; not editable)`,
     vision: "Supports image input (vision / multimodal)",
     visionHint:

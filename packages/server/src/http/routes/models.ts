@@ -5,6 +5,7 @@
  * issues). Any member can read (api_key is masked); only the owner can modify or test.
  */
 import { Hono } from "hono";
+import type { ThinkingLevelName } from "@prismshadow/penguin-core/interfaces";
 import type {
   ModelRefDto,
   ModelsUpdateRequest,
@@ -12,8 +13,11 @@ import type {
   ModelUpdateEntry,
 } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
-import { badRequest, readJson, requireString, requireValidId } from "../validate.js";
+import { badRequest, optionalEnum, readJson, requireString, requireValidId } from "../validate.js";
 import type { AppDeps } from "../../app.js";
+
+/** Allowed per-model thinking levels (mirrors core's ThinkingLevelName). */
+const THINKING_LEVELS: readonly ThinkingLevelName[] = ["none", "low", "medium", "high", "xhigh"];
 
 /** Validate a paired reference object ({ provider, modelId }); shape mismatch throws 400. */
 function parseRef(value: unknown, label: string): ModelRefDto {
@@ -76,6 +80,13 @@ function parseModelsUpdate(body: Record<string, unknown>): ModelsUpdateRequest {
       }
       entry.vision = m.vision;
     }
+    const thinkingLevel = optionalEnum(
+      m,
+      "thinkingLevel",
+      THINKING_LEVELS,
+      `models[${i}].thinkingLevel`,
+    );
+    if (thinkingLevel !== undefined) entry.thinkingLevel = thinkingLevel;
     if (m.pricing !== undefined) {
       const p = m.pricing as Record<string, unknown>;
       if (p === null || typeof p !== "object" || Array.isArray(p)) {

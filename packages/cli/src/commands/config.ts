@@ -2,7 +2,7 @@
  * `penguin config` — manages a Project's model credentials, default model, model list,
  * Agent-level vault environment variables, and UI language.
  *
- *   penguin config model add --model-id <upstream id> --provider <group> [--api-key <key>] [--context-window <n>] [--set-default] [--root <dir>]
+ *   penguin config model add --model-id <upstream id> --provider <group> [--api-key <key>] [--context-window <n>] [--thinking-level <level>] [--set-default] [--root <dir>]
  *   penguin config model default --model-id <upstream id> --provider <group> [--root <dir>]
  *   penguin config model vision --model-id <upstream id> --provider <group> [--root <dir>]
  *   penguin config model list [--root <dir>]
@@ -35,6 +35,7 @@ import {
   type ModelPricing,
   type ModelRef,
   type ProjectConfig,
+  type ThinkingLevelName,
   addModel,
   catalogEntryFor,
   formatModelRef,
@@ -56,6 +57,9 @@ import { applyLanguageToRc, restartShell } from "../lang-config.js";
 function resolveRootOption(root: string | undefined): string {
   return root !== undefined ? path.resolve(root) : resolveRoot();
 }
+
+/** Allowed values for `--thinking-level` (mirrors core's ThinkingLevelName). */
+const THINKING_LEVELS: readonly ThinkingLevelName[] = ["none", "low", "medium", "high", "xhigh"];
 
 /**
  * Renders the model list as column-aligned lines (the default model is marked with `*`;
@@ -120,6 +124,7 @@ export function registerConfigCommand(program: Command, t: Messages): void {
     .option("--api-key <key>", t.config.addApiKey)
     .option("--base-url <url>", t.config.addBaseUrl)
     .option("--context-window <n>", t.config.addContextWindow, parseIntArg)
+    .option("--thinking-level <level>", t.config.addThinkingLevel)
     .option("--client-type <type>", t.config.addClientType)
     // Tri-state: --vision marks it supported / --no-vision marks it unsupported / neither given keeps the existing value (defaults to supported).
     .option("--vision", t.config.addVision)
@@ -131,6 +136,16 @@ export function registerConfigCommand(program: Command, t: Messages): void {
     .option("--set-default", t.config.addSetDefault, false)
     .option("--root <dir>", t.common.root)
     .action(async (opts) => {
+      // Validated up front against the five levels (commander has no enum option type):
+      // an invalid value must never reach the config file.
+      const thinkingLevel = opts.thinkingLevel as ThinkingLevelName | undefined;
+      if (thinkingLevel !== undefined && !THINKING_LEVELS.includes(thinkingLevel)) {
+        process.stderr.write(
+          `${t.error(`--thinking-level must be one of ${THINKING_LEVELS.join(" / ")}: got "${thinkingLevel}".`)}\n`,
+        );
+        process.exitCode = 1;
+        return;
+      }
       const root = resolveRootOption(opts.root);
       // --model-id takes the upstream id, paired with the required --provider as a
       // reference; the group is never guessed, so --api-key can only ever land on the
@@ -164,6 +179,7 @@ export function registerConfigCommand(program: Command, t: Messages): void {
           provider,
           model_id: modelId,
           ...(opts.contextWindow !== undefined ? { context_window: opts.contextWindow } : {}),
+          ...(thinkingLevel !== undefined ? { thinking_level: thinkingLevel } : {}),
           ...(clientType !== undefined ? { client_type: clientType } : {}),
           ...(opts.vision !== undefined ? { vision: opts.vision } : {}),
           ...(Object.keys(pricing).length > 0 ? { pricing } : {}),

@@ -38,6 +38,7 @@ import type {
   ModelTestRequest,
   ModelUpdateEntry,
 } from "@prismshadow/penguin-server/api";
+import type { ThinkingLevelName } from "@prismshadow/penguin-core/interfaces";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
@@ -177,6 +178,8 @@ export interface RowState {
   /** Environment variable name used as fallback when api_key is empty (given by the server based on catalog/protocol). */
   envKey?: string;
   contextWindow: string;
+  /** Per-model thinking level ("" = inherit the Agent setting): when set it wins over the Agent config; user-only, never preset by the catalog. */
+  thinkingLevel: string;
   /** AgentHub client protocol: defaults for preset models (auto-routed), "openai" for new custom models; kept as-is, not user-editable. */
   clientType: string;
   cacheRead: string;
@@ -270,6 +273,7 @@ export function toRow(m: ModelsResponse["models"][number]): RowState {
     original: { provider: m.provider, modelId: m.modelId },
     vision: m.vision !== false,
     contextWindow: m.contextWindow !== undefined ? String(m.contextWindow) : "",
+    thinkingLevel: m.thinkingLevel ?? "",
     clientType: m.clientType ?? "",
     cacheRead: m.pricing ? String(m.pricing.cacheRead) : "",
     cacheWrite: m.pricing ? String(m.pricing.cacheWrite) : "",
@@ -300,6 +304,8 @@ function rowToEntry(row: RowState): ModelUpdateEntry {
   if (row.clientType.trim()) entry.clientType = row.clientType.trim();
   // Supported by default: submit false only when explicitly marked "unsupported" (preset vision models and checked custom models aren't persisted).
   if (!row.vision) entry.vision = false;
+  // Inherit by default ("" = follow the Agent setting): submitted only when explicitly picked; omitting clears the stored annotation.
+  if (row.thinkingLevel) entry.thinkingLevel = row.thinkingLevel as ThinkingLevelName;
   const cr = Number(row.cacheRead.trim());
   const cwr = Number(row.cacheWrite.trim());
   const out = Number(row.output.trim());
@@ -1047,6 +1053,7 @@ function ModelDialog({
       original: null,
       vision: true,
       contextWindow: "",
+      thinkingLevel: "",
       clientType: vendorAdd ? "" : "openai",
       cacheRead: "",
       cacheWrite: "",
@@ -1517,7 +1524,24 @@ function ModelDialog({
           {fieldErrors.contextWindow && <FieldError text={fieldErrors.contextWindow} />}
         </label>
 
-        {/* 4) Pricing: three fields side by side; currency and unit (/M tok) both
+        {/* 4) Thinking level: per-model override — when set it wins over the Agent's
+            system_config value (thinking capability is a model trait); the empty option
+            inherits the Agent setting (today's behavior). */}
+        <Select
+          size="sm"
+          label={S.models.thinkingLevel}
+          value={form.thinkingLevel}
+          disabled={!canEdit}
+          onChange={(e) => set({ thinkingLevel: e.target.value })}
+        >
+          {S.models.thinkingLevelOptions.map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </Select>
+
+        {/* 5) Pricing: three fields side by side; currency and unit (/M tok) both
             shown inside the input, no need to repeat in the title. */}
         <div>
           <p className="mb-1.5 text-xs font-semibold text-gray-600 dark:text-gray-400">
@@ -1557,7 +1581,7 @@ function ModelDialog({
           </div>
         </div>
 
-        {/* 5) Identity: model id (renamable) + display name and group (side by side) */}
+        {/* 6) Identity: model id (renamable) + display name and group (side by side) */}
         {!isNew && identityFields}
         {/* Legacy entries carrying a non-openai client_type (historical config): read-only display. */}
         {!isNew && !preset && form.clientType && form.clientType !== "openai" && (

@@ -515,6 +515,7 @@ describe("project-config round trip", () => {
         provider: "custom",
         model_id: "gpt-test",
         context_window: 128000,
+        thinking_level: "high",
         api_key: "sk-abc",
         base_url: "https://example.com/v1",
       },
@@ -533,6 +534,7 @@ describe("project-config round trip", () => {
       provider: "custom",
       model_id: "gpt-test",
       context_window: 128000,
+      thinking_level: "high",
       api_key: "sk-abc",
       base_url: "https://example.com/v1",
     });
@@ -626,6 +628,32 @@ describe("project-config round trip", () => {
     });
     m = getModel(await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID), dsRef);
     expect(m?.vision).toBe(true);
+  });
+
+  it("addModel persists thinking_level and upsert preserves it when not re-specified", async () => {
+    await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
+      provider: "custom",
+      model_id: "reasoner",
+      thinking_level: "none",
+    });
+    // Only supplements context_window, without thinking_level: the original annotation is kept.
+    await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
+      provider: "custom",
+      model_id: "reasoner",
+      context_window: 64000,
+    });
+    const ref = { provider: "custom", model_id: "reasoner" };
+    let m = getModel(await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID), ref);
+    expect(m?.thinking_level).toBe("none");
+    expect(m?.context_window).toBe(64000);
+    // Explicitly re-annotates to another level.
+    await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
+      provider: "custom",
+      model_id: "reasoner",
+      thinking_level: "xhigh",
+    });
+    m = getModel(await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID), ref);
+    expect(m?.thinking_level).toBe("xhigh");
   });
 
   it("setVisionModel persists and validates the target", async () => {

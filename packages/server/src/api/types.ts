@@ -206,6 +206,12 @@ export interface ModelInfo {
    * unset (= treated as supported).
    */
   vision?: boolean;
+  /**
+   * Per-model thinking level (TOML `thinking_level` annotation; user-only, never preset by the
+   * built-in catalog): when set it wins over the Agent's `system_config.model.thinking_level`;
+   * unset = inherit the Agent value.
+   */
+  thinkingLevel?: ThinkingLevelName;
   pricing?: ModelPricingDto;
   /** Environment variable name to fall back to when api_key is empty (e.g. ANTHROPIC_API_KEY); unset if no known fallback. */
   envKey?: string;
@@ -241,6 +247,8 @@ export interface ModelUpdateEntry {
   clientType?: string;
   /** Whether image input (vision/multimodal) is supported; omitted = supported (not persisted). */
   vision?: boolean;
+  /** Per-model thinking level (wins over the Agent config); omitted = inherit the Agent value (the annotation is cleared). */
+  thinkingLevel?: ThinkingLevelName;
   pricing?: ModelPricingDto;
   /** Providing it overwrites and updates createdAt; omitting it keeps the existing value. */
   apiKey?: string;

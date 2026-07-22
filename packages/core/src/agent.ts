@@ -245,7 +245,10 @@ export class Agent {
         model_context_window: modelEntry.context_window ?? "unknown",
         system_prompt: systemPrompt,
         tools: rt.tools,
-        thinking_level: this.state.systemConfig.model?.thinking_level ?? "default",
+        // The **effective** level (per-model annotation wins over the Agent config), so the
+        // Trace view reflects what the request actually ran with.
+        thinking_level:
+          modelEntry.thinking_level ?? this.state.systemConfig.model?.thinking_level ?? "default",
         agent_state: this.state.stateDir,
         workspace: workspaceDir,
       },
@@ -383,7 +386,10 @@ export class Agent {
         model_context_window: modelEntry.context_window ?? "unknown",
         system_prompt: meta.system_prompt,
         tools: rt.tools,
-        thinking_level: this.state.systemConfig.model?.thinking_level ?? "default",
+        // The **effective** level (per-model annotation wins over the Agent config), so the
+        // Trace view reflects what the request actually ran with.
+        thinking_level:
+          modelEntry.thinking_level ?? this.state.systemConfig.model?.thinking_level ?? "default",
         agent_state: this.state.stateDir,
         workspace: workspaceDir,
       },
@@ -592,6 +598,14 @@ export class Agent {
     });
     const tools = await environment.listTools();
 
+    // Effective thinking level: the entry's per-model annotation wins over the Agent's
+    // system_config value — thinking capability is a model trait (a local model served
+    // without thinking → none, a dedicated reasoner → high), and agents are seeded with
+    // an explicit per-Agent "medium", which would otherwise keep the per-model setting
+    // permanently shadowed. An unannotated entry inherits the Agent value as before.
+    const thinkingLevel =
+      modelEntry.thinking_level ?? this.state.systemConfig.model?.thinking_level;
+
     // LLM constructor args are extracted into a constant so they can be reused as-is when
     // rebuilding a new LLM object after compaction (with a fresh model context) — the system
     // prompt and tool definitions aren't part of the compacted history, so the new object keeps
@@ -615,9 +629,7 @@ export class Agent {
       ...(this.state.systemConfig.model?.max_tokens !== undefined
         ? { maxTokens: this.state.systemConfig.model.max_tokens }
         : {}),
-      ...(this.state.systemConfig.model?.thinking_level !== undefined
-        ? { thinkingLevel: this.state.systemConfig.model.thinking_level }
-        : {}),
+      ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
       ...(this.state.systemConfig.model?.timeoutMs !== undefined
         ? { requestTimeoutMs: this.state.systemConfig.model.timeoutMs }
         : {}),

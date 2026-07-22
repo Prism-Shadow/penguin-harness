@@ -229,6 +229,62 @@ describe("penguin config model add/list (--root plus provider / model_id stored 
     expect(by("mylab", "special-1").client_type).toBe("verbatim-type");
   });
 
+  it("--thinking-level round-trips to the entry's thinking_level; an invalid value is rejected before anything is written", async () => {
+    const add = await runModel([
+      "add",
+      "--model-id",
+      "local-qwen",
+      "--provider",
+      "custom",
+      "--base-url",
+      "http://127.0.0.1:8000/v1",
+      "--thinking-level",
+      "none",
+      "--root",
+      tmpRoot,
+    ]);
+    expect(add.code).toBe(0);
+    const entryOf = async () => {
+      const parsed = parseToml(
+        await fs.readFile(projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID), "utf8"),
+      ) as { models: Array<Record<string, unknown>> };
+      return parsed.models.find((m) => m.provider === "custom" && m.model_id === "local-qwen");
+    };
+    expect((await entryOf())?.thinking_level).toBe("none");
+
+    // Upsert without --thinking-level keeps the existing annotation (same merge policy as context_window).
+    const update = await runModel([
+      "add",
+      "--model-id",
+      "local-qwen",
+      "--provider",
+      "custom",
+      "--context-window",
+      "32768",
+      "--root",
+      tmpRoot,
+    ]);
+    expect(update.code).toBe(0);
+    expect((await entryOf())?.thinking_level).toBe("none");
+
+    // A value outside the five levels is rejected with a clear error, and the config is untouched.
+    const bad = await runModel([
+      "add",
+      "--model-id",
+      "local-qwen",
+      "--provider",
+      "custom",
+      "--thinking-level",
+      "ultra",
+      "--root",
+      tmpRoot,
+    ]);
+    expect(bad.code).toBe(1);
+    expect(bad.err).toContain("--thinking-level must be one of none / low / medium / high / xhigh");
+    expect(bad.err).toContain('"ultra"');
+    expect((await entryOf())?.thinking_level).toBe("none");
+  });
+
   it("model default sets the default model under the --root data root (--model-id upstream id + --provider as a pair)", async () => {
     const set = await runModel([
       "default",

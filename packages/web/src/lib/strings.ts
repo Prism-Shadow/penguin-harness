@@ -287,6 +287,16 @@ export const zh = {
     contextWindow: "上下文窗口",
     contextWindowUnit: "tokens",
     contextWindowHint: "留空表示未知",
+    thinkingLevel: "思考等级",
+    /** 模型页专用文案（与 Agent 配置页的档位说明不同）：选定后覆盖 Agent 配置，留空跟随。 */
+    thinkingLevelOptions: [
+      ["", "默认（跟随 Agent 设置）"],
+      ["none", "关闭"],
+      ["low", "低"],
+      ["medium", "中"],
+      ["high", "高"],
+      ["xhigh", "极高"],
+    ] as ReadonlyArray<readonly [string, string]>,
     clientTypeLocked: (t: string): string => `协议：${t}（沿用原配置，不可修改）`,
     vision: "支持图片输入（视觉/多模态）",
     visionHint:

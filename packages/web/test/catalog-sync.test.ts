@@ -16,6 +16,7 @@ function makeRow(partial: Partial<RowState> & Pick<RowState, "provider" | "model
     original: { provider: partial.provider, modelId: partial.modelId },
     vision: true,
     contextWindow: "",
+    thinkingLevel: "",
     clientType: "",
     cacheRead: "",
     cacheWrite: "",
@@ -116,6 +117,22 @@ describe("syncRowsWithCatalog", () => {
     const { rows, updated } = syncRowsWithCatalog([upToDate], PRESET);
     expect(updated).toBe(0);
     expect(rows[0]).toBe(upToDate);
+  });
+
+  it("preserves a user-set thinking level through a preset sync (user-owned, not catalog-owned)", () => {
+    const local = makeRow({
+      provider: "deepseek",
+      modelId: "deepseek-v4-pro",
+      thinkingLevel: "none", // user annotation
+      contextWindow: "500000", // stale -> the row does get updated by the sync
+    });
+    const { rows, updated } = syncRowsWithCatalog([local], PRESET);
+    expect(updated).toBe(1);
+    const row = rows[0]!;
+    expect(row.contextWindow).toBe("1000000"); // catalog-owned field reset
+    expect(row.thinkingLevel).toBe("none"); // user field survives the {...row, ...fields} merge
+    // Fresh catalog rows default to inherit (no preset thinking level exists).
+    expect(rows.find((r) => r.modelId === "glm-5.2")!.thinkingLevel).toBe("");
   });
 
   it("keeps locally added models (including user-defined groups) verbatim and in place", () => {

@@ -39,6 +39,7 @@ export interface Messages {
     addApiKey: string;
     addBaseUrl: string;
     addContextWindow: string;
+    addThinkingLevel: string;
     addClientType: string;
     addVision: string;
     addNoVision: string;
@@ -174,6 +175,8 @@ const en: Messages = {
     addApiKey: "API key, stored inline in the Project's hidden .project_config.toml",
     addBaseUrl: "Custom base URL",
     addContextWindow: "Context window size (tokens)",
+    addThinkingLevel:
+      "Per-model thinking level (none|low|medium|high|xhigh); when set it overrides the Agent's thinking_level, omit to inherit",
     addClientType: "AgentHub client type (e.g. openai); defaults by provider group when omitted",
     addVision: "Mark the model as supporting image input (vision)",
     addNoVision: "Mark the model as NOT supporting image input; omit both to keep current",
@@ -287,6 +290,8 @@ const zh: Messages = {
     addApiKey: "API key，内联存入 Project 的隐藏文件 .project_config.toml",
     addBaseUrl: "自定义 base url",
     addContextWindow: "上下文窗口大小（token 数）",
+    addThinkingLevel:
+      "该模型的思考等级（none|low|medium|high|xhigh）；设置后覆盖 Agent 的 thinking_level，缺省沿用",
     addClientType: "AgentHub 客户端协议（如 openai）；缺省按 provider 分组的语义取值",
     addVision: "标注该模型支持图片输入（视觉）",
     addNoVision: "标注该模型不支持图片输入；两者都不给则保留原值",

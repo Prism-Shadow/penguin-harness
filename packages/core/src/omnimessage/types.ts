@@ -86,7 +86,7 @@ export interface SessionMetaPayload {
   system_prompt: string;
   /** The list of tool definitions this Session exposes to the model (full schema, matching what's sent to the LLM). */
   tools: ToolDefinition[];
-  /** The model's thinking level (from system_config.model.thinking_level; "default" when unconfigured). */
+  /** The effective thinking level (the entry's per-model annotation wins over system_config.model.thinking_level); "default" when neither is configured. */
   thinking_level: string;
   /** Absolute path to the Agent State. */
   agent_state: string;
