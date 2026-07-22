@@ -38,8 +38,10 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { agents, setCurrentAgentId } = useProject();
-  const { sessions } = useSessions();
+  const { sessions, loading } = useSessions();
   const activeSessionId = useMatch("/chat/:sessionId")?.params.sessionId ?? null;
+  /** On some conversation (any non-draft /chat/:id): the "you are here" state of the last-conversation entry. */
+  const onConversation = activeSessionId !== null && activeSessionId !== DRAFT_SESSION_ID;
 
   /** Newest non-archived Session across the current Project by createdAt (the flat list is only ordered per Agent). */
   const lastSession = useMemo(
@@ -88,16 +90,18 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
         <GlyphIcon d="M9 6l6 6-6 6M20 4v16" size={18} />
       </button>
       <nav className="mt-1 flex flex-col items-center gap-1">
-        {/* 1. Last conversation: disabled (dimmed, tooltip kept) while the Project has no non-archived Session yet. */}
+        {/* 1. Last conversation: lit on any non-draft conversation. Dimmed/disabled (tooltip kept) only
+            once the list has settled with no non-archived Session — while it is still loading the
+            entry keeps its normal look (no flash) and a click is a graceful no-op. */}
         <button
           type="button"
           title={S.nav.lastConversation}
           aria-label={S.nav.lastConversation}
-          disabled={!lastSession}
+          disabled={!lastSession && !loading}
           onClick={openLastSession}
           className={
-            lastSession
-              ? railItemClass(activeSessionId === lastSession.sessionId)
+            lastSession || loading
+              ? railItemClass(onConversation)
               : "flex h-8 w-8 cursor-not-allowed items-center justify-center rounded-md text-gray-300 dark:text-gray-700"
           }
         >
