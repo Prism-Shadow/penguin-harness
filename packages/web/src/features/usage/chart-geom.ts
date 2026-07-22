@@ -7,7 +7,8 @@
  * horizontal layout (fixed 25px bar width, spacing ≥ bar width) is computed
  * by tokenBarLayout, and per-segment geometry (including per-segment hit
  * bands) is produced by barSegments; there's also pie-slice geometry (each
- * Agent's call count) and success-rate normalization. See chart-svg.tsx for the render skeleton.
+ * Agent's call count), success-rate normalization, and hover-bubble
+ * placement (pointer lower-right, flipping at the edges). See chart-svg.tsx for the render skeleton.
  *
  * **Canvas width = the container's measured pixel width (1 canvas unit = 1
  * CSS pixel)**: the SVG no longer stretches/scales via a fixed viewBox —
@@ -110,6 +111,46 @@ export function autoLabelIdx(n: number, step: number): number[] {
 /** Request success rate: no requests (total=0) is treated as 1 (matches the old bar's convention, avoiding 0/0). */
 export function successRate(completed: number, total: number): number {
   return total > 0 ? completed / total : 1;
+}
+
+// —— Hover bubble placement (shared by both daily charts) ——
+
+/** Gap between the pointer and the bubble's near corner: close enough to read as attached, far enough that the bubble never sits under the pointer. */
+export const BUBBLE_OFFSET = 12;
+
+/** The window the bubble must stay inside, in canvas coordinates: the scroll container's currently visible region (left/right move with horizontal scroll; the top is always 0). */
+export interface BubbleView {
+  left: number;
+  right: number;
+  bottom: number;
+}
+
+/**
+ * Hover bubble placement: the preferred spot is the pointer's lower-right
+ * (pointer + BUBBLE_OFFSET on both axes). Near an edge it **flips** to the
+ * pointer's other side (right edge → lower-left, bottom edge → upper-right,
+ * corner → upper-left): flipping keeps the bubble out from under the
+ * pointer, where pure clamping would slide it back over the hovered mark.
+ * The final clamp only guards the degenerate case (a window narrower than
+ * the bubble on both sides of the pointer): the bubble then covers the
+ * pointer, and a window narrower than the bubble itself still clips on the
+ * right — unreachable at real card widths; the clamp just keeps the failure graceful.
+ */
+export function bubblePosition(
+  px: number,
+  py: number,
+  bubbleW: number,
+  bubbleH: number,
+  view: BubbleView,
+): { left: number; top: number } {
+  let left = px + BUBBLE_OFFSET;
+  if (left + bubbleW > view.right) left = px - BUBBLE_OFFSET - bubbleW;
+  let top = py + BUBBLE_OFFSET;
+  if (top + bubbleH > view.bottom) top = py - BUBBLE_OFFSET - bubbleH;
+  return {
+    left: Math.max(view.left, Math.min(left, view.right - bubbleW)),
+    top: Math.max(0, Math.min(top, view.bottom - bubbleH)),
+  };
 }
 
 // —— Daily Token: bar + three-segment stack ——

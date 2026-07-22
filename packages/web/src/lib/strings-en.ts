@@ -17,10 +17,16 @@ export const en: Strings = {
     usage: "Costs",
     traces: "Trajectory",
     benchmark: "Evaluation Center",
+    // Collapsed-rail tooltips (product-specified wording; new chat reuses chat.newSessionMenu, the other pages reuse the page names above).
+    lastConversation: "Last conversation",
+    // Deliberately equal to nav.agents: the key exists for the zh-only wording difference (智能体 vs 智能体仓库).
+    railAgents: "Agents",
     collapseSidebar: "Collapse sidebar",
     expandSidebar: "Expand sidebar",
     collapseGroup: "Collapse",
     expandGroup: "Expand",
+    pinGroup: "Pin group",
+    unpinGroup: "Unpin group",
   },
 
   settings: {
@@ -197,7 +203,6 @@ export const en: Strings = {
     thinkingLevel: "model.thinking_level",
     thinkingLevelOptions: [
       ["", "Send no override — keep whatever is currently configured."],
-      ["none", "Disables extended reasoning; the fastest responses."],
       ["low", "Enables a lower tier of extended reasoning."],
       [
         "medium",
@@ -209,6 +214,8 @@ export const en: Strings = {
         "Enables the highest tier of extended reasoning; identical to high on some models.",
       ],
     ] as ReadonlyArray<readonly [string, string]>,
+    thinkingLevelNoneKept:
+      "Stored legacy tier: new selections no longer offer the off tier (many models cannot disable thinking).",
     timeoutMs: "model.timeoutMs",
     timeoutMsHint: "Per-request timeout, ms",
     compaction: "Context compaction",

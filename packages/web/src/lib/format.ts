@@ -73,10 +73,21 @@ export function formatTps(tps: number | null | undefined): string {
 }
 
 /**
+ * Cache hit rate = cacheRead ÷ (cacheRead + cacheWrite): the share of cached
+ * input actually served from cache; null when the denominator is 0 (no cache
+ * activity — the rate is undefined, callers omit the stat or let
+ * formatPercent render `—`). The single formula shared by the Trace page's
+ * turn/global summaries and the Cost center's cacheRead bubble, so the two pages can never drift apart.
+ */
+export function cacheHitRate(cacheRead: number, cacheWrite: number): number | null {
+  const total = cacheRead + cacheWrite;
+  return total > 0 ? cacheRead / total : null;
+}
+
+/**
  * Ratio display (rounded to a whole percent): `0.714` → `71%`; null
  * (denominator is 0, undefined) or a non-finite value → `—`.
- * Used by the Trace page's **cache hit rate** (cache hits ÷ this turn's
- * input) and similar cases.
+ * Used with cacheHitRate above (Trace page and the Cost center's cacheRead bubble) and similar cases.
  */
 export function formatPercent(ratio: number | null | undefined): string {
   if (ratio == null || !Number.isFinite(ratio)) return "—";

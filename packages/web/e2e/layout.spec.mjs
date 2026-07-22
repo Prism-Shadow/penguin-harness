@@ -14,6 +14,10 @@
  *   search box then horizontally scrolling the whole draft page — and the workspace menu
  *   ~143px off-screen right when the ownership pills share one row);
  * - the sidebar's "New chat" button has no background fill (same gray-scale style as nav items);
+ * - the collapsed rail shows, in product-specified order, last conversation / new chat /
+ *   Agents / Skills / Models / Costs / Traces / Benchmark with localized (en + zh) hover
+ *   tooltips; "last conversation" targets the newest non-archived session and is disabled
+ *   while none exists; expanding from the rail restores the pinned sidebar;
  * - login page: a single brand penguin logo above the form (part of the form area; the
  *   background still only has the trace animation), the trace animation grows in after a
  *   delayed blank first paint, no two trace segments cross or touch (except where a fork shares
@@ -130,6 +134,115 @@ test("layout: en draft + context gauge + mobile models", async ({ page }) => {
     await newChat.evaluate((el) => getComputedStyle(el).backgroundColor),
     "new-chat button has no background fill",
   ).toBe("rgba(0, 0, 0, 0)");
+});
+
+test("layout: collapsed rail — order, bilingual tooltips, last conversation", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("penguin.lang", "en"));
+  await provisionAndLogin(page.request, "railuser", P);
+  const projects = await (await page.request.get(`${BASE}/api/projects`)).json();
+  const projectId = projects.projects[0].projectId;
+  const put = await page.request.put(`${BASE}/api/projects/${projectId}/models`, {
+    data: {
+      defaultModel: { provider: "custom", modelId: "claude-4-8" },
+      models: [{ provider: "custom", modelId: "claude-4-8", apiKey: "sk-mock" }],
+    },
+  });
+  expect(put.ok(), "put models").toBeTruthy();
+
+  // --- No sessions yet: the rail renders all 8 entries, "last conversation" disabled ---
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto(`${BASE}/chat`);
+  await page.getByRole("button", { name: "Collapse sidebar" }).click();
+  const rail = page.locator("aside nav");
+  const entries = rail.locator("a, button");
+  await expect(entries).toHaveCount(8);
+  await expect(rail.getByRole("button", { name: "Last conversation" })).toBeDisabled();
+
+  // --- Order and tooltips (en): aria-label defines the order, title carries the same copy ---
+  const EN = [
+    "Last conversation",
+    "New chat",
+    "Agents",
+    "Skills",
+    "Models",
+    "Costs",
+    "Trajectory",
+    "Evaluation Center",
+  ];
+  const attrs = (name) =>
+    entries.evaluateAll((els, n) => els.map((el) => el.getAttribute(n)), name);
+  expect(await attrs("aria-label"), "rail order (en)").toEqual(EN);
+  expect(await attrs("title"), "rail tooltips (en)").toEqual(EN);
+
+  // --- Three sessions via the API (distinct createdAt), newest archived: the rail must target the newest *non-archived* one ---
+  const mkSession = async () => {
+    const res = await page.request.post(
+      `${BASE}/api/projects/${projectId}/agents/default_agent/sessions`,
+      { data: { provider: "custom", modelId: "claude-4-8" } },
+    );
+    expect(res.ok(), "create session").toBeTruthy();
+    return (await res.json()).session.sessionId;
+  };
+  await mkSession();
+  await page.waitForTimeout(25);
+  const target = await mkSession();
+  await page.waitForTimeout(25);
+  const archived = await mkSession();
+  const patched = await page.request.patch(`${BASE}/api/sessions/${archived}`, {
+    data: { archived: true },
+  });
+  expect(patched.ok(), "archive newest session").toBeTruthy();
+  await page.reload(); // the session store loads on mount; the collapsed state persists via localStorage
+
+  // A click during the fetch window is a graceful no-op (the entry stays enabled while the
+  // list loads), so retry click+assert until the store has settled.
+  await expect(async () => {
+    await rail.getByRole("button", { name: "Last conversation" }).click();
+    await expect(page, "last conversation → newest non-archived session").toHaveURL(
+      `${BASE}/chat/${target}`,
+      { timeout: 1000 },
+    );
+  }).toPass({ timeout: 15_000 });
+  // Active fill = the *unprefixed* bg-gray-200/70 token (the resting state carries hover:bg-gray-200/70, which a bare substring match would also hit).
+  const ACTIVE_FILL = /(^|\s)bg-gray-200\/70(\s|$)/;
+  // On a conversation, the entry lights as "you are here" (any non-draft /chat/:id).
+  await expect(rail.getByRole("button", { name: "Last conversation" })).toHaveClass(ACTIVE_FILL);
+
+  // --- New chat enters the draft page and shows the rail's gray active fill there ---
+  await rail.getByRole("button", { name: "New chat" }).click();
+  await expect(page).toHaveURL(`${BASE}/chat/new`);
+  await expect(rail.getByRole("button", { name: "New chat" })).toHaveClass(ACTIVE_FILL);
+  // The draft belongs to the new-chat entry: the last-conversation one must not stay lit here.
+  await expect(rail.getByRole("button", { name: "Last conversation" })).not.toHaveClass(
+    ACTIVE_FILL,
+  );
+
+  // --- Page entries navigate and highlight like the pinned nav ---
+  await rail.getByRole("link", { name: "Skills" }).click();
+  await expect(page).toHaveURL(`${BASE}/skills`);
+  await expect(rail.getByRole("link", { name: "Skills" })).toHaveClass(ACTIVE_FILL);
+
+  // --- zh: tooltips follow the product-specified wording ---
+  await page.addInitScript(() => localStorage.setItem("penguin.lang", "zh"));
+  await page.reload();
+  await expect(entries).toHaveCount(8);
+  const ZH = [
+    "最近一次对话",
+    "新建对话",
+    "智能体",
+    "技能库",
+    "模型仓库",
+    "成本中心",
+    "轨迹观测",
+    "评估中心",
+  ];
+  expect(await attrs("aria-label"), "rail order (zh)").toEqual(ZH);
+  expect(await attrs("title"), "rail tooltips (zh)").toEqual(ZH);
+
+  // --- Expand: the rail's top button (localized) restores the pinned sidebar ---
+  await page.getByRole("button", { name: "展开侧栏" }).click();
+  await expect(page.locator("aside")).toHaveClass(/w-64/);
+  await expect(page.getByRole("button", { name: "收起侧栏" })).toBeVisible();
 });
 
 test("layout: mobile chat dropdowns stay inside the viewport", async ({ page }) => {

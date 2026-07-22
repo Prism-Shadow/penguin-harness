@@ -64,7 +64,7 @@ import { ProviderLogo } from "../../components/ui/provider-logo";
 import { hasConfiguredKey, sameModelRef, visibleChatModels } from "../models/model-grouping";
 import { filterAgents, matchMention, splitLeadingMention } from "./agent-mentions";
 import { matchSlash, removeSlashToken } from "./slash-token";
-import { THINKING_LEVELS, thinkingLevelLabel } from "./thinking-level";
+import { SELECTABLE_THINKING_LEVELS, thinkingLevelLabel } from "./thinking-level";
 import {
   BOOK_ICON,
   buildSkillsMessage,
@@ -398,8 +398,10 @@ const SPARK_ICON = "M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 
  * level straight through to the Agent settings — llmConfig is assembled once per session, so
  * the level applies to the session created on first send and becomes the Agent's new default
  * (switch-becomes-default). Per review: a title bar names the control, and the menu lists
- * exactly the five levels with short names only (no descriptions, no "default" row) — an
- * Agent without an explicit override shows an em dash until a level is picked.
+ * the selectable levels with short names only (no descriptions, no "default" row, and no
+ * "none" — many models cannot disable thinking); an Agent without an explicit override shows
+ * an em dash until a level is picked, and a stored legacy "none" still displays via the
+ * label table (just never offered).
  */
 function ThinkingLevelSelect({
   value,
@@ -454,7 +456,7 @@ function ThinkingLevelSelect({
       <div className="border-b border-gray-100 px-3 pb-1.5 pt-0.5 text-xs font-semibold text-gray-500 dark:border-gray-800 dark:text-gray-400">
         {S.chat.thinkingLevel}
       </div>
-      {THINKING_LEVELS.map((level) => (
+      {SELECTABLE_THINKING_LEVELS.map((level) => (
         <button
           key={level}
           type="button"

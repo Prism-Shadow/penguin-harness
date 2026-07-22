@@ -113,7 +113,7 @@ Both tools' arguments (explicit keys):
 {
   prompt: string;          // required: the complete subtask (all context + the exact final output expected)
   agent_id?: string;       // the child Agent; defaults to the current Agent
-  model_id?: string;       // the child Session's model; defaults to the Project default model
+  model_id?: string;       // the child Session's model; inherits the parent Session's model when omitted
   yield_time_ms?: number;  // foreground wait; default 300000
 }
 
@@ -126,6 +126,7 @@ Both tools' arguments (explicit keys):
 ```
 
 - Depth is capped at 1: a subagent cannot spawn another subagent.
+- The child Session follows the parent Session — its model (unless `model_id`/`provider` pick another), thinking level, and Workspace — never the Project defaults.
 - The child Session inherits the parent Agent's approval callback, so the approval mode follows the parent.
 - The child Session gets its own Trace, linked from the parent by a `subagent` pointer event; child messages stream back into the parent flow tagged with `origin`. See [Sessions & Traces](/sessions-and-traces).
 

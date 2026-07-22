@@ -3,7 +3,8 @@
  * original TrendChart, reused by both the daily Token stacked bar and the
  * daily cost line): 4 horizontal grid lines + y-axis ticks, x-axis dates, a
  * hover vertical indicator line + a transparent hit area + a value bubble
- * that follows the cursor. "Data marks" (line / area / bars) are drawn by
+ * that follows the cursor at its lower-right (flipping to the other side of
+ * the pointer near the edges, see chart-geom's bubblePosition). "Data marks" (line / area / bars) are drawn by
  * the caller as children in the same x()/y() coordinate system;
  * see chart-geom.ts for the coordinate math.
  *
@@ -23,11 +24,23 @@
  * already indicates the x position — an extra vertical line would just be
  * noise, so the bar chart passes hoverLine={false} to turn it off.
  */
-import { useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
-import { CHART_H, PAD_L, PAD_R, PAD_T, sparseLabelIdx, type ChartGeom } from "./chart-geom";
-
-/** Upper bound on bubble width: clamps the bubble back inside the canvas near the right edge, so it doesn't spuriously trigger extra horizontal scroll. */
-const BUBBLE_W = 160;
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
+import {
+  bubblePosition,
+  CHART_H,
+  PAD_L,
+  PAD_R,
+  PAD_T,
+  sparseLabelIdx,
+  type ChartGeom,
+} from "./chart-geom";
 
 /**
  * Measure the available width inside the chart card (CSS pixels, rounded
@@ -103,18 +116,77 @@ export function ChartFrame({
     el.scrollLeft = el.scrollWidth - el.clientWidth;
   }, [scrollToEnd, w, dates.length]);
 
+  // The bubble follows the pointer **imperatively** (lower-right, flipping
+  // at the edges — see chart-geom's bubblePosition): mousemove only records
+  // the client position and schedules a single rAF, whose callback batches
+  // the layout reads (svg origin, the scroll container's visible window,
+  // the bubble's real size) and then writes style.left/top directly. No
+  // React state is involved, so a 60–120Hz pointer neither re-renders the
+  // few-hundred-element svg nor forces multiple sync layouts per event.
+  // The bubble mounts hidden and is revealed by its first placement (on
+  // entry, mouseenter fires before the first mousemove has sampled the pointer).
+  const svgRef = useRef<SVGSVGElement>(null);
+  const bubbleRef = useRef<HTMLDivElement>(null);
+  const mouseRef = useRef<{ cx: number; cy: number } | null>(null);
+  const rafRef = useRef(0);
+  const placeBubble = () => {
+    const el = bubbleRef.current;
+    const svg = svgRef.current;
+    const sc = scrollRef.current;
+    const m = mouseRef.current;
+    if (!el || !svg || !sc || !m) return;
+    const r = svg.getBoundingClientRect();
+    // Pointer in canvas coordinates (the svg's top-left is the content
+    // origin; bubble and content scroll together, so content pixels are
+    // enough), bounded by the *visible* window rather than the full canvas —
+    // that is what keeps the bubble on screen when the Token bar canvas is scrolled.
+    const pos = bubblePosition(m.cx - r.left, m.cy - r.top, el.offsetWidth, el.offsetHeight, {
+      left: sc.scrollLeft,
+      right: sc.scrollLeft + sc.clientWidth,
+      bottom: CHART_H,
+    });
+    el.style.left = `${pos.left}px`;
+    el.style.top = `${pos.top}px`;
+    el.style.visibility = "visible";
+  };
+  const schedulePlace = () => {
+    if (rafRef.current) return;
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = 0;
+      placeBubble();
+    });
+  };
+  useEffect(() => () => cancelAnimationFrame(rafRef.current), []);
+
+  // Re-place synchronously (before paint) when the bubble's content changes:
+  // its size changes as hover moves between days/buckets, which can change
+  // the flip decision. Keyed on the hover anchor and the bubble renderer's
+  // identity (the parent re-creates the callback whenever its own hover
+  // state — e.g. the bar chart's segment key — changes) instead of running on every render.
+  useLayoutEffect(placeBubble, [bubble, hover]);
+
   return (
     // Horizontal scroll when the canvas is wider than the container (bar
     // width has a pixel floor, so 30 days won't fit in a half-width panel);
-    // the bubble is this container's absolutely-positioned child element and scrolls along with the content, so anchoring it to the column by pixels is enough.
+    // the bubble is this container's absolutely-positioned child element and scrolls along with the content, so anchoring it to the pointer in content pixels is enough.
     <div ref={scrollRef} className="relative overflow-x-auto">
       <svg
+        ref={svgRef}
         viewBox={`0 0 ${w} ${CHART_H}`}
         width={w}
         height={CHART_H}
         className="text-gray-600 dark:text-gray-400"
         role="img"
-        onMouseLeave={() => onHover(null)}
+        onMouseLeave={() => {
+          onHover(null);
+          // Drop the pointer sample: on re-entry the bubble stays hidden until the fresh position is known, rather than flashing at the stale one.
+          mouseRef.current = null;
+        }}
+        // Only record the client position and coalesce into one rAF: all layout reads happen inside the rAF callback (see placeBubble).
+        onMouseMove={(e) => {
+          mouseRef.current = { cx: e.clientX, cy: e.clientY };
+          schedulePlace();
+        }}
       >
         {/* Grid lines and y-axis ticks (recessive gray) */}
         {gridLevels.map((v, i) => (
@@ -190,11 +262,15 @@ export function ChartFrame({
 
       {bubble && hover !== null && dates[hover] && (
         <div
-          className="pointer-events-none absolute top-0 rounded border border-gray-200 bg-white px-2 py-1 text-xs shadow-sm dark:border-gray-700 dark:bg-gray-900"
-          // Anchored near that column's left edge, clamped back inside the
-          // canvas (1 unit = 1 pixel, positioned directly in pixels; the
-          // left edge can't be negative, since the scroll container would clip off the part that sticks out).
-          style={{ left: `${Math.max(0, Math.min(x(hover) - 30, w - BUBBLE_W))}px` }}
+          ref={bubbleRef}
+          className="pointer-events-none absolute rounded border border-gray-200 bg-white px-2 py-1 text-xs whitespace-nowrap shadow-sm dark:border-gray-700 dark:bg-gray-900"
+          // Mounted hidden at the origin; placeBubble moves it to the
+          // pointer's lower-right (flipping near the right/bottom edges, see
+          // bubblePosition) and reveals it. The declared style below never
+          // changes between renders, so React leaves the imperative
+          // left/top/visibility writes alone (nowrap keeps the measured
+          // width the true content width, independent of where the bubble lands).
+          style={{ left: 0, top: 0, visibility: "hidden" }}
         >
           {bubble(hover)}
         </div>
