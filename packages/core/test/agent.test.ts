@@ -301,7 +301,13 @@ describe("run_subagent spawning follows the PARENT session (never the Project de
   async function spawnedChildMeta(
     runner: SubagentRunner,
     input: Parameters<SubagentRunner["spawn"]>[0],
-  ): Promise<{ provider: string; model_id: string; thinking_level: string; workspace: string }> {
+  ): Promise<{
+    provider: string;
+    model_id: string;
+    thinking_level: string;
+    workspace: string;
+    source?: string;
+  }> {
     const handle = await runner.spawn(input);
     try {
       const gen = handle.run({ prompt: "noop" });
