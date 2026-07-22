@@ -3,7 +3,6 @@ import type { Strings } from "./strings";
 
 export const en: Strings = {
   siteName: "PenguinHarness",
-  docsBadge: "Docs",
 
   nav: {
     highlights: "Highlights",

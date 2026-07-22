@@ -7,7 +7,6 @@
  */
 export const zh = {
   siteName: "PenguinHarness",
-  docsBadge: "Docs",
 
   nav: {
     // Landing-parity labels: the top bar mirrors the landing page's nav exactly
