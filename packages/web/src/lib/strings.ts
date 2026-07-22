@@ -462,6 +462,11 @@ export const zh = {
     workspaceAuto: "自动临时目录",
     workspaceClear: "改用自动临时目录",
     workspaceDirInvalid: "目录不存在或无法访问，已回退",
+    /** 侧栏对话列表的分组切换（默认按工作区）与工作区分组。 */
+    groupByWorkspace: "按工作区分组",
+    groupByAgent: "按 Agent 分组",
+    tempWorkspaces: "临时工作区",
+    newSessionInWorkspace: "在此工作区新建对话",
     draftSubtitle: "最擅长 AI 开发任务的自进化 Agent",
     /**
      * Example task cards on the draft screen: one click auto-submits the canned prompt (game

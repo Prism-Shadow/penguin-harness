@@ -17,8 +17,10 @@
  * change before unmount, one final write is flushed) — closing and returning to
  * the page resumes where you left off; the cache is cleared on successful send.
  * The sidebar group header "+" / menu "New conversation" explicitly specify an
- * Agent via route state (overriding the cached selection); a direct visit or
- * refresh falls back to the cache.
+ * Agent via route state (overriding the cached selection); the workspace-mode
+ * group header "+" additionally carries a Workspace path pre-filling the
+ * Workspace selection ("" = auto temp directory). A direct visit or refresh
+ * falls back to the cache.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
@@ -124,7 +126,8 @@ export function DraftView({
   // on invalid value" effect would let the former write B in one render while the
   // latter, still judging by the stale closure's invalid value, writes the default
   // Agent and clobbers B.
-  const stateAgentId = (location.state as { agentId?: string } | null)?.agentId;
+  const routeState = location.state as { agentId?: string; workspace?: string } | null;
+  const stateAgentId = routeState?.agentId;
   const appliedStateKey = useRef<string | null>(null);
   useEffect(() => {
     if (agents.length === 0) return; // list not ready yet, nothing to validate against — wait for the next pass
@@ -140,6 +143,18 @@ export function DraftView({
     if (valid(agentId)) return;
     setAgentId((agents.find((a) => a.agentId === "default_agent") ?? agents[0])?.agentId ?? null);
   }, [agents, agentId, location.key, stateAgentId]);
+
+  // Explicit Workspace from route state (the workspace-mode group header "+"): applied once per
+  // location.key, same convention as the Agent above, overriding the cached selection ("" pre-fills
+  // the auto temp directory). Unlike the Agent there's no list to validate against, so this is a
+  // separate effect that never has to wait for a load.
+  const stateWorkspace = routeState?.workspace;
+  const appliedWorkspaceKey = useRef<string | null>(null);
+  useEffect(() => {
+    if (stateWorkspace === undefined || appliedWorkspaceKey.current === location.key) return;
+    appliedWorkspaceKey.current = location.key;
+    setWorkspace(stateWorkspace);
+  }, [location.key, stateWorkspace]);
 
   // Model fallback: once config is ready, if nothing is selected or the selection is no longer valid, fall back to the project default → the first model (always as a paired reference).
   useEffect(() => {
