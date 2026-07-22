@@ -219,16 +219,18 @@ export function TraceFileView({
   }, [projectId, agentId, sessionId, index]);
 
   // Pricing for the session's Model (main session only; sub-session Tokens
-  // live in their own Trace and aren't part of this file):
-  // session_meta carries a paired reference (provider + model_id), matched against model config by that pair.
+  // live in their own Trace and aren't part of this file): session_meta carries a paired
+  // reference (provider + model_id), matched against model config by that whole pair.
+  // A Trace whose session_meta has no provider is legacy data (core refuses to resume it
+  // for the same reason) — the model_id alone identifies nothing, since the same id can
+  // exist under several providers at different prices, so no pricing is shown rather than
+  // an arbitrary first match.
   const pricing = useMemo(() => {
     const meta = events.find((m) => m.type === "session_meta");
     const ref = meta ? (meta.payload as { model_id?: string; provider?: string }) : undefined;
-    if (!ref?.model_id) return undefined;
-    return models?.models.find(
-      (m) =>
-        m.modelId === ref.model_id && (ref.provider === undefined || m.provider === ref.provider),
-    )?.pricing;
+    if (!ref?.model_id || !ref.provider) return undefined;
+    return models?.models.find((m) => m.modelId === ref.model_id && m.provider === ref.provider)
+      ?.pricing;
   }, [events, models]);
 
   const costOf = (b: Buckets): number | null => {

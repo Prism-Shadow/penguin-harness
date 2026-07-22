@@ -34,7 +34,7 @@ penguin -v
 | 完整性校验 | Release 提供 checksum 资产时自动进行 sha256 校验 |
 | 升级 | 重新执行安装脚本即可，文件原子替换 |
 
-脚本参数通过 `curl ... | sh -s -- --universal` 的形式传入。
+脚本参数写在 `sh -s --` 之后，例如 `curl -fsSL https://penguin.ooo/install.sh | sh -s -- --universal`。
 
 ### 数据目录
 

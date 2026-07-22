@@ -47,9 +47,9 @@ describe("scheduler", () => {
 
   beforeEach(async () => {
     root = await makeTempRoot();
-    // A schedule's model reference is resolved against the Project config during
-    // reconciliation, so provide a minimal config here:
-    // m-bench is globally unique, so provider can be omitted and still resolve uniquely.
+    // A schedule's model reference is checked against the Project config during
+    // reconciliation, so provide a minimal config here: the file must name the whole
+    // (provider, model_id) pair for it to match.
     await saveProjectConfig(root, P, {
       default_model: { provider: "custom", model_id: "m-bench" },
       models: [{ provider: "custom", model_id: "m-bench" }],
@@ -279,6 +279,7 @@ describe("scheduler", () => {
       `start_at = "${iso(T0 + MIN)}"`,
       `period = "5m"`,
       `workspace = "/tmp/ws"`,
+      `provider = "custom"`,
       `model_id = "m-bench"`,
     ]);
     await scheduler.tickOnce();
@@ -287,31 +288,50 @@ describe("scheduler", () => {
     nowMs = T0 + 6 * MIN;
     await scheduler.tickOnce();
     expect(created).toHaveLength(2);
-    // The file only supplies model_id (no provider): passed through as-is, resolved
-    // into a paired reference downstream via a unique match.
+    // The file's model reference is passed straight through as a pair.
     expect(created[0]).toMatchObject({
       projectId: P,
       agentId: A,
       workspace: "/tmp/ws",
+      provider: "custom",
       modelId: "m-bench",
     });
-    expect("provider" in created[0]!).toBe(false);
     expect(started.map((s) => s.sessionId)).toEqual(["session-new-1", "session-new-2"]);
   });
 
-  it("new-Session mode: when the file gives provider, it is passed through as a pair", async () => {
-    await writeFile("paired", [
-      `prompt = "paired"`,
+  it("new-Session mode: omitting the model reference entirely leaves the Project default to the session creator", async () => {
+    await writeFile("default-model", [
+      `prompt = "default"`,
       `enabled = true`,
       `start_at = "${iso(T0 + MIN)}"`,
-      `provider = "custom"`,
-      `model_id = "m-bench"`,
     ]);
     await scheduler.tickOnce();
     nowMs = T0 + MIN;
     await scheduler.tickOnce();
     expect(created).toHaveLength(1);
-    expect(created[0]).toMatchObject({ provider: "custom", modelId: "m-bench" });
+    expect("provider" in created[0]!).toBe(false);
+    expect("modelId" in created[0]!).toBe(false);
+  });
+
+  it("a file carrying model_id without provider is invalid: never scheduled, error recorded", async () => {
+    // A schedule file persisted before the pairing rule can hold model_id alone. It must
+    // fail exactly like any other invalid file — skipped with an error recorded — rather
+    // than resolving the provider or throwing out of the tick loop.
+    await writeFile("legacy", [
+      `prompt = "legacy"`,
+      `enabled = true`,
+      `start_at = "${iso(T0 + MIN)}"`,
+      `model_id = "m-bench"`,
+    ]);
+    await scheduler.tickOnce();
+    nowMs = T0 + 2 * MIN;
+    await scheduler.tickOnce();
+    expect(created).toHaveLength(0);
+    expect(started).toHaveLength(0);
+    expect(repo.find(P, A, "legacy")).toBeNull();
+    const recorded = errors.filter((e) => e.code === "schedule_invalid_file");
+    expect(recorded.length).toBeGreaterThan(0);
+    expect((recorded[0]?.err as Error).message).toContain("given together");
   });
 
   it("invalid files are skipped with an error recorded, without affecting other tasks", async () => {

@@ -359,6 +359,8 @@ export const zh = {
     readOnlyHint: "member 只读；模型与 credential 修改仅 owner 可执行",
     empty: "尚未配置任何模型",
     noKey: "未配置 key",
+    /** Chat model dropdown's bottom expander row: reveals the models hidden by the configured-key filter. */
+    showModelsWithoutKey: (n: number): string => `显示未配置 key 的模型（${n} 个）`,
     pendingSave: "（待保存）",
     modelIdExists: "该模型 id 已存在",
     pricingAllOrNone: "三项价格需一并填写",

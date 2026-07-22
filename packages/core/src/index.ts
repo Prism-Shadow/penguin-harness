@@ -9,7 +9,8 @@
  *
  * ```ts
  * const agent = await createAgent({ agentId: "default_agent" });
- * const session = await agent.createSession({ workspaceDir, modelId });
+ * // A model reference is always the (provider, model_id) pair; omit both for the Project default.
+ * const session = await agent.createSession({ workspaceDir, provider, modelId });
  * for await (const output of session.run([userText("...")])) { ... }
  * ```
  */
@@ -17,6 +18,9 @@
 // Protocol and interface contracts (foundation)
 export * from "./omnimessage/index.js";
 export * from "./interfaces.js";
+
+// Only the default server port leaves internal: the CLI / server default-port source of truth.
+export { DEFAULT_SERVER_PORT } from "./internal/ports.js";
 
 // Submodules
 export * from "./state/index.js";
@@ -47,4 +51,4 @@ export { Agent, createAgent } from "./agent.js";
 export type { CreateAgentOptions, CreateSessionOptions, ResumeSessionOptions } from "./agent.js";
 
 /** SDK version number. */
-export const VERSION = "0.0.1";
+export const VERSION = "0.1.0";

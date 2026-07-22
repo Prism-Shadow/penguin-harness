@@ -88,19 +88,23 @@ export function serializeSchedule(fields: {
 }
 
 /**
- * Resolvability check for a schedule's model reference (shared by save and
- * reconciliation): when the definition has `model_id`, it's
- * resolved against Project config per resolveModelRef semantics — omitting provider is
- * only resolvable when model_id matches exactly one entry globally; zero hits or
- * ambiguity means unresolvable. Returns an error message (unresolvable / config read
- * failure), or null if resolvable (or no model reference at all).
+ * Config check for a schedule's model reference (shared by save and reconciliation):
+ * the reference is a complete `(provider, model_id)` pair and must name an entry in the
+ * Project config — nothing is inferred, so a pair that matches no entry is simply an
+ * error. Returns an error message (no such model / half a reference / config read
+ * failure), or null when the pair is configured (or there is no model reference at all).
  */
 export async function validateScheduleModelRef(
   root: string,
   projectId: string,
   def: Pick<ScheduleDefinition, "modelId" | "provider">,
 ): Promise<string | null> {
-  if (def.modelId === undefined) return null;
+  if (def.modelId === undefined && def.provider === undefined) return null;
+  // parseScheduleFile already rejects half a reference, so this only guards callers that
+  // build a definition by hand — the missing half is reported, never guessed.
+  if (def.modelId === undefined || def.provider === undefined) {
+    return "provider and model_id must be given together (a model reference is always a pair); omit both to use the Project's default model";
+  }
   try {
     const cfg = await loadProjectConfig(root, projectId);
     resolveModelRef(cfg, def.modelId, def.provider);

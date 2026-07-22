@@ -200,8 +200,14 @@ export interface SubagentRunner {
   spawn(input: {
     /** The child Agent's agentId; if omitted, reuses the current Agent (self-invocation). */
     agentId?: string;
-    /** The Model used by the child Session; if omitted, uses the Project's default Model. */
+    /**
+     * Upstream model id for the child Session, paired with `provider` — a model reference is
+     * always the complete pair. Omit both to use the Project's default Model; supplying one
+     * half without the other is rejected.
+     */
     modelId?: string;
+    /** Provider group for `modelId`; required whenever `modelId` is given. */
+    provider?: string;
   }): Promise<SubagentHandle>;
 }
 

@@ -35,7 +35,7 @@ The openrouter, siliconflow, and custom groups speak the OpenAI-compatible proto
 
 ## Project config
 
-`<root>/<project>/.project_config.toml` is the Project's single config file: a hidden file written with mode 0600, with credentials inlined on the model entries. Model identity is always the `(provider, model_id)` pair — string concatenation is forbidden everywhere.
+`<root>/<project>/.project_config.toml` is the Project's single config file: a hidden file written with mode 0600, with credentials inlined on the model entries. Model identity is always the `(provider, model_id)` pair — string concatenation is forbidden everywhere, and every reference into this file carries both halves: the provider is never inferred from a bare `model_id`.
 
 | Field | Description |
 | --- | --- |
@@ -175,7 +175,7 @@ Each file `agent_state/schedule/<name>.toml` describes one scheduled task (the f
 | `end_at` | no | End time; must be later than `start_at` |
 | `session_id` | no | Bind to an existing Session; mutually exclusive with the three fields below |
 | `workspace` | no | Workspace for new-Session mode |
-| `provider` / `model_id` | no | Paired model reference for new-Session mode |
+| `provider` / `model_id` | no | Paired model reference for new-Session mode; write both or neither — a lone `model_id` is rejected, and with neither the Project's default model is used |
 
 ```toml
 prompt = "Check yesterday's builds and summarize the failures"

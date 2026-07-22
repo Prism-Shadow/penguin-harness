@@ -35,5 +35,19 @@ describe("removeSlashToken", () => {
   it("clears a token-only input to empty", () => {
     const m = matchSlash("/compact", 8)!;
     expect(removeSlashToken("/compact", m)).toBe("");
+    // Whitespace-only leftovers count as empty too.
+    expect(removeSlashToken("  /compact", matchSlash("  /compact", 10)!)).toBe("");
+  });
+
+  it("keeps multi-space runs elsewhere in the body verbatim", () => {
+    const text = "a  b /compact";
+    expect(removeSlashToken(text, matchSlash(text, text.length)!)).toBe("a  b ");
+  });
+
+  it("keeps indentation of a multi-line body verbatim", () => {
+    const text = "steps:\n  - one\n    - nested\n/compact";
+    expect(removeSlashToken(text, matchSlash(text, text.length)!)).toBe(
+      "steps:\n  - one\n    - nested\n",
+    );
   });
 });

@@ -49,6 +49,11 @@ describe("parseScheduleFile", () => {
     });
   });
 
+  it("keeps a complete model reference pair", () => {
+    const def = defOf(`${BASE}provider = "custom"\nmodel_id = "m1"\n`);
+    expect(def).toMatchObject({ provider: "custom", modelId: "m1" });
+  });
+
   it("enabled defaults to off; omitting period means one-shot", () => {
     const def = defOf(`prompt = "p"\nstart_at = "2026-07-16T09:00:00Z"\n`);
     expect(def.enabled).toBe(false);
@@ -67,6 +72,10 @@ describe("parseScheduleFile", () => {
       [`${BASE}session_id = "s"\nworkspace = "/tmp/w"\n`, "new-Session mode"],
       [`${BASE}session_id = "s"\nmodel_id = "m1"\n`, "new-Session mode"],
       [`${BASE}model_id = ""\n`, "model_id"],
+      // A model reference is always a pair: half of one is invalid in either direction
+      // (model_id alone is what a file written before this rule looks like).
+      [`${BASE}model_id = "m1"\n`, "given together"],
+      [`${BASE}provider = "custom"\n`, "given together"],
     ];
     for (const [raw, hint] of cases) {
       const r = parseScheduleFile("x", raw);

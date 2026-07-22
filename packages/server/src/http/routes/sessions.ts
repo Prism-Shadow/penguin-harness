@@ -108,10 +108,13 @@ export function agentSessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     const body = await readJson(c);
     const modelId = optionalString(body, "modelId", { minLen: 1, label: "modelId" });
     const provider = optionalString(body, "provider", { minLen: 1, label: "provider" });
-    // Model reference is submitted as a pair: provider can't appear without modelId (core does the same validation; this catches it early).
-    if (provider !== undefined && modelId === undefined) {
+    // Model reference is submitted as a pair — both or neither. Neither half is ever
+    // inferred from the other, so half a reference is rejected here instead of being
+    // resolved (core does the same validation; this catches it early). Omitting both
+    // falls back to the Project's default model.
+    if ((modelId === undefined) !== (provider === undefined)) {
       throw badRequest(
-        "provider is specified but modelId is not: a model reference must be given as a pair.",
+        "modelId and provider must be given together as a model reference pair: specify both, or neither to use the Project's default model.",
       );
     }
     const approvalMode = optionalEnum(body, "approvalMode", APPROVAL_MODES);

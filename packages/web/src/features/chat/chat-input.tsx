@@ -7,12 +7,15 @@
  * indicator) + Model + send (up arrow);
  * In draft state (Session not yet created), when models/onChangeModel are supplied, the model
  * selector sits to the left of the send button (provider logo + name, popup opens **downward**,
- * with a top quick-search box, and an internal scroll cap to avoid overflowing the screen) — once
+ * with a top quick-search box, an internal scroll cap to avoid overflowing the screen, and a
+ * configured-key-first list with a bottom "show all" row — see ModelSelect) — once
  * the Session is created the model is locked, and the same spot switches to a read-only
  * logo + name display;
  * `/` opens the slash command menu (`/compact` compresses context, replacing the button; each
  * installed skill gets its own entry; pressing Enter on `/<skill_name>` toggles that skill's
- * selection and clears the input, without sending);
+ * selection without sending). Matching is positional like `@`: a slash opens the menu from any
+ * caret position, running a command removes just that token, and Escape only dismisses the menu —
+ * the rest of the draft is never touched;
  * `@` opens the agent selection menu; once picked it becomes a fixed highlighted target chip
  * above the text body (only one allowed, picking again replaces it; removed via backspace or the
  * x button); only a leading `@` at the start of the text counts — typing or pasting text starting
@@ -54,7 +57,7 @@ import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { SkillIcon } from "../skills/skill-icon-view";
 import { ZoomableImage } from "../../components/ui/image-zoom";
 import { ProviderLogo } from "../../components/ui/provider-logo";
-import { matchesQuery, orderModelsLikeLibrary, sameModelRef } from "../models/model-grouping";
+import { hasConfiguredKey, sameModelRef, visibleChatModels } from "../models/model-grouping";
 import { filterAgents, matchMention, splitLeadingMention } from "./agent-mentions";
 import { matchSlash, removeSlashToken } from "./slash-token";
 import {
@@ -205,6 +208,13 @@ function modelLabel(m: ModelInfo): string {
 }
 
 /**
+ * "No key" marker for the model dropdown's key-less rows: a key struck through by a prohibition
+ * slash (24x24 line art, grayscale via currentColor, matching the approval-mode icon style).
+ */
+const NO_KEY_ICON =
+  "M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4M2 2l20 20";
+
+/**
  * Model selector (draft state only; docked to the left of the send button): both the button and
  * candidate items show the provider logo. The menu opens **downward** — the draft card is
  * vertically centered with room below; a top quick-search box (reusing the model page's rule:
@@ -212,6 +222,12 @@ function modelLabel(m: ModelInfo): string {
  * scroll (max-h-56) so it never overflows the browser's viewport height no matter how many models
  * there are. On narrow screens only the logo remains (name hidden); list items mark the project
  * default.
+ * By default only models with a configured API key are listed (stored masked key — the same
+ * standard as the model page's key status; `envKey` is merely the NAME of a fallback env var and
+ * doesn't count), with the selected and the default model always visible even without a key; a
+ * muted bottom row reveals the remaining key-less models (marked by a struck-through key icon,
+ * with the "no key" text in its title) without closing the menu or changing the selection. When
+ * no model has a key at all, everything is listed directly.
  */
 function ModelSelect({
   models,
@@ -229,12 +245,21 @@ function ModelSelect({
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  // Expanded "show all" state: collapses back to key-configured models on each open.
+  const [showAll, setShowAll] = useState(false);
   const current = models.find((m) => sameModelRef(m, value));
   // Display rule matches the model page's card: display name, or falls back to the upstream id (grouping is already conveyed by the provider logo).
   const label = current ? modelLabel(current) : (value?.modelId ?? "…");
   // Dropdown order mirrors the model library page: provider groups in MODEL_PROVIDERS order
-  // (user-defined groups after, custom last), in-group order preserved.
-  const filtered = orderModelsLikeLibrary(models).filter((m) => matchesQuery(m, query));
+  // (user-defined groups after, custom last), in-group order preserved. By default the list
+  // keeps only key-configured models (selected/default always included; lists everything when
+  // no model has a key); the query filters what's visible.
+  const visible = visibleChatModels(models, { showAll, query, selected: value, defaultModel });
+  // How many models the key filter hides under the current query (0 when expanded): drives the bottom "show all" row.
+  const hiddenCount = showAll
+    ? 0
+    : visibleChatModels(models, { showAll: true, query, selected: value, defaultModel }).length -
+      visible.length;
   return (
     <Dropdown
       open={open}
@@ -249,7 +274,11 @@ function ModelSelect({
           onClick={() => {
             const next = !open;
             setOpen(next);
-            if (next) setQuery(""); // Always start from the full list each time it opens
+            if (next) {
+              // Each open starts from the unsearched, collapsed (configured-only) list.
+              setQuery("");
+              setShowAll(false);
+            }
           }}
           className="flex h-8 max-w-44 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
         >
@@ -290,10 +319,10 @@ function ModelSelect({
         />
       </div>
       <div className="max-h-56 overflow-y-auto">
-        {filtered.length === 0 && (
+        {visible.length === 0 && (
           <p className="px-3 py-1.5 text-xs text-gray-400">{S.models.noSearchResults}</p>
         )}
-        {filtered.map((m) => (
+        {visible.map((m) => (
           <button
             key={`${m.provider}:${m.modelId}`}
             type="button"
@@ -309,6 +338,18 @@ function ModelSelect({
           >
             <ProviderLogo provider={m.provider} className="h-4 w-4 shrink-0" />
             <span className="min-w-0 flex-1 truncate">{modelLabel(m)}</span>
+            {/* Key-less rows (visible via show-all / selected / default / no-key-at-all) carry a
+                struck-through key icon (the "no key" text lives in the title/aria-label). */}
+            {!hasConfiguredKey(m) && (
+              <span
+                role="img"
+                title={S.models.noKey}
+                aria-label={S.models.noKey}
+                className="shrink-0 text-gray-400 dark:text-gray-500"
+              >
+                <GlyphIcon d={NO_KEY_ICON} size={13} />
+              </span>
+            )}
             {sameModelRef(m, defaultModel) && (
               <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
                 {S.models.default}
@@ -320,6 +361,20 @@ function ModelSelect({
           </button>
         ))}
       </div>
+      {/* Bottom expander row (pinned below the scroll area, mirroring the search box on top):
+          reveals the models hidden by the configured-key filter in place — the menu stays open
+          and the selection is untouched. */}
+      {hiddenCount > 0 && (
+        <div className="border-t border-gray-100 dark:border-gray-800">
+          <button
+            type="button"
+            onClick={() => setShowAll(true)}
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+          >
+            {S.models.showModelsWithoutKey(hiddenCount)}
+          </button>
+        </div>
+      )}
     </Dropdown>
   );
 }
@@ -627,6 +682,11 @@ export function ChatInput({
   const [images, setImages] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [slashIndex, setSlashIndex] = useState(0);
+  // Slash token start where Escape closed the menu (mirrors mentionDismissed: the menu stays shut for that one token).
+  const [slashDismissed, setSlashDismissed] = useState<number | null>(null);
+  // Anchor for the popups that open upward, and the room actually available above them.
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const [upwardMaxH, setUpwardMaxH] = useState<number>();
   // @ handoff target (chip, fixed at the front of the input); only one allowed, picking again replaces it directly.
   const [target, setTarget] = useState<AgentSummary | null>(null);
   // Selected skills (dropdown checklist, multi-select): initial value comes from draft restore (quick-invoke pre-selection), cleared on successful send.
@@ -694,12 +754,14 @@ export function ChatInput({
     ];
   }, [onCompact, onTextChange, skills, locale, toggleSkill]);
   // Positional matching (like @ mentions): a slash opens the menu from any caret position;
-  // running a command removes just the token, leaving the rest of the text intact.
+  // running a command removes just the token, leaving the rest of the text intact. Doesn't
+  // reopen after Escape until the caret sits on a different token.
   const slashTok = !running && !compacting ? matchSlash(text, caret) : null;
   slashMatchRef.current = slashTok;
-  const slashMatches = slashTok
-    ? commands.filter((c) => c.cmd.startsWith(`/${slashTok.query}`))
-    : [];
+  const slashMatches =
+    slashTok && slashTok.start !== slashDismissed
+      ? commands.filter((c) => c.cmd.startsWith(`/${slashTok.query}`))
+      : [];
   const slashOpen = slashMatches.length > 0;
   const activeSlash = slashMatches[Math.min(slashIndex, slashMatches.length - 1)];
 
@@ -709,6 +771,31 @@ export function ChatInput({
     mention && mention.start !== mentionDismissed ? filterAgents(agents, mention.query) : [];
   const mentionOpen = mentionMatches.length > 0;
   const activeMention = mentionMatches[Math.min(mentionIndex, mentionMatches.length - 1)];
+
+  // Both menus above are drawn upward (`bottom-full`) from the composer, so their ceiling is
+  // whatever ancestor clips overflow — on the draft page that's the centered scroll area, whose
+  // top edge sits well below the viewport's. A static `40vh` cap can't know that distance and
+  // clipped the first rows on shorter windows, so measure the real gap when a menu opens.
+  useEffect(() => {
+    if (!slashOpen && !mentionOpen) return;
+    const measure = () => {
+      const el = anchorRef.current;
+      if (!el) return;
+      let ceiling = 0;
+      for (let p = el.parentElement; p; p = p.parentElement) {
+        if (getComputedStyle(p).overflowY !== "visible") {
+          ceiling = p.getBoundingClientRect().top;
+          break;
+        }
+      }
+      // Less the menu's own 6px offset from the composer, plus a little breathing room.
+      const room = el.getBoundingClientRect().top - ceiling - 14;
+      setUpwardMaxH(Math.max(96, Math.min(320, Math.round(room))));
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [slashOpen, mentionOpen]);
 
   /** Auto-grow the textarea (caps at roughly 6 lines, scrolls internally beyond that). */
   const autoGrow = () => {
@@ -843,10 +930,10 @@ export function ChatInput({
         return;
       }
       if (e.key === "Escape") {
-        setText("");
-        onTextChange?.("");
-        // setText is async: wait for the DOM value to update before measuring height (measuring synchronously would read the pre-clear content).
-        requestAnimationFrame(autoGrow);
+        // Only closes the popup, doesn't clear the input: with positional matching the `/token`
+        // is part of the text body like any other word, and wiping a controlled textarea is not
+        // undoable with Ctrl+Z. Reopens if the user keeps typing on another token.
+        setSlashDismissed(slashTok?.start ?? null);
         return;
       }
     }
@@ -867,7 +954,7 @@ export function ChatInput({
         return;
       }
       if (e.key === "Escape") {
-        // Only closes the popup, doesn't clear the input (unlike slash: the @ prefix is part of the text body), reopens if the user keeps typing.
+        // Only closes the popup, doesn't clear the input (the `@token` is part of the text body), reopens if the user keeps typing.
         setMentionDismissed(mention?.start ?? null);
         return;
       }
@@ -923,12 +1010,16 @@ export function ChatInput({
   };
 
   return (
-    <div className="relative">
+    <div className="relative" ref={anchorRef}>
       {/* Slash command menu (triggered by typing /; /compact plus one entry per installed skill).
-          Height is viewport-capped with internal scrolling so a long skill list never pushes the
-          menu's top edge past the screen; the active row keeps itself scrolled into view. */}
+          Height is capped to the room measured above the composer (see upwardMaxH) with internal
+          scrolling, so a long skill list never pushes the menu's top edge out of view; the active
+          row keeps itself scrolled into view. */}
       {slashOpen && (
-        <div className="anim-pop absolute bottom-full left-0 z-40 mb-1.5 max-h-[min(20rem,40vh)] w-80 max-w-[calc(100vw-2rem)] overflow-y-auto overscroll-contain rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900">
+        <div
+          style={{ maxHeight: upwardMaxH }}
+          className="anim-pop absolute bottom-full left-0 z-40 mb-1.5 w-80 max-w-[calc(100vw-2rem)] overflow-y-auto overscroll-contain rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900"
+        >
           {slashMatches.map((c, i) => (
             <button
               key={c.cmd}
@@ -955,7 +1046,10 @@ export function ChatInput({
 
       {/* @ subagent menu (triggered by typing @; interaction matches the slash menu) */}
       {mentionOpen && (
-        <div className="anim-pop absolute bottom-full left-0 z-40 mb-1.5 max-h-64 w-72 overflow-y-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900">
+        <div
+          style={{ maxHeight: Math.min(256, upwardMaxH ?? 256) }}
+          className="anim-pop absolute bottom-full left-0 z-40 mb-1.5 w-72 overflow-y-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900"
+        >
           {mentionMatches.map((a, i) => (
             <button
               key={a.agentId}
@@ -1085,9 +1179,14 @@ export function ChatInput({
             setCaret(caretNow);
             setSlashIndex(0);
             setMentionIndex(0);
-            // Closing via Escape only persists for "the same @ mention": continuing to type
-            // within that mention won't reopen the menu; it re-opens once the cursor is no
-            // longer on that mention (deleted, moved away, or replaced by a new one).
+            // Closing via Escape only persists for "the same token": continuing to type within
+            // that slash command / mention won't reopen the menu; it re-opens once the cursor is
+            // no longer on that token (deleted, moved away, or replaced by a new one).
+            setSlashDismissed((d) => {
+              if (d === null) return null;
+              const m = matchSlash(value, caretNow);
+              return m && m.start === d ? d : null;
+            });
             setMentionDismissed((d) => {
               if (d === null) return null;
               const m = matchMention(value, caretNow);

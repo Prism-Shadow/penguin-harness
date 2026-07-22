@@ -1095,11 +1095,21 @@ export function toolDefinitionsToSchemas(tools: ToolDefinition[]): ToolSchema[] 
   }));
 }
 
-/** Pre-builds UniConfig from GenerativeModelConfig (called once at construction time). */
+/**
+ * Pre-builds UniConfig from GenerativeModelConfig (called once at construction time).
+ *
+ * When the tool list is empty (connectivity probe, bare/meta LLM, vision describer), `tools`
+ * is omitted entirely instead of set to `[]`: strict OpenAI-compatible servers (e.g. vLLM)
+ * reject an empty array with a 400 ("tools must not be an empty array"), and omission is the
+ * protocol equivalent. `tool_choice` is likewise never set — AgentHub only puts it on the wire
+ * when UniConfig defines it, and leaving it off preserves the protocol default ("auto" when
+ * tools are present).
+ */
 export function buildUniConfig(config: GenerativeModelConfig): UniConfig {
-  const uniConfig: UniConfig = {
-    tools: toolDefinitionsToSchemas(config.tools),
-  };
+  const uniConfig: UniConfig = {};
+  if (config.tools.length > 0) {
+    uniConfig.tools = toolDefinitionsToSchemas(config.tools);
+  }
   if (config.systemPrompt !== undefined) {
     uniConfig.system_prompt = config.systemPrompt;
   }

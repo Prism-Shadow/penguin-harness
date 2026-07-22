@@ -3,8 +3,8 @@ name: penguin-sdk
 description: Build AI apps on the Penguin Harness SDK — self-contained projects, the createSession/run streaming loop, and a complete RAG recipe that ingests documents into a knowledge base and answers with citations behind a web UI.
 short_description: Build AI and RAG apps on the Penguin Harness SDK.
 short_description_zh: 基于 Penguin SDK 构建 AI 与 RAG 应用。
-version: 9
-updated: 2026-07-20T19:30:00Z
+version: 11
+updated: 2026-07-21T00:00:00Z
 ---
 
 # Penguin Harness SDK
@@ -59,8 +59,8 @@ If the package is not on your npm registry (it is developed in the PenguinHarnes
 
 Configure a model for the app's data root, in this order — stop at the first that works:
 
-1. `penguin config model add --root <data_dir> --model-id <id> --api-key <key> [--base-url <url>] [--client-type openai] --set-default` — prefer `--client-type openai --base-url <endpoint>` (works with any OpenAI-compatible endpoint; exact ids in the agenthub-models skill).
-2. Environment variables cover the **credential only** (`DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, …) — model selection still comes from the project config, whose preset default is `deepseek-v4-pro`. Env-only setup therefore works out of the box only with `DEEPSEEK_API_KEY`; for another vendor either run the CLI command above or pass a catalog `modelId` to `createSession`.
+1. `penguin config model add --root <data_dir> --provider <group> --model-id <id> --api-key <key> [--base-url <url>] [--client-type openai] --set-default` — prefer `--client-type openai --base-url <endpoint>` (works with any OpenAI-compatible endpoint; exact ids in the agenthub-models skill). `--provider` is required: a model is always the `(provider, model_id)` pair and the group is never inferred from the id (`custom` for an endpoint outside the built-in groups).
+2. Environment variables cover the **credential only** (`DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, …) — model selection still comes from the project config, whose preset default is `deepseek-v4-pro`. Env-only setup therefore works out of the box only with `DEEPSEEK_API_KEY`; for another vendor either run the CLI command above or pass a configured `{ provider, modelId }` pair to `createSession`.
 
 Keep model API keys **project-local**: configure them with the penguin CLI into the app's own data root under the working directory, so the project stays self-contained and movable. When building an AI app, **always pass `--root <data_dir>` pointing at the app's data directory inside the current working directory** (the same path you give `createAgent({ root })`, e.g. `./penguin_data`) — never run `penguin config ...` without `--root`, or it writes to the global `~/.penguin/data` instead of the project. Never read, copy or fall back to model keys stored in the user's global `~/.penguin` directory — that config belongs to the person running Penguin, not to the app you are building.
 
@@ -99,7 +99,7 @@ rl.close();
 session.dispose();
 ```
 
-- `createSession({ workspaceDir, modelId })` — `workspaceDir` must already exist (omit for an auto temp dir); omit `modelId` for the project default model.
+- `createSession({ workspaceDir, provider, modelId })` — `workspaceDir` must already exist (omit for an auto temp dir); the model reference is the `(provider, modelId)` pair, so pass both to pick a configured model or neither for the project default — passing one alone throws.
 - The `approve` callback gates every tool call; **omitting it denies everything**.
 - An Agent's behavior is edited in its `agent_state/` files (system_config.yaml, AGENTS.md, skills/), not in code.
 - Call `session.dispose()` when done to release background processes.
@@ -128,7 +128,7 @@ git clone --depth 1 <repo_url> corpus/<name>   # or curl pages into corpus/
 find corpus -type f ! -regex '.*\.\(md\|mdx\|txt\|html?\)$' -delete && rm -rf corpus/*/.git
 ```
 
-**Ingest** (`ingest.ts`) — split on markdown headings, cap chunk size, write one JSON index; also initialize `penguin_data/` and install the persona:
+**Ingest** (`ingest.ts`) — split on markdown headings, cap chunk size, write one JSON index; also initialize `penguin_data/`, install the persona and strip the skills the embedded agent doesn't need:
 
 ```ts
 import fs from "node:fs";
@@ -140,9 +140,15 @@ const walk = (d: string): string[] =>
   fs.readdirSync(d, { withFileTypes: true }).flatMap((e) =>
     e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)]);
 
+const STATE = path.join(
+  ROOT, "penguin_data", "default_project", "agents", "default_agent", "agent_state");
 await createAgent({ root: path.join(ROOT, "penguin_data") });
-fs.copyFileSync(path.join(ROOT, "persona.md"), path.join(
-  ROOT, "penguin_data", "default_project", "agents", "default_agent", "agent_state", "AGENTS.md"));
+fs.copyFileSync(path.join(ROOT, "persona.md"), path.join(STATE, "AGENTS.md"));
+// A fresh default_agent is initialized with the whole built-in Skill library, and every installed
+// Skill's metadata is injected into the system prompt of every /api/ask. This app only answers
+// from retrieved context, so remove them: unrelated skill descriptions cost tokens on each
+// question and pull the answer off-topic when one happens to match the wording of a question.
+fs.rmSync(path.join(STATE, "skills"), { recursive: true, force: true });
 
 const chunks: { id: number; source: string; heading: string; text: string }[] = [];
 for (const f of walk(path.join(ROOT, "corpus")).filter((f) => /\.(md|mdx|txt|html?)$/i.test(f))) {

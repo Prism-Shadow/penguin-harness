@@ -169,7 +169,7 @@ interface ToolDefinitionConfig {
 Human 刻意不设计为接口类。SDK 的调用方就是 Human:
 
 ```ts
-const session = await agent.createSession({ workspaceDir, modelId });
+const session = await agent.createSession({ workspaceDir, provider, modelId });
 
 session.run(
   newMessages: OmniMessage[],                    // 输入:Prompt

@@ -1,4 +1,8 @@
-/** Site footer: brand + product/resource link columns + copyright. */
+/**
+ * Site footer: brand + product/resource link columns + copyright. The container is
+ * max-w-7xl to frame the page like the nav (chrome shared with the docs site), while
+ * content sections stay max-w-6xl.
+ */
 import { Link } from "react-router";
 import { S } from "../lib/strings";
 import { DOCS_URL, LICENSE_URL, RELEASES_URL, REPO_URL } from "../lib/links";
@@ -12,7 +16,7 @@ export function Footer() {
 
   return (
     <footer className="border-t border-gray-200 dark:border-gray-800">
-      <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
+      <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6">
         <div className="flex flex-col gap-10 sm:flex-row sm:justify-between">
           <div className="max-w-xs">
             <div className="flex items-center gap-2">

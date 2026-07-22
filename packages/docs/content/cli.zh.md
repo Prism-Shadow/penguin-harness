@@ -7,7 +7,7 @@ CLI 由 npm 包 `@prismshadow/penguin-cli` 提供，命令为 `penguin`。不带
 
 ## 全局约定
 
-- 模型引用：模型身份始终是 `(provider, model_id)` 二元组。`--model-id` 填上游模型 id，与 `--provider` 组成配对引用。`run` / `chat` 省略 `--provider` 时，仅当该 `--model-id` 在配置中全局唯一才会匹配，存在歧义则报错。
+- 模型引用：模型身份始终是 `(provider, model_id)` 二元组。`--model-id` 填上游模型 id，`--provider` 填其所属分组；provider 绝不推断、绝不猜测、也没有缺省值。`run` / `chat` 上这对参数整体可选——两个都给即指定模型，两个都不给则使用 Project 默认模型——但只给其中一个是错误。
 - 数据根目录：`--root <dir>` 覆盖数据根目录，优先级为 `--root` > 环境变量 `PENGUIN_HOME` > `~/.penguin/data`。
 
 ## penguin run
@@ -21,8 +21,8 @@ penguin run -m "总结当前目录的代码结构"
 | 选项 | 说明 |
 | --- | --- |
 | `-m, --message <message>` | 必填，要发送的消息 |
-| `--model-id <id>` | 指定模型，缺省使用 Project 默认模型 |
-| `--provider <group>` | 模型所属 Provider 分组 |
+| `--model-id <id>` | 指定模型的上游 id，须与 `--provider` 同时给出；两者都不给时使用 Project 默认模型 |
+| `--provider <group>` | 模型所属 Provider 分组，给出 `--model-id` 时必填 |
 | `--project-id <id>` | 指定 Project |
 | `--agent-id <id>` | 指定 Agent |
 | `--workspace <path>` | Workspace 目录，默认当前目录，必须已存在 |
@@ -74,13 +74,13 @@ Ctrl-C 的行为依状态而定：
 新增或更新模型条目：
 
 ```bash
-penguin config model add --model-id deepseek-v4-pro --api-key sk-... --set-default
+penguin config model add --provider deepseek --model-id deepseek-v4-pro --api-key sk-... --set-default
 ```
 
 | 选项 | 说明 |
 | --- | --- |
 | `--model-id <id>` | 必填，上游模型 id |
-| `--provider <group>` | Provider 分组，缺省时根据内置目录推断 |
+| `--provider <group>` | 必填，条目所属的 Provider 分组。它绝不由模型 id 推导：网关会以上游 id 转售厂商模型，猜错分组会把凭据写到另一家厂商的接口上。内置分组之外的接口一律用 `custom`。 |
 | `--api-key <key>` | API Key，内联存入 Project 隐藏文件 `.project_config.toml` |
 | `--base-url <url>` | 自定义接口地址 |
 | `--context-window <n>` | 上下文窗口大小 |

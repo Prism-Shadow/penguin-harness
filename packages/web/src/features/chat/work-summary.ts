@@ -13,7 +13,8 @@
  * are [argStartedAtMs, +generation segment] and [approvalAtMs ?? callStartedAtMs, +execution
  * segment]. Segments missing a start point can't be placed on the timeline and fall back to
  * plain summation on top of the span. `startMs` is the earliest placed start — the anchor the
- * group header ticks from while the group is still running.
+ * group header ticks from while an item is still in flight (once nothing is running the header
+ * freezes at the computed span, so the displayed number never jumps backwards).
  */
 import type { ChatItem } from "../../lib/omni/stream-model";
 

@@ -6,10 +6,11 @@
  */
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
+import { THEME_KEY, readPref, subscribePref, writePref } from "./site-prefs";
 
 export type ThemeMode = "light" | "dark" | "system";
 
-const MODE_KEY = "penguin-docs.theme";
+const THEME_MODES = ["light", "dark", "system"] as const;
 
 interface ThemeContextValue {
   mode: ThemeMode;
@@ -21,9 +22,7 @@ interface ThemeContextValue {
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 function initialMode(): ThemeMode {
-  const stored = localStorage.getItem(MODE_KEY);
-  if (stored === "light" || stored === "dark" || stored === "system") return stored;
-  return "system";
+  return readPref<ThemeMode>(THEME_KEY, THEME_MODES) ?? "system";
 }
 
 function systemDark(): boolean {
@@ -50,9 +49,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, [mode]);
 
   const setMode = useCallback((next: ThemeMode) => {
-    localStorage.setItem(MODE_KEY, next);
+    writePref(THEME_KEY, next);
     setModeState(next);
   }, []);
+
+  // The sibling site (landing <-> docs) writing the shared key in another tab.
+  useEffect(() => subscribePref<ThemeMode>(THEME_KEY, THEME_MODES, setModeState), []);
 
   return <ThemeContext.Provider value={{ mode, dark, setMode }}>{children}</ThemeContext.Provider>;
 }

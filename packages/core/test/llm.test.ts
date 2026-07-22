@@ -1048,10 +1048,23 @@ describe("config helpers", () => {
     expect(cfg.tools).toEqual([{ name: "t", description: "d" }]);
 
     const minimal = buildUniConfig({ modelId: "m", tools: [] });
-    expect(minimal.tools).toEqual([]);
+    expect("tools" in minimal).toBe(false);
     expect("system_prompt" in minimal).toBe(false);
     expect("max_tokens" in minimal).toBe(false);
     expect("thinking_level" in minimal).toBe(false);
+  });
+
+  it("omits tools when empty and never sets tool_choice (strict endpoints reject both)", () => {
+    // Empty tool list (connectivity probe, bare/meta LLM, vision describer): the `tools` key
+    // must be absent, not `[]` — AgentHub forwards any defined array verbatim, and strict
+    // OpenAI-compatible servers (e.g. vLLM) reject `tools: []` with a 400.
+    const empty = buildUniConfig({ modelId: "m", tools: [] });
+    expect("tools" in empty).toBe(false);
+    // `tool_choice` must never be set: AgentHub only emits it on the wire when UniConfig
+    // defines it, and leaving it off preserves the protocol default.
+    expect("tool_choice" in empty).toBe(false);
+    const withTools = buildUniConfig({ modelId: "m", tools: [{ name: "t", description: "d" }] });
+    expect("tool_choice" in withTools).toBe(false);
   });
 });
 
@@ -1489,6 +1502,46 @@ describe("provider fidelity payloads (opaque, AgentHub 0.4 semantics)", () => {
       ["plan...", { phase: "planning" }],
       ["final", { phase: "answer" }],
     ]);
+  });
+
+  it("closes a text segment on fidelity.signature: later text becomes its own segment (the signature must not cover unsigned text)", () => {
+    const { messages } = translateEvents([
+      // Gemini stamps a thoughtSignature on the text part it signed; whatever follows is
+      // unsigned. Merging them would replay a signature covering text the provider never
+      // signed, and the provider rejects the resumed turn.
+      ev({ content_items: [{ type: "text", text: "part one", fidelity: { signature: "sigA" } }] }),
+      ev({ content_items: [{ type: "text", text: "part two" }] }),
+      ev({ event_type: "stop", content_items: [], finish_reason: "stop" }),
+    ]);
+    const texts = complete(messages).filter((m) => (m.payload as { type: string }).type === "text");
+    expect(
+      texts.map((m) => {
+        const p = m.payload as { text: string; fidelity?: Record<string, unknown> };
+        return [p.text, p.fidelity];
+      }),
+    ).toEqual([
+      ["part one", { signature: "sigA" }],
+      ["part two", undefined],
+    ]);
+  });
+
+  it("accumulates fidelity keys across deltas of one text segment (phase marker + trailing signature)", () => {
+    const { messages } = translateEvents([
+      // GPT-5 opens the segment with a bare phase marker and signs it only at the end; a
+      // replacing (rather than merging) assignment would drop the phase and lose the
+      // segmentation on replay.
+      ev({ content_items: [{ type: "text", text: "", fidelity: { phase: "answer" } }] }),
+      ev({ content_items: [{ type: "text", text: "final" }] }),
+      ev({ content_items: [{ type: "text", text: "", fidelity: { signature: "sigB" } }] }),
+      ev({ event_type: "stop", content_items: [], finish_reason: "stop" }),
+    ]);
+    const texts = complete(messages).filter((m) => (m.payload as { type: string }).type === "text");
+    expect(
+      texts.map((m) => {
+        const p = m.payload as { text: string; fidelity?: Record<string, unknown> };
+        return [p.text, p.fidelity];
+      }),
+    ).toEqual([["final", { phase: "answer", signature: "sigB" }]]);
   });
 
   it("carries the tool_call fidelity through to the complete message", () => {

@@ -47,7 +47,7 @@ export function LangToggle() {
       {open && (
         <div
           role="menu"
-          className="anim-pop absolute right-0 z-40 mt-1 w-36 rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900"
+          className="anim-fade absolute right-0 z-40 mt-1 w-36 rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900"
         >
           {OPTIONS.map((o) => (
             <button

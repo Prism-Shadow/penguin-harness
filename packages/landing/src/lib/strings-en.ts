@@ -119,7 +119,9 @@ export const en: Strings = {
     title: "Multi-agent collaboration makes evolution automatic",
     subtitle:
       "The Optimizer orchestrates multiple Evaluators to score the Target Agent in parallel, uses the scores and run traces to find where points were lost, and upgrades the Agent from version N to N+1 — with a snapshot before every round.",
-    videoSoon: "Demo video coming soon",
+    videoLabel: "Self-improvement demo video",
+    videoCaption:
+      "The self-improvement loop end to end: run the benchmark, find the lost points, ship the next version.",
     nodeOptimizer: "Optimizer",
     nodeEvaluator: "Evaluator × N",
     nodeTarget: "Target Agent",
@@ -164,11 +166,12 @@ export const en: Strings = {
     tabDeepseek: "DeepSeek",
     tabOpenrouter: "OpenRouter",
     deepseekCmd: `penguin config model add \\
+  --provider deepseek \\
   --model-id deepseek-v4-pro \\
   --api-key sk-your-deepseek-key \\
   --set-default`,
     deepseekNote:
-      "The provider is inferred as deepseek automatically; omit --api-key to fall back to the DEEPSEEK_API_KEY environment variable.",
+      "A model is always referenced by the (provider, model_id) pair, so --provider is required; omit --api-key to fall back to the DEEPSEEK_API_KEY environment variable.",
     openrouterCmd: `penguin config model add \\
   --provider openrouter \\
   --model-id deepseek/deepseek-v4-pro \\
@@ -262,9 +265,9 @@ export const en: Strings = {
 
   benchmark: {
     eyebrow: "Benchmark",
-    title: "Same model, equal or better quality, lower cost",
+    title: "Each with its flagship model — comparable quality, 1-2 orders of magnitude cheaper",
     subtitle:
-      "All runs use the same DeepSeek V4 Pro model — head-to-head against Claude Code and OpenAI Codex on two suites.",
+      "Every product runs the model it is normally paired with, head-to-head against Claude Code and OpenAI Codex on two suites: comparable accuracy, tens of times the difference in spend.",
     higherBetter: "higher is better",
     lowerBetter: "lower is better",
     dimScore: "Accuracy",
@@ -272,12 +275,14 @@ export const en: Strings = {
     dimCost: "Cost",
     dataTitle: "Complex data analysis",
     dataDesc:
-      "Ties Claude Code on accuracy and clearly beats OpenAI Codex — with fewer Tokens at lower cost.",
+      "Best accuracy of the three (66.67%, against 53.33% for both rivals), at 1/35 of OpenAI Codex's cost and 1/70 of Claude Code's.",
     dataFootnote:
-      "15 complex data-analysis tasks · averaged over 1 run · cost estimated at official pricing.",
+      "15 complex data-analysis tasks · single run · Tokens and cost are suite totals · estimated at official pricing.",
     codeTitle: "Coding tasks",
-    codeDesc: "Highest accuracy of the three at the lowest per-run cost.",
-    codeFootnote: "40 coding tasks · averaged over 2 runs · cost estimated at official pricing.",
+    codeDesc:
+      "Ties OpenAI Codex on accuracy (71.25%) and trails Claude Code (86.25%) — at 1/58 and 1/39 of their cost.",
+    codeFootnote:
+      "40 coding tasks × 2 runs (accuracy over all 80 outcomes) · Tokens and cost are suite totals · estimated at official pricing.",
     colFramework: "Framework",
     colModel: "Model",
     colAccuracy: "Accuracy (%)",
@@ -326,6 +331,21 @@ export const en: Strings = {
       {
         title: "Multi-user management",
         desc: "Admins provision users; each gets an independent Project with isolated data.",
+      },
+    ],
+  },
+
+  skills: {
+    eyebrow: "Built-in Skills",
+    title: "The built-in Skill library at a glance",
+    subtitle: "Four Skill groups out of the box — Agents can write and optimize their own, too.",
+    groups: [
+      { title: "Office Productivity", skills: ["data-analysis", "firecrawl"] },
+      { title: "Software Development", skills: ["web-design", "software-engineering"] },
+      { title: "AI App Development", skills: ["penguin-sdk", "penguin-cli", "agenthub-models"] },
+      {
+        title: "Agent Tuning",
+        skills: ["agent-creation", "benchmark-design", "agent-evaluation", "agent-optimization"],
       },
     ],
   },

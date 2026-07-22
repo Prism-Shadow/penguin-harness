@@ -1,10 +1,10 @@
 /**
  * Integration tests for `penguin config model add|default|vision|list` (run through
  * commander's parseAsync for the full command path): --model-id always takes the
- * upstream id, paired with --provider to form a (provider, model_id) reference (add's
- * --provider defaults to catalog-based inference, falling back to custom when
- * inference fails; default / vision require --provider and raise an error when the
- * reference isn't found in models — no string concatenation is ever performed); --root
+ * upstream id, paired with --provider to form a (provider, model_id) reference
+ * (--provider is required on all three subcommands — the group is never inferred — and
+ * default / vision raise an error when the reference isn't found in models; no string
+ * concatenation is ever performed); --root
  * specifies the data root directory (takes priority over PENGUIN_HOME); persisted to a
  * single hidden .project_config.toml (mode 0600, credentials inline, provider and
  * model_id as separate columns); list displays provider and model_id as separate
@@ -84,13 +84,15 @@ describe("penguin config model add/list (--root plus provider / model_id stored 
       "add",
       "--model-id",
       "my-own-model",
+      "--provider",
+      "custom",
       "--api-key",
       "sk-root-secret-1",
       "--root",
       tmpRoot,
     ]);
     expect(add.code).toBe(0);
-    // Catalog inference fails -> falls back to the custom group (provider is a separate field, never concatenated into the id).
+    // The named group is stored as a separate field, never concatenated into the id.
     expect(add.out).toContain("Added model (provider=custom, model_id=my-own-model).");
 
     const file = projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID);
@@ -119,11 +121,13 @@ describe("penguin config model add/list (--root plus provider / model_id stored 
     expect(list.out).not.toContain("sk-root-secret-1");
   });
 
-  it("built-in catalog infers the grouping: an upstream id matching the catalog lands under that provider; --set-default writes a pair reference", async () => {
+  it("naming an existing pair updates that preset entry in place; --set-default writes a pair reference", async () => {
     const add = await runModel([
       "add",
       "--model-id",
       "claude-sonnet-4-6",
+      "--provider",
+      "anthropic",
       "--set-default",
       "--root",
       tmpRoot,
@@ -168,8 +172,16 @@ describe("penguin config model add/list (--root plus provider / model_id stored 
   });
 
   it("client_type defaults by grouping semantics (PRN-021): custom / self-hosted / gateway get openai, first-party providers get none", async () => {
-    // custom (catalog inference fails) and self-hosted groups (--provider not a catalog value): default to client_type=openai.
-    await runModel(["add", "--model-id", "my-openai-proxy", "--root", tmpRoot]);
+    // The custom group and self-hosted groups (--provider not a catalog value): default to client_type=openai.
+    await runModel([
+      "add",
+      "--model-id",
+      "my-openai-proxy",
+      "--provider",
+      "custom",
+      "--root",
+      tmpRoot,
+    ]);
     await runModel(["add", "--model-id", "in-house-1", "--provider", "mylab", "--root", tmpRoot]);
     // A non-catalog id under a first-party vendor group: client_type is not set (AgentHub auto-routes by upstream id).
     await runModel([
@@ -241,11 +253,27 @@ describe("penguin config model add/list (--root plus provider / model_id stored 
   });
 });
 
-describe("model default/vision: --provider is required, (provider, model_id) pair reference", () => {
+describe("model add/default/vision: --provider is required, (provider, model_id) pair reference", () => {
   it("missing --provider: commander usage error, nonzero exit code", async () => {
     const bad = await runModel(["default", "--model-id", "deepseek-v4-flash", "--root", tmpRoot]);
     expect(bad.code).not.toBe(0);
     expect(bad.err).toContain("--provider");
+  });
+
+  it("add without --provider is a usage error too: the group is never inferred, so no config is written", async () => {
+    const bad = await runModel([
+      "add",
+      "--model-id",
+      "claude-sonnet-4-6",
+      "--api-key",
+      "sk-never-stored",
+      "--root",
+      tmpRoot,
+    ]);
+    expect(bad.code).not.toBe(0);
+    expect(bad.err).toContain("--provider");
+    // The credential must not have landed on a guessed vendor: nothing was persisted at all.
+    await expect(fs.access(projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID))).rejects.toThrow();
   });
 
   it("dangling reference: the pair is not in models; the error carries the pair reference and a model list hint", async () => {

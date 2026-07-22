@@ -5,13 +5,14 @@
  * Readable by any member; toggle/edit/delete are owner-only — PUT has whole-file
  * replace semantics, so toggling also resends every field and only flips `enabled`.
  * startAt/endAt use datetime-local inputs (local timezone), converted to ISO 8601 on
- * submit; the "new Session each run" mode can also pick a Model (a provider + modelId
- * pair; defaults to the Project default; mutual exclusivity with sessionId is
- * validated server-side).
+ * submit; the "new Session each run" mode can also pick a Model — always a complete
+ * (provider, modelId) pair, since provider is never inferred; omitting it entirely falls
+ * back to the Project default. Mutual exclusivity with sessionId is validated server-side.
  */
 import { useCallback, useEffect, useState } from "react";
 import type {
   ModelInfo,
+  ModelRefDto,
   ScheduleItem,
   SchedulesResponse,
   ScheduleStatus,
@@ -50,36 +51,34 @@ function toLocalInput(iso: string | undefined): string {
 }
 
 /**
- * The model selection value in the form: a paired reference. provider may be
- * omitted — when a hand-written TOML only specifies model_id, it's resolved by
- * unique match at parse time; editing never fills in a provider on its own.
- */
-interface ScheduleModelRef {
-  provider?: string;
-  modelId: string;
-}
-
-/**
  * Model reference ↔ native select option value: encoded as a JSON array
- * ([provider ?? null, modelId]), used only as a transient DOM-value serialization —
+ * ([provider, modelId]), used only as a transient DOM-value serialization —
  * it never enters storage or requests; the persisted/submitted data still keeps
  * provider and modelId as two separate fields (no concatenation anywhere in the
  * pipeline). "" means the Project default.
  */
-const modelOptionValue = (ref: ScheduleModelRef): string =>
-  JSON.stringify([ref.provider ?? null, ref.modelId]);
+const modelOptionValue = (ref: ModelRefDto): string => JSON.stringify([ref.provider, ref.modelId]);
 
-const parseModelOption = (v: string): ScheduleModelRef | null => {
+const parseModelOption = (v: string): ModelRefDto | null => {
   if (!v) return null;
-  const [provider, modelId] = JSON.parse(v) as [string | null, string];
-  return provider === null ? { modelId } : { provider, modelId };
+  const [provider, modelId] = JSON.parse(v) as [string, string];
+  return { provider, modelId };
 };
 
 /** Display label for a model option: upstream id + provider name (shown side by side, not a composite id). */
-const modelOptionLabel = (ref: ScheduleModelRef): string =>
-  ref.provider === undefined
-    ? ref.modelId
-    : `${ref.modelId} · ${providerInfo(ref.provider)?.label ?? ref.provider}`;
+const modelOptionLabel = (ref: ModelRefDto): string =>
+  `${ref.modelId} · ${providerInfo(ref.provider)?.label ?? ref.provider}`;
+
+/**
+ * Stored schedule fields → a model reference. A reference is always the complete
+ * (provider, model_id) pair, since provider is never inferred: the DTO types the two
+ * fields independently, so this guard is what keeps the form and the upsert body from
+ * ever assembling half a reference. A file that sets only one half is rejected by the
+ * server when parsed (it surfaces under invalidFiles, never as a listed row), so in
+ * practice this returns null only when the schedule uses the Project's default model.
+ */
+const itemModelRef = (item: Pick<ScheduleItem, "provider" | "modelId">): ModelRefDto | null =>
+  item.modelId && item.provider ? { provider: item.provider, modelId: item.modelId } : null;
 
 /** Modal form state (shared by create/edit): non-null editing means editing that task (name locked). */
 interface FormState {
@@ -94,8 +93,8 @@ interface FormState {
   target: "new" | "session";
   sessionId: string;
   workspace: string;
-  /** Model for the new-Session mode (null = Project default, modelId/provider omitted). */
-  model: ScheduleModelRef | null;
+  /** Model for the new-Session mode (null = Project default, provider and modelId both omitted). */
+  model: ModelRefDto | null;
 }
 
 const EMPTY_FORM: FormState = {
@@ -191,10 +190,7 @@ export function SchedulesTab({ agentId }: { agentId: string }) {
         ? { workspace: form.workspace.trim() }
         : {}),
       ...(form.target === "new" && form.model
-        ? {
-            modelId: form.model.modelId,
-            ...(form.model.provider !== undefined ? { provider: form.model.provider } : {}),
-          }
+        ? { modelId: form.model.modelId, provider: form.model.provider }
         : {}),
     };
     setBusy(true);
@@ -218,6 +214,7 @@ export function SchedulesTab({ agentId }: { agentId: string }) {
     setBusy(true);
     setError(null);
     setNotice(null);
+    const model = itemModelRef(item);
     try {
       await api.updateSchedule(projectId, agentId, item.name, {
         prompt: item.prompt,
@@ -227,9 +224,8 @@ export function SchedulesTab({ agentId }: { agentId: string }) {
         ...(item.endAt !== undefined ? { endAt: item.endAt } : {}),
         ...(item.sessionId !== undefined ? { sessionId: item.sessionId } : {}),
         ...(item.workspace !== undefined ? { workspace: item.workspace } : {}),
-        // Model reference is resent as a pair (a hand-written file with provider omitted stays omitted).
-        ...(item.modelId !== undefined ? { modelId: item.modelId } : {}),
-        ...(item.provider !== undefined ? { provider: item.provider } : {}),
+        // Model reference is resent as a whole pair or not at all — never half of one.
+        ...(model ? { modelId: model.modelId, provider: model.provider } : {}),
       });
       setNotice(S.common.saved);
       await load();
@@ -240,7 +236,7 @@ export function SchedulesTab({ agentId }: { agentId: string }) {
     }
   };
 
-  /** Edit: prefill this row into the modal form (submits via PUT; model reference prefilled as a pair, provider not auto-filled when absent). */
+  /** Edit: prefill this row into the modal form (submits via PUT; the model reference is prefilled only as a complete pair). */
   const startEdit = (item: ScheduleItem) => {
     openForm({
       editing: item.name,
@@ -253,13 +249,7 @@ export function SchedulesTab({ agentId }: { agentId: string }) {
       target: item.sessionId ? "session" : "new",
       sessionId: item.sessionId ?? "",
       workspace: item.workspace ?? "",
-      model:
-        item.modelId !== undefined
-          ? {
-              modelId: item.modelId,
-              ...(item.provider !== undefined ? { provider: item.provider } : {}),
-            }
-          : null,
+      model: itemModelRef(item),
     });
   };
 
@@ -494,9 +484,9 @@ export function SchedulesTab({ agentId }: { agentId: string }) {
                     onChange={(e) => set({ model: parseModelOption(e.target.value) })}
                   >
                     <option value="">{S.schedule.modelDefault}</option>
-                    {/* When the prefilled reference is no longer in the model config (including a
-                        hand-written file missing only provider), add an extra option so it isn't
-                        displayed as "Project default". */}
+                    {/* When the prefilled pair is no longer in the model config (the entry was
+                        renamed or deleted), add an extra option so it isn't displayed as
+                        "Project default". */}
                     {form.model &&
                       !models.some(
                         (m) =>

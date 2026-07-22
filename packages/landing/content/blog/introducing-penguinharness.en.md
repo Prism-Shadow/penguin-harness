@@ -21,27 +21,27 @@ Three reasons, in deliberate order — from task quality, to how agents get buil
 
 ### 1. Better on complex tasks, at lower cost
 
-A deliberately minimal toolset over clean low-level interfaces: fewer tool calls, fewer Tokens, deeply tuned for open models like DeepSeek. All runs use the same DeepSeek V4 Pro model, head-to-head against Claude Code and OpenAI Codex on two suites:
+A deliberately minimal toolset over clean low-level interfaces: fewer tool calls, fewer Tokens, deeply tuned for open models like DeepSeek. Each harness runs the model it is normally paired with — the comparison is between the products as people actually use them — head-to-head on two suites:
 
-![Benchmark: PenguinHarness matches Claude Code on accuracy at lower cost, and beats OpenAI Codex on both suites](/blog-assets/benchmark-light.svg)
+![Benchmark: PenguinHarness leads the data-analysis suite and ties OpenAI Codex on coding, at a small fraction of both rivals' cost](/blog-assets/benchmark-light.svg)
 
-Complex data analysis (15 tasks, single run):
-
-| Framework      | Model           | Accuracy (%) | Tokens (M) | Cost ($) |
-| -------------- | --------------- | -----------: | ---------: | -------: |
-| PenguinHarness | DeepSeek V4 Pro |         66.7 |      18.04 |    0.552 |
-| Claude Code    | DeepSeek V4 Pro |         66.7 |      21.17 |    0.641 |
-| OpenAI Codex   | DeepSeek V4 Pro |         46.7 |      13.36 |    0.427 |
-
-Coding tasks (40 tasks × 2 runs averaged, thinking high, 30-minute per-task timeout, CNY pricing converted at $1 = ¥7):
+Complex data analysis (15 tasks, single run; PenguinHarness and Codex at thinking xhigh, Claude Code at max):
 
 | Framework      | Model           | Accuracy (%) | Tokens (M) | Cost ($) |
 | -------------- | --------------- | -----------: | ---------: | -------: |
-| PenguinHarness | DeepSeek V4 Pro |        50.00 |       2.10 |    0.041 |
-| Claude Code    | DeepSeek V4 Pro |        48.75 |       2.00 |    0.048 |
-| OpenAI Codex   | DeepSeek V4 Pro |        42.50 |       2.65 |    0.043 |
+| PenguinHarness | DeepSeek V4 Pro |        66.67 |      18.04 |     0.55 |
+| Claude Code    | Claude Opus 4.8 |        53.33 |      22.20 |    38.48 |
+| OpenAI Codex   | GPT-5.5         |        53.33 |      13.72 |    19.41 |
 
-On the data-analysis suite we tie Claude Code on accuracy and clearly beat OpenAI Codex, with 14.8% fewer Tokens and 13.8% lower cost; on the coding suite we score the highest accuracy of the three at the lowest per-run cost.
+Coding tasks (40 tasks × 2 runs; accuracy is over all 80 outcomes):
+
+| Framework      | Model           | Accuracy (%) | Tokens (M) | Cost ($) |
+| -------------- | --------------- | -----------: | ---------: | -------: |
+| PenguinHarness | DeepSeek V4 Pro |        71.25 |     200.00 |     3.81 |
+| Claude Code    | Claude Opus 4.8 |        86.25 |     151.61 |   146.97 |
+| OpenAI Codex   | GPT-5.5         |        71.25 |     251.20 |   220.08 |
+
+Tokens and cost are suite totals, not per-run means. On data analysis we take the highest accuracy of the three — 66.67% against 53.33% for both — while spending 1/35 of what Codex spent and 1/70 of Claude Code's. On coding we tie Codex at 71.25% and trail Claude Code's 86.25%, but the whole suite cost us $3.81 against their $220.08 and $146.97: comparable work, one to two orders of magnitude apart on the bill.
 
 ### 2. One sentence, and an Agent builds your Agent app
 

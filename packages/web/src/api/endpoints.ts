@@ -302,7 +302,7 @@ export const getUsage = (
     to?: string;
     groupBy: UsageGroupBy;
     agentId?: string;
-    /** Model filters are given as a pair (only takes effect when both provider and modelId are supplied). */
+    /** Model filter is always a whole pair — both fields or neither; a model is never referenced by id alone. */
     provider?: string;
     modelId?: string;
   },

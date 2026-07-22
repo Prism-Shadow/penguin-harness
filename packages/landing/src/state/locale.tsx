@@ -14,13 +14,14 @@ import {
   useState,
 } from "react";
 import type { ReactNode } from "react";
+import { LANG_KEY, readPref, subscribePref, writePref } from "./site-prefs";
 import { setActiveStrings, zh } from "../lib/strings";
 import { en } from "../lib/strings-en";
 
 export type LangPref = "zh" | "en" | "system";
 export type Locale = "zh" | "en";
 
-const STORAGE_KEY = "penguin-landing.lang";
+const LANG_PREFS = ["zh", "en", "system"] as const;
 
 interface LocaleContextValue {
   lang: LangPref;
@@ -44,9 +45,7 @@ function resolve(lang: LangPref): Locale {
 }
 
 function initialLang(): LangPref {
-  const stored = localStorage.getItem(STORAGE_KEY);
-  if (stored === "zh" || stored === "en" || stored === "system") return stored;
-  return "system";
+  return readPref<LangPref>(LANG_KEY, LANG_PREFS) ?? "system";
 }
 
 export function LocaleProvider({ children }: { children: ReactNode }) {
@@ -71,9 +70,12 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
   }, [lang]);
 
   const setLang = useCallback((next: LangPref) => {
-    localStorage.setItem(STORAGE_KEY, next);
+    writePref(LANG_KEY, next);
     setLangState(next);
   }, []);
+
+  // The sibling site (landing <-> docs) writing the shared key in another tab.
+  useEffect(() => subscribePref<LangPref>(LANG_KEY, LANG_PREFS, setLangState), []);
 
   return (
     <LocaleContext.Provider value={{ lang, locale, setLang }}>{children}</LocaleContext.Provider>

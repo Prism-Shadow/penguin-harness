@@ -123,7 +123,8 @@ export const zh = {
     title: "多 Agent 协作，进化自动发生",
     subtitle:
       "Optimizer 组织多个 Evaluator 为 Target Agent 并行打分，依据分数与运行轨迹定位失分原因，把 Agent 从版本 N 优化到版本 N+1——每一轮都有快照，随时可回退。",
-    videoSoon: "演示视频即将上线",
+    videoLabel: "自我进化演示视频",
+    videoCaption: "自我进化演示：Agent 跑评测、定位失分点、发布下一版——完整一轮。",
     nodeOptimizer: "Optimizer",
     nodeEvaluator: "Evaluator × N",
     nodeTarget: "Target Agent",
@@ -167,10 +168,12 @@ export const zh = {
     tabDeepseek: "DeepSeek",
     tabOpenrouter: "OpenRouter",
     deepseekCmd: `penguin config model add \\
+  --provider deepseek \\
   --model-id deepseek-v4-pro \\
   --api-key sk-your-deepseek-key \\
   --set-default`,
-    deepseekNote: "provider 自动推断为 deepseek；省略 --api-key 时回退环境变量 DEEPSEEK_API_KEY。",
+    deepseekNote:
+      "模型引用始终是 (provider, model_id) 二元组，--provider 必填；省略 --api-key 时回退环境变量 DEEPSEEK_API_KEY。",
     openrouterCmd: `penguin config model add \\
   --provider openrouter \\
   --model-id deepseek/deepseek-v4-pro \\
@@ -256,20 +259,24 @@ export const zh = {
 
   benchmark: {
     eyebrow: "Benchmark",
-    title: "同一模型，效果同级或更好，消耗更低",
+    title: "各用各的旗舰模型，效果同级，成本低一到两个数量级",
     subtitle:
-      "全部使用同一 DeepSeek V4 Pro 模型，与 Claude Code、OpenAI Codex 在两套题库上正面对比。",
+      "每个产品搭配它常用的模型，与 Claude Code、OpenAI Codex 在两套题库上正面对比：准确率同级，花的钱差出几十倍。",
     higherBetter: "越高越好",
     lowerBetter: "越低越好",
     dimScore: "准确率",
     dimTokens: "Token 用量",
     dimCost: "成本",
     dataTitle: "复杂数据分析",
-    dataDesc: "与 Claude Code 准确率持平、显著超过 OpenAI Codex，同时 Token 与成本更低。",
-    dataFootnote: "15 道复杂数据分析任务 · 1 次运行取均值 · 成本按官方计价估算。",
+    dataDesc:
+      "三者中准确率最高（66.67%，另两者均为 53.33%），成本只有 OpenAI Codex 的 1/35、Claude Code 的 1/70。",
+    dataFootnote:
+      "15 道复杂数据分析任务 · 单次运行 · Token 与成本为全套题目合计 · 按官方计价估算。",
     codeTitle: "代码任务",
-    codeDesc: "三者中准确率最高、单次成本最低。",
-    codeFootnote: "40 道代码任务 · 2 次运行取均值 · 成本按官方计价估算。",
+    codeDesc:
+      "准确率与 OpenAI Codex 持平（71.25%）、低于 Claude Code（86.25%），但成本只有前者的 1/58、后者的 1/39。",
+    codeFootnote:
+      "40 道代码任务 × 2 次运行（准确率取全部 80 次结果）· Token 与成本为全套题目合计 · 按官方计价估算。",
     colFramework: "实验框架",
     colModel: "模型名称",
     colAccuracy: "准确率（%）",
@@ -318,6 +325,21 @@ export const zh = {
       {
         title: "多用户管理",
         desc: "管理员创建用户，各自拥有独立 Project，数据相互隔离。",
+      },
+    ],
+  },
+
+  skills: {
+    eyebrow: "内置 Skill",
+    title: "内置 Skill 库一览",
+    subtitle: "四组 Skill 开箱即用，Agent 也能编写并优化自己的 Skill。",
+    groups: [
+      { title: "办公效率", skills: ["data-analysis", "firecrawl"] },
+      { title: "软件开发", skills: ["web-design", "software-engineering"] },
+      { title: "AI 应用开发", skills: ["penguin-sdk", "penguin-cli", "agenthub-models"] },
+      {
+        title: "Agent 调优",
+        skills: ["agent-creation", "benchmark-design", "agent-evaluation", "agent-optimization"],
       },
     ],
   },

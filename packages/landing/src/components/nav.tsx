@@ -5,6 +5,10 @@
  * LIVE scroll position (scroll-spy), so the highlight follows as you scroll; on other
  * routes it falls back to route state (e.g. Blog). Section links route through "/#id"
  * so the URL hash stays in sync on click. A disclosure menu covers small screens.
+ *
+ * The markup and class strings are duplicated verbatim in the docs nav
+ * (packages/docs/src/components/nav.tsx — the two sites share no package, as with
+ * site-prefs.ts); keep the two files aligned so the navbars render identically.
  */
 import { useRef, useState } from "react";
 import type { MouseEvent } from "react";
@@ -141,7 +145,7 @@ export function Nav() {
 
   return (
     <header className="sticky top-0 z-40 border-b border-gray-200 bg-white/85 backdrop-blur dark:border-gray-800 dark:bg-gray-950/85">
-      <div className="mx-auto flex h-14 max-w-6xl items-center gap-2 px-4 sm:px-6">
+      <div className="mx-auto flex h-14 max-w-7xl items-center gap-2 px-4 sm:px-6">
         <Link to="/" className="flex items-center gap-2" onClick={() => setOpen(false)}>
           <img src={`${import.meta.env.BASE_URL}penguin-logo.svg`} alt="" className="h-7 w-7" />
           <span className="text-[15px] font-semibold tracking-tight">{S.siteName}</span>

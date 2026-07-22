@@ -80,14 +80,18 @@ describe("Agent.createSession workspace handling", () => {
     expect(path.isAbsolute(session.workspaceDir)).toBe(true);
   });
 
-  it("rejects a modelId that is not in the Project config with a clear error", async () => {
+  it("rejects a model reference that is not in the Project config with a clear error", async () => {
     const agent = await createAgent();
     const ws = path.join(tmpRoot, "ws-bad-model");
     await fs.mkdir(ws, { recursive: true });
     // A reference outside the config is not silently allowed (the unique key is provider +
     // model_id); the error is thrown before creating the temp Workspace.
     await expect(
-      agent.createSession({ workspaceDir: ws, modelId: "not-configured-model" }),
+      agent.createSession({
+        workspaceDir: ws,
+        modelId: "not-configured-model",
+        provider: "custom",
+      }),
     ).rejects.toThrow(/is not in the Project config/);
     await expect(
       agent.createSession({ workspaceDir: ws, modelId: "deepseek-v4-pro", provider: "openai" }),
@@ -129,59 +133,62 @@ describe("Agent.createSession model reference ((provider, model_id) pair)", () =
     }
   });
 
-  it("resolves a unique bare model_id and accepts an explicit pair", async () => {
-    const agent = await createAgent();
-    const ws = path.join(tmpRoot, "ws-ref-pair");
-    await fs.mkdir(ws, { recursive: true });
-    // Provider omitted: model_id is a globally unique exact match in the config -> resolves to that entry.
-    const bare = await agent.createSession({ workspaceDir: ws, modelId: "deepseek-v4-flash" });
-    try {
-      expect(bare.provider).toBe("deepseek");
-      expect(bare.modelId).toBe("deepseek-v4-flash");
-    } finally {
-      bare.dispose();
-    }
-    const paired = await agent.createSession({
-      workspaceDir: ws,
-      modelId: "claude-sonnet-4-6",
-      provider: "anthropic",
-    });
-    try {
-      expect(paired.provider).toBe("anthropic");
-      expect(paired.modelId).toBe("claude-sonnet-4-6");
-    } finally {
-      paired.dispose();
-    }
-  });
-
-  it("rejects an ambiguous bare model_id and a provider without modelId", async () => {
-    // Two providers coexist with the same model_id: omitting provider throws an ambiguity
-    // error (listing the candidate pair references).
+  it("selects the entry named by the pair, even when a second group sells the same model_id", async () => {
+    // A user-run proxy resells claude-sonnet-4-6 under the same upstream id: the two entries
+    // coexist and the pair — not the bare id — decides which one (and therefore which
+    // credential and base_url) the Session runs on.
     await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
       provider: "myproxy",
       model_id: "claude-sonnet-4-6",
     });
     const agent = await createAgent();
-    const ws = path.join(tmpRoot, "ws-ref-ambiguous");
+    const ws = path.join(tmpRoot, "ws-ref-pair");
     await fs.mkdir(ws, { recursive: true });
-    await expect(
-      agent.createSession({ workspaceDir: ws, modelId: "claude-sonnet-4-6" }),
-    ).rejects.toThrow(/Ambiguous.*\(provider=anthropic, model_id=claude-sonnet-4-6\)/);
-    // Adding provider resolves it.
-    const session = await agent.createSession({
+    const vendor = await agent.createSession({
+      workspaceDir: ws,
+      modelId: "claude-sonnet-4-6",
+      provider: "anthropic",
+    });
+    try {
+      expect(vendor.provider).toBe("anthropic");
+      expect(vendor.modelId).toBe("claude-sonnet-4-6");
+    } finally {
+      vendor.dispose();
+    }
+    const proxied = await agent.createSession({
       workspaceDir: ws,
       modelId: "claude-sonnet-4-6",
       provider: "myproxy",
     });
     try {
-      expect(session.provider).toBe("myproxy");
+      expect(proxied.provider).toBe("myproxy");
+      expect(proxied.modelId).toBe("claude-sonnet-4-6");
+    } finally {
+      proxied.dispose();
+    }
+  });
+
+  it("rejects half a reference: modelId without provider, and provider without modelId", async () => {
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-ref-half");
+    await fs.mkdir(ws, { recursive: true });
+    // A bare model_id is never resolved against the config, not even when exactly one entry
+    // carries it (deepseek-v4-flash is unique here): the group is the caller's to name.
+    await expect(
+      agent.createSession({ workspaceDir: ws, modelId: "deepseek-v4-flash" }),
+    ).rejects.toThrow(/must be given as a \(provider, model_id\) pair/);
+    // The mirror case: provider alone is not a reference either.
+    await expect(agent.createSession({ workspaceDir: ws, provider: "deepseek" })).rejects.toThrow(
+      /must be given as a \(provider, model_id\) pair/,
+    );
+    // Neither half given is the documented "use the Project default" path, not an error.
+    const session = await agent.createSession({ workspaceDir: ws });
+    try {
+      expect(session.provider).toBe("deepseek");
+      expect(session.modelId).toBe("deepseek-v4-pro");
     } finally {
       session.dispose();
     }
-    // provider cannot be used alone (the reference must be a pair).
-    await expect(agent.createSession({ workspaceDir: ws, provider: "anthropic" })).rejects.toThrow(
-      /provider cannot be used alone/,
-    );
   });
 });
 

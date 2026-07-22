@@ -169,7 +169,7 @@ A tool emits only content deltas; framing, timeouts, truncation, `stop_reason` p
 Human is deliberately not an interface class. The SDK caller *is* the Human:
 
 ```ts
-const session = await agent.createSession({ workspaceDir, modelId });
+const session = await agent.createSession({ workspaceDir, provider, modelId });
 
 session.run(
   newMessages: OmniMessage[],                    // input: the Prompt

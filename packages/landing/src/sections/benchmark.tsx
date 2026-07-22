@@ -1,9 +1,9 @@
 /**
- * Benchmark section: two suites (complex data analysis + coding tasks), same model
- * everywhere, rendered in one identical format — three small multiples (accuracy /
- * Tokens / cost, one measure per axis) plus a five-column table of per-run means
- * (framework / model / accuracy % / Tokens M / cost $). Suite specifics (case count,
- * runs, thinking level, timeout, pricing) sit in a small footnote under each table.
+ * Benchmark section: two suites (complex data analysis + coding tasks), each harness on
+ * the model it is normally paired with, rendered in one identical format — three small
+ * multiples (accuracy / Tokens / cost, one measure per axis) plus a five-column table of
+ * suite totals (framework / model / accuracy % / Tokens M / cost $). Suite specifics
+ * (case count, runs, thinking level, timeout, pricing) sit in a footnote under each table.
  * Emphasis form: PenguinHarness wears the brand hue, competitors the de-emphasis
  * gray; per-bar identity comes from logo+name labels, every cap is value-labeled,
  * and the exact table relieves the sub-3:1 gray fills.
@@ -40,6 +40,13 @@ const VIEW_H = 210;
 const PLOT_TOP = 28;
 const BASELINE = 168;
 const BAR_W = 24;
+/**
+ * Shortest a bar may render. At true scale the cost panels put PenguinHarness at ~1.6px
+ * against a 140px plot (the spread is ~70x), which reads as an empty slot rather than a
+ * winning series. The floor keeps it visible while still plainly the smallest bar, and
+ * every cap carries its exact value.
+ */
+const MIN_BAR_H = 12;
 
 function BarPanel({
   title,
@@ -77,7 +84,7 @@ function BarPanel({
       >
         {rows.map((row, i) => {
           const v = values[i] ?? 0;
-          const h = ((v - lo) / (hi - lo)) * (BASELINE - PLOT_TOP);
+          const h = Math.max(MIN_BAR_H, ((v - lo) / (hi - lo)) * (BASELINE - PLOT_TOP));
           const yTop = BASELINE - h;
           const cx = slot * i + slot / 2;
           return (
@@ -248,9 +255,9 @@ export function Benchmark() {
           title={S.benchmark.dataTitle}
           desc={S.benchmark.dataDesc}
           rows={DATA_BENCH}
-          accDp={1}
+          accDp={2}
           tokenDp={2}
-          costDp={3}
+          costDp={2}
           footnote={S.benchmark.dataFootnote}
         />
         <SuiteBlock
@@ -259,7 +266,7 @@ export function Benchmark() {
           rows={CODE_BENCH}
           accDp={2}
           tokenDp={2}
-          costDp={3}
+          costDp={2}
           footnote={S.benchmark.codeFootnote}
         />
       </div>

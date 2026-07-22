@@ -33,18 +33,18 @@
 
 Three reasons, in deliberate order — from task quality, to how agents get built, to how they keep improving.
 
-### 1. 🏆 Better on complex tasks, at lower cost
+### 1. 🏆 Comparable quality, one to two orders of magnitude cheaper
 
-A deliberately minimal toolset over clean low-level interfaces: fewer tool calls, fewer tokens — better results at lower cost, deeply tuned for open models like DeepSeek. Same model, same tasks, head-to-head:
+A deliberately minimal toolset over clean low-level interfaces: fewer tool calls, fewer tokens — deeply tuned for open models like DeepSeek. Each harness on the model it is normally paired with, same tasks, head-to-head:
 
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/readme/benchmark-dark.svg" />
-    <img src="assets/readme/benchmark-light.svg" alt="Benchmark: PenguinHarness matches Claude Code on accuracy at lower cost, and beats OpenAI Codex on both suites" width="920" />
+    <img src="assets/readme/benchmark-light.svg" alt="Benchmark: PenguinHarness leads the data-analysis suite and ties OpenAI Codex on coding, at a small fraction of both rivals' cost" width="920" />
   </picture>
 </p>
 
-<sub>Data analysis: 15 tasks, single run, USD pricing. Coding: 40 tasks × 2 runs averaged, official CNY pricing converted at $1 = ¥7. Full breakdown on the <a href="https://penguin.ooo/">website</a>.</sub>
+**Best accuracy on data analysis — at 1/70 of Claude Code's cost.**
 
 ### 2. ⚡ One sentence, and an Agent builds your Agent app
 
@@ -56,12 +56,7 @@ Collect the docs from https://github.com/ericbuess/claude-code-docs and build a 
 
 And this is the finished product — a docs expert with retrieval, cited sources that link to the original files, and example questions built in:
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/readme/rag-app-en-dark.webp" />
-    <img src="assets/readme/rag-app-en-light.webp" alt="The generated RAG app: a Claude Code docs expert answering with cited, clickable sources and example questions" width="920" />
-  </picture>
-</p>
+https://github.com/user-attachments/assets/9b7033e8-f08a-4c3f-bd33-547896664e6e
 
 **And generating this entire RAG app burned just $0.02 (¥0.2) of tokens — on DeepSeek V4 Pro.**
 
@@ -69,14 +64,26 @@ And this is the finished product — a docs expert with retrieval, cited sources
 
 With PenguinHarness Skills, an Agent evaluates and optimizes itself: run the benchmark, find the lost points, ship version N+1 — with a snapshot before every round, and every request observable in the Trace view.
 
-<!-- TODO: self-evolution demo video — coming soon. -->
+https://github.com/user-attachments/assets/922d13a6-5ffc-4685-9a39-352f02f9afc0
+
+## Built-in Skills
+
+Four Skill groups ship in the box ([docs](https://penguin.ooo/docs/skills)); Agents can also write and optimize their own:
+
+| Group                | Skills                                                                            |
+| -------------------- | --------------------------------------------------------------------------------- |
+| Office Productivity  | `data-analysis`, `firecrawl`                                                      |
+| Software Development | `web-design`, `software-engineering`                                              |
+| AI App Development   | `penguin-sdk`, `penguin-cli`, `agenthub-models`                                   |
+| Agent Tuning         | `agent-creation`, `benchmark-design`, `agent-evaluation`, `agent-optimization`    |
 
 ## Supported Models
 
 | Model            | Providers                                                                        |
 | ---------------- | -------------------------------------------------------------------------------- |
 | DeepSeek V4      | DeepSeek, OpenRouter, Fireworks AI, SiliconFlow, Qwen Token Plan                 |
-| Kimi K3          | Moonshot AI, OpenRouter, Qwen Pay-As-You-Go                                      |
+| Kimi K3          | OpenRouter, Qwen Pay-As-You-Go                                                   |
+| Kimi K2.6        | Moonshot AI                                                                      |
 | GLM 5.2          | Z.AI, OpenRouter, Fireworks AI, SiliconFlow, Qwen Token Plan, Qwen Pay-As-You-Go |
 | Hunyuan 3        | OpenRouter                                                                       |
 | Qwen 3.8 Max     | Qwen Token Plan (preview)                                                        |
@@ -113,7 +120,7 @@ penguin web        # start the service and open http://127.0.0.1:7364 (first log
 The same engine, scriptable — made to be driven by agents (and agents building agents):
 
 ```bash
-penguin config model add --model-id deepseek-v4-pro --api-key sk-... --set-default
+penguin config model add --provider deepseek --model-id deepseek-v4-pro --api-key sk-... --set-default
 penguin run -m "Create hello.txt containing Hello, Penguin"   # one-shot task
 penguin chat       # interactive REPL (/compact, /exit, Ctrl-C to interrupt)
 penguin server     # headless service (same API the Web App uses)

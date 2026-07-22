@@ -18,10 +18,10 @@ For other options (npm, from source), see [Installation](/installation).
 PenguinHarness ships with no built-in model credentials, so configure a model first. Use the Models page in the Web UI, or the CLI:
 
 ```bash
-penguin config model add --model-id deepseek-v4-pro --api-key sk-... --set-default
+penguin config model add --provider deepseek --model-id deepseek-v4-pro --api-key sk-... --set-default
 ```
 
-- When `--provider` is omitted, the Provider is inferred from the built-in catalog.
+- A model is always referenced as a `(provider, model_id)` pair, so `--provider` and `--model-id` are both required — the Provider is never inferred from the model id. See [Models & Providers](/models) for the built-in groups.
 - The API key can also come from environment variables: when a model entry has no inline api_key, AgentHub (the LLM gateway library) reads variables such as `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, and `GEMINI_API_KEY`. A `.env` file in the working directory is loaded automatically.
 
 ## Start the Web App
