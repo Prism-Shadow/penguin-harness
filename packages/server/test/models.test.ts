@@ -430,6 +430,46 @@ describe("模型引用改键与连通性测试", () => {
     }
   });
 
+  it("连通性测试请求体不含 tools 与 tool_choice（空工具列表整体省略，vLLM 等严格端点不再 400）", async () => {
+    // The probe runs with an empty tool list. The wire body must omit `tools` entirely —
+    // `tools: []` is rejected by strict OpenAI-compatible servers (vLLM: "tools must not be an
+    // empty array") — and must never carry `tool_choice`.
+    const bodies: Record<string, unknown>[] = [];
+    const server = createServer((req, res) => {
+      let raw = "";
+      req.on("data", (chunk: Buffer) => (raw += chunk.toString("utf8")));
+      req.on("end", () => {
+        try {
+          bodies.push(JSON.parse(raw) as Record<string, unknown>);
+        } catch {
+          bodies.push({});
+        }
+        res.statusCode = 401;
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify({ error: { message: "test-reject", type: "invalid_request" } }));
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as AddressInfo).port;
+    try {
+      const res = await api.post(testUrl(), {
+        provider: "custom",
+        modelId: "probe-wire-model",
+        clientType: "openai",
+        apiKey: "sk-test-local",
+        baseUrl: `http://127.0.0.1:${port}/v1`,
+      });
+      expect(res.status).toBe(200);
+      expect(bodies.length).toBeGreaterThan(0);
+      for (const body of bodies) {
+        expect("tools" in body).toBe(false);
+        expect("tool_choice" in body).toBe(false);
+      }
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
   it("连通性测试：已保存的模型与**尚未保存**的自定义模型都可测（LLM 层不抛异常，一律收敛）", async () => {
     await api.put(url(), {
       models: [{ provider: "openai", modelId: "gpt-5.5", apiKey: "sk-invalid-key-for-test" }],

@@ -1048,10 +1048,23 @@ describe("config helpers", () => {
     expect(cfg.tools).toEqual([{ name: "t", description: "d" }]);
 
     const minimal = buildUniConfig({ modelId: "m", tools: [] });
-    expect(minimal.tools).toEqual([]);
+    expect("tools" in minimal).toBe(false);
     expect("system_prompt" in minimal).toBe(false);
     expect("max_tokens" in minimal).toBe(false);
     expect("thinking_level" in minimal).toBe(false);
+  });
+
+  it("omits tools when empty and never sets tool_choice (strict endpoints reject both)", () => {
+    // Empty tool list (connectivity probe, bare/meta LLM, vision describer): the `tools` key
+    // must be absent, not `[]` — AgentHub forwards any defined array verbatim, and strict
+    // OpenAI-compatible servers (e.g. vLLM) reject `tools: []` with a 400.
+    const empty = buildUniConfig({ modelId: "m", tools: [] });
+    expect("tools" in empty).toBe(false);
+    // `tool_choice` must never be set: AgentHub only emits it on the wire when UniConfig
+    // defines it, and leaving it off preserves the protocol default.
+    expect("tool_choice" in empty).toBe(false);
+    const withTools = buildUniConfig({ modelId: "m", tools: [{ name: "t", description: "d" }] });
+    expect("tool_choice" in withTools).toBe(false);
   });
 });
 
