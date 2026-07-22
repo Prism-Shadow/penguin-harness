@@ -80,11 +80,11 @@ llamafactory-cli api inference_config.yaml    # OpenAI-compatible API server
 
 ## Close the loop
 
-Serve the exported model with vLLM or Ollama (see the `vllm` and `ollama` skills) and register the endpoint:
+Serve the exported model — vLLM on NVIDIA/AMD GPUs, Ollama on macOS or CPU-only machines (see the `vllm` and `ollama` skills) — and register the endpoint:
 
 ```bash
 penguin config model add --provider custom --client-type openai \
   --base-url http://localhost:8000/v1 --model-id <served-model-name> --api-key <key>
 ```
 
-PenguinHarness agents then run on the fine-tuned model — building, evaluating and tuning AI apps on it end to end.
+When registering for an AI app under development, `--root` must point at the app's own data root (e.g. `--root ./penguin_data`), never the global `~/.penguin/data`; confirm with `penguin config model list`. PenguinHarness agents then run on the fine-tuned model — building, evaluating and tuning AI apps on it end to end.
