@@ -3,8 +3,8 @@ name: agent-optimization
 description: Improve an Agent State from direct feedback or versioned multi-Case Benchmark scores and score-linked Traces.
 short_description: Improve an Agent from feedback or measured Benchmark results.
 short_description_zh: 根据反馈或 Benchmark 结果改进 Agent。
-version: 1
-updated: 2026-07-17T17:08:17Z
+version: 3
+updated: 2026-07-22T14:52:46Z
 ---
 
 # Agent Optimization
@@ -16,6 +16,13 @@ Improve an existing Agent State. Use one-shot feedback mode for a direct correct
 If the request supplies neither concrete feedback nor an explicit Test Agent and Benchmark, ask what to improve. Determine the mode before editing anything.
 
 Benchmark mode requires a top-level Session with `run_subagent`, a complete baseline series in `scoreboard.yaml`, and `agent-evaluation` installed on the current Agent. If any requirement is missing, stop and explain what the user must provide or install. Do not begin a partial optimization round.
+
+For an explicit create → benchmark → optimize request, prerequisites produced earlier in this
+same top-level conversation satisfy this check: continue with the newly created Test Agent and the
+freshly frozen baseline instead of asking the user to repeat their ids or open another chat.
+The Builder must have accepted that baseline inside the user's requested calibration interval. If
+it reported `calibration_failed`, left the Scoreboard empty, or produced an out-of-band candidate,
+do not optimize it.
 
 ## Pick the target Agent
 
@@ -50,11 +57,26 @@ Every edit must generalize beyond the observed run. Do not encode Case ids, exac
 
 ## Version and rollback discipline
 
-Before changing Agent State, read its canonical top-level `version` from `system_config.yaml`, defaulting to 1. The system owns Agent State snapshot archives and exposes them through Web export and import. Do not create, import, extract, or replace snapshot archives yourself. Require `<target>/snapshots/v<version>.tar.gz` to exist; if it is missing, stop and ask the user to export the current Agent State from Agent settings before continuing.
+Before changing Agent State, read its canonical top-level `version` from `system_config.yaml`, defaulting to 1. Choose exactly one rollback mode before the first candidate:
+
+- **System snapshot mode**: for any Agent that existed before the current top-level Session,
+  require `<target>/snapshots/v<version>.tar.gz`. The system owns these archives through Web export
+  and import; never create, import, extract, or replace one yourself. If it is missing, stop and ask
+  the user to export the current State.
+- **Same-Session bootstrap mode**: allowed only when this top-level Session itself verified the
+  canonical target was absent, created it at `<project_dir>/agents/<test_agent_id>` as version `1`,
+  and then produced the accepted baseline without ending the top-level task or moving the workflow
+  to another user-created Session. Use
+  exact original-byte recording and verified file-level rollback as the recovery boundary. This
+  mode may continue across accepted optimization versions only while the same uninterrupted
+  top-level Session owns the loop. Never infer bootstrap status merely from `version: 1`, delete
+  the target, or synthesize a snapshot archive.
+
+If Same-Session bootstrap provenance cannot be positively established, use System snapshot mode.
 
 For each file the edit will change, record its exact original bytes and whether it existed in a temporary directory outside `STATE`. Never include `.vault.toml`, an unrelated State file, or a snapshot archive. Write each candidate file through a temporary sibling, validate it, and rename it into place. Set the State version to `current + 1` exactly once before evaluation.
 
-If the candidate is rejected or a valid comparison cannot complete, restore only those recorded files, remove files created by the candidate, and verify that the prior version is active. If the active version or a candidate-owned file no longer matches the value written by this round, treat it as a concurrent mutation and stop without overwriting it. If rollback cannot be verified, stop and ask the user to restore the system snapshot through Web import.
+If the candidate is rejected or a valid comparison cannot complete, restore only those recorded files, remove files created by the candidate, and verify that the prior version is active. If the active version or a candidate-owned file no longer matches the value written by this round, treat it as a concurrent mutation and stop without overwriting it. If rollback cannot be verified, stop. In System snapshot mode, ask the user to restore the archive through Web import. In Same-Session bootstrap mode, preserve the temporary exact-byte backup, report its path and the files whose restoration could not be verified, and treat the active State as untrusted; do not claim or continue optimization.
 
 ## One-shot feedback mode
 
@@ -119,7 +141,10 @@ For each round:
 
 1. Reconfirm that the reference version equals the active top-level State version and that it contains the complete frozen Case × `runs` matrix. Then analyze its aggregate, Case scores, repeated runs, and every score-linked Test Trace. Use repeated runs to separate stable failure from variation; never select a convenient Trace.
 2. State one falsifiable behavioral hypothesis connecting public evidence to a minimal State change. If no credible hypothesis remains, stop.
-3. Confirm the current-version system snapshot exists, record the exact originals of every candidate-owned file, make the candidate edit, and set `version` to `current + 1` once.
+3. Reconfirm that the selected rollback mode is still valid. In System snapshot mode, confirm the
+   current-version archive exists. In Same-Session bootstrap mode, confirm the uninterrupted
+   creation/baseline provenance still holds. Then record the exact originals of every
+   candidate-owned file, make the candidate edit, and set `version` to `current + 1` once.
 4. Retain the exact Scoreboard bytes and candidate version. Build the complete Case-run matrix before dispatch.
 5. Start one child per cell with `run_subagent`, and omit `agent_id` so the child reuses the current Agent. Each prompt begins with the caller identity and the sentence: Use the `agent-evaluation` Skill. Then it contains one request:
 
@@ -142,5 +167,11 @@ For each round:
 8. Accept only a score strictly higher than the comparable reference evaluation. On improvement, keep the candidate State and append one evaluation through a temporary sibling, YAML validation, and atomic rename. On an equal or lower score, roll back the candidate files and append nothing.
 
 Each accepted round becomes the next reference. Stop when the user's target or round limit is met, no credible evidence-backed hypothesis remains, or infrastructure prevents another valid comparison. Do not mutate State as random search.
+
+When the user supplied a target score, an accepted improvement below that target is an
+intermediate result, not successful completion. Unless the user supplied a round limit, keep
+testing evidence-backed hypotheses while any credible one remains. Do not emit the composed
+workflow's terminal success response until a complete valid retest reaches the target; otherwise
+report the precise non-success stop reason.
 
 At the end, report the accepted score curve, State versions and changes, rejected hypotheses and rollbacks, Test Session ids, stop reason, and limitations. Distinguish the active tested State from any unscored State; never claim a Scoreboard score applies to a later untested edit.
