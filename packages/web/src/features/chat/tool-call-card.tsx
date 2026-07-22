@@ -1,7 +1,8 @@
 /**
  * Tool call card: collapses to a single line by
  * default — status icon + tool name + duration (a live-ticking timer while running) + status
- * badge; clicking expands full arguments, output, and any nested subagent.
+ * badge; clicking expands full arguments and output; a nested subagent renders below them
+ * regardless of collapsed state.
  * The pending-approval row is always visible regardless of collapsed state; when a pending
  * approval appears anywhere in a nested subagent chain, the card auto-expands once (respecting
  * the user's choice if they've manually collapsed it since).
@@ -227,9 +228,9 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
         </div>
       )}
 
-      {/* Subagent card: always visible (not hidden after completion, only collapsed by default), unaffected by the tool card's collapsed state. Rendered below the expanded arguments/output so the nested conversation reads after the tool call's own content, not between the header and its details. */}
+      {/* Subagent card: always visible (not hidden after completion, only collapsed by default), unaffected by the tool card's collapsed state. Rendered below the expanded arguments/output so the nested conversation reads after the tool call's own content, not between the header and its details; pt-2 keeps a gap from the tinted args/output blocks above. */}
       {item.subagent && (
-        <div className="px-3 pb-2">
+        <div className="px-3 pb-2 pt-2">
           <SubagentCard
             sessionId={item.subagentSessionId ?? ""}
             model={item.subagent}

@@ -99,8 +99,6 @@ test("subagent card survives a reload; child session title is generated from its
     await subagentBtn.elementHandle(),
   );
   expect(cardFollowsArgs, "subagent expansion renders below the tool arguments/output").toBe(true);
-  // Collapse the tool card again so the reload section below starts from the default state.
-  await toolRow.click();
 
   // --- Must still hold after reload (the fix's goal: parent Trace's child session pointer + server-side expansion) ---
   await page.reload();
