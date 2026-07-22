@@ -19,6 +19,9 @@
 export * from "./omnimessage/index.js";
 export * from "./interfaces.js";
 
+// Only the default server port leaves internal: the CLI / server default-port source of truth.
+export { DEFAULT_SERVER_PORT } from "./internal/ports.js";
+
 // Submodules
 export * from "./state/index.js";
 export * from "./llm/index.js";
