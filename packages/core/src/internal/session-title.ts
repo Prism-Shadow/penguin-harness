@@ -1,21 +1,25 @@
 /**
  * Session title generation: an **out-of-band, one-off request** that generates
- * a short title from the first-turn conversation text.
+ * a short title from the first-turn conversation text (used by `Session.generateTitle`
+ * for assembly, not exported wholesale via the barrel).
  *
  * Called by `session.generateTitle()`: sends one request using the bare LLM for the session's
  * Model (no tools, no system prompt, thinking off), without writing history or Trace. Material
  * defaults to what the Session self-captures during run (see session.ts); this module is only
  * responsible for the prompt format, driving the one-off request, and sanitizing the result —
  * when to generate a title and where to store it is decided by the host (Web server / CLI).
+ * The narrow public surface — `SessionTitleResult` (part of `Session.generateTitle`'s
+ * signature) and the sanitation helpers the host's title fallback builds on — is re-exported
+ * by the barrel; the prompt/request internals are not.
  */
-import { userText } from "./omnimessage/index.js";
+import { userText } from "../omnimessage/index.js";
 import type {
   OmniMessage,
   TextPayload,
   TokenCounts,
   TokenUsagePayload,
-} from "./omnimessage/index.js";
-import type { LLMInterface } from "./interfaces.js";
+} from "../omnimessage/index.js";
+import type { LLMInterface } from "../interfaces.js";
 
 /** Cap on conversation text spliced into the title request (user/model each truncated separately, to control cost). */
 const EXCERPT_MAX_CHARS = 2000;

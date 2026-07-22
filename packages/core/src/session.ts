@@ -21,8 +21,8 @@ import { sessionMeta } from "./omnimessage/index.js";
 import type { OmniMessage, SessionMetaPayload, TokenCounts } from "./omnimessage/index.js";
 import { imagesToScratchpadPaths } from "./internal/session-support.js";
 import type { EnvironmentInterface, LLMInterface, ToolPermission } from "./interfaces.js";
-import { generateTitleWithLLM } from "./session-title.js";
-import type { SessionTitleResult } from "./session-title.js";
+import { generateTitleWithLLM } from "./internal/session-title.js";
+import type { SessionTitleResult } from "./internal/session-title.js";
 import { ContextEngine } from "./engine/context-engine.js";
 import type {
   CompactAvailability,
