@@ -4,7 +4,7 @@
  * z-40, overlays are z-50). menuClass controls the docking direction and width.
  */
 import { useEffect, useRef } from "react";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 export function Dropdown({
   button,
@@ -12,6 +12,7 @@ export function Dropdown({
   setOpen,
   children,
   menuClass,
+  menuStyle,
   className,
 }: {
   button: ReactNode;
@@ -20,6 +21,8 @@ export function Dropdown({
   children: ReactNode;
   /** Panel positioning and size (default: downward, left-aligned, w-64). */
   menuClass?: string;
+  /** Inline overrides for the panel, for values a static class cannot know (e.g. a max-width measured from the trigger's viewport offset). */
+  menuStyle?: CSSProperties;
   /** Extra classes for the root container (e.g. flex-1 in a flex layout). */
   className?: string;
 }) {
@@ -44,6 +47,7 @@ export function Dropdown({
       {button}
       {open && (
         <div
+          {...(menuStyle !== undefined ? { style: menuStyle } : {})}
           className={`anim-pop absolute z-40 max-h-[70vh] overflow-y-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900 ${
             menuClass ?? "left-0 top-full mt-1 w-64 max-w-[calc(100vw-2rem)] origin-top-left"
           }`}

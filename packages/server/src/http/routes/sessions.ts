@@ -30,6 +30,7 @@ import { sseEndpoint } from "../sse.js";
 import {
   badRequest,
   optionalEnum,
+  optionalPagingQuery,
   optionalString,
   paginationQuery,
   pathParam,
@@ -96,7 +97,14 @@ export function agentSessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     const agentId = requireValidId(c, "agentId");
     deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
     await deps.agentConfigService.requireExists(projectId, agentId);
-    const sessions = await deps.sessionService.listSessions(projectId, agentId);
+    // Optional paging (absent = full list, the pre-paging contract): the sidebar requests
+    // limit+1 and shows limit, detecting "has more" without a response-envelope change.
+    const paging = optionalPagingQuery(c);
+    const sessions = await deps.sessionService.listSessions(
+      projectId,
+      agentId,
+      ...(paging ? [paging] : []),
+    );
     return c.json({ sessions } satisfies SessionsResponse);
   });
 
@@ -167,7 +175,9 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
   app.get("/:sessionId", async (c) => {
     const row = resolveSession(c);
     const hasTrace = await deps.sessionService.hasTrace(row);
-    return c.json({ session: deps.sessionService.toInfo(row, hasTrace) } satisfies SessionResponse);
+    return c.json({
+      session: await deps.sessionService.toInfo(row, hasTrace),
+    } satisfies SessionResponse);
   });
 
   app.patch("/:sessionId", async (c) => {
@@ -216,7 +226,7 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     }
     const hasTrace = await deps.sessionService.hasTrace(updated);
     return c.json({
-      session: deps.sessionService.toInfo(updated, hasTrace),
+      session: await deps.sessionService.toInfo(updated, hasTrace),
     } satisfies SessionResponse);
   });
 
@@ -244,6 +254,9 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
         { recursive: true, force: true },
       );
       deps.sessionsRepo.deleteById(row.sessionId);
+      // Drop the derived-origin entry along with the Session (bulk Agent/Project deletion
+      // may leave stale entries; session ids are never reused, so they are never matched).
+      deps.sessionSources.delete(row.sessionId);
     } finally {
       deps.manager.endSessionDeletion(row.sessionId);
     }

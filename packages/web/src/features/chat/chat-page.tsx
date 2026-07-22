@@ -182,13 +182,36 @@ export function ChatPage() {
     };
   }, [projectId, selectedAgentId]);
 
+  // The Session list is paged: a deep-linked Session (old bookmark, cross-page jump) may sit
+  // beyond the loaded pages. Look it up directly and insert it before the auto-select effect
+  // below concludes it doesn't exist; only a failed probe releases that redirect.
+  const [probeFailedId, setProbeFailedId] = useState<string | null>(null);
+  useEffect(() => {
+    if (draft || !routeSessionId || sessionsLoading) return;
+    if (sessions.some((s) => s.sessionId === routeSessionId)) return;
+    let cancelled = false;
+    api.getSession(routeSessionId).then(
+      (res) => {
+        if (!cancelled) addSession(res.session);
+      },
+      () => {
+        if (!cancelled) setProbeFailedId(routeSessionId);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [draft, routeSessionId, sessionsLoading, sessions, addSession]);
+
   // Auto-select the most recent Session when the route doesn't select one; if there are none at all, fall back to draft state (instead of auto-creating one).
   useEffect(() => {
     if (sessionsLoading || draft) return;
     if (routeSessionId && sessions.some((s) => s.sessionId === routeSessionId)) return;
+    // A routed id missing from the paged list isn't gone until the direct lookup fails.
+    if (routeSessionId && probeFailedId !== routeSessionId) return;
     const first = sessions[0];
     navigate(first ? `/chat/${first.sessionId}` : `/chat/${DRAFT_SESSION_ID}`, { replace: true });
-  }, [sessionsLoading, draft, routeSessionId, sessions, navigate]);
+  }, [sessionsLoading, draft, routeSessionId, probeFailedId, sessions, navigate]);
 
   // Sync task_state to the sidebar list badge.
   useEffect(() => {

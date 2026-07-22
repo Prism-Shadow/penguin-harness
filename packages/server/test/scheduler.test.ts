@@ -40,6 +40,7 @@ describe("scheduler", () => {
     workspace?: string;
     provider?: string;
     modelId?: string;
+    source?: "schedule";
   }>;
   let events: Array<{ userId: string; event: ScheduleServerEvent }>;
   let errors: ErrorRecordArgs[];
@@ -288,13 +289,15 @@ describe("scheduler", () => {
     nowMs = T0 + 6 * MIN;
     await scheduler.tickOnce();
     expect(created).toHaveLength(2);
-    // The file's model reference is passed straight through as a pair.
+    // The file's model reference is passed straight through as a pair; every schedule-opened
+    // session is marked with its origin (SessionService stores it on the row and in core session_meta).
     expect(created[0]).toMatchObject({
       projectId: P,
       agentId: A,
       workspace: "/tmp/ws",
       provider: "custom",
       modelId: "m-bench",
+      source: "schedule",
     });
     expect(started.map((s) => s.sessionId)).toEqual(["session-new-1", "session-new-2"]);
   });

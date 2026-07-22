@@ -19,8 +19,8 @@ export interface SessionRow {
   title: string | null;
   /** Archive timestamp, ISO; NULL = not archived (omitting on insert defaults to NULL). */
   archivedAt?: string | null;
-  /** Session origin: NULL = user-created; schedule = triggered by a Schedule; subagent = registered as a subagent session. */
-  source?: "schedule" | "subagent" | null;
+  // The Session origin (schedule / subagent) is deliberately NOT a row field: core
+  // session_meta in the Trace is the single source of truth (runtime/session-sources.ts).
   createdAt: string;
 }
 
@@ -35,7 +35,6 @@ function mapRow(r: Record<string, unknown>): SessionRow {
     approvalMode: r.approval_mode as ApprovalMode,
     title: (r.title as string | null) ?? null,
     archivedAt: (r.archived_at as string | null) ?? null,
-    source: (r.source as "schedule" | "subagent" | null) ?? null,
     createdAt: r.created_at as string,
   };
 }
@@ -46,8 +45,8 @@ export class SessionsRepo {
   insert(row: SessionRow): void {
     this.db
       .prepare(
-        `INSERT INTO sessions (session_id, project_id, agent_id, provider, model_id, workspace, approval_mode, title, source, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO sessions (session_id, project_id, agent_id, provider, model_id, workspace, approval_mode, title, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         row.sessionId,
@@ -58,7 +57,6 @@ export class SessionsRepo {
         row.workspace,
         row.approvalMode,
         row.title,
-        row.source ?? null,
         row.createdAt,
       );
   }
@@ -67,8 +65,8 @@ export class SessionsRepo {
   insertOrIgnore(row: SessionRow): void {
     this.db
       .prepare(
-        `INSERT OR IGNORE INTO sessions (session_id, project_id, agent_id, provider, model_id, workspace, approval_mode, title, source, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT OR IGNORE INTO sessions (session_id, project_id, agent_id, provider, model_id, workspace, approval_mode, title, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         row.sessionId,
@@ -79,7 +77,6 @@ export class SessionsRepo {
         row.workspace,
         row.approvalMode,
         row.title,
-        row.source ?? null,
         row.createdAt,
       );
   }

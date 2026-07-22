@@ -17,6 +17,10 @@ export const en: Strings = {
     usage: "Costs",
     traces: "Trajectory",
     benchmark: "Evaluation Center",
+    // Collapsed-rail tooltips (product-specified wording; new chat reuses chat.newSessionMenu, the other pages reuse the page names above).
+    lastConversation: "Last conversation",
+    // Deliberately equal to nav.agents: the key exists for the zh-only wording difference (智能体 vs 智能体仓库).
+    railAgents: "Agents",
     collapseSidebar: "Collapse sidebar",
     expandSidebar: "Expand sidebar",
     collapseGroup: "Collapse",
@@ -692,6 +696,13 @@ When done, open index.html in a browser and self-test once.`,
     archiveSession: "Archive",
     unarchiveSession: "Unarchive",
     archivedGroup: (n: number) => `Archived (${n})`,
+    /** Sidebar group "reveal/load next page" row (display cap + server paging). */
+    loadMore: "More",
+    /** Sidebar folders for automation-created sessions (one per origin), parallel to Archived; wording matches the sourceNames badges. */
+    sourceGroups: {
+      subagent: (n: number) => `Subagents (${n})`,
+      schedule: (n: number) => `Scheduled (${n})`,
+    },
     skillsBanner: (names: string[]): string =>
       `Using skill${names.length === 1 ? "" : "s"}: ${names.join(", ")}`,
   },
