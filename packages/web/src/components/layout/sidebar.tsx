@@ -1,15 +1,19 @@
 /**
  * Single-column sidebar, top to bottom:
  * Project switcher -> new chat (default_agent draft) + fixed nav (Agents / models / cost center /
- * Trace) -> Session area grouped by Agent (group header = Agent name + new chat + Agent settings;
+ * Trace) -> Session area with two grouping modes (a small toggle in the section header; the
+ * choice and each Project's group collapse state persist in localStorage): by Workspace (the
+ * default; groups loaded Sessions by their
+ * Workspace path, auto temp directories merged into one trailing group, header "+" starts a
+ * draft in that Workspace) or by Agent (group header = Agent name + new chat + Agent settings;
  * shows all Agents, including empty groups) -> bottom user config (theme / language / logout).
  * Desktop keeps it pinned as the left column; mobile puts the whole thing in a drawer.
- * New chats always enter draft state (/chat/new, route state specifies the Agent): Model /
- * Workspace / approval mode are all chosen on the draft input card, so there's no longer a
- * separate "quick / advanced" pair of new-chat dialogs.
+ * New chats always enter draft state (/chat/new, route state specifies the Agent and optionally
+ * the Workspace): Model / Workspace / approval mode are all chosen on the draft input card, so
+ * there's no longer a separate "quick / advanced" pair of new-chat dialogs.
  * Color scheme is white/gray-based: active state uses a solid gray fill, running status uses a small color dot, no large blocks of color.
  */
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { NavLink, useMatch, useNavigate } from "react-router";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
@@ -23,6 +27,7 @@ import { ACCENT_SWATCHES, useTheme } from "../../state/theme";
 import type { Accent, Currency, FontScale, ThemeMode } from "../../state/theme";
 import { agentDisplayName, projectDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
+import { groupSessionsByWorkspace, workspaceGroupKey } from "../../lib/session-grouping";
 import { Dropdown } from "../ui/dropdown";
 import { AgentAvatar } from "../ui/agent-avatar";
 import { Chevron } from "../ui/chevron";
@@ -81,8 +86,46 @@ const NAV_ICONS = {
 const GEAR_ICON =
   "M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2zM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z";
 
+/** Folder outline (same glyph as the draft page's Workspace pill). */
+const FOLDER_ICON = "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z";
+
 const menuItemClass =
   "block w-full px-3.5 py-2 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800";
+
+/** Grouping mode of the Session list (persisted; Workspace is the default). */
+type GroupMode = "workspace" | "agent";
+const GROUP_MODE_KEY = "penguin.sidebarGroupMode";
+function initialGroupMode(): GroupMode {
+  return localStorage.getItem(GROUP_MODE_KEY) === "agent" ? "agent" : "workspace";
+}
+
+/**
+ * Collapsed-group persistence (survives a refresh), one key per Project — group keys
+ * are Agent ids / Workspace paths, which are Project-scoped. Both grouping modes share
+ * one set (their key spaces never collide); stray keys left by deleted Agents or
+ * Workspaces are harmless (never matched) and the per-Project sets stay tiny.
+ */
+const collapsedGroupsKey = (projectId: string) => `penguin.sidebarCollapsedGroups.${projectId}`;
+/** Reads the persisted collapsed set (corrupted storage degrades to "all expanded"). */
+function loadCollapsedGroups(projectId: string | null): ReadonlySet<string> {
+  if (!projectId) return new Set();
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(collapsedGroupsKey(projectId)) ?? "[]");
+    return new Set(
+      Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : [],
+    );
+  } catch {
+    return new Set();
+  }
+}
+function saveCollapsedGroups(projectId: string | null, next: ReadonlySet<string>): void {
+  if (!projectId) return;
+  try {
+    localStorage.setItem(collapsedGroupsKey(projectId), JSON.stringify([...next]));
+  } catch {
+    /* best-effort persistence (quota/private mode) */
+  }
+}
 
 /** Session status dot: running pulses green, compacting shows an amber dot; idle shows nothing. */
 function StatusDot({ session }: { session: SessionInfo }) {
@@ -123,9 +166,10 @@ export function Sidebar({
     setCurrentProjectId,
     reloadProjects,
     agents,
+    currentAgent,
     setCurrentAgentId,
   } = useProject();
-  const { byAgent, loading, remove, replace } = useSessions();
+  const { sessions, byAgent, loading, remove, replace } = useSessions();
   const chatMatch = useMatch("/chat/:sessionId");
   const activeSessionId = chatMatch?.params.sessionId ?? null;
 
@@ -134,9 +178,18 @@ export function Sidebar({
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
-  /** Collapsed Agent groups (expanded by default). */
-  const [collapsedAgents, setCollapsedAgents] = useState<ReadonlySet<string>>(new Set());
-  /** Expanded "archived" groups (collapsed by default). */
+  const currentProjectId = currentProject?.projectId ?? null;
+  /** Grouping mode of the Session list (Workspace by default; the choice persists across sessions). */
+  const [groupMode, setGroupModeState] = useState<GroupMode>(initialGroupMode);
+  /** Collapsed groups (expanded by default), keyed by Agent id or Workspace group key depending on the mode; persisted per Project. */
+  const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(() =>
+    loadCollapsedGroups(currentProjectId),
+  );
+  // Project resolved on first load / switched: swap in that Project's persisted collapse set.
+  useEffect(() => {
+    setCollapsedGroups(loadCollapsedGroups(currentProjectId));
+  }, [currentProjectId]);
+  /** Expanded "archived" groups (collapsed by default), keyed like collapsedGroups. */
   const [openArchived, setOpenArchived] = useState<ReadonlySet<string>>(new Set());
   /** Session pending delete confirmation (null = none). */
   const [deletingSession, setDeletingSession] = useState<SessionInfo | null>(null);
@@ -148,19 +201,33 @@ export function Sidebar({
   const [renameBusy, setRenameBusy] = useState(false);
   const [renameError, setRenameError] = useState<string | null>(null);
 
-  const toggleAgent = (agentId: string) =>
-    setCollapsedAgents((prev) => {
-      const next = new Set(prev);
-      if (next.has(agentId)) next.delete(agentId);
-      else next.add(agentId);
-      return next;
-    });
+  const setGroupMode = (mode: GroupMode) => {
+    localStorage.setItem(GROUP_MODE_KEY, mode);
+    setGroupModeState(mode);
+  };
 
-  const toggleArchivedGroup = (agentId: string) =>
+  /** Workspace groups (workspace mode): computed from the flat list, temp directories merged last. */
+  const workspaceGroups = useMemo(() => groupSessionsByWorkspace(sessions), [sessions]);
+
+  /** Group key of a Session under the current mode (collapse / archived-open state). */
+  const sessionGroupKey = (s: SessionInfo) =>
+    groupMode === "agent" ? s.agentId : workspaceGroupKey(s.workspace);
+
+  const toggleGroup = (key: string) => {
+    // Computed outside the state updater (theme.tsx convention): the persistence write is a
+    // side effect, and updaters must stay pure (double-invoked in StrictMode).
+    const next = new Set(collapsedGroups);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    setCollapsedGroups(next);
+    saveCollapsedGroups(currentProjectId, next);
+  };
+
+  const toggleArchivedGroup = (key: string) =>
     setOpenArchived((prev) => {
       const next = new Set(prev);
-      if (next.has(agentId)) next.delete(agentId);
-      else next.add(agentId);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
       return next;
     });
 
@@ -168,7 +235,7 @@ export function Sidebar({
   const toggleArchive = async (s: SessionInfo) => {
     // Archiving the currently open chat: expand the "archived" group so it doesn't silently vanish from the sidebar with no way back.
     if (!s.archived && s.sessionId === activeSessionId) {
-      setOpenArchived((prev) => new Set(prev).add(s.agentId));
+      setOpenArchived((prev) => new Set(prev).add(sessionGroupKey(s)));
     }
     try {
       const res = await api.patchSession(s.sessionId, { archived: !s.archived });
@@ -231,23 +298,99 @@ export function Sidebar({
    * New chat: enters draft state (/chat/new) without creating a Session — Model / Workspace /
    * approval mode are all chosen on the draft input card, and the Session is only actually
    * created when the first message is sent. The route state explicitly carries the target
-   * Agent: the group header's "+" uses that group's Agent, while the menu's "New chat" uses
-   * default_agent; this explicit intent overrides the previously selected Agent in the draft
-   * cache (the rest of the draft content, such as the message body, is preserved).
+   * Agent: the agent-mode group header's "+" uses that group's Agent, while the menu's "New
+   * chat" uses default_agent; this explicit intent overrides the previously selected Agent in
+   * the draft cache (the rest of the draft content, such as the message body, is preserved).
+   * The workspace-mode group header's "+" additionally carries that group's Workspace path
+   * ("" = the auto temp directory), pre-filling the draft's Workspace selection the same way.
    */
-  const newChat = (agentId?: string) => {
+  const newChat = (agentId?: string, workspace?: string) => {
     if (agentId) setCurrentAgentId(agentId);
-    navigate(`/chat/${DRAFT_SESSION_ID}`, agentId ? { state: { agentId } } : undefined);
+    const state = {
+      ...(agentId ? { agentId } : {}),
+      ...(workspace !== undefined ? { workspace } : {}),
+    };
+    navigate(`/chat/${DRAFT_SESSION_ID}`, Object.keys(state).length > 0 ? { state } : undefined);
     onNavigate?.();
   };
 
   /** Target of the menu's "New chat": default_agent, falling back to the first Agent (if the list isn't ready yet, resolution is deferred to the draft page). */
   const defaultAgentId = (agents.find((a) => a.agentId === "default_agent") ?? agents[0])?.agentId;
 
+  /** A Session always needs an Agent, so the workspace-mode "+" uses the current Agent, falling back to default_agent. */
+  const workspaceNewChatAgentId = currentAgent?.agentId ?? defaultAgentId;
+
   const openSession = (s: SessionInfo) => {
     // Cross-group click: the current Agent follows this Session's own Agent.
     setCurrentAgentId(s.agentId);
     go(`/chat/${s.sessionId}`);
+  };
+
+  /** agentId → display name (row hint tooltips in workspace mode). */
+  const agentNameById = useMemo(
+    () => new Map(agents.map((a) => [a.agentId, agentDisplayName(a)])),
+    [agents],
+  );
+
+  /** Session rows shared by both modes; withAgentHint adds a small Agent avatar per row (workspace mode, where the group no longer names the Agent). */
+  const renderRows = (rows: SessionInfo[], withAgentHint: boolean) => (
+    <ul className="space-y-0.5">
+      {rows.map((s) => (
+        <SessionRow
+          key={s.sessionId}
+          s={s}
+          active={s.sessionId === activeSessionId}
+          {...(withAgentHint ? { agentHint: agentNameById.get(s.agentId) ?? s.agentId } : {})}
+          onOpen={openSession}
+          onRename={(x) => {
+            setRenameError(null);
+            setRenameText(x.title ?? "");
+            setRenamingSession(x);
+          }}
+          onDelete={(x) => {
+            setDeleteError(null);
+            setDeletingSession(x);
+          }}
+          onToggleArchive={(x) => void toggleArchive(x)}
+        />
+      ))}
+    </ul>
+  );
+
+  /** Expanded group body shared by both modes: active rows + the collapsed-by-default archived subgroup (keyed by the group key). */
+  const renderGroupBody = (
+    groupKey: string,
+    activeList: SessionInfo[],
+    archivedList: SessionInfo[],
+    withAgentHint: boolean,
+  ) => {
+    const archivedOpen = openArchived.has(groupKey);
+    return (
+      <>
+        {activeList.length === 0 && archivedList.length === 0 ? (
+          <p className="px-2.5 py-1 text-xs text-gray-400 dark:text-gray-600">
+            {S.chat.noSessions}
+          </p>
+        ) : (
+          renderRows(activeList, withAgentHint)
+        )}
+
+        {/* Archived group (collapsed by default) */}
+        {archivedList.length > 0 && (
+          <div className="mt-1">
+            <button
+              type="button"
+              onClick={() => toggleArchivedGroup(groupKey)}
+              className="flex w-full items-center gap-1 rounded px-1.5 py-1 text-left text-[11px] font-medium text-gray-400 transition-colors duration-150 hover:bg-gray-200/50 dark:text-gray-500 dark:hover:bg-gray-800/50"
+            >
+              <Chevron open={archivedOpen} size={12} />
+              {S.chat.archivedGroup(archivedList.length)}
+            </button>
+            {archivedOpen && renderRows(archivedList, withAgentHint)}
+          </div>
+        )}
+      </>
+    );
   };
 
   const navItems: Array<{ to: string; label: string; icon: string }> = [
@@ -396,126 +539,146 @@ export function Sidebar({
         ))}
       </nav>
 
-      {/* Session area grouped by Agent (scrollable) */}
+      {/* Session area (scrollable): grouped by Workspace (default) or by Agent */}
       <div className="mt-3 min-h-0 flex-1 overflow-y-auto border-t border-gray-200 px-2 pb-2 dark:border-gray-800">
-        {loading && agents.length === 0 ? (
+        {/* Section header: list label + grouping-mode toggle (the choice persists in localStorage) */}
+        <div className="flex items-center justify-between px-1 pt-2">
+          <span className="px-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+            {S.chat.sessionList}
+          </span>
+          <div className="flex items-center gap-0.5">
+            {(
+              [
+                { value: "workspace", icon: FOLDER_ICON, label: S.chat.groupByWorkspace },
+                { value: "agent", icon: NAV_ICONS.agents, label: S.chat.groupByAgent },
+              ] as const
+            ).map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                title={opt.label}
+                aria-label={opt.label}
+                aria-pressed={groupMode === opt.value}
+                onClick={() => setGroupMode(opt.value)}
+                className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors duration-150 ${
+                  groupMode === opt.value
+                    ? "bg-gray-200/70 text-gray-700 dark:bg-gray-800 dark:text-gray-200"
+                    : "text-gray-400 hover:bg-gray-200/50 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800/70 dark:hover:text-gray-300"
+                }`}
+              >
+                <Icon d={opt.icon} size={14} />
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {groupMode === "agent" ? (
+          loading && agents.length === 0 ? (
+            <SkeletonList rows={5} />
+          ) : (
+            agents.map((agent) => {
+              const list = byAgent.get(agent.agentId) ?? [];
+              const activeList = list.filter((s) => !s.archived);
+              const archivedList = list.filter((s) => s.archived);
+              const collapsed = collapsedGroups.has(agent.agentId);
+              return (
+                <div key={agent.agentId} className="pt-2.5">
+                  {/* Group header: collapse toggle (Agent name) + new chat + Agent settings */}
+                  <div className="flex items-center gap-0.5 px-1 pb-0.5">
+                    <button
+                      type="button"
+                      onClick={() => toggleGroup(agent.agentId)}
+                      aria-label={collapsed ? S.nav.expandGroup : S.nav.collapseGroup}
+                      className="flex min-w-0 flex-1 items-center gap-1 rounded px-1 py-0.5 text-left transition-colors duration-150 hover:bg-gray-200/50 dark:hover:bg-gray-800/50"
+                    >
+                      <AgentAvatar
+                        id={agent.agentId}
+                        name={agentDisplayName(agent)}
+                        size={18}
+                        className="shrink-0 rounded"
+                      />
+                      <span className="min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                        {agentDisplayName(agent)}
+                      </span>
+                      {/* Expand/collapse indicator sits right after the Agent name */}
+                      <Chevron open={!collapsed} size={12} className="text-gray-400" />
+                      <span className="min-w-0 flex-1" />
+                    </button>
+                    {/* New chat: enters draft state directly with this group's Agent (all options live on the draft input card) */}
+                    <button
+                      type="button"
+                      title={S.chat.newSessionMenu}
+                      aria-label={S.chat.newSessionMenu}
+                      onClick={() => newChat(agent.agentId)}
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+                    >
+                      <Icon d="M12 5v14M5 12h14" size={18} />
+                    </button>
+                    <button
+                      type="button"
+                      title={S.agent.settings}
+                      onClick={() => go(`/agents/${agent.agentId}`)}
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+                    >
+                      <Icon d={GEAR_ICON} size={16} />
+                    </button>
+                  </div>
+
+                  {collapsed
+                    ? null
+                    : renderGroupBody(agent.agentId, activeList, archivedList, false)}
+                </div>
+              );
+            })
+          )
+        ) : loading && sessions.length === 0 ? (
           <SkeletonList rows={5} />
+        ) : workspaceGroups.length === 0 ? (
+          <p className="px-2.5 pt-3 text-xs text-gray-400 dark:text-gray-600">
+            {S.chat.noSessions}
+          </p>
         ) : (
-          agents.map((agent) => {
-            const list = byAgent.get(agent.agentId) ?? [];
-            const activeList = list.filter((s) => !s.archived);
-            const archivedList = list.filter((s) => s.archived);
-            const collapsed = collapsedAgents.has(agent.agentId);
-            const archivedOpen = openArchived.has(agent.agentId);
+          workspaceGroups.map((group) => {
+            const activeList = group.sessions.filter((s) => !s.archived);
+            const archivedList = group.sessions.filter((s) => s.archived);
+            const collapsed = collapsedGroups.has(group.key);
             return (
-              <div key={agent.agentId} className="pt-2.5">
-                {/* Group header: collapse toggle (Agent name) + new chat + Agent settings */}
+              <div key={group.key} className="pt-2.5">
+                {/* Group header: collapse toggle (folder icon + directory basename + count, full path in the tooltip) + new chat in this Workspace */}
                 <div className="flex items-center gap-0.5 px-1 pb-0.5">
                   <button
                     type="button"
-                    onClick={() => toggleAgent(agent.agentId)}
+                    onClick={() => toggleGroup(group.key)}
                     aria-label={collapsed ? S.nav.expandGroup : S.nav.collapseGroup}
+                    {...(group.fullPath !== null ? { title: group.fullPath } : {})}
                     className="flex min-w-0 flex-1 items-center gap-1 rounded px-1 py-0.5 text-left transition-colors duration-150 hover:bg-gray-200/50 dark:hover:bg-gray-800/50"
                   >
-                    <AgentAvatar
-                      id={agent.agentId}
-                      name={agentDisplayName(agent)}
-                      size={18}
-                      className="shrink-0 rounded"
-                    />
-                    <span className="min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                      {agentDisplayName(agent)}
+                    <span className="shrink-0 text-gray-400 dark:text-gray-500">
+                      <Icon d={FOLDER_ICON} size={15} />
                     </span>
-                    {/* Expand/collapse indicator sits right after the Agent name */}
+                    {/* No uppercase transform: a directory basename's casing is meaningful */}
+                    <span className="min-w-0 truncate text-xs font-semibold text-gray-500 dark:text-gray-400">
+                      {group.temp ? S.chat.tempWorkspaces : group.label}
+                    </span>
+                    <span className="shrink-0 text-[11px] text-gray-400 dark:text-gray-500">
+                      {activeList.length}
+                    </span>
                     <Chevron open={!collapsed} size={12} className="text-gray-400" />
                     <span className="min-w-0 flex-1" />
                   </button>
-                  {/* New chat: enters draft state directly with this group's Agent (all options live on the draft input card) */}
+                  {/* New chat in this Workspace: pre-fills the group's path in the draft ("" = auto temp directory); the Agent is the current one, falling back to default_agent */}
                   <button
                     type="button"
-                    title={S.chat.newSessionMenu}
-                    aria-label={S.chat.newSessionMenu}
-                    onClick={() => newChat(agent.agentId)}
+                    title={S.chat.newSessionInWorkspace}
+                    aria-label={S.chat.newSessionInWorkspace}
+                    onClick={() => newChat(workspaceNewChatAgentId, group.fullPath ?? "")}
                     className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
                   >
                     <Icon d="M12 5v14M5 12h14" size={18} />
                   </button>
-                  <button
-                    type="button"
-                    title={S.agent.settings}
-                    onClick={() => go(`/agents/${agent.agentId}`)}
-                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-                  >
-                    <Icon d={GEAR_ICON} size={16} />
-                  </button>
                 </div>
 
-                {collapsed ? null : (
-                  <>
-                    {activeList.length === 0 && archivedList.length === 0 ? (
-                      <p className="px-2.5 py-1 text-xs text-gray-400 dark:text-gray-600">
-                        {S.chat.noSessions}
-                      </p>
-                    ) : (
-                      <ul className="space-y-0.5">
-                        {activeList.map((s) => (
-                          <SessionRow
-                            key={s.sessionId}
-                            s={s}
-                            active={s.sessionId === activeSessionId}
-                            onOpen={openSession}
-                            onRename={(x) => {
-                              setRenameError(null);
-                              setRenameText(x.title ?? "");
-                              setRenamingSession(x);
-                            }}
-                            onDelete={(x) => {
-                              setDeleteError(null);
-                              setDeletingSession(x);
-                            }}
-                            onToggleArchive={(x) => void toggleArchive(x)}
-                          />
-                        ))}
-                      </ul>
-                    )}
-
-                    {/* Archived group (collapsed by default) */}
-                    {archivedList.length > 0 && (
-                      <div className="mt-1">
-                        <button
-                          type="button"
-                          onClick={() => toggleArchivedGroup(agent.agentId)}
-                          className="flex w-full items-center gap-1 rounded px-1.5 py-1 text-left text-[11px] font-medium text-gray-400 transition-colors duration-150 hover:bg-gray-200/50 dark:text-gray-500 dark:hover:bg-gray-800/50"
-                        >
-                          <Chevron open={archivedOpen} size={12} />
-                          {S.chat.archivedGroup(archivedList.length)}
-                        </button>
-                        {archivedOpen && (
-                          <ul className="space-y-0.5">
-                            {archivedList.map((s) => (
-                              <SessionRow
-                                key={s.sessionId}
-                                s={s}
-                                active={s.sessionId === activeSessionId}
-                                onOpen={openSession}
-                                onRename={(x) => {
-                                  setRenameError(null);
-                                  setRenameText(x.title ?? "");
-                                  setRenamingSession(x);
-                                }}
-                                onDelete={(x) => {
-                                  setDeleteError(null);
-                                  setDeletingSession(x);
-                                }}
-                                onToggleArchive={(x) => void toggleArchive(x)}
-                              />
-                            ))}
-                          </ul>
-                        )}
-                      </div>
-                    )}
-                  </>
-                )}
+                {collapsed ? null : renderGroupBody(group.key, activeList, archivedList, true)}
               </div>
             );
           })
@@ -695,6 +858,7 @@ export function Sidebar({
 function SessionRow({
   s,
   active,
+  agentHint,
   onOpen,
   onRename,
   onDelete,
@@ -702,6 +866,8 @@ function SessionRow({
 }: {
   s: SessionInfo;
   active: boolean;
+  /** Agent display name; when set (workspace mode) a small avatar keeps the Agent context visible on the row. */
+  agentHint?: string;
   onOpen: (s: SessionInfo) => void;
   onRename: (s: SessionInfo) => void;
   onDelete: (s: SessionInfo) => void;
@@ -723,6 +889,13 @@ function SessionRow({
           onClick={() => onOpen(s)}
           className="flex min-w-0 flex-1 items-center gap-1.5 px-2.5 py-1.5 text-left"
         >
+          {agentHint !== undefined && (
+            <span title={agentHint} className="flex shrink-0 items-center">
+              <AgentAvatar id={s.agentId} name={agentHint} size={14} className="rounded" />
+              {/* The avatar is aria-hidden and title only serves pointer users: expose the Agent name to keyboard/screen-reader users as visually hidden text inside the row button. */}
+              <span className="sr-only">{agentHint}</span>
+            </span>
+          )}
           {/* Only attach a title attribute when the title is actually truncated (hover to see full text); don't duplicate the text otherwise. */}
           <Truncated
             text={s.title ?? S.chat.defaultSessionTitle}

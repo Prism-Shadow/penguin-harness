@@ -486,6 +486,11 @@ export const en: Strings = {
     workspaceAuto: "Auto temp directory",
     workspaceClear: "Use auto temp directory instead",
     workspaceDirInvalid: "Directory does not exist or is inaccessible; reverted",
+    /** Sidebar conversation-list grouping toggle (workspace is the default) + workspace groups. */
+    groupByWorkspace: "Group by workspace",
+    groupByAgent: "Group by agent",
+    tempWorkspaces: "Temp workspaces",
+    newSessionInWorkspace: "New chat in this workspace",
     draftSubtitle: "The self-evolving agent that excels at AI development tasks",
     exampleTasks: {
       game: {
