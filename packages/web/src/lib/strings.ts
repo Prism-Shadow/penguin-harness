@@ -188,7 +188,7 @@ export const zh = {
     maxTurns: "max_turns（单 Task 最大轮次，-1 不限制）",
     maxTokens: "model.max_tokens",
     thinkingLevel: "model.thinking_level",
-    /** 可选档位不含 none（多数模型不支持关闭思考）；已存的 none 仍能显示，见 thinkingLevelNoneKept。 */
+    /** Selectable tiers exclude `none` (many models cannot disable thinking); a stored `none` still displays — see `thinkingLevelNoneKept`. */
     thinkingLevelOptions: [
       ["", "不提交覆盖值，沿用当前生效的配置。"],
       ["low", "开启较低强度的扩展推理。"],
@@ -196,7 +196,7 @@ export const zh = {
       ["high", "开启较高强度的扩展推理，响应更慢。"],
       ["xhigh", "开启最高强度的扩展推理，部分模型上效果与 high 相同。"],
     ] as ReadonlyArray<readonly [string, string]>,
-    /** 仅当已存配置为 none 时补充展示的行说明：不改写、不再提供该档。 */
+    /** Row description shown only while the stored config is `none`: displayed as-is, never rewritten, and no longer offered as a choice. */
     thinkingLevelNoneKept: "已存的历史档位：新选择不再提供关闭档（多数模型不支持关闭思考）。",
     timeoutMs: "model.timeoutMs",
     timeoutMsHint: "单次 Request 超时，毫秒",
@@ -465,7 +465,7 @@ export const zh = {
     chooseAgent: "选择 Agent",
     chooseModel: "选择模型",
     thinkingLevel: "思考等级",
-    /** 会话前拾取器的档位短名（评审要求：只写短名、不带说明、无“缺省”项）。none 仅用于展示已存的历史值——选项里不再提供（多数模型不支持关闭思考）。 */
+    /** Short tier names for the pre-conversation picker (per review: short names only, no descriptions, no "default" row). `none` exists purely to display a stored legacy value — it is never offered as a choice (many models cannot disable thinking). */
     thinkingLevelNames: {
       none: "无",
       low: "低",

@@ -31,6 +31,7 @@ import { Modal } from "../../components/ui/modal";
 import { Skeleton } from "../../components/ui/skeleton";
 import { VaultTab } from "./vault-tab";
 import { SchedulesTab } from "./schedules-tab";
+import { thinkingLevelOptionsFor } from "../chat/thinking-level";
 
 type TabKey = "overview" | "prompt" | "runtime" | "tools" | "vault" | "schedules";
 
@@ -501,21 +502,15 @@ function RuntimeTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveF
 
   // S is reassigned on language switch (live binding), so read it during render rather than hoisting to a module-level constant.
   // "none" is no longer offered (many models cannot disable thinking) but stays a valid stored
-  // value: when this Agent's config already carries it, a display-only row is appended so the
-  // trigger shows the real state instead of "—" — never silently rewritten, gone once another
-  // level is picked.
-  const thinkingLevelOptions =
-    thinkingLevel === "none"
-      ? [
-          ...withDefaultOption(S.agent.thinkingLevelOptions),
-          {
-            value: "none",
-            triggerLabel: "none",
-            label: "none",
-            description: S.agent.thinkingLevelNoneKept,
-          },
-        ]
-      : withDefaultOption(S.agent.thinkingLevelOptions);
+  // value: assembly lives in thinkingLevelOptionsFor, gated on the **persisted** config — a
+  // misclick onto another tier keeps the legacy row until the change is actually saved, so the
+  // stored value stays reachable (see thinking-level.ts).
+  const thinkingLevelOptions = thinkingLevelOptionsFor(
+    S.agent.thinkingLevelOptions,
+    S.agent.defaultValue,
+    S.agent.thinkingLevelNoneKept,
+    cfg.model?.thinkingLevel,
+  );
   const compactionModeOptions = withDefaultOption(S.agent.compactionModeOptions);
 
   return (

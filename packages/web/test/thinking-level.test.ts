@@ -9,6 +9,7 @@ import {
   SELECTABLE_THINKING_LEVELS,
   THINKING_LEVELS,
   thinkingLevelLabel,
+  thinkingLevelOptionsFor,
 } from "../src/features/chat/thinking-level";
 
 /** Mirrors the shape of S.chat.thinkingLevelNames. */
@@ -49,5 +50,36 @@ describe("thinkingLevelLabel", () => {
 
   it("falls back to the raw value if the name table misses a level (defensive)", () => {
     expect(thinkingLevelLabel({}, "medium")).toBe("medium");
+  });
+});
+
+describe("thinkingLevelOptionsFor (agent-settings dropdown assembly)", () => {
+  /** Mirrors the shape of S.agent.thinkingLevelOptions after the none row's removal. */
+  const OPTIONS: ReadonlyArray<readonly [string, string]> = [
+    ["", "Send no override."],
+    ["low", "Low tier."],
+    ["medium", "Medium tier."],
+    ["high", "High tier."],
+    ["xhigh", "Extra-high tier."],
+  ];
+
+  it("maps the dictionary in order; the '' row renders the default tag; no none row normally", () => {
+    for (const stored of [undefined, "", "medium", "xhigh"]) {
+      const rows = thinkingLevelOptionsFor(OPTIONS, "(default)", "legacy none", stored);
+      expect(rows.map((r) => r.value)).toEqual(["", "low", "medium", "high", "xhigh"]);
+      expect(rows[0]).toMatchObject({ triggerLabel: "(default)", label: "(default)" });
+      expect(rows.some((r) => r.value === "none")).toBe(false);
+    }
+  });
+
+  it("appends a display-only none row when the persisted config stores none (backward compat)", () => {
+    const rows = thinkingLevelOptionsFor(OPTIONS, "(default)", "legacy none", "none");
+    expect(rows.map((r) => r.value)).toEqual(["", "low", "medium", "high", "xhigh", "none"]);
+    expect(rows.at(-1)).toEqual({
+      value: "none",
+      triggerLabel: "none",
+      label: "none",
+      description: "legacy none",
+    });
   });
 });
