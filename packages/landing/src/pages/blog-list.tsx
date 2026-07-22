@@ -1,13 +1,19 @@
-/** Blog list: category chips (all / product news / release notes) + post cards. */
+/**
+ * Blog list: category chips (all / product news / tech practice / release notes) +
+ * post cards. A flat list in every view — each card carries its category badge,
+ * chips filter by category, and pinned posts sort first.
+ */
 import { useState } from "react";
 import { Link } from "react-router";
 import { S } from "../lib/strings";
 import { useLocale } from "../state/locale";
-import { postsFor } from "../lib/blog";
+import { formatPostDate, postsFor } from "../lib/blog";
 import type { BlogCategory } from "../lib/blog";
-import { CategoryBadge } from "../components/category-badge";
+import { CategoryBadge, PinnedBadge } from "../components/category-badge";
 
 type Filter = "all" | BlogCategory;
+
+const FILTERS: Filter[] = ["all", "news", "practice", "changelog"];
 
 export function BlogListPage() {
   const { locale } = useLocale();
@@ -27,23 +33,16 @@ export function BlogListPage() {
         <h1 className="text-3xl font-semibold tracking-tight">{S.blog.title}</h1>
         <p className="mt-2 text-gray-600 dark:text-gray-400">{S.blog.subtitle}</p>
         <div className="mt-6 flex flex-wrap gap-2">
-          <button type="button" className={chip(filter === "all")} onClick={() => setFilter("all")}>
-            {S.blog.all}
-          </button>
-          <button
-            type="button"
-            className={chip(filter === "news")}
-            onClick={() => setFilter("news")}
-          >
-            {S.blog.news}
-          </button>
-          <button
-            type="button"
-            className={chip(filter === "changelog")}
-            onClick={() => setFilter("changelog")}
-          >
-            {S.blog.changelog}
-          </button>
+          {FILTERS.map((value) => (
+            <button
+              key={value}
+              type="button"
+              className={chip(filter === value)}
+              onClick={() => setFilter(value)}
+            >
+              {value === "all" ? S.blog.all : S.blog[value]}
+            </button>
+          ))}
         </div>
       </header>
 
@@ -61,9 +60,10 @@ export function BlogListPage() {
           >
             <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
               <time dateTime={post.date} className="tabular-nums">
-                {post.date}
+                {formatPostDate(post.date, locale)}
               </time>
               <CategoryBadge category={post.category} />
+              {post.pinned && <PinnedBadge />}
             </div>
             <h2 className="mt-2 text-lg font-semibold tracking-tight group-hover:text-brand-700 dark:group-hover:text-brand-300">
               {post.title}

@@ -4,17 +4,17 @@
  * (same slugifier as the TOC) and the active section is tracked with an
  * IntersectionObserver so the TOC highlights while scrolling.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Link, useParams } from "react-router";
 import { S } from "../lib/strings";
 import { useLocale } from "../state/locale";
-import { getPost } from "../lib/blog";
+import { formatAuthors, formatPostDate, getPost } from "../lib/blog";
 import { extractToc, slugifyHeading } from "../lib/toc";
 import { CategoryBadge } from "../components/category-badge";
-import { ArrowRightIcon } from "../components/icons";
+import { ArrowRightIcon, CheckIcon, LinkIcon } from "../components/icons";
 
 /** Flatten react-markdown heading children to plain text for slugging. */
 function nodeText(node: ReactNode): string {
@@ -25,6 +25,68 @@ function nodeText(node: ReactNode): string {
     return nodeText((node as { props: { children?: ReactNode } }).props.children);
   }
   return "";
+}
+
+/** Copy text to the clipboard; reports whether a copy actually happened. */
+async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    // Clipboard API unavailable (e.g. non-secure context): fall back to a textarea
+    // kept out of layout (fixed + invisible) so select() cannot scroll the page.
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.top = "0";
+    ta.style.left = "0";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    try {
+      ta.select();
+      return document.execCommand("copy");
+    } catch {
+      return false;
+    } finally {
+      ta.remove();
+    }
+  }
+}
+
+/** Copies the page URL to the clipboard; the label flips to "copied" for ~2s. */
+function CopyLinkButton() {
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current);
+    },
+    [],
+  );
+
+  const onCopy = async () => {
+    if (!(await copyToClipboard(window.location.href))) return;
+    setCopied(true);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={() => void onCopy()}
+      className="inline-flex items-center gap-1.5 transition-colors hover:text-gray-900 dark:hover:text-gray-100"
+    >
+      {copied ? (
+        <CheckIcon className="h-3.5 w-3.5 text-green-600 dark:text-green-400" />
+      ) : (
+        <LinkIcon className="h-3.5 w-3.5" />
+      )}
+      {copied ? S.blog.linkCopied : S.blog.copyLink}
+    </button>
+  );
 }
 
 function Toc({ entries, activeId }: { entries: ReturnType<typeof extractToc>; activeId: string }) {
@@ -130,13 +192,16 @@ export function BlogPostPage() {
           {S.blog.back}
         </Link>
         <header className="mt-6">
-          <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
+          <h1 className="text-3xl font-semibold tracking-tight text-balance">{post.title}</h1>
+          <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-gray-500 dark:text-gray-400">
             <time dateTime={post.date} className="tabular-nums">
-              {post.date}
+              {formatPostDate(post.date, locale)}
             </time>
+            <span aria-hidden="true">·</span>
+            <span>{formatAuthors(post.authors, locale)}</span>
             <CategoryBadge category={post.category} />
+            <CopyLinkButton />
           </div>
-          <h1 className="mt-3 text-3xl font-semibold tracking-tight text-balance">{post.title}</h1>
         </header>
         <div className="md-body mt-8 text-[15px] text-gray-800 dark:text-gray-200">
           <Markdown

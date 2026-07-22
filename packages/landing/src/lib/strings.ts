@@ -405,10 +405,14 @@ export const zh = {
 
   blog: {
     title: "博客",
-    subtitle: "产品动态与更新日志",
+    subtitle: "产品动态、技术实践与更新日志",
     all: "全部",
     news: "产品动态",
+    practice: "技术实践",
     changelog: "更新日志",
+    pinned: "置顶",
+    copyLink: "复制页面链接",
+    linkCopied: "已复制",
     back: "返回博客",
     empty: "该分类下暂无文章",
     notFound: "文章不存在",
