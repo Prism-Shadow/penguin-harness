@@ -3,12 +3,12 @@ title: "A closer look at PenguinHarness — and running a self-improving agent l
 date: 2026-07-20
 category: practice
 author: Ning Zhang (AMD), Yuyang Gao (AMD), Yaowei Zheng (PrismShadow)
-excerpt: What PenguinHarness actually is, the ideas behind its architecture, and a real end-to-end run — a local open-weight model on an AMD GPU that fails a scored task, then improves itself from 0 to 4 out of 5 by editing its own files, entirely on-device.
+excerpt: What PenguinHarness actually is, the ideas behind its architecture, and a real end-to-end run — a local open-weight model on an AMD GPU that fails a scored task, then recursively improves itself from a middling score to near the ceiling by diagnosing and rewriting its own files, entirely on-device.
 ---
 
 *AMD × PrismShadow — by Ning Zhang, Yuyang Gao (AMD) and Yaowei Zheng (PrismShadow).*
 
-If you are new to PenguinHarness, this post is a guided tour: what the project is, the ideas that shape its architecture, and — to make it concrete — a real run where a fully local open-weight model on an AMD GPU *fails* a scored task and then *improves itself* from 0 to 4 out of 5 by editing its own files, without a single byte leaving the machine.
+If you are new to PenguinHarness, this post is a guided tour: what the project is, the ideas that shape its architecture, and — to make it concrete — a real run where a fully local open-weight model on an AMD GPU fails a scored task and then recursively improves itself from a middling score to near the ceiling by diagnosing and rewriting its own files, without a single byte leaving the machine.
 
 ## What PenguinHarness is
 
@@ -169,7 +169,7 @@ penguin config model add \
 
 **The task, and how it's scored.** We gave it a task that looks trivial: read a project notes file and produce a summary with a 2-sentence overview and exactly 3 key facts — *and follow the team's standard report format.* That last clause is the whole point. The "team format" is an arbitrary house convention — a specific marker line, a `# Report: <subject>` title, a `Classification: INTERNAL` line, a `Reviewed-by: Aurora Team` footer — that lives *only in the agent's `AGENTS.md`* and cannot be inferred from the task. The task carries a private rubric — a checklist the agent never sees — with 10 points: 5 for content any capable model earns from the task alone, and 5 for the convention, which is knowable only from `AGENTS.md`.
 
-**The baseline — and why it isn't perfect.** Running locally on the AMD GPU with a blank `AGENTS.md`, the model wrote a perfectly reasonable summary — and stably lost all 5 convention points, landing around **4.6 / 10**. It could not have done otherwise: nothing in the task reveals the house convention, so this is an *information gap, not a capability gap* — which is exactly why a stronger model can't just "figure it out." And because every step is in the Trace, this is not guesswork — you can open the run and see precisely which points were missed.
+**The baseline — and why it isn't perfect.** Running locally on the AMD GPU with a blank `AGENTS.md`, the model wrote a perfectly reasonable summary — and stably lost all 5 convention points, landing around **4.6 / 10** (exact numbers vary run to run). It could not have done otherwise: nothing in the task reveals the house convention, so this is an *information gap, not a capability gap* — which is exactly why a stronger model can't just "figure it out." And because every step is in the Trace, this is not guesswork — you can open the run and see precisely which points were missed.
 
 That is the honest starting point: on local hardware, an out-of-the-box agent does *not* ace a task whose rules live in files it hasn't learned yet. Which is exactly what makes the next section interesting — a measured, auditable, *reproducible* failure is something the agent can systematically fix by teaching itself.
 
@@ -189,7 +189,7 @@ Let's improve the exact agent from the previous section — the same `qwen3.6:35
 - **The edit (N → N+1), authored by the agent.** The agent writes the convention it just inferred into its own `AGENTS.md`. From a single example it correctly recovers the *structure*, but can't yet tell which tokens are fixed constants vs per-report fields — a single example is ambiguous — so it generalizes the marker to a placeholder. Re-evaluated, the score climbs to about **6.6 / 10**. No retraining, no code — the agent edited a text file it reads on every run.
 - **The recursion (N+1 → N+2).** Now we show it *several* accepted reports from different projects that share the same marker and sign-off. The agent reasons that whatever is identical across all of them must be a fixed constant, reads its *own* N+1 `AGENTS.md`, and refines it — locking `<!-- ACME-DATA-PLATFORM -->` and `Reviewed-by: Aurora Team` to literals. Re-evaluated again: about **9.8 / 10**. That is recursion in the true sense: `state_{n+1} = agent.reflect(state_n, new_evidence)`.
 
-That is a **4.6 → 6.6 → 9.8** climb on the same model and task, achieved purely by the agent editing a text file it reads — with the harness keeping each round only because the score strictly improved. That is the loop, self-driven: *what the agent can see, the agent can improve* — measured against a rubric, linked to a Trace, not vibes.
+That is a **4.6 → 6.6 → 9.8** climb on the same model and task (numbers vary run to run), achieved purely by the agent editing a text file it reads — with the harness keeping each round only because the score strictly improved. That is the loop, self-driven: *what the agent can see, the agent can improve* — measured against a rubric, linked to a Trace, not vibes.
 
 **Run it yourself.** This whole loop is a self-contained, SDK-driven script in the repo:
 [`examples/self-improving-agent/`](https://github.com/Prism-Shadow/penguin-harness/tree/main/examples/self-improving-agent).
