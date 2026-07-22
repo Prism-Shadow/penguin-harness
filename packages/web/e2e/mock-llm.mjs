@@ -185,10 +185,26 @@ const server = http.createServer((req, res) => {
     }
 
     if (hasToolResult) {
-      // Turn 2: final answer text.
+      // Turn 2: final answer text. The first sentence is asserted verbatim across several specs —
+      // keep it byte-identical and in its own paragraph. The rest is a rendering fixture for
+      // chat.spec: a ~170-char bare URL inside a CJK sentence (must autolink, open in a new tab,
+      // and wrap instead of widening the page) plus a Markdown table with an unbreakable
+      // 118-char plain token (must scroll inside the message body, not push the page wide).
       block(res, 0, { type: "text", text: "" }, [
         { type: "text_delta", text: "Command finished; " },
-        { type: "text_delta", text: "the result looks as expected." },
+        { type: "text_delta", text: "the result looks as expected.\n\n" },
+        { type: "text_delta", text: "长链接折行验证：完整报告地址是 " },
+        {
+          type: "text_delta",
+          text: "https://example.com/penguin-harness/reports/2026-07/agent-session-0123456789abcdef0123456789abcdef/artifacts/deep-verification-run-with-a-very-long-descriptive-file-name-v3.html",
+        },
+        { type: "text_delta", text: " ，请在浏览器中打开查看。\n\n" },
+        { type: "text_delta", text: "| 指标 | 标识 | 说明 |\n| --- | --- | --- |\n" },
+        {
+          type: "text_delta",
+          text: "| 会话 | agent-session-0123456789abcdef0123456789abcdef-0123456789abcdef0123456789abcdef-final | 长标识验证表格横向滚动 |\n",
+        },
+        { type: "text_delta", text: "| 结果 | completed | 全部通过 |\n" },
       ]);
       messageStop(res, "end_turn", 20);
       return;

@@ -43,19 +43,44 @@ function MdPre({ children, streaming }: { children?: ReactNode; streaming: boole
 }
 
 /**
+ * Link adapter: every chat link opens in a new tab (`target="_blank"` + `rel="noreferrer"`,
+ * which also implies `noopener`), unconditionally — including relative and `#anchor` hrefs a
+ * model may emit — so clicking a reply link never navigates the SPA away from the live
+ * conversation. Long-URL wrapping is CSS (`.md-body a` in styles.css), not handled here.
+ */
+function MdLink({
+  href,
+  children,
+  className,
+}: {
+  href?: string;
+  children?: ReactNode;
+  className?: string;
+}) {
+  return (
+    <a href={href} className={className} target="_blank" rel="noreferrer">
+      {children}
+    </a>
+  );
+}
+
+/**
  * The two `components` maps, built once at module scope instead of inline per render.
  * react-markdown uses `components.pre` as the element **type**, so a fresh arrow each render is
  * a new type on every commit: React unmounts and remounts every code block, dropping the user's
  * text selection and resetting each block's Copy-button state — ~8 times a second while a reply
  * streams, including for blocks that closed long ago. `streaming` is the only thing the adapter
  * closes over, so one frozen map per value is enough; the single flip between them happens on
- * the settle render, which re-parses the message anyway.
+ * the settle render, which re-parses the message anyway. The `a` adapter closes over nothing,
+ * so both maps share the one `MdLink` reference.
  */
 const STREAMING_COMPONENTS: Components = {
   pre: (props) => <MdPre streaming>{props.children}</MdPre>,
+  a: MdLink,
 };
 const SETTLED_COMPONENTS: Components = {
   pre: (props) => <MdPre streaming={false}>{props.children}</MdPre>,
+  a: MdLink,
 };
 
 export const Md = memo(function Md({
