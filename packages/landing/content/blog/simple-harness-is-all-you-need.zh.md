@@ -1,5 +1,5 @@
 ---
-title: "Simple Harness Is All You Need：精简的 Harness 就够了"
+title: "精简的 Harness 就够了"
 date: 2026-07-22
 category: perspectives
 excerpt: Databricks 拿自家百万行代码库里的真实 PR，评测了多个 coding agent harness。全场最高分不属于功能最全的那个 harness，而属于最简单的那个，成本还只有一半左右。本文讲清楚上下文纪律为什么胜过功能数量，以及 PenguinHarness 怎么把这个判断写进了代码。
