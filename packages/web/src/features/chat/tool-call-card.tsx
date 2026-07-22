@@ -194,18 +194,6 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
         </div>
       )}
 
-      {/* Subagent card: always visible (not hidden after completion, only collapsed by default), unaffected by the tool card's collapsed state. */}
-      {item.subagent && (
-        <div className="px-3 pb-2">
-          <SubagentCard
-            sessionId={item.subagentSessionId ?? ""}
-            model={item.subagent}
-            running={!item.outputComplete}
-            ctx={ctx}
-          />
-        </div>
-      )}
-
       {/* Expanded details: full arguments / output */}
       {open && (
         <div className="anim-fade">
@@ -236,6 +224,18 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Subagent card: always visible (not hidden after completion, only collapsed by default), unaffected by the tool card's collapsed state. Rendered below the expanded arguments/output so the nested conversation reads after the tool call's own content, not between the header and its details. */}
+      {item.subagent && (
+        <div className="px-3 pb-2">
+          <SubagentCard
+            sessionId={item.subagentSessionId ?? ""}
+            model={item.subagent}
+            running={!item.outputComplete}
+            ctx={ctx}
+          />
         </div>
       )}
     </div>
