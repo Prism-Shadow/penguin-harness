@@ -17,7 +17,7 @@ If the user's message only invokes this skill (e.g. "use ollama skill") without 
 
 Ask the user which model to run; if they have no preference, recommend the small default [Qwen/Qwen3.5-0.8B](https://huggingface.co/Qwen/Qwen3.5-0.8B) (`ollama pull qwen3.5:0.8b`). The model must fit the machine's RAM/VRAM.
 
-Ollama runs everywhere — macOS, Linux and Windows, on CPUs as well as NVIDIA/AMD GPUs — so engine choice follows the user's preference: Ollama is the simple default, while the `vllm` skill targets high-throughput GPU serving. Check the current state first:
+Ollama runs everywhere — macOS, Linux and Windows, on CPUs as well as NVIDIA/AMD GPUs — so engine choice follows the user's preference: Ollama is the simple default, while vLLM targets high-throughput GPU serving. Check the current state first:
 
 ```bash
 ollama --version   # is Ollama installed?
@@ -29,7 +29,7 @@ If port 11434 is already serving, reuse that instance — never kill an existing
 ## Suggested workflow
 
 1. Ask the user which model to run; with no preference, recommend [Qwen/Qwen3.5-0.8B](https://huggingface.co/Qwen/Qwen3.5-0.8B) (`qwen3.5:0.8b`).
-2. Pick the engine the user prefers: Ollama (this skill) is the default; switch to the `vllm` skill for high-throughput GPU serving.
+2. Pick the engine the user prefers: Ollama is the default; vLLM covers high-throughput GPU serving.
 3. Install Ollama if missing, then `ollama pull qwen3.5:0.8b`.
 4. Verify with `curl http://localhost:11434/v1/models`.
 5. Register the endpoint: `penguin config model add ... --client-type openai --base-url http://localhost:11434/v1` — a pulled Ollama model is not visible to Penguin until added.
@@ -89,5 +89,3 @@ penguin config model add --provider custom --client-type openai \
   --base-url http://localhost:11434/v1 --model-id qwen3.5:0.8b --api-key ollama
 penguin config model list   # the new entry should now be listed
 ```
-
-Which data root to target (`--root`) is covered by the `penguin-cli` skill.

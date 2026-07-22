@@ -17,7 +17,7 @@ If the user's message only invokes this skill (e.g. "use vllm skill") without a 
 
 Ask the user which model to serve; if they have no preference, recommend the small default [Qwen/Qwen3.5-0.8B](https://huggingface.co/Qwen/Qwen3.5-0.8B). Also ask what context length the workload needs.
 
-vLLM needs an NVIDIA or AMD GPU. Engine choice follows the user's preference: Ollama (see the `ollama` skill) also runs on GPUs and is the simpler default — pick vLLM for high-throughput serving, and Ollama on macOS or CPU-only machines, which vLLM does not serve. Confirm the hardware first:
+vLLM needs an NVIDIA or AMD GPU. Engine choice follows the user's preference: Ollama also runs on GPUs and is the simpler default — pick vLLM for high-throughput serving, and Ollama on macOS or CPU-only machines, which vLLM does not serve. Confirm the hardware first:
 
 ```bash
 nvidia-smi          # NVIDIA: GPU model and free VRAM (AMD ROCm: rocm-smi)
@@ -29,7 +29,7 @@ The model must fit the available VRAM — model size and context length drive th
 ## Suggested workflow
 
 1. Ask the user which model to serve; with no preference, recommend [Qwen/Qwen3.5-0.8B](https://huggingface.co/Qwen/Qwen3.5-0.8B).
-2. Pick the engine the user prefers: vLLM (this skill) for high-throughput GPU serving; the `ollama` skill is the simple default and the choice on macOS or CPU-only machines.
+2. Pick the engine the user prefers: vLLM for high-throughput GPU serving; Ollama is the simple default and the choice on macOS or CPU-only machines.
 3. Serve on a free port, with the tool-calling flags whenever agents will call it (see below).
 4. Verify with `curl http://localhost:8000/v1/models`.
 5. Register the endpoint: `penguin config model add ... --client-type openai --base-url http://localhost:8000/v1` — a served model is not visible to Penguin until added.
@@ -86,8 +86,6 @@ penguin config model add --provider custom --client-type openai \
   --base-url http://localhost:8000/v1 --model-id <served-model-name> --api-key <key>
 penguin config model list   # the new entry should now be listed
 ```
-
-Which data root to target (`--root`) is covered by the `penguin-cli` skill.
 
 ## Troubleshooting
 
