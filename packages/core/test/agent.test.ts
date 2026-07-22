@@ -350,6 +350,46 @@ describe("run_subagent spawning follows the PARENT session (never the Project de
     }
   });
 
+  it("passes 'no thinking level' down when the parent has none (the child config never applies)", async () => {
+    // helper_agent's own seeded config pins "medium"; the parent's optional key is removed
+    // (hand-edited config). The tri-state null must reach the child: falling back to the
+    // child's own config here was the fallback hole — the child must show no level at all.
+    await createAgent({ agentId: "helper_agent" });
+    const agent = await createAgent();
+    delete agent.state.systemConfig.model?.thinking_level;
+    const ws = path.join(tmpRoot, "ws-inherit-none");
+    await fs.mkdir(ws, { recursive: true });
+    const parent = await agent.createSession({ workspaceDir: ws });
+    const runner = lastSpawnedRunner();
+    try {
+      expect((parent.metaMessage.payload as { thinking_level: string }).thinking_level).toBe(
+        "default",
+      );
+      const child = await spawnedChildMeta(runner, { agentId: "helper_agent" });
+      expect(child.thinking_level).toBe("default");
+    } finally {
+      parent.dispose();
+    }
+  });
+
+  it("rejects half a model reference at the runner layer (never completed from the parent's half)", async () => {
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-inherit-half");
+    await fs.mkdir(ws, { recursive: true });
+    const parent = await agent.createSession({ workspaceDir: ws });
+    const runner = lastSpawnedRunner();
+    try {
+      await expect(runner.spawn({ modelId: "claude-sonnet-4-6" })).rejects.toThrow(
+        /must be given as a \(provider, model_id\) pair/,
+      );
+      await expect(runner.spawn({ provider: "anthropic" })).rejects.toThrow(
+        /must be given as a \(provider, model_id\) pair/,
+      );
+    } finally {
+      parent.dispose();
+    }
+  });
+
   it("makes a cross-agent child follow the parent session, not its own Agent config", async () => {
     // Seed the second Agent first (spawn verifies its system_config exists); its own seeded
     // config (thinking "medium") and the Project default model must both lose to the parent.

@@ -70,6 +70,26 @@ import type { ModelEntry } from "./state/index.js";
  */
 const MAX_SUBAGENT_DEPTH = 1;
 
+/** The five valid thinking level names (session_meta additionally records the literal "default" for "no level"). */
+const THINKING_LEVEL_NAMES: readonly ThinkingLevelName[] = [
+  "none",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+];
+
+/**
+ * Narrows a recorded session_meta `thinking_level` back to a ThinkingLevelName; the literal
+ * "default" (no level recorded), a missing field (legacy Trace), and anything unknown are
+ * not levels and yield undefined.
+ */
+function asThinkingLevelName(value: unknown): ThinkingLevelName | undefined {
+  return typeof value === "string" && (THINKING_LEVEL_NAMES as readonly string[]).includes(value)
+    ? (value as ThinkingLevelName)
+    : undefined;
+}
+
 export interface CreateAgentOptions {
   agentId?: string;
   projectId?: string;
@@ -91,12 +111,16 @@ export interface CreateSessionOptions {
    */
   provider?: string;
   /**
-   * Thinking level for this Session; when unspecified, falls back to the Agent config's
-   * `model.thinking_level`. Subagent spawning passes the parent Session's effective level
-   * here, so a child Session thinks at the parent's level rather than the child Agent's
-   * own default.
+   * Thinking level for this Session — a tri-state:
+   * - a `ThinkingLevelName` pins the level;
+   * - `undefined` (omitted) falls back to the Agent config's `model.thinking_level`;
+   * - `null` means "no thinking level": the config fallback is suppressed entirely
+   *   (nothing goes into the LLM config; session_meta echoes `"default"`).
+   * Subagent spawning always passes the parent Session's effective level (its level, or
+   * `null` when the parent has none), so a child Session thinks at the parent's level and
+   * never falls back to the child Agent's own config.
    */
-  thinkingLevel?: ThinkingLevelName;
+  thinkingLevel?: ThinkingLevelName | null;
   /** Explicit credentials; if unspecified, falls back to credentials in the Project config, then to AgentHub reading environment variables. */
   apiKey?: string;
   baseUrl?: string;
@@ -214,9 +238,13 @@ export class Agent {
     }
     const sessionId = formatSessionId();
     const subagentDepth = opts.subagentDepth ?? 0;
-    // Effective thinking level: an explicit option (how subagent spawning passes down the
-    // parent Session's level) wins over this Agent's own system_config.
-    const thinkingLevel = opts.thinkingLevel ?? this.state.systemConfig.model?.thinking_level;
+    // Effective thinking level (tri-state option): a value wins over this Agent's own
+    // system_config; `null` — how subagent spawning says "the parent has none" — suppresses
+    // the config fallback entirely; only `undefined` (no option) reads the Agent config.
+    const thinkingLevel =
+      opts.thinkingLevel === null
+        ? undefined
+        : (opts.thinkingLevel ?? this.state.systemConfig.model?.thinking_level);
 
     // Agent-level vault (agent_state/.vault.toml) and installed Skills: read the current values each time a Session is created.
     const vault = await loadAgentVault(this.state.root, this.state.projectId, this.state.agentId);
@@ -361,14 +389,20 @@ export class Agent {
     // original history); the vault uses current values (it's injected into the
     // subprocess environment, not the history, so a resumed Session should get the
     // latest keys too).
+    // The recorded thinking level is restored with the rest of session_meta (like model,
+    // Workspace, and system prompt): a resumed subagent session keeps its inherited level
+    // instead of re-reading this Agent's config. The literal "default" (no level recorded)
+    // — and a legacy Trace without the field — falls back to the Agent's current config.
+    const thinkingLevel =
+      asThinkingLevelName(meta.thinking_level) ?? this.state.systemConfig.model?.thinking_level;
+
     const rt = await this.buildRuntime({
       workspaceDir,
       modelEntry,
       apiKey,
       baseUrl,
       systemPrompt: meta.system_prompt,
-      // Resume has no per-Session override: the level follows this Agent's current config.
-      thinkingLevel: this.state.systemConfig.model?.thinking_level,
+      thinkingLevel,
       subagentDepth: 0,
       vault: await loadAgentVault(this.state.root, this.state.projectId, this.state.agentId),
     });
@@ -407,7 +441,7 @@ export class Agent {
         model_context_window: modelEntry.context_window ?? "unknown",
         system_prompt: meta.system_prompt,
         tools: rt.tools,
-        thinking_level: this.state.systemConfig.model?.thinking_level ?? "default",
+        thinking_level: thinkingLevel ?? "default",
         agent_state: this.state.stateDir,
         workspace: workspaceDir,
       },
@@ -532,11 +566,12 @@ export class Agent {
                 ...(provider !== undefined ? { provider } : {}),
               };
         // The parent Session's effective thinking level (`thinkingLevel` in scope) is passed
-        // down too — on a cross-agent spawn the child Agent's own config would otherwise apply.
+        // down too, as a tri-state: `null` when the parent has none, so the child never falls
+        // back to its own Agent config (which would otherwise apply on a cross-agent spawn).
         const childSession = await childAgent.createSession({
           workspaceDir,
           ...childModel,
-          ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
+          thinkingLevel: thinkingLevel ?? null,
           subagentDepth: subagentDepth + 1,
         });
         // All child-session messages are tagged with an origin (the child Session id,
