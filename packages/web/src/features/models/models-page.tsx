@@ -51,6 +51,7 @@ import { Input } from "../../components/ui/input";
 import { PasswordInput } from "../../components/ui/password-input";
 import { Modal } from "../../components/ui/modal";
 import { Select } from "../../components/ui/select";
+import { Switch } from "../../components/ui/switch";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { Badge } from "../../components/ui/badge";
 import { Chevron } from "../../components/ui/chevron";
@@ -1527,73 +1528,67 @@ function ModelDialog({
 
         {/* 3) Context window + max output tokens side by side (one row): the "Token" unit
             sits inside each box as a muted right suffix. Placeholders cannot scroll, so at
-            this half width they carry only a short line; the full max-output guidance is a
-            visible one-line hint under the pair (hover-only tooltips are undiscoverable and
-            unusable on touch — the titles stay as a bonus). Only field errors appear under a
-            cell. Max output tokens: per-model cap on the request's output — when set it wins
-            over the Agent's system_config value; empty inherits it (lets a small-context
-            local model stay under its window). */}
-        <div>
-          <div className="grid grid-cols-2 items-start gap-2">
-            <label className="block">
-              <span className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-400">
-                {S.models.contextWindow}
+            this half width they carry only a short line; the full explanation lives in the
+            input's title (hover) — the owner explicitly prefers saving the vertical space
+            over a visible hint line. Only field errors appear under a cell. Max output
+            tokens: per-model cap on the request's output — when set it wins over the
+            Agent's system_config value; empty inherits it (lets a small-context local
+            model stay under its window). */}
+        <div className="grid grid-cols-2 items-start gap-2">
+          <label className="block">
+            <span className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-400">
+              {S.models.contextWindow}
+            </span>
+            <span className="relative block">
+              <Input
+                size="sm"
+                value={form.contextWindow}
+                inputMode="numeric"
+                disabled={!canEdit}
+                invalid={Boolean(fieldErrors.contextWindow)}
+                onChange={(e) => set({ contextWindow: digitsOnly(e.target.value) })}
+                className="pr-12 font-mono"
+                // The title mirrors the placeholder: at half width the (EN) copy can clip, hover reveals it in full.
+                title={
+                  preset
+                    ? S.models.contextWindowHint
+                    : S.models.contextWindowDefaultHint(CUSTOM_CONTEXT_DEFAULT)
+                }
+                placeholder={
+                  preset
+                    ? S.models.contextWindowHint
+                    : S.models.contextWindowDefaultHint(CUSTOM_CONTEXT_DEFAULT)
+                }
+              />
+              <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-gray-400">
+                {S.models.tokenUnit}
               </span>
-              <span className="relative block">
-                <Input
-                  size="sm"
-                  value={form.contextWindow}
-                  inputMode="numeric"
-                  disabled={!canEdit}
-                  invalid={Boolean(fieldErrors.contextWindow)}
-                  onChange={(e) => set({ contextWindow: digitsOnly(e.target.value) })}
-                  className="pr-12 font-mono"
-                  // The title mirrors the placeholder: at half width the (EN) copy can clip, hover reveals it in full.
-                  title={
-                    preset
-                      ? S.models.contextWindowHint
-                      : S.models.contextWindowDefaultHint(CUSTOM_CONTEXT_DEFAULT)
-                  }
-                  placeholder={
-                    preset
-                      ? S.models.contextWindowHint
-                      : S.models.contextWindowDefaultHint(CUSTOM_CONTEXT_DEFAULT)
-                  }
-                />
-                <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-gray-400">
-                  {S.models.tokenUnit}
-                </span>
+            </span>
+            {fieldErrors.contextWindow && <FieldError text={fieldErrors.contextWindow} />}
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-400">
+              {S.models.maxTokens}
+            </span>
+            <span className="relative block">
+              <Input
+                size="sm"
+                value={form.maxTokens}
+                inputMode="numeric"
+                disabled={!canEdit}
+                invalid={Boolean(fieldErrors.maxTokens)}
+                onChange={(e) => set({ maxTokens: digitsOnly(e.target.value) })}
+                className="pr-12 font-mono"
+                // Short placeholder (fits the half-width box); the full explanation incl. the small-context advice is the hover title.
+                title={S.models.maxTokensTitle}
+                placeholder={S.models.maxTokensHint}
+              />
+              <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-gray-400">
+                {S.models.tokenUnit}
               </span>
-              {fieldErrors.contextWindow && <FieldError text={fieldErrors.contextWindow} />}
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-400">
-                {S.models.maxTokens}
-              </span>
-              <span className="relative block">
-                <Input
-                  size="sm"
-                  value={form.maxTokens}
-                  inputMode="numeric"
-                  disabled={!canEdit}
-                  invalid={Boolean(fieldErrors.maxTokens)}
-                  onChange={(e) => set({ maxTokens: digitsOnly(e.target.value) })}
-                  className="pr-12 font-mono"
-                  // Short placeholder (fits the half-width box); the full explanation incl. the small-context advice is the hover title.
-                  title={S.models.maxTokensTitle}
-                  placeholder={S.models.maxTokensHint}
-                />
-                <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-gray-400">
-                  {S.models.tokenUnit}
-                </span>
-              </span>
-              {fieldErrors.maxTokens && <FieldError text={fieldErrors.maxTokens} />}
-            </label>
-          </div>
-          {/* Visible guidance for the output cap (one wrapping line under the pair). */}
-          <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
-            {S.models.maxTokensCapHint}
-          </p>
+            </span>
+            {fieldErrors.maxTokens && <FieldError text={fieldErrors.maxTokens} />}
+          </label>
         </div>
 
         {/* 4) Pricing: three fields side by side with self-contained labels (… price) — no
@@ -1643,26 +1638,23 @@ function ModelDialog({
           </p>
         )}
 
-        {/* Vision capability: for preset models it's flagged by the built-in catalog (read-only); custom models can be checked. */}
+        {/* Vision capability: for preset models it's flagged by the built-in catalog (read-only);
+            custom models toggle it here — an iOS-style switch with the label only, no
+            explanation text (per owner: the dialog must not spend rows on descriptions). */}
         {!preset && (
-          <div>
-            <label
-              className={`flex items-center gap-2 text-sm ${canEdit ? "cursor-pointer" : "cursor-not-allowed"}`}
-            >
-              <input
-                type="checkbox"
-                checked={form.vision}
-                disabled={!canEdit}
-                onChange={(e) => set({ vision: e.target.checked })}
-                className={canEdit ? "cursor-pointer" : "cursor-not-allowed"}
-              />
+          <label
+            className={`flex items-center justify-between gap-2 ${canEdit ? "cursor-pointer" : "cursor-not-allowed"}`}
+          >
+            <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
               {S.models.vision}
-            </label>
-            {/* Note toggles with the checkbox: supports images → read_image feeds them back directly; doesn't → describe_image reads them on its behalf. */}
-            <p className="mt-1 text-xs text-gray-400">
-              {form.vision ? S.models.visionOnHint : S.models.visionOffHint}
-            </p>
-          </div>
+            </span>
+            <Switch
+              checked={form.vision}
+              disabled={!canEdit}
+              onChange={(vision) => set({ vision })}
+              aria-label={S.models.vision}
+            />
+          </label>
         )}
       </div>
 

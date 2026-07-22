@@ -291,16 +291,14 @@ export const zh = {
     tokenUnit: "Token",
     contextWindowHint: "留空表示未知",
     maxTokens: "最大输出长度",
-    /** Placeholders cannot scroll, so this must fit the half-width box; the full guidance is the visible maxTokensCapHint line under the pair (the title tooltip is a bonus). */
+    /** Placeholders cannot scroll, so this must fit the half-width box; the full guidance is the input's title tooltip (the owner prefers no visible hint line — saves vertical space). */
     maxTokensHint: "留空沿用 Agent 设置",
     maxTokensTitle:
       "按模型限制单次请求的最大输出 Token 数；留空沿用 Agent 设置，小上下文模型建议调低",
-    maxTokensCapHint: "最大输出长度限制单次请求的输出 Token 数；小上下文的本地模型建议调低",
     maxTokensInvalid: "必须为正整数",
     clientTypeLocked: (t: string): string => `协议：${t}（沿用原配置，不可修改）`,
-    vision: "支持图片输入（视觉/多模态）",
-    visionHint:
-      "取消勾选后，对话中上传的图片将以文件路径转交，读图经 describe_image 由视觉模型代读",
+    /** Switch label only — the dialog carries no explanation text for it (per owner). */
+    vision: "支持视觉",
     visionBadge: "视觉",
     visionModelBadge: "视觉代理",
     setVisionModel: "设为视觉代理模型",
@@ -331,9 +329,6 @@ export const zh = {
     baseUrlHint: "留空使用厂商默认地址",
     baseUrlRequired: "必须填写 base URL",
     contextWindowDefaultHint: (n: number): string => `留空按 ${n} 计`,
-    visionOnHint: "读图用 read_image：图片直接回灌模型",
-    visionOffHint:
-      "读图用 describe_image：图片交给视觉代理模型描述、只回文本；对话中上传的图片以文件路径转交",
     confirmDeleteTitle: "删除模型",
     confirmDelete: (name: string): string =>
       `确定删除「${name}」？该模型的配置与 API key 将一并移除。`,

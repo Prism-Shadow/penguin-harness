@@ -317,13 +317,9 @@ export const en: Strings = {
     maxTokensHint: "Empty = inherit agent setting",
     maxTokensTitle:
       "Caps output tokens per request; leave empty to inherit the agent setting — lower it for small-context models",
-    maxTokensCapHint:
-      "Max output tokens caps output per request; lower it for small-context local models",
     maxTokensInvalid: "Must be a positive integer",
     clientTypeLocked: (t: string): string => `Protocol: ${t} (kept as configured; not editable)`,
-    vision: "Supports image input (vision / multimodal)",
-    visionHint:
-      "When unchecked, chat images are passed as file paths and read via describe_image (vision model)",
+    vision: "Vision support",
     visionBadge: "Vision",
     visionModelBadge: "Proxy vision",
     setVisionModel: "Set as proxy vision model",
@@ -354,9 +350,6 @@ export const en: Strings = {
     baseUrlHint: "Leave empty to use the provider default",
     baseUrlRequired: "A base URL is required",
     contextWindowDefaultHint: (n: number): string => `Defaults to ${n} if empty`,
-    visionOnHint: "Images are read with read_image and fed to the model directly",
-    visionOffHint:
-      "Images are read with describe_image: described by the proxy vision model, text only; chat uploads are passed as file paths",
     confirmDeleteTitle: "Delete model",
     confirmDelete: (name: string): string =>
       `Delete "${name}"? Its configuration and API key will be removed.`,
