@@ -40,7 +40,6 @@ export interface Messages {
     addBaseUrl: string;
     addContextWindow: string;
     addMaxTokens: string;
-    addThinkingLevel: string;
     addClientType: string;
     addVision: string;
     addNoVision: string;
@@ -178,8 +177,6 @@ const en: Messages = {
     addContextWindow: "Context window size (tokens)",
     addMaxTokens:
       "Per-model max output tokens (positive integer); when set it overrides the Agent's max_tokens, omit to inherit — lower it for small-context models",
-    addThinkingLevel:
-      "Per-model thinking level (none|low|medium|high|xhigh); when set it overrides the Agent's thinking_level, omit to inherit",
     addClientType: "AgentHub client type (e.g. openai); defaults by provider group when omitted",
     addVision: "Mark the model as supporting image input (vision)",
     addNoVision: "Mark the model as NOT supporting image input; omit both to keep current",
@@ -295,8 +292,6 @@ const zh: Messages = {
     addContextWindow: "上下文窗口大小（token 数）",
     addMaxTokens:
       "该模型的最大输出长度（正整数）；设置后覆盖 Agent 的 max_tokens，缺省沿用——小上下文模型建议调低",
-    addThinkingLevel:
-      "该模型的思考等级（none|low|medium|high|xhigh）；设置后覆盖 Agent 的 thinking_level，缺省沿用",
     addClientType: "AgentHub 客户端协议（如 openai）；缺省按 provider 分组的语义取值",
     addVision: "标注该模型支持图片输入（视觉）",
     addNoVision: "标注该模型不支持图片输入；两者都不给则保留原值",

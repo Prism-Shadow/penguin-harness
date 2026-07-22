@@ -14,7 +14,6 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { ThinkingLevel } from "@prismshadow/agenthub";
 import {
   addModel,
   createAgent,
@@ -198,53 +197,6 @@ describe("Agent.createSession model reference ((provider, model_id) pair)", () =
       expect(session.modelId).toBe("deepseek-v4-pro");
     } finally {
       session.dispose();
-    }
-  });
-});
-
-describe("Agent.createSession thinking level (per-model annotation wins over the Agent config)", () => {
-  it("uses the entry's thinking_level in llmConfig and records the effective level in session_meta", async () => {
-    // A local model served without thinking, annotated none — while the Agent State is
-    // seeded with an explicit per-Agent "medium" (agent-wins would leave the per-model
-    // annotation permanently shadowed).
-    await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
-      provider: "custom",
-      model_id: "local-no-think",
-      client_type: "openai",
-      thinking_level: "none",
-    });
-    const agent = await createAgent();
-    expect(agent.state.systemConfig.model?.thinking_level).toBe("medium");
-    const ws = path.join(tmpRoot, "ws-thinking");
-    await fs.mkdir(ws, { recursive: true });
-
-    const annotated = await agent.createSession({
-      workspaceDir: ws,
-      modelId: "local-no-think",
-      provider: "custom",
-    });
-    try {
-      // session_meta records the **effective** level (what the Trace view shows).
-      const meta = annotated.metaMessage.payload as { thinking_level: string };
-      expect(meta.thinking_level).toBe("none");
-      // And the LLM request config carries the same level.
-      const llm = (annotated as unknown as { engine: { deps: { llm: unknown } } }).engine.deps.llm;
-      const uniConfig = (llm as { uniConfig?: { thinking_level?: unknown } }).uniConfig;
-      expect(uniConfig?.thinking_level).toBe(ThinkingLevel.NONE);
-    } finally {
-      annotated.dispose();
-    }
-
-    // An unannotated entry (the default model) inherits the Agent value, as before.
-    const inherited = await agent.createSession({ workspaceDir: ws });
-    try {
-      const meta = inherited.metaMessage.payload as { thinking_level: string };
-      expect(meta.thinking_level).toBe("medium");
-      const llm = (inherited as unknown as { engine: { deps: { llm: unknown } } }).engine.deps.llm;
-      const uniConfig = (llm as { uniConfig?: { thinking_level?: unknown } }).uniConfig;
-      expect(uniConfig?.thinking_level).toBe(ThinkingLevel.MEDIUM);
-    } finally {
-      inherited.dispose();
     }
   });
 });

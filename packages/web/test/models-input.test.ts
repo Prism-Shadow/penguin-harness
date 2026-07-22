@@ -68,18 +68,6 @@ describe("toRow (DTO → row edit state)", () => {
     expect(row.modelId).toBe("xiaomi/mimo-v2.5");
   });
 
-  it("carries the per-model thinking level through; absent = '' (inherit the Agent setting)", () => {
-    const annotated = toRow({
-      provider: "custom",
-      modelId: "local-qwen",
-      thinkingLevel: "none",
-      isDefault: false,
-    });
-    expect(annotated.thinkingLevel).toBe("none");
-    const plain = toRow({ provider: "custom", modelId: "local-qwen", isDefault: false });
-    expect(plain.thinkingLevel).toBe("");
-  });
-
   it("carries the per-model max output tokens through; absent = '' (inherit the Agent setting)", () => {
     const capped = toRow({
       provider: "custom",

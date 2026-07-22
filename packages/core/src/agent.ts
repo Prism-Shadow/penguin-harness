@@ -255,10 +255,7 @@ export class Agent {
         model_context_window: modelEntry.context_window ?? "unknown",
         system_prompt: systemPrompt,
         tools: rt.tools,
-        // The **effective** level (per-model annotation wins over the Agent config), so the
-        // Trace view reflects what the request actually ran with.
-        thinking_level:
-          modelEntry.thinking_level ?? this.state.systemConfig.model?.thinking_level ?? "default",
+        thinking_level: this.state.systemConfig.model?.thinking_level ?? "default",
         agent_state: this.state.stateDir,
         workspace: workspaceDir,
       },
@@ -396,10 +393,7 @@ export class Agent {
         model_context_window: modelEntry.context_window ?? "unknown",
         system_prompt: meta.system_prompt,
         tools: rt.tools,
-        // The **effective** level (per-model annotation wins over the Agent config), so the
-        // Trace view reflects what the request actually ran with.
-        thinking_level:
-          modelEntry.thinking_level ?? this.state.systemConfig.model?.thinking_level ?? "default",
+        thinking_level: this.state.systemConfig.model?.thinking_level ?? "default",
         agent_state: this.state.stateDir,
         workspace: workspaceDir,
       },
@@ -609,16 +603,10 @@ export class Agent {
     });
     const tools = await environment.listTools();
 
-    // Effective thinking level: the entry's per-model annotation wins over the Agent's
-    // system_config value — thinking capability is a model trait (a local model served
-    // without thinking → none, a dedicated reasoner → high), and agents are seeded with
-    // an explicit per-Agent "medium", which would otherwise keep the per-model setting
-    // permanently shadowed. An unannotated entry inherits the Agent value as before.
-    const thinkingLevel =
-      modelEntry.thinking_level ?? this.state.systemConfig.model?.thinking_level;
-    // Effective output cap, same precedence: the fit is a model trait — the seeded per-Agent
-    // default (32000) cannot fit into e.g. a 32768-token context window together with any
-    // prompt, so a small-window model needs its own pinned cap. Unset inherits the Agent value.
+    // Effective output cap: the entry's per-model annotation wins over the Agent's
+    // system_config value — the fit is a model trait: the seeded per-Agent default (32000)
+    // cannot fit into e.g. a 32768-token context window together with any prompt, so a
+    // small-window model needs its own pinned cap. Unset inherits the Agent value.
     const maxTokens = modelEntry.max_tokens ?? this.state.systemConfig.model?.max_tokens;
 
     // LLM constructor args are extracted into a constant so they can be reused as-is when
@@ -642,7 +630,9 @@ export class Agent {
         ? { contextWindow: modelEntry.context_window }
         : {}),
       ...(maxTokens !== undefined ? { maxTokens } : {}),
-      ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
+      ...(this.state.systemConfig.model?.thinking_level !== undefined
+        ? { thinkingLevel: this.state.systemConfig.model.thinking_level }
+        : {}),
       ...(this.state.systemConfig.model?.timeoutMs !== undefined
         ? { requestTimeoutMs: this.state.systemConfig.model.timeoutMs }
         : {}),

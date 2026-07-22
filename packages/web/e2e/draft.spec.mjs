@@ -78,6 +78,23 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   await page.getByRole("button", { name: /放行只读/ }).click();
   await expect(page.getByRole("button", { name: "审批模式" })).toContainText("放行只读");
 
+  // Conversation-time thinking level (backed by the Agent settings): the picker shows the
+  // seeded default (medium); picking high writes straight through to the Agent config, so
+  // the session created on send runs with it and it becomes the Agent's new default.
+  const thinkingBtn = page.getByRole("button", { name: "model.thinking_level" });
+  await expect(thinkingBtn).toContainText("medium");
+  await thinkingBtn.click();
+  await page.getByRole("button", { name: /开启较高强度/ }).click();
+  await expect(thinkingBtn).toContainText("high");
+  await expect
+    .poll(async () => {
+      const cfg = await (
+        await page.request.get(`${BASE}/api/projects/${projectId}/agents/default_agent/config`)
+      ).json();
+      return cfg.config.model?.thinkingLevel;
+    })
+    .toBe("high");
+
   // Reload only after the body is persisted via debounce: both the body and the two selections should restore from the cache.
   const draftKey = `penguin.chatDraft.${userId}.${projectId}`;
   await expect
@@ -97,6 +114,8 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
     .toBe(true);
   await expect(page.getByRole("button", { name: "选择模型" })).toContainText("claude-4-8-mini");
   await expect(page.getByRole("button", { name: "审批模式" })).toContainText("放行只读");
+  // The thinking level is NOT draft state: it restores from the Agent config (written through above), not the cache.
+  await expect(page.getByRole("button", { name: "model.thinking_level" })).toContainText("high");
   // The @ target restores along with the draft; removing it falls back to a normal send (no delegation triggered).
   await expect(page.getByText("@agent_helper")).toBeVisible();
   await page.getByRole("button", { name: "移除 @ 目标" }).click();
@@ -111,6 +130,16 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   expect(first.session.modelId).toBe("claude-4-8-mini");
   expect(first.session.provider).toBe("custom");
   expect(first.session.approvalMode).toBe("read-only");
+
+  // The written-through thinking level reached the session: its trace's session_meta records
+  // the level llmConfig was assembled with (per-session fixed), and the input area shows the
+  // read-only tag next to the locked model.
+  const replay = await (
+    await page.request.get(`${BASE}/api/sessions/${firstSessionId}/messages`)
+  ).json();
+  const meta = replay.messages.find((m) => m.type === "session_meta");
+  expect(meta?.payload?.thinking_level).toBe("high");
+  await expect(page.getByTitle("model.thinking_level：high")).toBeVisible();
 
   // The cache clears as soon as sending succeeds.
   await expect.poll(() => page.evaluate((k) => localStorage.getItem(k), draftKey)).toBeNull();

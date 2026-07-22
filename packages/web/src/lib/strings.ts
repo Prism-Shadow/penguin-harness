@@ -287,16 +287,6 @@ export const zh = {
     contextWindow: "上下文窗口",
     contextWindowUnit: "tokens",
     contextWindowHint: "留空表示未知",
-    thinkingLevel: "思考等级",
-    /** 模型页专用文案（与 Agent 配置页的档位说明不同）：选定后覆盖 Agent 配置，留空跟随。 */
-    thinkingLevelOptions: [
-      ["", "默认（跟随 Agent 设置）"],
-      ["none", "关闭"],
-      ["low", "低"],
-      ["medium", "中"],
-      ["high", "高"],
-      ["xhigh", "极高"],
-    ] as ReadonlyArray<readonly [string, string]>,
     maxTokens: "最大输出长度（Token）",
     maxTokensHint: "留空沿用 Agent 设置",
     maxTokensCapHint: "限制单次请求的输出 Token 数；小上下文的本地模型建议调低",

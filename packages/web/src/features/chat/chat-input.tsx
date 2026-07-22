@@ -10,6 +10,10 @@
  * with a top quick-search box, and an internal scroll cap to avoid overflowing the screen) — once
  * the Session is created the model is locked, and the same spot switches to a read-only
  * logo + name display;
+ * Draft state also renders a thinking-level picker left of the model selector (backed by the
+ * Agent settings: picking a level writes through to the Agent config and applies to the session
+ * created on first send); in session state the level is fixed (llmConfig is assembled once per
+ * session), shown as a read-only tag from session_meta;
  * `/` opens the slash command menu (`/compact` compresses context, replacing the button; each
  * installed skill gets its own entry; pressing Enter on `/<skill_name>` toggles that skill's
  * selection without sending). Matching is positional like `@`: a slash opens the menu from any
@@ -59,6 +63,7 @@ import { ProviderLogo } from "../../components/ui/provider-logo";
 import { matchesQuery, orderModelsLikeLibrary, sameModelRef } from "../models/model-grouping";
 import { filterAgents, matchMention, splitLeadingMention } from "./agent-mentions";
 import { matchSlash, removeSlashToken } from "./slash-token";
+import { thinkingLevelChoices } from "./thinking-level";
 import {
   BOOK_ICON,
   buildSkillsMessage,
@@ -326,6 +331,97 @@ function ModelSelect({
   );
 }
 
+/** Spark glyph for the thinking-level picker (24x24 line path, consistent with the toolbar icon set). */
+const SPARK_ICON = "M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z";
+
+/**
+ * Conversation-time thinking-level picker (draft state only, docked left of the model
+ * selector): shows the **selected Agent's** current `model.thinking_level` and writes a picked
+ * level straight through to the Agent settings — llmConfig is assembled once per session, so
+ * the level applies to the session created on first send and becomes the Agent's new default.
+ * Options reuse the agent-settings dictionary; the "" row (no override = provider default)
+ * cannot be persisted through the config API, so it's selectable only when it already is the
+ * current state (see thinking-level.ts).
+ */
+function ThinkingLevelSelect({
+  value,
+  onChange,
+  disabled,
+}: {
+  /** Current level ("" = no override / provider default); null = the Agent config is still loading. */
+  value: string | null;
+  onChange: (level: string) => void;
+  disabled: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const choices = thinkingLevelChoices(
+    S.agent.thinkingLevelOptions,
+    S.agent.defaultValue,
+    value ?? "",
+  );
+  const label = value === null ? "…" : value || S.agent.defaultValue;
+  return (
+    <Dropdown
+      open={open}
+      setOpen={setOpen}
+      menuClass="right-0 top-full mt-1 w-[22rem] max-w-[calc(100vw-2rem)] origin-top-right"
+      button={
+        <button
+          type="button"
+          title={`${S.agent.thinkingLevel}：${label}`}
+          aria-label={S.agent.thinkingLevel}
+          disabled={disabled || value === null}
+          onClick={() => setOpen(!open)}
+          className="flex h-8 max-w-36 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+        >
+          <GlyphIcon d={SPARK_ICON} size={14} className="shrink-0" />
+          {/* When the card is narrower than @md, only the icon remains (title shows the full state). */}
+          <span className="hidden min-w-0 truncate font-mono @md:block">{label}</span>
+          <svg
+            width="10"
+            height="10"
+            viewBox="0 0 12 12"
+            fill="none"
+            stroke="currentColor"
+            className="shrink-0"
+            aria-hidden
+          >
+            <path
+              d="M3 4.5l3 3 3-3"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+      }
+    >
+      {choices.map((c) => (
+        <button
+          key={c.value || "default"}
+          type="button"
+          disabled={c.disabled}
+          onClick={() => {
+            onChange(c.value);
+            setOpen(false);
+          }}
+          className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors duration-150 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-gray-800 ${
+            c.value === (value ?? "")
+              ? "font-medium text-gray-900 dark:text-gray-100"
+              : "text-gray-600 dark:text-gray-400"
+          }`}
+        >
+          <span className="shrink-0 font-mono">{c.label}</span>
+          <span className="min-w-0 flex-1 truncate text-gray-400 dark:text-gray-500">
+            {c.description}
+          </span>
+          <span className="w-3 shrink-0 text-center">{c.value === (value ?? "") ? "✓" : ""}</span>
+        </button>
+      ))}
+    </Dropdown>
+  );
+}
+
 /**
  * Multi-select skills dropdown (bottom toolbar, after approval mode): styled like the model
  * selector — button = book icon + "Skills" label + selected-count badge (no badge at 0; when the
@@ -535,6 +631,9 @@ export function ChatInput({
   models,
   onChangeModel,
   defaultModel,
+  thinkingLevel,
+  onChangeThinkingLevel,
+  sessionThinkingLevel,
   contextWindow,
   contextNow,
   contextStale = false,
@@ -576,6 +675,24 @@ export function ChatInput({
   onChangeModel?: (ref: ModelRefDto) => void;
   /** Project default model (marked "default" on the selector's candidate item). */
   defaultModel?: ModelRefDto;
+  /**
+   * Draft state: the selected Agent's current thinking level ("" = no override / provider
+   * default; null while the Agent config is loading — the picker renders disabled). Supplied
+   * together with onChangeThinkingLevel; without the callback the picker isn't rendered.
+   */
+  thinkingLevel?: string | null;
+  /**
+   * Draft state: writes the picked level straight through to the Agent settings (the parent
+   * persists it via the agent-config API; the session created on first send picks it up and it
+   * becomes the Agent's new default).
+   */
+  onChangeThinkingLevel?: (level: string) => void;
+  /**
+   * Session state: the session's fixed thinking level (captured from session_meta on replay;
+   * llmConfig is assembled once per session, so it cannot change mid-session). Rendered as a
+   * read-only tag next to the locked model; null/undefined = unknown (nothing shown).
+   */
+  sessionThinkingLevel?: string | null;
   /** Model's context window (from models config; when not configured, the ring's cap falls back to 128000 via resolveContextWindow). */
   contextWindow?: number;
   /** Current context usage (total of the most recent main-session Request). */
@@ -1211,6 +1328,24 @@ export function ChatInput({
               unknown={contextStale}
               {...(contextWindow !== undefined ? { window: contextWindow } : {})}
             />
+          )}
+          {/* Draft state: conversation-time thinking level (backed by Agent settings), docked left of the model selector. */}
+          {models && onChangeModel && onChangeThinkingLevel && (
+            <ThinkingLevelSelect
+              value={thinkingLevel ?? null}
+              onChange={onChangeThinkingLevel}
+              disabled={busy}
+            />
+          )}
+          {/* Session state: the session's fixed thinking level (from session_meta), read-only next to the locked model. */}
+          {!onChangeModel && sessionThinkingLevel && (
+            <span
+              title={`${S.agent.thinkingLevel}：${sessionThinkingLevel}`}
+              className="hidden h-8 shrink-0 items-center gap-1 px-1 font-mono text-xs text-gray-400 @md:flex dark:text-gray-500"
+            >
+              <GlyphIcon d={SPARK_ICON} size={13} className="shrink-0" />
+              {sessionThinkingLevel}
+            </span>
           )}
           {/* Left of the send button: model selector in draft state; once the Session is created the model is locked, shown read-only (still with the provider logo). */}
           {models && onChangeModel ? (

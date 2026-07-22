@@ -162,43 +162,6 @@ describe("models preset & catalog enrichment", () => {
     expect(noProvider.status).toBe(400);
   });
 
-  it("PUT thinkingLevel：落盘为 thinking_level 并经 GET 回读；整表省略即清除；非法值 400", async () => {
-    const put = await api.put(url(), {
-      models: [
-        { provider: "custom", modelId: "local-qwen", clientType: "openai", thinkingLevel: "none" },
-      ],
-    });
-    expect(put.status).toBe(200);
-    expect(pick((await put.json()) as ModelsResponse, "custom", "local-qwen").thinkingLevel).toBe(
-      "none",
-    );
-
-    // Round-trips through disk (persisted as snake_case on the entry, not just echoed back).
-    const again = (await (await api.get(url())).json()) as ModelsResponse;
-    expect(pick(again, "custom", "local-qwen").thinkingLevel).toBe("none");
-    const toml = await readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
-    expect(toml).toContain('thinking_level = "none"');
-
-    // Full-table PUT omitting the field clears the annotation (same replace semantics as vision/contextWindow).
-    const cleared = await api.put(url(), {
-      models: [{ provider: "custom", modelId: "local-qwen", clientType: "openai" }],
-    });
-    expect(cleared.status).toBe(200);
-    const clearedRow = pick((await cleared.json()) as ModelsResponse, "custom", "local-qwen");
-    expect("thinkingLevel" in clearedRow).toBe(false);
-    expect(
-      await readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8"),
-    ).not.toContain("thinking_level");
-
-    // Outside the five levels → 400 (nothing written).
-    const bad = await api.put(url(), {
-      models: [{ provider: "custom", modelId: "local-qwen", thinkingLevel: "ultra" }],
-    });
-    expect(bad.status).toBe(400);
-    const badBody = (await bad.json()) as { error: { message: string } };
-    expect(badBody.error.message).toContain("models[0].thinkingLevel");
-  });
-
   it("PUT maxTokens：落盘为 max_tokens 并经 GET 回读；整表省略即清除；0/负数/非数字 400", async () => {
     const put = await api.put(url(), {
       models: [

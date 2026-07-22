@@ -16,7 +16,6 @@ function makeRow(partial: Partial<RowState> & Pick<RowState, "provider" | "model
     original: { provider: partial.provider, modelId: partial.modelId },
     vision: true,
     contextWindow: "",
-    thinkingLevel: "",
     maxTokens: "",
     clientType: "",
     cacheRead: "",
@@ -120,11 +119,10 @@ describe("syncRowsWithCatalog", () => {
     expect(rows[0]).toBe(upToDate);
   });
 
-  it("preserves user-set thinking level and max output tokens through a preset sync (user-owned, not catalog-owned)", () => {
+  it("preserves a user-set max output tokens through a preset sync (user-owned, not catalog-owned)", () => {
     const local = makeRow({
       provider: "deepseek",
       modelId: "deepseek-v4-pro",
-      thinkingLevel: "none", // user annotation
       maxTokens: "4096", // user annotation
       contextWindow: "500000", // stale -> the row does get updated by the sync
     });
@@ -132,12 +130,9 @@ describe("syncRowsWithCatalog", () => {
     expect(updated).toBe(1);
     const row = rows[0]!;
     expect(row.contextWindow).toBe("1000000"); // catalog-owned field reset
-    expect(row.thinkingLevel).toBe("none"); // user fields survive the {...row, ...fields} merge
-    expect(row.maxTokens).toBe("4096");
-    // Fresh catalog rows default to inherit (no preset thinking level / output cap exists).
-    const fresh = rows.find((r) => r.modelId === "glm-5.2")!;
-    expect(fresh.thinkingLevel).toBe("");
-    expect(fresh.maxTokens).toBe("");
+    expect(row.maxTokens).toBe("4096"); // user field survives the {...row, ...fields} merge
+    // Fresh catalog rows default to inherit (no preset output cap exists).
+    expect(rows.find((r) => r.modelId === "glm-5.2")!.maxTokens).toBe("");
   });
 
   it("keeps locally added models (including user-defined groups) verbatim and in place", () => {
