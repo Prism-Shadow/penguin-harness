@@ -63,18 +63,22 @@ describe("thinkingLevelOptionsFor (agent-settings dropdown assembly)", () => {
     ["xhigh", "Extra-high tier."],
   ];
 
-  it("maps the dictionary in order; the '' row renders the default tag; no none row normally", () => {
+  it("filters the '' inherit row and keeps dictionary order; no none row normally", () => {
     for (const stored of [undefined, "", "medium", "xhigh"]) {
-      const rows = thinkingLevelOptionsFor(OPTIONS, "(default)", "legacy none", stored);
-      expect(rows.map((r) => r.value)).toEqual(["", "low", "medium", "high", "xhigh"]);
-      expect(rows[0]).toMatchObject({ triggerLabel: "(default)", label: "(default)" });
+      const rows = thinkingLevelOptionsFor(OPTIONS, "legacy none", stored);
+      expect(rows.map((r) => r.value)).toEqual(["low", "medium", "high", "xhigh"]);
       expect(rows.some((r) => r.value === "none")).toBe(false);
+      expect(rows[0]).toMatchObject({
+        triggerLabel: "low",
+        label: "low",
+        description: "Low tier.",
+      });
     }
   });
 
   it("appends a display-only none row when the persisted config stores none (backward compat)", () => {
-    const rows = thinkingLevelOptionsFor(OPTIONS, "(default)", "legacy none", "none");
-    expect(rows.map((r) => r.value)).toEqual(["", "low", "medium", "high", "xhigh", "none"]);
+    const rows = thinkingLevelOptionsFor(OPTIONS, "legacy none", "none");
+    expect(rows.map((r) => r.value)).toEqual(["low", "medium", "high", "xhigh", "none"]);
     expect(rows.at(-1)).toEqual({
       value: "none",
       triggerLabel: "none",
