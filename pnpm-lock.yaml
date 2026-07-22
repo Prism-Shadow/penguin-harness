@@ -36,8 +36,8 @@ importers:
   packages/cli:
     dependencies:
       '@prismshadow/agenthub':
-        specifier: ^0.4.0
-        version: 0.4.0(ws@8.21.0)
+        specifier: ^0.4.1
+        version: 0.4.1(ws@8.21.0)
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: link:../core
@@ -79,8 +79,8 @@ importers:
   packages/core:
     dependencies:
       '@prismshadow/agenthub':
-        specifier: ^0.4.0
-        version: 0.4.0(ws@8.21.0)
+        specifier: ^0.4.1
+        version: 0.4.1(ws@8.21.0)
       '@prismshadow/penguin-skills':
         specifier: workspace:*
         version: link:../skills
@@ -1040,8 +1040,8 @@ packages:
     engines: {node: '>=18'}
     hasBin: true
 
-  '@prismshadow/agenthub@0.4.0':
-    resolution: {integrity: sha512-P96fAoYEtAy+BQHsrdQ2Rw5oXbrR2IAXcN6S3SnpUUlwpVoH2kkdtbe4bTGTafys0jJeH7s1lCZDF7KRvdWOoQ==}
+  '@prismshadow/agenthub@0.4.1':
+    resolution: {integrity: sha512-YKidCwa4ZO0+BP5E+vg/p8HQAPrTvTDaFmoj5omUHi7OxXCXPMDxwodj4VPz/ntWMDsgjsePhzkZIfVmSbECkw==}
 
   '@protobufjs/aspromise@1.1.2':
     resolution: {integrity: sha512-j+gKExEuLmKwvz3OgROXtrJ2UG2x8Ch2YZUxahh+s1F2HZ+wAceUNLkvy6zKCPVRkU++ZWQrdxsUeQXmcg4uoQ==}
@@ -3678,7 +3678,7 @@ snapshots:
     dependencies:
       playwright: 1.61.1
 
-  '@prismshadow/agenthub@0.4.0(ws@8.21.0)':
+  '@prismshadow/agenthub@0.4.1(ws@8.21.0)':
     dependencies:
       '@anthropic-ai/bedrock-sdk': 0.26.4
       '@anthropic-ai/sdk': 0.81.0
