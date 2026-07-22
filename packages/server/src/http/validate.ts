@@ -42,8 +42,13 @@ export function requireValidId(c: Context, name: string): string {
 
 /** Parse a positive-integer path parameter (e.g. Trace file index). */
 export function positiveIntParam(c: Context, name: string): number {
-  const v = Number.parseInt(pathParam(c, name), 10);
-  if (!Number.isInteger(v) || v < 1) throw badRequest(`${name} must be a positive integer.`);
+  // Match digits only: Number.parseInt would accept trailing garbage ("12abc" -> 12).
+  const raw = pathParam(c, name);
+  if (!/^\d+$/.test(raw)) throw badRequest(`${name} must be a positive integer.`);
+  const v = Number.parseInt(raw, 10);
+  // isSafeInteger (not isInteger) also rejects overlong indices like "99999999999999999999"
+  // that would otherwise parse to an imprecise float (1e20).
+  if (!Number.isSafeInteger(v) || v < 1) throw badRequest(`${name} must be a positive integer.`);
   return v;
 }
 
@@ -163,8 +168,20 @@ export function optionalNumber(
 /** Validate a yyyy-mm-dd query parameter (defaults to undefined). */
 export function optionalDateParam(value: string | undefined, label: string): string | undefined {
   if (value === undefined || value === "") return undefined;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    throw badRequest(`${label} must be in YYYY-MM-DD format.`);
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  // The shape check alone accepts impossible dates (2026-13-40, 2026-02-30); verify it's a real
+  // calendar day by round-tripping through UTC (which never rolls over into an adjacent month).
+  if (m) {
+    const [, y, mo, d] = m;
+    const dt = new Date(`${value}T00:00:00Z`);
+    if (
+      !Number.isNaN(dt.getTime()) &&
+      dt.getUTCFullYear() === Number(y) &&
+      dt.getUTCMonth() + 1 === Number(mo) &&
+      dt.getUTCDate() === Number(d)
+    ) {
+      return value;
+    }
   }
-  return value;
+  throw badRequest(`${label} must be a valid date in YYYY-MM-DD format.`);
 }

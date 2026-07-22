@@ -2,7 +2,7 @@
  * Example: an Agent that improves itself — one turn of the self-improvement loop, in code.
  *
  * This is the "Recursive Self-Improvement" pillar made runnable. It runs entirely on a local
- * open-weight model (Ollama serving qwen3:8b) — see README.md for the one-time setup.
+ * open-weight model (Ollama serving qwen3.6:35b) — see README.md for the one-time setup.
  *
  * The loop, exactly as the docs describe it:
  *   1. EVALUATE  — run the agent on a constrained task, score it against a rubric.

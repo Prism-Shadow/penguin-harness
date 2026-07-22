@@ -315,6 +315,22 @@ describe("assembleSystemPrompt", () => {
     expect(prompt).not.toContain(DATE_PLACEHOLDER);
   });
 
+  it("default prompt carries the port and API-key guardrails", async () => {
+    const state = await loadOrInitAgentState();
+    const prompt = assembleSystemPrompt(state);
+    // Ports: never kill listeners or take PenguinHarness service ports; numbers are deliberately not listed.
+    expect(prompt).toContain("pick another free port");
+    expect(prompt).toContain("PenguinHarness service port");
+    expect(prompt).not.toContain("7364");
+    // Auth/key failures: retry at most once (Constraints), then stop and ask the user to update
+    // the key outside the chat (Stop rules) — no CLI commands, no secret values in the conversation.
+    expect(prompt).toContain("retry at most once");
+    expect(prompt).toContain("stop calling tools");
+    expect(prompt).toContain("never be pasted into the conversation");
+    expect(prompt).toContain("next conversation");
+    expect(prompt).not.toContain("penguin config vault set");
+  });
+
   it("replaces AGENTS.md and specific Session environment fields at template locations", () => {
     const state = {
       root: tmpRoot,

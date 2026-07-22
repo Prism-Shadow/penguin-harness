@@ -14,11 +14,12 @@
  * Docs: /docs/cli § "penguin server / penguin web".
  */
 import { spawn } from "node:child_process";
+import { DEFAULT_SERVER_PORT } from "@prismshadow/penguin-core";
 import type { Command } from "commander";
 import type { Messages } from "../i18n.js";
 
-/** Default service port (deliberately avoids common defaults like 3000/8080). */
-export const DEFAULT_PORT = 7364;
+/** Default service port — core's DEFAULT_SERVER_PORT (7364), the single source of truth. */
+export const DEFAULT_PORT = DEFAULT_SERVER_PORT;
 /** Default service listen host. */
 export const DEFAULT_HOST = "127.0.0.1";
 

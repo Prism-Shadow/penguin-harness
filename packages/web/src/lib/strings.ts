@@ -359,6 +359,8 @@ export const zh = {
     readOnlyHint: "member 只读；模型与 credential 修改仅 owner 可执行",
     empty: "尚未配置任何模型",
     noKey: "未配置 key",
+    /** Chat model dropdown's bottom expander row: reveals the models hidden by the configured-key filter. */
+    showModelsWithoutKey: (n: number): string => `显示未配置 key 的模型（${n} 个）`,
     pendingSave: "（待保存）",
     modelIdExists: "该模型 id 已存在",
     pricingAllOrNone: "三项价格需一并填写",
@@ -592,8 +594,12 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     statCost: "成本",
     statElapsed: "用时",
     statInput: "输入 tokens",
+    statCached: "已缓存",
     statOutput: "输出 tokens",
     statTps: "输出 TPS",
+    /** Copied-stats-line parenthesis wrappers around the cached amount (fullwidth for zh typography). */
+    statParenOpen: "（",
+    statParenClose: "）",
     noSessions: "还没有 Session",
     emptyStream: "发送一条消息开始对话",
     historyLoadFailed: "历史消息加载失败",

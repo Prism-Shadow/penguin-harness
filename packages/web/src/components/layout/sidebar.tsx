@@ -591,7 +591,12 @@ export function Sidebar({
                       aria-label={collapsed ? S.nav.expandGroup : S.nav.collapseGroup}
                       className="flex min-w-0 flex-1 items-center gap-1 rounded px-1 py-0.5 text-left transition-colors duration-150 hover:bg-gray-200/50 dark:hover:bg-gray-800/50"
                     >
-                      <AgentAvatar id={agent.agentId} size={18} className="shrink-0 rounded" />
+                      <AgentAvatar
+                        id={agent.agentId}
+                        name={agentDisplayName(agent)}
+                        size={18}
+                        className="shrink-0 rounded"
+                      />
                       <span className="min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                         {agentDisplayName(agent)}
                       </span>
@@ -886,7 +891,7 @@ function SessionRow({
         >
           {agentHint !== undefined && (
             <span title={agentHint} className="flex shrink-0 items-center">
-              <AgentAvatar id={s.agentId} size={14} className="rounded" />
+              <AgentAvatar id={s.agentId} name={agentHint} size={14} className="rounded" />
               {/* The avatar is aria-hidden and title only serves pointer users: expose the Agent name to keyboard/screen-reader users as visually hidden text inside the row button. */}
               <span className="sr-only">{agentHint}</span>
             </span>

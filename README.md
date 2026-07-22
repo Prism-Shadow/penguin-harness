@@ -66,6 +66,17 @@ With PenguinHarness Skills, an Agent evaluates and optimizes itself: run the ben
 
 https://github.com/user-attachments/assets/922d13a6-5ffc-4685-9a39-352f02f9afc0
 
+## Built-in Skills
+
+Four Skill groups ship in the box ([docs](https://penguin.ooo/docs/skills)); Agents can also write and optimize their own:
+
+| Group                | Skills                                                                            |
+| -------------------- | --------------------------------------------------------------------------------- |
+| Office Productivity  | `data-analysis`, `firecrawl`                                                      |
+| Software Development | `web-design`, `software-engineering`                                              |
+| AI App Development   | `penguin-sdk`, `penguin-cli`, `agenthub-models`                                   |
+| Agent Tuning         | `agent-creation`, `benchmark-design`, `agent-evaluation`, `agent-optimization`    |
+
 ## Supported Models
 
 | Model            | Providers                                                                        |
@@ -135,6 +146,8 @@ for await (const output of session.run([userText("Create hello.txt containing hi
 - [ ] Public release of the benchmark suite
 - [ ] Desktop app
 - [ ] Windows support
+- [ ] Agent company and templates
+- [ ] Company-level self evolving
 - More to come…
 
 ## Development
