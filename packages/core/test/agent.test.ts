@@ -220,6 +220,31 @@ describe("Agent.createSession model reference ((provider, model_id) pair)", () =
   });
 });
 
+describe("Agent.createSession session source (session_meta origin marker)", () => {
+  it("records the given source in session_meta; a user-created session carries no source key", async () => {
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-source");
+    await fs.mkdir(ws, { recursive: true });
+
+    const scheduled = await agent.createSession({ workspaceDir: ws, source: "schedule" });
+    try {
+      expect((scheduled.metaMessage.payload as { source?: string }).source).toBe("schedule");
+    } finally {
+      scheduled.dispose();
+    }
+
+    // Absent = user-created: the key must not appear at all (Trace consumers treat absence as the default).
+    const plain = await agent.createSession({ workspaceDir: ws });
+    try {
+      expect("source" in (plain.metaMessage.payload as unknown as Record<string, unknown>)).toBe(
+        false,
+      );
+    } finally {
+      plain.dispose();
+    }
+  });
+});
+
 describe("Agent.createSession thinking level (explicit option wins over the Agent config)", () => {
   const uniThinkingOf = (llm: unknown): unknown =>
     ((llm as { uniConfig?: { thinking_level?: unknown } }).uniConfig ?? {}).thinking_level;
@@ -276,7 +301,13 @@ describe("run_subagent spawning follows the PARENT session (never the Project de
   async function spawnedChildMeta(
     runner: SubagentRunner,
     input: Parameters<SubagentRunner["spawn"]>[0],
-  ): Promise<{ provider: string; model_id: string; thinking_level: string; workspace: string }> {
+  ): Promise<{
+    provider: string;
+    model_id: string;
+    thinking_level: string;
+    workspace: string;
+    source?: string;
+  }> {
     const handle = await runner.spawn(input);
     try {
       const gen = handle.run({ prompt: "noop" });
@@ -292,6 +323,7 @@ describe("run_subagent spawning follows the PARENT session (never the Project de
         model_id: string;
         thinking_level: string;
         workspace: string;
+        source?: string;
       };
     } finally {
       handle.dispose();
@@ -320,6 +352,9 @@ describe("run_subagent spawning follows the PARENT session (never the Project de
       expect(child.thinking_level).toBe("high");
       // Workspace inheritance (behavior that predates model/thinking inheritance): locked here.
       expect(child.workspace).toBe(ws);
+      // The spawn site marks the child's own session_meta as subagent-created — the single
+      // source of truth the server derives from (its registration fallback cannot mask this).
+      expect(child.source).toBe("subagent");
     } finally {
       parent.dispose();
     }

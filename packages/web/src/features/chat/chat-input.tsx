@@ -269,7 +269,12 @@ function ModelSelect({
     <Dropdown
       open={open}
       setOpen={setOpen}
-      menuClass="right-0 top-full mt-1 w-max min-w-56 max-w-[calc(100vw-2rem)] origin-top-right"
+      // right-0 docks the panel's right edge to the button, which itself sits ~4.5rem in from
+      // the viewport's right edge (page + card padding, gap, send button) — so the width clamp
+      // must reserve that anchor offset too, or the w-max panel's LEFT edge runs off-screen on
+      // phones (~34px off-screen at 375px with a 100vw-2rem clamp). Desktop is untouched:
+      // w-max stays far below the clamp there.
+      menuClass="right-0 top-full mt-1 w-max min-w-56 max-w-[calc(100vw-6rem)] origin-top-right"
       button={
         <button
           type="button"
@@ -507,11 +512,16 @@ function SkillSelect({
       open={open}
       setOpen={setOpen}
       menuClass={
-        // As wide as reasonably possible so descriptions stay readable; the viewport clamp
-        // keeps it inside phone screens.
+        // As wide as reasonably possible so descriptions stay readable. The panel is
+        // left-anchored to a button ~8rem into the toolbar (icon-only card; ~17rem once the
+        // card is wide enough for button labels, @md), so a plain 100vw clamp still let the
+        // right edge overrun the viewport on phones (~92px at 375px — the search box's
+        // autofocus then dragged the whole page sideways); the clamp must reserve the anchor
+        // offset plus a margin. Desktop is untouched: the fixed 26rem width stays below both
+        // clamps there.
         direction === "down"
-          ? "left-0 top-full mt-1 w-[26rem] max-w-[calc(100vw-2rem)] origin-top-left"
-          : "bottom-full left-0 mb-1 w-[26rem] max-w-[calc(100vw-2rem)] origin-bottom-left"
+          ? "left-0 top-full mt-1 w-[26rem] max-w-[calc(100vw-10rem)] @md:max-w-[calc(100vw-17rem)] origin-top-left"
+          : "bottom-full left-0 mb-1 w-[26rem] max-w-[calc(100vw-10rem)] @md:max-w-[calc(100vw-17rem)] origin-bottom-left"
       }
       button={
         <button

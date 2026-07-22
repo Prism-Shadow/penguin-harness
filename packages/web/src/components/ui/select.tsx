@@ -48,6 +48,9 @@ const CONTROL_CLASS =
   "dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:border-gray-600 " +
   "dark:focus:border-gray-400 dark:focus:ring-gray-500/30";
 
+/** Menu-row text follows the control's size tier, so the dropdown reads exactly like an Input of the same tier (review: dropdown text = input text). */
+const menuTextClass: Record<ControlSize, string> = { base: "text-base", sm: "text-xs" };
+
 export function Select({
   label,
   hint,
@@ -169,7 +172,7 @@ export function Select({
                   aria-selected={o.value === current}
                   disabled={o.disabled}
                   onClick={() => pick(o.value)}
-                  className={`flex w-full items-center px-3 py-1.5 text-left text-sm transition-colors duration-150 disabled:opacity-50 ${
+                  className={`flex w-full items-center px-3 py-1.5 text-left ${menuTextClass[size]} transition-colors duration-150 disabled:opacity-50 ${
                     o.value === current
                       ? "bg-gray-100 font-medium text-gray-900 dark:bg-gray-800 dark:text-gray-100"
                       : "text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"

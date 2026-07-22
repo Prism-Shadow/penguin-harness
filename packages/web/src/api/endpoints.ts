@@ -185,9 +185,16 @@ export const getAgentTraces = (projectId: string, agentId: string) =>
 
 // Session ---------------------------------------------------------------------
 
-export const listSessions = (projectId: string, agentId: string) =>
+/** Optional paging (both absent = full list): the store requests `limit+1` per page to detect "has more". */
+export const listSessions = (
+  projectId: string,
+  agentId: string,
+  paging?: { offset: number; limit: number },
+) =>
   apiFetch<SessionsResponse>(
-    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/sessions`,
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/sessions${
+      paging ? `?limit=${paging.limit}&offset=${paging.offset}` : ""
+    }`,
   );
 
 /** Server directory browsing: `path` is an absolute path; empty means start from the server's home directory. */

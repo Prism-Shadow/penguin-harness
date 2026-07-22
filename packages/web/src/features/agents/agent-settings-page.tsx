@@ -35,16 +35,69 @@ import { thinkingLevelOptionsFor } from "../chat/thinking-level";
 
 type TabKey = "overview" | "prompt" | "runtime" | "tools" | "vault" | "schedules";
 
-/** "" represents not overridden (falls back to the current config), corresponding to the defaultValue placeholder row. */
-function withDefaultOption(
+/**
+ * Dropdown rows from a dictionary's [value, description] pairs (exported for unit tests).
+ * The "" (not-overridden / inherit) row is filtered out per review — the menus offer only
+ * concrete values in dictionary order, the user picks explicitly. An unset stored value
+ * simply matches no row, so the OptionMenu trigger falls back to its placeholder
+ * (（缺省）/(default), the same convention as the tools-table permission menu); nothing is
+ * ever written silently, and the reset link next to each menu rewinds a local pick back to "".
+ */
+export function optionRows(
   entries: ReadonlyArray<readonly [string, string]>,
 ): ReadonlyArray<OptionMenuChoice<string>> {
-  return entries.map(([value, description]) => ({
-    value,
-    triggerLabel: value || S.agent.defaultValue,
-    label: value || S.agent.defaultValue,
-    description,
-  }));
+  return entries
+    .filter(([value]) => value !== "")
+    .map(([value, description]) => ({
+      value,
+      triggerLabel: value,
+      label: value,
+      description,
+    }));
+}
+
+/**
+ * OptionMenu whose pick can be explicitly rewound: the runtime menus no longer offer an
+ * inherit row, so without this an accidental pick could not be backed out before saving.
+ * The reset link (top-right of the label line, visible only while a value is picked) sets
+ * the LOCAL edit state back to "" — the save guard skips empty values, nothing is written.
+ * The unset trigger shows the (default) placeholder, matching the tools-table permission menu.
+ */
+function ResettableOptionMenu({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: ReadonlyArray<OptionMenuChoice<string>>;
+}) {
+  return (
+    <div className="relative">
+      <OptionMenu
+        label={label}
+        fullWidth
+        size="sm"
+        placeholder={S.agent.defaultValue}
+        value={value}
+        onChange={onChange}
+        options={options}
+      />
+      {value !== "" && (
+        <button
+          type="button"
+          title={S.agent.resetToDefault}
+          aria-label={S.agent.resetToDefault}
+          onClick={() => onChange("")}
+          className="absolute right-0 top-0 text-xs text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:hover:text-gray-300"
+        >
+          {S.agent.resetToDefault}
+        </button>
+      )}
+    </div>
+  );
 }
 
 /** Numeric input's string state → number (empty/invalid = undefined, meaning no change). */
@@ -501,17 +554,18 @@ function RuntimeTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveF
   };
 
   // S is reassigned on language switch (live binding), so read it during render rather than hoisting to a module-level constant.
-  // "none" is no longer offered (many models cannot disable thinking) but stays a valid stored
-  // value: assembly lives in thinkingLevelOptionsFor, gated on the **persisted** config — a
-  // misclick onto another tier keeps the legacy row until the change is actually saved, so the
-  // stored value stays reachable (see thinking-level.ts).
+  // Thinking level composes both review rounds: the "" inherit row is filtered (the user picks
+  // explicitly; unset shows the (default) placeholder and the reset link rewinds to it), "none"
+  // is no longer offered (many models cannot disable thinking) but stays a valid stored value —
+  // when the **persisted** config carries it, a display-only legacy row is appended, so a
+  // misclick onto another tier keeps it reachable until the change is actually saved
+  // (see thinking-level.ts).
   const thinkingLevelOptions = thinkingLevelOptionsFor(
     S.agent.thinkingLevelOptions,
-    S.agent.defaultValue,
     S.agent.thinkingLevelNoneKept,
     cfg.model?.thinkingLevel,
   );
-  const compactionModeOptions = withDefaultOption(S.agent.compactionModeOptions);
+  const compactionModeOptions = optionRows(S.agent.compactionModeOptions);
 
   return (
     <div className="space-y-4">
@@ -534,10 +588,8 @@ function RuntimeTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveF
               inputMode="numeric"
               className="font-mono"
             />
-            <OptionMenu
+            <ResettableOptionMenu
               label={S.agent.thinkingLevel}
-              fullWidth
-              size="sm"
               value={thinkingLevel}
               onChange={setThinkingLevel}
               options={thinkingLevelOptions}
@@ -577,10 +629,8 @@ function RuntimeTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveF
               inputMode="numeric"
               className="font-mono"
             />
-            <OptionMenu
+            <ResettableOptionMenu
               label={S.agent.compactionMode}
-              fullWidth
-              size="sm"
               value={mode}
               onChange={setMode}
               options={compactionModeOptions}

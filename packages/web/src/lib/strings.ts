@@ -231,6 +231,8 @@ export const zh = {
     toolMaxOutput: "maxOutputLength",
     mcpServers: "MCP Server（只读）",
     defaultValue: "（缺省）",
+    /** Reset link next to the runtime dropdowns: rewinds the local pick back to "not overridden" (the menus offer no inherit row). */
+    resetToDefault: "恢复缺省",
     deleteAgent: "删除 Agent",
     builtinUndeletable: "内置 Agent 不可被删除",
     deleteConfirm: (name: string): string =>
@@ -292,16 +294,20 @@ export const zh = {
     displayNameHint: "留空则展示模型 ID",
     providerGroup: "分组",
     contextWindow: "上下文窗口",
-    contextWindowUnit: "tokens",
+    /** 单位后缀，显示在上下文窗口/最大输出长度输入框内右侧。 */
+    tokenUnit: "Token",
     contextWindowHint: "留空表示未知",
-    maxTokens: "最大输出长度（Token）",
+    maxTokens: "最大输出长度",
+    /** Placeholders cannot scroll, so this must fit the half-width box; the full guidance is the input's title tooltip (the owner prefers no visible hint line — saves vertical space). */
     maxTokensHint: "留空沿用 Agent 设置",
-    maxTokensCapHint: "限制单次请求的输出 Token 数；小上下文的本地模型建议调低",
+    maxTokensTitle:
+      "按模型限制单次请求的最大输出 Token 数；留空沿用 Agent 设置，小上下文模型建议调低",
     maxTokensInvalid: "必须为正整数",
     clientTypeLocked: (t: string): string => `协议：${t}（沿用原配置，不可修改）`,
-    vision: "支持图片输入（视觉/多模态）",
-    visionHint:
-      "取消勾选后，对话中上传的图片将以文件路径转交，读图经 describe_image 由视觉模型代读",
+    /** Switch label only — the dialog carries no explanation text for it (per owner). */
+    vision: "支持视觉",
+    /** Shown only while the vision switch is OFF: images are then read via the configured vision proxy model (describe_image). */
+    visionOffProxyHint: "使用视觉代理模型读图",
     visionBadge: "视觉",
     visionModelBadge: "视觉代理",
     setVisionModel: "设为视觉代理模型",
@@ -312,10 +318,9 @@ export const zh = {
     testOk: (ms: number): string => `连通正常（${ms} ms）`,
     testFailed: (msg: string): string => `连通失败：${msg}`,
     modelIdRenameHint: "改 id 后原配置与 API key 一并迁移",
-    priceCacheRead: "缓存读取",
-    priceCacheWrite: "缓存写入",
-    priceOutput: "输出",
-    pricing: "价格",
+    priceCacheRead: "缓存读取价格",
+    priceCacheWrite: "缓存写入价格",
+    priceOutput: "输出价格",
     priceUnit: "每百万 Token",
     currency: "币种",
     currencyUsd: "美元 $",
@@ -333,9 +338,6 @@ export const zh = {
     baseUrlHint: "留空使用厂商默认地址",
     baseUrlRequired: "必须填写 base URL",
     contextWindowDefaultHint: (n: number): string => `留空按 ${n} 计`,
-    visionOnHint: "读图用 read_image：图片直接回灌模型",
-    visionOffHint:
-      "读图用 describe_image：图片交给视觉代理模型描述、只回文本；对话中上传的图片以文件路径转交",
     confirmDeleteTitle: "删除模型",
     confirmDelete: (name: string): string =>
       `确定删除「${name}」？该模型的配置与 API key 将一并移除。`,
@@ -680,6 +682,13 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     archiveSession: "归档",
     unarchiveSession: "取消归档",
     archivedGroup: (n: number) => `已归档（${n}）`,
+    /** Sidebar group "reveal/load next page" row (display cap + server paging). */
+    loadMore: "更多",
+    /** Sidebar folders for automation-created sessions (one per origin), parallel to 已归档; wording matches the sourceNames badges. */
+    sourceGroups: {
+      subagent: (n: number) => `子智能体（${n}）`,
+      schedule: (n: number) => `定时任务（${n}）`,
+    },
     skillsBanner: (names: string[]): string => `使用技能：${names.join("、")}`,
   },
 

@@ -43,6 +43,11 @@ export interface OptionMenuChoice<T extends string> {
 
 const PANEL_WIDTH = 288; // w-72
 
+/** Row-title text follows the control's size tier, so the dropdown reads exactly like an Input of the same tier (review: dropdown text = input text); descriptions stay text-xs secondary. */
+const rowTextClass: Record<ControlSize, string> = { base: "text-base", sm: "text-xs" };
+/** Descriptions keep one step below the row title at every tier, so the title/description hierarchy survives the sm tier's text-xs titles. */
+const rowDescClass: Record<ControlSize, string> = { base: "text-xs", sm: "text-[11px]" };
+
 export function OptionMenu<T extends string>({
   options,
   value,
@@ -143,7 +148,7 @@ export function OptionMenu<T extends string>({
               >
                 <span className="flex items-center justify-between gap-2">
                   <span
-                    className={`text-sm ${
+                    className={`${rowTextClass[size]} ${
                       opt.value === value
                         ? "font-medium text-gray-900 dark:text-gray-100"
                         : "text-gray-700 dark:text-gray-300"
@@ -170,7 +175,9 @@ export function OptionMenu<T extends string>({
                     </svg>
                   )}
                 </span>
-                <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
+                <span
+                  className={`mt-0.5 block ${rowDescClass[size]} text-gray-500 dark:text-gray-400`}
+                >
                   {opt.description}
                 </span>
               </button>

@@ -252,6 +252,7 @@ export const en: Strings = {
     toolMaxOutput: "maxOutputLength",
     mcpServers: "MCP Servers (read-only)",
     defaultValue: "(default)",
+    resetToDefault: "Reset to default",
     deleteAgent: "Delete Agent",
     builtinUndeletable: "Built-in Agents cannot be deleted",
     deleteConfirm: (name: string): string =>
@@ -317,16 +318,16 @@ export const en: Strings = {
     displayNameHint: "Defaults to the model ID",
     providerGroup: "Group",
     contextWindow: "Context window",
-    contextWindowUnit: "tokens",
+    tokenUnit: "Token",
     contextWindowHint: "Leave empty if unknown",
     maxTokens: "Max output tokens",
-    maxTokensHint: "Leave empty to inherit the agent setting",
-    maxTokensCapHint: "Caps output tokens per request; lower it for small-context local models",
+    maxTokensHint: "Empty = inherit agent setting",
+    maxTokensTitle:
+      "Caps output tokens per request; leave empty to inherit the agent setting — lower it for small-context models",
     maxTokensInvalid: "Must be a positive integer",
     clientTypeLocked: (t: string): string => `Protocol: ${t} (kept as configured; not editable)`,
-    vision: "Supports image input (vision / multimodal)",
-    visionHint:
-      "When unchecked, chat images are passed as file paths and read via describe_image (vision model)",
+    vision: "Vision support",
+    visionOffProxyHint: "Images are read via the vision proxy model",
     visionBadge: "Vision",
     visionModelBadge: "Proxy vision",
     setVisionModel: "Set as proxy vision model",
@@ -337,10 +338,9 @@ export const en: Strings = {
     testOk: (ms: number): string => `Connected (${ms} ms)`,
     testFailed: (msg: string): string => `Failed: ${msg}`,
     modelIdRenameHint: "Renaming migrates the existing config and API key",
-    priceCacheRead: "Cache read",
-    priceCacheWrite: "Cache write",
-    priceOutput: "Output",
-    pricing: "Pricing",
+    priceCacheRead: "Cache read price",
+    priceCacheWrite: "Cache write price",
+    priceOutput: "Output price",
     priceUnit: "per 1M tokens",
     currency: "Currency",
     currencyUsd: "USD $",
@@ -358,9 +358,6 @@ export const en: Strings = {
     baseUrlHint: "Leave empty to use the provider default",
     baseUrlRequired: "A base URL is required",
     contextWindowDefaultHint: (n: number): string => `Defaults to ${n} if empty`,
-    visionOnHint: "Images are read with read_image and fed to the model directly",
-    visionOffHint:
-      "Images are read with describe_image: described by the proxy vision model, text only; chat uploads are passed as file paths",
     confirmDeleteTitle: "Delete model",
     confirmDelete: (name: string): string =>
       `Delete "${name}"? Its configuration and API key will be removed.`,
@@ -700,6 +697,13 @@ When done, open index.html in a browser and self-test once.`,
     archiveSession: "Archive",
     unarchiveSession: "Unarchive",
     archivedGroup: (n: number) => `Archived (${n})`,
+    /** Sidebar group "reveal/load next page" row (display cap + server paging). */
+    loadMore: "More",
+    /** Sidebar folders for automation-created sessions (one per origin), parallel to Archived; wording matches the sourceNames badges. */
+    sourceGroups: {
+      subagent: (n: number) => `Subagents (${n})`,
+      schedule: (n: number) => `Scheduled (${n})`,
+    },
     skillsBanner: (names: string[]): string =>
       `Using skill${names.length === 1 ? "" : "s"}: ${names.join(", ")}`,
   },

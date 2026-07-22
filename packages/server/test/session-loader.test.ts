@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createAgent, saveProjectConfig, sessionMeta, userText } from "@prismshadow/penguin-core";
 import type { SessionMetaPayload } from "@prismshadow/penguin-core";
 import { createCoreSessionLoader } from "../src/runtime/session-manager.js";
+import { SessionSources } from "../src/runtime/session-sources.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import { HttpError } from "../src/http/errors.js";
 import { makeTempRoot, writeTraceFile } from "./helpers.js";
@@ -98,5 +99,39 @@ describe("session-loader", () => {
     expect(err).toBeInstanceOf(HttpError);
     expect((err as HttpError).status).toBe(409);
     expect((err as HttpError).code).toBe("workspace_missing");
+  });
+
+  it("self-heal rebuild re-records a registry-known origin in the fresh session_meta; unknown stays absent", async () => {
+    // The anthropic pair constructs without a credential (the same pair session-index
+    // creates over HTTP); custom/m1 would demand a key at client construction.
+    await saveProjectConfig(root, PROJECT, {
+      default_model: { provider: "anthropic", model_id: "claude-sonnet-4-6" },
+      models: [{ provider: "anthropic", model_id: "claude-sonnet-4-6", context_window: 1000 }],
+    });
+    const ws = path.join(root, "ws-heal");
+    await fs.mkdir(ws, { recursive: true });
+    const healRow: SessionRow = {
+      ...row(ws),
+      modelId: "claude-sonnet-4-6",
+      provider: "anthropic",
+    };
+
+    // Origin known to this process (e.g. a schedule-created Session rebuilt after adoption):
+    // the fresh session_meta must re-record it — meta is the single source of truth, and the
+    // rebuilt Session's Trace is the only place the origin can survive.
+    const sources = new SessionSources();
+    sources.set(SID, "schedule");
+    const known = await createCoreSessionLoader(root, sources).load(healRow);
+    const knownMeta = (known as unknown as { metaMessage: { payload: { source?: string } } })
+      .metaMessage;
+    expect(knownMeta.payload.source).toBe("schedule");
+    (known as unknown as { dispose(): void }).dispose();
+
+    // No registry entry (e.g. the process restarted and no Trace was ever written): the
+    // rebuilt Session is unsourced — no source key is invented.
+    const unknown = await createCoreSessionLoader(root, new SessionSources()).load(healRow);
+    const unknownMeta = (unknown as unknown as { metaMessage: { payload: object } }).metaMessage;
+    expect("source" in unknownMeta.payload).toBe(false);
+    (unknown as unknown as { dispose(): void }).dispose();
   });
 });
