@@ -1,6 +1,6 @@
-# Version 0.2.0
+# Version 0.1.1
 
-Unreleased.
+Released on 2026-07-22.
 
 - [2026-07-22] Models and core: empty tool lists are omitted from LLM requests (fixing 400s from strict OpenAI-compatible servers), the default system prompt gains service-protection and API-key retry guardrails with the default port as a core SDK constant, a per-model max output tokens cap lands on the Models page, the thinking level moves to a conversation-time picker (low and above) that writes through to Agent settings, subagents inherit the parent session's model and thinking level, sessions record their origin in `session_meta.source` as the single source of truth, the SDK moves to AgentHub 0.4.1 and its supported-model registry drives a catalog refresh across every provider group (with the READMEs trimmed to the newest generation per vendor), and session-title generation folds into core's internal module. ([details](2026-07-22-models-and-core.md))
 

@@ -51,4 +51,4 @@ export { Agent, createAgent } from "./agent.js";
 export type { CreateAgentOptions, CreateSessionOptions, ResumeSessionOptions } from "./agent.js";
 
 /** SDK version number. */
-export const VERSION = "0.1.0";
+export const VERSION = "0.1.1";

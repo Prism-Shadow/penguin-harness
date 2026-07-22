@@ -96,16 +96,29 @@ describe("frontmatter mapping (author / pinned / category)", () => {
   it("reads the pinned flag and sorts the pinned post first", () => {
     for (const locale of ["en", "zh"] as const) {
       const posts = postsFor(locale);
-      expect(posts.length).toBe(5);
+      expect(posts.length).toBe(7);
+      // The launch post stays the single pinned post; newer posts sort under it by date.
+      expect(posts.filter((p) => p.pinned).map((p) => p.slug)).toEqual([
+        "introducing-penguinharness",
+      ]);
       expect(posts[0]?.slug).toBe("introducing-penguinharness");
-      expect(posts[0]?.pinned).toBe(true);
+      expect(posts[1]?.slug).toBe("gemini-3-6-in-penguinharness");
     }
   });
 
   it("filters by the practice category, newest first", () => {
     expect(postsFor("en", "practice").map((p) => p.slug)).toEqual([
+      "local-models-and-the-tuning-loop",
       "penguin-harness-self-improvement-with-amd-gpu",
       "local-agents-on-amd-gpus",
+    ]);
+  });
+
+  it("filters by the news category, newest first", () => {
+    expect(postsFor("en", "news").map((p) => p.slug)).toEqual([
+      "introducing-penguinharness",
+      "gemini-3-6-in-penguinharness",
+      "fireworks-credits-amd",
     ]);
   });
 });
