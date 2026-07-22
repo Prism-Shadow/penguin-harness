@@ -25,7 +25,9 @@ export function testConfig(root: string): ServerConfig {
   return {
     root,
     host: "127.0.0.1",
-    port: 0,
+    // Nothing listens in tests, but the value is not inert: preview URLs are built from
+    // the server's own port, so keep it realistic rather than 0.
+    port: 7364,
     dbPath: ":memory:",
     previewOrigin: null,
     // Points to a nonexistent directory: static hosting is disabled in tests.

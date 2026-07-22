@@ -125,16 +125,28 @@ export function requestAuthority(requestUrl: string, hostHeader: string | undefi
   }
 }
 
+/** Bind addresses from which the loopback names are reachable. */
+const LOOPBACK_BINDS = new Set(["127.0.0.1", "localhost", "::1", "[::1]", "0.0.0.0", "::"]);
+
 /**
  * Where previews for this request should be served from: the configured origin when
  * PENGUIN_PREVIEW_ORIGIN is set, otherwise the loopback counterpart of the host the
- * caller is using, on the same scheme and port. Null when neither applies — the caller
- * degrades to the same-origin sandbox rather than silently serving unisolated content.
+ * caller is using. Null when neither applies — the caller degrades to the same-origin
+ * sandbox rather than silently serving unisolated content.
+ *
+ * The port comes from **this server's own binding**, never from the request. Those differ
+ * in development: the SPA is served by Vite on its own port and only proxies `/api`, so a
+ * preview URL built from the browser's current port would point at a port where nothing
+ * serves `/preview` — connection refused, or a Vite 404. In production the two are the
+ * same and this is a no-op. `serverBind.host` is checked too: if the server is bound to
+ * some specific non-loopback address, the loopback counterpart is not reachable and the
+ * only correct answer is to fall back.
  */
 export function resolvePreviewTarget(
   requestUrl: string,
   hostHeader: string | undefined,
   configuredOrigin: string | null,
+  serverBind: { host: string; port: number },
 ): { origin: string; host: string } | null {
   if (configuredOrigin) {
     const url = new URL(configuredOrigin);
@@ -142,15 +154,20 @@ export function resolvePreviewTarget(
   }
   const raw = requestAuthority(requestUrl, hostHeader);
   if (raw === "") return null;
-  const host = hostOnly(raw);
-  const counterpart = loopbackCounterpart(host);
+  const counterpart = loopbackCounterpart(hostOnly(raw));
   if (!counterpart) return null;
-  const portPart = raw.slice(host.length).startsWith(":") ? raw.slice(host.length) : "";
+  if (!LOOPBACK_BINDS.has(serverBind.host.toLowerCase())) return null;
+
   let protocol: string;
   try {
     protocol = new URL(requestUrl).protocol;
   } catch {
     protocol = "http:";
   }
-  return { origin: `${protocol}//${counterpart}${portPart}`, host: counterpart };
+  const suffix =
+    (protocol === "http:" && serverBind.port === 80) ||
+    (protocol === "https:" && serverBind.port === 443)
+      ? ""
+      : `:${serverBind.port}`;
+  return { origin: `${protocol}//${counterpart}${suffix}`, host: counterpart };
 }

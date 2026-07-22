@@ -19,7 +19,12 @@ export function meRoutes(deps: AppDeps): Hono<AppEnv> {
     // previewIsolated depends on the host this request came in on, so it is computed
     // here rather than stored: the same server answers on 127.0.0.1, localhost and
     // possibly a LAN address, and only the first two have a loopback counterpart.
-    const target = resolvePreviewTarget(c.req.url, c.req.header("host"), deps.config.previewOrigin);
+    const target = resolvePreviewTarget(
+      c.req.url,
+      c.req.header("host"),
+      deps.config.previewOrigin,
+      deps.config,
+    );
     return c.json({
       user: toUserInfo(c.var.user),
       previewIsolated: target !== null,

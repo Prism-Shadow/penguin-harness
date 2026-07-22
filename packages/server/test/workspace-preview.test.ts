@@ -63,22 +63,55 @@ describe("preview origin derivation", () => {
     expect(loopbackCounterpart("penguin.example.com")).toBeNull();
   });
 
-  it("derives the counterpart origin, preserving scheme and port", () => {
-    expect(resolvePreviewTarget("http://127.0.0.1:7364/x", "127.0.0.1:7364", null)).toEqual({
+  const bind = { host: "127.0.0.1", port: 7364 };
+
+  it("derives the counterpart origin on the server's own port", () => {
+    expect(resolvePreviewTarget("http://127.0.0.1:7364/x", "127.0.0.1:7364", null, bind)).toEqual({
       origin: "http://localhost:7364",
       host: "localhost",
     });
-    expect(resolvePreviewTarget("http://localhost/x", "localhost", null)).toEqual({
-      origin: "http://127.0.0.1",
+    expect(
+      resolvePreviewTarget("http://localhost:80/x", "localhost", null, { ...bind, port: 80 }),
+    ).toEqual({ origin: "http://127.0.0.1", host: "127.0.0.1" });
+  });
+
+  it("uses the server port, not the browser's — dev serves the SPA on a different port", () => {
+    // `pnpm dev`: the SPA is on Vite:7365 and only /api is proxied, so a preview URL on
+    // :7365 would hit a port that does not serve /preview at all.
+    expect(resolvePreviewTarget("http://localhost:7365/x", "localhost:7365", null, bind)).toEqual({
+      origin: "http://127.0.0.1:7364",
       host: "127.0.0.1",
     });
   });
 
+  it("gives up when the loopback counterpart is not reachable from the bind address", () => {
+    expect(
+      resolvePreviewTarget("http://localhost:7364/x", "localhost:7364", null, {
+        host: "192.168.1.5",
+        port: 7364,
+      }),
+    ).toBeNull();
+    // Wildcard binds do serve the loopback names.
+    expect(
+      resolvePreviewTarget("http://localhost:7364/x", "localhost:7364", null, {
+        host: "0.0.0.0",
+        port: 7364,
+      }),
+    ).toEqual({ origin: "http://127.0.0.1:7364", host: "127.0.0.1" });
+  });
+
   it("prefers a configured origin, and gives up on hosts with no counterpart", () => {
     expect(
-      resolvePreviewTarget("https://app.example.com/x", "app.example.com", "https://p.example.com"),
+      resolvePreviewTarget(
+        "https://app.example.com/x",
+        "app.example.com",
+        "https://p.example.com",
+        bind,
+      ),
     ).toEqual({ origin: "https://p.example.com", host: "p.example.com" });
-    expect(resolvePreviewTarget("http://192.168.1.5:7364/x", "192.168.1.5:7364", null)).toBeNull();
+    expect(
+      resolvePreviewTarget("http://192.168.1.5:7364/x", "192.168.1.5:7364", null, bind),
+    ).toBeNull();
   });
 });
 
@@ -127,7 +160,7 @@ describe("preview route", () => {
   it("redirects to the loopback counterpart of the App host", async () => {
     const { url, status } = await mint("index.html");
     expect(status).toBe(302);
-    expect(url).toMatch(/^http:\/\/127\.0\.0\.1\/preview\/[^/]+\/index\.html$/);
+    expect(url).toMatch(/^http:\/\/127\.0\.0\.1:7364\/preview\/[^/]+\/index\.html$/);
   });
 
   it("serves the file with a real content type, no sandbox, and no referrer", async () => {

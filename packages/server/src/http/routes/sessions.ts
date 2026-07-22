@@ -434,7 +434,12 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     // than as an opaque 404 from the unauthenticated preview origin.
     await deps.workspaceFiles.read(row.workspace, rel);
 
-    const target = resolvePreviewTarget(c.req.url, c.req.header("host"), deps.config.previewOrigin);
+    const target = resolvePreviewTarget(
+      c.req.url,
+      c.req.header("host"),
+      deps.config.previewOrigin,
+      deps.config,
+    );
     if (!target) {
       return c.redirect(
         `/api/sessions/${row.sessionId}/files/content?path=${encodeURIComponent(rel)}&preview=1`,
