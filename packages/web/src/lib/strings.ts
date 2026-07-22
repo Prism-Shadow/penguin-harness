@@ -224,6 +224,8 @@ export const zh = {
     toolMaxOutput: "maxOutputLength",
     mcpServers: "MCP Server（只读）",
     defaultValue: "（缺省）",
+    /** Reset link next to the runtime dropdowns: rewinds the local pick back to "not overridden" (the menus offer no inherit row). */
+    resetToDefault: "恢复缺省",
     deleteAgent: "删除 Agent",
     builtinUndeletable: "内置 Agent 不可被删除",
     deleteConfirm: (name: string): string =>
@@ -289,10 +291,11 @@ export const zh = {
     tokenUnit: "Token",
     contextWindowHint: "留空表示未知",
     maxTokens: "最大输出长度",
-    /** 占位符须在半宽输入框内放得下（placeholder 无法滚动）；完整说明放 title 悬停提示。 */
+    /** Placeholders cannot scroll, so this must fit the half-width box; the full guidance is the visible maxTokensCapHint line under the pair (the title tooltip is a bonus). */
     maxTokensHint: "留空沿用 Agent 设置",
     maxTokensTitle:
       "按模型限制单次请求的最大输出 Token 数；留空沿用 Agent 设置，小上下文模型建议调低",
+    maxTokensCapHint: "最大输出长度限制单次请求的输出 Token 数；小上下文的本地模型建议调低",
     maxTokensInvalid: "必须为正整数",
     clientTypeLocked: (t: string): string => `协议：${t}（沿用原配置，不可修改）`,
     vision: "支持图片输入（视觉/多模态）",

@@ -245,6 +245,7 @@ export const en: Strings = {
     toolMaxOutput: "maxOutputLength",
     mcpServers: "MCP Servers (read-only)",
     defaultValue: "(default)",
+    resetToDefault: "Reset to default",
     deleteAgent: "Delete Agent",
     builtinUndeletable: "Built-in Agents cannot be deleted",
     deleteConfirm: (name: string): string =>
@@ -316,6 +317,8 @@ export const en: Strings = {
     maxTokensHint: "Empty = inherit agent setting",
     maxTokensTitle:
       "Caps output tokens per request; leave empty to inherit the agent setting — lower it for small-context models",
+    maxTokensCapHint:
+      "Max output tokens caps output per request; lower it for small-context local models",
     maxTokensInvalid: "Must be a positive integer",
     clientTypeLocked: (t: string): string => `Protocol: ${t} (kept as configured; not editable)`,
     vision: "Supports image input (vision / multimodal)",

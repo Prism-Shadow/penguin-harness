@@ -35,12 +35,14 @@ import { SchedulesTab } from "./schedules-tab";
 type TabKey = "overview" | "prompt" | "runtime" | "tools" | "vault" | "schedules";
 
 /**
- * Dropdown rows from a dictionary's [value, description] pairs. The "" (not-overridden /
- * inherit) row is filtered out per review — the menus offer only concrete values, the user
- * picks explicitly. An unset stored value simply matches no row, so the OptionMenu trigger
- * falls back to its placeholder convention ("—"); nothing is ever written silently.
+ * Dropdown rows from a dictionary's [value, description] pairs (exported for unit tests).
+ * The "" (not-overridden / inherit) row is filtered out per review — the menus offer only
+ * concrete values in dictionary order, the user picks explicitly. An unset stored value
+ * simply matches no row, so the OptionMenu trigger falls back to its placeholder
+ * (（缺省）/(default), the same convention as the tools-table permission menu); nothing is
+ * ever written silently, and the reset link next to each menu rewinds a local pick back to "".
  */
-function optionRows(
+export function optionRows(
   entries: ReadonlyArray<readonly [string, string]>,
 ): ReadonlyArray<OptionMenuChoice<string>> {
   return entries
@@ -51,6 +53,50 @@ function optionRows(
       label: value,
       description,
     }));
+}
+
+/**
+ * OptionMenu whose pick can be explicitly rewound: the runtime menus no longer offer an
+ * inherit row, so without this an accidental pick could not be backed out before saving.
+ * The reset link (top-right of the label line, visible only while a value is picked) sets
+ * the LOCAL edit state back to "" — the save guard skips empty values, nothing is written.
+ * The unset trigger shows the (default) placeholder, matching the tools-table permission menu.
+ */
+function ResettableOptionMenu({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: ReadonlyArray<OptionMenuChoice<string>>;
+}) {
+  return (
+    <div className="relative">
+      <OptionMenu
+        label={label}
+        fullWidth
+        size="sm"
+        placeholder={S.agent.defaultValue}
+        value={value}
+        onChange={onChange}
+        options={options}
+      />
+      {value !== "" && (
+        <button
+          type="button"
+          title={S.agent.resetToDefault}
+          aria-label={S.agent.resetToDefault}
+          onClick={() => onChange("")}
+          className="absolute right-0 top-0 text-xs text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:hover:text-gray-300"
+        >
+          {S.agent.resetToDefault}
+        </button>
+      )}
+    </div>
+  );
 }
 
 /** Numeric input's string state → number (empty/invalid = undefined, meaning no change). */
@@ -531,10 +577,8 @@ function RuntimeTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveF
               inputMode="numeric"
               className="font-mono"
             />
-            <OptionMenu
+            <ResettableOptionMenu
               label={S.agent.thinkingLevel}
-              fullWidth
-              size="sm"
               value={thinkingLevel}
               onChange={setThinkingLevel}
               options={thinkingLevelOptions}
@@ -574,10 +618,8 @@ function RuntimeTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveF
               inputMode="numeric"
               className="font-mono"
             />
-            <OptionMenu
+            <ResettableOptionMenu
               label={S.agent.compactionMode}
-              fullWidth
-              size="sm"
               value={mode}
               onChange={setMode}
               options={compactionModeOptions}
