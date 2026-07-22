@@ -20,10 +20,25 @@ export interface BlogPost {
   date: string;
   category: BlogCategory;
   excerpt: string;
-  author: string;
+  /** Author list from comma-separated `author` frontmatter (default byline when absent). */
+  authors: string[];
   /** `pinned: true` in frontmatter: sorts before everything else, badge on the card. */
   pinned: boolean;
   body: string;
+}
+
+/** Split `author` frontmatter on comma-class separators (`,` `，` `、`); default when empty. */
+export function parseAuthors(raw: string | undefined): string[] {
+  const authors = (raw ?? "")
+    .split(/[,，、]/)
+    .map((name) => name.trim())
+    .filter(Boolean);
+  return authors.length > 0 ? authors : [DEFAULT_AUTHOR];
+}
+
+/** Join authors for display: 顿号 in Chinese, comma otherwise. */
+export function formatAuthors(authors: string[], locale: Locale): string {
+  return authors.join(locale === "zh" ? "、" : ", ");
 }
 
 const files = import.meta.glob("../../content/blog/*.md", {
@@ -46,7 +61,7 @@ function toPost(path: string, raw: string): BlogPost | null {
     date: meta.date ?? "",
     category,
     excerpt: meta.excerpt ?? "",
-    author: meta.author?.trim() || DEFAULT_AUTHOR,
+    authors: parseAuthors(meta.author),
     pinned: meta.pinned === "true",
     body,
   };

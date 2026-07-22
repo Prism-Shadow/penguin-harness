@@ -1,12 +1,11 @@
 ---
 title: "在 AMD GPU 上用 PenguinHarness 实现 Agent 自我进化"
 date: 2026-07-22
-category: "news"
+category: practice
+author: 高钰洋（AMD）、张宁（AMD）、郑耀威（PrismShadow）
 excerpt: "通过本地 Qwen3:8B 与 Fireworks API 的双模型分工，完整演示 PenguinHarness 从基线评测、Trace 分析到 Agent 优化与回滚的自我进化闭环。"
 description: "介绍 PenguinHarness 如何通过 Benchmark、Trace、可编辑的 Agent State 与 Snapshot 回滚构建自我进化闭环，并用本地 Qwen3:8B 与 Fireworks API 完成一次双模型实验。"
 ---
-# 在 AMD GPU 上用 PenguinHarness 实现 Agent 自我进化
-
 *AMD × PrismShadow——高钰洋、张宁（AMD），郑耀威（PrismShadow）。*
 
 [PenguinHarness](https://github.com/Prism-Shadow/penguin-harness) 是一个开源的 Agent Harness。它把模型接入、Agent 配置、工作区工具、Session、Trace、Skill 和 Benchmark 放在同一套运行环境中，并同时提供 CLI 与 Web UI。在线模型和通过 OpenAI 兼容接口暴露的本地模型，都可以作为其中的推理后端。

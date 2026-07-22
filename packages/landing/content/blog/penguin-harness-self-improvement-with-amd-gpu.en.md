@@ -1,14 +1,13 @@
 ---
 title: "Implementing Agent Self-Improvement with PenguinHarness on an AMD GPU"
 date: 2026-07-22
-category: "news"
+category: practice
+author: Yuyang Gao (AMD), Ning Zhang (AMD), Yaowei Zheng (PrismShadow)
 excerpt: "A complete PenguinHarness self-improvement loop—from baseline evaluation and Trace analysis to Agent optimization and rollback—using a local Qwen3:8B model alongside the Fireworks API."
 description: "Learn how PenguinHarness combines Benchmarks, Traces, editable Agent State, Snapshots, and rollback in a dual-model experiment with local Qwen3:8B and the Fireworks API."
 ---
 
 
-
-# Implementing Agent Self-Improvement with PenguinHarness on an AMD GPU
 
 *AMD × PrismShadow — Yuyang Gao and Ning Zhang (AMD), Yaowei Zheng (PrismShadow).*
 

@@ -2,7 +2,7 @@
 title: "A closer look at PenguinHarness — and running a self-improving agent locally on an AMD GPU"
 date: 2026-07-20
 category: practice
-author: Ning Zhang, Yuyang Gao (AMD) and Yaowei Zheng (PrismShadow)
+author: Ning Zhang (AMD), Yuyang Gao (AMD), Yaowei Zheng (PrismShadow)
 excerpt: What PenguinHarness actually is, the ideas behind its architecture, and a real end-to-end run — a local open-weight model on an AMD GPU that fails a scored task, then improves itself from 0 to 4 out of 5 by editing its own files, entirely on-device.
 ---
 

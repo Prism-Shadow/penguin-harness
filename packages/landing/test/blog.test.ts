@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_AUTHOR, comparePosts, formatPostDate, getPost, postsFor } from "../src/lib/blog";
+import {
+  DEFAULT_AUTHOR,
+  comparePosts,
+  formatAuthors,
+  formatPostDate,
+  getPost,
+  parseAuthors,
+  postsFor,
+} from "../src/lib/blog";
 
 const entry = (pinned: boolean, date: string, slug: string) => ({ pinned, date, slug });
 
@@ -50,16 +58,37 @@ describe("formatPostDate", () => {
   });
 });
 
+describe("parseAuthors / formatAuthors", () => {
+  it("splits comma-class separators and trims", () => {
+    expect(parseAuthors("A (AMD), B（X）、C ，D")).toEqual(["A (AMD)", "B（X）", "C", "D"]);
+  });
+
+  it("falls back to the default byline when absent or blank", () => {
+    expect(parseAuthors(undefined)).toEqual([DEFAULT_AUTHOR]);
+    expect(parseAuthors("  ")).toEqual([DEFAULT_AUTHOR]);
+  });
+
+  it("joins with a comma in English and 顿号 in Chinese", () => {
+    expect(formatAuthors(["A", "B"], "en")).toBe("A, B");
+    expect(formatAuthors(["甲", "乙"], "zh")).toBe("甲、乙");
+    expect(formatAuthors(["A"], "en")).toBe("A");
+  });
+});
+
 describe("frontmatter mapping (author / pinned / category)", () => {
-  it("defaults author and pinned when the frontmatter omits them", () => {
+  it("defaults authors and pinned when the frontmatter omits them", () => {
     const post = getPost("july-2026-updates", "en");
-    expect(post?.author).toBe(DEFAULT_AUTHOR);
+    expect(post?.authors).toEqual([DEFAULT_AUTHOR]);
     expect(post?.pinned).toBe(false);
   });
 
-  it("reads the explicit author and the practice category", () => {
+  it("reads the explicit author list and the practice category", () => {
     const post = getPost("local-agents-on-amd-gpus", "en");
-    expect(post?.author).toBe("Ning Zhang, Yuyang Gao (AMD) and Yaowei Zheng (PrismShadow)");
+    expect(post?.authors).toEqual([
+      "Ning Zhang (AMD)",
+      "Yuyang Gao (AMD)",
+      "Yaowei Zheng (PrismShadow)",
+    ]);
     expect(post?.category).toBe("practice");
     expect(post?.pinned).toBe(false);
   });
@@ -67,12 +96,16 @@ describe("frontmatter mapping (author / pinned / category)", () => {
   it("reads the pinned flag and sorts the pinned post first", () => {
     for (const locale of ["en", "zh"] as const) {
       const posts = postsFor(locale);
+      expect(posts.length).toBe(5);
       expect(posts[0]?.slug).toBe("introducing-penguinharness");
       expect(posts[0]?.pinned).toBe(true);
     }
   });
 
-  it("filters by the practice category", () => {
-    expect(postsFor("en", "practice").map((p) => p.slug)).toEqual(["local-agents-on-amd-gpus"]);
+  it("filters by the practice category, newest first", () => {
+    expect(postsFor("en", "practice").map((p) => p.slug)).toEqual([
+      "penguin-harness-self-improvement-with-amd-gpu",
+      "local-agents-on-amd-gpus",
+    ]);
   });
 });

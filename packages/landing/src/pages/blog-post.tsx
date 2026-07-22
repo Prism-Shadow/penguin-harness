@@ -11,7 +11,7 @@ import remarkGfm from "remark-gfm";
 import { Link, useParams } from "react-router";
 import { S } from "../lib/strings";
 import { useLocale } from "../state/locale";
-import { formatPostDate, getPost } from "../lib/blog";
+import { formatAuthors, formatPostDate, getPost } from "../lib/blog";
 import { extractToc, slugifyHeading } from "../lib/toc";
 import { CategoryBadge } from "../components/category-badge";
 import { ArrowRightIcon, CheckIcon, LinkIcon } from "../components/icons";
@@ -193,14 +193,13 @@ export function BlogPostPage() {
         </Link>
         <header className="mt-6">
           <h1 className="text-3xl font-semibold tracking-tight text-balance">{post.title}</h1>
-          <div className="mt-4 flex flex-col items-start gap-2 text-sm text-gray-500 dark:text-gray-400">
-            <div className="flex items-center gap-3">
-              <time dateTime={post.date} className="tabular-nums">
-                {formatPostDate(post.date, locale)}
-              </time>
-              <CategoryBadge category={post.category} />
-            </div>
-            <p>{post.author}</p>
+          <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-gray-500 dark:text-gray-400">
+            <time dateTime={post.date} className="tabular-nums">
+              {formatPostDate(post.date, locale)}
+            </time>
+            <span aria-hidden="true">·</span>
+            <span>{formatAuthors(post.authors, locale)}</span>
+            <CategoryBadge category={post.category} />
             <CopyLinkButton />
           </div>
         </header>
