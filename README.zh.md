@@ -66,6 +66,17 @@ https://github.com/user-attachments/assets/604eb626-0a5d-4a62-87e3-14ebade1cd5f
 
 https://github.com/user-attachments/assets/aec49ae9-b743-467b-b247-37bedfeaa36e
 
+## 内置 Skill 库
+
+开箱内置四组 Skill（[文档](https://penguin.ooo/docs/skills)），Agent 也能编写并优化自己的 Skill：
+
+| 分组        | Skill                                                                          |
+| ----------- | ------------------------------------------------------------------------------ |
+| 办公效率    | `data-analysis`、`firecrawl`                                                   |
+| 软件开发    | `web-design`、`software-engineering`                                           |
+| AI 应用开发 | `penguin-sdk`、`penguin-cli`、`agenthub-models`                                |
+| Agent 调优  | `agent-creation`、`benchmark-design`、`agent-evaluation`、`agent-optimization` |
+
 ## 支持的模型
 
 | 模型             | 可用供应商                                                                       |

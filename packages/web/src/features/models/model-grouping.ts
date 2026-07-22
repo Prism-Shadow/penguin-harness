@@ -98,3 +98,48 @@ export function groupModelRows<T extends ModelRowLike>(
 export function orderModelsLikeLibrary<T extends ModelRowLike>(rows: T[]): T[] {
   return groupModelRows(rows, "").flatMap((g) => g.rows);
 }
+
+/** Row shape for the configured-key filter: adds the read-only credential display (the DTO's ModelInfo is a superset). */
+export interface ModelCredentialRowLike extends ModelRowLike {
+  credential?: { apiKeyMasked?: string };
+}
+
+/**
+ * Whether the model has an API key configured: judged solely by the stored (masked) key — the
+ * same standard as the chat credential guide and the model page's key status. `envKey` is only
+ * the NAME of a fallback environment variable; its presence says nothing about whether that
+ * variable is actually set, so it never counts as configured.
+ */
+export function hasConfiguredKey(m: ModelCredentialRowLike): boolean {
+  return !!m.credential?.apiKeyMasked;
+}
+
+export interface VisibleChatModelsOptions {
+  /** true = list every model (the dropdown's expanded "show all" state). */
+  showAll: boolean;
+  query: string;
+  /** Currently selected model: always visible even without a configured key (the active choice must never be invisible). */
+  selected?: ModelRefValue | null;
+  /** Project default model: always visible even without a configured key. */
+  defaultModel?: ModelRefValue | null;
+}
+
+/**
+ * Candidate list for the chat model dropdown: library order → keep only key-configured models
+ * (plus the selected and the default model, unless showAll) → the query then filters whatever
+ * is visible. When NO model has a configured key, the key filter degrades to showAll
+ * (everything listed), so the dropdown is never uselessly empty.
+ */
+export function visibleChatModels<T extends ModelCredentialRowLike>(
+  models: T[],
+  { showAll, query, selected, defaultModel }: VisibleChatModelsOptions,
+): T[] {
+  const ordered = orderModelsLikeLibrary(models);
+  const keep =
+    showAll || !ordered.some(hasConfiguredKey)
+      ? ordered
+      : ordered.filter(
+          (m) => hasConfiguredKey(m) || sameModelRef(m, selected) || sameModelRef(m, defaultModel),
+        );
+  return keep.filter((m) => matchesQuery(m, query));
+}

@@ -3,13 +3,13 @@ name: penguin-cli
 description: Manage model API keys, default models and per-agent vault secrets with the penguin CLI.
 short_description: Manage models and secrets with the penguin CLI.
 short_description_zh: 用 penguin CLI 管理模型与密钥。
-version: 3
-updated: 2026-07-21T00:00:00Z
+version: 4
+updated: 2026-07-22T00:00:00Z
 ---
 
 # Penguin CLI
 
-The `penguin` CLI manages model credentials, default models and per-agent vault secrets. Configuration goes through the CLI only — never read or hand-edit the underlying hidden files.
+The `penguin` CLI manages model credentials, default models and per-agent vault secrets. Its primary job is model configuration: `penguin config model add` registers a model and `penguin config model list` shows the models currently available. Configuration goes through the CLI only — never read or hand-edit the underlying hidden files.
 
 ## Before you start
 
@@ -30,7 +30,10 @@ penguin config model add --provider <group> --model-id <upstream_id> [--api-key 
 - For any OpenAI chat-completion compatible endpoint use `--client-type openai --base-url <endpoint>`; omit `--client-type` to auto-route by model id.
 - Prices are USD per million tokens (cache read / cache write / output).
 - `--vision` / `--no-vision` mark whether the model accepts images; omitting both keeps the current value (default is vision-capable).
-- All `penguin config model ...` and `penguin config vault ...` commands accept `--root <dir>` to target another data root (default `PENGUIN_HOME`, then `~/.penguin/data`). **When configuring models for an AI app you are building, always pass `--root <dir>` pointing at the app's own data directory inside the current working directory** (e.g. `--root ./penguin_data`, the same path the app gives `createAgent({ root })`); running without `--root` writes to the global `~/.penguin/data`, which belongs to the person running Penguin — not to the app.
+- All `penguin config model ...` and `penguin config vault ...` commands accept `--root <dir>` to target another data root (default `PENGUIN_HOME`, then `~/.penguin/data`). Two configuration targets — treat the difference as a hard rule:
+  - **Penguin's own model** (self-configuration: the model Penguin itself runs on): the default root without `--root` is correct.
+  - **An AI app you are building**: `--root` **must** point at the app's own data directory inside the project (e.g. `--root ./penguin_data`, the same path the app gives `createAgent({ root })`) unless the user explicitly chose another location — never write an app's models or keys into the global `~/.penguin/data`, which belongs to the person running Penguin, not to the app.
+  - While developing an app, review regularly: `penguin config model list --root <app root>` should show the app's entries, and the global list (no `--root`) should stay clean.
 
 Other model commands:
 

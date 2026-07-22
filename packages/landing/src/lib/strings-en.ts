@@ -335,6 +335,21 @@ export const en: Strings = {
     ],
   },
 
+  skills: {
+    eyebrow: "Built-in Skills",
+    title: "The built-in Skill library at a glance",
+    subtitle: "Four Skill groups out of the box — Agents can write and optimize their own, too.",
+    groups: [
+      { title: "Office Productivity", skills: ["data-analysis", "firecrawl"] },
+      { title: "Software Development", skills: ["web-design", "software-engineering"] },
+      { title: "AI App Development", skills: ["penguin-sdk", "penguin-cli", "agenthub-models"] },
+      {
+        title: "Agent Tuning",
+        skills: ["agent-creation", "benchmark-design", "agent-evaluation", "agent-optimization"],
+      },
+    ],
+  },
+
   security: {
     eyebrow: "Security",
     title: "Evolution within bounds, data within walls",

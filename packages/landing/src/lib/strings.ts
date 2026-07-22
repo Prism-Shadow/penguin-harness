@@ -329,6 +329,21 @@ export const zh = {
     ],
   },
 
+  skills: {
+    eyebrow: "内置 Skill",
+    title: "内置 Skill 库一览",
+    subtitle: "四组 Skill 开箱即用，Agent 也能编写并优化自己的 Skill。",
+    groups: [
+      { title: "办公效率", skills: ["data-analysis", "firecrawl"] },
+      { title: "软件开发", skills: ["web-design", "software-engineering"] },
+      { title: "AI 应用开发", skills: ["penguin-sdk", "penguin-cli", "agenthub-models"] },
+      {
+        title: "Agent 调优",
+        skills: ["agent-creation", "benchmark-design", "agent-evaluation", "agent-optimization"],
+      },
+    ],
+  },
+
   security: {
     eyebrow: "安全",
     title: "进化不越界，数据不出域",

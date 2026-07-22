@@ -587,7 +587,12 @@ function AgentSelect({
           className={pillClass}
         >
           {selected ? (
-            <AgentAvatar id={selected.agentId} size={16} className="shrink-0 rounded" />
+            <AgentAvatar
+              id={selected.agentId}
+              name={agentDisplayName(selected)}
+              size={16}
+              className="shrink-0 rounded"
+            />
           ) : null}
           <span className="min-w-0 truncate">
             {selected ? agentDisplayName(selected) : S.common.loading}
@@ -613,7 +618,12 @@ function AgentSelect({
               }}
               className="flex w-full items-center gap-2.5 px-3 py-1.5 text-left transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800"
             >
-              <AgentAvatar id={a.agentId} size={20} className="shrink-0 rounded" />
+              <AgentAvatar
+                id={a.agentId}
+                name={agentDisplayName(a)}
+                size={20}
+                className="shrink-0 rounded"
+              />
               <span className="min-w-0 flex-1">
                 <span
                   className={`block truncate text-xs ${

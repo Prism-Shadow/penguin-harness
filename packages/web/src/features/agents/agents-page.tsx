@@ -197,7 +197,12 @@ export function AgentsPage() {
                   <div className="min-w-[14rem] flex-1">
                     {/* Title line: small avatar + name + agentId + active badge */}
                     <div className="flex items-center gap-2">
-                      <AgentAvatar id={a.agentId} size={18} className="shrink-0 rounded" />
+                      <AgentAvatar
+                        id={a.agentId}
+                        name={agentDisplayName(a)}
+                        size={18}
+                        className="shrink-0 rounded"
+                      />
                       {/* min-w-0: flex children don't shrink below their content by default; needed here to truncate overly long names */}
                       <span className="min-w-0 truncate text-base font-bold">
                         {agentDisplayName(a)}

@@ -382,6 +382,8 @@ export const en: Strings = {
     readOnlyHint: "Members have read-only access; only owners can change models and credentials",
     empty: "No models configured yet",
     noKey: "No key",
+    showModelsWithoutKey: (n: number): string =>
+      `Show model${n === 1 ? "" : "s"} without a key (${n})`,
     pendingSave: "(pending save)",
     modelIdExists: "This model id already exists",
     pricingAllOrNone: "Fill all three prices",
