@@ -7,7 +7,7 @@
 import { parseFrontmatter } from "./frontmatter";
 import type { Locale } from "../state/locale";
 
-export type BlogCategory = "news" | "changelog";
+export type BlogCategory = "news" | "practice" | "changelog";
 
 /** Byline used when a post has no `author` frontmatter. */
 export const DEFAULT_AUTHOR = "Yaowei Zheng (PrismShadow AI)";
@@ -37,7 +37,8 @@ function toPost(path: string, raw: string): BlogPost | null {
   const match = /^(.+)\.(zh|en)\.md$/.exec(file);
   if (!match) return null;
   const { meta, body } = parseFrontmatter(raw);
-  const category: BlogCategory = meta.category === "changelog" ? "changelog" : "news";
+  const category: BlogCategory =
+    meta.category === "changelog" || meta.category === "practice" ? meta.category : "news";
   return {
     slug: match[1]!,
     lang: match[2] as Locale,
@@ -69,7 +70,13 @@ export function comparePosts(
 export function formatPostDate(date: string, locale: Locale): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
   if (!match) return date;
-  const utc = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  const [y, m, d] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  const utc = new Date(Date.UTC(y, m - 1, d));
+  // Date.UTC silently normalizes impossible dates (2026-02-31 -> March 3): fall back
+  // to the raw string when the components do not survive the round-trip.
+  if (utc.getUTCFullYear() !== y || utc.getUTCMonth() !== m - 1 || utc.getUTCDate() !== d) {
+    return date;
+  }
   return new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : "en-US", {
     year: "numeric",
     month: "long",

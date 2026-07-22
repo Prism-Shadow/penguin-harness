@@ -42,24 +42,37 @@ describe("formatPostDate", () => {
     expect(formatPostDate("", "en")).toBe("");
     expect(formatPostDate("not-a-date", "zh")).toBe("not-a-date");
   });
+
+  it("falls back to the raw string for impossible calendar dates", () => {
+    expect(formatPostDate("2026-02-31", "en")).toBe("2026-02-31");
+    expect(formatPostDate("2026-13-01", "en")).toBe("2026-13-01");
+    expect(formatPostDate("2026-04-00", "zh")).toBe("2026-04-00");
+  });
 });
 
-describe("frontmatter mapping (author / pinned)", () => {
+describe("frontmatter mapping (author / pinned / category)", () => {
   it("defaults author and pinned when the frontmatter omits them", () => {
-    const post = getPost("introducing-penguinharness", "en");
+    const post = getPost("july-2026-updates", "en");
     expect(post?.author).toBe(DEFAULT_AUTHOR);
     expect(post?.pinned).toBe(false);
   });
 
-  it("reads the explicit author and pinned flag", () => {
+  it("reads the explicit author and the practice category", () => {
     const post = getPost("local-agents-on-amd-gpus", "en");
-    expect(post?.pinned).toBe(true);
     expect(post?.author).toBe("Ning Zhang, Yuyang Gao (AMD) and Yaowei Zheng (PrismShadow)");
+    expect(post?.category).toBe("practice");
+    expect(post?.pinned).toBe(false);
   });
 
-  it("sorts the pinned post first in postsFor", () => {
+  it("reads the pinned flag and sorts the pinned post first", () => {
     for (const locale of ["en", "zh"] as const) {
-      expect(postsFor(locale)[0]?.slug).toBe("local-agents-on-amd-gpus");
+      const posts = postsFor(locale);
+      expect(posts[0]?.slug).toBe("introducing-penguinharness");
+      expect(posts[0]?.pinned).toBe(true);
     }
+  });
+
+  it("filters by the practice category", () => {
+    expect(postsFor("en", "practice").map((p) => p.slug)).toEqual(["local-agents-on-amd-gpus"]);
   });
 });

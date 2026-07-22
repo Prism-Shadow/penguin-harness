@@ -1,18 +1,24 @@
-/** Blog badges: category (product news = brand tint, release notes = neutral) + pinned. */
+/**
+ * Blog badges: category (news = brand fill, practice = brand outline, changelog =
+ * neutral) + the pinned marker, all sharing the same pill shape.
+ */
 import { S } from "../lib/strings";
 import type { BlogCategory } from "../lib/blog";
 
+const CATEGORY_STYLES: Record<BlogCategory, string> = {
+  news: "border-brand-200 bg-brand-50 text-brand-700 dark:border-brand-800 dark:bg-brand-950 dark:text-brand-300",
+  practice:
+    "border-brand-200 bg-transparent text-brand-700 dark:border-brand-800 dark:text-brand-300",
+  changelog:
+    "border-gray-200 bg-gray-50 text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300",
+};
+
 export function CategoryBadge({ category }: { category: BlogCategory }) {
-  const isNews = category === "news";
   return (
     <span
-      className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${
-        isNews
-          ? "border-brand-200 bg-brand-50 text-brand-700 dark:border-brand-800 dark:bg-brand-950 dark:text-brand-300"
-          : "border-gray-200 bg-gray-50 text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
-      }`}
+      className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${CATEGORY_STYLES[category]}`}
     >
-      {isNews ? S.blog.news : S.blog.changelog}
+      {S.blog[category]}
     </span>
   );
 }

@@ -27,6 +27,33 @@ function nodeText(node: ReactNode): string {
   return "";
 }
 
+/** Copy text to the clipboard; reports whether a copy actually happened. */
+async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    // Clipboard API unavailable (e.g. non-secure context): fall back to a textarea
+    // kept out of layout (fixed + invisible) so select() cannot scroll the page.
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.top = "0";
+    ta.style.left = "0";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    try {
+      ta.select();
+      return document.execCommand("copy");
+    } catch {
+      return false;
+    } finally {
+      ta.remove();
+    }
+  }
+}
+
 /** Copies the page URL to the clipboard; the label flips to "copied" for ~2s. */
 function CopyLinkButton() {
   const [copied, setCopied] = useState(false);
@@ -40,18 +67,7 @@ function CopyLinkButton() {
   );
 
   const onCopy = async () => {
-    const url = window.location.href;
-    try {
-      await navigator.clipboard.writeText(url);
-    } catch {
-      // Clipboard API unavailable (e.g. non-secure context): fall back to a hidden textarea.
-      const ta = document.createElement("textarea");
-      ta.value = url;
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand("copy");
-      ta.remove();
-    }
+    if (!(await copyToClipboard(window.location.href))) return;
     setCopied(true);
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => setCopied(false), 2000);
