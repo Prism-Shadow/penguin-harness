@@ -589,8 +589,12 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     statCost: "成本",
     statElapsed: "用时",
     statInput: "输入 tokens",
+    statCached: "已缓存",
     statOutput: "输出 tokens",
     statTps: "输出 TPS",
+    /** Copied-stats-line parenthesis wrappers around the cached amount (fullwidth for zh typography). */
+    statParenOpen: "（",
+    statParenClose: "）",
     noSessions: "还没有 Session",
     emptyStream: "发送一条消息开始对话",
     historyLoadFailed: "历史消息加载失败",
