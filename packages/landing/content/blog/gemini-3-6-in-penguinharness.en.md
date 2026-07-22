@@ -106,6 +106,8 @@ The docs and landing navbars are now literally the same layout — same containe
 
 The README roadmap gained two items — Agent company and templates, and company-level self evolving — and the self-improvement example under `examples/` was reworked into two runnable scripts that let a local open-weight model score itself, edit its own files and re-run, instead of a fixed illustrative transcript. On the hardening side, the server now validates paging and date query parameters instead of trusting them, and two previously uncovered core modules picked up unit tests.
 
+Upgrading is now one command. `penguin update` resolves the newest release, tells you exactly what it is about to do, and upgrades in place using the mechanism your install actually came from — re-running the official installer for a tarball install (keeping your install dir and your choice of bundled runtime), or the right global install for an npm/pnpm/yarn/bun one. It refuses to touch a source checkout, and it never touches your data dir. `penguin update --check` reports the versions and changes nothing.
+
 ## Get it
 
 ```bash

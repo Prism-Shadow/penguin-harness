@@ -12,4 +12,4 @@ Released on 2026-07-22.
 
 - [2026-07-22] Docs and examples: two new README roadmap items, and the self-improvement example reworked to genuinely evolve itself. ([details](2026-07-22-docs-and-examples.md))
 
-- [2026-07-22] Tooling: server query-parameter validation hardening, and unit tests for two previously uncovered core modules. ([details](2026-07-22-tooling.md))
+- [2026-07-22] Tooling: `penguin update` upgrades an existing install in place via the mechanism it was installed with, plus server query-parameter validation hardening and unit tests for two previously uncovered core modules. ([details](2026-07-22-tooling.md))

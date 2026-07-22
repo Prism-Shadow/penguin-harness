@@ -143,4 +143,29 @@ penguin web
 
 端口 / 地址优先级：命令行选项 > 环境变量 `PORT` / `HOST`（含 `.env`）> 默认值。
 
+## penguin update
+
+原地升级当前安装，并沿用它当初的安装方式。安装方式由运行中 CLI 的真实路径判定，不做猜测。
+
+```bash
+penguin update --check     # 只报告版本
+penguin update             # 确认后升级到最新版
+```
+
+| 选项 | 说明 |
+| --- | --- |
+| `--check` | 只报告已安装版本与最新版本，不做任何修改；两种情况下退出码均为 0 |
+| `--release <tag>` | 指定目标版本而不是最新版（`v0.1.2` 或 `0.1.2`）；允许低于当前版本，会明确提示为降级 |
+| `-y, --yes` | 跳过确认提示 |
+
+目标版本参数叫 `--release` 而不是 `--version`，因为 `-v, --version` 是 CLI 自身的版本参数，会优先生效。
+
+| 安装方式 | 升级方式 |
+| --- | --- |
+| tarball（`install.sh`，默认 `~/.penguin`） | 重新执行官方安装脚本，并保持原安装目录以及是否内置 Node 运行时 |
+| npm/pnpm/yarn/bun 全局安装 | 用该包管理器全局安装 `@prismshadow/penguin-cli@<目标版本>`；无法确定包管理器时，只打印命令而不猜测 |
+| 源码检出 | 拒绝执行——请用 `git pull` 更新并重新构建 |
+
+不带 `-y` 时，命令会先打印它将要做什么——方式、目标版本与安装目录——再请求确认；当 stdin 不是终端时，它要求显式加 `--yes`，而不是卡在无人能回答的提示上。最新版本取自 GitHub Releases API。**数据目录不会被改动**：升级只替换 `bin`、`lib`、`web` 与 `node`。tarball 路径不支持 Windows，因为安装脚本是 POSIX shell 脚本。
+
 相关文档：[配置参考](/configuration)、[模型与 Provider](/models)。

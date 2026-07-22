@@ -106,6 +106,8 @@ AI 应用开发分组新增三个技能——**vllm**、**ollama** 与 **llamafa
 
 README 路线图新增两项——Agent company and templates，以及 company-level self evolving；`examples/` 下的自我进化示例重写成两个可运行脚本，让本地开源权重模型真正给自己打分、改自己的文件并重跑，而不再是一段固定的示意记录。加固方面，服务端现在校验分页与日期查询参数而不是照单全收，两个此前没有直接测试覆盖的内核模块补上了单元测试。
 
+升级现在只需一条命令。`penguin update` 会解析最新版本，先把将要做的事讲清楚，再按你当初的安装方式原地升级——tarball 安装就重新执行官方安装脚本（保留原安装目录与是否内置运行时），npm/pnpm/yarn/bun 全局安装就用对应的包管理器。它拒绝改动源码检出，也从不碰你的数据目录。`penguin update --check` 只报告版本，不做任何修改。
+
 ## 获取方式
 
 ```bash

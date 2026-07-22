@@ -143,4 +143,29 @@ penguin web
 
 Port / host priority: command-line option > the `PORT` / `HOST` env vars (including `.env`) > defaults.
 
+## penguin update
+
+Upgrades this install in place, using the mechanism it was installed with. The install kind is detected from the real path of the running CLI, never guessed.
+
+```bash
+penguin update --check     # report versions only
+penguin update             # upgrade to the latest release, after confirming
+```
+
+| Option | Description |
+| --- | --- |
+| `--check` | Only report the installed and latest versions; change nothing. Exit code is 0 either way |
+| `--release <tag>` | Target a specific release instead of the latest (`v0.1.2` or `0.1.2`); older tags are allowed and reported as a downgrade |
+| `-y, --yes` | Skip the confirmation prompt |
+
+The target flag is `--release`, not `--version`, because `-v, --version` is the CLI's own version flag and would take precedence.
+
+| Install kind | How it upgrades |
+| --- | --- |
+| Tarball (`install.sh`, default `~/.penguin`) | Re-runs the official installer, preserving the install dir and whether the package bundles a Node runtime |
+| Global npm/pnpm/yarn/bun install | Runs that manager's global install of `@prismshadow/penguin-cli@<target>`; if the manager cannot be identified, prints the command instead of guessing |
+| Source checkout | Refused — update it with `git pull` and a rebuild |
+
+Without `-y` the command prints exactly what it will do — mechanism, target version and install dir — and asks for confirmation; when stdin is not a terminal it requires `--yes` rather than waiting on a prompt nobody can answer. The latest version comes from the GitHub Releases API. **The data root is never touched**: an upgrade only replaces `bin`, `lib`, `web` and `node`. Windows is not supported for the tarball path, since the installer is a POSIX shell script.
+
 See also: [Configuration Reference](/configuration), [Models & Providers](/models).

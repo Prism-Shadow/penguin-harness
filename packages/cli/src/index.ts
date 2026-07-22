@@ -9,6 +9,7 @@
  *   penguin chat ...
  *   penguin run --message ...
  *   penguin server|web ...
+ *   penguin update ...
  * Docs: packages/docs/content/cli.{zh,en}.md (site path /docs/cli).
  */
 import "dotenv/config";
@@ -18,6 +19,7 @@ import { registerConfigCommand } from "./commands/config.js";
 import { registerRunCommand } from "./commands/run.js";
 import { registerChatCommand } from "./commands/chat.js";
 import { registerServeCommands } from "./commands/serve.js";
+import { registerUpdateCommand } from "./commands/update.js";
 import { defaultMessages } from "./i18n.js";
 
 // Language comes from the PENGUIN_LANG env var (default en); used consistently for
@@ -34,6 +36,7 @@ registerConfigCommand(program, t);
 registerRunCommand(program, t);
 registerChatCommand(program, t);
 registerServeCommands(program, t);
+registerUpdateCommand(program, t);
 
 // Show help only when no subcommand is given (empty input); do not error.
 program.action(() => {
