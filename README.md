@@ -79,17 +79,19 @@ Four Skill groups ship in the box ([docs](https://penguin.ooo/docs/skills)); Age
 
 ## Supported Models
 
-| Model            | Providers                                                                        |
-| ---------------- | -------------------------------------------------------------------------------- |
-| DeepSeek V4      | DeepSeek, OpenRouter, Fireworks AI, SiliconFlow, Qwen Token Plan                 |
-| Kimi K3          | OpenRouter, Qwen Pay-As-You-Go                                                   |
-| Kimi K2.6        | Moonshot AI                                                                      |
-| GLM 5.2          | Z.AI, OpenRouter, Fireworks AI, SiliconFlow, Qwen Token Plan, Qwen Pay-As-You-Go |
-| Hunyuan 3        | OpenRouter                                                                       |
-| Qwen 3.8 Max     | Qwen Token Plan (preview)                                                        |
-| GPT 5.5          | OpenAI, OpenRouter                                                               |
-| Gemini 3.5 Flash | Google Gemini, OpenRouter                                                        |
-| Claude Opus 4.8  | Anthropic, OpenRouter                                                            |
+| Model                 | Providers                                                                        |
+| --------------------- | -------------------------------------------------------------------------------- |
+| DeepSeek V4           | DeepSeek, OpenRouter, Fireworks AI, SiliconFlow, Qwen Token Plan                 |
+| Kimi K3               | OpenRouter, Qwen Pay-As-You-Go                                                   |
+| Kimi K2.6             | Moonshot AI                                                                      |
+| GLM 5.2               | Z.AI, OpenRouter, Fireworks AI, SiliconFlow, Qwen Token Plan, Qwen Pay-As-You-Go |
+| Hunyuan 3             | OpenRouter                                                                       |
+| Qwen 3.8 Max          | Qwen Token Plan (preview)                                                        |
+| GPT 5.5               | OpenAI, OpenRouter                                                               |
+| Gemini 3.6 Flash      | OpenRouter                                                                       |
+| Gemini 3.5 Flash      | Google Gemini, OpenRouter                                                        |
+| Gemini 3.5 Flash Lite | OpenRouter                                                                       |
+| Claude Opus 4.8       | Anthropic, OpenRouter                                                            |
 
 Any OpenAI-protocol endpoint is supported: pick a preset above, or point a custom endpoint at any of the 1000+ online and local models.
 

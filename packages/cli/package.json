@@ -22,7 +22,7 @@
     "penguin": "tsx src/index.ts"
   },
   "dependencies": {
-    "@prismshadow/agenthub": "^0.4.0",
+    "@prismshadow/agenthub": "^0.4.1",
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/penguin-server": "workspace:*",
     "@prismshadow/penguin-skills": "workspace:*",

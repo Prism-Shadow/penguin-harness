@@ -284,11 +284,34 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
+    // Context window and list price read from the model's OpenRouter page (2026-07-22);
+    // the page publishes no cache price, so cache_read carries the standard input price.
+    modelId: "google/gemini-3.6-flash",
+    displayName: "Gemini 3.6 Flash",
+    provider: "openrouter",
+    contextWindow: 1048576,
+    pricing: usd(1.5, 1.5, 7.5),
+    supportsVision: true,
+    clientType: "openai",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
     modelId: "google/gemini-3.5-flash",
     displayName: "Gemini 3.5 Flash",
     provider: "openrouter",
     contextWindow: 1000000,
     pricing: usd(1.5, 1.5, 9),
+    supportsVision: true,
+    clientType: "openai",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
+    // Same 2026-07-22 OpenRouter page reading as gemini-3.6-flash above (no cache price listed).
+    modelId: "google/gemini-3.5-flash-lite",
+    displayName: "Gemini 3.5 Flash Lite",
+    provider: "openrouter",
+    contextWindow: 1048576,
+    pricing: usd(0.3, 0.3, 2.5),
     supportsVision: true,
     clientType: "openai",
     baseUrl: OPENROUTER_BASE_URL,
