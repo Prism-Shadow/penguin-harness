@@ -70,7 +70,11 @@ describe("skills api", () => {
       expect("description" in group).toBe(false);
     }
     // Members within a group follow the SKILL_GROUPS list order (as ungrouped by loadSkillGroups).
-    expect(body.groups[0]!.skills.map((s) => s.name)).toEqual(["data-analysis", "firecrawl"]);
+    expect(body.groups[0]!.skills.map((s) => s.name)).toEqual([
+      "data-analysis",
+      "firecrawl",
+      "bento-slides",
+    ]);
     expect(body.groups[1]!.skills.map((s) => s.name)).toEqual([
       "web-design",
       "software-engineering",

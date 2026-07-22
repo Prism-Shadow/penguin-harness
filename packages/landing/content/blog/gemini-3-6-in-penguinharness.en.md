@@ -98,6 +98,8 @@ Chat rendering got a pass: links open in a new tab, long URLs and inline code wr
 
 Three new skills join the AI App Development group — **vllm**, **ollama** and **llamafactory** — so an agent can stand up and tune the models it builds on, not just call them. Both serving skills share a guided workflow: ask which model to serve, ask which engine the user prefers, serve, verify, then register the endpoint with the CLI. The `penguin-cli` skill (now v5) and `penguin-sdk` carry the hard rule they lean on: configuring Penguin's own model uses the default data root, but models configured for an app under development must go into the app's own project directory. There is a whole [practice post](/blog/natural-language-training-loop) on what changes once an agent holds all three — you stop typing the commands and start describing the outcome.
 
+A fourth skill, **bento-slides**, joins the Office Productivity group: ask for a presentation and the agent authors a real Bento deck — one self-contained `.bento.html` whose document is JSON — mapping your material onto charts, morph transitions and state slides instead of a wall of bullets. It is adapted, with attribution, from the Bento project's own MIT-licensed skill.
+
 `agenthub-models` tracks the 0.4.1 upgrade: the new supported-model registry, the config parameters a client may now reject outright, and the Gemini 3.6 / Kimi K3 / GLM-5.2 families with their reasoning-effort knobs.
 
 ### Sites, docs and tooling

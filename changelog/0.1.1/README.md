@@ -6,7 +6,7 @@ Released on 2026-07-22.
 
 - [2026-07-22] Web App: the chat sidebar groups conversations by Workspace (with an Agent-mode toggle, group pinning, subagent/scheduled folders and paged loading), the collapsed sidebar becomes an eight-entry navigation rail with bilingual tooltips, the model picker lists key-configured models first, chat renders links in a new tab with clean CJK/URL wrapping and the subagent expansion below the tool's own output, mobile dropdowns stay inside the viewport, the Cost center's daily-token tooltip follows the pointer and shows the cache hit rate, the model and Agent settings forms were tightened, the copied task-stats line is localized, and custom model groups and Agents get initial-letter avatars. ([details](2026-07-22-web-app.md))
 
-- [2026-07-22] Skills: vLLM and Ollama deployment plus LlamaFactory fine-tuning join the AI App Development group with a guided serving workflow that follows the user's engine preference, and `agenthub-models` tracks the AgentHub 0.4.1 API. ([details](2026-07-22-skills.md))
+- [2026-07-22] Skills: vLLM and Ollama deployment plus LlamaFactory fine-tuning join the AI App Development group with a guided serving workflow that follows the user's engine preference, `bento-slides` joins Office Productivity for authoring single-file Bento decks, and `agenthub-models` tracks the AgentHub 0.4.1 API. ([details](2026-07-22-skills.md))
 
 - [2026-07-22] Sites: the docs and landing navbars are now identical, the blog gains a Tech-practice category, pinned posts, author/date/copy-link metadata and a second AMD practice post, and the built-in Skills are listed in the READMEs and on the landing page. ([details](2026-07-22-sites-and-blog.md))
 
