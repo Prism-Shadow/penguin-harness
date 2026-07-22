@@ -17,7 +17,7 @@ If the user's message only invokes this skill (e.g. "use ollama skill") without 
 
 Ask the user which model to run; if they have no preference, recommend the small default [Qwen/Qwen3.5-0.8B](https://huggingface.co/Qwen/Qwen3.5-0.8B) (`ollama pull qwen3.5:0.8b`). The model must fit the machine's RAM/VRAM.
 
-Ollama is the engine for macOS (Apple Silicon) and CPU-only machines; on an NVIDIA or AMD GPU, prefer the `vllm` skill. Check the current state first:
+Ollama runs everywhere — macOS, Linux and Windows, on CPUs as well as NVIDIA/AMD GPUs — so engine choice follows the user's preference: Ollama is the simple default, while the `vllm` skill targets high-throughput GPU serving. Check the current state first:
 
 ```bash
 ollama --version   # is Ollama installed?
@@ -29,11 +29,11 @@ If port 11434 is already serving, reuse that instance — never kill an existing
 ## Suggested workflow
 
 1. Ask the user which model to run; with no preference, recommend [Qwen/Qwen3.5-0.8B](https://huggingface.co/Qwen/Qwen3.5-0.8B) (`qwen3.5:0.8b`).
-2. Pick the engine by hardware: macOS or CPU-only → Ollama (this skill); NVIDIA/AMD GPU → the `vllm` skill.
+2. Pick the engine the user prefers: Ollama (this skill) is the default; switch to the `vllm` skill for high-throughput GPU serving.
 3. Install Ollama if missing, then `ollama pull qwen3.5:0.8b`.
 4. Verify with `curl http://localhost:11434/v1/models`.
-5. Register the endpoint: `penguin config model add ... --client-type openai --base-url http://localhost:11434/v1` (root rule below).
-6. Confirm with `penguin config model list` — the entry should be there.
+5. Register the endpoint: `penguin config model add ... --client-type openai --base-url http://localhost:11434/v1` — a pulled Ollama model is not visible to Penguin until added.
+6. Confirm the new entry with `penguin config model list`.
 
 ## Install
 
@@ -82,17 +82,12 @@ ollama create qwen3.5-32k -f Modelfile
 
 ## Register with PenguinHarness
 
-Model configuration is the penguin CLI's primary job — `penguin config model add` registers an endpoint and `penguin config model list` shows the models currently available (details in the `penguin-cli` skill):
+Model configuration is the penguin CLI's job — `penguin config model add` registers an endpoint and `penguin config model list` shows what has been registered. A pulled Ollama model is not visible to Penguin until you add it:
 
 ```bash
 penguin config model add --provider custom --client-type openai \
   --base-url http://localhost:11434/v1 --model-id qwen3.5:0.8b --api-key ollama
-penguin config model list   # confirm the entry landed where you intended
+penguin config model list   # the new entry should now be listed
 ```
 
-Two configuration targets — treat the difference as a hard rule:
-
-- **Penguin's own model** (self-configuration, the model Penguin itself runs on): the default root without `--root` is correct.
-- **An AI app under development**: `--root` must point at the app's own project directory (e.g. `--root ./penguin_data`, the same path the app passes `createAgent({ root })`) unless the user explicitly chose another location. Never write an app's models or keys into the global `~/.penguin/data`.
-
-While developing an app, review regularly: `penguin config model list --root <app root>` should show the app's entries, and the global list (no `--root`) should stay clean.
+Which data root to target (`--root`) is covered by the `penguin-cli` skill.
