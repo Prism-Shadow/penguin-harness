@@ -23,6 +23,14 @@ A model with a 32k context served locally rejected requests outright — `400 Th
 
 The thinking level is no longer a Models-page annotation. The default lives in Agent settings (where it always was), and the chat draft gains a compact titled picker next to the model selector offering `low` / `medium` / `high` / `xhigh` — `none` is no longer offered because many models cannot disable thinking, though it remains a valid stored value that still displays correctly. Changing the picker writes through to the Agent settings immediately, so the session created on send — and every later one — uses the new level. The draft's model choice now carries over the same way: after a successful send it becomes the next conversation's default.
 
+## Subagents follow the parent session
+
+`run_subagent` with the model pair omitted used to fall through to the Project default model, and a child always ran at its own Agent's thinking level. A spawned subagent now inherits the parent session's resolved `(provider, model_id)` pair and its effective thinking level (workspace was already inherited); an explicit complete pair in the tool call still wins, and half a pair is still rejected rather than completed from the parent's half. The pass-down is tri-state, so a parent with no thinking level produces a child with none — the child's own config never sneaks back in — and resuming a session restores the thinking level its Trace recorded instead of re-reading the Agent config.
+
+## Sessions carry their origin
+
+`session_meta` gains an optional `source` field (`"subagent" | "schedule"`, absent = user-created) written at creation, preserved across resume and compaction-driven trace rotation, and treated as the single source of truth: the server derives the session index's origin from the meta (registering children from the forwarded meta, adopting discovered traces, lazily reading the trace head for rows indexed by an earlier process) and no longer stores the type in the database.
+
 ## Session-title generation is internal
 
 `session-title.ts` moved into core's `internal/` module. `Session.generateTitle()` remains the public entry point, and `SessionTitleResult`, `stripConversationMarkers` and `sanitizeTitle` (both used by the server's fallback title path) stay importable from the package barrel; the LLM-driving internals (`buildTitlePrompt`, `generateTitleWithLLM`) are no longer part of the public surface.
