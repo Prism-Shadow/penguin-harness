@@ -40,6 +40,15 @@ describe("Md links", () => {
     expectNewTab(tags[0]);
   });
 
+  it('preserves the markdown link title from [text](url "title")', () => {
+    const html = render('Read [docs](https://example.com "API docs") first.');
+    const tags = anchors(html);
+    expect(tags).toHaveLength(1);
+    expect(tags[0]).toContain('href="https://example.com"');
+    expect(tags[0]).toContain('title="API docs"');
+    expectNewTab(tags[0]);
+  });
+
   it("relative and #anchor hrefs also open in a new tab (never SPA-navigate)", () => {
     const html = render("[rel](./file.md) and [frag](#section)");
     const tags = anchors(html);

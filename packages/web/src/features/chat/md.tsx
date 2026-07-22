@@ -13,9 +13,9 @@
  * Inline code keeps the default rendering (`.md-body code` styling).
  */
 import { isValidElement, memo } from "react";
-import type { ReactNode } from "react";
+import type { ComponentPropsWithoutRef, ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
-import type { Components } from "react-markdown";
+import type { Components, ExtraProps } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { CodeBlock } from "./code-block";
 
@@ -46,19 +46,18 @@ function MdPre({ children, streaming }: { children?: ReactNode; streaming: boole
  * Link adapter: every chat link opens in a new tab (`target="_blank"` + `rel="noreferrer"`,
  * which also implies `noopener`), unconditionally — including relative and `#anchor` hrefs a
  * model may emit — so clicking a reply link never navigates the SPA away from the live
- * conversation. Long-URL wrapping is CSS (`.md-body a` in styles.css), not handled here.
+ * conversation. All other anchor props react-markdown supplies (`href`, `title` from
+ * `[text](url "title")`, ...) are forwarded as-is — only its non-DOM `node` prop is stripped —
+ * and `target`/`rel` sit after the spread so the new-tab behavior always wins.
+ * Long-URL wrapping is CSS (`.md-body a` in styles.css), not handled here.
  */
 function MdLink({
-  href,
+  node: _node,
   children,
-  className,
-}: {
-  href?: string;
-  children?: ReactNode;
-  className?: string;
-}) {
+  ...anchorProps
+}: ComponentPropsWithoutRef<"a"> & ExtraProps) {
   return (
-    <a href={href} className={className} target="_blank" rel="noreferrer">
+    <a {...anchorProps} target="_blank" rel="noreferrer">
       {children}
     </a>
   );
