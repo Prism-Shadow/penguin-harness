@@ -62,6 +62,30 @@ penguin config model list
 
 **Agent 先把量具造出来。** `benchmark-design` 技能让它铺开一个 Benchmark 目录：一份 `benchmark_config.toml`、一份 `scoreboard.yaml`，以及每个 Case 一个目录，里面是被测 Agent 能看到的公开 `statement/README.md`，和它绝不能看到的私有 `rubric/README.md`。`runs` 默认为 3，于是不确定的本地模型是被平均，而不是只采样一次。整套 Case 的 Rubric 满分合计 100 分，分数因此始终可解释。接受一个 Case 之前，技能还要求它跑一次反事实检验：一个**不具备**该能力的执行者，能不能靠机械照做 Statement 通过？如果能，这个 Case 就被否掉重设计。
 
+<details>
+<summary><strong>展开：技能铺开的 Benchmark 目录</strong></summary>
+
+```text
+<benchmark_id>/
+├── benchmark_config.toml
+├── scoreboard.yaml
+└── CASE-<nnn>-<semantic-name>/
+    ├── statement/
+    │   └── README.md
+    └── rubric/
+        └── README.md
+```
+
+两份 README 都是必需的，两个目录都可以放辅助文件。`statement/` 是完整的公开任务与材料，`rubric/` 是私有评分材料——Statement 里不得出现任何私有标准或路径。配置文件先写，而且刻意不记录模型：产生每次评估的 `(provider, model_id)` 二元组由该次评估自己记录。
+
+```toml
+title = "<benchmark_title>"
+description = "<capability_and_scope>"
+runs = 3
+```
+
+</details>
+
 **然后它把评测扇出去。** N 个 Case、R 次运行，它会把 N × R 个评估作为并行子 Agent 调用一次性发出；每个子 Agent 加载 `agent-evaluation`，只做一个 Case 的一次运行。这个子 Agent 建立自己的一次性 Workspace，**只**把 Statement 拷进去，用指定的 `(provider, model_id)` 二元组通过 CLI 启动被测 Agent 恰好一次，然后机械地绑定 Trace——比对会话记录里的 Workspace、Agent State、provider 与 model id，而不是相信「最近跑的那个」。它返回的只有协议元数据：分数、成本、耗时、session id，一句自然语言都没有。这份沉默正是设计本身：Rubric 因此既不进入被测 Agent 的上下文，也不进入对话记录。
 
 **于是 Agent 拿到的不只是一个数字。** 每次评估都记录产生它的 `(provider, model_id)` 二元组，基座模型与调优后的后继者因此落在同一张记分板上，可以直接比。而每一次 run 都带着自己的 session id，Agent 可以打开那次 Trace，看清是哪一步丢的分。

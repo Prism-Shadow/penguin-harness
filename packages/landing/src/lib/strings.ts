@@ -13,7 +13,7 @@ export const zh = {
     label: "公告",
     prev: "上一条公告",
     next: "下一条公告",
-    gemini: "Gemini 3.6 Flash 与 3.5 Flash-Lite 现已在 PenguinHarness 可用",
+    gemini: "Gemini 3.6 Flash 现已在 PenguinHarness 可用",
     models: "Kimi K3 与 Qwen 3.8 Max 模型现已在 PenguinHarness 可用",
     fireworks: "携手 AMD 开发者计划：$50 Fireworks API 额度免费领取中",
   },

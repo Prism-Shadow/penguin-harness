@@ -369,7 +369,7 @@
 .md-body {
   overflow-wrap: break-word;
 }
-.md-body :is(p, ul, ol, pre, blockquote, table) {
+.md-body :is(p, ul, ol, pre, blockquote, table, details) {
   margin: 0.625rem 0;
 }
 .md-body li {
@@ -433,6 +433,56 @@
 .md-body blockquote {
   @apply border-l-2 border-gray-300 pl-3 text-gray-600 dark:border-gray-700 dark:text-gray-400;
 }
+/* <details>/<summary> — raw HTML that posts already use for long prompts and transcripts, and
+   which the browser leaves entirely unstyled (a bare disclosure triangle against flat prose).
+   Styled as a card in the same language as `pre`: 1px border, faint fill, rounded. The summary is
+   the card's header, so it keeps the horizontal padding of the box and cancels it with a negative
+   margin to stay full-bleed, which lets its hover tint reach the border. Open state adds a
+   hairline under it, so an expanded block reads as header + body rather than one run of text.
+
+   The disclosure marker is replaced rather than kept: the native one differs per engine and per
+   platform and cannot be recolored. `list-style: none` removes it in Chrome and Firefox (where a
+   summary is a list item) and the `::-webkit-details-marker` rule removes it in Safari; the
+   substitute is a CSS chevron in `currentColor`, so it follows the theme for free and rotates a
+   quarter turn on open. It is positioned against the first line (padding + half a line box), not
+   the box's center, so a summary long enough to wrap keeps its chevron on line one. The global
+   prefers-reduced-motion block below already neutralizes the rotation transition. */
+.md-body details {
+  @apply rounded-lg border border-gray-200 bg-gray-50/60 px-3.5 dark:border-gray-800 dark:bg-gray-900/40;
+}
+.md-body details[open] {
+  @apply pb-2.5;
+}
+.md-body summary {
+  @apply relative -mx-3.5 cursor-pointer rounded-lg py-2 pr-3.5 pl-8 font-medium transition-colors select-none hover:bg-gray-200/50 dark:hover:bg-gray-800/50;
+  list-style: none;
+}
+.md-body summary::-webkit-details-marker {
+  display: none;
+}
+.md-body summary::before {
+  content: "";
+  position: absolute;
+  left: 1.125rem;
+  top: calc(0.5rem + 0.75em);
+  width: 0.4em;
+  height: 0.4em;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  opacity: 0.6;
+  transform: translate(-50%, -50%) rotate(-45deg);
+  transition: transform 150ms ease;
+}
+.md-body details[open] > summary {
+  @apply mb-1 rounded-b-none border-b border-gray-200 dark:border-gray-800;
+}
+.md-body details[open] > summary::before {
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+/* The last block inside an open card keeps the card's own bottom padding as its only gutter. */
+.md-body details > :last-child {
+  margin-bottom: 0;
+}
 /* Tables: `display: block` + `overflow-x: auto` makes the table its own scroll container, so a
    wide one scrolls inside the prose column instead of widening the page. `border-collapse:
    separate` with zero spacing rather than `collapse`: collapsed borders come from a shared-edge
@@ -447,7 +497,16 @@
    at all. This is the discoverability cue, because the scrollbar cannot be relied on: on overlay-
    scrollbar platforms it reserves no layout space and is invisible until you already scroll. The
    covers are the page background color, so they stay invisible themselves; they paint behind the
-   cells, which keeps the translucent row tints intact. */
+   cells, which keeps the translucent row tints intact.
+
+   `width: max-content` is what makes that hold for a table narrower than the prose column. A
+   `display: block` table is a block box, so its width defaults to the container's while the rows
+   inside stay at their own width — and the two attachments then stop agreeing: the `local` cover
+   sits at the scrollable area's right edge (the container's, since there is nothing to scroll)
+   with its 24px ramp, while the `scroll` shadow sits at the same edge with a 14px ramp, so the
+   halves that do not overlap paint a gradient in the empty strip past the last cell. Shrinking
+   the box to its content puts both ramps back on the table's own edge, where the cover wins.
+   `max-width: 100%` still clamps a wide one, so it scrolls exactly as before. */
 .md-body {
   --md-scroll-cover: #fff;
   --md-scroll-shadow: rgb(15 23 42 / 0.16);
@@ -461,6 +520,7 @@
   border-spacing: 0;
   display: block;
   overflow-x: auto;
+  width: max-content;
   max-width: 100%;
   scrollbar-width: thin;
   background-image:
@@ -481,11 +541,26 @@
     14px 100%;
   background-attachment: local, local, scroll, scroll;
 }
-/* Cells never wrap — the owner's ask: a long value stays on one line and the table scrolls,
-   rather than every column collapsing into ragged two-line prose. */
+/* Cells wrap, with a floor. `white-space: nowrap` used to hold every cell on one line, which sent
+   even a mildly wide table into horizontal scroll; the ask now is that a cell may take a second
+   line, and only past that should the table widen and scroll instead of growing into a paragraph.
+
+   CSS cannot count lines, so the knob is `min-width`: a column is never squeezed below 9rem, and
+   once the columns' floors add up past the prose column the table overflows and the scroll (with
+   the shadows above) takes over. 9rem is ~16 Latin / 8 CJK characters of text at this size, and it
+   is the largest floor that still leaves every table in the blog at one line inside the 720px
+   prose column — the widest, the 4-column benchmark table, lands at 697px. At 10rem that same
+   table fills the column exactly and its header starts wrapping; at 12rem it scrolls on the
+   desktop it fits on today.
+
+   What this does not do: a two-column table whose second column is a sentence still wraps past
+   two lines on a phone, because two 9rem floors fit inside a 390px viewport so nothing overflows
+   and nothing scrolls. Raising the floor until it does makes that case *worse* (the prose column
+   gets narrower, so the line count goes up). A cell holding 150+ characters of prose is a content
+   problem — it wants a definition list, not a table row. */
 .md-body :is(th, td) {
   @apply border-r border-b border-gray-200 px-2.5 py-1.5 text-sm dark:border-gray-800;
-  white-space: nowrap;
+  min-width: 9rem;
 }
 .md-body :is(th, td):first-child {
   @apply border-l;

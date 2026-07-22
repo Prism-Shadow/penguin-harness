@@ -1,5 +1,5 @@
 ---
-title: MLE-Bench 63.9%：为什么 Gemini 3.6 Flash 是「让 Agent 构建 Agent」迄今最强的模型——以及 0.1.1 的其余更新
+title: PenguinHarness 0.1.1 更新：支持 Gemini 3.6 Flash，更快更好地构建 Agent
 date: 2026-07-22
 category: news
 excerpt: Google 给出的 Gemini 3.6 Flash MLE-Bench 成绩是 63.9%，3.5 Flash 是 49.7%。MLE-Bench 衡量的是机器学习工程能力——Agent 亲手构建、训练、调优一套 ML 系统，而这正是 PenguinHarness 要做的事。该模型今天已在模型目录中，价格还低于它取代的那一代 Flash。本文讲清这个判断，以及 0.1.1 版本的其余更新。

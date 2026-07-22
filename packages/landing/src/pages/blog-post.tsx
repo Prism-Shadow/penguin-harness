@@ -1,6 +1,6 @@
 /**
- * Blog post: renders the local Markdown body (react-markdown + GFM) in .md-body
- * style, with a sticky table of contents on wide screens. Headings get slug ids
+ * Blog post: renders the local Markdown body (react-markdown + GFM + raw HTML) in
+ * .md-body style, with a sticky table of contents on wide screens. Headings get slug ids
  * (same slugifier as the TOC) and the active section is tracked with an
  * IntersectionObserver so the TOC highlights while scrolling.
  */
@@ -8,6 +8,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
 import Markdown from "react-markdown";
 import type { Components, ExtraProps } from "react-markdown";
+import rehypeRaw from "rehype-raw";
 import remarkGfm from "remark-gfm";
 import { Link, useParams } from "react-router";
 import { S } from "../lib/strings";
@@ -68,6 +69,34 @@ const MD_COMPONENTS: Components = {
   ),
   a: MdLink,
 };
+
+/**
+ * Module-scope plugin lists, for the same reason MD_COMPONENTS is: a fresh array literal per
+ * render is a new prop identity and re-runs the whole unified pipeline on every commit.
+ */
+export const REMARK_PLUGINS = [remarkGfm];
+
+/**
+ * `rehype-raw` re-parses the raw HTML that remark leaves as opaque `raw` nodes, which is the only
+ * way `<details>`/`<summary>` (and the `<img width height alt>` tags some posts already use) render
+ * as elements instead of escaped text.
+ *
+ * **The trust boundary this depends on.** Post bodies are first-party Markdown committed to this
+ * repo and inlined at build time (`import.meta.glob("../../content/blog/*.md", { query: "?raw" })`
+ * in lib/blog.ts) — never fetched, never user-submitted, never model output. Re-enabling raw HTML
+ * therefore grants the content exactly the privilege its neighbours in the same repo already have:
+ * anything able to land HTML here could equally land a `<script>` in this very file, so a sanitizer
+ * would be guarding the *least* privileged input in the build while costing a dependency and
+ * silently dropping attributes authors legitimately write. It is deliberately not paired with
+ * `rehype-sanitize` for that reason, and the reason is the boundary, not the risk appetite:
+ *
+ *   If post bodies ever come from anywhere but this repo — a CMS, reader submissions, an API —
+ *   `rehype-raw` MUST be paired with `rehype-sanitize`, or dropped.
+ *
+ * The Web App's chat renderer (packages/web/src/features/chat/md.tsx) renders LLM output, which is
+ * untrusted by construction; it must never gain `rehype-raw`. Same library, opposite boundary.
+ */
+export const REHYPE_PLUGINS = [rehypeRaw];
 
 /** Copy text to the clipboard; reports whether a copy actually happened. */
 async function copyToClipboard(text: string): Promise<boolean> {
@@ -246,7 +275,11 @@ export function BlogPostPage() {
           </div>
         </header>
         <div className="md-body mt-8 text-[15px] text-gray-800 dark:text-gray-200">
-          <Markdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>
+          <Markdown
+            remarkPlugins={REMARK_PLUGINS}
+            rehypePlugins={REHYPE_PLUGINS}
+            components={MD_COMPONENTS}
+          >
             {post.body}
           </Markdown>
         </div>

@@ -62,6 +62,30 @@ serve the model  →  run the benchmark  →  read the failing traces
 
 **The agent builds the measurement first.** The `benchmark-design` skill has it lay out a Benchmark directory: a `benchmark_config.toml`, a `scoreboard.yaml`, and one directory per Case containing a public `statement/README.md` that the tested agent sees and a private `rubric/README.md` that it must never see. `runs` defaults to 3, so a nondeterministic local model gets averaged instead of sampled once. Rubric maxima across the Case set total 100 points, so the score stays interpretable. Before accepting a Case the skill makes it run a counterfactual — could someone *without* the capability pass this by mechanically following the statement? If yes, the Case is rejected and redesigned.
 
+<details>
+<summary><strong>Expand: the Benchmark directory the skill lays out</strong></summary>
+
+```text
+<benchmark_id>/
+├── benchmark_config.toml
+├── scoreboard.yaml
+└── CASE-<nnn>-<semantic-name>/
+    ├── statement/
+    │   └── README.md
+    └── rubric/
+        └── README.md
+```
+
+Both README files are required; either directory may hold supporting files. `statement/` is the complete public task and its evidence; `rubric/` is the private scoring material, and no private criterion or path may be mentioned in the statement. The config comes first, and it deliberately does not name a model — every evaluation records the `(provider, model_id)` pair that actually ran:
+
+```toml
+title = "<benchmark_title>"
+description = "<capability_and_scope>"
+runs = 3
+```
+
+</details>
+
 **Then it fans the runs out.** For N Cases and R runs it emits all N × R evaluations as parallel subagent calls, each one a child that loads `agent-evaluation` and does exactly one Case run. That child creates its own throwaway workspace, copies in **only** the statement, launches the tested agent once through the CLI with the exact `(provider, model_id)` pair, and then binds the resulting trace mechanically — matching the session's recorded workspace, agent state, provider and model id rather than trusting whichever session ran most recently. It returns nothing but protocol metadata: a score, a cost, a duration, a session id. Not a sentence of prose. That silence is the design: it is how the rubric stays out of the tested agent's context and out of the transcript.
 
 **Which gives the agent something to read, not just a number.** Every evaluation records the `(provider, model_id)` pair that produced it, so the base model and its tuned successor land in the same scoreboard and compare directly. And every run carries its session id, so the agent can open the exact trace and see which step lost the point.
