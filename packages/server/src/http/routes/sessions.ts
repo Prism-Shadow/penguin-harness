@@ -22,6 +22,7 @@ import type {
   SessionsResponse,
   TaskCreateResponse,
 } from "../../api/types.js";
+import { PREVIEW_TOKEN_TTL_MS, resolvePreviewTarget } from "../../services/preview-token.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { SessionRow } from "../../db/repos/sessions.js";
 import { assertWorkspaceAllowed } from "../../services/workspace-guard.js";
@@ -407,6 +408,47 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
           : {}),
       },
     });
+  });
+
+  // "Open in a new tab" for Workspace HTML: mints a token and redirects to the separate
+  // preview origin (see design § "Workspace 文件预览").
+  //
+  // A redirect rather than a JSON endpoint the UI fetches, because the alternative is
+  // worse on two counts: opening the tab after an await trips popup blockers, and a
+  // window opened by script keeps an `opener` handle back to the App — exactly the
+  // reference this design exists to deny. A plain link with rel="noopener noreferrer"
+  // has neither problem.
+  //
+  // Minting on GET is safe: a cross-site request can make the browser follow the
+  // redirect, but the response is opaque to the initiating page, so no token leaks — and
+  // what it would grant is a preview of the victim's own file.
+  //
+  // With no usable preview origin (the App is reached on something other than a loopback
+  // name and PENGUIN_PREVIEW_ORIGIN is unset), this falls back to the sandboxed
+  // same-origin preview: the page still renders, but storage and third-party embeds do
+  // not. The UI flags that ahead of time via `previewIsolated` on /api/me.
+  app.get("/:sessionId/files/preview-redirect", async (c) => {
+    const row = resolveSession(c);
+    const rel = c.req.query("path") ?? "";
+    // Resolve while the caller is still authenticated, so a bad path fails here rather
+    // than as an opaque 404 from the unauthenticated preview origin.
+    await deps.workspaceFiles.read(row.workspace, rel);
+
+    const target = resolvePreviewTarget(c.req.url, c.req.header("host"), deps.config.previewOrigin);
+    if (!target) {
+      return c.redirect(
+        `/api/sessions/${row.sessionId}/files/content?path=${encodeURIComponent(rel)}&preview=1`,
+        302,
+      );
+    }
+
+    const token = deps.previewTokens.sign({
+      sessionId: row.sessionId,
+      host: target.host,
+      expiresAt: Date.now() + PREVIEW_TOKEN_TTL_MS,
+    });
+    const encoded = rel.split("/").map(encodeURIComponent).join("/");
+    return c.redirect(`${target.origin}/preview/${token}/${encoded}`, 302);
   });
 
   // Bulk existence check (message file cards list only files that actually exist):

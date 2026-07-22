@@ -19,6 +19,7 @@ import remarkGfm from "remark-gfm";
 import type { SessionInfo, WorkspaceFilesResponse } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
+import { useAuth } from "../../state/auth";
 import { S } from "../../lib/strings";
 import { formatBytes, formatDateTime } from "../../lib/format";
 import { Button } from "../../components/ui/button";
@@ -187,6 +188,9 @@ export function WorkspaceBrowser({
   /** Callback when entering file preview (used by the mobile Sheet to raise its snap point to full). */
   onPreviewOpen?: () => void;
 }) {
+  // Whether "open in new tab" lands on a separate origin; false downgrades it to the
+  // same-origin sandbox, which the link flags rather than failing silently in the page.
+  const { previewIsolated } = useAuth();
   const [path, setPath] = useState("");
   const [data, setData] = useState<WorkspaceFilesResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -402,14 +406,26 @@ export function WorkspaceBrowser({
             </div>
           )}
           {/* Ghost style, matching the toolbar's upload label (text-xs, transparent until hover) — the bordered secondary look stood out from every neighbor. */}
+          {/* rel="noopener noreferrer" is load-bearing, not boilerplate: the preview must
+              not keep a handle back to this window, which is the whole point of serving
+              it from a separate origin. */}
           {/\.html?$/i.test(preview.name) && (
             <a
               href={api.workspaceFilePreviewUrl(session.sessionId, preview.path)}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex shrink-0 items-center rounded-md border border-transparent bg-transparent px-2.5 py-1 text-xs font-medium text-gray-600 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100"
+              title={previewIsolated ? undefined : S.files.previewNotIsolatedHint}
+              className="inline-flex shrink-0 items-center gap-1 rounded-md border border-transparent bg-transparent px-2.5 py-1 text-xs font-medium text-gray-600 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100"
             >
               {S.files.openInNewTab}
+              {!previewIsolated && (
+                <span
+                  aria-label={S.files.previewNotIsolatedHint}
+                  className="text-amber-600 dark:text-amber-500"
+                >
+                  ⚠
+                </span>
+              )}
             </a>
           )}
           <a

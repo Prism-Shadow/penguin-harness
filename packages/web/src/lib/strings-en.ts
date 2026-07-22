@@ -713,6 +713,8 @@ When done, open index.html in a browser and self-test once.`,
     upload: "Upload",
     download: "Download",
     openInNewTab: "Open in new tab",
+    previewNotIsolatedHint:
+      "This address has no separate preview origin, so the page opens sandboxed: localStorage, cookies and third-party embeds will not work. Reach the app over 127.0.0.1 or localhost, or set PENGUIN_PREVIEW_ORIGIN.",
     refresh: "Refresh",
     root: "Workspace root",
     empty: "Empty directory",

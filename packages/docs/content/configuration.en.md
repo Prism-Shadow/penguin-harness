@@ -16,7 +16,10 @@ The CLI and the server automatically load a `.env` file from the working directo
 | `HOST` | Web service listen address | `127.0.0.1` |
 | `PENGUIN_WEB_DB` | Server SQLite database path | `<root>/web.db` |
 | `PENGUIN_WEB_DIST` | Front-end static assets directory | the npm server package falls back to its bundled web-dist |
+| `PENGUIN_PREVIEW_ORIGIN` | Origin that serves Workspace HTML previews, e.g. `https://preview.example.com` | unset — the loopback counterpart is derived per request |
 | `PENGUIN_LANG` | CLI language (`en` / `zh`), set via `penguin config lang` | `en` |
+
+`PENGUIN_PREVIEW_ORIGIN` must differ from the app's origin by **hostname**, not just port: cookies ignore ports, so a second port would still share the session cookie. Leave it unset for local use — previews are served from the loopback counterpart of whatever you browse to (`127.0.0.1` ↔ `localhost`), which needs no configuration and no DNS. Set it when the app is reached over a LAN address or a real domain; otherwise previews there fall back to a same-origin sandbox where `localStorage`, cookies and third-party embeds do not work. When you do set it on a real domain, keep the session cookie host-only (no `Domain=`), or a sibling subdomain shares it. An unparseable value is a startup error rather than a silent fallback.
 
 ### Provider credential variables
 

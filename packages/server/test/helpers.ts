@@ -27,6 +27,7 @@ export function testConfig(root: string): ServerConfig {
     host: "127.0.0.1",
     port: 0,
     dbPath: ":memory:",
+    previewOrigin: null,
     // Points to a nonexistent directory: static hosting is disabled in tests.
     webDist: path.join(root, "__no_web_dist__"),
     authSessionTtlMs: 7 * DAY_MS,

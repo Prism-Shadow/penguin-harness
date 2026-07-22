@@ -697,6 +697,8 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     upload: "上传",
     download: "下载",
     openInNewTab: "新页面打开",
+    previewNotIsolatedHint:
+      "当前访问地址无法提供独立预览源，页面将以沙箱模式打开：localStorage、Cookie 与第三方 embed 不可用。经 127.0.0.1 或 localhost 访问，或配置 PENGUIN_PREVIEW_ORIGIN 即可解除。",
     refresh: "刷新",
     root: "根目录",
     empty: "空目录",

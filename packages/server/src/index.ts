@@ -32,6 +32,25 @@ const server = serve({ fetch: app.fetch, hostname: config.host, port: config.por
   console.log(`SQLite: ${config.dbPath}`);
 });
 
+/**
+ * Second loopback listener so the preview origin is actually reachable.
+ *
+ * Workspace HTML previews are served from the loopback counterpart of the host the App
+ * is used on (`127.0.0.1` <-> `localhost`, see design § "Workspace 文件预览"). On most
+ * systems `localhost` resolves to `::1` first, so a server bound only to `127.0.0.1`
+ * would leave every preview URL refusing connections. Binding `::1` as well closes that
+ * gap. Failure is non-fatal — the App keeps working, previews just fall back.
+ */
+const ipv6Loopback =
+  config.host === "127.0.0.1" || config.host === "localhost"
+    ? serve({ fetch: app.fetch, hostname: "::1", port: config.port })
+    : null;
+ipv6Loopback?.on("error", (err: NodeJS.ErrnoException) => {
+  console.warn(
+    `[server] IPv6 loopback listener unavailable (${err.code ?? err.message}); previews via localhost may not resolve.`,
+  );
+});
+
 let shuttingDown = false;
 async function shutdown(signal: string, exitCode = 0): Promise<void> {
   if (shuttingDown) return;
@@ -40,6 +59,7 @@ async function shutdown(signal: string, exitCode = 0): Promise<void> {
   deps.scheduler.stop();
   await deps.manager.shutdown(5000);
   deps.channels.dispose();
+  ipv6Loopback?.close();
   server.close(() => {
     deps.db.close();
     process.exit(exitCode);
