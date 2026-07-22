@@ -500,7 +500,22 @@ function RuntimeTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveF
   };
 
   // S is reassigned on language switch (live binding), so read it during render rather than hoisting to a module-level constant.
-  const thinkingLevelOptions = withDefaultOption(S.agent.thinkingLevelOptions);
+  // "none" is no longer offered (many models cannot disable thinking) but stays a valid stored
+  // value: when this Agent's config already carries it, a display-only row is appended so the
+  // trigger shows the real state instead of "—" — never silently rewritten, gone once another
+  // level is picked.
+  const thinkingLevelOptions =
+    thinkingLevel === "none"
+      ? [
+          ...withDefaultOption(S.agent.thinkingLevelOptions),
+          {
+            value: "none",
+            triggerLabel: "none",
+            label: "none",
+            description: S.agent.thinkingLevelNoneKept,
+          },
+        ]
+      : withDefaultOption(S.agent.thinkingLevelOptions);
   const compactionModeOptions = withDefaultOption(S.agent.compactionModeOptions);
 
   return (

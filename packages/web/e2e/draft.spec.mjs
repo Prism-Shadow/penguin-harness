@@ -87,14 +87,16 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   await expect(page.getByRole("button", { name: "审批模式" })).toContainText("放行只读");
 
   // Conversation-time thinking level (backed by the Agent settings): the picker shows the
-  // seeded default (medium, short name 中); the menu carries a title bar and exactly the five
-  // short-name rows (no descriptions, no default row); picking 高 writes straight through to
-  // the Agent config, so the session created on send runs with it and it becomes the Agent's
-  // new default.
+  // seeded default (medium, short name 中); the menu carries a title bar and the short-name
+  // rows 低/中/高/极高 only — no descriptions, no default row, and no 无 (many models cannot
+  // disable thinking); picking 高 writes straight through to the Agent config, so the session
+  // created on send runs with it and it becomes the Agent's new default.
   const thinkingBtn = page.getByRole("button", { name: "思考等级" });
   await expect(thinkingBtn).toContainText("中");
   await thinkingBtn.click();
   await expect(page.getByText("思考等级", { exact: true })).toBeVisible(); // menu title bar
+  await expect(page.getByRole("button", { name: "低", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "无", exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "高", exact: true }).click();
   await expect(thinkingBtn).toContainText("高");
   await expect
