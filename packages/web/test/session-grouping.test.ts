@@ -173,4 +173,21 @@ describe("pinnedFirst (stable pinned-before-unpinned partition)", () => {
     const pinned = pinnedFirst(groups, (g) => g.key, new Set([TEMP_WORKSPACE_GROUP_KEY]));
     expect(pinned.map((g) => g.key)).toEqual([TEMP_WORKSPACE_GROUP_KEY, "/srv/alpha"]);
   });
+
+  it("agent-mode ordering: pinned agentIds lift agents, the unpinned keep the configured order", () => {
+    // The sidebar's agent mode partitions the Project's Agent list (agentId is the group key).
+    const agents = [{ agentId: "default_agent" }, { agentId: "agent_a" }, { agentId: "agent_b" }];
+    const byId = (a: { agentId: string }) => a.agentId;
+    expect(pinnedFirst(agents, byId, new Set(["agent_b"])).map(byId)).toEqual([
+      "agent_b",
+      "default_agent",
+      "agent_a",
+    ]);
+    // Multiple pinned Agents keep their relative configured order inside the pinned partition.
+    expect(pinnedFirst(agents, byId, new Set(["agent_b", "default_agent"])).map(byId)).toEqual([
+      "default_agent",
+      "agent_b",
+      "agent_a",
+    ]);
+  });
 });

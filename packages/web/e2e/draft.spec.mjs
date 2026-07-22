@@ -223,11 +223,27 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
     )
     .toContain("temp-workspaces");
   await expect.poll(async () => (await yOf(tempLabel)) < (await yOf(namedLabel))).toBe(true);
-  // Pinned state and order survive a reload.
+  // Pinned state and order survive a reload. The pin button's accessible name is STATIC
+  // ("置顶分组"); the state lives in aria-pressed alone (review: a name swapping to 取消置顶
+  // alongside aria-pressed announces the state twice in conflicting ways).
   await page.reload();
   await expect(tempLabel).toBeVisible();
   await expect.poll(async () => (await yOf(tempLabel)) < (await yOf(namedLabel))).toBe(true);
-  await expect(tempHeader.getByRole("button", { name: "取消置顶" })).toBeVisible();
+  const tempPin = tempHeader.getByRole("button", { name: "置顶分组" });
+  await expect(tempPin).toHaveAttribute("aria-pressed", "true");
+  // The pinned pin doubles as the always-visible indicator. toBeVisible() ignores opacity,
+  // so assert computed opacity directly: pinned = 1 with the mouse elsewhere; an unpinned
+  // header's pin stays hover-gated at 0. Park the mouse first — after the reorder the named
+  // header sits where the temp header was clicked, which would otherwise hover-reveal it.
+  await page.mouse.move(640, 500);
+  await expect.poll(() => tempPin.evaluate((el) => getComputedStyle(el).opacity)).toBe("1");
+  await expect
+    .poll(() =>
+      wsHeader
+        .getByRole("button", { name: "置顶分组" })
+        .evaluate((el) => getComputedStyle(el).opacity),
+    )
+    .toBe("0");
 
   // —— Switch the sidebar to agent mode via the section-header toggle (persists in localStorage) ——
   await page.getByRole("button", { name: "按 Agent 分组" }).click();
