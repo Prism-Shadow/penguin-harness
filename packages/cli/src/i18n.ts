@@ -99,7 +99,13 @@ export interface Messages {
     unknownInstall(modulePath: string): string;
     /** A global install whose package manager could not be identified: print the command, never guess. */
     npmUnknownManager(globalRoot: string, target: string): string;
+    /** Windows, tarball install: the official installer is a POSIX shell script. */
     windowsUnsupported(): string;
+    /**
+     * Windows, global install: `spawn` cannot run a `.cmd` shim without a shell, so hand the user
+     * the exact command instead of failing generically.
+     */
+    windowsGlobalInstall(command: string): string;
     networkFailed(url: string): string;
     rateLimited(): string;
     apiFailed(status: number): string;
@@ -287,6 +293,12 @@ const en: Messages = {
       `This is a global install under ${globalRoot}, but the package manager that owns it could not be identified. Upgrade it yourself with that manager, e.g. \`npm install -g @prismshadow/penguin-cli@${target}\`.`,
     windowsUnsupported: () =>
       "The official installer is a POSIX shell script and does not run on Windows. Re-install from the GitHub Releases page, or use a global npm install instead.",
+    windowsGlobalInstall: (command) =>
+      [
+        "On Windows, penguin cannot run your package manager for you: Node will not execute an npm/pnpm/yarn `.cmd` shim without a shell.",
+        "Run this yourself in a terminal, then reopen it:",
+        `  ${command}`,
+      ].join("\n"),
     networkFailed: (url) => `Could not reach ${url}. Check your network and retry.`,
     rateLimited: () =>
       "GitHub rate-limited the release lookup. Wait a few minutes and retry, or pass --release <tag> to skip the lookup.",
@@ -447,6 +459,12 @@ const zh: Messages = {
       `这是位于 ${globalRoot} 的全局安装，但无法确定是哪个包管理器安装的。请自行用该包管理器升级，例如 \`npm install -g @prismshadow/penguin-cli@${target}\`。`,
     windowsUnsupported: () =>
       "官方安装脚本是 POSIX shell 脚本，无法在 Windows 上运行。请从 GitHub Releases 页面重新安装，或改用 npm 全局安装。",
+    windowsGlobalInstall: (command) =>
+      [
+        "在 Windows 上，penguin 无法代你调用包管理器：Node 不会在没有 shell 的情况下执行 npm/pnpm/yarn 的 `.cmd` 包装脚本。",
+        "请在终端里自行执行下面的命令，然后重新打开终端：",
+        `  ${command}`,
+      ].join("\n"),
     networkFailed: (url) => `无法访问 ${url}。请检查网络后重试。`,
     rateLimited: () =>
       "GitHub 对版本查询做了限流。请等待几分钟后重试，或用 --release <tag> 跳过查询。",

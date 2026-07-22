@@ -166,6 +166,6 @@ penguin update             # 确认后升级到最新版
 | npm/pnpm/yarn/bun 全局安装 | 用该包管理器全局安装 `@prismshadow/penguin-cli@<目标版本>`；无法确定包管理器时，只打印命令而不猜测 |
 | 源码检出 | 拒绝执行——请用 `git pull` 更新并重新构建 |
 
-不带 `-y` 时，命令会先打印它将要做什么——方式、目标版本与安装目录——再请求确认；当 stdin 不是终端时，它要求显式加 `--yes`，而不是卡在无人能回答的提示上。最新版本取自 GitHub Releases API。**数据目录不会被改动**：升级只替换 `bin`、`lib`、`web` 与 `node`。tarball 路径不支持 Windows，因为安装脚本是 POSIX shell 脚本。
+不带 `-y` 时，命令会先打印它将要做什么——方式、目标版本与安装目录——再请求确认；当 stdin 不是终端时，它要求显式加 `--yes`，而不是卡在无人能回答的提示上。最新版本取自 GitHub Releases API。**数据目录不会被改动**：升级只替换 `bin`、`lib`、`web` 与 `node`。两条路径在 Windows 上都不做原地升级：安装脚本是 POSIX shell 脚本，而全局安装也无法由此驱动——Node 不会在没有 shell 的情况下执行 `npm`/`pnpm` 的 `.cmd` 包装脚本——因此命令会直接打印出应当由你自己执行的命令。
 
 相关文档：[配置参考](/configuration)、[模型与 Provider](/models)。

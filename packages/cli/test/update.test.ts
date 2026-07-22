@@ -1,7 +1,8 @@
 /**
  * `penguin update`'s pure pieces: install-kind detection over the three real layouts, package-
- * manager identification for global installs, version normalisation/comparison, and the installer
- * argv/env built for each combination of install dir and bundled runtime.
+ * manager identification for global installs, version normalisation/comparison, the installer
+ * argv/env built for each combination of install dir and bundled runtime, and the decision the
+ * command makes before it touches anything (planUpdate) plus its confirmation gate.
  *
  * No network and no filesystem mutation — every function under test takes its inputs as arguments.
  */
@@ -10,11 +11,13 @@ import { Command } from "commander";
 import {
   buildInstallerInvocation,
   compareVersions,
+  confirmationMode,
   detectInstall,
   detectPackageManager,
   globalInstallCommand,
   installerUrl,
   normalizeVersion,
+  planUpdate,
   registerUpdateCommand,
 } from "../src/commands/update.js";
 import { getMessages } from "../src/i18n.js";
@@ -138,6 +141,18 @@ describe("normalizeVersion / compareVersions", () => {
     expect(compareVersions("not-a-version", "0.1.1")).toBe(-1);
     expect(compareVersions("", "0.1.1")).toBe(-1);
   });
+  it("reads each component as far as it is numeric, which is what the docblock promises", () => {
+    // parseInt semantics, pinned so the comment and the behaviour cannot drift apart again:
+    // leading digits win, and a component with none counts as 0.
+    expect(compareVersions("0.1.2abc", "0.1.2")).toBe(0);
+    expect(compareVersions("0.1.x", "0.1.0")).toBe(0);
+    expect(compareVersions("0.1.x", "0.1.1")).toBe(-1);
+  });
+  it("suffixes are invisible, so a pre-release compares equal to its release", () => {
+    // Documented limitation rather than a bug: this project publishes plain vX.Y.Z tags only.
+    expect(compareVersions("0.1.2-rc1", "0.1.2")).toBe(0);
+    expect(compareVersions("0.1.2-rc1", "0.1.1")).toBe(1);
+  });
 });
 
 describe("installerUrl", () => {
@@ -224,6 +239,157 @@ describe("buildInstallerInvocation (preserves the shape of the install being upg
       args: ["/tmp/penguin-install-1.sh", "--universal"],
       env: { PENGUIN_INSTALL_DIR: "/opt/penguin", PENGUIN_VERSION: "v0.2.0" },
     });
+  });
+});
+
+describe("planUpdate (what the command decides before it touches anything)", () => {
+  const base = {
+    current: "0.1.1",
+    target: "0.1.2",
+    modulePath: "/home/me/.penguin/lib/dist/index.js",
+    platform: "linux",
+    defaultInstallDir: "/home/me/.penguin",
+  };
+  const tarball = { kind: "tarball", installDir: "/home/me/.penguin" } as const;
+  const npmGlobal = { kind: "npm", globalRoot: "/usr/local/lib/node_modules" } as const;
+
+  it("--check reports the comparison and never upgrades, even when one is available", () => {
+    expect(planUpdate({ ...base, check: true, install: tarball })).toEqual({
+      action: "report",
+      current: "0.1.1",
+      target: "0.1.2",
+      comparison: 1,
+    });
+  });
+
+  it("--check reports a downgrade and an up-to-date install without upgrading either", () => {
+    expect(planUpdate({ ...base, target: "0.1.0", check: true, install: tarball })).toMatchObject({
+      action: "report",
+      comparison: -1,
+    });
+    expect(planUpdate({ ...base, target: "0.1.1", check: true, install: tarball })).toMatchObject({
+      action: "report",
+      comparison: 0,
+    });
+  });
+
+  it("--check reports even from a source checkout, where an upgrade would be refused", () => {
+    // Reporting changes nothing, so the layout must not gate it.
+    expect(planUpdate({ ...base, check: true, install: { kind: "source" } }).action).toBe("report");
+  });
+
+  it("an install already on the target exits without touching anything", () => {
+    expect(planUpdate({ ...base, target: "0.1.1", install: tarball })).toEqual({
+      action: "up-to-date",
+      current: "0.1.1",
+    });
+    // Decided before the layout matters: even an unknown install is simply up to date.
+    expect(planUpdate({ ...base, target: "v0.1.1", install: { kind: "unknown" } }).action).toBe(
+      "up-to-date",
+    );
+  });
+
+  it("a source checkout is refused, because overwriting a working tree destroys work", () => {
+    expect(planUpdate({ ...base, install: { kind: "source" } })).toEqual({
+      action: "refuse",
+      reason: "source",
+    });
+  });
+
+  it("an unrecognised layout is refused and names the path it was running from", () => {
+    expect(
+      planUpdate({ ...base, modulePath: "/random/place/index.js", install: { kind: "unknown" } }),
+    ).toEqual({
+      action: "refuse",
+      reason: "unknown-install",
+      modulePath: "/random/place/index.js",
+    });
+  });
+
+  it("a global install upgrades through its own manager", () => {
+    expect(planUpdate({ ...base, install: npmGlobal })).toEqual({
+      action: "npm",
+      manager: "npm",
+      command: "npm",
+      args: ["install", "-g", "@prismshadow/penguin-cli@0.1.2"],
+    });
+  });
+
+  it("a global install with an unidentifiable manager is refused rather than guessed", () => {
+    expect(planUpdate({ ...base, install: { kind: "npm", globalRoot: "/weird/place" } })).toEqual({
+      action: "refuse",
+      reason: "unknown-manager",
+      globalRoot: "/weird/place",
+      target: "0.1.2",
+    });
+  });
+
+  it("a tarball install re-runs the installer at the dir it was detected in", () => {
+    expect(planUpdate({ ...base, install: tarball })).toEqual({
+      action: "tarball",
+      installDir: "/home/me/.penguin",
+    });
+    expect(
+      planUpdate({ ...base, install: { kind: "tarball", installDir: "/opt/penguin" } }),
+    ).toEqual({ action: "tarball", installDir: "/opt/penguin" });
+    // No installDir on the info (shouldn't happen, but the fallback is the default install dir).
+    expect(planUpdate({ ...base, install: { kind: "tarball" } })).toEqual({
+      action: "tarball",
+      installDir: "/home/me/.penguin",
+    });
+  });
+
+  it("Windows is refused on the tarball path: the installer is a POSIX shell script", () => {
+    expect(planUpdate({ ...base, platform: "win32", install: tarball })).toEqual({
+      action: "refuse",
+      reason: "windows-installer",
+    });
+  });
+
+  it("Windows is refused on the npm path too, handing over the exact command to run", () => {
+    // spawn() cannot run a .cmd shim without a shell, so this must not reach the spawn and
+    // fail with a generic message.
+    expect(planUpdate({ ...base, platform: "win32", install: npmGlobal })).toEqual({
+      action: "refuse",
+      reason: "windows-global",
+      command: "npm install -g @prismshadow/penguin-cli@0.1.2",
+    });
+  });
+
+  it("every refusal has a message in both languages", () => {
+    const plans = [
+      planUpdate({ ...base, install: { kind: "source" } }),
+      planUpdate({ ...base, install: { kind: "unknown" } }),
+      planUpdate({ ...base, install: { kind: "npm", globalRoot: "/weird/place" } }),
+      planUpdate({ ...base, platform: "win32", install: tarball }),
+      planUpdate({ ...base, platform: "win32", install: npmGlobal }),
+    ];
+    for (const lang of ["en", "zh"] as const) {
+      const t = getMessages(lang);
+      expect(plans.map((p) => p.action)).toEqual(Array(plans.length).fill("refuse"));
+      expect(t.update.sourceCheckout()).toBeTruthy();
+      expect(t.update.unknownInstall("/x")).toContain("/x");
+      expect(t.update.npmUnknownManager("/weird/place", "0.1.2")).toContain("/weird/place");
+      expect(t.update.windowsUnsupported()).toBeTruthy();
+      // The Windows global-install message is only useful if it carries the command verbatim.
+      expect(t.update.windowsGlobalInstall("pnpm add -g pkg@1")).toContain("pnpm add -g pkg@1");
+    }
+  });
+});
+
+describe("confirmationMode (the gate in front of every upgrade)", () => {
+  it("--yes proceeds without a prompt, interactive or not", () => {
+    expect(confirmationMode(true, true)).toBe("proceed");
+    expect(confirmationMode(true, false)).toBe("proceed");
+  });
+  it("a non-TTY without --yes demands --yes instead of hanging on a prompt nobody can answer", () => {
+    expect(confirmationMode(undefined, false)).toBe("needs-yes");
+    expect(confirmationMode(false, false)).toBe("needs-yes");
+    expect(getMessages("en").update.needsYes()).toContain("--yes");
+    expect(getMessages("zh").update.needsYes()).toContain("--yes");
+  });
+  it("a terminal without --yes gets the interactive prompt", () => {
+    expect(confirmationMode(undefined, true)).toBe("prompt");
   });
 });
 

@@ -166,6 +166,6 @@ The target flag is `--release`, not `--version`, because `-v, --version` is the 
 | Global npm/pnpm/yarn/bun install | Runs that manager's global install of `@prismshadow/penguin-cli@<target>`; if the manager cannot be identified, prints the command instead of guessing |
 | Source checkout | Refused — update it with `git pull` and a rebuild |
 
-Without `-y` the command prints exactly what it will do — mechanism, target version and install dir — and asks for confirmation; when stdin is not a terminal it requires `--yes` rather than waiting on a prompt nobody can answer. The latest version comes from the GitHub Releases API. **The data root is never touched**: an upgrade only replaces `bin`, `lib`, `web` and `node`. Windows is not supported for the tarball path, since the installer is a POSIX shell script.
+Without `-y` the command prints exactly what it will do — mechanism, target version and install dir — and asks for confirmation; when stdin is not a terminal it requires `--yes` rather than waiting on a prompt nobody can answer. The latest version comes from the GitHub Releases API. **The data root is never touched**: an upgrade only replaces `bin`, `lib`, `web` and `node`. Neither path upgrades in place on Windows: the installer is a POSIX shell script, and a global install cannot be driven from here because Node will not execute an `npm`/`pnpm` `.cmd` shim without a shell — so the command prints the exact command to run yourself instead.
 
 See also: [Configuration Reference](/configuration), [Models & Providers](/models).
