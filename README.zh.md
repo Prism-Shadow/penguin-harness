@@ -79,23 +79,18 @@ https://github.com/user-attachments/assets/aec49ae9-b743-467b-b247-37bedfeaa36e
 
 ## 支持的模型
 
-| 模型                  | 可用供应商                                                                       |
-| --------------------- | -------------------------------------------------------------------------------- |
-| DeepSeek V4           | DeepSeek, OpenRouter, Fireworks AI, SiliconFlow, Qwen Token Plan                 |
-| Kimi K3               | Moonshot AI, OpenRouter, Qwen Pay-As-You-Go                                      |
-| Kimi K2.6             | Moonshot AI, OpenRouter, SiliconFlow                                             |
-| GLM 5.2               | Z.AI, OpenRouter, Fireworks AI, SiliconFlow, Qwen Token Plan, Qwen Pay-As-You-Go |
-| Hunyuan 3             | OpenRouter                                                                       |
-| Qwen 3.8 Max          | Qwen Token Plan（预览）                                                          |
-| GPT 5.5               | OpenAI, OpenRouter                                                               |
-| Gemini 3.6 Flash      | Google Gemini, OpenRouter                                                        |
-| Gemini 3.5 Flash      | Google Gemini, OpenRouter                                                        |
-| Gemini 3.5 Flash-Lite | Google Gemini, OpenRouter                                                        |
-| Claude Fable 5        | Anthropic, OpenRouter                                                            |
-| Claude Sonnet 5       | Anthropic, OpenRouter                                                            |
-| Claude Opus 4.8       | Anthropic, OpenRouter                                                            |
+| 模型             | 可用供应商                                                                       |
+| ---------------- | -------------------------------------------------------------------------------- |
+| DeepSeek V4      | DeepSeek, OpenRouter, Fireworks AI, SiliconFlow, Qwen Token Plan                 |
+| Kimi K3          | Moonshot AI, OpenRouter, Qwen Pay-As-You-Go                                      |
+| GLM 5.2          | Z.AI, OpenRouter, Fireworks AI, SiliconFlow, Qwen Token Plan, Qwen Pay-As-You-Go |
+| Hunyuan 3        | OpenRouter                                                                       |
+| Qwen 3.8 Max     | Qwen Token Plan（预览）                                                          |
+| GPT 5.6          | OpenRouter                                                                       |
+| Gemini 3.6 Flash | Google Gemini, OpenRouter                                                        |
+| Claude 5         | Anthropic, OpenRouter                                                            |
 
-只要是 OpenAI 协议的端点都可以接入：从上表选择预置，或用自定义端点连接 1000+ 在线与本地模型。
+上表每个系列只列最新一代，完整预置清单请在应用的**模型**页查看；只要是 OpenAI 协议的端点都可以接入：选择预置，或用自定义端点连接 1000+ 在线与本地模型。
 
 ## 系统需求
 
