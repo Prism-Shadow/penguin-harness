@@ -31,11 +31,13 @@ The thinking level is no longer a Models-page annotation. The default lives in A
 
 `session_meta` gains an optional `source` field (`"subagent" | "schedule"`, absent = user-created) written at creation, preserved across resume and compaction-driven trace rotation, and treated as the single source of truth: the server derives the session index's origin from the meta (registering children from the forwarded meta, adopting discovered traces, lazily reading the trace head for rows indexed by an earlier process) and no longer stores the type in the database.
 
-## AgentHub 0.4.1 and two more Gemini models
+## AgentHub 0.4.1 and a catalog refresh across every provider group
 
 The SDK dependency moves to AgentHub 0.4.1 (core and CLI). The upgrade is type-compatible — the published `UniConfig`, `ThinkingLevel`, message/event types and `AutoLLMClient` declarations are unchanged from 0.4.0, so nothing in core needed adapting. What 0.4.1 adds is additive: a `listSupportedModels(currency)` registry (model / base URL / client triples with modalities, context windows and per-million pricing), a typed `UnsupportedParameterError` for rejected `temperature` / `tool_choice` / `prompt_caching` values, and client support for the Gemini 3.6 generation, Kimi K3 and GLM-5.2. PenguinHarness never sends those three parameters, so the new error cannot fire from here today.
 
-The model catalog gains the two OpenRouter entries that generation covers — `google/gemini-3.6-flash` and `google/gemini-3.5-flash-lite`, both with a 1,048,576-token context and vision — and both READMEs list them.
+That registry doubles as the authoritative model list, so the catalog was diffed against it and refreshed everywhere it fell behind — 59 entries to 70. New rows: Gemini 3.6 Flash and Gemini 3.5 Flash Lite on both the Google endpoint and OpenRouter; Claude Fable 5 and Claude Sonnet 5 on Anthropic; Kimi K3 on Moonshot; Kimi K2.6, Qwen3.6 35B A3B and GLM 5.1 on OpenRouter; and Kimi K2.6, GLM 5.1 and Qwen3.6 35B A3B on SiliconFlow — the last three unpriced, because no source publishes their rates and a guessed number is worse than none. Every context window, vision flag and price bucket came from the registry rather than a vendor page. `google/gemini-3.5-flash`'s context window was 1,000,000 against the registry's and the direct-vendor row's 1,048,576, and is now corrected. Adding Kimi K3 also surfaced a routing gap: `resolveModelEnv` matched only `kimi-k2.x`, so the new id resolved to no credential pair until a `kimi-k3` branch was added.
+
+The READMEs' model tables move the other way — one row per vendor family naming only the newest generation, with the full preset list left to the app's Models page. Kimi K2.6 and Gemini 3.5 Flash drop out; Claude Opus 4.8 becomes Claude 5 and GPT 5.5 becomes GPT 5.6 under the same rule.
 
 ## Session-title generation is internal
 
