@@ -32,6 +32,7 @@ import {
   makeGeom,
   autoLabelIdx,
   barSegments,
+  cacheHitRate,
   tokenBarLayout,
   pieSlices,
   successRate,
@@ -254,7 +255,8 @@ interface SegHover {
  * be un-hoverable; widening the bar doesn't help the vertical dimension
  * either). Hitting a segment highlights only that segment and fades out
  * everything else; the bubble reports only that segment's date/bucket
- * name/Token count. When legend is passed in (legend hover), it highlights all segments of the matching bucket.
+ * name/Token count (the cacheRead segment adds that day's cache hit rate,
+ * cacheRead / (cacheRead + cacheWrite)). When legend is passed in (legend hover), it highlights all segments of the matching bucket.
  * No hover vertical line is drawn (hoverLine={false}): the bar itself already indicates the x position.
  */
 export function TokenBarChart({
@@ -304,12 +306,20 @@ export function TokenBarChart({
             const p = trend[i]!;
             const key = hover?.key;
             if (!key) return null;
+            // The cacheRead bubble additionally reports that day's cache hit
+            // rate, cacheRead / (cacheRead + cacheWrite); null (denominator 0) omits the line instead of showing 0/0.
+            const hitRate = key === "cacheRead" ? cacheHitRate(p.cacheRead, p.cacheWrite) : null;
             return (
               <>
                 <p className="text-gray-400">{p.date}</p>
                 <p className="font-mono">
                   {bucketLabel(key)} {humanizeTokens(p[key])}
                 </p>
+                {hitRate !== null && (
+                  <p className="font-mono">
+                    {S.usage.cacheHitRate} {hitRate}
+                  </p>
+                )}
               </>
             );
           }}

@@ -3,7 +3,8 @@
  * original TrendChart, reused by both the daily Token stacked bar and the
  * daily cost line): 4 horizontal grid lines + y-axis ticks, x-axis dates, a
  * hover vertical indicator line + a transparent hit area + a value bubble
- * that follows the cursor. "Data marks" (line / area / bars) are drawn by
+ * that follows the cursor at its lower-right (flipping to the other side of
+ * the pointer near the edges, see chart-geom's bubblePosition). "Data marks" (line / area / bars) are drawn by
  * the caller as children in the same x()/y() coordinate system;
  * see chart-geom.ts for the coordinate math.
  *
@@ -24,10 +25,26 @@
  * noise, so the bar chart passes hoverLine={false} to turn it off.
  */
 import { useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
-import { CHART_H, PAD_L, PAD_R, PAD_T, sparseLabelIdx, type ChartGeom } from "./chart-geom";
+import {
+  bubblePosition,
+  CHART_H,
+  PAD_L,
+  PAD_R,
+  PAD_T,
+  sparseLabelIdx,
+  type BubbleView,
+  type ChartGeom,
+} from "./chart-geom";
 
-/** Upper bound on bubble width: clamps the bubble back inside the canvas near the right edge, so it doesn't spuriously trigger extra horizontal scroll. */
-const BUBBLE_W = 160;
+/** Bubble size estimate for the frame before the first measurement: the layout effect swaps in the real offsetWidth/offsetHeight before paint, so the estimate itself never shows. */
+const BUBBLE_EST = { w: 160, h: 48 };
+
+/** The pointer in canvas coordinates plus the scroll container's visible window at that moment (bubble and content scroll together, so plain content pixels are enough to place it). */
+interface PointerAt {
+  x: number;
+  y: number;
+  view: BubbleView;
+}
 
 /**
  * Measure the available width inside the chart card (CSS pixels, rounded
@@ -94,6 +111,23 @@ export function ChartFrame({
   const labelIdx = labels ?? sparseLabelIdx(dates.length);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // The bubble follows the pointer (lower-right, flipping at the edges — see
+  // chart-geom's bubblePosition): mousemove records the pointer in canvas
+  // coordinates together with the visible window at that moment, and the
+  // bubble's real size is re-measured after every render (its content
+  // changes as hover moves between days/buckets) in a layout effect — i.e.
+  // before paint, so neither the first-frame estimate nor a stale size ever shows.
+  const [pointer, setPointer] = useState<PointerAt | null>(null);
+  const [bubbleSize, setBubbleSize] = useState(BUBBLE_EST);
+  const bubbleRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = bubbleRef.current;
+    if (!el) return;
+    const bw = el.offsetWidth;
+    const bh = el.offsetHeight;
+    setBubbleSize((s) => (s.w === bw && s.h === bh ? s : { w: bw, h: bh }));
+  });
+
   // The daily chart defaults to sitting on the most recent day (there's only
   // room to scroll when the canvas is wider than the container). It
   // re-snaps whenever the data or canvas width changes, without disturbing a position the user has manually scrolled to in the meantime.
@@ -106,7 +140,7 @@ export function ChartFrame({
   return (
     // Horizontal scroll when the canvas is wider than the container (bar
     // width has a pixel floor, so 30 days won't fit in a half-width panel);
-    // the bubble is this container's absolutely-positioned child element and scrolls along with the content, so anchoring it to the column by pixels is enough.
+    // the bubble is this container's absolutely-positioned child element and scrolls along with the content, so anchoring it to the pointer in content pixels is enough.
     <div ref={scrollRef} className="relative overflow-x-auto">
       <svg
         viewBox={`0 0 ${w} ${CHART_H}`}
@@ -114,7 +148,25 @@ export function ChartFrame({
         height={CHART_H}
         className="text-gray-600 dark:text-gray-400"
         role="img"
-        onMouseLeave={() => onHover(null)}
+        onMouseLeave={() => {
+          onHover(null);
+          setPointer(null);
+        }}
+        // Pointer in canvas coordinates (the svg's top-left is the content
+        // origin), plus the visible window read off the scroll container:
+        // clamping against the window (not the full canvas) is what keeps
+        // the bubble on screen when the Token bar canvas is scrolled.
+        onMouseMove={(e) => {
+          const r = e.currentTarget.getBoundingClientRect();
+          const sc = scrollRef.current;
+          setPointer({
+            x: e.clientX - r.left,
+            y: e.clientY - r.top,
+            view: sc
+              ? { left: sc.scrollLeft, right: sc.scrollLeft + sc.clientWidth, bottom: CHART_H }
+              : { left: 0, right: w, bottom: CHART_H },
+          });
+        }}
       >
         {/* Grid lines and y-axis ticks (recessive gray) */}
         {gridLevels.map((v, i) => (
@@ -188,13 +240,16 @@ export function ChartFrame({
           ))}
       </svg>
 
-      {bubble && hover !== null && dates[hover] && (
+      {bubble && hover !== null && dates[hover] && pointer && (
         <div
-          className="pointer-events-none absolute top-0 rounded border border-gray-200 bg-white px-2 py-1 text-xs shadow-sm dark:border-gray-700 dark:bg-gray-900"
-          // Anchored near that column's left edge, clamped back inside the
-          // canvas (1 unit = 1 pixel, positioned directly in pixels; the
-          // left edge can't be negative, since the scroll container would clip off the part that sticks out).
-          style={{ left: `${Math.max(0, Math.min(x(hover) - 30, w - BUBBLE_W))}px` }}
+          ref={bubbleRef}
+          className="pointer-events-none absolute rounded border border-gray-200 bg-white px-2 py-1 text-xs whitespace-nowrap shadow-sm dark:border-gray-700 dark:bg-gray-900"
+          // Anchored at the pointer's lower-right, flipped to the pointer's
+          // other side near the right/bottom edges (see bubblePosition): it
+          // never sits under the pointer or hides the hovered mark, and
+          // never gets clipped by the visible window (nowrap keeps the
+          // measured width the true content width, independent of where the bubble lands).
+          style={bubblePosition(pointer.x, pointer.y, bubbleSize.w, bubbleSize.h, pointer.view)}
         >
           {bubble(hover)}
         </div>
