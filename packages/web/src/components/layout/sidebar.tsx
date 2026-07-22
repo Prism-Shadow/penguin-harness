@@ -76,7 +76,8 @@ function DropdownCaret() {
   );
 }
 
-const NAV_ICONS = {
+/** Page-nav glyphs (shared with the collapsed rail in app-layout.tsx). */
+export const NAV_ICONS = {
   agents: "M12 3v3m-6 4a6 6 0 0 1 12 0v5a3 3 0 0 1-3 3H9a3 3 0 0 1-3-3v-5zm3 3h.01M15 13h.01",
   /** Skill library (an open book: two pages + spine). */
   skills: "M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2zM22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z",
@@ -87,6 +88,9 @@ const NAV_ICONS = {
   benchmark:
     "M7 4h10v5a5 5 0 0 1-10 0V4zM7 5H4v1a3 3 0 0 0 3 3m10-4h3v1a3 3 0 0 1-3 3M12 14v4m-4 0h8",
 } as const;
+
+/** New-chat pencil (the pinned "New chat" button and the collapsed rail share it). */
+export const NEW_CHAT_ICON = "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z";
 
 /** Standard gear (lucide settings): full tooth outline + center circle, crisp and undistorted at 16px. */
 const GEAR_ICON =
@@ -557,7 +561,7 @@ export function Sidebar({
           }`}
         >
           <span className="text-gray-500 dark:text-gray-400">
-            <Icon d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+            <Icon d={NEW_CHAT_ICON} />
           </span>
           {S.chat.newSessionMenu}
         </button>

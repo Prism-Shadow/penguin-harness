@@ -17,6 +17,10 @@ export const en: Strings = {
     usage: "Costs",
     traces: "Trajectory",
     benchmark: "Evaluation Center",
+    // Collapsed-rail tooltips (product-specified wording; new chat reuses chat.newSessionMenu, the other pages reuse the page names above).
+    lastConversation: "Last conversation",
+    // Deliberately equal to nav.agents: the key exists for the zh-only wording difference (智能体 vs 智能体仓库).
+    railAgents: "Agents",
     collapseSidebar: "Collapse sidebar",
     expandSidebar: "Expand sidebar",
     collapseGroup: "Collapse",
