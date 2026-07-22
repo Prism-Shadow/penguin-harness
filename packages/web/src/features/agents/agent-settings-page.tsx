@@ -34,16 +34,23 @@ import { SchedulesTab } from "./schedules-tab";
 
 type TabKey = "overview" | "prompt" | "runtime" | "tools" | "vault" | "schedules";
 
-/** "" represents not overridden (falls back to the current config), corresponding to the defaultValue placeholder row. */
-function withDefaultOption(
+/**
+ * Dropdown rows from a dictionary's [value, description] pairs. The "" (not-overridden /
+ * inherit) row is filtered out per review — the menus offer only concrete values, the user
+ * picks explicitly. An unset stored value simply matches no row, so the OptionMenu trigger
+ * falls back to its placeholder convention ("—"); nothing is ever written silently.
+ */
+function optionRows(
   entries: ReadonlyArray<readonly [string, string]>,
 ): ReadonlyArray<OptionMenuChoice<string>> {
-  return entries.map(([value, description]) => ({
-    value,
-    triggerLabel: value || S.agent.defaultValue,
-    label: value || S.agent.defaultValue,
-    description,
-  }));
+  return entries
+    .filter(([value]) => value !== "")
+    .map(([value, description]) => ({
+      value,
+      triggerLabel: value,
+      label: value,
+      description,
+    }));
 }
 
 /** Numeric input's string state → number (empty/invalid = undefined, meaning no change). */
@@ -500,8 +507,8 @@ function RuntimeTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveF
   };
 
   // S is reassigned on language switch (live binding), so read it during render rather than hoisting to a module-level constant.
-  const thinkingLevelOptions = withDefaultOption(S.agent.thinkingLevelOptions);
-  const compactionModeOptions = withDefaultOption(S.agent.compactionModeOptions);
+  const thinkingLevelOptions = optionRows(S.agent.thinkingLevelOptions);
+  const compactionModeOptions = optionRows(S.agent.compactionModeOptions);
 
   return (
     <div className="space-y-4">

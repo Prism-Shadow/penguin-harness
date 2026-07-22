@@ -1242,17 +1242,7 @@ function ModelDialog({
             {S.models.modelId}
           </span>
           <span className="flex shrink-0 items-baseline gap-2.5">
-            {/* Model homepage (the model's own page; gateway groups have per-model URLs) — only for existing rows, whose identity is settled. */}
-            {row && modelHomepageUrl(row.provider, row.modelId) && (
-              <a
-                href={modelHomepageUrl(row.provider, row.modelId)}
-                target="_blank"
-                rel="noreferrer noopener"
-                className="shrink-0 text-xs text-brand-600 underline-offset-2 hover:underline dark:text-brand-300"
-              >
-                {S.models.homepage} ↗
-              </a>
-            )}
+            {/* The model-homepage entry lives in the dialog header (top-right button); only the "get model ids" provider link stays here. */}
             {dialogProvider?.modelsUrl && (
               <a
                 href={dialogProvider.modelsUrl}
@@ -1368,14 +1358,16 @@ function ModelDialog({
       }
     >
       <div className="space-y-3">
-        {/* Header: logo + display name + badges + upstream id (existing model). */}
+        {/* Header: logo + display name + badges + upstream id (existing model); the model
+            homepage entry lives here as a small secondary button on the right (moved out of
+            the form body — it's a property of the model, not an input). */}
         {!isNew && (
           <div className="flex items-center gap-2.5 rounded-md bg-gray-50 px-3 py-2 dark:bg-gray-800/60">
             <ProviderLogo
               provider={form.provider}
               className="h-6 w-6 shrink-0 text-gray-700 dark:text-gray-300"
             />
-            <div className="flex min-w-0 flex-col">
+            <div className="flex min-w-0 flex-1 flex-col">
               <span className="flex flex-wrap items-center gap-1.5 text-sm font-medium">
                 {form.displayName ?? form.modelId}
                 {isDefault && <Badge tone="brand">{S.models.default}</Badge>}
@@ -1389,6 +1381,31 @@ function ModelDialog({
                 </span>
               )}
             </div>
+            {row && modelHomepageUrl(row.provider, row.modelId) && (
+              <a
+                href={modelHomepageUrl(row.provider, row.modelId)}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="inline-flex shrink-0 items-center gap-1 rounded-md border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium text-gray-800 transition-colors duration-150 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+              >
+                {S.models.homepage}
+                {/* External-link glyph (opens in a new tab) */}
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden
+                  className="shrink-0"
+                >
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3" />
+                </svg>
+              </a>
+            )}
           </div>
         )}
 
@@ -1508,100 +1525,100 @@ function ModelDialog({
           {...(fieldErrors.baseUrl ? { error: fieldErrors.baseUrl } : {})}
         />
 
-        {/* 3) Context window: unit on the right inside the input */}
-        <label className="block">
-          <span className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-400">
-            {S.models.contextWindow}
-          </span>
-          <span className="relative block">
-            <Input
-              size="sm"
-              value={form.contextWindow}
-              inputMode="numeric"
-              disabled={!canEdit}
-              invalid={Boolean(fieldErrors.contextWindow)}
-              onChange={(e) => set({ contextWindow: digitsOnly(e.target.value) })}
-              className="pr-14 font-mono"
-              placeholder={
-                preset
-                  ? S.models.contextWindowHint
-                  : S.models.contextWindowDefaultHint(CUSTOM_CONTEXT_DEFAULT)
-              }
-            />
-            <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-gray-400">
-              {S.models.contextWindowUnit}
+        {/* 3) Context window + max output tokens side by side (one row): the "Token" unit
+            sits inside each box as a muted right suffix, and all explanatory copy lives in
+            the placeholders (no hint lines below — only field errors appear under a cell).
+            Max output tokens: per-model cap on the request's output — when set it wins over
+            the Agent's system_config value; empty inherits it (lets a small-context local
+            model stay under its window). */}
+        <div className="grid grid-cols-2 items-start gap-2">
+          <label className="block">
+            <span className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-400">
+              {S.models.contextWindow}
             </span>
-          </span>
-          {fieldErrors.contextWindow && <FieldError text={fieldErrors.contextWindow} />}
-        </label>
-
-        {/* 4) Max output tokens: per-model cap on the request's output — when set it wins
-            over the Agent's system_config value; empty inherits it. Lets a small-context
-            local model stay under its window (the per-Agent default may not fit). */}
-        <label className="block">
-          <span className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-400">
-            {S.models.maxTokens}
-          </span>
-          <Input
-            size="sm"
-            value={form.maxTokens}
-            inputMode="numeric"
-            disabled={!canEdit}
-            invalid={Boolean(fieldErrors.maxTokens)}
-            onChange={(e) => set({ maxTokens: digitsOnly(e.target.value) })}
-            className="font-mono"
-            placeholder={S.models.maxTokensHint}
-          />
-          {fieldErrors.maxTokens ? (
-            <FieldError text={fieldErrors.maxTokens} />
-          ) : (
-            <span className="mt-1 block text-xs text-gray-400 dark:text-gray-500">
-              {S.models.maxTokensCapHint}
+            <span className="relative block">
+              <Input
+                size="sm"
+                value={form.contextWindow}
+                inputMode="numeric"
+                disabled={!canEdit}
+                invalid={Boolean(fieldErrors.contextWindow)}
+                onChange={(e) => set({ contextWindow: digitsOnly(e.target.value) })}
+                className="pr-12 font-mono"
+                placeholder={
+                  preset
+                    ? S.models.contextWindowHint
+                    : S.models.contextWindowDefaultHint(CUSTOM_CONTEXT_DEFAULT)
+                }
+              />
+              <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-gray-400">
+                {S.models.tokenUnit}
+              </span>
             </span>
-          )}
-        </label>
-
-        {/* 5) Pricing: three fields side by side; currency and unit (/M tok) both
-            shown inside the input, no need to repeat in the title. */}
-        <div>
-          <p className="mb-1.5 text-xs font-semibold text-gray-600 dark:text-gray-400">
-            {S.models.pricing}
-          </p>
-          {/* Errors land right under the offending field (which is also outlined red): with three fields side by side, only sticking close to the field makes clear which one it is. */}
-          <div className="grid grid-cols-3 items-start gap-2">
-            {(
-              [
-                ["cacheRead", S.models.priceCacheRead, form.cacheRead],
-                ["cacheWrite", S.models.priceCacheWrite, form.cacheWrite],
-                ["output", S.models.priceOutput, form.output],
-              ] as Array<[keyof FieldErrors & keyof RowState, string, string]>
-            ).map(([key, label, value]) => (
-              <label key={key} className="block">
-                <span className="mb-1 block text-xs text-gray-500 dark:text-gray-400">{label}</span>
-                <span className="relative block">
-                  <span className="pointer-events-none absolute inset-y-0 left-2 flex items-center text-xs text-gray-400">
-                    {CURRENCY_SYMBOL[currency]}
-                  </span>
-                  <Input
-                    size="sm"
-                    value={value}
-                    inputMode="decimal"
-                    disabled={!canEdit}
-                    invalid={Boolean(fieldErrors[key])}
-                    onChange={(e) => set({ [key]: decimalOnly(e.target.value) })}
-                    className="pl-4 pr-11 text-right font-mono"
-                  />
-                  <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-gray-400">
-                    {S.models.priceUnitShort}
-                  </span>
-                </span>
-                {fieldErrors[key] && <FieldError text={fieldErrors[key]} />}
-              </label>
-            ))}
-          </div>
+            {fieldErrors.contextWindow && <FieldError text={fieldErrors.contextWindow} />}
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-400">
+              {S.models.maxTokens}
+            </span>
+            <span className="relative block">
+              <Input
+                size="sm"
+                value={form.maxTokens}
+                inputMode="numeric"
+                disabled={!canEdit}
+                invalid={Boolean(fieldErrors.maxTokens)}
+                onChange={(e) => set({ maxTokens: digitsOnly(e.target.value) })}
+                className="pr-12 font-mono"
+                placeholder={S.models.maxTokensHint}
+              />
+              <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-gray-400">
+                {S.models.tokenUnit}
+              </span>
+            </span>
+            {fieldErrors.maxTokens && <FieldError text={fieldErrors.maxTokens} />}
+          </label>
         </div>
 
-        {/* 6) Identity: model id (renamable) + display name and group (side by side) */}
+        {/* 4) Pricing: three fields side by side with self-contained labels (… price) — no
+            standalone section heading; currency and unit (/M tok) are shown inside the input.
+            Errors land right under the offending field (which is also outlined red): with
+            three fields side by side, only sticking close to the field makes clear which one it is. */}
+        <div className="grid grid-cols-3 items-start gap-2">
+          {(
+            [
+              ["cacheRead", S.models.priceCacheRead, form.cacheRead],
+              ["cacheWrite", S.models.priceCacheWrite, form.cacheWrite],
+              ["output", S.models.priceOutput, form.output],
+            ] as Array<[keyof FieldErrors & keyof RowState, string, string]>
+          ).map(([key, label, value]) => (
+            <label key={key} className="block">
+              <span className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-400">
+                {label}
+              </span>
+              <span className="relative block">
+                <span className="pointer-events-none absolute inset-y-0 left-2 flex items-center text-xs text-gray-400">
+                  {CURRENCY_SYMBOL[currency]}
+                </span>
+                <Input
+                  size="sm"
+                  value={value}
+                  inputMode="decimal"
+                  disabled={!canEdit}
+                  invalid={Boolean(fieldErrors[key])}
+                  onChange={(e) => set({ [key]: decimalOnly(e.target.value) })}
+                  className="pl-4 pr-11 text-right font-mono"
+                />
+                <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-gray-400">
+                  {S.models.priceUnitShort}
+                </span>
+              </span>
+              {fieldErrors[key] && <FieldError text={fieldErrors[key]} />}
+            </label>
+          ))}
+        </div>
+
+        {/* 5) Identity: model id (renamable) + display name and group (side by side) */}
         {!isNew && identityFields}
         {/* Legacy entries carrying a non-openai client_type (historical config): read-only display. */}
         {!isNew && !preset && form.clientType && form.clientType !== "openai" && (
