@@ -19,7 +19,7 @@
 export * from "./omnimessage/index.js";
 export * from "./interfaces.js";
 
-// Reserved service ports (the default-port source of truth shared by CLI / server)
+// Default server port (the single source of truth shared by CLI / server)
 export * from "./ports.js";
 
 // Submodules

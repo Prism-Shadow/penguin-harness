@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Command } from "commander";
-import { DEFAULT_SERVER_PORT, RESERVED_PORTS } from "@prismshadow/penguin-core";
+import { DEFAULT_SERVER_PORT } from "@prismshadow/penguin-core";
 import {
   DEFAULT_HOST,
   DEFAULT_PORT,
@@ -12,9 +12,8 @@ import {
 import { getMessages } from "../src/i18n.js";
 
 describe("resolvePort (option > env var > default 7364)", () => {
-  it("derives DEFAULT_PORT from core's DEFAULT_SERVER_PORT (a reserved port)", () => {
+  it("derives DEFAULT_PORT from core's DEFAULT_SERVER_PORT", () => {
     expect(DEFAULT_PORT).toBe(DEFAULT_SERVER_PORT);
-    expect(RESERVED_PORTS).toContain(DEFAULT_PORT);
   });
   it("uses the default 7364 when neither is given", () => {
     expect(DEFAULT_PORT).toBe(7364);
