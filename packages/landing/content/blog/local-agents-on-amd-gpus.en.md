@@ -168,13 +168,13 @@ penguin config model add \
 
 **The task, and how it's scored.** We gave it a task that looks trivial: read a project notes file and produce a summary with a 2-sentence overview and exactly 3 key facts — *and follow the team's standard report format.* That last clause is the whole point. The "team format" is an arbitrary house convention — a specific marker line, a `# Report: <subject>` title, a `Classification: INTERNAL` line, a `Reviewed-by: Aurora Team` footer — that lives *only in the agent's `AGENTS.md`* and cannot be inferred from the task. The task carries a private rubric — a checklist the agent never sees — with 10 points: 5 for content any capable model earns from the task alone, and 5 for the convention, which is knowable only from `AGENTS.md`.
 
-**The baseline — and why it isn't perfect.** Running locally on the AMD GPU with a blank `AGENTS.md`, the model wrote a perfectly reasonable summary — and stably lost all 5 convention points, landing at about half the rubric. It could not have done otherwise: nothing in the task reveals the house convention, so this is an *information gap, not a capability gap* — which is exactly why a stronger model can't just "figure it out." And because every step is in the Trace, this is not guesswork — you can open the run and see precisely which points were missed.
+**The baseline — and why it isn't perfect.** Running locally on the AMD GPU with a blank `AGENTS.md`, the model wrote a perfectly reasonable summary — and stably lost all 5 convention points, landing around **4.6 / 10** (exact numbers vary run to run). It could not have done otherwise: nothing in the task reveals the house convention, so this is an *information gap, not a capability gap* — which is exactly why a stronger model can't just "figure it out." And because every step is in the Trace, this is not guesswork — you can open the run and see precisely which points were missed.
 
 That is the honest starting point: on local hardware, an out-of-the-box agent does *not* ace a task whose rules live in files it hasn't learned yet. Which is exactly what makes the next section interesting — a measured, auditable, *reproducible* failure is something the agent can systematically fix by teaching itself.
 
 ## How self-improvement actually works — and a real before/after
 
-That half-mark baseline is an *evaluation* — a snapshot of the agent as it stands. The more interesting question is how PenguinHarness turns that snapshot into progress. This is the recursive self-improvement loop, and it is worth understanding as a mechanism, because there is no magic engine code behind it — it is ordinary agent machinery, orchestrated by Skills:
+The 4.6 / 10 above is an *evaluation* — a snapshot of the agent as it stands. The more interesting question is how PenguinHarness turns that snapshot into progress. This is the recursive self-improvement loop, and it is worth understanding as a mechanism, because there is no magic engine code behind it — it is ordinary agent machinery, orchestrated by Skills:
 
 1. **Benchmark** — define capability cases, each with a private rubric (as above).
 2. **Evaluate** — run the agent over the cases and score against the rubrics. Each run is an ordinary, fully-traced Session.
@@ -182,13 +182,13 @@ That half-mark baseline is an *evaluation* — a snapshot of the agent as it sta
 4. **Edit the Agent's state** — the agent's behavior lives in editable files (`AGENTS.md`, Skills, config). You (or an Optimizer agent) change those to address the failure, producing version N+1.
 5. **Snapshot & keep-or-roll-back** — snapshot before each round; keep N+1 only if the score strictly improves, otherwise roll back.
 
-Let's improve the exact agent from the previous section — the same `qwen3.6:35b` on the same AMD GPU, the same task it just half-passed. And here is the crucial part: the *agent* does the diagnosing and the editing — we do not hand it the answer.
+Let's improve the exact agent from the previous section — the same `qwen3.6:35b` on the same AMD GPU, the same task that just scored **4.6 / 10**. And here is the crucial part: the *agent* does the diagnosing and the editing — we do not hand it the answer.
 
 - **The diagnosis (by the agent).** We give the agent two files and nothing else: the report it just got rejected, and a *different* project's report that passed review. Nobody tells it the rules. It compares the two, and infers the reusable house convention — the marker, the title shape, the metadata line, the sign-off. This is the "read the Trace to find where points were lost" step, performed by the agent itself.
-- **The edit (N → N+1), authored by the agent.** The agent writes the convention it just inferred into its own `AGENTS.md`. From a single example it correctly recovers the *structure*, but can't yet tell which tokens are fixed constants vs per-report fields — a single example is ambiguous — so it generalizes the marker to a placeholder. Re-evaluated, the score climbs meaningfully but not all the way. No retraining, no code — the agent edited a text file it reads on every run.
-- **The recursion (N+1 → N+2).** Now we show it *several* accepted reports from different projects that share the same marker and sign-off. The agent reasons that whatever is identical across all of them must be a fixed constant, reads its *own* N+1 `AGENTS.md`, and refines it — locking `<!-- ACME-DATA-PLATFORM -->` and `Reviewed-by: Aurora Team` to literals. Re-evaluated again: near the ceiling. That is recursion in the true sense: `state_{n+1} = agent.reflect(state_n, new_evidence)`.
+- **The edit (N → N+1), authored by the agent.** The agent writes the convention it just inferred into its own `AGENTS.md`. From a single example it correctly recovers the *structure*, but can't yet tell which tokens are fixed constants vs per-report fields — a single example is ambiguous — so it generalizes the marker to a placeholder. Re-evaluated, the score climbs to about **6.6 / 10**. No retraining, no code — the agent edited a text file it reads on every run.
+- **The recursion (N+1 → N+2).** Now we show it *several* accepted reports from different projects that share the same marker and sign-off. The agent reasons that whatever is identical across all of them must be a fixed constant, reads its *own* N+1 `AGENTS.md`, and refines it — locking `<!-- ACME-DATA-PLATFORM -->` and `Reviewed-by: Aurora Team` to literals. Re-evaluated again: about **9.8 / 10**. That is recursion in the true sense: `state_{n+1} = agent.reflect(state_n, new_evidence)`.
 
-That is a half-mark → clear-gain → near-ceiling climb on the same model and task, achieved purely by the agent editing a text file it reads — with the harness keeping each round only because the score strictly improved. That is the loop, self-driven: *what the agent can see, the agent can improve* — measured against a rubric, linked to a Trace, not vibes.
+That is a **4.6 → 6.6 → 9.8** climb on the same model and task (numbers vary run to run), achieved purely by the agent editing a text file it reads — with the harness keeping each round only because the score strictly improved. That is the loop, self-driven: *what the agent can see, the agent can improve* — measured against a rubric, linked to a Trace, not vibes.
 
 **Run it yourself.** This whole loop is a self-contained, SDK-driven script in the repo:
 [`examples/self-improving-agent/`](https://github.com/Prism-Shadow/penguin-harness/tree/main/examples/self-improving-agent).
@@ -196,7 +196,7 @@ It uses a deterministic, readable rubric (10 points: 5 for content, 5 for the ho
 lives only in `AGENTS.md`) and — because a local model is nondeterministic — averages several runs
 per version, which is exactly why real benchmarks use a `runs` count. Crucially, the script never
 writes the convention itself: the *agent* diagnoses the gap from a passing example and edits its own
-`AGENTS.md`. In our runs the averaged score climbed monotonically — from about half the rubric to near the ceiling — across two self-authored
+`AGENTS.md`. In our runs the averaged score moved **4.6 → 6.6 → 9.8** across two self-authored
 rounds (structure learned, then constants locked), and the harness keeps each round only because the
 score strictly improved. It runs on the same local Ollama + qwen3.6:35b setup and uses a dedicated
 agent id, so your own agents are untouched.
