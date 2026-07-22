@@ -34,6 +34,7 @@ import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import {
+  cacheHitRate,
   computeTps,
   formatMoney,
   formatPercent,
@@ -103,11 +104,8 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
 /** This round's input = cache hit (cacheRead) + cache miss (cacheWrite). */
 const inputOf = (b: Buckets): number => b.cacheRead + b.cacheWrite;
 
-/** Cache hit rate = cache hit ÷ this round's input; undefined when input is 0 → null (shown as `—`). */
-const hitRateOf = (b: Buckets): number | null => {
-  const input = inputOf(b);
-  return input > 0 ? b.cacheRead / input : null;
-};
+/** Cache hit rate of this round's input: the shared formula (lib/format.ts cacheHitRate, also used by the Cost center's bubble); input 0 → null (shown as `—`). */
+const hitRateOf = (b: Buckets): number | null => cacheHitRate(b.cacheRead, b.cacheWrite);
 
 /** Shared style for stat rows (icon + value, tabular figures). */
 const CHIP_CLASS =
