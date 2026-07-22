@@ -104,12 +104,17 @@ describe("frontmatter mapping (author / pinned / category)", () => {
 
   it("filters by the practice category, newest first", () => {
     expect(postsFor("en", "practice").map((p) => p.slug)).toEqual([
-      // Same date (2026-07-22): slug ascending is the tie-break.
+      "penguin-harness-self-improvement-with-amd-gpu",
+      "local-agents-on-amd-gpus",
+    ]);
+  });
+
+  it("filters by the perspectives category", () => {
+    expect(postsFor("en", "perspectives").map((p) => p.slug)).toEqual([
+      // All three share 2026-07-22, so slug ascending is the tie-break.
       "ai-infrastructure-past-present-future",
       "easiest-way-to-build-ai-agents-2026",
-      "penguin-harness-self-improvement-with-amd-gpu",
       "simple-harness-is-all-you-need",
-      "local-agents-on-amd-gpus",
     ]);
   });
 });

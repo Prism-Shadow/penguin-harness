@@ -1,7 +1,7 @@
 ---
 title: "2026 年构建 AI Agent 最简单的方式"
 date: 2026-07-22
-category: practice
+category: perspectives
 excerpt: 今天写一个 Agent 只要十几行。成本没有消失，只是换了地方——挪到了它外面那一圈：构建、观测、评估分属两三家厂商的独立产品。本文算一算这笔学习成本，再说说另一条路：把它自动化掉，而不是老老实实付掉。
 ---
 

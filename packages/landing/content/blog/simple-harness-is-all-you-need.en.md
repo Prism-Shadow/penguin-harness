@@ -1,7 +1,7 @@
 ---
 title: "Simple Harness Is All You Need"
 date: 2026-07-22
-category: practice
+category: perspectives
 excerpt: Databricks benchmarked coding agents against real pull requests from its own multi-million-line codebase. The best score on the entire board did not belong to the most capable harness — it belonged to the simplest one, at roughly half the cost. Here is why context discipline beats feature count, and how PenguinHarness is built around that bet.
 ---
 

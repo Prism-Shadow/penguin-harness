@@ -1,7 +1,7 @@
 ---
 title: "The Easiest Way to Build AI Agents in 2026"
 date: 2026-07-22
-category: practice
+category: perspectives
 excerpt: Writing an agent takes ten lines now. The cost has moved somewhere else — into the stack you must assemble around it, where building, observability and evaluation are three separate products from two or three vendors. This is a comparison of what that actually costs to learn, and the case for automating it away instead.
 ---
 

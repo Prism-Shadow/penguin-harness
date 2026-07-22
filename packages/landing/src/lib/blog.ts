@@ -7,7 +7,7 @@
 import { parseFrontmatter } from "./frontmatter";
 import type { Locale } from "../state/locale";
 
-export type BlogCategory = "news" | "practice" | "changelog";
+export type BlogCategory = "news" | "practice" | "perspectives" | "changelog";
 
 /** Byline used when a post has no `author` frontmatter. */
 export const DEFAULT_AUTHOR = "Yaowei Zheng (PrismShadow AI)";
@@ -53,7 +53,11 @@ function toPost(path: string, raw: string): BlogPost | null {
   if (!match) return null;
   const { meta, body } = parseFrontmatter(raw);
   const category: BlogCategory =
-    meta.category === "changelog" || meta.category === "practice" ? meta.category : "news";
+    meta.category === "changelog" ||
+    meta.category === "practice" ||
+    meta.category === "perspectives"
+      ? meta.category
+      : "news";
   return {
     slug: match[1]!,
     lang: match[2] as Locale,

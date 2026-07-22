@@ -408,10 +408,11 @@ export const zh = {
 
   blog: {
     title: "博客",
-    subtitle: "产品动态、技术实践与更新日志",
+    subtitle: "产品动态、技术实践、观点与更新日志",
     all: "全部",
     news: "产品动态",
     practice: "技术实践",
+    perspectives: "观点",
     changelog: "更新日志",
     pinned: "置顶",
     copyLink: "复制页面链接",

@@ -1,7 +1,7 @@
 ---
 title: "AI Infrastructure: Past, Present, and Future"
 date: 2026-07-22
-category: practice
+category: perspectives
 excerpt: PyTorch, vLLM, Ollama and LlamaFactory were all designed for a human who reads the docs, watches the logs and remembers what is already running. Increasingly the thing driving them is an agent. Here is what changes — and what PenguinHarness ships today to make it work.
 ---
 

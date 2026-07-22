@@ -1,7 +1,7 @@
 ---
 title: "AI 基础设施：过去、现在与未来"
 date: 2026-07-22
-category: practice
+category: perspectives
 excerpt: PyTorch、vLLM、Ollama、LlamaFactory，都是照着"一个会读文档、会看日志、记得自己启过什么服务的人"来设计的。可现在，越来越多地在驱动它们的是 Agent。这个变化意味着什么，PenguinHarness 今天又为它准备了什么。
 ---
 
