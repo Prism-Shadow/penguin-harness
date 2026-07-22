@@ -6,16 +6,20 @@
  * provider not in the catalog becomes a custom-built group — each forms its own
  * group, sorted by name and appended after custom; empty groups are hidden, except the
  * custom group, which is always shown when there's no search query, hosting the generic
- * "add model" entry point.
+ * "add model" entry point. Also covers the chat dropdown's visibility rule (visibleChatModels):
+ * key-configured models only by default (a stored masked key, judged by hasConfiguredKey),
+ * selected/default always visible, everything listed when nothing is configured or on showAll.
  */
 import { describe, expect, it } from "vitest";
 import { MODEL_PROVIDERS } from "@prismshadow/penguin-core/model-catalog";
 import {
   groupModelRows,
-  orderModelsLikeLibrary,
+  hasConfiguredKey,
   matchesQuery,
+  orderModelsLikeLibrary,
+  visibleChatModels,
 } from "../src/features/models/model-grouping";
-import type { ModelRowLike } from "../src/features/models/model-grouping";
+import type { ModelCredentialRowLike, ModelRowLike } from "../src/features/models/model-grouping";
 
 const rows: ModelRowLike[] = [
   { provider: "anthropic", modelId: "claude-sonnet-4-6", displayName: "Claude Sonnet 4.6" },
@@ -128,6 +132,101 @@ describe("groupModelRows", () => {
     expect(groups.map((g) => g.provider.id)).toEqual(["custom", "alpha-proxy", "zeta-lab"]);
     // Search matches a custom-built group's name: only that group is kept.
     expect(groupModelRows(mixed, "zeta").map((g) => g.provider.id)).toEqual(["zeta-lab"]);
+  });
+});
+
+describe("hasConfiguredKey", () => {
+  it("only a stored (masked) key counts as configured", () => {
+    expect(
+      hasConfiguredKey({
+        provider: "anthropic",
+        modelId: "m",
+        credential: { apiKeyMasked: "sk-a***xyz" },
+      }),
+    ).toBe(true);
+    expect(hasConfiguredKey({ provider: "anthropic", modelId: "m" })).toBe(false);
+    expect(hasConfiguredKey({ provider: "anthropic", modelId: "m", credential: {} })).toBe(false);
+    // envKey is merely the NAME of a fallback env var (nothing says the var is actually set): never counts.
+    const envOnly = { provider: "anthropic", modelId: "m", envKey: "ANTHROPIC_API_KEY" };
+    expect(hasConfiguredKey(envOnly)).toBe(false);
+  });
+});
+
+describe("visibleChatModels", () => {
+  const configured = (provider: string, modelId: string): ModelCredentialRowLike => ({
+    provider,
+    modelId,
+    credential: { apiKeyMasked: "sk-***" },
+  });
+  const keyless = (provider: string, modelId: string): ModelCredentialRowLike => ({
+    provider,
+    modelId,
+  });
+  const pool: ModelCredentialRowLike[] = [
+    keyless("deepseek", "deepseek-v4"),
+    configured("anthropic", "claude-sonnet-4-6"),
+    keyless("anthropic", "claude-opus-4-8"),
+    configured("moonshot", "kimi-k2.6"),
+    keyless("custom", "my-proxy"),
+  ];
+
+  it("by default lists only key-configured models, in library order", () => {
+    expect(visibleChatModels(pool, { showAll: false, query: "" }).map((m) => m.modelId)).toEqual([
+      "claude-sonnet-4-6",
+      "kimi-k2.6",
+    ]);
+  });
+
+  it("showAll lists everything, still in library order", () => {
+    expect(visibleChatModels(pool, { showAll: true, query: "" }).map((m) => m.modelId)).toEqual([
+      "deepseek-v4",
+      "claude-sonnet-4-6",
+      "claude-opus-4-8",
+      "kimi-k2.6",
+      "my-proxy",
+    ]);
+  });
+
+  it("the selected and the default model stay visible even without a key", () => {
+    const visible = visibleChatModels(pool, {
+      showAll: false,
+      query: "",
+      selected: { provider: "anthropic", modelId: "claude-opus-4-8" },
+      defaultModel: { provider: "deepseek", modelId: "deepseek-v4" },
+    });
+    expect(visible.map((m) => m.modelId)).toEqual([
+      "deepseek-v4", // default, key-less — kept
+      "claude-sonnet-4-6",
+      "claude-opus-4-8", // selected, key-less — kept
+      "kimi-k2.6",
+    ]);
+  });
+
+  it("when no model has a configured key, everything is listed (never an empty dropdown)", () => {
+    const none = [keyless("anthropic", "a"), keyless("moonshot", "b")];
+    expect(visibleChatModels(none, { showAll: false, query: "" }).map((m) => m.modelId)).toEqual([
+      "a",
+      "b",
+    ]);
+  });
+
+  it("the query filters what's visible: hidden key-less models only match once showAll", () => {
+    expect(visibleChatModels(pool, { showAll: false, query: "opus" })).toEqual([]);
+    expect(visibleChatModels(pool, { showAll: true, query: "opus" }).map((m) => m.modelId)).toEqual(
+      ["claude-opus-4-8"],
+    );
+    // The query also narrows the configured-only view.
+    expect(
+      visibleChatModels(pool, { showAll: false, query: "kimi" }).map((m) => m.modelId),
+    ).toEqual(["kimi-k2.6"]);
+    // ...and a key-less selected model kept by the exception is still searchable.
+    expect(
+      visibleChatModels(pool, {
+        showAll: false,
+        query: "opus",
+        selected: { provider: "anthropic", modelId: "claude-opus-4-8" },
+      }).map((m) => m.modelId),
+    ).toEqual(["claude-opus-4-8"]);
   });
 });
 
