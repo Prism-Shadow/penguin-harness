@@ -8,6 +8,11 @@
  * - the models page at 390x844 must not overflow horizontally, and text must not overlap
  *   (the group header's provider name used to get pushed out of the button box and overlap
  *   the group-level actions);
+ * - every chat-page dropdown menu, opened at phone widths (375/390), must keep its panel
+ *   inside the viewport and must not shove the page sideways (the model menu used to run
+ *   ~34px off-screen left, the skills menu ~92px off-screen right — with its autofocused
+ *   search box then horizontally scrolling the whole draft page — and the workspace menu
+ *   ~143px off-screen right when the ownership pills share one row);
  * - the sidebar's "New chat" button has no background fill (same gray-scale style as nav items);
  * - login page: a single brand penguin logo above the form (part of the form area; the
  *   background still only has the trace animation), the trace animation grows in after a
@@ -125,6 +130,105 @@ test("layout: en draft + context gauge + mobile models", async ({ page }) => {
     await newChat.evaluate((el) => getComputedStyle(el).backgroundColor),
     "new-chat button has no background fill",
   ).toBe("rgba(0, 0, 0, 0)");
+});
+
+test("layout: mobile chat dropdowns stay inside the viewport", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("penguin.lang", "en"));
+  await provisionAndLogin(page.request, "layoutdropdowns", P);
+  const projects = await (await page.request.get(`${BASE}/api/projects`)).json();
+  const projectId = projects.projects[0].projectId;
+  // Keyed models unblock the draft page (no "missing key" modal); the long-id model pushes the
+  // model menu's w-max width to its clamp, and the key-less one adds the show-all expander row.
+  const put = await page.request.put(`${BASE}/api/projects/${projectId}/models`, {
+    data: {
+      defaultModel: { provider: "custom", modelId: "claude-4-8" },
+      models: [
+        { provider: "custom", modelId: "claude-4-8", apiKey: "sk-mock", contextWindow: 200000 },
+        { provider: "openai", modelId: "gpt-5.5", apiKey: "sk-mock2" },
+        {
+          provider: "custom",
+          modelId: "anthropic/claude-sonnet-4-5-thinking-preview",
+          apiKey: "sk-mock3",
+        },
+        { provider: "google", modelId: "gemini-3-pro" },
+      ],
+    },
+  });
+  expect(put.ok(), "put models").toBeTruthy();
+
+  const panel = page.locator("div.anim-pop.z-40");
+  /** Assert the one open menu panel and the page itself stay inside the viewport. */
+  const checkPanel = async (name) => {
+    await expect(panel, `${name}: menu open`).toHaveCount(1);
+    await page.waitForTimeout(200); // let the pop-in scale animation settle before measuring
+    const m = await panel.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      // A horizontally scrolled ancestor is the old failure mode: the menu's autofocused
+      // search box dragged the overflowing panel into view, shoving the page sideways.
+      let scrolled = 0;
+      for (let p = el.parentElement; p; p = p.parentElement) {
+        scrolled = Math.max(scrolled, Math.abs(p.scrollLeft));
+      }
+      return { left: r.left, right: r.right, vw: window.innerWidth, scrolled };
+    });
+    expect(m.left, `${name}: panel left edge on-screen`).toBeGreaterThanOrEqual(0);
+    expect(m.right, `${name}: panel right edge on-screen`).toBeLessThanOrEqual(m.vw);
+    expect(m.scrolled, `${name}: page not scrolled sideways`).toBe(0);
+    const d = await docWidths(page);
+    expect(d.scrollWidth, `${name}: no horizontal overflow`).toBeLessThanOrEqual(d.clientWidth);
+  };
+  const open = async (label, name) => {
+    await page.locator(`button[aria-label="${label}"]`).click();
+    await checkPanel(name);
+  };
+  const close = async () => {
+    await page.keyboard.press("Escape");
+    await expect(panel).toHaveCount(0);
+  };
+
+  // Draft page, both common phone widths. The two widths exercise different geometry for the
+  // ownership pills below the card: at 375 they wrap onto two rows (workspace pill at the row
+  // start), at 390 they share one row (workspace pill anchored mid-screen).
+  for (const vp of [
+    { width: 375, height: 667 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(vp);
+    await page.goto(`${BASE}/chat/new`);
+    await page.getByPlaceholder(/Type a message/).waitFor();
+    // Model / thinking-level buttons stay disabled until models and the agent config load.
+    await expect(page.locator('button[aria-label="Choose model"]')).toBeEnabled();
+    await expect(page.locator('button[aria-label="Thinking level"]')).toBeEnabled();
+    await open("Approval mode", `approval @${vp.width}`);
+    await close();
+    await open("Skills", `skills @${vp.width}`);
+    await close();
+    await open("Thinking level", `thinking @${vp.width}`);
+    await close();
+    await open("Choose model", `model @${vp.width}`);
+    // Reveal the key-less remainder — the widest state of the w-max panel — and re-check.
+    await page.getByRole("button", { name: /without a key/ }).click();
+    await checkPanel(`model show-all @${vp.width}`);
+    await close();
+    await open("Choose agent", `agent @${vp.width}`);
+    await close();
+    await open("Workspace", `workspace @${vp.width}`);
+    await close();
+  }
+
+  // Session state (bottom-docked composer, menus open upward): approval + skills render there
+  // too and share the left-anchored geometry; still at 390x844 from the loop above.
+  const sess = await (
+    await page.request.post(`${BASE}/api/projects/${projectId}/agents/default_agent/sessions`, {
+      data: { provider: "custom", modelId: "claude-4-8" },
+    })
+  ).json();
+  await page.goto(`${BASE}/chat/${sess.session.sessionId}`);
+  await page.getByPlaceholder(/Type a message/).waitFor();
+  await open("Approval mode", "approval @session");
+  await close();
+  await open("Skills", "skills @session");
+  await close();
 });
 
 test("layout: login — blank start, non-crossing traces, lang/theme controls", async ({ page }) => {

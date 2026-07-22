@@ -25,6 +25,7 @@
  * falls back to the cache.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { MouseEvent as ReactMouseEvent } from "react";
 import { useLocation, useNavigate } from "react-router";
 import type {
   AgentModelConfigDto,
@@ -765,7 +766,8 @@ function AgentSelect({
  * auto temporary directory). The menu browses server-side directories: **the current path can be
  * edited directly** at the top (Enter/blur commits it, an invalid directory toasts and reverts
  * to the previous path), the list omits hidden directories, and the hint text sits at the bottom
- * of the menu; only loads on first expand.
+ * of the menu; only loads on first expand. On narrow screens the menu docks to whichever side
+ * of the pill keeps it inside the viewport (measured on open — see menuDock).
  */
 function WorkspaceSelect({
   projectId,
@@ -777,6 +779,17 @@ function WorkspaceSelect({
   onChange: (path: string) => void;
 }) {
   const [open, setOpen] = useState(false);
+  /**
+   * Menu docking, measured on each open: the pill follows the agent pill in a wrapping row, so
+   * its left offset varies with the agent's name — a statically left-anchored 20rem panel can
+   * cross the viewport's right edge on phones (measured ~143px past a 390px viewport). Keep the
+   * desktop left anchoring whenever the panel fits; otherwise dock to whichever side of the
+   * pill has more room, capping the width to that room via menuStyle. On desktop the panel
+   * always fits, so nothing changes there.
+   */
+  const [menuDock, setMenuDock] = useState<{ right: boolean; maxWidth?: number }>({
+    right: false,
+  });
   const browsedRef = useRef(false);
 
   const [dir, setDir] = useState<DirListResponse | null>(null);
@@ -803,8 +816,22 @@ function WorkspaceSelect({
     [projectId],
   );
 
-  const toggle = () => {
+  const toggle = (e: ReactMouseEvent<HTMLButtonElement>) => {
     const next = !open;
+    if (next) {
+      const r = e.currentTarget.getBoundingClientRect();
+      const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
+      const margin = 12; // breathing room against the viewport edge
+      // The panel's effective width: w-80 capped by its max-w-[calc(100vw-2rem)] class
+      // (rem-derived — the root font size is not 16px here).
+      const width = Math.min(20 * rem, window.innerWidth - 2 * rem);
+      const roomRight = window.innerWidth - margin - r.left; // room for a left-anchored panel
+      const roomLeft = r.right - margin; // room for a right-anchored panel
+      if (roomRight >= width) setMenuDock({ right: false });
+      else if (roomLeft > roomRight)
+        setMenuDock({ right: true, ...(roomLeft < width ? { maxWidth: roomLeft } : {}) });
+      else setMenuDock({ right: false, maxWidth: roomRight });
+    }
     setOpen(next);
     // Only loads on first expand: an already-filled absolute path is used as the starting point, otherwise the server falls back to the home directory.
     if (next && !browsedRef.current) {
@@ -839,7 +866,10 @@ function WorkspaceSelect({
     <Dropdown
       open={open}
       setOpen={setOpen}
-      menuClass="left-0 top-full mt-1 w-80 max-w-[calc(100vw-2rem)] origin-top-left"
+      menuClass={`top-full mt-1 w-80 max-w-[calc(100vw-2rem)] ${
+        menuDock.right ? "right-0 origin-top-right" : "left-0 origin-top-left"
+      }`}
+      {...(menuDock.maxWidth !== undefined ? { menuStyle: { maxWidth: menuDock.maxWidth } } : {})}
       button={
         <button
           type="button"
