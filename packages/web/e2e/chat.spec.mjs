@@ -258,10 +258,15 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
 
   const sidebar = page.getByRole("complementary");
 
-  // --- agent group collapse / expand (header button shows the agent name, so its state
+  // --- group collapse / expand (the header button shows the group name, so its state
   //     lives on aria-label rather than a duplicate title tooltip) ---
   await expect(sidebar.getByText("Configure Tailwind theme")).toBeVisible();
   await sidebar.locator('button[aria-label="折叠"]').first().click();
+  await expect(sidebar.getByText("Configure Tailwind theme")).toHaveCount(0);
+  // The collapse state persists across a reload (localStorage, keyed per Project): the group
+  // comes back rendered collapsed (an "展开" header), with its rows still hidden.
+  await page.reload();
+  await expect(sidebar.locator('button[aria-label="展开"]').first()).toBeVisible();
   await expect(sidebar.getByText("Configure Tailwind theme")).toHaveCount(0);
   await sidebar.locator('button[aria-label="展开"]').first().click();
   await expect(sidebar.getByText("Configure Tailwind theme")).toBeVisible();

@@ -57,6 +57,32 @@ import { sameModelRef } from "../models/model-grouping";
 const DRAFT_SAVE_DEBOUNCE_MS = 300;
 
 /**
+ * "Applied" markers for the route-state overrides (one slot per field, holding the last
+ * consumed location.key). React Router persists location.state AND location.key in
+ * history.state, which survives a full page reload, while a ref resets with the JS
+ * context — with a ref alone, a reload would re-apply the override and clobber whatever
+ * the user changed since (restored from the draft cache). sessionStorage is per-tab
+ * exactly like history.state, so the marker follows the history entry; on storage
+ * failure (private mode) both helpers degrade to "not consumed", and the in-component
+ * ref still provides the previous apply-once-per-mount behavior.
+ */
+type RouteStateField = "agentId" | "workspace";
+function loadAppliedRouteKey(field: RouteStateField): string | null {
+  try {
+    return sessionStorage.getItem(`penguin.chatRouteApplied.${field}`);
+  } catch {
+    return null;
+  }
+}
+function saveAppliedRouteKey(field: RouteStateField, key: string): void {
+  try {
+    sessionStorage.setItem(`penguin.chatRouteApplied.${field}`, key);
+  } catch {
+    /* best-effort: the dedup marker falls back to the per-mount ref */
+  }
+}
+
+/**
  * Example tasks on the draft screen, in display order (game card first, LoL music player,
  * then the RAG build). Copy lives in S.chat.exampleTasks[id]; skills are pinned via a
  * `<use_skills>` block — only those the selected Agent actually has installed are included,
@@ -133,8 +159,13 @@ export function DraftView({
     if (agents.length === 0) return; // list not ready yet, nothing to validate against — wait for the next pass
     const valid = (id: string | null | undefined): id is string =>
       !!id && agents.some((a) => a.agentId === id);
-    if (stateAgentId && appliedStateKey.current !== location.key) {
+    if (
+      stateAgentId &&
+      appliedStateKey.current !== location.key &&
+      loadAppliedRouteKey("agentId") !== location.key
+    ) {
       appliedStateKey.current = location.key;
+      saveAppliedRouteKey("agentId", location.key);
       if (valid(stateAgentId)) {
         setAgentId(stateAgentId);
         return;
@@ -151,8 +182,15 @@ export function DraftView({
   const stateWorkspace = routeState?.workspace;
   const appliedWorkspaceKey = useRef<string | null>(null);
   useEffect(() => {
-    if (stateWorkspace === undefined || appliedWorkspaceKey.current === location.key) return;
+    if (
+      stateWorkspace === undefined ||
+      appliedWorkspaceKey.current === location.key ||
+      loadAppliedRouteKey("workspace") === location.key
+    ) {
+      return;
+    }
     appliedWorkspaceKey.current = location.key;
+    saveAppliedRouteKey("workspace", location.key);
     setWorkspace(stateWorkspace);
   }, [location.key, stateWorkspace]);
 

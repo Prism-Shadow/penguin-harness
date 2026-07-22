@@ -6,14 +6,15 @@
  *   the selections are restored, and the cache clears once sending succeeds;
  * - the sidebar defaults to grouping by Workspace: auto temp directories merge into one
  *   "临时工作区" group, a named directory groups under its basename, and that group header's
- *   "+" pre-fills the draft's Workspace (via router state);
+ *   "+" pre-fills the draft's Workspace (via router state, applied once per navigation — a
+ *   manual change made afterwards survives a reload instead of being re-overridden);
  * - after switching the sidebar to agent mode (toggle persisted in localStorage), the agent
  *   group header's "+" creates a draft scoped to that group's Agent (explicitly set via router
  *   state, overriding the cache).
  */
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { test, expect } from "@playwright/test";
 import { provisionAndLogin } from "./auth.mjs";
 
@@ -142,6 +143,27 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   await wsHeader.getByRole("button", { name: "在此工作区新建对话" }).click();
   await expect(page.getByRole("heading", { name: "PenguinHarness" })).toBeVisible();
   await expect(page.getByLabel("Workspace")).toContainText(wsLabel);
+
+  // Regression (review): the route-state prefill applies once per navigation only — after the
+  // user picks a different directory and reloads, the restored cached choice must win; the
+  // prefill must NOT re-apply (location.state survives a reload inside history.state, so the
+  // consumed marker lives in sessionStorage rather than a ref). Browse one level up and select
+  // it; the path row mirrors the loaded directory, which orders the two clicks deterministically.
+  await page.getByRole("button", { name: "Workspace", exact: true }).click();
+  // Match by trailing basename: the server realpaths the browsed directory, so the prefix may differ from the raw mkdtemp path.
+  await expect(page.getByRole("textbox", { name: "Workspace" })).toHaveValue(
+    new RegExp(`${wsLabel}$`),
+  );
+  await page.getByRole("button", { name: "上级目录" }).click();
+  await expect(page.getByRole("textbox", { name: "Workspace" })).not.toHaveValue(
+    new RegExp(`${wsLabel}$`),
+  );
+  await page.getByRole("button", { name: "使用此目录" }).click();
+  const parentLabel = basename(dirname(namedWs));
+  await expect(page.getByLabel("Workspace")).toContainText(parentLabel);
+  await page.reload();
+  await expect(page.getByLabel("Workspace")).toContainText(parentLabel);
+  await expect(page.getByLabel("Workspace")).not.toContainText(wsLabel);
 
   // —— Switch the sidebar to agent mode via the section-header toggle (persists in localStorage) ——
   await page.getByRole("button", { name: "按 Agent 分组" }).click();

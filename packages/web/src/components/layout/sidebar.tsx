@@ -1,8 +1,9 @@
 /**
  * Single-column sidebar, top to bottom:
  * Project switcher -> new chat (default_agent draft) + fixed nav (Agents / models / cost center /
- * Trace) -> Session area with two grouping modes (a small toggle in the section header, choice
- * persisted in localStorage): by Workspace (the default; groups loaded Sessions by their
+ * Trace) -> Session area with two grouping modes (a small toggle in the section header; the
+ * choice and each Project's group collapse state persist in localStorage): by Workspace (the
+ * default; groups loaded Sessions by their
  * Workspace path, auto temp directories merged into one trailing group, header "+" starts a
  * draft in that Workspace) or by Agent (group header = Agent name + new chat + Agent settings;
  * shows all Agents, including empty groups) -> bottom user config (theme / language / logout).
@@ -12,7 +13,7 @@
  * there's no longer a separate "quick / advanced" pair of new-chat dialogs.
  * Color scheme is white/gray-based: active state uses a solid gray fill, running status uses a small color dot, no large blocks of color.
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { NavLink, useMatch, useNavigate } from "react-router";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
@@ -98,6 +99,34 @@ function initialGroupMode(): GroupMode {
   return localStorage.getItem(GROUP_MODE_KEY) === "agent" ? "agent" : "workspace";
 }
 
+/**
+ * Collapsed-group persistence (survives a refresh), one key per Project — group keys
+ * are Agent ids / Workspace paths, which are Project-scoped. Both grouping modes share
+ * one set (their key spaces never collide); stray keys left by deleted Agents or
+ * Workspaces are harmless (never matched) and the per-Project sets stay tiny.
+ */
+const collapsedGroupsKey = (projectId: string) => `penguin.sidebarCollapsedGroups.${projectId}`;
+/** Reads the persisted collapsed set (corrupted storage degrades to "all expanded"). */
+function loadCollapsedGroups(projectId: string | null): ReadonlySet<string> {
+  if (!projectId) return new Set();
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(collapsedGroupsKey(projectId)) ?? "[]");
+    return new Set(
+      Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : [],
+    );
+  } catch {
+    return new Set();
+  }
+}
+function saveCollapsedGroups(projectId: string | null, next: ReadonlySet<string>): void {
+  if (!projectId) return;
+  try {
+    localStorage.setItem(collapsedGroupsKey(projectId), JSON.stringify([...next]));
+  } catch {
+    /* best-effort persistence (quota/private mode) */
+  }
+}
+
 /** Session status dot: running pulses green, compacting shows an amber dot; idle shows nothing. */
 function StatusDot({ session }: { session: SessionInfo }) {
   if (session.status === "running") {
@@ -149,10 +178,17 @@ export function Sidebar({
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+  const currentProjectId = currentProject?.projectId ?? null;
   /** Grouping mode of the Session list (Workspace by default; the choice persists across sessions). */
   const [groupMode, setGroupModeState] = useState<GroupMode>(initialGroupMode);
-  /** Collapsed groups (expanded by default), keyed by Agent id or Workspace group key depending on the mode. */
-  const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(new Set());
+  /** Collapsed groups (expanded by default), keyed by Agent id or Workspace group key depending on the mode; persisted per Project. */
+  const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(() =>
+    loadCollapsedGroups(currentProjectId),
+  );
+  // Project resolved on first load / switched: swap in that Project's persisted collapse set.
+  useEffect(() => {
+    setCollapsedGroups(loadCollapsedGroups(currentProjectId));
+  }, [currentProjectId]);
   /** Expanded "archived" groups (collapsed by default), keyed like collapsedGroups. */
   const [openArchived, setOpenArchived] = useState<ReadonlySet<string>>(new Set());
   /** Session pending delete confirmation (null = none). */
@@ -177,13 +213,15 @@ export function Sidebar({
   const sessionGroupKey = (s: SessionInfo) =>
     groupMode === "agent" ? s.agentId : workspaceGroupKey(s.workspace);
 
-  const toggleGroup = (key: string) =>
-    setCollapsedGroups((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
+  const toggleGroup = (key: string) => {
+    // Computed outside the state updater (theme.tsx convention): the persistence write is a
+    // side effect, and updaters must stay pure (double-invoked in StrictMode).
+    const next = new Set(collapsedGroups);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    setCollapsedGroups(next);
+    saveCollapsedGroups(currentProjectId, next);
+  };
 
   const toggleArchivedGroup = (key: string) =>
     setOpenArchived((prev) => {
@@ -849,6 +887,8 @@ function SessionRow({
           {agentHint !== undefined && (
             <span title={agentHint} className="flex shrink-0 items-center">
               <AgentAvatar id={s.agentId} size={14} className="rounded" />
+              {/* The avatar is aria-hidden and title only serves pointer users: expose the Agent name to keyboard/screen-reader users as visually hidden text inside the row button. */}
+              <span className="sr-only">{agentHint}</span>
             </span>
           )}
           {/* Only attach a title attribute when the title is actually truncated (hover to see full text); don't duplicate the text otherwise. */}
