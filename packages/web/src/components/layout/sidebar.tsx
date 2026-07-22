@@ -2,11 +2,13 @@
  * Single-column sidebar, top to bottom:
  * Project switcher -> new chat (default_agent draft) + fixed nav (Agents / models / cost center /
  * Trace) -> Session area with two grouping modes (a small toggle in the section header; the
- * choice and each Project's group collapse state persist in localStorage): by Workspace (the
- * default; groups loaded Sessions by their
+ * choice and each Project's group collapse and pin state persist in localStorage): by Workspace
+ * (the default; groups loaded Sessions by their
  * Workspace path, auto temp directories merged into one trailing group, header "+" starts a
  * draft in that Workspace) or by Agent (group header = Agent name + new chat + Agent settings;
- * shows all Agents, including empty groups) -> bottom user config (theme / language / logout).
+ * shows all Agents, including empty groups). Groups can be pinned via the header's hover pin
+ * toggle: pinned groups sort before unpinned within their mode, keeping each partition's own
+ * order -> bottom user config (theme / language / logout).
  * Desktop keeps it pinned as the left column; mobile puts the whole thing in a drawer.
  * New chats always enter draft state (/chat/new, route state specifies the Agent and optionally
  * the Workspace): Model / Workspace / approval mode are all chosen on the draft input card, so
@@ -27,7 +29,11 @@ import { ACCENT_SWATCHES, useTheme } from "../../state/theme";
 import type { Accent, Currency, FontScale, ThemeMode } from "../../state/theme";
 import { agentDisplayName, projectDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
-import { groupSessionsByWorkspace, workspaceGroupKey } from "../../lib/session-grouping";
+import {
+  groupSessionsByWorkspace,
+  pinnedFirst,
+  workspaceGroupKey,
+} from "../../lib/session-grouping";
 import { Dropdown } from "../ui/dropdown";
 import { AgentAvatar } from "../ui/agent-avatar";
 import { Chevron } from "../ui/chevron";
@@ -86,8 +92,16 @@ const NAV_ICONS = {
 const GEAR_ICON =
   "M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2zM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z";
 
-/** Folder outline (same glyph as the draft page's Workspace pill). */
+/** Folder outline, closed (same glyph as the draft page's Workspace pill); collapsed workspace groups and the grouping toggle use it. */
 const FOLDER_ICON = "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z";
+
+/** Folder outline, open (lucide folder-open: back panel + tilted front flap); expanded workspace groups use it. */
+const FOLDER_OPEN_ICON =
+  "m6 14 1.45-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2";
+
+/** Pushpin (lucide pin: head + body + stem), the group-header pin toggle / pinned indicator. */
+const PIN_ICON =
+  "M12 17v5M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1z";
 
 const menuItemClass =
   "block w-full px-3.5 py-2 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800";
@@ -100,17 +114,19 @@ function initialGroupMode(): GroupMode {
 }
 
 /**
- * Collapsed-group persistence (survives a refresh), one key per Project — group keys
- * are Agent ids / Workspace paths, which are Project-scoped. Both grouping modes share
- * one set (their key spaces never collide); stray keys left by deleted Agents or
- * Workspaces are harmless (never matched) and the per-Project sets stay tiny.
+ * Collapsed-group and pinned-group persistence (survives a refresh), one storage key
+ * per Project and concern — group keys are Agent ids / Workspace paths, which are
+ * Project-scoped. Both grouping modes share one set per concern (their key spaces
+ * never collide); stray keys left by deleted Agents or Workspaces are harmless
+ * (never matched) and the per-Project sets stay tiny.
  */
 const collapsedGroupsKey = (projectId: string) => `penguin.sidebarCollapsedGroups.${projectId}`;
-/** Reads the persisted collapsed set (corrupted storage degrades to "all expanded"). */
-function loadCollapsedGroups(projectId: string | null): ReadonlySet<string> {
-  if (!projectId) return new Set();
+const pinnedGroupsKey = (projectId: string) => `penguin.sidebarPinnedGroups.${projectId}`;
+/** Reads a persisted group-key set (no Project yet / corrupted storage degrade to empty). */
+function loadGroupSet(storageKey: string | null): ReadonlySet<string> {
+  if (!storageKey) return new Set();
   try {
-    const parsed: unknown = JSON.parse(localStorage.getItem(collapsedGroupsKey(projectId)) ?? "[]");
+    const parsed: unknown = JSON.parse(localStorage.getItem(storageKey) ?? "[]");
     return new Set(
       Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : [],
     );
@@ -118,10 +134,10 @@ function loadCollapsedGroups(projectId: string | null): ReadonlySet<string> {
     return new Set();
   }
 }
-function saveCollapsedGroups(projectId: string | null, next: ReadonlySet<string>): void {
-  if (!projectId) return;
+function saveGroupSet(storageKey: string | null, next: ReadonlySet<string>): void {
+  if (!storageKey) return;
   try {
-    localStorage.setItem(collapsedGroupsKey(projectId), JSON.stringify([...next]));
+    localStorage.setItem(storageKey, JSON.stringify([...next]));
   } catch {
     /* best-effort persistence (quota/private mode) */
   }
@@ -179,16 +195,23 @@ export function Sidebar({
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const currentProjectId = currentProject?.projectId ?? null;
+  const collapseStoreKey = currentProjectId === null ? null : collapsedGroupsKey(currentProjectId);
+  const pinStoreKey = currentProjectId === null ? null : pinnedGroupsKey(currentProjectId);
   /** Grouping mode of the Session list (Workspace by default; the choice persists across sessions). */
   const [groupMode, setGroupModeState] = useState<GroupMode>(initialGroupMode);
   /** Collapsed groups (expanded by default), keyed by Agent id or Workspace group key depending on the mode; persisted per Project. */
   const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(() =>
-    loadCollapsedGroups(currentProjectId),
+    loadGroupSet(collapseStoreKey),
   );
-  // Project resolved on first load / switched: swap in that Project's persisted collapse set.
+  /** Pinned groups (sorted before unpinned within their mode), keyed like collapsedGroups; persisted per Project. */
+  const [pinnedGroups, setPinnedGroups] = useState<ReadonlySet<string>>(() =>
+    loadGroupSet(pinStoreKey),
+  );
+  // Project resolved on first load / switched: swap in that Project's persisted collapse/pin sets.
   useEffect(() => {
-    setCollapsedGroups(loadCollapsedGroups(currentProjectId));
-  }, [currentProjectId]);
+    setCollapsedGroups(loadGroupSet(collapseStoreKey));
+    setPinnedGroups(loadGroupSet(pinStoreKey));
+  }, [collapseStoreKey, pinStoreKey]);
   /** Expanded "archived" groups (collapsed by default), keyed like collapsedGroups. */
   const [openArchived, setOpenArchived] = useState<ReadonlySet<string>>(new Set());
   /** Session pending delete confirmation (null = none). */
@@ -209,6 +232,17 @@ export function Sidebar({
   /** Workspace groups (workspace mode): computed from the flat list, temp directories merged last. */
   const workspaceGroups = useMemo(() => groupSessionsByWorkspace(sessions), [sessions]);
 
+  // Pinned groups first within each mode; inside each partition the existing order is kept
+  // (recency for Workspace groups, the configured Agent order for Agents).
+  const orderedAgents = useMemo(
+    () => pinnedFirst(agents, (a) => a.agentId, pinnedGroups),
+    [agents, pinnedGroups],
+  );
+  const orderedWorkspaceGroups = useMemo(
+    () => pinnedFirst(workspaceGroups, (g) => g.key, pinnedGroups),
+    [workspaceGroups, pinnedGroups],
+  );
+
   /** Group key of a Session under the current mode (collapse / archived-open state). */
   const sessionGroupKey = (s: SessionInfo) =>
     groupMode === "agent" ? s.agentId : workspaceGroupKey(s.workspace);
@@ -220,7 +254,16 @@ export function Sidebar({
     if (next.has(key)) next.delete(key);
     else next.add(key);
     setCollapsedGroups(next);
-    saveCollapsedGroups(currentProjectId, next);
+    saveGroupSet(collapseStoreKey, next);
+  };
+
+  /** Pin / unpin a group (same toggle-and-persist convention as toggleGroup). */
+  const togglePin = (key: string) => {
+    const next = new Set(pinnedGroups);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    setPinnedGroups(next);
+    saveGroupSet(pinStoreKey, next);
   };
 
   const toggleArchivedGroup = (key: string) =>
@@ -576,20 +619,24 @@ export function Sidebar({
           loading && agents.length === 0 ? (
             <SkeletonList rows={5} />
           ) : (
-            agents.map((agent) => {
+            orderedAgents.map((agent) => {
               const list = byAgent.get(agent.agentId) ?? [];
               const activeList = list.filter((s) => !s.archived);
               const archivedList = list.filter((s) => s.archived);
               const collapsed = collapsedGroups.has(agent.agentId);
+              const pinned = pinnedGroups.has(agent.agentId);
               return (
                 <div key={agent.agentId} className="pt-2.5">
-                  {/* Group header: collapse toggle (Agent name) + new chat + Agent settings */}
-                  <div className="flex items-center gap-0.5 px-1 pb-0.5">
+                  {/* Group header: collapse toggle (Agent name) + pin + new chat + Agent settings.
+                      self-stretch makes the collapse toggle's hover pill span the full row height
+                      set by the h-7 action buttons (one consistent hover geometry). */}
+                  <div className="group/header flex items-center gap-0.5 px-1 pb-0.5">
                     <button
                       type="button"
                       onClick={() => toggleGroup(agent.agentId)}
+                      aria-expanded={!collapsed}
                       aria-label={collapsed ? S.nav.expandGroup : S.nav.collapseGroup}
-                      className="flex min-w-0 flex-1 items-center gap-1 rounded px-1 py-0.5 text-left transition-colors duration-150 hover:bg-gray-200/50 dark:hover:bg-gray-800/50"
+                      className="flex min-w-0 flex-1 items-center gap-1 self-stretch rounded px-1 py-0.5 text-left transition-colors duration-150 hover:bg-gray-200/50 dark:hover:bg-gray-800/50"
                     >
                       <AgentAvatar
                         id={agent.agentId}
@@ -604,6 +651,7 @@ export function Sidebar({
                       <Chevron open={!collapsed} size={12} className="text-gray-400" />
                       <span className="min-w-0 flex-1" />
                     </button>
+                    <GroupPinButton pinned={pinned} onToggle={() => togglePin(agent.agentId)} />
                     {/* New chat: enters draft state directly with this group's Agent (all options live on the draft input card) */}
                     <button
                       type="button"
@@ -633,28 +681,33 @@ export function Sidebar({
           )
         ) : loading && sessions.length === 0 ? (
           <SkeletonList rows={5} />
-        ) : workspaceGroups.length === 0 ? (
+        ) : orderedWorkspaceGroups.length === 0 ? (
           <p className="px-2.5 pt-3 text-xs text-gray-400 dark:text-gray-600">
             {S.chat.noSessions}
           </p>
         ) : (
-          workspaceGroups.map((group) => {
+          orderedWorkspaceGroups.map((group) => {
             const activeList = group.sessions.filter((s) => !s.archived);
             const archivedList = group.sessions.filter((s) => s.archived);
             const collapsed = collapsedGroups.has(group.key);
+            const pinned = pinnedGroups.has(group.key);
             return (
               <div key={group.key} className="pt-2.5">
-                {/* Group header: collapse toggle (folder icon + directory basename + count, full path in the tooltip) + new chat in this Workspace */}
-                <div className="flex items-center gap-0.5 px-1 pb-0.5">
+                {/* Group header: collapse toggle (folder icon + directory basename + count, full path in the tooltip) + pin + new chat in this Workspace.
+                    self-stretch: without it the collapse toggle's hover pill is content-sized
+                    (~20px) and sits visibly shorter than the h-7 action buttons beside it. */}
+                <div className="group/header flex items-center gap-0.5 px-1 pb-0.5">
                   <button
                     type="button"
                     onClick={() => toggleGroup(group.key)}
+                    aria-expanded={!collapsed}
                     aria-label={collapsed ? S.nav.expandGroup : S.nav.collapseGroup}
                     {...(group.fullPath !== null ? { title: group.fullPath } : {})}
-                    className="flex min-w-0 flex-1 items-center gap-1 rounded px-1 py-0.5 text-left transition-colors duration-150 hover:bg-gray-200/50 dark:hover:bg-gray-800/50"
+                    className="flex min-w-0 flex-1 items-center gap-1 self-stretch rounded px-1 py-0.5 text-left transition-colors duration-150 hover:bg-gray-200/50 dark:hover:bg-gray-800/50"
                   >
+                    {/* Folder opens and closes with the group */}
                     <span className="shrink-0 text-gray-400 dark:text-gray-500">
-                      <Icon d={FOLDER_ICON} size={15} />
+                      <Icon d={collapsed ? FOLDER_ICON : FOLDER_OPEN_ICON} size={15} />
                     </span>
                     {/* No uppercase transform: a directory basename's casing is meaningful */}
                     <span className="min-w-0 truncate text-xs font-semibold text-gray-500 dark:text-gray-400">
@@ -666,6 +719,7 @@ export function Sidebar({
                     <Chevron open={!collapsed} size={12} className="text-gray-400" />
                     <span className="min-w-0 flex-1" />
                   </button>
+                  <GroupPinButton pinned={pinned} onToggle={() => togglePin(group.key)} />
                   {/* New chat in this Workspace: pre-fills the group's path in the draft ("" = auto temp directory); the Agent is the current one, falling back to default_agent */}
                   <button
                     type="button"
@@ -851,6 +905,36 @@ export function Sidebar({
         )}
       </Modal>
     </div>
+  );
+}
+
+/**
+ * Group-header pin toggle, shared by both grouping modes: revealed on header hover (or
+ * keyboard focus) while unpinned; once pinned it stays visible, doubling as the subtle
+ * pinned indicator. The header row carries the `group/header` scope so the reveal only
+ * reacts to its own row, not to the session rows' plain `group` scope.
+ * The accessible name stays STATIC and aria-pressed alone carries the state (the toggle
+ * pattern the grouping-mode buttons use) — a name that swaps 置顶/取消置顶 alongside
+ * aria-pressed reads as "Unpin group, pressed", saying the state twice in conflicting
+ * ways. The title tooltip may still swap: it is presentation for pointer users and does
+ * not feed the accessible name while aria-label is present.
+ */
+function GroupPinButton({ pinned, onToggle }: { pinned: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      title={pinned ? S.nav.unpinGroup : S.nav.pinGroup}
+      aria-label={S.nav.pinGroup}
+      aria-pressed={pinned}
+      onClick={onToggle}
+      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-all duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:hover:bg-gray-800 dark:hover:text-gray-200 ${
+        pinned
+          ? "text-gray-500 dark:text-gray-400"
+          : "text-gray-400 opacity-0 focus-visible:opacity-100 group-hover/header:opacity-100 dark:text-gray-500"
+      }`}
+    >
+      <Icon d={PIN_ICON} size={15} />
+    </button>
   );
 }
 

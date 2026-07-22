@@ -21,6 +21,8 @@ export const en: Strings = {
     expandSidebar: "Expand sidebar",
     collapseGroup: "Collapse",
     expandGroup: "Expand",
+    pinGroup: "Pin group",
+    unpinGroup: "Unpin group",
   },
 
   settings: {
