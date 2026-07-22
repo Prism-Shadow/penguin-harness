@@ -6,8 +6,8 @@ A model with a 32k context served locally rejected requests outright — `400 Th
 
 ## Thinking level moves to the conversation
 
-The thinking level is no longer a Models-page annotation. The default lives in Agent settings (where it always was), and the chat draft gains a compact picker next to the model selector: changing it writes through to the Agent settings immediately, so the session created on send — and every later one — uses the new level. Values stay `none / low / medium / high / xhigh`, with an inherit-provider-default option.
+The thinking level is no longer a Models-page annotation. The default lives in Agent settings (where it always was), and the chat draft gains a compact titled picker next to the model selector with the five short levels (None / Low / Medium / High / Extreme High): changing it writes through to the Agent settings immediately, so the session created on send — and every later one — uses the new level. The draft's model choice now carries over the same way: after a successful send it becomes the next conversation's default.
 
 ## Session-title generation is internal
 
-`session-title.ts` moved into core's `internal/` module. `Session.generateTitle()` remains the public entry point, and `SessionTitleResult` plus `stripConversationMarkers` (used by the server's fallback title) stay importable from the package barrel; the LLM-driving internals (`buildTitlePrompt`, `generateTitleWithLLM`, `sanitizeTitle`) are no longer part of the public surface.
+`session-title.ts` moved into core's `internal/` module. `Session.generateTitle()` remains the public entry point, and `SessionTitleResult`, `stripConversationMarkers` and `sanitizeTitle` (both used by the server's fallback title path) stay importable from the package barrel; the LLM-driving internals (`buildTitlePrompt`, `generateTitleWithLLM`) are no longer part of the public surface.
