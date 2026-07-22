@@ -3,8 +3,8 @@ name: agent-evaluation
 description: Run and score exactly one Benchmark Case run with CLI execution, Trace provenance checks, and private Rubric isolation.
 short_description: Run and score one isolated Benchmark Case.
 short_description_zh: 隔离执行并评分一个 Benchmark Case。
-version: 1
-updated: 2026-07-17T17:08:17Z
+version: 2
+updated: 2026-07-22T14:52:46Z
 ---
 
 # Agent Evaluation
@@ -35,6 +35,11 @@ model_id: <upstream_model_id>
 ## Validate and prepare
 
 Resolve the Project, Test Agent, Benchmark, and Case only from the explicit request and Environment Project Dir. Reject traversal, symlink escape, or any path outside the requested Test Agent. Never read a Project configuration file, credential, or vault.
+
+The canonical Test Agent directory is exactly
+`<project_dir>/agents/<test_agent_id>`. Require it to be a real directory rather than a symlink,
+and require `benchmark_dir` to resolve beneath its `benchmarks/` directory. Never probe or fall
+back to a legacy `<project_dir>/<test_agent_id>` path.
 
 Require:
 
@@ -85,7 +90,7 @@ When matching Test subagents exist, exclude child ids referenced by subagent eve
 
 Inspect only the unique Test Workspace, its bound Test Trace, and the retained private Rubric. Apply every atomic item exactly and normalize only allowed equivalents. A missing, malformed, wrong-type, or incorrect Test artifact is ordinary scored Test Agent behavior: apply the Rubric's zero or partial credit and return `status: ok`. Only a changed or unusable Rubric, or a non-finite/out-of-range result, is `invalid_score`. Detailed reasoning remains in Evaluator Trace.
 
-Compute `duration_ms` from the bound root Test Session, not from the Evaluator. Compute cost only from that root and child Sessions mechanically referenced by subagent events whose traces are available within the explicitly requested Test Agent's `traces/` tree. For each included Session, use final cumulative token usage rather than summing intermediate cumulative events, and apply the matching public `(provider, model_id)` pricing. If any referenced child trace or usage is unavailable there, including because the Test Session delegated to another Agent, or if any included usage is unpriced, return `cost: null` rather than inspecting another Agent or reporting a known partial sum as complete cost.
+Compute `duration_ms` from the bound root Test Session, not from the Evaluator. Compute cost only from that root and child Sessions mechanically referenced by subagent events whose traces are available within the explicitly requested Test Agent's `traces/` tree. For each included Session, read final cumulative usage from the last `event_msg` whose `payload.type` is `token_usage`, using `payload.session.cache_read`, `payload.session.cache_write`, and `payload.session.output`; do not look for `payload.usage` or sum intermediate events. Apply the matching `(provider, model_id)` prices reported by `penguin config model list`. Those `price=` values are USD per 1,000,000 tokens in cache-read, cache-write, output order, so compute `(cache_read * cache_read_price + cache_write * cache_write_price + output * output_price) / 1_000_000`; never interpret them as per-1,000-token prices. If any referenced child trace or usage is unavailable there, including because the Test Session delegated to another Agent, or if any included usage is unpriced, return `cost: null` rather than inspecting another Agent or reporting a known partial sum as complete cost.
 
 ## Return protocol
 

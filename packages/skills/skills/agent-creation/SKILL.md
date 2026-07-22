@@ -3,8 +3,8 @@ name: agent-creation
 description: Turn a user requirement into a concrete agent — write the target agent's AGENTS.md and install the skills it needs.
 short_description: Turn a requirement into a working agent.
 short_description_zh: 把需求变成可用的 Agent。
-version: 2
-updated: 2026-07-20T13:00:00Z
+version: 4
+updated: 2026-07-22T14:52:46Z
 ---
 
 # Agent Creation
@@ -24,6 +24,11 @@ PROJECT_DIR="<project_dir>"        # the Project Dir value from your Environment
 ls "$PROJECT_DIR/agents"          # existing agents (each is a folder here)
 TARGET="$PROJECT_DIR/agents/<agent_id>"   # the agent to configure
 ```
+
+This is the only canonical Agent location. Never create or write a legacy
+`$PROJECT_DIR/<agent_id>` sibling, redirect `TARGET`, or create a compatibility symlink. If the
+canonical path cannot be used, stop and report the exact conflict instead of repairing the
+Project layout from this Skill.
 
 An agent directory contains `agent_state/` (`system_config.yaml`, `AGENTS.md`, `skills/`, `memory/`, `tools/`) plus `scratchpad/` — and `traces/`, which appears once the agent has run at least once.
 
@@ -63,20 +68,44 @@ Library skills can be copied from any agent that already has them (e.g. `default
 - **Knowledge expert** (answers questions over a document set): usually **no** harness agent is needed — build a RAG app with the penguin-sdk skill instead, and configure the app's embedded agent (below).
 - **Evaluation loop**: `benchmark-design`, `agent-evaluation`, `agent-optimization`.
 
+When this Agent is the Test Agent in a create → benchmark → optimize request, keep the
+evaluation-loop Skills on the top-level orchestrator. Do not install them on the Test Agent
+merely because the orchestrator will evaluate it; install only capabilities the Test Agent
+needs while solving its own tasks.
+
+## Composed tuning workflows
+
+Before creating a target for a create → benchmark → optimize request, confirm that the current
+top-level orchestrator has `benchmark-design`, `agent-evaluation`, and `agent-optimization`
+installed and exposes `run_subagent`. If not, stop before creating a partial target and report the
+missing prerequisite.
+
+When the same top-level request also asks to benchmark and optimize the new Agent, finish its
+initial State and continue in the current conversation: hand the explicit Agent id and capability
+goal to `benchmark-design`, then hand its frozen baseline to `agent-optimization`. Do not open a
+separate user-facing chat or ask the user to repeat information already present in the request.
+Keep in the current working context whether the canonical target was absent before creation; this
+fact, the explicit Agent id, and the initial State version are the bootstrap provenance consumed by
+`agent-optimization`. A creation-stage progress update is fine, but do not emit a terminal success
+response while a requested Benchmark or optimization stage remains.
+
 ## Set name and description
 
-In the target's `agent_state/system_config.yaml`, set the top-level `name:` and `description:` fields so the agent is recognizable in lists. Edit only these two fields.
+In the target's `agent_state/system_config.yaml`, set the top-level `name:` and `description:` fields so the agent is recognizable in lists. For an existing Agent, edit only these two fields. For a brand-new Agent, also set its canonical top-level `version` to `1`; do not inherit a later State version from the default Agent template.
 
 ## Creating a brand-new agent
 
-Prefer configuring an agent the user already created. If you must create one from scratch: pick a short id (letters, digits, `_`, `-`), copy the default agent's `system_config.yaml` as the base, and create the layout described above:
+Prefer configuring an agent the user already created. If you must create one from scratch: pick a short id (letters, digits, `_`, `-`), first verify that the canonical `TARGET` does not exist, copy the default agent's `system_config.yaml` as the base, and create the layout described above:
 
 ```bash
 mkdir -p "$TARGET/agent_state/skills" "$TARGET/agent_state/memory" "$TARGET/agent_state/tools" "$TARGET/scratchpad"
 cp "$PROJECT_DIR/agents/default_agent/agent_state/system_config.yaml" "$TARGET/agent_state/"
 ```
 
-A new agent starts with no skills — install only what it needs. Then write its AGENTS.md, name and description as above.
+A new agent starts with no skills — install only what it needs. Then write its AGENTS.md, name and description as above. Before handing it to another Skill, verify that
+`TARGET/agent_state/system_config.yaml` and `TARGET/agent_state/AGENTS.md` are regular files, the
+State version is exactly `1`, and no legacy `$PROJECT_DIR/<agent_id>` path or compatibility
+symlink was created.
 
 ## The embedded agent of an SDK app
 

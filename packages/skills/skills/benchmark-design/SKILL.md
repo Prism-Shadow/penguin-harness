@@ -3,8 +3,8 @@ name: benchmark-design
 description: Design and calibrate a multi-Case capability Benchmark with repeated independent evaluations and a traceable baseline.
 short_description: Design and calibrate an Agent capability Benchmark.
 short_description_zh: 设计并校准 Agent 能力评测 Benchmark。
-version: 1
-updated: 2026-07-17T17:08:17Z
+version: 3
+updated: 2026-07-22T14:52:46Z
 ---
 
 # Benchmark Design
@@ -14,6 +14,13 @@ Create and calibrate a multi-Case Benchmark that discovers a specified Test Agen
 ## Before you start
 
 Require a Test Agent and the capability to measure. If either is missing, ask the user. A Benchmark run also requires a top-level Session with `run_subagent` and the current Agent must have `agent-evaluation` installed. If the Skill is missing or this Session is already a subagent, stop and ask the user to install the Skill or start a top-level Session. Do not begin a partial Benchmark.
+
+When this is the middle stage of an explicit create → benchmark → optimize request, freeze and
+record an accepted calibrated baseline as usual, then continue to `agent-optimization` in the same
+top-level conversation. The accepted Case set, Statements, Rubrics, run count, and baseline Model
+become the fixed comparison surface; optimization must not reshape them. Do not hand off an
+out-of-band candidate or a `calibration_failed` result. Keep the baseline calibration interval
+distinct from the later optimization target score and hand both values forward explicitly.
 
 ## Boundaries
 
@@ -96,7 +103,7 @@ evaluations:
             session_id: session-3
 ```
 
-Case `score`, `cost`, and `duration_ms` are the means of their valid `runs`. Evaluation totals are the sums of the Case means. Omit a Case or evaluation `cost` when any contributing run has unknown cost; never treat unknown as zero. Rubric maxima across the complete Case set should total 100 points so the evaluation score remains interpretable on a 0–100 scale.
+Case `score`, `cost`, and `duration_ms` are the means of their valid `runs`. Evaluation totals are the sums of the Case means. Omit a Case or evaluation `cost` when any contributing run has unknown cost; never treat unknown as zero. Rubric maxima across the complete Case set must total exactly 100 points before any evaluation is dispatched. Recompute that sum after every material Case or Rubric revision. Never report a raw sum with another denominator as a score out of 100, and do not use post-hoc normalization to make an invalid point scale look compliant.
 
 Builder writes one final baseline for the current Benchmark definition. A material change to a Statement, Rubric, Case set, or `runs` invalidates prior results: clear `evaluations`, recalibrate, and write a new baseline. Rejected candidates and provisional matrices remain only in Builder Trace. Evaluator never writes the Scoreboard.
 
@@ -112,7 +119,17 @@ Build several independent, realistic end-to-end Cases with distinct capability-r
 
 Freeze every Rubric before evaluation. Use atomic observable conditions, exact points, reasonable equivalence rules, and meaningful partial credit. Test the Rubric mentally against full, partial, missing, malformed, wrong-type, and extra output. Never execute Test Agent-produced code while scoring.
 
-Use valid evidence to calibrate toward a user-supplied target; otherwise aim near 60/100. Treat a near-ceiling candidate as uncalibrated when a credible structural refinement remains. Audit high scores for shortcuts or leakage and low scores for ambiguity, missing evidence, unrelated difficulty, or a defective Rubric. More items, steps, or workload alone are not structural refinement.
+Use valid evidence to calibrate toward a user-supplied target; otherwise aim near 60/100. A
+user-supplied score interval is a hard acceptance gate: accept and freeze a baseline only when the
+complete 100-point evaluation lies inside that interval. Treat an out-of-band or near-ceiling
+candidate as uncalibrated while a credible structural refinement remains. Audit high scores for
+shortcuts or leakage and low scores for ambiguity, missing evidence, unrelated difficulty, or a
+defective Rubric. More items, steps, workload, or ambiguity alone are not structural refinement.
+Do not hit the target by merely redistributing Rubric points or weakening partial credit after
+seeing model answers; change the capability-relevant evidence, state interaction, or reasoning
+path, freeze the revised Rubrics, and run a fresh complete matrix. Unless the user supplies a round
+limit, there is no implicit calibration-round cap: continue while a credible structural redesign
+remains.
 
 ## Select the evaluation Model
 
@@ -147,10 +164,15 @@ For N Cases and R runs, emit all N × R independent `run_subagent` calls in the 
 
 Parse only the last terminal `protocol_version: 1` YAML mapping. Keep every identity-matched `status: ok` result. Retry only invalid cells once, with all retry cells dispatched together and the same State version, Model, Benchmark, and run identities. Never retry a valid scored cell. If any retry remains invalid, abandon the matrix.
 
+An abandoned matrix contributes no cells to a later matrix. If the failure is an owned Statement
+delivery or temporary Workspace problem, repair that cause and start a fresh complete matrix. If
+the canonical Test Agent path or State is wrong, stop with that blocker. Never move or recreate the
+Test Agent, create compatibility symlinks, or weaken provenance checks to make an evaluation run.
+
 For a complete matrix, calculate Case means and evaluation sums using scoreboard v2. Retain every run's score, cost when known, duration, and Test Session id. Re-read State version and exact Scoreboard bytes; abandon the result if either changed.
 
 Use each returned Test Session id to inspect the exact Test Trace and artifact. Analyze all repeated runs; disagreement is capability instability, not permission to select a convenient result. Accept a candidate only when the capability caused the scored difference, evidence was sufficient, the Rubric was sound, and useful headroom remains.
 
-When calibration stops after a complete valid matrix, write the final baseline to a temporary sibling, parse it as YAML, then atomically rename it over `scoreboard.yaml`. Include the sorted Case set and sorted runs, a real UTC ISO-8601 time, the tested version and Model pair, and a privacy-safe summary. A near-ceiling final score is still recorded, but if the refinement budget ends without an acceptable candidate, report `calibration_failed` rather than calling the Benchmark ready. Leave `evaluations` empty only when no complete valid matrix exists.
+When an acceptable complete valid matrix is reached, write the final baseline to a temporary sibling, parse it as YAML, then atomically rename it over `scoreboard.yaml`. Include the sorted Case set and sorted runs, a real UTC ISO-8601 time, the tested version and Model pair, and a privacy-safe summary. An out-of-band matrix is a rejected candidate and remains in Builder/Evaluator Traces, not the Scoreboard. If no credible valid refinement remains, report `calibration_failed`, leave a new Benchmark's `evaluations` empty, and stop the composed workflow before optimization.
 
 Report the Benchmark path, aggregate and Case scores, Test Session ids, refinements, stop reason, and limitations.
