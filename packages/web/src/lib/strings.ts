@@ -23,6 +23,8 @@ export const zh = {
     expandSidebar: "展开侧栏",
     collapseGroup: "折叠",
     expandGroup: "展开",
+    pinGroup: "置顶分组",
+    unpinGroup: "取消置顶",
   },
 
   settings: {
