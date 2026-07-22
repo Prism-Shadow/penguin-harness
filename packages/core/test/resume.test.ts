@@ -77,7 +77,12 @@ async function writeTraceFile(
   return file;
 }
 
-function metaFor(sessionId: string, workspaceDir: string, model = MODEL): OmniMessage {
+function metaFor(
+  sessionId: string,
+  workspaceDir: string,
+  model = MODEL,
+  source?: "subagent" | "schedule",
+): OmniMessage {
   return sessionMeta({
     session_id: sessionId,
     provider: model.provider,
@@ -88,6 +93,7 @@ function metaFor(sessionId: string, workspaceDir: string, model = MODEL): OmniMe
     thinking_level: "default",
     agent_state: "/agent/state",
     workspace: workspaceDir,
+    ...(source !== undefined ? { source } : {}),
   });
 }
 
@@ -114,6 +120,30 @@ describe("agent.resumeSession", () => {
       (m) => (m.payload as { text?: string }).text ?? "",
     );
     expect(texts).toEqual(["hello", "hi there"]);
+  });
+
+  it("preserves the stored session source across resume (and its absence for user sessions)", async () => {
+    const agent = await createAgent({});
+    await writeTraceFile(tmpRoot, SID, [
+      metaFor(SID, workspace, MODEL, "subagent"),
+      userText("child task"),
+      requestBegin(),
+      assistantText("done"),
+      requestEnd("completed"),
+    ]);
+    const session = await agent.resumeSession({ sessionId: SID });
+    // The rebuilt session_meta carries the origin over (a rotated Trace file must re-record it).
+    expect((session.metaMessage.payload as { source?: string }).source).toBe("subagent");
+    session.dispose();
+
+    // A user-created session's meta has no source key, and resume must not invent one.
+    const SID2 = "session-2026-07-06-11-00-00-abcdef02";
+    await writeTraceFile(tmpRoot, SID2, [metaFor(SID2, workspace), userText("hi")]);
+    const plain = await agent.resumeSession({ sessionId: SID2 });
+    expect("source" in (plain.metaMessage.payload as unknown as Record<string, unknown>)).toBe(
+      false,
+    );
+    plain.dispose();
   });
 
   it("keeps abort events in resumed render history", async () => {

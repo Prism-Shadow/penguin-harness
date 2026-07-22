@@ -196,6 +196,8 @@ export class SessionService {
         modelId,
         provider,
         ...(args.workspace !== undefined ? { workspaceDir: args.workspace } : {}),
+        // The origin is also recorded in core session_meta (Trace), not just the index row.
+        ...(args.source !== undefined ? { source: args.source } : {}),
       });
     } catch (err) {
       // A missing credential is its own category (the frontend shows localized text
@@ -280,6 +282,8 @@ export class SessionService {
       // The approval mode for an unmanaged Session (started via the CLI) isn't in the Trace, so it's backfilled with the default value.
       approvalMode: "allow-all",
       title: null,
+      // session_meta records the origin, so discovery backfill can carry it into the index row.
+      ...(meta.payload.source !== undefined ? { source: meta.payload.source } : {}),
       createdAt: sessionIdCreatedAt(sessionId) ?? meta.timestamp,
     };
     // Idempotent backfill: concurrent list calls may discover the same Session for the first time simultaneously (consistent with AgentsRepo's convention).

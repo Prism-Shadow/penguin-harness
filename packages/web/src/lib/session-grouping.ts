@@ -41,6 +41,32 @@ export function workspaceLabel(workspace: string): string {
   return parts[parts.length - 1] ?? "/";
 }
 
+/** Three-way split of one sidebar group's Sessions (rendered top to bottom in this order). */
+export interface SessionPartition {
+  /** User-created, not archived: rendered directly in the group body. */
+  active: SessionInfo[];
+  /** Automation-created (`source` set: schedule / subagent), not archived: the collapsed "Automated" folder. */
+  automated: SessionInfo[];
+  /** Archived: the collapsed "Archived" folder. Archived wins — an archived Session with a `source` goes here only. */
+  archived: SessionInfo[];
+}
+
+/**
+ * Partitions a group's Sessions for rendering: archived first (regardless of `source` —
+ * archiving is an explicit user action, so the Archived folder must show everything the
+ * user put there), then automation-created (schedule / subagent), then plain user Sessions.
+ * Input order is preserved within each part.
+ */
+export function partitionSessions(sessions: SessionInfo[]): SessionPartition {
+  const parts: SessionPartition = { active: [], automated: [], archived: [] };
+  for (const s of sessions) {
+    if (s.archived) parts.archived.push(s);
+    else if (s.source) parts.automated.push(s);
+    else parts.active.push(s);
+  }
+  return parts;
+}
+
 export interface WorkspaceGroup {
   /** Stable group key: the Workspace path, or TEMP_WORKSPACE_GROUP_KEY for the merged temp group. */
   key: string;

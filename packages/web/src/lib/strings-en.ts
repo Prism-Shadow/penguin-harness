@@ -693,6 +693,8 @@ When done, open index.html in a browser and self-test once.`,
     archiveSession: "Archive",
     unarchiveSession: "Unarchive",
     archivedGroup: (n: number) => `Archived (${n})`,
+    /** Sidebar folder for automation-created sessions (schedule / subagent), parallel to Archived. */
+    automatedGroup: (n: number) => `Automated (${n})`,
     skillsBanner: (names: string[]): string =>
       `Using skill${names.length === 1 ? "" : "s"}: ${names.join(", ")}`,
   },

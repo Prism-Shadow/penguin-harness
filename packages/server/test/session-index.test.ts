@@ -103,6 +103,26 @@ describe("session-index", () => {
     expect(list.sessions.map((s) => s.sessionId)).toContain(session.sessionId);
   });
 
+  it("schedule-created Session: source lands on the index row and in the list; user sessions carry none", async () => {
+    await configureModels();
+    // The scheduler goes through SessionService.createSession directly (no HTTP route exposes source).
+    const info = await t.deps.sessionService.createSession({
+      projectId,
+      agentId: "default_agent",
+      source: "schedule",
+    });
+    expect(info.source).toBe("schedule");
+    expect(t.deps.sessionsRepo.findById(info.sessionId)?.source).toBe("schedule");
+
+    // A user-created session (HTTP) has no source, and the list surfaces both accordingly.
+    const res = await api.post(base(), {});
+    expect(res.status).toBe(201);
+    const { session: plain } = (await res.json()) as SessionCreateResponse;
+    const list = (await (await api.get(base())).json()) as SessionsResponse;
+    expect(list.sessions.find((s) => s.sessionId === info.sessionId)?.source).toBe("schedule");
+    expect(list.sessions.find((s) => s.sessionId === plain.sessionId)?.source).toBeUndefined();
+  });
+
   it("half a model reference is 400: the missing half is never inferred", async () => {
     await configureModels();
     // Only modelId: even though it names the one configured model, the provider is never

@@ -301,6 +301,9 @@ describe("session-manager", () => {
     expect(child?.agentId).toBe("child_agent");
     expect(child?.modelId).toBe("m-child");
     expect(child?.workspace).toBe("/tmp/w-child");
+    // The row is marked as a subagent session even when the forwarded meta predates the
+    // source field (this fake omits it): the registration path itself is the fallback.
+    expect(child?.source).toBe("subagent");
     // Title left blank: produced by the title generator from the sub-session's own conversation (falls back to the prompt's first line on failure).
     expect(child?.title).toBeNull();
 

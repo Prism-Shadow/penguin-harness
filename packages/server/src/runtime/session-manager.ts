@@ -141,6 +141,8 @@ export function createCoreSessionLoader(root: string): SessionLoader {
           workspaceDir: row.workspace,
           modelId: row.modelId,
           provider: row.provider,
+          // The rebuilt Session keeps the row's origin in its fresh session_meta.
+          ...(row.source != null ? { source: row.source } : {}),
         });
       } catch (err) {
         if (isMissingCredential(err)) throw modelCredentialMissing(row.modelId);
@@ -879,6 +881,9 @@ export class SessionManager {
     const p = msg.payload as SessionMetaPayload;
     const agentId = path.basename(path.dirname(p.agent_state));
     if (!agentId || agentId === "." || agentId === "..") return null;
+    // The forwarded session_meta now records the origin at the source (core's spawn site);
+    // fall back to inferring "subagent" from the registration path for older metas.
+    const source = p.source ?? "subagent";
     this.deps.sessions.insertOrIgnore({
       sessionId: childSid,
       projectId: entry.projectId,
@@ -890,7 +895,7 @@ export class SessionManager {
       // inserted with defaults (matches the convention for Sessions discovered by the CLI).
       approvalMode: "allow-all",
       title: null,
-      source: "subagent",
+      source,
       createdAt: new Date().toISOString(),
     });
     // Make the subagent appear immediately in the sidebar: notify via the parent
@@ -900,7 +905,7 @@ export class SessionManager {
       projectId: entry.projectId,
       agentId,
       sessionId: childSid,
-      source: "subagent",
+      source,
     });
     const child: ChildSession = {
       sessionId: childSid,

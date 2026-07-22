@@ -14,6 +14,7 @@ import {
   TEMP_WORKSPACE_GROUP_KEY,
   groupSessionsByWorkspace,
   isTempWorkspace,
+  partitionSessions,
   workspaceGroupKey,
   workspaceLabel,
 } from "../src/lib/session-grouping";
@@ -22,7 +23,12 @@ let seq = 0;
 function session(
   workspace: string,
   createdAt: string,
-  over: { sessionId?: string; agentId?: string; archived?: boolean } = {},
+  over: {
+    sessionId?: string;
+    agentId?: string;
+    archived?: boolean;
+    source?: "schedule" | "subagent";
+  } = {},
 ): SessionInfo {
   seq += 1;
   return {
@@ -38,6 +44,7 @@ function session(
     pendingApprovalCount: 0,
     hasTrace: false,
     archived: over.archived ?? false,
+    ...(over.source !== undefined ? { source: over.source } : {}),
   };
 }
 
@@ -134,5 +141,34 @@ describe("groupSessionsByWorkspace", () => {
     const groups = groupSessionsByWorkspace([archived, active]);
     expect(groups).toHaveLength(1);
     expect(groups[0]!.sessions).toHaveLength(2);
+  });
+});
+
+describe("partitionSessions (per-group user / automated / archived split)", () => {
+  it("splits user, automation-created (schedule/subagent) and archived rows, preserving order", () => {
+    const user1 = session("/srv/alpha", "2026-07-05T10:00:00.000Z");
+    const sched = session("/srv/alpha", "2026-07-04T10:00:00.000Z", { source: "schedule" });
+    const sub = session("/srv/alpha", "2026-07-03T10:00:00.000Z", { source: "subagent" });
+    const user2 = session("/srv/alpha", "2026-07-02T10:00:00.000Z");
+    const gone = session("/srv/alpha", "2026-07-01T10:00:00.000Z", { archived: true });
+    const parts = partitionSessions([user1, sched, sub, user2, gone]);
+    expect(parts.active.map((s) => s.sessionId)).toEqual([user1.sessionId, user2.sessionId]);
+    expect(parts.automated.map((s) => s.sessionId)).toEqual([sched.sessionId, sub.sessionId]);
+    expect(parts.archived.map((s) => s.sessionId)).toEqual([gone.sessionId]);
+  });
+
+  it("archived wins over source: an archived automated session goes to the Archived folder only", () => {
+    const both = session("/srv/alpha", "2026-07-01T10:00:00.000Z", {
+      source: "subagent",
+      archived: true,
+    });
+    const parts = partitionSessions([both]);
+    expect(parts.automated).toEqual([]);
+    expect(parts.archived.map((s) => s.sessionId)).toEqual([both.sessionId]);
+    expect(parts.active).toEqual([]);
+  });
+
+  it("empty input yields three empty parts", () => {
+    expect(partitionSessions([])).toEqual({ active: [], automated: [], archived: [] });
   });
 });

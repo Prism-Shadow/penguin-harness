@@ -96,4 +96,17 @@ test("subagent card survives a reload; child session title is generated from its
     return list.sessions.find((s) => s.sessionId !== sessionId)?.title ?? null;
   };
   await expect.poll(childTitle, { timeout: 10000 }).toBe("Subagent TODO summary");
+
+  // --- Sidebar: the child session (source=subagent) nests inside the collapsed "Automated"
+  // folder, parallel to "Archived" within the same (temp-workspace) group. Reload first so the
+  // sidebar list carries the persisted title/source, and the folder is back to its default
+  // collapsed state. ---
+  await page.reload();
+  const sidebar = page.getByRole("complementary");
+  const automated = sidebar.getByRole("button", { name: "自动（1）" });
+  await expect(automated, "collapsed Automated folder").toBeVisible();
+  // Collapsed by default: the child row is not rendered until the folder is expanded.
+  await expect(sidebar.getByText("Subagent TODO summary")).toHaveCount(0);
+  await automated.click();
+  await expect(sidebar.getByText("Subagent TODO summary")).toBeVisible();
 });

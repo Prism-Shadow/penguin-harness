@@ -27,7 +27,12 @@ import { ACCENT_SWATCHES, useTheme } from "../../state/theme";
 import type { Accent, Currency, FontScale, ThemeMode } from "../../state/theme";
 import { agentDisplayName, projectDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
-import { groupSessionsByWorkspace, workspaceGroupKey } from "../../lib/session-grouping";
+import {
+  groupSessionsByWorkspace,
+  partitionSessions,
+  workspaceGroupKey,
+} from "../../lib/session-grouping";
+import type { SessionPartition } from "../../lib/session-grouping";
 import { Dropdown } from "../ui/dropdown";
 import { AgentAvatar } from "../ui/agent-avatar";
 import { Chevron } from "../ui/chevron";
@@ -191,6 +196,8 @@ export function Sidebar({
   }, [currentProjectId]);
   /** Expanded "archived" groups (collapsed by default), keyed like collapsedGroups. */
   const [openArchived, setOpenArchived] = useState<ReadonlySet<string>>(new Set());
+  /** Expanded "automated" groups (schedule/subagent Sessions; collapsed by default), keyed like collapsedGroups. */
+  const [openAutomated, setOpenAutomated] = useState<ReadonlySet<string>>(new Set());
   /** Session pending delete confirmation (null = none). */
   const [deletingSession, setDeletingSession] = useState<SessionInfo | null>(null);
   const [deletingBusy, setDeletingBusy] = useState(false);
@@ -230,6 +237,25 @@ export function Sidebar({
       else next.add(key);
       return next;
     });
+
+  const toggleAutomatedGroup = (key: string) =>
+    setOpenAutomated((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+
+  // The open chat is an automation-created Session: expand its group's "automated" folder so
+  // the active row is never hidden inside a collapsed folder (mirrors the archived expansion
+  // on archiving the open chat; archived wins, so an archived Session is left to that folder).
+  useEffect(() => {
+    if (!activeSessionId) return;
+    const s = sessions.find((x) => x.sessionId === activeSessionId);
+    if (!s || !s.source || s.archived) return;
+    const key = groupMode === "agent" ? s.agentId : workspaceGroupKey(s.workspace);
+    setOpenAutomated((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
+  }, [activeSessionId, sessions, groupMode]);
 
   /** Archive / unarchive: persists immediately and updates in place (fails silently; the next list refresh self-corrects). */
   const toggleArchive = async (s: SessionInfo) => {
@@ -357,36 +383,51 @@ export function Sidebar({
     </ul>
   );
 
-  /** Expanded group body shared by both modes: active rows + the collapsed-by-default archived subgroup (keyed by the group key). */
-  const renderGroupBody = (
-    groupKey: string,
-    activeList: SessionInfo[],
-    archivedList: SessionInfo[],
-    withAgentHint: boolean,
-  ) => {
+  /** Expanded group body shared by both modes: user rows + the collapsed-by-default automated and archived subgroups (keyed by the group key). */
+  const renderGroupBody = (groupKey: string, parts: SessionPartition, withAgentHint: boolean) => {
+    const automatedOpen = openAutomated.has(groupKey);
     const archivedOpen = openArchived.has(groupKey);
+    const folderClass =
+      "flex w-full items-center gap-1 rounded px-1.5 py-1 text-left text-[11px] font-medium text-gray-400 transition-colors duration-150 hover:bg-gray-200/50 dark:text-gray-500 dark:hover:bg-gray-800/50";
     return (
       <>
-        {activeList.length === 0 && archivedList.length === 0 ? (
+        {parts.active.length === 0 &&
+        parts.automated.length === 0 &&
+        parts.archived.length === 0 ? (
           <p className="px-2.5 py-1 text-xs text-gray-400 dark:text-gray-600">
             {S.chat.noSessions}
           </p>
         ) : (
-          renderRows(activeList, withAgentHint)
+          renderRows(parts.active, withAgentHint)
         )}
 
-        {/* Archived group (collapsed by default) */}
-        {archivedList.length > 0 && (
+        {/* Automated group (schedule / subagent Sessions; collapsed by default, above Archived) */}
+        {parts.automated.length > 0 && (
+          <div className="mt-1">
+            <button
+              type="button"
+              onClick={() => toggleAutomatedGroup(groupKey)}
+              className={folderClass}
+            >
+              <Chevron open={automatedOpen} size={12} />
+              {S.chat.automatedGroup(parts.automated.length)}
+            </button>
+            {automatedOpen && renderRows(parts.automated, withAgentHint)}
+          </div>
+        )}
+
+        {/* Archived group (collapsed by default; archived wins over automated) */}
+        {parts.archived.length > 0 && (
           <div className="mt-1">
             <button
               type="button"
               onClick={() => toggleArchivedGroup(groupKey)}
-              className="flex w-full items-center gap-1 rounded px-1.5 py-1 text-left text-[11px] font-medium text-gray-400 transition-colors duration-150 hover:bg-gray-200/50 dark:text-gray-500 dark:hover:bg-gray-800/50"
+              className={folderClass}
             >
               <Chevron open={archivedOpen} size={12} />
-              {S.chat.archivedGroup(archivedList.length)}
+              {S.chat.archivedGroup(parts.archived.length)}
             </button>
-            {archivedOpen && renderRows(archivedList, withAgentHint)}
+            {archivedOpen && renderRows(parts.archived, withAgentHint)}
           </div>
         )}
       </>
@@ -577,9 +618,7 @@ export function Sidebar({
             <SkeletonList rows={5} />
           ) : (
             agents.map((agent) => {
-              const list = byAgent.get(agent.agentId) ?? [];
-              const activeList = list.filter((s) => !s.archived);
-              const archivedList = list.filter((s) => s.archived);
+              const parts = partitionSessions(byAgent.get(agent.agentId) ?? []);
               const collapsed = collapsedGroups.has(agent.agentId);
               return (
                 <div key={agent.agentId} className="pt-2.5">
@@ -624,9 +663,7 @@ export function Sidebar({
                     </button>
                   </div>
 
-                  {collapsed
-                    ? null
-                    : renderGroupBody(agent.agentId, activeList, archivedList, false)}
+                  {collapsed ? null : renderGroupBody(agent.agentId, parts, false)}
                 </div>
               );
             })
@@ -639,8 +676,7 @@ export function Sidebar({
           </p>
         ) : (
           workspaceGroups.map((group) => {
-            const activeList = group.sessions.filter((s) => !s.archived);
-            const archivedList = group.sessions.filter((s) => s.archived);
+            const parts = partitionSessions(group.sessions);
             const collapsed = collapsedGroups.has(group.key);
             return (
               <div key={group.key} className="pt-2.5">
@@ -660,8 +696,9 @@ export function Sidebar({
                     <span className="min-w-0 truncate text-xs font-semibold text-gray-500 dark:text-gray-400">
                       {group.temp ? S.chat.tempWorkspaces : group.label}
                     </span>
+                    {/* Header count = non-archived Sessions (user + automated; unchanged semantics) */}
                     <span className="shrink-0 text-[11px] text-gray-400 dark:text-gray-500">
-                      {activeList.length}
+                      {parts.active.length + parts.automated.length}
                     </span>
                     <Chevron open={!collapsed} size={12} className="text-gray-400" />
                     <span className="min-w-0 flex-1" />
@@ -678,7 +715,7 @@ export function Sidebar({
                   </button>
                 </div>
 
-                {collapsed ? null : renderGroupBody(group.key, activeList, archivedList, true)}
+                {collapsed ? null : renderGroupBody(group.key, parts, true)}
               </div>
             );
           })
