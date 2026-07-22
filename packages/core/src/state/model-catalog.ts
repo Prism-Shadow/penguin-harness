@@ -222,7 +222,12 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // 2026-07-20 list no cache pricing on their OpenRouter pages, so cache_read carries the
   // standard input price; their :free tier stores a genuine $0 price (not "unknown"), so
   // costs correctly compute to 0. GPT models are uniformly vision-capable (OpenAI
-  // product-line policy) even where the gateway page omits the modality. --
+  // product-line policy) even where the gateway page omits the modality.
+  // Two cache_read conventions coexist in this block: rows whose upstream publishes a
+  // cache-hit price store that real price (the google/gemini-3.6-flash and
+  // google/gemini-3.5-flash-lite entries below), while the 2026-07-20 rows still repeat the
+  // input price. Several of those older rows do have a published cache price upstream and
+  // should be re-read in one pass; until then treat their cache_read as an upper bound. --
   {
     modelId: "anthropic/claude-fable-5",
     displayName: "Claude Fable 5",
@@ -284,13 +289,18 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
-    // Context window and list price read from the model's OpenRouter page (2026-07-22);
-    // the page publishes no cache price, so cache_read carries the standard input price.
+    // Unlike the older OpenRouter entries above, upstream **does** publish a cache-hit price
+    // for the Gemini rows (2026-07-22: $0.15/mtok here, agreed by the OpenRouter models API
+    // and AgentHub's own supported-model registry), so cache_read stores the real discounted
+    // price rather than repeating the input price: cache_read is billed as its own bucket in
+    // the cost center, and an input-priced cache_read overstates cache-heavy spend 10x.
+    // cache_write repeats the input price (no separate per-token cache-write fee), matching
+    // the direct-vendor Gemini rows below.
     modelId: "google/gemini-3.6-flash",
     displayName: "Gemini 3.6 Flash",
     provider: "openrouter",
     contextWindow: 1048576,
-    pricing: usd(1.5, 1.5, 7.5),
+    pricing: usd(0.15, 1.5, 7.5),
     supportsVision: true,
     clientType: "openai",
     baseUrl: OPENROUTER_BASE_URL,
@@ -299,19 +309,20 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     modelId: "google/gemini-3.5-flash",
     displayName: "Gemini 3.5 Flash",
     provider: "openrouter",
-    contextWindow: 1000000,
+    contextWindow: 1048576,
     pricing: usd(1.5, 1.5, 9),
     supportsVision: true,
     clientType: "openai",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
-    // Same 2026-07-22 OpenRouter page reading as gemini-3.6-flash above (no cache price listed).
+    // Same published-cache-price convention as gemini-3.6-flash above (2026-07-22: $0.03/mtok
+    // cache hit, $0.30 input, $2.50 output).
     modelId: "google/gemini-3.5-flash-lite",
     displayName: "Gemini 3.5 Flash Lite",
     provider: "openrouter",
     contextWindow: 1048576,
-    pricing: usd(0.3, 0.3, 2.5),
+    pricing: usd(0.03, 0.3, 2.5),
     supportsVision: true,
     clientType: "openai",
     baseUrl: OPENROUTER_BASE_URL,

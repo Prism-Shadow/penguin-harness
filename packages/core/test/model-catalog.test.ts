@@ -263,12 +263,13 @@ describe("model-catalog", () => {
     expect([mimo.cache_read, mimo.cache_write, mimo.output]).toEqual([0.0028, 0.14, 0.28]);
     const hy3 = MODEL_CATALOG.find((m) => m.modelId === "tencent/hy3")!.pricing!;
     expect([hy3.cache_read, hy3.cache_write, hy3.output]).toEqual([0.035, 0.14, 0.58]);
-    // Gemini 3.6 Flash and 3.5 Flash Lite: their OpenRouter pages list only in/out prices, so
-    // cache_read repeats the input price (same convention as the other google/* entries).
+    // Gemini 3.6 Flash and 3.5 Flash Lite: upstream publishes a cache-hit price, so cache_read
+    // stores the real discounted price (not the input price) — cache_read is its own billing
+    // bucket in the cost center. cache_write repeats input (no per-token cache-write fee).
     const g36 = catalogEntryFor("openrouter", "google/gemini-3.6-flash")!;
     expect([g36.contextWindow, g36.supportsVision]).toEqual([1048576, true]);
     expect([g36.pricing!.cache_read, g36.pricing!.cache_write, g36.pricing!.output]).toEqual([
-      1.5, 1.5, 7.5,
+      0.15, 1.5, 7.5,
     ]);
     const g35lite = catalogEntryFor("openrouter", "google/gemini-3.5-flash-lite")!;
     expect([g35lite.contextWindow, g35lite.supportsVision]).toEqual([1048576, true]);
@@ -276,7 +277,11 @@ describe("model-catalog", () => {
       g35lite.pricing!.cache_read,
       g35lite.pricing!.cache_write,
       g35lite.pricing!.output,
-    ]).toEqual([0.3, 0.3, 2.5]);
+    ]).toEqual([0.03, 0.3, 2.5]);
+    // The gateway row for gemini-3.5-flash reports the same context window as the
+    // direct-vendor row for that model (and as AgentHub's registry): 1048576, not 1000000.
+    expect(catalogEntryFor("openrouter", "google/gemini-3.5-flash")!.contextWindow).toBe(1048576);
+    expect(catalogEntryFor("google", "gemini-3.5-flash")!.contextWindow).toBe(1048576);
 
     // In preset entries, exactly the gateway models (and only them) inline base_url (no credentials).
     const withBaseUrl = presetModelEntries().filter((e) => e.base_url !== undefined);
