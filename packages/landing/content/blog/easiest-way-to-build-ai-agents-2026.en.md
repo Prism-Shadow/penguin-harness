@@ -109,12 +109,10 @@ Every tool call gets exactly one approval decision in one of four modes — allo
 
 ## 5. When not to use PenguinHarness
 
-A comparison where one option wins every row is an advertisement, not an analysis. Ours loses several.
+A comparison where one option wins every row is an advertisement, not an analysis. Two cases where you should pick something else:
 
-- **Embedding an agent in an existing app.** For an agent inside a Django service or a Next.js route, use a library built for it — Pydantic AI and the Vercel AI SDK are excellent, and LangChain's ecosystem breadth is hard to match.
-- **Python shops.** Our SDK is TypeScript. The CLI and server are language-agnostic, but a Python team wanting to subclass things will fit better elsewhere.
-- **Genuinely graph-shaped problems.** If you really do need conditional routing over checkpointed state, LangGraph and ADK model that explicitly. We give you subagents, capped at depth 1, because most delegation is not a graph.
-- **Deep cloud integration.** On Azure, Microsoft Agent Framework is the path of least resistance; on Vertex, ADK is.
+- **Python shops.** Our SDK is TypeScript. The CLI and server are language-agnostic, but if your team works in Python and wants to subclass and extend these classes, most of the options above will fit better.
+- **Deep cloud integration.** If you are already all-in on Azure, Microsoft Agent Framework is the path of least resistance; on Vertex, ADK is.
 
 ## 6. The short version
 
