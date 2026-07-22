@@ -414,10 +414,11 @@ export const en: Strings = {
 
   blog: {
     title: "Blog",
-    subtitle: "Product news, tech practices and release notes",
+    subtitle: "Product news, tech practices, perspectives and release notes",
     all: "All",
     news: "Product news",
     practice: "Tech practice",
+    perspectives: "Perspectives",
     changelog: "Release notes",
     pinned: "Pinned",
     copyLink: "Copy page link",

@@ -96,7 +96,7 @@ describe("frontmatter mapping (author / pinned / category)", () => {
   it("reads the pinned flag and sorts the pinned post first", () => {
     for (const locale of ["en", "zh"] as const) {
       const posts = postsFor(locale);
-      expect(posts.length).toBe(5);
+      expect(posts.length).toBe(8);
       expect(posts[0]?.slug).toBe("introducing-penguinharness");
       expect(posts[0]?.pinned).toBe(true);
     }
@@ -106,6 +106,15 @@ describe("frontmatter mapping (author / pinned / category)", () => {
     expect(postsFor("en", "practice").map((p) => p.slug)).toEqual([
       "penguin-harness-self-improvement-with-amd-gpu",
       "local-agents-on-amd-gpus",
+    ]);
+  });
+
+  it("filters by the perspectives category", () => {
+    expect(postsFor("en", "perspectives").map((p) => p.slug)).toEqual([
+      // All three share 2026-07-22, so slug ascending is the tie-break.
+      "ai-infrastructure-past-present-future",
+      "easiest-way-to-build-ai-agents-2026",
+      "simple-harness-is-all-you-need",
     ]);
   });
 });
