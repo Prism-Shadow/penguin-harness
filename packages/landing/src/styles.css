@@ -490,31 +490,15 @@
    keep every cell's own hairline crisp behind a semi-transparent fill — the per-side rules below
    rebuild the single-hairline grid.
 
-   The four background layers are the classic CSS-only scroll shadows: the two *cover* layers are
-   attached `local` so they travel with the content and sit at its far ends, and the two *shadow*
-   layers are attached `scroll` so they stay pinned to the visible edges. A shadow is therefore
-   only visible on a side that still has content off-screen, and a table that fits shows nothing
-   at all. This is the discoverability cue, because the scrollbar cannot be relied on: on overlay-
-   scrollbar platforms it reserves no layout space and is invisible until you already scroll. The
-   covers are the page background color, so they stay invisible themselves; they paint behind the
-   cells, which keeps the translucent row tints intact.
+   `width: max-content` keeps a table narrower than the prose column at its own width. A
+   `display: block` table is a block box, so its width would otherwise default to the container's
+   while the rows inside stay at their own — leaving an empty strip past the last cell that any
+   edge decoration paints into. `max-width: 100%` still clamps a wide one, so it scrolls.
 
-   `width: max-content` is what makes that hold for a table narrower than the prose column. A
-   `display: block` table is a block box, so its width defaults to the container's while the rows
-   inside stay at their own width — and the two attachments then stop agreeing: the `local` cover
-   sits at the scrollable area's right edge (the container's, since there is nothing to scroll)
-   with its 24px ramp, while the `scroll` shadow sits at the same edge with a 14px ramp, so the
-   halves that do not overlap paint a gradient in the empty strip past the last cell. Shrinking
-   the box to its content puts both ramps back on the table's own edge, where the cover wins.
-   `max-width: 100%` still clamps a wide one, so it scrolls exactly as before. */
-.md-body {
-  --md-scroll-cover: #fff;
-  --md-scroll-shadow: rgb(15 23 42 / 0.16);
-}
-.dark .md-body {
-  --md-scroll-cover: #000;
-  --md-scroll-shadow: rgb(148 163 184 / 0.24);
-}
+   Deliberately undecorated edges: an earlier revision drew CSS scroll shadows here as an overflow
+   cue, and they were dropped as visual noise. The trade-off is real — on overlay-scrollbar
+   platforms the scrollbar reserves no layout space and stays invisible until you scroll — so a
+   wide table now announces itself only by being clipped at the column edge. */
 .md-body table {
   border-collapse: separate;
   border-spacing: 0;
@@ -523,31 +507,14 @@
   width: max-content;
   max-width: 100%;
   scrollbar-width: thin;
-  background-image:
-    linear-gradient(to right, var(--md-scroll-cover), transparent),
-    linear-gradient(to left, var(--md-scroll-cover), transparent),
-    linear-gradient(to right, var(--md-scroll-shadow), transparent),
-    linear-gradient(to left, var(--md-scroll-shadow), transparent);
-  background-position:
-    left center,
-    right center,
-    left center,
-    right center;
-  background-repeat: no-repeat;
-  background-size:
-    24px 100%,
-    24px 100%,
-    14px 100%,
-    14px 100%;
-  background-attachment: local, local, scroll, scroll;
 }
 /* Cells wrap, with a floor. `white-space: nowrap` used to hold every cell on one line, which sent
    even a mildly wide table into horizontal scroll; the ask now is that a cell may take a second
    line, and only past that should the table widen and scroll instead of growing into a paragraph.
 
    CSS cannot count lines, so the knob is `min-width`: a column is never squeezed below 9rem, and
-   once the columns' floors add up past the prose column the table overflows and the scroll (with
-   the shadows above) takes over. 9rem is ~16 Latin / 8 CJK characters of text at this size, and it
+   once the columns' floors add up past the prose column the table overflows and horizontal
+   scrolling takes over. 9rem is ~16 Latin / 8 CJK characters of text at this size, and it
    is the largest floor that still leaves every table in the blog at one line inside the 720px
    prose column — the widest, the 4-column benchmark table, lands at 697px. At 10rem that same
    table fills the column exactly and its header starts wrapping; at 12rem it scrolls on the

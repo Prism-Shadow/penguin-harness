@@ -1,5 +1,5 @@
 ---
-title: "Tell the agent, not the terminal: a self-closing training loop that never leaves your machine"
+title: "Let the agent do it, not you: a data-safe self-closing training loop"
 date: 2026-07-22
 category: practice
 excerpt: PenguinHarness 0.1.1 ships the ollama, vllm and llamafactory skills. They are not three more command-line tools for you to learn — they are what the agent learns, so that "run a local model here, and fine-tune it until it passes my evaluation" becomes something you say rather than something you type. The loop that follows closes on its own, and the data in it never leaves your environment.
