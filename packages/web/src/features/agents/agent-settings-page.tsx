@@ -31,6 +31,7 @@ import { Modal } from "../../components/ui/modal";
 import { Skeleton } from "../../components/ui/skeleton";
 import { VaultTab } from "./vault-tab";
 import { SchedulesTab } from "./schedules-tab";
+import { thinkingLevelOptionsFor } from "../chat/thinking-level";
 
 type TabKey = "overview" | "prompt" | "runtime" | "tools" | "vault" | "schedules";
 
@@ -553,7 +554,17 @@ function RuntimeTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveF
   };
 
   // S is reassigned on language switch (live binding), so read it during render rather than hoisting to a module-level constant.
-  const thinkingLevelOptions = optionRows(S.agent.thinkingLevelOptions);
+  // Thinking level composes both review rounds: the "" inherit row is filtered (the user picks
+  // explicitly; unset shows the (default) placeholder and the reset link rewinds to it), "none"
+  // is no longer offered (many models cannot disable thinking) but stays a valid stored value —
+  // when the **persisted** config carries it, a display-only legacy row is appended, so a
+  // misclick onto another tier keeps it reachable until the change is actually saved
+  // (see thinking-level.ts).
+  const thinkingLevelOptions = thinkingLevelOptionsFor(
+    S.agent.thinkingLevelOptions,
+    S.agent.thinkingLevelNoneKept,
+    cfg.model?.thinkingLevel,
+  );
   const compactionModeOptions = optionRows(S.agent.compactionModeOptions);
 
   return (

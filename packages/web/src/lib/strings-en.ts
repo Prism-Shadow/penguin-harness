@@ -21,6 +21,8 @@ export const en: Strings = {
     expandSidebar: "Expand sidebar",
     collapseGroup: "Collapse",
     expandGroup: "Expand",
+    pinGroup: "Pin group",
+    unpinGroup: "Unpin group",
   },
 
   settings: {
@@ -197,7 +199,6 @@ export const en: Strings = {
     thinkingLevel: "model.thinking_level",
     thinkingLevelOptions: [
       ["", "Send no override — keep whatever is currently configured."],
-      ["none", "Disables extended reasoning; the fastest responses."],
       ["low", "Enables a lower tier of extended reasoning."],
       [
         "medium",
@@ -209,6 +210,8 @@ export const en: Strings = {
         "Enables the highest tier of extended reasoning; identical to high on some models.",
       ],
     ] as ReadonlyArray<readonly [string, string]>,
+    thinkingLevelNoneKept:
+      "Stored legacy tier: new selections no longer offer the off tier (many models cannot disable thinking).",
     timeoutMs: "model.timeoutMs",
     timeoutMsHint: "Per-request timeout, ms",
     compaction: "Context compaction",

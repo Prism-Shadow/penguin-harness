@@ -2,8 +2,10 @@
  * Cost Center chart pure-function unit tests (chart-geom.ts): coordinate mapping, SVG path
  * assembly, Token bar chart horizontal layout (fixed 25px bar width / spacing ≥ bar width /
  * whether it scrolls horizontally), stacked-bar segment geometry and per-segment hit bands,
- * pie slice arcs, success rate. Component interaction isn't covered here (vitest runs in a
- * node environment, no DOM).
+ * pie slice arcs, success rate, hover-bubble placement (pointer lower-right, flipping at
+ * the edges; the cache hit rate shown in the cacheRead bubble is lib/format's shared
+ * cacheHitRate, tested in format.test.ts). Component interaction isn't covered here
+ * (vitest runs in a node environment, no DOM).
  *
  * Canvas width is "measured container pixels" (1 canvas unit = 1 CSS pixel), so each case
  * passes an explicit width; 640 was the original fixed canvas width, and reusing it as the
@@ -18,10 +20,13 @@ import {
   sparseLabelIdx,
   autoLabelIdx,
   successRate,
+  bubblePosition,
   tokenBarLayout,
   barSegments,
   pieSlices,
   BAR_W,
+  BUBBLE_OFFSET,
+  CHART_H,
   MIN_HIT_H,
   PAD_L,
   PAD_R,
@@ -248,5 +253,63 @@ describe("successRate", () => {
     expect(successRate(99, 100)).toBeCloseTo(0.99);
     expect(successRate(5, 10)).toBe(0.5);
     expect(successRate(0, 0)).toBe(1);
+  });
+});
+
+describe("bubblePosition", () => {
+  // A 640px canvas that fits its card, not scrolled: the visible window is the whole canvas.
+  const view = { left: 0, right: 640, bottom: CHART_H };
+  const BW = 160;
+  const BH = 48;
+
+  it("default: the bubble hangs at the pointer's lower-right, offset on both axes", () => {
+    expect(bubblePosition(100, 50, BW, BH, view)).toEqual({
+      left: 100 + BUBBLE_OFFSET,
+      top: 50 + BUBBLE_OFFSET,
+    });
+  });
+
+  it("right edge: flips to the pointer's lower-left (clamping would slide it back under the pointer)", () => {
+    const pos = bubblePosition(600, 50, BW, BH, view);
+    expect(pos).toEqual({ left: 600 - BUBBLE_OFFSET - BW, top: 50 + BUBBLE_OFFSET });
+    expect(pos.left + BW).toBeLessThanOrEqual(view.right); // fully inside the window
+    expect(pos.left + BW).toBeLessThanOrEqual(600 - BUBBLE_OFFSET); // and clear of the pointer
+  });
+
+  it("bottom edge: flips above the pointer", () => {
+    expect(bubblePosition(100, 190, BW, BH, view)).toEqual({
+      left: 100 + BUBBLE_OFFSET,
+      top: 190 - BUBBLE_OFFSET - BH,
+    });
+  });
+
+  it("bottom-right corner: flips on both axes to the pointer's upper-left", () => {
+    expect(bubblePosition(630, 195, BW, BH, view)).toEqual({
+      left: 630 - BUBBLE_OFFSET - BW,
+      top: 195 - BUBBLE_OFFSET - BH,
+    });
+  });
+
+  it("an exact fit against the edge does not flip", () => {
+    const px = view.right - BUBBLE_OFFSET - BW; // left + BW lands exactly on view.right
+    expect(bubblePosition(px, 50, BW, BH, view).left).toBe(px + BUBBLE_OFFSET);
+  });
+
+  it("scrolled Token bar canvas: flips against the *visible* window, not the full canvas", () => {
+    // 1554px canvas in a 495px card scrolled to the far right: visible [1059, 1554].
+    const v = { left: 1059, right: 1554, bottom: CHART_H };
+    // Mid-window: normal lower-right placement (canvas coordinates, not window-relative).
+    expect(bubblePosition(1100, 50, BW, BH, v)).toEqual({ left: 1112, top: 62 });
+    // Near the visible right edge: 1512+160 would clip at 1554 → flip left.
+    expect(bubblePosition(1500, 50, BW, BH, v).left).toBe(1500 - BUBBLE_OFFSET - BW);
+    // Near the visible left edge the lower-right placement already fits: no shove.
+    expect(bubblePosition(1065, 50, BW, BH, v).left).toBe(1065 + BUBBLE_OFFSET);
+  });
+
+  it("degenerate guard: when neither side of the pointer fits, clamp to the window (covering the pointer is then unavoidable)", () => {
+    const v = { left: 0, right: 200, bottom: CHART_H };
+    const pos = bubblePosition(100, 100, 180, BH, v); // wider than either side of the pointer, still narrower than the window
+    expect(pos.left).toBe(0); // flip target would be negative → clamped to the window's left edge
+    expect(pos.left + 180).toBeLessThanOrEqual(v.right); // a bubble wider than the whole window would still clip on the right — unreachable at real card widths
   });
 });

@@ -25,7 +25,7 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import { catalogEntryFor, providerInfo } from "@prismshadow/penguin-core/model-catalog";
 import { S } from "../../lib/strings";
-import { humanizeTokens } from "../../lib/format";
+import { cacheHitRate, formatPercent, humanizeTokens } from "../../lib/format";
 import { TOKEN_COLORS } from "../../lib/token-colors";
 import { categoryColor } from "../../lib/category-colors";
 import {
@@ -254,7 +254,8 @@ interface SegHover {
  * be un-hoverable; widening the bar doesn't help the vertical dimension
  * either). Hitting a segment highlights only that segment and fades out
  * everything else; the bubble reports only that segment's date/bucket
- * name/Token count. When legend is passed in (legend hover), it highlights all segments of the matching bucket.
+ * name/Token count (the cacheRead segment adds that day's cache hit rate,
+ * cacheRead / (cacheRead + cacheWrite)). When legend is passed in (legend hover), it highlights all segments of the matching bucket.
  * No hover vertical line is drawn (hoverLine={false}): the bar itself already indicates the x position.
  */
 export function TokenBarChart({
@@ -304,12 +305,22 @@ export function TokenBarChart({
             const p = trend[i]!;
             const key = hover?.key;
             if (!key) return null;
+            // The cacheRead bubble additionally reports that day's cache hit
+            // rate, via the formula/format/label shared with the Trace page
+            // (lib/format.ts cacheHitRate + formatPercent, S.traces.hitRate),
+            // so the metric reads identically everywhere; null (denominator 0) omits the line instead of showing 0/0.
+            const hitRate = key === "cacheRead" ? cacheHitRate(p.cacheRead, p.cacheWrite) : null;
             return (
               <>
                 <p className="text-gray-400">{p.date}</p>
                 <p className="font-mono">
                   {bucketLabel(key)} {humanizeTokens(p[key])}
                 </p>
+                {hitRate !== null && (
+                  <p className="font-mono">
+                    {S.traces.hitRate} {formatPercent(hitRate)}
+                  </p>
+                )}
               </>
             );
           }}
