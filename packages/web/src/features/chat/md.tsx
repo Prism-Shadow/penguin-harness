@@ -13,9 +13,9 @@
  * Inline code keeps the default rendering (`.md-body code` styling).
  */
 import { isValidElement, memo } from "react";
-import type { ReactNode } from "react";
+import type { ComponentPropsWithoutRef, ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
-import type { Components } from "react-markdown";
+import type { Components, ExtraProps } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { CodeBlock } from "./code-block";
 
@@ -43,19 +43,43 @@ function MdPre({ children, streaming }: { children?: ReactNode; streaming: boole
 }
 
 /**
+ * Link adapter: every chat link opens in a new tab (`target="_blank"` + `rel="noreferrer"`,
+ * which also implies `noopener`), unconditionally — including relative and `#anchor` hrefs a
+ * model may emit — so clicking a reply link never navigates the SPA away from the live
+ * conversation. All other anchor props react-markdown supplies (`href`, `title` from
+ * `[text](url "title")`, ...) are forwarded as-is — only its non-DOM `node` prop is stripped —
+ * and `target`/`rel` sit after the spread so the new-tab behavior always wins.
+ * Long-URL wrapping is CSS (`.md-body a` in styles.css), not handled here.
+ */
+function MdLink({
+  node: _node,
+  children,
+  ...anchorProps
+}: ComponentPropsWithoutRef<"a"> & ExtraProps) {
+  return (
+    <a {...anchorProps} target="_blank" rel="noreferrer">
+      {children}
+    </a>
+  );
+}
+
+/**
  * The two `components` maps, built once at module scope instead of inline per render.
  * react-markdown uses `components.pre` as the element **type**, so a fresh arrow each render is
  * a new type on every commit: React unmounts and remounts every code block, dropping the user's
  * text selection and resetting each block's Copy-button state — ~8 times a second while a reply
  * streams, including for blocks that closed long ago. `streaming` is the only thing the adapter
  * closes over, so one frozen map per value is enough; the single flip between them happens on
- * the settle render, which re-parses the message anyway.
+ * the settle render, which re-parses the message anyway. The `a` adapter closes over nothing,
+ * so both maps share the one `MdLink` reference.
  */
 const STREAMING_COMPONENTS: Components = {
   pre: (props) => <MdPre streaming>{props.children}</MdPre>,
+  a: MdLink,
 };
 const SETTLED_COMPONENTS: Components = {
   pre: (props) => <MdPre streaming={false}>{props.children}</MdPre>,
+  a: MdLink,
 };
 
 export const Md = memo(function Md({

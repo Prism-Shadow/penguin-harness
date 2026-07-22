@@ -7,10 +7,19 @@
  * vendor's brand mark (for recognition purposes, not under trademark license;
  * Qwen's official gradient wordmark is flattened to currentColor monochrome);
  * Z.AI uses a simplified geometric approximation of its branded glyph (not an
- * exact reproduction of the trademark); unknown vendors and custom models use
- * a generic cube. All are pure paths, no external image assets.
+ * exact reproduction of the trademark); custom models use a generic cube. All
+ * are pure paths, no external image assets.
+ *
+ * Vendor ids outside the preset table are user-defined groups: instead of all
+ * sharing the cube (which made same-named models across groups
+ * indistinguishable) each renders a letter tile — the group id's initial as
+ * colored ink on a light tint hashed from the id (the soft tinted-tile style
+ * AgentAvatar and the Skill tiles use, keeping the row's visual weight close
+ * to the flat preset glyphs).
  */
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
+
+import { avatarInitial, avatarTile } from "../../lib/avatar";
 
 interface Glyph {
   /** Solid marks (brand mark) use fill; line art uses stroke. */
@@ -106,7 +115,35 @@ const GLYPHS: Record<string, Glyph> = {
 };
 
 export function ProviderLogo({ provider, className }: { provider: string; className?: string }) {
-  const glyph = GLYPHS[provider] ?? GLYPHS.custom!;
+  const glyph = GLYPHS[provider];
+  // User-defined group (only the preset `custom` id keeps the generic cube): letter tile.
+  // SVG text scales with the viewBox, staying crisp at every call-site size; the ink is
+  // theme-switched via --tile-fg / --tile-fg-dark (≥ 4.5:1 on the tile for every hue,
+  // see lib/avatar.ts), so the surrounding text-color class only affects preset glyphs.
+  if (!glyph) {
+    const tile = avatarTile(provider);
+    return (
+      <svg
+        viewBox="0 0 24 24"
+        className={className}
+        style={{ "--tile-fg": tile.fg, "--tile-fg-dark": tile.fgDark } as CSSProperties}
+        aria-hidden
+      >
+        <rect x="0" y="0" width="24" height="24" rx="5" fill={tile.bg} />
+        <text
+          x="12"
+          y="12"
+          textAnchor="middle"
+          dominantBaseline="central"
+          fontSize="13"
+          fontWeight="700"
+          className="[fill:var(--tile-fg)] dark:[fill:var(--tile-fg-dark)]"
+        >
+          {avatarInitial(provider)}
+        </text>
+      </svg>
+    );
+  }
   return (
     <svg
       viewBox={glyph.viewBox ?? "0 0 24 24"}

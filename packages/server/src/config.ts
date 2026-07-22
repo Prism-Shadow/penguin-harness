@@ -12,7 +12,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { resolveRoot } from "@prismshadow/penguin-core";
+import { DEFAULT_SERVER_PORT, resolveRoot } from "@prismshadow/penguin-core";
 
 export interface ServerConfig {
   /** Local data root directory (shared with the SDK/CLI). */
@@ -52,7 +52,7 @@ export function resolveServerConfig(env: NodeJS.ProcessEnv = process.env): Serve
   // An empty PORT string is treated as unset (the common `.env` case of an empty
   // `PORT=`): Number("") === 0 would pass the range check and bind to a random
   // port; this matches the CLI's resolvePort convention.
-  const port = Number(env.PORT || 7364);
+  const port = Number(env.PORT || DEFAULT_SERVER_PORT);
   if (!Number.isInteger(port) || port < 0 || port > 65535) {
     throw new Error(`Invalid port configuration PORT=${env.PORT}`);
   }
