@@ -74,7 +74,7 @@ https://github.com/user-attachments/assets/aec49ae9-b743-467b-b247-37bedfeaa36e
 | ----------- | ------------------------------------------------------------------------------ |
 | 办公效率    | `data-analysis`、`firecrawl`                                                   |
 | 软件开发    | `web-design`、`software-engineering`                                           |
-| AI 应用开发 | `penguin-sdk`、`penguin-cli`、`agenthub-models`                                |
+| AI 应用开发 | `penguin-sdk`、`penguin-cli`、`agenthub-models`、`vllm`、`ollama`、`llamafactory` |
 | Agent 调优  | `agent-creation`、`benchmark-design`、`agent-evaluation`、`agent-optimization` |
 
 ## 支持的模型
