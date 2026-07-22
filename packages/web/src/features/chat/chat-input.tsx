@@ -208,6 +208,13 @@ function modelLabel(m: ModelInfo): string {
 }
 
 /**
+ * "No key" marker for the model dropdown's key-less rows: a key struck through by a prohibition
+ * slash (24x24 line art, grayscale via currentColor, matching the approval-mode icon style).
+ */
+const NO_KEY_ICON =
+  "M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4M2 2l20 20";
+
+/**
  * Model selector (draft state only; docked to the left of the send button): both the button and
  * candidate items show the provider logo. The menu opens **downward** — the draft card is
  * vertically centered with room below; a top quick-search box (reusing the model page's rule:
@@ -218,8 +225,9 @@ function modelLabel(m: ModelInfo): string {
  * By default only models with a configured API key are listed (stored masked key — the same
  * standard as the model page's key status; `envKey` is merely the NAME of a fallback env var and
  * doesn't count), with the selected and the default model always visible even without a key; a
- * muted bottom row reveals the remaining key-less models (tagged "no key") without closing the
- * menu or changing the selection. When no model has a key at all, everything is listed directly.
+ * muted bottom row reveals the remaining key-less models (marked by a struck-through key icon,
+ * with the "no key" text in its title) without closing the menu or changing the selection. When
+ * no model has a key at all, everything is listed directly.
  */
 function ModelSelect({
   models,
@@ -330,10 +338,16 @@ function ModelSelect({
           >
             <ProviderLogo provider={m.provider} className="h-4 w-4 shrink-0" />
             <span className="min-w-0 flex-1 truncate">{modelLabel(m)}</span>
-            {/* Key-less rows (visible via show-all / selected / default / no-key-at-all) carry a subtle "no key" tag. */}
+            {/* Key-less rows (visible via show-all / selected / default / no-key-at-all) carry a
+                struck-through key icon (the "no key" text lives in the title/aria-label). */}
             {!hasConfiguredKey(m) && (
-              <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
-                {S.models.noKey}
+              <span
+                role="img"
+                title={S.models.noKey}
+                aria-label={S.models.noKey}
+                className="shrink-0 text-gray-400 dark:text-gray-500"
+              >
+                <GlyphIcon d={NO_KEY_ICON} size={13} />
               </span>
             )}
             {sameModelRef(m, defaultModel) && (
