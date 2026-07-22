@@ -350,6 +350,8 @@ export class ProjectConfigService {
         // routed has no fallback (no envKey, and AgentHub will reject that id).
         const envKey = resolveModelEnv(modelId, clientType)?.envKey;
         const vision = typeof m.vision === "boolean" ? m.vision : cat?.supportsVision;
+        // Output cap: TOML annotation only (user-owned; the built-in catalog never presets it).
+        const maxTokens = optNum(m.max_tokens);
         // Display name: the explicit TOML field (user-edited) takes priority, then the built-in catalog.
         const displayName = optStr(m.display_name) ?? cat?.displayName;
         // credential is inlined on the entry: a credential block is emitted if either api_key or base_url is present.
@@ -369,6 +371,7 @@ export class ProjectConfigService {
             : {}),
           ...(clientType ? { clientType } : {}),
           ...(vision !== undefined ? { vision } : {}),
+          ...(maxTokens !== undefined ? { maxTokens } : {}),
           ...(envKey ? { envKey } : {}),
           ...(pricingDto ? { pricing: pricingDto } : {}),
           ...(apiKey !== undefined || credBaseUrl !== undefined
@@ -443,6 +446,7 @@ export class ProjectConfigService {
       delete next.context_window;
       delete next.client_type;
       delete next.vision;
+      delete next.max_tokens;
       delete next.pricing;
       delete next.display_name;
       // Leftover key from the old concatenated format (request_model_id): defensively stripped, never written to disk again.
@@ -460,6 +464,8 @@ export class ProjectConfigService {
       if (entry.clientType) next.client_type = entry.clientType;
       // Treated as supported by default: only written to disk when explicitly annotated (both true/false are kept; false drives a frontend blocking hint).
       if (entry.vision !== undefined) next.vision = entry.vision;
+      // Inherit-the-Agent-value by default: only written to disk when explicitly annotated (omitted on a full-table PUT = the annotation is cleared).
+      if (entry.maxTokens !== undefined) next.max_tokens = entry.maxTokens;
       if (entry.pricing !== undefined) {
         next.pricing = {
           unit: "usd_per_mtok",

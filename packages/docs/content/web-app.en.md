@@ -33,7 +33,7 @@ The interface language (中文 / English / system) and theme (light / dark / sys
 
 ### Creating a Conversation
 
-A new conversation starts as a draft: pick the Agent, the Workspace (via a server-side directory browser), the approval mode, and the model before sending the first message. The Session is created on first send, and from then on its model and Workspace are locked.
+A new conversation starts as a draft: pick the Agent, the Workspace (via a server-side directory browser), the approval mode, the model, and the thinking level before sending the first message. The Session is created on first send, and from then on its model and Workspace are locked. Switching the thinking level or the model makes the switched-to value the new default: the level is written back to the selected Agent's `model.thinking_level` immediately, and the picked model carries over as the next conversation's default; a running session keeps the level and model it was created with (the input area shows them read-only).
 
 There are four approval modes: `allow-all`, `deny-all`, `read-only` (only read-only tools pass), and `always-ask`. See [Tools and Approvals](/tools).
 
@@ -76,7 +76,7 @@ Browse the Skill library by group, install Skills onto an Agent, or quick-invoke
 
 ## Model Configuration (/models)
 
-A per-Project model table grouped by provider. Models can be added and edited: identity is the `(provider, model_id)` pair, credentials are masked, and context window, pricing, and the vision flag are configurable. You can set the default model and the vision model (which reads images on behalf of session models without image input), and run a connectivity test on any entry. Only Project owners can edit. For concepts, see [Models and Providers](/models).
+A per-Project model table grouped by provider. Models can be added and edited: identity is the `(provider, model_id)` pair, credentials are masked, and context window, max output tokens (a per-model cap overriding the Agent's `model.max_tokens` — lower it for small-context models), pricing, and the vision flag are configurable. You can set the default model and the vision model (which reads images on behalf of session models without image input), and run a connectivity test on any entry. Only Project owners can edit. For concepts, see [Models and Providers](/models).
 
 ## Usage (/usage)
 

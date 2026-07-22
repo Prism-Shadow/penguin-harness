@@ -22,6 +22,7 @@ Each Project's available models are recorded in the hidden `.project_config.toml
 | `provider` | Config group name; paired with `model_id` it forms the unique key |
 | `model_id` | Upstream request id |
 | `context_window` | Context window |
+| `max_tokens` | Optional per-model output cap (max output tokens per request). When set it overrides the Agent's `model.max_tokens`; unset inherits it. Lower it for small-context models: the per-Agent default (32000) cannot fit into e.g. a 32k window together with any prompt. Omitting the field on a Web full-table save clears it |
 | `client_type` | Protocol hint (e.g. `openai`); inferred by AgentHub from the model id when omitted |
 | `display_name` | Display name |
 | `vision` | Whether image input is supported, default true |
@@ -76,7 +77,7 @@ Some models in the preset catalog: deepseek-v4-pro / deepseek-v4-flash, gemini-3
 
 ## Thinking levels
 
-Five levels: `none | low | medium | high | xhigh`, configured per Agent as `model.thinking_level` in `system_config.yaml`, default medium. See [Configuration](/configuration).
+Five levels: `none | low | medium | high | xhigh`, configured per Agent as `model.thinking_level` in `system_config.yaml`, default medium. The chat draft view offers a quick picker next to the model selector: a picked level is written back to the selected Agent's setting immediately (the switched-to level becomes that Agent's new default and applies from the next session; a running session keeps the level it was created with). See [Configuration](/configuration).
 
 ## Models decoupled from Agents
 

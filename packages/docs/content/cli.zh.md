@@ -84,6 +84,7 @@ penguin config model add --provider deepseek --model-id deepseek-v4-pro --api-ke
 | `--api-key <key>` | API Key，内联存入 Project 隐藏文件 `.project_config.toml` |
 | `--base-url <url>` | 自定义接口地址 |
 | `--context-window <n>` | 上下文窗口大小 |
+| `--max-tokens <n>` | 该模型的最大输出长度（正整数）。设置后覆盖 Agent 的 `model.max_tokens`，缺省沿用；小上下文模型建议调低 |
 | `--client-type <type>` | 客户端协议类型 |
 | `--vision` / `--no-vision` | 标记是否支持视觉输入 |
 | `--price-cache-read <n>` | 缓存读价格 |

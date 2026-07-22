@@ -7,9 +7,14 @@
  * indicator) + Model + send (up arrow);
  * In draft state (Session not yet created), when models/onChangeModel are supplied, the model
  * selector sits to the left of the send button (provider logo + name, popup opens **downward**,
- * with a top quick-search box, and an internal scroll cap to avoid overflowing the screen) — once
+ * with a top quick-search box, an internal scroll cap to avoid overflowing the screen, and a
+ * configured-key-first list with a bottom "show all" row — see ModelSelect) — once
  * the Session is created the model is locked, and the same spot switches to a read-only
  * logo + name display;
+ * Draft state also renders a thinking-level picker left of the model selector (backed by the
+ * Agent settings: picking a level writes through to the Agent config and applies to the session
+ * created on first send); in session state the level is fixed (llmConfig is assembled once per
+ * session), shown as a read-only tag from session_meta;
  * `/` opens the slash command menu (`/compact` compresses context, replacing the button; each
  * installed skill gets its own entry; pressing Enter on `/<skill_name>` toggles that skill's
  * selection without sending). Matching is positional like `@`: a slash opens the menu from any
@@ -56,9 +61,10 @@ import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { SkillIcon } from "../skills/skill-icon-view";
 import { ZoomableImage } from "../../components/ui/image-zoom";
 import { ProviderLogo } from "../../components/ui/provider-logo";
-import { matchesQuery, orderModelsLikeLibrary, sameModelRef } from "../models/model-grouping";
+import { hasConfiguredKey, sameModelRef, visibleChatModels } from "../models/model-grouping";
 import { filterAgents, matchMention, splitLeadingMention } from "./agent-mentions";
 import { matchSlash, removeSlashToken } from "./slash-token";
+import { THINKING_LEVELS, thinkingLevelLabel } from "./thinking-level";
 import {
   BOOK_ICON,
   buildSkillsMessage,
@@ -207,6 +213,13 @@ function modelLabel(m: ModelInfo): string {
 }
 
 /**
+ * "No key" marker for the model dropdown's key-less rows: a key struck through by a prohibition
+ * slash (24x24 line art, grayscale via currentColor, matching the approval-mode icon style).
+ */
+const NO_KEY_ICON =
+  "M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4M2 2l20 20";
+
+/**
  * Model selector (draft state only; docked to the left of the send button): both the button and
  * candidate items show the provider logo. The menu opens **downward** — the draft card is
  * vertically centered with room below; a top quick-search box (reusing the model page's rule:
@@ -214,6 +227,12 @@ function modelLabel(m: ModelInfo): string {
  * scroll (max-h-56) so it never overflows the browser's viewport height no matter how many models
  * there are. On narrow screens only the logo remains (name hidden); list items mark the project
  * default.
+ * By default only models with a configured API key are listed (stored masked key — the same
+ * standard as the model page's key status; `envKey` is merely the NAME of a fallback env var and
+ * doesn't count), with the selected and the default model always visible even without a key; a
+ * muted bottom row reveals the remaining key-less models (marked by a struck-through key icon,
+ * with the "no key" text in its title) without closing the menu or changing the selection. When
+ * no model has a key at all, everything is listed directly.
  */
 function ModelSelect({
   models,
@@ -231,12 +250,21 @@ function ModelSelect({
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  // Expanded "show all" state: collapses back to key-configured models on each open.
+  const [showAll, setShowAll] = useState(false);
   const current = models.find((m) => sameModelRef(m, value));
   // Display rule matches the model page's card: display name, or falls back to the upstream id (grouping is already conveyed by the provider logo).
   const label = current ? modelLabel(current) : (value?.modelId ?? "…");
   // Dropdown order mirrors the model library page: provider groups in MODEL_PROVIDERS order
-  // (user-defined groups after, custom last), in-group order preserved.
-  const filtered = orderModelsLikeLibrary(models).filter((m) => matchesQuery(m, query));
+  // (user-defined groups after, custom last), in-group order preserved. By default the list
+  // keeps only key-configured models (selected/default always included; lists everything when
+  // no model has a key); the query filters what's visible.
+  const visible = visibleChatModels(models, { showAll, query, selected: value, defaultModel });
+  // How many models the key filter hides under the current query (0 when expanded): drives the bottom "show all" row.
+  const hiddenCount = showAll
+    ? 0
+    : visibleChatModels(models, { showAll: true, query, selected: value, defaultModel }).length -
+      visible.length;
   return (
     <Dropdown
       open={open}
@@ -251,7 +279,11 @@ function ModelSelect({
           onClick={() => {
             const next = !open;
             setOpen(next);
-            if (next) setQuery(""); // Always start from the full list each time it opens
+            if (next) {
+              // Each open starts from the unsearched, collapsed (configured-only) list.
+              setQuery("");
+              setShowAll(false);
+            }
           }}
           className="flex h-8 max-w-44 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
         >
@@ -292,10 +324,10 @@ function ModelSelect({
         />
       </div>
       <div className="max-h-56 overflow-y-auto">
-        {filtered.length === 0 && (
+        {visible.length === 0 && (
           <p className="px-3 py-1.5 text-xs text-gray-400">{S.models.noSearchResults}</p>
         )}
-        {filtered.map((m) => (
+        {visible.map((m) => (
           <button
             key={`${m.provider}:${m.modelId}`}
             type="button"
@@ -311,6 +343,18 @@ function ModelSelect({
           >
             <ProviderLogo provider={m.provider} className="h-4 w-4 shrink-0" />
             <span className="min-w-0 flex-1 truncate">{modelLabel(m)}</span>
+            {/* Key-less rows (visible via show-all / selected / default / no-key-at-all) carry a
+                struck-through key icon (the "no key" text lives in the title/aria-label). */}
+            {!hasConfiguredKey(m) && (
+              <span
+                role="img"
+                title={S.models.noKey}
+                aria-label={S.models.noKey}
+                className="shrink-0 text-gray-400 dark:text-gray-500"
+              >
+                <GlyphIcon d={NO_KEY_ICON} size={13} />
+              </span>
+            )}
             {sameModelRef(m, defaultModel) && (
               <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
                 {S.models.default}
@@ -322,6 +366,109 @@ function ModelSelect({
           </button>
         ))}
       </div>
+      {/* Bottom expander row (pinned below the scroll area, mirroring the search box on top):
+          reveals the models hidden by the configured-key filter in place — the menu stays open
+          and the selection is untouched. */}
+      {hiddenCount > 0 && (
+        <div className="border-t border-gray-100 dark:border-gray-800">
+          <button
+            type="button"
+            onClick={() => setShowAll(true)}
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+          >
+            {S.models.showModelsWithoutKey(hiddenCount)}
+          </button>
+        </div>
+      )}
+    </Dropdown>
+  );
+}
+
+/** Spark glyph for the thinking-level picker (24x24 line path, consistent with the toolbar icon set). */
+const SPARK_ICON = "M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z";
+
+/**
+ * Conversation-time thinking-level picker (draft state only, docked left of the model
+ * selector): shows the **selected Agent's** current `model.thinking_level` and writes a picked
+ * level straight through to the Agent settings — llmConfig is assembled once per session, so
+ * the level applies to the session created on first send and becomes the Agent's new default
+ * (switch-becomes-default). Per review: a title bar names the control, and the menu lists
+ * exactly the five levels with short names only (no descriptions, no "default" row) — an
+ * Agent without an explicit override shows an em dash until a level is picked.
+ */
+function ThinkingLevelSelect({
+  value,
+  onChange,
+  disabled,
+}: {
+  /** Current level ("" = no override yet); null = the Agent config is still loading. */
+  value: string | null;
+  onChange: (level: string) => void;
+  disabled: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const label =
+    value === null ? "…" : (thinkingLevelLabel(S.chat.thinkingLevelNames, value) ?? "—");
+  return (
+    <Dropdown
+      open={open}
+      setOpen={setOpen}
+      menuClass="right-0 top-full mt-1 w-36 origin-top-right"
+      button={
+        <button
+          type="button"
+          title={`${S.chat.thinkingLevel}：${label}`}
+          aria-label={S.chat.thinkingLevel}
+          disabled={disabled || value === null}
+          onClick={() => setOpen(!open)}
+          className="flex h-8 max-w-36 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+        >
+          <GlyphIcon d={SPARK_ICON} size={14} className="shrink-0" />
+          {/* When the card is narrower than @md, only the icon remains (title shows the full state). */}
+          <span className="hidden min-w-0 truncate @md:block">{label}</span>
+          <svg
+            width="10"
+            height="10"
+            viewBox="0 0 12 12"
+            fill="none"
+            stroke="currentColor"
+            className="shrink-0"
+            aria-hidden
+          >
+            <path
+              d="M3 4.5l3 3 3-3"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+      }
+    >
+      {/* Title bar: names the control (the rows themselves are just the five short names). */}
+      <div className="border-b border-gray-100 px-3 pb-1.5 pt-0.5 text-xs font-semibold text-gray-500 dark:border-gray-800 dark:text-gray-400">
+        {S.chat.thinkingLevel}
+      </div>
+      {THINKING_LEVELS.map((level) => (
+        <button
+          key={level}
+          type="button"
+          onClick={() => {
+            onChange(level);
+            setOpen(false);
+          }}
+          className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800 ${
+            level === value
+              ? "font-medium text-gray-900 dark:text-gray-100"
+              : "text-gray-600 dark:text-gray-400"
+          }`}
+        >
+          <span className="min-w-0 flex-1 truncate">
+            {S.chat.thinkingLevelNames[level] ?? level}
+          </span>
+          <span className="w-3 shrink-0 text-center">{level === value ? "✓" : ""}</span>
+        </button>
+      ))}
     </Dropdown>
   );
 }
@@ -535,6 +682,9 @@ export function ChatInput({
   models,
   onChangeModel,
   defaultModel,
+  thinkingLevel,
+  onChangeThinkingLevel,
+  sessionThinkingLevel,
   contextWindow,
   contextNow,
   contextStale = false,
@@ -576,6 +726,24 @@ export function ChatInput({
   onChangeModel?: (ref: ModelRefDto) => void;
   /** Project default model (marked "default" on the selector's candidate item). */
   defaultModel?: ModelRefDto;
+  /**
+   * Draft state: the selected Agent's current thinking level ("" = no override / provider
+   * default; null while the Agent config is loading — the picker renders disabled). Supplied
+   * together with onChangeThinkingLevel; without the callback the picker isn't rendered.
+   */
+  thinkingLevel?: string | null;
+  /**
+   * Draft state: writes the picked level straight through to the Agent settings (the parent
+   * persists it via the agent-config API; the session created on first send picks it up and it
+   * becomes the Agent's new default).
+   */
+  onChangeThinkingLevel?: (level: string) => void;
+  /**
+   * Session state: the session's fixed thinking level (captured from session_meta on replay;
+   * llmConfig is assembled once per session, so it cannot change mid-session). Rendered as a
+   * read-only tag next to the locked model; null/undefined = unknown (nothing shown).
+   */
+  sessionThinkingLevel?: string | null;
   /** Model's context window (from models config; when not configured, the ring's cap falls back to 128000 via resolveContextWindow). */
   contextWindow?: number;
   /** Current context usage (total of the most recent main-session Request). */
@@ -1212,6 +1380,31 @@ export function ChatInput({
               {...(contextWindow !== undefined ? { window: contextWindow } : {})}
             />
           )}
+          {/* Draft state: conversation-time thinking level (backed by Agent settings), docked left of the model selector. */}
+          {models && onChangeModel && onChangeThinkingLevel && (
+            <ThinkingLevelSelect
+              value={thinkingLevel ?? null}
+              onChange={onChangeThinkingLevel}
+              disabled={busy}
+            />
+          )}
+          {/* Session state: the session's fixed thinking level (from session_meta), read-only next
+              to the locked model; hidden when it isn't one of the five levels (e.g. "default"). */}
+          {!onChangeModel &&
+            (() => {
+              const label = thinkingLevelLabel(S.chat.thinkingLevelNames, sessionThinkingLevel);
+              return (
+                label && (
+                  <span
+                    title={`${S.chat.thinkingLevel}：${label}`}
+                    className="hidden h-8 shrink-0 items-center gap-1 px-1 text-xs text-gray-400 @md:flex dark:text-gray-500"
+                  >
+                    <GlyphIcon d={SPARK_ICON} size={13} className="shrink-0" />
+                    {label}
+                  </span>
+                )
+              );
+            })()}
           {/* Left of the send button: model selector in draft state; once the Session is created the model is locked, shown read-only (still with the provider logo). */}
           {models && onChangeModel ? (
             <ModelSelect

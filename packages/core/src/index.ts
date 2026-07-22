@@ -19,6 +19,9 @@
 export * from "./omnimessage/index.js";
 export * from "./interfaces.js";
 
+// Only the default server port leaves internal: the CLI / server default-port source of truth.
+export { DEFAULT_SERVER_PORT } from "./internal/ports.js";
+
 // Submodules
 export * from "./state/index.js";
 export * from "./llm/index.js";
@@ -37,13 +40,13 @@ export type {
 } from "./engine/context-engine.js";
 export { Session } from "./session.js";
 export type { SessionConfig } from "./session.js";
-export {
-  buildTitlePrompt,
-  generateTitleWithLLM,
-  sanitizeTitle,
-  stripConversationMarkers,
-} from "./session-title.js";
-export type { SessionTitleResult } from "./session-title.js";
+// Session-title generation lives in internal/ (an assembly detail of Session.generateTitle);
+// only its narrow public surface is re-exported: the result type (part of
+// Session.generateTitle's signature) and the sanitation helpers the Web server's title
+// fallback builds on (stripConversationMarkers / sanitizeTitle). The prompt/request
+// internals (buildTitlePrompt / generateTitleWithLLM) are deliberately not public.
+export { sanitizeTitle, stripConversationMarkers } from "./internal/session-title.js";
+export type { SessionTitleResult } from "./internal/session-title.js";
 export { Agent, createAgent } from "./agent.js";
 export type { CreateAgentOptions, CreateSessionOptions, ResumeSessionOptions } from "./agent.js";
 

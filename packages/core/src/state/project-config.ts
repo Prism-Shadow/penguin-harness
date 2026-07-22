@@ -88,6 +88,14 @@ export interface ModelEntry {
    * enters that session's history.
    */
   vision?: boolean;
+  /**
+   * Per-model max output tokens (the request's output cap, i.e. GenerativeModelConfig.maxTokens):
+   * when set it wins over the Agent's `system_config.model.max_tokens` — the fit is a model trait
+   * (the seeded per-Agent default of 32000 cannot fit into e.g. a 32768-token context window
+   * together with any prompt, and the upstream rejects the request outright). Unset = inherit
+   * the Agent value. User-only, never preset by the builtin catalog.
+   */
+  max_tokens?: number;
   /** Pricing info; absent means this Model's cost isn't counted. */
   pricing?: ModelPricing;
   /** API key (inlined credential); left empty falls back to the vendor's environment variable. */
@@ -275,6 +283,8 @@ export async function addModel(
     client_type?: string;
     /** Whether image input is supported (vision/multimodal); keeps the existing value by default (treated as supported if never set). */
     vision?: boolean;
+    /** Per-model max output tokens (wins over the Agent config); keeps the existing value by default (unset = inherit the Agent value). */
+    max_tokens?: number;
     /** Price input may cover only some buckets; merged and written as a complete `ModelPricing`. */
     pricing?: Partial<ModelPricing>;
     api_key?: string;
@@ -309,6 +319,10 @@ export async function addModel(
   const vision = entry.vision ?? existing?.vision;
   if (vision !== undefined) {
     modelEntry.vision = vision;
+  }
+  const maxTokens = entry.max_tokens ?? existing?.max_tokens;
+  if (maxTokens !== undefined) {
+    modelEntry.max_tokens = maxTokens;
   }
   // The three price buckets are merged field by field: an unspecified bucket keeps its existing
   // value (the same policy as context_window/credential); the unit is fixed to usd_per_mtok, and

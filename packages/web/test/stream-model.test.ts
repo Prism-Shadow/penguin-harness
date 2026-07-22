@@ -279,6 +279,34 @@ describe("approvals and events", () => {
     expect(items(m)).toHaveLength(0);
   });
 
+  it("captures the session's thinking level from the main session_meta (read-only input-area tag)", () => {
+    const m = createStreamModel();
+    expect(m.thinkingLevel).toBeNull();
+    // The shared helper's meta carries thinking_level "default" (Agent config leaves it unset).
+    pushMessage(m, meta("session-x"));
+    expect(m.thinkingLevel).toBe("default");
+
+    const m2 = createStreamModel();
+    pushMessage(
+      m2,
+      sessionMeta({
+        session_id: "session-y",
+        model_id: "m",
+        provider: "custom",
+        model_context_window: 200000,
+        system_prompt: "",
+        tools: [],
+        thinking_level: "medium",
+        agent_state: "/a",
+        workspace: "/w",
+      }),
+    );
+    expect(m2.thinkingLevel).toBe("medium");
+    // An origin-tagged (sub-session) session_meta routes to the nested model and must not clobber the main session's level.
+    pushMessage(m2, withOrigin(meta("child"), "child"));
+    expect(m2.thinkingLevel).toBe("medium");
+  });
+
   it("request_end final state timeout/malformed produces a retry notice item (with attempt number); request_begin marks it as resent", () => {
     const m = createStreamModel();
     pushMessage(m, requestBegin());

@@ -287,6 +287,10 @@ export const zh = {
     contextWindow: "上下文窗口",
     contextWindowUnit: "tokens",
     contextWindowHint: "留空表示未知",
+    maxTokens: "最大输出长度（Token）",
+    maxTokensHint: "留空沿用 Agent 设置",
+    maxTokensCapHint: "限制单次请求的输出 Token 数；小上下文的本地模型建议调低",
+    maxTokensInvalid: "必须为正整数",
     clientTypeLocked: (t: string): string => `协议：${t}（沿用原配置，不可修改）`,
     vision: "支持图片输入（视觉/多模态）",
     visionHint:
@@ -359,6 +363,8 @@ export const zh = {
     readOnlyHint: "member 只读；模型与 credential 修改仅 owner 可执行",
     empty: "尚未配置任何模型",
     noKey: "未配置 key",
+    /** Chat model dropdown's bottom expander row: reveals the models hidden by the configured-key filter. */
+    showModelsWithoutKey: (n: number): string => `显示未配置 key 的模型（${n} 个）`,
     pendingSave: "（待保存）",
     modelIdExists: "该模型 id 已存在",
     pricingAllOrNone: "三项价格需一并填写",
@@ -456,12 +462,26 @@ export const zh = {
     newSessionMenu: "新建对话",
     chooseAgent: "选择 Agent",
     chooseModel: "选择模型",
+    thinkingLevel: "思考等级",
+    /** 会话前拾取器的档位短名（评审要求：只写短名、不带说明、无“缺省”项）。 */
+    thinkingLevelNames: {
+      none: "无",
+      low: "低",
+      medium: "中",
+      high: "高",
+      xhigh: "极高",
+    } as Readonly<Record<string, string>>,
     workspaceUseThis: "使用此目录",
     workspaceUp: "上级目录",
     workspaceNoSubdirs: "无子目录",
     workspaceAuto: "自动临时目录",
     workspaceClear: "改用自动临时目录",
     workspaceDirInvalid: "目录不存在或无法访问，已回退",
+    /** 侧栏对话列表的分组切换（默认按工作区）与工作区分组。 */
+    groupByWorkspace: "按工作区分组",
+    groupByAgent: "按 Agent 分组",
+    tempWorkspaces: "临时工作区",
+    newSessionInWorkspace: "在此工作区新建对话",
     draftSubtitle: "最擅长 AI 开发任务的自进化 Agent",
     /**
      * Example task cards on the draft screen: one click auto-submits the canned prompt (game
@@ -587,8 +607,12 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     statCost: "成本",
     statElapsed: "用时",
     statInput: "输入 tokens",
+    statCached: "已缓存",
     statOutput: "输出 tokens",
     statTps: "输出 TPS",
+    /** Copied-stats-line parenthesis wrappers around the cached amount (fullwidth for zh typography). */
+    statParenOpen: "（",
+    statParenClose: "）",
     noSessions: "还没有 Session",
     emptyStream: "发送一条消息开始对话",
     historyLoadFailed: "历史消息加载失败",

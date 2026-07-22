@@ -315,6 +315,22 @@ describe("assembleSystemPrompt", () => {
     expect(prompt).not.toContain(DATE_PLACEHOLDER);
   });
 
+  it("default prompt carries the port and API-key guardrails", async () => {
+    const state = await loadOrInitAgentState();
+    const prompt = assembleSystemPrompt(state);
+    // Ports: never kill listeners or take PenguinHarness service ports; numbers are deliberately not listed.
+    expect(prompt).toContain("pick another free port");
+    expect(prompt).toContain("PenguinHarness service port");
+    expect(prompt).not.toContain("7364");
+    // Auth/key failures: retry at most once (Constraints), then stop and ask the user to update
+    // the key outside the chat (Stop rules) — no CLI commands, no secret values in the conversation.
+    expect(prompt).toContain("retry at most once");
+    expect(prompt).toContain("stop calling tools");
+    expect(prompt).toContain("never be pasted into the conversation");
+    expect(prompt).toContain("next conversation");
+    expect(prompt).not.toContain("penguin config vault set");
+  });
+
   it("replaces AGENTS.md and specific Session environment fields at template locations", () => {
     const state = {
       root: tmpRoot,
@@ -515,6 +531,7 @@ describe("project-config round trip", () => {
         provider: "custom",
         model_id: "gpt-test",
         context_window: 128000,
+        max_tokens: 8192,
         api_key: "sk-abc",
         base_url: "https://example.com/v1",
       },
@@ -533,6 +550,7 @@ describe("project-config round trip", () => {
       provider: "custom",
       model_id: "gpt-test",
       context_window: 128000,
+      max_tokens: 8192,
       api_key: "sk-abc",
       base_url: "https://example.com/v1",
     });
@@ -626,6 +644,32 @@ describe("project-config round trip", () => {
     });
     m = getModel(await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID), dsRef);
     expect(m?.vision).toBe(true);
+  });
+
+  it("addModel persists max_tokens and upsert preserves it when not re-specified", async () => {
+    await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
+      provider: "custom",
+      model_id: "small-window",
+      max_tokens: 4096,
+    });
+    // Only supplements context_window, without max_tokens: the original annotation is kept.
+    await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
+      provider: "custom",
+      model_id: "small-window",
+      context_window: 32768,
+    });
+    const ref = { provider: "custom", model_id: "small-window" };
+    let m = getModel(await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID), ref);
+    expect(m?.max_tokens).toBe(4096);
+    expect(m?.context_window).toBe(32768);
+    // Explicitly re-pins the cap.
+    await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
+      provider: "custom",
+      model_id: "small-window",
+      max_tokens: 2048,
+    });
+    m = getModel(await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID), ref);
+    expect(m?.max_tokens).toBe(2048);
   });
 
   it("setVisionModel persists and validates the target", async () => {

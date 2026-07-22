@@ -494,6 +494,7 @@ export function ChatPage() {
       onCompact={onCompact}
       modelRef={activeModelRef}
       {...(models !== null ? { models: models.models } : {})}
+      sessionThinkingLevel={stream.model.thinkingLevel}
       {...(contextWindow !== undefined ? { contextWindow } : {})}
       contextNow={stream.model.stats.contextNow}
       contextStale={stream.model.stats.contextStale}

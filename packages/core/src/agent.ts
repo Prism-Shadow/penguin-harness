@@ -117,6 +117,16 @@ export function effectiveMaxContextLength(configured: number, contextWindow: unk
   return Math.min(configured, Math.floor(contextWindow * 0.75));
 }
 
+/**
+ * Output cap for meta requests (title generation / vision describing): these carry their own
+ * small hardcoded budget, tightened further by the entry's per-model `max_tokens` when that is
+ * smaller — a cap the user pinned below the budget must bind every request to that model. The
+ * budget is never raised.
+ */
+export function metaMaxTokens(budget: number, modelCap: number | undefined): number {
+  return modelCap !== undefined ? Math.min(budget, modelCap) : budget;
+}
+
 /** Create or load an Agent. */
 export async function createAgent(opts: CreateAgentOptions = {}): Promise<Agent> {
   const state = await loadOrInitAgentState(opts);
@@ -570,7 +580,8 @@ export class Agent {
                 : {}),
               tools: [],
               thinkingLevel: "none",
-              maxTokens: 2048,
+              // The describing budget, tightened by the vision entry's own pinned cap when smaller.
+              maxTokens: metaMaxTokens(2048, visionEntry.max_tokens),
               requestTimeoutMs: 60_000,
             }),
         };
@@ -592,6 +603,12 @@ export class Agent {
     });
     const tools = await environment.listTools();
 
+    // Effective output cap: the entry's per-model annotation wins over the Agent's
+    // system_config value — the fit is a model trait: the seeded per-Agent default (32000)
+    // cannot fit into e.g. a 32768-token context window together with any prompt, so a
+    // small-window model needs its own pinned cap. Unset inherits the Agent value.
+    const maxTokens = modelEntry.max_tokens ?? this.state.systemConfig.model?.max_tokens;
+
     // LLM constructor args are extracted into a constant so they can be reused as-is when
     // rebuilding a new LLM object after compaction (with a fresh model context) — the system
     // prompt and tool definitions aren't part of the compacted history, so the new object keeps
@@ -612,9 +629,7 @@ export class Agent {
       ...(modelEntry.context_window !== undefined
         ? { contextWindow: modelEntry.context_window }
         : {}),
-      ...(this.state.systemConfig.model?.max_tokens !== undefined
-        ? { maxTokens: this.state.systemConfig.model.max_tokens }
-        : {}),
+      ...(maxTokens !== undefined ? { maxTokens } : {}),
       ...(this.state.systemConfig.model?.thinking_level !== undefined
         ? { thinkingLevel: this.state.systemConfig.model.thinking_level }
         : {}),
@@ -640,7 +655,8 @@ export class Agent {
         ...(modelEntry.client_type !== undefined ? { clientType: modelEntry.client_type } : {}),
         tools: [],
         thinkingLevel: "none",
-        maxTokens: 300,
+        // The meta budget, tightened by the entry's pinned per-model cap when smaller.
+        maxTokens: metaMaxTokens(300, modelEntry.max_tokens),
         requestTimeoutMs: 30_000,
       });
 

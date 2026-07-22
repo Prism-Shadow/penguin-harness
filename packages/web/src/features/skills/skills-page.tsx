@@ -493,7 +493,7 @@ function InstallRow({
 }) {
   return (
     <div className="flex items-center gap-2 rounded-md px-1.5 py-1.5 transition-colors duration-150 hover:bg-gray-50 dark:hover:bg-gray-800/60">
-      <AgentAvatar id={agentId} size={22} className="shrink-0 rounded" />
+      <AgentAvatar id={agentId} name={name} size={22} className="shrink-0 rounded" />
       <span className="min-w-0 flex-1 truncate text-sm" title={agentId}>
         {name}
       </span>

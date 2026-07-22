@@ -2,6 +2,7 @@
 title: PenguinHarness 正式发布：让 Agent 为你构建 Agent
 date: 2026-07-17
 category: news
+pinned: true
 excerpt: 我们在 GDPevo Benchmark 中验证了 Agent 自我进化的能力，现在把它带给所有人——首个支持递归自我进化的开源 Harness 正式发布，从一句话构建 Agent 到持续自我进化，一套基础设施全部覆盖。
 ---
 

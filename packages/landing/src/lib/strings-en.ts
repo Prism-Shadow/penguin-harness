@@ -335,6 +335,21 @@ export const en: Strings = {
     ],
   },
 
+  skills: {
+    eyebrow: "Built-in Skills",
+    title: "The built-in Skill library at a glance",
+    subtitle: "Four Skill groups out of the box — Agents can write and optimize their own, too.",
+    groups: [
+      { title: "Office Productivity", skills: ["data-analysis", "firecrawl"] },
+      { title: "Software Development", skills: ["web-design", "software-engineering"] },
+      { title: "AI App Development", skills: ["penguin-sdk", "penguin-cli", "agenthub-models"] },
+      {
+        title: "Agent Tuning",
+        skills: ["agent-creation", "benchmark-design", "agent-evaluation", "agent-optimization"],
+      },
+    ],
+  },
+
   security: {
     eyebrow: "Security",
     title: "Evolution within bounds, data within walls",
@@ -396,10 +411,14 @@ export const en: Strings = {
 
   blog: {
     title: "Blog",
-    subtitle: "Product news and release notes",
+    subtitle: "Product news, tech practices and release notes",
     all: "All",
     news: "Product news",
+    practice: "Tech practice",
     changelog: "Release notes",
+    pinned: "Pinned",
+    copyLink: "Copy page link",
+    linkCopied: "Copied",
     back: "Back to blog",
     empty: "No posts in this category yet",
     notFound: "Post not found",

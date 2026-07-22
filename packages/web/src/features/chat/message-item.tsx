@@ -106,8 +106,8 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
           {text && (
             <div className="anim-msg group my-4 flex flex-col items-end">
               <div className="max-w-[88%] rounded-lg bg-gray-100 px-4 py-2.5 md:max-w-[75%] dark:bg-gray-800">
-                {/* break-words: long unbroken strings like attachment paths/long URLs wrap within the bubble on narrow (mobile) screens instead of overflowing. */}
-                <p className="whitespace-pre-wrap break-words text-base leading-relaxed text-gray-900 dark:text-gray-100">
+                {/* wrap-anywhere: long unbroken strings like attachment paths/long URLs wrap within the bubble on narrow (mobile) screens instead of overflowing; unlike break-words it also shrinks min-content, so a pathological token can't stretch the flex bubble itself. Normal words still only break when a token can't fit on a line. */}
+                <p className="wrap-anywhere whitespace-pre-wrap text-base leading-relaxed text-gray-900 dark:text-gray-100">
                   {text}
                 </p>
               </div>

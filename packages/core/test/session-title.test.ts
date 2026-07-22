@@ -5,9 +5,7 @@
 import { describe, it, expect } from "vitest";
 import {
   assistantText,
-  buildTitlePrompt,
   emptyTokenCounts,
-  generateTitleWithLLM,
   sanitizeTitle,
   Session,
   stripConversationMarkers,
@@ -15,6 +13,8 @@ import {
   tokenUsage,
   userText,
 } from "../src/index.js";
+// Prompt/request internals are no longer exported via the barrel: imported directly from the internal module.
+import { buildTitlePrompt, generateTitleWithLLM } from "../src/internal/session-title.js";
 import type {
   EnvironmentInterface,
   LLMInterface,

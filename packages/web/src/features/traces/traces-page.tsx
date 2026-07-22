@@ -118,7 +118,7 @@ function AgentNode({
           aria-label={open ? S.nav.collapseGroup : S.nav.expandGroup}
           className="flex min-w-0 flex-1 items-center gap-1 rounded px-1 py-0.5 text-left transition-colors duration-150 hover:bg-gray-200/50 dark:hover:bg-gray-800/50"
         >
-          <AgentAvatar id={agentId} size={18} className="shrink-0 rounded" />
+          <AgentAvatar id={agentId} name={name} size={18} className="shrink-0 rounded" />
           <span className="min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
             {name}
           </span>

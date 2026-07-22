@@ -162,6 +162,43 @@ describe("models preset & catalog enrichment", () => {
     expect(noProvider.status).toBe(400);
   });
 
+  it("PUT maxTokens：落盘为 max_tokens 并经 GET 回读；整表省略即清除；0/负数/非数字 400", async () => {
+    const put = await api.put(url(), {
+      models: [
+        { provider: "custom", modelId: "local-qwen", clientType: "openai", maxTokens: 8000 },
+      ],
+    });
+    expect(put.status).toBe(200);
+    expect(pick((await put.json()) as ModelsResponse, "custom", "local-qwen").maxTokens).toBe(8000);
+
+    // Round-trips through disk (persisted as snake_case on the entry, not just echoed back).
+    const again = (await (await api.get(url())).json()) as ModelsResponse;
+    expect(pick(again, "custom", "local-qwen").maxTokens).toBe(8000);
+    const toml = await readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
+    expect(toml).toContain("max_tokens = 8000");
+
+    // Full-table PUT omitting the field clears the annotation (same replace semantics as vision/contextWindow).
+    const cleared = await api.put(url(), {
+      models: [{ provider: "custom", modelId: "local-qwen", clientType: "openai" }],
+    });
+    expect(cleared.status).toBe(200);
+    const clearedRow = pick((await cleared.json()) as ModelsResponse, "custom", "local-qwen");
+    expect("maxTokens" in clearedRow).toBe(false);
+    expect(
+      await readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8"),
+    ).not.toContain("max_tokens");
+
+    // Not a positive integer → 400 with the field-labelled message (nothing written).
+    for (const bad of [0, -5, 1.5, "8000"]) {
+      const res = await api.put(url(), {
+        models: [{ provider: "custom", modelId: "local-qwen", maxTokens: bad }],
+      });
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { error: { message: string } };
+      expect(body.error.message).toContain("models[0].maxTokens");
+    }
+  });
+
   it("同名 model_id 可在不同 provider 下并存（成对键，互不覆盖）", async () => {
     const put = await api.put(url(), {
       models: [

@@ -65,6 +65,9 @@ The built-in Skills, by group (the group manifest is `SKILL_GROUPS` in `packages
 | AI App Development | `penguin-sdk` | Build AI and RAG apps on the SDK: the createSession/run streaming loop plus a complete retrieval recipe with chunk-revealing citations |
 | | `penguin-cli` | Manage model API keys, default models and per-agent Vault secrets with the penguin CLI |
 | | `agenthub-models` | Call model APIs through `@prismshadow/agenthub`: streaming text, image generation, speech synthesis and embeddings |
+| | `vllm` | Deploy and serve LLMs with vLLM behind an OpenAI-compatible endpoint, with tool calling enabled for agent workloads |
+| | `ollama` | Deploy and serve local models with Ollama: pull and run them, then expose the OpenAI-compatible endpoint to apps and agents |
+| | `llamafactory` | Fine-tune LLMs with LlamaFactory: register datasets, train via YAML configs, merge LoRA adapters and serve the result |
 | Agent Tuning | `agent-creation` | Turn a user requirement into a concrete agent: write the target agent's AGENTS.md and install the skills it needs |
 | | `benchmark-design` | Design and calibrate a multi-Case capability Benchmark with repeated independent evaluations and a traceable baseline |
 | | `agent-evaluation` | Run and score exactly one Benchmark Case run, with CLI execution, Trace provenance checks and private Rubric isolation |

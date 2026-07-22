@@ -2,6 +2,7 @@
 title: "Introducing PenguinHarness: agents that build agents"
 date: 2026-07-17
 category: news
+pinned: true
 excerpt: We proved agents can self-evolve in our GDPevo Benchmark — now we are bringing that capability to everyone. The first open-source harness with recursive self-improvement covers everything from one-sentence agent construction to continuous self-evolution.
 ---
 

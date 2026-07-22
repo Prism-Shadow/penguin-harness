@@ -86,10 +86,25 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   // Final assistant answer (turn 2 from mock).
   await expect(page.getByText("Command finished; the result looks as expected.")).toBeVisible();
 
+  // Chat links always open in a new tab and never navigate the SPA away — including bare URLs
+  // that remark-gfm autolinks (the mock reply carries one inside a CJK sentence).
+  const replyLink = page.locator(".md-body a", { hasText: "example.com" }).first();
+  await expect(replyLink).toBeVisible();
+  await expect(replyLink).toHaveAttribute("href", /^https:\/\/example\.com\//);
+  await expect(replyLink).toHaveAttribute("target", "_blank");
+  await expect(replyLink).toHaveAttribute("rel", "noreferrer");
+  // Wide Markdown tables scroll inside the message body instead of pushing the page wide.
+  const replyTable = page.locator(".md-body table").first();
+  await expect(replyTable).toBeVisible();
+  expect(await replyTable.evaluate((el) => getComputedStyle(el).overflowX)).toBe("auto");
+
   // Regression: after entering a session and rendering messages, the page must not overflow
   // horizontally (previously, with the Files dock panel closed, the sr-only upload input was
   // anchored to the initial containing block, bypassing the panel's overflow-hidden and
-  // stretching the document wide enough to create a horizontal scrollbar).
+  // stretching the document wide enough to create a horizontal scrollbar). The turn-2 reply
+  // above deliberately contains a ~170-char bare URL in CJK prose and a table with a 118-char
+  // unbreakable token — this assertion also proves the URL wraps and the table scrolls inside
+  // the message column instead of blowing out the page.
   const docWidth = await page.evaluate(() => ({
     scrollWidth: document.documentElement.scrollWidth,
     clientWidth: document.documentElement.clientWidth,
@@ -258,10 +273,15 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
 
   const sidebar = page.getByRole("complementary");
 
-  // --- agent group collapse / expand (header button shows the agent name, so its state
+  // --- group collapse / expand (the header button shows the group name, so its state
   //     lives on aria-label rather than a duplicate title tooltip) ---
   await expect(sidebar.getByText("Configure Tailwind theme")).toBeVisible();
   await sidebar.locator('button[aria-label="折叠"]').first().click();
+  await expect(sidebar.getByText("Configure Tailwind theme")).toHaveCount(0);
+  // The collapse state persists across a reload (localStorage, keyed per Project): the group
+  // comes back rendered collapsed (an "展开" header), with its rows still hidden.
+  await page.reload();
+  await expect(sidebar.locator('button[aria-label="展开"]').first()).toBeVisible();
   await expect(sidebar.getByText("Configure Tailwind theme")).toHaveCount(0);
   await sidebar.locator('button[aria-label="展开"]').first().click();
   await expect(sidebar.getByText("Configure Tailwind theme")).toBeVisible();
