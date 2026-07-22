@@ -202,8 +202,8 @@ export interface SubagentRunner {
     agentId?: string;
     /**
      * Upstream model id for the child Session, paired with `provider` — a model reference is
-     * always the complete pair. Omit both to use the Project's default Model; supplying one
-     * half without the other is rejected.
+     * always the complete pair. Omit both to inherit the parent Session's model; supplying
+     * one half without the other is rejected.
      */
     modelId?: string;
     /** Provider group for `modelId`; required whenever `modelId` is given. */

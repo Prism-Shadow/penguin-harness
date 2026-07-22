@@ -3,6 +3,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  cacheHitRate,
   computeTps,
   formatBytes,
   formatDateTime,
@@ -90,6 +91,26 @@ describe("formatPercent", () => {
     expect(formatPercent(undefined)).toBe("—");
     expect(formatPercent(Number.NaN)).toBe("—");
     expect(formatPercent(Number.POSITIVE_INFINITY)).toBe("—");
+  });
+});
+
+describe("cacheHitRate (shared by the Trace summaries and the Cost center's cacheRead bubble)", () => {
+  it("cacheRead ÷ (cacheRead + cacheWrite)", () => {
+    expect(cacheHitRate(50, 50)).toBe(0.5);
+    expect(cacheHitRate(75, 25)).toBe(0.75);
+    expect(cacheHitRate(100, 0)).toBe(1);
+    expect(cacheHitRate(0, 100)).toBe(0); // all writes, no hits: 0 is a real value, not the guard
+  });
+
+  it("renders via formatPercent as a whole percent", () => {
+    expect(formatPercent(cacheHitRate(1, 2))).toBe("33%"); // 33.3… rounds down
+    expect(formatPercent(cacheHitRate(2, 1))).toBe("67%"); // 66.6… rounds up
+    expect(formatPercent(cacheHitRate(999, 1))).toBe("100%"); // 99.9 rounds to 100% at whole-percent precision
+  });
+
+  it("denominator 0 (no cache activity) yields null: the bubble omits the line, formatPercent shows —", () => {
+    expect(cacheHitRate(0, 0)).toBeNull();
+    expect(formatPercent(cacheHitRate(0, 0))).toBe("—");
   });
 });
 

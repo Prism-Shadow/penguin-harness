@@ -19,10 +19,15 @@ export const zh = {
     usage: "成本中心",
     traces: "轨迹观测",
     benchmark: "评估中心",
+    // Collapsed-rail tooltips (product-specified wording; new chat reuses chat.newSessionMenu, the other pages reuse the page names above).
+    lastConversation: "最近一次对话",
+    railAgents: "智能体",
     collapseSidebar: "收起侧栏",
     expandSidebar: "展开侧栏",
     collapseGroup: "折叠",
     expandGroup: "展开",
+    pinGroup: "置顶分组",
+    unpinGroup: "取消置顶",
   },
 
   settings: {
@@ -188,14 +193,16 @@ export const zh = {
     maxTurns: "max_turns（单 Task 最大轮次，-1 不限制）",
     maxTokens: "model.max_tokens",
     thinkingLevel: "model.thinking_level",
+    /** Selectable tiers exclude `none` (many models cannot disable thinking); a stored `none` still displays — see `thinkingLevelNoneKept`. */
     thinkingLevelOptions: [
       ["", "不提交覆盖值，沿用当前生效的配置。"],
-      ["none", "关闭扩展推理，响应最快。"],
       ["low", "开启较低强度的扩展推理。"],
       ["medium", "开启中等强度的扩展推理（新建 Agent 的缺省档位）。"],
       ["high", "开启较高强度的扩展推理，响应更慢。"],
       ["xhigh", "开启最高强度的扩展推理，部分模型上效果与 high 相同。"],
     ] as ReadonlyArray<readonly [string, string]>,
+    /** Row description shown only while the stored config is `none`: displayed as-is, never rewritten, and no longer offered as a choice. */
+    thinkingLevelNoneKept: "已存的历史档位：新选择不再提供关闭档（多数模型不支持关闭思考）。",
     timeoutMs: "model.timeoutMs",
     timeoutMsHint: "单次 Request 超时，毫秒",
     compaction: "上下文压缩（compaction）",
@@ -463,7 +470,7 @@ export const zh = {
     chooseAgent: "选择 Agent",
     chooseModel: "选择模型",
     thinkingLevel: "思考等级",
-    /** 会话前拾取器的档位短名（评审要求：只写短名、不带说明、无“缺省”项）。 */
+    /** Short tier names for the pre-conversation picker (per review: short names only, no descriptions, no "default" row). `none` exists purely to display a stored legacy value — it is never offered as a choice (many models cannot disable thinking). */
     thinkingLevelNames: {
       none: "无",
       low: "低",
