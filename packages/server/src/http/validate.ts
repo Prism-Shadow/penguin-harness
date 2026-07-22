@@ -64,6 +64,28 @@ export function paginationQuery(c: Context): { offset: number; limit: number } {
   return { offset, limit };
 }
 
+/**
+ * Parse OPTIONAL list paging query params: both absent = null (caller returns the full
+ * list — the pre-paging behavior stays intact for existing callers). When paging, `limit`
+ * is required (1-1000) and `offset` optional (>= 0, default 0) — an offset alone would
+ * silently return the full list shifted, which no caller ever means.
+ */
+export function optionalPagingQuery(c: Context): { offset: number; limit: number } | null {
+  const rawLimit = c.req.query("limit");
+  const rawOffset = c.req.query("offset");
+  if (rawLimit === undefined && rawOffset === undefined) return null;
+  if (rawLimit === undefined) throw badRequest("offset requires limit.");
+  const limit = Number.parseInt(rawLimit, 10);
+  if (!Number.isInteger(limit) || limit < 1 || limit > 1000) {
+    throw badRequest("limit must be an integer between 1 and 1000.");
+  }
+  const offset = Number.parseInt(rawOffset ?? "0", 10);
+  if (!Number.isInteger(offset) || offset < 0) {
+    throw badRequest("offset must be a non-negative integer.");
+  }
+  return { offset, limit };
+}
+
 /** Read the JSON request body (parse failure / non-object -> 400). */
 export async function readJson(c: Context): Promise<Record<string, unknown>> {
   let body: unknown;

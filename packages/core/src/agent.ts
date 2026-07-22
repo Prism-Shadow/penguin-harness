@@ -126,6 +126,8 @@ export interface CreateSessionOptions {
   baseUrl?: string;
   /** Internal use: this Session's depth in the subagent spawn chain (0 at the top level), used to cap spawn depth. */
   subagentDepth?: number;
+  /** Session origin recorded in session_meta (absent = user-created); the subagent spawn site passes "subagent", callers driven by a scheduled task pass "schedule". */
+  source?: "subagent" | "schedule";
 }
 
 export interface ResumeSessionOptions {
@@ -298,6 +300,7 @@ export class Agent {
         thinking_level: thinkingLevel ?? "default",
         agent_state: this.state.stateDir,
         workspace: workspaceDir,
+        ...(opts.source !== undefined ? { source: opts.source } : {}),
       },
       llm: rt.llm,
       environment: rt.environment,
@@ -444,6 +447,12 @@ export class Agent {
         thinking_level: thinkingLevel ?? "default",
         agent_state: this.state.stateDir,
         workspace: workspaceDir,
+        // The origin carries over from the original session_meta (a resumed scheduled/subagent
+        // Session stays marked). The on-disk value is untrusted: only the exact known origins
+        // pass; junk written by a third party is dropped rather than cast through.
+        ...(meta.source === "subagent" || meta.source === "schedule"
+          ? { source: meta.source }
+          : {}),
       },
       llm: rt.llm,
       environment: rt.environment,
@@ -573,6 +582,7 @@ export class Agent {
           ...childModel,
           thinkingLevel: thinkingLevel ?? null,
           subagentDepth: subagentDepth + 1,
+          source: "subagent",
         });
         // All child-session messages are tagged with an origin (the child Session id,
         // prepended as one hop from outer to inner); the first turn forwards the

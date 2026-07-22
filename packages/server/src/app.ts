@@ -50,6 +50,7 @@ import { agentSessionsRoutes, sessionsRoutes } from "./http/routes/sessions.js";
 import { ChannelHub } from "./runtime/channel.js";
 import { ErrorRecorder } from "./runtime/error-recorder.js";
 import { createCoreSessionLoader, SessionManager } from "./runtime/session-manager.js";
+import { SessionSources } from "./runtime/session-sources.js";
 import type { SessionLoader } from "./runtime/session-manager.js";
 import { Scheduler } from "./runtime/scheduler.js";
 import { TitleGenerator } from "./runtime/title-generator.js";
@@ -91,6 +92,8 @@ export interface AppDeps {
   scheduler: Scheduler;
   channels: ChannelHub;
   manager: SessionManager;
+  /** Session-origin registry derived from session_meta (single source of truth; no DB column). */
+  sessionSources: SessionSources;
   /** Error persistence (shared by app.onError and various background capture points; the process-level fallback is in index.ts). */
   errors: ErrorRecorder;
   /** Request log output (minimal one-liner); tests inject a noop. */
@@ -149,10 +152,15 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
   const titles =
     overrides.titles ??
     new TitleGenerator({ sessions: sessionsRepo, channels, recorder, errors, log });
+  // Session-origin registry: session_meta is the single source of truth (no DB column);
+  // shared by the manager (subagent registration), the loader (self-heal rebuild) and
+  // SessionService (creation / adoption / lazy list resolution).
+  const sessionSources = new SessionSources();
   const manager = new SessionManager({
     sessions: sessionsRepo,
     channels,
-    loader: overrides.loader ?? createCoreSessionLoader(config.root),
+    loader: overrides.loader ?? createCoreSessionLoader(config.root, sessionSources),
+    sources: sessionSources,
     recorder,
     errors,
     titles,
@@ -194,6 +202,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     sessions: sessionsRepo,
     manager,
     projectConfig: projectConfigService,
+    sources: sessionSources,
   });
   // Schedule scheduler: active only while the server is running. Only
   // assembled here; start() is called in index.ts (tests drive it via tickOnce, no real timer).
@@ -232,6 +241,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     scheduler,
     channels,
     manager,
+    sessionSources,
     errors,
     log,
   };

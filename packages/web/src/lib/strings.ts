@@ -680,6 +680,13 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     archiveSession: "归档",
     unarchiveSession: "取消归档",
     archivedGroup: (n: number) => `已归档（${n}）`,
+    /** Sidebar group "reveal/load next page" row (display cap + server paging). */
+    loadMore: "更多",
+    /** Sidebar folders for automation-created sessions (one per origin), parallel to 已归档; wording matches the sourceNames badges. */
+    sourceGroups: {
+      subagent: (n: number) => `子智能体（${n}）`,
+      schedule: (n: number) => `定时任务（${n}）`,
+    },
     skillsBanner: (names: string[]): string => `使用技能：${names.join("、")}`,
   },
 

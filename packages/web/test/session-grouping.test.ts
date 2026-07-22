@@ -11,10 +11,14 @@
 import { describe, expect, it } from "vitest";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import {
+  SIDEBAR_PAGE_SIZE,
   TEMP_WORKSPACE_GROUP_KEY,
+  groupAgentsWithMore,
   groupSessionsByWorkspace,
   isTempWorkspace,
+  partitionSessions,
   pinnedFirst,
+  splitPage,
   workspaceGroupKey,
   workspaceLabel,
 } from "../src/lib/session-grouping";
@@ -23,7 +27,12 @@ let seq = 0;
 function session(
   workspace: string,
   createdAt: string,
-  over: { sessionId?: string; agentId?: string; archived?: boolean } = {},
+  over: {
+    sessionId?: string;
+    agentId?: string;
+    archived?: boolean;
+    source?: "schedule" | "subagent";
+  } = {},
 ): SessionInfo {
   seq += 1;
   return {
@@ -39,6 +48,7 @@ function session(
     pendingApprovalCount: 0,
     hasTrace: false,
     archived: over.archived ?? false,
+    ...(over.source !== undefined ? { source: over.source } : {}),
   };
 }
 
@@ -135,6 +145,78 @@ describe("groupSessionsByWorkspace", () => {
     const groups = groupSessionsByWorkspace([archived, active]);
     expect(groups).toHaveLength(1);
     expect(groups[0]!.sessions).toHaveLength(2);
+  });
+});
+
+describe("partitionSessions (per-group user / subagent / scheduled / archived split)", () => {
+  it("splits user rows and one bucket per origin, preserving order within each part", () => {
+    const user1 = session("/srv/alpha", "2026-07-06T10:00:00.000Z");
+    const sched1 = session("/srv/alpha", "2026-07-05T10:00:00.000Z", { source: "schedule" });
+    const sub1 = session("/srv/alpha", "2026-07-04T10:00:00.000Z", { source: "subagent" });
+    const user2 = session("/srv/alpha", "2026-07-03T10:00:00.000Z");
+    const sub2 = session("/srv/alpha", "2026-07-02T10:00:00.000Z", { source: "subagent" });
+    const gone = session("/srv/alpha", "2026-07-01T10:00:00.000Z", { archived: true });
+    const parts = partitionSessions([user1, sched1, sub1, user2, sub2, gone]);
+    expect(parts.active.map((s) => s.sessionId)).toEqual([user1.sessionId, user2.sessionId]);
+    expect(parts.subagent.map((s) => s.sessionId)).toEqual([sub1.sessionId, sub2.sessionId]);
+    expect(parts.schedule.map((s) => s.sessionId)).toEqual([sched1.sessionId]);
+    expect(parts.archived.map((s) => s.sessionId)).toEqual([gone.sessionId]);
+  });
+
+  it("archived wins over source: an archived automation-created session goes to the Archived folder only", () => {
+    const sub = session("/srv/alpha", "2026-07-01T10:00:00.000Z", {
+      source: "subagent",
+      archived: true,
+    });
+    const sched = session("/srv/alpha", "2026-07-02T10:00:00.000Z", {
+      source: "schedule",
+      archived: true,
+    });
+    const parts = partitionSessions([sub, sched]);
+    expect(parts.subagent).toEqual([]);
+    expect(parts.schedule).toEqual([]);
+    expect(parts.archived.map((s) => s.sessionId)).toEqual([sub.sessionId, sched.sessionId]);
+    expect(parts.active).toEqual([]);
+  });
+
+  it("empty input yields four empty parts", () => {
+    expect(partitionSessions([])).toEqual({
+      active: [],
+      subagent: [],
+      schedule: [],
+      archived: [],
+    });
+  });
+});
+
+describe("splitPage (limit+1 fetch trick)", () => {
+  it("an overflow row proves the server has more and is never shown", () => {
+    const fetched = [1, 2, 3, 4];
+    expect(splitPage(fetched, 3)).toEqual({ items: [1, 2, 3], hasMore: true });
+  });
+
+  it("a short or exactly-full page means the server is exhausted", () => {
+    expect(splitPage([1, 2], 3)).toEqual({ items: [1, 2], hasMore: false });
+    expect(splitPage([1, 2, 3], 3)).toEqual({ items: [1, 2, 3], hasMore: false });
+    expect(splitPage([], SIDEBAR_PAGE_SIZE)).toEqual({ items: [], hasMore: false });
+  });
+});
+
+describe("groupAgentsWithMore (workspace groups span Agents)", () => {
+  it("returns each contributing Agent with unfetched pages once; others are skipped", () => {
+    const rows = [
+      session("/srv/alpha", "2026-07-03T10:00:00.000Z", { agentId: "agent_a" }),
+      session("/srv/alpha", "2026-07-02T10:00:00.000Z", { agentId: "agent_b" }),
+      session("/srv/alpha", "2026-07-01T10:00:00.000Z", { agentId: "agent_a" }),
+    ];
+    const hasMore = new Map([
+      ["agent_a", true],
+      ["agent_b", false],
+      ["agent_c", true], // not contributing to this group
+    ]);
+    expect(groupAgentsWithMore(rows, hasMore)).toEqual(["agent_a"]);
+    expect(groupAgentsWithMore(rows, new Map())).toEqual([]);
+    expect(groupAgentsWithMore([], hasMore)).toEqual([]);
   });
 });
 

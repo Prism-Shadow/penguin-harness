@@ -158,6 +158,8 @@ const summaryClass =
 function SessionMetaBody({ p }: { p: Record<string, unknown> }) {
   const rows: Array<[string, string]> = [
     ["session_id", String(p.session_id ?? "")],
+    // Session origin (subagent / schedule); user-created sessions have no source and show the empty dash.
+    ["source", String(p.source ?? "")],
     ["model_id", String(p.model_id ?? "")],
     ["context_window", String(p.model_context_window ?? "")],
     ["thinking_level", String(p.thinking_level ?? "")],

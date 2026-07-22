@@ -41,6 +41,7 @@ interface SessionMetaPayload {
   thinking_level: string;                 // "default" when unconfigured
   agent_state: string;                    // absolute path of the Agent State
   workspace: string;                      // absolute path of the Workspace
+  source?: "subagent" | "schedule";       // session origin; absent = user-created
 }
 
 interface ToolDefinition {

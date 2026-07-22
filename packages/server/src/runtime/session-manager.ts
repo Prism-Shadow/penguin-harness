@@ -48,6 +48,8 @@ import { ApprovalRegistry, makeApprove } from "./approvals.js";
 import type { PendingApproval } from "./approvals.js";
 import type { ChannelHub } from "./channel.js";
 import type { ErrorSink } from "./error-recorder.js";
+import { asSessionSource } from "./session-sources.js";
+import type { SessionSources } from "./session-sources.js";
 import { StreamErrorWatcher } from "./stream-error-watcher.js";
 import type { TitleNotifier } from "./title-generator.js";
 import type { UsageContext } from "./usage-recorder.js";
@@ -96,8 +98,13 @@ export interface SessionLoader {
   load(row: SessionRow): Promise<RuntimeSession>;
 }
 
-/** Production loader: the core SDK's resumeSession / createSession. */
-export function createCoreSessionLoader(root: string): SessionLoader {
+/**
+ * Production loader: the core SDK's resumeSession / createSession. `sources` (when given)
+ * lets the no-Trace self-heal rebuild re-record a known origin into the fresh session_meta;
+ * with no registry entry (e.g. the process restarted and no Trace was ever written) the
+ * rebuilt Session is unsourced — session_meta is the single source of truth, and none survived.
+ */
+export function createCoreSessionLoader(root: string, sources?: SessionSources): SessionLoader {
   return {
     async load(row: SessionRow): Promise<RuntimeSession> {
       const agent = await createAgent({
@@ -136,11 +143,14 @@ export function createCoreSessionLoader(root: string): SessionLoader {
           `This Session's Workspace no longer exists: ${row.workspace}, so it cannot continue. Create a new Session.`,
         );
       }
+      const knownSource = sources?.get(row.sessionId);
       try {
         return await agent.createSession({
           workspaceDir: row.workspace,
           modelId: row.modelId,
           provider: row.provider,
+          // The rebuilt Session re-records a known origin in its fresh session_meta.
+          ...(knownSource != null ? { source: knownSource } : {}),
         });
       } catch (err) {
         if (isMissingCredential(err)) throw modelCredentialMissing(row.modelId);
@@ -168,6 +178,8 @@ export interface SessionManagerDeps {
   sessions: SessionsRepo;
   channels: ChannelHub;
   loader: SessionLoader;
+  /** Session-origin registry (session_meta is the single source of truth; subagent registration records the forwarded meta's source here). */
+  sources: SessionSources;
   recorder: UsageRecorderLike;
   /** Automatic Session title generation (optional: not injected in tests or when disabled). */
   titles?: TitleNotifier;
@@ -879,6 +891,12 @@ export class SessionManager {
     const p = msg.payload as SessionMetaPayload;
     const agentId = path.basename(path.dirname(p.agent_state));
     if (!agentId || agentId === "." || agentId === "..") return null;
+    // The forwarded session_meta records the origin at the source (core's spawn site); fall
+    // back to inferring "subagent" from the registration path for older metas (narrowed —
+    // a junk value also falls back). It goes into the in-process registry only — the index
+    // row deliberately stores no source column.
+    const source = asSessionSource(p.source) ?? "subagent";
+    this.deps.sources.set(childSid, source);
     this.deps.sessions.insertOrIgnore({
       sessionId: childSid,
       projectId: entry.projectId,
@@ -890,7 +908,6 @@ export class SessionManager {
       // inserted with defaults (matches the convention for Sessions discovered by the CLI).
       approvalMode: "allow-all",
       title: null,
-      source: "subagent",
       createdAt: new Date().toISOString(),
     });
     // Make the subagent appear immediately in the sidebar: notify via the parent
@@ -900,7 +917,7 @@ export class SessionManager {
       projectId: entry.projectId,
       agentId,
       sessionId: childSid,
-      source: "subagent",
+      source,
     });
     const child: ChildSession = {
       sessionId: childSid,
