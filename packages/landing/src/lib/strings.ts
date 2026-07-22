@@ -89,7 +89,7 @@ export const zh = {
       {
         title: "Harness for Building Agents",
         tag: "",
-        desc: "通过 PenguinHarness SDK，让 Agent 从零自主完成 Agent 应用的构建。",
+        desc: "通过 PenguinHarness SDK，让 Agent 从零自主完成 Agent 应用的构建；「AI 应用开发」Skill 组让构建和调优全自动。",
       },
       {
         title: "Harness for Recursive Self-Improvement",
@@ -300,7 +300,7 @@ export const zh = {
       },
       {
         title: "技能库",
-        desc: "浏览、安装、快捷调用 Skill，Agent 也能编写并优化自己的技能。",
+        desc: "内置「AI 应用开发」Skill 组，全自动构建和调优 AI 应用——vLLM / Ollama 部署、LLaMA-Factory 微调。",
       },
       {
         title: "定时任务",

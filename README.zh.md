@@ -60,6 +60,8 @@ https://github.com/user-attachments/assets/604eb626-0a5d-4a62-87e3-14ebade1cd5f
 
 **而生成整个 RAG 应用，仅消耗了 0.2 元（$0.02）的 token——使用 DeepSeek V4 Pro 模型。**
 
+这背后是内置的「**AI 应用开发**」Skill 组——Penguin SDK、Penguin CLI、AgentHub 模型调用，以及 vLLM / Ollama 本地部署与 LLaMA-Factory 微调——让 PenguinHarness 端到端**全自动构建和调优 AI 应用**。
+
 ### 3. 🧬 自进化，越用越强
 
 借助 PenguinHarness 技能库，Agent 自己评估、自己优化：跑 Benchmark、找失分点、发布 N+1 版——每轮之前自动快照，每个请求都可在轨迹观测中回放。

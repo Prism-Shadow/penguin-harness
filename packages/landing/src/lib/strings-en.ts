@@ -85,7 +85,7 @@ export const en: Strings = {
       {
         title: "Harness for Building Agents",
         tag: "",
-        desc: "With the PenguinHarness SDK, an Agent builds complete Agent applications for you — autonomously, from scratch.",
+        desc: "With the PenguinHarness SDK, an Agent builds complete Agent applications for you from scratch — and the AI App Development Skills make build-and-tune fully automatic.",
       },
       {
         title: "Harness for Recursive Self-Improvement",
@@ -306,7 +306,7 @@ export const en: Strings = {
       },
       {
         title: "Skill library",
-        desc: "Browse, install and quick-invoke Skills — Agents can write and optimize their own.",
+        desc: "Built-in AI App Development Skills build and tune AI apps fully automatically — vLLM / Ollama deployment, LLaMA-Factory fine-tuning.",
       },
       {
         title: "Scheduled tasks",
