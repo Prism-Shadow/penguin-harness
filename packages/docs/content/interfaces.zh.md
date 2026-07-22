@@ -202,7 +202,7 @@ interface SubagentRunner {
   // 深度超限、目标 Agent 不存在等前置错误以抛出表达(由 Environment 收敛为 failed)
   spawn(input: {
     agentId?: string;     // 缺省复用当前 Agent(自派生)
-    modelId?: string;     // 缺省用 Project 默认模型
+    modelId?: string;     // 缺省继承父 Session 的模型
   }): Promise<SubagentHandle>;
 }
 

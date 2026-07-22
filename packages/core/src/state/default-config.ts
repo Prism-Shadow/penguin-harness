@@ -253,7 +253,7 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
           model_id: {
             type: "string",
             description:
-              "Which model the subagent should use, as the upstream model id. Must be given together with provider — a model is always referenced by the pair. Omit both to use the Project default model.",
+              "Which model the subagent should use, as the upstream model id. Must be given together with provider — a model is always referenced by the pair. Omit both to inherit the parent session's model.",
           },
           provider: {
             type: "string",

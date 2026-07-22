@@ -57,6 +57,7 @@ import type { CompactionSettings } from "./engine/context-engine.js";
 import type {
   GenerativeModelConfig,
   SubagentRunner,
+  ThinkingLevelName,
   ToolDefinition,
   VisionDescriberService,
 } from "./interfaces.js";
@@ -89,6 +90,13 @@ export interface CreateSessionOptions {
    * inferred, so it's "both or neither" — either half alone is an error, not a lookup.
    */
   provider?: string;
+  /**
+   * Thinking level for this Session; when unspecified, falls back to the Agent config's
+   * `model.thinking_level`. Subagent spawning passes the parent Session's effective level
+   * here, so a child Session thinks at the parent's level rather than the child Agent's
+   * own default.
+   */
+  thinkingLevel?: ThinkingLevelName;
   /** Explicit credentials; if unspecified, falls back to credentials in the Project config, then to AgentHub reading environment variables. */
   apiKey?: string;
   baseUrl?: string;
@@ -206,6 +214,9 @@ export class Agent {
     }
     const sessionId = formatSessionId();
     const subagentDepth = opts.subagentDepth ?? 0;
+    // Effective thinking level: an explicit option (how subagent spawning passes down the
+    // parent Session's level) wins over this Agent's own system_config.
+    const thinkingLevel = opts.thinkingLevel ?? this.state.systemConfig.model?.thinking_level;
 
     // Agent-level vault (agent_state/.vault.toml) and installed Skills: read the current values each time a Session is created.
     const vault = await loadAgentVault(this.state.root, this.state.projectId, this.state.agentId);
@@ -238,6 +249,7 @@ export class Agent {
       apiKey,
       baseUrl,
       systemPrompt,
+      thinkingLevel,
       subagentDepth,
       vault,
     });
@@ -255,7 +267,7 @@ export class Agent {
         model_context_window: modelEntry.context_window ?? "unknown",
         system_prompt: systemPrompt,
         tools: rt.tools,
-        thinking_level: this.state.systemConfig.model?.thinking_level ?? "default",
+        thinking_level: thinkingLevel ?? "default",
         agent_state: this.state.stateDir,
         workspace: workspaceDir,
       },
@@ -355,6 +367,8 @@ export class Agent {
       apiKey,
       baseUrl,
       systemPrompt: meta.system_prompt,
+      // Resume has no per-Session override: the level follows this Agent's current config.
+      thinkingLevel: this.state.systemConfig.model?.thinking_level,
       subagentDepth: 0,
       vault: await loadAgentVault(this.state.root, this.state.projectId, this.state.agentId),
     });
@@ -448,6 +462,8 @@ export class Agent {
     apiKey: string | undefined;
     baseUrl: string | undefined;
     systemPrompt: string;
+    /** The Session's effective thinking level: the caller resolves the explicit option against the Agent config. */
+    thinkingLevel: ThinkingLevelName | undefined;
     subagentDepth: number;
     vault: Record<string, string>;
   }): Promise<{
@@ -458,15 +474,24 @@ export class Agent {
     createBareLLM: () => GenerativeModel;
     compaction: CompactionSettings;
   }> {
-    const { workspaceDir, modelEntry, apiKey, baseUrl, systemPrompt, subagentDepth, vault } = args;
+    const {
+      workspaceDir,
+      modelEntry,
+      apiKey,
+      baseUrl,
+      systemPrompt,
+      thinkingLevel,
+      subagentDepth,
+      vault,
+    } = args;
     // Child-Agent runner: injected into the run_subagent tool so it doesn't need to
     // depend on Agent/Session (breaking a circular dependency). The model can
     // optionally choose agentId (omitted = call the current Agent) and the child
-    // Session's model (omitted = Project default); the model reference is forwarded to
-    // createSession as-is and must be a complete (provider, model_id) pair — half a
-    // reference is rejected there rather than being guessed here. Precheck errors (depth
-    // limit exceeded / agent doesn't exist) are expressed as throws, which the
-    // Environment collapses to failed.
+    // Session's model (omitted = the parent Session's model); an explicit model reference
+    // is forwarded to createSession as-is and must be a complete (provider, model_id)
+    // pair — half a reference is rejected there rather than being guessed here. Precheck
+    // errors (depth limit exceeded / agent doesn't exist) are expressed as throws, which
+    // the Environment collapses to failed.
     // Docs: /docs/interfaces § "Subagent interfaces"
     const parentAgent = this;
     const { root, projectId, agentId: parentAgentId } = this.state;
@@ -494,12 +519,24 @@ export class Agent {
           agentId !== undefined && agentId !== parentAgentId
             ? await createAgent({ root, projectId, agentId })
             : parentAgent;
-        // The model reference is forwarded as a whole: createSession rejects half a pair, so a
-        // caller that named only one side gets the same error the CLI and HTTP layers give.
+        // The child Session follows the PARENT Session, never the Project default: with the
+        // model pair fully omitted it reuses the parent's resolved (provider, model_id) —
+        // the same Project-config entry, so max_tokens / context_window / vision follow
+        // automatically. An explicit pair still wins, and half a pair is forwarded as-is so
+        // createSession rejects it (never silently completed from the parent's here).
+        const childModel =
+          modelId === undefined && provider === undefined
+            ? { modelId: modelEntry.model_id, provider: modelEntry.provider }
+            : {
+                ...(modelId !== undefined ? { modelId } : {}),
+                ...(provider !== undefined ? { provider } : {}),
+              };
+        // The parent Session's effective thinking level (`thinkingLevel` in scope) is passed
+        // down too — on a cross-agent spawn the child Agent's own config would otherwise apply.
         const childSession = await childAgent.createSession({
           workspaceDir,
-          ...(modelId !== undefined ? { modelId } : {}),
-          ...(provider !== undefined ? { provider } : {}),
+          ...childModel,
+          ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
           subagentDepth: subagentDepth + 1,
         });
         // All child-session messages are tagged with an origin (the child Session id,
@@ -630,9 +667,7 @@ export class Agent {
         ? { contextWindow: modelEntry.context_window }
         : {}),
       ...(maxTokens !== undefined ? { maxTokens } : {}),
-      ...(this.state.systemConfig.model?.thinking_level !== undefined
-        ? { thinkingLevel: this.state.systemConfig.model.thinking_level }
-        : {}),
+      ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
       ...(this.state.systemConfig.model?.timeoutMs !== undefined
         ? { requestTimeoutMs: this.state.systemConfig.model.timeoutMs }
         : {}),

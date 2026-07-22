@@ -196,7 +196,10 @@ describe("run_subagent tool (foreground)", () => {
     }
   });
 
-  it("uses the Project default model when neither half of the reference is given", async () => {
+  it("leaves an omitted model reference to the runner, which inherits the parent session's model", async () => {
+    // With neither half given, the tool forwards NO pair — it never invents one; the real
+    // runner (the spawn closure in agent.ts) then fills in the PARENT session's model, not
+    // the Project default (that inheritance is locked in agent.test.ts).
     const seen: Array<{ modelId?: string; provider?: string }> = [];
     const runner = runnerOf(
       async function* () {
@@ -208,6 +211,7 @@ describe("run_subagent tool (foreground)", () => {
     const tool = createSubagentTool(DEF, services);
     const { result } = await collectWithReturn(tool.execute({ prompt: "x" }, CTX));
     expect(result?.stopReason).toBe("completed");
+    expect(seen).toHaveLength(1);
     expect(seen[0]?.modelId).toBeUndefined();
     expect(seen[0]?.provider).toBeUndefined();
   });
