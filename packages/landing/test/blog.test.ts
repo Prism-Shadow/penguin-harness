@@ -108,7 +108,7 @@ describe("frontmatter mapping (author / pinned / category)", () => {
 
   it("filters by the practice category, newest first", () => {
     expect(postsFor("en", "practice").map((p) => p.slug)).toEqual([
-      "local-models-and-the-tuning-loop",
+      "natural-language-training-loop",
       "penguin-harness-self-improvement-with-amd-gpu",
       "local-agents-on-amd-gpus",
     ]);

@@ -5,8 +5,9 @@
  * IntersectionObserver so the TOC highlights while scrolling.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import type { ComponentPropsWithoutRef, ReactNode } from "react";
 import Markdown from "react-markdown";
+import type { Components, ExtraProps } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Link, useParams } from "react-router";
 import { S } from "../lib/strings";
@@ -26,6 +27,47 @@ function nodeText(node: ReactNode): string {
   }
   return "";
 }
+
+/**
+ * Link adapter: every link in a post body opens in a new tab (`target="_blank"` + `rel="noreferrer"`,
+ * which also implies `noopener`), unconditionally — including relative and `#anchor` hrefs, since a
+ * post is a reading surface people come back to. Every other anchor prop react-markdown supplies
+ * (`href`, and `title` from `[text](url "title")`) is forwarded as-is — only its non-DOM `node` prop
+ * is stripped — and `target`/`rel` sit after the spread so the new-tab behavior always wins.
+ * Long-URL wrapping is CSS (`.md-body a` in styles.css), not handled here. Mirrors the Web App's
+ * chat renderer (packages/web/src/features/chat/md.tsx).
+ */
+export function MdLink({
+  node: _node,
+  children,
+  ...anchorProps
+}: ComponentPropsWithoutRef<"a"> & ExtraProps) {
+  return (
+    <a {...anchorProps} target="_blank" rel="noreferrer">
+      {children}
+    </a>
+  );
+}
+
+/**
+ * Built once at module scope rather than inline per render: react-markdown uses each entry as the
+ * element **type**, so a fresh arrow every render is a new type on every commit and React remounts
+ * that subtree instead of updating it. None of these adapters closes over render state, so a single
+ * frozen map is enough.
+ */
+const MD_COMPONENTS: Components = {
+  h2: ({ children }) => (
+    <h2 id={slugifyHeading(nodeText(children))} className="scroll-mt-20">
+      {children}
+    </h2>
+  ),
+  h3: ({ children }) => (
+    <h3 id={slugifyHeading(nodeText(children))} className="scroll-mt-20">
+      {children}
+    </h3>
+  ),
+  a: MdLink,
+};
 
 /** Copy text to the clipboard; reports whether a copy actually happened. */
 async function copyToClipboard(text: string): Promise<boolean> {
@@ -204,21 +246,7 @@ export function BlogPostPage() {
           </div>
         </header>
         <div className="md-body mt-8 text-[15px] text-gray-800 dark:text-gray-200">
-          <Markdown
-            remarkPlugins={[remarkGfm]}
-            components={{
-              h2: ({ children }) => (
-                <h2 id={slugifyHeading(nodeText(children))} className="scroll-mt-20">
-                  {children}
-                </h2>
-              ),
-              h3: ({ children }) => (
-                <h3 id={slugifyHeading(nodeText(children))} className="scroll-mt-20">
-                  {children}
-                </h3>
-              ),
-            }}
-          >
+          <Markdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>
             {post.body}
           </Markdown>
         </div>

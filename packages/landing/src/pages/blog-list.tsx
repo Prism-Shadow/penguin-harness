@@ -56,7 +56,10 @@ export function BlogListPage() {
           <Link
             key={post.slug}
             to={`/blog/${post.slug}`}
-            className="anim-rise group rounded-xl border border-gray-200 bg-white p-5 transition-colors hover:border-gray-300 sm:p-6 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-gray-700"
+            // Semi-transparent surface: the ambient neon backdrop (NeonBackground, behind the
+            // whole page) reads through the card, so it sits as a layer over the page instead of
+            // a solid slab. Hover lifts the alpha as well as the border, both under transition-colors.
+            className="anim-rise group rounded-xl border border-gray-200 bg-white/70 p-5 transition-colors hover:border-gray-300 hover:bg-white/90 sm:p-6 dark:border-gray-800 dark:bg-gray-900/60 dark:hover:border-gray-700 dark:hover:bg-gray-900/85"
           >
             <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
               <time dateTime={post.date} className="tabular-nums">

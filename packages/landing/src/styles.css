@@ -402,9 +402,25 @@
 }
 .md-body a {
   @apply text-brand-700 underline decoration-brand-300 underline-offset-2 transition-colors hover:text-brand-600 dark:text-brand-300 dark:decoration-brand-700;
+  /* `anywhere` rather than `word-break: break-all`: it only breaks a token that would otherwise
+     overflow, so long URLs wrap cleanly (filling each line) while short Latin words in mixed
+     CJK/Latin link text never split mid-word; unlike `break-word` it also counts the break
+     opportunities toward min-content sizing, so a long link can't blow out flex/table layouts. */
+  overflow-wrap: anywhere;
 }
+/* Font size only, so fenced blocks keep the size they have always had; the visible chrome below
+   is scoped to inline code. */
 .md-body code {
-  @apply rounded bg-gray-100 px-1 py-0.5 text-[0.85em] text-gray-800 dark:bg-gray-800 dark:text-gray-200;
+  @apply text-[0.85em];
+}
+/* Inline code: a hairline outline over a barely-there brand wash, replacing the solid gray fill
+   this used to carry — in prose dense with `code` that fill read as a row of heavy blocks. The
+   chrome is scoped to inline code because the `.md-body pre code` reset below strips background,
+   color and padding inside fenced blocks but would not strip a border. Prose often holds long
+   unbroken paths and identifiers, so inline code gets the same `anywhere` treatment as links. */
+.md-body :not(pre) > code {
+  @apply rounded-md border border-brand-200/60 bg-brand-50/40 px-[0.3em] py-[0.1em] text-[0.875em] text-gray-900 dark:border-brand-900/70 dark:bg-brand-950/50 dark:text-gray-100;
+  overflow-wrap: anywhere;
 }
 .md-body pre {
   @apply overflow-x-auto rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm dark:border-gray-800 dark:bg-gray-900;
@@ -417,13 +433,70 @@
 .md-body blockquote {
   @apply border-l-2 border-gray-300 pl-3 text-gray-600 dark:border-gray-700 dark:text-gray-400;
 }
+/* Tables: `display: block` + `overflow-x: auto` makes the table its own scroll container, so a
+   wide one scrolls inside the prose column instead of widening the page. `border-collapse:
+   separate` with zero spacing rather than `collapse`: collapsed borders come from a shared-edge
+   model that paints inconsistently under the translucent row tints below, while separate borders
+   keep every cell's own hairline crisp behind a semi-transparent fill — the per-side rules below
+   rebuild the single-hairline grid.
+
+   The four background layers are the classic CSS-only scroll shadows: the two *cover* layers are
+   attached `local` so they travel with the content and sit at its far ends, and the two *shadow*
+   layers are attached `scroll` so they stay pinned to the visible edges. A shadow is therefore
+   only visible on a side that still has content off-screen, and a table that fits shows nothing
+   at all. This is the discoverability cue, because the scrollbar cannot be relied on: on overlay-
+   scrollbar platforms it reserves no layout space and is invisible until you already scroll. The
+   covers are the page background color, so they stay invisible themselves; they paint behind the
+   cells, which keeps the translucent row tints intact. */
+.md-body {
+  --md-scroll-cover: #fff;
+  --md-scroll-shadow: rgb(15 23 42 / 0.16);
+}
+.dark .md-body {
+  --md-scroll-cover: #000;
+  --md-scroll-shadow: rgb(148 163 184 / 0.24);
+}
 .md-body table {
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   display: block;
   overflow-x: auto;
+  max-width: 100%;
+  scrollbar-width: thin;
+  background-image:
+    linear-gradient(to right, var(--md-scroll-cover), transparent),
+    linear-gradient(to left, var(--md-scroll-cover), transparent),
+    linear-gradient(to right, var(--md-scroll-shadow), transparent),
+    linear-gradient(to left, var(--md-scroll-shadow), transparent);
+  background-position:
+    left center,
+    right center,
+    left center,
+    right center;
+  background-repeat: no-repeat;
+  background-size:
+    24px 100%,
+    24px 100%,
+    14px 100%,
+    14px 100%;
+  background-attachment: local, local, scroll, scroll;
 }
+/* Cells never wrap — the owner's ask: a long value stays on one line and the table scrolls,
+   rather than every column collapsing into ragged two-line prose. */
 .md-body :is(th, td) {
-  @apply border border-gray-200 px-2.5 py-1.5 text-sm dark:border-gray-800;
+  @apply border-r border-b border-gray-200 px-2.5 py-1.5 text-sm dark:border-gray-800;
+  white-space: nowrap;
+}
+.md-body :is(th, td):first-child {
+  @apply border-l;
+}
+/* Header and zebra stripes are translucent, like the blog cards: the page (and its ambient
+   backdrop) reads through them, so the grid layers over the page instead of sitting on a slab. */
+.md-body thead :is(th, td) {
+  @apply border-t bg-gray-200/50 text-left font-semibold dark:bg-gray-800/60;
+}
+.md-body tbody tr:nth-child(even) {
+  @apply bg-gray-100/70 dark:bg-gray-800/35;
 }
 .md-body hr {
   @apply my-4 border-gray-200 dark:border-gray-800;

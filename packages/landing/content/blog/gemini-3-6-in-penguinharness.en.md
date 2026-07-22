@@ -1,48 +1,48 @@
 ---
-title: "Gemini 3.6 Flash and 3.5 Flash-Lite are in PenguinHarness — plus everything else in 0.1.1"
+title: "MLE-Bench 63.9%: why Gemini 3.6 Flash is the strongest model yet for agents that build agents — plus the rest of 0.1.1"
 date: 2026-07-22
 category: news
-excerpt: Google shipped Gemini 3.6 Flash and 3.5 Flash-Lite on July 21. Both are already in the PenguinHarness model catalog — on the Google endpoint and on OpenRouter, with the full 1,048,576-token context and vision. Here is what the new models bring, and the rest of the 0.1.1 release around them.
+excerpt: Google reports Gemini 3.6 Flash at 63.9% on MLE-Bench, against 49.7% for 3.5 Flash. MLE-Bench scores machine-learning engineering — an agent doing the work of building and tuning ML systems, which is exactly what PenguinHarness exists to do. The model is in the catalog today, at a lower price than the Flash it replaces. Here is the case, and the rest of the 0.1.1 release.
 ---
 
-Google announced [Gemini 3.6 Flash, 3.5 Flash-Lite, and 3.5 Flash Cyber](https://blog.google/innovation-and-ai/models-and-research/gemini-models/gemini-3-6-flash-3-5-flash-lite-3-5-flash-cyber/) on July 21, 2026. One day later, the first two are in the PenguinHarness model catalog — pick one on the Models page, paste a key, and run. This post covers what the new models actually change for agent workloads, and then walks through the rest of the **0.1.1** release.
+Google announced [Gemini 3.6 Flash, 3.5 Flash-Lite, and 3.5 Flash Cyber](https://blog.google/innovation-and-ai/models-and-research/gemini-models/gemini-3-6-flash-3-5-flash-lite-3-5-flash-cyber/) on July 21, 2026. One number in that announcement matters more to PenguinHarness than everything else in it: **MLE-Bench, 63.9% against 3.5 Flash's 49.7%**.
 
-## Why the Flash generation matters for an agent harness
+## Why that one number
 
-Google's framing of the release is aimed squarely at what a harness like this one does all day: "Developers and customers building production AI agents need higher token efficiency, lower latency, and more reliable performance." An agent loop is not one long completion — it is dozens of short round trips, each carrying a tool schema, a growing transcript and a reasoning budget. Efficiency per step is the whole cost model.
+MLE-Bench scores machine-learning *engineering* — an agent doing the work of building, training and tuning an ML system, not answering questions about one. Google's own phrasing for the result is a "significant improvement in ML Research, as seen in MLE Bench (63.9% vs. 49.7%)". That is a 14.2-point gain, the largest move of the three percentage-scored panels in Google's chart below, and it lands well above the 42.6% the same chart records for the previous Pro-generation model, 3.1 Pro.
 
-That is exactly where Gemini 3.6 Flash claims its gains. Google reports it consumes **17% fewer output tokens than 3.5 Flash** on the Artificial Analysis Index, with "up to 65%" observed on some benchmarks such as DeepSWE by Datacurve — and that it "takes fewer reasoning steps and tool calls to accomplish multi-step workflows." It does that at a **lower price than 3.5 Flash**: $1.50 per million input tokens and $7.50 per million output tokens.
+PenguinHarness exists so that **agents build agents — faster, better, cheaper**. Every loop the product runs is machine-learning engineering in miniature: stand a model up, hand an agent a task, score it against a private rubric, read the failures, tune, redeploy, measure again. A model that is markedly better at precisely that work, priced in the Flash tier, is the strongest model yet for what this harness does all day. That is the argument; the rest of this post is the evidence, and then the rest of the release.
 
-Fewer tokens, fewer steps, lower unit price. For a self-improving loop that re-runs a benchmark suite on every round, all three compound.
+One caveat up front, and it holds for every figure below: these are **Google's numbers, from Google's evaluation methodology**. We have not independently reproduced any of them.
+
+## The rest of the scoreboard
 
 ![Gemini 3.6 Flash evaluation chart: DeepSWE v1.1, MLE-Bench, GDPval-AA v2 and OSWorld-Verified, each comparing Gemini 3.1 Pro, 3.5 Flash and 3.6 Flash](/blog-assets/gemini-3-6-flash-evals.webp)
 
 *Figure by Google, reproduced from its announcement post [Introducing Gemini 3.6 Flash, 3.5 Flash-Lite, and 3.5 Flash Cyber](https://blog.google/innovation-and-ai/models-and-research/gemini-models/gemini-3-6-flash-3-5-flash-lite-3-5-flash-cyber/) (July 21, 2026). All numbers and the evaluation methodology are Google's, not ours.*
 
-The quality story travels with the efficiency story rather than against it. Against 3.5 Flash, Google reports:
+MLE-Bench does not stand alone. Against 3.5 Flash, Google reports:
 
 | Benchmark        | What it measures                  | 3.5 Flash | 3.6 Flash |
 | ---------------- | --------------------------------- | --------: | --------: |
-| DeepSWE v1.1     | Long-horizon software engineering |       37% |       49% |
 | MLE-Bench        | Machine-learning engineering      |     49.7% |     63.9% |
+| DeepSWE v1.1     | Long-horizon software engineering |       37% |       49% |
 | GDPval-AA v2     | Knowledge work                    |      1349 |      1421 |
 | OSWorld-Verified | Computer use                      |     78.4% |     83.0% |
 
-Google attributes the DeepSWE jump to "higher precision with fewer unwanted code edits and reduced execution loops" — the failure mode anyone who has watched an agent thrash through a repository will recognize. Computer use is now a built-in client-side tool in the Gemini API and Gemini Enterprise, and the model ships with enhanced Frontier Safety safeguards for CBRN and cyber-offense misuse that Google says make it "substantially more resistant to jailbreaks" while minimizing refusals for beneficial uses.
+The three supporting rows are the ones an ML-engineering loop actually leans on. Long-horizon software engineering is how the agent edits the training config, the dataset builder and the serving flags without thrashing — Google attributes the DeepSWE jump to "higher precision with fewer unwanted code edits and reduced execution loops", the failure mode anyone who has watched an agent churn through a repository will recognize. Computer use is now a built-in client-side tool in the Gemini API and Gemini Enterprise. And the model ships with enhanced Frontier Safety safeguards for CBRN and cyber-offense misuse that Google says make it "substantially more resistant to jailbreaks" while minimizing refusals for beneficial uses.
 
-## 3.5 Flash-Lite: the cheap, fast half of the pair
+## The cheaper leg: fewer tokens, fewer steps, lower price
 
-Gemini 3.5 Flash-Lite is the other half, and it is aimed at volume: it is the fastest model in the 3.5 series, running at **350 output tokens per second** as measured by Artificial Analysis, priced at **$0.30 per million input tokens and $2.50 per million output tokens**. Google positions it for high-throughput work like agentic search and document processing, with configurable thinking levels so the same model can be driven cheap-and-shallow for bulk tasks or pushed to a higher thinking level for multi-step subagent workloads. Computer use is a built-in tool here too.
+Google's framing of the release lands squarely on what a harness like this one does all day: "Developers and customers building production AI agents need higher token efficiency, lower latency, and more reliable performance." An agent loop is not one long completion — it is dozens of short round trips, each carrying a tool schema, a growing transcript and a reasoning budget. Efficiency per step is the whole cost model.
 
-Against the previous Flash-Lite generation, Google reports Terminal-Bench 2.1 at **54% vs 31%**, long context on GDM-MRCR v2 at **72.2% vs 60.1%**, and GDPval-AA v2 at **1140 vs 642**. On several agentic and coding evals it even passes 3 Flash — SWE-Bench Pro **54.2% vs 49.6%**, OSWorld-Verified **74.0% vs 65.1%**.
+Google reports 3.6 Flash consuming **17% fewer output tokens than 3.5 Flash** on the Artificial Analysis Index, with "up to 65%" observed on some benchmarks such as DeepSWE by Datacurve, and says it "takes fewer reasoning steps and tool calls to accomplish multi-step workflows." That efficiency "is also combined with a lower price than 3.5 Flash": **$1.50 per million input tokens and $7.50 per million output tokens**. Google's own conclusion is the one that matters here — the combination "reduces the overall cost per agentic task, making agents more cost-effective to build and run."
 
-That combination is a very good fit for the subagent pattern: a capable parent model planning, a cheap fast model fanning out. Google's own post shows the same shape, with 3.5 Flash-Lite working "alongside 3.6 Flash as the master agent."
+Fewer tokens, fewer steps, lower unit price. For a self-improving loop that re-runs a whole benchmark suite on every round, the three compound.
 
-The third model in Google's announcement, 3.5 Flash Cyber, is deliberately out of reach: Google says it will be available exclusively to governments and trusted partners through CodeMender, as part of a limited-access pilot program. It is not something PenguinHarness — or anyone else — will be pointing a base URL at.
+## What ships in PenguinHarness today
 
-## What you get in PenguinHarness today
-
-Both models are catalog entries in 0.1.1, on two routes:
+One day after the announcement, the catalog carries both generally available models, on two routes each:
 
 | Provider group | Model id                       |   Context | Vision |
 | -------------- | ------------------------------ | --------: | ------ |
@@ -59,6 +59,16 @@ penguin config model list
 ```
 
 Two related corrections landed with them. Gemini pricing is now recorded with the vendor's real cache-hit rate rather than the input price repeated into the cache bucket — $0.15 per million cached input tokens for 3.6 Flash, $0.03 for 3.5 Flash-Lite — so the Cost center no longer overstates cache-heavy spend by an order of magnitude. And `google/gemini-3.5-flash` had its context window recorded as 1,000,000; the real figure, on both the gateway and the direct endpoint, is 1,048,576.
+
+### 3.5 Flash-Lite, the fan-out half
+
+The second model in the catalog is aimed at volume rather than depth. Gemini 3.5 Flash-Lite is the fastest model in the 3.5 series as measured by Artificial Analysis, running at **350 output tokens per second**, priced at **$0.30 per million input tokens and $2.50 per million output tokens**. Google positions it for high-throughput work like agentic search and document processing, with configurable thinking levels so the same model can be driven cheap-and-shallow for bulk tasks or pushed higher for multi-step subagent workloads. Computer use is a built-in tool here too.
+
+Against the previous Flash-Lite generation, Google reports Terminal-Bench 2.1 at **54% vs 31%**, long context on GDM-MRCR v2 at **72.2% vs 60.1%**, and GDPval-AA v2 at **1140 vs 642**. On several agentic and coding evals it even passes 3 Flash — SWE-Bench Pro **54.2% vs 49.6%**, OSWorld-Verified **74.0% vs 65.1%**.
+
+That is a very good fit for the subagent pattern PenguinHarness runs on: a capable parent model planning, a cheap fast model fanning out. Google's own post shows the same shape — 3.5 Flash-Lite generating design concepts "alongside 3.6 Flash as the master agent."
+
+The third model in Google's announcement, 3.5 Flash Cyber, is deliberately out of reach: Google says it will be available exclusively to governments and trusted partners through CodeMender, as part of a limited-access pilot program. It is not something PenguinHarness — or anyone else — will be pointing a base URL at.
 
 ## The rest of 0.1.1
 
@@ -86,7 +96,7 @@ Chat rendering got a pass: links open in a new tab, long URLs and inline code wr
 
 ### Skills
 
-Three new skills join the AI App Development group — **vllm**, **ollama** and **llamafactory** — so an agent can stand up and tune the models it builds on, not just call them. Both serving skills share a guided workflow: ask which model to serve, ask which engine the user prefers, serve, verify, then register the endpoint with the CLI. The `penguin-cli` skill (now v5) and `penguin-sdk` carry the hard rule they lean on: configuring Penguin's own model uses the default data root, but models configured for an app under development must go into the app's own project directory. There is a whole [practice post](/blog/local-models-and-the-tuning-loop) on using these three end to end.
+Three new skills join the AI App Development group — **vllm**, **ollama** and **llamafactory** — so an agent can stand up and tune the models it builds on, not just call them. Both serving skills share a guided workflow: ask which model to serve, ask which engine the user prefers, serve, verify, then register the endpoint with the CLI. The `penguin-cli` skill (now v5) and `penguin-sdk` carry the hard rule they lean on: configuring Penguin's own model uses the default data root, but models configured for an app under development must go into the app's own project directory. There is a whole [practice post](/blog/natural-language-training-loop) on what changes once an agent holds all three — you stop typing the commands and start describing the outcome.
 
 `agenthub-models` tracks the 0.4.1 upgrade: the new supported-model registry, the config parameters a client may now reject outright, and the Gemini 3.6 / Kimi K3 / GLM-5.2 families with their reasoning-effort knobs.
 

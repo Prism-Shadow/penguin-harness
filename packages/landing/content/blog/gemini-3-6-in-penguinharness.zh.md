@@ -1,48 +1,48 @@
 ---
-title: Gemini 3.6 Flash 与 3.5 Flash-Lite 已接入 PenguinHarness——以及 0.1.1 的其余更新
+title: MLE-Bench 63.9%：为什么 Gemini 3.6 Flash 是「让 Agent 构建 Agent」迄今最强的模型——以及 0.1.1 的其余更新
 date: 2026-07-22
 category: news
-excerpt: Google 于 7 月 21 日发布 Gemini 3.6 Flash 与 3.5 Flash-Lite，两者已进入 PenguinHarness 模型目录——Google 直连与 OpenRouter 两条路径都可用，1,048,576 Token 上下文、支持视觉。本文介绍新模型带来了什么，以及围绕它的 0.1.1 版本还改了哪些地方。
+excerpt: Google 给出的 Gemini 3.6 Flash MLE-Bench 成绩是 63.9%，3.5 Flash 是 49.7%。MLE-Bench 衡量的是机器学习工程能力——Agent 亲手构建、训练、调优一套 ML 系统，而这正是 PenguinHarness 要做的事。该模型今天已在模型目录中，价格还低于它取代的那一代 Flash。本文讲清这个判断，以及 0.1.1 版本的其余更新。
 ---
 
-Google 在 2026 年 7 月 21 日发布了 [Gemini 3.6 Flash、3.5 Flash-Lite 与 3.5 Flash Cyber](https://blog.google/innovation-and-ai/models-and-research/gemini-models/gemini-3-6-flash-3-5-flash-lite-3-5-flash-cyber/)。一天之后，前两个已经出现在 PenguinHarness 的模型目录里——在 Models 页面选中、填入 Key，即可运行。本文先讲新模型对 Agent 负载究竟意味着什么，再梳理 **0.1.1** 这个版本的其余更新。
+Google 在 2026 年 7 月 21 日发布了 [Gemini 3.6 Flash、3.5 Flash-Lite 与 3.5 Flash Cyber](https://blog.google/innovation-and-ai/models-and-research/gemini-models/gemini-3-6-flash-3-5-flash-lite-3-5-flash-cyber/)。这次发布里有一个数字，对 PenguinHarness 的意义超过其余全部：**MLE-Bench 63.9%，而 3.5 Flash 是 49.7%**。
 
-## 为什么 Flash 这一代对 Harness 特别重要
+## 为什么是这个数字
 
-Google 对这次发布的定位，恰好就是 Harness 每天在做的事：「构建生产级 AI Agent 的开发者与客户，需要更高的 Token 效率、更低的延迟和更可靠的表现。」Agent 循环不是一次长补全，而是几十次短往返，每一次都带着工具 Schema、不断增长的对话记录和一份推理预算。单步效率就是全部的成本模型。
+MLE-Bench 衡量的是机器学习*工程*能力——Agent 亲手构建、训练、调优一套 ML 系统，而不是回答关于它的问题。Google 自己的说法是，这体现了「ML Research 上的显著提升，见 MLE Bench（63.9% vs. 49.7%）」。这是 14.2 个百分点的提升，是下面那张图中三项百分制基准里幅度最大的一项，并且明显高于同一张图给出的上一代 Pro 级模型 3.1 Pro 的 42.6%。
 
-Gemini 3.6 Flash 的收益正落在这里。按 Google 的说法，在 Artificial Analysis Index 上它比 3.5 Flash **少消耗 17% 的输出 Token**，在 Datacurve 的 DeepSWE 等部分基准上观察到「最高 65%」，并且「完成多步工作流所需的推理步数与工具调用更少」。与此同时价格**低于 3.5 Flash**：输入 $1.50 / 百万 Token，输出 $7.50 / 百万 Token。
+PenguinHarness 存在的意义，就是**让 Agent 构建 Agent——更快、更好、更便宜**。这个产品跑的每一个循环，本质上都是一次小型的机器学习工程：把模型部署起来，交给 Agent 一个任务，用私有 Rubric 打分，读失败原因，调优，重新部署，再测一次。一个在这件事上明显更强、又落在 Flash 价格档的模型，就是迄今最适合这套 Harness 的模型。这是本文的论点；后面是证据，再后面是这个版本的其余更新。
 
-更少的 Token、更少的步数、更低的单价。对于每一轮都要重跑一遍评测集的自我进化循环来说，这三者是叠乘关系。
+有一点先说清楚，且对下文每一个数字都成立：这些都是 **Google 自己的数据、按 Google 自己的评测方法得出**，我们没有独立复现其中任何一项。
+
+## 其余的成绩单
 
 ![Gemini 3.6 Flash 评测图：DeepSWE v1.1、MLE-Bench、GDPval-AA v2 与 OSWorld-Verified 四项，逐项对比 Gemini 3.1 Pro、3.5 Flash 与 3.6 Flash](/blog-assets/gemini-3-6-flash-evals.webp)
 
 *图片版权归 Google 所有，转载自其发布博客 [Introducing Gemini 3.6 Flash, 3.5 Flash-Lite, and 3.5 Flash Cyber](https://blog.google/innovation-and-ai/models-and-research/gemini-models/gemini-3-6-flash-3-5-flash-lite-3-5-flash-cyber/)（2026 年 7 月 21 日）。图中全部数据与评测方法均出自 Google，而非我们自测。*
 
-难得的是，质量并没有为效率让路。对比 3.5 Flash，Google 给出的数据是：
+MLE-Bench 不是孤证。对比 3.5 Flash，Google 给出的数据是：
 
 | 基准             | 衡量的能力   | 3.5 Flash | 3.6 Flash |
 | ---------------- | ------------ | --------: | --------: |
-| DeepSWE v1.1     | 长程软件工程 |       37% |       49% |
 | MLE-Bench        | 机器学习工程 |     49.7% |     63.9% |
+| DeepSWE v1.1     | 长程软件工程 |       37% |       49% |
 | GDPval-AA v2     | 知识工作     |      1349 |      1421 |
 | OSWorld-Verified | 计算机操作   |     78.4% |     83.0% |
 
-Google 把 DeepSWE 的提升归因于「更高的精确度、更少的多余代码改动和更少的执行循环」——任何看过 Agent 在代码仓库里反复折腾的人都认得这个失败模式。计算机操作现在是 Gemini API 与 Gemini Enterprise 中的内置客户端工具；模型还带上了针对 CBRN 与网络攻击滥用的 Frontier Safety 加固，Google 称其「明显更难被越狱」，同时减少了对正当用途的拒答。
+另外三行恰好是一个机器学习工程循环真正依赖的能力。长程软件工程决定了 Agent 能不能不反复折腾地改好训练配置、数据集脚本与部署参数——Google 把 DeepSWE 的提升归因于「更高的精确度、更少的多余代码改动和更少的执行循环」，任何看过 Agent 在代码仓库里来回折腾的人都认得这个失败模式。计算机操作现在是 Gemini API 与 Gemini Enterprise 中的内置客户端工具。模型还带上了针对 CBRN 与网络攻击滥用的 Frontier Safety 加固，Google 称其「明显更难被越狱」，同时减少了对正当用途的拒答。
 
-## 3.5 Flash-Lite：便宜且快的那一半
+## 「更便宜」这一条：更少 Token、更少步数、更低单价
 
-Gemini 3.5 Flash-Lite 是这次发布的另一半，目标是吞吐：按 Artificial Analysis 的测量，它是 3.5 系列中最快的模型，达到 **350 输出 Token/秒**，定价 **输入 $0.30 / 百万 Token、输出 $2.50 / 百万 Token**。Google 把它定位在 Agent 检索、文档处理这类高吞吐场景，并支持配置思考等级——同一个模型既可以压到低延迟低成本跑批量任务，也可以调高思考等级承担多步子 Agent 负载。计算机操作在这里同样是内置工具。
+Google 对这次发布的定位，恰好就是 Harness 每天在做的事：「构建生产级 AI Agent 的开发者与客户，需要更高的 Token 效率、更低的延迟和更可靠的表现。」Agent 循环不是一次长补全，而是几十次短往返，每一次都带着工具 Schema、不断增长的对话记录和一份推理预算。单步效率就是全部的成本模型。
 
-与上一代 Flash-Lite 相比，Google 给出的数据是：Terminal-Bench 2.1 **54% 对 31%**，长上下文 GDM-MRCR v2 **72.2% 对 60.1%**，GDPval-AA v2 **1140 对 642**。在若干 Agent 与编码评测上它甚至超过 3 Flash——SWE-Bench Pro **54.2% 对 49.6%**，OSWorld-Verified **74.0% 对 65.1%**。
+按 Google 的说法，在 Artificial Analysis Index 上 3.6 Flash 比 3.5 Flash **少消耗 17% 的输出 Token**，在 Datacurve 的 DeepSWE 等部分基准上观察到「最高 65%」，并且「完成多步工作流所需的推理步数与工具调用更少」。这种效率提升「同时还配上了低于 3.5 Flash 的价格」：**输入 $1.50 / 百万 Token，输出 $7.50 / 百万 Token**。Google 自己的结论正是这里最要紧的一句——这套组合「降低了每个 Agent 任务的总体成本，让 Agent 的构建与运行更划算」。
 
-这个组合非常适合子 Agent 模式：能力更强的父模型负责规划，便宜且快的模型负责扇出执行。Google 自己的博客展示的也是同一形态——3.5 Flash-Lite「与作为主控 Agent 的 3.6 Flash 协同工作」。
-
-发布中的第三个模型 3.5 Flash Cyber 则刻意不对外开放：Google 表示它将仅通过 CodeMender、以限量试点计划的形式提供给政府与可信合作伙伴。PenguinHarness——以及任何其他工具——都不会有机会把 base URL 指过去。
+更少的 Token、更少的步数、更低的单价。对于每一轮都要重跑一整套评测集的自我进化循环来说，这三者是叠乘关系。
 
 ## PenguinHarness 里现在能用到什么
 
-两个模型在 0.1.1 中各有两条接入路径：
+发布一天之后，目录里已经收录了两个公开可用的模型，各有两条接入路径：
 
 | 提供方分组    | 模型 ID                        |    上下文 | 视觉 |
 | ------------- | ------------------------------ | --------: | ---- |
@@ -59,6 +59,16 @@ penguin config model list
 ```
 
 随之落地的还有两处修正。Gemini 的价格现在按厂商真实的缓存命中价记录，而不是把输入价重复填进缓存桶——3.6 Flash 每百万缓存输入 Token $0.15，3.5 Flash-Lite $0.03——费用中心因此不再把缓存密集型开销高估一个数量级。另外 `google/gemini-3.5-flash` 的上下文窗口此前记为 1,000,000，网关与直连端点的真实值都是 1,048,576，现已更正。
+
+### 3.5 Flash-Lite：负责扇出的那一半
+
+目录里的第二个模型，目标是吞吐而不是深度。按 Artificial Analysis 的测量，Gemini 3.5 Flash-Lite 是 3.5 系列中最快的模型，达到 **350 输出 Token/秒**，定价 **输入 $0.30 / 百万 Token、输出 $2.50 / 百万 Token**。Google 把它定位在 Agent 检索、文档处理这类高吞吐场景，并支持配置思考等级——同一个模型既可以压到低延迟低成本跑批量任务，也可以调高思考等级承担多步子 Agent 负载。计算机操作在这里同样是内置工具。
+
+与上一代 Flash-Lite 相比，Google 给出的数据是：Terminal-Bench 2.1 **54% 对 31%**，长上下文 GDM-MRCR v2 **72.2% 对 60.1%**，GDPval-AA v2 **1140 对 642**。在若干 Agent 与编码评测上它甚至超过 3 Flash——SWE-Bench Pro **54.2% 对 49.6%**，OSWorld-Verified **74.0% 对 65.1%**。
+
+这非常契合 PenguinHarness 依赖的子 Agent 模式：能力更强的父模型负责规划，便宜且快的模型负责扇出执行。Google 自己的博客展示的也是同一形态——3.5 Flash-Lite「与作为主控 Agent 的 3.6 Flash 协同」批量生成设计方案。
+
+发布中的第三个模型 3.5 Flash Cyber 则刻意不对外开放：Google 表示它将仅通过 CodeMender、以限量试点计划的形式提供给政府与可信合作伙伴。PenguinHarness——以及任何其他工具——都不会有机会把 base URL 指过去。
 
 ## 0.1.1 的其余更新
 
@@ -86,7 +96,7 @@ SDK 升级到 **AgentHub 0.4.1**。这是一次类型兼容的升级，它新增
 
 ### 技能
 
-AI 应用开发分组新增三个技能——**vllm**、**ollama** 与 **llamafactory**——让 Agent 不只是调用模型，还能把自己依赖的模型部署起来、调优出来。两个部署技能共享同一套引导流程：先问要部署哪个模型、再问用户偏好哪个引擎，然后部署、验证，最后用 CLI 注册端点。`penguin-cli`（现为 v5）与 `penguin-sdk` 承载了它们所依赖的硬性规则：给 Penguin 自身配置模型用默认数据根目录，而为在开发的 AI 应用配置模型必须写进该应用自己的项目目录。我们另有一篇[实践文章](/blog/local-models-and-the-tuning-loop)完整讲这三个技能怎么串起来用。
+AI 应用开发分组新增三个技能——**vllm**、**ollama** 与 **llamafactory**——让 Agent 不只是调用模型，还能把自己依赖的模型部署起来、调优出来。两个部署技能共享同一套引导流程：先问要部署哪个模型、再问用户偏好哪个引擎，然后部署、验证，最后用 CLI 注册端点。`penguin-cli`（现为 v5）与 `penguin-sdk` 承载了它们所依赖的硬性规则：给 Penguin 自身配置模型用默认数据根目录，而为在开发的 AI 应用配置模型必须写进该应用自己的项目目录。我们另有一篇[实践文章](/blog/natural-language-training-loop)讲当 Agent 同时握有这三个技能之后会发生什么——你不再敲命令，只描述你要的结果。
 
 `agenthub-models` 同步了 0.4.1：新的受支持模型注册表、客户端现在可能直接拒绝的配置参数，以及 Gemini 3.6 / Kimi K3 / GLM-5.2 系列及其推理强度旋钮。
 
