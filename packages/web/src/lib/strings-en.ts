@@ -327,6 +327,7 @@ export const en: Strings = {
     maxTokensInvalid: "Must be a positive integer",
     clientTypeLocked: (t: string): string => `Protocol: ${t} (kept as configured; not editable)`,
     vision: "Vision support",
+    visionOffProxyHint: "Images are read via the vision proxy model",
     visionBadge: "Vision",
     visionModelBadge: "Proxy vision",
     setVisionModel: "Set as proxy vision model",

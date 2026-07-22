@@ -1639,22 +1639,31 @@ function ModelDialog({
         )}
 
         {/* Vision capability: for preset models it's flagged by the built-in catalog (read-only);
-            custom models toggle it here — an iOS-style switch with the label only, no
-            explanation text (per owner: the dialog must not spend rows on descriptions). */}
+            custom models toggle it here — an iOS-style switch sitting inline right next to the
+            label (per owner: no full-row stretch, no standing explanation text). Only the OFF
+            state shows one small muted line: images are then read via the configured vision
+            proxy model (describe_image). */}
         {!preset && (
-          <label
-            className={`flex items-center justify-between gap-2 ${canEdit ? "cursor-pointer" : "cursor-not-allowed"}`}
-          >
-            <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
-              {S.models.vision}
-            </span>
-            <Switch
-              checked={form.vision}
-              disabled={!canEdit}
-              onChange={(vision) => set({ vision })}
-              aria-label={S.models.vision}
-            />
-          </label>
+          <div>
+            <label
+              className={`inline-flex items-center gap-2 ${canEdit ? "cursor-pointer" : "cursor-not-allowed"}`}
+            >
+              <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
+                {S.models.vision}
+              </span>
+              <Switch
+                checked={form.vision}
+                disabled={!canEdit}
+                onChange={(vision) => set({ vision })}
+                aria-label={S.models.vision}
+              />
+            </label>
+            {!form.vision && (
+              <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                {S.models.visionOffProxyHint}
+              </p>
+            )}
+          </div>
         )}
       </div>
 

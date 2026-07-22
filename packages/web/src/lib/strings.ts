@@ -306,6 +306,8 @@ export const zh = {
     clientTypeLocked: (t: string): string => `协议：${t}（沿用原配置，不可修改）`,
     /** Switch label only — the dialog carries no explanation text for it (per owner). */
     vision: "支持视觉",
+    /** Shown only while the vision switch is OFF: images are then read via the configured vision proxy model (describe_image). */
+    visionOffProxyHint: "使用视觉代理模型读图",
     visionBadge: "视觉",
     visionModelBadge: "视觉代理",
     setVisionModel: "设为视觉代理模型",
