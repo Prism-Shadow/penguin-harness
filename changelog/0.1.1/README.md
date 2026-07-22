@@ -8,7 +8,7 @@ Released on 2026-07-22.
 
 - [2026-07-22] Skills: vLLM and Ollama deployment plus LlamaFactory fine-tuning join the AI App Development group with a guided serving workflow that follows the user's engine preference, `bento-slides` joins Office Productivity for authoring single-file Bento decks, and `agenthub-models` tracks the AgentHub 0.4.1 API. ([details](2026-07-22-skills.md))
 
-- [2026-07-22] Sites: the docs and landing navbars are now identical, the blog gains a Tech-practice category, pinned posts, author/date/copy-link metadata and a second AMD practice post, and the built-in Skills are listed in the READMEs and on the landing page. ([details](2026-07-22-sites-and-blog.md))
+- [2026-07-22] Sites: the docs and landing navbars are now identical, the blog gains Tech-practice and Perspectives categories, pinned posts, author/date/copy-link metadata, a second AMD practice post and three bilingual Perspectives posts (harness minimalism against the Databricks benchmark, a sourced comparison of five agent frameworks, and the AI development stack — vLLM, Ollama, LlamaFactory — as infrastructure now driven by agents rather than people), and the built-in Skills are listed in the READMEs and on the landing page. ([details](2026-07-22-sites-and-blog.md))
 
 - [2026-07-22] Docs and examples: two new README roadmap items, and the self-improvement example reworked to genuinely evolve itself. ([details](2026-07-22-docs-and-examples.md))
 

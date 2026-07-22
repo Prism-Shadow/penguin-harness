@@ -1,6 +1,6 @@
 /**
- * Blog badges: category (news = brand fill, practice = brand outline, changelog =
- * neutral) + the pinned marker, all sharing the same pill shape.
+ * Blog badges: category (news = brand fill, practice = brand outline, perspectives =
+ * teal fill, changelog = neutral) + the pinned marker, all sharing the same pill shape.
  */
 import { S } from "../lib/strings";
 import type { BlogCategory } from "../lib/blog";
@@ -9,6 +9,8 @@ const CATEGORY_STYLES: Record<BlogCategory, string> = {
   news: "border-brand-200 bg-brand-50 text-brand-700 dark:border-brand-800 dark:bg-brand-950 dark:text-brand-300",
   practice:
     "border-brand-200 bg-transparent text-brand-700 dark:border-brand-800 dark:text-brand-300",
+  perspectives:
+    "border-teal-300 bg-teal-50 text-teal-800 dark:border-teal-700 dark:bg-teal-950 dark:text-teal-300",
   changelog:
     "border-gray-200 bg-gray-50 text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300",
 };

@@ -96,13 +96,16 @@ describe("frontmatter mapping (author / pinned / category)", () => {
   it("reads the pinned flag and sorts the pinned post first", () => {
     for (const locale of ["en", "zh"] as const) {
       const posts = postsFor(locale);
-      expect(posts.length).toBe(7);
+      expect(posts.length).toBe(10);
       // The launch post stays the single pinned post; newer posts sort under it by date.
       expect(posts.filter((p) => p.pinned).map((p) => p.slug)).toEqual([
         "introducing-penguinharness",
       ]);
       expect(posts[0]?.slug).toBe("introducing-penguinharness");
-      expect(posts[1]?.slug).toBe("gemini-3-6-in-penguinharness");
+      // Pinning beats recency: the runner-up is strictly newer than the pinned post. Asserted
+      // as a relation rather than a slug, because the newest date is shared by several posts
+      // and the slug tie-break makes any single winner churn whenever a post is added.
+      expect(posts[1]!.date > posts[0]!.date).toBe(true);
     }
   });
 
@@ -119,6 +122,15 @@ describe("frontmatter mapping (author / pinned / category)", () => {
       "introducing-penguinharness",
       "gemini-3-6-in-penguinharness",
       "fireworks-credits-amd",
+    ]);
+  });
+
+  it("filters by the perspectives category", () => {
+    expect(postsFor("en", "perspectives").map((p) => p.slug)).toEqual([
+      // All three share 2026-07-22, so slug ascending is the tie-break.
+      "ai-infrastructure-past-present-future",
+      "easiest-way-to-build-ai-agents-2026",
+      "simple-harness-is-all-you-need",
     ]);
   });
 });

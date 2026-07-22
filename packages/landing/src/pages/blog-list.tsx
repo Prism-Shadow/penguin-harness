@@ -1,5 +1,5 @@
 /**
- * Blog list: category chips (all / product news / tech practice / release notes) +
+ * Blog list: category chips (all / product news / tech practice / perspectives / release notes) +
  * post cards. A flat list in every view — each card carries its category badge,
  * chips filter by category, and pinned posts sort first.
  */
@@ -13,7 +13,7 @@ import { CategoryBadge, PinnedBadge } from "../components/category-badge";
 
 type Filter = "all" | BlogCategory;
 
-const FILTERS: Filter[] = ["all", "news", "practice", "changelog"];
+const FILTERS: Filter[] = ["all", "news", "practice", "perspectives", "changelog"];
 
 export function BlogListPage() {
   const { locale } = useLocale();
