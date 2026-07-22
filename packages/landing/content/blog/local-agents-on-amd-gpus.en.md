@@ -156,25 +156,25 @@ The third pillar builds on the same idea. Because agents are editable data and e
 
 Design tenets are easy to claim. Here is an end-to-end run that exercises them, entirely on fully local, open-weight infrastructure with an AMD GPU — every token generated on-device, nothing sent to a cloud API.
 
-**The setup.** An AMD GPU running ROCm, serving `qwen3:8b` — a popular, everyday local open-weight model (about 5 GB) — through Ollama's OpenAI-compatible endpoint. Ollama detected the AMD GPU natively (no architecture override needed) and loaded the model into GPU memory. This same path spans AMD's ROCm-supported lineup — from Radeon PRO workstation cards such as the W7900 (48 GB, RDNA3) up to datacenter Instinct accelerators. Wiring it into PenguinHarness took a single command, precisely because the core treats any OpenAI-compatible endpoint the same way:
+**The setup.** An AMD GPU running ROCm, serving `qwen3.6:35b` — a capable local open-weight model (a ~24 GB MoE, 36B total parameters, Q4_K_M) — through Ollama's OpenAI-compatible endpoint. Ollama detected the AMD GPU natively (no architecture override needed) and loaded the model into GPU memory. This same path spans AMD's ROCm-supported lineup — from Radeon PRO workstation cards such as the W7900 (48 GB, RDNA3) up to datacenter Instinct accelerators. Wiring it into PenguinHarness took a single command, precisely because the core treats any OpenAI-compatible endpoint the same way:
 
 ```bash
 penguin config model add \
-  --model-id qwen3:8b \
+  --model-id qwen3.6:35b \
   --provider custom --client-type openai \
   --base-url http://localhost:11434/v1 \
   --api-key ollama --set-default
 ```
 
-**The task, and how it's scored.** We gave it a constrained writing task in the style of the built-in `example-benchmark`: read a project notes file and produce a summary with an overview of at most 2 sentences, exactly 3 key facts, under 60 words total. The task carries a private rubric — a scoring checklist the agent never sees, so it cannot "teach to the test." The rubric turns each requirement into one point (file actually written · ≤2-sentence overview · exactly 3 bullets · under 60 words · facts accurate), for a score out of 5.
+**The task, and how it's scored.** We gave it a task that looks trivial: read a project notes file and produce a summary with a 2-sentence overview and exactly 3 key facts — *and follow the team's standard report format.* That last clause is the whole point. The "team format" is an arbitrary house convention — a specific marker line, a `# Report: <subject>` title, a `Classification: INTERNAL` line, a `Reviewed-by: Aurora Team` footer — that lives *only in the agent's `AGENTS.md`* and cannot be inferred from the task. The task carries a private rubric — a checklist the agent never sees — with 10 points: 5 for content any capable model earns from the task alone, and 5 for the convention, which is knowable only from `AGENTS.md`.
 
-**The baseline — and why it isn't perfect.** Running locally on the AMD GPU, the model read the file, composed a perfectly reasonable summary… and then never wrote it to disk. It emitted the answer as chat text instead of calling the write tool. No deliverable means the rubric scores it **0 / 5**. And because every step is in the Trace, this is not guesswork — you can open the run and see exactly where it went wrong.
+**The baseline — and why it isn't perfect.** Running locally on the AMD GPU with a blank `AGENTS.md`, the model wrote a perfectly reasonable summary — and stably lost all 5 convention points, landing around **4.6 / 10**. It could not have done otherwise: nothing in the task reveals the house convention, so this is an *information gap, not a capability gap* — which is exactly why a stronger model can't just "figure it out." And because every step is in the Trace, this is not guesswork — you can open the run and see precisely which points were missed.
 
-That is the honest starting point: on local hardware, an out-of-the-box model does *not* ace a constrained task. Which is exactly what makes the next section interesting — a measured, auditable failure is something you can systematically fix.
+That is the honest starting point: on local hardware, an out-of-the-box agent does *not* ace a task whose rules live in files it hasn't learned yet. Which is exactly what makes the next section interesting — a measured, auditable, *reproducible* failure is something the agent can systematically fix by teaching itself.
 
 ## How self-improvement actually works — and a real before/after
 
-The 0 / 5 above is an *evaluation* — a snapshot of the agent as it stands. The more interesting question is how PenguinHarness turns that snapshot into progress. This is the recursive self-improvement loop, and it is worth understanding as a mechanism, because there is no magic engine code behind it — it is ordinary agent machinery, orchestrated by Skills:
+The 4.6 / 10 above is an *evaluation* — a snapshot of the agent as it stands. The more interesting question is how PenguinHarness turns that snapshot into progress. This is the recursive self-improvement loop, and it is worth understanding as a mechanism, because there is no magic engine code behind it — it is ordinary agent machinery, orchestrated by Skills:
 
 1. **Benchmark** — define capability cases, each with a private rubric (as above).
 2. **Evaluate** — run the agent over the cases and score against the rubrics. Each run is an ordinary, fully-traced Session.
@@ -182,22 +182,24 @@ The 0 / 5 above is an *evaluation* — a snapshot of the agent as it stands. The
 4. **Edit the Agent's state** — the agent's behavior lives in editable files (`AGENTS.md`, Skills, config). You (or an Optimizer agent) change those to address the failure, producing version N+1.
 5. **Snapshot & keep-or-roll-back** — snapshot before each round; keep N+1 only if the score strictly improves, otherwise roll back.
 
-Let's improve the exact agent from the previous section — the same `qwen3:8b` on the same AMD GPU, the same task that just scored **0 / 5**.
+Let's improve the exact agent from the previous section — the same `qwen3.6:35b` on the same AMD GPU, the same task that just scored **4.6 / 10**. And here is the crucial part: the *agent* does the diagnosing and the editing — we do not hand it the answer.
 
-- **The diagnosis (from the Trace).** The run failed for one concrete reason: the model produced the summary as chat text and never called the tool to write `summary.md`. The Trace shows it — a `cat` to read the input, then prose, and no write. So the fix is not "make the model smarter"; it is "make the behavior reliable."
-- **The edit (N → N+1).** We added a short *working-discipline* section to the agent's `AGENTS.md`: *read the source first, restate the task's constraints as a checklist, actually call the tool to write the file, and re-read the output to self-check before finishing.* That is the entire change — a few sentences in an editable text file the agent reads on every run. No retraining, no code.
-- **The re-evaluation.** Same model, same task, run again: this time it wrote a correct, on-topic `summary.md` to disk, with a 2-sentence overview and exactly 3 key facts drawn from the source — **4 / 5** (the one remaining miss: it ran to 70 words, over the 60-word budget).
+- **The diagnosis (by the agent).** We give the agent two files and nothing else: the report it just got rejected, and a *different* project's report that passed review. Nobody tells it the rules. It compares the two, and infers the reusable house convention — the marker, the title shape, the metadata line, the sign-off. This is the "read the Trace to find where points were lost" step, performed by the agent itself.
+- **The edit (N → N+1), authored by the agent.** The agent writes the convention it just inferred into its own `AGENTS.md`. From a single example it correctly recovers the *structure*, but can't yet tell which tokens are fixed constants vs per-report fields — a single example is ambiguous — so it generalizes the marker to a placeholder. Re-evaluated, the score climbs to about **6.6 / 10**. No retraining, no code — the agent edited a text file it reads on every run.
+- **The recursion (N+1 → N+2).** Now we show it *several* accepted reports from different projects that share the same marker and sign-off. The agent reasons that whatever is identical across all of them must be a fixed constant, reads its *own* N+1 `AGENTS.md`, and refines it — locking `<!-- ACME-DATA-PLATFORM -->` and `Reviewed-by: Aurora Team` to literals. Re-evaluated again: about **9.8 / 10**. That is recursion in the true sense: `state_{n+1} = agent.reflect(state_n, new_evidence)`.
 
-That is a jump on the same model and the same task, achieved purely by editing a text file the agent reads. That is the loop in miniature: *what you can see, you (or an Optimizer agent) can improve* — and because the score comes from a rubric and links to a Trace, the improvement is measured, not vibes. This is exactly the "keep the change only if the score strictly improves" loop, one turn of the crank.
+That is a **4.6 → 6.6 → 9.8** climb on the same model and task, achieved purely by the agent editing a text file it reads — with the harness keeping each round only because the score strictly improved. That is the loop, self-driven: *what the agent can see, the agent can improve* — measured against a rubric, linked to a Trace, not vibes.
 
 **Run it yourself.** This whole loop is a self-contained, SDK-driven script in the repo:
 [`examples/self-improving-agent/`](https://github.com/Prism-Shadow/penguin-harness/tree/main/examples/self-improving-agent).
-It uses a deterministic, readable rubric (file written · ≤2 sentences · exactly 3 bullets · under
-60 words · facts accurate) and — because a local model is nondeterministic — averages several runs
-per version, which is exactly why real benchmarks use a `runs` count. In our runs the averaged
-score moved from **0.00/5** (blank `AGENTS.md`) to **5.00/5** (with the working-discipline edit),
-and the script keeps N+1 only because the score strictly improved. It runs on the same local
-Ollama + qwen3:8b setup and uses a dedicated agent id, so your own agents are untouched.
+It uses a deterministic, readable rubric (10 points: 5 for content, 5 for the house convention that
+lives only in `AGENTS.md`) and — because a local model is nondeterministic — averages several runs
+per version, which is exactly why real benchmarks use a `runs` count. Crucially, the script never
+writes the convention itself: the *agent* diagnoses the gap from a passing example and edits its own
+`AGENTS.md`. In our runs the averaged score moved **4.6 → 6.6 → 9.8** across two self-authored
+rounds (structure learned, then constants locked), and the harness keeps each round only because the
+score strictly improved. It runs on the same local Ollama + qwen3.6:35b setup and uses a dedicated
+agent id, so your own agents are untouched.
 
 ## No AMD GPU yet? Free cloud compute from AMD + Fireworks
 
