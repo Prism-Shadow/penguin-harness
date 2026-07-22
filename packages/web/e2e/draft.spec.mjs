@@ -86,6 +86,26 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   await page.getByRole("button", { name: /放行只读/ }).click();
   await expect(page.getByRole("button", { name: "审批模式" })).toContainText("放行只读");
 
+  // Conversation-time thinking level (backed by the Agent settings): the picker shows the
+  // seeded default (medium, short name 中); the menu carries a title bar and exactly the five
+  // short-name rows (no descriptions, no default row); picking 高 writes straight through to
+  // the Agent config, so the session created on send runs with it and it becomes the Agent's
+  // new default.
+  const thinkingBtn = page.getByRole("button", { name: "思考等级" });
+  await expect(thinkingBtn).toContainText("中");
+  await thinkingBtn.click();
+  await expect(page.getByText("思考等级", { exact: true })).toBeVisible(); // menu title bar
+  await page.getByRole("button", { name: "高", exact: true }).click();
+  await expect(thinkingBtn).toContainText("高");
+  await expect
+    .poll(async () => {
+      const cfg = await (
+        await page.request.get(`${BASE}/api/projects/${projectId}/agents/default_agent/config`)
+      ).json();
+      return cfg.config.model?.thinkingLevel;
+    })
+    .toBe("high");
+
   // Reload only after the body is persisted via debounce: both the body and the two selections should restore from the cache.
   const draftKey = `penguin.chatDraft.${userId}.${projectId}`;
   await expect
@@ -105,6 +125,8 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
     .toBe(true);
   await expect(page.getByRole("button", { name: "选择模型" })).toContainText("claude-4-8-mini");
   await expect(page.getByRole("button", { name: "审批模式" })).toContainText("放行只读");
+  // The thinking level is NOT draft state: it restores from the Agent config (written through above), not the cache.
+  await expect(page.getByRole("button", { name: "思考等级" })).toContainText("高");
   // The @ target restores along with the draft; removing it falls back to a normal send (no delegation triggered).
   await expect(page.getByText("@agent_helper")).toBeVisible();
   await page.getByRole("button", { name: "移除 @ 目标" }).click();
@@ -120,8 +142,24 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   expect(first.session.provider).toBe("custom");
   expect(first.session.approvalMode).toBe("read-only");
 
-  // The cache clears as soon as sending succeeds.
-  await expect.poll(() => page.evaluate((k) => localStorage.getItem(k), draftKey)).toBeNull();
+  // The written-through thinking level reached the session: its trace's session_meta records
+  // the level llmConfig was assembled with (per-session fixed), and the input area shows the
+  // read-only tag next to the locked model.
+  const replay = await (
+    await page.request.get(`${BASE}/api/sessions/${firstSessionId}/messages`)
+  ).json();
+  const meta = replay.messages.find((m) => m.type === "session_meta");
+  expect(meta?.payload?.thinking_level).toBe("high");
+  await expect(page.getByTitle("思考等级：高")).toBeVisible();
+
+  // On a successful send the cache clears — except the model selection, which carries over as
+  // the next conversation's default (switch-becomes-default, like the thinking level above).
+  await expect
+    .poll(() => page.evaluate((k) => localStorage.getItem(k), draftKey))
+    .toContain("claude-4-8-mini");
+  expect(await page.evaluate((k) => localStorage.getItem(k), draftKey)).not.toContain(
+    "Draft body must not be lost",
+  );
 
   // —— Default grouping: the sidebar groups Sessions by Workspace — the session just created
   // used the auto temp directory, so it lands in the merged "临时工作区" group. ——
@@ -185,8 +223,9 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   expect(secondSessionId).not.toBe(firstSessionId);
   const second = await (await page.request.get(`${BASE}/api/sessions/${secondSessionId}`)).json();
   expect(second.session.agentId).toBe("agent_helper");
-  // No selection was changed: the model falls back to the project default, and approval mode falls back to allow-all (the previous draft was cleared, so read-only doesn't linger).
-  expect(second.session.modelId).toBe("claude-4-8");
+  // The previously picked model carries over as the new default (switch-becomes-default);
+  // approval mode falls back to allow-all (the rest of the draft was cleared, so read-only doesn't linger).
+  expect(second.session.modelId).toBe("claude-4-8-mini");
   expect(second.session.provider).toBe("custom");
   expect(second.session.approvalMode).toBe("allow-all");
 

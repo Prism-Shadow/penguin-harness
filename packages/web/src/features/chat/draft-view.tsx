@@ -15,7 +15,9 @@
  * "user × Project", #68): the four selections are saved as soon as they change;
  * body text is keystroke-frequent and deferred/coalesced (if there's an unsaved
  * change before unmount, one final write is flushed) — closing and returning to
- * the page resumes where you left off; the cache is cleared on successful send.
+ * the page resumes where you left off; on successful send the cache clears, except
+ * the model selection, which carries over as the next conversation's default
+ * (switch-becomes-default, mirroring the thinking level persisting on the Agent).
  * The sidebar group header "+" / menu "New conversation" explicitly specify an
  * Agent via route state (overriding the cached selection); the workspace-mode
  * group header "+" additionally carries a Workspace path pre-filling the
@@ -25,6 +27,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import type {
+  AgentModelConfigDto,
   AgentSummary,
   ApprovalMode,
   DirListResponse,
@@ -204,6 +207,49 @@ export function DraftView({
     );
   }, [models, modelRef]);
 
+  // —— Conversation-time thinking level (backed by the Agent settings) ——
+  // Shows the selected Agent's current `model.thinking_level` ("" = no override); picking a
+  // level immediately persists it via the agent-config API (the PUT carries only that key —
+  // the server merges per-key into the YAML, so nothing else is clobbered). The session created
+  // on first send reads systemConfig fresh, so it runs with the picked level, which also
+  // becomes the Agent's new default. Refetched whenever the draft's Agent changes; while
+  // loading (or after a failed fetch) the picker stays disabled (null).
+  const [thinkingLevel, setThinkingLevel] = useState<string | null>(null);
+  useEffect(() => {
+    setThinkingLevel(null);
+    if (!agentId) return;
+    let cancelled = false;
+    api
+      .getAgentConfig(projectId, agentId)
+      .then((res) => {
+        if (!cancelled) setThinkingLevel(res.config.model?.thinkingLevel ?? "");
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, agentId]);
+  /** Live mirror for the rollback value (a stale closure would roll back to an outdated level). */
+  const thinkingRef = useRef<string | null>(null);
+  thinkingRef.current = thinkingLevel;
+  const onChangeThinkingLevel = useCallback(
+    (level: string) => {
+      // "" (no override) is not persistable through the config API — the picker disables that row.
+      if (!agentId || !level) return;
+      const rollback = thinkingRef.current;
+      setThinkingLevel(level); // Optimistic: the picker reflects the choice immediately.
+      api
+        .putAgentConfig(projectId, agentId, {
+          config: { model: { thinkingLevel: level as AgentModelConfigDto["thinkingLevel"] } },
+        })
+        .catch((e: unknown) => {
+          setThinkingLevel(rollback);
+          toastError(e instanceof ApiError ? e.message : S.common.unknownError);
+        });
+    },
+    [projectId, agentId],
+  );
+
   // Skills installed on the currently selected Agent (candidates for the input
   // area's skills dropdown): switching Agents first clears the list (which also
   // clears the selection in the input area), then refetches; a fetch failure is
@@ -302,13 +348,21 @@ export function DraftView({
     [],
   );
 
-  /** Discard the draft after a successful send: first cancels the pending save timer, otherwise it would write the just-cleared draft back. */
+  /**
+   * Discard the draft after a successful send: first cancels the pending save timer, otherwise
+   * it would write the just-cleared draft back. The **model selection carries over** as the
+   * next conversation's default (review: switching the model, like switching the thinking
+   * level, makes the switched-to value the new default — the level persists on the Agent
+   * config, the model here in the per-user draft cache); everything else clears.
+   */
   const discardDraft = useCallback(() => {
     cancelPendingSave();
     // Clear the preselected skills too: any subsequent write (e.g. the unmount flush) must not resurrect a selection that's already been sent.
     skillsRef.current = [];
-    if (userId) clearDraft(draftKey(userId, projectId));
-  }, [cancelPendingSave, userId, projectId]);
+    if (!userId) return;
+    if (modelRef) saveDraft(draftKey(userId, projectId), { modelRef });
+    else clearDraft(draftKey(userId, projectId));
+  }, [cancelPendingSave, userId, projectId, modelRef]);
 
   const selectAgent = (a: AgentSummary) => {
     setAgentId(a.agentId);
@@ -466,6 +520,8 @@ export function DraftView({
           modelRef={modelRef}
           models={models?.models ?? []}
           onChangeModel={setModelRef}
+          thinkingLevel={thinkingLevel}
+          onChangeThinkingLevel={onChangeThinkingLevel}
           {...(models?.defaultModel !== undefined ? { defaultModel: models.defaultModel } : {})}
           {...(contextWindow !== undefined ? { contextWindow } : {})}
           contextNow={0}

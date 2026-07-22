@@ -287,6 +287,10 @@ export const zh = {
     contextWindow: "上下文窗口",
     contextWindowUnit: "tokens",
     contextWindowHint: "留空表示未知",
+    maxTokens: "最大输出长度（Token）",
+    maxTokensHint: "留空沿用 Agent 设置",
+    maxTokensCapHint: "限制单次请求的输出 Token 数；小上下文的本地模型建议调低",
+    maxTokensInvalid: "必须为正整数",
     clientTypeLocked: (t: string): string => `协议：${t}（沿用原配置，不可修改）`,
     vision: "支持图片输入（视觉/多模态）",
     visionHint:
@@ -458,6 +462,15 @@ export const zh = {
     newSessionMenu: "新建对话",
     chooseAgent: "选择 Agent",
     chooseModel: "选择模型",
+    thinkingLevel: "思考等级",
+    /** 会话前拾取器的档位短名（评审要求：只写短名、不带说明、无“缺省”项）。 */
+    thinkingLevelNames: {
+      none: "无",
+      low: "低",
+      medium: "中",
+      high: "高",
+      xhigh: "极高",
+    } as Readonly<Record<string, string>>,
     workspaceUseThis: "使用此目录",
     workspaceUp: "上级目录",
     workspaceNoSubdirs: "无子目录",

@@ -67,6 +67,18 @@ describe("toRow (DTO → row edit state)", () => {
     expect(row.provider).toBe("openrouter");
     expect(row.modelId).toBe("xiaomi/mimo-v2.5");
   });
+
+  it("carries the per-model max output tokens through; absent = '' (inherit the Agent setting)", () => {
+    const capped = toRow({
+      provider: "custom",
+      modelId: "local-qwen",
+      maxTokens: 8000,
+      isDefault: false,
+    });
+    expect(capped.maxTokens).toBe("8000");
+    const plain = toRow({ provider: "custom", modelId: "local-qwen", isDefault: false });
+    expect(plain.maxTokens).toBe("");
+  });
 });
 
 describe("nextPointers (where the default/vision-agent model pointers land after save; always paired)", () => {
