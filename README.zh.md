@@ -146,6 +146,8 @@ for await (const output of session.run([userText("Create hello.txt containing hi
 - [ ] Benchmark 套件正式发布
 - [ ] 桌面端应用
 - [ ] Windows 系统支持
+- [ ] Agent 公司与模板
+- [ ] 公司级自进化能力
 - 更多规划，敬请期待……
 
 ## 参与开发
