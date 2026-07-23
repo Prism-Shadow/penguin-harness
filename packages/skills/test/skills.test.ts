@@ -85,6 +85,55 @@ describe("loadLibrarySkills", () => {
   });
 });
 
+describe("agent tuning workflow contracts", () => {
+  const content = (name: string): string => {
+    const skill = librarySkill(name);
+    expect(skill, name).toBeDefined();
+    return skill!.content;
+  };
+
+  it("keeps creation generic and free of downstream evaluation knowledge", () => {
+    const creation = content("agent-creation");
+    expect(creation).toContain("final capability-scope audit");
+    expect(creation).toContain("whose only purpose is to improve a future evaluation");
+  });
+
+  it("defines black-box adaptation without weakening matrix immutability", () => {
+    const benchmark = content("benchmark-design");
+    expect(benchmark).toContain("Black-box adaptation");
+    expect(benchmark).toMatch(/every candidate\s+must itself be executable deterministically/);
+    expect(benchmark).toContain("the candidate definition is locked");
+    expect(benchmark).toContain("structural-hypothesis ledger");
+  });
+
+  it("binds evaluation to the new trace delta and bounded accounting work", () => {
+    const evaluation = content("agent-evaluation");
+    expect(evaluation).toContain("prelaunch inventory");
+    expect(evaluation).toContain("inspect only new files or files that grew");
+    expect(evaluation).toContain("one `penguin config model list` call");
+  });
+
+  it("keeps score-only optimization private, hypothesis-led, and generalizable", () => {
+    const optimization = content("agent-optimization");
+    expect(optimization).toContain("optional `.private/` mechanism manifest");
+    expect(optimization).toContain("private hypothesis ledger");
+    expect(optimization).toContain("variance-dominated");
+  });
+
+  it("never probes checksum commands without an operand", () => {
+    for (const name of [
+      "agent-creation",
+      "benchmark-design",
+      "agent-evaluation",
+      "agent-optimization",
+    ]) {
+      expect(content(name), name).toMatch(
+        /Never probe a\s+checksum command by running it without an operand/,
+      );
+    }
+  });
+});
+
 describe("loadSkillGroups / groupSkills", () => {
   it("loads groups per SKILL_GROUPS, members complete with Chinese titles, no Other group", () => {
     const groups = loadSkillGroups();

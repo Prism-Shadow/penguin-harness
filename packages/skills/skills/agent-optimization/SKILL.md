@@ -3,8 +3,8 @@ name: agent-optimization
 description: Improve an Agent State from direct feedback or versioned multi-Case Benchmark scores and score-linked Traces.
 short_description: Improve an Agent from feedback or measured Benchmark results.
 short_description_zh: 根据反馈或 Benchmark 结果改进 Agent。
-version: 8
-updated: 2026-07-23T10:16:06Z
+version: 9
+updated: 2026-07-23T11:28:42Z
 ---
 
 # Agent Optimization
@@ -81,6 +81,11 @@ defaulting to 1. Choose exactly one rollback mode before the first candidate:
 If orchestrated provenance cannot be positively established, use System snapshot mode. Never
 create or synthesize a snapshot archive.
 
+When computing any State, Benchmark, or Scoreboard digest, select a checksum utility with
+`command -v` or invoke it with explicit operands or a finite explicit pipeline. Never probe a
+checksum command by running it without an operand, because it may wait indefinitely for standard
+input.
+
 For each file the edit will change, record its exact original bytes and whether it existed in a temporary directory outside `STATE`. Never include `.vault.toml`, an unrelated State file, or a snapshot archive. Write each candidate file through a temporary sibling, validate it, and rename it into place. Set the State version to `current + 1` exactly once before evaluation.
 
 If the candidate is rejected or a valid comparison cannot complete, restore only those recorded files, remove files created by the candidate, and verify that the prior version and State digest are active. If the active version or a candidate-owned file no longer matches the value written by this round, treat it as a concurrent mutation and stop without overwriting it. If rollback cannot be verified, stop. In System snapshot mode, ask the user to restore the archive through Web import. In Orchestrated bootstrap mode, preserve the temporary exact-byte backup, report its path and the files whose restoration could not be verified, and treat the active State as untrusted; do not claim or continue optimization.
@@ -106,6 +111,12 @@ Before any candidate edit, read the canonical top-level State version and select
 If the active State has no such evaluation, measure it before optimizing: leave State unchanged, run the complete frozen matrix with the existing series' exact `(provider, model_id)` pair, and validate the results under the same rules used for a candidate. Retain the exact Scoreboard bytes and active State version before dispatch; append the completed no-edit reference through a temporary sibling, YAML validation, and atomic rename only if both remain unchanged. This appended evaluation becomes the reference. If any cell remains invalid after the allowed retry, provenance does not match, State or Scoreboard changes, or the atomic append cannot complete, stop before editing Agent State.
 
 You may inspect the complete target `agent_state/`, public Case Statements, the Scoreboard, and all Test traces referenced by the Scoreboard runs. Use only those explicit Case and Session ids. Never read private Rubric or Gold contents. You may mechanically recompute the supplied Benchmark-definition digest without printing or loading private file contents into model context. Never edit the Benchmark definition, Test traces, Project configuration, or another Agent; `scoreboard.yaml` is the sole Benchmark-side write allowed above.
+
+Treat every Benchmark-private location, including an optional `.private/` mechanism manifest, as
+opaque definition bytes. It may contribute mechanically to the supplied definition digest, but
+must never be opened, summarized, searched, copied into model context, or used to propose a State
+change. In score-only adaptation, recover useful behavior only from public Statements, the
+target's own score-linked Test Traces and artifacts, and Case-level scores.
 
 Scoreboard v2 uses this shape:
 
@@ -147,7 +158,11 @@ Case metrics are the means of valid `runs`; evaluation totals are the sums of Ca
 For each round:
 
 1. Reconfirm that the reference version equals the active top-level State version and that it contains the complete frozen Case × `runs` matrix. Then analyze its aggregate, Case scores, repeated runs, and every score-linked Test Trace. Use repeated runs to separate stable failure from variation; never select a convenient Trace.
-2. State one falsifiable behavioral hypothesis connecting public evidence to a minimal State change. If no credible hypothesis remains, stop.
+2. Add one entry to a private hypothesis ledger: the observed public behavior, the single
+   generalizable mechanism or reasoning deficiency proposed to explain it, the Cases predicted to
+   change, and the minimal State edit. Test one behavioral dimension per round. Do not bundle every
+   low-scoring Case into a Benchmark-shaped workflow, and do not treat a guessed hidden answer as
+   a reusable rule. If no falsifiable, evidence-backed hypothesis remains, stop.
 3. Reconfirm that the selected rollback mode is still valid. In System snapshot mode, confirm the
    current-version archive exists. In Orchestrated bootstrap mode, recompute and match all supplied
    provenance and digest fields. Then record the exact originals of every
@@ -180,9 +195,19 @@ For each round:
    and cell identity. Never retry a valid scored cell. If any retry remains invalid, reject the
    round and roll back the candidate files.
 7. Compute Case means and evaluation sums. Retain every score, cost when complete, duration, and Test Session id. Re-read State version and exact Scoreboard bytes, and verify that every candidate-owned file still matches the value written by this round. If State changed concurrently, stop without overwriting it. If only the Scoreboard changed, reject the round and roll back the candidate files.
-8. Accept only a score strictly higher than the comparable reference evaluation. On improvement, keep the candidate State and append one evaluation through a temporary sibling, YAML validation, and atomic rename. On an equal or lower score, roll back the candidate files and append nothing.
+8. Accept only a score strictly higher than the comparable reference evaluation and consistent
+   with the hypothesis's predicted Case pattern. Do not accept a gain that is explained mainly by
+   an isolated correct/incorrect flip within the existing repeated-run variation. Before
+   acceptance, audit the changed State for Case identities, exact observed outputs,
+   Benchmark-specific constants, or instructions whose only purpose is this evaluation. On a
+   credible generalizing improvement, keep the candidate State and append one evaluation through a
+   temporary sibling, YAML validation, and atomic rename. On an equal, lower, variance-dominated,
+   or Benchmark-specific result, roll back the candidate files and append nothing.
 
-Each accepted round becomes the next reference. Stop when the user's target or round limit is met, no credible evidence-backed hypothesis remains, or infrastructure prevents another valid comparison. Do not mutate State as random search.
+Each accepted round becomes the next reference. A hypothesis that fails in two valid comparable
+rounds without new public evidence is exhausted; do not retry cosmetic rewrites of the same idea.
+Stop when the user's target or round limit is met, no credible evidence-backed hypothesis remains,
+or infrastructure prevents another valid comparison. Do not mutate State as random search.
 
 When the user supplied a target score, an accepted improvement below that target is an
 intermediate result, not successful completion. Unless the user supplied a round limit, keep

@@ -3,8 +3,8 @@ name: agent-evaluation
 description: Run and score exactly one Benchmark Case run with CLI execution, Trace provenance checks, and private Rubric isolation.
 short_description: Run and score one isolated Benchmark Case.
 short_description_zh: 隔离执行并评分一个 Benchmark Case。
-version: 2
-updated: 2026-07-22T14:52:46Z
+version: 3
+updated: 2026-07-23T11:28:42Z
 ---
 
 # Agent Evaluation
@@ -56,6 +56,13 @@ Read and retain the exact Statement and Rubric bytes before launch. Reject an un
 
 Create a collision-checked Workspace at `<test_agent_dir>/workspaces/tmp-<8hex>`. Copy only the contents of `statement/` into it. Never copy, link, or disclose `rubric/`, and never reuse another Case or run's Workspace.
 
+Before launch, inventory the Test Agent trace files by exact path, byte size, and modification time.
+This inventory is only a provenance boundary for the new Session; do not parse historical Trace
+bodies. Hash the retained Statement and Rubric once and reuse those hashes for the post-run
+unchanged-byte checks. Select a checksum utility with `command -v` or pass it explicit operands.
+Never probe a checksum command by running it without an operand, because it may wait indefinitely
+for standard input.
+
 ## Launch and bind the Test Session
 
 Use an existing verified Penguin CLI or repository-local launcher already available in the runtime. Do not install a CLI and do not use `penguin run` as a probe. If no launcher is available, return `cli_failed`.
@@ -77,7 +84,13 @@ Use the exact Project, Test Agent, Model pair, and Workspace. Do not fall back t
 
 Read the canonical State version before and after the Test run; any change is `version_changed`. Confirm the Statement and Rubric bytes are unchanged before scoring.
 
-Search only the explicitly requested Test Agent's `traces/` tree and never inspect another Agent's traces. Group rotated shards by Session. Evaluate every Session group that could contain the exact Workspace match; never infer ownership from recency or a fixed-size latest subset. Bind the Test Trace mechanically from `session_meta`:
+Search only the explicitly requested Test Agent's `traces/` tree and never inspect another Agent's
+traces. Compare it with the prelaunch inventory and inspect only new files or files that grew
+during this launch. Read each candidate shard's `session_meta` record first, group matching rotated
+shards by Session, and parse full bodies only for groups whose metadata could match the unique
+Workspace. Never rescan unchanged historical Trace bodies, infer ownership from recency alone, or
+probe alternative JSON shapes after the required schema matches. Bind the Test Trace mechanically
+from `session_meta`:
 
 - `payload.workspace` equals the unique Workspace;
 - `payload.agent_state` equals the exact Test Agent State path;
@@ -90,7 +103,21 @@ When matching Test subagents exist, exclude child ids referenced by subagent eve
 
 Inspect only the unique Test Workspace, its bound Test Trace, and the retained private Rubric. Apply every atomic item exactly and normalize only allowed equivalents. A missing, malformed, wrong-type, or incorrect Test artifact is ordinary scored Test Agent behavior: apply the Rubric's zero or partial credit and return `status: ok`. Only a changed or unusable Rubric, or a non-finite/out-of-range result, is `invalid_score`. Detailed reasoning remains in Evaluator Trace.
 
-Compute `duration_ms` from the bound root Test Session, not from the Evaluator. Compute cost only from that root and child Sessions mechanically referenced by subagent events whose traces are available within the explicitly requested Test Agent's `traces/` tree. For each included Session, read final cumulative usage from the last `event_msg` whose `payload.type` is `token_usage`, using `payload.session.cache_read`, `payload.session.cache_write`, and `payload.session.output`; do not look for `payload.usage` or sum intermediate events. Apply the matching `(provider, model_id)` prices reported by `penguin config model list`. Those `price=` values are USD per 1,000,000 tokens in cache-read, cache-write, output order, so compute `(cache_read * cache_read_price + cache_write * cache_write_price + output * output_price) / 1_000_000`; never interpret them as per-1,000-token prices. If any referenced child trace or usage is unavailable there, including because the Test Session delegated to another Agent, or if any included usage is unpriced, return `cost: null` rather than inspecting another Agent or reporting a known partial sum as complete cost.
+Compute `duration_ms` from the bound root Test Session, not from the Evaluator. Compute cost only
+from that root and child Sessions mechanically referenced by subagent events whose traces are
+available within the explicitly requested Test Agent's `traces/` tree. For each included Session,
+read final cumulative usage from the last `event_msg` whose `payload.type` is `token_usage`, using
+`payload.session.cache_read`, `payload.session.cache_write`, and `payload.session.output`; do not
+look for `payload.usage` or sum intermediate events. Apply the matching `(provider, model_id)`
+prices reported by one `penguin config model list` call made after the Test Trace is bound. Do not
+call model-list, help, version, or launcher probes repeatedly. Those `price=` values are USD per
+1,000,000 tokens in cache-read, cache-write, output order, so compute
+`(cache_read * cache_read_price + cache_write * cache_write_price + output * output_price) /
+1_000_000`; never interpret them as per-1,000-token prices. If pricing cannot be resolved in that
+single call, any referenced child trace or usage is unavailable, or any included usage is
+unpriced, return `cost: null` rather than searching unrelated configuration or reporting a known
+partial sum as complete cost. Cost accounting must not trigger a second Test launch or broad Trace
+scan.
 
 ## Return protocol
 

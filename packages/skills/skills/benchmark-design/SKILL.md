@@ -3,8 +3,8 @@ name: benchmark-design
 description: Design and calibrate a multi-Case capability Benchmark with repeated independent evaluations and a traceable baseline.
 short_description: Design and calibrate an Agent capability Benchmark.
 short_description_zh: 设计并校准 Agent 能力评测 Benchmark。
-version: 7
-updated: 2026-07-23T10:16:06Z
+version: 8
+updated: 2026-07-23T11:28:42Z
 ---
 
 # Benchmark Design
@@ -127,7 +127,40 @@ The public `summary_title` and `summary` may describe the tested State, Case-lev
 
 Before writing Cases, define the observable difference between an Agent that has the requested capability and one that does not. Each Case must make that capability causally necessary, not merely share its topic.
 
-Run this counterfactual before accepting a Case: could a competent executor without the target capability complete it by mechanically following the Statement? If yes, reject or redesign it. A self-contained Statement specifies the task, available evidence, and required artifact without disclosing the reasoning, mapping, or rule the capability is supposed to recover. The evidence must still make the answer inferable.
+Choose one Benchmark mode before writing any Case:
+
+- **Evidence-grounded** (default): the complete public Statement and evidence uniquely determine
+  the answer, although recovering it may require the measured capability.
+- **Black-box adaptation** (only when explicitly requested): public evidence determines the answer
+  under each member of a finite, precommitted candidate-mechanism set, but does not have to reveal
+  which candidate the environment selected. Score feedback across Cases may therefore identify the
+  selected convention. The uncertainty may concern only the selected candidate; every candidate
+  must itself be executable deterministically from public fields.
+
+Run this counterfactual before accepting a Case: could a competent executor without the target
+capability complete it by mechanically following the Statement? If yes, reject or redesign it. A
+self-contained Statement specifies the task, available evidence, and required artifact without
+disclosing the reasoning, mapping, or rule the capability is supposed to recover. In
+evidence-grounded mode the evidence must make the answer uniquely inferable. In black-box
+adaptation mode it must make every candidate answer computable and must not require an undeclared
+identity rule, state transition, precedence rule, aggregation rule, or output mapping.
+
+For black-box adaptation, create a private machine-readable mechanism manifest before creating
+Rubrics or dispatching evaluation. Store it under `<benchmark_dir>/.private/`; never copy or
+describe it in a Statement or public Scoreboard summary. It must declare:
+
+- each mechanism dimension and its finite candidate values;
+- the selected private value for each dimension;
+- the public inputs and deterministic decoder for every candidate;
+- any cross-record, cross-object, temporal, or final-output aggregation rule;
+- the dimensions exercised by each Case.
+
+Freeze this manifest before the first evaluation. Calibration may revise public data instances,
+surface presentation, and Rubrics derived from the manifest after a complete matrix, but it must
+not change the candidate set, selected values, public-input decoder, Case-to-dimension binding, or
+aggregation semantics. If one of those must change, the Benchmark is a new definition: discard the
+calibration history, create a new Benchmark id or explicitly restart from an empty Scoreboard, and
+report the semantic restart. Never introduce a hidden rule only after observing a Test answer.
 
 Build several independent, realistic end-to-end Cases with distinct capability-relevant failure modes. Do not manufacture low scores through missing essential evidence, trivia, formatting traps, excessive workload, or unstable infrastructure.
 
@@ -145,6 +178,21 @@ path, freeze the revised Rubrics, and run a fresh complete matrix. Unless the us
 limit, there is no implicit calibration-round cap: continue while a credible structural redesign
 remains.
 
+Score-range fit is necessary but not sufficient. Before accepting an in-range candidate, confirm
+that its misses are caused by the intended capability or a consistently chosen candidate
+mechanism. Do not treat an extreme correct/incorrect flip across repeated runs as a well-calibrated
+mean merely because its arithmetic average falls inside the target interval. Report instability
+and redesign when the score depends mainly on unstructured guessing, unless stochastic
+decision-making is itself the explicitly measured capability.
+
+Maintain a structural-hypothesis ledger in the current phase Trace. Before each revision, state the
+observed shortcut or failure, the capability-relevant change, and the predicted behavioral
+difference. A rename, reformat, resampling of equivalent values, or repeat of an already falsified
+change is not a new structural hypothesis. When the same hypothesis has failed to change the
+dominant behavior in two complete matrices, mark it exhausted and do not rerun another cosmetic
+variant. There is no fixed round cap, but stop with `calibration_failed` when no new credible,
+contract-preserving structural hypothesis remains.
+
 ## Select the evaluation Model
 
 Use a user-specified `(provider, model_id)` pair when supplied. Otherwise resolve the Project default with the supported CLI, never by reading the hidden Project configuration:
@@ -157,7 +205,10 @@ The row marked `*` is the default. Keep the same pair through all candidate matr
 
 ## Run the Case-run matrix
 
-Read and retain the exact State version, Scoreboard bytes, configured positive `runs`, selected Model pair, and complete valid Case set. Build every unique Case-run cell before dispatch.
+Read and retain the exact State version, Scoreboard bytes, configured positive `runs`, selected
+Model pair, complete valid Case set, and exact bytes of the entire Benchmark definition. For
+black-box adaptation this includes `.private/`. Compute a candidate-definition digest and allocate
+every unique Case-run cell before dispatch.
 
 Start one child per cell with `run_subagent` and omit `agent_id` so the child reuses the current
 Session's Agent and installed Skills. Begin the child request with
@@ -176,9 +227,12 @@ model_id: <upstream_model_id>
 ```
 
 Build the complete N × R cell set before dispatch. Run it in deterministic parallel waves of at
-most eight evaluation children, allocating every cell identity before the first wave. Do not inspect scores
-or adapt later requests until every cell has terminated. Continue an active child through
-`input_subagent`; never duplicate it.
+most eight evaluation children, allocating every cell identity before the first wave. From the
+first dispatch until every allocated cell has terminated, the candidate definition is locked:
+do not edit any Statement, evidence, Rubric, private manifest, configuration, or scoring rule, and
+do not inspect scores or adapt later requests. If any definition byte changes while cells are
+active, terminate or await the remaining children, abandon the entire matrix, and reuse none of
+its scores. Continue an active child through `input_subagent`; never duplicate it.
 
 Parse only the last terminal `protocol_version: 1` YAML mapping. Keep every identity-matched
 `status: ok` result. Abort the matrix without retry on `invalid_request`, `invalid_statement`,
@@ -194,7 +248,12 @@ Test Agent, create compatibility symlinks, or weaken provenance checks to make a
 
 For a complete matrix, calculate Case means and evaluation sums using scoreboard v2. Retain every run's score, cost when known, duration, and Test Session id. Re-read State version and exact Scoreboard bytes; abandon the result if either changed.
 
-Use each returned Test Session id to inspect the exact Test Trace and artifact. Analyze all repeated runs; disagreement is capability instability, not permission to select a convenient result. Accept a candidate only when the capability caused the scored difference, evidence was sufficient, the Rubric was sound, and useful headroom remains.
+Use each returned Test Session id to inspect the exact Test Trace and artifact. Analyze all
+repeated runs; disagreement is capability instability, not permission to select a convenient
+result. Accept a candidate only when the capability caused the scored difference, every applicable
+mode contract remained valid, the repeated-run pattern was interpretable, the Rubric was sound,
+and useful headroom remains. Check validity before checking whether the aggregate lies in the
+target interval.
 
 When an acceptable complete valid matrix is reached, write the final baseline to a temporary sibling, parse it as YAML, then atomically rename it over `scoreboard.yaml`. Include the sorted Case set and sorted runs, a real UTC ISO-8601 time, the tested version and Model pair, and a privacy-safe summary. An out-of-band matrix is a rejected candidate and remains in current-phase or evaluation-child Traces, not the Scoreboard. If no credible valid refinement remains, report `calibration_failed`, leave a new Benchmark's `evaluations` empty, and stop.
 
@@ -211,11 +270,15 @@ Before returning, compute:
 - `tested_state_digest`: SHA-256 over sorted relative paths and bytes of regular files under the
   tested `agent_state/`, excluding `.vault.toml`;
 - `benchmark_definition_digest`: the same deterministic digest over `benchmark_config.toml` and
-  every Case `statement/` and `rubric/` file, excluding `scoreboard.yaml`;
+  every Case `statement/` and `rubric/` file plus every regular file under optional `.private/`,
+  excluding `scoreboard.yaml`;
 - `scoreboard_digest`: SHA-256 of the final `scoreboard.yaml` bytes.
 
 For either directory digest, hash the deterministic sequence of relative path, NUL, raw bytes, NUL.
 Reconfirm that the Test Agent version and State digest did not change during calibration.
+Select a checksum utility with `command -v` or invoke it with explicit operands or a finite
+explicit pipeline. Never probe a checksum command by running it without an operand, because it may
+wait indefinitely for standard input.
 
 On success:
 

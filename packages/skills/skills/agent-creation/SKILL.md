@@ -3,8 +3,8 @@ name: agent-creation
 description: Turn a user requirement into a concrete agent — write the target agent's AGENTS.md and install the skills it needs.
 short_description: Turn a requirement into a working agent.
 short_description_zh: 把需求变成可用的 Agent。
-version: 7
-updated: 2026-07-23T10:16:06Z
+version: 8
+updated: 2026-07-23T11:28:42Z
 ---
 
 # Agent Creation
@@ -107,6 +107,16 @@ A new agent starts with no skills — install only what it needs. Then write its
 State version is exactly `1`, and no legacy `$PROJECT_DIR/<agent_id>` path or compatibility
 symlink was created.
 
+Perform a final capability-scope audit over the created `agent_state/`. The State may contain the
+requested role, general task-family guidance, reusable methods, output requirements, and safety
+constraints. It must not contain orchestration metadata or downstream evaluation knowledge such
+as a workflow id, Benchmark or Case identity, Rubric or expected answer, score target, evaluation
+Model, hidden environment convention, or optimization strategy. Do not merely search for one
+literal keyword: compare the resulting behavior against the creation requirement and remove any
+instruction whose only purpose is to improve a future evaluation. If removing such an instruction
+would reduce the Agent's ordinary usefulness for the requested task family, keep the general
+capability but remove the evaluation-specific framing.
+
 ## Delegated phase protocol
 
 When the request contains `pipeline_protocol: 1`, work non-interactively and make the final
@@ -144,7 +154,9 @@ protocol_end: true
 Return `status: ok` only after all required files and installed Skills have been verified. The
 digest is SHA-256 over the deterministic sequence of each regular file's sorted relative path,
 NUL, raw bytes, and NUL; exclude `.vault.toml`. Do not include downstream phase details in either
-protocol.
+protocol. Select a checksum utility with `command -v` or invoke it with explicit operands or a
+finite explicit pipeline. Never probe a checksum command by running it without an operand: such a
+call reads standard input indefinitely and can stall the phase.
 
 ## The embedded agent of an SDK app
 
