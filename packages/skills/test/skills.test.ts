@@ -104,6 +104,9 @@ describe("agent tuning workflow contracts", () => {
     expect(benchmark).toMatch(/every candidate\s+must itself be executable deterministically/);
     expect(benchmark).toContain("the candidate definition is locked");
     expect(benchmark).toContain("structural-hypothesis ledger");
+    expect(benchmark).toContain("Case directory names, titles, headings, and evidence filenames");
+    expect(benchmark).toContain("one lightweight pilot cell per Case");
+    expect(benchmark).toContain("calibration_budget_exhausted");
   });
 
   it("binds evaluation to the new trace delta and bounded accounting work", () => {
@@ -111,6 +114,8 @@ describe("agent tuning workflow contracts", () => {
     expect(evaluation).toContain("prelaunch inventory");
     expect(evaluation).toContain("inspect only new files or files that grew");
     expect(evaluation).toContain("one `penguin config model list` call");
+    expect(evaluation).toContain("`md5sum 2>/dev/null || ...` is forbidden");
+    expect(evaluation).toContain("do not print a recursive listing of the Trace tree");
   });
 
   it("keeps score-only optimization private, hypothesis-led, and generalizable", () => {

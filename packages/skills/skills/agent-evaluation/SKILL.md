@@ -3,8 +3,8 @@ name: agent-evaluation
 description: Run and score exactly one Benchmark Case run with CLI execution, Trace provenance checks, and private Rubric isolation.
 short_description: Run and score one isolated Benchmark Case.
 short_description_zh: 隔离执行并评分一个 Benchmark Case。
-version: 3
-updated: 2026-07-23T11:28:42Z
+version: 4
+updated: 2026-07-23T15:19:31Z
 ---
 
 # Agent Evaluation
@@ -17,7 +17,13 @@ This Skill is invoked by `benchmark-design` or Benchmark mode in `agent-optimiza
 
 ## Privacy boundary
 
-Before the final protocol YAML, emit no assistant text; use private reasoning and tool calls only. Never serialize Statement or artifact contents, Rubric items, expected values, correct outcomes, per-item scoring, diagnostics, secret configuration, Workspace paths, or Trace paths into an assistant message. The final assistant message is the protocol YAML only. It may echo the public identity fields supplied by the caller.
+Before the final protocol YAML, emit no assistant text; use private reasoning and tool calls only.
+Do not narrate setup, execution, scoring, or verification stages. A response containing prose,
+Markdown fences, intermediate scores, or a protocol embedded after an explanation is malformed.
+Never serialize Statement or artifact contents, Rubric items, expected values, correct outcomes,
+per-item scoring, diagnostics, secret configuration, Workspace paths, or Trace paths into an
+assistant message. The final assistant message is the protocol YAML only. It may echo the public
+identity fields supplied by the caller.
 
 A valid request contains exactly one value for each field:
 
@@ -58,10 +64,16 @@ Create a collision-checked Workspace at `<test_agent_dir>/workspaces/tmp-<8hex>`
 
 Before launch, inventory the Test Agent trace files by exact path, byte size, and modification time.
 This inventory is only a provenance boundary for the new Session; do not parse historical Trace
-bodies. Hash the retained Statement and Rubric once and reuse those hashes for the post-run
-unchanged-byte checks. Select a checksum utility with `command -v` or pass it explicit operands.
-Never probe a checksum command by running it without an operand, because it may wait indefinitely
-for standard input.
+bodies. Keep the inventory in a temporary file or private in-memory structure; do not print a recursive listing of the Trace tree into model context. Hash the retained Statement and Rubric once
+and reuse those hashes for the post-run unchanged-byte checks.
+
+Use SHA-256 only. Select the implementation with `command -v sha256sum` and otherwise use
+`shasum -a 256`; every checksum invocation must include `--` where supported and an explicit file
+operand, or consume a finite explicitly produced byte stream. Never invoke `md5`, `md5sum`,
+`sha256sum`, `shasum`, or `openssl dgst` without an operand or finite pipeline. In particular,
+`md5sum 2>/dev/null || ...` is forbidden because the first command waits for standard input instead
+of testing availability.
+Never probe a checksum command by running it without an operand.
 
 ## Launch and bind the Test Session
 
@@ -117,7 +129,8 @@ call model-list, help, version, or launcher probes repeatedly. Those `price=` va
 single call, any referenced child trace or usage is unavailable, or any included usage is
 unpriced, return `cost: null` rather than searching unrelated configuration or reporting a known
 partial sum as complete cost. Cost accounting must not trigger a second Test launch or broad Trace
-scan.
+scan. Do not print model-list output, Trace inventories, or scoring diagnostics into the terminal
+assistant response.
 
 ## Return protocol
 

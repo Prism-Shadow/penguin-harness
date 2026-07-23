@@ -3,8 +3,8 @@ name: benchmark-design
 description: Design and calibrate a multi-Case capability Benchmark with repeated independent evaluations and a traceable baseline.
 short_description: Design and calibrate an Agent capability Benchmark.
 short_description_zh: 设计并校准 Agent 能力评测 Benchmark。
-version: 8
-updated: 2026-07-23T11:28:42Z
+version: 9
+updated: 2026-07-23T15:19:31Z
 ---
 
 # Benchmark Design
@@ -61,7 +61,7 @@ Use this structure:
 <benchmark_id>/
 ├── benchmark_config.toml
 ├── scoreboard.yaml
-└── CASE-<nnn>-<semantic-name>/
+└── CASE-<nnn>-<neutral-name>/
     ├── statement/
     │   └── README.md
     └── rubric/
@@ -69,6 +69,18 @@ Use this structure:
 ```
 
 Both README files are required; either directory may contain supporting files. `statement/` is the complete public task and evidence. `rubric/` is private scoring material. Never mention private criteria or paths in the Statement.
+
+Case directory names, titles, headings, and evidence filenames are public evidence. Keep them
+neutral whenever the measured capability includes recovering an unstated mechanism, mapping,
+precedence rule, state transition, or aggregation rule. They may identify the business setting or
+artifact type, but must not name the hidden mechanism or the reasoning operation that earns
+points. Audit these labels before every pilot or matrix.
+
+When the requested capability explicitly includes cross-file or multi-source synthesis, each Case
+must contain at least two supporting public evidence artifacts in addition to `statement/README.md`.
+Each artifact must contribute a fact needed for at least one scored conclusion; decorative splits
+and duplicated inline copies do not count. Keep the README focused on the task and output contract
+rather than reproducing all evidence in one place.
 
 Create `benchmark_config.toml` first. The Model is deliberately not stored here; each evaluation records the actual `(provider, model_id)` pair.
 
@@ -166,17 +178,42 @@ Build several independent, realistic end-to-end Cases with distinct capability-r
 
 Freeze every Rubric before evaluation. Use atomic observable conditions, exact points, reasonable equivalence rules, and meaningful partial credit. Test the Rubric mentally against full, partial, missing, malformed, wrong-type, and extra output. Never execute Test Agent-produced code while scoring.
 
-Use valid evidence to calibrate toward a user-supplied target; otherwise aim near 60/100. A
-user-supplied score interval is a hard acceptance gate: accept and freeze a baseline only when the
-complete 100-point evaluation lies inside that interval. Treat an out-of-band or near-ceiling
-candidate as uncalibrated while a credible structural refinement remains. Audit high scores for
-shortcuts or leakage and low scores for ambiguity, missing evidence, unrelated difficulty, or a
-defective Rubric. More items, steps, workload, or ambiguity alone are not structural refinement.
-Do not hit the target by merely redistributing Rubric points or weakening partial credit after
-seeing model answers; change the capability-relevant evidence, state interaction, or reasoning
-path, freeze the revised Rubrics, and run a fresh complete matrix. Unless the user supplies a round
-limit, there is no implicit calibration-round cap: continue while a credible structural redesign
-remains.
+Before dispatching any evaluation, run a definition audit over the complete candidate:
+
+- verify that public names and headings do not disclose private mechanism dimensions;
+- verify that every required public evidence file is present and materially used;
+- verify that every Gold item is derivable under the selected mode and has exactly one Rubric
+  disposition;
+- recompute all Case maxima and the exact 100-point total;
+- check the Statement output contract against the Rubric's expected artifact type and required
+  keys;
+- reject drafting notes, unresolved alternatives, self-corrections, missing table rows, and
+  contradictory rationales from private scoring material.
+
+Do not dispatch a pilot or full matrix until this audit passes.
+
+Use valid evidence to calibrate toward a user-supplied target; otherwise aim near 60/100. Before
+the first complete matrix, run one lightweight pilot cell per Case. Pilot cells are screening
+evidence only: never write them to the Scoreboard or mix them into a later matrix. Use the pilot to
+catch leakage, defective Rubrics, answer-shape mistakes, and an obviously ceiling or floor-heavy
+portfolio. Revise the candidate once as needed, rerun the definition audit, and then freeze it for
+the complete matrix.
+
+Audit high scores for shortcuts or leakage and low scores for ambiguity, missing evidence,
+unrelated difficulty, or a defective Rubric. More items, steps, workload, or ambiguity alone are
+not structural refinement. Do not hit the target by merely redistributing Rubric points or
+weakening partial credit after seeing model answers; change the capability-relevant evidence,
+state interaction, or reasoning path, freeze the revised Rubrics, and run a fresh complete matrix.
+
+A user-supplied score interval remains the calibration target. In a standalone Benchmark request,
+accept success only when a complete stable 100-point evaluation lies inside that interval. In a
+delegated pipeline, prioritize returning a usable, stable baseline to the next isolated phase:
+after the initial complete matrix, allow at most one evidence-backed structural revision and one
+fresh complete matrix. If neither stable matrix is in range, freeze the stable valid candidate
+closest to the interval, mark `target_met: false`, and return it with
+`stop_reason: calibration_budget_exhausted`. This bounded fallback is still a valid measured
+baseline, not a claim that the requested range was reached. A caller may explicitly supply a
+different positive full-matrix budget.
 
 Score-range fit is necessary but not sufficient. Before accepting an in-range candidate, confirm
 that its misses are caused by the intended capability or a consistently chosen candidate
@@ -188,10 +225,10 @@ decision-making is itself the explicitly measured capability.
 Maintain a structural-hypothesis ledger in the current phase Trace. Before each revision, state the
 observed shortcut or failure, the capability-relevant change, and the predicted behavioral
 difference. A rename, reformat, resampling of equivalent values, or repeat of an already falsified
-change is not a new structural hypothesis. When the same hypothesis has failed to change the
-dominant behavior in two complete matrices, mark it exhausted and do not rerun another cosmetic
-variant. There is no fixed round cap, but stop with `calibration_failed` when no new credible,
-contract-preserving structural hypothesis remains.
+change is not a new structural hypothesis. When a revision does not move the dominant behavior in
+its predicted direction, mark that hypothesis exhausted and do not rerun a cosmetic variant.
+Respect the applicable matrix budget and stop rather than searching indefinitely for an exact
+aggregate.
 
 ## Select the evaluation Model
 
@@ -255,7 +292,14 @@ mode contract remained valid, the repeated-run pattern was interpretable, the Ru
 and useful headroom remains. Check validity before checking whether the aggregate lies in the
 target interval.
 
-When an acceptable complete valid matrix is reached, write the final baseline to a temporary sibling, parse it as YAML, then atomically rename it over `scoreboard.yaml`. Include the sorted Case set and sorted runs, a real UTC ISO-8601 time, the tested version and Model pair, and a privacy-safe summary. An out-of-band matrix is a rejected candidate and remains in current-phase or evaluation-child Traces, not the Scoreboard. If no credible valid refinement remains, report `calibration_failed`, leave a new Benchmark's `evaluations` empty, and stop.
+When an acceptable complete valid matrix is reached, write the final baseline to a temporary
+sibling, parse it as YAML, then atomically rename it over `scoreboard.yaml`. Include the sorted Case
+set and sorted runs, a real UTC ISO-8601 time, the tested version and Model pair, and a privacy-safe
+summary. In a delegated pipeline, the bounded closest stable fallback is also written as the one
+final baseline, with its out-of-range status stated in the terminal protocol and public summary.
+Rejected candidates remain only in current-phase or evaluation-child Traces. If no complete stable
+valid matrix exists, report `calibration_failed`, leave a new Benchmark's `evaluations` empty, and
+stop.
 
 Report the Benchmark path, aggregate and Case scores, Test Session ids, refinements, stop reason, and limitations.
 
@@ -276,9 +320,12 @@ Before returning, compute:
 
 For either directory digest, hash the deterministic sequence of relative path, NUL, raw bytes, NUL.
 Reconfirm that the Test Agent version and State digest did not change during calibration.
-Select a checksum utility with `command -v` or invoke it with explicit operands or a finite
-explicit pipeline. Never probe a checksum command by running it without an operand, because it may
-wait indefinitely for standard input.
+Use SHA-256 only. Select the implementation with `command -v sha256sum` and otherwise use
+`shasum -a 256`; every checksum invocation must include `--` where supported and an explicit file
+operand, or consume a finite explicitly produced byte stream. Never invoke `md5`, `md5sum`,
+`sha256sum`, `shasum`, or `openssl dgst` without an operand or finite pipeline, because such a call
+may wait indefinitely for standard input.
+Never probe a checksum command by running it without an operand.
 
 On success:
 
@@ -288,6 +335,7 @@ workflow_id: <workflow_id>
 project_id: <project_id>
 phase: benchmark
 status: calibrated
+target_met: <true_if_inside_requested_interval_else_false>
 test_agent_id: <test_agent_id>
 tested_state_version: <version>
 tested_state_digest: <sha256>
@@ -298,19 +346,20 @@ scoreboard_digest: <sha256>
 reference_time: <scoreboard_evaluation_time>
 provider: <provider>
 model_id: <model_id>
-score: <raw_0_to_100_score_inside_requested_interval>
+score: <raw_0_to_100_score>
 case_count: <positive_integer>
 case_ids: [<sorted_unique_case_id>, ...]
 runs_per_case: <positive_integer>
 expected_cell_count: <case_count_times_runs_per_case>
 valid_cell_count: <same_as_expected_cell_count>
 reference_evaluation_key: <time_version_provider_model_tuple>
+stop_reason: <target_reached_or_calibration_budget_exhausted>
 protocol_end: true
 ```
 
-If no acceptable candidate remains, return `status: calibration_failed` with the same identity,
-version, Model, count, and digest fields when available, plus `last_valid_score` and
-`failure_code: target_interval_not_reached`. For an invalid request or infrastructure blocker,
-return `status: blocked` with `workflow_id`, `project_id`, `phase`, available identity fields, a
-stable `failure_code`, and `protocol_end: true`. Never return `calibrated` for
-an out-of-band score, incomplete matrix, changed State, or invalid Scoreboard.
+Return `status: calibration_failed` only when no complete stable valid matrix exists, with the same
+identity, version, Model, count, and digest fields when available plus a stable failure code. For
+an invalid request or infrastructure blocker, return `status: blocked` with `workflow_id`,
+`project_id`, `phase`, available identity fields, a stable `failure_code`, and
+`protocol_end: true`. Never return `calibrated` for an incomplete matrix, changed State, invalid
+Scoreboard, or a score whose out-of-range status is concealed.
