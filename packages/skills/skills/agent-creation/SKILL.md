@@ -3,8 +3,8 @@ name: agent-creation
 description: Turn a user requirement into a concrete agent — write the target agent's AGENTS.md and install the skills it needs.
 short_description: Turn a requirement into a working agent.
 short_description_zh: 把需求变成可用的 Agent。
-version: 4
-updated: 2026-07-22T14:52:46Z
+version: 5
+updated: 2026-07-23T09:30:00Z
 ---
 
 # Agent Creation
@@ -68,26 +68,23 @@ Library skills can be copied from any agent that already has them (e.g. `default
 - **Knowledge expert** (answers questions over a document set): usually **no** harness agent is needed — build a RAG app with the penguin-sdk skill instead, and configure the app's embedded agent (below).
 - **Evaluation loop**: `benchmark-design`, `agent-evaluation`, `agent-optimization`.
 
-When this Agent is the Test Agent in a create → benchmark → optimize request, keep the
-evaluation-loop Skills on the top-level orchestrator. Do not install them on the Test Agent
-merely because the orchestrator will evaluate it; install only capabilities the Test Agent
-needs while solving its own tasks.
+When this Agent will be a Test Agent, install only capabilities it needs while solving its own
+tasks. Do not install `benchmark-design`, `agent-evaluation`, or `agent-optimization` merely
+because another Agent will later evaluate it.
 
-## Composed tuning workflows
+## Isolation in a delegated pipeline
 
-Before creating a target for a create → benchmark → optimize request, confirm that the current
-top-level orchestrator has `benchmark-design`, `agent-evaluation`, and `agent-optimization`
-installed and exposes `run_subagent`. If not, stop before creating a partial target and report the
-missing prerequisite.
+Creation is one complete phase. Do not design or inspect a Benchmark, run an evaluation, analyze a
+score, or optimize the Agent. In particular, do not read any `benchmarks/`, `snapshots/`, or
+`traces/` directory, prior Workspace, or Memory, and do not inspect another Agent. Read only the
+default Agent files needed as templates or Skill sources and the canonical target `agent_state/`
+that this phase owns.
 
-When the same top-level request also asks to benchmark and optimize the new Agent, finish its
-initial State and continue in the current conversation: hand the explicit Agent id and capability
-goal to `benchmark-design`, then hand its frozen baseline to `agent-optimization`. Do not open a
-separate user-facing chat or ask the user to repeat information already present in the request.
-Keep in the current working context whether the canonical target was absent before creation; this
-fact, the explicit Agent id, and the initial State version are the bootstrap provenance consumed by
-`agent-optimization`. A creation-stage progress update is fine, but do not emit a terminal success
-response while a requested Benchmark or optimization stage remains.
+When creating a Test Agent for a later evaluation pipeline, require a fresh target id. The
+capability requirement may describe the general task family, evidence types, expected outputs, and
+safety constraints, but must not contain a future Benchmark id, Case, Rubric, hidden rule, score
+target, test Model, or optimization hint. If such downstream details are accidentally present,
+ignore them and never encode them in the target State.
 
 ## Set name and description
 
@@ -106,6 +103,47 @@ A new agent starts with no skills — install only what it needs. Then write its
 `TARGET/agent_state/system_config.yaml` and `TARGET/agent_state/AGENTS.md` are regular files, the
 State version is exactly `1`, and no legacy `$PROJECT_DIR/<agent_id>` path or compatibility
 symlink was created.
+
+## Delegated phase protocol
+
+When the request contains `pipeline_protocol: 1`, work non-interactively and make the final
+assistant message exactly one plain YAML document. Emit no code fence or prose around it. Echo the
+supplied `workflow_id`; never invent or alter it.
+
+On success:
+
+```text
+pipeline_protocol: 1
+workflow_id: <workflow_id>
+project_id: <project_id>
+phase: creation
+phase_agent_id: agent_creator
+status: ok
+agent_id: <agent_id>
+agent_dir: <absolute_canonical_agent_dir>
+state_version: 1
+target_was_absent: true
+state_digest: <sha256_of_sorted_relative_paths_and_bytes_under_agent_state_excluding_dot_vault>
+protocol_end: true
+```
+
+On failure:
+
+```text
+pipeline_protocol: 1
+workflow_id: <workflow_id>
+project_id: <project_id>
+phase: creation
+phase_agent_id: agent_creator
+status: blocked
+failure_code: <invalid_request_or_target_exists_or_path_conflict_or_creation_failed>
+protocol_end: true
+```
+
+Return `status: ok` only after all required files and installed Skills have been verified. The
+digest is SHA-256 over the deterministic sequence of each regular file's sorted relative path,
+NUL, raw bytes, and NUL; exclude `.vault.toml`. Do not include downstream phase details in either
+protocol.
 
 ## The embedded agent of an SDK app
 
