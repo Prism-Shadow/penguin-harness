@@ -3,8 +3,8 @@ name: benchmark-design
 description: Design and calibrate a multi-Case capability Benchmark with repeated independent evaluations and a traceable baseline.
 short_description: Design and calibrate an Agent capability Benchmark.
 short_description_zh: 设计并校准 Agent 能力评测 Benchmark。
-version: 6
-updated: 2026-07-23T10:02:21Z
+version: 7
+updated: 2026-07-23T10:16:06Z
 ---
 
 # Benchmark Design
@@ -14,13 +14,16 @@ Create and calibrate a multi-Case Benchmark that discovers a specified Test Agen
 ## Before you start
 
 Require a Test Agent and the capability to measure. If either is missing, ask the user. A Benchmark
-run requires a fresh top-level Session with `run_subagent` and `agent-evaluation` installed on the
-current Benchmark Builder Agent. If this Session is already a subagent or the evaluation Skill is
+run requires a fresh top-level CLI Session with `run_subagent` and `agent-evaluation` installed on
+the current Session's Agent. If this Session is already a subagent or the evaluation Skill is
 unavailable, stop before creating a partial Benchmark.
 
 Benchmark design is one complete phase. Freeze and record an accepted baseline, return its terminal
 result, and stop. Do not invoke `agent-creation` or `agent-optimization`, modify the Test Agent, or
 continue another pipeline phase in this Session.
+
+Do not create any persistent phase-role Agent. Benchmark design runs in the current CLI Session,
+and every evaluation is a temporary child Session.
 
 ## Boundaries
 
@@ -32,8 +35,8 @@ consume only its terminal protocol response and returned Test Session id.
 Before the first evaluation, do not read the Test Agent's `AGENTS.md`, Skills, Memory, Tools, prior
 Traces, or prior Workspaces. Read only `system_config.yaml` for the canonical version and
 mechanically compute the supplied State digest without printing State contents. After evaluation,
-inspect only the score-linked Test Sessions returned for the current candidate. Do not read
-Benchmark Builder's prior Trace, Memory, or Workspace from another workflow.
+inspect only the score-linked Test Sessions returned for the current candidate. Do not read a
+prior phase Session's Trace, Memory, or Workspace from another workflow.
 
 Use the Environment's Project Dir and the explicit Test Agent id:
 
@@ -47,7 +50,7 @@ SCOREBOARD = <benchmark_dir>/scoreboard.yaml
 ```
 
 Derive a semantic Benchmark id when the user does not supply one. Require `agent_state/system_config.yaml`; its top-level `version` is the canonical State version and defaults to 1 when absent.
-In delegated pipeline mode, also require the Creator's `expected_state_version` and
+In delegated pipeline mode, also require the creation phase's `expected_state_version` and
 `expected_state_digest`; recompute and match both before creating any Benchmark file.
 
 ## Benchmark contract
@@ -116,7 +119,7 @@ evaluations:
 
 Case `score`, `cost`, and `duration_ms` are the means of their valid `runs`. Evaluation totals are the sums of the Case means. Omit a Case or evaluation `cost` when any contributing run has unknown cost; never treat unknown as zero. Rubric maxima across the complete Case set must total exactly 100 points before any evaluation is dispatched. Recompute that sum after every material Case or Rubric revision. Never report a raw sum with another denominator as a score out of 100, and do not use post-hoc normalization to make an invalid point scale look compliant.
 
-Builder writes one final baseline for the current Benchmark definition. A material change to a Statement, Rubric, Case set, or `runs` invalidates prior results: clear `evaluations`, recalibrate, and write a new baseline. Rejected candidates and provisional matrices remain only in Builder Trace. Evaluator never writes the Scoreboard.
+This Skill writes one final baseline for the current Benchmark definition. A material change to a Statement, Rubric, Case set, or `runs` invalidates prior results: clear `evaluations`, recalibrate, and write a new baseline. Rejected candidates and provisional matrices remain only in the current phase Trace. Evaluation children never write the Scoreboard.
 
 The public `summary_title` and `summary` may describe the tested State, Case-level score patterns, and instability. They must not reveal Rubric or Gold content, expected answers, private scoring reasoning, mappings, thresholds, formulas, or rules.
 
@@ -150,14 +153,14 @@ Use a user-specified `(provider, model_id)` pair when supplied. Otherwise resolv
 penguin config model list --project-id "<project_id>" --root "<penguin_home>"
 ```
 
-The row marked `*` is the default. Keep the same pair through all candidate matrices for this calibration. The pair selects the Test Agent's CLI Session, not the Builder or Evaluator runtime model.
+The row marked `*` is the default. Keep the same pair through all candidate matrices for this calibration. The pair selects the Test Agent's CLI Session, not the current phase or evaluation-child runtime model.
 
 ## Run the Case-run matrix
 
 Read and retain the exact State version, Scoreboard bytes, configured positive `runs`, selected Model pair, and complete valid Case set. Build every unique Case-run cell before dispatch.
 
 Start one child per cell with `run_subagent` and omit `agent_id` so the child reuses the current
-Benchmark Builder Agent and its installed Skills. Begin the child request with
+Session's Agent and installed Skills. Begin the child request with
 `Use the agent-evaluation Skill. Return only its terminal protocol YAML.` Then provide exactly one
 protocol request:
 
@@ -173,7 +176,7 @@ model_id: <upstream_model_id>
 ```
 
 Build the complete N × R cell set before dispatch. Run it in deterministic parallel waves of at
-most eight Evaluators, allocating every cell identity before the first wave. Do not inspect scores
+most eight evaluation children, allocating every cell identity before the first wave. Do not inspect scores
 or adapt later requests until every cell has terminated. Continue an active child through
 `input_subagent`; never duplicate it.
 
@@ -193,7 +196,7 @@ For a complete matrix, calculate Case means and evaluation sums using scoreboard
 
 Use each returned Test Session id to inspect the exact Test Trace and artifact. Analyze all repeated runs; disagreement is capability instability, not permission to select a convenient result. Accept a candidate only when the capability caused the scored difference, evidence was sufficient, the Rubric was sound, and useful headroom remains.
 
-When an acceptable complete valid matrix is reached, write the final baseline to a temporary sibling, parse it as YAML, then atomically rename it over `scoreboard.yaml`. Include the sorted Case set and sorted runs, a real UTC ISO-8601 time, the tested version and Model pair, and a privacy-safe summary. An out-of-band matrix is a rejected candidate and remains in Builder/Evaluator Traces, not the Scoreboard. If no credible valid refinement remains, report `calibration_failed`, leave a new Benchmark's `evaluations` empty, and stop.
+When an acceptable complete valid matrix is reached, write the final baseline to a temporary sibling, parse it as YAML, then atomically rename it over `scoreboard.yaml`. Include the sorted Case set and sorted runs, a real UTC ISO-8601 time, the tested version and Model pair, and a privacy-safe summary. An out-of-band matrix is a rejected candidate and remains in current-phase or evaluation-child Traces, not the Scoreboard. If no credible valid refinement remains, report `calibration_failed`, leave a new Benchmark's `evaluations` empty, and stop.
 
 Report the Benchmark path, aggregate and Case scores, Test Session ids, refinements, stop reason, and limitations.
 
@@ -221,7 +224,6 @@ pipeline_protocol: 1
 workflow_id: <workflow_id>
 project_id: <project_id>
 phase: benchmark
-phase_agent_id: benchmark_builder
 status: calibrated
 test_agent_id: <test_agent_id>
 tested_state_version: <version>
@@ -246,6 +248,6 @@ protocol_end: true
 If no acceptable candidate remains, return `status: calibration_failed` with the same identity,
 version, Model, count, and digest fields when available, plus `last_valid_score` and
 `failure_code: target_interval_not_reached`. For an invalid request or infrastructure blocker,
-return `status: blocked` with `workflow_id`, `project_id`, `phase`, `phase_agent_id`, available
-identity fields, a stable `failure_code`, and `protocol_end: true`. Never return `calibrated` for
+return `status: blocked` with `workflow_id`, `project_id`, `phase`, available identity fields, a
+stable `failure_code`, and `protocol_end: true`. Never return `calibrated` for
 an out-of-band score, incomplete matrix, changed State, or invalid Scoreboard.

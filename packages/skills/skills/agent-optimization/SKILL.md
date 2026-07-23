@@ -3,26 +3,29 @@ name: agent-optimization
 description: Improve an Agent State from direct feedback or versioned multi-Case Benchmark scores and score-linked Traces.
 short_description: Improve an Agent from feedback or measured Benchmark results.
 short_description_zh: 根据反馈或 Benchmark 结果改进 Agent。
-version: 7
-updated: 2026-07-23T10:02:21Z
+version: 8
+updated: 2026-07-23T10:16:06Z
 ---
 
 # Agent Optimization
 
-Improve an existing Agent State. Use one-shot feedback mode for a direct correction, or Benchmark optimization mode for a measured loop. Do not mix their execution paths. One-shot mode does not require Agent Evaluator. Benchmark mode evaluates every configured Case run through Agent Evaluator and never launches or scores the Test Agent directly.
+Improve an existing Agent State. Use one-shot feedback mode for a direct correction, or Benchmark optimization mode for a measured loop. Do not mix their execution paths. One-shot mode does not require `agent-evaluation`. Benchmark mode evaluates every configured Case run through temporary children using `agent-evaluation` and never launches or scores the Test Agent directly.
 
 ## Before you start
 
 If the request supplies neither concrete feedback nor an explicit Test Agent and Benchmark, ask what to improve. Determine the mode before editing anything.
 
 Benchmark mode requires a fresh top-level Session with `run_subagent`, a complete baseline series
-in `scoreboard.yaml`, and `agent-evaluation` installed on the current Agent Optimizer. If any
+in `scoreboard.yaml`, and `agent-evaluation` installed on the current Session's Agent. If any
 requirement is missing, stop before editing State.
 
 Optimization is one complete phase. Consume only the explicit target, frozen Benchmark reference,
 and score-linked public evidence supplied to this phase. Do not create an Agent, design or refine a
-Benchmark, or invoke another pipeline phase. Do not read Agent Optimizer's prior Trace, Memory, or
+Benchmark, or invoke another pipeline phase. Do not read a prior phase Session's Trace, Memory, or
 Workspace from another workflow.
+
+Do not create any persistent phase-role Agent. Optimization runs in the current isolated CLI
+Session, and every evaluation is a temporary child Session.
 
 ## Pick the target Agent
 
@@ -151,7 +154,7 @@ For each round:
    candidate-owned file, make the candidate edit, and set `version` to `current + 1` once.
 4. Retain the exact Scoreboard bytes and candidate version. Build the complete Case-run matrix before dispatch.
 5. Start one child per cell with `run_subagent` and omit `agent_id` so the child reuses the current
-   Agent Optimizer and its installed Skills. Begin the child request with
+   Session's Agent and installed Skills. Begin the child request with
    `Use the agent-evaluation Skill. Return only its terminal protocol YAML.` Then send exactly one
    request:
 
@@ -167,7 +170,7 @@ For each round:
    ```
 
    Build the complete N × R cell set before dispatch, then run deterministic waves of at most eight
-   Evaluators. Do not inspect scores or adapt later requests until every cell terminates. Continue
+   evaluation children. Do not inspect scores or adapt later requests until every cell terminates. Continue
    an active child through `input_subagent`; never duplicate it.
 6. Parse only each child's last terminal `protocol_version: 1` YAML mapping. Keep every
    identity-matched `status: ok` result. Reject and roll back immediately on `invalid_request`,
@@ -201,7 +204,6 @@ pipeline_protocol: 1
 workflow_id: <workflow_id>
 project_id: <project_id>
 phase: optimization
-phase_agent_id: agent_optimizer
 status: optimized
 target_met: true
 test_agent_id: <test_agent_id>
@@ -226,7 +228,7 @@ If credible hypotheses are exhausted before the target, return `status: target_n
 `target_met: false`, the same identity/digest fields, the tested final version and score, the score
 curve, accepted changes, `failure_code: no_credible_hypothesis`, and `protocol_end: true`. For an
 invalid request, provenance mismatch, infrastructure blocker, or unverified rollback, return
-`status: blocked`, `target_met: false`, `workflow_id`, `project_id`, `phase`, `phase_agent_id`,
+`status: blocked`, `target_met: false`, `workflow_id`, `project_id`, `phase`,
 available identity/version fields, a stable `failure_code` and `stop_reason`, and
 `protocol_end: true`. Never report `optimized` for an untested State, changed Benchmark
 definition, incomplete matrix, invalid rollback, or score below target.

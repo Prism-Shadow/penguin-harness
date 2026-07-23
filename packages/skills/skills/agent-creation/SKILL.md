@@ -3,8 +3,8 @@ name: agent-creation
 description: Turn a user requirement into a concrete agent — write the target agent's AGENTS.md and install the skills it needs.
 short_description: Turn a requirement into a working agent.
 short_description_zh: 把需求变成可用的 Agent。
-version: 6
-updated: 2026-07-23T09:09:56Z
+version: 7
+updated: 2026-07-23T10:16:06Z
 ---
 
 # Agent Creation
@@ -80,6 +80,9 @@ score, or optimize the Agent. In particular, do not read any `benchmarks/`, `sna
 default Agent files needed as templates or Skill sources and the canonical target `agent_state/`
 that this phase owns.
 
+Run this phase in the current isolated CLI Session. Do not create a persistent creator or other
+phase-role Agent; the target is the only Agent directory this Skill may create.
+
 When creating a Test Agent for a later evaluation pipeline, require a fresh target id. The
 capability requirement may describe the general task family, evidence types, expected outputs, and
 safety constraints, but must not contain a future Benchmark id, Case, Rubric, hidden rule, score
@@ -117,7 +120,6 @@ pipeline_protocol: 1
 workflow_id: <workflow_id>
 project_id: <project_id>
 phase: creation
-phase_agent_id: <current_agent_id>
 status: ok
 agent_id: <agent_id>
 agent_dir: <absolute_canonical_agent_dir>
@@ -134,7 +136,6 @@ pipeline_protocol: 1
 workflow_id: <workflow_id>
 project_id: <project_id>
 phase: creation
-phase_agent_id: <current_agent_id>
 status: blocked
 failure_code: <invalid_request_or_target_exists_or_path_conflict_or_creation_failed>
 protocol_end: true
