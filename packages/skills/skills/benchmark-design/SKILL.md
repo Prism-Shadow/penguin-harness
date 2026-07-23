@@ -3,8 +3,8 @@ name: benchmark-design
 description: Design and calibrate a multi-Case capability Benchmark with repeated independent evaluations and a traceable baseline.
 short_description: Design and calibrate an Agent capability Benchmark.
 short_description_zh: 设计并校准 Agent 能力评测 Benchmark。
-version: 9
-updated: 2026-07-23T15:19:31Z
+version: 10
+updated: 2026-07-23T16:56:05Z
 ---
 
 # Benchmark Design
@@ -133,7 +133,10 @@ Case `score`, `cost`, and `duration_ms` are the means of their valid `runs`. Eva
 
 This Skill writes one final baseline for the current Benchmark definition. A material change to a Statement, Rubric, Case set, or `runs` invalidates prior results: clear `evaluations`, recalibrate, and write a new baseline. Rejected candidates and provisional matrices remain only in the current phase Trace. Evaluation children never write the Scoreboard.
 
-The public `summary_title` and `summary` may describe the tested State, Case-level score patterns, and instability. They must not reveal Rubric or Gold content, expected answers, private scoring reasoning, mappings, thresholds, formulas, or rules.
+The public `summary_title` and `summary` may describe only the tested State, aggregate or
+Case-level score patterns, and instability. They must not name or paraphrase a private mechanism
+dimension, candidate, selected value, hidden convention, Rubric or Gold item, expected answer,
+private scoring reasoning, mapping, threshold, formula, or rule.
 
 ## Design and calibrate
 
@@ -156,6 +159,15 @@ disclosing the reasoning, mapping, or rule the capability is supposed to recover
 evidence-grounded mode the evidence must make the answer uniquely inferable. In black-box
 adaptation mode it must make every candidate answer computable and must not require an undeclared
 identity rule, state transition, precedence rule, aggregation rule, or output mapping.
+
+In black-box adaptation mode, public material must expose observations and the fields needed to
+compute candidate outcomes, not prose that selects a candidate. The selected private value and
+any semantic equivalent of it are forbidden from public Statements, Case directory names, titles,
+headings, filenames, schema descriptions, data dictionaries, comments, examples, and Scoreboard
+summaries. For example, replacing a private label with an explanatory sentence that describes the
+same identity, time, retry, correction, grouping, or visibility convention is still leakage.
+Public evidence may contain raw records whose consequences differ under the candidates; it must
+not contain an authoritative explanation of which interpretation is correct.
 
 For black-box adaptation, create a private machine-readable mechanism manifest before creating
 Rubrics or dispatching evaluation. Store it under `<benchmark_dir>/.private/`; never copy or
@@ -180,7 +192,8 @@ Freeze every Rubric before evaluation. Use atomic observable conditions, exact p
 
 Before dispatching any evaluation, run a definition audit over the complete candidate:
 
-- verify that public names and headings do not disclose private mechanism dimensions;
+- verify that no public name, prose, schema description, example, or summary discloses or
+  paraphrases a private mechanism dimension, candidate, or selected value;
 - verify that every required public evidence file is present and materially used;
 - verify that every Gold item is derivable under the selected mode and has exactly one Rubric
   disposition;
@@ -189,6 +202,11 @@ Before dispatching any evaluation, run a definition audit over the complete cand
   keys;
 - reject drafting notes, unresolved alternatives, self-corrections, missing table rows, and
   contradictory rationales from private scoring material.
+
+Then run a blind-review check: reason from a copy of the public Case material while treating the
+private manifest as unavailable. If the wording itself recommends, rules out, or effectively names
+the selected candidate, reject the Case. Passing requires that the task and candidate-computable
+observations remain usable while the selected convention remains genuinely private.
 
 Do not dispatch a pilot or full matrix until this audit passes.
 
@@ -199,21 +217,31 @@ catch leakage, defective Rubrics, answer-shape mistakes, and an obviously ceilin
 portfolio. Revise the candidate once as needed, rerun the definition audit, and then freeze it for
 the complete matrix.
 
+When a target interval is supplied, do not dispatch the first full matrix from a pilot that is
+plainly non-diagnostic. Treat the pilot as ceiling-heavy when its aggregate is above the requested
+upper bound and most Cases earn at least 90% of their maxima; treat the symmetric condition below
+the lower bound as floor-heavy. Audit leakage or ambiguity and perform the one pre-matrix
+structural rebuild before spending the full repeated-run budget. Do not repeatedly pilot variants.
+
 Audit high scores for shortcuts or leakage and low scores for ambiguity, missing evidence,
 unrelated difficulty, or a defective Rubric. More items, steps, workload, or ambiguity alone are
 not structural refinement. Do not hit the target by merely redistributing Rubric points or
 weakening partial credit after seeing model answers; change the capability-relevant evidence,
 state interaction, or reasoning path, freeze the revised Rubrics, and run a fresh complete matrix.
 
-A user-supplied score interval remains the calibration target. In a standalone Benchmark request,
-accept success only when a complete stable 100-point evaluation lies inside that interval. In a
-delegated pipeline, prioritize returning a usable, stable baseline to the next isolated phase:
-after the initial complete matrix, allow at most one evidence-backed structural revision and one
-fresh complete matrix. If neither stable matrix is in range, freeze the stable valid candidate
-closest to the interval, mark `target_met: false`, and return it with
-`stop_reason: calibration_budget_exhausted`. This bounded fallback is still a valid measured
-baseline, not a claim that the requested range was reached. A caller may explicitly supply a
-different positive full-matrix budget.
+A user-supplied score interval remains the calibration acceptance gate. Accept success only when a
+complete stable 100-point evaluation lies inside that interval. In delegated pipeline mode, run at
+most two full matrices: the initial frozen candidate, then at most one evidence-backed structural
+revision followed by one fresh matrix. A caller may explicitly supply a different positive
+full-matrix budget.
+
+If no stable complete matrix enters the requested interval, do not freeze an out-of-range baseline
+for downstream optimization. Return `calibration_failed`, leave a new Benchmark's `evaluations`
+empty, and report whether the final candidate was a `non_diagnostic_ceiling`,
+`non_diagnostic_floor`, or `target_interval_not_reached`. A Benchmark above the upper bound lacks
+the headroom needed to test optimization, while a below-range or unstable Benchmark does not
+satisfy the requested calibration contract. Bounded failure is preferable to an uninformative
+handoff.
 
 Score-range fit is necessary but not sufficient. Before accepting an in-range candidate, confirm
 that its misses are caused by the intended capability or a consistently chosen candidate
@@ -295,11 +323,9 @@ target interval.
 When an acceptable complete valid matrix is reached, write the final baseline to a temporary
 sibling, parse it as YAML, then atomically rename it over `scoreboard.yaml`. Include the sorted Case
 set and sorted runs, a real UTC ISO-8601 time, the tested version and Model pair, and a privacy-safe
-summary. In a delegated pipeline, the bounded closest stable fallback is also written as the one
-final baseline, with its out-of-range status stated in the terminal protocol and public summary.
-Rejected candidates remain only in current-phase or evaluation-child Traces. If no complete stable
-valid matrix exists, report `calibration_failed`, leave a new Benchmark's `evaluations` empty, and
-stop.
+summary. Rejected and out-of-range candidates remain only in current-phase or evaluation-child
+Traces. If no complete stable in-range valid matrix exists, report `calibration_failed`, leave a
+new Benchmark's `evaluations` empty, and stop.
 
 Report the Benchmark path, aggregate and Case scores, Test Session ids, refinements, stop reason, and limitations.
 
@@ -308,6 +334,12 @@ Report the Benchmark path, aggregate and Case scores, Test Session ids, refineme
 When the request contains `pipeline_protocol: 1`, work non-interactively and make the final
 assistant message exactly one plain YAML document. Emit no code fence or prose around it. Echo the
 supplied `workflow_id`; never invent or alter it.
+
+Treat this as a bounded phase: resolve paths directly from the supplied Project Dir, perform the
+definition work in batches, use only the pilot and full-matrix budget above, and return immediately
+at the first terminal condition. Do not run CLI help, inspect Project configuration, browse prior
+pipeline Sessions, or narrate planning and polling. A caller must treat any assistant text before
+or after the single YAML document as a malformed phase response.
 
 Before returning, compute:
 
@@ -335,7 +367,7 @@ workflow_id: <workflow_id>
 project_id: <project_id>
 phase: benchmark
 status: calibrated
-target_met: <true_if_inside_requested_interval_else_false>
+target_met: true
 test_agent_id: <test_agent_id>
 tested_state_version: <version>
 tested_state_digest: <sha256>
@@ -353,13 +385,15 @@ runs_per_case: <positive_integer>
 expected_cell_count: <case_count_times_runs_per_case>
 valid_cell_count: <same_as_expected_cell_count>
 reference_evaluation_key: <time_version_provider_model_tuple>
-stop_reason: <target_reached_or_calibration_budget_exhausted>
+stop_reason: target_reached
 protocol_end: true
 ```
 
-Return `status: calibration_failed` only when no complete stable valid matrix exists, with the same
-identity, version, Model, count, and digest fields when available plus a stable failure code. For
-an invalid request or infrastructure blocker, return `status: blocked` with `workflow_id`,
-`project_id`, `phase`, available identity fields, a stable `failure_code`, and
-`protocol_end: true`. Never return `calibrated` for an incomplete matrix, changed State, invalid
-Scoreboard, or a score whose out-of-range status is concealed.
+Return `status: calibration_failed`, `target_met: false`, and
+`failure_code: <non_diagnostic_ceiling_or_non_diagnostic_floor_or_target_interval_not_reached>`
+when the bounded phase produced valid evidence but no acceptable in-range baseline. Include
+identity, version, Model, count, and definition-digest fields when available, but no reference
+evaluation or nonempty Scoreboard. For an invalid request or infrastructure blocker, return
+`status: blocked` with `workflow_id`, `project_id`, `phase`, available identity fields, a stable
+`failure_code`, and `protocol_end: true`. Never return `calibrated` for an incomplete matrix,
+changed State, invalid Scoreboard, or out-of-range score.

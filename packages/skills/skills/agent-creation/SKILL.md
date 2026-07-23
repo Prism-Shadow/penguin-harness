@@ -3,8 +3,8 @@ name: agent-creation
 description: Turn a user requirement into a concrete agent — write the target agent's AGENTS.md and install the skills it needs.
 short_description: Turn a requirement into a working agent.
 short_description_zh: 把需求变成可用的 Agent。
-version: 8
-updated: 2026-07-23T11:28:42Z
+version: 9
+updated: 2026-07-23T16:56:05Z
 ---
 
 # Agent Creation
@@ -122,6 +122,13 @@ capability but remove the evaluation-specific framing.
 When the request contains `pipeline_protocol: 1`, work non-interactively and make the final
 assistant message exactly one plain YAML document. Emit no code fence or prose around it. Echo the
 supplied `workflow_id`; never invent or alter it.
+
+Treat delegated creation as a bounded file operation, not an environment-discovery task. Resolve
+`project_id` from the basename of the supplied Project Dir, inspect only the canonical target path
+and the exact default-Agent files needed as templates or Skill sources, and create and verify the
+target in one pass. Do not run CLI help, enumerate Models, inspect Project configuration, search
+for prior pipeline artifacts, or narrate a plan. A caller must treat any assistant text before or
+after the single YAML document as a malformed phase response.
 
 On success:
 

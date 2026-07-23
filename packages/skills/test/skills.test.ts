@@ -96,6 +96,7 @@ describe("agent tuning workflow contracts", () => {
     const creation = content("agent-creation");
     expect(creation).toContain("final capability-scope audit");
     expect(creation).toContain("whose only purpose is to improve a future evaluation");
+    expect(creation).toContain("bounded file operation");
   });
 
   it("defines black-box adaptation without weakening matrix immutability", () => {
@@ -106,7 +107,9 @@ describe("agent tuning workflow contracts", () => {
     expect(benchmark).toContain("structural-hypothesis ledger");
     expect(benchmark).toContain("Case directory names, titles, headings, and evidence filenames");
     expect(benchmark).toContain("one lightweight pilot cell per Case");
-    expect(benchmark).toContain("calibration_budget_exhausted");
+    expect(benchmark).toContain("blind-review check");
+    expect(benchmark).toContain("non_diagnostic_ceiling");
+    expect(benchmark).toContain("do not freeze an out-of-range baseline");
   });
 
   it("binds evaluation to the new trace delta and bounded accounting work", () => {
@@ -123,6 +126,9 @@ describe("agent tuning workflow contracts", () => {
     expect(optimization).toContain("optional `.private/` mechanism manifest");
     expect(optimization).toContain("private hypothesis ledger");
     expect(optimization).toContain("variance-dominated");
+    expect(optimization).toContain("creation_handoff");
+    expect(optimization).toContain("benchmark_not_calibrated");
+    expect(optimization).toContain("aggregate noise guard");
   });
 
   it("never probes checksum commands without an operand", () => {

@@ -3,8 +3,8 @@ name: agent-optimization
 description: Improve an Agent State from direct feedback or versioned multi-Case Benchmark scores and score-linked Traces.
 short_description: Improve an Agent from feedback or measured Benchmark results.
 short_description_zh: 根据反馈或 Benchmark 结果改进 Agent。
-version: 9
-updated: 2026-07-23T11:28:42Z
+version: 10
+updated: 2026-07-23T16:56:05Z
 ---
 
 # Agent Optimization
@@ -69,14 +69,16 @@ defaulting to 1. Choose exactly one rollback mode before the first candidate:
   and import; never create, import, extract, or replace one yourself. If it is missing, stop and ask
   the user to export the current State.
 - **Orchestrated bootstrap mode**: allowed for a target created in an earlier isolated phase of the
-  same delegated pipeline only when the request supplies one `workflow_id`,
-  `target_was_absent: true`, `creator_state_version`, `creator_state_digest`,
-  `reference_version`, `reference_state_digest`, `benchmark_definition_digest`,
-  `scoreboard_digest`, `reference_time`, `reference_provider`, `reference_model_id`,
-  `reference_score`, `reference_evaluation_key`, `case_count`, `case_ids`, `runs_per_case`, and
-  `expected_cell_count`. Mechanically recompute and match every value before editing. The target
-  must still be canonical, versioned, and unchanged. Never infer bootstrap status merely from
-  `version: 1`.
+  same delegated pipeline only when the request embeds the exact terminal YAML documents from the
+  creation and Benchmark phases as `creation_handoff` and `benchmark_handoff`. Both documents must
+  use `pipeline_protocol: 1`, share the request's `workflow_id` and `project_id`, end with
+  `protocol_end: true`, and report successful phases. Derive the creator version and State digest
+  from `creation_handoff`; derive the reference version, State and Benchmark digests, reference
+  time, Model pair, score, evaluation key, Case ids, run count, and expected cell count from
+  `benchmark_handoff`. Mechanically recompute and match every derived value before editing. The
+  target must still be canonical, versioned, and unchanged. Never infer bootstrap status merely
+  from `version: 1`, accept a rewritten summary in place of the original handoffs, or require the
+  coordinator to flatten their fields manually.
 
 If orchestrated provenance cannot be positively established, use System snapshot mode. Never
 create or synthesize a snapshot archive.
@@ -103,6 +105,12 @@ Require the current-version system snapshot and record the exact originals of fi
 ## Benchmark optimization mode
 
 Require `benchmark_config.toml` with a positive integer `runs` and a complete baseline evaluation. The baseline Case set, Statements, Rubrics, and run count are frozen for optimization. Each reference or candidate evaluation must include exactly `runs` uniquely numbered runs for every frozen Case. `scoreboard.yaml` is the only writable Benchmark-side ledger; append only complete accepted evaluations atomically.
+
+In delegated pipeline mode, require `benchmark_handoff.status: calibrated` and
+`benchmark_handoff.target_met: true`. If Benchmark calibration failed, was blocked, omitted a
+target result, or returned an out-of-range fallback, stop before reading traces or editing State
+with `failure_code: benchmark_not_calibrated`. A near-ceiling Benchmark that failed its requested
+calibration is not useful evidence for optimization.
 
 Use the reference evaluation's `(provider, model_id)` pair unchanged so scores remain comparable. If the user wants a different Model, stop and ask for a new baseline series rather than comparing across Models.
 
@@ -153,6 +161,10 @@ evaluations:
 
 Case metrics are the means of valid `runs`; evaluation totals are the sums of Case means. Omit cost when any contributing run has unknown cost. `summary_title` and `summary` may describe public State changes, gains, regressions, and instability, but must not reveal private Rubric or Gold content, expected answers, or private scoring reasoning.
 
+If the comparable reference score already meets or exceeds the user's optimization target, return
+`status: already_met` without editing State or appending a duplicate evaluation. Measured
+optimization is unnecessary when the frozen reference already satisfies the requested outcome.
+
 ## Optimization loop
 
 For each round:
@@ -195,9 +207,13 @@ For each round:
    and cell identity. Never retry a valid scored cell. If any retry remains invalid, reject the
    round and roll back the candidate files.
 7. Compute Case means and evaluation sums. Retain every score, cost when complete, duration, and Test Session id. Re-read State version and exact Scoreboard bytes, and verify that every candidate-owned file still matches the value written by this round. If State changed concurrently, stop without overwriting it. If only the Scoreboard changed, reject the round and roll back the candidate files.
-8. Accept only a score strictly higher than the comparable reference evaluation and consistent
-   with the hypothesis's predicted Case pattern. Do not accept a gain that is explained mainly by
-   an isolated correct/incorrect flip within the existing repeated-run variation. Before
+8. Estimate an aggregate noise guard from the repeated runs before comparing scores. For each
+   Case, take its observed run range (`max - min`) across the reference and candidate matrices;
+   set the guard to the larger of 1 point on the 100-point scale and the square root of the sum of
+   squared Case ranges. Accept only when the aggregate gain is strictly greater than this guard
+   and the Case movement is consistent with the hypothesis's predicted pattern. Do not accept a
+   gain that is explained mainly by an isolated correct/incorrect flip, a regression of comparable
+   size, or existing repeated-run variation. Before
    acceptance, audit the changed State for Case identities, exact observed outputs,
    Benchmark-specific constants, or instructions whose only purpose is this evaluation. On a
    credible generalizing improvement, keep the candidate State and append one evaluation through a
@@ -221,6 +237,12 @@ At the end, report the accepted score curve, State versions and changes, rejecte
 When the request contains `pipeline_protocol: 1`, work non-interactively and make the final
 assistant message exactly one plain YAML document. Emit no code fence or prose around it. Echo the
 supplied `workflow_id`; never invent or alter it.
+
+Parse the embedded handoff documents directly, resolve canonical paths from them, and return at
+the first terminal condition. Do not run CLI help, inspect Project configuration, browse prior
+phase Sessions or Workspaces, or narrate planning, polling, hypotheses, or score changes. A caller
+must treat any assistant text before or after the single YAML document as a malformed phase
+response.
 
 On target reached:
 
@@ -248,6 +270,11 @@ scoreboard_digest: <sha256_after_final_accepted_append>
 stop_reason: target_reached
 protocol_end: true
 ```
+
+If the frozen reference already meets the optimization target, return the same identity and digest
+fields with `status: already_met`, `target_met: true`, `final_version` and `final_score` equal to
+the baseline, `score_curve: [<baseline>]`, `accepted_changes: []`, `accepted_rounds: 0`, and
+`stop_reason: target_already_met`. Do not edit State or append a Scoreboard evaluation.
 
 If credible hypotheses are exhausted before the target, return `status: target_not_reached`,
 `target_met: false`, the same identity/digest fields, the tested final version and score, the score
