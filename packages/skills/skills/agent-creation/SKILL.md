@@ -3,8 +3,8 @@ name: agent-creation
 description: Turn a user requirement into a concrete agent — write the target agent's AGENTS.md and install the skills it needs.
 short_description: Turn a requirement into a working agent.
 short_description_zh: 把需求变成可用的 Agent。
-version: 10
-updated: 2026-07-23T17:53:44Z
+version: 11
+updated: 2026-07-23T18:10:28Z
 ---
 
 # Agent Creation
@@ -136,20 +136,9 @@ target in one pass. Do not run CLI help, enumerate Models, inspect Project confi
 for prior pipeline artifacts, or narrate a plan. A caller must treat any assistant text before or
 after the single YAML document as a malformed phase response.
 
-Before returning success, write the intended YAML document to a temporary file and run:
-
-```bash
-python3 "<this-skill-dir>/scripts/validate_handoff.py" "<handoff.yaml>" \
-  --workflow-id "<workflow_id>" --project-id "<project_id>" \
-  --project-dir "<project_dir>" --agent-id "<agent_id>"
-python3 "<this-skill-dir>/scripts/audit_agent.py" \
-  "<project_dir>" "<agent_id>" "<handoff.yaml>"
-```
-
-When creating a later Test Agent, append one `--forbid-skill` argument for each evaluation-only
-Skill excluded by the request. Return success only when both checks print `valid`. Do not
-reinterpret, rename, omit, or add
-protocol fields after validation.
+Before returning success, re-read the created State and verify every required identity, path,
+version, installed Skill, and scope constraint against the protocol below. Do not reinterpret,
+rename, omit, or add protocol fields.
 
 On success:
 

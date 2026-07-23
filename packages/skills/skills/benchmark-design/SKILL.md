@@ -3,8 +3,8 @@ name: benchmark-design
 description: Design and calibrate a multi-Case capability Benchmark with repeated independent evaluations and a traceable baseline.
 short_description: Design and calibrate an Agent capability Benchmark.
 short_description_zh: 设计并校准 Agent 能力评测 Benchmark。
-version: 11
-updated: 2026-07-23T17:53:44Z
+version: 12
+updated: 2026-07-23T18:10:28Z
 ---
 
 # Benchmark Design
@@ -75,9 +75,9 @@ Use this structure:
 
 Both README files are required; either directory may contain supporting files. `statement/` is the complete public task and evidence. `rubric/` is private scoring material. Never mention private criteria or paths in the Statement.
 
-Every `rubric/README.md` must contain one machine-readable line
-`max_points: <positive_number>`. Fix the complete Case point allocation before the first pilot;
-the maxima must total exactly 100.
+Fix the complete Case point allocation before the first pilot; the maxima must total exactly 100.
+Record each maximum clearly in its Rubric and never redistribute points after observing a pilot,
+matrix, Trace, or score.
 
 Case directory names, titles, headings, and evidence filenames are public evidence. Keep them
 neutral whenever the measured capability includes recovering an unstated mechanism, mapping,
@@ -178,9 +178,9 @@ same identity, time, retry, correction, grouping, or visibility convention is st
 Public evidence may contain raw records whose consequences differ under the candidates; it must
 not contain an authoritative explanation of which interpretation is correct.
 
-For black-box adaptation, create a private machine-readable mechanism manifest before creating
-Rubrics or dispatching evaluation. Store it under `<benchmark_dir>/.private/`; never copy or
-describe it in a Statement or public Scoreboard summary. It must declare:
+For black-box adaptation, create a private mechanism manifest before creating Rubrics or
+dispatching evaluation. Store it under `<benchmark_dir>/.private/`; never copy or describe it in a
+Statement or public Scoreboard summary. It must declare:
 
 - each mechanism dimension and its finite candidate values;
 - the selected private value for each dimension;
@@ -188,18 +188,11 @@ describe it in a Statement or public Scoreboard summary. It must declare:
 - any cross-record, cross-object, temporal, or final-output aggregation rule;
 - the dimensions exercised by each Case.
 
-Use `.private/mechanism-manifest.json` for this manifest. Add a `private_terms` string array
-containing private candidate names, selected-value descriptions, and short synonymous phrases that
-must not occur literally in public material. This list supports deterministic leakage auditing; it
-does not replace the semantic blind-review check.
-
-Before the first pilot, also write `.private/point-lock.json` with the exact Case-to-maximum map
-and its point-allocation digest. The digest is SHA-256 over each sorted Case id, NUL, canonical
-decimal maximum, and NUL. Never change this lock or any Case maximum after observing a pilot,
-matrix, Trace, or score. Maintain `.private/calibration-history.json` with the same digest plus the
-pilot, full-matrix, and structural-revision counts. Calibration may change capability-relevant
-evidence and reasoning paths within the budget, but cannot reach a target by moving points toward a
-Case that already fails.
+The manifest format is implementation-defined. Keep it concise and private. Before the first
+pilot, record the exact Case-to-maximum map in the phase Trace. Never change that map after
+observing a pilot, matrix, Trace, or score. Calibration may change capability-relevant evidence and
+reasoning paths within the budget, but cannot reach a target by moving points toward a Case that
+already fails.
 
 Freeze this manifest before the first evaluation. Calibration may revise public data instances,
 surface presentation, and Rubrics derived from the manifest after a complete matrix, but it must
@@ -368,23 +361,10 @@ at the first terminal condition. Do not run CLI help, inspect Project configurat
 pipeline Sessions, or narrate planning and polling. A caller must treat any assistant text before
 or after the single YAML document as a malformed phase response.
 
-Before returning success, write the intended terminal document to a temporary YAML file and run
-both bundled validators:
-
-```bash
-python3 "<this-skill-dir>/scripts/validate_handoff.py" "<handoff.yaml>" \
-  --workflow-id "<workflow_id>" --project-id "<project_id>" \
-  --project-dir "<project_dir>" --agent-id "<test_agent_id>" \
-  --benchmark-id "<benchmark_id>" --target-low "<low>" --target-high "<high>"
-python3 "<this-skill-dir>/scripts/audit_benchmark.py" \
-  "<benchmark_dir>" "<handoff.yaml>"
-```
-
-When the request fixes a uniform Case allocation, append
-`--expected-uniform-points "<points>"` to the audit command.
-
-Return `calibrated` only when both print `valid`. Do not treat a validator failure as advice to
-rename fields, redistribute points, disclose a private term, or relax an invariant.
+Before returning success, re-read the final Benchmark definition and Scoreboard and verify the
+identity, fixed point allocation, complete valid matrix, target interval, privacy constraints, and
+all protocol fields below. Do not rename fields, redistribute points, disclose a private term, or
+relax an invariant to make the handoff pass.
 
 Before returning, compute:
 
@@ -432,7 +412,6 @@ valid_cell_count: <same_as_expected_cell_count>
 reference_evaluation_key: <time_version_provider_model_tuple>
 full_matrix_count: <1_or_2>
 structural_revision_count: <0_or_1>
-point_allocation_digest: <sha256>
 stop_reason: target_reached
 protocol_end: true
 ```

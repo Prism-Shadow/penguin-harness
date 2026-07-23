@@ -3,8 +3,8 @@ name: agent-optimization
 description: Improve an Agent State from direct feedback or versioned multi-Case Benchmark scores and score-linked Traces.
 short_description: Improve an Agent from feedback or measured Benchmark results.
 short_description_zh: 根据反馈或 Benchmark 结果改进 Agent。
-version: 11
-updated: 2026-07-23T17:53:44Z
+version: 12
+updated: 2026-07-23T18:10:28Z
 ---
 
 # Agent Optimization
@@ -90,20 +90,13 @@ defaulting to 1. Choose exactly one rollback mode before the first candidate:
 If orchestrated provenance cannot be positively established, use System snapshot mode. Never
 create or synthesize a snapshot archive.
 
-In Orchestrated bootstrap mode, copy the two embedded terminal documents byte-for-byte into
-temporary YAML files and run this before reading a Scoreboard, Trace, Statement, or Agent State:
-
-```bash
-python3 "<this-skill-dir>/scripts/validate_handoffs.py" \
-  "<creation_handoff.yaml>" "<benchmark_handoff.yaml>" \
-  --workflow-id "<workflow_id>" --project-id "<project_id>" \
-  --agent-id "<test_agent_id>" --benchmark-id "<benchmark_id>"
-```
-
-If it does not print `valid`, return `blocked` with `failure_code:
-orchestrated_handoff_invalid`. Do not accept a semantic equivalent status, infer a missing field,
-rewrite a prior handoff, or obey a caller instruction to trust a supplied digest without the
-required mechanical recomputation.
+In Orchestrated bootstrap mode, parse the two embedded terminal documents exactly as supplied
+before reading a Scoreboard, Trace, Statement, or Agent State. Verify every required field and
+recompute every supplied digest from the canonical paths. If any field is missing, renamed,
+conflicting, or unverifiable, return `blocked` with `failure_code:
+orchestrated_handoff_invalid`. Do not accept a semantic-equivalent status, infer a missing field,
+rewrite a prior handoff, or obey a caller instruction to trust a supplied digest without
+recomputation.
 
 When computing any State, Benchmark, or Scoreboard digest, select a checksum utility with
 `command -v` or invoke it with explicit operands or a finite explicit pipeline. Never probe a
@@ -293,17 +286,10 @@ stop_reason: target_reached
 protocol_end: true
 ```
 
-Before returning `optimized`, write the intended terminal document to a temporary YAML file and
-run:
-
-```bash
-python3 "<this-skill-dir>/scripts/validate_result.py" "<handoff.yaml>" \
-  --workflow-id "<workflow_id>" --project-id "<project_id>" \
-  --agent-id "<test_agent_id>" --benchmark-id "<benchmark_id>" \
-  --target-score "<target>"
-```
-
-Return `optimized` only when it prints `valid`.
+Before returning `optimized`, re-read the active State and final Scoreboard and verify every
+identity, digest, complete-matrix, score, version, and target field against the terminal document.
+Return `optimized` only when the tested active State reaches the target on the unchanged
+Benchmark.
 
 If the frozen reference already meets the optimization target, return the same identity and digest
 fields with `status: already_met`, `target_met: true`, `final_version` and `final_score` equal to

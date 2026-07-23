@@ -98,7 +98,7 @@ describe("agent tuning workflow contracts", () => {
     expect(creation).toContain("whose only purpose is to improve a future evaluation");
     expect(creation).toContain("bounded file operation");
     expect(creation).toContain("only permitted");
-    expect(creation).toContain("scripts/validate_handoff.py");
+    expect(creation).toContain("verify every required identity");
   });
 
   it("defines black-box adaptation without weakening matrix immutability", () => {
@@ -113,9 +113,8 @@ describe("agent tuning workflow contracts", () => {
     expect(benchmark).toContain("non_diagnostic_ceiling");
     expect(benchmark).toContain("do not freeze an out-of-range baseline");
     expect(benchmark).toContain("exact creation phase terminal");
-    expect(benchmark).toContain(".private/point-lock.json");
     expect(benchmark).toContain("distributed diagnostic headroom");
-    expect(benchmark).toContain("scripts/audit_benchmark.py");
+    expect(benchmark).toContain("never redistribute points");
   });
 
   it("binds evaluation to the new trace delta and bounded accounting work", () => {
@@ -135,23 +134,8 @@ describe("agent tuning workflow contracts", () => {
     expect(optimization).toContain("creation_handoff");
     expect(optimization).toContain("benchmark_not_calibrated");
     expect(optimization).toContain("aggregate noise guard");
-    expect(optimization).toContain("scripts/validate_handoffs.py");
+    expect(optimization).toContain("semantic-equivalent status");
     expect(optimization).toContain("at least two distinct Cases");
-  });
-
-  it("bundles deterministic delegated-phase validators", async () => {
-    for (const relativePath of [
-      "agent-creation/scripts/validate_handoff.py",
-      "agent-creation/scripts/audit_agent.py",
-      "benchmark-design/scripts/validate_handoff.py",
-      "benchmark-design/scripts/audit_benchmark.py",
-      "agent-optimization/scripts/validate_handoffs.py",
-      "agent-optimization/scripts/validate_result.py",
-    ]) {
-      const raw = await fs.readFile(path.join(skillsRoot, relativePath), "utf8");
-      expect(raw, relativePath).toContain("#!/usr/bin/env python3");
-      expect(raw, relativePath).toContain("raise SystemExit(1)");
-    }
   });
 
   it("never probes checksum commands without an operand", () => {
