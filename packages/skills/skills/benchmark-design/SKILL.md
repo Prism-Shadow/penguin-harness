@@ -4,7 +4,7 @@ description: Design and calibrate a multi-Case capability Benchmark with repeate
 short_description: Design and calibrate an Agent capability Benchmark.
 short_description_zh: 设计并校准 Agent 能力评测 Benchmark。
 version: 4
-updated: 2026-07-23T09:30:00Z
+updated: 2026-07-23T09:09:56Z
 ---
 
 # Benchmark Design

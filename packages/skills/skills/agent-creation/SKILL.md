@@ -3,8 +3,8 @@ name: agent-creation
 description: Turn a user requirement into a concrete agent — write the target agent's AGENTS.md and install the skills it needs.
 short_description: Turn a requirement into a working agent.
 short_description_zh: 把需求变成可用的 Agent。
-version: 5
-updated: 2026-07-23T09:30:00Z
+version: 6
+updated: 2026-07-23T09:09:56Z
 ---
 
 # Agent Creation
@@ -117,7 +117,7 @@ pipeline_protocol: 1
 workflow_id: <workflow_id>
 project_id: <project_id>
 phase: creation
-phase_agent_id: agent_creator
+phase_agent_id: <current_agent_id>
 status: ok
 agent_id: <agent_id>
 agent_dir: <absolute_canonical_agent_dir>
@@ -134,7 +134,7 @@ pipeline_protocol: 1
 workflow_id: <workflow_id>
 project_id: <project_id>
 phase: creation
-phase_agent_id: agent_creator
+phase_agent_id: <current_agent_id>
 status: blocked
 failure_code: <invalid_request_or_target_exists_or_path_conflict_or_creation_failed>
 protocol_end: true
