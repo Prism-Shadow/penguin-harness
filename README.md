@@ -4,9 +4,9 @@
 
 <h1 align="center">PenguinHarness</h1>
 
-<p align="center"><b>Your desktop for automatically building AI agents, connected to 1,000+ models.<br />Open source, local-first, and recursively self-improving.</b></p>
+<p align="center"><b>With LangChain, you build agents by hand — at 1× speed.<br />With PenguinHarness, agents build agents — at 100×.</b></p>
 
-<p align="center">With LangChain, you build agents by hand — at 1× speed. With PenguinHarness, agents build agents — at 100×.</p>
+<p align="center">Your desktop agent that automatically builds agents, connected to 1,000+ models. Open source, local-first, and recursively self-improving.</p>
 
 <p align="center">
   <a href="https://www.producthunt.com/products/penguinharness?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-penguinharness" target="_blank" rel="noopener noreferrer"><img alt="PenguinHarness - Let Agents Autonomously Build Better Agents for $0.02 | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1202577&amp;theme=light&amp;t=1784804711946" /></a>
@@ -51,9 +51,9 @@ A deliberately minimal toolset over clean low-level interfaces: fewer tool calls
 
 **Best accuracy on data analysis — at 1/70 of Claude Code's cost.**
 
-### 2. ⚡ One sentence, and an Agent builds your Agent app
+### 2. ⚡ One sentence, and an agent builds your agent app
 
-Type one sentence, and an Agent builds the complete Agent application for you — scaffold, code, and run instructions, end to end:
+Type one sentence, and an agent builds the complete agent application for you — scaffold, code, and run instructions, end to end:
 
 ```text
 Collect the docs from https://github.com/ericbuess/claude-code-docs and build a RAG app that answers Claude Code questions as a configuration expert, citing its sources.
@@ -67,13 +67,13 @@ https://github.com/user-attachments/assets/9b7033e8-f08a-4c3f-bd33-547896664e6e
 
 ### 3. 🧬 Self-evolution: it gets stronger with use
 
-With PenguinHarness Skills, an Agent evaluates and optimizes itself: run the benchmark, find the lost points, ship version N+1 — with a snapshot before every round, and every request observable in the Trace view.
+With PenguinHarness Skills, an agent evaluates and optimizes itself: run the benchmark, find the lost points, ship version N+1 — with a snapshot before every round, and every request observable in the Trace view.
 
 https://github.com/user-attachments/assets/922d13a6-5ffc-4685-9a39-352f02f9afc0
 
 ## Built-in Skills
 
-Four Skill groups ship in the box ([docs](https://penguin.ooo/docs/skills)); Agents can also write and optimize their own:
+Four Skill groups ship in the box ([docs](https://penguin.ooo/docs/skills)); agents can also write and optimize their own:
 
 | Group                | Skills                                                                            |
 | -------------------- | --------------------------------------------------------------------------------- |
@@ -110,7 +110,7 @@ Each family's latest generation only — the app's **Models** page lists every b
 
 ### 🌐 Web App — for humans
 
-🚀 Install and launch the full experience (multi-session chat, Agent/skill/model management, usage stats, Trace observability, evaluation center):
+🚀 Install and launch the full experience (multi-session chat, agent/skill/model management, usage stats, Trace observability, evaluation center):
 
 ```bash
 curl -fsSL https://penguin.ooo/install.sh | sh

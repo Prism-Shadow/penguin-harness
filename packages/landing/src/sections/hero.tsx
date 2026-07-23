@@ -1,42 +1,14 @@
 /**
- * Hero: enlarged logo + product name, the slogan inside the pill badge, then a
- * bilingual headline whose rotating word crossfades through a gaussian blur
- * (building <-> improving / 构建 <-> 优化), the tagline line, the install
- * one-liner and stats. The rotating word is a stacked inline-grid so line
- * width never jumps.
+ * Hero: enlarged logo + product name, the slogan inside the pill badge, then the
+ * two-line comparison headline (the LangChain 1× baseline over the PenguinHarness
+ * 100× answer, each sentence on its own line), the tagline line, the install
+ * one-liner and stats.
  */
-import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { S } from "../lib/strings";
 import { INSTALL_CMD, REPO_URL } from "../lib/links";
 import { CopyButton } from "../components/copy-button";
 import { ArrowRightIcon, GitHubIcon } from "../components/icons";
-
-const ROTATE_MS = 2600;
-
-function RotatingWord({ words }: { words: string[] }) {
-  const [active, setActive] = useState(0);
-  useEffect(() => {
-    if (words.length < 2) return;
-    const timer = setInterval(() => setActive((i) => (i + 1) % words.length), ROTATE_MS);
-    return () => clearInterval(timer);
-  }, [words.length]);
-  return (
-    <span className="inline-grid justify-items-center align-bottom">
-      {words.map((word, i) => (
-        <span
-          key={word}
-          aria-hidden={i !== active}
-          className={`col-start-1 row-start-1 text-brand-600 transition-[opacity,filter] duration-500 dark:text-brand-300 ${
-            i === active ? "opacity-100 blur-none" : "opacity-0 blur-[6px]"
-          }`}
-        >
-          {word}
-        </span>
-      ))}
-    </span>
-  );
-}
 
 export function Hero() {
   return (
@@ -58,16 +30,18 @@ export function Hero() {
           <span className="h-1.5 w-1.5 rounded-full bg-brand-500" aria-hidden="true" />
           {S.hero.badge}
         </p>
+        {/* Two block lines rather than one balanced run: the 1×/100× contrast only lands
+            when each sentence owns a line (they still wrap internally on narrow screens). */}
+        {/* tracking-tighter (not -tight): buys the ~50px that keeps the longer English
+            sentence on a single line at desktop widths (content max 1104px). */}
         <h1
-          className="anim-rise mx-auto mt-6 max-w-full text-3xl font-semibold tracking-tight text-balance sm:text-5xl"
+          className="anim-rise mx-auto mt-6 max-w-full text-2xl font-semibold tracking-tighter sm:text-4xl"
           style={{ animationDelay: "80ms" }}
         >
-          {S.hero.titlePrefix}
-          <RotatingWord words={S.hero.titleWords} />
-          {S.hero.titleSuffix}
-          {S.hero.titleSuffixNoWrap && (
-            <span className="whitespace-nowrap">{S.hero.titleSuffixNoWrap}</span>
-          )}
+          <span className="block text-balance text-gray-500 dark:text-gray-400">
+            {S.hero.titleLine1}
+          </span>
+          <span className="mt-1 block text-balance">{S.hero.titleLine2}</span>
         </h1>
 
         <p

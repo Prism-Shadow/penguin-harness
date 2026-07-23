@@ -46,12 +46,10 @@ export const en: Strings = {
 
   hero: {
     badge: "Agents building agents",
-    titlePrefix: "Your desktop for automatically ",
-    titleWords: ["building", "improving"],
-    titleSuffix: " ",
-    titleSuffixNoWrap: "AI agents",
+    titleLine1: "With LangChain, you build agents by hand — at 1× speed.",
+    titleLine2: "With PenguinHarness, agents build agents — at 100×.",
     tagline:
-      "Connected to 1,000+ models. Open source, local-first, and recursively self-improving.",
+      "Your desktop agent that automatically builds agents, connected to 1,000+ models. Open source, local-first, and recursively self-improving.",
     ctaPrimary: "Get started",
     ctaGithub: "GitHub",
     installHint:
@@ -209,6 +207,33 @@ export const en: Strings = {
         caption:
           "The generated mini game: an Antarctic penguin sleds and jumps rocks, with live scoring and rising difficulty",
         cost: "",
+      },
+    ],
+  },
+
+  customers: {
+    eyebrow: "Customer stories",
+    title: "Already on duty in real businesses",
+    subtitle:
+      "From medical QC to factory floors, agents built with PenguinHarness run in production.",
+    items: [
+      {
+        title: "Health screening · report-QC agent",
+        alt: "A CT scanner room at a health screening center",
+        body: "A health screening provider built and tuned a report-QC agent with PenguinHarness, running on a locally deployed Qwen3 14B: a manual review flow that took about 30 minutes became automated checks of 30 reports a minute, with quality broadly on par with medical experts.",
+        metrics: [
+          { value: "30/min", label: "reports auto-checked" },
+          { value: "Severalfold", label: "throughput gain" },
+        ],
+      },
+      {
+        title: "Manufacturing · line-inspection agents",
+        alt: "An automated semiconductor production line",
+        body: "An industrial manufacturer built multiple inspection agents for its different production lines to watch equipment in real time and attempt automatic recovery on anomalies — cutting downtime by 65% and lifting output roughly 2×.",
+        metrics: [
+          { value: "-65%", label: "downtime" },
+          { value: "≈2×", label: "output" },
+        ],
       },
     ],
   },

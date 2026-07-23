@@ -47,16 +47,10 @@ export const zh = {
 
   hero: {
     badge: "让 Agent 为你构建 Agent",
-    /**
-     * Rotating headline: {titlePrefix}{word}{titleSuffix}{titleSuffixNoWrap} — the
-     * word cycles through titleWords with a gaussian-blur crossfade; titleSuffixNoWrap
-     * renders as an unbreakable span so CJK line-breaking lands on the phrase boundary.
-     */
-    titlePrefix: "在你的桌面全自动",
-    titleWords: ["构建", "优化"],
-    titleSuffix: " ",
-    titleSuffixNoWrap: "AI Agent",
-    tagline: "连接 1,000+ 模型。开源、本地优先、递归自我进化。",
+    /** Two-line comparison headline: line 1 sets the LangChain baseline, line 2 answers with 100×. */
+    titleLine1: "使用 LangChain，以 1 倍速度人工构建 Agent；",
+    titleLine2: "使用 PenguinHarness，以 100 倍速度用 Agent 构建 Agent。",
+    tagline: "全自动构建 Agent 的桌面 Agent，连接 1,000+ 模型。开源、本地优先、递归自我进化。",
     ctaPrimary: "快速开始",
     ctaGithub: "GitHub",
     installHint: "一行命令安装（Linux / macOS，x64 / arm64，内嵌 Node 运行时，解压即用）",
@@ -204,6 +198,32 @@ export const zh = {
         prompt: "做一个可爱的南极企鹅滑雪橇越野小游戏：空格起跳跃过石头，速度与难度随时间上升。",
         caption: "生成的小游戏成品：南极企鹅滑雪橇跳石头越野，实时计分，难度渐进",
         cost: "",
+      },
+    ],
+  },
+
+  customers: {
+    eyebrow: "客户案例",
+    title: "已经在真实业务里值守",
+    subtitle: "从医疗质控到工业产线，用 PenguinHarness 构建的 Agent 正在生产环境中运行。",
+    items: [
+      {
+        title: "体检机构 · 报告质控 Agent",
+        alt: "体检中心的 CT 检查室",
+        body: "一家体检机构用 PenguinHarness 构建并调优体检报告质控 Agent，运行在本地部署的 Qwen3 14B 上：原本约 30 分钟的人工审核流程，变为每分钟自动质检 30 份报告，质量与医学专家基本持平。",
+        metrics: [
+          { value: "30 份/分钟", label: "报告自动质检" },
+          { value: "数倍", label: "产出效率提升" },
+        ],
+      },
+      {
+        title: "工业制造 · 产线巡检 Agent",
+        alt: "自动化半导体生产线",
+        body: "一家工业制造企业按流水线构建了多个巡检 Agent，实时监控设备状态并在异常时尝试自动恢复，帮助企业把停机时间减少 65%，产出提升约 2 倍。",
+        metrics: [
+          { value: "-65%", label: "停机时间" },
+          { value: "≈2×", label: "产出提升" },
+        ],
       },
     ],
   },
