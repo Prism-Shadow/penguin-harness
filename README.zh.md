@@ -4,9 +4,9 @@
 
 <h1 align="center">PenguinHarness</h1>
 
-<p align="center"><b>使用 LangChain，以 1 倍速度人工构建 Agent；<br />使用 PenguinHarness，以 100 倍速度用 Agent 构建 Agent。</b></p>
+<p align="center"><b>在你的桌面全自动构建 AI Agent，连接 1,000+ 模型。<br />开源、本地优先、递归自我进化。</b></p>
 
-<p align="center">用于构建 Agent 的零代码 CLI 与 Web UI，连接 1,000+ 模型。</p>
+<p align="center">使用 LangChain，以 1 倍速度人工构建 Agent；使用 PenguinHarness，以 100 倍速度用 Agent 构建 Agent。</p>
 
 <p align="center">
   <a href="https://www.producthunt.com/products/penguinharness?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-penguinharness" target="_blank" rel="noopener noreferrer"><img alt="PenguinHarness - Let Agents Autonomously Build Better Agents for $0.02 | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1202577&amp;theme=light&amp;t=1784804711946" /></a>

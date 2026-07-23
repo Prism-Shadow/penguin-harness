@@ -45,12 +45,13 @@ export const en: Strings = {
   },
 
   hero: {
-    badge: "Build AI agents, with an Agent",
-    titlePrefix: "Efficient Self-Improving Harness for ",
-    titleWords: ["Developers", "Enterprises"],
-    titleSuffix: "",
-    titleSuffixNoWrap: "",
-    keywords: ["Lightweight", "Efficient", "Open Source"],
+    badge: "Agents building agents",
+    titlePrefix: "Your desktop for automatically ",
+    titleWords: ["building", "improving"],
+    titleSuffix: " ",
+    titleSuffixNoWrap: "AI agents",
+    tagline:
+      "Connected to 1,000+ models. Open source, local-first, and recursively self-improving.",
     ctaPrimary: "Get started",
     ctaGithub: "GitHub",
     installHint:

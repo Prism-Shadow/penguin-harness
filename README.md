@@ -4,9 +4,9 @@
 
 <h1 align="center">PenguinHarness</h1>
 
-<p align="center"><b>With LangChain, you build agents by hand — at 1× speed.<br />With PenguinHarness, agents build agents — at 100×.</b></p>
+<p align="center"><b>Your desktop for automatically building AI agents, connected to 1,000+ models.<br />Open source, local-first, and recursively self-improving.</b></p>
 
-<p align="center">A zero-code CLI and Web UI for building agents, connected to 1,000+ models.</p>
+<p align="center">With LangChain, you build agents by hand — at 1× speed. With PenguinHarness, agents build agents — at 100×.</p>
 
 <p align="center">
   <a href="https://www.producthunt.com/products/penguinharness?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-penguinharness" target="_blank" rel="noopener noreferrer"><img alt="PenguinHarness - Let Agents Autonomously Build Better Agents for $0.02 | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1202577&amp;theme=light&amp;t=1784804711946" /></a>

@@ -1,10 +1,11 @@
 /**
  * Hero: enlarged logo + product name, the slogan inside the pill badge, then a
  * bilingual headline whose rotating word crossfades through a gaussian blur
- * (Developers <-> Enterprises), three keywords, the install one-liner and stats.
- * The rotating word is a stacked inline-grid so line width never jumps.
+ * (building <-> improving / 构建 <-> 优化), the tagline line, the install
+ * one-liner and stats. The rotating word is a stacked inline-grid so line
+ * width never jumps.
  */
-import { Fragment, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { S } from "../lib/strings";
 import { INSTALL_CMD, REPO_URL } from "../lib/links";
@@ -69,22 +70,12 @@ export function Hero() {
           )}
         </h1>
 
-        <div
-          className="anim-rise mt-6 flex items-center justify-center gap-4 text-base font-medium text-gray-600 sm:text-lg dark:text-gray-300"
+        <p
+          className="anim-rise mx-auto mt-6 max-w-2xl text-base font-medium text-balance text-gray-600 sm:text-lg dark:text-gray-300"
           style={{ animationDelay: "140ms" }}
         >
-          {S.hero.keywords.map((keyword, i) => (
-            <Fragment key={keyword}>
-              {i > 0 && (
-                <span
-                  className="h-1 w-1 rounded-full bg-gray-300 dark:bg-gray-600"
-                  aria-hidden="true"
-                />
-              )}
-              <span>{keyword}</span>
-            </Fragment>
-          ))}
-        </div>
+          {S.hero.tagline}
+        </p>
 
         <div
           className="anim-rise mt-8 flex flex-wrap items-center justify-center gap-3"

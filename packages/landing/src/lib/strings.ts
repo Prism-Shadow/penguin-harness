@@ -52,11 +52,11 @@ export const zh = {
      * word cycles through titleWords with a gaussian-blur crossfade; titleSuffixNoWrap
      * renders as an unbreakable span so CJK line-breaking lands on the phrase boundary.
      */
-    titlePrefix: "专为",
-    titleWords: ["开发者", "企业"],
-    titleSuffix: "设计的",
-    titleSuffixNoWrap: "高效自进化 Harness",
-    keywords: ["轻量", "高效", "开源"],
+    titlePrefix: "在你的桌面全自动",
+    titleWords: ["构建", "优化"],
+    titleSuffix: " ",
+    titleSuffixNoWrap: "AI Agent",
+    tagline: "连接 1,000+ 模型。开源、本地优先、递归自我进化。",
     ctaPrimary: "快速开始",
     ctaGithub: "GitHub",
     installHint: "一行命令安装（Linux / macOS，x64 / arm64，内嵌 Node 运行时，解压即用）",
