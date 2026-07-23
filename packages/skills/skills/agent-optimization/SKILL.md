@@ -3,8 +3,8 @@ name: agent-optimization
 description: Improve an Agent State from direct feedback or versioned multi-Case Benchmark scores and score-linked Traces.
 short_description: Improve an Agent from feedback or measured Benchmark results.
 short_description_zh: 根据反馈或 Benchmark 结果改进 Agent。
-version: 5
-updated: 2026-07-23T09:16:28Z
+version: 6
+updated: 2026-07-23T10:00:25Z
 ---
 
 # Agent Optimization
@@ -109,8 +109,8 @@ Scoreboard v2 uses this shape:
 evaluations:
   - time: "2026-07-17T00:00:00Z"
     version: 2
-    provider: deepseek
-    model_id: deepseek-v4-pro
+    provider: <provider>
+    model_id: <model_id>
     summary_title: "Improved evidence validation"
     summary: "Added a reusable validation step; all Cases improved without new instability."
     score: 24

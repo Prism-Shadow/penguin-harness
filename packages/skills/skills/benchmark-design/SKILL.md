@@ -3,8 +3,8 @@ name: benchmark-design
 description: Design and calibrate a multi-Case capability Benchmark with repeated independent evaluations and a traceable baseline.
 short_description: Design and calibrate an Agent capability Benchmark.
 short_description_zh: 设计并校准 Agent 能力评测 Benchmark。
-version: 4
-updated: 2026-07-23T09:09:56Z
+version: 5
+updated: 2026-07-23T10:00:25Z
 ---
 
 # Benchmark Design
@@ -84,8 +84,8 @@ Every accepted evaluation follows scoreboard v2:
 evaluations:
   - time: "2026-07-17T00:00:00Z"
     version: 1
-    provider: deepseek
-    model_id: deepseek-v4-pro
+    provider: <provider>
+    model_id: <model_id>
     summary_title: "Calibrated baseline"
     summary: "Abbreviated baseline schema for one Case with three independent runs."
     score: 18
