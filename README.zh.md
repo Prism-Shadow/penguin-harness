@@ -4,9 +4,7 @@
 
 <h1 align="center">PenguinHarness</h1>
 
-<p align="center"><b>使用 LangChain，以 1 倍速度人工构建 Agent；<br />使用 PenguinHarness，以 100 倍速度用 Agent 构建 Agent。</b></p>
-
-<p align="center">用于构建 Agent 的零代码 CLI 与 Web UI，连接 1,000+ 模型。</p>
+<p align="center"><b>全自动 Agent 构建器，住在你的桌面上，连接 1,000+ 模型。</b></p>
 
 <p align="center">
   <a href="https://www.producthunt.com/products/penguinharness?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-penguinharness" target="_blank" rel="noopener noreferrer"><img alt="PenguinHarness - Let Agents Autonomously Build Better Agents for $0.02 | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1202577&amp;theme=light&amp;t=1784804711946" /></a>
@@ -36,9 +34,11 @@
 
 ## 为什么选择 PenguinHarness
 
+> 使用 LangChain，以 1 倍速度人工构建 Agent；<br />使用 PenguinHarness，以 100 倍速度用 Agent 构建 Agent。
+
 三个递进的理由——从任务效果，到构建方式，再到进化能力。
 
-### 1. 🏆 效果同级，成本低一到两个数量级
+### 1. 🏆 以几十分之一的成本，跑出优异的效果
 
 刻意精简的工具集配合干净的底层接口：更少的工具调用、更少的 Token，对 DeepSeek 等开放模型深度适配。各自搭配常用模型、同一批任务，正面对比：
 

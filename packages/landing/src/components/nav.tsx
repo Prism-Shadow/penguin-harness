@@ -37,6 +37,8 @@ export function Nav() {
   const sectionLabel: Record<(typeof SECTION_IDS)[number], string> = {
     highlights: S.nav.highlights,
     quickstart: S.nav.quickstart,
+    cases: S.nav.cases,
+    scenarios: S.nav.scenarios,
     benchmark: S.nav.benchmark,
     contract: S.nav.contract,
     features: S.nav.features,
@@ -152,7 +154,7 @@ export function Nav() {
         </Link>
 
         <nav
-          className="relative ml-4 hidden items-center gap-0.5 md:flex"
+          className="relative ml-4 hidden items-center gap-0.5 xl:flex"
           aria-label="Primary"
           onMouseLeave={hidePill}
         >
@@ -184,7 +186,7 @@ export function Nav() {
             onClick={() => setOpen((v) => !v)}
             aria-label={open ? S.nav.closeMenu : S.nav.openMenu}
             aria-expanded={open}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-transparent text-gray-600 transition-colors hover:border-gray-200 hover:bg-gray-50 md:hidden dark:text-gray-400 dark:hover:border-gray-800 dark:hover:bg-gray-900"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-transparent text-gray-600 transition-colors hover:border-gray-200 hover:bg-gray-50 xl:hidden dark:text-gray-400 dark:hover:border-gray-800 dark:hover:bg-gray-900"
           >
             {open ? <XIcon className="h-5 w-5" /> : <MenuIcon className="h-5 w-5" />}
           </button>
@@ -193,7 +195,7 @@ export function Nav() {
 
       {open && (
         <nav
-          className="anim-fade border-t border-gray-200 bg-white px-4 py-2 md:hidden dark:border-gray-800 dark:bg-gray-950"
+          className="anim-fade border-t border-gray-200 bg-white px-4 py-2 xl:hidden dark:border-gray-800 dark:bg-gray-950"
           aria-label="Mobile"
         >
           <div className="flex flex-col py-1">{mobileLinks}</div>

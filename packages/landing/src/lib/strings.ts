@@ -21,6 +21,8 @@ export const zh = {
   nav: {
     highlights: "特色",
     quickstart: "快速开始",
+    cases: "案例",
+    scenarios: "应用场景",
     benchmark: "评测",
     contract: "CONTRACT.md",
     features: "功能",
@@ -48,14 +50,15 @@ export const zh = {
   hero: {
     badge: "让 Agent 为你构建 Agent",
     /**
-     * Rotating headline: {titlePrefix}{word}{titleSuffix}{titleSuffixNoWrap} — the
-     * word cycles through titleWords with a gaussian-blur crossfade; titleSuffixNoWrap
-     * renders as an unbreakable span so CJK line-breaking lands on the phrase boundary.
+     * Headline: {titlePrefix}<nowrap>{titleNoWrap}{word}{titleSuffix}</nowrap>, the word
+     * rotating through titleWords (桌面/服务器 — where the builder lives; the README
+     * states Desktop only). The nowrap span pins the wrap point in front of it, so a
+     * break never splits "Agent Builder" / "Lives on Your Desktop" mid-phrase.
      */
-    titlePrefix: "专为",
-    titleWords: ["开发者", "企业"],
-    titleSuffix: "设计的",
-    titleSuffixNoWrap: "高效自进化 Harness",
+    titlePrefix: "全自动 Agent 构建器，",
+    titleNoWrap: "住在你的",
+    titleWords: ["桌面", "服务器"],
+    titleSuffix: "上",
     keywords: ["轻量", "高效", "开源"],
     ctaPrimary: "快速开始",
     ctaGithub: "GitHub",
@@ -103,8 +106,10 @@ export const zh = {
   compare: {
     eyebrow: "对比 LangChain",
     title: "1× 与 100× 的差距",
-    subtitle:
-      "使用 LangChain，以 1 倍速度人工构建 Agent；使用 PenguinHarness，以 100 倍速度用 Agent 构建 Agent。",
+    subtitle: [
+      "使用 LangChain，以 1 倍速度人工构建 Agent；",
+      "使用 PenguinHarness，以 100 倍速度用 Agent 构建 Agent。",
+    ],
     langchain: {
       name: "LangChain",
       speed: "1×",
@@ -208,6 +213,24 @@ export const zh = {
     ],
   },
 
+  scenarios: {
+    eyebrow: "应用场景",
+    title: "从体检中心到工厂车间",
+    subtitle: "都是已经上线的真实部署，不是概念演示。",
+    items: [
+      {
+        title: "体检报告质控",
+        alt: "体检中心的 CT 检查室",
+        body: "一家体检机构把报告质控交给了 Agent，跑在本地部署的 Qwen3 14B 上，数据不出机房。过去一轮人工复核要 30 分钟，现在一分钟自动过 30 份，核查结论与医学专家基本一致，审核产能提升数倍。",
+      },
+      {
+        title: "产线设备巡检",
+        alt: "自动化半导体生产线",
+        body: "一家制造企业在各条流水线上部署巡检 Agent，全天候盯着设备状态，异常时先尝试自动恢复。停机时间减少 65%，产出提升约 2 倍。",
+      },
+    ],
+  },
+
   contract: {
     eyebrow: "稳定进化的契约",
     title: "CONTRACT.md",
@@ -260,7 +283,7 @@ export const zh = {
 
   benchmark: {
     eyebrow: "Benchmark",
-    title: "各用各的旗舰模型，效果同级，成本低一到两个数量级",
+    title: "以几十分之一的成本，跑出优异的效果",
     subtitle:
       "每个产品搭配它常用的模型，与 Claude Code、OpenAI Codex 在两套题库上正面对比：准确率同级，花的钱差出几十倍。",
     higherBetter: "越高越好",

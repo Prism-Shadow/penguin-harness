@@ -13,6 +13,8 @@ export const zh = {
     // (same items, same order) so the two sites link into each other seamlessly.
     highlights: "特色",
     quickstart: "快速开始",
+    cases: "案例",
+    scenarios: "应用场景",
     benchmark: "评测",
     contract: "CONTRACT.md",
     features: "功能",
