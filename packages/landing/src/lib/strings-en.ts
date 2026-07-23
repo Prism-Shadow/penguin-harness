@@ -48,12 +48,12 @@ export const en: Strings = {
 
   hero: {
     badge: "Agents building agents",
-    titlePrefix: "The Automated Agent ",
-    titleWords: ["Builder", "Tuner", "Evaluator"],
+    // The trailing space lives in the PREFIX (a breakable space before the nowrap
+    // span) — inside titleNoWrap it would glue "Builder" to the unbreakable chunk.
+    titlePrefix: "Your Automated Agent Builder ",
+    titleNoWrap: "Lives on Your ",
+    titleWords: ["Desktop", "Server"],
     titleSuffix: "",
-    taglinePrefix: "Your Desktop AI Agent for ",
-    taglineWords: ["Building", "Fine-Tuning", "Evaluating"],
-    taglineSuffix: " AI Agents",
     keywords: ["Lightweight", "Efficient", "Open Source"],
     ctaPrimary: "Get started",
     ctaGithub: "GitHub",

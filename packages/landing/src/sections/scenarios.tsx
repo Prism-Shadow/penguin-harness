@@ -1,13 +1,15 @@
 /**
- * Deployment scenarios as an auto-cycling stacked deck: the front card holds for
- * ROTATE_MS (long enough to actually read the paragraph), then swaps with the card
- * peeking out behind it (both live in one grid cell, so the container takes the
- * tallest card's height and nothing jumps). Hovering the deck pauses the timer —
- * nobody loses their place mid-read; clicking the peeking card (or a dot) switches
- * manually. The back card is a pointer-only shortcut and stays aria-hidden — dots
- * carry the accessible switching — and prefers-reduced-motion disables auto-advance.
- * SHOTS is index-aligned with S.scenarios.items; the photos are theme-agnostic, so
- * a single asset serves light and dark (unlike the Cases screenshots).
+ * Deployment scenarios as an auto-cycling overlapped pair: the front card sits
+ * left at 92% width, the other slides right so its strip peeks past the front
+ * card's right edge, tucked underneath — on swap the two cross horizontally
+ * (both live in one grid cell, so the container takes the tallest card's height
+ * and nothing jumps). The front card holds for ROTATE_MS (long enough to actually
+ * read the paragraph); hovering the deck pauses the timer — nobody loses their
+ * place mid-read; clicking the peeking card (or a dot) switches manually. The
+ * covered card is a pointer-only shortcut and stays aria-hidden — dots carry the
+ * accessible switching — and prefers-reduced-motion disables auto-advance.
+ * SHOTS is index-aligned with S.scenarios.items; the photos are theme-agnostic,
+ * so a single asset serves light and dark (unlike the Cases screenshots).
  */
 import { useEffect, useState } from "react";
 import { S } from "../lib/strings";
@@ -42,8 +44,7 @@ export function Scenarios() {
         onMouseEnter={() => setPaused(true)}
         onMouseLeave={() => setPaused(false)}
       >
-        {/* pt-6 gives the back card's peeking top edge room inside the wrapper */}
-        <div className="grid pt-6">
+        <div className="grid">
           {items.map((c, i) => {
             const front = i === active;
             return (
@@ -53,10 +54,13 @@ export function Scenarios() {
                 // The peeking card is itself the switch target (its visible strip is
                 // small, so the whole card surface accepts the click).
                 onClick={front ? undefined : () => setActive(i)}
-                className={`col-start-1 row-start-1 overflow-hidden rounded-2xl border bg-white transition-all duration-500 dark:bg-gray-900 ${
+                // Cards are 92% wide in a shared cell: the front one holds the left
+                // edge; the covered one shifts its own 8.7% (= the container's 8%)
+                // so exactly that strip peeks past the front card's right edge.
+                className={`col-start-1 row-start-1 w-[92%] overflow-hidden rounded-2xl border bg-white transition-all duration-500 dark:bg-gray-900 ${
                   front
-                    ? "z-10 border-gray-200 opacity-100 dark:border-gray-800"
-                    : "z-0 -translate-y-6 scale-[0.96] cursor-pointer border-gray-200/70 opacity-60 dark:border-gray-800/70"
+                    ? "z-10 translate-x-0 border-gray-200 opacity-100 dark:border-gray-800"
+                    : "z-0 translate-x-[8.7%] scale-[0.96] cursor-pointer border-gray-200/70 opacity-60 dark:border-gray-800/70"
                 }`}
               >
                 <div className="md:flex md:min-h-[340px] md:items-stretch">

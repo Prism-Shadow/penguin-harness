@@ -4,9 +4,7 @@
 
 <h1 align="center">PenguinHarness</h1>
 
-<p align="center"><b>With LangChain, you build agents by hand — at 1× speed.<br />With PenguinHarness, agents build agents — at 100×.</b></p>
-
-<p align="center">Your Desktop AI Agent for Building/Fine-Tuning/Evaluating AI Agents</p>
+<p align="center"><b>Your Automated Agent Builder Lives on Your Desktop</b></p>
 
 <p align="center">Lightweight · Efficient · Open Source</p>
 
@@ -37,6 +35,8 @@
 <p align="center">English | <a href="README.zh.md">简体中文</a></p>
 
 ## Why PenguinHarness
+
+> With LangChain, you build agents by hand — at 1× speed.<br />With PenguinHarness, agents build agents — at 100×.
 
 Three reasons, in deliberate order — from task quality, to how agents get built, to how they keep improving.
 

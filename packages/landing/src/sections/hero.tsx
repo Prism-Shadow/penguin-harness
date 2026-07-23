@@ -1,10 +1,8 @@
 /**
- * Hero: enlarged logo + product name, the slogan inside the pill badge, then a
- * one-line headline around "Automated Agent Builder" and the desktop-AI-Agent
- * subtitle — each with a rotating word that crossfades through a gaussian blur
- * (Builder/Tuner/Evaluator · 构建/调优/评测; both rotators share ROTATE_MS and
- * word count, so they tick in phase) — three keywords, the install one-liner and
- * stats. The rotating word is a stacked inline-grid so line width never jumps.
+ * Hero: enlarged logo + product name, the slogan inside the pill badge, then the
+ * one-line headline whose rotating word crossfades through a gaussian blur
+ * (Desktop <-> Server / 桌面 <-> 服务器), three keywords, the install one-liner
+ * and stats. The rotating word is a stacked inline-grid so line width never jumps.
  */
 import { Fragment, useEffect, useState } from "react";
 import { Link } from "react-router";
@@ -59,27 +57,24 @@ export function Hero() {
           <span className="h-1.5 w-1.5 rounded-full bg-brand-500" aria-hidden="true" />
           {S.hero.badge}
         </p>
+        {/* No text-balance: balance may break inside the breakable prefix ("…Agent /
+            Builder…"); greedy wrapping + the nowrap span pins the desktop break to
+            "Your Automated Agent Builder / Lives on Your Desktop". */}
         <h1
-          className="anim-rise mx-auto mt-6 max-w-full text-3xl font-semibold tracking-tight text-balance sm:text-5xl"
+          className="anim-rise mx-auto mt-6 max-w-full text-3xl font-semibold tracking-tight sm:text-5xl"
           style={{ animationDelay: "80ms" }}
         >
           {S.hero.titlePrefix}
-          <RotatingWord words={S.hero.titleWords} />
-          {S.hero.titleSuffix}
+          <span className="whitespace-nowrap">
+            {S.hero.titleNoWrap}
+            <RotatingWord words={S.hero.titleWords} />
+            {S.hero.titleSuffix}
+          </span>
         </h1>
 
-        <p
-          className="anim-rise mx-auto mt-6 max-w-2xl text-base font-medium text-gray-600 sm:text-lg dark:text-gray-300"
-          style={{ animationDelay: "140ms" }}
-        >
-          {S.hero.taglinePrefix}
-          <RotatingWord words={S.hero.taglineWords} />
-          {S.hero.taglineSuffix}
-        </p>
-
         <div
-          className="anim-rise mt-5 flex items-center justify-center gap-4 text-sm font-medium text-gray-500 dark:text-gray-400"
-          style={{ animationDelay: "170ms" }}
+          className="anim-rise mt-6 flex items-center justify-center gap-4 text-base font-medium text-gray-600 sm:text-lg dark:text-gray-300"
+          style={{ animationDelay: "140ms" }}
         >
           {S.hero.keywords.map((keyword, i) => (
             <Fragment key={keyword}>

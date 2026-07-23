@@ -50,17 +50,15 @@ export const zh = {
   hero: {
     badge: "让 Agent 为你构建 Agent",
     /**
-     * One-line headline around "Automated Agent Builder": {titlePrefix}{word}{titleSuffix},
-     * the word rotating through titleWords — in phase with the subtitle's rotator (same
-     * length, same interval), so 构建/调优/评测 tick together across both lines.
+     * Headline: {titlePrefix}<nowrap>{titleNoWrap}{word}{titleSuffix}</nowrap>, the word
+     * rotating through titleWords (桌面/服务器 — where the builder lives; the README
+     * states Desktop only). The nowrap span pins the wrap point in front of it, so a
+     * break never splits "Agent Builder" / "Lives on Your Desktop" mid-phrase.
      */
-    titlePrefix: "全自动",
-    titleWords: ["构建", "调优", "评测"],
-    titleSuffix: " Agent",
-    /** Subtitle: {taglinePrefix}{word}{taglineSuffix} — the word cycles through taglineWords (构建/调优/评测). */
-    taglinePrefix: "你的桌面 AI Agent，为你",
-    taglineWords: ["构建", "调优", "评测"],
-    taglineSuffix: " AI Agent",
+    titlePrefix: "全自动 Agent 构建器，",
+    titleNoWrap: "住在你的",
+    titleWords: ["桌面", "服务器"],
+    titleSuffix: "上",
     keywords: ["轻量", "高效", "开源"],
     ctaPrimary: "快速开始",
     ctaGithub: "GitHub",

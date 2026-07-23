@@ -4,9 +4,7 @@
 
 <h1 align="center">PenguinHarness</h1>
 
-<p align="center"><b>使用 LangChain，以 1 倍速度人工构建 Agent；<br />使用 PenguinHarness，以 100 倍速度用 Agent 构建 Agent。</b></p>
-
-<p align="center">你的桌面 AI Agent，为你构建 / 调优 / 评测 AI Agent</p>
+<p align="center"><b>全自动 Agent 构建器，住在你的桌面上</b></p>
 
 <p align="center">轻量 · 高效 · 开源</p>
 
@@ -37,6 +35,8 @@
 <p align="center"><a href="README.md">English</a> | 简体中文</p>
 
 ## 为什么选择 PenguinHarness
+
+> 使用 LangChain，以 1 倍速度人工构建 Agent；<br />使用 PenguinHarness，以 100 倍速度用 Agent 构建 Agent。
 
 三个递进的理由——从任务效果，到构建方式，再到进化能力。
 
