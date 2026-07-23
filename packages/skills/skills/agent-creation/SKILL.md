@@ -142,9 +142,13 @@ Before returning success, write the intended YAML document to a temporary file a
 python3 "<this-skill-dir>/scripts/validate_handoff.py" "<handoff.yaml>" \
   --workflow-id "<workflow_id>" --project-id "<project_id>" \
   --project-dir "<project_dir>" --agent-id "<agent_id>"
+python3 "<this-skill-dir>/scripts/audit_agent.py" \
+  "<project_dir>" "<agent_id>" "<handoff.yaml>"
 ```
 
-Return success only when the validator prints `valid`. Do not reinterpret, rename, omit, or add
+When creating a later Test Agent, append one `--forbid-skill` argument for each evaluation-only
+Skill excluded by the request. Return success only when both checks print `valid`. Do not
+reinterpret, rename, omit, or add
 protocol fields after validation.
 
 On success:

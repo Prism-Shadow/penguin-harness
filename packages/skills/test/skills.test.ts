@@ -142,9 +142,11 @@ describe("agent tuning workflow contracts", () => {
   it("bundles deterministic delegated-phase validators", async () => {
     for (const relativePath of [
       "agent-creation/scripts/validate_handoff.py",
+      "agent-creation/scripts/audit_agent.py",
       "benchmark-design/scripts/validate_handoff.py",
       "benchmark-design/scripts/audit_benchmark.py",
       "agent-optimization/scripts/validate_handoffs.py",
+      "agent-optimization/scripts/validate_result.py",
     ]) {
       const raw = await fs.readFile(path.join(skillsRoot, relativePath), "utf8");
       expect(raw, relativePath).toContain("#!/usr/bin/env python3");

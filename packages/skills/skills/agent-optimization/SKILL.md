@@ -293,6 +293,18 @@ stop_reason: target_reached
 protocol_end: true
 ```
 
+Before returning `optimized`, write the intended terminal document to a temporary YAML file and
+run:
+
+```bash
+python3 "<this-skill-dir>/scripts/validate_result.py" "<handoff.yaml>" \
+  --workflow-id "<workflow_id>" --project-id "<project_id>" \
+  --agent-id "<test_agent_id>" --benchmark-id "<benchmark_id>" \
+  --target-score "<target>"
+```
+
+Return `optimized` only when it prints `valid`.
+
 If the frozen reference already meets the optimization target, return the same identity and digest
 fields with `status: already_met`, `target_met: true`, `final_version` and `final_score` equal to
 the baseline, `score_curve: [<baseline>]`, `accepted_changes: []`, `accepted_rounds: 0`, and
