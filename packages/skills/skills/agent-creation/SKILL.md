@@ -3,8 +3,8 @@ name: agent-creation
 description: Turn a user requirement into a concrete agent — write the target agent's AGENTS.md and install the skills it needs.
 short_description: Turn a requirement into a working agent.
 short_description_zh: 把需求变成可用的 Agent。
-version: 9
-updated: 2026-07-23T16:56:05Z
+version: 10
+updated: 2026-07-23T17:53:44Z
 ---
 
 # Agent Creation
@@ -93,6 +93,12 @@ ignore them and never encode them in the target State.
 
 In the target's `agent_state/system_config.yaml`, set the top-level `name:` and `description:` fields so the agent is recognizable in lists. For an existing Agent, edit only these two fields. For a brand-new Agent, also set its canonical top-level `version` to `1`; do not inherit a later State version from the default Agent template.
 
+For a brand-new Agent copied from the default template, the only permitted
+`system_config.yaml` differences are the top-level `version`, `name`, and `description`. Preserve
+all Model, tool, prompt, limit, and runtime fields in meaning. Do not repair, normalize, rewrite,
+or improve a copied tool description or configuration entry while creating the Agent; a discovered
+template defect is outside this Skill.
+
 ## Creating a brand-new agent
 
 Prefer configuring an agent the user already created. If you must create one from scratch: pick a short id (letters, digits, `_`, `-`), first verify that the canonical `TARGET` does not exist, copy the default agent's `system_config.yaml` as the base, and create the layout described above:
@@ -129,6 +135,17 @@ and the exact default-Agent files needed as templates or Skill sources, and crea
 target in one pass. Do not run CLI help, enumerate Models, inspect Project configuration, search
 for prior pipeline artifacts, or narrate a plan. A caller must treat any assistant text before or
 after the single YAML document as a malformed phase response.
+
+Before returning success, write the intended YAML document to a temporary file and run:
+
+```bash
+python3 "<this-skill-dir>/scripts/validate_handoff.py" "<handoff.yaml>" \
+  --workflow-id "<workflow_id>" --project-id "<project_id>" \
+  --project-dir "<project_dir>" --agent-id "<agent_id>"
+```
+
+Return success only when the validator prints `valid`. Do not reinterpret, rename, omit, or add
+protocol fields after validation.
 
 On success:
 

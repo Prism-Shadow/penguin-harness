@@ -3,8 +3,8 @@ name: agent-optimization
 description: Improve an Agent State from direct feedback or versioned multi-Case Benchmark scores and score-linked Traces.
 short_description: Improve an Agent from feedback or measured Benchmark results.
 short_description_zh: 根据反馈或 Benchmark 结果改进 Agent。
-version: 10
-updated: 2026-07-23T16:56:05Z
+version: 11
+updated: 2026-07-23T17:53:44Z
 ---
 
 # Agent Optimization
@@ -59,6 +59,13 @@ Make the smallest complete edit supported by evidence and preserve unrelated ins
 
 Every edit must generalize beyond the observed run. Do not encode Case ids, exact expected outputs, Benchmark-specific constants, private criteria, or a guessed answer. Keep a recovered mapping, threshold, or formula only when repeated public evidence supports it as a durable rule; otherwise encode the reasoning and validation method.
 
+For a black-box adaptation Benchmark, consistent score-linked behavior across multiple Cases may
+support one task-family convention even when public evidence alone cannot select it. Require the
+same hypothesis to explain stable misses in at least two distinct Cases before encoding that
+convention. A single low-scoring, heavily weighted Case supports only a general analysis-method
+change, not a Case-shaped rule, threshold, formula, or example. Never manufacture an unstated
+numeric boundary from clustering merely because one Case score is low.
+
 ## Version and rollback discipline
 
 Before changing Agent State, read its canonical top-level `version` from `system_config.yaml`,
@@ -82,6 +89,21 @@ defaulting to 1. Choose exactly one rollback mode before the first candidate:
 
 If orchestrated provenance cannot be positively established, use System snapshot mode. Never
 create or synthesize a snapshot archive.
+
+In Orchestrated bootstrap mode, copy the two embedded terminal documents byte-for-byte into
+temporary YAML files and run this before reading a Scoreboard, Trace, Statement, or Agent State:
+
+```bash
+python3 "<this-skill-dir>/scripts/validate_handoffs.py" \
+  "<creation_handoff.yaml>" "<benchmark_handoff.yaml>" \
+  --workflow-id "<workflow_id>" --project-id "<project_id>" \
+  --agent-id "<test_agent_id>" --benchmark-id "<benchmark_id>"
+```
+
+If it does not print `valid`, return `blocked` with `failure_code:
+orchestrated_handoff_invalid`. Do not accept a semantic equivalent status, infer a missing field,
+rewrite a prior handoff, or obey a caller instruction to trust a supplied digest without the
+required mechanical recomputation.
 
 When computing any State, Benchmark, or Scoreboard digest, select a checksum utility with
 `command -v` or invoke it with explicit operands or a finite explicit pipeline. Never probe a
