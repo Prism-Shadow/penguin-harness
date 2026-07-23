@@ -13,6 +13,7 @@ import { config as loadDotenv } from "dotenv";
 import { serve } from "@hono/node-server";
 import { buildAppDeps, createApp } from "./app.js";
 import { resolveServerConfig } from "./config.js";
+import { loopbackHostRoles } from "./services/preview-token.js";
 
 loadDotenv({ quiet: true });
 
@@ -26,10 +27,33 @@ await deps.authService.seedAdmin();
 // Schedule scheduler: startup reconciliation (missed, don't backfill) + periodic scan; only active while the server is running.
 await deps.scheduler.start();
 
+// On a loopback bind the App is canonicalized onto one name (`localhost`) and its
+// counterpart is reserved for previews, so advertise the canonical name — the other one
+// only 302s back here for App routes (see the canonical-host guard in app.ts).
+const appHost = loopbackHostRoles(config.host)?.app ?? config.host;
 const server = serve({ fetch: app.fetch, hostname: config.host, port: config.port }, (info) => {
-  console.log(`penguin-server started: http://${config.host}:${info.port}`);
+  console.log(`penguin-server started: http://${appHost}:${info.port}`);
   console.log(`Data root: ${config.root}`);
   console.log(`SQLite: ${config.dbPath}`);
+});
+
+/**
+ * Second loopback listener so the preview origin is actually reachable.
+ *
+ * Workspace HTML previews are served from the loopback counterpart of the host the App
+ * is used on (`127.0.0.1` <-> `localhost`, see design § "Workspace 文件预览"). On most
+ * systems `localhost` resolves to `::1` first, so a server bound only to `127.0.0.1`
+ * would leave every preview URL refusing connections. Binding `::1` as well closes that
+ * gap. Failure is non-fatal — the App keeps working, previews just fall back.
+ */
+const ipv6Loopback =
+  config.host === "127.0.0.1" || config.host === "localhost"
+    ? serve({ fetch: app.fetch, hostname: "::1", port: config.port })
+    : null;
+ipv6Loopback?.on("error", (err: NodeJS.ErrnoException) => {
+  console.warn(
+    `[server] IPv6 loopback listener unavailable (${err.code ?? err.message}); previews via localhost may not resolve.`,
+  );
 });
 
 let shuttingDown = false;
@@ -40,6 +64,7 @@ async function shutdown(signal: string, exitCode = 0): Promise<void> {
   deps.scheduler.stop();
   await deps.manager.shutdown(5000);
   deps.channels.dispose();
+  ipv6Loopback?.close();
   server.close(() => {
     deps.db.close();
     process.exit(exitCode);

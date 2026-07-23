@@ -13,6 +13,13 @@ import { ApiError, setUnauthorizedHandler } from "../api/client";
 interface AuthContextValue {
   /** undefined = initializing; null = not logged in. */
   user: UserInfo | null | undefined;
+  /**
+   * Whether Workspace HTML previews open on a separate origin. False means this
+   * deployment falls back to the same-origin sandbox, where `localStorage`, cookies and
+   * third-party embeds do not work — the Files panel warns before opening. Comes from
+   * /api/me because it depends on the host the browser is using.
+   */
+  previewIsolated: boolean;
   login: (userId: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   /** Refetch /api/me (e.g. to refresh the passwordIsInitial flag after a password change). */
@@ -23,6 +30,9 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserInfo | null | undefined>(undefined);
+  // Assume isolated until told otherwise: the warning is the exceptional state, and
+  // flashing it during initialization would be noise.
+  const [previewIsolated, setPreviewIsolated] = useState(true);
 
   // Any API returning 401 (session expired / database rebuilt) clears the current user, and
   // RequireAuth redirects back to the login page.
@@ -38,7 +48,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     api
       .getMe()
       .then((res) => {
-        if (!cancelled) setUser(res.user);
+        if (cancelled) return;
+        setUser(res.user);
+        setPreviewIsolated(res.previewIsolated);
       })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -66,10 +78,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(async () => {
     const res = await api.getMe();
     setUser(res.user);
+    setPreviewIsolated(res.previewIsolated);
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, refresh }}>{children}</AuthContext.Provider>
+    <AuthContext.Provider value={{ user, previewIsolated, login, logout, refresh }}>
+      {children}
+    </AuthContext.Provider>
   );
 }
 

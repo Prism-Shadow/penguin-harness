@@ -63,6 +63,15 @@ export interface AuthResponse {
 
 export interface MeResponse {
   user: UserInfo;
+  /**
+   * Whether Workspace HTML previews open on a separate origin (see design §
+   * "Workspace 文件预览"). False means this deployment has no usable preview origin —
+   * the App is reached on something other than a loopback name and
+   * PENGUIN_PREVIEW_ORIGIN is unset — so previews fall back to the same-origin sandbox,
+   * where `localStorage`, cookies and third-party embeds do not work. Computed per
+   * request, since it depends on the host the caller is using.
+   */
+  previewIsolated: boolean;
 }
 
 export interface PasswordChangeRequest {

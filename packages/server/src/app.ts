@@ -67,6 +67,14 @@ import { SessionService } from "./services/session-service.js";
 import { TraceService } from "./services/trace-service.js";
 import { UsageService } from "./services/usage-service.js";
 import { WorkspaceFilesService } from "./services/workspace-files-service.js";
+import {
+  createPreviewTokenSigner,
+  hostOnly,
+  loopbackHostRoles,
+  requestAuthority,
+} from "./services/preview-token.js";
+import type { PreviewTokenSigner } from "./services/preview-token.js";
+import { previewRoutes } from "./http/routes/preview.js";
 
 /** Request body size limit (tasks may carry data: images): 20MB. */
 const MAX_BODY_BYTES = 20 * 1024 * 1024;
@@ -86,6 +94,8 @@ export interface AppDeps {
   traceService: TraceService;
   usageService: UsageService;
   workspaceFiles: WorkspaceFilesService;
+  /** Signs/verifies short-lived Workspace preview tokens (separate preview origin). */
+  previewTokens: PreviewTokenSigner;
   benchmarks: BenchmarkService;
   snapshots: SnapshotService;
   schedulesRepo: SchedulesRepo;
@@ -130,6 +140,9 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
   const agentService = new AgentService(config.root, agentsRepo, agentConfigService);
   const traceService = new TraceService(config.root);
   const workspaceFiles = new WorkspaceFilesService();
+  // Per-process secret: preview tokens are short-lived, so losing them on restart is
+  // harmless and there is nothing to persist or rotate.
+  const previewTokens = createPreviewTokenSigner();
   const benchmarks = new BenchmarkService(config.root);
   const snapshots = new SnapshotService(config.root);
   const usageService = new UsageService(
@@ -235,6 +248,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     traceService,
     usageService,
     workspaceFiles,
+    previewTokens,
     benchmarks,
     snapshots,
     schedulesRepo,
@@ -274,6 +288,32 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
     deps.log(`${c.req.method} ${c.req.path} ${c.res.status} ${ms}ms`);
   });
 
+  // Canonical-host guard (loopback binds only): the App is served on one loopback name and
+  // previews on its counterpart, but the SAME process answers on both. Without this, Agent-
+  // written preview HTML on the preview host could call /api same-origin and — if a session
+  // cookie had ever been set on that host — act as the user. So the preview host serves ONLY
+  // /preview/*: /api answers 401 (it never sets or honors a cookie there, closing both the
+  // login and the stale-cookie paths), and everything else 302s to the canonical App host.
+  // See design § "Workspace 文件预览". Off when PENGUIN_PREVIEW_ORIGIN is set: previews then
+  // use that origin rather than the loopback counterpart, so 127.0.0.1 is an ordinary App
+  // access point and must not be locked down — deployments enforce the equivalent at the
+  // reverse proxy (route only /preview/* to the App on the preview origin).
+  const previewRoles = deps.config.previewOrigin ? null : loopbackHostRoles(deps.config.host);
+  if (previewRoles) {
+    app.use("*", async (c, next) => {
+      const host = hostOnly(requestAuthority(c.req.url, c.req.header("host"))).toLowerCase();
+      if (host === previewRoles.preview && !c.req.path.startsWith("/preview/")) {
+        if (c.req.path.startsWith("/api/")) {
+          throw new HttpError(401, "unauthorized", "The API is not served on the preview host.");
+        }
+        const url = new URL(c.req.url);
+        url.hostname = previewRoles.app;
+        return c.redirect(url.toString(), 302);
+      }
+      await next();
+    });
+  }
+
   // API common defenses: request body size cap (20MB) and write-request Content-Type (one of the CSRF MVP defenses).
   app.use("/api/*", async (c, next) => {
     const contentLength = Number(c.req.header("content-length") ?? 0);
@@ -310,6 +350,12 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   app.route("/api/projects/:projectId/agents/:agentId/sessions", agentSessionsRoutes(deps));
   app.route("/api/projects/:projectId/usage", usageRoutes(deps));
   app.route("/api/sessions", sessionsRoutes(deps));
+
+  // Workspace HTML preview on the separate preview origin: deliberately outside /api and
+  // outside the auth middleware — that origin never receives the session cookie, so the
+  // signed token in the path is the only credential. Mounted before static hosting so the
+  // SPA fallback cannot swallow it. See design § "Workspace 文件预览".
+  app.route("/preview", previewRoutes(deps));
 
   // Static hosting (production): serves the frontend build output when webDist exists, with SPA fallback to index.html.
   if (fs.existsSync(deps.config.webDist)) {

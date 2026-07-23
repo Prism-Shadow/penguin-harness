@@ -25,8 +25,11 @@ export function testConfig(root: string): ServerConfig {
   return {
     root,
     host: "127.0.0.1",
-    port: 0,
+    // Nothing listens in tests, but the value is not inert: preview URLs are built from
+    // the server's own port, so keep it realistic rather than 0.
+    port: 7364,
     dbPath: ":memory:",
+    previewOrigin: null,
     // Points to a nonexistent directory: static hosting is disabled in tests.
     webDist: path.join(root, "__no_web_dist__"),
     authSessionTtlMs: 7 * DAY_MS,
@@ -44,13 +47,15 @@ export interface TestApp {
 export interface TestAppOptions extends BuildDepsOverrides {
   /** Runs before seeding the admin (for scenarios pre-populating a default_project config as the CLI would). */
   beforeSeed?: (root: string) => Promise<void>;
+  /** Overrides merged onto the default test ServerConfig (e.g. `previewOrigin`). */
+  config?: Partial<ServerConfig>;
 }
 
 export async function createTestApp(options: TestAppOptions = {}): Promise<TestApp> {
-  const { beforeSeed, ...overrides } = options;
+  const { beforeSeed, config, ...overrides } = options;
   const root = await makeTempRoot();
   if (beforeSeed) await beforeSeed(root);
-  const deps = buildAppDeps(testConfig(root), { log: () => {}, ...overrides });
+  const deps = buildAppDeps({ ...testConfig(root), ...config }, { log: () => {}, ...overrides });
   // Consistent with the startup entrypoint: seed the built-in admin (owning default_project).
   await deps.authService.seedAdmin();
   const app = createApp(deps);
