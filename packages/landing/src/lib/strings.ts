@@ -21,6 +21,8 @@ export const zh = {
   nav: {
     highlights: "特色",
     quickstart: "快速开始",
+    cases: "案例",
+    scenarios: "应用场景",
     benchmark: "评测",
     contract: "CONTRACT.md",
     features: "功能",
@@ -50,7 +52,11 @@ export const zh = {
     /** Two-line comparison headline: line 1 sets the LangChain baseline, line 2 answers with 100×. */
     titleLine1: "使用 LangChain，以 1 倍速度人工构建 Agent；",
     titleLine2: "使用 PenguinHarness，以 100 倍速度用 Agent 构建 Agent。",
-    tagline: "全自动构建 Agent 的桌面 Agent，连接 1,000+ 模型。开源、本地优先、递归自我进化。",
+    /** Subtitle: {taglinePrefix}{word}{taglineSuffix} — the word cycles through taglineWords (构建/调优/评测). */
+    taglinePrefix: "你的桌面 AI Agent，为你",
+    taglineWords: ["构建", "调优", "评测"],
+    taglineSuffix: " AI Agent",
+    keywords: ["轻量", "高效", "开源"],
     ctaPrimary: "快速开始",
     ctaGithub: "GitHub",
     installHint: "一行命令安装（Linux / macOS，x64 / arm64，内嵌 Node 运行时，解压即用）",
@@ -97,8 +103,10 @@ export const zh = {
   compare: {
     eyebrow: "对比 LangChain",
     title: "1× 与 100× 的差距",
-    subtitle:
-      "使用 LangChain，以 1 倍速度人工构建 Agent；使用 PenguinHarness，以 100 倍速度用 Agent 构建 Agent。",
+    subtitle: [
+      "使用 LangChain，以 1 倍速度人工构建 Agent；",
+      "使用 PenguinHarness，以 100 倍速度用 Agent 构建 Agent。",
+    ],
     langchain: {
       name: "LangChain",
       speed: "1×",
@@ -202,24 +210,24 @@ export const zh = {
     ],
   },
 
-  customers: {
-    eyebrow: "客户案例",
-    title: "已经在真实业务里值守",
-    subtitle: "从医疗质控到工业产线，用 PenguinHarness 构建的 Agent 正在生产环境中运行。",
+  scenarios: {
+    eyebrow: "应用场景",
+    title: "从体检中心到工厂车间",
+    subtitle: "都是已经上线的真实部署，不是概念演示。",
     items: [
       {
-        title: "体检机构 · 报告质控 Agent",
+        title: "体检报告质控",
         alt: "体检中心的 CT 检查室",
-        body: "一家体检机构用 PenguinHarness 构建并调优体检报告质控 Agent，运行在本地部署的 Qwen3 14B 上：原本约 30 分钟的人工审核流程，变为每分钟自动质检 30 份报告，质量与医学专家基本持平。",
+        body: "一家体检机构把报告质控交给了 Agent，跑在本地部署的 Qwen3 14B 上，数据不出机房。过去一轮人工复核要 30 分钟，现在一分钟自动过 30 份，核查结论与医学专家基本一致，审核产能提升数倍。",
         metrics: [
-          { value: "30 份/分钟", label: "报告自动质检" },
-          { value: "数倍", label: "产出效率提升" },
+          { value: "30 份/分钟", label: "自动质检" },
+          { value: "数倍", label: "审核产能" },
         ],
       },
       {
-        title: "工业制造 · 产线巡检 Agent",
+        title: "产线设备巡检",
         alt: "自动化半导体生产线",
-        body: "一家工业制造企业按流水线构建了多个巡检 Agent，实时监控设备状态并在异常时尝试自动恢复，帮助企业把停机时间减少 65%，产出提升约 2 倍。",
+        body: "一家制造企业在各条流水线上部署巡检 Agent，全天候盯着设备状态，异常时先尝试自动恢复。停机时间减少 65%，产出提升约 2 倍。",
         metrics: [
           { value: "-65%", label: "停机时间" },
           { value: "≈2×", label: "产出提升" },
@@ -280,7 +288,7 @@ export const zh = {
 
   benchmark: {
     eyebrow: "Benchmark",
-    title: "各用各的旗舰模型，效果同级，成本低一到两个数量级",
+    title: "PenguinHarness 以几十分之一的成本，跑出优异的效果",
     subtitle:
       "每个产品搭配它常用的模型，与 Claude Code、OpenAI Codex 在两套题库上正面对比：准确率同级，花的钱差出几十倍。",
     higherBetter: "越高越好",

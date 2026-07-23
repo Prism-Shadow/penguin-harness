@@ -5,7 +5,7 @@ import { Compare } from "../sections/compare";
 import { SelfImprove } from "../sections/self-improve";
 import { Quickstart } from "../sections/quickstart";
 import { Cases } from "../sections/cases";
-import { Customers } from "../sections/customers";
+import { Scenarios } from "../sections/scenarios";
 import { Benchmark } from "../sections/benchmark";
 import { Contract } from "../sections/contract";
 import { Features } from "../sections/features";
@@ -23,7 +23,7 @@ export function HomePage() {
       <SelfImprove />
       <Quickstart />
       <Cases />
-      <Customers />
+      <Scenarios />
       <Benchmark />
       <Contract />
       <Features />

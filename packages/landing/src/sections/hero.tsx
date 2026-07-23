@@ -1,14 +1,43 @@
 /**
  * Hero: enlarged logo + product name, the slogan inside the pill badge, then the
  * two-line comparison headline (the LangChain 1× baseline over the PenguinHarness
- * 100× answer, each sentence on its own line), the tagline line, the install
- * one-liner and stats.
+ * 100× answer, each sentence on its own line), the subtitle whose rotating word
+ * crossfades through a gaussian blur (Building/Fine-Tuning/Evaluating · 构建/调优/评测),
+ * three keywords, the install one-liner and stats. The rotating word is a stacked
+ * inline-grid so line width never jumps.
  */
+import { Fragment, useEffect, useState } from "react";
 import { Link } from "react-router";
 import { S } from "../lib/strings";
 import { INSTALL_CMD, REPO_URL } from "../lib/links";
 import { CopyButton } from "../components/copy-button";
 import { ArrowRightIcon, GitHubIcon } from "../components/icons";
+
+const ROTATE_MS = 2600;
+
+function RotatingWord({ words }: { words: string[] }) {
+  const [active, setActive] = useState(0);
+  useEffect(() => {
+    if (words.length < 2) return;
+    const timer = setInterval(() => setActive((i) => (i + 1) % words.length), ROTATE_MS);
+    return () => clearInterval(timer);
+  }, [words.length]);
+  return (
+    <span className="inline-grid justify-items-center align-bottom">
+      {words.map((word, i) => (
+        <span
+          key={word}
+          aria-hidden={i !== active}
+          className={`col-start-1 row-start-1 text-brand-600 transition-[opacity,filter] duration-500 dark:text-brand-300 ${
+            i === active ? "opacity-100 blur-none" : "opacity-0 blur-[6px]"
+          }`}
+        >
+          {word}
+        </span>
+      ))}
+    </span>
+  );
+}
 
 export function Hero() {
   return (
@@ -45,11 +74,30 @@ export function Hero() {
         </h1>
 
         <p
-          className="anim-rise mx-auto mt-6 max-w-2xl text-base font-medium text-balance text-gray-600 sm:text-lg dark:text-gray-300"
+          className="anim-rise mx-auto mt-6 max-w-2xl text-base font-medium text-gray-600 sm:text-lg dark:text-gray-300"
           style={{ animationDelay: "140ms" }}
         >
-          {S.hero.tagline}
+          {S.hero.taglinePrefix}
+          <RotatingWord words={S.hero.taglineWords} />
+          {S.hero.taglineSuffix}
         </p>
+
+        <div
+          className="anim-rise mt-5 flex items-center justify-center gap-4 text-sm font-medium text-gray-500 dark:text-gray-400"
+          style={{ animationDelay: "170ms" }}
+        >
+          {S.hero.keywords.map((keyword, i) => (
+            <Fragment key={keyword}>
+              {i > 0 && (
+                <span
+                  className="h-1 w-1 rounded-full bg-gray-300 dark:bg-gray-600"
+                  aria-hidden="true"
+                />
+              )}
+              <span>{keyword}</span>
+            </Fragment>
+          ))}
+        </div>
 
         <div
           className="anim-rise mt-8 flex flex-wrap items-center justify-center gap-3"

@@ -20,6 +20,8 @@ export const en: Strings = {
   nav: {
     highlights: "Highlights",
     quickstart: "Quick start",
+    cases: "Cases",
+    scenarios: "Scenarios",
     benchmark: "Benchmark",
     contract: "CONTRACT.md",
     features: "Features",
@@ -48,8 +50,10 @@ export const en: Strings = {
     badge: "Agents building agents",
     titleLine1: "With LangChain, you build agents by hand — at 1× speed.",
     titleLine2: "With PenguinHarness, agents build agents — at 100×.",
-    tagline:
-      "Your desktop agent that automatically builds agents, connected to 1,000+ models. Open source, local-first, and recursively self-improving.",
+    taglinePrefix: "Your Desktop AI Agent for ",
+    taglineWords: ["Building", "Fine-Tuning", "Evaluating"],
+    taglineSuffix: " AI Agents",
+    keywords: ["Lightweight", "Efficient", "Open Source"],
     ctaPrimary: "Get started",
     ctaGithub: "GitHub",
     installHint:
@@ -98,8 +102,10 @@ export const en: Strings = {
   compare: {
     eyebrow: "vs. LangChain",
     title: "The gap between 1× and 100×",
-    subtitle:
-      "With LangChain, you build agents by hand — at 1× speed. With PenguinHarness, agents build agents — at 100×.",
+    subtitle: [
+      "With LangChain, you build agents by hand — at 1× speed.",
+      "With PenguinHarness, agents build agents — at 100×.",
+    ],
     langchain: {
       name: "LangChain",
       speed: "1×",
@@ -211,25 +217,24 @@ export const en: Strings = {
     ],
   },
 
-  customers: {
-    eyebrow: "Customer stories",
-    title: "Already on duty in real businesses",
-    subtitle:
-      "From medical QC to factory floors, agents built with PenguinHarness run in production.",
+  scenarios: {
+    eyebrow: "Scenarios",
+    title: "From screening centers to factory floors",
+    subtitle: "Real deployments in production — not concept demos.",
     items: [
       {
-        title: "Health screening · report-QC agent",
+        title: "Screening-report QC",
         alt: "A CT scanner room at a health screening center",
-        body: "A health screening provider built and tuned a report-QC agent with PenguinHarness, running on a locally deployed Qwen3 14B: a manual review flow that took about 30 minutes became automated checks of 30 reports a minute, with quality broadly on par with medical experts.",
+        body: "A health-screening group handed report QC to an agent on a locally deployed Qwen3 14B — data never leaves the facility. A review round that took 30 minutes by hand now clears 30 reports a minute, with findings in line with medical experts and several times the review capacity.",
         metrics: [
-          { value: "30/min", label: "reports auto-checked" },
-          { value: "Severalfold", label: "throughput gain" },
+          { value: "30/min", label: "auto-checked" },
+          { value: "Severalfold", label: "review capacity" },
         ],
       },
       {
-        title: "Manufacturing · line-inspection agents",
+        title: "Production-line inspection",
         alt: "An automated semiconductor production line",
-        body: "An industrial manufacturer built multiple inspection agents for its different production lines to watch equipment in real time and attempt automatic recovery on anomalies — cutting downtime by 65% and lifting output roughly 2×.",
+        body: "A manufacturer runs inspection agents across its production lines, watching equipment around the clock and trying automated recovery first when something goes wrong. Downtime is down 65%; output roughly doubled.",
         metrics: [
           { value: "-65%", label: "downtime" },
           { value: "≈2×", label: "output" },
@@ -292,7 +297,7 @@ export const en: Strings = {
 
   benchmark: {
     eyebrow: "Benchmark",
-    title: "Each with its flagship model — comparable quality, 1-2 orders of magnitude cheaper",
+    title: "PenguinHarness delivers outstanding results at tens of times less cost",
     subtitle:
       "Every product runs the model it is normally paired with, head-to-head against Claude Code and OpenAI Codex on two suites: comparable accuracy, tens of times the difference in spend.",
     higherBetter: "higher is better",

@@ -13,7 +13,8 @@ export function Section({
   id?: string;
   eyebrow?: string;
   title?: string;
-  subtitle?: string;
+  /** A list renders one line per entry (deliberate breaks, e.g. the 1×/100× pair); a string wraps naturally. */
+  subtitle?: string | readonly string[];
   children: ReactNode;
   className?: string;
 }) {
@@ -35,7 +36,13 @@ export function Section({
             )}
             {subtitle && (
               <p className="mt-4 text-base leading-7 text-pretty text-gray-600 dark:text-gray-400">
-                {subtitle}
+                {typeof subtitle === "string"
+                  ? subtitle
+                  : subtitle.map((line) => (
+                      <span key={line} className="block">
+                        {line}
+                      </span>
+                    ))}
               </p>
             )}
           </div>

@@ -5,6 +5,8 @@
 export const SECTION_IDS = [
   "highlights",
   "quickstart",
+  "cases",
+  "scenarios",
   "benchmark",
   "contract",
   "features",

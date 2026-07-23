@@ -6,7 +6,9 @@
 
 <p align="center"><b>With LangChain, you build agents by hand — at 1× speed.<br />With PenguinHarness, agents build agents — at 100×.</b></p>
 
-<p align="center">Your desktop agent that automatically builds agents, connected to 1,000+ models. Open source, local-first, and recursively self-improving.</p>
+<p align="center">Your Desktop AI Agent for Building/Fine-Tuning/Evaluating AI Agents</p>
+
+<p align="center">Lightweight · Efficient · Open Source</p>
 
 <p align="center">
   <a href="https://www.producthunt.com/products/penguinharness?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-penguinharness" target="_blank" rel="noopener noreferrer"><img alt="PenguinHarness - Let Agents Autonomously Build Better Agents for $0.02 | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1202577&amp;theme=light&amp;t=1784804711946" /></a>
@@ -38,7 +40,7 @@
 
 Three reasons, in deliberate order — from task quality, to how agents get built, to how they keep improving.
 
-### 1. 🏆 Comparable quality, one to two orders of magnitude cheaper
+### 1. 🏆 Outstanding results at tens of times less cost
 
 A deliberately minimal toolset over clean low-level interfaces: fewer tool calls, fewer tokens — deeply tuned for open models like DeepSeek. Each harness on the model it is normally paired with, same tasks, head-to-head:
 
