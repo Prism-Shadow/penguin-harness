@@ -49,9 +49,14 @@ export const zh = {
 
   hero: {
     badge: "让 Agent 为你构建 Agent",
-    /** Two-line comparison headline: line 1 sets the LangChain baseline, line 2 answers with 100×. */
-    titleLine1: "使用 LangChain，以 1 倍速度人工构建 Agent；",
-    titleLine2: "使用 PenguinHarness，以 100 倍速度用 Agent 构建 Agent。",
+    /**
+     * One-line headline around "Automated Agent Builder": {titlePrefix}{word}{titleSuffix},
+     * the word rotating through titleWords — in phase with the subtitle's rotator (same
+     * length, same interval), so 构建/调优/评测 tick together across both lines.
+     */
+    titlePrefix: "全自动",
+    titleWords: ["构建", "调优", "评测"],
+    titleSuffix: " Agent",
     /** Subtitle: {taglinePrefix}{word}{taglineSuffix} — the word cycles through taglineWords (构建/调优/评测). */
     taglinePrefix: "你的桌面 AI Agent，为你",
     taglineWords: ["构建", "调优", "评测"],
@@ -219,19 +224,11 @@ export const zh = {
         title: "体检报告质控",
         alt: "体检中心的 CT 检查室",
         body: "一家体检机构把报告质控交给了 Agent，跑在本地部署的 Qwen3 14B 上，数据不出机房。过去一轮人工复核要 30 分钟，现在一分钟自动过 30 份，核查结论与医学专家基本一致，审核产能提升数倍。",
-        metrics: [
-          { value: "30 份/分钟", label: "自动质检" },
-          { value: "数倍", label: "审核产能" },
-        ],
       },
       {
         title: "产线设备巡检",
         alt: "自动化半导体生产线",
         body: "一家制造企业在各条流水线上部署巡检 Agent，全天候盯着设备状态，异常时先尝试自动恢复。停机时间减少 65%，产出提升约 2 倍。",
-        metrics: [
-          { value: "-65%", label: "停机时间" },
-          { value: "≈2×", label: "产出提升" },
-        ],
       },
     ],
   },
@@ -288,7 +285,7 @@ export const zh = {
 
   benchmark: {
     eyebrow: "Benchmark",
-    title: "PenguinHarness 以几十分之一的成本，跑出优异的效果",
+    title: "以几十分之一的成本，跑出优异的效果",
     subtitle:
       "每个产品搭配它常用的模型，与 Claude Code、OpenAI Codex 在两套题库上正面对比：准确率同级，花的钱差出几十倍。",
     higherBetter: "越高越好",

@@ -48,8 +48,9 @@ export const en: Strings = {
 
   hero: {
     badge: "Agents building agents",
-    titleLine1: "With LangChain, you build agents by hand — at 1× speed.",
-    titleLine2: "With PenguinHarness, agents build agents — at 100×.",
+    titlePrefix: "The Automated Agent ",
+    titleWords: ["Builder", "Tuner", "Evaluator"],
+    titleSuffix: "",
     taglinePrefix: "Your Desktop AI Agent for ",
     taglineWords: ["Building", "Fine-Tuning", "Evaluating"],
     taglineSuffix: " AI Agents",
@@ -226,19 +227,11 @@ export const en: Strings = {
         title: "Screening-report QC",
         alt: "A CT scanner room at a health screening center",
         body: "A health-screening group handed report QC to an agent on a locally deployed Qwen3 14B — data never leaves the facility. A review round that took 30 minutes by hand now clears 30 reports a minute, with findings in line with medical experts and several times the review capacity.",
-        metrics: [
-          { value: "30/min", label: "auto-checked" },
-          { value: "Severalfold", label: "review capacity" },
-        ],
       },
       {
         title: "Production-line inspection",
         alt: "An automated semiconductor production line",
         body: "A manufacturer runs inspection agents across its production lines, watching equipment around the clock and trying automated recovery first when something goes wrong. Downtime is down 65%; output roughly doubled.",
-        metrics: [
-          { value: "-65%", label: "downtime" },
-          { value: "≈2×", label: "output" },
-        ],
       },
     ],
   },
@@ -297,7 +290,7 @@ export const en: Strings = {
 
   benchmark: {
     eyebrow: "Benchmark",
-    title: "PenguinHarness delivers outstanding results at tens of times less cost",
+    title: "Outstanding results at tens of times less cost",
     subtitle:
       "Every product runs the model it is normally paired with, head-to-head against Claude Code and OpenAI Codex on two suites: comparable accuracy, tens of times the difference in spend.",
     higherBetter: "higher is better",

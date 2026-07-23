@@ -1,12 +1,13 @@
 /**
  * Deployment scenarios as an auto-cycling stacked deck: the front card holds for
- * ROTATE_MS, then swaps with the card peeking out behind it (both live in one grid
- * cell, so the container takes the tallest card's height and nothing jumps).
- * Hovering the deck pauses the timer — nobody loses their place mid-read — and the
- * dots switch manually. The hidden card is inert, so neither Tab nor a screen
- * reader lands inside it; prefers-reduced-motion disables auto-advance entirely.
- * SHOTS is index-aligned with S.scenarios.items; the photos are theme-agnostic,
- * so a single asset serves light and dark (unlike the Cases screenshots).
+ * ROTATE_MS (long enough to actually read the paragraph), then swaps with the card
+ * peeking out behind it (both live in one grid cell, so the container takes the
+ * tallest card's height and nothing jumps). Hovering the deck pauses the timer —
+ * nobody loses their place mid-read; clicking the peeking card (or a dot) switches
+ * manually. The back card is a pointer-only shortcut and stays aria-hidden — dots
+ * carry the accessible switching — and prefers-reduced-motion disables auto-advance.
+ * SHOTS is index-aligned with S.scenarios.items; the photos are theme-agnostic, so
+ * a single asset serves light and dark (unlike the Cases screenshots).
  */
 import { useEffect, useState } from "react";
 import { S } from "../lib/strings";
@@ -15,7 +16,7 @@ import medicalShot from "../assets/case-medical-qc.webp";
 import lineShot from "../assets/case-line-inspection.webp";
 
 const SHOTS = [medicalShot, lineShot];
-const ROTATE_MS = 6000;
+const ROTATE_MS = 12000;
 
 export function Scenarios() {
   const items = S.scenarios.items;
@@ -37,48 +38,39 @@ export function Scenarios() {
       subtitle={S.scenarios.subtitle}
     >
       <div
-        className="mx-auto max-w-4xl"
+        className="mx-auto max-w-5xl"
         onMouseEnter={() => setPaused(true)}
         onMouseLeave={() => setPaused(false)}
       >
-        {/* pt-5 gives the back card's peeking top edge room inside the wrapper */}
-        <div className="grid pt-5">
+        {/* pt-6 gives the back card's peeking top edge room inside the wrapper */}
+        <div className="grid pt-6">
           {items.map((c, i) => {
             const front = i === active;
             return (
               <figure
                 key={c.title}
-                inert={!front}
+                aria-hidden={!front}
+                // The peeking card is itself the switch target (its visible strip is
+                // small, so the whole card surface accepts the click).
+                onClick={front ? undefined : () => setActive(i)}
                 className={`col-start-1 row-start-1 overflow-hidden rounded-2xl border bg-white transition-all duration-500 dark:bg-gray-900 ${
                   front
                     ? "z-10 border-gray-200 opacity-100 dark:border-gray-800"
-                    : "z-0 -translate-y-5 scale-[0.955] border-gray-200/70 opacity-60 dark:border-gray-800/70"
+                    : "z-0 -translate-y-6 scale-[0.96] cursor-pointer border-gray-200/70 opacity-60 dark:border-gray-800/70"
                 }`}
               >
-                <div className="md:flex md:items-stretch">
+                <div className="md:flex md:min-h-[340px] md:items-stretch">
                   <img
                     src={SHOTS[i]}
                     alt={c.alt}
                     loading="lazy"
-                    className="aspect-[16/9] w-full object-cover md:aspect-auto md:w-[44%]"
+                    className="aspect-[16/9] w-full object-cover md:aspect-auto md:w-[48%]"
                   />
-                  <figcaption className="p-6 md:flex md:flex-1 md:flex-col md:justify-center md:p-8">
-                    <h3 className="text-lg font-semibold">{c.title}</h3>
-                    <p className="mt-2.5 text-sm leading-6 text-gray-600 dark:text-gray-400">
+                  <figcaption className="p-7 md:flex md:flex-1 md:flex-col md:justify-center md:p-12">
+                    <h3 className="text-xl font-semibold sm:text-2xl">{c.title}</h3>
+                    <p className="mt-4 text-[15px] leading-7 text-gray-600 dark:text-gray-400">
                       {c.body}
                     </p>
-                    <dl className="mt-5 flex gap-10">
-                      {c.metrics.map((m) => (
-                        <div key={m.label}>
-                          <dd className="text-xl font-semibold tracking-tight text-brand-700 dark:text-brand-300">
-                            {m.value}
-                          </dd>
-                          <dt className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                            {m.label}
-                          </dt>
-                        </div>
-                      ))}
-                    </dl>
                   </figcaption>
                 </div>
               </figure>
@@ -87,7 +79,7 @@ export function Scenarios() {
         </div>
 
         {/* Manual switch doubles as the position indicator */}
-        <div className="mt-5 flex justify-center gap-2">
+        <div className="mt-6 flex justify-center gap-2">
           {items.map((c, i) => (
             <button
               key={c.title}

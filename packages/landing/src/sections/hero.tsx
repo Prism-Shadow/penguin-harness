@@ -1,10 +1,10 @@
 /**
- * Hero: enlarged logo + product name, the slogan inside the pill badge, then the
- * two-line comparison headline (the LangChain 1× baseline over the PenguinHarness
- * 100× answer, each sentence on its own line), the subtitle whose rotating word
- * crossfades through a gaussian blur (Building/Fine-Tuning/Evaluating · 构建/调优/评测),
- * three keywords, the install one-liner and stats. The rotating word is a stacked
- * inline-grid so line width never jumps.
+ * Hero: enlarged logo + product name, the slogan inside the pill badge, then a
+ * one-line headline around "Automated Agent Builder" and the desktop-AI-Agent
+ * subtitle — each with a rotating word that crossfades through a gaussian blur
+ * (Builder/Tuner/Evaluator · 构建/调优/评测; both rotators share ROTATE_MS and
+ * word count, so they tick in phase) — three keywords, the install one-liner and
+ * stats. The rotating word is a stacked inline-grid so line width never jumps.
  */
 import { Fragment, useEffect, useState } from "react";
 import { Link } from "react-router";
@@ -59,18 +59,13 @@ export function Hero() {
           <span className="h-1.5 w-1.5 rounded-full bg-brand-500" aria-hidden="true" />
           {S.hero.badge}
         </p>
-        {/* Two block lines rather than one balanced run: the 1×/100× contrast only lands
-            when each sentence owns a line (they still wrap internally on narrow screens). */}
-        {/* tracking-tighter (not -tight): buys the ~50px that keeps the longer English
-            sentence on a single line at desktop widths (content max 1104px). */}
         <h1
-          className="anim-rise mx-auto mt-6 max-w-full text-2xl font-semibold tracking-tighter sm:text-4xl"
+          className="anim-rise mx-auto mt-6 max-w-full text-3xl font-semibold tracking-tight text-balance sm:text-5xl"
           style={{ animationDelay: "80ms" }}
         >
-          <span className="block text-balance text-gray-500 dark:text-gray-400">
-            {S.hero.titleLine1}
-          </span>
-          <span className="mt-1 block text-balance">{S.hero.titleLine2}</span>
+          {S.hero.titlePrefix}
+          <RotatingWord words={S.hero.titleWords} />
+          {S.hero.titleSuffix}
         </h1>
 
         <p
