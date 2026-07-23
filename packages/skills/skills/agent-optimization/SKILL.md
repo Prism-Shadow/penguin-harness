@@ -3,8 +3,8 @@ name: agent-optimization
 description: Improve an Agent State from direct feedback or versioned multi-Case Benchmark scores and score-linked Traces.
 short_description: Improve an Agent from feedback or measured Benchmark results.
 short_description_zh: 根据反馈或 Benchmark 结果改进 Agent。
-version: 4
-updated: 2026-07-23T09:09:56Z
+version: 5
+updated: 2026-07-23T09:16:28Z
 ---
 
 # Agent Optimization
@@ -66,10 +66,13 @@ defaulting to 1. Choose exactly one rollback mode before the first candidate:
   the user to export the current State.
 - **Orchestrated bootstrap mode**: allowed for a target created in an earlier isolated phase of the
   same delegated pipeline only when the request supplies one `workflow_id`,
-  `target_was_absent: true`, the Creator's State digest, and the Builder's accepted reference
-  version, State digest, Benchmark-definition digest, Scoreboard digest, and evaluation identity.
-  Mechanically recompute and match every value before editing. The target must still be canonical,
-  versioned, and unchanged. Never infer bootstrap status merely from `version: 1`.
+  `target_was_absent: true`, `creator_state_version`, `creator_state_digest`,
+  `reference_version`, `reference_state_digest`, `benchmark_definition_digest`,
+  `scoreboard_digest`, `reference_time`, `reference_provider`, `reference_model_id`,
+  `reference_score`, `reference_evaluation_key`, `case_count`, `case_ids`, `runs_per_case`, and
+  `expected_cell_count`. Mechanically recompute and match every value before editing. The target
+  must still be canonical, versioned, and unchanged. Never infer bootstrap status merely from
+  `version: 1`.
 
 If orchestrated provenance cannot be positively established, use System snapshot mode. Never
 create or synthesize a snapshot archive.
