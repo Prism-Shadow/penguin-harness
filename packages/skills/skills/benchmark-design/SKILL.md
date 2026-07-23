@@ -49,9 +49,14 @@ BENCHMARK_DIR = <project_dir>/agents/<test_agent_id>/benchmarks/<benchmark_id>
 SCOREBOARD = <benchmark_dir>/scoreboard.yaml
 ```
 
-Derive a semantic Benchmark id when the user does not supply one. Require `agent_state/system_config.yaml`; its top-level `version` is the canonical State version and defaults to 1 when absent.
-In delegated pipeline mode, also require the creation phase's `expected_state_version` and
-`expected_state_digest`; recompute and match both before creating any Benchmark file.
+Derive a semantic Benchmark id when the user does not supply one. Require
+`agent_state/system_config.yaml`; its top-level `version` is the canonical State version and
+defaults to 1 when absent. In delegated pipeline mode, require the exact creation phase terminal
+YAML as `creation_handoff`. It must use `pipeline_protocol: 1`, share the request's `workflow_id`
+and `project_id`, report `phase: creation`, `status: ok`, `target_was_absent: true`, and end with
+`protocol_end: true`. Derive the expected State version and digest from that document, then
+recompute and match both before creating any Benchmark file. Do not require the coordinator to
+flatten or rename its fields.
 
 ## Benchmark contract
 

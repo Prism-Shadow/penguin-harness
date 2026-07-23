@@ -110,6 +110,7 @@ describe("agent tuning workflow contracts", () => {
     expect(benchmark).toContain("blind-review check");
     expect(benchmark).toContain("non_diagnostic_ceiling");
     expect(benchmark).toContain("do not freeze an out-of-range baseline");
+    expect(benchmark).toContain("exact creation phase terminal");
   });
 
   it("binds evaluation to the new trace delta and bounded accounting work", () => {
