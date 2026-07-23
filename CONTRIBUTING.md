@@ -80,10 +80,10 @@ pnpm test:e2e                                        # core live-model e2e, need
   CLI `i18n.ts`, `titleZh`, `short_description_zh`), `*.zh.md` documents, and test
   literals that assert zh i18n output or exercise CJK-specific behavior.
 - **Every change ships with a changelog entry**: add
-  `changelog/<version>/YYYY-MM-DD-<semantic-id>.md` under the next unreleased version
-  (released versions' folders are frozen) — an H1 title, a one-sentence summary
-  paragraph, then details — and add a one-line link for it to that version's index,
-  `changelog/<version>/README.md`. The layout is documented in
+  `changelog/unreleased/YYYY-MM-DD-<semantic-id>.md` (unreleased work never goes in a
+  numbered folder — the next version number isn't known yet; released folders are frozen)
+  — an H1 title, a one-sentence summary paragraph, then details — and add a one-line link
+  for it to the folder index, `changelog/unreleased/README.md`. The layout is documented in
   [`changelog/README.md`](changelog/README.md). Related changes may share one entry
   file (extending its details) instead of opening a new file per small change.
 - README assets under `assets/readme/` are generated — the benchmark charts from the
