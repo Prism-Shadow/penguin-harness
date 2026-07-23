@@ -3,8 +3,8 @@ name: agent-optimization
 description: Improve an Agent State from direct feedback or versioned multi-Case Benchmark scores and score-linked Traces.
 short_description: Improve an Agent from feedback or measured Benchmark results.
 short_description_zh: 根据反馈或 Benchmark 结果改进 Agent。
-version: 6
-updated: 2026-07-23T10:00:25Z
+version: 7
+updated: 2026-07-23T10:02:21Z
 ---
 
 # Agent Optimization
@@ -16,8 +16,8 @@ Improve an existing Agent State. Use one-shot feedback mode for a direct correct
 If the request supplies neither concrete feedback nor an explicit Test Agent and Benchmark, ask what to improve. Determine the mode before editing anything.
 
 Benchmark mode requires a fresh top-level Session with `run_subagent`, a complete baseline series
-in `scoreboard.yaml`, and a separately provisioned `agent_evaluator` Agent. If any requirement is
-missing, stop before editing State. Do not use Agent Optimizer itself as an Evaluator.
+in `scoreboard.yaml`, and `agent-evaluation` installed on the current Agent Optimizer. If any
+requirement is missing, stop before editing State.
 
 Optimization is one complete phase. Consume only the explicit target, frozen Benchmark reference,
 and score-linked public evidence supplied to this phase. Do not create an Agent, design or refine a
@@ -41,7 +41,8 @@ BENCHMARK = <target>/benchmarks/<benchmark_id>
 SCOREBOARD = <benchmark>/scoreboard.yaml
 ```
 
-Never read a Project configuration file, credential, vault, private Rubric, Agent Evaluator State, Evaluator Workspace, or Evaluator Trace.
+Never read a Project configuration file, credential, vault, private Rubric, evaluation-child
+Workspace, or evaluation-child Trace.
 
 ## State editing policy
 
@@ -149,8 +150,10 @@ For each round:
    provenance and digest fields. Then record the exact originals of every
    candidate-owned file, make the candidate edit, and set `version` to `current + 1` once.
 4. Retain the exact Scoreboard bytes and candidate version. Build the complete Case-run matrix before dispatch.
-5. Start one child per cell with `run_subagent` and set `agent_id: "agent_evaluator"` explicitly.
-   Never reuse Agent Optimizer as the Evaluator. Send exactly one request:
+5. Start one child per cell with `run_subagent` and omit `agent_id` so the child reuses the current
+   Agent Optimizer and its installed Skills. Begin the child request with
+   `Use the agent-evaluation Skill. Return only its terminal protocol YAML.` Then send exactly one
+   request:
 
    ```text
    protocol_version: 1
@@ -170,9 +173,9 @@ For each round:
    identity-matched `status: ok` result. Reject and roll back immediately on `invalid_request`,
    `invalid_statement`, `invalid_rubric`, `version_changed`, or `invalid_score`. Retry at most once
    only for a transient `cli_failed`, `provenance_mismatch`, or malformed/missing terminal
-   protocol, with a fresh Evaluator and Workspace but identical State, Model, Benchmark, and cell
-   identity. Never retry a valid scored cell. If any retry remains invalid, reject the round and
-   roll back the candidate files.
+   protocol, with a fresh evaluation child and Workspace but identical State, Model, Benchmark,
+   and cell identity. Never retry a valid scored cell. If any retry remains invalid, reject the
+   round and roll back the candidate files.
 7. Compute Case means and evaluation sums. Retain every score, cost when complete, duration, and Test Session id. Re-read State version and exact Scoreboard bytes, and verify that every candidate-owned file still matches the value written by this round. If State changed concurrently, stop without overwriting it. If only the Scoreboard changed, reject the round and roll back the candidate files.
 8. Accept only a score strictly higher than the comparable reference evaluation. On improvement, keep the candidate State and append one evaluation through a temporary sibling, YAML validation, and atomic rename. On an equal or lower score, roll back the candidate files and append nothing.
 

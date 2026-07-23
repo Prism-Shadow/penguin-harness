@@ -3,8 +3,8 @@ name: benchmark-design
 description: Design and calibrate a multi-Case capability Benchmark with repeated independent evaluations and a traceable baseline.
 short_description: Design and calibrate an Agent capability Benchmark.
 short_description_zh: 设计并校准 Agent 能力评测 Benchmark。
-version: 5
-updated: 2026-07-23T10:00:25Z
+version: 6
+updated: 2026-07-23T10:02:21Z
 ---
 
 # Benchmark Design
@@ -14,8 +14,8 @@ Create and calibrate a multi-Case Benchmark that discovers a specified Test Agen
 ## Before you start
 
 Require a Test Agent and the capability to measure. If either is missing, ask the user. A Benchmark
-run requires a fresh top-level Session with `run_subagent` and a separately provisioned
-`agent_evaluator` Agent. If this Session is already a subagent or the dedicated Evaluator is
+run requires a fresh top-level Session with `run_subagent` and `agent-evaluation` installed on the
+current Benchmark Builder Agent. If this Session is already a subagent or the evaluation Skill is
 unavailable, stop before creating a partial Benchmark.
 
 Benchmark design is one complete phase. Freeze and record an accepted baseline, return its terminal
@@ -24,7 +24,10 @@ continue another pipeline phase in this Session.
 
 ## Boundaries
 
-Access only the explicit Test Agent and Benchmark paths. Do not inspect another Agent, Project configuration files, Agent Evaluator State, Evaluator Workspace, or Evaluator Trace. The only allowed cross-Agent action is dispatching a protocol request to the dedicated `agent_evaluator`; consume only its terminal protocol response and returned Test Session id.
+Access only the explicit Test Agent and Benchmark paths. Do not inspect another Agent, Project
+configuration files, evaluation-child Workspace, or evaluation-child Trace. The only allowed child
+action is dispatching one Case-run protocol request to a fresh child that uses `agent-evaluation`;
+consume only its terminal protocol response and returned Test Session id.
 
 Before the first evaluation, do not read the Test Agent's `AGENTS.md`, Skills, Memory, Tools, prior
 Traces, or prior Workspaces. Read only `system_config.yaml` for the canonical version and
@@ -153,8 +156,10 @@ The row marked `*` is the default. Keep the same pair through all candidate matr
 
 Read and retain the exact State version, Scoreboard bytes, configured positive `runs`, selected Model pair, and complete valid Case set. Build every unique Case-run cell before dispatch.
 
-Start one child per cell with `run_subagent` and set `agent_id: "agent_evaluator"` explicitly.
-Never reuse Benchmark Builder as the Evaluator. Provide exactly one protocol request:
+Start one child per cell with `run_subagent` and omit `agent_id` so the child reuses the current
+Benchmark Builder Agent and its installed Skills. Begin the child request with
+`Use the agent-evaluation Skill. Return only its terminal protocol YAML.` Then provide exactly one
+protocol request:
 
 ```text
 protocol_version: 1
@@ -176,8 +181,8 @@ Parse only the last terminal `protocol_version: 1` YAML mapping. Keep every iden
 `status: ok` result. Abort the matrix without retry on `invalid_request`, `invalid_statement`,
 `invalid_rubric`, `version_changed`, or `invalid_score`. Retry at most once only for a transient
 `cli_failed`, `provenance_mismatch`, or malformed/missing terminal protocol, using a fresh
-Evaluator and Workspace with the same State, Model, Benchmark, and cell identity. Never retry a
-valid scored cell. If any retry remains invalid, abandon the matrix.
+evaluation child and Workspace with the same State, Model, Benchmark, and cell identity. Never
+retry a valid scored cell. If any retry remains invalid, abandon the matrix.
 
 An abandoned matrix contributes no cells to a later matrix. If the failure is an owned Statement
 delivery or temporary Workspace problem, repair that cause and start a fresh complete matrix. If
