@@ -1,0 +1,8 @@
+# PenguinHarness — https://penguin.ooo/ (landing at the root, docs under /docs/).
+# Everything here is public; nothing needs to be kept out of an index.
+User-agent: *
+Allow: /
+
+# Absolute by spec, and per-origin anyway, so the production domain is hardcoded even
+# though builds accept a SITE_ORIGIN override. scripts/build-site.mjs writes the file.
+Sitemap: https://penguin.ooo/sitemap.xml
