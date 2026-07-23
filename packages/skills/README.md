@@ -11,11 +11,9 @@ Included skills, in the order of the `SKILL_GROUPS` manifest in `src/index.ts` (
 | Office Productivity | `data-analysis`, `firecrawl` |
 | Software Development | `web-design`, `software-engineering` |
 | AI App Development | `penguin-sdk`, `penguin-cli`, `agenthub-models`, `vllm`, `ollama`, `llamafactory` |
-| Agent Tuning | `agent-tuning-pipeline`, `agent-creation`, `benchmark-design`, `agent-evaluation`, `agent-optimization` |
+| Agent Tuning | `agent-creation`, `benchmark-design`, `agent-evaluation`, `agent-optimization` |
 
-Agent Tuning powers the self-improvement loop. `agent-tuning-pipeline` coordinates isolated CLI
-Sessions; the phase Skills create the Target Agent, design and evaluate a Benchmark, and optimize
-the Agent to a tested later version.
+Agent Tuning powers the self-improvement loop: create the Target Agent, design a Benchmark, evaluate it, and optimize it to a tested later version.
 
 ## Documentation
 

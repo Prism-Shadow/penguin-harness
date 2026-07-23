@@ -160,13 +160,7 @@ export const SKILL_GROUPS: SkillGroupInfo[] = [
     id: "agent-tuning",
     title: "Agent Tuning",
     titleZh: "Agent 调优",
-    skills: [
-      "agent-tuning-pipeline",
-      "agent-creation",
-      "benchmark-design",
-      "agent-evaluation",
-      "agent-optimization",
-    ],
+    skills: ["agent-creation", "benchmark-design", "agent-evaluation", "agent-optimization"],
   },
 ];
 

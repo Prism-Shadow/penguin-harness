@@ -115,7 +115,6 @@ describe("loadSkillGroups / groupSkills", () => {
     expect(groups[2]!.title).toBe("AI App Development");
     expect(groups[2]!.titleZh).toBe("AI 应用开发");
     expect(groups[3]!.skills.map((s) => s.name)).toEqual([
-      "agent-tuning-pipeline",
       "agent-creation",
       "benchmark-design",
       "agent-evaluation",
@@ -171,13 +170,7 @@ describe("loadSkillGroups / groupSkills", () => {
       },
       {
         id: "agent-tuning",
-        skills: [
-          "agent-tuning-pipeline",
-          "agent-creation",
-          "benchmark-design",
-          "agent-evaluation",
-          "agent-optimization",
-        ],
+        skills: ["agent-creation", "benchmark-design", "agent-evaluation", "agent-optimization"],
       },
     ]);
   });
