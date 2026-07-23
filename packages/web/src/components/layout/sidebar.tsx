@@ -704,8 +704,13 @@ export function Sidebar({
         ))}
       </nav>
 
-      {/* Session area (scrollable): grouped by Workspace (default) or by Agent */}
-      <div className="mt-3 min-h-0 flex-1 overflow-y-auto border-t border-gray-200 px-2 pb-2 dark:border-gray-800">
+      {/* Session area (scrollable): grouped by Workspace (default) or by Agent.
+          relative: the scroller acts as its own containing block, so absolute descendants
+          (each row's sr-only Agent name) anchor and scroll inside it — anchored to the
+          initial containing block instead, rows past the fold would bypass this
+          overflow-y-auto and stretch the **document**, so expanding "More" / a source
+          folder made the whole page scroll (composer pushed up, blank space below). */}
+      <div className="relative mt-3 min-h-0 flex-1 overflow-y-auto border-t border-gray-200 px-2 pb-2 dark:border-gray-800">
         {/* Section header: list label + grouping-mode toggle (the choice persists in localStorage) */}
         <div className="flex items-center justify-between px-1 pt-2">
           <span className="px-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
