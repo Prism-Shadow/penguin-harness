@@ -67,7 +67,12 @@ import { SessionService } from "./services/session-service.js";
 import { TraceService } from "./services/trace-service.js";
 import { UsageService } from "./services/usage-service.js";
 import { WorkspaceFilesService } from "./services/workspace-files-service.js";
-import { createPreviewTokenSigner } from "./services/preview-token.js";
+import {
+  createPreviewTokenSigner,
+  hostOnly,
+  loopbackHostRoles,
+  requestAuthority,
+} from "./services/preview-token.js";
 import type { PreviewTokenSigner } from "./services/preview-token.js";
 import { previewRoutes } from "./http/routes/preview.js";
 
@@ -282,6 +287,32 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
     const ms = Math.round(performance.now() - start);
     deps.log(`${c.req.method} ${c.req.path} ${c.res.status} ${ms}ms`);
   });
+
+  // Canonical-host guard (loopback binds only): the App is served on one loopback name and
+  // previews on its counterpart, but the SAME process answers on both. Without this, Agent-
+  // written preview HTML on the preview host could call /api same-origin and — if a session
+  // cookie had ever been set on that host — act as the user. So the preview host serves ONLY
+  // /preview/*: /api answers 401 (it never sets or honors a cookie there, closing both the
+  // login and the stale-cookie paths), and everything else 302s to the canonical App host.
+  // See design § "Workspace 文件预览". Off when PENGUIN_PREVIEW_ORIGIN is set: previews then
+  // use that origin rather than the loopback counterpart, so 127.0.0.1 is an ordinary App
+  // access point and must not be locked down — deployments enforce the equivalent at the
+  // reverse proxy (route only /preview/* to the App on the preview origin).
+  const previewRoles = deps.config.previewOrigin ? null : loopbackHostRoles(deps.config.host);
+  if (previewRoles) {
+    app.use("*", async (c, next) => {
+      const host = hostOnly(requestAuthority(c.req.url, c.req.header("host"))).toLowerCase();
+      if (host === previewRoles.preview && !c.req.path.startsWith("/preview/")) {
+        if (c.req.path.startsWith("/api/")) {
+          throw new HttpError(401, "unauthorized", "The API is not served on the preview host.");
+        }
+        const url = new URL(c.req.url);
+        url.hostname = previewRoles.app;
+        return c.redirect(url.toString(), 302);
+      }
+      await next();
+    });
+  }
 
   // API common defenses: request body size cap (20MB) and write-request Content-Type (one of the CSRF MVP defenses).
   app.use("/api/*", async (c, next) => {

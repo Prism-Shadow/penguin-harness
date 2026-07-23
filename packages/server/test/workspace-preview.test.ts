@@ -13,6 +13,7 @@ import {
   createPreviewTokenSigner,
   hostOnly,
   loopbackCounterpart,
+  loopbackHostRoles,
   resolvePreviewTarget,
 } from "../src/services/preview-token.js";
 import type { ProjectCreateResponse, SessionCreateResponse } from "../src/api/types.js";
@@ -63,6 +64,17 @@ describe("preview origin derivation", () => {
     expect(loopbackCounterpart("penguin.example.com")).toBeNull();
   });
 
+  it("assigns fixed App/preview roles only for loopback binds", () => {
+    // localhost is the canonical App host; 127.0.0.1 is reserved for previews. Fixed, not
+    // "counterpart of whoever asked", so the preview host is never a host the App logs in on.
+    expect(loopbackHostRoles("127.0.0.1")).toEqual({ app: "localhost", preview: "127.0.0.1" });
+    expect(loopbackHostRoles("localhost")).toEqual({ app: "localhost", preview: "127.0.0.1" });
+    // Wildcard / LAN / bare ::1 binds get no loopback roles — they must configure an origin.
+    expect(loopbackHostRoles("0.0.0.0")).toBeNull();
+    expect(loopbackHostRoles("::")).toBeNull();
+    expect(loopbackHostRoles("192.168.1.5")).toBeNull();
+  });
+
   const bind = { host: "127.0.0.1", port: 7364 };
 
   it("derives the counterpart origin on the server's own port", () => {
@@ -91,13 +103,16 @@ describe("preview origin derivation", () => {
         port: 7364,
       }),
     ).toBeNull();
-    // Wildcard binds do serve the loopback names.
+    // A wildcard bind (0.0.0.0 / ::) no longer qualifies: localhost may resolve to ::1,
+    // which 0.0.0.0 never serves, so the preview URL would refuse the connection while
+    // /api/me claimed isolation. Only a loopback-name bind offers a loopback preview; the
+    // rest fall back and must set PENGUIN_PREVIEW_ORIGIN.
     expect(
       resolvePreviewTarget("http://localhost:7364/x", "localhost:7364", null, {
         host: "0.0.0.0",
         port: 7364,
       }),
-    ).toEqual({ origin: "http://127.0.0.1:7364", host: "127.0.0.1" });
+    ).toBeNull();
   });
 
   it("prefers a configured origin, and gives up on hosts with no counterpart", () => {
@@ -118,6 +133,7 @@ describe("preview origin derivation", () => {
 describe("preview route", () => {
   let t: TestApp;
   let owner: ReturnType<typeof apiClient>;
+  let ownerCookie: string;
   let sessionId: string;
   let workspace: string;
 
@@ -125,6 +141,7 @@ describe("preview route", () => {
     t = await createTestApp();
     const a = await provisionUser(t.app, "owner");
     owner = apiClient(t.app, a.cookie);
+    ownerCookie = a.cookie;
     const created = (await (
       await owner.post("/api/projects", { projectId: "owner-preview", name: "project" })
     ).json()) as ProjectCreateResponse;
@@ -196,8 +213,28 @@ describe("preview route", () => {
     expect((await t.app.request("http://127.0.0.1/preview/nope/index.html")).status).toBe(404);
     const { url } = await mint("index.html");
     const token = url!.split("/preview/")[1]!.split("/")[0]!;
-    const escape = await t.app.request(`http://127.0.0.1/preview/${token}/../../etc/passwd`);
+    // Traversal with encoded slashes: WHATWG URL parsing collapses `../` — and even
+    // `%2e%2e/` — before the handler sees it, so encode only the slashes. The `..` segments
+    // then survive as one path segment, and decodeURIComponent -> WorkspaceFilesService is
+    // what rejects them. (A plain `../../etc/passwd` would instead normalize to `/etc/passwd`
+    // and never match the /preview route at all.)
+    const escape = await t.app.request(`http://127.0.0.1/preview/${token}/..%2f..%2fetc%2fpasswd`);
     expect(escape.status).toBe(404);
+  });
+
+  it("serves only /preview on the preview host: /api is 401 even authenticated", async () => {
+    // The preview host (127.0.0.1) and the App (localhost) are one process. If /api answered
+    // here, Agent HTML previewed on 127.0.0.1 could drive it same-origin — so it is refused
+    // even with a valid cookie, and no cookie is ever set here either.
+    const api = await t.app.request(`http://127.0.0.1/api/sessions/${sessionId}/files?path=`, {
+      headers: { cookie: ownerCookie },
+    });
+    expect(api.status).toBe(401);
+    // A top-level App navigation on the preview host is redirected to the canonical host, so
+    // login (and every cookie) only ever happens on localhost.
+    const doc = await t.app.request("http://127.0.0.1/some/spa/route");
+    expect(doc.status).toBe(302);
+    expect(doc.headers.get("location")).toBe("http://localhost/some/spa/route");
   });
 
   it("requires authentication to mint, and validates the path", async () => {
@@ -212,5 +249,18 @@ describe("preview route", () => {
   it("reports isolation on /api/me so the UI can warn before opening", async () => {
     const me = (await (await owner.get("/api/me")).json()) as { previewIsolated: boolean };
     expect(me.previewIsolated).toBe(true);
+  });
+
+  it("leaves the loopback guard off when PENGUIN_PREVIEW_ORIGIN is set", async () => {
+    // With a configured preview origin, previews no longer use 127.0.0.1, so it is an
+    // ordinary App host and must not be redirected/refused (deployments enforce the
+    // equivalent at their reverse proxy). A guarded app would 302 this to localhost.
+    const configured = await createTestApp({ config: { previewOrigin: "https://p.example.com" } });
+    try {
+      const doc = await configured.app.request("http://127.0.0.1/some/spa/route");
+      expect(doc.status).not.toBe(302);
+    } finally {
+      await configured.cleanup();
+    }
   });
 });

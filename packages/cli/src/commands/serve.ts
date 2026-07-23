@@ -81,7 +81,10 @@ async function waitForReady(url: string, timeoutMs = 15_000, intervalMs = 300): 
       // Each probe is capped at 1s: if the port is held by a non-HTTP program, the
       // connection can succeed while the response hangs forever; without a timeout this
       // would block the whole polling loop (the deadline check below would never run).
-      const res = await fetch(url, { signal: AbortSignal.timeout(1000) });
+      // `redirect: "manual"`: on a loopback bind the root path 302s to the canonical host
+      // (127.0.0.1 is reserved for previews); the probe only needs to know the port answers,
+      // so treat that 302 as ready rather than chasing it to a name that may resolve to ::1.
+      const res = await fetch(url, { redirect: "manual", signal: AbortSignal.timeout(1000) });
       void res.body?.cancel();
       return true;
     } catch {

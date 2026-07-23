@@ -110,6 +110,29 @@ export function loopbackCounterpart(host: string): string | null {
 }
 
 /**
+ * When the server is bound to a loopback host, the App is canonicalized onto one loopback
+ * name and previews are served from the other. Fixing the assignment — rather than serving
+ * previews from the counterpart of whichever name the caller happens to type — is what
+ * keeps the preview host free of a session cookie. The same process answers on both names,
+ * so if the App could be reached (and logged into) on the preview name too, Agent-written
+ * preview HTML would call `/api` same-origin and regain a full App session. `app` is the
+ * only name that serves the App and sets/accepts the session cookie; `preview` serves
+ * `/preview/*` and nothing else (enforced by the canonical-host guard in app.ts).
+ *
+ * Null for non-loopback binds (wildcard, LAN IP, a bare `::1`): they can't offer a loopback
+ * preview the IPv6 companion listener actually serves, so they must set
+ * PENGUIN_PREVIEW_ORIGIN and otherwise fall back to the same-origin sandbox.
+ */
+export function loopbackHostRoles(bindHost: string): { app: string; preview: string } | null {
+  const h = bindHost.trim().toLowerCase();
+  if (h !== "127.0.0.1" && h !== "localhost") return null;
+  const app = "localhost";
+  const preview = loopbackCounterpart(app);
+  if (!preview) return null;
+  return { app, preview };
+}
+
+/**
  * The host:port this request was addressed to. Prefers the Host header (what the browser
  * actually sent, and what decides the origin), falling back to the request URL's
  * authority — some server runtimes and test harnesses build a Request from a full URL
@@ -125,9 +148,6 @@ export function requestAuthority(requestUrl: string, hostHeader: string | undefi
   }
 }
 
-/** Bind addresses from which the loopback names are reachable. */
-const LOOPBACK_BINDS = new Set(["127.0.0.1", "localhost", "::1", "[::1]", "0.0.0.0", "::"]);
-
 /**
  * Where previews for this request should be served from: the configured origin when
  * PENGUIN_PREVIEW_ORIGIN is set, otherwise the loopback counterpart of the host the
@@ -138,9 +158,10 @@ const LOOPBACK_BINDS = new Set(["127.0.0.1", "localhost", "::1", "[::1]", "0.0.0
  * in development: the SPA is served by Vite on its own port and only proxies `/api`, so a
  * preview URL built from the browser's current port would point at a port where nothing
  * serves `/preview` — connection refused, or a Vite 404. In production the two are the
- * same and this is a no-op. `serverBind.host` is checked too: if the server is bound to
- * some specific non-loopback address, the loopback counterpart is not reachable and the
- * only correct answer is to fall back.
+ * same and this is a no-op. Only a loopback-name bind (`127.0.0.1` / `localhost`) offers a
+ * loopback preview — it is the bind where the IPv6 companion listener runs and where the
+ * App is canonicalized (see `loopbackHostRoles`); any other bind (wildcard, LAN IP) has no
+ * reachable counterpart and falls back.
  */
 export function resolvePreviewTarget(
   requestUrl: string,
@@ -156,7 +177,7 @@ export function resolvePreviewTarget(
   if (raw === "") return null;
   const counterpart = loopbackCounterpart(hostOnly(raw));
   if (!counterpart) return null;
-  if (!LOOPBACK_BINDS.has(serverBind.host.toLowerCase())) return null;
+  if (!loopbackHostRoles(serverBind.host)) return null;
 
   let protocol: string;
   try {

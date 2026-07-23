@@ -430,9 +430,12 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
   app.get("/:sessionId/files/preview-redirect", async (c) => {
     const row = resolveSession(c);
     const rel = c.req.query("path") ?? "";
-    // Resolve while the caller is still authenticated, so a bad path fails here rather
-    // than as an opaque 404 from the unauthenticated preview origin.
-    await deps.workspaceFiles.read(row.workspace, rel);
+    // Validate existence + containment while the caller is still authenticated, so a bad
+    // path fails here rather than as an opaque 404 from the unauthenticated preview origin.
+    // A stat, not a read: the file itself is fetched later, on the preview origin — reading
+    // it here (up to 50MB) only to discard the bytes would be wasted work on every click.
+    const [exists] = await deps.workspaceFiles.statExisting(row.workspace, [rel]);
+    if (!exists) throw new HttpError(404, "file_not_found", "File does not exist.");
 
     const target = resolvePreviewTarget(
       c.req.url,

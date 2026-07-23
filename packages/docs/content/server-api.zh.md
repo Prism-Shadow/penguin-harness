@@ -180,7 +180,8 @@ GET  /api/sessions/:sessionId/files/preview-redirect?path=index.html
 GET  /preview/<token>/<相对路径>              （不鉴权，令牌即凭证）
 ```
 
-- **为什么要独立源。** 页面需要一个真实的源，才能有可用的 storage、Cookie 与第三方 embed；但它不能是应用自己的源，否则 Agent 写出来的 HTML 就带着会话 Cookie 在跑。本地取你当前访问地址的回环对应名（`127.0.0.1` ↔ `localhost`）——Cookie 按主机划分且不区分端口，所以这两者天然是两个 Cookie jar，而只换端口做不到。其余情况用 `PENGUIN_PREVIEW_ORIGIN`；两者都没有时回退到上面的同源沙箱，并由 `GET /api/me` 的 `previewIsolated` 返回 `false`，界面据此提前说明。
+- **为什么要独立源。** 页面需要一个真实的源，才能有可用的 storage、Cookie 与第三方 embed；但它不能是应用自己的源，否则 Agent 写出来的 HTML 就带着会话 Cookie 在跑。本地把 App 固定在规范主机 `localhost`，预览用 `127.0.0.1`——Cookie 按主机划分且不区分端口，所以这两者天然是两个 Cookie jar，而只换端口做不到。其余情况用 `PENGUIN_PREVIEW_ORIGIN`；两者都没有时（通配或非回环绑定，或变量未设）回退到上面的同源沙箱，并由 `GET /api/me` 的 `previewIsolated` 返回 `false`，界面据此提前说明。
+- **预览主机只服务 `/preview/*`。** 它与 App 是同一个进程，故其 `/api` 一律 401，其余路径一律 302 回规范 App 主机——会话 Cookie 因此永远不会落在预览主机上，也不被其接受，那里的 Agent HTML 无法同源调用 API。（部署 `PENGUIN_PREVIEW_ORIGIN` 时，反向代理须做等价保证：该源上只把 `/preview/*` 路由到 App。）
 - **路径式而非查询参数**，页面里的相对子资源（`app.js`、`style.css`、图片）才能相对文档解析，并在同一个令牌下加载。
 - **令牌绑定 Session、预览主机与过期时间。** 其中主机绑定是承重的：同一个进程也在应用源上应答，因此 `/preview/...` 在应用源上一律拒绝服务——否则那就是一个同源 XSS。权限只读、限定该 Session 的 Workspace，路径仍在服务端重新解析，`..` 与符号链接逃逸照旧拒绝。
 - **响应带 `Referrer-Policy: no-referrer`**，否则带令牌的 URL 会经 `Referer` 泄漏给页面内嵌的每一个第三方——而这个风险恰恰是因为 embed 现在能用了才出现的。

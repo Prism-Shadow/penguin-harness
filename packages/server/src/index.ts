@@ -13,6 +13,7 @@ import { config as loadDotenv } from "dotenv";
 import { serve } from "@hono/node-server";
 import { buildAppDeps, createApp } from "./app.js";
 import { resolveServerConfig } from "./config.js";
+import { loopbackHostRoles } from "./services/preview-token.js";
 
 loadDotenv({ quiet: true });
 
@@ -26,8 +27,12 @@ await deps.authService.seedAdmin();
 // Schedule scheduler: startup reconciliation (missed, don't backfill) + periodic scan; only active while the server is running.
 await deps.scheduler.start();
 
+// On a loopback bind the App is canonicalized onto one name (`localhost`) and its
+// counterpart is reserved for previews, so advertise the canonical name — the other one
+// only 302s back here for App routes (see the canonical-host guard in app.ts).
+const appHost = loopbackHostRoles(config.host)?.app ?? config.host;
 const server = serve({ fetch: app.fetch, hostname: config.host, port: config.port }, (info) => {
-  console.log(`penguin-server started: http://${config.host}:${info.port}`);
+  console.log(`penguin-server started: http://${appHost}:${info.port}`);
   console.log(`Data root: ${config.root}`);
   console.log(`SQLite: ${config.dbPath}`);
 });
