@@ -168,11 +168,11 @@ Workspace 文件可能由 Agent 生成，`GET /files/content` 一律按不可信
 | `preview=1` | 真实类型（`text/html`、`image/svg+xml` 等） | `inline` | `sandbox allow-scripts allow-popups allow-modals allow-forms`，仅对 `.html` / `.htm` / `.svg` 下发 |
 | `download=1` | 真实类型 | `attachment` | 无 |
 
-文件名始终以 `filename*=UTF-8''` 形式携带（百分号编码）。`preview=1` 用于 Files 面板内的沙箱 iframe 渲染，同时也是“新页面打开”在没有独立预览源时的回退：文档保留真实类型，可以正常渲染并执行脚本，但沙箱刻意不含 `allow-same-origin`，因此它落在一个不透明源里，既拿不到本源的 Cookie，也调不动 API。这份隔离也正是那里 `localStorage`、`document.cookie` 与第三方 embed 全都不可用的原因。
+文件名始终以 `filename*=UTF-8''` 形式携带（百分号编码）。`preview=1` 是预览跳转在没有独立预览源时的回退目标：文档保留真实类型，可以正常渲染并执行脚本，但沙箱刻意不含 `allow-same-origin`，因此它落在一个不透明源里，既拿不到本源的 Cookie，也调不动 API。这份隔离也正是那里 `localStorage`、`document.cookie` 与第三方 embed 全都不可用的原因。
 
 ### 独立源预览
 
-“新页面打开”走 `GET /files/preview-redirect?path=`：先鉴权，再签发一枚短时效 HMAC 令牌，然后 302 跳转到**另一个源**：
+Files 面板内的 HTML 渲染视图（iframe）与“新页面打开”都走 `GET /files/preview-redirect?path=`：先鉴权，再签发一枚短时效 HMAC 令牌，然后 302 跳转到**另一个源**：
 
 ```text
 GET  /api/sessions/:sessionId/files/preview-redirect?path=index.html

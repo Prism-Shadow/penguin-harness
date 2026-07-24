@@ -171,7 +171,13 @@ interface Preview {
   /** Content for kind=text/md/html (may be truncated). */
   content?: string;
   truncated?: boolean;
+  /** Bumped on every previewPath call; keys the isolated HTML iframe so re-opening the
+   *  same path remounts it and refetches fresh content (its src alone would not change). */
+  nonce: number;
 }
+
+/** Monotonic source for Preview.nonce (only uniqueness matters; sharing across instances is fine). */
+let previewSeq = 0;
 
 export function WorkspaceBrowser({
   session,
@@ -191,8 +197,10 @@ export function WorkspaceBrowser({
   /** Callback when entering file preview (used by the mobile Sheet to raise its snap point to full). */
   onPreviewOpen?: () => void;
 }) {
-  // Whether "open in new tab" lands on a separate origin; false downgrades it to the
-  // same-origin sandbox, which the link flags rather than failing silently in the page.
+  // Whether the HTML preview lands on a separate origin. True routes both the in-app
+  // rendered view and "open in new tab" through the preview origin; false downgrades
+  // the new tab to the same-origin sandbox (which the link flags rather than failing
+  // silently in the page) and the in-app rendered view to the srcDoc fallback.
   const { previewIsolated } = useAuth();
   const [path, setPath] = useState("");
   const [data, setData] = useState<WorkspaceFilesResponse | null>(null);
@@ -251,26 +259,28 @@ export function WorkspaceBrowser({
         ? filePath.slice(filePath.lastIndexOf("/") + 1)
         : filePath;
       const ext = extOf(name);
+      const nonce = ++previewSeq;
       setRichView("rendered");
       if (IMAGE_EXTS.has(ext)) {
-        setPreview({ path: filePath, name, kind: "image" });
+        setPreview({ path: filePath, name, kind: "image", nonce });
         return;
       }
       // PDF: the server returns it inline as application/pdf, embedded directly in an iframe and rendered by the browser.
       if (ext === "pdf") {
-        setPreview({ path: filePath, name, kind: "pdf" });
+        setPreview({ path: filePath, name, kind: "pdf", nonce });
         return;
       }
       const isHtml = HTML_EXTS.has(ext);
       const isMd = ext === "md";
       if (!isHtml && !TEXT_EXTS.has(ext)) {
-        setPreview({ path: filePath, name, kind: "unsupported" });
+        setPreview({ path: filePath, name, kind: "unsupported", nonce });
         return;
       }
       try {
         // The server downgrades html/svg served inline to text/plain (a same-origin XSS
-        // defense); this fetches the raw content back, and the HTML rendered view is placed in a
-        // sandboxed iframe (without allow-scripts), so scripts don't execute.
+        // defense); this fetches the raw content back. For HTML the content feeds the source
+        // view (and, without an isolated preview origin, the srcDoc fallback rendered view);
+        // the isolated rendered view loads the file itself from the preview origin instead.
         const res = await fetch(api.workspaceFileUrl(session.sessionId, filePath), {
           credentials: "same-origin",
         });
@@ -287,9 +297,10 @@ export function WorkspaceBrowser({
           kind: isHtml ? "html" : isMd ? "md" : "text",
           content: truncated ? full.slice(0, TEXT_PREVIEW_LIMIT) : full,
           truncated,
+          nonce,
         });
       } catch {
-        setPreview({ path: filePath, name, kind: "unsupported" });
+        setPreview({ path: filePath, name, kind: "unsupported", nonce });
       }
     },
     [session.sessionId],
@@ -463,16 +474,39 @@ export function WorkspaceBrowser({
               className="h-full min-h-[60vh] w-full rounded-md border border-gray-200 dark:border-gray-800"
             />
           ) : preview.kind === "html" && richView === "rendered" ? (
-            // sandbox allows scripts but **without allow-same-origin**: the iframe has an opaque
-            // origin, so scripts can run to fully render the page, yet can't read the app's
-            // same-origin cookies / DOM (an XSS defense). The storage shim is injected to avoid
-            // a SecurityError when a script accesses localStorage from an opaque origin.
-            <iframe
-              srcDoc={withStorageShim(preview.content ?? "")}
-              title={preview.name}
-              sandbox="allow-scripts"
-              className="h-full min-h-[60vh] w-full rounded-md border border-gray-200 bg-white dark:border-gray-800"
-            />
+            previewIsolated ? (
+              // Same URL and serving path as "open in new tab": the app-origin redirect mints
+              // a token and 302s to the separate preview origin, where the document has a real
+              // base URL — relative subresources (<img src="foo.png">, app.js, style.css)
+              // resolve and load, and storage works, exactly as in the new-page preview.
+              // allow-same-origin is safe here precisely because the document IS on a separate
+              // origin: it grants the preview origin's identity, not the app's, so the frame
+              // still can't reach the app's cookies or DOM. Popups stay sandboxed (no
+              // allow-popups-to-escape-sandbox). The key remounts the iframe on every
+              // previewPath call — its src alone wouldn't change when the same file is
+              // re-opened after the Agent rewrote it.
+              <iframe
+                key={preview.nonce}
+                src={api.workspaceFilePreviewUrl(session.sessionId, preview.path)}
+                title={preview.name}
+                sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+                className="h-full min-h-[60vh] w-full rounded-md border border-gray-200 bg-white dark:border-gray-800"
+              />
+            ) : (
+              // No separate preview origin: srcDoc fallback. sandbox allows scripts but
+              // **without allow-same-origin**: the iframe has an opaque origin, so scripts can
+              // run to fully render the page, yet can't read the app's same-origin cookies /
+              // DOM (an XSS defense). The storage shim is injected to avoid a SecurityError
+              // when a script accesses localStorage from an opaque origin. srcdoc has no real
+              // base URL, so relative subresources cannot resolve here — that's what the
+              // isolated branch above fixes.
+              <iframe
+                srcDoc={withStorageShim(preview.content ?? "")}
+                title={preview.name}
+                sandbox="allow-scripts"
+                className="h-full min-h-[60vh] w-full rounded-md border border-gray-200 bg-white dark:border-gray-800"
+              />
+            )
           ) : preview.kind === "md" && richView === "rendered" ? (
             // Markdown's default rendered view: uses the same md-body layout as message bodies
             // (ReactMarkdown outputs pure static HTML with no script execution surface, so no iframe sandbox is needed).

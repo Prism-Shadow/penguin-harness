@@ -168,11 +168,11 @@ Workspace files may be Agent-generated, so `GET /files/content` treats them as u
 | `preview=1` | the real type (`text/html`, `image/svg+xml`, …) | `inline` | `sandbox allow-scripts allow-popups allow-modals allow-forms`, sent only for `.html` / `.htm` / `.svg` |
 | `download=1` | the real type | `attachment` | — |
 
-The filename always rides along as `filename*=UTF-8''` with percent-encoding. `preview=1` renders inside the Files panel's sandboxed iframe, and is also the fallback for "open in a new tab" when no separate preview origin is available: the document keeps its real type and does render and run, but the sandbox deliberately omits `allow-same-origin`, so it lands in an opaque origin and can reach neither this origin's cookies nor the API. That isolation is also why `localStorage`, `document.cookie` and third-party embeds do not work there.
+The filename always rides along as `filename*=UTF-8''` with percent-encoding. `preview=1` is where the preview redirect falls back when no separate preview origin is available: the document keeps its real type and does render and run, but the sandbox deliberately omits `allow-same-origin`, so it lands in an opaque origin and can reach neither this origin's cookies nor the API. That isolation is also why `localStorage`, `document.cookie` and third-party embeds do not work there.
 
 ### Preview on a separate origin
 
-"Open in a new tab" goes through `GET /files/preview-redirect?path=`, which authenticates the caller, then mints a short-lived HMAC token and 302s to a **different origin**:
+Both the Files panel's rendered HTML view (an iframe) and "open in a new tab" go through `GET /files/preview-redirect?path=`, which authenticates the caller, then mints a short-lived HMAC token and 302s to a **different origin**:
 
 ```text
 GET  /api/sessions/:sessionId/files/preview-redirect?path=index.html
