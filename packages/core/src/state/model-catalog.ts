@@ -416,12 +416,28 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   {
     // OpenRouter's unified Free Models Router: each request is routed to a random free model
     // currently on OpenRouter, filtered by the features the request needs (tool calling,
-    // structured outputs, ...). The routed target varies per request, so no context window is
-    // recorded, and supportsVision stays false deliberately: the harness must not send images
-    // to a router whose target may be text-only.
+    // structured outputs, ...). Routed targets vary, so the context window is a conservative
+    // floor rather than any single target's real window: it keeps the 75% compaction clamp
+    // meaningful and avoids hard context-length 400s on small-window targets.
+    // supportsVision stays false deliberately: the harness must not send images to a router
+    // whose target may be text-only.
     modelId: "openrouter/free",
     displayName: "Free Models Router",
     provider: "openrouter",
+    contextWindow: 65536,
+    pricing: usd(0, 0, 0),
+    supportsVision: false,
+    clientType: "openai",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
+    // Poolside's free tier of Laguna M.1, its flagship coding-agent model (agentic coding
+    // workflows with tool calling and reasoning), text-only; context and $0 pricing per the
+    // OpenRouter models API (2026-07-24).
+    modelId: "poolside/laguna-m.1:free",
+    displayName: "Laguna M.1 (free)",
+    provider: "openrouter",
+    contextWindow: 262144,
     pricing: usd(0, 0, 0),
     supportsVision: false,
     clientType: "openai",
