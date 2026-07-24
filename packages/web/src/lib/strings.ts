@@ -566,9 +566,12 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
 \`\`\`bash
 mkdir -p <phase_workspace>
 
-PENGUIN_HOME=/Users/xjz/PenguinHarness-Saturday-Recovered \\
+PROJECT_DIR="<当前 Session 的 Environment Project Dir>"
+PROJECT_ID="$(basename "$PROJECT_DIR")"
+export PENGUIN_HOME="$(dirname "$PROJECT_DIR")"
+
 penguin run \\
-  --project-id default_project \\
+  --project-id "$PROJECT_ID" \\
   --agent-id default_agent \\
   --workspace <phase_workspace> \\
   --message "$(cat <phase_prompt_file>)"

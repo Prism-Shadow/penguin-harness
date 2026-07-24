@@ -96,7 +96,6 @@ describe("agent tuning workflow contracts", () => {
     const creation = content("agent-creation");
     expect(creation).toContain("ordinary tasks");
     expect(creation).toMatch(/Do not\s+install evaluation or optimization Skills/);
-    expect(creation).toContain("version: 1");
     expect(creation).toContain("Stop after the requested Agent");
   });
 

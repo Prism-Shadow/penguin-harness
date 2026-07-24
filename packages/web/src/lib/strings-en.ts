@@ -582,9 +582,12 @@ Prepare a separate Prompt file and Workspace for each phase, then launch it in t
 \`\`\`bash
 mkdir -p <phase_workspace>
 
-PENGUIN_HOME=/Users/xjz/PenguinHarness-Saturday-Recovered \\
+PROJECT_DIR="<Project Dir from the current Session Environment>"
+PROJECT_ID="$(basename "$PROJECT_DIR")"
+export PENGUIN_HOME="$(dirname "$PROJECT_DIR")"
+
 penguin run \\
-  --project-id default_project \\
+  --project-id "$PROJECT_ID" \\
   --agent-id default_agent \\
   --workspace <phase_workspace> \\
   --message "$(cat <phase_prompt_file>)"

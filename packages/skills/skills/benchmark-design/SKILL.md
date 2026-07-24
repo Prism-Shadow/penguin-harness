@@ -3,8 +3,8 @@ name: benchmark-design
 description: Design and calibrate a multi-Case capability Benchmark with repeated independent evaluations and a traceable baseline.
 short_description: Design and calibrate an Agent capability Benchmark.
 short_description_zh: 设计并校准 Agent 能力评测 Benchmark。
-version: 19
-updated: 2026-07-24T11:25:34Z
+version: 20
+updated: 2026-07-24T17:04:47Z
 ---
 
 # Benchmark Design
@@ -136,6 +136,20 @@ cell only after an explicit infrastructure failure. Use bounded batches that fit
 subagent capacity. For independent cells in one batch, launch one `agent-evaluation` subagent per
 cell before waiting for any of them to finish, then poll those exact subagent ids until the batch is
 complete. Do not wait for one cell to finish before launching the next independent cell.
+
+Send each Evaluator one unambiguous request with every required identity field:
+
+```text
+Use the `agent-evaluation` Skill and evaluate exactly this Case run.
+protocol_version: 1
+case_id: <case_id>
+run: <1_based_run_index>
+expected_version: <test_agent_state_version>
+test_agent_id: <test_agent_id>
+benchmark_dir: <absolute_benchmark_dir>
+provider: <provider>
+model_id: <model_id>
+```
 
 Prefer an Evaluator response that is one plain protocol YAML document with the fields defined by
 `agent-evaluation`. If the response also contains commentary or a code fence, extract one

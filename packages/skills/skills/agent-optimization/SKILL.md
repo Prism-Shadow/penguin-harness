@@ -3,8 +3,8 @@ name: agent-optimization
 description: Improve an Agent State from direct feedback or versioned Benchmark scores and score-linked Traces.
 short_description: Improve an Agent from feedback or measured Benchmark results.
 short_description_zh: 根据反馈或 Benchmark 结果改进 Agent。
-version: 18
-updated: 2026-07-24T12:38:51Z
+version: 19
+updated: 2026-07-24T17:04:47Z
 ---
 
 # Agent Optimization
@@ -143,6 +143,20 @@ cell only after an explicit infrastructure failure. Use bounded batches that fit
 subagent capacity. For independent cells in one batch, launch one `agent-evaluation` subagent per
 cell before waiting for any of them to finish, then poll those exact subagent ids until the batch is
 complete. Do not wait for one cell to finish before launching the next independent cell.
+
+Send each Evaluator one unambiguous request with every required identity field:
+
+```text
+Use the `agent-evaluation` Skill and evaluate exactly this Case run.
+protocol_version: 1
+case_id: <case_id>
+run: <1_based_run_index>
+expected_version: <test_agent_state_version>
+test_agent_id: <test_agent_id>
+benchmark_dir: <absolute_benchmark_dir>
+provider: <provider>
+model_id: <model_id>
+```
 
 Prefer an Evaluator response that is one plain protocol YAML document with the fields defined by
 `agent-evaluation`. If the response also contains commentary or a code fence, extract one
