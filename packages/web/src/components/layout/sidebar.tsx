@@ -18,7 +18,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { NavLink, useMatch, useNavigate } from "react-router";
-import type { SessionCategoryCounts, SessionInfo } from "@prismshadow/penguin-server/api";
+import type {
+  SessionCategory,
+  SessionCategoryCounts,
+  SessionInfo,
+} from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -32,7 +36,7 @@ import { useSessions } from "../../state/sessions";
 import {
   FOLDER_CATEGORIES,
   SIDEBAR_PAGE_SIZE,
-  groupAgentsWithMore,
+  aggregateWorkspaceCounts,
   groupSessionsByWorkspace,
   partitionSessions,
   pinnedFirst,
@@ -199,6 +203,7 @@ export function Sidebar({
     sessions,
     byAgent,
     countsByAgent,
+    workspaceCountsByAgent,
     isLoadedFor,
     hasMoreFor,
     loadMoreFor,
@@ -252,6 +257,12 @@ export function Sidebar({
 
   /** Workspace groups (workspace mode): computed from the flat list, temp directories merged last. */
   const workspaceGroups = useMemo(() => groupSessionsByWorkspace(sessions), [sessions]);
+
+  /** Workspace-mode per-group exact server totals (folded from the per-Agent per-Workspace counts). */
+  const workspaceGroupCounts = useMemo(
+    () => aggregateWorkspaceCounts(workspaceCountsByAgent),
+    [workspaceCountsByAgent],
+  );
 
   // Pinned groups first within each mode; inside each partition the existing order is kept
   // (recency for Workspace groups, the configured Agent order for Agents).
@@ -466,24 +477,29 @@ export function Sidebar({
   /**
    * Collapsed-by-default lazy folder (subagent / scheduled / archived): nothing is
    * fetched until the first expand, and once open the folder pages independently with
-   * its own "More" row. Visible while it holds loaded rows or any contributing Agent
-   * still has (or may have) unfetched rows of the category. The label count is the
-   * exact per-Agent server total in agent mode (`countsOf`); a workspace group can't
-   * know its share before loading, so it counts loaded rows only (none yet = no count).
+   * its own "More" row. Everything is driven by the group's **own** exact server share
+   * (`totals` — the Agent's counts in agent mode, the per-Workspace fold in workspace
+   * mode): the folder exists only while its share is non-zero, the label shows that
+   * share, and "More" shows only while loaded rows fall short of it — an Agent's
+   * content in *other* Workspaces can never surface a folder here.
    */
   const renderFolder = (
     groupKey: string,
     category: FolderCategory,
     parts: SessionPartition,
     withAgentHint: boolean,
+    /** Agents that may hold this group's rows of this category (fetch fan-out set). */
     agentIds: string[],
-    countsOf: SessionCategoryCounts | undefined,
+    totals: SessionCategoryCounts | undefined,
   ) => {
     const rows = parts[category];
-    const moreAgents = agentIds.filter((id) => hasMoreFor(id, category));
-    if (rows.length === 0 && moreAgents.length === 0) return null;
+    // Loaded rows win a disagreement with the totals (counts refresh only on reload).
+    const total = Math.max(totals?.[category] ?? 0, rows.length);
+    if (total === 0) return null;
     const open = openFolders.has(folderKey(groupKey, category));
-    const count = countsOf ? countsOf[category] : rows.length > 0 ? rows.length : null;
+    // More while the group's share isn't fully loaded AND somewhere is left to fetch from
+    // (counts drifting above reality would otherwise leave a dead button until reload).
+    const more = rows.length < total && agentIds.some((id) => hasMoreFor(id, category));
     return (
       <div key={category} className="mt-1">
         <button
@@ -492,17 +508,18 @@ export function Sidebar({
           className={folderClass}
         >
           <Chevron open={open} size={12} />
-          {S.chat.folderGroups[category](count)}
+          {S.chat.folderGroups[category](total)}
         </button>
         {open && renderRows(rows, withAgentHint)}
         {/* The folder's own paging, independent of the active list's "More". In workspace
             mode a fetched page can land rows in other groups' folders too, so one click may
-            grow this folder by fewer than a full page — the row stays until exhausted. */}
-        {open && moreAgents.length > 0 && (
+            grow this folder by fewer than a full page — the row stays until this group's
+            share is fully loaded. */}
+        {open && more && (
           <button
             type="button"
             aria-label={S.chat.loadMore}
-            onClick={() => void loadMoreFor(moreAgents, category)}
+            onClick={() => void loadMoreFor(agentIds, category)}
             className={folderClass}
           >
             <span className="w-3" aria-hidden />
@@ -513,40 +530,41 @@ export function Sidebar({
     );
   };
 
-  /** Active-list "More": reveal one more page of already-loaded active rows AND fetch the next active server page for every contributing Agent that still has one. */
-  const showMore = (groupKey: string, moreAgents: string[]) => {
+  /** Active-list "More": reveal one more page of already-loaded active rows AND fetch the next active server page for every Agent that still has one. */
+  const showMore = (groupKey: string, agentIds: string[]) => {
     setGroupCaps((prev) => {
       const next = new Map(prev);
       next.set(groupKey, (prev.get(groupKey) ?? SIDEBAR_PAGE_SIZE) + SIDEBAR_PAGE_SIZE);
       return next;
     });
-    if (moreAgents.length > 0) void loadMoreFor(moreAgents, "active");
+    if (agentIds.length > 0) void loadMoreFor(agentIds, "active");
   };
 
   /**
    * Expanded group body shared by both modes: active user rows (display-capped; "More"
    * reveals and loads further **active-only** pages — the folders below never feed it) +
    * the collapsed-by-default subagent / scheduled / archived folders, each loading on
-   * first expand and paging on its own.
+   * first expand and paging on its own. `totals` / `agentsFor` carry the group's exact
+   * server share and its fetch fan-out set per category.
    */
   const renderGroupBody = (
     groupKey: string,
     parts: SessionPartition,
     withAgentHint: boolean,
-    /** Agents contributing to this group (agent mode: exactly the group's Agent). */
-    agentIds: string[],
-    /** The group Agent's exact category totals (agent mode only — folder labels). */
-    countsOf?: SessionCategoryCounts,
+    totals: SessionCategoryCounts | undefined,
+    agentsFor: (category: SessionCategory) => string[],
   ) => {
     const cap = groupCaps.get(groupKey) ?? SIDEBAR_PAGE_SIZE;
     const shownActive = parts.active.slice(0, cap);
-    // Only the outer active rows drive the group's "More": hidden loaded rows exist, or an
-    // Agent contributing to them still has active server pages. The folders don't count —
-    // each carries its own paging.
-    const activeMoreAgents = groupAgentsWithMore(parts.active, (id) => hasMoreFor(id, "active"));
-    const hasMore = parts.active.length > cap || activeMoreAgents.length > 0;
+    // Only the outer active rows drive the group's "More" — the folders never feed it:
+    // hidden loaded rows exist, or the group's own active share isn't fully loaded yet.
+    const activeAgents = agentsFor("active");
+    const activeTotal = Math.max(totals?.active ?? 0, parts.active.length);
+    const hasMore =
+      parts.active.length > cap ||
+      (parts.active.length < activeTotal && activeAgents.some((id) => hasMoreFor(id, "active")));
     const folders = FOLDER_CATEGORIES.map((category) =>
-      renderFolder(groupKey, category, parts, withAgentHint, agentIds, countsOf),
+      renderFolder(groupKey, category, parts, withAgentHint, agentsFor(category), totals),
     );
     const empty = parts.active.length === 0 && folders.every((f) => f === null);
     return (
@@ -564,7 +582,7 @@ export function Sidebar({
           <button
             type="button"
             aria-label={S.chat.loadMore}
-            onClick={() => showMore(groupKey, activeMoreAgents)}
+            onClick={() => showMore(groupKey, activeAgents)}
             className={`${folderClass} mt-0.5`}
           >
             <span className="w-3" aria-hidden />
@@ -825,8 +843,8 @@ export function Sidebar({
                         agent.agentId,
                         parts,
                         false,
-                        [agent.agentId],
                         countsByAgent.get(agent.agentId),
+                        () => [agent.agentId],
                       )}
                 </div>
               );
@@ -843,6 +861,12 @@ export function Sidebar({
             const parts = partitionSessions(group.sessions);
             const collapsed = collapsedGroups.has(group.key);
             const pinned = pinnedGroups.has(group.key);
+            /** This group's exact server share (per-Workspace fold) and its per-category fetch fan-out. */
+            const counts = workspaceGroupCounts.get(group.key);
+            const contributingAgents = [...new Set(group.sessions.map((s) => s.agentId))];
+            const agentsFor = (category: SessionCategory) => [
+              ...new Set([...(counts?.agents[category] ?? []), ...contributingAgents]),
+            ];
             return (
               <div key={group.key} className="pt-2.5">
                 {/* Group header: collapse toggle (folder icon + directory basename + count, full path in the tooltip) + pin + new chat in this Workspace.
@@ -865,10 +889,10 @@ export function Sidebar({
                     <span className="min-w-0 truncate text-xs font-semibold text-gray-500 dark:text-gray-400">
                       {group.temp ? S.chat.tempWorkspaces : group.label}
                     </span>
-                    {/* Header count = the outer active rows only (loaded user Sessions): the folders
-                        are lazy-loaded, so any count spanning them would misreport until opened. */}
+                    {/* Header count = the group's active conversations only (exact server share;
+                        loaded rows win a disagreement) — the folders never feed it. */}
                     <span className="shrink-0 text-[11px] text-gray-400 dark:text-gray-500">
-                      {parts.active.length}
+                      {Math.max(counts?.totals.active ?? 0, parts.active.length)}
                     </span>
                     <Chevron open={!collapsed} size={12} className="text-gray-400" />
                     <span className="min-w-0 flex-1" />
@@ -887,13 +911,12 @@ export function Sidebar({
                 </div>
 
                 {/* A workspace group can span Agents: the group body fans folder loads and "More"
-                    out to every contributing Agent (per category — the active list and each
-                    folder page independently). */}
+                    out per category to the Agents whose share of THIS group is non-zero (plus the
+                    Agents already contributing loaded rows) — the active list and each folder
+                    page independently. */}
                 {collapsed
                   ? null
-                  : renderGroupBody(group.key, parts, true, [
-                      ...new Set(group.sessions.map((s) => s.agentId)),
-                    ])}
+                  : renderGroupBody(group.key, parts, true, counts?.totals, agentsFor)}
               </div>
             );
           })

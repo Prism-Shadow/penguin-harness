@@ -51,6 +51,8 @@ interface SessionsContextValue {
   byAgent: ReadonlyMap<string, SessionInfo[]>;
   /** agentId → per-category totals from the last list fetch (folder labels; kept in step locally on add / remove / archive toggles). */
   countsByAgent: ReadonlyMap<string, SessionCategoryCounts>;
+  /** agentId → the same totals broken down by Workspace path (workspace-mode groups read their own share from it; maintained like countsByAgent). */
+  workspaceCountsByAgent: ReadonlyMap<string, Readonly<Record<string, SessionCategoryCounts>>>;
   /** Whether a pair's first page has been fetched (false = the folder shows nothing because nothing was asked for yet). */
   isLoadedFor: (agentId: string, category: SessionCategory) => boolean;
   /** Whether the server still holds unfetched Sessions of a category for an Agent — an unloaded pair answers from the counts. */
@@ -89,6 +91,9 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
   const [countsByAgent, setCountsByAgent] = useState<ReadonlyMap<string, SessionCategoryCounts>>(
     new Map(),
   );
+  const [workspaceCountsByAgent, setWorkspaceCountsByAgent] = useState<
+    ReadonlyMap<string, Readonly<Record<string, SessionCategoryCounts>>>
+  >(new Map());
   const [loading, setLoading] = useState(true);
   // Generation counter: invalidates any in-flight response once the Project/Agent set
   // changes or a reload happens.
@@ -128,6 +133,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
                 return {
                   category,
                   counts: res.counts,
+                  workspaceCounts: res.workspaceCounts,
                   ...splitPage(res.sessions, SIDEBAR_PAGE_SIZE),
                 };
               }),
@@ -144,10 +150,15 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       const seen = new Set<string>();
       const nextPageState = new Map<string, boolean>();
       const nextCounts = new Map<string, SessionCategoryCounts>();
+      const nextWorkspaceCounts = new Map<
+        string,
+        Readonly<Record<string, SessionCategoryCounts>>
+      >();
       for (const r of results) {
         for (const p of r.pages) {
           nextPageState.set(pageKey(r.agentId, p.category), p.hasMore);
           if (p.counts) nextCounts.set(r.agentId, p.counts);
+          if (p.workspaceCounts) nextWorkspaceCounts.set(r.agentId, p.workspaceCounts);
           for (const s of p.items) {
             if (!seen.has(s.sessionId)) {
               seen.add(s.sessionId);
@@ -159,6 +170,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       setSessions(nextSessions);
       setPageState(nextPageState);
       setCountsByAgent(nextCounts);
+      setWorkspaceCountsByAgent(nextWorkspaceCounts);
     } finally {
       if (g === gen.current) setLoading(false);
     }
@@ -172,6 +184,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
     pageStateRef.current = new Map();
     setPageState(pageStateRef.current);
     setCountsByAgent(new Map());
+    setWorkspaceCountsByAgent(new Map());
     void reload();
   }, [reload]);
 
@@ -245,16 +258,31 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
     [pageState, countsByAgent],
   );
 
-  /** Keeps an Agent's category totals in step with local list mutations (no-op while its counts are unknown). */
-  const adjustCount = useCallback((agentId: string, category: SessionCategory, delta: number) => {
-    setCountsByAgent((prev) => {
-      const cur = prev.get(agentId);
-      if (!cur) return prev;
-      const next = new Map(prev);
-      next.set(agentId, { ...cur, [category]: Math.max(0, cur[category] + delta) });
-      return next;
-    });
-  }, []);
+  /** Keeps an Agent's category totals — overall and per Workspace — in step with a local list mutation of `session` (no-op while its counts are unknown). */
+  const adjustCount = useCallback(
+    (session: SessionInfo, category: SessionCategory, delta: number) => {
+      const { agentId, workspace } = session;
+      setCountsByAgent((prev) => {
+        const cur = prev.get(agentId);
+        if (!cur) return prev;
+        const next = new Map(prev);
+        next.set(agentId, { ...cur, [category]: Math.max(0, cur[category] + delta) });
+        return next;
+      });
+      setWorkspaceCountsByAgent((prev) => {
+        const cur = prev.get(agentId);
+        if (!cur) return prev;
+        const ws = cur[workspace] ?? { active: 0, subagent: 0, schedule: 0, archived: 0 };
+        const next = new Map(prev);
+        next.set(agentId, {
+          ...cur,
+          [workspace]: { ...ws, [category]: Math.max(0, ws[category] + delta) },
+        });
+        return next;
+      });
+    },
+    [],
+  );
 
   // User-level event stream (/api/events): a scheduled task firing may have created a new
   // Session (new-session mode); reload the list so it appears immediately. schedule_queued
@@ -290,7 +318,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
         !existed &&
         pageStateRef.current.get(pageKey(session.agentId, sessionCategory(session))) === false
       ) {
-        adjustCount(session.agentId, sessionCategory(session), 1);
+        adjustCount(session, sessionCategory(session), 1);
       }
       setSessions((prev) => [session, ...prev.filter((s) => s.sessionId !== session.sessionId)]);
     },
@@ -302,7 +330,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       // Invalidate any in-flight reload: the deletion mustn't be undone by a stale snapshot.
       gen.current += 1;
       const row = sessionsRef.current.find((s) => s.sessionId === sessionId);
-      if (row) adjustCount(row.agentId, sessionCategory(row), -1);
+      if (row) adjustCount(row, sessionCategory(row), -1);
       setSessions((prev) => prev.filter((s) => s.sessionId !== sessionId));
     },
     [adjustCount],
@@ -313,8 +341,8 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       // An archive toggle moves the row across categories: keep the folder totals in step.
       const old = sessionsRef.current.find((s) => s.sessionId === session.sessionId);
       if (old && sessionCategory(old) !== sessionCategory(session)) {
-        adjustCount(session.agentId, sessionCategory(old), -1);
-        adjustCount(session.agentId, sessionCategory(session), 1);
+        adjustCount(session, sessionCategory(old), -1);
+        adjustCount(session, sessionCategory(session), 1);
       }
       setSessions((prev) => prev.map((s) => (s.sessionId === session.sessionId ? session : s)));
     },
@@ -352,6 +380,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       sessions,
       byAgent,
       countsByAgent,
+      workspaceCountsByAgent,
       isLoadedFor,
       hasMoreFor,
       loading,
@@ -366,6 +395,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
   }, [
     sessions,
     countsByAgent,
+    workspaceCountsByAgent,
     isLoadedFor,
     hasMoreFor,
     loading,

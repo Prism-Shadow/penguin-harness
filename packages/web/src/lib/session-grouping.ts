@@ -9,7 +9,11 @@
  * those is single-use, so per-path groups would be one-session noise — they are all
  * merged into ONE trailing "temp workspaces" group instead.
  */
-import type { SessionCategory, SessionInfo } from "@prismshadow/penguin-server/api";
+import type {
+  SessionCategory,
+  SessionCategoryCounts,
+  SessionInfo,
+} from "@prismshadow/penguin-server/api";
 
 /** Group key of the merged auto-temp group ("\0" can never appear in a filesystem path, so it never collides with a real Workspace). */
 export const TEMP_WORKSPACE_GROUP_KEY = "\0temp-workspaces";
@@ -42,11 +46,13 @@ export function workspaceLabel(workspace: string): string {
 }
 
 /**
- * Sidebar page size: sessions fetched per Agent per page, and the per-group display cap
- * step for active rows. Fetches use limit = SIDEBAR_PAGE_SIZE + 1 (see splitPage) so one
- * request both fills a page and answers "is there more" without a response-envelope change.
+ * Sidebar page size: sessions fetched per (Agent, category) per page, and the per-group
+ * display cap step for active rows — 10 conversations show by default and every "More"
+ * click reveals/loads 10 more. Fetches use limit = SIDEBAR_PAGE_SIZE + 1 (see splitPage)
+ * so one request both fills a page and answers "is there more" without a
+ * response-envelope change.
  */
-export const SIDEBAR_PAGE_SIZE = 20;
+export const SIDEBAR_PAGE_SIZE = 10;
 
 /**
  * Applies the limit+1 fetch trick: `fetched` came from a request with `limit = pageSize + 1`;
@@ -57,23 +63,6 @@ export function splitPage<T>(fetched: T[], pageSize: number): { items: T[]; hasM
   return fetched.length > pageSize
     ? { items: fetched.slice(0, pageSize), hasMore: true }
     : { items: fetched, hasMore: false };
-}
-
-/**
- * The distinct Agents contributing to a group that still have unfetched server pages
- * (per the caller's predicate — page state is per Agent **and** category) — a
- * workspace-mode group can span Agents, so "load more" for the group fans out to every
- * contributing Agent with more (agent-mode groups are single-Agent and get 0..1 entries).
- */
-export function groupAgentsWithMore(
-  sessions: SessionInfo[],
-  hasMore: (agentId: string) => boolean,
-): string[] {
-  const out: string[] = [];
-  for (const s of sessions) {
-    if (hasMore(s.agentId) && !out.includes(s.agentId)) out.push(s.agentId);
-  }
-  return out;
 }
 
 /**
@@ -105,6 +94,49 @@ export function partitionSessions(sessions: SessionInfo[]): SessionPartition {
   const parts: SessionPartition = { active: [], subagent: [], schedule: [], archived: [] };
   for (const s of sessions) parts[sessionCategory(s)].push(s);
   return parts;
+}
+
+const ALL_CATEGORIES: readonly SessionCategory[] = ["active", ...FOLDER_CATEGORIES];
+
+/** One workspace-mode group's aggregated server counts: exact totals plus which Agents hold rows of each category. */
+export interface GroupCounts {
+  totals: SessionCategoryCounts;
+  /** Per category, the Agents whose share of this group is non-zero — the fetch fan-out set for the group's folders and "More". */
+  agents: Record<SessionCategory, string[]>;
+}
+
+/**
+ * Folds the per-Agent per-Workspace-path category counts (SessionsResponse.workspaceCounts)
+ * into workspace-mode groups, keyed like groupSessionsByWorkspace (exact path; auto-temp
+ * paths merged into the temp group). The sidebar labels a group's folders and decides its
+ * "More" from its own share — never from an Agent's other Workspaces, which would
+ * advertise folders whose content lives in other groups.
+ */
+export function aggregateWorkspaceCounts(
+  byAgent: ReadonlyMap<string, Readonly<Record<string, SessionCategoryCounts>>>,
+): Map<string, GroupCounts> {
+  const out = new Map<string, GroupCounts>();
+  for (const [agentId, byWorkspace] of byAgent) {
+    for (const [workspace, counts] of Object.entries(byWorkspace)) {
+      const key = workspaceGroupKey(workspace);
+      let group = out.get(key);
+      if (!group) {
+        group = {
+          totals: { active: 0, subagent: 0, schedule: 0, archived: 0 },
+          agents: { active: [], subagent: [], schedule: [], archived: [] },
+        };
+        out.set(key, group);
+      }
+      for (const category of ALL_CATEGORIES) {
+        const n = counts[category];
+        if (n <= 0) continue;
+        group.totals[category] += n;
+        // Several temp paths of one Agent fold into the temp group: dedupe.
+        if (!group.agents[category].includes(agentId)) group.agents[category].push(agentId);
+      }
+    }
+  }
+  return out;
 }
 
 /**

@@ -653,11 +653,11 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     unarchiveSession: "取消归档",
     /** Sidebar group "reveal/load next page" row (display cap + server paging). */
     loadMore: "更多",
-    /** Collapsed sidebar folders inside a group (lazy-loaded); null count = share unknown until first opened (workspace mode). */
+    /** Collapsed sidebar folders inside a group (lazy-loaded); the count is the group's exact server share. */
     folderGroups: {
-      subagent: (n: number | null) => (n === null ? "子智能体" : `子智能体（${n}）`),
-      schedule: (n: number | null) => (n === null ? "定时任务" : `定时任务（${n}）`),
-      archived: (n: number | null) => (n === null ? "已归档" : `已归档（${n}）`),
+      subagent: (n: number) => `子智能体（${n}）`,
+      schedule: (n: number) => `定时任务（${n}）`,
+      archived: (n: number) => `已归档（${n}）`,
     },
     skillsBanner: (names: string[]): string => `使用技能：${names.join("、")}`,
   },

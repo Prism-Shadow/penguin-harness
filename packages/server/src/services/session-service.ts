@@ -165,8 +165,9 @@ export class SessionService {
    * within the category. Filtering needs each walked row's category (a possible
    * Trace-head read per row, cached in the sources registry); without `withCounts`
    * the walk stops as soon as the requested page is complete. `withCounts` classifies
-   * every row and returns per-category totals over the whole list — the sidebar asks
-   * for them on its first page to label the collapsed folders without loading them.
+   * every row and returns per-category totals over the whole list — plus the same
+   * totals broken down by Workspace path — so the sidebar can label the collapsed
+   * folders (and a workspace group can know its own share) without loading them.
    */
   async listSessions(
     projectId: string,
@@ -176,7 +177,11 @@ export class SessionService {
       category?: SessionCategory;
       withCounts?: boolean;
     } = {},
-  ): Promise<{ sessions: SessionInfo[]; counts?: SessionCategoryCounts }> {
+  ): Promise<{
+    sessions: SessionInfo[];
+    counts?: SessionCategoryCounts;
+    workspaceCounts?: Record<string, SessionCategoryCounts>;
+  }> {
     const { paging, category, withCounts } = opts;
     const traceIds = await this.discoverTraceSessionIds(projectId, agentId);
     const rows = new Map(
@@ -207,15 +212,25 @@ export class SessionService {
 
     const want = paging ? paging.offset + paging.limit : Infinity;
     const counts: SessionCategoryCounts = { active: 0, subagent: 0, schedule: 0, archived: 0 };
+    const workspaceCounts: Record<string, SessionCategoryCounts> = {};
     const matched: SessionRow[] = [];
     for (const row of sorted) {
       if (!withCounts && matched.length >= want) break;
       const cat = await this.categoryOf(row, traceIds.has(row.sessionId));
       counts[cat] += 1;
+      if (withCounts) {
+        const ws = (workspaceCounts[row.workspace] ??= {
+          active: 0,
+          subagent: 0,
+          schedule: 0,
+          archived: 0,
+        });
+        ws[cat] += 1;
+      }
       if ((category === undefined || cat === category) && matched.length < want) matched.push(row);
     }
     const sessions = await toPage(paging ? matched.slice(paging.offset, want) : matched);
-    return withCounts ? { sessions, counts } : { sessions };
+    return withCounts ? { sessions, counts, workspaceCounts } : { sessions };
   }
 
   /**

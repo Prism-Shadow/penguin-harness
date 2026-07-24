@@ -668,11 +668,11 @@ When done, open index.html in a browser and self-test once.`,
     unarchiveSession: "Unarchive",
     /** Sidebar group "reveal/load next page" row (display cap + server paging). */
     loadMore: "More",
-    /** Collapsed sidebar folders inside a group (lazy-loaded); null count = share unknown until first opened (workspace mode). */
+    /** Collapsed sidebar folders inside a group (lazy-loaded); the count is the group's exact server share. */
     folderGroups: {
-      subagent: (n: number | null) => (n === null ? "Subagents" : `Subagents (${n})`),
-      schedule: (n: number | null) => (n === null ? "Scheduled" : `Scheduled (${n})`),
-      archived: (n: number | null) => (n === null ? "Archived" : `Archived (${n})`),
+      subagent: (n: number) => `Subagents (${n})`,
+      schedule: (n: number) => `Scheduled (${n})`,
+      archived: (n: number) => `Archived (${n})`,
     },
     skillsBanner: (names: string[]): string =>
       `Using skill${names.length === 1 ? "" : "s"}: ${names.join(", ")}`,

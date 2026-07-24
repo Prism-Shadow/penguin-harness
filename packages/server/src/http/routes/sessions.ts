@@ -118,12 +118,20 @@ export function agentSessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     }
     const rawCounts = c.req.query("counts");
     if (rawCounts !== undefined && rawCounts !== "1") throw badRequest("counts only accepts 1.");
-    const { sessions, counts } = await deps.sessionService.listSessions(projectId, agentId, {
-      ...(paging ? { paging } : {}),
-      ...(rawCategory !== undefined ? { category: rawCategory as SessionCategory } : {}),
-      ...(rawCounts !== undefined ? { withCounts: true } : {}),
-    });
-    return c.json({ sessions, ...(counts ? { counts } : {}) } satisfies SessionsResponse);
+    const { sessions, counts, workspaceCounts } = await deps.sessionService.listSessions(
+      projectId,
+      agentId,
+      {
+        ...(paging ? { paging } : {}),
+        ...(rawCategory !== undefined ? { category: rawCategory as SessionCategory } : {}),
+        ...(rawCounts !== undefined ? { withCounts: true } : {}),
+      },
+    );
+    return c.json({
+      sessions,
+      ...(counts ? { counts } : {}),
+      ...(workspaceCounts ? { workspaceCounts } : {}),
+    } satisfies SessionsResponse);
   });
 
   app.post("/", async (c) => {

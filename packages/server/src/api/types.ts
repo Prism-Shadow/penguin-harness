@@ -489,6 +489,13 @@ export interface SessionsResponse {
   sessions: SessionInfo[];
   /** Present when the request asked for counts (`counts=1`): totals per category over the full list, not just the returned page. */
   counts?: SessionCategoryCounts;
+  /**
+   * Present with `counts`: the same totals broken down by Workspace path (only paths
+   * with at least one Session appear). The sidebar's workspace grouping decides each
+   * group's folders and "More" from its own share, so a group never advertises
+   * content that lives in other Workspaces.
+   */
+  workspaceCounts?: Record<string, SessionCategoryCounts>;
 }
 
 /** Server directory browsing (advanced new-Workspace picker): starts from the home directory by default, can navigate up to the root. */

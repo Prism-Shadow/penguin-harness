@@ -321,6 +321,23 @@ describe("session-index", () => {
     expect(full.sessions).toHaveLength(6);
     expect(full.counts).toEqual({ active: 2, subagent: 1, schedule: 1, archived: 2 });
     expect((await list("")).counts).toBeUndefined();
+    expect((await list("")).workspaceCounts).toBeUndefined();
+
+    // The per-Workspace breakdown accompanies the totals and sums back to them: the
+    // subagent Session sits alone in its path; every other row lives in its own auto
+    // temp directory.
+    const byWorkspace = full.workspaceCounts!;
+    expect(byWorkspace["/tmp/w-sub"]).toEqual({
+      active: 0,
+      subagent: 1,
+      schedule: 0,
+      archived: 0,
+    });
+    const summed = { active: 0, subagent: 0, schedule: 0, archived: 0 };
+    for (const ws of Object.values(byWorkspace)) {
+      for (const key of Object.keys(summed) as (keyof typeof summed)[]) summed[key] += ws[key];
+    }
+    expect(summed).toEqual(full.counts);
 
     // Junk values are rejected, never silently unfiltered.
     expect((await api.get(`${base()}?category=weird`)).status).toBe(400);
