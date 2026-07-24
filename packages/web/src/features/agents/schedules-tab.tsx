@@ -30,6 +30,7 @@ import { Input, Textarea } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
 import { Modal } from "../../components/ui/modal";
 import { SkeletonList } from "../../components/ui/skeleton";
+import { toastError, toastSuccess } from "../../components/ui/toast";
 
 /** Display status → badge tone. */
 const STATUS_TONE: Record<ScheduleStatus, BadgeTone> = {
@@ -117,11 +118,18 @@ export function SchedulesTab({ agentId }: { agentId: string }) {
   const isOwner = currentProject?.role === "owner";
 
   const [data, setData] = useState<SchedulesResponse | null>(null);
+  // Tab-level error is only the initial list load failure; row/edit actions report via toast.
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   // Modal form: non-null means open (EMPTY_FORM for create / prefilled row for edit).
   const [form, setForm] = useState<FormState | null>(null);
+  // Per-field required errors sit next to their input; formError holds a submit rejection that isn't attributable to one field.
+  const [fieldErrors, setFieldErrors] = useState<{
+    name?: string;
+    prompt?: string;
+    startAt?: string;
+    sessionId?: string;
+  }>({});
   const [formError, setFormError] = useState<string | null>(null);
   // Name of the task pending deletion confirmation (non-null shows the confirm modal).
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -151,10 +159,14 @@ export function SchedulesTab({ agentId }: { agentId: string }) {
       .catch(() => setModels([]));
   }, [projectId, isOwner]);
 
-  const set = (patch: Partial<FormState>) =>
+  const set = (patch: Partial<FormState>) => {
+    setFieldErrors((p) => (p.name || p.prompt || p.startAt || p.sessionId ? {} : p));
+    setFormError((p) => (p ? null : p));
     setForm((prev) => (prev === null ? prev : { ...prev, ...patch }));
+  };
 
   const openForm = (next: FormState) => {
+    setFieldErrors({});
     setFormError(null);
     setForm(next);
   };
@@ -162,18 +174,19 @@ export function SchedulesTab({ agentId }: { agentId: string }) {
   const submit = async () => {
     if (!projectId || form === null) return;
     setFormError(null);
-    setNotice(null);
     const name = form.editing ?? form.name.trim();
     // sessionId is required in bind-to-Session mode — leaving it blank would silently downgrade to "new Session", changing the user's intended choice.
-    if (
-      !name ||
-      !form.prompt.trim() ||
-      !form.startAt ||
-      (form.target === "session" && !form.sessionId.trim())
-    ) {
-      setFormError(S.common.requiredField);
+    const next: { name?: string; prompt?: string; startAt?: string; sessionId?: string } = {};
+    if (!name) next.name = S.common.requiredField;
+    if (!form.prompt.trim()) next.prompt = S.common.requiredField;
+    if (!form.startAt) next.startAt = S.common.requiredField;
+    if (form.target === "session" && !form.sessionId.trim())
+      next.sessionId = S.common.requiredField;
+    if (next.name || next.prompt || next.startAt || next.sessionId) {
+      setFieldErrors(next);
       return;
     }
+    setFieldErrors({});
     // Empty-string keys are always omitted; target is one of two choices — sessionId is
     // sent only when binding to a Session, and workspace plus the model reference
     // (modelId + provider pair) only when creating a new Session.
@@ -198,10 +211,10 @@ export function SchedulesTab({ agentId }: { agentId: string }) {
       if (form.editing !== null) await api.updateSchedule(projectId, agentId, form.editing, body);
       else await api.createSchedule(projectId, agentId, { name, ...body });
       setForm(null);
-      setNotice(S.common.saved);
+      toastSuccess(S.common.saved);
       await load();
     } catch (e) {
-      // Errors like 400 (validated with the same rules as hand-written files) land under the modal form.
+      // A 400 (validated with the same rules as hand-written files) isn't tied to one field — show it under the modal form.
       setFormError(e instanceof ApiError ? e.message : S.common.unknownError);
     } finally {
       setBusy(false);
@@ -212,8 +225,6 @@ export function SchedulesTab({ agentId }: { agentId: string }) {
   const toggle = async (item: ScheduleItem) => {
     if (!projectId) return;
     setBusy(true);
-    setError(null);
-    setNotice(null);
     const model = itemModelRef(item);
     try {
       await api.updateSchedule(projectId, agentId, item.name, {
@@ -227,10 +238,10 @@ export function SchedulesTab({ agentId }: { agentId: string }) {
         // Model reference is resent as a whole pair or not at all — never half of one.
         ...(model ? { modelId: model.modelId, provider: model.provider } : {}),
       });
-      setNotice(S.common.saved);
+      toastSuccess(S.common.saved);
       await load();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : S.common.unknownError);
+      toastError(e instanceof ApiError ? e.message : S.common.unknownError);
     } finally {
       setBusy(false);
     }
@@ -257,14 +268,12 @@ export function SchedulesTab({ agentId }: { agentId: string }) {
   const confirmRemove = async () => {
     if (!projectId || deleting === null) return;
     setBusy(true);
-    setError(null);
-    setNotice(null);
     try {
       await api.deleteSchedule(projectId, agentId, deleting);
       if (form?.editing === deleting) setForm(null);
       await load();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : S.common.unknownError);
+      toastError(e instanceof ApiError ? e.message : S.common.unknownError);
     } finally {
       setBusy(false);
       setDeleting(null);
@@ -295,7 +304,7 @@ export function SchedulesTab({ agentId }: { agentId: string }) {
           <table className="w-full min-w-[640px] text-left text-sm">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50/80 text-xs text-gray-500 dark:border-gray-800 dark:bg-gray-900">
-                <th className="px-3 py-2.5">{S.schedule.colName}</th>
+                <th className="px-3 py-2.5">{S.common.name}</th>
                 <th className="px-3 py-2.5">{S.schedule.colStatus}</th>
                 <th className="px-3 py-2.5">{S.schedule.colPeriod}</th>
                 <th className="px-3 py-2.5">{S.schedule.colTarget}</th>
@@ -423,8 +432,9 @@ export function SchedulesTab({ agentId }: { agentId: string }) {
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               <Input
                 size="sm"
-                label={S.schedule.name}
+                label={S.common.name}
                 hint={S.schedule.nameHint}
+                error={fieldErrors.name}
                 value={form.name}
                 disabled={form.editing !== null}
                 onChange={(e) => set({ name: e.target.value })}
@@ -445,6 +455,7 @@ export function SchedulesTab({ agentId }: { agentId: string }) {
                 size="sm"
                 label={S.schedule.startAt}
                 type="datetime-local"
+                error={fieldErrors.startAt}
                 value={form.startAt}
                 onChange={(e) => set({ startAt: e.target.value })}
                 className="font-mono"
@@ -470,6 +481,7 @@ export function SchedulesTab({ agentId }: { agentId: string }) {
                 <Input
                   size="sm"
                   label={S.schedule.sessionId}
+                  error={fieldErrors.sessionId}
                   value={form.sessionId}
                   onChange={(e) => set({ sessionId: e.target.value })}
                   className="font-mono"
@@ -520,6 +532,7 @@ export function SchedulesTab({ agentId }: { agentId: string }) {
               label={S.schedule.prompt}
               size="sm"
               rows={4}
+              error={fieldErrors.prompt}
               value={form.prompt}
               onChange={(e) => set({ prompt: e.target.value })}
             />
@@ -556,7 +569,6 @@ export function SchedulesTab({ agentId }: { agentId: string }) {
       </Modal>
 
       {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
-      {notice && <p className="text-xs text-emerald-600 dark:text-emerald-400">{notice}</p>}
     </div>
   );
 }

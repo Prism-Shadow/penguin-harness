@@ -425,7 +425,7 @@ export function TraceFileView({
           {/* Duration · cost · TPS (cost above duration, same order as the conversation page's stats row). */}
           <div>
             <SummaryRow
-              label={S.chat.statCost}
+              label={S.common.cost}
               value={formatMoney(costOf(global.buckets), currency)}
             />
             <SummaryRow
@@ -497,7 +497,7 @@ export function TraceFileView({
                 <StatChip
                   icon={STAT_ICONS.cost}
                   value={formatMoney(costOf(tokens), currency)}
-                  label={`${S.chat.statCost}（${currency}）`}
+                  label={`${S.common.cost}（${currency}）`}
                 />
                 <StatChip
                   icon={STAT_ICONS.elapsed}

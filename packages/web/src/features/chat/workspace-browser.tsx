@@ -23,6 +23,7 @@ import { useAuth } from "../../state/auth";
 import { S } from "../../lib/strings";
 import { formatBytes, formatDateTime } from "../../lib/format";
 import { Button } from "../../components/ui/button";
+import { toastError, toastSuccess } from "../../components/ui/toast";
 import { Dropdown } from "../../components/ui/dropdown";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { CodeBlock } from "./code-block";
@@ -195,7 +196,6 @@ export function WorkspaceBrowser({
   const [data, setData] = useState<WorkspaceFilesResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [reloadTick, setReloadTick] = useState(0);
   const [showPath, setShowPath] = useState(false);
@@ -223,7 +223,6 @@ export function WorkspaceBrowser({
     setPath("");
     setPreview(null);
     setData(null);
-    setNotice(null);
   }, [session.sessionId]);
 
   // Edge-triggered refresh on the panel's hidden -> visible transition (doesn't count the initial mount: mounting itself already fetches once).
@@ -311,7 +310,6 @@ export function WorkspaceBrowser({
     const files = e.target.files;
     if (!files || files.length === 0) return;
     setUploading(true);
-    setNotice(null);
     setError(null);
     void (async () => {
       try {
@@ -327,10 +325,10 @@ export function WorkspaceBrowser({
           });
           await api.uploadWorkspaceFile(session.sessionId, joinPath(path, file.name), b64);
         }
-        setNotice(S.files.uploaded);
+        toastSuccess(S.files.uploaded);
         setReloadTick((t) => t + 1);
       } catch (err) {
-        setError(err instanceof ApiError ? err.message : S.common.unknownError);
+        toastError(err instanceof ApiError ? err.message : S.common.unknownError);
       } finally {
         setUploading(false);
       }
@@ -692,9 +690,6 @@ export function WorkspaceBrowser({
               </li>
             ))}
           </ul>
-        )}
-        {notice && (
-          <p className="px-3 py-2 text-xs text-emerald-600 dark:text-emerald-400">{notice}</p>
         )}
       </div>
     </div>

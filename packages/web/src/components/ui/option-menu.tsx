@@ -29,6 +29,8 @@ import { useState } from "react";
 import { createPortal } from "react-dom";
 import { sizeClass } from "./input";
 import type { ControlSize } from "./input";
+import { Field, controlBase, menuRowClass } from "./field";
+import { CheckIcon, ChevronDown } from "./icons";
 import { usePortalPanel } from "./use-portal-panel";
 
 export interface OptionMenuChoice<T extends string> {
@@ -95,27 +97,14 @@ export function OptionMenu<T extends string>({
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
         className={
-          "flex items-center gap-2 rounded-md border border-gray-300 bg-white text-gray-900 " +
-          "transition-[border-color,box-shadow] duration-200 hover:border-gray-400 " +
-          "focus:border-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-400/30 " +
-          "dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:border-gray-600 " +
-          "dark:focus:border-gray-400 dark:focus:ring-gray-500/30 " +
-          sizeClass[size] +
+          `flex items-center gap-2 ${controlBase} ${sizeClass[size]}` +
           (fullWidth ? " w-full justify-between" : "")
         }
       >
         <span className={`min-w-0 truncate ${mono ? "font-mono" : ""}`}>
           {current?.triggerLabel ?? placeholder ?? "—"}
         </span>
-        <svg
-          viewBox="0 0 12 12"
-          fill="none"
-          stroke="currentColor"
-          aria-hidden
-          className="size-3 shrink-0 text-gray-400"
-        >
-          <path d="M3 4.5l3 3 3-3" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
+        <ChevronDown className="text-gray-400" />
       </button>
       {open &&
         position &&
@@ -142,7 +131,7 @@ export function OptionMenu<T extends string>({
                   onChange(opt.value);
                   setOpen(false);
                 }}
-                className={`block w-full px-3 py-1.5 text-left transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800 ${
+                className={`block ${menuRowClass} hover:bg-gray-100 dark:hover:bg-gray-800 ${
                   opt.value === value ? "bg-gray-100 dark:bg-gray-800" : ""
                 }`}
               >
@@ -157,22 +146,7 @@ export function OptionMenu<T extends string>({
                     {opt.label}
                   </span>
                   {opt.value === value && (
-                    <svg
-                      width="13"
-                      height="13"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      className="shrink-0 text-gray-500 dark:text-gray-400"
-                      aria-hidden
-                    >
-                      <path
-                        d="M5 12l4 4L19 6"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
+                    <CheckIcon className="text-gray-500 dark:text-gray-400" />
                   )}
                 </span>
                 <span
@@ -187,13 +161,5 @@ export function OptionMenu<T extends string>({
         )}
     </>
   );
-  if (!label) return control;
-  return (
-    <label className="block">
-      <span className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-400">
-        {label}
-      </span>
-      {control}
-    </label>
-  );
+  return <Field label={label}>{control}</Field>;
 }

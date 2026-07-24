@@ -574,7 +574,7 @@ export function ChatPage() {
               <StatChip
                 icon={STAT_ICONS.cost}
                 value={`${formatMoney(sessionCost, currency)}${costUncosted ? " *" : ""}`}
-                label={`${S.chat.statCost}（${currency}）${costUncosted ? ` · ${S.usage.uncostedNote}` : ""}`}
+                label={`${S.common.cost}（${currency}）${costUncosted ? ` · ${S.usage.uncostedNote}` : ""}`}
               />
             )}
             <StatChip
@@ -660,7 +660,7 @@ export function ChatPage() {
               </div>
               <div>
                 <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                  {S.models.createdAt}
+                  {S.common.created}
                 </p>
                 <p className="font-mono text-xs">{formatDateTime(selected.createdAt)}</p>
               </div>
@@ -672,7 +672,7 @@ export function ChatPage() {
                 <p className="font-mono text-xs">
                   {S.chat.statTokens} {humanizeTokens(totalTokens)}
                   {sessionCost != null &&
-                    ` · ${S.chat.statCost} ${formatMoney(sessionCost, currency)}`}{" "}
+                    ` · ${S.common.cost} ${formatMoney(sessionCost, currency)}`}{" "}
                   · {S.chat.statElapsed} {humanizeDuration(stream.model.stats.sessionElapsedMs)}
                 </p>
               </div>

@@ -17,34 +17,37 @@ export function ChangePasswordDialog({ open, onClose }: { open: boolean; onClose
   const [oldPassword, setOldPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [errors, setErrors] = useState<{ old?: string; new?: string; confirm?: string }>({});
   const [busy, setBusy] = useState(false);
+  const clearErrors = () => setErrors((p) => (p.old || p.new || p.confirm ? {} : p));
 
   useEffect(() => {
     if (!open) return;
     setOldPassword("");
     setNewPassword("");
     setConfirmPassword("");
-    setError(null);
+    setErrors({});
   }, [open]);
 
   const submit = async () => {
-    if (!oldPassword || !newPassword || !confirmPassword) {
-      setError(S.common.requiredField);
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      setError(S.account.passwordMismatch);
+    const next: { old?: string; new?: string; confirm?: string } = {};
+    if (!oldPassword) next.old = S.common.requiredField;
+    if (!newPassword) next.new = S.common.requiredField;
+    if (!confirmPassword) next.confirm = S.common.requiredField;
+    if (!next.confirm && newPassword !== confirmPassword) next.confirm = S.account.passwordMismatch;
+    if (next.old || next.new || next.confirm) {
+      setErrors(next);
       return;
     }
     setBusy(true);
-    setError(null);
+    setErrors({});
     try {
       await api.changePassword({ oldPassword, newPassword });
       await refresh();
       onClose();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : S.common.unknownError);
+      // The server only rejects here when the old password is wrong — attach it to that field.
+      setErrors({ old: e instanceof ApiError ? e.message : S.common.unknownError });
     } finally {
       setBusy(false);
     }
@@ -71,7 +74,11 @@ export function ChangePasswordDialog({ open, onClose }: { open: boolean; onClose
           label={S.account.oldPassword}
           size="sm"
           value={oldPassword}
-          onChange={(e) => setOldPassword(e.target.value)}
+          onChange={(e) => {
+            setOldPassword(e.target.value);
+            clearErrors();
+          }}
+          error={errors.old}
           autoComplete="current-password"
           hint={S.account.oldPasswordHint}
           autoFocus
@@ -80,7 +87,11 @@ export function ChangePasswordDialog({ open, onClose }: { open: boolean; onClose
           label={S.account.newPassword}
           size="sm"
           value={newPassword}
-          onChange={(e) => setNewPassword(e.target.value)}
+          onChange={(e) => {
+            setNewPassword(e.target.value);
+            clearErrors();
+          }}
+          error={errors.new}
           autoComplete="new-password"
           hint={S.auth.passwordHint}
         />
@@ -88,10 +99,13 @@ export function ChangePasswordDialog({ open, onClose }: { open: boolean; onClose
           label={S.account.confirmPassword}
           size="sm"
           value={confirmPassword}
-          onChange={(e) => setConfirmPassword(e.target.value)}
+          onChange={(e) => {
+            setConfirmPassword(e.target.value);
+            clearErrors();
+          }}
+          error={errors.confirm}
           autoComplete="new-password"
         />
-        {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
       </div>
     </Modal>
   );

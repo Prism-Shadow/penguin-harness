@@ -62,11 +62,11 @@ export function AdminUsersPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50 text-left text-xs text-gray-500 dark:border-gray-800 dark:bg-gray-900/60 dark:text-gray-400">
-                  <th className="whitespace-nowrap px-3 py-2 font-medium">{S.admin.userId}</th>
-                  <th className="whitespace-nowrap px-3 py-2 font-medium">{S.admin.role}</th>
-                  <th className="whitespace-nowrap px-3 py-2 font-medium">{S.admin.createdAt}</th>
+                  <th className="whitespace-nowrap px-3 py-2 font-medium">{S.common.username}</th>
+                  <th className="whitespace-nowrap px-3 py-2 font-medium">{S.common.role}</th>
+                  <th className="whitespace-nowrap px-3 py-2 font-medium">{S.common.created}</th>
                   <th className="whitespace-nowrap px-3 py-2 text-right font-medium">
-                    {S.admin.actions}
+                    {S.common.actions}
                   </th>
                 </tr>
               </thead>
@@ -93,7 +93,7 @@ export function AdminUsersPage() {
                       </Button>
                       {!u.isAdmin && (
                         <Button size="sm" variant="ghost" onClick={() => setDeleting(u)}>
-                          {S.admin.deleteUser}
+                          {S.common.delete}
                         </Button>
                       )}
                     </td>
@@ -138,33 +138,35 @@ function CreateUserDialog({
 }) {
   const [userId, setUserId] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [errors, setErrors] = useState<{ userId?: string; password?: string }>({});
   const [busy, setBusy] = useState(false);
+  const clearErrors = () => setErrors((p) => (p.userId || p.password ? {} : p));
 
   useEffect(() => {
     if (!open) return;
     setUserId("");
     setPassword("");
-    setError(null);
+    setErrors({});
   }, [open]);
 
   const submit = async () => {
     const id = userId.trim();
-    if (!id || !password) {
-      setError(S.common.requiredField);
-      return;
-    }
-    if (!USERNAME_PATTERN.test(id)) {
-      setError(S.auth.usernameHint);
+    const next: { userId?: string; password?: string } = {};
+    if (!id) next.userId = S.common.requiredField;
+    else if (!USERNAME_PATTERN.test(id)) next.userId = S.auth.usernameHint;
+    if (!password) next.password = S.common.requiredField;
+    if (next.userId || next.password) {
+      setErrors(next);
       return;
     }
     setBusy(true);
-    setError(null);
+    setErrors({});
     try {
       await api.adminCreateUser({ userId: id, password });
       onDone();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : S.common.unknownError);
+      // The server rejects a duplicate id here — surface it on the id field.
+      setErrors({ userId: e instanceof ApiError ? e.message : S.common.unknownError });
     } finally {
       setBusy(false);
     }
@@ -188,10 +190,14 @@ function CreateUserDialog({
     >
       <div className="space-y-3">
         <Input
-          label={S.admin.userId}
+          label={S.common.username}
           size="sm"
           value={userId}
-          onChange={(e) => setUserId(e.target.value)}
+          onChange={(e) => {
+            setUserId(e.target.value);
+            clearErrors();
+          }}
+          error={errors.userId}
           hint={S.auth.usernameHint}
           autoFocus
         />
@@ -199,7 +205,11 @@ function CreateUserDialog({
           label={S.admin.initialPassword}
           size="sm"
           value={password}
-          onChange={(e) => setPassword(e.target.value)}
+          onChange={(e) => {
+            setPassword(e.target.value);
+            clearErrors();
+          }}
+          error={errors.password}
           autoComplete="new-password"
           hint={S.auth.passwordHint}
         />
@@ -208,7 +218,6 @@ function CreateUserDialog({
             {S.admin.defaultProjectNote(`${userId.trim()}-default_project`)}
           </p>
         )}
-        {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
       </div>
     </Modal>
   );
@@ -216,28 +225,28 @@ function CreateUserDialog({
 
 function ResetPasswordDialog({ user, onClose }: { user: UserInfo | null; onClose: () => void }) {
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [passwordError, setPasswordError] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (!user) return;
     setPassword("");
-    setError(null);
+    setPasswordError(undefined);
   }, [user]);
 
   const submit = async () => {
     if (!user) return;
     if (!password) {
-      setError(S.common.requiredField);
+      setPasswordError(S.common.requiredField);
       return;
     }
     setBusy(true);
-    setError(null);
+    setPasswordError(undefined);
     try {
       await api.adminResetPassword(user.userId, { password });
       onClose();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : S.common.unknownError);
+      setPasswordError(e instanceof ApiError ? e.message : S.common.unknownError);
     } finally {
       setBusy(false);
     }
@@ -264,13 +273,16 @@ function ResetPasswordDialog({ user, onClose }: { user: UserInfo | null; onClose
           label={S.admin.initialPassword}
           size="sm"
           value={password}
-          onChange={(e) => setPassword(e.target.value)}
+          onChange={(e) => {
+            setPassword(e.target.value);
+            setPasswordError(undefined);
+          }}
+          error={passwordError}
           autoComplete="new-password"
           hint={S.auth.passwordHint}
           autoFocus
         />
         <p className="text-xs text-gray-400 dark:text-gray-500">{S.admin.resetPasswordNote}</p>
-        {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
       </div>
     </Modal>
   );

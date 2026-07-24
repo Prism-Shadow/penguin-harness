@@ -20,6 +20,7 @@ import { Input } from "../../components/ui/input";
 import { PasswordInput } from "../../components/ui/password-input";
 import { Modal } from "../../components/ui/modal";
 import { SkeletonList } from "../../components/ui/skeleton";
+import { toastError, toastSuccess } from "../../components/ui/toast";
 
 /** Vault key naming rule (consistent with core/server): shell environment variable name. */
 const VAULT_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -30,14 +31,15 @@ export function VaultTab({ agentId }: { agentId: string }) {
   const isOwner = currentProject?.role === "owner";
 
   const [entries, setEntries] = useState<VaultEntryInfo[] | null>(null);
+  // Tab-level error is only the initial load failure; saves/deletes report via toast.
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  // Add modal: both form state and errors travel with the modal (tab-level error would be hidden behind the modal).
+  // Add modal: form state and per-field errors travel with the modal (a tab-level error would be hidden behind it).
   const [adding, setAdding] = useState(false);
   const [keyInput, setKeyInput] = useState("");
   const [valueInput, setValueInput] = useState("");
-  const [addError, setAddError] = useState<string | null>(null);
+  const [addErrors, setAddErrors] = useState<{ key?: string; value?: string }>({});
+  const clearAddErrors = () => setAddErrors((p) => (p.key || p.value ? {} : p));
   // Key pending deletion confirmation (non-null shows the confirm modal).
   const [deleting, setDeleting] = useState<string | null>(null);
 
@@ -61,11 +63,10 @@ export function VaultTab({ agentId }: { agentId: string }) {
   const persist = async (body: VaultUpdateRequest): Promise<string | null> => {
     if (!projectId || !agentId) return S.common.unknownError;
     setBusy(true);
-    setNotice(null);
     try {
       const res = await api.putVault(projectId, agentId, body);
       setEntries(res.entries);
-      setNotice(S.common.saved);
+      toastSuccess(S.common.saved);
       return null;
     } catch (e) {
       return e instanceof ApiError ? e.message : S.common.unknownError;
@@ -84,40 +85,36 @@ export function VaultTab({ agentId }: { agentId: string }) {
   const openAdd = () => {
     setKeyInput("");
     setValueInput("");
-    setAddError(null);
+    setAddErrors({});
     setAdding(true);
   };
 
   const addEntry = async () => {
     const key = keyInput.trim();
-    if (!key) {
-      setAddError(S.common.requiredField);
+    const next: { key?: string; value?: string } = {};
+    if (!key) next.key = S.common.requiredField;
+    else if (!VAULT_KEY_PATTERN.test(key)) next.key = S.vault.keyInvalid;
+    if (!valueInput) next.value = S.vault.valueRequired;
+    if (next.key || next.value) {
+      setAddErrors(next);
       return;
     }
-    if (!VAULT_KEY_PATTERN.test(key)) {
-      setAddError(S.vault.keyInvalid);
-      return;
-    }
-    if (!valueInput) {
-      setAddError(S.vault.valueRequired);
-      return;
-    }
-    setAddError(null);
+    setAddErrors({});
     // Upsert by same key name: don't resend the existing entry too, to avoid a 400 from PUT's duplicate-key validation.
     const err = await persist({ entries: [...keepEntries(key), { key, value: valueInput }] });
     if (err !== null) {
-      setAddError(err);
+      // Server rejection (e.g. duplicate key) — surface it on the key field.
+      setAddErrors({ key: err });
       return;
     }
     setAdding(false);
   };
 
-  /** Confirm modal's "Confirm": closes the modal after deletion (on failure, the error lands on the tab's error line). */
+  /** Confirm modal's "Confirm": closes the modal after deletion; a failure pops a toast. */
   const confirmRemove = async () => {
     if (deleting === null) return;
-    setError(null);
     const err = await persist({ entries: keepEntries(deleting) });
-    if (err !== null) setError(err);
+    if (err !== null) toastError(err);
     setDeleting(null);
   };
 
@@ -201,8 +198,12 @@ export function VaultTab({ agentId }: { agentId: string }) {
             size="sm"
             label={S.vault.key}
             hint={S.vault.keyHint}
+            error={addErrors.key}
             value={keyInput}
-            onChange={(e) => setKeyInput(e.target.value)}
+            onChange={(e) => {
+              setKeyInput(e.target.value);
+              clearAddErrors();
+            }}
             className="font-mono"
             placeholder="OPENAI_API_KEY"
             autoComplete="off"
@@ -210,15 +211,18 @@ export function VaultTab({ agentId }: { agentId: string }) {
           <PasswordInput
             size="sm"
             label={S.vault.value}
+            error={addErrors.value}
             value={valueInput}
-            onChange={(e) => setValueInput(e.target.value)}
+            onChange={(e) => {
+              setValueInput(e.target.value);
+              clearAddErrors();
+            }}
             className="font-mono"
             autoComplete="off"
             onKeyDown={(e) => {
               if (e.key === "Enter" && !busy) void addEntry();
             }}
           />
-          {addError && <p className="text-xs text-red-600 dark:text-red-400">{addError}</p>}
         </div>
       </Modal>
 
@@ -242,7 +246,6 @@ export function VaultTab({ agentId }: { agentId: string }) {
       </Modal>
 
       {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
-      {notice && <p className="text-xs text-emerald-600 dark:text-emerald-400">{notice}</p>}
     </div>
   );
 }

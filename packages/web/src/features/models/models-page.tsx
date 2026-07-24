@@ -48,11 +48,12 @@ import { USD_TO_CNY, useTheme } from "../../state/theme";
 import type { Currency } from "../../state/theme";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
+import { FieldError, FieldLabel } from "../../components/ui/field";
 import { PasswordInput } from "../../components/ui/password-input";
 import { Modal } from "../../components/ui/modal";
 import { Select } from "../../components/ui/select";
 import { Switch } from "../../components/ui/switch";
-import { toastError, toastSuccess } from "../../components/ui/toast";
+import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 import { Badge } from "../../components/ui/badge";
 import { Chevron } from "../../components/ui/chevron";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
@@ -231,11 +232,6 @@ export function nextPointers(args: {
           : follow(defaultModel),
     visionModel: action === "setVisionModel" ? ref : follow(visionModel),
   };
-}
-
-/** Field-level error text: placed directly below the offending input (the input itself is highlighted red via Input's invalid prop). */
-function FieldError({ text }: { text: string }) {
-  return <span className="mt-1 block text-xs text-red-600 dark:text-red-400">{text}</span>;
 }
 
 /** Fields in the config dialog that can be highlighted red on error (keys match RowState field names, so they can be cleared per edit action). */
@@ -449,7 +445,7 @@ export function ModelsPage() {
     if (!rows) return;
     const merged = syncRowsWithCatalog(rows);
     if (merged.added === 0 && merged.updated === 0) {
-      toastSuccess(S.models.syncUpToDate);
+      toastInfo(S.models.syncUpToDate);
       return;
     }
     await persist(
@@ -826,7 +822,7 @@ export function ModelsPage() {
               className="font-mono"
               autoFocus
             />
-            {groupNameError && <FieldError text={groupNameError} />}
+            {groupNameError && <FieldError>{groupNameError}</FieldError>}
           </label>
           <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">{S.models.addGroupDesc}</p>
         </Modal>
@@ -1266,7 +1262,7 @@ function ModelDialog({
           autoFocus={isNew}
           placeholder={S.models.modelIdHint}
         />
-        {fieldErrors.modelId && <FieldError text={fieldErrors.modelId} />}
+        {fieldErrors.modelId && <FieldError>{fieldErrors.modelId}</FieldError>}
         {/* Hint when auto-routing misses (first-party provider group, adding): warns without blocking. */}
         {autoRouteMiss && (
           <span className="mt-1 block text-xs text-amber-600 dark:text-amber-400">
@@ -1346,7 +1342,7 @@ function ModelDialog({
             <Button
               variant="primary"
               onClick={() => {
-                // Validate first: if validation fails, show it via the top-level hint right away without popping the confirm dialog.
+                // Validate first: if validation fails, the inline field errors show right away without popping the confirm dialog.
                 if (!validated()) return;
                 if (isNew) submit("save");
                 else setConfirming("save");
@@ -1498,7 +1494,7 @@ function ModelDialog({
             <span className="font-mono">{form.credential.apiKeyMasked}</span>
             {form.credential.createdAt && (
               <span className="text-gray-400">
-                {S.models.createdAt} {formatDateTime(form.credential.createdAt)}
+                {S.common.created} {formatDateTime(form.credential.createdAt)}
               </span>
             )}
             {canEdit && (
@@ -1536,9 +1532,7 @@ function ModelDialog({
             model stay under its window). */}
         <div className="grid grid-cols-2 items-start gap-2">
           <label className="block">
-            <span className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-400">
-              {S.models.contextWindow}
-            </span>
+            <FieldLabel>{S.models.contextWindow}</FieldLabel>
             <span className="relative block">
               <Input
                 size="sm"
@@ -1564,12 +1558,10 @@ function ModelDialog({
                 {S.models.tokenUnit}
               </span>
             </span>
-            {fieldErrors.contextWindow && <FieldError text={fieldErrors.contextWindow} />}
+            {fieldErrors.contextWindow && <FieldError>{fieldErrors.contextWindow}</FieldError>}
           </label>
           <label className="block">
-            <span className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-400">
-              {S.models.maxTokens}
-            </span>
+            <FieldLabel>{S.models.maxTokens}</FieldLabel>
             <span className="relative block">
               <Input
                 size="sm"
@@ -1587,7 +1579,7 @@ function ModelDialog({
                 {S.models.tokenUnit}
               </span>
             </span>
-            {fieldErrors.maxTokens && <FieldError text={fieldErrors.maxTokens} />}
+            {fieldErrors.maxTokens && <FieldError>{fieldErrors.maxTokens}</FieldError>}
           </label>
         </div>
 
@@ -1604,9 +1596,7 @@ function ModelDialog({
             ] as Array<[keyof FieldErrors & keyof RowState, string, string]>
           ).map(([key, label, value]) => (
             <label key={key} className="block">
-              <span className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-400">
-                {label}
-              </span>
+              <FieldLabel>{label}</FieldLabel>
               <span className="relative block">
                 <span className="pointer-events-none absolute inset-y-0 left-2 flex items-center text-xs text-gray-400">
                   {CURRENCY_SYMBOL[currency]}
@@ -1624,7 +1614,7 @@ function ModelDialog({
                   {S.models.priceUnitShort}
                 </span>
               </span>
-              {fieldErrors[key] && <FieldError text={fieldErrors[key]} />}
+              {fieldErrors[key] && <FieldError>{fieldErrors[key]}</FieldError>}
             </label>
           ))}
         </div>

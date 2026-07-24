@@ -81,7 +81,7 @@ function SummaryCard({
         <SummaryRow label={S.usage.requests} value={String(bucket.requests)} muted />
         {/* The unpriced-records asterisk sits on the word "cost" (superscript), keeping the number clean and readable; see the footer for the explanation */}
         <SummaryRow
-          label={S.usage.colCost}
+          label={S.common.cost}
           value={formatMoney(bucket.cost, currency)}
           sup={bucket.hasUncosted}
         />

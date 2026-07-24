@@ -71,7 +71,8 @@ export function AgentsPage() {
   const [agentId, setAgentId] = useState("");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  // The id is the only validated create field; format problems and the server's duplicate-id rejection land beside it.
+  const [idError, setIdError] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
 
   /** Open the create dialog: don't keep the previous draft, always start from an empty form. */
@@ -79,7 +80,7 @@ export function AgentsPage() {
     setAgentId("");
     setName("");
     setDescription("");
-    setError(null);
+    setIdError(undefined);
     setCreateOpen(true);
   };
   /** Agent pending delete confirmation (null = none). */
@@ -92,15 +93,15 @@ export function AgentsPage() {
     if (!projectId) return;
     const id = agentId.trim();
     if (!id) {
-      setError(S.common.requiredField);
+      setIdError(S.common.requiredField);
       return;
     }
     if (!SEMANTIC_ID_PATTERN.test(id)) {
-      setError(S.agent.idHint);
+      setIdError(S.agent.idHint);
       return;
     }
     setBusy(true);
-    setError(null);
+    setIdError(undefined);
     try {
       // Name defaults to the id (leave blank to let the server fill it in from the id).
       const body: { agentId: string; name?: string; description?: string } = { agentId: id };
@@ -112,7 +113,7 @@ export function AgentsPage() {
       setCurrentAgentId(res.agent.agentId);
       navigate(`/agents/${res.agent.agentId}`);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : S.common.unknownError);
+      setIdError(e instanceof ApiError ? e.message : S.common.unknownError);
     } finally {
       setBusy(false);
     }
@@ -372,12 +373,16 @@ export function AgentsPage() {
             label={S.agent.id}
             size="sm"
             value={agentId}
-            onChange={(e) => setAgentId(e.target.value)}
+            onChange={(e) => {
+              setAgentId(e.target.value);
+              setIdError(undefined);
+            }}
+            error={idError}
             hint={S.agent.idHint}
             autoFocus
           />
           <Input
-            label={S.agent.name}
+            label={S.common.name}
             size="sm"
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -390,7 +395,6 @@ export function AgentsPage() {
             value={description}
             onChange={(e) => setDescription(e.target.value)}
           />
-          {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
         </div>
       </Modal>
 

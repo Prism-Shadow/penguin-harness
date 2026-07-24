@@ -25,6 +25,7 @@ import { useDocumentTitle } from "../../lib/use-document-title";
 import { useProject } from "../../state/project";
 import { Tabs } from "../../components/ui/tabs";
 import { Button } from "../../components/ui/button";
+import { toastError, toastSuccess } from "../../components/ui/toast";
 import { Input, Textarea } from "../../components/ui/input";
 import { OptionMenu, type OptionMenuChoice } from "../../components/ui/option-menu";
 import { Modal } from "../../components/ui/modal";
@@ -131,8 +132,8 @@ export function AgentSettingsPage() {
 
   const [data, setData] = useState<AgentConfigResponse | null>(null);
   const [tab, setTab] = useState<TabKey>("overview");
+  // Only the initial config load failure renders inline (the page can't show without it); saves/imports report via toast.
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
 
   const load = useCallback(() => {
     if (!projectId || !agentId) return;
@@ -151,7 +152,7 @@ export function AgentSettingsPage() {
   /** Snapshot import succeeded: show the new version and reload the whole config (import overwrites the entire Agent State, so every tab's data needs a refresh). */
   const onImported = useCallback(
     (version: number) => {
-      setNotice(S.agent.importDone(version));
+      toastSuccess(S.agent.importDone(version));
       load();
       void reloadAgents();
     },
@@ -161,18 +162,16 @@ export function AgentSettingsPage() {
   const save = useCallback(
     async (update: AgentConfigUpdateRequest) => {
       if (!projectId || !agentId) return;
-      setError(null);
-      setNotice(null);
       try {
         const res = await api.putAgentConfig(projectId, agentId, update);
         setData(res);
-        setNotice(S.common.saved);
+        toastSuccess(S.common.saved);
         // Name/description changes affect the breadcrumb and list display.
         if (update.config?.name !== undefined || update.config?.description !== undefined) {
           void reloadAgents();
         }
       } catch (e) {
-        setError(e instanceof ApiError ? e.message : S.common.unknownError);
+        toastError(e instanceof ApiError ? e.message : S.common.unknownError);
       }
     },
     [projectId, agentId, reloadAgents],
@@ -229,8 +228,6 @@ export function AgentSettingsPage() {
           {tab === "vault" && <VaultTab agentId={agentId} />}
           {tab === "schedules" && <SchedulesTab agentId={agentId} />}
         </div>
-        {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
-        {notice && <p className="text-xs text-emerald-600 dark:text-emerald-400">{notice}</p>}
       </div>
     </div>
   );
@@ -317,7 +314,7 @@ function OverviewTab({
     <div className="space-y-4">
       <Input
         size="sm"
-        label={S.agent.name}
+        label={S.common.name}
         value={name}
         onChange={(e) => setName(e.target.value)}
       />
@@ -503,16 +500,17 @@ function RuntimeTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveF
   const [maxSessionTurns, setMaxSessionTurns] = useState(numToStr(cfg.compaction?.maxSessionTurns));
   const [mode, setMode] = useState(cfg.compaction?.mode ?? "");
   const [prompt, setPrompt] = useState(cfg.compaction?.prompt ?? "");
-  const [localError, setLocalError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<{ maxTurns?: string; timeoutMs?: string }>({});
+  const clearFieldErrors = () => setFieldErrors((p) => (p.maxTurns || p.timeoutMs ? {} : p));
 
   const submit = () => {
-    setLocalError(null);
+    setFieldErrors({});
     const config: NonNullable<AgentConfigUpdateRequest["config"]> = {};
 
     const mt = parseNum(maxTurns);
     if (mt !== undefined && mt !== cfg.maxTurns) {
       if (mt <= 0 && mt !== -1) {
-        setLocalError(S.agent.maxTurnsInvalid);
+        setFieldErrors({ maxTurns: S.agent.maxTurnsInvalid });
         return;
       }
       config.maxTurns = mt;
@@ -527,7 +525,7 @@ function RuntimeTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveF
     const tmo = parseNum(timeoutMs);
     if (tmo !== undefined && tmo !== cfg.model?.timeoutMs) {
       if (tmo <= 0 && tmo !== -1) {
-        setLocalError(S.agent.timeoutInvalid);
+        setFieldErrors({ timeoutMs: S.agent.timeoutInvalid });
         return;
       }
       model.timeoutMs = tmo;
@@ -576,7 +574,11 @@ function RuntimeTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveF
               label={S.agent.maxTurns}
               size="sm"
               value={maxTurns}
-              onChange={(e) => setMaxTurns(e.target.value)}
+              error={fieldErrors.maxTurns}
+              onChange={(e) => {
+                setMaxTurns(e.target.value);
+                clearFieldErrors();
+              }}
               inputMode="numeric"
               className="font-mono"
             />
@@ -599,7 +601,11 @@ function RuntimeTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveF
               hint={S.agent.timeoutMsHint}
               size="sm"
               value={timeoutMs}
-              onChange={(e) => setTimeoutMs(e.target.value)}
+              error={fieldErrors.timeoutMs}
+              onChange={(e) => {
+                setTimeoutMs(e.target.value);
+                clearFieldErrors();
+              }}
               inputMode="numeric"
               className="font-mono"
             />
@@ -653,7 +659,6 @@ function RuntimeTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveF
         </div>
       </div>
 
-      {localError && <p className="text-xs text-red-600 dark:text-red-400">{localError}</p>}
       <Button size="sm" variant="primary" onClick={submit}>
         {S.common.save}
       </Button>
@@ -691,17 +696,27 @@ function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn 
       maxOutputLength: numToStr(t.maxOutputLength),
     })),
   );
-  const [localError, setLocalError] = useState<string | null>(null);
+  // Per-cell validation errors, keyed `${rowIndex}-${column}`, shown red under the offending numeric input.
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   const update = (index: number, patch: Partial<ToolRowState>) => {
     setRows((prev) => prev.map((r, i) => (i === index ? { ...r, ...patch } : r)));
+    setFieldErrors((p) => {
+      const kt = `${index}-timeoutMs`;
+      const km = `${index}-maxOutputLength`;
+      if (!p[kt] && !p[km]) return p;
+      const next = { ...p };
+      delete next[kt];
+      delete next[km];
+      return next;
+    });
   };
 
   const submit = () => {
-    setLocalError(null);
     // toolsBuiltin is submitted as a full table: an empty string omits that key (revert to default); non-empty values are validated per the server's rules.
+    const errs: Record<string, string> = {};
     const tools: ToolDefinitionConfig[] = [];
-    for (const row of rows) {
+    for (const [i, row] of rows.entries()) {
       const tool: ToolDefinitionConfig = { ...row.base };
       delete tool.timeoutMs;
       delete tool.maxOutputLength;
@@ -709,22 +724,23 @@ function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn 
       if (timeout) {
         const n = Number(timeout);
         if (!Number.isInteger(n) || (n <= 0 && n !== -1)) {
-          setLocalError(S.agent.toolFieldInvalid(row.base.name, "timeoutMs"));
-          return;
-        }
-        tool.timeoutMs = n;
+          errs[`${i}-timeoutMs`] = S.agent.toolFieldInvalid(row.base.name, "timeoutMs");
+        } else tool.timeoutMs = n;
       }
       const maxOutput = row.maxOutputLength.trim();
       if (maxOutput) {
         const n = Number(maxOutput);
         if (!Number.isInteger(n) || (n <= 0 && n !== -1)) {
-          setLocalError(S.agent.toolFieldInvalid(row.base.name, "maxOutputLength"));
-          return;
-        }
-        tool.maxOutputLength = n;
+          errs[`${i}-maxOutputLength`] = S.agent.toolFieldInvalid(row.base.name, "maxOutputLength");
+        } else tool.maxOutputLength = n;
       }
       tools.push(tool);
     }
+    if (Object.keys(errs).length > 0) {
+      setFieldErrors(errs);
+      return;
+    }
+    setFieldErrors({});
     void onSave({ config: { toolsBuiltin: tools } });
   };
 
@@ -734,7 +750,7 @@ function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn 
         <table className="w-full min-w-[520px] text-left text-sm">
           <thead>
             <tr className="border-b border-gray-200 bg-gray-50/80 text-xs text-gray-500 dark:border-gray-800 dark:bg-gray-900">
-              <th className="px-3 py-2">{S.agent.toolName}</th>
+              <th className="px-3 py-2">{S.common.name}</th>
               <th className="px-3 py-2">{S.agent.toolPermission}</th>
               <th className="px-3 py-2">{S.agent.toolTimeout}</th>
               <th className="px-3 py-2">{S.agent.toolMaxOutput}</th>
@@ -743,8 +759,8 @@ function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn 
           <tbody>
             {rows.map((row, i) => (
               <tr key={row.base.name} className="border-b border-gray-100 dark:border-gray-800/60">
-                <td className="px-3 py-2 font-mono text-xs">{row.base.name}</td>
-                <td className="px-3 py-2">
+                <td className="px-3 py-2 align-top font-mono text-xs">{row.base.name}</td>
+                <td className="px-3 py-2 align-top">
                   <OptionMenu
                     mono
                     size="sm"
@@ -755,19 +771,21 @@ function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn 
                     onChange={(v) => update(i, { base: { ...row.base, permission: v } })}
                   />
                 </td>
-                <td className="px-3 py-2">
+                <td className="px-3 py-2 align-top">
                   <Input
                     size="sm"
                     value={row.timeoutMs}
+                    error={fieldErrors[`${i}-timeoutMs`]}
                     inputMode="numeric"
                     className="font-mono"
                     onChange={(e) => update(i, { timeoutMs: e.target.value })}
                   />
                 </td>
-                <td className="px-3 py-2">
+                <td className="px-3 py-2 align-top">
                   <Input
                     size="sm"
                     value={row.maxOutputLength}
+                    error={fieldErrors[`${i}-maxOutputLength`]}
                     inputMode="numeric"
                     className="font-mono"
                     onChange={(e) => update(i, { maxOutputLength: e.target.value })}
@@ -778,8 +796,6 @@ function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn 
           </tbody>
         </table>
       </div>
-
-      {localError && <p className="text-xs text-red-600 dark:text-red-400">{localError}</p>}
 
       <div>
         <p className="mb-1 text-xs font-medium text-gray-500">{S.agent.mcpServers}</p>

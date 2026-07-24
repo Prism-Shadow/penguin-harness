@@ -41,6 +41,8 @@ import type { SessionPartition } from "../../lib/session-grouping";
 import { Dropdown } from "../ui/dropdown";
 import { AgentAvatar } from "../ui/agent-avatar";
 import { Chevron } from "../ui/chevron";
+import { ChevronDown } from "../ui/icons";
+import { toastError } from "../ui/toast";
 import { Truncated } from "../ui/truncated";
 import { Badge } from "../ui/badge";
 import { Modal } from "../ui/modal";
@@ -67,15 +69,6 @@ function Icon({ d, size = 16 }: { d: string; size?: number }) {
       aria-hidden
     >
       <path d={d} />
-    </svg>
-  );
-}
-
-/** Dropdown caret (used by the Project switcher; distinct from the collapse-indicator Chevron). */
-function DropdownCaret() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" aria-hidden>
-      <path d="M3 4.5l3 3 3-3" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -237,7 +230,6 @@ export function Sidebar({
   /** Session pending delete confirmation (null = none). */
   const [deletingSession, setDeletingSession] = useState<SessionInfo | null>(null);
   const [deletingBusy, setDeletingBusy] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
   /** Session currently being renamed (null = none) and the title being typed. */
   const [renamingSession, setRenamingSession] = useState<SessionInfo | null>(null);
   const [renameText, setRenameText] = useState("");
@@ -358,7 +350,6 @@ export function Sidebar({
   const confirmDeleteSession = async () => {
     if (!deletingSession) return;
     setDeletingBusy(true);
-    setDeleteError(null);
     const target = deletingSession;
     try {
       await api.deleteSession(target.sessionId);
@@ -376,7 +367,7 @@ export function Sidebar({
         navigate(rest[0] ? `/chat/${rest[0].sessionId}` : "/chat");
       }
     } catch (e) {
-      setDeleteError(e instanceof ApiError ? e.message : S.common.unknownError);
+      toastError(e instanceof ApiError ? e.message : S.common.unknownError);
     } finally {
       setDeletingBusy(false);
     }
@@ -440,10 +431,7 @@ export function Sidebar({
             setRenameText(x.title ?? "");
             setRenamingSession(x);
           }}
-          onDelete={(x) => {
-            setDeleteError(null);
-            setDeletingSession(x);
-          }}
+          onDelete={(x) => setDeletingSession(x)}
           onToggleArchive={(x) => void toggleArchive(x)}
         />
       ))}
@@ -617,7 +605,7 @@ export function Sidebar({
                 {currentProject ? projectDisplayName(currentProject) : S.common.loading}
               </span>
               <span className="text-gray-400">
-                <DropdownCaret />
+                <ChevronDown />
               </span>
             </button>
           }
@@ -1001,16 +989,17 @@ export function Sidebar({
         <Input
           label={S.chat.renameSessionLabel}
           value={renameText}
+          error={renameError ?? undefined}
           autoFocus
           maxLength={120}
-          onChange={(e) => setRenameText(e.target.value)}
+          onChange={(e) => {
+            setRenameText(e.target.value);
+            if (renameError) setRenameError(null);
+          }}
           onKeyDown={(e) => {
             if (e.key === "Enter" && renameText.trim() && !renameBusy) void confirmRename();
           }}
         />
-        {renameError && (
-          <p className="mt-2 text-xs text-red-600 dark:text-red-400">{renameError}</p>
-        )}
       </Modal>
 
       {/* Delete chat confirmation */}
@@ -1038,9 +1027,6 @@ export function Sidebar({
             ? S.chat.deleteSessionConfirm(deletingSession.title ?? S.chat.defaultSessionTitle)
             : ""}
         </p>
-        {deleteError && (
-          <p className="mt-2 text-xs text-red-600 dark:text-red-400">{deleteError}</p>
-        )}
       </Modal>
     </div>
   );

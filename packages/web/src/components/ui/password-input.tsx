@@ -9,6 +9,7 @@
  */
 import { useState } from "react";
 import { Input, type InputProps } from "./input";
+import { Field } from "./field";
 import { S } from "../../lib/strings";
 
 /** Eye (click to show) and a crossed-out closed eye (click to hide). */
@@ -28,12 +29,7 @@ export function PasswordInput({
   const [visible, setVisible] = useState(false);
   const toggleLabel = visible ? S.auth.hidePassword : S.auth.showPassword;
   return (
-    <label className="block">
-      {label && (
-        <span className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-400">
-          {label}
-        </span>
-      )}
+    <Field label={label} hint={hint} error={error}>
       <div className="relative">
         <Input
           {...rest}
@@ -68,11 +64,6 @@ export function PasswordInput({
           </svg>
         </button>
       </div>
-      {error ? (
-        <span className="mt-1 block text-xs text-red-600 dark:text-red-400">{error}</span>
-      ) : hint ? (
-        <span className="mt-1 block text-xs text-gray-500 dark:text-gray-500">{hint}</span>
-      ) : null}
-    </label>
+    </Field>
   );
 }
