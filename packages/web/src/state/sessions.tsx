@@ -78,6 +78,19 @@ const SessionsContext = createContext<SessionsContextValue | null>(null);
 /** Page-state key of one (Agent, category) pair ("\0" never appears in Agent ids). */
 const pageKey = (agentId: string, category: SessionCategory) => `${agentId}\0${category}`;
 
+/** One pair's paging cursor. */
+interface PagePosition {
+  /** Whether the server still has unfetched rows past `fetched`. */
+  hasMore: boolean;
+  /**
+   * Rows consumed from the server's category stream — the exact offset of the next
+   * page. Deliberately NOT derived from the loaded list: `add()` prepends rows that
+   * were never part of any page (deep-link self-heal), and counting those would skip
+   * a server row on the next fetch.
+   */
+  fetched: number;
+}
+
 export function SessionsProvider({ children }: { children: ReactNode }) {
   const { currentProject, agents } = useProject();
   const projectId = currentProject?.projectId ?? null;
@@ -86,8 +99,8 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
   const agentIdsKey = agents.map((a) => a.agentId).join(",");
 
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
-  /** pageKey → server-has-more for that pair; a key is present iff its first page has been fetched. */
-  const [pageState, setPageState] = useState<ReadonlyMap<string, boolean>>(new Map());
+  /** pageKey → that pair's paging cursor; a key is present iff its first page has been fetched. */
+  const [pageState, setPageState] = useState<ReadonlyMap<string, PagePosition>>(new Map());
   const [countsByAgent, setCountsByAgent] = useState<ReadonlyMap<string, SessionCategoryCounts>>(
     new Map(),
   );
@@ -101,7 +114,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
   // Current values for loadMoreFor (offsets are computed from what is actually loaded).
   const sessionsRef = useRef<SessionInfo[]>([]);
   sessionsRef.current = sessions;
-  const pageStateRef = useRef<ReadonlyMap<string, boolean>>(pageState);
+  const pageStateRef = useRef<ReadonlyMap<string, PagePosition>>(pageState);
   pageStateRef.current = pageState;
   const countsRef = useRef<ReadonlyMap<string, SessionCategoryCounts>>(countsByAgent);
   countsRef.current = countsByAgent;
@@ -148,7 +161,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       if (g !== gen.current) return;
       const nextSessions: SessionInfo[] = [];
       const seen = new Set<string>();
-      const nextPageState = new Map<string, boolean>();
+      const nextPageState = new Map<string, PagePosition>();
       const nextCounts = new Map<string, SessionCategoryCounts>();
       const nextWorkspaceCounts = new Map<
         string,
@@ -156,7 +169,10 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       >();
       for (const r of results) {
         for (const p of r.pages) {
-          nextPageState.set(pageKey(r.agentId, p.category), p.hasMore);
+          nextPageState.set(pageKey(r.agentId, p.category), {
+            hasMore: p.hasMore,
+            fetched: p.items.length,
+          });
           if (p.counts) nextCounts.set(r.agentId, p.counts);
           if (p.workspaceCounts) nextWorkspaceCounts.set(r.agentId, p.workspaceCounts);
           for (const s of p.items) {
@@ -191,26 +207,25 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
   /**
    * Category page fetch for each given Agent: the first page when the pair is unloaded
    * (skipped unless the counts say the category holds anything), the next page when
-   * loaded with more. Offsets are the currently loaded per-pair counts; a session
-   * created since the last page shifts server offsets, so appended rows are
+   * loaded with more. The offset is the pair's `fetched` cursor — rows actually
+   * consumed from the server's stream, never rows `add()` slipped in. A session
+   * created since the last page still shifts server offsets, so appended rows are
    * deduplicated by sessionId (a short page is fine — `hasMore` comes from the server
-   * response, and the next click continues from the new count).
+   * response, and the next click continues from the advanced cursor).
    */
   const loadMoreFor = useCallback(
     async (agentIds: string[], category: SessionCategory) => {
       if (!projectId) return;
       const targets = [...new Set(agentIds)].filter((agentId) => {
-        const loaded = pageStateRef.current.get(pageKey(agentId, category));
-        if (loaded === undefined) return (countsRef.current.get(agentId)?.[category] ?? 0) > 0;
-        return loaded;
+        const position = pageStateRef.current.get(pageKey(agentId, category));
+        if (position === undefined) return (countsRef.current.get(agentId)?.[category] ?? 0) > 0;
+        return position.hasMore;
       });
       if (targets.length === 0) return;
       const g = gen.current;
       const results = await Promise.all(
         targets.map(async (agentId) => {
-          const offset = sessionsRef.current.filter(
-            (s) => s.agentId === agentId && sessionCategory(s) === category,
-          ).length;
+          const offset = pageStateRef.current.get(pageKey(agentId, category))?.fetched ?? 0;
           try {
             const fetched = (
               await api.listSessions(projectId, agentId, {
@@ -236,7 +251,13 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       });
       setPageState((prev) => {
         const next = new Map(prev);
-        for (const r of ok) next.set(pageKey(r.agentId, category), r.hasMore);
+        for (const r of ok) {
+          const key = pageKey(r.agentId, category);
+          next.set(key, {
+            hasMore: r.hasMore,
+            fetched: (prev.get(key)?.fetched ?? 0) + r.items.length,
+          });
+        }
         return next;
       });
     },
@@ -250,8 +271,8 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
 
   const hasMoreFor = useCallback(
     (agentId: string, category: SessionCategory) => {
-      const loaded = pageState.get(pageKey(agentId, category));
-      if (loaded !== undefined) return loaded;
+      const position = pageState.get(pageKey(agentId, category));
+      if (position !== undefined) return position.hasMore;
       // Unloaded pair: anything the counts report is by definition still unfetched.
       return (countsByAgent.get(agentId)?.[category] ?? 0) > 0;
     },
@@ -316,7 +337,8 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       const existed = sessionsRef.current.some((s) => s.sessionId === session.sessionId);
       if (
         !existed &&
-        pageStateRef.current.get(pageKey(session.agentId, sessionCategory(session))) === false
+        pageStateRef.current.get(pageKey(session.agentId, sessionCategory(session)))?.hasMore ===
+          false
       ) {
         adjustCount(session, sessionCategory(session), 1);
       }

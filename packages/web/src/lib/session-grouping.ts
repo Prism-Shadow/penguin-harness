@@ -129,7 +129,8 @@ export function aggregateWorkspaceCounts(
       }
       for (const category of ALL_CATEGORIES) {
         const n = counts[category];
-        if (n <= 0) continue;
+        // !(n > 0) rather than n <= 0: a missing key (undefined) must not slip through and poison the totals with NaN.
+        if (!(n > 0)) continue;
         group.totals[category] += n;
         // Several temp paths of one Agent fold into the temp group: dedupe.
         if (!group.agents[category].includes(agentId)) group.agents[category].push(agentId);

@@ -8,6 +8,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Navigate } from "react-router";
 import type { UserInfo } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
+import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { USERNAME_PATTERN } from "../../lib/semantic-id";
@@ -165,8 +166,13 @@ function CreateUserDialog({
       await api.adminCreateUser({ userId: id, password });
       onDone();
     } catch (e) {
-      // The server rejects a duplicate id here — surface it on the id field.
-      setErrors({ userId: apiErrorText(e) });
+      // Route by error code: invalid_password is about the password's strength;
+      // user_exists (and anything unrecognized) is about the id.
+      if (e instanceof ApiError && e.code === "invalid_password") {
+        setErrors({ password: apiErrorText(e) });
+      } else {
+        setErrors({ userId: apiErrorText(e) });
+      }
     } finally {
       setBusy(false);
     }

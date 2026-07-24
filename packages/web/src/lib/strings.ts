@@ -640,7 +640,6 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     handoffFrom: (agent: string) => `由 ${agent} 的对话交接而来`,
     handoffBack: (title?: string) => (title ? `回到原对话：${title}` : "回到原对话"),
     scheduledFrom: (name: string) => `由定时任务「${name}」触发`,
-    /** Source badge on session list rows (user-created sessions have no source). */
     emptyGreeting: "开始一段新对话",
     compactionRunning: (mode: string) => `压缩进行中（${mode}）…`,
     compactionDone: (mode: string): string =>

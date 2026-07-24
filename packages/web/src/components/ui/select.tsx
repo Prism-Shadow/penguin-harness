@@ -6,10 +6,10 @@
  * is never clipped by a Modal or scroll container; it closes on outside click,
  * Esc, scroll, or resize. Styling matches Input.
  */
-import { Children, isValidElement, useState } from "react";
+import { Children, isValidElement, useId, useState } from "react";
 import type { ChangeEvent, ReactNode, SelectHTMLAttributes } from "react";
 import { createPortal } from "react-dom";
-import { sizeClass } from "./input";
+import { errorClass, sizeClass } from "./input";
 import type { ControlSize } from "./input";
 import { Field, controlBase, menuRowClass } from "./field";
 import { CheckIcon, ChevronDown } from "./icons";
@@ -18,6 +18,8 @@ import { usePortalPanel } from "./use-portal-panel";
 export interface SelectProps extends Omit<SelectHTMLAttributes<HTMLSelectElement>, "size"> {
   label?: string;
   hint?: string;
+  /** Field-value error: red border + message below, exactly like Input. */
+  error?: string;
   /** Same size tier as Input: sm is for filter bars, keeps the toolbar from growing taller. */
   size?: ControlSize;
 }
@@ -51,6 +53,7 @@ const menuTextClass: Record<ControlSize, string> = { base: "text-base", sm: "tex
 export function Select({
   label,
   hint,
+  error,
   required,
   size = "base",
   className,
@@ -62,6 +65,7 @@ export function Select({
   const options = parseOptions(children);
   const current = String(value ?? "");
   const selected = options.find((o) => o.value === current);
+  const errorId = useId();
 
   const [open, setOpen] = useState(false);
   const { triggerRef, panelRef, position } = usePortalPanel({
@@ -87,8 +91,10 @@ export function Select({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-required={required || undefined}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? errorId : undefined}
         onClick={() => setOpen((v) => !v)}
-        className={`${CONTROL_CLASS} ${sizeClass[size]} ${className ?? ""}`}
+        className={`${CONTROL_CLASS} ${sizeClass[size]} ${error ? errorClass : ""} ${className ?? ""}`}
       >
         <span className="min-w-0 flex-1 truncate">
           {selected?.label ?? options[0]?.label ?? ""}
@@ -134,7 +140,7 @@ export function Select({
   );
 
   return (
-    <Field label={label} hint={hint} required={required}>
+    <Field label={label} hint={hint} error={error} errorId={errorId} required={required}>
       {control}
     </Field>
   );

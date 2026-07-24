@@ -5,6 +5,7 @@
  */
 import { useEffect, useState } from "react";
 import * as api from "../../api/endpoints";
+import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useAuth } from "../../state/auth";
@@ -46,8 +47,13 @@ export function ChangePasswordDialog({ open, onClose }: { open: boolean; onClose
       await refresh();
       onClose();
     } catch (e) {
-      // The server only rejects here when the old password is wrong — attach it to that field.
-      setErrors({ old: apiErrorText(e) });
+      // Route by error code: invalid_password is about the NEW password's strength;
+      // password_mismatch (and anything unrecognized) is about the current one.
+      if (e instanceof ApiError && e.code === "invalid_password") {
+        setErrors({ new: apiErrorText(e) });
+      } else {
+        setErrors({ old: apiErrorText(e) });
+      }
     } finally {
       setBusy(false);
     }

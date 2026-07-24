@@ -25,9 +25,9 @@
  * the root stacking context, and this component may also be used inside a Modal
  * form, where z-40 would get covered by the overlay.
  */
-import { useState } from "react";
+import { useId, useState } from "react";
 import { createPortal } from "react-dom";
-import { sizeClass } from "./input";
+import { errorClass, sizeClass } from "./input";
 import type { ControlSize } from "./input";
 import { Field, controlBase, menuRowClass } from "./field";
 import { CheckIcon, ChevronDown } from "./icons";
@@ -57,6 +57,7 @@ export function OptionMenu<T extends string>({
   placeholder,
   mono,
   label,
+  error,
   required,
   fullWidth,
   size = "base",
@@ -72,6 +73,8 @@ export function OptionMenu<T extends string>({
   mono?: boolean;
   /** Field title above the control (same typography as Input); omit to render a bare trigger button (e.g. for table cell usage). */
   label?: string;
+  /** Field-value error: red border + message below, exactly like Input. */
+  error?: string;
   /** Renders a red "*" after the label to mark the field as required. */
   required?: boolean;
   /** Stretch the trigger button to fill the container width, as a replacement for native Select in dense form areas. */
@@ -89,6 +92,7 @@ export function OptionMenu<T extends string>({
     panelWidth: PANEL_WIDTH,
   });
   const current = value != null ? options.find((o) => o.value === value) : undefined;
+  const errorId = useId();
 
   const control = (
     <>
@@ -99,9 +103,11 @@ export function OptionMenu<T extends string>({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-required={required || undefined}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? errorId : undefined}
         onClick={() => setOpen((v) => !v)}
         className={
-          `flex items-center gap-2 ${controlBase} ${sizeClass[size]}` +
+          `flex items-center gap-2 ${controlBase} ${sizeClass[size]} ${error ? errorClass : ""}` +
           (fullWidth ? " w-full justify-between" : "")
         }
       >
@@ -166,7 +172,7 @@ export function OptionMenu<T extends string>({
     </>
   );
   return (
-    <Field label={label} required={required}>
+    <Field label={label} error={error} errorId={errorId} required={required}>
       {control}
     </Field>
   );

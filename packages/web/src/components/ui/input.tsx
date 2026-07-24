@@ -3,7 +3,7 @@
  * a hover border darken and brand focus-ring transition. Shares the control look
  * and the label/hint/error scaffolding with the other form controls via field.tsx.
  */
-import { forwardRef } from "react";
+import { forwardRef, useId } from "react";
 import type { InputHTMLAttributes, TextareaHTMLAttributes } from "react";
 import { Field, controlBase } from "./field";
 
@@ -37,13 +37,14 @@ export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 
 
 /**
  * Error state: red border + light red background (a failed field is visible at a
- * glance; the error text sits below the box).
+ * glance; the error text sits below the box). Shared with Select/OptionMenu so a
+ * failed dropdown reads exactly like a failed input.
  * Forced with `!` — baseClass's border-gray-300 / bg-white are the same kind of
  * border/background utility classes, and which one wins depends on the order the
  * CSS was generated in, not the order of classes in the string (without `!important`
  * this would get overridden).
  */
-const errorClass =
+export const errorClass =
   "!border-red-400 !bg-red-50 hover:!border-red-500 focus:!border-red-500 focus:!ring-red-400/30 " +
   "dark:!border-red-800 dark:!bg-red-950/40 dark:hover:!border-red-700 dark:focus:!border-red-600";
 
@@ -58,15 +59,17 @@ export function Input({
   ...rest
 }: InputProps) {
   const bad = Boolean(error) || Boolean(invalid);
+  const errorId = useId();
   // `required` drives the label's asterisk + aria-required only; the native `required`
   // attribute is intentionally not forwarded (the app validates on submit, so browser
   // validation bubbles would collide with the inline field errors).
   return (
-    <Field label={label} hint={hint} error={error} required={required}>
+    <Field label={label} hint={hint} error={error} errorId={errorId} required={required}>
       <input
         className={`${baseClass} ${sizeClass[size]} ${bad ? errorClass : ""} ${className ?? ""}`}
         aria-invalid={bad ? true : undefined}
         aria-required={required || undefined}
+        aria-describedby={error ? errorId : undefined}
         {...rest}
       />
     </Field>
@@ -90,13 +93,15 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
   ref,
 ) {
   const bad = Boolean(error) || Boolean(invalid);
+  const errorId = useId();
   return (
-    <Field label={label} hint={hint} error={error} required={required}>
+    <Field label={label} hint={hint} error={error} errorId={errorId} required={required}>
       <textarea
         ref={ref}
         className={`${baseClass} px-3 py-2 ${size === "sm" ? "text-xs leading-relaxed" : "text-base"} ${mono ? "font-mono" : ""} ${bad ? errorClass : ""} ${className ?? ""}`}
         aria-invalid={bad ? true : undefined}
         aria-required={required || undefined}
+        aria-describedby={error ? errorId : undefined}
         {...rest}
       />
     </Field>

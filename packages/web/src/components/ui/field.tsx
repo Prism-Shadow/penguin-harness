@@ -40,9 +40,18 @@ export function FieldHint({ children }: { children: ReactNode }) {
   return <span className="mt-1 block text-xs text-gray-500 dark:text-gray-500">{children}</span>;
 }
 
-/** Field-level error text: placed directly below the offending input (the input itself is highlighted red via the control's error/invalid state). */
-export function FieldError({ children }: { children: ReactNode }) {
-  return <span className="mt-1 block text-xs text-red-600 dark:text-red-400">{children}</span>;
+/**
+ * Field-level error text: placed directly below the offending input (the input itself
+ * is highlighted red via the control's error/invalid state). role="alert" announces the
+ * message to assistive tech the moment it appears; `id` is the anchor the control's
+ * aria-describedby points at, so AT users can also find *what* is wrong from the input.
+ */
+export function FieldError({ id, children }: { id?: string; children: ReactNode }) {
+  return (
+    <span id={id} role="alert" className="mt-1 block text-xs text-red-600 dark:text-red-400">
+      {children}
+    </span>
+  );
 }
 
 /**
@@ -55,12 +64,15 @@ export function Field({
   label,
   hint,
   error,
+  errorId,
   required,
   children,
 }: {
   label?: ReactNode;
   hint?: ReactNode;
   error?: ReactNode;
+  /** id for the error text — the control passes the same id in aria-describedby. */
+  errorId?: string;
   /** Renders a red "*" after the label to mark the field as required. */
   required?: boolean;
   children: ReactNode;
@@ -70,7 +82,11 @@ export function Field({
     <label className="block">
       {label != null && label !== "" && <FieldLabel required={required}>{label}</FieldLabel>}
       {children}
-      {error ? <FieldError>{error}</FieldError> : hint ? <FieldHint>{hint}</FieldHint> : null}
+      {error ? (
+        <FieldError id={errorId}>{error}</FieldError>
+      ) : hint ? (
+        <FieldHint>{hint}</FieldHint>
+      ) : null}
     </label>
   );
 }

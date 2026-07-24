@@ -240,6 +240,8 @@ export function Sidebar({
   }, [collapseStoreKey, pinStoreKey]);
   /** Expanded folders (subagent / scheduled / archived; collapsed by default), keyed by folderKey — each folder has its own open state. */
   const [openFolders, setOpenFolders] = useState<ReadonlySet<string>>(new Set());
+  /** "More" rows with a fetch in flight, keyed `${category}\0${groupKey}` — the row disables and reads "loading" so a page that lands entirely in other groups still visibly did something. */
+  const [pendingLoads, setPendingLoads] = useState<ReadonlySet<string>>(new Set());
   /** Per-group display cap for active rows (keyed by group key; absent = SIDEBAR_PAGE_SIZE). "More" raises it a page at a time. */
   const [groupCaps, setGroupCaps] = useState<ReadonlyMap<string, number>>(new Map());
   /** Session pending delete confirmation (null = none). */
@@ -297,6 +299,22 @@ export function Sidebar({
     else next.add(key);
     setPinnedGroups(next);
     saveGroupSet(pinStoreKey, next);
+  };
+
+  /** In-flight key of one group's category "More" (folderKey shares the same composite for folder categories). */
+  const loadKey = (groupKey: string, category: SessionCategory) => `${category}\0${groupKey}`;
+
+  /** loadMoreFor with an in-flight marker for the triggering "More" row (disable + loading text). */
+  const trackedLoadMore = (groupKey: string, category: SessionCategory, agentIds: string[]) => {
+    const key = loadKey(groupKey, category);
+    setPendingLoads((prev) => new Set(prev).add(key));
+    void loadMoreFor(agentIds, category).finally(() => {
+      setPendingLoads((prev) => {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
+    });
   };
 
   /**
@@ -501,6 +519,7 @@ export function Sidebar({
     // More while the group's share isn't fully loaded AND somewhere is left to fetch from
     // (counts drifting above reality would otherwise leave a dead button until reload).
     const more = rows.length < total && agentIds.some((id) => hasMoreFor(id, category));
+    const pending = pendingLoads.has(loadKey(groupKey, category));
     return (
       <div key={category} className="mt-1">
         <button
@@ -514,17 +533,18 @@ export function Sidebar({
         {open && renderRows(rows, withAgentHint)}
         {/* The folder's own paging, independent of the active list's "More". In workspace
             mode a fetched page can land rows in other groups' folders too, so one click may
-            grow this folder by fewer than a full page — the row stays until this group's
-            share is fully loaded. */}
+            grow this folder by fewer than a full page — the row shows a loading state while
+            the fetch runs and stays until this group's share is fully loaded. */}
         {open && more && (
           <button
             type="button"
             aria-label={S.chat.loadMore}
-            onClick={() => void loadMoreFor(agentIds, category)}
-            className={folderClass}
+            disabled={pending}
+            onClick={() => trackedLoadMore(groupKey, category, agentIds)}
+            className={`${folderClass} disabled:opacity-60`}
           >
             <span className="w-3" aria-hidden />
-            {S.chat.loadMore}
+            {pending ? S.common.loading : S.chat.loadMore}
           </button>
         )}
       </div>
@@ -538,7 +558,7 @@ export function Sidebar({
       next.set(groupKey, (prev.get(groupKey) ?? SIDEBAR_PAGE_SIZE) + SIDEBAR_PAGE_SIZE);
       return next;
     });
-    if (agentIds.length > 0) void loadMoreFor(agentIds, "active");
+    if (agentIds.length > 0) trackedLoadMore(groupKey, "active", agentIds);
   };
 
   /**
@@ -568,6 +588,7 @@ export function Sidebar({
       renderFolder(groupKey, category, parts, withAgentHint, agentsFor(category), totals),
     );
     const empty = parts.active.length === 0 && folders.every((f) => f === null);
+    const activePending = pendingLoads.has(loadKey(groupKey, "active"));
     return (
       <>
         {empty ? (
@@ -583,11 +604,12 @@ export function Sidebar({
           <button
             type="button"
             aria-label={S.chat.loadMore}
+            disabled={activePending}
             onClick={() => showMore(groupKey, activeAgents)}
-            className={`${folderClass} mt-0.5`}
+            className={`${folderClass} mt-0.5 disabled:opacity-60`}
           >
             <span className="w-3" aria-hidden />
-            {S.chat.loadMore}
+            {activePending ? S.common.loading : S.chat.loadMore}
           </button>
         )}
 

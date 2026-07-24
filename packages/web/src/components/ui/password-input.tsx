@@ -7,7 +7,7 @@
  * shift out of place. So error is only passed down as `invalid` (red border), and
  * the error text is rendered below the box by this component.
  */
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Input, type InputProps } from "./input";
 import { Field } from "./field";
 import { S } from "../../lib/strings";
@@ -29,8 +29,12 @@ export function PasswordInput({
 }: Omit<InputProps, "type">) {
   const [visible, setVisible] = useState(false);
   const toggleLabel = visible ? S.auth.hidePassword : S.auth.showPassword;
+  // The error text renders in THIS component's Field (see the header comment), so the
+  // association is wired here too: the inner Input only gets `invalid` and points its
+  // aria-describedby at the outer FieldError.
+  const errorId = useId();
   return (
-    <Field label={label} hint={hint} error={error} required={required}>
+    <Field label={label} hint={hint} error={error} errorId={errorId} required={required}>
       <div className="relative">
         <Input
           {...rest}
@@ -38,6 +42,7 @@ export function PasswordInput({
           size={size}
           type={visible ? "text" : "password"}
           invalid={Boolean(error) || Boolean(invalid)}
+          aria-describedby={error ? errorId : undefined}
           className={`${size === "sm" ? "pr-8" : "pr-10"} ${className ?? ""}`}
         />
         <button
