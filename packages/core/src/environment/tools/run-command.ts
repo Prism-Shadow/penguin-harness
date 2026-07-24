@@ -1,5 +1,7 @@
 /**
- * exec_command —— local shell executor, a built-in tool implementation (BuiltinTool).
+ * run_command —— local shell executor, a built-in tool implementation (BuiltinTool).
+ * (Formerly named exec_command; configs that still use the old name keep working — see
+ * the legacy alias in registry.ts.)
  *
  * Spawns a process inside the Workspace via `bash -lc <cmd>` and streams content deltas as
  * stdout/stderr chunks arrive. Waits up to `yield_time_ms`: if the command finishes in time,
@@ -27,23 +29,32 @@ import { DEFAULT_EXEC_YIELD_MS, resultForExit } from "./command/index.js";
 import { clampYield } from "./background/index.js";
 
 /** Tool name constant (used only inside this tool module, not exposed to Environment). */
+export const RUN_COMMAND_NAME = "run_command";
+
+/**
+ * Legacy tool name: agents whose on-disk `system_config.yaml` predates the rename still list
+ * the shell tool as `exec_command`; the registry maps both names to the same factory.
+ * @deprecated Use {@link RUN_COMMAND_NAME}; kept only for old configs and traces.
+ */
 export const EXEC_COMMAND_NAME = "exec_command";
 
 /**
- * exec_command built-in tool: parses arguments, resolves workdir, and delegates to
+ * run_command built-in tool: parses arguments, resolves workdir, and delegates to
  * `CommandSessionManager` to spawn the process and collect output.
  * `definition` is overridden by Environment at construction time with the matching entry
- * from ToolConfig (description/parameters/permission/limits).
+ * from ToolConfig (description/parameters/permission/limits); the runtime tool name follows
+ * `definition.name`, so a legacy `exec_command` config entry keeps its original name in
+ * dispatch, self-referential messages, and the LLM tool list.
  * `services.commandSessions` is injected by Environment (shares the same registry with
  * input_command).
  */
-export function createExecCommandTool(
+export function createRunCommandTool(
   definition: ToolDefinitionConfig,
   services?: EnvironmentServices,
 ): BuiltinTool {
   const manager = services?.commandSessions;
   return {
-    name: EXEC_COMMAND_NAME,
+    name: definition.name,
     definition,
     async *execute(
       args: Record<string, unknown>,
@@ -54,13 +65,13 @@ export function createExecCommandTool(
         partialToolCallOutput({ eventType: "delta", output, toolCallId });
 
       if (!manager) {
-        yield delta("[exec_command unavailable: no command session manager configured]");
+        yield delta(`[${definition.name} unavailable: no command session manager configured]`);
         return { stopReason: "failed" };
       }
 
       const cmd = args["cmd"];
       if (typeof cmd !== "string" || cmd.length === 0) {
-        yield delta('Missing required argument "cmd" for exec_command.');
+        yield delta(`Missing required argument "cmd" for ${definition.name}.`);
         return { stopReason: "failed" };
       }
       // workdir defaults to workspaceDir; relative paths are resolved against workspaceDir.

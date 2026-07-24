@@ -48,7 +48,7 @@ class FakeLLM implements LLMInterface {
       yield partialText("stop", "", "completed");
       yield assistantText("I will create the file.");
       yield toolCall({
-        name: "exec_command",
+        name: "run_command",
         arguments: JSON.stringify({ cmd: "printf 'Hello, Penguin' > hello.txt" }),
         toolCallId: "call_1",
         stopReason: "completed",
@@ -77,7 +77,7 @@ function execCommandToolConfig() {
   return {
     customTools: [
       {
-        name: "exec_command",
+        name: "run_command",
         description: "Run a shell command.",
         parameters: {
           type: "object",
@@ -288,7 +288,7 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
     const llm: LLMInterface = {
       async *streamGenerate() {
         yield toolCall({
-          name: "exec_command",
+          name: "run_command",
           arguments: JSON.stringify({ cmd: "true" }),
           toolCallId: "c1",
           stopReason: "completed",
@@ -340,7 +340,7 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
         calls += 1;
         if (calls <= 2) {
           yield toolCall({
-            name: "exec_command",
+            name: "run_command",
             arguments: JSON.stringify({ cmd: "true" }),
             toolCallId: `c${calls}`,
             stopReason: "completed",
@@ -381,7 +381,7 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
           // Turn 1: the tool call completes normally; the tool output cannot be fed back
           // because max_turns was hit.
           yield toolCall({
-            name: "exec_command",
+            name: "run_command",
             arguments: JSON.stringify({ cmd: "true" }),
             toolCallId: "c1",
             stopReason: "completed",
@@ -500,13 +500,13 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
         call += 1;
         if (call === 1) {
           yield toolCall({
-            name: "exec_command",
+            name: "run_command",
             arguments: JSON.stringify({ cmd: "true" }),
             toolCallId: "a1",
             stopReason: "completed",
           });
           yield toolCall({
-            name: "exec_command",
+            name: "run_command",
             arguments: JSON.stringify({ cmd: "true" }),
             toolCallId: "a2",
             stopReason: "completed",
@@ -686,13 +686,13 @@ describe("ContextEngine async/incremental tool calls (overlapping execution)", (
         if (this.calls === 1) {
           // First tool: slow (sleep 0.4s). Second tool: fast.
           yield toolCall({
-            name: "exec_command",
+            name: "run_command",
             arguments: JSON.stringify({ cmd: "sleep 0.4; printf one > a.txt" }),
             toolCallId: "t1",
             stopReason: "completed",
           });
           yield toolCall({
-            name: "exec_command",
+            name: "run_command",
             arguments: JSON.stringify({ cmd: "printf two > b.txt" }),
             toolCallId: "t2",
             stopReason: "completed",
@@ -770,13 +770,13 @@ describe("ContextEngine async/incremental tool calls (overlapping execution)", (
         this.calls += 1;
         if (this.calls === 1) {
           yield toolCall({
-            name: "exec_command",
+            name: "run_command",
             arguments: JSON.stringify({ cmd: "printf x" }),
             toolCallId: "u1",
             stopReason: "completed",
           });
           yield toolCall({
-            name: "exec_command",
+            name: "run_command",
             arguments: JSON.stringify({ cmd: "printf y" }),
             toolCallId: "u2",
             stopReason: "completed",
@@ -871,7 +871,7 @@ describe("ContextEngine tool execution resilience", () => {
           });
         if (this.calls === 1) {
           yield toolCall({
-            name: "exec_command",
+            name: "run_command",
             arguments: JSON.stringify({ cmd: "x" }),
             toolCallId: "e1",
             stopReason: "completed",
@@ -941,7 +941,7 @@ describe("ContextEngine tool execution resilience", () => {
           });
         if (this.calls === 1) {
           yield toolCall({
-            name: "exec_command",
+            name: "run_command",
             arguments: JSON.stringify({ cmd: "x" }),
             toolCallId: "t1",
             stopReason: "completed",
@@ -990,7 +990,7 @@ describe("ContextEngine tool execution resilience", () => {
           });
         if (this.calls === 1) {
           yield toolCall({
-            name: "exec_command",
+            name: "run_command",
             arguments: JSON.stringify({ cmd: "x" }),
             toolCallId: "t1",
             stopReason: "completed",
@@ -1058,7 +1058,7 @@ describe("ContextEngine abort during execution", () => {
         call += 1;
         if (call === 1) {
           yield toolCall({
-            name: "exec_command",
+            name: "run_command",
             arguments: JSON.stringify({ cmd: "sleep 5" }),
             toolCallId: "slow",
             stopReason: "completed",
@@ -1133,13 +1133,13 @@ describe("ContextEngine abort during execution", () => {
           // Two real tool_calls + token_usage: AgentHub commits this turn including both
           // a1 and a2 tool_calls.
           yield toolCall({
-            name: "exec_command",
+            name: "run_command",
             arguments: JSON.stringify({ cmd: "true" }),
             toolCallId: "a1",
             stopReason: "completed",
           });
           yield toolCall({
-            name: "exec_command",
+            name: "run_command",
             arguments: JSON.stringify({ cmd: "true" }),
             toolCallId: "a2",
             stopReason: "completed",
@@ -1270,7 +1270,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
         inputs.push(params.newMessages);
         if (calls === 1) {
           yield toolCall({
-            name: "exec_command",
+            name: "run_command",
             arguments: '{"cmd": "ec',
             toolCallId: "tc-broken",
             stopReason: "malformed",
@@ -1463,7 +1463,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
           // Real tool_call -> the engine dispatches it for execution (appends to a file, a
           // side effect), followed by a timeout/network drop (timeout).
           yield toolCall({
-            name: "exec_command",
+            name: "run_command",
             arguments: JSON.stringify({ cmd: "printf x >> count.txt" }),
             toolCallId: "t1",
             stopReason: "completed",
@@ -1502,7 +1502,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     expect(inputs[1]![0]).toEqual(inputs[0]![0]);
     const retried = (inputs[1]![1]!.payload as { text?: string }).text ?? "";
     expect(retried).toContain("<turn_retried>");
-    expect(retried).toContain('<tool_call name="exec_command" id="t1">');
+    expect(retried).toContain('<tool_call name="run_command" id="t1">');
     expect(retried).toContain('<tool_call_output id="t1"');
     // Completes, no abort.
     expect(
@@ -1568,7 +1568,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
         if (calls === 1) {
           // Attempt 1: a real tool_call (execution has a side effect) followed by a timeout.
           yield toolCall({
-            name: "exec_command",
+            name: "run_command",
             arguments: JSON.stringify({ cmd: "printf x >> chain.txt" }),
             toolCallId: "t1",
             stopReason: "completed",
@@ -1618,7 +1618,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     expect(nextRunTexts).toHaveLength(3);
     expect(nextRunTexts[0]).toBe("go");
     const block = nextRunTexts[1]!;
-    expect(block).toContain('<tool_call name="exec_command" id="t1">');
+    expect(block).toContain('<tool_call name="run_command" id="t1">');
     expect(block).toContain('<tool_call_output id="t1"');
     expect(block).toContain("<thinking>retry-thought</thinking>");
     expect((block.match(/<turn_retried>/g) ?? []).length).toBe(1);

@@ -81,7 +81,7 @@ packages/
 │   ├── engine/context-engine.ts    # ReAct 循环编排:轮生命周期、审批、补发、重连、压缩
 │   ├── omnimessage/                # types.ts 协议类型 · builders.ts 构造函数 · aggregate.ts 分片聚合
 │   ├── llm/                        # generative-model.ts AgentHub 适配 · tool-call-ids.ts id 唯一化
-│   ├── environment/                # environment.ts 执行与收尾 · tools/ 注册表、6 个内置工具、后台会话
+│   ├── environment/                # environment.ts 执行与收尾 · tools/ 注册表、9 个内置工具、后台会话
 │   ├── state/                      # paths · default-config · project-config · model-catalog
 │   │                               # agent-state(Skill 安装、提示词装配)· agent-vault · builtin-agents
 │   ├── trace/                      # writer.ts 追加式 JSONL · resume.ts 回放恢复

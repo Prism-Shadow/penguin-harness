@@ -103,6 +103,7 @@ output = 0.857143
 | `compaction.prompt` | 内置模板 | summarize 压缩使用的 Prompt |
 | `tools.builtin` | 缺省时为完整默认工具集 | 工具条目：`name` / `description` / `parameters` / `permission`（`r` 或 `rw`）/ `forModel` / `timeoutMs` / `maxOutputLength`；一旦写出即整体替换默认列表 |
 | `tools.mcpServers` | `[]` | MCP Server 配置（`name` + `config`），预留给 MCP 适配层 |
+| `tools.call_descriptions` | 缺省视为开启 | 命令/Subagent 类工具是否接受可选的 `description` 调用参数（模型写的一句说明，调用运行期间展示）；写 `false` 关闭 |
 
 工具权限与审批语义见[工具与审批](/tools)。
 

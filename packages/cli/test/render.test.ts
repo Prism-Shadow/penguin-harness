@@ -102,20 +102,20 @@ describe("StreamRenderer", () => {
   it("does not render a complete tool_call without partials", () => {
     const { stream, text } = collector();
     const r = new StreamRenderer(stream, t);
-    r.handle(toolCall({ name: "exec_command", arguments: '{"cmd":"ls"}', toolCallId: "c2" }));
+    r.handle(toolCall({ name: "run_command", arguments: '{"cmd":"ls"}', toolCallId: "c2" }));
     expect(text()).toBe("");
   });
 
   it("streams partial_tool_call with a pairing tag and skips the complete tool_call", () => {
     const { stream, text } = collector();
     const r = new StreamRenderer(stream, t);
-    r.handle(partialToolCall({ eventType: "start", name: "exec_command", toolCallId: "c4" }));
+    r.handle(partialToolCall({ eventType: "start", name: "run_command", toolCallId: "c4" }));
     r.handle(
       partialToolCall({ eventType: "delta", name: "", arguments: '{"cmd":"l', toolCallId: "c4" }),
     );
     r.handle(partialToolCall({ eventType: "delta", name: "", arguments: 's"}', toolCallId: "c4" }));
     r.handle(partialToolCall({ eventType: "stop", name: "", toolCallId: "c4" }));
-    r.handle(toolCall({ name: "exec_command", arguments: '{"cmd":"ls"}', toolCallId: "c4" }));
+    r.handle(toolCall({ name: "run_command", arguments: '{"cmd":"ls"}', toolCallId: "c4" }));
     // The call line carries a [tool-<last-3-chars-of-id>] pairing tag matching the output line.
     expect(stripAnsi(text())).toBe("[tool-c4] $ ls\n");
   });
@@ -193,7 +193,7 @@ describe("StreamRenderer", () => {
         model_id: "m",
         model_context_window: 1,
         system_prompt: "sp",
-        tools: [{ name: "exec_command", description: "test tool" }],
+        tools: [{ name: "run_command", description: "test tool" }],
         thinking_level: "medium",
         agent_state: "/a",
         workspace: "/w",
@@ -407,7 +407,7 @@ describe("StreamRenderer", () => {
   it("keeps call → decision contiguous at prompt time and dedupes the late approval_decision event", () => {
     const { stream, text } = collector();
     const r = new StreamRenderer(stream, t);
-    const tc = toolCall({ name: "exec_command", arguments: '{"cmd":"pwd"}', toolCallId: "p8" });
+    const tc = toolCall({ name: "run_command", arguments: '{"cmd":"pwd"}', toolCallId: "p8" });
     // Interactive approval: while locked, renders "call line -> (prompt, written directly by readline) -> result" as three contiguous lines.
     r.beginUserPrompt(tc);
     r.noteApprovalDecision(tc, "allow");
@@ -422,12 +422,12 @@ describe("StreamRenderer", () => {
     const { stream, text } = collector();
     const r = new StreamRenderer(stream, t);
     const tc = toolCall({
-      name: "exec_command",
+      name: "run_command",
       arguments: '{"cmd":"git status"}',
       toolCallId: "h7",
     });
     // The call line is still mid-stream (only half its arguments rendered) when approval begins.
-    r.handle(partialToolCall({ eventType: "start", name: "exec_command", toolCallId: "h7" }));
+    r.handle(partialToolCall({ eventType: "start", name: "run_command", toolCallId: "h7" }));
     r.handle(
       partialToolCall({
         eventType: "delta",
@@ -456,12 +456,12 @@ describe("StreamRenderer", () => {
     const { stream, text } = collector();
     const r = new StreamRenderer(stream, t);
     const parent = toolCall({
-      name: "exec_command",
+      name: "run_command",
       arguments: '{"cmd":"pwd"}',
       toolCallId: "pa1",
     });
     const child = withOrigin(
-      toolCall({ name: "exec_command", arguments: '{"cmd":"ls"}', toolCallId: "ch2" }),
+      toolCall({ name: "run_command", arguments: '{"cmd":"ls"}', toolCallId: "ch2" }),
       "sess_kid",
     );
     r.beginUserPrompt(parent); // parent call's interactive prompt: locks the screen
@@ -514,7 +514,7 @@ describe("StreamRenderer", () => {
     const { stream, text } = collector();
     const r = new StreamRenderer(stream, t);
     // The call line is first rendered while streaming, then separated from the decision by other output.
-    r.handle(partialToolCall({ eventType: "start", name: "exec_command", toolCallId: "c5" }));
+    r.handle(partialToolCall({ eventType: "start", name: "run_command", toolCallId: "c5" }));
     r.handle(
       partialToolCall({
         eventType: "delta",
@@ -529,7 +529,7 @@ describe("StreamRenderer", () => {
     r.handle(partialText("stop", "", "completed"));
     // Auto-approval: the call line is no longer adjacent -> it is re-rendered in place, with the result immediately following it as a pair.
     r.noteApprovalDecision(
-      toolCall({ name: "exec_command", arguments: '{"cmd":"ls"}', toolCallId: "c5" }),
+      toolCall({ name: "run_command", arguments: '{"cmd":"ls"}', toolCallId: "c5" }),
       "allow",
     );
     expect(stripAnsi(text())).toBe("[tool-c5] $ ls\nhi\n[tool-c5] $ ls\n✓ [approved]\n");
@@ -538,7 +538,7 @@ describe("StreamRenderer", () => {
   it("does not re-render the call line when it is already adjacent to the decision", () => {
     const { stream, text } = collector();
     const r = new StreamRenderer(stream, t);
-    r.handle(partialToolCall({ eventType: "start", name: "exec_command", toolCallId: "c6" }));
+    r.handle(partialToolCall({ eventType: "start", name: "run_command", toolCallId: "c6" }));
     r.handle(
       partialToolCall({
         eventType: "delta",
@@ -549,7 +549,7 @@ describe("StreamRenderer", () => {
     );
     r.handle(partialToolCall({ eventType: "stop", name: "", toolCallId: "c6" }));
     r.noteApprovalDecision(
-      toolCall({ name: "exec_command", arguments: '{"cmd":"ls"}', toolCallId: "c6" }),
+      toolCall({ name: "run_command", arguments: '{"cmd":"ls"}', toolCallId: "c6" }),
       "deny",
     );
     expect(stripAnsi(text())).toBe("[tool-c6] $ ls\n× [denied]\n");
@@ -570,7 +570,7 @@ describe("StreamRenderer — nested (origin-tagged) subagent messages", () => {
     // approval line carries no tag.
     r.handle(
       withOrigin(
-        toolCall({ name: "exec_command", arguments: '{"cmd":"ls"}', toolCallId: "cc1" }),
+        toolCall({ name: "run_command", arguments: '{"cmd":"ls"}', toolCallId: "cc1" }),
         hop,
       ),
     );
@@ -582,7 +582,7 @@ describe("StreamRenderer — nested (origin-tagged) subagent messages", () => {
     const { stream, text } = collector();
     const r = new StreamRenderer(stream, t);
     const tc = withOrigin(
-      toolCall({ name: "exec_command", arguments: '{"cmd":"ls"}', toolCallId: "cc9" }),
+      toolCall({ name: "run_command", arguments: '{"cmd":"ls"}', toolCallId: "cc9" }),
       hop,
     );
     // The approval callback arrives before the forwarded message: beginUserPrompt renders the call line directly from the complete message.
@@ -598,11 +598,11 @@ describe("StreamRenderer — nested (origin-tagged) subagent messages", () => {
     const { stream, text } = collector();
     const r = new StreamRenderer(stream, t);
     r.beginUserPrompt(
-      toolCall({ name: "exec_command", arguments: '{"cmd":"pwd"}', toolCallId: "p7" }),
+      toolCall({ name: "run_command", arguments: '{"cmd":"pwd"}', toolCallId: "p7" }),
     );
     r.endUserPrompt();
     // The whole late streaming copy is deduped and skipped.
-    r.handle(partialToolCall({ eventType: "start", name: "exec_command", toolCallId: "p7" }));
+    r.handle(partialToolCall({ eventType: "start", name: "run_command", toolCallId: "p7" }));
     r.handle(
       partialToolCall({
         eventType: "delta",
@@ -682,7 +682,7 @@ describe("renderHistory (resume)", () => {
         userText("hello"),
         thinkingMessage("pondering"),
         assistantText("hi there"),
-        toolCall({ name: "exec_command", arguments: '{"cmd":"ls"}', toolCallId: "call_653" }),
+        toolCall({ name: "run_command", arguments: '{"cmd":"ls"}', toolCallId: "call_653" }),
         toolCallOutput({ output: "a.txt\nb.txt", toolCallId: "call_653" }),
         assistantText("half answer", "aborted"),
       ],

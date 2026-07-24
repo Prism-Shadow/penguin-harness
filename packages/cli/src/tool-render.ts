@@ -1,12 +1,19 @@
 /**
  * Streaming tool-call rendering (CLI side).
  *
- * The CLI only consumes `partial_tool_call` for visible rendering. exec_command is shown as
- * `$ <cmd>` as early as possible; input_command / input_subagent show the target session id,
- * with a non-empty payload (chars / prompt) appended as `<< <content>` — the payload is
- * critical for approval and later audit (writing to stdin is equivalent to running a command),
- * so the session id alone is not enough; run_subagent shows the prompt; other tools fall back
- * to `name(args-prefix)`.
+ * The CLI only consumes `partial_tool_call` for visible rendering. run_command (legacy name
+ * exec_command — old traces and pre-rename agents still emit it) is shown as `$ <cmd>` as
+ * early as possible; input_command / input_subagent show the target session id, with a
+ * non-empty payload (chars / prompt) appended as `<< <content>` — the payload is critical
+ * for approval and later audit (writing to stdin is equivalent to running a command), so the
+ * session id alone is not enough; run_subagent shows the prompt; the file tools
+ * (read_file / edit_file / write_file) show the tool name plus the file path; other tools
+ * fall back to `name(args-prefix)`.
+ *
+ * The command/subagent tools accept an optional model-written `description` argument (see
+ * tools.call_descriptions); when present it is appended as a `— <description>` suffix, but
+ * only once the argument JSON is complete — appending it while other fields still stream
+ * would rewrite the middle of the preview.
  *
  * The render layer streams by appending to the preview (see render.ts), so the preview format
  * must stay append-only: rendering only starts once the target id has fully appeared, the
@@ -114,23 +121,49 @@ function extractPartialStringField(argsJson: string, field: string): string | nu
   return out;
 }
 
+/** The three file tools: previewed as `<name> <file_path>`. */
+const FILE_TOOL_NAMES = new Set(["read_file", "edit_file", "write_file"]);
+
 /**
- * Streaming argument preview: exec_command shows `$ <cmd>` once cmd can be read; input_command /
- * input_subagent show `⌨ <name> → <id>` once the target id is available, with a non-empty
- * chars / prompt appended as `<< <content>` (an empty payload just means polling, left as-is);
- * run_subagent shows `run_subagent << <prompt>` once prompt can be read; other tools fall back
- * to name(args-prefix).
+ * The optional model-written `description` argument, as a ` — <description>` suffix.
+ * Only appended once the whole argument JSON parses (i.e. streaming is finished): before
+ * that, other fields may still be growing and a suffix after them would break the
+ * append-only preview. The suffix itself then appends onto the settled base preview.
+ */
+function descriptionSuffix(argsJson: string): string {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(argsJson);
+  } catch {
+    return "";
+  }
+  const desc = (parsed as Record<string, unknown> | null)?.["description"];
+  if (typeof desc !== "string") return "";
+  const line = toSingleLine(desc);
+  return line ? ` — ${capPreview(line)}` : "";
+}
+
+/**
+ * Streaming argument preview: run_command (and its legacy name exec_command) shows `$ <cmd>`
+ * once cmd can be read; input_command / input_subagent show `⌨ <name> → <id>` once the target
+ * id is available, with a non-empty chars / prompt appended as `<< <content>` (an empty
+ * payload just means polling, left as-is); run_subagent shows `run_subagent << <prompt>` once
+ * prompt can be read; read_file / edit_file / write_file show `<name> <file_path>`; other
+ * tools fall back to name(args-prefix). The command/subagent tools append the optional
+ * `description` argument as a ` — <description>` suffix once the arguments are complete.
  */
 export function renderPartialToolCall(name: string, argsJson: string): string | null {
   if (!argsJson) return null;
-  if (name === "exec_command") {
+  if (name === "run_command" || name === "exec_command") {
     const cmd = extractPartialStringField(argsJson, "cmd");
-    if (cmd !== null) return `$ ${toSingleLine(cmd)}`;
+    if (cmd !== null) return `$ ${toSingleLine(cmd)}${descriptionSuffix(argsJson)}`;
     return null;
   }
   if (name === "run_subagent") {
     const prompt = extractPartialStringField(argsJson, "prompt");
-    if (prompt !== null) return `run_subagent << ${capPreview(toSingleLine(prompt))}`;
+    if (prompt !== null) {
+      return `run_subagent << ${capPreview(toSingleLine(prompt))}${descriptionSuffix(argsJson)}`;
+    }
     return null;
   }
   if (name === "input_command") {
@@ -138,14 +171,19 @@ export function renderPartialToolCall(name: string, argsJson: string): string | 
     if (pid === null) return null;
     const chars = extractPartialStringField(argsJson, "chars");
     const payload = chars ? ` << ${capPreview(visualizeControlChars(chars))}` : "";
-    return `⌨ input_command → ${toSingleLine(pid)}${payload}`;
+    return `⌨ input_command → ${toSingleLine(pid)}${payload}${descriptionSuffix(argsJson)}`;
   }
   if (name === "input_subagent") {
     const sid = extractPartialStringField(argsJson, "subagent_id");
     if (sid === null) return null;
     const prompt = extractPartialStringField(argsJson, "prompt");
     const payload = prompt ? ` << ${capPreview(toSingleLine(prompt))}` : "";
-    return `⌨ input_subagent → ${toSingleLine(sid)}${payload}`;
+    return `⌨ input_subagent → ${toSingleLine(sid)}${payload}${descriptionSuffix(argsJson)}`;
+  }
+  if (FILE_TOOL_NAMES.has(name)) {
+    const filePath = extractPartialStringField(argsJson, "file_path");
+    if (filePath !== null) return `${name} ${toSingleLine(filePath)}`;
+    return null;
   }
   return `${name || "tool_call"}(${toSingleLine(argsJson)}`;
 }

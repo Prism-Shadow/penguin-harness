@@ -34,7 +34,13 @@ import type {
   VaultUpdateRequest,
 } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
-import { badRequest, optionalEnum, optionalNumber, optionalString } from "../http/validate.js";
+import {
+  badRequest,
+  optionalBoolean,
+  optionalEnum,
+  optionalNumber,
+  optionalString,
+} from "../http/validate.js";
 import { maskApiKey } from "./project-config-service.js";
 
 const THINKING_LEVELS: readonly ThinkingLevelName[] = ["none", "low", "medium", "high", "xhigh"];
@@ -143,6 +149,10 @@ export class AgentConfigService {
       ...(Object.keys(compactionDto).length > 0 ? { compaction: compactionDto } : {}),
       toolsBuiltin: Array.isArray(tools.builtin) ? (tools.builtin as ToolDefinitionConfig[]) : [],
       mcpServers: Array.isArray(tools.mcpServers) ? (tools.mcpServers as MCPServerConfig[]) : [],
+      // Only a stored boolean is surfaced; a missing field stays missing (semantics: enabled).
+      ...(typeof tools.call_descriptions === "boolean"
+        ? { callDescriptions: tools.call_descriptions }
+        : {}),
     };
     return {
       agentsMd,
@@ -234,6 +244,10 @@ export class AgentConfigService {
     if (cfg.mcpServers !== undefined) {
       doc.setIn(["tools", "mcpServers"], validateMcpServers(cfg.mcpServers));
     }
+    setIfProvided(
+      ["tools", "call_descriptions"],
+      optionalBoolean(cfg, "callDescriptions", "callDescriptions"),
+    );
 
     await fs.writeFile(yamlPath, doc.toString(), "utf8");
   }

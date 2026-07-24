@@ -469,7 +469,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
 
   it("tool failed / timeout → environment + expected, code carries the tool name", () => {
     const got = feed([
-      call("exec_command", "tc-1"),
+      call("run_command", "tc-1"),
       toolCallOutput({
         output: "ls: /nope: No such file or directory\n[tool error] exit code 2",
         toolCallId: "tc-1",
@@ -486,7 +486,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
     expect(got[0]).toMatchObject({
       source: "environment",
       kind: "expected", // error fed back to the model; the Agent adjusts on its own — no human needed
-      code: "tool_failed:exec_command",
+      code: "tool_failed:run_command",
       project_id: "p1",
       agent_id: "a1",
       session_id: "s1",
@@ -498,7 +498,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
   it("tool aborted (denial / user interrupt) and completed are not recorded", () => {
     expect(
       feed([
-        call("exec_command", "tc-1"),
+        call("run_command", "tc-1"),
         toolCallOutput({
           output: "Tool call denied by user.",
           toolCallId: "tc-1",
@@ -512,20 +512,20 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
 
   it("parallel tools: each tool_call_id maps to its own name despite out-of-order outputs", () => {
     const got = feed([
-      call("exec_command", "tc-1"),
+      call("run_command", "tc-1"),
       call("read_file", "tc-2"),
       call("write_file", "tc-3"),
       toolCallOutput({ output: "boom-2", toolCallId: "tc-2", stopReason: "failed" }),
       toolCallOutput({ output: "ok", toolCallId: "tc-3", stopReason: "completed" }),
       toolCallOutput({ output: "boom-1", toolCallId: "tc-1", stopReason: "failed" }),
     ]);
-    expect(got.map((r) => r.code)).toEqual(["tool_failed:read_file", "tool_failed:exec_command"]);
+    expect(got.map((r) => r.code)).toEqual(["tool_failed:read_file", "tool_failed:run_command"]);
     expect(got.map((r) => r.message)).toEqual(["boom-2", "boom-1"]);
   });
 
   it("a child session's tool failure: no name mix-up with the parent's equal tool_call_id", () => {
     const got = feed([
-      call("exec_command", "tc-1"), // parent session
+      call("run_command", "tc-1"), // parent session
       withOrigin(call("write_file", "tc-1"), "session-child"), // sub-session happens to share the same id
       withOrigin(
         toolCallOutput({ output: "child boom", toolCallId: "tc-1", stopReason: "failed" }),
@@ -539,12 +539,12 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
       message: "child boom",
       session_id: "s1", // this test didn't feed the sub-session's session_meta → attribution falls back to the parent ctx (see the "attribution" test cases below)
     });
-    expect(got[1]).toMatchObject({ code: "tool_failed:exec_command", message: "parent boom" });
+    expect(got[1]).toMatchObject({ code: "tool_failed:run_command", message: "parent boom" });
   });
 
   it("overlong tool output: message takes the tail (the reason is at the end)", () => {
     const got = feed([
-      call("exec_command", "tc-1"),
+      call("run_command", "tc-1"),
       toolCallOutput({
         output: `${"x".repeat(2000)}\n[tool error] boom`,
         toolCallId: "tc-1",
@@ -561,7 +561,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
     expect(
       feed([
         assistantText("normal output"),
-        call("exec_command", "tc-1"),
+        call("run_command", "tc-1"),
         partialToolCallOutput({ eventType: "stop", toolCallId: "tc-1", stopReason: "failed" }),
       ]),
     ).toHaveLength(0);
@@ -590,7 +590,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
   it("a child session's tool failure attributes to it (code still carries the tool name)", () => {
     const got = feed([
       childMeta("session-child", "/data/agents/agent-child/agent_state"),
-      withOrigin(call("exec_command", "tc-1"), "session-child"),
+      withOrigin(call("run_command", "tc-1"), "session-child"),
       withOrigin(
         toolCallOutput({ output: "child boom", toolCallId: "tc-1", stopReason: "failed" }),
         "session-child",
@@ -599,7 +599,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
     expect(got).toHaveLength(1);
     expect(got[0]).toMatchObject({
       source: "environment",
-      code: "tool_failed:exec_command",
+      code: "tool_failed:run_command",
       message: "child boom",
       agent_id: "agent-child",
       session_id: "session-child",
@@ -619,7 +619,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
         toolCallOutput({ output: "child tool boom", toolCallId: "tc-9", stopReason: "failed" }),
         "session-child",
       ),
-      call("exec_command", "tc-9"), // parent session happens to share the same id
+      call("run_command", "tc-9"), // parent session happens to share the same id
       toolCallOutput({ output: "parent tool boom", toolCallId: "tc-9", stopReason: "failed" }),
       requestEnd("failed"), // the parent session's LLM failure only wraps up now
       abortEvent("llm request error: 500 upstream"),
@@ -628,7 +628,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
     expect(got.map((r) => [r.code, r.agent_id, r.session_id])).toEqual([
       ["llm_timeout", "agent-child", "session-child"],
       ["tool_failed:write_file", "agent-child", "session-child"],
-      ["tool_failed:exec_command", "a1", "s1"],
+      ["tool_failed:run_command", "a1", "s1"],
       ["llm_failed", "a1", "s1"],
     ]);
   });

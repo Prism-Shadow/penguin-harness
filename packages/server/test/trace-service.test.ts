@@ -126,7 +126,7 @@ describe("trace-service", () => {
       at("2026-07-05T10:00:03.500Z", requestBegin()),
       at(
         "2026-07-05T10:00:04.000Z",
-        toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc-1" }),
+        toolCall({ name: "run_command", arguments: "{}", toolCallId: "tc-1" }),
       ),
       at("2026-07-05T10:00:05.000Z", requestEnd("completed")),
       at("2026-07-05T10:00:06.500Z", toolCallOutput({ output: "done", toolCallId: "tc-1" })),
@@ -157,7 +157,7 @@ describe("trace-service", () => {
     expect(analysis.requests.map((r) => r.taskIndex)).toEqual([0, 0, 1]);
 
     expect(analysis.toolCalls).toHaveLength(1);
-    expect(analysis.toolCalls[0]!.name).toBe("exec_command");
+    expect(analysis.toolCalls[0]!.name).toBe("run_command");
     expect(analysis.toolCalls[0]!.durationMs).toBe(2500);
     expect(analysis.toolCalls[0]!.stopReason).toBe("completed");
 
@@ -180,7 +180,7 @@ describe("trace-service", () => {
       at("2026-07-05T10:00:01.000Z", requestBegin()),
       at(
         "2026-07-05T10:00:02.000Z",
-        toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc-1" }),
+        toolCall({ name: "run_command", arguments: "{}", toolCallId: "tc-1" }),
       ),
       at("2026-07-05T10:00:03.000Z", requestEnd("completed")),
       at("2026-07-05T10:00:03.100Z", tokenUsage(counts(60_000), buckets(50_000, 8_000, 2_000))),
@@ -218,7 +218,7 @@ describe("trace-service", () => {
       at("2026-07-05T10:00:01.000Z", requestBegin()),
       at(
         "2026-07-05T10:00:02.000Z",
-        toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc-1" }),
+        toolCall({ name: "run_command", arguments: "{}", toolCallId: "tc-1" }),
       ),
       at("2026-07-05T10:00:32.000Z", approvalDecision("allow", "tc-1")), // human left it hanging for 30s
       at("2026-07-05T10:00:33.000Z", requestEnd("completed")),
@@ -498,7 +498,7 @@ describe("trace-service", () => {
       at(T("00.000"), userText("q")), // the user input is sent instantly, so it occupies no segment
       at(T("01.000"), requestBegin()),
       at(T("03.000"), thinkingMessage("think", "completed")),
-      at(T("04.000"), toolCall({ name: "exec_command", arguments: "{}", toolCallId: "t1" })),
+      at(T("04.000"), toolCall({ name: "run_command", arguments: "{}", toolCallId: "t1" })),
       // Two async tools: t1 is already in approval/execution while the model keeps decoding t2
       at(T("04.500"), toolCall({ name: "read_file", arguments: "{}", toolCallId: "t2" })),
       at(T("05.000"), requestEnd("completed")),
@@ -522,7 +522,7 @@ describe("trace-service", () => {
         startTs: T("03.000"),
         endTs: T("04.000"),
         toolCallId: "t1",
-        name: "exec_command",
+        name: "run_command",
         taskIndex: 0,
       },
       {
@@ -538,7 +538,7 @@ describe("trace-service", () => {
     expect(a.toolSpans).toEqual([
       {
         toolCallId: "t1",
-        name: "exec_command",
+        name: "run_command",
         callTs: T("04.000"),
         approvalTs: T("05.500"),
         decision: "allow",
@@ -654,7 +654,7 @@ describe("trace-service", () => {
       at(
         T("02.000"),
         toolCall({
-          name: "exec_command",
+          name: "run_command",
           arguments: "{}",
           toolCallId: "t1",
           stopReason: "timeout",

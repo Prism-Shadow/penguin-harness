@@ -36,7 +36,7 @@ Parsing is tolerant: only `key: value` scalar lines inside the first `---` block
 
 ## Progressive loading
 
-Skills follow an "index first, body on demand" design: the system prompt injects only each installed Skill's metadata (name + description) through the `{{SKILL_METADATA}}` placeholder, and instructs the model to read the matching `SKILL.md` in full via the shell before following it. There is no dedicated skill tool — reading the body is just one `exec_command` call (see [Tools & Approval](/tools)).
+Skills follow an "index first, body on demand" design: the system prompt injects only each installed Skill's metadata (name + description) through the `{{SKILL_METADATA}}` placeholder, and instructs the model to read the matching `SKILL.md` in full via the shell before following it. There is no dedicated skill tool — reading the body is just one `read_file` or shell call (see [Tools & Approval](/tools)).
 
 Chat can also pin skills explicitly: the message then starts with a `<use_skills>` block listing the skill names.
 

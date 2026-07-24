@@ -32,7 +32,7 @@ PenguinHarness 的能力围绕三个递进的概念展开——消息协议、SD
 
 这些原则贯穿所有组件，后续每一页设计文档都会反复引用：
 
-- **极简工具集**:shell 是通用接口，文件读写与命令执行统一经 `exec_command` 完成，见[工具与审批](/tools)。
+- **极简工具集**:专门的文件工具（`read_file` / `edit_file` / `write_file`）负责精确读写，shell（`run_command`）作为通用兜底接口负责其余一切，见[工具与审批](/tools)。
 - **Agent 是可编辑的数据**:Prompt、Skill、配置都是磁盘上的可编辑文件，而非硬编码——你能看到的，Agent 就能改进，见[配置参考](/configuration)。
 - **全量可观测**：每一次请求、工具调用与审批决策都以追加方式写入 [Trace](/sessions-and-traces),Session 可从 Trace 完整恢复。
 - **错误收敛为消息**：模型与工具的错误不抛异常，而是变成模型可以继续处理的消息，见 [Agent 运行循环](/agent-loop)。

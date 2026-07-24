@@ -213,7 +213,7 @@ describe("agent.resumeSession", () => {
       metaFor(SID, workspace),
       userText("go"),
       requestBegin(),
-      toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc1" }),
+      toolCall({ name: "run_command", arguments: "{}", toolCallId: "tc1" }),
       requestEnd("completed"),
       tokenUsage(usage(10), usage(10)),
       // tc1's output was lost along with the process: the pairing placeholder is synthesized in memory and sent out with the next run, never persisted.
@@ -337,7 +337,7 @@ describe("setHistory injection", () => {
     const uni = groupHistoryToUniMessages([
       userText("hello"),
       assistantText("hi"),
-      toolCall({ name: "exec_command", arguments: '{"cmd":"ls"}', toolCallId: "tc1" }),
+      toolCall({ name: "run_command", arguments: '{"cmd":"ls"}', toolCallId: "tc1" }),
       {
         ...userText("ignored-shape"),
         payload: {

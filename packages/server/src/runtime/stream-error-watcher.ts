@@ -35,7 +35,7 @@
  * adjusts on its own; `aborted` is denial/interruption, not recorded).
  * `tool_call_output` only has tool_call_id, no tool name, so `tool_call_id → tool name`
  * is cached (tool_call always arrives before its output), and the tool name is written
- * into code (`tool_failed:exec_command`) — so the stats dashboard's "most common error
+ * into code (`tool_failed:run_command`) — so the stats dashboard's "most common error
  * code" and the error table can show at a glance which tool failed.
  *
  * **Attribution (ctx) is recorded against the session that actually produced the error,

@@ -226,6 +226,9 @@ export const zh = {
     permissionReadWriteDescription: "可修改。审批模式为 read-only 时需人工确认。",
     toolTimeout: "timeoutMs",
     toolMaxOutput: "maxOutputLength",
+    callDescriptions: "工具调用描述（call_descriptions）",
+    callDescriptionsHint:
+      "开启后 run_command / input_command / run_subagent / input_subagent 接受模型为每次调用附带的一句说明（description 参数），运行时展示给用户。",
     mcpServers: "MCP Server（只读）",
     defaultValue: "（缺省）",
     /** Reset link next to the runtime dropdowns: rewinds the local pick back to "not overridden" (the menus offer no inherit row). */
@@ -372,7 +375,7 @@ export const zh = {
   },
 
   vault: {
-    desc: "本 Agent 专属的环境变量（存于 agent_state/.vault.toml）：键值对注入其 shell 命令（exec_command）的子进程环境；键名会告知模型，值不进入模型上下文。子 Agent 使用各自的保险柜，不继承。保存后自下一个任务起生效（进行中的任务不受影响）。",
+    desc: "本 Agent 专属的环境变量（存于 agent_state/.vault.toml）：键值对注入其 shell 命令（run_command）的子进程环境；键名会告知模型，值不进入模型上下文。子 Agent 使用各自的保险柜，不继承。保存后自下一个任务起生效（进行中的任务不受影响）。",
     key: "键名",
     value: "值",
     valueMasked: "值（掩码）",

@@ -6,7 +6,7 @@
  * resending only the key name means keep the original value (plaintext never comes
  * back to the frontend); only owners can edit, members are read-only.
  * The key name is injected into the Agent's system prompt to inform the model; the
- * value is injected only into the exec_command subprocess environment, never into
+ * value is injected only into the run_command subprocess environment, never into
  * the model context.
  */
 import { useCallback, useEffect, useState } from "react";
