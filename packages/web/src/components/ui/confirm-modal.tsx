@@ -1,10 +1,11 @@
 /**
- * Confirmation dialog: a Modal with a Cancel / Confirm footer, for destructive or
- * overwriting actions (delete, overwrite-on-update, save-to-file, …). `tone` picks
- * the look — danger (red) for deletions, primary for saves and other overwrites —
- * and renders a matching tinted icon badge beside the message, so every
- * confirmation in the app reads the same way at a glance. The message and any
- * details (e.g. a version list) go in children.
+ * Confirmation dialog for destructive or overwriting actions (delete,
+ * overwrite-on-update, save-to-file, …), deliberately minimal: **no title bar** —
+ * just the tone icon, the message and a small Cancel / Confirm pair, so every
+ * confirmation in the app is one compact, identical card. `tone` picks the look —
+ * danger (red) for deletions, primary for saves and other overwrites. The message
+ * and any details (e.g. a version list) go in children; `title` only names the
+ * dialog for assistive tech (never rendered).
  */
 import { useState } from "react";
 import type { ReactNode } from "react";
@@ -56,6 +57,7 @@ export function ConfirmModal({
   children,
 }: {
   open: boolean;
+  /** Accessible dialog name only — the compact card renders no title bar. */
   title: string;
   onClose: () => void;
   onConfirm: () => void;
@@ -67,24 +69,18 @@ export function ConfirmModal({
   children: ReactNode;
 }) {
   return (
-    <Modal
-      open={open}
-      title={title}
-      onClose={onClose}
-      footer={
-        <>
-          <Button onClick={onClose} disabled={busy}>
-            {S.common.cancel}
-          </Button>
-          <Button variant={tone} disabled={busy} onClick={onConfirm}>
-            {confirmLabel ?? S.common.confirm}
-          </Button>
-        </>
-      }
-    >
+    <Modal open={open} title={title} onClose={onClose} headerless widthClass="sm:max-w-sm">
       <div className="flex items-start gap-3">
         <ToneBadge tone={tone} />
-        <div className="min-w-0 flex-1 pt-1">{children}</div>
+        <div className="min-w-0 flex-1 pt-1.5">{children}</div>
+      </div>
+      <div className="mt-4 flex justify-end gap-2">
+        <Button size="sm" onClick={onClose} disabled={busy}>
+          {S.common.cancel}
+        </Button>
+        <Button size="sm" variant={tone} disabled={busy} onClick={onConfirm}>
+          {confirmLabel ?? S.common.confirm}
+        </Button>
       </div>
     </Modal>
   );

@@ -450,8 +450,8 @@ export const zh = {
     updateOutdated: (n: number): string => `有新版本：更新 ${n} 个 Agent 的安装`,
     updateAction: "更新",
     updateConfirmTitle: (name: string): string => `更新 ${name}`,
-    updateConfirmWarning:
-      "更新会把库内当前副本重装到各 Agent，覆盖其已安装的文件——对已装技能的本地改动会丢失，如有需要请先导出备份。",
+    updateConfirmWarning: (name: string): string =>
+      `更新 ${name} 会把库内当前副本重装到各 Agent，覆盖其已安装的文件——对已装技能的本地改动会丢失，如有需要请先导出备份。`,
     updatedToast: (skill: string, n: number): string =>
       `已将 ${skill} 更新到最新版（${n} 个 Agent）`,
     uninstalledToast: (skill: string, agent: string): string => `已从 ${agent} 卸载 ${skill}`,

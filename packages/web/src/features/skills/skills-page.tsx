@@ -502,7 +502,7 @@ function SkillCard({
         >
           <div className="space-y-3">
             <p className="text-sm text-gray-600 dark:text-gray-300">
-              {S.skills.updateConfirmWarning}
+              {S.skills.updateConfirmWarning(skill.name)}
             </p>
             {/* Per-agent old → new version, so it's clear exactly which installs get overwritten. */}
             <ul className="divide-y divide-gray-100 overflow-hidden rounded-md border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
