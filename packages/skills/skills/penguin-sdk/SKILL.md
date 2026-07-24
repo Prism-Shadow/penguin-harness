@@ -23,7 +23,7 @@ If the user's message only invokes this skill (e.g. "use penguin-sdk skill") wit
 
 ## Project location
 
-Create the app in the current workspace directory by default (the `CWD` value from your Environment section), as a self-contained project — do not place it under `<agents_dir>` (the Agents Dir value from your Environment section; on an older agent that lists Project Dir instead, `<Project Dir>/agents`) or its parent project directory, or depend on any path outside the project folder. When creating the app's agent, the data root defaults **under the working directory (CWD)** too: point `createAgent({ root })` at a directory inside the project, resolved from the source file so it stays relative:
+Create the app in the current workspace directory by default (the `CWD` value from your Environment section), as a self-contained project — do not place it under `<agents_dir>` or its parent project directory, or depend on any path outside the project folder. When creating the app's agent, the data root defaults **under the working directory (CWD)** too: point `createAgent({ root })` at a directory inside the project, resolved from the source file so it stays relative:
 
 ```ts
 const agent = await createAgent({ root: path.join(import.meta.dirname, "penguin_data") });

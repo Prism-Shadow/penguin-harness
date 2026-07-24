@@ -245,6 +245,13 @@ export const zh = {
     importDone: (v: number): string => `导入完成，Agent State 版本 v${v}`,
     importConflictTitle: "版本冲突",
     importConflictBody: "快照包版本不高于当前版本，导入将覆盖现有 Agent State。确认继续？",
+    resetConfigTitle: "更新配置",
+    resetConfigDesc:
+      "把 system_config.yaml 更新为当前内置默认值（与 Skill 更新同语义）：自定义的系统提示词、工具列表、模型/压缩参数与 MCP Server 将被覆盖，仅保留名称、描述与版本号。",
+    resetConfigAction: "更新为默认配置",
+    resetConfigConfirmBody:
+      "此操作会用当前默认值覆盖该 Agent 的现有配置：自定义系统提示词、工具列表、模型/压缩参数与 MCP Server 全部被替换，仅保留名称与描述。与 Skill 更新一样不可撤销，确认继续？",
+    resetConfigDone: "配置已更新为当前默认值",
   },
 
   models: {

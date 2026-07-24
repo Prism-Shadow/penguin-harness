@@ -34,7 +34,7 @@ model_id: <upstream_model_id>
 
 ## Validate and prepare
 
-Resolve the Project, Test Agent, Benchmark, and Case only from the explicit request and Environment Agents Dir (on an older agent whose Environment lists Project Dir instead, the agents dir is `<Project Dir>/agents`). Reject traversal, symlink escape, or any path outside the requested Test Agent. Never read a Project configuration file, credential, or vault.
+Resolve the Project, Test Agent, Benchmark, and Case only from the explicit request and Environment Agents Dir. Reject traversal, symlink escape, or any path outside the requested Test Agent. Never read a Project configuration file, credential, or vault.
 
 Require:
 

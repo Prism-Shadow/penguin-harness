@@ -69,7 +69,7 @@ penguin config lang <en|zh>   # persist the CLI language via PENGUIN_LANG in you
 
 ## Storage
 
-Paths use `<agents_dir>`, the Agents Dir value from your Environment section (on an older agent whose Environment lists Project Dir instead, the agents dir is `<Project Dir>/agents`).
+Paths use `<agents_dir>`, the Agents Dir value from your Environment section.
 
 - `<agents_dir>/../.project_config.toml` — the project's single hidden config file: model list, settings and per-model credentials (`api_key` etc. inlined in each model entry). Configuration is CLI-only — never read, print or hand-edit this file.
 - `<agents_dir>/<agent_id>/agent_state/.vault.toml` — that agent's vault entries, hidden file; same rule, manage it with `penguin config vault`.

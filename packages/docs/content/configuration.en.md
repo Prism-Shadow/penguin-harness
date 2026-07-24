@@ -134,6 +134,8 @@ compaction:
 # parameters JSON Schema) for every tool you keep — see Tools & Approval.
 ```
 
+An existing Agent always runs with its on-disk config verbatim — newer code defaults are never merged in automatically. To adopt the current defaults (for example an updated built-in system prompt), use the settings page's **update config** action: like a skill update it overwrites the existing configuration — custom system prompt, tool list, model/compaction settings and MCP Servers — keeping only `name`, `description` and `version`.
+
 ### System prompt placeholders
 
 `system_prompt` is the only template with placeholder substitution. Available placeholders:

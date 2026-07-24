@@ -30,6 +30,7 @@ import {
   PROVIDER_PLACEHOLDER,
   MODEL_ID_PLACEHOLDER,
   DATE_PLACEHOLDER,
+  agentStateVersion,
   defaultAgentsMd,
   defaultSystemConfig,
   OS_VERSION_PLACEHOLDER,
@@ -212,6 +213,48 @@ export async function provisionProjectAgents(opts?: {
     agentIds.push(agentId);
   }
   return agentIds;
+}
+
+/**
+ * Rewrites an Agent's `system_config.yaml` to the current code defaults
+ * (`defaultSystemConfig()`) — the config-side analogue of updating an installed Skill to
+ * the current library version.
+ *
+ * Exact semantics: only the identity fields of the existing file are preserved — `name`,
+ * `description` and the Agent State `version` (an invalid or missing version normalizes
+ * to 1); **everything else is replaced by the defaults**: `system_prompt`, `max_turns`,
+ * `model.*`, `compaction.*` (including its prompt) and `tools` (the builtin list and
+ * `mcpServers`). Keys outside the default schema are dropped, and YAML comments are not
+ * preserved (the file is rewritten from the default object). Other Agent State files
+ * (AGENTS.md, skills/, vault, memory/ …) are untouched. Returns the config written.
+ *
+ * Requires an existing Agent: unlike `loadOrInitAgentState` this never initializes a new
+ * one — it throws when `system_config.yaml` is missing.
+ */
+export async function resetSystemConfigToDefaults(
+  root: string,
+  projectId: string,
+  agentId: string,
+): Promise<SystemConfig> {
+  // Validate before building paths, to prevent path traversal.
+  assertValidId("project_id", projectId);
+  assertValidId("agent_id", agentId);
+  const configPath = systemConfigPath(root, projectId, agentId);
+  if (!(await fileExists(configPath))) {
+    throw new Error(`Agent State config not found: ${configPath} (the Agent does not exist).`);
+  }
+  const parsed = parseYaml(await fs.readFile(configPath, "utf8")) as unknown;
+  const prev = (
+    parsed !== null && typeof parsed === "object" ? parsed : {}
+  ) as Partial<SystemConfig>;
+  const next: SystemConfig = {
+    ...(typeof prev.name === "string" ? { name: prev.name } : {}),
+    ...(typeof prev.description === "string" ? { description: prev.description } : {}),
+    ...defaultSystemConfig(),
+    version: agentStateVersion(prev),
+  };
+  await fs.writeFile(configPath, stringifyYaml(next), "utf8");
+  return next;
 }
 
 /**

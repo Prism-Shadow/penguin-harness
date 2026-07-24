@@ -1,7 +1,7 @@
 /**
  * Agent settings page: six tabs —
  * Overview (name/description/State path/active count/State version + snapshot
- * export-import), Prompt (AGENTS.md and system_prompt editors + placeholder
+ * export-import + update config to current defaults), Prompt (AGENTS.md and system_prompt editors + placeholder
  * reference), Runtime (max_turns, model.*, compaction.*), Tools (editable built-in
  * tools table, MCP Server read-only JSON), Vault (vault-tab.tsx), Schedule
  * (schedules-tab.tsx).
@@ -116,6 +116,13 @@ export function AgentSettingsPage() {
     [load, reloadAgents],
   );
 
+  /** Config reset succeeded: the whole system_config.yaml was replaced, so reload every tab's data (and the list's tool counts). */
+  const onConfigReset = useCallback(() => {
+    toastSuccess(S.agent.resetConfigDone);
+    load();
+    void reloadAgents();
+  }, [load, reloadAgents]);
+
   const save = useCallback(
     async (update: AgentConfigUpdateRequest) => {
       if (!projectId || !agentId) return;
@@ -177,7 +184,13 @@ export function AgentSettingsPage() {
         <Tabs items={TABS} active={tab} onChange={setTab} />
         <div className="py-4">
           {tab === "overview" && (
-            <OverviewTab data={data} agentId={agentId} onSave={save} onImported={onImported} />
+            <OverviewTab
+              data={data}
+              agentId={agentId}
+              onSave={save}
+              onImported={onImported}
+              onConfigReset={onConfigReset}
+            />
           )}
           {tab === "prompt" && <PromptTab data={data} onSave={save} />}
           {tab === "runtime" && <RuntimeTab data={data} onSave={save} />}
@@ -204,11 +217,13 @@ function OverviewTab({
   agentId,
   onSave,
   onImported,
+  onConfigReset,
 }: {
   data: AgentConfigResponse;
   agentId: string;
   onSave: SaveFn;
   onImported: (version: number) => void;
+  onConfigReset: () => void;
 }) {
   const { currentProject } = useProject();
   const projectId = currentProject?.projectId ?? null;
@@ -219,7 +234,23 @@ function OverviewTab({
   const [importError, setImportError] = useState<string | null>(null);
   // base64 of the snapshot package pending confirmation for a version conflict (409 version_conflict); non-null shows the confirm modal.
   const [conflict, setConflict] = useState<string | null>(null);
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetting, setResetting] = useState(false);
   const { requestSave, element: saveConfirm } = useSaveConfirm();
+
+  const runReset = async () => {
+    if (!projectId) return;
+    setResetting(true);
+    try {
+      await api.resetAgentConfig(projectId, agentId);
+      setResetOpen(false);
+      onConfigReset();
+    } catch (e) {
+      toastError(apiErrorText(e));
+    } finally {
+      setResetting(false);
+    }
+  };
 
   const submit = () => {
     const config: NonNullable<AgentConfigUpdateRequest["config"]> = {};
@@ -336,6 +367,15 @@ function OverviewTab({
         )}
       </div>
 
+      {/* Config update: overwrite system_config.yaml with the current defaults (name/description/version kept) — the config-side analogue of a skill update. */}
+      <div>
+        <p className="mb-1 text-xs font-medium text-gray-500">{S.agent.resetConfigTitle}</p>
+        <p className="mb-2 text-xs text-gray-500 dark:text-gray-400">{S.agent.resetConfigDesc}</p>
+        <Button size="sm" disabled={resetting} onClick={() => setResetOpen(true)}>
+          {S.agent.resetConfigAction}
+        </Button>
+      </div>
+
       <Button size="sm" variant="primary" onClick={submit}>
         {S.common.save}
       </Button>
@@ -352,6 +392,18 @@ function OverviewTab({
         }}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">{S.agent.importConflictBody}</p>
+      </ConfirmModal>
+
+      {/* Reset confirmation: overwriting customizations with the defaults is destructive, so it keeps the danger tone. */}
+      <ConfirmModal
+        open={resetOpen}
+        title={S.agent.resetConfigTitle}
+        busy={resetting}
+        onClose={() => setResetOpen(false)}
+        onConfirm={() => void runReset()}
+        confirmLabel={S.agent.resetConfigAction}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">{S.agent.resetConfigConfirmBody}</p>
       </ConfirmModal>
     </div>
   );

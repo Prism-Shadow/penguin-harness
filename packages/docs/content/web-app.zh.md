@@ -61,7 +61,7 @@ penguin web
 
 | 标签页 | 内容 |
 | --- | --- |
-| Overview | 基本信息，以及 Agent State 快照的导出 / 导入 |
+| Overview | 基本信息、Agent State 快照的导出 / 导入，以及把配置更新为当前默认值（覆盖自定义内容，仅保留名称与描述） |
 | Prompt | AGENTS.md 与 system_prompt |
 | Runtime | max_turns、model.*、compaction.* 等运行参数 |
 | Tools | 内置工具表格与 MCP Server 的 JSON 配置 |

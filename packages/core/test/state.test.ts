@@ -27,6 +27,8 @@ import {
   buildToolConfig,
   selectBuiltinToolsForModel,
   defaultProjectConfig,
+  defaultSystemConfig,
+  resetSystemConfigToDefaults,
   getModel,
   isValidVaultKey,
   loadOrInitAgentState,
@@ -547,6 +549,81 @@ describe("assembleSystemPrompt", () => {
     expect(prompt.indexOf("CWD:")).toBeLessThan(prompt.indexOf("Provider:"));
     expect(prompt.indexOf("Provider:")).toBeLessThan(prompt.indexOf("Model ID:"));
     expect(prompt.indexOf("Model ID:")).toBeLessThan(prompt.indexOf("Session ID:"));
+  });
+});
+
+describe("resetSystemConfigToDefaults", () => {
+  it("replaces everything with the current defaults, keeping only name/description/version", async () => {
+    await loadOrInitAgentState();
+    const configPath = systemConfigPath(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID);
+    // An old on-disk config: custom prompt/runtime/tools plus a key outside the schema.
+    await fs.writeFile(
+      configPath,
+      [
+        "name: Custom Name",
+        "description: Custom description",
+        "version: 7",
+        "system_prompt: Custom prompt with {{PROJECT_DIR}}",
+        "max_turns: 5",
+        "model:",
+        "  max_tokens: 1234",
+        "compaction:",
+        "  mode: discard",
+        "tools:",
+        "  builtin: []",
+        "  mcpServers:",
+        "    - name: custom-mcp",
+        "      config: {}",
+        "custom_extra_key: should-be-dropped",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const written = await resetSystemConfigToDefaults(
+      tmpRoot,
+      DEFAULT_PROJECT_ID,
+      DEFAULT_AGENT_ID,
+    );
+    // Identity fields survive; everything else is the current default.
+    expect(written.name).toBe("Custom Name");
+    expect(written.description).toBe("Custom description");
+    expect(written.version).toBe(7);
+    const defaults = defaultSystemConfig();
+    expect(written.system_prompt).toBe(defaults.system_prompt);
+    expect(written.max_turns).toBe(defaults.max_turns);
+    expect(written.model).toEqual(defaults.model);
+    expect(written.compaction).toEqual(defaults.compaction);
+    expect(written.tools).toEqual(defaults.tools);
+
+    // The file on disk round-trips to the same object; out-of-schema keys are gone.
+    const reloaded = await loadOrInitAgentState();
+    expect(reloaded.systemConfig).toEqual(written);
+    expect("custom_extra_key" in reloaded.systemConfig).toBe(false);
+    expect(reloaded.systemConfig.system_prompt).toContain("Agents Dir: {{AGENTS_DIR}}");
+  });
+
+  it("normalizes an invalid version to 1 and keeps a missing name/description absent", async () => {
+    await loadOrInitAgentState();
+    const configPath = systemConfigPath(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID);
+    await fs.writeFile(configPath, "system_prompt: old\nversion: nonsense\n", "utf8");
+    const written = await resetSystemConfigToDefaults(
+      tmpRoot,
+      DEFAULT_PROJECT_ID,
+      DEFAULT_AGENT_ID,
+    );
+    expect(written.version).toBe(1);
+    expect("name" in written).toBe(false);
+    expect("description" in written).toBe(false);
+  });
+
+  it("throws for a nonexistent Agent instead of initializing one", async () => {
+    await expect(
+      resetSystemConfigToDefaults(tmpRoot, DEFAULT_PROJECT_ID, "ghost_agent"),
+    ).rejects.toThrow(/not found/);
+    // No directory is created as a side effect.
+    await expect(
+      fs.access(agentStateDir(tmpRoot, DEFAULT_PROJECT_ID, "ghost_agent")),
+    ).rejects.toThrow();
   });
 });
 

@@ -20,7 +20,7 @@ If the user's message only invokes this skill (e.g. "use agent-creation skill") 
 All agents of this project live side by side in the agents directory:
 
 ```bash
-AGENTS_DIR="<agents_dir>"         # the Agents Dir value from your Environment section (on an older agent that lists Project Dir instead, use <Project Dir>/agents)
+AGENTS_DIR="<agents_dir>"         # the Agents Dir value from your Environment section
 ls "$AGENTS_DIR"                  # existing agents (each is a folder here)
 TARGET="$AGENTS_DIR/<agent_id>"   # the agent to configure
 ```

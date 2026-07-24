@@ -21,7 +21,7 @@ Benchmark mode requires a top-level Session with `run_subagent`, a complete base
 
 A one-shot request normally names the target. A delegated request begins with `Caller agent: <agent_id>`, and an @-mention handoff contains `<handoff_from>`. When one-shot mode has no explicit target, use that caller or origin; if neither exists, ask. Benchmark mode always requires an explicit Test Agent and Benchmark.
 
-Resolve paths from the Environment's Agents Dir (on an older agent whose Environment lists Project Dir instead, the agents dir is `<Project Dir>/agents`) without recursively discovering the Project:
+Resolve paths from the Environment's Agents Dir without recursively discovering the Project:
 
 ```text
 AGENTS_DIR = <agents_dir>

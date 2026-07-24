@@ -19,7 +19,7 @@ Require a Test Agent and the capability to measure. If either is missing, ask th
 
 Access only the explicit Test Agent and Benchmark paths. Do not inspect another Agent, Project configuration files, Agent Evaluator State, Evaluator Workspace, or Evaluator Trace. Consume only each Evaluator's terminal protocol response and the returned Test Session id.
 
-Use the Environment's Agents Dir (on an older agent whose Environment lists Project Dir instead, the agents dir is `<Project Dir>/agents`) and the explicit Test Agent id:
+Use the Environment's Agents Dir and the explicit Test Agent id:
 
 ```text
 AGENTS_DIR = <agents_dir>

@@ -179,6 +179,13 @@ export const putAgentConfig = (
     { method: "PUT", body },
   );
 
+/** Overwrite system_config.yaml with the current defaults (keeps only name/description/version). */
+export const resetAgentConfig = (projectId: string, agentId: string) =>
+  apiFetch<AgentConfigResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/config/reset`,
+    { method: "POST" },
+  );
+
 export const getAgentTraces = (projectId: string, agentId: string) =>
   apiFetch<AgentTracesResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/traces`,
