@@ -222,12 +222,11 @@ describe("resumeTrace", () => {
     expect(summary.text).toBe("[context_summary]\nthe old-form gist\n[/context_summary]");
   });
 
-  it("replays a trace with a [user_steering] block in a tool output and a steering continuation turn", () => {
-    // Mid-run steering rewrites the tool output before it is traced, so the block is part of
-    // the persisted output: replay must keep it verbatim (pairing intact) — both in committed
-    // history and, when trailing, in carry-over. The loop-end continuation turn is a plain
-    // user message and replays like any Prompt.
-    const steered = "result-1\n\n[user_steering]\nswitch to the staging config\n[/user_steering]";
+  it("replays a trace containing [user_steering] user messages as ordinary turn input", () => {
+    // Mid-run steering is delivered as standalone [user_steering] user messages written to
+    // Trace alongside that turn's tool outputs: replay attributes them positionally like any
+    // user input — committed spans keep them in history verbatim (marker and all).
+    const steered = "[user_steering]\nswitch to the staging config\n[/user_steering]";
     const result = resumeTrace([
       meta(),
       userText("run it"),
@@ -235,13 +234,15 @@ describe("resumeTrace", () => {
       toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc1" }),
       requestEnd("completed"),
       tokenUsage(usage(10), usage(10)),
-      toolCallOutput({ output: steered, toolCallId: "tc1" }),
+      toolCallOutput({ output: "result-1", toolCallId: "tc1" }),
+      // Steering delivered with the tool output as the second turn's input.
+      userText(steered),
       requestBegin(),
       assistantText("done"),
       requestEnd("completed"),
       tokenUsage(usage(20), usage(20)),
-      // Loop-end steering delivery: a plain continuation user turn in the trace.
-      userText("one more thing"),
+      // Loop-end steering continuation: a [user_steering] user turn of its own.
+      userText("[user_steering]\none more thing\n[/user_steering]"),
       requestBegin(),
       assistantText("handled"),
       requestEnd("completed"),
@@ -250,19 +251,20 @@ describe("resumeTrace", () => {
     expect(textsOf(result.history)).toEqual([
       "run it",
       "exec_command",
+      "result-1",
       steered,
       "done",
-      "one more thing",
+      "[user_steering]\none more thing\n[/user_steering]",
       "handled",
     ]);
     expect(result.sessionTurns).toBe(3);
     expect(result.carryOver).toEqual([]);
   });
 
-  it("keeps a trailing steered tool output as carry-over verbatim (block included)", () => {
-    // The steered output was persisted but its answering request never committed: it is
-    // resent as-is on resume, [user_steering] block and all.
-    const steered = "late\n\n[user_steering]\nalso check CI\n[/user_steering]";
+  it("keeps trailing steering user messages as carry-over verbatim (unanswered input is resent)", () => {
+    // The steering message was persisted but its answering request never committed: it is
+    // resent as-is on resume, marker and all, next to the tool output it rode along with.
+    const steered = "[user_steering]\nalso check CI\n[/user_steering]";
     const result = resumeTrace([
       meta(),
       userText("run it"),
@@ -270,10 +272,11 @@ describe("resumeTrace", () => {
       toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc1" }),
       requestEnd("completed"),
       tokenUsage(usage(10), usage(10)),
-      toolCallOutput({ output: steered, toolCallId: "tc1" }),
+      toolCallOutput({ output: "late", toolCallId: "tc1" }),
+      userText(steered),
     ]);
     expect(textsOf(result.history)).toEqual(["run it", "exec_command"]);
-    expect(textsOf(result.carryOver)).toEqual([steered]);
+    expect(textsOf(result.carryOver)).toEqual(["late", steered]);
   });
 
   it("closed context (discard): empty history and no pending summary", () => {

@@ -144,8 +144,8 @@ The paths below omit the `/api/sessions/:sessionId` prefix. For the storage mode
 | DELETE | / | Delete the Session (along with its Traces and scratch files) |
 | GET | /messages | Full OmniMessage history |
 | GET | /stream | SSE event stream (next section) |
-| POST | /tasks | Start a Task: `{input: TaskInputPart[], thinkingLevel?}` → 202 |
-| POST | /steer | Mid-run steering: `{text}` queues a message for the running Task (delivered inside the next completed tool output as a `[user_steering]` block) → 202; 409 `not_running` when no Task is in progress |
+| POST | /tasks | Start a Task: `{input: TaskInputPart[], thinkingLevel?, queueIfBusy?}` → 202. With `queueIfBusy`, a busy session holds the input as a follow-up (`queued: true`) and auto-starts it as an ordinary next task once idle; `task_state` events report the queued count |
+| POST | /steer | Mid-run steering: `{text}` queues a message for the running Task (delivered between turns as a standalone `[user_steering]` user message) → 202; 409 `not_running` when no Task is in progress |
 | POST | /approvals/:toolCallId | Approval decision: `{decision}` is `allow` or `deny` → 204 |
 | POST | /abort | Interrupt the current Task: 202 when triggered, 204 when idle |
 | POST | /compact | Trigger context compaction: 202; 409 `nothing_to_compact` when there is nothing to compact |

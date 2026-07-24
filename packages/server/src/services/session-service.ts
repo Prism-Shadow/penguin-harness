@@ -120,6 +120,7 @@ export class SessionService {
       createdAt: row.createdAt,
       status: this.deps.manager.statusOf(row.sessionId),
       pendingApprovalCount: this.deps.manager.pendingApprovalCount(row.sessionId),
+      pendingFollowUpCount: this.deps.manager.pendingFollowUpCount(row.sessionId),
       hasTrace,
       archived: (row.archivedAt ?? null) !== null,
     };

@@ -87,7 +87,7 @@ Carry-over enters the model context only — it is never written to the Trace, w
 
 ## Mid-run steering
 
-While a Task is running, the host can queue a user message with `session.steer(text)` without interrupting the loop: the engine appends it to the next **completed** tool output as a `[user_steering]` block (part of the persisted message — Trace, stream and next-turn input all carry the same rewritten output). If the turn ends with no tool calls while steering is still queued, the queued text continues the loop as a plain user turn instead of being dropped. `steer` returns `false` when no Task is running (hosts then submit a normal task); anything still queued when a run aborts is discarded.
+While a Task is running, the host can queue a user message with `session.steer(text)` without interrupting the loop: at the next input assembly the engine delivers it as a **standalone user text message** wrapped in `[user_steering]…[/user_steering]`, sent alongside that turn's tool outputs (or alone as the continuation input when the turn produced no tool calls — the Task keeps going instead of ending). Steering is real user input: written to Trace like any Prompt, yielded to the output stream, and replayed as ordinary turn input on resume; tool outputs are never rewritten. The queue is drained at **every** input assembly — including right after a mid-run compaction, so steering that arrives during the compaction request is delivered, never swallowed. `steer` returns `false` when no Task is running (hosts then submit a normal task); the queue is discarded only when the run exits (abort included).
 
 ## Automatic reconnect
 

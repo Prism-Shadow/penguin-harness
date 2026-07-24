@@ -46,7 +46,11 @@
  *     message hits the dedup check, discardFragmentFor also discards the corresponding in-flight fragment.
  * Docs: /docs/omni-message § "The streaming discipline".
  */
-import { isEventMessage, isPartialPayload } from "@prismshadow/penguin-core/omnimessage";
+import {
+  isEventMessage,
+  isPartialPayload,
+  parseUserSteeringText,
+} from "@prismshadow/penguin-core/omnimessage";
 import type {
   ApprovalDecision,
   CompactionMode,
@@ -83,6 +87,19 @@ export interface UserTextItem {
   id: number;
   text: string;
   /** Message timestamp (milliseconds): shown on footer hover. History and real time share the same source — this message's own timestamp. */
+  atMs?: number;
+}
+
+/**
+ * Mid-run steering: a `[user_steering]`-wrapped user text delivered between turns
+ * (see core `Session.steer`). Rendered as a compact user-styled chip **inside** the running
+ * Task's flow — it never starts a new Task (`text` is the inner message, marker stripped).
+ */
+export interface UserSteeringItem {
+  kind: "user_steering";
+  id: number;
+  text: string;
+  /** Message timestamp (milliseconds): shown on footer hover. */
   atMs?: number;
 }
 
@@ -223,6 +240,7 @@ export interface TaskStatsItem {
 
 export type ChatItem =
   | UserTextItem
+  | UserSteeringItem
   | UserImageItem
   | AssistantTextItem
   | ThinkingItem
@@ -710,6 +728,22 @@ function handleComplete(
         // Traces containing it are re-rendered through this reducer.
         if (p.text.startsWith("[context_summary]") || p.text.startsWith("<context_summary>")) {
           touchTask(model, timestamp);
+          return;
+        }
+        // Mid-run steering (`[user_steering]`-wrapped user text, delivered between turns):
+        // stays inside the running Task — it must NOT start a new Task (same exclusion idea
+        // as [context_summary]) — but unlike the summary it IS rendered, as a compact
+        // user-styled steering chip in-flow.
+        const steering = parseUserSteeringText(p.text);
+        if (steering !== null) {
+          touchTask(model, timestamp);
+          const steerMs = tsOf(timestamp);
+          model.items.push({
+            kind: "user_steering",
+            id: nextId(model),
+            text: steering,
+            ...(steerMs !== undefined ? { atMs: steerMs } : {}),
+          });
           return;
         }
         // A complete text message on the main session's user side: starts a new Task.

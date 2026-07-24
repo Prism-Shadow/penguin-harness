@@ -11,7 +11,12 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { agentsDir, readTraceTolerant, tracesDir } from "@prismshadow/penguin-core";
+import {
+  agentsDir,
+  parseUserSteeringText,
+  readTraceTolerant,
+  tracesDir,
+} from "@prismshadow/penguin-core";
 import type { OmniMessage } from "@prismshadow/penguin-core";
 import type {
   AgentTracesResponse,
@@ -332,9 +337,22 @@ export class TraceService {
       // images" = multiple messages; only the **first** one counts (once
       // pendingFrom is set, it's not changed again), otherwise the turn's start
       // would shift to the last image.
+      // Mid-run steering (`[user_steering]`-wrapped user text, delivered between turns of a
+      // running Task): never a turn starter — same exclusion idea as the compaction summary —
+      // and it forces the next request to be a continuation (a steering-only continuation
+      // turn has no preceding tool call, but it is still the same Task).
+      const isSteeringText =
+        !hasOrigin &&
+        msg.type === "model_msg" &&
+        p.type === "text" &&
+        p.role === "user" &&
+        typeof p.text === "string" &&
+        parseUserSteeringText(p.text) !== null;
+      if (isSteeringText) continuation = true;
       const startsUserTurn =
         !hasOrigin &&
         !compactionActive &&
+        !isSteeringText &&
         msg.type === "model_msg" &&
         ((p.type === "text" && p.role === "user") || p.type === "image_url");
       const startsCompactionTurn =

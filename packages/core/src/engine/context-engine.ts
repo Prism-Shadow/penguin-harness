@@ -43,7 +43,7 @@ import {
   requestEnd,
   subagentEvent,
   toolCallOutput,
-  userSteeringBlock,
+  userSteeringText,
   userText,
 } from "../omnimessage/index.js";
 import type {
@@ -245,13 +245,16 @@ export class ContextEngine {
    */
   private pendingTraceRotation = false;
   /**
-   * Steering queue: user messages sent mid-run (`steer`). Drained when a tool call completes
-   * (appended to that tool_call_output as `[user_steering]` blocks) or at loop end (delivered
-   * as the next user turn). Only accepts entries while a run is in flight; whatever is still
-   * queued when the run exits — abort, LLM failure, or a plain race with completion — is
-   * **discarded** (the abort event / task end already hands control back to the user, and
-   * silently replaying stale steering into a later Task would be more surprising than losing
-   * it; hosts get `steer() === false` after that point and fall back to a normal task).
+   * Steering queue: user messages sent mid-run (`steer`). Drained at every next-input
+   * assembly — after each turn (delivered as standalone `[user_steering]` user messages
+   * alongside that turn's tool outputs, or alone as the continuation input when the turn
+   * produced no tool calls) and after a completed mid-run compaction (so steering that
+   * arrived during the compaction request is delivered, never swallowed). Only accepts
+   * entries while a run is in flight; the queue is discarded **only when the run exits**
+   * — abort, LLM failure, or a plain race with completion (the abort event / task end
+   * already hands control back to the user, and silently replaying stale steering into a
+   * later Task would be more surprising than losing it; hosts get `steer() === false`
+   * after that point and fall back to a normal task).
    */
   private steeringQueue: string[] = [];
   /** Whether a `run` is currently in flight (gates `steer`; compaction does not count). */
@@ -294,10 +297,11 @@ export class ContextEngine {
   }
 
   /**
-   * Queues a steering message for the running Task: it is appended to the next completed
-   * tool output as a `[user_steering]` block, or — if the turn ends without tool calls
-   * first — delivered as the next user turn. Returns false when no Task is running (the
-   * host should then submit the text as a normal task instead).
+   * Queues a steering message for the running Task: it is delivered with the next request
+   * input as a standalone `[user_steering]` user message — alongside that turn's tool
+   * outputs, or alone as the continuation input when the turn produced no tool calls.
+   * Returns false when no Task is running (the host should then submit the text as a
+   * normal task instead).
    */
   steer(text: string): boolean {
     if (!this.taskRunning) return false;
@@ -305,32 +309,24 @@ export class ContextEngine {
     return true;
   }
 
-  /** Takes everything currently queued for steering (in arrival order), leaving the queue empty. */
-  private drainSteering(): string[] {
+  /**
+   * Drains the steering queue into standalone `[user_steering]` user messages (one per
+   * queued text, in arrival order), yielding each to the output stream and writing it to
+   * Trace — steering is real user input: unlike a normal Prompt (which the render layer
+   * already holds locally) this text never reached the consumer, and replay attributes it
+   * positionally to the next turn's input like any other user message. Returns the messages
+   * for the caller to append to the next request input; an empty queue is a no-op.
+   */
+  private async *deliverSteering(): AsyncGenerator<OmniMessage, OmniMessage[]> {
     if (this.steeringQueue.length === 0) return [];
     const drained = this.steeringQueue;
     this.steeringQueue = [];
-    return drained;
-  }
-
-  /**
-   * Appends the queued steering messages to a completed tool output as `[user_steering]`
-   * blocks (one block per message, in arrival order); returns the message unchanged when the
-   * queue is empty. The rewrite happens before the message is streamed / traced / collected,
-   * so the single modified message is what every consumer sees.
-   */
-  private withSteering(
-    out: OmniMessage<ToolCallOutputPayload>,
-  ): OmniMessage<ToolCallOutputPayload> {
-    const drained = this.drainSteering();
-    if (drained.length === 0) return out;
-    return {
-      ...out,
-      payload: {
-        ...out.payload,
-        output: out.payload.output + drained.map(userSteeringBlock).join(""),
-      },
-    };
+    const messages = drained.map((text) => userText(userSteeringText(text)));
+    for (const msg of messages) {
+      yield msg;
+      await this.write(msg);
+    }
+    return messages;
   }
 
   /** The actual Task loop behind `run` (split out so run's finally can close the steering window on every exit path). */
@@ -457,23 +453,14 @@ export class ContextEngine {
       // applies mid-Task — when runTurn returns, all of this turn's
       // tool results are ready and paired with their tool_call.
       const midTask = turn.toolOutputs.length > 0;
-      // Loop-end steering delivery: the turn produced no tool calls (the model has already
-      // streamed its final answer), but steering is still queued that no tool output could
-      // carry — instead of dropping it, continue the loop with the queued text as the next
-      // user input. At that point it is a normal user turn (plain userText, no marker),
-      // written to Trace like any Prompt, and subject to the max-turns guard at the top of
-      // the loop. Drained before the compaction checkpoint so a Task-boundary compaction
-      // can't end the run with the queue still full.
-      const steeringNext = midTask ? [] : this.drainSteering().map((text) => userText(text));
-      // A real Task boundary: no tool outputs to feed back and no steering left to deliver.
-      const atBoundary = !midTask && steeringNext.length === 0;
       const compactionReason = this.compactionTrigger();
       if (compactionReason) {
         const mode = this.deps.compaction!.mode;
         if (mode === "discard") {
           // Once discarded, the current Task can't continue: defer until the Task really
-          // ends (mid-Task, or a steering continuation turn still pending).
-          if (atBoundary) {
+          // ends (mid-Task, or steering still queued that must continue the loop). The
+          // queue is only peeked here — delivery happens at the input assembly below.
+          if (!midTask && this.steeringQueue.length === 0) {
             yield* this.discardContext(compactionReason);
             return;
           }
@@ -485,9 +472,8 @@ export class ContextEngine {
           );
           if (result.status === "aborted") {
             // User interrupted compaction: keep the original context; if mid-Task, hold the
-            // tool outputs as carry-over per case A. A drained steering continuation is
-            // discarded along with the rest of the queue (abort hands control back to the
-            // user, see steeringQueue).
+            // tool outputs as carry-over per case A. Abort is the one path that discards the
+            // steering queue (run's finally — control goes back to the user).
             if (midTask) {
               this.pendingCarryOver = this.buildCarryOver(attemptInput, turn);
               yield* this.emitAbort("aborted during compaction");
@@ -495,7 +481,10 @@ export class ContextEngine {
             return;
           }
           if (result.status === "completed") {
-            if (atBoundary) {
+            // Boundary check against the **live** queue: steering may have arrived during
+            // the multi-second compaction request and must not be swallowed (no await sits
+            // between this check and the return, so the window cannot reopen).
+            if (!midTask && this.steeringQueue.length === 0) {
               // Task boundary: the summary is merged with the next user Prompt as the new
               // context's first input.
               this.pendingSummary = result.summary!;
@@ -504,15 +493,12 @@ export class ContextEngine {
             // Mid-Task: the summary itself becomes the new LLM object's first input (this
             // turn's tool results were already folded into the compaction request and absorbed
             // into the summary); continuation relies on the model's own next-step plan written
-            // into the summary, with no hardcoded continuation instruction appended. A pending
-            // steering continuation follows the summary as the next user turn (yielded so live
-            // consumers see it — unlike normal Prompts, the render layer never had this text).
+            // into the summary, with no hardcoded continuation instruction appended. Queued
+            // steering (including anything that arrived during the compaction request) is
+            // delivered right after the summary as standalone [user_steering] user turns.
             await this.write(result.summary!);
-            for (const m of steeringNext) {
-              yield m;
-              await this.write(m);
-            }
-            nextInput = [result.summary!, ...steeringNext];
+            const steering = yield* this.deliverSteering();
+            nextInput = [result.summary!, ...steering];
             continue;
           }
           // failed: keep the original context and Trace index; the current Task continues and
@@ -520,22 +506,15 @@ export class ContextEngine {
         }
       }
 
+      // Next-input assembly — the steering delivery point: everything queued so far becomes
+      // standalone [user_steering] user messages riding alongside this turn's tool outputs
+      // (or alone as the continuation input when the turn produced no tool calls, instead of
+      // ending the Task — subject to the max-turns guard at the top of the loop).
+      const steering = yield* this.deliverSteering();
       // No tool_call this turn and no steering left -> the Task ends (the final reply has
       // already been streamed out).
-      if (atBoundary) return;
-      if (!midTask) {
-        // Steering continuation turn: the queued text becomes the next user input. Unlike a
-        // normal Prompt (which the render layer already holds locally), this text never
-        // reached the consumer — yield it so live streams render the user turn.
-        for (const m of steeringNext) {
-          yield m;
-          await this.write(m);
-        }
-        nextInput = steeringNext;
-        continue;
-      }
-      // Otherwise continue, using the tool outputs as the next turn's LLM input.
-      nextInput = turn.toolOutputs;
+      if (!midTask && steering.length === 0) return;
+      nextInput = [...turn.toolOutputs, ...steering];
     }
   }
 
@@ -801,13 +780,14 @@ export class ContextEngine {
   ): Promise<void> {
     let completed = false;
     try {
-      for await (let out of this.deps.environment.executeTool({
+      for await (const out of this.deps.environment.executeTool({
         toolCall,
         ...(signal ? { signal } : {}),
         // Pass through the parent approval callback: run_subagent uses this so the child
         // Session inherits the parent Agent's approval mode.
         ...(approve ? { approve } : {}),
       })) {
+        queue.push(out);
         // Nested-session messages carrying an origin: forwarded to the frontend as a stream;
         // their content is not written to the parent Trace (the child Session has its own
         // Trace). When a direct child session's (origin length 1) session_meta arrives, write a
@@ -817,25 +797,13 @@ export class ContextEngine {
         // Never fed back — a child session's tool_call_output has no pairing with the parent's
         // tool_call, and feeding it back by mistake would be rejected by the Provider.
         if (out.origin && out.origin.length > 0) {
-          queue.push(out);
           if (isSessionMeta(out) && out.origin.length === 1) {
             await this.write(subagentEvent(out.origin[0]!));
           }
           continue;
         }
-        const isCompleteOutput =
-          isCompleteModelMessage(out) && out.payload.type === "tool_call_output";
-        // Steering delivery point: pending steering is appended to the completed tool output
-        // **before** the message is streamed / traced / collected below, so the one modified
-        // message flows everywhere (Trace, SSE/stream, next-turn input). The streamed partial
-        // deltas do not include the appended block; the complete message wins in every
-        // aggregator.
-        if (isCompleteOutput) {
-          out = this.withSteering(out as OmniMessage<ToolCallOutputPayload>);
-        }
-        queue.push(out);
         await this.write(out);
-        if (isCompleteOutput) {
+        if (isCompleteModelMessage(out) && out.payload.type === "tool_call_output") {
           toolOutputs.push(out);
           completed = true;
         }
@@ -847,15 +815,11 @@ export class ContextEngine {
         process.stderr.write(`[penguin] environment threw after tool output: ${message}\n`);
         return;
       }
-      // The safety-net failure output is still this tool call completing: pending steering
-      // rides on it the same way.
-      const failed = this.withSteering(
-        toolCallOutput({
-          output: `[tool error] ${message}`,
-          toolCallId: toolCall.payload.tool_call_id,
-          stopReason: "failed",
-        }),
-      );
+      const failed = toolCallOutput({
+        output: `[tool error] ${message}`,
+        toolCallId: toolCall.payload.tool_call_id,
+        stopReason: "failed",
+      });
       queue.push(failed);
       await this.write(failed);
       toolOutputs.push(failed);

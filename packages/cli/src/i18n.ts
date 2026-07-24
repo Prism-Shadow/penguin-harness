@@ -125,9 +125,9 @@ export interface Messages {
   chatHints(): string;
   confirmExit(): string;
   taskInterrupted(): string;
-  /** Acknowledgment printed when a line typed mid-run is queued as steering (delivered with the next tool result). */
-  steerQueued(): string;
-  /** Prefix for a [user_steering] line inside rendered tool output (mid-run user message). */
+  /** Acknowledgment printed when a line typed mid-run is queued as steering (echoes the text; delivered between turns). */
+  steerQueued(text: string): string;
+  /** Prefix for a rendered [user_steering] line (a mid-run user message delivered between turns). */
   steerLinePrefix(): string;
   error(message: string): string;
   /** Approval prompt text (the tool call is already streamed above and directly precedes this prompt, so no index and no re-rendering). */
@@ -350,7 +350,7 @@ const en: Messages = {
     "Type a message to start a conversation; end a line with \\; typing while a task runs steers the agent; /compact to compact the context; /exit to quit; and Ctrl-C interrupts the current conversation.",
   confirmExit: () => "Exit penguin? [y/N] ",
   taskInterrupted: () => "[current conversation interrupted]",
-  steerQueued: () => "» steering queued (delivered with the next tool result)",
+  steerQueued: (text) => `» steering queued (delivered with the next turn): ${text}`,
   steerLinePrefix: () => "↪ user: ",
   error: (message) => `[error] ${message}`,
   approvePrompt: () => "? Approve this tool call? [Y/n] ",
@@ -517,7 +517,7 @@ const zh: Messages = {
     "输入消息发起对话；行尾 \\ 续行；运行中输入可插话引导；/compact 压缩上下文；/exit 退出；Ctrl-C 中断对话。",
   confirmExit: () => "确认退出 penguin？[y/N] ",
   taskInterrupted: () => "[已中断当前对话]",
-  steerQueued: () => "» 插话已排队（随下一个工具结果送达）",
+  steerQueued: (text) => `» 插话已排队（随下一轮送达）：${text}`,
   steerLinePrefix: () => "↪ 用户: ",
   error: (message) => `[错误] ${message}`,
   approvePrompt: () => "? 批准此工具调用？[Y/n] ",

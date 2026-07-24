@@ -469,6 +469,8 @@ export interface SessionInfo {
   status: SessionStatus;
   /** Number of approvals awaiting human decision (a persisted count outside server events, for list badges). */
   pendingApprovalCount: number;
+  /** Number of queued follow-up tasks (`queueIfBusy`) awaiting auto-start once the session is idle. */
+  pendingFollowUpCount: number;
   /** Whether a Trace record exists (a Task has been started). */
   hasTrace: boolean;
   /** Whether archived (hidden from the default list, grouped under "Archived"). */
@@ -573,14 +575,23 @@ export interface TaskCreateRequest {
   /**
    * Thinking level for this Task's LLM requests (a per-turn parameter; one of
    * `none | low | medium | high | xhigh`, anything else is a 400). Omitted = falls back to
-   * the session's default (the Agent config's `model.thinking_level`).
+   * the session's default (the Agent config's `model.thinking_level`). A queued follow-up
+   * (`queueIfBusy`) keeps its level and applies it when it auto-starts.
    */
   thinkingLevel?: ThinkingLevelName;
+  /**
+   * Queue instead of 409 when a Task/compaction is already in progress: the input is held
+   * server-side and auto-starts as an ordinary next task once the session returns to idle
+   * (in queue order, one at a time). The response then carries `queued: true`.
+   */
+  queueIfBusy?: boolean;
 }
 
 export interface TaskCreateResponse {
   /** Current actual session_id: a Trace-less invalid Session self-heals and returns a new id; the frontend updates its route accordingly. */
   sessionId: string;
+  /** True when `queueIfBusy` enqueued the input as a follow-up instead of starting it (absent/false: the task started). */
+  queued?: boolean;
 }
 
 /**
@@ -609,8 +620,8 @@ export type ServerEvent =
    * calls under read-only (see runtime/approvals.ts); pending approvals are resent on reconnect.
    */
   | { type: "approval_request"; toolCall: OmniMessage<ToolCallPayload>; origin?: string[] }
-  /** Session run status flip (for toggling the input area and list). */
-  | { type: "task_state"; state: SessionStatus }
+  /** Session run status flip (for toggling the input area and list); `queued` = queued follow-up count (see TaskCreateRequest.queueIfBusy). */
+  | { type: "task_state"; state: SessionStatus; queued?: number }
   /** The model-generated title after the first turn has been persisted (for in-place list updates). */
   | { type: "session_title"; sessionId: string; title: string }
   /** Last-Event-ID has been evicted from the buffer: the frontend should re-fetch the history endpoint before continuing to consume this connection. */

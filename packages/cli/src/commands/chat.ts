@@ -125,7 +125,7 @@ export function registerChatCommand(program: Command, t: Messages): void {
       // regular input.
       if (session.resumedHistory) {
         out.write(`${t.resumedBanner(session.sessionId, session.resumedHistory.length)}\n`);
-        renderHistory(session.resumedHistory, out);
+        renderHistory(session.resumedHistory, out, t);
       }
 
       // TTY: raw mode + bracketed paste + PasteFilter; non-TTY (pipe/test): read stdin directly.
@@ -148,11 +148,26 @@ export function registerChatCommand(program: Command, t: Messages): void {
       const rli = rl as unknown as RlInternals;
       const composer = new LineComposer();
 
+      // Typing lock (owner directive): while the user is composing a line mid-run, streamed
+      // output must not scribble over it — the renderer holds (queues) output while the input
+      // buffer is non-empty and flushes once the line is submitted or cleared. Synced after
+      // readline has processed each chunk (setImmediate: listener order is not guaranteed);
+      // TTY only — non-TTY input (pipe/tests) has no echoed line to protect. The approval
+      // prompt has its own lock (beginUserPrompt), so the hold applies to "running" only.
+      const syncInputHold = (): void => {
+        renderer.setInputHold(state === "running" && rli.line.length > 0);
+      };
+      if (isTTY) {
+        inputStream.on("data", () => setImmediate(syncInputHold));
+      }
+
       let state: ChatState = "idle";
       let closed = false;
       let taskAbort: AbortController | null = null;
       let pendingLine: ((line: string | null) => void) | null = null;
       let pendingApproval: ((decision: ApprovalDecision) => void) | null = null;
+      /** A line typed in the running->idle race window (steer refused): becomes the next prompt instead of being dropped. */
+      let queuedPrompt: string | null = null;
 
       const cleanup = () => {
         if (!isTTY) return;
@@ -224,14 +239,19 @@ export function registerChatCommand(program: Command, t: Messages): void {
           return;
         }
         // running: a non-empty line becomes a steering message for the running Task — core
-        // appends it to the next completed tool output as a [user_steering] block, so the
-        // model sees it without the loop being interrupted. Empty lines are still ignored,
-        // and steer() returning false (race: the task just finished) falls through to the
-        // old ignore behavior.
+        // delivers it between turns as a standalone [user_steering] user message, so the
+        // model sees it without the loop being interrupted. Empty lines are still ignored.
+        // steer() returning false (race: the task just finished) must not drop the line:
+        // it is stashed and becomes the next normal prompt as soon as the loop asks again.
         if (state === "running") {
           const text = line.trim();
-          if (text.length > 0 && session.steer(text)) {
-            out.write(`${dim(t.steerQueued())}\n`);
+          if (text.length === 0) return;
+          if (session.steer(text)) {
+            // Printed via the renderer while the typing hold is still engaged, so the ack
+            // lands before the held stream output flushes underneath it.
+            renderer.printLine(dim(t.steerQueued(text)));
+          } else {
+            queuedPrompt = text;
           }
         }
       });
@@ -281,6 +301,15 @@ export function registerChatCommand(program: Command, t: Messages): void {
         new Promise((resolve) => {
           if (closed) {
             resolve(null);
+            return;
+          }
+          // A line typed in the running->idle race window (steer refused): submit it as this
+          // prompt immediately — the text is already echoed on screen, no re-prompt needed.
+          if (queuedPrompt !== null) {
+            const line = queuedPrompt;
+            queuedPrompt = null;
+            state = "idle";
+            resolve(line);
             return;
           }
           state = "idle";

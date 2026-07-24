@@ -584,6 +584,37 @@ describe("trace-service", () => {
     expect(a.requests.map((r) => r.taskIndex)).toEqual([0, 0, 1]);
   });
 
+  it("Task grouping: [user_steering] user texts never start a new Task (steering continuation stays in the same Task)", async () => {
+    const T = (sec: string) => `2026-07-05T10:03:${sec}Z`;
+    await writeTraceFile(root, P, A, "2026-07-05", S, 12, [
+      sessionMeta(metaPayload()),
+      // Task 0, round 1: calls a tool; a steering message rides alongside the tool output.
+      at(T("00.000"), userText("q1")),
+      at(T("01.000"), requestBegin()),
+      at(T("02.000"), toolCall({ name: "read_file", arguments: "{}", toolCallId: "t1" })),
+      at(T("02.500"), requestEnd("completed")),
+      at(T("03.000"), toolCallOutput({ output: "o", toolCallId: "t1" })),
+      at(T("03.200"), userText("[user_steering]\nalso check the tests\n[/user_steering]")),
+      at(T("03.500"), requestBegin()),
+      at(T("04.000"), assistantText("answer 1")),
+      at(T("04.500"), requestEnd("completed")),
+      // Loop-end steering: the answer round produced no tool call — a plain user text here
+      // would start a new Task, but the steering continuation stays in Task 0.
+      at(T("05.000"), userText("[user_steering]\none more thing\n[/user_steering]")),
+      at(T("05.500"), requestBegin()),
+      at(T("06.000"), assistantText("answer 2")),
+      at(T("06.500"), requestEnd("completed")),
+      // A real new user turn afterwards starts Task 1 as usual.
+      at(T("20.000"), userText("q2")),
+      at(T("21.000"), requestBegin()),
+      at(T("22.000"), assistantText("answer 3")),
+      at(T("22.500"), requestEnd("completed")),
+    ]);
+    const a = await service.analyze(P, A, S, 12);
+    expect(a.requests.map((r) => r.taskIndex)).toEqual([0, 0, 0, 1]);
+    expect(a.modelSegments.map((s) => s.taskIndex)).toEqual([0, 0, 0, 1]);
+  });
+
   // Compaction is its own turn: the previous turn called a tool and would
   // otherwise "continue", but compaction_begin breaks that continuation, so the
   // compaction request lands on a new taskIndex. A successful compaction splits

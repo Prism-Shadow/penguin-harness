@@ -11,10 +11,10 @@ import {
   partialText,
   partialToolCall,
   partialToolCallOutput,
-  splitUserSteering,
+  parseUserSteeringText,
   toolCall,
   toolCallOutput,
-  userSteeringBlock,
+  userSteeringText,
   userText,
 } from "../src/omnimessage/index.js";
 import type {
@@ -199,28 +199,24 @@ describe("PartialAggregator", () => {
   });
 });
 
-describe("user steering blocks (userSteeringBlock / splitUserSteering)", () => {
-  it("round-trips: appended blocks split back out in order, output text preserved", () => {
-    const output =
-      "tool result" + userSteeringBlock("first note") + userSteeringBlock("second\nmultiline");
-    expect(splitUserSteering(output)).toEqual([
-      { kind: "output", text: "tool result" },
-      { kind: "steering", text: "first note" },
-      { kind: "steering", text: "second\nmultiline" },
-    ]);
+describe("user steering messages (userSteeringText / parseUserSteeringText)", () => {
+  it("round-trips: a wrapped steering message parses back to the inner text (multiline kept)", () => {
+    expect(userSteeringText("switch branch")).toBe(
+      "[user_steering]\nswitch branch\n[/user_steering]",
+    );
+    expect(parseUserSteeringText(userSteeringText("switch branch"))).toBe("switch branch");
+    expect(parseUserSteeringText(userSteeringText("line1\nline2"))).toBe("line1\nline2");
   });
 
-  it("plain output yields a single output segment; empty output yields none", () => {
-    expect(splitUserSteering("just output")).toEqual([{ kind: "output", text: "just output" }]);
-    expect(splitUserSteering("")).toEqual([]);
+  it("normal user text is left alone (including text merely mentioning the marker)", () => {
+    expect(parseUserSteeringText("fix the bug")).toBeNull();
+    expect(parseUserSteeringText("what does [user_steering] mean?")).toBeNull();
+    // A block not spanning the whole message is not a steering message.
+    expect(parseUserSteeringText("hi\n[user_steering]\nx\n[/user_steering]")).toBeNull();
+    expect(parseUserSteeringText("")).toBeNull();
   });
 
-  it("output resuming after a block (defensive) keeps segment order", () => {
-    const mixed = "a" + userSteeringBlock("note") + "\ntrailing";
-    expect(splitUserSteering(mixed)).toEqual([
-      { kind: "output", text: "a" },
-      { kind: "steering", text: "note" },
-      { kind: "output", text: "\ntrailing" },
-    ]);
+  it("tolerates trailing whitespace after the closing tag", () => {
+    expect(parseUserSteeringText("[user_steering]\nok\n[/user_steering]\n")).toBe("ok");
   });
 });

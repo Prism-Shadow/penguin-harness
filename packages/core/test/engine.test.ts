@@ -1811,7 +1811,14 @@ describe("ContextEngine mid-run steering ([user_steering])", () => {
     };
   }
 
-  it("appends queued steering to the next completed tool output — exact format, order kept, one consistent message in stream/trace/next input", async () => {
+  /** The text payloads of the [user_steering]-wrapped user messages in a list. */
+  const steeringTexts = (msgs: OmniMessage[]): string[] =>
+    msgs
+      .map((m) => m.payload as { role?: string; text?: string })
+      .filter((p) => p.role === "user" && (p.text ?? "").startsWith("[user_steering]"))
+      .map((p) => p.text!);
+
+  it("delivers queued steering as standalone user messages alongside the turn's tool outputs — traced, streamed, fed to the model in order; tool output untouched", async () => {
     const llm = new FakeLLM();
     const trace = new Writer({ tracesDir: traces, sessionId: "sess_steer" });
     const engine = new ContextEngine({ llm, environment: steeringEnvironment(), trace });
@@ -1828,39 +1835,46 @@ describe("ContextEngine mid-run steering ([user_steering])", () => {
     };
     const all = await collectRun(engine, [userText("go")], approve);
 
-    const expected =
-      "tool result" +
-      "\n\n[user_steering]\nfocus on the tests\n[/user_steering]" +
-      "\n\n[user_steering]\nalso update the docs\n[/user_steering]";
+    const expected = [
+      "[user_steering]\nfocus on the tests\n[/user_steering]",
+      "[user_steering]\nalso update the docs\n[/user_steering]",
+    ];
 
-    // Streamed complete output carries the blocks (exactly one complete tool_call_output).
-    const streamed = all.filter(
+    // The tool output itself is never rewritten.
+    const outputs = all.filter(
       (m) => isCompleteModelMessage(m) && m.payload.type === "tool_call_output",
     );
-    expect(streamed).toHaveLength(1);
-    expect((streamed[0]!.payload as { output: string }).output).toBe(expected);
+    expect(outputs).toHaveLength(1);
+    expect((outputs[0]!.payload as { output: string }).output).toBe("tool result");
 
-    // The next turn's LLM input got the same modified message.
-    const fedBack = llm.receivedSecondInput!.filter(
+    // Streamed: the steering user messages are yielded (live consumers never saw this text).
+    expect(steeringTexts(all)).toEqual(expected);
+
+    // The next turn's LLM input = tool output first, then the steering user messages in order.
+    const second = llm.receivedSecondInput!;
+    expect(second.map((m) => (m.payload as { type?: string }).type)).toEqual([
+      "tool_call_output",
+      "text",
+      "text",
+    ]);
+    expect(steeringTexts(second)).toEqual(expected);
+
+    // Trace recorded them as real user input (replay attributes them to the next turn).
+    const recorded = await readTrace(trace.currentPath());
+    expect(steeringTexts(recorded)).toEqual(expected);
+    const recordedOutputs = recorded.filter(
       (m) => (m.payload as { type?: string }).type === "tool_call_output",
     );
-    expect(fedBack).toHaveLength(1);
-    expect((fedBack[0]!.payload as { output: string }).output).toBe(expected);
-
-    // Trace recorded the same modified message (and only that one).
-    const recorded = (await readTrace(trace.currentPath())).filter(
-      (m) => (m.payload as { type?: string }).type === "tool_call_output",
-    );
-    expect(recorded).toHaveLength(1);
-    expect((recorded[0]!.payload as { output: string }).output).toBe(expected);
+    expect((recordedOutputs[0]!.payload as { output: string }).output).toBe("tool result");
 
     // Task over: the queue window is closed again.
     expect(engine.steer("late")).toBe(false);
   });
 
-  it("delivers steering left at loop end as a plain continuation user turn (traced, streamed, no marker)", async () => {
+  it("delivers steering left at loop end as a [user_steering] continuation turn (traced, streamed)", async () => {
     // Turn 1 ends with no tool calls while steering is queued mid-stream -> the engine keeps
-    // looping and sends the queued text as the next user input.
+    // looping and sends the queued text as the next input, wrapped in the same marker (UIs
+    // keep it inside the running Task; the model knows it is mid-task user input).
     let engineRef: ContextEngine | null = null;
     const inputs: OmniMessage[][] = [];
     const llm: LLMInterface = {
@@ -1881,27 +1895,78 @@ describe("ContextEngine mid-run steering ([user_steering])", () => {
 
     const all = await collectRun(engine, [userText("go")], allowAll);
 
-    // Turn 2 received the steering text as a normal user message (no [user_steering] marker).
+    const wrapped = "[user_steering]\none more thing\n[/user_steering]";
+    // Turn 2 received exactly the wrapped steering message as its input.
     expect(inputs).toHaveLength(2);
-    const turn2 = inputs[1]!.map((m) => (m.payload as { text?: string }).text ?? "");
-    expect(turn2).toEqual(["one more thing"]);
-    // The continuation user turn is streamed (live consumers never saw this text otherwise)...
-    const userTexts = all.filter(
-      (m) =>
-        isCompleteModelMessage(m) &&
-        m.payload.type === "text" &&
-        (m.payload as { role?: string }).role === "user",
-    );
-    expect(userTexts.map((m) => (m.payload as TextPayload).text)).toEqual(["one more thing"]);
-    // ...and written to Trace like any user Prompt (resume replays it as that turn's input).
-    const recorded = await readTrace(trace.currentPath());
-    expect(
-      recorded.some(
-        (m) =>
-          (m.payload as { role?: string; text?: string }).role === "user" &&
-          (m.payload as { text?: string }).text === "one more thing",
-      ),
-    ).toBe(true);
+    expect(inputs[1]!.map((m) => (m.payload as { text?: string }).text)).toEqual([wrapped]);
+    // Streamed and traced like any user input.
+    expect(steeringTexts(all)).toEqual([wrapped]);
+    expect(steeringTexts(await readTrace(trace.currentPath()))).toEqual([wrapped]);
+  });
+
+  it("steering queued during a mid-run compaction is delivered right after it (never swallowed)", async () => {
+    // Turn 1 completes over the context threshold -> summarize compaction runs on the old
+    // LLM; the user steers DURING the compaction request (the acceptance window stays open);
+    // the new context's first input must be [summary, steering], not just the summary.
+    let engineRef: ContextEngine | null = null;
+    const newInputs: OmniMessage[][] = [];
+    const oldLLM: LLMInterface = {
+      async *streamGenerate(params): AsyncGenerator<OmniMessage, LLMOutcome> {
+        const texts = params.newMessages.map((m) => (m.payload as { text?: string }).text ?? "");
+        if (texts.some((t) => t.includes("summary prompt"))) {
+          // The compaction request: steering arrives while it streams.
+          expect(engineRef!.steer("switch to staging")).toBe(true);
+          yield assistantText("[summary]the gist[/summary]");
+          yield tokenUsage(emptyTokenCounts(), {
+            cache_read: 0,
+            cache_write: 0,
+            output: 1,
+            total: 10,
+          });
+          return { status: "completed" };
+        }
+        // Turn 1: final answer with usage over the threshold.
+        yield assistantText("done with the answer");
+        yield tokenUsage(emptyTokenCounts(), {
+          cache_read: 0,
+          cache_write: 0,
+          output: 5,
+          total: 5000,
+        });
+        return { status: "completed" };
+      },
+    };
+    const newLLM: LLMInterface = {
+      async *streamGenerate(params): AsyncGenerator<OmniMessage, LLMOutcome> {
+        newInputs.push(params.newMessages);
+        yield assistantText("continuing after compaction");
+        return { status: "completed" };
+      },
+    };
+    const engine = new ContextEngine({
+      llm: oldLLM,
+      environment: steeringEnvironment(),
+      createLLM: () => newLLM,
+      compaction: {
+        maxContextLength: 1000,
+        maxSessionTurns: -1,
+        mode: "summarize",
+        prompt: "summary prompt",
+      },
+    });
+    engineRef = engine;
+
+    const all = await collectRun(engine, [userText("go")], allowAll);
+
+    const wrapped = "[user_steering]\nswitch to staging\n[/user_steering]";
+    // The new context received the summary followed by the steering user message.
+    expect(newInputs).toHaveLength(1);
+    expect(newInputs[0]!.map((m) => (m.payload as { text?: string }).text)).toEqual([
+      "[context_summary]\nthe gist\n[/context_summary]",
+      wrapped,
+    ]);
+    // The steering message reached the output stream too.
+    expect(steeringTexts(all)).toEqual([wrapped]);
   });
 
   it("discards the queue on abort — the next run sees no leftover steering", async () => {

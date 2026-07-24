@@ -36,6 +36,8 @@ export interface SessionStreamState {
   /** True until history finishes loading. */
   loading: boolean;
   taskState: SessionStatus;
+  /** Queued follow-up count from the stream's task_state events (auto-sent once the session is idle). */
+  queuedFollowUps: number;
   /** approvalKey(origin, toolCallId) → pending approval. */
   pendingApprovals: ReadonlyMap<string, PendingApproval>;
   /** Recorded when this client clicks an approval decision (marks it as "manual"). */
@@ -61,6 +63,7 @@ export function useSessionStream(
   const [version, setVersion] = useState(0);
   const [loading, setLoading] = useState(true);
   const [taskState, setTaskState] = useState<SessionStatus>(initialStatus);
+  const [queuedFollowUps, setQueuedFollowUps] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [pendingTick, setPendingTick] = useState(0);
   const onTitleRef = useRef(onSessionTitle);
@@ -111,6 +114,7 @@ export function useSessionStream(
       controllerRef.current?.dispose();
       controllerRef.current = null;
       setTaskState("idle");
+      setQueuedFollowUps(0);
       setLoading(false);
       setError(null);
       setPendingTick((t) => t + 1);
@@ -123,11 +127,13 @@ export function useSessionStream(
     // First-frame placeholder: the task_state snapshot from the stream (pushed on subscribe)
     // subsequently overrides it as the authoritative state.
     setTaskState(initialStatus);
+    setQueuedFollowUps(0);
     setPendingTick((t) => t + 1);
 
     const controller = createStreamController({
       loadMessages: async () => (await getMessages(sessionId)).messages,
       onTaskState: setTaskState,
+      onQueuedFollowUps: setQueuedFollowUps,
       onLoading: setLoading,
       onError: setError,
       onModelChange: bump,
@@ -187,6 +193,7 @@ export function useSessionStream(
     version,
     loading,
     taskState,
+    queuedFollowUps,
     pendingApprovals: controllerRef.current?.pendingApprovals ?? EMPTY_PENDING,
     markLocalDecision,
     resolveApproval,

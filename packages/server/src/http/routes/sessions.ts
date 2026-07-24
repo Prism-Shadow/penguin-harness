@@ -353,7 +353,11 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     // caused by a stale running/idle in the list; followed by replaying all still-pending
     // approval requests.
     const initialEvents: ServerEvent[] = [
-      { type: "task_state", state: deps.manager.statusOf(row.sessionId) },
+      {
+        type: "task_state",
+        state: deps.manager.statusOf(row.sessionId),
+        queued: deps.manager.pendingFollowUpCount(row.sessionId),
+      },
       ...deps.manager.pendingApprovals(row.sessionId).map((p) => ({
         type: "approval_request" as const,
         toolCall: p.toolCall,
@@ -368,13 +372,17 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     const body = await readJson(c);
     const input = parseTaskInput(body);
     // Per-turn thinking level (optional): validated against the five names; omitted follows
-    // the session's default.
+    // the session's default. A queued follow-up keeps its level for its auto-start.
     const thinkingLevel = optionalEnum(body, "thinkingLevel", THINKING_LEVELS);
+    // Follow-up queue: with queueIfBusy, a busy session enqueues the input instead of 409
+    // (auto-starts as an ordinary next task once idle; the response says which happened).
+    const queueIfBusy = body.queueIfBusy === true;
     // 202: the Task executes on the server, decoupled from the SSE connection; sessionId is the current actual id (the new id after self-heal).
-    const { sessionId } = await deps.manager.startTask(row.sessionId, input, {
+    const { sessionId, queued } = await deps.manager.startTask(row.sessionId, input, {
       ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
+      queueIfBusy,
     });
-    return c.json({ sessionId } satisfies TaskCreateResponse, 202);
+    return c.json({ sessionId, queued } satisfies TaskCreateResponse, 202);
   });
 
   // Mid-run steering: queue a user message for the running Task; core appends it to the next

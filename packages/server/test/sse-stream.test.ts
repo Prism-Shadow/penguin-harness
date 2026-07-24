@@ -108,7 +108,7 @@ describe("sse-stream", () => {
   it("FD-1: a new subscription's first frame is always the task_state snapshot (idle)", async () => {
     const frames = await readSseFrames(await getStream(), 1);
     expect(frames[0]!.event).toBe("server_event");
-    expect(JSON.parse(frames[0]!.data)).toEqual({ type: "task_state", state: "idle" });
+    expect(JSON.parse(frames[0]!.data)).toEqual({ type: "task_state", state: "idle", queued: 0 });
     expect(frames[0]!.id).toMatch(/^[0-9a-f]{8}-\d+$/); // FD-2: opaque string id
   });
 
@@ -118,7 +118,11 @@ describe("sse-stream", () => {
     await waitFor(() => t.deps.manager.pendingApprovalCount(SID) === 1);
 
     const frames = await readSseFrames(await getStream(), 2);
-    expect(JSON.parse(frames[0]!.data)).toEqual({ type: "task_state", state: "running" });
+    expect(JSON.parse(frames[0]!.data)).toEqual({
+      type: "task_state",
+      state: "running",
+      queued: 0,
+    });
     const approval = JSON.parse(frames[1]!.data) as {
       type: string;
       toolCall: { payload: { tool_call_id: string } };
@@ -137,7 +141,7 @@ describe("sse-stream", () => {
       2,
     );
     expect(JSON.parse(frames[0]!.data)).toEqual({ type: "resync_required" });
-    expect(JSON.parse(frames[1]!.data)).toEqual({ type: "task_state", state: "idle" });
+    expect(JSON.parse(frames[1]!.data)).toEqual({ type: "task_state", state: "idle", queued: 0 });
   });
 
   it("FD-2: same-epoch Last-Event-ID hitting the buffer → replays later events, then the task_state snapshot", async () => {
@@ -147,6 +151,6 @@ describe("sse-stream", () => {
     const frames = await readSseFrames(await getStream({ "Last-Event-ID": first.id }), 2);
     expect(frames[0]!.event).toBeUndefined(); // replayed OmniMessage
     expect((JSON.parse(frames[0]!.data) as { payload: { text: string } }).payload.text).toBe("m2");
-    expect(JSON.parse(frames[1]!.data)).toEqual({ type: "task_state", state: "idle" });
+    expect(JSON.parse(frames[1]!.data)).toEqual({ type: "task_state", state: "idle", queued: 0 });
   });
 });

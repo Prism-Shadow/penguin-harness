@@ -508,25 +508,44 @@ export function ChatPage() {
     await api.postAbort(selected.sessionId).catch(() => undefined);
   }, [selected]);
 
-  // Mid-run steering: the text is queued on the server and delivered inside the next completed
-  // tool output as a `[user_steering]` block (visible once that tool_call_output arrives over
-  // SSE). A 409 means no Task is in progress anymore (race with completion) — fall back to
-  // sending the same text as a normal task.
-  const onSteer = useCallback(
-    async (text: string): Promise<boolean> => {
+  // Follow-up queue: post the full input with queueIfBusy — a busy session holds it
+  // server-side and auto-sends it as an ordinary next task once this run finishes (the
+  // "N queued" count arrives via task_state). Succeeds either way (queued or started
+  // directly in the completion race), so the input area clears the draft on true.
+  const onQueueFollowUp = useCallback(
+    async (input: TaskInputPart[]): Promise<boolean> => {
       if (!selected) return false;
       try {
-        await api.postSteer(selected.sessionId, { text });
+        const res = await api.postTask(selected.sessionId, { input, queueIfBusy: true });
+        discardSessionDraft();
+        await syncHealedSessionId(selected.sessionId, res.sessionId);
         return true;
       } catch (e) {
-        if (e instanceof ApiError && e.status === 409) {
-          return onSend([{ type: "text", text }]);
-        }
         toastError(apiErrorText(e, { modelId: selected.modelId }));
         return false;
       }
     },
-    [selected, onSend],
+    [selected, discardSessionDraft, syncHealedSessionId],
+  );
+
+  // Mid-run steering: the text is queued on the server and delivered between turns as a
+  // standalone `[user_steering]` user message (visible once it arrives over SSE / from the
+  // Trace). "not_running" (409) means no Task is in progress anymore (race with completion):
+  // the input area then falls back to its **full** normal send path — images / skills / the
+  // whole draft included — rather than a text-only task.
+  const onSteer = useCallback(
+    async (text: string): Promise<"queued" | "not_running" | "failed"> => {
+      if (!selected) return "failed";
+      try {
+        await api.postSteer(selected.sessionId, { text });
+        return "queued";
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 409) return "not_running";
+        toastError(apiErrorText(e, { modelId: selected.modelId }));
+        return "failed";
+      }
+    },
+    [selected],
   );
 
   const onApprove = useCallback(
@@ -633,6 +652,11 @@ export function ChatPage() {
       status={stream.taskState}
       onSend={onSend}
       onSteer={onSteer}
+      // Count of steering messages already visible in the stream: the input area keeps its
+      // "queued" indicator up until this count increases (i.e. the steering message arrived).
+      steeringDeliveredCount={stream.model.items.filter((i) => i.kind === "user_steering").length}
+      onQueueFollowUp={onQueueFollowUp}
+      queuedFollowUps={stream.queuedFollowUps}
       onStop={onStop}
       onCompact={onCompact}
       modelRef={activeModelRef}

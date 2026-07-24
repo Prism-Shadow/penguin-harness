@@ -52,6 +52,7 @@ import type {
   TaskStatsItem,
   ThinkingItem,
   ToolCallItem,
+  UserSteeringItem,
   UserTextItem,
 } from "../src/lib/omni/stream-model";
 
@@ -905,6 +906,38 @@ describe("compaction-internal messages (#17: history rebuild aligned with the li
     finalizeHistory(m);
     const users = items(m).filter((i) => i.kind === "user_text") as UserTextItem[];
     expect(users.map((u) => u.text)).toEqual(["continue the task"]);
+  });
+
+  it("[user_steering] user text renders as a steering chip inside the running Task — it never starts a new Task", () => {
+    // Mid-run steering is delivered as a standalone [user_steering] user message: it must
+    // stay inside the current Task (one stats row, one task) but render in-flow, marker
+    // stripped, as a user_steering item.
+    const m = createStreamModel();
+    pushMessages(m, [
+      at(userText("fix the bug"), "2026-07-05T00:00:00.000Z"),
+      at(assistantText("looking"), "2026-07-05T00:00:02.000Z"),
+      at(tokenUsage(counts(100), counts(100)), "2026-07-05T00:00:03.000Z"),
+      at(
+        userText("[user_steering]\nalso check the tests\n[/user_steering]"),
+        "2026-07-05T00:00:04.000Z",
+      ),
+      at(assistantText("checking the tests too"), "2026-07-05T00:00:06.000Z"),
+      at(tokenUsage(counts(200), counts(100)), "2026-07-05T00:00:07.000Z"),
+    ]);
+    finalizeHistory(m);
+    const kinds = items(m).map((i) => i.kind);
+    // One Task: user, assistant, steering chip, assistant, one stats row at the end.
+    expect(kinds).toEqual([
+      "user_text",
+      "assistant_text",
+      "user_steering",
+      "assistant_text",
+      "task_stats",
+    ]);
+    const steering = items(m).find((i) => i.kind === "user_steering") as UserSteeringItem;
+    expect(steering.text).toBe("also check the tests");
+    // Only the real prompt is a user bubble.
+    expect(items(m).filter((i) => i.kind === "user_text")).toHaveLength(1);
   });
 });
 

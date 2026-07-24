@@ -1,44 +1,31 @@
 /**
- * `[user_steering]` blocks — mid-run user messages riding on tool output.
+ * `[user_steering]` blocks — mid-run user messages delivered between turns.
  *
- * While a Task is running, the user can send a steering message
- * (`Session.steer`): the engine appends it to the next completed
- * `tool_call_output`'s `output` as a `[user_steering]…[/user_steering]` block, so the model
- * sees it with the tool result **without interrupting the agent loop**. The block is part of
- * the persisted output (Trace) and of the streamed complete message; render layers (Web tool
- * card, CLI gutter) use `splitUserSteering` to show it as user speech instead of raw markers.
+ * While a Task is running, the user can send a steering message (`Session.steer`): the engine
+ * queues it and delivers it as a **standalone user text message** wrapped in a
+ * `[user_steering]…[/user_steering]` block, sent with the next request input alongside that
+ * turn's tool outputs (or as the continuation input when the turn produced no tool calls) —
+ * the model sees it without the agent loop being interrupted. The message is real user input:
+ * written to Trace like any Prompt and yielded to the output stream. The marker exists so the
+ * model and the render layers can tell it apart from a task-starting Prompt: UIs keep it inside
+ * the running Task (no new Task segment) and render it as user speech instead of raw markers.
  */
 
-/** Formats one queued steering message as the block appended to a tool output (leading blank line separates it from the tool's own output). */
-export function userSteeringBlock(text: string): string {
-  return `\n\n[user_steering]\n${text}\n[/user_steering]`;
+/** Wraps one queued steering message as the standalone user-text body sent to the model. */
+export function userSteeringText(text: string): string {
+  return `[user_steering]\n${text}\n[/user_steering]`;
 }
 
-/** One segment of a tool output: the tool's own output text, or an appended steering message (marker stripped). */
-export interface ToolOutputSegment {
-  kind: "output" | "steering";
-  text: string;
-}
-
-/** Matches an appended `[user_steering]` block (with the blank-line separator emitted by userSteeringBlock, tolerated if absent). */
-const STEERING_BLOCK_RE = /\n?\n?\[user_steering\]\n([\s\S]*?)\n\[\/user_steering\]/g;
+/** Matches a whole user text that is exactly one `[user_steering]` block. */
+const STEERING_TEXT_RE = /^\[user_steering\]\n([\s\S]*?)\n\[\/user_steering\]\s*$/;
 
 /**
- * Splits a tool output into ordinary output and the `[user_steering]` blocks appended to it,
- * in order. An output without steering yields a single `output` segment (empty output yields
- * no segments); render layers show `steering` segments as user speech.
+ * Inverse of `userSteeringText`: when the whole user text is one `[user_steering]` block,
+ * returns the inner message; otherwise null (a normal user message — including one merely
+ * mentioning the marker mid-body — is left alone). Used by task segmentation (a steering
+ * message must not start a new Task) and by the Web/CLI steering rendering.
  */
-export function splitUserSteering(output: string): ToolOutputSegment[] {
-  const segments: ToolOutputSegment[] = [];
-  let last = 0;
-  STEERING_BLOCK_RE.lastIndex = 0;
-  for (let m = STEERING_BLOCK_RE.exec(output); m !== null; m = STEERING_BLOCK_RE.exec(output)) {
-    const before = output.slice(last, m.index);
-    if (before) segments.push({ kind: "output", text: before });
-    segments.push({ kind: "steering", text: m[1]! });
-    last = m.index + m[0].length;
-  }
-  const rest = output.slice(last);
-  if (rest) segments.push({ kind: "output", text: rest });
-  return segments;
+export function parseUserSteeringText(text: string): string | null {
+  const m = STEERING_TEXT_RE.exec(text);
+  return m ? m[1]! : null;
 }

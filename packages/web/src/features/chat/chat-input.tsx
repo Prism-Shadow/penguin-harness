@@ -736,6 +736,9 @@ export function ChatInput({
   status,
   onSend,
   onSteer,
+  steeringDeliveredCount,
+  onQueueFollowUp,
+  queuedFollowUps = 0,
   onStop,
   onCompact,
   modelRef,
@@ -770,12 +773,27 @@ export function ChatInput({
   onSend: (input: TaskInputPart[]) => Promise<boolean>;
   /**
    * Mid-run steering (session state only): while a Task is running, Enter/send queues the
-   * trimmed text for the running agent — it is delivered inside the next completed tool
-   * output as a `[user_steering]` block. Returns whether it succeeded (the caller falls back
-   * to a normal task POST on a 409 race with completion). When absent (draft state), the
-   * input stays send-disabled while running, as before.
+   * trimmed text for the running agent — it is delivered between turns as a standalone
+   * `[user_steering]` user message. `"queued"` clears the text and shows the queued hint;
+   * `"not_running"` (409 race with completion) makes the input fall back to its full normal
+   * send path; `"failed"` keeps the draft. When absent (draft state), the input stays
+   * send-disabled while running, as before.
    */
-  onSteer?: (text: string) => Promise<boolean>;
+  onSteer?: (text: string) => Promise<"queued" | "not_running" | "failed">;
+  /**
+   * Count of steering messages already visible in the message stream: the queued hint stays
+   * up until this increases past its value at queue time (i.e. the message was delivered).
+   */
+  steeringDeliveredCount?: number;
+  /**
+   * Follow-up queue (session state only): posts the full input with `queueIfBusy` — a busy
+   * session holds it server-side and auto-sends it as an ordinary next task once the current
+   * run finishes. Offered as the "follow-up" choice of the mid-run mode switch; when absent,
+   * only steering is offered while running.
+   */
+  onQueueFollowUp?: (input: TaskInputPart[]) => Promise<boolean>;
+  /** Server-reported queued follow-up count (from task_state): renders the "N queued" hint until they auto-send. */
+  queuedFollowUps?: number;
   /**
    * Used instead of onSend when an @ target is present (chip or a leading @ typed manually):
    * opens a new chat for the target agent (the text body carries no @ marker, and the current
@@ -916,11 +934,38 @@ export function ChatInput({
     !busy &&
     (text.trim().length > 0 || images.length > 0 || target !== null || selectedSkills.length > 0);
   // Mid-run steering: while running, Enter/send queues plain text for the running agent
-  // (delivered with the next tool result). Text only — images / skills / @ target stay in the
-  // draft for a later normal send (an @ target also blocks steering: a leading mention means a
-  // handoff, not a message to this agent).
+  // (delivered between turns as a [user_steering] user message). Text only — images / skills /
+  // @ target stay in the draft for a later normal send (an @ target also blocks steering: a
+  // leading mention means a handoff, not a message to this agent).
   const canSteer =
     running && !busy && onSteer !== undefined && target === null && text.trim().length > 0;
+  // Mid-run send mode (owner directive): the user chooses between "steer" (delivered
+  // mid-run as a [user_steering] input) and "follow-up" (held server-side and auto-sent as
+  // an ordinary next task once this run finishes). Defaults to steer; resets when the run
+  // ends so the next run starts from the default again.
+  const [steerMode, setSteerMode] = useState<"steer" | "followup">("steer");
+  useEffect(() => {
+    if (!running) setSteerMode("steer");
+  }, [running]);
+  const followUpMode = steerMode === "followup" && onQueueFollowUp !== undefined;
+  // A follow-up is a full normal message: the whole draft (text / images / skills / handoff)
+  // is eligible, same content rule as canSend.
+  const canFollowUp =
+    running &&
+    !busy &&
+    followUpMode &&
+    (text.trim().length > 0 || images.length > 0 || target !== null || selectedSkills.length > 0);
+  // Queued hint: shown after a successful steer until the message shows up in the stream
+  // (steeringDeliveredCount increases past the baseline captured at queue time) or the run
+  // stops being observable (task no longer running).
+  const [steerPending, setSteerPending] = useState(false);
+  const steerBaseline = useRef(0);
+  useEffect(() => {
+    if (!steerPending) return;
+    if (!running || (steeringDeliveredCount ?? 0) > steerBaseline.current) {
+      setSteerPending(false);
+    }
+  }, [steerPending, running, steeringDeliveredCount]);
 
   /** Toggle a skill on/off (shared by dropdown option clicks and the slash skill command); the change callback lets the parent write it into the draft. */
   const toggleSkill = useCallback(
@@ -1169,26 +1214,16 @@ export function ChatInput({
     autoGrow();
   };
 
-  const send = async () => {
-    // Steering branch (Task running): queue the trimmed text for the running agent; only the
-    // text is sent and cleared — attached images / selected skills stay for a normal send.
-    if (running) {
-      if (!canSteer) return;
-      const steerText = text.trim();
-      setBusy(true);
-      try {
-        const ok = await onSteer!(steerText);
-        if (ok) {
-          setText("");
-          requestAnimationFrame(autoGrow);
-        }
-      } finally {
-        setBusy(false);
-        textareaRef.current?.focus();
-      }
-      return;
-    }
-    if (!canSend) return;
+  /**
+   * The full normal send path (task / handoff), also the follow-up queue path and the
+   * fallback target when a steer hits the completion race: assembles the [use_skills]
+   * block, images and @ handoff from the whole draft; `post` decides where a non-handoff
+   * message goes (default: onSend; follow-up mode: onQueueFollowUp). Deliberately not
+   * gated on `running` — the caller decides (send() gates the normal path; the steering
+   * fallback calls this directly after the server said 409 not_running, when the local
+   * `status` may still lag behind).
+   */
+  const sendNormal = async (post: (input: TaskInputPart[]) => Promise<boolean> = onSend) => {
     const t = text.trim();
     // @ target = the chip (selected via menu), or a leading `@<agentId>` typed/pasted manually
     // (an @ in the middle of the text is plain text); with a target present, this becomes a
@@ -1206,7 +1241,7 @@ export function ChatInput({
     for (const url of images) input.push({ type: "image_url", imageUrl: url });
     setBusy(true);
     try {
-      const ok = lead ? await onHandoff(lead.agent, input) : await onSend(input);
+      const ok = lead ? await onHandoff(lead.agent, input) : await post(input);
       // Only clear the draft after a successful send: on failure (network / conflict / server error) keep the user's input and images.
       if (ok) {
         setText("");
@@ -1219,6 +1254,46 @@ export function ChatInput({
       setBusy(false);
       textareaRef.current?.focus();
     }
+  };
+
+  const send = async () => {
+    if (running) {
+      // Follow-up branch: the whole draft goes out through the normal composition path,
+      // but posted with queueIfBusy — the server holds it and auto-sends once this run
+      // finishes (an @ handoff still opens a new chat directly: the target session isn't
+      // the one running).
+      if (followUpMode) {
+        if (!canFollowUp) return;
+        await sendNormal(onQueueFollowUp!);
+        return;
+      }
+      // Steering branch: queue the trimmed text for the running agent; only the text is
+      // sent and cleared — attached images / selected skills stay for a normal send.
+      if (!canSteer) return;
+      const steerText = text.trim();
+      setBusy(true);
+      let res: "queued" | "not_running" | "failed" = "failed";
+      try {
+        res = await onSteer!(steerText);
+        if (res === "queued") {
+          // Show the "queued" hint until the steering message shows up in the stream
+          // (steeringDeliveredCount increases) — see the effect below.
+          steerBaseline.current = steeringDeliveredCount ?? 0;
+          setSteerPending(true);
+          setText("");
+          requestAnimationFrame(autoGrow);
+        }
+      } finally {
+        setBusy(false);
+        textareaRef.current?.focus();
+      }
+      // Completion race (server: no Task running anymore): deliver the whole draft — images,
+      // skills and all — through the full normal send path instead of a text-only task.
+      if (res === "not_running") await sendNormal();
+      return;
+    }
+    if (!canSend) return;
+    await sendNormal();
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -1437,6 +1512,22 @@ export function ChatInput({
         </p>
       )}
 
+      {/* Mid-run steering queued: lightweight hint until the steering message appears in the
+          stream (or the run ends). */}
+      {steerPending && (
+        <p className="anim-fade mb-1 text-xs text-gray-400 dark:text-gray-500">
+          {S.chat.steerQueuedIndicator}
+        </p>
+      )}
+
+      {/* Queued follow-ups (server-side, auto-sent once this run finishes): count from
+          task_state — survives reloads because the queue lives on the server. */}
+      {queuedFollowUps > 0 && (
+        <p className="anim-fade mb-1 text-xs text-gray-400 dark:text-gray-500">
+          {S.chat.followUpQueuedChip(queuedFollowUps)}
+        </p>
+      )}
+
       {/* Unified input card: the multi-line text body occupies the top area, with all controls
           collected onto a single bottom row that never shares a line with the text.
           @container: the bottom toolbar row collapses based on the **card's actual width**
@@ -1531,13 +1622,17 @@ export function ChatInput({
           onKeyDown={onKeyDown}
           onPaste={onPaste}
           placeholder={
-            running && onSteer
+            running && followUpMode
               ? narrow
-                ? S.chat.steerPlaceholderShort
-                : S.chat.steerPlaceholder
-              : narrow
-                ? S.chat.inputPlaceholderShort
-                : S.chat.inputPlaceholder
+                ? S.chat.followUpPlaceholderShort
+                : S.chat.followUpPlaceholder
+              : running && onSteer
+                ? narrow
+                  ? S.chat.steerPlaceholderShort
+                  : S.chat.steerPlaceholder
+                : narrow
+                  ? S.chat.inputPlaceholderShort
+                  : S.chat.inputPlaceholder
           }
           className="block max-h-44 min-h-[60px] w-full resize-none bg-transparent px-1 py-0.5 text-base leading-6 placeholder:text-gray-400 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60 dark:placeholder:text-gray-500"
         />
@@ -1652,10 +1747,45 @@ export function ChatInput({
               </span>
             </span>
           )}
-          {/* While running: Stop stays available, and — when the host supports steering — the
-              send button remains next to it so Enter/click queues a steering message for the
-              running agent. Idle/compacting keeps the single send button (disabled while
+          {/* While running: Stop stays available; when the host supports both mid-run paths, a
+              compact segmented switch chooses between steering (default, delivered mid-run)
+              and follow-up (queued server-side, auto-sent after this run); the send button
+              stays next to them. Idle/compacting keeps the single send button (disabled while
               compacting via canSend). */}
+          {running && onSteer && onQueueFollowUp && (
+            <div
+              role="group"
+              aria-label={S.chat.steerModeLabel}
+              className="flex h-8 shrink-0 items-center rounded-md border border-gray-200 p-0.5 text-xs dark:border-gray-700"
+            >
+              <button
+                type="button"
+                title={S.chat.steerModeSteerHint}
+                aria-pressed={steerMode === "steer"}
+                onClick={() => setSteerMode("steer")}
+                className={`h-full rounded px-2 transition-colors duration-150 ${
+                  steerMode === "steer"
+                    ? "bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-100"
+                    : "text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
+                }`}
+              >
+                {S.chat.steerModeSteer}
+              </button>
+              <button
+                type="button"
+                title={S.chat.steerModeFollowUpHint}
+                aria-pressed={steerMode === "followup"}
+                onClick={() => setSteerMode("followup")}
+                className={`h-full rounded px-2 transition-colors duration-150 ${
+                  steerMode === "followup"
+                    ? "bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-100"
+                    : "text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
+                }`}
+              >
+                {S.chat.steerModeFollowUp}
+              </button>
+            </div>
+          )}
           {running && (
             <button
               type="button"
@@ -1669,12 +1799,16 @@ export function ChatInput({
               </svg>
             </button>
           )}
-          {(!running || onSteer) && (
+          {(!running || onSteer || onQueueFollowUp) && (
             <button
               type="button"
-              title={running ? S.chat.steerSend : S.chat.send}
-              aria-label={running ? S.chat.steerSend : S.chat.send}
-              disabled={running ? !canSteer : !canSend}
+              title={
+                running ? (followUpMode ? S.chat.followUpSend : S.chat.steerSend) : S.chat.send
+              }
+              aria-label={
+                running ? (followUpMode ? S.chat.followUpSend : S.chat.steerSend) : S.chat.send
+              }
+              disabled={running ? (followUpMode ? !canFollowUp : !canSteer) : !canSend}
               onClick={() => void send()}
               className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-gray-900 text-white transition-colors duration-150 hover:bg-gray-700 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-300 dark:disabled:bg-gray-800 dark:disabled:text-gray-600"
             >

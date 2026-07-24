@@ -40,7 +40,7 @@
  *
  * No third-party color library is used; only minimal ANSI escapes.
  */
-import { isEventMessage, isModelMessage, splitUserSteering } from "@prismshadow/penguin-core";
+import { isEventMessage, isModelMessage, parseUserSteeringText } from "@prismshadow/penguin-core";
 import type {
   AbortPayload,
   ApprovalDecision,
@@ -55,8 +55,8 @@ import type {
   PartialToolCallOutputPayload,
   RequestEndPayload,
   SessionMetaPayload,
+  TextPayload,
   TokenUsagePayload,
-  ToolCallOutputPayload,
   ToolCallPayload,
   ToolDefinition,
 } from "@prismshadow/penguin-core";
@@ -189,8 +189,18 @@ export function renderHistory(
     const marker = p.stop_reason && p.stop_reason !== "completed" ? dim(` [${p.stop_reason}]`) : "";
     switch (p.type) {
       case "text":
-        if (p.role === "user") out.write(`\n> ${p.text ?? ""}\n`);
-        else out.write(`${p.text ?? ""}${marker}\n`);
+        if (p.role === "user") {
+          // Mid-run steering ([user_steering]-wrapped user text delivered between turns):
+          // rendered as distinct user-speech lines instead of a raw marker block or a prompt.
+          const steering = parseUserSteeringText(p.text ?? "");
+          if (steering !== null) {
+            writeSteeringLines(out, steering, t);
+          } else {
+            out.write(`\n> ${p.text ?? ""}\n`);
+          }
+        } else {
+          out.write(`${p.text ?? ""}${marker}\n`);
+        }
         break;
       case "image_url":
         out.write(`\n> ${dim("[image]")}\n`);
@@ -208,26 +218,18 @@ export function renderHistory(
       }
       case "tool_call_output": {
         // Output lines carry the pairing tag plus the tool name (the bare tag when the
-        // transcript has no matching call); file-tool diff lines are colored like git's. A
-        // [user_steering] block appended to the output (a mid-run user message) renders as
-        // distinct user-speech lines instead of raw markers.
+        // transcript has no matching call); file-tool diff lines are colored like git's.
         const tag = `[${callTag(p.tool_call_id ?? "")}]`;
         const name = toolNames.get(nameKey(msg, p.tool_call_id ?? ""));
         const label = name ? `${tag} ${name}` : tag;
         const colorDiff = name !== undefined && DIFF_OUTPUT_TOOLS.has(name);
-        for (const seg of splitUserSteering(p.output ?? "")) {
-          for (const line of seg.text.split("\n")) {
-            if (seg.kind === "steering") {
-              out.write(`${DIM}${tag} ${RESET}${MAGENTA}${t.steerLinePrefix()}${line}${RESET}\n`);
-              continue;
-            }
-            const color = colorDiff ? diffLineColor(line[0]) : null;
-            out.write(
-              color
-                ? `${DIM}${label} -> ${RESET}${color}${line}${RESET}\n`
-                : `${DIM}${label} -> ${RESET}${line}\n`,
-            );
-          }
+        for (const line of (p.output ?? "").split("\n")) {
+          const color = colorDiff ? diffLineColor(line[0]) : null;
+          out.write(
+            color
+              ? `${DIM}${label} -> ${RESET}${color}${line}${RESET}\n`
+              : `${DIM}${label} -> ${RESET}${line}\n`,
+          );
         }
         // Attached images aren't rendered by the terminal; print one placeholder line per image.
         for (const _ of p.images ?? []) {
@@ -238,6 +240,13 @@ export function renderHistory(
       default:
         break; // inline_data / inline_thinking etc.: not shown in static history rendering for now
     }
+  }
+}
+
+/** Writes a steering message's lines with the colored user prefix (shared by history rendering and the streaming renderer). */
+function writeSteeringLines(out: NodeJS.WritableStream, text: string, t: Messages): void {
+  for (const line of text.split("\n")) {
+    out.write(`${MAGENTA}${t.steerLinePrefix()}${line}${RESET}\n`);
   }
 }
 
@@ -256,6 +265,13 @@ export class StreamRenderer {
   private holder: string | null = null;
   /** Awaiting user input (approval prompt): locks the screen, all messages queue up. */
   private promptActive = false;
+  /**
+   * The user is composing an input line mid-run (chat REPL): streaming output must not
+   * scribble over the half-typed line, so rendering is held (messages queue up) until the
+   * line is submitted or cleared (see `setInputHold`). Independent of the approval-prompt
+   * lock — approval answers use `beginUserPrompt`/`endUserPrompt`.
+   */
+  private inputHold = false;
   /** Key of the call the current interactive prompt belongs to (the tool_call passed to beginUserPrompt); null = unattached. */
   private promptKey: string | null = null;
   /**
@@ -477,6 +493,29 @@ export class StreamRenderer {
     this.lastLineKey = key;
   }
 
+  /**
+   * Chat REPL typing hold: while the user is composing a line mid-run, hold rendering so
+   * streamed output doesn't scribble over the input; releasing flushes everything queued in
+   * the meantime. Idempotent; `endTask` force-releases it as a safety net.
+   */
+  setInputHold(active: boolean): void {
+    if (this.inputHold === active) return;
+    this.inputHold = active;
+    if (!active) this.drain();
+  }
+
+  /**
+   * Writes one standalone line through the renderer at the current position (finishing any
+   * open streamed line first). Meant for host notices tied to the input flow — e.g. the chat
+   * REPL's steering acknowledgment — printed while the screen is held so they don't
+   * interleave with streamed output.
+   */
+  printLine(text: string): void {
+    this.finishLine();
+    this.out.write(`${text}\n`);
+    this.lastLineKey = null;
+  }
+
   /** User interaction ends: unlocks the screen, first renders approval results deferred during the lock, then drains the queue. */
   endUserPrompt(): void {
     this.promptActive = false;
@@ -522,7 +561,7 @@ export class StreamRenderer {
     if (this.draining) return;
     this.draining = true;
     try {
-      while (!this.promptActive && this.pending.length > 0) {
+      while (!this.promptActive && !this.inputHold && this.pending.length > 0) {
         if (this.holder === null) {
           const msg = this.pending.shift()!;
           const owner = this.streamOwner(msg);
@@ -537,7 +576,7 @@ export class StreamRenderer {
         const keep: OmniMessage[] = [];
         let progressed = false;
         for (let i = 0; i < this.pending.length; i++) {
-          if (this.promptActive || this.holder === null) {
+          if (this.promptActive || this.inputHold || this.holder === null) {
             keep.push(...this.pending.slice(i));
             break;
           }
@@ -595,13 +634,21 @@ export class StreamRenderer {
           this.toolNames.set(p.tool_call_id, p.name);
           return;
         }
-        case "tool_call_output":
-          // Exception to the rule above: the engine appends mid-run [user_steering] blocks
-          // only to the complete message — the partial stream never carries them — so the
-          // steering lines are rendered here (exactly once; the streamed output itself is
-          // not repeated).
-          this.renderSteering(payload as ToolCallOutputPayload);
+        case "text": {
+          // Another exception: a mid-run steering message ([user_steering]-wrapped user text
+          // delivered between turns) has no streamed copy — it is rendered here, in the
+          // steering style.
+          const p = payload as TextPayload;
+          if (p.role === "user") {
+            const steering = parseUserSteeringText(p.text);
+            if (steering !== null) {
+              this.finishLine();
+              writeSteeringLines(this.out, steering, this.t);
+              this.lastLineKey = null;
+            }
+          }
           return;
+        }
         default:
           return;
       }
@@ -901,27 +948,6 @@ export class StreamRenderer {
   }
 
   /**
-   * Renders the `[user_steering]` blocks appended to a completed tool output (mid-run user
-   * messages riding on this tool result): each block's lines are written with the tool's
-   * pairing tag and a colored user prefix, visually distinct from the dim `>>` output gutter.
-   * The tool's own output is not repeated (it already streamed).
-   */
-  private renderSteering(p: ToolCallOutputPayload): void {
-    const steering = splitUserSteering(p.output).filter((seg) => seg.kind === "steering");
-    if (steering.length === 0) return;
-    this.finishLine();
-    const tag = callTag(p.tool_call_id);
-    for (const seg of steering) {
-      for (const line of seg.text.split("\n")) {
-        this.out.write(
-          `${DIM}[${tag}] ${RESET}${MAGENTA}${this.t.steerLinePrefix()}${line}${RESET}\n`,
-        );
-      }
-    }
-    this.lastLineKey = null;
-  }
-
-  /**
    * Writes tool-call **output** line by line, each line starting with the dim gutter
    * `[tool-xxx] <toolName> -> ` (the same prefix as the call line, cyan
    * `[tool-xxx] <name> <- …`; the bare tag when no call was seen). Streaming chunks
@@ -973,6 +999,7 @@ export class StreamRenderer {
   endTask(elapsedMs = 0): void {
     this.promptActive = false;
     this.promptKey = null;
+    this.inputHold = false;
     this.flushDeferredDecisions();
     this.holder = null;
     this.drain();

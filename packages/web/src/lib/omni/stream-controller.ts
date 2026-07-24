@@ -53,6 +53,8 @@ export interface StreamControllerDeps {
   loadMessages: () => Promise<OmniMessage[]>;
   /** Authoritative running state from the stream (covers both the subscription snapshot and transition events). */
   onTaskState: (state: SessionStatus) => void;
+  /** Queued follow-up count carried on task_state events (absent on old servers -> 0). */
+  onQueuedFollowUps?: (count: number) => void;
   onLoading: (loading: boolean) => void;
   /** History load failure message (null = clear). */
   onError: (message: string | null) => void;
@@ -150,6 +152,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
         // server sends the current snapshot as soon as it subscribes; the list's snapshot is only a first-frame placeholder).
         streamStatus = ev.state;
         deps.onTaskState(ev.state);
+        deps.onQueuedFollowUps?.(ev.queued ?? 0);
         if (ev.state === "idle") {
           // Task ended (or the snapshot confirms idle): finalize the current Task's stats; pending approvals have already converged server-side.
           notifyTaskIdle(model, now());
@@ -284,6 +287,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
         if (ev.type === "task_state") {
           streamStatus = ev.state;
           deps.onTaskState(ev.state);
+          deps.onQueuedFollowUps?.(ev.queued ?? 0);
         }
         buffer.push({ kind: "server", ev });
         return;
