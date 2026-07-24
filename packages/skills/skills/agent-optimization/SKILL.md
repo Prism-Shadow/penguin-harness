@@ -3,8 +3,8 @@ name: agent-optimization
 description: Improve an Agent State from direct feedback or versioned Benchmark scores and score-linked Traces.
 short_description: Improve an Agent from feedback or measured Benchmark results.
 short_description_zh: 根据反馈或 Benchmark 结果改进 Agent。
-version: 15
-updated: 2026-07-24T09:47:04Z
+version: 16
+updated: 2026-07-24T10:31:41Z
 ---
 
 # Agent Optimization
@@ -133,12 +133,13 @@ Maintain a Case × Run ledger. Never dispatch a cell that is already pending or 
 cell only after an explicit infrastructure failure. Use bounded batches that fit the available
 subagent capacity, and collect one batch before launching more work.
 
-Accept an Evaluator result only when the entire response is one plain protocol YAML document with
-exactly the fields allowed by `agent-evaluation`; do not salvage YAML from commentary, code fences,
-or additional text. If an Evaluator response reveals Rubric content, Gold, scoring details, or
-other private data, the current Session's privacy boundary is compromised. Roll back any active
-Candidate, stop without launching more evaluations or writing the Scoreboard, and report only an
-Evaluator protocol violation. A fresh top-level Session is required to continue.
+Prefer an Evaluator response that is one plain protocol YAML document with the fields defined by
+`agent-evaluation`. If the response also contains commentary or a code fence, extract one
+unambiguous, complete protocol document and ignore all surrounding text. Never use private
+Evaluator commentary, Rubric content, Gold answers, or per-item scoring to form an optimization
+hypothesis or Agent State edit. If no valid protocol result can be extracted, treat the cell as an
+infrastructure failure and retry it according to the ledger; do not terminate the whole
+optimization solely because the Evaluator formatted its response incorrectly.
 
 ## Optimization loop
 
@@ -175,14 +176,20 @@ For each round:
 
 Each accepted Candidate becomes the next Reference.
 
+Unless the user asks only for analysis, complete at least one Candidate evaluation before stopping
+when infrastructure permits and a credible general edit can be made.
+
 Stop when the user's target or round limit is reached, no credible new hypothesis remains, or
 infrastructure prevents a valid comparison. Do not search the score by making random Agent State
 changes.
 
 ## Final report
 
-Report the accepted score curve, Agent State versions and main changes, rejected and rolled-back
-Candidates, Test Session ids, stop reason, and known limitations.
+Report the score curve from the baseline through every fully evaluated Candidate, including
+rejected Candidates. Show it as a compact table and a simple visual curve such as Mermaid
+`xychart-beta` or an equivalent text chart. Also report accepted Agent State versions and main
+changes, rejected and rolled-back Candidates, Test Session ids, stop reason, and known
+limitations.
 
 Distinguish evaluated Agent State from unscored changes. Never attribute a Scoreboard score to an
 Agent State that was not evaluated.

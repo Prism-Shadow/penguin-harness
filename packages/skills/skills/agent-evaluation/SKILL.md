@@ -3,17 +3,17 @@ name: agent-evaluation
 description: Run and score exactly one Benchmark Case run with CLI execution, Trace provenance checks, and private Rubric isolation.
 short_description: Run and score one isolated Benchmark Case.
 short_description_zh: 隔离执行并评分一个 Benchmark Case。
-version: 6
-updated: 2026-07-24T09:47:04Z
+version: 7
+updated: 2026-07-24T10:31:41Z
 ---
 
 # Agent Evaluation
 
 Act as an internal leaf worker. For one valid request, run and score exactly one Benchmark Case once, then return minimal protocol metadata. Do not design or refine the Benchmark, modify the Test Agent State, or write `scoreboard.yaml`. Do not use `run_subagent` or `input_subagent`.
 
-The output contract is part of the privacy boundary: emit no assistant text while working, and make
-the final assistant message exactly one plain protocol YAML document. Commentary, code fences,
-summaries, scoring rationale, and any text before or after that document are forbidden.
+Keep assistant output minimal while working. The final assistant message should be exactly one
+plain protocol YAML document so the caller can consume the result reliably. Never include Rubric
+content, Gold answers, per-item scoring, or scoring rationale in assistant messages.
 
 ## Before you start
 
@@ -106,7 +106,8 @@ recursive trace searches, or inspection of sibling Sessions.
 
 ## Return protocol
 
-Emit exactly one plain YAML document beginning with `protocol_version:` and stop. Do not use a code fence or add explanations.
+Emit one plain YAML document beginning with `protocol_version:` and stop. Do not use a code fence
+or add explanations.
 
 On success:
 

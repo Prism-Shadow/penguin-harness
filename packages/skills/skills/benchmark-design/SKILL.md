@@ -3,8 +3,8 @@ name: benchmark-design
 description: Design and calibrate a multi-Case capability Benchmark with repeated independent evaluations and a traceable baseline.
 short_description: Design and calibrate an Agent capability Benchmark.
 short_description_zh: 设计并校准 Agent 能力评测 Benchmark。
-version: 16
-updated: 2026-07-24T09:47:04Z
+version: 17
+updated: 2026-07-24T10:31:41Z
 ---
 
 # Benchmark Design
@@ -133,12 +133,12 @@ Maintain a Case × Run ledger. Never dispatch a cell that is already pending or 
 cell only after an explicit infrastructure failure. Use bounded batches that fit the available
 subagent capacity, and collect one batch before launching more work.
 
-Accept an Evaluator result only when the entire response is one plain protocol YAML document with
-exactly the fields allowed by `agent-evaluation`; do not salvage YAML from commentary, code fences,
-or additional text. If an Evaluator response reveals Rubric content, Gold, scoring details, or
-other private data, the current Session's privacy boundary is compromised: stop without launching
-more evaluations or writing a baseline, and report only an Evaluator protocol violation. A fresh
-top-level Session is required to continue.
+Prefer an Evaluator response that is one plain protocol YAML document with the fields defined by
+`agent-evaluation`. If the response also contains commentary or a code fence, extract one
+unambiguous, complete protocol document and ignore the surrounding text. Do not copy private
+Evaluator commentary into the Scoreboard or final report. If no valid protocol result can be
+extracted, treat the cell as an infrastructure failure and retry it according to the ledger; do not
+terminate the whole calibration solely because the Evaluator formatted its response incorrectly.
 
 ## Calibration
 

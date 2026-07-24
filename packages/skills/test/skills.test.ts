@@ -108,7 +108,8 @@ describe("agent tuning workflow contracts", () => {
     expect(benchmark).toContain("representative Test Traces");
     expect(benchmark).toContain("semantic isolation review");
     expect(benchmark).toContain("Case × Run ledger");
-    expect(benchmark).toContain("privacy boundary is compromised");
+    expect(benchmark).toContain("extract one");
+    expect(benchmark).toMatch(/do not\s+terminate the whole calibration/);
     expect(benchmark).toContain("per-item scores");
     expect(benchmark).toContain("could reveal private scoring conditions");
     expect(benchmark).toContain("Stop after writing and reporting the baseline");
@@ -117,7 +118,7 @@ describe("agent tuning workflow contracts", () => {
   it("binds evaluation to the new trace delta and bounded accounting work", () => {
     const evaluation = content("agent-evaluation");
     expect(evaluation).toContain("record the existing files and sizes");
-    expect(evaluation).toContain("output contract is part of the privacy boundary");
+    expect(evaluation).toContain("caller can consume the result reliably");
     expect(evaluation).toMatch(/Do not narrate validation, launch,\s+binding, or scoring/);
     expect(evaluation).toContain("inspect only new files or files that grew");
     expect(evaluation).toContain("Do not perform open-ended Session archaeology");
@@ -133,7 +134,9 @@ describe("agent tuning workflow contracts", () => {
     expect(optimization).toContain("one falsifiable behavioral hypothesis");
     expect(optimization).toContain("conditional analysis procedure");
     expect(optimization).toContain("Case × Run ledger");
-    expect(optimization).toContain("privacy boundary is compromised");
+    expect(optimization).toMatch(/do not terminate the whole\s+optimization/);
+    expect(optimization).toMatch(/every fully evaluated Candidate/);
+    expect(optimization).toContain("visual curve");
     expect(optimization).toContain("strictly higher than the Reference");
     expect(optimization).toContain("rules that apply to only one Case");
   });
