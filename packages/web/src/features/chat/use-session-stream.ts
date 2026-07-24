@@ -161,14 +161,21 @@ export function useSessionStream(
     setPendingTick((t) => t + 1);
 
     // Restore an in-flight goal's banner (only when still active — a long-finished goal
-    // shouldn't greet every visit); live goal_* events override this snapshot.
+    // shouldn't greet every visit); live goal_* events override this snapshot. Fetched from
+    // the stream's onOpen (below), never before it: reading the DB before subscribing races a
+    // goal that finishes in that window — its goal_finished isn't replayed to a fresh
+    // subscription, so a stale `active` read would pin a "running" banner forever. Once
+    // subscribed, the DB already reflects the terminal status for anything that finished before
+    // we connected, and anything finishing after arrives live on the stream.
     let goalFetchStale = false;
-    void getGoal(sessionId)
-      .then((res) => {
-        if (goalFetchStale || !res.goal || res.goal.status !== "active") return;
-        setGoal((prev) => prev ?? res.goal);
-      })
-      .catch(() => undefined);
+    const hydrateGoal = () => {
+      void getGoal(sessionId)
+        .then((res) => {
+          if (goalFetchStale || !res.goal || res.goal.status !== "active") return;
+          setGoal((prev) => prev ?? res.goal);
+        })
+        .catch(() => undefined);
+    };
 
     const controller = createStreamController({
       loadMessages: async () => (await getMessages(sessionId)).messages,
@@ -187,6 +194,9 @@ export function useSessionStream(
     const conn = openSessionStream(sessionId, {
       onOmniMessage: controller.handleOmni,
       onServerEvent: controller.handleServer,
+      // Hydrate the goal banner only once the subscription is live (fires on first connect and
+      // every reconnect); the prev/active guards keep it from clobbering a live banner.
+      onOpen: hydrateGoal,
       // EventSource can't read the status code: when the connection is judged a fatal error and
       // closes, probe once with GET /api/me; if the session has expired (401), the client's
       // global handler clears the user and redirects to the login page.

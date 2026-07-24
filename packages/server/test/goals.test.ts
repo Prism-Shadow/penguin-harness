@@ -79,14 +79,47 @@ describe("GoalsRepo", () => {
     expect(repo.latestForSession("s1")?.id).toBe(id2);
   });
 
-  it("deletes by session and by project", () => {
+  it("deletes by session, by agent, and by project", () => {
     repo.create({ sessionId: "s1", projectId: "p1", agentId: "a1", objective: "o", budget: -1 });
     repo.create({ sessionId: "s2", projectId: "p1", agentId: "a1", objective: "o", budget: -1 });
     repo.deleteBySession("s1");
     expect(repo.latestForSession("s1")).toBeNull();
     expect(repo.latestForSession("s2")).not.toBeNull();
-    repo.deleteByProject("p1");
+
+    // deleteByAgent drops the agent's rows but spares another agent in the same project.
+    repo.create({ sessionId: "s3", projectId: "p1", agentId: "a2", objective: "o", budget: -1 });
+    repo.deleteByAgent("p1", "a1");
     expect(repo.latestForSession("s2")).toBeNull();
+    expect(repo.latestForSession("s3")).not.toBeNull();
+
+    repo.deleteByProject("p1");
+    expect(repo.latestForSession("s3")).toBeNull();
+  });
+
+  it("reconciles orphaned active rows to aborted on startup, leaving terminal rows untouched", () => {
+    const active = repo.create({
+      sessionId: "s1",
+      projectId: "p1",
+      agentId: "a1",
+      objective: "o",
+      budget: -1,
+    });
+    const done = repo.create({
+      sessionId: "s2",
+      projectId: "p1",
+      agentId: "a1",
+      objective: "o",
+      budget: -1,
+    });
+    repo.finish(done, "complete", 1, 10);
+
+    // A hard crash leaves the running goal's row `active`; boot reconciliation flips only it.
+    expect(repo.abortOrphanedActive()).toBe(1);
+    expect(repo.latestForSession("s1")?.status).toBe("aborted");
+    expect(repo.latestForSession("s2")?.status).toBe("complete");
+    // Idempotent: a second boot finds nothing left to reconcile.
+    expect(repo.abortOrphanedActive()).toBe(0);
+    void active;
   });
 });
 

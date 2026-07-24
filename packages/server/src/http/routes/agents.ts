@@ -76,6 +76,12 @@ export function agentsRoutes(deps: AppDeps): Hono<AppEnv> {
       await settleWithin(runnings, 5000);
       await deps.agentService.deleteAgent(projectId, agentId);
       deps.sessionsRepo.deleteByAgent(projectId, agentId);
+      // Per-Agent runtime state keyed on the now-removed sessions/agent: drop it so nothing is
+      // orphaned (session ids are never reused, so a leftover row is dead weight). Usage records
+      // are deliberately kept — historical stats survive Agent deletion (see deleteAgent).
+      deps.goalsRepo.deleteByAgent(projectId, agentId);
+      deps.schedulesRepo.deleteByAgent(projectId, agentId);
+      deps.errorsRepo.deleteByAgent(projectId, agentId);
     } finally {
       deps.manager.endAgentDeletion(projectId, agentId);
     }

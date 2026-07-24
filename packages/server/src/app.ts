@@ -101,6 +101,7 @@ export interface AppDeps {
   snapshots: SnapshotService;
   schedulesRepo: SchedulesRepo;
   goalsRepo: GoalsRepo;
+  errorsRepo: ErrorsRepo;
   scheduler: Scheduler;
   channels: ChannelHub;
   manager: SessionManager;
@@ -259,6 +260,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     snapshots,
     schedulesRepo,
     goalsRepo,
+    errorsRepo,
     scheduler,
     channels,
     manager,

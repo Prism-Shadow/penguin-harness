@@ -185,6 +185,12 @@ export class SchedulesRepo {
     return removed;
   }
 
+  deleteByAgent(projectId: string, agentId: string): void {
+    this.db
+      .prepare("DELETE FROM schedule_state WHERE project_id = ? AND agent_id = ?")
+      .run(projectId, agentId);
+  }
+
   deleteByProject(projectId: string): void {
     this.db.prepare("DELETE FROM schedule_state WHERE project_id = ?").run(projectId);
   }

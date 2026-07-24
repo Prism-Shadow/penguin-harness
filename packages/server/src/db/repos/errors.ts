@@ -212,6 +212,13 @@ export class ErrorsRepo {
     }));
   }
 
+  /** Cascading cleanup on Agent deletion (unattributed errors carry no agent_id and are unaffected). */
+  deleteByAgent(projectId: string, agentId: string): void {
+    this.db
+      .prepare("DELETE FROM error_records WHERE project_id = ? AND agent_id = ?")
+      .run(projectId, agentId);
+  }
+
   /** Cascading cleanup on Project deletion (unattributed errors belong to no Project and are unaffected). */
   deleteByProject(projectId: string): void {
     this.db.prepare("DELETE FROM error_records WHERE project_id = ?").run(projectId);

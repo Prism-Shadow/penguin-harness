@@ -27,6 +27,12 @@ await deps.authService.seedAdmin();
 // Schedule scheduler: startup reconciliation (missed, don't backfill) + periodic scan; only active while the server is running.
 await deps.scheduler.start();
 
+// Goal mode runs only in SessionManager memory: a hard crash (SIGKILL, power loss) can leave
+// goal_state rows stuck `active` with no runner behind them. Reconcile them to `aborted` now —
+// nothing is running yet, so any `active` row is a crash orphan — so the chat banner never
+// restores a phantom "running" goal. GOAL.yaml on disk stays `active` as the resume point.
+deps.goalsRepo.abortOrphanedActive();
+
 // On a loopback bind the App is canonicalized onto one name (`localhost`) and its
 // counterpart is reserved for previews, so advertise the canonical name — the other one
 // only 302s back here for App routes (see the canonical-host guard in app.ts).

@@ -935,7 +935,7 @@ export function ChatInput({
         target !== null ||
         selectedSkills.length > 0);
 
-  /** Engage/exit goal mode; engaging clears the @ target and skills (mutually exclusive input add-ons). */
+  /** Engage/exit goal mode; engaging clears the @ target, skills, and images (mutually exclusive input add-ons — the objective is re-injected every round as plain text). */
   const toggleGoal = useCallback(
     (on: boolean) => {
       setGoalOn(on);
@@ -943,6 +943,9 @@ export function ChatInput({
         setGoalBudgetText("");
         setTarget(null);
         onHandoffTargetChange?.(null);
+        // Images can't ride a goal (the server rejects non-text goal input): clear any already
+        // attached, or canSend would stay silently false with the objective looking ready.
+        setImages([]);
         if (selectedSkills.length > 0) {
           setSelectedSkills([]);
           onSkillsChange?.([]);
@@ -1246,6 +1249,9 @@ export function ChatInput({
   };
 
   const addFiles = (files: Iterable<File>) => {
+    // Goal mode is text-only (the objective is re-injected each round): drop image attachments
+    // outright — including pastes — so send never lands in a silently-disabled state.
+    if (goalOn) return;
     for (const file of files) {
       if (!file.type.startsWith("image/")) continue;
       const reader = new FileReader();
@@ -1508,13 +1514,20 @@ export function ChatInput({
         {/* Bottom toolbar row: attachments + approval mode + help text | context usage + Model + send */}
         <div className="mt-1 flex items-center gap-2 text-xs">
           <label
-            className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"
-            title={vision ? S.chat.imageAlt : S.chat.imagesAsPathHint}
+            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 ${
+              goalOn
+                ? "cursor-not-allowed opacity-40"
+                : "cursor-pointer hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+            }`}
+            title={
+              goalOn ? S.chat.goalModeDesc : vision ? S.chat.imageAlt : S.chat.imagesAsPathHint
+            }
           >
             <input
               type="file"
               accept="image/*"
               multiple
+              disabled={goalOn}
               className="hidden"
               onChange={onPickFiles}
             />

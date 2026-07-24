@@ -89,7 +89,28 @@ export class GoalsRepo {
     this.db.prepare("DELETE FROM goal_state WHERE session_id = ?").run(sessionId);
   }
 
+  deleteByAgent(projectId: string, agentId: string): void {
+    this.db
+      .prepare("DELETE FROM goal_state WHERE project_id = ? AND agent_id = ?")
+      .run(projectId, agentId);
+  }
+
   deleteByProject(projectId: string): void {
     this.db.prepare("DELETE FROM goal_state WHERE project_id = ?").run(projectId);
+  }
+
+  /**
+   * Startup reconciliation: a goal runs only in SessionManager memory, so a hard crash
+   * (SIGKILL, power loss) leaves its row stuck `active` with no runner behind it — the banner
+   * would then restore a forever-"running" goal. Called once at boot, before the server accepts
+   * connections (nothing can be running yet), so every remaining `active` row is an orphan:
+   * mark them `aborted`. The on-disk GOAL.yaml is left `active` as the documented resume point.
+   * Returns the number of rows reconciled.
+   */
+  abortOrphanedActive(): number {
+    const result = this.db
+      .prepare("UPDATE goal_state SET status = 'aborted', updated_at = ? WHERE status = 'active'")
+      .run(new Date().toISOString());
+    return Number(result.changes);
   }
 }
