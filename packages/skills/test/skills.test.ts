@@ -94,61 +94,37 @@ describe("agent tuning workflow contracts", () => {
 
   it("keeps creation generic and free of downstream evaluation knowledge", () => {
     const creation = content("agent-creation");
-    expect(creation).toContain("final capability-scope audit");
-    expect(creation).toContain("whose only purpose is to improve a future evaluation");
-    expect(creation).toContain("bounded file operation");
-    expect(creation).toContain("only permitted");
-    expect(creation).toContain("verify every required identity");
+    expect(creation).toContain("ordinary tasks");
+    expect(creation).toMatch(/Do not\s+install evaluation or optimization Skills/);
+    expect(creation).toContain("version: 1");
+    expect(creation).toContain("Stop after the requested Agent");
   });
 
-  it("defines black-box adaptation without weakening matrix immutability", () => {
+  it("defines black-box adaptation and freezes the scored benchmark", () => {
     const benchmark = content("benchmark-design");
-    expect(benchmark).toContain("Black-box adaptation");
-    expect(benchmark).toMatch(/every candidate\s+must itself be executable deterministically/);
-    expect(benchmark).toContain("the candidate definition is locked");
-    expect(benchmark).toContain("structural-hypothesis ledger");
-    expect(benchmark).toContain("Case directory names, titles, headings, and evidence filenames");
-    expect(benchmark).toContain("one lightweight pilot cell per Case");
-    expect(benchmark).toContain("blind-review check");
-    expect(benchmark).toContain("non_diagnostic_ceiling");
-    expect(benchmark).toContain("do not freeze an out-of-range baseline");
-    expect(benchmark).toContain("exact creation phase terminal");
-    expect(benchmark).toContain("distributed diagnostic headroom");
-    expect(benchmark).toContain("never redistribute points");
+    expect(benchmark).toContain("black-box adaptation");
+    expect(benchmark).toContain("finite set of candidate mechanisms");
+    expect(benchmark).toContain("freeze the Rubric and points before evaluation");
+    expect(benchmark).toContain("across more than one Case");
+    expect(benchmark).toContain("Stop after recording and reporting the baseline");
   });
 
   it("binds evaluation to the new trace delta and bounded accounting work", () => {
     const evaluation = content("agent-evaluation");
-    expect(evaluation).toContain("prelaunch inventory");
+    expect(evaluation).toContain("record the existing files and sizes");
     expect(evaluation).toContain("inspect only new files or files that grew");
-    expect(evaluation).toContain("one `penguin config model list` call");
-    expect(evaluation).toContain("`md5sum 2>/dev/null || ...` is forbidden");
-    expect(evaluation).toContain("do not print a recursive listing of the Trace tree");
+    expect(evaluation).toContain("Do not perform open-ended Session archaeology");
+    expect(evaluation).toContain("return `cost: null`");
+    expect(evaluation).toContain("must not trigger repeated pricing calculations");
   });
 
-  it("keeps score-only optimization private, hypothesis-led, and generalizable", () => {
+  it("keeps score-only optimization versioned, hypothesis-led, and generalizable", () => {
     const optimization = content("agent-optimization");
-    expect(optimization).toContain("optional `.private/` mechanism manifest");
-    expect(optimization).toContain("private hypothesis ledger");
-    expect(optimization).toContain("variance-dominated");
-    expect(optimization).toContain("creation_handoff");
-    expect(optimization).toContain("benchmark_not_calibrated");
-    expect(optimization).toContain("aggregate noise guard");
-    expect(optimization).toContain("semantic-equivalent status");
-    expect(optimization).toContain("at least two distinct Cases");
-  });
-
-  it("never probes checksum commands without an operand", () => {
-    for (const name of [
-      "agent-creation",
-      "benchmark-design",
-      "agent-evaluation",
-      "agent-optimization",
-    ]) {
-      expect(content(name), name).toMatch(
-        /Never probe a\s+checksum command by running it without an operand/,
-      );
-    }
+    expect(optimization).toMatch(/at least\s+two Cases/);
+    expect(optimization).toContain("snapshots/v<version>.tar.gz");
+    expect(optimization).toContain("without `.vault.toml`");
+    expect(optimization).toContain("complete frozen Case × `runs` matrix");
+    expect(optimization).toContain("Accept only a score strictly higher");
   });
 });
 

@@ -3,29 +3,19 @@ name: agent-optimization
 description: Improve an Agent State from direct feedback or versioned multi-Case Benchmark scores and score-linked Traces.
 short_description: Improve an Agent from feedback or measured Benchmark results.
 short_description_zh: 根据反馈或 Benchmark 结果改进 Agent。
-version: 12
-updated: 2026-07-23T18:10:28Z
+version: 13
+updated: 2026-07-24T04:48:33Z
 ---
 
 # Agent Optimization
 
-Improve an existing Agent State. Use one-shot feedback mode for a direct correction, or Benchmark optimization mode for a measured loop. Do not mix their execution paths. One-shot mode does not require `agent-evaluation`. Benchmark mode evaluates every configured Case run through temporary children using `agent-evaluation` and never launches or scores the Test Agent directly.
+Improve an existing Agent State. Use one-shot feedback mode for a direct correction, or Benchmark optimization mode for a measured loop. Do not mix their execution paths. One-shot mode does not require Agent Evaluator. Benchmark mode evaluates every configured Case run through Agent Evaluator and never launches or scores the Test Agent directly.
 
 ## Before you start
 
 If the request supplies neither concrete feedback nor an explicit Test Agent and Benchmark, ask what to improve. Determine the mode before editing anything.
 
-Benchmark mode requires a fresh top-level Session with `run_subagent`, a complete baseline series
-in `scoreboard.yaml`, and `agent-evaluation` installed on the current Session's Agent. If any
-requirement is missing, stop before editing State.
-
-Optimization is one complete phase. Consume only the explicit target, frozen Benchmark reference,
-and score-linked public evidence supplied to this phase. Do not create an Agent, design or refine a
-Benchmark, or invoke another pipeline phase. Do not read a prior phase Session's Trace, Memory, or
-Workspace from another workflow.
-
-Do not create any persistent phase-role Agent. Optimization runs in the current isolated CLI
-Session, and every evaluation is a temporary child Session.
+Benchmark mode requires a top-level Session with `run_subagent`, a complete baseline series in `scoreboard.yaml`, and `agent-evaluation` installed on the current Agent. If any requirement is missing, stop and explain what the user must provide or install. Do not begin a partial optimization round.
 
 ## Pick the target Agent
 
@@ -44,8 +34,7 @@ BENCHMARK = <target>/benchmarks/<benchmark_id>
 SCOREBOARD = <benchmark>/scoreboard.yaml
 ```
 
-Never read a Project configuration file, credential, vault, private Rubric, evaluation-child
-Workspace, or evaluation-child Trace.
+Never read a Project configuration file, credential, vault, private Rubric, Agent Evaluator State, Evaluator Workspace, or Evaluator Trace.
 
 ## State editing policy
 
@@ -59,53 +48,21 @@ Make the smallest complete edit supported by evidence and preserve unrelated ins
 
 Every edit must generalize beyond the observed run. Do not encode Case ids, exact expected outputs, Benchmark-specific constants, private criteria, or a guessed answer. Keep a recovered mapping, threshold, or formula only when repeated public evidence supports it as a durable rule; otherwise encode the reasoning and validation method.
 
-For a black-box adaptation Benchmark, consistent score-linked behavior across multiple Cases may
-support one task-family convention even when public evidence alone cannot select it. Require the
-same hypothesis to explain stable misses in at least two distinct Cases before encoding that
-convention. A single low-scoring, heavily weighted Case supports only a general analysis-method
-change, not a Case-shaped rule, threshold, formula, or example. Never manufacture an unstated
-numeric boundary from clustering merely because one Case score is low.
+For a black-box adaptation Benchmark, prefer a hypothesis that explains stable misses in at least
+two Cases. A single Case may justify a better analysis method, but not an answer-shaped rule or
+Benchmark-specific constant.
 
 ## Version and rollback discipline
 
 Before changing Agent State, read its canonical top-level `version` from `system_config.yaml`,
-defaulting to 1. Choose exactly one rollback mode before the first candidate:
-
-- **System snapshot mode**: for any Agent that existed before the current top-level Session,
-  require `<target>/snapshots/v<version>.tar.gz`. The system owns these archives through Web export
-  and import; never create, import, extract, or replace one yourself. If it is missing, stop and ask
-  the user to export the current State.
-- **Orchestrated bootstrap mode**: allowed for a target created in an earlier isolated phase of the
-  same delegated pipeline only when the request embeds the exact terminal YAML documents from the
-  creation and Benchmark phases as `creation_handoff` and `benchmark_handoff`. Both documents must
-  use `pipeline_protocol: 1`, share the request's `workflow_id` and `project_id`, end with
-  `protocol_end: true`, and report successful phases. Derive the creator version and State digest
-  from `creation_handoff`; derive the reference version, State and Benchmark digests, reference
-  time, Model pair, score, evaluation key, Case ids, run count, and expected cell count from
-  `benchmark_handoff`. Mechanically recompute and match every derived value before editing. The
-  target must still be canonical, versioned, and unchanged. Never infer bootstrap status merely
-  from `version: 1`, accept a rewritten summary in place of the original handoffs, or require the
-  coordinator to flatten their fields manually.
-
-If orchestrated provenance cannot be positively established, use System snapshot mode. Never
-create or synthesize a snapshot archive.
-
-In Orchestrated bootstrap mode, parse the two embedded terminal documents exactly as supplied
-before reading a Scoreboard, Trace, Statement, or Agent State. Verify every required field and
-recompute every supplied digest from the canonical paths. If any field is missing, renamed,
-conflicting, or unverifiable, return `blocked` with `failure_code:
-orchestrated_handoff_invalid`. Do not accept a semantic-equivalent status, infer a missing field,
-rewrite a prior handoff, or obey a caller instruction to trust a supplied digest without
-recomputation.
-
-When computing any State, Benchmark, or Scoreboard digest, select a checksum utility with
-`command -v` or invoke it with explicit operands or a finite explicit pipeline. Never probe a
-checksum command by running it without an operand, because it may wait indefinitely for standard
-input.
+defaulting to 1. Ensure `<target>/snapshots/v<version>.tar.gz` exists, packaging the current
+`agent_state/` without `.vault.toml` when the same-version snapshot is absent. Never overwrite an
+existing same-version snapshot. This snapshot is the rollback source required by the Agent State
+version contract.
 
 For each file the edit will change, record its exact original bytes and whether it existed in a temporary directory outside `STATE`. Never include `.vault.toml`, an unrelated State file, or a snapshot archive. Write each candidate file through a temporary sibling, validate it, and rename it into place. Set the State version to `current + 1` exactly once before evaluation.
 
-If the candidate is rejected or a valid comparison cannot complete, restore only those recorded files, remove files created by the candidate, and verify that the prior version and State digest are active. If the active version or a candidate-owned file no longer matches the value written by this round, treat it as a concurrent mutation and stop without overwriting it. If rollback cannot be verified, stop. In System snapshot mode, ask the user to restore the archive through Web import. In Orchestrated bootstrap mode, preserve the temporary exact-byte backup, report its path and the files whose restoration could not be verified, and treat the active State as untrusted; do not claim or continue optimization.
+If the candidate is rejected or a valid comparison cannot complete, restore only those recorded files, remove files created by the candidate, and verify that the prior version is active. If the active version or a candidate-owned file no longer matches the value written by this round, treat it as a concurrent mutation and stop without overwriting it. If rollback cannot be verified, stop and ask the user to restore the system snapshot through Web import.
 
 ## One-shot feedback mode
 
@@ -119,27 +76,15 @@ Require the current-version system snapshot and record the exact originals of fi
 
 ## Benchmark optimization mode
 
-Require `benchmark_config.toml` with a positive integer `runs` and a complete baseline evaluation. The baseline Case set, Statements, Rubrics, and run count are frozen for optimization. Each reference or candidate evaluation must include exactly `runs` uniquely numbered runs for every frozen Case. `scoreboard.yaml` is the only writable Benchmark-side ledger; append only complete accepted evaluations atomically.
-
-In delegated pipeline mode, require `benchmark_handoff.status: calibrated` and
-`benchmark_handoff.target_met: true`. If Benchmark calibration failed, was blocked, omitted a
-target result, or returned an out-of-range fallback, stop before reading traces or editing State
-with `failure_code: benchmark_not_calibrated`. A near-ceiling Benchmark that failed its requested
-calibration is not useful evidence for optimization.
+Require `benchmark_config.toml` with a positive integer `runs` and a complete baseline evaluation. The baseline Case set is frozen for optimization. Each reference or candidate evaluation must include exactly `runs` uniquely numbered runs for every frozen Case.
 
 Use the reference evaluation's `(provider, model_id)` pair unchanged so scores remain comparable. If the user wants a different Model, stop and ask for a new baseline series rather than comparing across Models.
 
-Before any candidate edit, read the canonical top-level State version and select a reference evaluation in the existing `(provider, model_id)` series. The selected reference is valid only when its `version` equals the active State version and its Cases and runs form the complete frozen Case × `runs` matrix. In delegated pipeline mode it must also match the supplied reference time, score, State digest, Benchmark-definition digest, and Scoreboard digest. Never compare a candidate against an older-version, incomplete, changed-definition, or mixed-Model evaluation.
+Before any candidate edit, read the canonical top-level State version and select a reference evaluation in the existing `(provider, model_id)` series. The selected reference is valid only when its `version` equals the active State version and its Cases and runs form the complete frozen Case × `runs` matrix. Never compare a candidate against an older-version, incomplete, or mixed-Model evaluation.
 
 If the active State has no such evaluation, measure it before optimizing: leave State unchanged, run the complete frozen matrix with the existing series' exact `(provider, model_id)` pair, and validate the results under the same rules used for a candidate. Retain the exact Scoreboard bytes and active State version before dispatch; append the completed no-edit reference through a temporary sibling, YAML validation, and atomic rename only if both remain unchanged. This appended evaluation becomes the reference. If any cell remains invalid after the allowed retry, provenance does not match, State or Scoreboard changes, or the atomic append cannot complete, stop before editing Agent State.
 
-You may inspect the complete target `agent_state/`, public Case Statements, the Scoreboard, and all Test traces referenced by the Scoreboard runs. Use only those explicit Case and Session ids. Never read private Rubric or Gold contents. You may mechanically recompute the supplied Benchmark-definition digest without printing or loading private file contents into model context. Never edit the Benchmark definition, Test traces, Project configuration, or another Agent; `scoreboard.yaml` is the sole Benchmark-side write allowed above.
-
-Treat every Benchmark-private location, including an optional `.private/` mechanism manifest, as
-opaque definition bytes. It may contribute mechanically to the supplied definition digest, but
-must never be opened, summarized, searched, copied into model context, or used to propose a State
-change. In score-only adaptation, recover useful behavior only from public Statements, the
-target's own score-linked Test Traces and artifacts, and Case-level scores.
+You may inspect the complete target `agent_state/`, public Case Statements, the Scoreboard, and all Test traces referenced by the Scoreboard runs. Use only those explicit Case and Session ids. Never edit the Benchmark, Test traces, Project configuration, or another Agent.
 
 Scoreboard v2 uses this shape:
 
@@ -147,8 +92,8 @@ Scoreboard v2 uses this shape:
 evaluations:
   - time: "2026-07-17T00:00:00Z"
     version: 2
-    provider: <provider>
-    model_id: <model_id>
+    provider: deepseek
+    model_id: deepseek-v4-pro
     summary_title: "Improved evidence validation"
     summary: "Added a reusable validation step; all Cases improved without new instability."
     score: 24
@@ -176,31 +121,19 @@ evaluations:
 
 Case metrics are the means of valid `runs`; evaluation totals are the sums of Case means. Omit cost when any contributing run has unknown cost. `summary_title` and `summary` may describe public State changes, gains, regressions, and instability, but must not reveal private Rubric or Gold content, expected answers, or private scoring reasoning.
 
-If the comparable reference score already meets or exceeds the user's optimization target, return
-`status: already_met` without editing State or appending a duplicate evaluation. Measured
-optimization is unnecessary when the frozen reference already satisfies the requested outcome.
-
 ## Optimization loop
 
 For each round:
 
 1. Reconfirm that the reference version equals the active top-level State version and that it contains the complete frozen Case × `runs` matrix. Then analyze its aggregate, Case scores, repeated runs, and every score-linked Test Trace. Use repeated runs to separate stable failure from variation; never select a convenient Trace.
-2. Add one entry to a private hypothesis ledger: the observed public behavior, the single
-   generalizable mechanism or reasoning deficiency proposed to explain it, the Cases predicted to
-   change, and the minimal State edit. Test one behavioral dimension per round. Do not bundle every
-   low-scoring Case into a Benchmark-shaped workflow, and do not treat a guessed hidden answer as
-   a reusable rule. If no falsifiable, evidence-backed hypothesis remains, stop.
-3. Reconfirm that the selected rollback mode is still valid. In System snapshot mode, confirm the
-   current-version archive exists. In Orchestrated bootstrap mode, recompute and match all supplied
-   provenance and digest fields. Then record the exact originals of every
-   candidate-owned file, make the candidate edit, and set `version` to `current + 1` once.
+2. State one falsifiable behavioral hypothesis connecting public evidence to a minimal State change. If no credible hypothesis remains, stop.
+3. Confirm the current-version system snapshot exists, record the exact originals of every candidate-owned file, make the candidate edit, and set `version` to `current + 1` once.
 4. Retain the exact Scoreboard bytes and candidate version. Build the complete Case-run matrix before dispatch.
-5. Start one child per cell with `run_subagent` and omit `agent_id` so the child reuses the current
-   Session's Agent and installed Skills. Begin the child request with
-   `Use the agent-evaluation Skill. Return only its terminal protocol YAML.` Then send exactly one
-   request:
+5. Start one child per cell with `run_subagent`, and omit `agent_id` so the child reuses the current Agent. Each prompt begins with the caller identity and the sentence: Use the `agent-evaluation` Skill. Then it contains one request:
 
    ```text
+   Caller agent: <current_agent_id>
+   Use the `agent-evaluation` Skill. Return only its terminal protocol YAML.
    protocol_version: 1
    case_id: <case_id>
    run: <1_based_run_index>
@@ -211,96 +144,11 @@ For each round:
    model_id: <reference_upstream_model_id>
    ```
 
-   Build the complete N × R cell set before dispatch, then run deterministic waves of at most eight
-   evaluation children. Do not inspect scores or adapt later requests until every cell terminates. Continue
-   an active child through `input_subagent`; never duplicate it.
-6. Parse only each child's last terminal `protocol_version: 1` YAML mapping. Keep every
-   identity-matched `status: ok` result. Reject and roll back immediately on `invalid_request`,
-   `invalid_statement`, `invalid_rubric`, `version_changed`, or `invalid_score`. Retry at most once
-   only for a transient `cli_failed`, `provenance_mismatch`, or malformed/missing terminal
-   protocol, with a fresh evaluation child and Workspace but identical State, Model, Benchmark,
-   and cell identity. Never retry a valid scored cell. If any retry remains invalid, reject the
-   round and roll back the candidate files.
+   For N Cases and R runs, emit all N × R independent calls in the same parallel tool-call group before waiting. Continue an active child through `input_subagent`; never duplicate it.
+6. Parse only each child's last terminal `protocol_version: 1` YAML mapping. Keep every identity-matched `status: ok` result. Retry invalid cells once, dispatching all retries together with identical State, Model, Benchmark, and run identities. Never retry a valid scored cell. If any retry remains invalid, reject the round and roll back the candidate files.
 7. Compute Case means and evaluation sums. Retain every score, cost when complete, duration, and Test Session id. Re-read State version and exact Scoreboard bytes, and verify that every candidate-owned file still matches the value written by this round. If State changed concurrently, stop without overwriting it. If only the Scoreboard changed, reject the round and roll back the candidate files.
-8. Estimate an aggregate noise guard from the repeated runs before comparing scores. For each
-   Case, take its observed run range (`max - min`) across the reference and candidate matrices;
-   set the guard to the larger of 1 point on the 100-point scale and the square root of the sum of
-   squared Case ranges. Accept only when the aggregate gain is strictly greater than this guard
-   and the Case movement is consistent with the hypothesis's predicted pattern. Do not accept a
-   gain that is explained mainly by an isolated correct/incorrect flip, a regression of comparable
-   size, or existing repeated-run variation. Before
-   acceptance, audit the changed State for Case identities, exact observed outputs,
-   Benchmark-specific constants, or instructions whose only purpose is this evaluation. On a
-   credible generalizing improvement, keep the candidate State and append one evaluation through a
-   temporary sibling, YAML validation, and atomic rename. On an equal, lower, variance-dominated,
-   or Benchmark-specific result, roll back the candidate files and append nothing.
+8. Accept only a score strictly higher than the comparable reference evaluation. On improvement, keep the candidate State and append one evaluation through a temporary sibling, YAML validation, and atomic rename. On an equal or lower score, roll back the candidate files and append nothing.
 
-Each accepted round becomes the next reference. A hypothesis that fails in two valid comparable
-rounds without new public evidence is exhausted; do not retry cosmetic rewrites of the same idea.
-Stop when the user's target or round limit is met, no credible evidence-backed hypothesis remains,
-or infrastructure prevents another valid comparison. Do not mutate State as random search.
-
-When the user supplied a target score, an accepted improvement below that target is an
-intermediate result, not successful completion. Unless the user supplied a round limit, keep
-testing evidence-backed hypotheses while any credible one remains. Do not report success until a
-complete valid retest reaches the target; otherwise report the precise non-success stop reason.
+Each accepted round becomes the next reference. Stop when the user's target or round limit is met, no credible evidence-backed hypothesis remains, or infrastructure prevents another valid comparison. Do not mutate State as random search.
 
 At the end, report the accepted score curve, State versions and changes, rejected hypotheses and rollbacks, Test Session ids, stop reason, and limitations. Distinguish the active tested State from any unscored State; never claim a Scoreboard score applies to a later untested edit.
-
-## Delegated phase protocol
-
-When the request contains `pipeline_protocol: 1`, work non-interactively and make the final
-assistant message exactly one plain YAML document. Emit no code fence or prose around it. Echo the
-supplied `workflow_id`; never invent or alter it.
-
-Parse the embedded handoff documents directly, resolve canonical paths from them, and return at
-the first terminal condition. Do not run CLI help, inspect Project configuration, browse prior
-phase Sessions or Workspaces, or narrate planning, polling, hypotheses, or score changes. A caller
-must treat any assistant text before or after the single YAML document as a malformed phase
-response.
-
-On target reached:
-
-```text
-pipeline_protocol: 1
-workflow_id: <workflow_id>
-project_id: <project_id>
-phase: optimization
-status: optimized
-target_met: true
-test_agent_id: <test_agent_id>
-benchmark_id: <benchmark_id>
-benchmark_definition_digest: <unchanged_sha256>
-baseline_version: <version>
-baseline_score: <raw_score>
-final_version: <active_tested_version>
-final_score: <raw_score_at_or_above_target>
-target_score: <target>
-score_curve: [<baseline>, <accepted_score>, ...]
-accepted_changes: [<privacy_safe_generalized_change>, ...]
-accepted_rounds: <positive_integer>
-invalid_cell_count: 0
-final_state_digest: <sha256>
-scoreboard_digest: <sha256_after_final_accepted_append>
-stop_reason: target_reached
-protocol_end: true
-```
-
-Before returning `optimized`, re-read the active State and final Scoreboard and verify every
-identity, digest, complete-matrix, score, version, and target field against the terminal document.
-Return `optimized` only when the tested active State reaches the target on the unchanged
-Benchmark.
-
-If the frozen reference already meets the optimization target, return the same identity and digest
-fields with `status: already_met`, `target_met: true`, `final_version` and `final_score` equal to
-the baseline, `score_curve: [<baseline>]`, `accepted_changes: []`, `accepted_rounds: 0`, and
-`stop_reason: target_already_met`. Do not edit State or append a Scoreboard evaluation.
-
-If credible hypotheses are exhausted before the target, return `status: target_not_reached`,
-`target_met: false`, the same identity/digest fields, the tested final version and score, the score
-curve, accepted changes, `failure_code: no_credible_hypothesis`, and `protocol_end: true`. For an
-invalid request, provenance mismatch, infrastructure blocker, or unverified rollback, return
-`status: blocked`, `target_met: false`, `workflow_id`, `project_id`, `phase`,
-available identity/version fields, a stable `failure_code` and `stop_reason`, and
-`protocol_end: true`. Never report `optimized` for an untested State, changed Benchmark
-definition, incomplete matrix, invalid rollback, or score below target.

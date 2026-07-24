@@ -3,8 +3,8 @@ name: agent-evaluation
 description: Run and score exactly one Benchmark Case run with CLI execution, Trace provenance checks, and private Rubric isolation.
 short_description: Run and score one isolated Benchmark Case.
 short_description_zh: 隔离执行并评分一个 Benchmark Case。
-version: 4
-updated: 2026-07-23T15:19:31Z
+version: 5
+updated: 2026-07-24T04:48:33Z
 ---
 
 # Agent Evaluation
@@ -17,13 +17,7 @@ This Skill is invoked by `benchmark-design` or Benchmark mode in `agent-optimiza
 
 ## Privacy boundary
 
-Before the final protocol YAML, emit no assistant text; use private reasoning and tool calls only.
-Do not narrate setup, execution, scoring, or verification stages. A response containing prose,
-Markdown fences, intermediate scores, or a protocol embedded after an explanation is malformed.
-Never serialize Statement or artifact contents, Rubric items, expected values, correct outcomes,
-per-item scoring, diagnostics, secret configuration, Workspace paths, or Trace paths into an
-assistant message. The final assistant message is the protocol YAML only. It may echo the public
-identity fields supplied by the caller.
+Before the final protocol YAML, emit no assistant text; use private reasoning and tool calls only. Never serialize Statement or artifact contents, Rubric items, expected values, correct outcomes, per-item scoring, diagnostics, secret configuration, Workspace paths, or Trace paths into an assistant message. The final assistant message is the protocol YAML only. It may echo the public identity fields supplied by the caller.
 
 A valid request contains exactly one value for each field:
 
@@ -42,11 +36,6 @@ model_id: <upstream_model_id>
 
 Resolve the Project, Test Agent, Benchmark, and Case only from the explicit request and Environment Project Dir. Reject traversal, symlink escape, or any path outside the requested Test Agent. Never read a Project configuration file, credential, or vault.
 
-The canonical Test Agent directory is exactly
-`<project_dir>/agents/<test_agent_id>`. Require it to be a real directory rather than a symlink,
-and require `benchmark_dir` to resolve beneath its `benchmarks/` directory. Never probe or fall
-back to a legacy `<project_dir>/<test_agent_id>` path.
-
 Require:
 
 ```text
@@ -61,19 +50,6 @@ Require `benchmark_config.toml` to contain a positive integer `runs`; the reques
 Read and retain the exact Statement and Rubric bytes before launch. Reject an unusable, contradictory, non-atomic, or unbounded Rubric. The Rubric must declare a finite Case maximum; the returned score must fall within `0..case_max`.
 
 Create a collision-checked Workspace at `<test_agent_dir>/workspaces/tmp-<8hex>`. Copy only the contents of `statement/` into it. Never copy, link, or disclose `rubric/`, and never reuse another Case or run's Workspace.
-
-Before launch, inventory the Test Agent trace files by exact path, byte size, and modification time.
-This inventory is only a provenance boundary for the new Session; do not parse historical Trace
-bodies. Keep the inventory in a temporary file or private in-memory structure; do not print a recursive listing of the Trace tree into model context. Hash the retained Statement and Rubric once
-and reuse those hashes for the post-run unchanged-byte checks.
-
-Use SHA-256 only. Select the implementation with `command -v sha256sum` and otherwise use
-`shasum -a 256`; every checksum invocation must include `--` where supported and an explicit file
-operand, or consume a finite explicitly produced byte stream. Never invoke `md5`, `md5sum`,
-`sha256sum`, `shasum`, or `openssl dgst` without an operand or finite pipeline. In particular,
-`md5sum 2>/dev/null || ...` is forbidden because the first command waits for standard input instead
-of testing availability.
-Never probe a checksum command by running it without an operand.
 
 ## Launch and bind the Test Session
 
@@ -96,41 +72,29 @@ Use the exact Project, Test Agent, Model pair, and Workspace. Do not fall back t
 
 Read the canonical State version before and after the Test run; any change is `version_changed`. Confirm the Statement and Rubric bytes are unchanged before scoring.
 
-Search only the explicitly requested Test Agent's `traces/` tree and never inspect another Agent's
-traces. Compare it with the prelaunch inventory and inspect only new files or files that grew
-during this launch. Read each candidate shard's `session_meta` record first, group matching rotated
-shards by Session, and parse full bodies only for groups whose metadata could match the unique
-Workspace. Never rescan unchanged historical Trace bodies, infer ownership from recency alone, or
-probe alternative JSON shapes after the required schema matches. Bind the Test Trace mechanically
-from `session_meta`:
+Before launch, record the existing files and sizes under the requested Test Agent's `traces/`
+tree. After launch, inspect only new files or files that grew. Never inspect another Agent's
+traces or unrelated older Sessions. Bind one unique root Test Trace mechanically from
+`session_meta`:
 
 - `payload.workspace` equals the unique Workspace;
 - `payload.agent_state` equals the exact Test Agent State path;
 - `payload.provider` equals the requested provider;
 - `payload.model_id` equals the requested model id.
 
-When matching Test subagents exist, exclude child ids referenced by subagent events and require one unique matching root Test Session. Unrelated concurrent traces are not conflicts. Missing, multiple, malformed, or identity-mismatched roots are `provenance_mismatch`.
+When matching Test subagents exist, exclude directly referenced child ids and require one unique
+matching root Test Session. Missing, multiple, malformed, or identity-mismatched roots are
+`provenance_mismatch`. Do not perform open-ended Session archaeology to repair a failed binding.
 
 ## Score and account
 
 Inspect only the unique Test Workspace, its bound Test Trace, and the retained private Rubric. Apply every atomic item exactly and normalize only allowed equivalents. A missing, malformed, wrong-type, or incorrect Test artifact is ordinary scored Test Agent behavior: apply the Rubric's zero or partial credit and return `status: ok`. Only a changed or unusable Rubric, or a non-finite/out-of-range result, is `invalid_score`. Detailed reasoning remains in Evaluator Trace.
 
-Compute `duration_ms` from the bound root Test Session, not from the Evaluator. Compute cost only
-from that root and child Sessions mechanically referenced by subagent events whose traces are
-available within the explicitly requested Test Agent's `traces/` tree. For each included Session,
-read final cumulative usage from the last `event_msg` whose `payload.type` is `token_usage`, using
-`payload.session.cache_read`, `payload.session.cache_write`, and `payload.session.output`; do not
-look for `payload.usage` or sum intermediate events. Apply the matching `(provider, model_id)`
-prices reported by one `penguin config model list` call made after the Test Trace is bound. Do not
-call model-list, help, version, or launcher probes repeatedly. Those `price=` values are USD per
-1,000,000 tokens in cache-read, cache-write, output order, so compute
-`(cache_read * cache_read_price + cache_write * cache_write_price + output * output_price) /
-1_000_000`; never interpret them as per-1,000-token prices. If pricing cannot be resolved in that
-single call, any referenced child trace or usage is unavailable, or any included usage is
-unpriced, return `cost: null` rather than searching unrelated configuration or reporting a known
-partial sum as complete cost. Cost accounting must not trigger a second Test launch or broad Trace
-scan. Do not print model-list output, Trace inventories, or scoring diagnostics into the terminal
-assistant response.
+Compute `duration_ms` from the bound root Test Session. Compute cost from its final cumulative token
+usage and any directly referenced child traces already found in the same bounded pass. If usage,
+pricing, or a referenced child is unavailable, return `cost: null`. Cost accounting must not delay
+or invalidate an otherwise valid score, and must not trigger repeated pricing calculations,
+recursive trace searches, or inspection of sibling Sessions.
 
 ## Return protocol
 

@@ -3,8 +3,8 @@ name: agent-creation
 description: Turn a user requirement into a concrete agent — write the target agent's AGENTS.md and install the skills it needs.
 short_description: Turn a requirement into a working agent.
 short_description_zh: 把需求变成可用的 Agent。
-version: 11
-updated: 2026-07-23T18:10:28Z
+version: 12
+updated: 2026-07-24T04:48:33Z
 ---
 
 # Agent Creation
@@ -24,11 +24,6 @@ PROJECT_DIR="<project_dir>"        # the Project Dir value from your Environment
 ls "$PROJECT_DIR/agents"          # existing agents (each is a folder here)
 TARGET="$PROJECT_DIR/agents/<agent_id>"   # the agent to configure
 ```
-
-This is the only canonical Agent location. Never create or write a legacy
-`$PROJECT_DIR/<agent_id>` sibling, redirect `TARGET`, or create a compatibility symlink. If the
-canonical path cannot be used, stop and report the exact conflict instead of repairing the
-Project layout from this Skill.
 
 An agent directory contains `agent_state/` (`system_config.yaml`, `AGENTS.md`, `skills/`, `memory/`, `tools/`) plus `scratchpad/` — and `traces/`, which appears once the agent has run at least once.
 
@@ -68,112 +63,26 @@ Library skills can be copied from any agent that already has them (e.g. `default
 - **Knowledge expert** (answers questions over a document set): usually **no** harness agent is needed — build a RAG app with the penguin-sdk skill instead, and configure the app's embedded agent (below).
 - **Evaluation loop**: `benchmark-design`, `agent-evaluation`, `agent-optimization`.
 
-When this Agent will be a Test Agent, install only capabilities it needs while solving its own
-tasks. Do not install `benchmark-design`, `agent-evaluation`, or `agent-optimization` merely
-because another Agent will later evaluate it.
-
-## Isolation in a delegated pipeline
-
-Creation is one complete phase. Do not design or inspect a Benchmark, run an evaluation, analyze a
-score, or optimize the Agent. In particular, do not read any `benchmarks/`, `snapshots/`, or
-`traces/` directory, prior Workspace, or Memory, and do not inspect another Agent. Read only the
-default Agent files needed as templates or Skill sources and the canonical target `agent_state/`
-that this phase owns.
-
-Run this phase in the current isolated CLI Session. Do not create a persistent creator or other
-phase-role Agent; the target is the only Agent directory this Skill may create.
-
-When creating a Test Agent for a later evaluation pipeline, require a fresh target id. The
-capability requirement may describe the general task family, evidence types, expected outputs, and
-safety constraints, but must not contain a future Benchmark id, Case, Rubric, hidden rule, score
-target, test Model, or optimization hint. If such downstream details are accidentally present,
-ignore them and never encode them in the target State.
+When creating a Test Agent, install only the capabilities it needs to solve ordinary tasks. Do not
+install evaluation or optimization Skills merely because another Session will later test it.
 
 ## Set name and description
 
-In the target's `agent_state/system_config.yaml`, set the top-level `name:` and `description:` fields so the agent is recognizable in lists. For an existing Agent, edit only these two fields. For a brand-new Agent, also set its canonical top-level `version` to `1`; do not inherit a later State version from the default Agent template.
-
-For a brand-new Agent copied from the default template, the only permitted
-`system_config.yaml` differences are the top-level `version`, `name`, and `description`. Preserve
-all Model, tool, prompt, limit, and runtime fields in meaning. Do not repair, normalize, rewrite,
-or improve a copied tool description or configuration entry while creating the Agent; a discovered
-template defect is outside this Skill.
+In the target's `agent_state/system_config.yaml`, set the top-level `name:` and `description:` fields so the agent is recognizable in lists. Edit only these two fields. A brand-new Agent starts at top-level `version: 1`.
 
 ## Creating a brand-new agent
 
-Prefer configuring an agent the user already created. If you must create one from scratch: pick a short id (letters, digits, `_`, `-`), first verify that the canonical `TARGET` does not exist, copy the default agent's `system_config.yaml` as the base, and create the layout described above:
+Prefer configuring an agent the user already created. If you must create one from scratch: pick a short id (letters, digits, `_`, `-`), copy the default agent's `system_config.yaml` as the base, and create the layout described above:
 
 ```bash
 mkdir -p "$TARGET/agent_state/skills" "$TARGET/agent_state/memory" "$TARGET/agent_state/tools" "$TARGET/scratchpad"
 cp "$PROJECT_DIR/agents/default_agent/agent_state/system_config.yaml" "$TARGET/agent_state/"
 ```
 
-A new agent starts with no skills — install only what it needs. Then write its AGENTS.md, name and description as above. Before handing it to another Skill, verify that
-`TARGET/agent_state/system_config.yaml` and `TARGET/agent_state/AGENTS.md` are regular files, the
-State version is exactly `1`, and no legacy `$PROJECT_DIR/<agent_id>` path or compatibility
-symlink was created.
+A new agent starts with no skills — install only what it needs. Then write its AGENTS.md, name and description as above.
 
-Perform a final capability-scope audit over the created `agent_state/`. The State may contain the
-requested role, general task-family guidance, reusable methods, output requirements, and safety
-constraints. It must not contain orchestration metadata or downstream evaluation knowledge such
-as a workflow id, Benchmark or Case identity, Rubric or expected answer, score target, evaluation
-Model, hidden environment convention, or optimization strategy. Do not merely search for one
-literal keyword: compare the resulting behavior against the creation requirement and remove any
-instruction whose only purpose is to improve a future evaluation. If removing such an instruction
-would reduce the Agent's ordinary usefulness for the requested task family, keep the general
-capability but remove the evaluation-specific framing.
-
-## Delegated phase protocol
-
-When the request contains `pipeline_protocol: 1`, work non-interactively and make the final
-assistant message exactly one plain YAML document. Emit no code fence or prose around it. Echo the
-supplied `workflow_id`; never invent or alter it.
-
-Treat delegated creation as a bounded file operation, not an environment-discovery task. Resolve
-`project_id` from the basename of the supplied Project Dir, inspect only the canonical target path
-and the exact default-Agent files needed as templates or Skill sources, and create and verify the
-target in one pass. Do not run CLI help, enumerate Models, inspect Project configuration, search
-for prior pipeline artifacts, or narrate a plan. A caller must treat any assistant text before or
-after the single YAML document as a malformed phase response.
-
-Before returning success, re-read the created State and verify every required identity, path,
-version, installed Skill, and scope constraint against the protocol below. Do not reinterpret,
-rename, omit, or add protocol fields.
-
-On success:
-
-```text
-pipeline_protocol: 1
-workflow_id: <workflow_id>
-project_id: <project_id>
-phase: creation
-status: ok
-agent_id: <agent_id>
-agent_dir: <absolute_canonical_agent_dir>
-state_version: 1
-target_was_absent: true
-state_digest: <sha256_of_sorted_relative_paths_and_bytes_under_agent_state_excluding_dot_vault>
-protocol_end: true
-```
-
-On failure:
-
-```text
-pipeline_protocol: 1
-workflow_id: <workflow_id>
-project_id: <project_id>
-phase: creation
-status: blocked
-failure_code: <invalid_request_or_target_exists_or_path_conflict_or_creation_failed>
-protocol_end: true
-```
-
-Return `status: ok` only after all required files and installed Skills have been verified. The
-digest is SHA-256 over the deterministic sequence of each regular file's sorted relative path,
-NUL, raw bytes, and NUL; exclude `.vault.toml`. Do not include downstream phase details in either
-protocol. Select a checksum utility with `command -v` or invoke it with explicit operands or a
-finite explicit pipeline. Never probe a checksum command by running it without an operand: such a
-call reads standard input indefinitely and can stall the phase.
+Stop after the requested Agent has been created and verified. Do not design a Benchmark or optimize
+the Agent as part of this Skill.
 
 ## The embedded agent of an SDK app
 
