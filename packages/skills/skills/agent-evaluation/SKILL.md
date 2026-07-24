@@ -3,8 +3,8 @@ name: agent-evaluation
 description: Run and score exactly one Benchmark Case run with CLI execution, Trace provenance checks, and private Rubric isolation.
 short_description: Run and score one isolated Benchmark Case.
 short_description_zh: 隔离执行并评分一个 Benchmark Case。
-version: 1
-updated: 2026-07-17T17:08:17Z
+version: 2
+updated: 2026-07-24T00:00:00Z
 ---
 
 # Agent Evaluation
@@ -34,7 +34,7 @@ model_id: <upstream_model_id>
 
 ## Validate and prepare
 
-Resolve the Project, Test Agent, Benchmark, and Case only from the explicit request and Environment Project Dir. Reject traversal, symlink escape, or any path outside the requested Test Agent. Never read a Project configuration file, credential, or vault.
+Resolve the Project, Test Agent, Benchmark, and Case only from the explicit request and Environment Agents Dir. Reject traversal, symlink escape, or any path outside the requested Test Agent. Never read a Project configuration file, credential, or vault.
 
 Require:
 
@@ -58,10 +58,11 @@ Use an existing verified Penguin CLI or repository-local launcher already availa
 Run the Test Agent exactly once in the foreground with a fresh top-level Session:
 
 ```bash
-PROJECT_DIR="<project_dir>"
+AGENTS_DIR="<agents_dir>"
+PROJECT_DIR="$(dirname "$AGENTS_DIR")"   # the project root is the parent directory of the agents dir
 PROJECT_ID="$(basename "$PROJECT_DIR")"
 PENGUIN_HOME="$(dirname "$PROJECT_DIR")"
-WORKSPACE="$PROJECT_DIR/agents/<test_agent_id>/workspaces/<unique_workspace_id>"
+WORKSPACE="$AGENTS_DIR/<test_agent_id>/workspaces/<unique_workspace_id>"
 export PENGUIN_HOME
 penguin run --message "Read README.md in the current Workspace and complete the task exactly as specified there." \
   --provider "<provider>" --model-id "<model_id>" --project-id "$PROJECT_ID" \
