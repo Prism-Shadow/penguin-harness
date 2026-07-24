@@ -1113,7 +1113,10 @@ export function buildUniConfig(config: GenerativeModelConfig): UniConfig {
   if (config.systemPrompt !== undefined) {
     uniConfig.system_prompt = config.systemPrompt;
   }
-  if (config.maxTokens !== undefined) {
+  // Non-positive (-1 per the config contract) means "no explicit cap": the key is left off
+  // the wire so the provider default applies — sent literally, every provider rejects a
+  // negative max_tokens with a 400 (issue #55's sibling).
+  if (config.maxTokens !== undefined && config.maxTokens > 0) {
     uniConfig.max_tokens = config.maxTokens;
   }
   const thinking = mapThinkingLevel(config.thinkingLevel);

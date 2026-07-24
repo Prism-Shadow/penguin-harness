@@ -94,7 +94,7 @@ Edit this file via the CLI (`penguin config model â€¦`) or the Web Models page â
 | `version` | `1` | Agent State version (a natural number), incremented on each successful optimization |
 | `system_prompt` | built-in template | Required; the only template with placeholder substitution |
 | `max_turns` | `100` | Maximum LLM turns per Task (-1 removes the cap) |
-| `model.max_tokens` | `32000` | Output Token limit per Request |
+| `model.max_tokens` | `32000` | Output Token limit per Request (-1 = no cap, provider default) |
 | `model.thinking_level` | `medium` | `none` / `low` / `medium` / `high` / `xhigh` |
 | `model.timeoutMs` | `120000` | Per-Request timeout (milliseconds) |
 | `compaction.max_context_length` | `128000` | Context Token threshold that triggers compaction |
