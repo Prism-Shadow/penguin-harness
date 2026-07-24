@@ -51,6 +51,7 @@ const menuTextClass: Record<ControlSize, string> = { base: "text-base", sm: "tex
 export function Select({
   label,
   hint,
+  required,
   size = "base",
   className,
   children,
@@ -85,6 +86,7 @@ export function Select({
         disabled={disabled}
         aria-haspopup="listbox"
         aria-expanded={open}
+        aria-required={required || undefined}
         onClick={() => setOpen((v) => !v)}
         className={`${CONTROL_CLASS} ${sizeClass[size]} ${className ?? ""}`}
       >
@@ -132,7 +134,7 @@ export function Select({
   );
 
   return (
-    <Field label={label} hint={hint}>
+    <Field label={label} hint={hint} required={required}>
       {control}
     </Field>
   );

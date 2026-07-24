@@ -15,8 +15,8 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
 import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
+import { apiErrorText } from "../../lib/api-error";
 import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
 import { formatDateTime, formatRelativeDays } from "../../lib/format";
 import { useDocumentTitle } from "../../lib/use-document-title";
@@ -113,7 +113,7 @@ export function AgentsPage() {
       setCurrentAgentId(res.agent.agentId);
       navigate(`/agents/${res.agent.agentId}`);
     } catch (e) {
-      setIdError(e instanceof ApiError ? e.message : S.common.unknownError);
+      setIdError(apiErrorText(e));
     } finally {
       setBusy(false);
     }
@@ -140,7 +140,7 @@ export function AgentsPage() {
       setDeleting(null);
       await reloadAgents();
     } catch (e) {
-      setDeleteError(e instanceof ApiError ? e.message : S.common.unknownError);
+      setDeleteError(apiErrorText(e));
     } finally {
       setBusy(false);
     }
@@ -371,6 +371,7 @@ export function AgentsPage() {
         <div className="space-y-3">
           <Input
             label={S.agent.id}
+            required
             size="sm"
             value={agentId}
             onChange={(e) => {

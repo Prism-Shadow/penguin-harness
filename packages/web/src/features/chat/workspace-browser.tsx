@@ -21,6 +21,7 @@ import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { useAuth } from "../../state/auth";
 import { S } from "../../lib/strings";
+import { apiErrorText } from "../../lib/api-error";
 import { formatBytes, formatDateTime } from "../../lib/format";
 import { Button } from "../../components/ui/button";
 import { toastError, toastSuccess } from "../../components/ui/toast";
@@ -328,7 +329,7 @@ export function WorkspaceBrowser({
         toastSuccess(S.files.uploaded);
         setReloadTick((t) => t + 1);
       } catch (err) {
-        toastError(err instanceof ApiError ? err.message : S.common.unknownError);
+        toastError(apiErrorText(err));
       } finally {
         setUploading(false);
       }

@@ -22,6 +22,7 @@ export function PasswordInput({
   hint,
   error,
   invalid,
+  required,
   size = "base",
   className,
   ...rest
@@ -29,10 +30,11 @@ export function PasswordInput({
   const [visible, setVisible] = useState(false);
   const toggleLabel = visible ? S.auth.hidePassword : S.auth.showPassword;
   return (
-    <Field label={label} hint={hint} error={error}>
+    <Field label={label} hint={hint} error={error} required={required}>
       <div className="relative">
         <Input
           {...rest}
+          required={required}
           size={size}
           type={visible ? "text" : "password"}
           invalid={Boolean(error) || Boolean(invalid)}

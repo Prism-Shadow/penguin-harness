@@ -60,7 +60,10 @@ function Th({ children, className = "" }: { children: React.ReactNode; className
 
 /**
  * Error panel: stats + a recent-errors table (the server already takes the top N, newest first).
- * The table is table-fixed with in-cell truncation: a long message doesn't break the layout, and the full text goes into title.
+ * The message column shows the **full** error text (wrapping, not truncated) — for a failed
+ * request "what exactly went wrong" is the whole point, and the upstream detail after the code
+ * (e.g. the provider's 402 body) must be readable, not hidden in a hover title. Cells align to
+ * the top so a multi-line message keeps the row tidy; the table still scrolls past max height.
  */
 export function ErrorsPanel({ errors }: { errors: UsageErrors }) {
   const { total, unexpected, topCode, recent } = errors;
@@ -110,21 +113,20 @@ export function ErrorsPanel({ errors }: { errors: UsageErrors }) {
                     key={`${e.ts}-${i}`}
                     className="border-t border-gray-100 dark:border-gray-800/60"
                   >
-                    <td className="py-1.5 pr-2 font-mono tabular-nums text-gray-400">
+                    <td className="py-1.5 pr-2 align-top font-mono tabular-nums text-gray-400">
                       {formatDateTime(e.ts)}
                     </td>
-                    <td className="py-1.5 pr-2 font-mono text-gray-500 dark:text-gray-400">
-                      <span className="block truncate" title={`${e.source} · ${e.code}`}>
+                    <td className="py-1.5 pr-2 align-top font-mono text-gray-500 dark:text-gray-400">
+                      <span className="block break-words">
                         {e.source} · {e.code}
                       </span>
                     </td>
-                    <td className="py-1.5 pr-2">
+                    <td className="py-1.5 pr-2 align-top">
                       <Badge tone={key === "unexpected" ? "red" : "gray"}>{kindLabel(key)}</Badge>
                     </td>
-                    <td className="py-1.5 text-gray-500 dark:text-gray-400">
-                      <span className="block truncate" title={e.message}>
-                        {e.message}
-                      </span>
+                    <td className="py-1.5 align-top text-gray-500 dark:text-gray-400">
+                      {/* Full message: wrap and preserve newlines so the whole upstream error is visible. */}
+                      <span className="block whitespace-pre-wrap break-words">{e.message}</span>
                     </td>
                   </tr>
                 );

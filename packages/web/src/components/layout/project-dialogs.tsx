@@ -5,8 +5,8 @@
 import { useEffect, useState } from "react";
 import type { MemberInfo } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
+import { apiErrorText } from "../../lib/api-error";
 import {
   PROJECT_ID_MAX_LENGTH,
   PROJECT_SUFFIX_PATTERN,
@@ -70,7 +70,7 @@ export function CreateProjectDialog({
       });
       onCreated(res.project.projectId);
     } catch (e) {
-      setIdError(e instanceof ApiError ? e.message : S.common.unknownError);
+      setIdError(apiErrorText(e));
     } finally {
       setBusy(false);
     }
@@ -93,7 +93,7 @@ export function CreateProjectDialog({
       <div className="space-y-3">
         {prefix ? (
           <div>
-            <FieldLabel>{S.project.id}</FieldLabel>
+            <FieldLabel required>{S.project.id}</FieldLabel>
             <div className="flex items-stretch">
               <span className="flex shrink-0 items-center rounded-l-md border border-r-0 border-gray-300 bg-gray-100 px-2 font-mono text-xs text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400">
                 {prefix}
@@ -119,6 +119,7 @@ export function CreateProjectDialog({
         ) : (
           <Input
             label={S.project.id}
+            required
             size="sm"
             value={idInput}
             error={idError}
@@ -162,9 +163,7 @@ export function ProjectSettingsDialog({ open, onClose }: { open: boolean; onClos
     api
       .listMembers(projectId)
       .then((res) => setMembers(res.members))
-      .catch((e: unknown) =>
-        setLoadError(e instanceof ApiError ? e.message : S.common.unknownError),
-      );
+      .catch((e: unknown) => setLoadError(apiErrorText(e)));
   }, [open, projectId]);
 
   if (!currentProject || !projectId) return null;
@@ -177,7 +176,7 @@ export function ProjectSettingsDialog({ open, onClose }: { open: boolean; onClos
       const res = await api.listMembers(projectId);
       setMembers(res.members);
     } catch (e) {
-      toastError(e instanceof ApiError ? e.message : S.common.unknownError);
+      toastError(apiErrorText(e));
     }
   };
 
@@ -187,7 +186,7 @@ export function ProjectSettingsDialog({ open, onClose }: { open: boolean; onClos
       const res = await api.listMembers(projectId);
       setMembers(res.members);
     } catch (e) {
-      toastError(e instanceof ApiError ? e.message : S.common.unknownError);
+      toastError(apiErrorText(e));
     }
   };
 
@@ -199,7 +198,7 @@ export function ProjectSettingsDialog({ open, onClose }: { open: boolean; onClos
       await reloadProjects();
       if (next) setCurrentProjectId(next.projectId);
     } catch (e) {
-      toastError(e instanceof ApiError ? e.message : S.common.unknownError);
+      toastError(apiErrorText(e));
     }
   };
 

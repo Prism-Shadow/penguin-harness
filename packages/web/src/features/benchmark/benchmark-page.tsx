@@ -20,8 +20,8 @@ import type {
   BenchmarkSummary,
 } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
+import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { formatDateTime, formatMoney, formatScore, humanizeDuration } from "../../lib/format";
 import { agentDisplayName, useProject } from "../../state/project";
@@ -75,7 +75,7 @@ function AgentNode({
     api
       .listBenchmarks(projectId, agentId)
       .then((data) => setBenchmarks(data.benchmarks))
-      .catch((e: unknown) => setError(e instanceof ApiError ? e.message : S.common.unknownError));
+      .catch((e: unknown) => setError(apiErrorText(e)));
   }, [open, benchmarks, projectId, agentId]);
 
   return (

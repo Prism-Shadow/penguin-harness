@@ -52,16 +52,21 @@ export function Input({
   hint,
   error,
   invalid,
+  required,
   size = "base",
   className,
   ...rest
 }: InputProps) {
   const bad = Boolean(error) || Boolean(invalid);
+  // `required` drives the label's asterisk + aria-required only; the native `required`
+  // attribute is intentionally not forwarded (the app validates on submit, so browser
+  // validation bubbles would collide with the inline field errors).
   return (
-    <Field label={label} hint={hint} error={error}>
+    <Field label={label} hint={hint} error={error} required={required}>
       <input
         className={`${baseClass} ${sizeClass[size]} ${bad ? errorClass : ""} ${className ?? ""}`}
         aria-invalid={bad ? true : undefined}
+        aria-required={required || undefined}
         {...rest}
       />
     </Field>
@@ -81,16 +86,17 @@ export interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElemen
 }
 
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function Textarea(
-  { label, hint, error, invalid, mono, size = "base", className, ...rest },
+  { label, hint, error, invalid, required, mono, size = "base", className, ...rest },
   ref,
 ) {
   const bad = Boolean(error) || Boolean(invalid);
   return (
-    <Field label={label} hint={hint} error={error}>
+    <Field label={label} hint={hint} error={error} required={required}>
       <textarea
         ref={ref}
         className={`${baseClass} px-3 py-2 ${size === "sm" ? "text-xs leading-relaxed" : "text-base"} ${mono ? "font-mono" : ""} ${bad ? errorClass : ""} ${className ?? ""}`}
         aria-invalid={bad ? true : undefined}
+        aria-required={required || undefined}
         {...rest}
       />
     </Field>

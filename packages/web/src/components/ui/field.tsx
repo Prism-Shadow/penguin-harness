@@ -23,10 +23,15 @@ export const controlBase =
 /** Base padding/alignment/transition for a menu row (Select, OptionMenu, and the chat composer menus); callers add flex/block and the hover/selected colors. */
 export const menuRowClass = "w-full px-3 py-1.5 text-left transition-colors duration-150";
 
-export function FieldLabel({ children }: { children: ReactNode }) {
+export function FieldLabel({ children, required }: { children: ReactNode; required?: boolean }) {
   return (
     <span className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-400">
       {children}
+      {required && (
+        <span className="ml-0.5 text-red-500 dark:text-red-400" aria-hidden>
+          *
+        </span>
+      )}
     </span>
   );
 }
@@ -50,17 +55,20 @@ export function Field({
   label,
   hint,
   error,
+  required,
   children,
 }: {
   label?: ReactNode;
   hint?: ReactNode;
   error?: ReactNode;
+  /** Renders a red "*" after the label to mark the field as required. */
+  required?: boolean;
   children: ReactNode;
 }) {
   if (!label && !hint && !error) return <>{children}</>;
   return (
     <label className="block">
-      {label != null && label !== "" && <FieldLabel>{label}</FieldLabel>}
+      {label != null && label !== "" && <FieldLabel required={required}>{label}</FieldLabel>}
       {children}
       {error ? <FieldError>{error}</FieldError> : hint ? <FieldHint>{hint}</FieldHint> : null}
     </label>

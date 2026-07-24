@@ -9,8 +9,8 @@ import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import type { AgentTracesResponse } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
+import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { formatBytes } from "../../lib/format";
 import { agentDisplayName, useProject } from "../../state/project";
@@ -91,7 +91,7 @@ function AgentNode({
     api
       .getAgentTraces(projectId, agentId)
       .then((data) => setGroups(flattenSessions(data)))
-      .catch((e: unknown) => setError(e instanceof ApiError ? e.message : S.common.unknownError));
+      .catch((e: unknown) => setError(apiErrorText(e)));
   }, [open, groups, projectId, agentId]);
 
   // The Session deep link is applied only once: it selects the target as

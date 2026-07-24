@@ -8,13 +8,13 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
 import { S } from "../lib/strings";
+import { apiErrorText } from "../lib/api-error";
 import { useDocumentTitle } from "../lib/use-document-title";
 import { useAuth } from "../state/auth";
 import { useLocale } from "../state/locale";
 import type { LangPref } from "../state/locale";
 import { useTheme } from "../state/theme";
 import type { ThemeMode } from "../state/theme";
-import { ApiError } from "../api/client";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { PasswordInput } from "../components/ui/password-input";
@@ -49,7 +49,7 @@ export function LoginPage() {
       await login(userId.trim(), password);
       navigate("/chat", { replace: true });
     } catch (e) {
-      setErrors({ form: e instanceof ApiError ? e.message : S.common.unknownError });
+      setErrors({ form: apiErrorText(e) });
     } finally {
       setBusy(false);
     }
@@ -96,6 +96,7 @@ export function LoginPage() {
           >
             <Input
               label={S.common.username}
+              required
               value={userId}
               onChange={(e) => {
                 setUserId(e.target.value);
@@ -107,6 +108,7 @@ export function LoginPage() {
             />
             <PasswordInput
               label={S.auth.password}
+              required
               value={password}
               onChange={(e) => {
                 setPassword(e.target.value);

@@ -19,8 +19,8 @@ import type {
   ScheduleUpsertRequest,
 } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
+import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
 import { useProject } from "../../state/project";
 import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
@@ -143,7 +143,7 @@ export function SchedulesTab({ agentId }: { agentId: string }) {
     try {
       setData(await api.listSchedules(projectId, agentId));
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : S.common.unknownError);
+      setError(apiErrorText(e));
     }
   }, [projectId, agentId]);
 
@@ -215,7 +215,7 @@ export function SchedulesTab({ agentId }: { agentId: string }) {
       await load();
     } catch (e) {
       // A 400 (validated with the same rules as hand-written files) isn't tied to one field — show it under the modal form.
-      setFormError(e instanceof ApiError ? e.message : S.common.unknownError);
+      setFormError(apiErrorText(e));
     } finally {
       setBusy(false);
     }
@@ -241,7 +241,7 @@ export function SchedulesTab({ agentId }: { agentId: string }) {
       toastSuccess(S.common.saved);
       await load();
     } catch (e) {
-      toastError(e instanceof ApiError ? e.message : S.common.unknownError);
+      toastError(apiErrorText(e));
     } finally {
       setBusy(false);
     }
@@ -273,7 +273,7 @@ export function SchedulesTab({ agentId }: { agentId: string }) {
       if (form?.editing === deleting) setForm(null);
       await load();
     } catch (e) {
-      toastError(e instanceof ApiError ? e.message : S.common.unknownError);
+      toastError(apiErrorText(e));
     } finally {
       setBusy(false);
       setDeleting(null);
@@ -433,6 +433,7 @@ export function SchedulesTab({ agentId }: { agentId: string }) {
               <Input
                 size="sm"
                 label={S.common.name}
+                required
                 hint={S.schedule.nameHint}
                 error={fieldErrors.name}
                 value={form.name}
@@ -454,6 +455,7 @@ export function SchedulesTab({ agentId }: { agentId: string }) {
               <Input
                 size="sm"
                 label={S.schedule.startAt}
+                required
                 type="datetime-local"
                 error={fieldErrors.startAt}
                 value={form.startAt}
@@ -481,6 +483,7 @@ export function SchedulesTab({ agentId }: { agentId: string }) {
                 <Input
                   size="sm"
                   label={S.schedule.sessionId}
+                  required
                   error={fieldErrors.sessionId}
                   value={form.sessionId}
                   onChange={(e) => set({ sessionId: e.target.value })}
@@ -530,6 +533,7 @@ export function SchedulesTab({ agentId }: { agentId: string }) {
             </div>
             <Textarea
               label={S.schedule.prompt}
+              required
               size="sm"
               rows={4}
               error={fieldErrors.prompt}

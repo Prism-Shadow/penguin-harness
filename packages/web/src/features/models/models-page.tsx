@@ -39,8 +39,8 @@ import type {
   ModelUpdateEntry,
 } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
+import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useProject } from "../../state/project";
 import { useAuth } from "../../state/auth";
@@ -379,7 +379,7 @@ export function ModelsPage() {
       setDefaultModel(res.defaultModel);
       setVisionModel(res.visionModel);
     } catch (e) {
-      setLoadError(e instanceof ApiError ? e.message : S.common.unknownError);
+      setLoadError(apiErrorText(e));
     }
   }, [projectId]);
 
@@ -427,7 +427,7 @@ export function ModelsPage() {
       setRows(nextRows);
       if (nextDefault !== undefined) setDefaultModel(nextDefault);
       if (effectiveVision !== undefined) setVisionModel(effectiveVision);
-      toastError(e instanceof ApiError ? e.message : S.common.unknownError);
+      toastError(apiErrorText(e));
       return false;
     } finally {
       setBusy(false);
@@ -480,7 +480,7 @@ export function ModelsPage() {
           setSpeedResults((prev) =>
             new Map(prev).set(key, {
               ok: false,
-              message: e instanceof ApiError ? e.message : S.common.unknownError,
+              message: apiErrorText(e),
             }),
           );
         }
@@ -1117,7 +1117,7 @@ function ModelDialog({
       if (res.ok) toastSuccess(S.models.testOk(res.latencyMs ?? 0));
       else toastError(S.models.testFailed(res.message ?? ""));
     } catch (e) {
-      toastError(S.models.testFailed(e instanceof ApiError ? e.message : S.common.unknownError));
+      toastError(S.models.testFailed(apiErrorText(e)));
     } finally {
       setTesting(false);
     }

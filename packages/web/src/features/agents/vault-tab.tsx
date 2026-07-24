@@ -12,8 +12,8 @@
 import { useCallback, useEffect, useState } from "react";
 import type { VaultEntryInfo, VaultUpdateRequest } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
+import { apiErrorText } from "../../lib/api-error";
 import { useProject } from "../../state/project";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
@@ -51,7 +51,7 @@ export function VaultTab({ agentId }: { agentId: string }) {
       const res = await api.getVault(projectId, agentId);
       setEntries(res.entries);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : S.common.unknownError);
+      setError(apiErrorText(e));
     }
   }, [projectId, agentId]);
 
@@ -69,7 +69,7 @@ export function VaultTab({ agentId }: { agentId: string }) {
       toastSuccess(S.common.saved);
       return null;
     } catch (e) {
-      return e instanceof ApiError ? e.message : S.common.unknownError;
+      return apiErrorText(e);
     } finally {
       setBusy(false);
     }
@@ -197,6 +197,7 @@ export function VaultTab({ agentId }: { agentId: string }) {
           <Input
             size="sm"
             label={S.vault.key}
+            required
             hint={S.vault.keyHint}
             error={addErrors.key}
             value={keyInput}
@@ -211,6 +212,7 @@ export function VaultTab({ agentId }: { agentId: string }) {
           <PasswordInput
             size="sm"
             label={S.vault.value}
+            required
             error={addErrors.value}
             value={valueInput}
             onChange={(e) => {

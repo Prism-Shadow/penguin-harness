@@ -57,6 +57,7 @@ export function OptionMenu<T extends string>({
   placeholder,
   mono,
   label,
+  required,
   fullWidth,
   size = "base",
   "aria-label": ariaLabel,
@@ -71,6 +72,8 @@ export function OptionMenu<T extends string>({
   mono?: boolean;
   /** Field title above the control (same typography as Input); omit to render a bare trigger button (e.g. for table cell usage). */
   label?: string;
+  /** Renders a red "*" after the label to mark the field as required. */
+  required?: boolean;
   /** Stretch the trigger button to fill the container width, as a replacement for native Select in dense form areas. */
   fullWidth?: boolean;
   /** Same size tier as Input/Select (sizeClass), for pixel-perfect alignment when mixed together. */
@@ -95,6 +98,7 @@ export function OptionMenu<T extends string>({
         aria-label={ariaLabel}
         aria-haspopup="listbox"
         aria-expanded={open}
+        aria-required={required || undefined}
         onClick={() => setOpen((v) => !v)}
         className={
           `flex items-center gap-2 ${controlBase} ${sizeClass[size]}` +
@@ -161,5 +165,9 @@ export function OptionMenu<T extends string>({
         )}
     </>
   );
-  return <Field label={label}>{control}</Field>;
+  return (
+    <Field label={label} required={required}>
+      {control}
+    </Field>
+  );
 }

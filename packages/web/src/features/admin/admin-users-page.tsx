@@ -8,8 +8,8 @@ import { useCallback, useEffect, useState } from "react";
 import { Navigate } from "react-router";
 import type { UserInfo } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
+import { apiErrorText } from "../../lib/api-error";
 import { USERNAME_PATTERN } from "../../lib/semantic-id";
 import { formatDateTime } from "../../lib/format";
 import { useDocumentTitle } from "../../lib/use-document-title";
@@ -34,7 +34,7 @@ export function AdminUsersPage() {
       setUsers((await api.adminListUsers()).users);
       setListError(null);
     } catch (e) {
-      setListError(e instanceof ApiError ? e.message : S.common.unknownError);
+      setListError(apiErrorText(e));
     }
   }, []);
 
@@ -166,7 +166,7 @@ function CreateUserDialog({
       onDone();
     } catch (e) {
       // The server rejects a duplicate id here — surface it on the id field.
-      setErrors({ userId: e instanceof ApiError ? e.message : S.common.unknownError });
+      setErrors({ userId: apiErrorText(e) });
     } finally {
       setBusy(false);
     }
@@ -191,6 +191,7 @@ function CreateUserDialog({
       <div className="space-y-3">
         <Input
           label={S.common.username}
+          required
           size="sm"
           value={userId}
           onChange={(e) => {
@@ -203,6 +204,7 @@ function CreateUserDialog({
         />
         <PasswordInput
           label={S.admin.initialPassword}
+          required
           size="sm"
           value={password}
           onChange={(e) => {
@@ -246,7 +248,7 @@ function ResetPasswordDialog({ user, onClose }: { user: UserInfo | null; onClose
       await api.adminResetPassword(user.userId, { password });
       onClose();
     } catch (e) {
-      setPasswordError(e instanceof ApiError ? e.message : S.common.unknownError);
+      setPasswordError(apiErrorText(e));
     } finally {
       setBusy(false);
     }
@@ -271,6 +273,7 @@ function ResetPasswordDialog({ user, onClose }: { user: UserInfo | null; onClose
       <div className="space-y-3">
         <PasswordInput
           label={S.admin.initialPassword}
+          required
           size="sm"
           value={password}
           onChange={(e) => {
@@ -315,7 +318,7 @@ function DeleteUserDialog({
       await api.adminDeleteUser(user.userId);
       onDone();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : S.common.unknownError);
+      setError(apiErrorText(e));
     } finally {
       setBusy(false);
     }

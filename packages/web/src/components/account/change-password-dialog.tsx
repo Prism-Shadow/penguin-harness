@@ -5,8 +5,8 @@
  */
 import { useEffect, useState } from "react";
 import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
+import { apiErrorText } from "../../lib/api-error";
 import { useAuth } from "../../state/auth";
 import { Button } from "../ui/button";
 import { PasswordInput } from "../ui/password-input";
@@ -47,7 +47,7 @@ export function ChangePasswordDialog({ open, onClose }: { open: boolean; onClose
       onClose();
     } catch (e) {
       // The server only rejects here when the old password is wrong — attach it to that field.
-      setErrors({ old: e instanceof ApiError ? e.message : S.common.unknownError });
+      setErrors({ old: apiErrorText(e) });
     } finally {
       setBusy(false);
     }
@@ -72,6 +72,7 @@ export function ChangePasswordDialog({ open, onClose }: { open: boolean; onClose
       <div className="space-y-3">
         <PasswordInput
           label={S.account.oldPassword}
+          required
           size="sm"
           value={oldPassword}
           onChange={(e) => {
@@ -85,6 +86,7 @@ export function ChangePasswordDialog({ open, onClose }: { open: boolean; onClose
         />
         <PasswordInput
           label={S.account.newPassword}
+          required
           size="sm"
           value={newPassword}
           onChange={(e) => {
@@ -97,6 +99,7 @@ export function ChangePasswordDialog({ open, onClose }: { open: boolean; onClose
         />
         <PasswordInput
           label={S.account.confirmPassword}
+          required
           size="sm"
           value={confirmPassword}
           onChange={(e) => {

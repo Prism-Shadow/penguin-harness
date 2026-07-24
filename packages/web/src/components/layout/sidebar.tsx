@@ -20,8 +20,8 @@ import type { ReactNode } from "react";
 import { NavLink, useMatch, useNavigate } from "react-router";
 import type { SessionInfo, SessionSource } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
+import { apiErrorText } from "../../lib/api-error";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import type { LangPref } from "../../state/locale";
@@ -341,7 +341,7 @@ export function Sidebar({
       replace(res.session);
       setRenamingSession(null);
     } catch (e) {
-      setRenameError(e instanceof ApiError ? e.message : S.common.unknownError);
+      setRenameError(apiErrorText(e));
     } finally {
       setRenameBusy(false);
     }
@@ -367,7 +367,7 @@ export function Sidebar({
         navigate(rest[0] ? `/chat/${rest[0].sessionId}` : "/chat");
       }
     } catch (e) {
-      toastError(e instanceof ApiError ? e.message : S.common.unknownError);
+      toastError(apiErrorText(e));
     } finally {
       setDeletingBusy(false);
     }

@@ -31,8 +31,8 @@ import type {
   TraceToolSpan,
 } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
+import { apiErrorText } from "../../lib/api-error";
 import {
   cacheHitRate,
   computeTps,
@@ -209,7 +209,7 @@ export function TraceFileView({
         setModels(m);
       })
       .catch((err: unknown) => {
-        if (!cancelled) setError(err instanceof ApiError ? err.message : S.common.unknownError);
+        if (!cancelled) setError(apiErrorText(err));
       });
     return () => {
       cancelled = true;

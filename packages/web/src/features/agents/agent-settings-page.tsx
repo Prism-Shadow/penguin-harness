@@ -21,6 +21,7 @@ import type { ToolDefinitionConfig, ToolPermission } from "@prismshadow/penguin-
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
+import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useProject } from "../../state/project";
 import { Tabs } from "../../components/ui/tabs";
@@ -142,7 +143,7 @@ export function AgentSettingsPage() {
     api
       .getAgentConfig(projectId, agentId)
       .then(setData)
-      .catch((e: unknown) => setError(e instanceof ApiError ? e.message : S.common.unknownError));
+      .catch((e: unknown) => setError(apiErrorText(e)));
   }, [projectId, agentId]);
 
   useEffect(() => {
@@ -171,7 +172,7 @@ export function AgentSettingsPage() {
           void reloadAgents();
         }
       } catch (e) {
-        toastError(e instanceof ApiError ? e.message : S.common.unknownError);
+        toastError(apiErrorText(e));
       }
     },
     [projectId, agentId, reloadAgents],
@@ -289,7 +290,7 @@ function OverviewTab({
         setConflict(dataBase64); // resend with confirm: true after confirming
       } else {
         setConflict(null);
-        setImportError(e instanceof ApiError ? e.message : S.common.unknownError);
+        setImportError(apiErrorText(e));
       }
     } finally {
       setImporting(false);
