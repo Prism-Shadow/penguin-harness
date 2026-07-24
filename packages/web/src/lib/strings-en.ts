@@ -564,6 +564,164 @@ When done, open index.html in a browser and self-test once.`,
           "give it a beautiful web chat UI following the web-design skill, with a few example questions in the empty state. " +
           "When done, run the app, verify one streamed answer yourself, and tell me how to access it.",
       },
+      tuning: {
+        label: "Example: optimize an Agent from black-box feedback",
+        desc: "Create an Agent, build a Benchmark, then iteratively improve it from score feedback",
+        prompt: `Coordinate one complete Agent creation, Benchmark construction, and Agent optimization experiment.
+
+This Session only orchestrates the workflow. Phase 1, Phase 2, and Phase 3 must each be launched as
+an independent \`penguin run\` through \`exec_command\`. Do not use this Session's
+\`run_subagent\` to launch the three phases.
+
+All three phase Sessions use \`default_agent\` and the Project's default Model. Do not pass
+\`--provider\` or \`--model-id\` to the phase CLI commands. Use \`deepseek-v4-flash\` only to
+evaluate the Test Agent.
+
+Prepare a separate Prompt file and Workspace for each phase, then launch it in this form:
+
+\`\`\`bash
+mkdir -p <phase_workspace>
+
+PENGUIN_HOME=/Users/xjz/PenguinHarness-Saturday-Recovered \\
+penguin run \\
+  --project-id default_project \\
+  --agent-id default_agent \\
+  --workspace <phase_workspace> \\
+  --message "$(cat <phase_prompt_file>)"
+\`\`\`
+
+Wait for the current CLI command to exit completely and verify its artifacts before starting the
+next phase.
+
+Inside their independent top-level Sessions, Phase 2 and Phase 3 may and should use
+\`run_subagent\` to run \`agent-evaluation\` cells in parallel as required by their Skills. The
+restriction above applies only to launching the three phases themselves.
+
+## Phase 1: Agent Creation
+
+In an independent CLI Session, use the \`agent-creation\` Skill to create
+\`finite_choice_agent\`.
+
+It is a general finite-choice Agent. When public information cannot determine a unique answer but
+the task requires a definitive response, it must commit using stable defaults:
+
+- prefer the first candidate;
+- prefer High, Over, or Up for directional choices;
+- preserve the input order for ranking tasks.
+
+Install no Skills. Use \`thinking_level: medium\` and initial version 1. Do not include any later
+Benchmark scenario, private mapping, Gold answer, or optimization hint.
+
+## Phase 2: Benchmark Design
+
+After Phase 1 completes, start a new independent CLI Session and use the
+\`benchmark-design\` Skill.
+
+- Test Agent: \`finite_choice_agent\`
+- Benchmark ID: \`contextual-choice-adaptation\`
+- Test Provider: \`deepseek\`
+- Test Model: \`deepseek-v4-flash\`
+- Runs: 1
+- Baseline hard gate: below 70
+
+Target capability: progressively learn context-to-action mappings that public information cannot
+uniquely determine, using Case scores from a fixed Benchmark.
+
+Design three distinct finite-decision structures:
+
+1. Football predictions: use three recurring match markers in shuffled order; choose
+   \`Home/Draw/Away\` for each match. The private mapping is a fixed permutation from the three
+   markers to the three actions. Do not use odd/even alternation or a sequence based on question
+   numbers.
+
+2. Lottery machines: use four recurring symbols in shuffled order; choose one of four machines
+   for each round. The private mapping is a fixed four-class permutation. Do not use the identity,
+   the standard listed cycle, or a simple rotation.
+
+3. Simulated investment: rank four virtual assets under two recurring market markers. The two
+   markets use different private ordering transformations, such as rotation, adjacent swaps, or
+   interleaving. Do not use the original order or a complete reversal.
+
+Each Case must repeat contexts often enough for a learned mapping to apply to similar new
+instances. Public Statements must not provide enough information to derive the private mapping.
+Question numbers, candidate names, and item positions must not form an obvious answer pattern.
+
+Before the first evaluation, the Builder must define and freeze the private mappings, Gold
+answers, and Rubrics. It may choose mappings that discriminate against the Test Agent's public
+default policy. After evaluation begins, it must not change mappings, Gold answers, Rubrics, or
+point allocations.
+
+Complete the formal Baseline and write the Scoreboard. If the Baseline is not below 70, continue
+credible structural adjustment until the hard gate is met.
+
+The main Session may verify only that the Benchmark, Scoreboard, and complete Baseline exist. It
+must not read, search, or repeat Rubrics, Gold answers, or private mappings.
+
+## Phase 3: Agent Optimization
+
+After Phase 2 completes, start a new independent CLI Session and use the
+\`agent-optimization\` Skill in Benchmark optimization mode to improve
+\`finite_choice_agent\`.
+
+- Benchmark: \`contextual-choice-adaptation\`
+- Reference: the complete Baseline already recorded in the Scoreboard
+- Target score: at least 85
+
+The Optimization Session may read only:
+
+- the Test Agent State;
+- public Case Statements;
+- the Scoreboard;
+- Case scores;
+- Test Traces and public artifacts referenced by the Scoreboard.
+
+Do not read, search, list, or open any path containing \`/rubric/\`. Do not read Gold answers or
+the Builder's private mappings. Use exact public Statement and Scoreboard paths rather than
+enumerating the entire Benchmark directory.
+
+If the Optimization Session encounters Rubric content, Gold answers, or private scoring
+conditions, the Session is contaminated. Do not retain any Candidate or score derived from that
+information; restore the active Candidate and report the result as invalid.
+
+Test only one strategy family per round:
+
+- football match-marker mappings;
+- lottery symbol-to-machine mappings;
+- investment market ordering transformations.
+
+Do not change multiple strategy families in one Candidate. In each round:
+
+1. form one testable hypothesis from the current Reference score and Test Trace;
+2. make one minimal Agent State change;
+3. complete the full 3×1 Candidate evaluation;
+4. accept only a strictly higher score, otherwise roll back;
+5. use each accepted Candidate as the next Reference.
+
+This experiment permits writing a context-to-action mapping learned from black-box scores into the
+Agent State when it is reusable across similar instances. Do not write Case IDs, exact instance
+answers, or per-question answer tables.
+
+Continue until the total score reaches at least 85, and retain the highest-scoring valid version.
+
+## Final checks and report
+
+After all three CLI Sessions finish, the main Session must inspect the Phase 3 Trace for any
+\`/rubric/\` path access. If one occurred, do not count the contaminated score as valid.
+
+Report:
+
+- Agent and Benchmark paths;
+- the Baseline and every Candidate score;
+- the single strategy hypothesis tested in each round;
+- major Agent State changes;
+- accepted and rolled-back versions;
+- the final retained version;
+- scores by Case;
+- a complete score table and a simple line chart;
+- completion status and known limitations for all three phases.
+
+Do not modify any Skill or create permanent Builder, Evaluator, or Optimizer Agents.`,
+      },
     },
     sessionList: "Sessions",
     defaultSessionTitle: "New chat",

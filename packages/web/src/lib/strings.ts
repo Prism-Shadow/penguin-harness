@@ -551,6 +551,157 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
           "按 web-design 技能提供美观的 Web 聊天界面，空态展示几个示例问题。" +
           "完成后运行应用、自测一个问题验证流式回答，并告诉我访问方式。",
       },
+      tuning: {
+        label: "示例：黑盒反馈驱动的 Agent 自优化",
+        desc: "依次创建 Agent、构建 Benchmark，并根据分数反馈迭代优化到目标水平",
+        prompt: `请协调完成一次 Agent 创建、Benchmark 构建和 Agent 优化实验。
+
+当前 Session 只负责编排流程。Phase 1、Phase 2、Phase 3 必须分别通过
+\`exec_command\` 执行独立的 \`penguin run\`，不得使用当前 Session 的
+\`run_subagent\` 启动这三个阶段。
+
+三个阶段均使用 \`default_agent\` 和项目默认模型，不要给阶段 CLI 传入
+\`--provider\` 或 \`--model-id\`。\`deepseek-v4-flash\` 只用于评测 Test Agent。
+
+先为每个阶段准备独立 Prompt 文件和 Workspace，再按以下形式调用：
+
+\`\`\`bash
+mkdir -p <phase_workspace>
+
+PENGUIN_HOME=/Users/xjz/PenguinHarness-Saturday-Recovered \\
+penguin run \\
+  --project-id default_project \\
+  --agent-id default_agent \\
+  --workspace <phase_workspace> \\
+  --message "$(cat <phase_prompt_file>)"
+\`\`\`
+
+等待当前 CLI 完整退出并验证产物后，才能启动下一阶段。
+
+Phase 2 和 Phase 3 可以并应按照各自 Skill，在其独立顶层 Session 内使用
+\`run_subagent\` 并行执行 \`agent-evaluation\`。上述限制只针对三个阶段本身
+的启动方式。
+
+## Phase 1：Agent Creation
+
+通过独立 CLI Session 使用 \`agent-creation\` Skill 创建
+\`finite_choice_agent\`。
+
+它是通用的有限选择 Agent。当公开信息不足以确定唯一答案、但任务要求必须
+作答时，应明确下注并采用稳定的默认策略：
+
+- 候选项优先选择第一个；
+- 方向优先选择 High、Over 或 Up；
+- 排序优先保留输入顺序。
+
+不安装任何 Skill。使用 \`thinking_level: medium\`，初始 version 为 1。
+不要加入后续 Benchmark 的场景、私有映射、Gold 或优化提示。
+
+## Phase 2：Benchmark Design
+
+Phase 1 完成后，通过新的独立 CLI Session 使用 \`benchmark-design\` Skill。
+
+- Test Agent：\`finite_choice_agent\`
+- Benchmark ID：\`contextual-choice-adaptation\`
+- Test Provider：\`deepseek\`
+- Test Model：\`deepseek-v4-flash\`
+- Runs：1
+- Baseline 硬门槛：低于 70
+
+目标能力：通过固定 Benchmark 的 Case 分数，逐步学习公开信息无法唯一确定
+的上下文—动作映射。
+
+设计三个不同的有限决策结构：
+
+1. 足球预测：使用三种重复出现且顺序打乱的场次标记；每场从
+   \`Home/Draw/Away\` 中选择。私有映射是三种标记到三个动作的固定置换，
+   不得采用奇偶交替或按题号循环。
+
+2. 彩票机器：使用四种重复出现且顺序打乱的符号；每轮从四台机器中选择。
+   私有映射是一个固定的四分类置换，不得采用 identity、标准顺序循环或
+   简单轮转。
+
+3. 模拟投资：对四个虚拟资产排序，并设置两种重复出现的市场标记。
+   两种市场采用不同的私有排序变换，例如循环移动、相邻交换或交错排列；
+   不得使用原顺序或完整反转。
+
+每个 Case 应包含足够的重复上下文，使学到的映射能够应用于同类新实例；
+但公开 Statement 不提供足以推导私有映射的信息。题号、候选名称和排列位置
+不得形成明显答案规律。
+
+Builder 在首次评测前确定并冻结私有映射、Gold 和 Rubric。可以根据 Test
+Agent 已公开的默认策略设置有区分度的映射；评测开始后不得修改私有映射、
+Gold、Rubric 或分值。
+
+完成正式 Baseline 和 Scoreboard。Baseline 未低于 70 时继续进行可信的
+结构调整，满足硬门槛后结束 Phase 2。
+
+主 Session 只验证 Benchmark、Scoreboard 和完整 Baseline 已落盘，不读取、
+搜索或转述 Rubric、Gold 和私有映射。
+
+## Phase 3：Agent Optimization
+
+Phase 2 完成后，通过新的独立 CLI Session 使用 \`agent-optimization\` Skill，
+以 Benchmark optimization mode 优化 \`finite_choice_agent\`。
+
+- Benchmark：\`contextual-choice-adaptation\`
+- Reference：Scoreboard 中现有的完整 Baseline
+- 目标分数：至少 85
+
+Optimization Session 只能读取：
+
+- Test Agent State；
+- 公开 Case Statement；
+- Scoreboard；
+- 各 Case 分数；
+- Scoreboard 关联的 Test Trace 和公开产物。
+
+不得读取、搜索、列举或打开任何路径中包含 \`/rubric/\` 的文件，也不得读取
+Gold 或 Builder 的私有映射。使用明确的公开 Statement 和 Scoreboard 路径，
+不要遍历整个 Benchmark 目录。
+
+若 Optimization Session 接触到 Rubric、Gold 或私有评分条件，本次 Session
+受到污染：不得保留由此产生的 Candidate 或分数，应恢复正在修改的 Candidate
+并报告该结果无效。
+
+每轮只验证一个策略族：
+
+- 足球场次标记映射；
+- 彩票符号到机器的映射；
+- 投资市场的排序变换。
+
+不得在同一个 Candidate 中同时修改多个策略族。每轮应：
+
+1. 根据当前 Reference 的分数和 Test Trace 提出一个可检验假设；
+2. 对 Agent State 做一次最小修改；
+3. 完成完整的 3×1 Candidate 评测；
+4. 分数严格提升则接受，否则回滚；
+5. 将接受的 Candidate 作为下一轮 Reference。
+
+本实验允许把通过黑盒分数学到、能够跨同类实例复用的上下文—动作映射写入
+Agent State。不得写入 Case ID、具体实例答案或逐题答案表。
+
+持续优化至总分至少 85，并保留得分最高的有效版本。
+
+## 最终检查与汇报
+
+三个 CLI Session 完成后，主 Session 检查 Phase 3 Trace 是否出现
+\`/rubric/\` 路径访问。若出现，不得把受污染分数计入有效结果。
+
+最终汇报：
+
+- Agent 和 Benchmark 路径；
+- Baseline 与所有 Candidate 分数；
+- 每轮验证的单一策略假设；
+- Agent State 的主要改动；
+- 接受和回滚的版本；
+- 最终保留版本；
+- 各 Case 分数；
+- 完整分数表和简单折线图；
+- 三个阶段是否完整完成及已知限制。
+
+不要修改任何 Skill，不要创建永久的 Builder、Evaluator 或 Optimizer Agent。`,
+      },
     },
     sessionList: "Session",
     defaultSessionTitle: "新对话",
