@@ -244,7 +244,6 @@ export const en: Strings = {
     toolMaxOutput: "maxOutputLength",
     mcpServers: "MCP Servers (read-only)",
     defaultValue: "(default)",
-    resetToDefault: "Reset to default",
     deleteAgent: "Delete agent",
     builtinUndeletable: "Built-in agents cannot be deleted",
     deleteConfirm: (name: string): string =>

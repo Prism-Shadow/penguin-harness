@@ -58,50 +58,6 @@ export function optionRows(
     }));
 }
 
-/**
- * OptionMenu whose pick can be explicitly rewound: the runtime menus no longer offer an
- * inherit row, so without this an accidental pick could not be backed out before saving.
- * The reset link (top-right of the label line, visible only while a value is picked) sets
- * the LOCAL edit state back to "" — the save guard skips empty values, nothing is written.
- * The unset trigger shows the (default) placeholder, matching the tools-table permission menu.
- */
-function ResettableOptionMenu({
-  label,
-  value,
-  onChange,
-  options,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  options: ReadonlyArray<OptionMenuChoice<string>>;
-}) {
-  return (
-    <div className="relative">
-      <OptionMenu
-        label={label}
-        fullWidth
-        size="sm"
-        placeholder={S.agent.defaultValue}
-        value={value}
-        onChange={onChange}
-        options={options}
-      />
-      {value !== "" && (
-        <button
-          type="button"
-          title={S.agent.resetToDefault}
-          aria-label={S.agent.resetToDefault}
-          onClick={() => onChange("")}
-          className="absolute right-0 top-0 text-xs text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:hover:text-gray-300"
-        >
-          {S.agent.resetToDefault}
-        </button>
-      )}
-    </div>
-  );
-}
-
 /** Numeric input's string state → number (empty/invalid = undefined, meaning no change). */
 function parseNum(s: string): number | undefined {
   const trimmed = s.trim();
@@ -591,8 +547,11 @@ function RuntimeTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveF
               inputMode="numeric"
               className="font-mono"
             />
-            <ResettableOptionMenu
+            <OptionMenu
               label={S.agent.thinkingLevel}
+              fullWidth
+              size="sm"
+              placeholder={S.agent.defaultValue}
               value={thinkingLevel}
               onChange={setThinkingLevel}
               options={thinkingLevelOptions}
@@ -636,8 +595,11 @@ function RuntimeTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveF
               inputMode="numeric"
               className="font-mono"
             />
-            <ResettableOptionMenu
+            <OptionMenu
               label={S.agent.compactionMode}
+              fullWidth
+              size="sm"
+              placeholder={S.agent.defaultValue}
               value={mode}
               onChange={setMode}
               options={compactionModeOptions}

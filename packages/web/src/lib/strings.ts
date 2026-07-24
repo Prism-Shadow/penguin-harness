@@ -224,7 +224,6 @@ export const zh = {
     mcpServers: "MCP Server（只读）",
     defaultValue: "（缺省）",
     /** Reset link next to the runtime dropdowns: rewinds the local pick back to "not overridden" (the menus offer no inherit row). */
-    resetToDefault: "恢复缺省",
     deleteAgent: "删除 Agent",
     builtinUndeletable: "内置 Agent 不可被删除",
     deleteConfirm: (name: string): string =>
