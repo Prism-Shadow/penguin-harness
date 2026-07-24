@@ -17,7 +17,7 @@ context_engine 依赖三个接口：Human、LLM、Environment。协议转换全�
         LLMInterface │            │ EnvironmentInterface
                      ▼            ▼
         GenerativeModel        Environment
-         └─ AgentHub 网关       └─ BuiltinTool 注册表(exec_command …)
+         └─ AgentHub 网关       └─ BuiltinTool 注册表(run_command …)
 ```
 
 | 接口 | 契约 | 内置实现 |
@@ -122,7 +122,7 @@ interface EnvironmentConfig {
   workspaceDir: string;
   toolConfig: ToolConfig;                   // { customTools: ToolDefinitionConfig[]; mcpServers: MCPServerConfig[] }
   services?: EnvironmentServices;           // 注入给个别工具的运行时服务
-  vault?: Record<string, string>;           // Vault 环境变量,注入 exec_command / input_command 子进程
+  vault?: Record<string, string>;           // Vault 环境变量,注入 run_command / input_command 子进程
 }
 
 interface EnvironmentServices {

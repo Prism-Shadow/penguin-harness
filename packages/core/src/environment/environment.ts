@@ -80,7 +80,7 @@ export class Environment implements EnvironmentInterface {
   private readonly toolConfig: ToolConfig;
   /** Assembled built-in tools: tool name -> BuiltinTool. Only tools supported by the registry and present in config. */
   private readonly tools: Map<string, BuiltinTool>;
-  /** Long-running command session registry: constructed within this Environment and shared between exec_command / input_command. */
+  /** Long-running command session registry: constructed within this Environment and shared between run_command / input_command. */
   private readonly commandSessions: CommandSessionManager;
   /** Background subagent session registry: constructed within this Environment and shared between run_subagent / input_subagent. */
   private readonly subagentSessions: SubagentSessionManager;

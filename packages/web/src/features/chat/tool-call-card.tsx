@@ -28,17 +28,61 @@ import { LiveDuration } from "./live-duration";
 import { SubagentCard } from "./subagent-card";
 import type { StreamRenderContext } from "./message-stream";
 
+/** Tools that accept the optional model-written `description` argument (canonical names + the legacy exec_command). */
+const DESCRIBED_TOOLS = new Set([
+  "run_command",
+  "exec_command",
+  "input_command",
+  "run_subagent",
+  "input_subagent",
+]);
+
+/** The three file tools: previewed by their `file_path` argument. */
+const FILE_TOOLS = new Set(["read_file", "edit_file", "write_file"]);
+
 /**
- * Argument preview (same approach as the CLI's tool-render): exec_command shows `$ <cmd>`,
- * other tools show a single-line `name(args)` prefix. Arguments may be incomplete JSON
- * (mid-stream), so extraction is done leniently.
+ * Argument preview (same approach as the CLI's tool-render): run_command (legacy name
+ * exec_command) shows `$ <cmd>`, the file tools show their file path, other tools show a
+ * single-line `name(args)` prefix. Arguments may be incomplete JSON (mid-stream), so
+ * extraction is done leniently. The preview deliberately keeps the real arguments (not the
+ * model-written description): it is what the approval row shows, and the user must approve
+ * the actual command, not the model's summary of it.
  */
-function previewArguments(name: string, argsJson: string): string {
-  if (name === "exec_command") {
+export function previewArguments(name: string, argsJson: string): string {
+  if (name === "run_command" || name === "exec_command") {
     const cmd = extractStringField(argsJson, "cmd");
     if (cmd !== null) return `$ ${cmd.replace(/\s+/g, " ").trim()}`;
   }
+  if (FILE_TOOLS.has(name)) {
+    const filePath = extractStringField(argsJson, "file_path");
+    if (filePath !== null) return filePath.replace(/\s+/g, " ").trim();
+  }
   return argsJson.replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Collapsed-header subtitle: the human-readable line next to the tool name — the
+ * model-written `description` argument for the command/subagent tools (present only when
+ * tools.call_descriptions is enabled; renderers simply show it when sent), or the file
+ * path for the file tools. Null when there is nothing beyond the raw arguments.
+ */
+export function headerSubtitle(name: string, argsJson: string): string | null {
+  if (DESCRIBED_TOOLS.has(name)) {
+    const desc = extractStringField(argsJson, "description");
+    if (desc !== null) {
+      const line = desc.replace(/\s+/g, " ").trim();
+      if (line) return line;
+    }
+    return null;
+  }
+  if (FILE_TOOLS.has(name)) {
+    const filePath = extractStringField(argsJson, "file_path");
+    if (filePath !== null) {
+      const line = filePath.replace(/\s+/g, " ").trim();
+      if (line) return line;
+    }
+  }
+  return null;
 }
 
 /** Extracts the current value of a string field from a possibly-incomplete JSON object string (a simplified version, good enough for preview purposes). */
@@ -94,6 +138,7 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
   }, [hasNestedPending]);
 
   const preview = previewArguments(item.name, item.argumentsText);
+  const subtitle = headerSubtitle(item.name, item.argumentsText);
   // Executing = the call has finished streaming, output hasn't arrived yet, and it's not waiting on approval (approval wait time doesn't count toward execution).
   const executing = item.callComplete && !item.outputComplete && !pending;
   // Argument-generation segment (settled): the live execution timer accumulates on top of this as a baseline, so the displayed duration doesn't shrink back once output arrives.
@@ -135,6 +180,12 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
         <span className="shrink-0 truncate font-mono text-xs font-semibold text-gray-700 dark:text-gray-300">
           {item.name || S.chat.unknownTool}
         </span>
+        {/* Human-readable subtitle: the model-written call description (command/subagent tools) or the file path (file tools). */}
+        {subtitle && (
+          <span className="min-w-0 shrink truncate text-xs text-gray-500 dark:text-gray-400">
+            {subtitle}
+          </span>
+        )}
         <span className="shrink-0 font-mono text-xs text-gray-500 dark:text-gray-400">
           {item.durationMs !== undefined ? (
             humanizeDuration(item.durationMs)

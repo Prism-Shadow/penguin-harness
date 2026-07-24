@@ -137,7 +137,7 @@ describe("approval re-delivery (origin composite key + missing-card backfill)", 
     h.resolveLoad([]);
     await p;
     const tc = withOrigin(
-      toolCall({ name: "exec_command", arguments: '{"cmd":"rm -rf x"}', toolCallId: "t1" }),
+      toolCall({ name: "run_command", arguments: '{"cmd":"rm -rf x"}', toolCallId: "t1" }),
       "c1",
     );
     const ev: ServerEvent = { type: "approval_request", toolCall: tc, origin: ["c1"] };
@@ -149,7 +149,7 @@ describe("approval re-delivery (origin composite key + missing-card backfill)", 
     // without this mechanism, the approval button has nowhere to render).
     const card = findToolCard(h.controller.model, ["c1"], "t1");
     expect(card).not.toBeNull();
-    expect((card as ToolCallItem).name).toBe("exec_command");
+    expect((card as ToolCallItem).name).toBe("run_command");
     // Repeated re-delivery (reconnect) doesn't create a duplicate card.
     h.controller.handleServer(ev);
     const sub = h.controller.model.subagents.get("c1")!;

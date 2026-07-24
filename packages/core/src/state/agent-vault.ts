@@ -2,7 +2,7 @@
  * Agent-level environment-variable vault (`<project>/agents/<agent_id>/agent_state/.vault.toml`).
  *
  * Key-value pairs such as third-party API keys, configured per Agent: injected into that Agent
- * session's `exec_command` / `input_command` child-process environment, with key names disclosed
+ * session's `run_command` / `input_command` child-process environment, with key names disclosed
  * to the model via the system Prompt while values never enter the model context. Carries the same
  * trade-offs as a credential: stored in plaintext on disk, masked at the API layer. The file is
  * created/removed together with the Agent directory; its absence is treated as an empty table;
@@ -21,7 +21,7 @@ const VAULT_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 /**
  * Vault value length cap: since values are injected into the child-process environment, Linux
  * caps a single env entry at roughly 128KB, and an oversized value would make every
- * exec_command spawn for that Agent fail (E2BIG) — so it's rejected on the write side (core and
+ * run_command spawn for that Agent fail (E2BIG) — so it's rejected on the write side (core and
  * the API layer share this same cap).
  */
 export const VAULT_VALUE_MAX_LENGTH = 8192;

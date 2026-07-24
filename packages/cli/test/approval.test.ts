@@ -23,11 +23,11 @@ function collector(): { stream: Writable; text: () => string } {
 const readTool = (): OmniMessage<ToolCallPayload> =>
   toolCall({ name: "mock_read_only_tool", arguments: '{"path":"a"}', toolCallId: "r1" });
 const writeTool = (): OmniMessage<ToolCallPayload> =>
-  toolCall({ name: "exec_command", arguments: '{"cmd":"rm x"}', toolCallId: "w1" });
+  toolCall({ name: "run_command", arguments: '{"cmd":"rm x"}', toolCallId: "w1" });
 
 const perms: Record<string, "r" | "rw"> = {
   mock_read_only_tool: "r",
-  exec_command: "rw",
+  run_command: "rw",
 };
 const toolPermission = (name: string): "r" | "rw" | undefined => perms[name];
 

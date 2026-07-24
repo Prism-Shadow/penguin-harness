@@ -7,7 +7,7 @@
  * `timeoutMs`.
  */
 
-/** Default wait duration (milliseconds) for `exec_command` starting a command. */
+/** Default wait duration (milliseconds) for `run_command` starting a command. */
 export const DEFAULT_EXEC_YIELD_MS = 60_000;
 /** Default wait duration (milliseconds) for `input_command` when there's a write. */
 export const DEFAULT_WRITE_YIELD_MS = 250;

@@ -1,5 +1,5 @@
 /**
- * input_command — accesses a long-running command session started by `exec_command` (BuiltinTool).
+ * input_command — accesses a long-running command session started by `run_command` (BuiltinTool).
  *
  * Finds the session by `process_id`: if `chars` is non-empty, writes it to stdin first (when it is exactly `\u0003`, special-cased as sending SIGINT to the
  * process group, i.e. Ctrl-C — it must be sent alone; mixing it with other content errors out,
@@ -9,7 +9,7 @@
  * running, returns the same `process_id`; once exited, returns the trailing output and exit
  * status and cleans up the session.
  *
- * Shares the same `CommandSessionManager` injected by Environment with exec_command. An
+ * Shares the same `CommandSessionManager` injected by Environment with run_command. An
  * interruption only cancels this poll — **it does not kill the background process** (the process
  * was started independently earlier; interrupting one poll shouldn't kill it as a side effect).
  * Docs: /docs/tools § "Command sessions".

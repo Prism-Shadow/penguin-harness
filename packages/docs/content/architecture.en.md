@@ -81,7 +81,7 @@ packages/
 │   ├── engine/context-engine.ts    # ReAct loop orchestration: turn lifecycle, approvals, carry-over, reconnect, compaction
 │   ├── omnimessage/                # types.ts protocol types · builders.ts constructors · aggregate.ts partial aggregation
 │   ├── llm/                        # generative-model.ts AgentHub adapter · tool-call-ids.ts id uniqueness
-│   ├── environment/                # environment.ts execution close-out · tools/ registry, 6 builtin tools, background sessions
+│   ├── environment/                # environment.ts execution close-out · tools/ registry, 9 builtin tools, background sessions
 │   ├── state/                      # paths · default-config · project-config · model-catalog
 │   │                               # agent-state (Skill install, prompt assembly) · agent-vault · builtin-agents
 │   ├── trace/                      # writer.ts append-only JSONL · resume.ts replay-based recovery

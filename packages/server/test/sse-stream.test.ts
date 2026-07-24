@@ -64,7 +64,7 @@ function approvalFakeSession(sessionId: string): RuntimeSession {
     generateTitle: async () => ({ title: null, usage: null }),
     compactability: () => "ok" as const,
     async *run(_input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
-      const tc = toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc-sse" });
+      const tc = toolCall({ name: "run_command", arguments: "{}", toolCallId: "tc-sse" });
       yield tc;
       const decision = await opts.approve(tc);
       yield approvalDecision(decision, "tc-sse");

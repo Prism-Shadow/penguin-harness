@@ -9,7 +9,7 @@
  * `ManagedSubagentSession` (sharing the `SubagentSessionManager` injected by Environment with
  * `input_subagent`).
  *
- * The two-phase semantics mirror `exec_command`: within the `yield_time_ms` window, child-session
+ * The two-phase semantics mirror `run_command`: within the `yield_time_ms` window, child-session
  * messages are forwarded live (tagged with origin, so the frontend can see the child Agent's tool
  * calls and token usage) and the child Agent's text deltas are copied as this tool's output; if
  * the child Agent finishes within the window, its terminal state is returned and the child
@@ -21,7 +21,7 @@
  * approval; the child session's tool approval requests are forwarded to the same Human within
  * the window via the session's approval queue (tagged with origin), and queued for the next
  * access while running in the background. An interruption within the startup window kills the
- * child session per exec_command semantics; precheck errors such as exceeding the depth limit or
+ * child session per run_command semantics; precheck errors such as exceeding the depth limit or
  * a nonexistent agent are expressed by the runner as a throw, and collapsed to failed.
  * Docs: /docs/tools § "Subagents".
  */
@@ -125,7 +125,7 @@ export function createSubagentTool(
       }
 
       // An interruption within the startup window kills the child session (consistent with
-      // exec_command); once switched to background, this listener is removed in `finally`.
+      // run_command); once switched to background, this listener is removed in `finally`.
       const onAbort = (): void => session.kill();
       let registered = false;
       signal?.addEventListener("abort", onAbort, { once: true });

@@ -110,7 +110,7 @@ export function ErrorsPanel({ errors }: { errors: UsageErrors }) {
                 <Th className="w-32">{S.common.time}</Th>
                 {/* Wide enough to fully fit the longest error code: a tool
                     failure's code carries the tool name (e.g. environment ·
-                    tool_failed:exec_command), and truncating it would hide which tool failed. */}
+                    tool_failed:run_command), and truncating it would hide which tool failed. */}
                 <Th className="w-72">{S.usage.errorsColCode}</Th>
                 <Th className="w-20">{S.usage.errorsColKind}</Th>
                 <Th>{S.usage.errorsColMessage}</Th>

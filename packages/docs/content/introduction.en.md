@@ -32,7 +32,7 @@ One install gives you four layers that share a single data directory and a singl
 
 These principles run through every component; the design pages keep coming back to them:
 
-- **A minimal toolset**: the shell is the universal interface — file reads, writes and edits all go through `exec_command`. See [Tools & Approval](/tools).
+- **A minimal toolset**: dedicated file tools (`read_file` / `edit_file` / `write_file`) for precise reading and editing, with the shell (`run_command`) as the general-purpose fallback for everything else. See [Tools & Approval](/tools).
 - **Agents are editable data**: prompts, Skills and config are editable files on disk, not hardcoded constants — what you can see, an Agent can improve. See the [Configuration Reference](/configuration).
 - **Everything observable**: every request, tool call and approval decision is appended to the [Trace](/sessions-and-traces); a Session restores fully from it.
 - **Errors converge into messages**: model and tool failures never throw — they become messages the model can react to. See [The Agent Loop](/agent-loop).
