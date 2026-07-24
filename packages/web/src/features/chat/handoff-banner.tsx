@@ -1,8 +1,8 @@
 /**
  * Provenance banners for conversations opened from another conversation — each collapses a
  * machine-inserted source block (the raw text is never shown; the model still sees it):
- * - `HandoffBanner` (`<handoff_from>`, @ delegation): "Handed off from <agent>'s chat";
- * - `ModelSwitchBanner` (`<model_switch_from>`, the /model command): "switched model —
+ * - `HandoffBanner` (`[handoff_from]`, @ delegation): "Handed off from <agent>'s chat";
+ * - `ModelSwitchBanner` (`[model_switch_from]`, the /model command): "switched model —
  *   continued from the earlier conversation".
  * When there's a source Session, the whole line is clickable and jumps back to it (the
  * source Session's title goes into the title hover tooltip, taking no space in the body).

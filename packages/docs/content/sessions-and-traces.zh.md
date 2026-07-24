@@ -77,7 +77,7 @@ Trace 是恢复的唯一事实来源，没有独立的会话数据库需要与�
 
 恢复的前提是 Workspace 与模型仍然存在。恢复保证的是结构合法性：只回放已提交的轮次，`tool_call` 与 `tool_call_output` 配对完整；未完成的模型输出（thinking、文本）允许丢失。异常退出留下的截断末行会被容忍并忽略。实现见 `packages/core/src/trace/resume.ts`。
 
-特殊情形：若最新 Trace 文件以一次完成的压缩收尾，则该上下文已整体关闭——恢复从空上下文开始；summarize 模式下会重建 `<context_summary>` 摘要，前置到恢复后第一轮输入中。
+特殊情形：若最新 Trace 文件以一次完成的压缩收尾，则该上下文已整体关闭——恢复从空上下文开始；summarize 模式下会重建 `[context_summary]` 摘要，前置到恢复后第一轮输入中（旧 Trace 中早期的尖括号 `<summary>` 形式仍可识别）。
 
 ## 模型切换（/model）
 

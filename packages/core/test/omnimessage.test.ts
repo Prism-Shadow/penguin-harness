@@ -11,8 +11,10 @@ import {
   partialText,
   partialToolCall,
   partialToolCallOutput,
+  splitUserSteering,
   toolCall,
   toolCallOutput,
+  userSteeringBlock,
   userText,
 } from "../src/omnimessage/index.js";
 import type {
@@ -194,5 +196,31 @@ describe("PartialAggregator", () => {
     const flushed = agg.flush();
     expect(flushed).toHaveLength(1);
     expect((flushed[0]!.payload as TextPayload).text).toBe("abcdef");
+  });
+});
+
+describe("user steering blocks (userSteeringBlock / splitUserSteering)", () => {
+  it("round-trips: appended blocks split back out in order, output text preserved", () => {
+    const output =
+      "tool result" + userSteeringBlock("first note") + userSteeringBlock("second\nmultiline");
+    expect(splitUserSteering(output)).toEqual([
+      { kind: "output", text: "tool result" },
+      { kind: "steering", text: "first note" },
+      { kind: "steering", text: "second\nmultiline" },
+    ]);
+  });
+
+  it("plain output yields a single output segment; empty output yields none", () => {
+    expect(splitUserSteering("just output")).toEqual([{ kind: "output", text: "just output" }]);
+    expect(splitUserSteering("")).toEqual([]);
+  });
+
+  it("output resuming after a block (defensive) keeps segment order", () => {
+    const mixed = "a" + userSteeringBlock("note") + "\ntrailing";
+    expect(splitUserSteering(mixed)).toEqual([
+      { kind: "output", text: "a" },
+      { kind: "steering", text: "note" },
+      { kind: "output", text: "\ntrailing" },
+    ]);
   });
 });

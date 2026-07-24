@@ -40,7 +40,7 @@
  *
  * No third-party color library is used; only minimal ANSI escapes.
  */
-import { isEventMessage, isModelMessage } from "@prismshadow/penguin-core";
+import { isEventMessage, isModelMessage, splitUserSteering } from "@prismshadow/penguin-core";
 import type {
   AbortPayload,
   ApprovalDecision,
@@ -56,6 +56,7 @@ import type {
   RequestEndPayload,
   SessionMetaPayload,
   TokenUsagePayload,
+  ToolCallOutputPayload,
   ToolCallPayload,
   ToolDefinition,
 } from "@prismshadow/penguin-core";
@@ -67,6 +68,7 @@ const DIM = "\x1b[2m";
 const GREEN = "\x1b[32m";
 const RED = "\x1b[31m";
 const CYAN = "\x1b[36m";
+const MAGENTA = "\x1b[35m";
 const RESET = "\x1b[0m";
 
 export function dim(text: string): string {
@@ -206,18 +208,26 @@ export function renderHistory(
       }
       case "tool_call_output": {
         // Output lines carry the pairing tag plus the tool name (the bare tag when the
-        // transcript has no matching call); file-tool diff lines are colored like git's.
+        // transcript has no matching call); file-tool diff lines are colored like git's. A
+        // [user_steering] block appended to the output (a mid-run user message) renders as
+        // distinct user-speech lines instead of raw markers.
         const tag = `[${callTag(p.tool_call_id ?? "")}]`;
         const name = toolNames.get(nameKey(msg, p.tool_call_id ?? ""));
         const label = name ? `${tag} ${name}` : tag;
         const colorDiff = name !== undefined && DIFF_OUTPUT_TOOLS.has(name);
-        for (const line of (p.output ?? "").split("\n")) {
-          const color = colorDiff ? diffLineColor(line[0]) : null;
-          out.write(
-            color
-              ? `${DIM}${label} -> ${RESET}${color}${line}${RESET}\n`
-              : `${DIM}${label} -> ${RESET}${line}\n`,
-          );
+        for (const seg of splitUserSteering(p.output ?? "")) {
+          for (const line of seg.text.split("\n")) {
+            if (seg.kind === "steering") {
+              out.write(`${DIM}${tag} ${RESET}${MAGENTA}${t.steerLinePrefix()}${line}${RESET}\n`);
+              continue;
+            }
+            const color = colorDiff ? diffLineColor(line[0]) : null;
+            out.write(
+              color
+                ? `${DIM}${label} -> ${RESET}${color}${line}${RESET}\n`
+                : `${DIM}${label} -> ${RESET}${line}\n`,
+            );
+          }
         }
         // Attached images aren't rendered by the terminal; print one placeholder line per image.
         for (const _ of p.images ?? []) {
@@ -585,6 +595,13 @@ export class StreamRenderer {
           this.toolNames.set(p.tool_call_id, p.name);
           return;
         }
+        case "tool_call_output":
+          // Exception to the rule above: the engine appends mid-run [user_steering] blocks
+          // only to the complete message — the partial stream never carries them — so the
+          // steering lines are rendered here (exactly once; the streamed output itself is
+          // not repeated).
+          this.renderSteering(payload as ToolCallOutputPayload);
+          return;
         default:
           return;
       }
@@ -628,7 +645,7 @@ export class StreamRenderer {
         this.lastLineKey = null;
       } else if (payload.type === "request_begin") {
         // The previous request ended in timeout/malformed -> this request is a retry
-        // carrying <turn_retried>: printed when the retry **actually starts** (when
+        // carrying [turn_retried]: printed when the retry **actually starts** (when
         // retries are exhausted, there's no retry after the last failure, only an abort
         // explaining why).
         if (this.pendingRetry) {
@@ -881,6 +898,27 @@ export class StreamRenderer {
     const tag = `[${callTag(toolCallId)}]`;
     const name = this.toolNames.get(toolCallId);
     return name ? `${tag} ${name}` : tag;
+  }
+
+  /**
+   * Renders the `[user_steering]` blocks appended to a completed tool output (mid-run user
+   * messages riding on this tool result): each block's lines are written with the tool's
+   * pairing tag and a colored user prefix, visually distinct from the dim `>>` output gutter.
+   * The tool's own output is not repeated (it already streamed).
+   */
+  private renderSteering(p: ToolCallOutputPayload): void {
+    const steering = splitUserSteering(p.output).filter((seg) => seg.kind === "steering");
+    if (steering.length === 0) return;
+    this.finishLine();
+    const tag = callTag(p.tool_call_id);
+    for (const seg of steering) {
+      for (const line of seg.text.split("\n")) {
+        this.out.write(
+          `${DIM}[${tag}] ${RESET}${MAGENTA}${this.t.steerLinePrefix()}${line}${RESET}\n`,
+        );
+      }
+    }
+    this.lastLineKey = null;
   }
 
   /**

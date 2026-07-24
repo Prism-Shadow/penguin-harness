@@ -88,7 +88,7 @@ function saveAppliedRouteKey(field: RouteStateField, key: string): void {
 /**
  * Example tasks on the draft screen, in display order (game card first, LoL music player,
  * then the RAG build). Copy lives in S.chat.exampleTasks[id]; skills are pinned via a
- * `<use_skills>` block — only those the selected Agent actually has installed are included,
+ * `[use_skills]` block — only those the selected Agent actually has installed are included,
  * so the block never references a skill the agent can't read.
  */
 const EXAMPLE_TASKS: { id: "game" | "lol" | "rag"; skills: string[] }[] = [
@@ -258,7 +258,7 @@ export function DraftView({
   // mount render would trigger ChatInput's pruning effect and wrongly clear the
   // quick-invoke preselection.
   const [agentSkills, setAgentSkills] = useState<SkillMetadataItem[]>([]);
-  /** Whether the skills fetch for the current Agent has settled — the example task waits for it so its `<use_skills>` pinning doesn't silently depend on network timing. */
+  /** Whether the skills fetch for the current Agent has settled — the example task waits for it so its `[use_skills]` pinning doesn't silently depend on network timing. */
   const [skillsLoaded, setSkillsLoaded] = useState(false);
   useEffect(() => {
     setAgentSkills((prev) => (prev.length > 0 ? [] : prev));
@@ -442,7 +442,7 @@ export function DraftView({
 
   // @ handoff: opens a new chat for the @-mentioned agent (approval mode carries over from the
   // draft's current value; model/Workspace use the creation defaults), first input =
-  // <handoff_from> source block + the text and images with the @ mention stripped.
+  // [handoff_from] source block + the text and images with the @ mention stripped.
   const selectedAgent = agents.find((a) => a.agentId === agentId) ?? null;
   const onHandoff = useCallback(
     async (target: AgentSummary, input: TaskInputPart[]): Promise<boolean> => {
