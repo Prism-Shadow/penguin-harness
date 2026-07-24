@@ -55,7 +55,7 @@ See `packages/core/src/trace/writer.ts` for the implementation.
 The head of a Trace (illustrative; one OmniMessage envelope per line):
 
 ```jsonl
-{"timestamp":"2026-07-18T03:10:22.531Z","type":"session_meta","payload":{"session_id":"session-2026-07-18-11-10-22-3f8a1c2d","provider":"deepseek","model_id":"deepseek-v4-pro","model_context_window":1000000,"system_prompt":"…","tools":[…],"thinking_level":"medium","agent_state":"/home/u/.penguin/data/default_project/agents/default_agent/agent_state","workspace":"/home/u/work"}}
+{"timestamp":"2026-07-18T03:10:22.531Z","type":"session_meta","payload":{"session_id":"session-2026-07-18-11-10-22-3f8a1c2d","provider":"deepseek","model_id":"deepseek-v4-pro","model_context_window":1000000,"system_prompt":"…","tools":[…],"agent_state":"/home/u/.penguin/data/default_project/agents/default_agent/agent_state","workspace":"/home/u/work"}}
 {"timestamp":"…","type":"event_msg","payload":{"type":"request_begin"}}
 {"timestamp":"…","type":"model_msg","payload":{"type":"text","role":"user","text":"Create hello.txt"}}
 {"timestamp":"…","type":"model_msg","payload":{"type":"tool_call","role":"assistant","name":"exec_command","arguments":"{\"cmd\":\"printf hi > hello.txt\"}","tool_call_id":"call_0"}}
@@ -78,6 +78,10 @@ The Trace is the single source of truth for recovery — there is no separate se
 Recovery requires that the Workspace and the model still exist. What recovery guarantees is structural legality: only committed turns are replayed, with `tool_call` / `tool_call_output` pairing intact; incomplete model output (thinking, text) is allowed to be lost. A truncated last line left by an abnormal process exit is tolerated and ignored. See `packages/core/src/trace/resume.ts`.
 
 Special case: if the latest Trace file ends with a completed compaction, that context is closed as a whole — resume starts from an empty context; in summarize mode the `<context_summary>` is reconstructed and prepended to the first input after resume.
+
+## Model-switch fork
+
+`forkSession` derives a new Session under the same Agent that **carries the current conversation** and continues on another model (the Web's `/model` command): it reads the source Session's latest Trace file and sanitizes the records **unconditionally** — thinking / inline_thinking messages are dropped, every `fidelity` payload is stripped (thinking fidelity is bound to the source model and gets rejected when replayed elsewhere), `token_usage` is dropped (usage restarts at zero), and `subagent` pointers are dropped (child sessions belong to the source) — then writes them as the new Session's fresh Trace file (opening with a new session_meta that records `forked_from`), and replays the same records through the recovery path into the model context, so the Trace on disk equals the injected history exactly. The Workspace carries over from the source (a real continuation); the source session is untouched.
 
 ## Field fidelity
 

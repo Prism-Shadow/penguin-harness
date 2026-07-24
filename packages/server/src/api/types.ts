@@ -544,6 +544,25 @@ export interface SessionPatchRequest {
   title?: string;
 }
 
+/**
+ * POST /api/sessions/:sessionId/fork — model switch: creates a NEW Session for the same
+ * Agent that carries the source Session's conversation (sanitized real history) and
+ * continues on the given model. Both halves of the model reference are required.
+ */
+export interface SessionForkRequest {
+  /** Upstream id of the NEW session's model; required, paired with provider. */
+  modelId: string;
+  /** Provider group for `modelId`; required (a model reference is always the complete pair). */
+  provider: string;
+}
+
+export interface SessionForkResponse {
+  /** The new Session (same shape as session creation). */
+  session: SessionInfo;
+  /** The source session id (also recorded as `forked_from` in the new session_meta). */
+  forkedFrom: string;
+}
+
 /** Message history: the full messages and events from concatenating all of this Session's Trace files in order (excludes partial_*). */
 export interface MessagesResponse {
   messages: OmniMessage[];
@@ -562,6 +581,12 @@ export type TaskInputPart =
 
 export interface TaskCreateRequest {
   input: TaskInputPart[];
+  /**
+   * Thinking level for this Task's LLM requests (a per-turn parameter; one of
+   * `none | low | medium | high | xhigh`, anything else is a 400). Omitted = follow the
+   * session's default (the Agent config's `model.thinking_level`).
+   */
+  thinkingLevel?: ThinkingLevelName;
 }
 
 export interface TaskCreateResponse {

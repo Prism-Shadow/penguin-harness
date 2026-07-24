@@ -56,6 +56,7 @@ for await (const output of session.run([userText("整理 data/ 下的 CSV 文件
 interface RunOptions {
   signal?: AbortSignal;    // 中断信号(如 Ctrl-C)
   approve?: ApproveFn;     // 逐工具审批;未注入时默认全部拒绝(保守策略)
+  thinkingLevel?: ThinkingLevelName;   // 本次 run 的思考等级(逐轮参数,覆盖到重连重试;压缩请求用默认值)
 }
 ```
 

@@ -33,7 +33,7 @@ import type {
 } from "./engine/context-engine.js";
 
 export interface SessionConfig {
-  /** Session metadata (session_id / provider / model_id / model_context_window / system_prompt / tools / thinking_level / agent_state / workspace). */
+  /** Session metadata — per-session invariants only (session_id / provider / model_id / model_context_window / system_prompt / tools / agent_state / workspace / source / forked_from). */
   meta: SessionMetaPayload;
   llm: LLMInterface;
   environment: EnvironmentInterface;

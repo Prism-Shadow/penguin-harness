@@ -48,7 +48,12 @@ export type { SessionConfig } from "./session.js";
 export { sanitizeTitle, stripConversationMarkers } from "./internal/session-title.js";
 export type { SessionTitleResult } from "./internal/session-title.js";
 export { Agent, createAgent } from "./agent.js";
-export type { CreateAgentOptions, CreateSessionOptions, ResumeSessionOptions } from "./agent.js";
+export type {
+  CreateAgentOptions,
+  CreateSessionOptions,
+  ForkSessionOptions,
+  ResumeSessionOptions,
+} from "./agent.js";
 
 /** SDK version number. */
 export const VERSION = "0.1.1";

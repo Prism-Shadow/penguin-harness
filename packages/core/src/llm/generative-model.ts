@@ -863,6 +863,13 @@ export function isRetryableError(error: unknown): boolean {
 export class GenerativeModel implements LLMInterface {
   private readonly client: AutoLLMClient;
   private readonly uniConfig: UniConfig;
+  /**
+   * Construction-time default thinking level. Kept **out of the frozen uniConfig**: the
+   * effective level is resolved per request (`params.thinkingLevel ?? default`), so a turn can
+   * override it without rebuilding the model object — the thinking level is a per-turn
+   * parameter, not a Session invariant.
+   */
+  private readonly defaultThinkingLevel: ThinkingLevelName | undefined;
   /** Streaming idle timeout (milliseconds); <= 0 disables it. A timeout is treated as needing reconnection. */
   private readonly requestTimeoutMs: number;
   /**
@@ -889,8 +896,21 @@ export class GenerativeModel implements LLMInterface {
     });
 
     this.uniConfig = buildUniConfig(config);
+    this.defaultThinkingLevel = config.thinkingLevel;
     this.requestTimeoutMs = config.requestTimeoutMs ?? 120000;
     this.toolCallIds = config.toolCallIds ?? new ToolCallIdAllocator();
+  }
+
+  /**
+   * The UniConfig for one request: the shared frozen config plus this request's effective
+   * thinking level (per-request override, else the construction-time default; neither → the
+   * key stays off the wire, preserving the provider default).
+   */
+  private requestConfig(override: ThinkingLevelName | undefined): UniConfig {
+    const thinking = mapThinkingLevel(override ?? this.defaultThinkingLevel);
+    return thinking === undefined
+      ? this.uniConfig
+      : { ...this.uniConfig, thinking_level: thinking };
   }
 
   /**
@@ -967,7 +987,9 @@ export class GenerativeModel implements LLMInterface {
     // parse error) / aborted (user) / failed (other). null means it ended normally.
     let outcome: LLMOutcome | null = null;
     try {
-      const it = this.openStream(uniMessage, ac.signal)[Symbol.asyncIterator]();
+      const it = this.openStream(uniMessage, ac.signal, this.requestConfig(params.thinkingLevel))[
+        Symbol.asyncIterator
+      ]();
       for (;;) {
         // The interruption check must happen **before pulling from upstream**: the user may
         // interrupt while this generator is suspended at the `yield` below (the typical case —
@@ -1087,12 +1109,17 @@ export class GenerativeModel implements LLMInterface {
    * Opens the underlying AgentHub stream (a testing seam): defaults to
    * `streamingResponseStateful`; unit tests can subclass and override this method, feeding in a
    * controlled UniEvent stream to verify the outcome classification for timeout/network
-   * drop/interruption/error (without a real API).
+   * drop/interruption/error (without a real API). `config` is this request's resolved
+   * UniConfig (the shared frozen config plus the per-request thinking level).
    */
-  protected openStream(uniMessage: UniMessage, signal: AbortSignal): AsyncIterable<UniEvent> {
+  protected openStream(
+    uniMessage: UniMessage,
+    signal: AbortSignal,
+    config: UniConfig = this.uniConfig,
+  ): AsyncIterable<UniEvent> {
     return this.client.streamingResponseStateful({
       message: uniMessage,
-      config: this.uniConfig,
+      config,
       signal,
     });
   }
@@ -1133,6 +1160,10 @@ export function toolDefinitionsToSchemas(tools: ToolDefinition[]): ToolSchema[] 
  * protocol equivalent. `tool_choice` is likewise never set — AgentHub only puts it on the wire
  * when UniConfig defines it, and leaving it off preserves the protocol default ("auto" when
  * tools are present).
+ *
+ * `thinkingLevel` is deliberately **not** baked in here: the effective level is resolved per
+ * request (`GenerativeModelParameters.thinkingLevel ?? the construction default`, see
+ * `GenerativeModel.requestConfig`), so a turn can override it on a live session.
  */
 export function buildUniConfig(config: GenerativeModelConfig): UniConfig {
   const uniConfig: UniConfig = {};
@@ -1147,10 +1178,6 @@ export function buildUniConfig(config: GenerativeModelConfig): UniConfig {
   // negative max_tokens with a 400 (issue #55's sibling).
   if (config.maxTokens !== undefined && config.maxTokens > 0) {
     uniConfig.max_tokens = config.maxTokens;
-  }
-  const thinking = mapThinkingLevel(config.thinkingLevel);
-  if (thinking !== undefined) {
-    uniConfig.thinking_level = thinking;
   }
   return uniConfig;
 }

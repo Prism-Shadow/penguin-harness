@@ -162,7 +162,8 @@ function SessionMetaBody({ p }: { p: Record<string, unknown> }) {
     ["source", String(p.source ?? "")],
     ["model_id", String(p.model_id ?? "")],
     ["context_window", String(p.model_context_window ?? "")],
-    ["thinking_level", String(p.thinking_level ?? "")],
+    // Fork provenance (model switch): the source session id; non-forked sessions show the empty dash.
+    ["forked_from", String(p.forked_from ?? "")],
     ["agent_state", String(p.agent_state ?? "")],
     ["workspace", String(p.workspace ?? "")],
   ];

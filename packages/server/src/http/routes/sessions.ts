@@ -11,7 +11,7 @@ import path from "node:path";
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { imageUrlMessage, scratchpadDir, userText } from "@prismshadow/penguin-core";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { OmniMessage, ThinkingLevelName } from "@prismshadow/penguin-core";
 import type {
   ApprovalMode,
   FilesStatResponse,
@@ -19,6 +19,7 @@ import type {
   ServerEvent,
   SessionCategory,
   SessionCreateResponse,
+  SessionForkResponse,
   SessionResponse,
   SessionsResponse,
   TaskCreateResponse,
@@ -39,6 +40,7 @@ import {
   positiveIntParam,
   readJson,
   requireEnum,
+  requireString,
   requireValidId,
 } from "../validate.js";
 import type { AppDeps } from "../../app.js";
@@ -57,6 +59,9 @@ const APPROVAL_MODES: readonly ApprovalMode[] = [
   "read-only",
   "always-ask",
 ];
+
+/** The five valid per-turn thinking level names (TaskCreateRequest.thinkingLevel). */
+const THINKING_LEVELS: readonly ThinkingLevelName[] = ["none", "low", "medium", "high", "xhigh"];
 
 /** Accepted `category` query values of the list endpoint (SessionCategory, spelled out for validation). */
 const SESSION_CATEGORIES: readonly SessionCategory[] = [
@@ -357,10 +362,33 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
 
   app.post("/:sessionId/tasks", async (c) => {
     const row = resolveSession(c);
-    const input = parseTaskInput(await readJson(c));
+    const body = await readJson(c);
+    const input = parseTaskInput(body);
+    // Per-turn thinking level (optional): validated against the five names; omitted follows
+    // the session's default.
+    const thinkingLevel = optionalEnum(body, "thinkingLevel", THINKING_LEVELS);
     // 202: the Task executes on the server, decoupled from the SSE connection; sessionId is the current actual id (the new id after self-heal).
-    const { sessionId } = await deps.manager.startTask(row.sessionId, input);
+    const { sessionId } = await deps.manager.startTask(row.sessionId, input, {
+      ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
+    });
     return c.json({ sessionId } satisfies TaskCreateResponse, 202);
+  });
+
+  // Model switch: fork this Session onto another model. The new Session (same Agent, same
+  // Workspace) carries the source conversation as sanitized real history; the source Session
+  // stays untouched. 409 while the source is running/compacting; both halves of the model
+  // reference are required (400 otherwise; an unknown pair is a 400 from the service).
+  app.post("/:sessionId/fork", async (c) => {
+    const row = resolveSession(c);
+    const body = await readJson(c);
+    const modelId = requireString(body, "modelId", { minLen: 1, label: "modelId" });
+    const provider = requireString(body, "provider", { minLen: 1, label: "provider" });
+    const { session, forkedFrom } = await deps.sessionService.forkSession({
+      row,
+      modelId,
+      provider,
+    });
+    return c.json({ session, forkedFrom } satisfies SessionForkResponse, 201);
   });
 
   app.post("/:sessionId/approvals/:toolCallId", async (c) => {

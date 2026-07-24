@@ -580,7 +580,6 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
         model_context_window: 1000,
         system_prompt: "sys",
         tools: [],
-        thinking_level: "medium",
         agent_state: "/root/p/worker/agent_state",
         workspace: "/tmp/w",
       });
@@ -665,6 +664,66 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
       ),
     ).toBe(false);
     expect(recorded.filter((m) => (m.payload as { text?: string }).text === "go")).toHaveLength(1);
+  });
+
+  it("forwards RunOptions.thinkingLevel to every LLM request of the run (reconnects included); compaction keeps the default", async () => {
+    const levels: (string | undefined)[] = [];
+    let calls = 0;
+    const llm: LLMInterface = {
+      async *streamGenerate(params) {
+        calls += 1;
+        levels.push(params.thinkingLevel);
+        if (calls === 1) {
+          // First attempt drops: the reconnect retry must carry the same per-turn level.
+          yield assistantText("half", "timeout");
+          return { status: "timeout" };
+        }
+        if (calls === 2) {
+          // Retry completes with usage above the compaction threshold → a Task-boundary
+          // summarize compaction issues one more request (the engine's, not this run's turn):
+          // it must NOT carry the per-turn override.
+          yield assistantText("recovered");
+          yield tokenUsage(emptyTokenCounts(), {
+            cache_read: 0,
+            cache_write: 0,
+            output: 1,
+            total: 100,
+          });
+          return { status: "completed" };
+        }
+        yield assistantText("<summary>s</summary>");
+        yield tokenUsage(emptyTokenCounts(), {
+          cache_read: 0,
+          cache_write: 0,
+          output: 1,
+          total: 5,
+        });
+        return { status: "completed" };
+      },
+    };
+    const environment = new Environment({
+      workspaceDir: workspace,
+      toolConfig: execCommandToolConfig(),
+    });
+    const engine = new ContextEngine({
+      llm,
+      environment,
+      maxReconnects: 1,
+      reconnectBackoffMs: 1,
+      createLLM: () => llm,
+      compaction: { maxContextLength: 10, maxSessionTurns: -1, mode: "summarize", prompt: "SUM" },
+    });
+
+    const all: OmniMessage[] = [];
+    for await (const msg of engine.run([userText("go")], {
+      approve: allowAll,
+      thinkingLevel: "high",
+    })) {
+      all.push(msg);
+    }
+    expect(calls).toBe(3);
+    // Turn attempt + reconnect retry carry the run's level; the compaction request does not.
+    expect(levels).toEqual(["high", "high", undefined]);
   });
 });
 
