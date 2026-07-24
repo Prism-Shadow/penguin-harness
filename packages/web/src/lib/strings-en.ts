@@ -459,6 +459,9 @@ export const en: Strings = {
     installedToast: (skill: string, agent: string): string => `Installed ${skill} to ${agent}`,
     updateOutdated: (n: number): string => `Update available: update ${n} agent install(s)`,
     updateAction: "Update",
+    updateConfirmTitle: (name: string): string => `Update ${name}`,
+    updateConfirmWarning:
+      "Updating reinstalls the library copy over each agent's installed files — any local edits to the installed skill are lost. Export a backup first if you need them.",
     updatedToast: (skill: string, n: number): string =>
       `Updated ${skill} to the latest version (${n} agent(s))`,
     uninstalledToast: (skill: string, agent: string): string =>
