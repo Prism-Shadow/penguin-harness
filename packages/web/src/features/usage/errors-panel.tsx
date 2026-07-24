@@ -9,6 +9,7 @@
  * exceptions) is a prominent rose; expected (HttpError, business 4xx) recedes into gray.
  * The outer frame is provided by the caller's ChartCard (full width, below the four business charts).
  */
+import { useState } from "react";
 import type { UsageErrors } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
 import { formatDateTime } from "../../lib/format";
@@ -60,13 +61,23 @@ function Th({ children, className = "" }: { children: React.ReactNode; className
 
 /**
  * Error panel: stats + a recent-errors table (the server already takes the top N, newest first).
- * The message column shows the **full** error text (wrapping, not truncated) — for a failed
- * request "what exactly went wrong" is the whole point, and the upstream detail after the code
- * (e.g. the provider's 402 body) must be readable, not hidden in a hover title. Cells align to
- * the top so a multi-line message keeps the row tidy; the table still scrolls past max height.
+ * The message column shows **one line per error by default** (kept compact — an error storm can
+ * fill the table); clicking a message expands it in place to the full text (wrapping, newlines
+ * preserved — the upstream detail after the code, e.g. a provider's 402 body, is what matters),
+ * and clicking again collapses it. The full text is also in the hover title. Cells align to the
+ * top so an expanded multi-line message keeps the row tidy; the table scrolls past max height.
  */
 export function ErrorsPanel({ errors }: { errors: UsageErrors }) {
   const { total, unexpected, topCode, recent } = errors;
+  // Message rows expanded to their full text (index into `recent`); one line each by default.
+  const [expanded, setExpanded] = useState<ReadonlySet<number>>(new Set());
+  const toggle = (i: number) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i);
+      else next.add(i);
+      return next;
+    });
 
   return (
     <div>
@@ -125,8 +136,17 @@ export function ErrorsPanel({ errors }: { errors: UsageErrors }) {
                       <Badge tone={key === "unexpected" ? "red" : "gray"}>{kindLabel(key)}</Badge>
                     </td>
                     <td className="py-1.5 align-top text-gray-500 dark:text-gray-400">
-                      {/* Full message: wrap and preserve newlines so the whole upstream error is visible. */}
-                      <span className="block whitespace-pre-wrap break-words">{e.message}</span>
+                      {/* One line by default; click to expand to the full message (wrapping), click again to collapse. */}
+                      <button
+                        type="button"
+                        title={e.message}
+                        onClick={() => toggle(i)}
+                        className={`block w-full cursor-pointer text-left transition-colors hover:text-gray-700 dark:hover:text-gray-300 ${
+                          expanded.has(i) ? "whitespace-pre-wrap break-words" : "truncate"
+                        }`}
+                      >
+                        {e.message}
+                      </button>
                     </td>
                   </tr>
                 );
