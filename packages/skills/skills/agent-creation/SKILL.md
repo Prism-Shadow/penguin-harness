@@ -3,8 +3,8 @@ name: agent-creation
 description: Turn a user requirement into a concrete agent — write the target agent's AGENTS.md and install the skills it needs.
 short_description: Turn a requirement into a working agent.
 short_description_zh: 把需求变成可用的 Agent。
-version: 12
-updated: 2026-07-24T04:48:33Z
+version: 13
+updated: 2026-07-24T07:47:44Z
 ---
 
 # Agent Creation
@@ -68,18 +68,30 @@ install evaluation or optimization Skills merely because another Session will la
 
 ## Set name and description
 
-In the target's `agent_state/system_config.yaml`, set the top-level `name:` and `description:` fields so the agent is recognizable in lists. Edit only these two fields. A brand-new Agent starts at top-level `version: 1`.
+For a new Agent, set the top-level `name:` and `description:` fields in
+`agent_state/system_config.yaml` so the Agent is recognizable in lists, and explicitly set the
+top-level `version` to `1`.
+
+When modifying an existing Agent, do not copy the default configuration over it, reset its
+version, or rewrite its name or description without a relevant user request. Change only the
+Agent State files required by the current request.
 
 ## Creating a brand-new agent
 
-Prefer configuring an agent the user already created. If you must create one from scratch: pick a short id (letters, digits, `_`, `-`), copy the default agent's `system_config.yaml` as the base, and create the layout described above:
+Before creating a new Agent, confirm that `TARGET` does not exist. If it already exists, stop and
+tell the user; never silently overwrite, reinitialize, or reuse an existing Agent under the same
+id.
+
+After confirming that the target is absent, pick a short id using letters, digits, `_`, or `-`,
+copy the default Agent's `system_config.yaml` as the base, and create the layout described above:
 
 ```bash
 mkdir -p "$TARGET/agent_state/skills" "$TARGET/agent_state/memory" "$TARGET/agent_state/tools" "$TARGET/scratchpad"
 cp "$PROJECT_DIR/agents/default_agent/agent_state/system_config.yaml" "$TARGET/agent_state/"
 ```
 
-A new agent starts with no skills — install only what it needs. Then write its AGENTS.md, name and description as above.
+A new Agent starts with no Skills. Set its top-level version to `1`, set its name and description,
+write its AGENTS.md, and install only the Skills it needs.
 
 Stop after the requested Agent has been created and verified. Do not design a Benchmark or optimize
 the Agent as part of this Skill.
