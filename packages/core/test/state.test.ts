@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   AGENT_ID_PLACEHOLDER,
+  AGENTS_DIR_PLACEHOLDER,
   AGENTS_MD_PLACEHOLDER,
   VAULT_KEYS_PLACEHOLDER,
   SKILL_METADATA_PLACEHOLDER,
@@ -310,9 +311,14 @@ describe("assembleSystemPrompt", () => {
     expect(prompt).not.toContain(AGENTS_MD_PLACEHOLDER);
     expect(prompt).not.toContain(SESSION_ID_PLACEHOLDER);
     expect(prompt).not.toContain(CWD_PLACEHOLDER);
+    expect(prompt).not.toContain(AGENTS_DIR_PLACEHOLDER);
     expect(prompt).not.toContain(PLATFORM_PLACEHOLDER);
     expect(prompt).not.toContain(OS_VERSION_PLACEHOLDER);
     expect(prompt).not.toContain(DATE_PLACEHOLDER);
+    // The default prompt references only the agents directory — never the project dir.
+    expect(prompt).not.toContain(PROJECT_DIR_PLACEHOLDER);
+    expect(prompt).not.toContain("<project_dir>");
+    expect(prompt).not.toContain("Project Dir:");
   });
 
   it("default prompt carries the port and API-key guardrails", async () => {
@@ -343,7 +349,7 @@ describe("assembleSystemPrompt", () => {
           `sid=${SESSION_ID_PLACEHOLDER}`,
           `cwd=${CWD_PLACEHOLDER}`,
           `aid=${AGENT_ID_PLACEHOLDER}`,
-          `pdir=${PROJECT_DIR_PLACEHOLDER}`,
+          `adir=${AGENTS_DIR_PLACEHOLDER}`,
           `platform=${PLATFORM_PLACEHOLDER}`,
           `os=${OS_VERSION_PLACEHOLDER}`,
           `date=${DATE_PLACEHOLDER}`,
@@ -372,7 +378,7 @@ describe("assembleSystemPrompt", () => {
         "sid=session-1",
         "cwd=/tmp/ws",
         "aid=agent-x",
-        "pdir=/tmp/proj",
+        "adir=/tmp/proj/agents",
         "platform=darwin",
         "os=Darwin 25.0.0",
         "date=2026-06-30",
@@ -381,6 +387,35 @@ describe("assembleSystemPrompt", () => {
         "after",
       ].join("\n"),
     );
+  });
+
+  it("still substitutes the legacy {{PROJECT_DIR}} placeholder in old custom prompts", () => {
+    // Existing agents may carry a system_config.yaml written before the {{AGENTS_DIR}} switch;
+    // loaded configs are used verbatim (no migration), so the legacy placeholder must keep
+    // resolving to the Project directory while {{AGENTS_DIR}} resolves to its agents/ child.
+    const state = {
+      root: tmpRoot,
+      projectId: DEFAULT_PROJECT_ID,
+      agentId: DEFAULT_AGENT_ID,
+      stateDir: agentStateDir(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID),
+      systemConfig: {
+        system_prompt: `pdir=${PROJECT_DIR_PLACEHOLDER}\nadir=${AGENTS_DIR_PLACEHOLDER}`,
+      },
+      agentsMd: "",
+    };
+
+    const prompt = assembleSystemPrompt(state, {
+      sessionId: "session-1",
+      cwd: "/tmp/ws",
+      agentId: "agent-x",
+      projectDir: "/tmp/proj",
+      provider: "deepseek",
+      modelId: "deepseek-v4-pro",
+      platform: "darwin",
+      osVersion: "Darwin 25.0.0",
+      date: "2026-06-30",
+    });
+    expect(prompt).toBe("pdir=/tmp/proj\nadir=/tmp/proj/agents");
   });
 
   it("replaces the placeholder with an empty string when AGENTS.md is blank", () => {
@@ -498,7 +533,7 @@ describe("assembleSystemPrompt", () => {
     expect(prompt).toContain("Session ID: session-test-1");
     expect(prompt).toContain("CWD: /tmp/penguin-ws");
     expect(prompt).toContain("Agent ID: agent-x");
-    expect(prompt).toContain("Project Dir: /tmp/proj");
+    expect(prompt).toContain("Agents Dir: /tmp/proj/agents");
     expect(prompt).toContain("Provider: openai");
     expect(prompt).toContain("Model ID: gpt-5.5");
     expect(prompt).toContain("Platform:");
@@ -506,8 +541,8 @@ describe("assembleSystemPrompt", () => {
     expect(prompt).toContain("Date: 2026-06-30");
     expect(prompt.indexOf("Platform:")).toBeLessThan(prompt.indexOf("OS Version:"));
     expect(prompt.indexOf("OS Version:")).toBeLessThan(prompt.indexOf("Date:"));
-    expect(prompt.indexOf("Date:")).toBeLessThan(prompt.indexOf("Project Dir:"));
-    expect(prompt.indexOf("Project Dir:")).toBeLessThan(prompt.indexOf("Agent ID:"));
+    expect(prompt.indexOf("Date:")).toBeLessThan(prompt.indexOf("Agents Dir:"));
+    expect(prompt.indexOf("Agents Dir:")).toBeLessThan(prompt.indexOf("Agent ID:"));
     expect(prompt.indexOf("Agent ID:")).toBeLessThan(prompt.indexOf("CWD:"));
     expect(prompt.indexOf("CWD:")).toBeLessThan(prompt.indexOf("Provider:"));
     expect(prompt.indexOf("Provider:")).toBeLessThan(prompt.indexOf("Model ID:"));

@@ -4,7 +4,7 @@
  * - sessionId looks like `session-YYYY-MM-DD-HH-mm-ss-<8-digit hex>` (local time, zero-padded fields).
  * - createSession no longer creates any `.penguin` symlink inside the Workspace, nor touches existing
  *   Workspace files; the model reaches Agent State and other absolute paths directly by combining the
- *   Project Dir / Agent ID placeholders from the system prompt.
+ *   Agents Dir / Agent ID placeholders from the system prompt.
  */
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -12,7 +12,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createAgent } from "../src/index.js";
 import { formatSessionId } from "../src/internal/session-support.js";
-import { projectDir } from "../src/state/paths.js";
+import { agentsDir } from "../src/state/paths.js";
 import { stubProviderKeys } from "./provider-keys.js";
 
 let tmpRoot: string;
@@ -92,14 +92,14 @@ describe("Agent.createSession session id + no .penguin symlink", () => {
     expect(process.listenerCount("exit") - before).toBe(0);
   });
 
-  it("injects Project Dir and Agent ID into the assembled system prompt", async () => {
+  it("injects Agents Dir and Agent ID into the assembled system prompt", async () => {
     const agent = await createAgent();
     const ws = path.join(tmpRoot, "ws");
     await fs.mkdir(ws, { recursive: true });
     const session = await agent.createSession({ workspaceDir: ws });
     const prompt = (session.metaMessage.payload as { system_prompt: string }).system_prompt;
     expect(prompt).toContain(`Agent ID: ${agent.state.agentId}`);
-    expect(prompt).toContain(`Project Dir: ${projectDir(tmpRoot, agent.state.projectId)}`);
+    expect(prompt).toContain(`Agents Dir: ${agentsDir(tmpRoot, agent.state.projectId)}`);
     expect(prompt).not.toContain(".penguin");
   });
 });

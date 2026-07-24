@@ -146,12 +146,15 @@ compaction:
 | `{{PLATFORM}}` | Runtime platform |
 | `{{OS_VERSION}}` | Operating system version |
 | `{{DATE}}` | Current date |
-| `{{PROJECT_DIR}}` | Project directory |
+| `{{AGENTS_DIR}}` | Agents directory (the `agents` folder under the Project directory) |
+| `{{PROJECT_DIR}}` | Project directory (legacy) |
 | `{{AGENT_ID}}` | Agent id |
 | `{{CWD}}` | Workspace path |
 | `{{PROVIDER}}` | Model provider group |
 | `{{MODEL_ID}}` | Upstream model id |
 | `{{SESSION_ID}}` | Session id |
+
+`{{AGENTS_DIR}}` is the standard directory placeholder: it resolves to the Project's `agents/` container, where every Agent (its Agent State, scratchpad, etc.) lives. `{{PROJECT_DIR}}` is legacy — the default prompt no longer uses it, but it is still substituted so existing custom prompts keep working.
 
 `agent_state/AGENTS.md` is the developer-editable instruction file, injected via `{{AGENTS_MD}}` and empty by default — it is also the file an optimizer edits most (see [Self-Improvement](/self-improvement)).
 
