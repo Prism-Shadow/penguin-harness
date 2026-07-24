@@ -9,7 +9,7 @@
  * those is single-use, so per-path groups would be one-session noise — they are all
  * merged into ONE trailing "temp workspaces" group instead.
  */
-import type { SessionInfo } from "@prismshadow/penguin-server/api";
+import type { SessionCategory, SessionInfo } from "@prismshadow/penguin-server/api";
 
 /** Group key of the merged auto-temp group ("\0" can never appear in a filesystem path, so it never collides with a real Workspace). */
 export const TEMP_WORKSPACE_GROUP_KEY = "\0temp-workspaces";
@@ -60,50 +60,50 @@ export function splitPage<T>(fetched: T[], pageSize: number): { items: T[]; hasM
 }
 
 /**
- * The distinct Agents contributing to a group that still have unfetched server pages —
- * a workspace-mode group can span Agents, so "load more" for the group fans out to every
+ * The distinct Agents contributing to a group that still have unfetched server pages
+ * (per the caller's predicate — page state is per Agent **and** category) — a
+ * workspace-mode group can span Agents, so "load more" for the group fans out to every
  * contributing Agent with more (agent-mode groups are single-Agent and get 0..1 entries).
  */
 export function groupAgentsWithMore(
   sessions: SessionInfo[],
-  hasMoreByAgent: ReadonlyMap<string, boolean>,
+  hasMore: (agentId: string) => boolean,
 ): string[] {
   const out: string[] = [];
   for (const s of sessions) {
-    if (hasMoreByAgent.get(s.agentId) === true && !out.includes(s.agentId)) out.push(s.agentId);
+    if (hasMore(s.agentId) && !out.includes(s.agentId)) out.push(s.agentId);
   }
   return out;
 }
 
-/** Four-way split of one sidebar group's Sessions (rendered top to bottom in this order). */
-export interface SessionPartition {
-  /** User-created, not archived: rendered directly in the group body. */
-  active: SessionInfo[];
-  /** Subagent-created (`source === "subagent"`), not archived: the collapsed "Subagents" folder. */
-  subagent: SessionInfo[];
-  /** Schedule-created (`source === "schedule"`), not archived: the collapsed "Scheduled" folder. */
-  schedule: SessionInfo[];
-  /** Archived: the collapsed "Archived" folder. Archived wins — an archived Session with a `source` goes here only. */
-  archived: SessionInfo[];
+/**
+ * The sidebar category a Session renders under — the same precedence the server's
+ * `category` list filter applies, so filtered fetching and client rendering can never
+ * disagree: archived wins regardless of `source` (archiving is an explicit user action,
+ * so the Archived folder must show everything the user put there); otherwise a Session
+ * goes to its origin's bucket, and no (or an unrecognized future) source falls through
+ * to the active user rows (visible) rather than vanishing into the wrong folder.
+ */
+export function sessionCategory(s: SessionInfo): SessionCategory {
+  if (s.archived) return "archived";
+  return s.source === "subagent" || s.source === "schedule" ? s.source : "active";
 }
 
+/** The collapsed-folder categories of a group, in render order (below the active user rows). */
+export const FOLDER_CATEGORIES = ["subagent", "schedule", "archived"] as const;
+export type FolderCategory = (typeof FOLDER_CATEGORIES)[number];
+
 /**
- * Partitions a group's Sessions for rendering. Classification precedence: archived wins
- * regardless of `source` (archiving is an explicit user action, so the Archived folder
- * must show everything the user put there); otherwise a Session goes to its origin's
- * bucket, and an unrecognized future source falls through to the active user rows
- * (visible) rather than vanishing into the wrong folder. The sidebar renders the
- * parts top to bottom in the interface's field order — user rows, Subagents folder,
- * Scheduled folder, Archived folder. Input order is preserved within each part.
+ * Four-way split of one sidebar group's Sessions by sessionCategory (rendered top to
+ * bottom in this order): active user rows in the group body, then the collapsed
+ * Subagents / Scheduled / Archived folders.
  */
+export type SessionPartition = Record<SessionCategory, SessionInfo[]>;
+
+/** Partitions a group's Sessions for rendering. Input order is preserved within each part. */
 export function partitionSessions(sessions: SessionInfo[]): SessionPartition {
   const parts: SessionPartition = { active: [], subagent: [], schedule: [], archived: [] };
-  for (const s of sessions) {
-    if (s.archived) parts.archived.push(s);
-    else if (s.source === "subagent") parts.subagent.push(s);
-    else if (s.source === "schedule") parts.schedule.push(s);
-    else parts.active.push(s);
-  }
+  for (const s of sessions) parts[sessionCategory(s)].push(s);
   return parts;
 }
 

@@ -18,6 +18,7 @@ import {
   isTempWorkspace,
   partitionSessions,
   pinnedFirst,
+  sessionCategory,
   splitPage,
   workspaceGroupKey,
   workspaceLabel,
@@ -148,6 +149,19 @@ describe("groupSessionsByWorkspace", () => {
   });
 });
 
+describe("sessionCategory (the bucket a Session renders under = the server's list filter)", () => {
+  it("archived wins over source; a source names its bucket; no source is active", () => {
+    const at = "2026-07-01T10:00:00.000Z";
+    expect(sessionCategory(session("/srv/a", at))).toBe("active");
+    expect(sessionCategory(session("/srv/a", at, { source: "subagent" }))).toBe("subagent");
+    expect(sessionCategory(session("/srv/a", at, { source: "schedule" }))).toBe("schedule");
+    expect(sessionCategory(session("/srv/a", at, { archived: true }))).toBe("archived");
+    expect(sessionCategory(session("/srv/a", at, { source: "subagent", archived: true }))).toBe(
+      "archived",
+    );
+  });
+});
+
 describe("partitionSessions (per-group user / subagent / scheduled / archived split)", () => {
   it("splits user rows and one bucket per origin, preserving order within each part", () => {
     const user1 = session("/srv/alpha", "2026-07-06T10:00:00.000Z");
@@ -203,19 +217,16 @@ describe("splitPage (limit+1 fetch trick)", () => {
 });
 
 describe("groupAgentsWithMore (workspace groups span Agents)", () => {
-  it("returns each contributing Agent with unfetched pages once; others are skipped", () => {
+  it("returns each contributing Agent the predicate accepts once; others are skipped", () => {
     const rows = [
       session("/srv/alpha", "2026-07-03T10:00:00.000Z", { agentId: "agent_a" }),
       session("/srv/alpha", "2026-07-02T10:00:00.000Z", { agentId: "agent_b" }),
       session("/srv/alpha", "2026-07-01T10:00:00.000Z", { agentId: "agent_a" }),
     ];
-    const hasMore = new Map([
-      ["agent_a", true],
-      ["agent_b", false],
-      ["agent_c", true], // not contributing to this group
-    ]);
+    // agent_c also has more but contributes no row to this group — never returned.
+    const hasMore = (id: string) => id === "agent_a" || id === "agent_c";
     expect(groupAgentsWithMore(rows, hasMore)).toEqual(["agent_a"]);
-    expect(groupAgentsWithMore(rows, new Map())).toEqual([]);
+    expect(groupAgentsWithMore(rows, () => false)).toEqual([]);
     expect(groupAgentsWithMore([], hasMore)).toEqual([]);
   });
 });

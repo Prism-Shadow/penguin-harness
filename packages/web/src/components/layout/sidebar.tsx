@@ -18,7 +18,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { NavLink, useMatch, useNavigate } from "react-router";
-import type { SessionInfo, SessionSource } from "@prismshadow/penguin-server/api";
+import type { SessionCategoryCounts, SessionInfo } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -30,14 +30,16 @@ import type { Accent, Currency, FontScale, ThemeMode } from "../../state/theme";
 import { agentDisplayName, projectDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import {
+  FOLDER_CATEGORIES,
   SIDEBAR_PAGE_SIZE,
   groupAgentsWithMore,
   groupSessionsByWorkspace,
   partitionSessions,
   pinnedFirst,
+  sessionCategory,
   workspaceGroupKey,
 } from "../../lib/session-grouping";
-import type { SessionPartition } from "../../lib/session-grouping";
+import type { FolderCategory, SessionPartition } from "../../lib/session-grouping";
 import { Dropdown } from "../ui/dropdown";
 import { AgentAvatar } from "../ui/agent-avatar";
 import { Chevron } from "../ui/chevron";
@@ -145,11 +147,11 @@ function saveGroupSet(storageKey: string | null, next: ReadonlySet<string>): voi
 }
 
 /**
- * Open-state key of a per-origin folder (subagent / scheduled) inside a group: each folder
- * has its own state. "\0" never appears in Agent ids or Workspace paths, so the composite
- * never collides across groups or with plain group keys.
+ * Open-state key of a collapsed folder (subagent / scheduled / archived) inside a group:
+ * each folder has its own state. "\0" never appears in Agent ids or Workspace paths, so
+ * the composite never collides across groups or with plain group keys.
  */
-const sourceFolderKey = (groupKey: string, source: SessionSource) => `${source}\0${groupKey}`;
+const folderKey = (groupKey: string, category: FolderCategory) => `${category}\0${groupKey}`;
 
 /** Session status dot: running pulses green, compacting shows an amber dot; idle shows nothing. */
 function StatusDot({ session }: { session: SessionInfo }) {
@@ -193,8 +195,17 @@ export function Sidebar({
     currentAgent,
     setCurrentAgentId,
   } = useProject();
-  const { sessions, byAgent, hasMoreByAgent, loadMoreFor, loading, remove, replace } =
-    useSessions();
+  const {
+    sessions,
+    byAgent,
+    countsByAgent,
+    isLoadedFor,
+    hasMoreFor,
+    loadMoreFor,
+    loading,
+    remove,
+    replace,
+  } = useSessions();
   const chatMatch = useMatch("/chat/:sessionId");
   const activeSessionId = chatMatch?.params.sessionId ?? null;
 
@@ -221,10 +232,8 @@ export function Sidebar({
     setCollapsedGroups(loadGroupSet(collapseStoreKey));
     setPinnedGroups(loadGroupSet(pinStoreKey));
   }, [collapseStoreKey, pinStoreKey]);
-  /** Expanded "archived" groups (collapsed by default), keyed like collapsedGroups. */
-  const [openArchived, setOpenArchived] = useState<ReadonlySet<string>>(new Set());
-  /** Expanded per-origin folders (subagent / scheduled Sessions; collapsed by default), keyed by sourceFolderKey — each folder has its own open state. */
-  const [openSourceFolders, setOpenSourceFolders] = useState<ReadonlySet<string>>(new Set());
+  /** Expanded folders (subagent / scheduled / archived; collapsed by default), keyed by folderKey — each folder has its own open state. */
+  const [openFolders, setOpenFolders] = useState<ReadonlySet<string>>(new Set());
   /** Per-group display cap for active rows (keyed by group key; absent = SIDEBAR_PAGE_SIZE). "More" raises it a page at a time. */
   const [groupCaps, setGroupCaps] = useState<ReadonlyMap<string, number>>(new Map());
   /** Session pending delete confirmation (null = none). */
@@ -278,22 +287,26 @@ export function Sidebar({
     saveGroupSet(pinStoreKey, next);
   };
 
-  const toggleArchivedGroup = (key: string) =>
-    setOpenArchived((prev) => {
+  /**
+   * Open/close a group's folder. A folder's content is loaded on demand: the first
+   * expand fetches its category's first page for every contributing Agent that hasn't
+   * been asked yet (already-loaded rows stay put — re-expanding never refetches; the
+   * folder's own "More" row does the paging from there).
+   */
+  const toggleFolder = (groupKey: string, category: FolderCategory, agentIds: string[]) => {
+    const key = folderKey(groupKey, category);
+    const opening = !openFolders.has(key);
+    setOpenFolders((prev) => {
       const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
+      if (opening) next.add(key);
+      else next.delete(key);
       return next;
     });
-
-  const toggleSourceFolder = (groupKey: string, source: SessionSource) =>
-    setOpenSourceFolders((prev) => {
-      const key = sourceFolderKey(groupKey, source);
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
+    if (opening) {
+      const unloaded = agentIds.filter((id) => !isLoadedFor(id, category));
+      if (unloaded.length > 0) void loadMoreFor(unloaded, category);
+    }
+  };
 
   // The open chat is an automation-created Session: expand exactly its origin's folder in its
   // group, so the active row is never hidden inside a collapsed folder (mirrors the archived
@@ -307,20 +320,25 @@ export function Sidebar({
   useEffect(() => {
     if (!activeSessionId) return;
     const s = sessions.find((x) => x.sessionId === activeSessionId);
-    if (!s || !s.source || s.archived) return;
+    if (!s) return;
+    const category = sessionCategory(s);
+    if (category === "active" || category === "archived") return;
     const guard = `${groupMode}\0${activeSessionId}`;
     if (lastAutoExpandedRef.current === guard) return;
     lastAutoExpandedRef.current = guard;
     const groupKey = groupMode === "agent" ? s.agentId : workspaceGroupKey(s.workspace);
-    const key = sourceFolderKey(groupKey, s.source);
-    setOpenSourceFolders((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
-  }, [activeSessionId, sessions, groupMode]);
+    const key = folderKey(groupKey, category);
+    setOpenFolders((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
+    // Same on-demand load a click-expand does, for this Session's own Agent (siblings of
+    // other contributing Agents stay behind the folder's "More").
+    if (!isLoadedFor(s.agentId, category)) void loadMoreFor([s.agentId], category);
+  }, [activeSessionId, sessions, groupMode, isLoadedFor, loadMoreFor]);
 
   /** Archive / unarchive: persists immediately and updates in place (fails silently; the next list refresh self-corrects). */
   const toggleArchive = async (s: SessionInfo) => {
-    // Archiving the currently open chat: expand the "archived" group so it doesn't silently vanish from the sidebar with no way back.
+    // Archiving the currently open chat: expand the "archived" folder so it doesn't silently vanish from the sidebar with no way back.
     if (!s.archived && s.sessionId === activeSessionId) {
-      setOpenArchived((prev) => new Set(prev).add(sessionGroupKey(s)));
+      setOpenFolders((prev) => new Set(prev).add(folderKey(sessionGroupKey(s), "archived")));
     }
     try {
       const res = await api.patchSession(s.sessionId, { archived: !s.archived });
@@ -441,65 +459,92 @@ export function Sidebar({
   const folderClass =
     "flex w-full items-center gap-1 rounded px-1.5 py-1 text-left text-[11px] font-medium text-gray-400 transition-colors duration-150 hover:bg-gray-200/50 dark:text-gray-500 dark:hover:bg-gray-800/50";
 
-  /** Collapsed-by-default per-origin folder (subagent / scheduled), parallel to the archived folder. */
-  const renderSourceFolder = (
+  /**
+   * Collapsed-by-default lazy folder (subagent / scheduled / archived): nothing is
+   * fetched until the first expand, and once open the folder pages independently with
+   * its own "More" row. Visible while it holds loaded rows or any contributing Agent
+   * still has (or may have) unfetched rows of the category. The label count is the
+   * exact per-Agent server total in agent mode (`countsOf`); a workspace group can't
+   * know its share before loading, so it counts loaded rows only (none yet = no count).
+   */
+  const renderFolder = (
     groupKey: string,
-    source: SessionSource,
-    rows: SessionInfo[],
+    category: FolderCategory,
+    parts: SessionPartition,
     withAgentHint: boolean,
+    agentIds: string[],
+    countsOf: SessionCategoryCounts | undefined,
   ) => {
-    if (rows.length === 0) return null;
-    const open = openSourceFolders.has(sourceFolderKey(groupKey, source));
+    const rows = parts[category];
+    const moreAgents = agentIds.filter((id) => hasMoreFor(id, category));
+    if (rows.length === 0 && moreAgents.length === 0) return null;
+    const open = openFolders.has(folderKey(groupKey, category));
+    const count = countsOf ? countsOf[category] : rows.length > 0 ? rows.length : null;
     return (
-      <div className="mt-1">
+      <div key={category} className="mt-1">
         <button
           type="button"
-          onClick={() => toggleSourceFolder(groupKey, source)}
+          onClick={() => toggleFolder(groupKey, category, agentIds)}
           className={folderClass}
         >
           <Chevron open={open} size={12} />
-          {S.chat.sourceGroups[source](rows.length)}
+          {S.chat.folderGroups[category](count)}
         </button>
         {open && renderRows(rows, withAgentHint)}
+        {/* The folder's own paging, independent of the active list's "More". In workspace
+            mode a fetched page can land rows in other groups' folders too, so one click may
+            grow this folder by fewer than a full page — the row stays until exhausted. */}
+        {open && moreAgents.length > 0 && (
+          <button
+            type="button"
+            aria-label={S.chat.loadMore}
+            onClick={() => void loadMoreFor(moreAgents, category)}
+            className={folderClass}
+          >
+            <span className="w-3" aria-hidden />
+            {S.chat.loadMore}
+          </button>
+        )}
       </div>
     );
   };
 
-  /** "More": reveal one more page of already-loaded active rows AND fetch the next server page for every contributing Agent that still has one. */
+  /** Active-list "More": reveal one more page of already-loaded active rows AND fetch the next active server page for every contributing Agent that still has one. */
   const showMore = (groupKey: string, moreAgents: string[]) => {
     setGroupCaps((prev) => {
       const next = new Map(prev);
       next.set(groupKey, (prev.get(groupKey) ?? SIDEBAR_PAGE_SIZE) + SIDEBAR_PAGE_SIZE);
       return next;
     });
-    if (moreAgents.length > 0) void loadMoreFor(moreAgents);
+    if (moreAgents.length > 0) void loadMoreFor(moreAgents, "active");
   };
 
   /**
-   * Expanded group body shared by both modes: user rows (display-capped; "More" reveals and
-   * loads further pages) + the collapsed-by-default subagent / scheduled / archived subgroups
-   * (keyed by the group key; rendered uncapped over loaded data — they are collapsed by
-   * default and only ever hold what the pages brought in).
+   * Expanded group body shared by both modes: active user rows (display-capped; "More"
+   * reveals and loads further **active-only** pages — the folders below never feed it) +
+   * the collapsed-by-default subagent / scheduled / archived folders, each loading on
+   * first expand and paging on its own.
    */
   const renderGroupBody = (
     groupKey: string,
     parts: SessionPartition,
     withAgentHint: boolean,
-    /** Agents contributing to this group that still have unfetched server pages. */
-    moreAgents: string[],
+    /** Agents contributing to this group (agent mode: exactly the group's Agent). */
+    agentIds: string[],
+    /** The group Agent's exact category totals (agent mode only — folder labels). */
+    countsOf?: SessionCategoryCounts,
   ) => {
-    const archivedOpen = openArchived.has(groupKey);
     const cap = groupCaps.get(groupKey) ?? SIDEBAR_PAGE_SIZE;
     const shownActive = parts.active.slice(0, cap);
-    // "More" while hidden loaded rows exist OR any contributing Agent has server-side pages
-    // left; a fetched page can also land rows in the folders below, so one click may grow
-    // the visible list by fewer than a full page — the row simply stays until exhausted.
-    const hasMore = parts.active.length > cap || moreAgents.length > 0;
-    const empty =
-      parts.active.length === 0 &&
-      parts.subagent.length === 0 &&
-      parts.schedule.length === 0 &&
-      parts.archived.length === 0;
+    // Only the outer active rows drive the group's "More": hidden loaded rows exist, or an
+    // Agent contributing to them still has active server pages. The folders don't count —
+    // each carries its own paging.
+    const activeMoreAgents = groupAgentsWithMore(parts.active, (id) => hasMoreFor(id, "active"));
+    const hasMore = parts.active.length > cap || activeMoreAgents.length > 0;
+    const folders = FOLDER_CATEGORIES.map((category) =>
+      renderFolder(groupKey, category, parts, withAgentHint, agentIds, countsOf),
+    );
+    const empty = parts.active.length === 0 && folders.every((f) => f === null);
     return (
       <>
         {empty ? (
@@ -515,7 +560,7 @@ export function Sidebar({
           <button
             type="button"
             aria-label={S.chat.loadMore}
-            onClick={() => showMore(groupKey, moreAgents)}
+            onClick={() => showMore(groupKey, activeMoreAgents)}
             className={`${folderClass} mt-0.5`}
           >
             <span className="w-3" aria-hidden />
@@ -523,25 +568,10 @@ export function Sidebar({
           </button>
         )}
 
-        {/* Per-origin folders (collapsed by default, above Archived): subagent first — spawned
-            from the conversations at hand — then scheduled background runs. */}
-        {renderSourceFolder(groupKey, "subagent", parts.subagent, withAgentHint)}
-        {renderSourceFolder(groupKey, "schedule", parts.schedule, withAgentHint)}
-
-        {/* Archived group (collapsed by default; archived wins over the per-origin folders) */}
-        {parts.archived.length > 0 && (
-          <div className="mt-1">
-            <button
-              type="button"
-              onClick={() => toggleArchivedGroup(groupKey)}
-              className={folderClass}
-            >
-              <Chevron open={archivedOpen} size={12} />
-              {S.chat.archivedGroup(parts.archived.length)}
-            </button>
-            {archivedOpen && renderRows(parts.archived, withAgentHint)}
-          </div>
-        )}
+        {/* Folders (collapsed by default): subagent first — spawned from the conversations
+            at hand — then scheduled background runs, then archived (archived wins over the
+            origin folders). */}
+        {folders}
       </>
     );
   };
@@ -791,11 +821,8 @@ export function Sidebar({
                         agent.agentId,
                         parts,
                         false,
-                        // Only fetch more when this group has active rows: a group holding only collapsed
-                        // (subagent / scheduled / archived) Sessions must not show "More" over an empty active list.
-                        parts.active.length > 0 && hasMoreByAgent.get(agent.agentId) === true
-                          ? [agent.agentId]
-                          : [],
+                        [agent.agentId],
+                        countsByAgent.get(agent.agentId),
                       )}
                 </div>
               );
@@ -834,9 +861,10 @@ export function Sidebar({
                     <span className="min-w-0 truncate text-xs font-semibold text-gray-500 dark:text-gray-400">
                       {group.temp ? S.chat.tempWorkspaces : group.label}
                     </span>
-                    {/* Header count = non-archived Sessions (user + automation-created; unchanged semantics) */}
+                    {/* Header count = the outer active rows only (loaded user Sessions): the folders
+                        are lazy-loaded, so any count spanning them would misreport until opened. */}
                     <span className="shrink-0 text-[11px] text-gray-400 dark:text-gray-500">
-                      {parts.active.length + parts.subagent.length + parts.schedule.length}
+                      {parts.active.length}
                     </span>
                     <Chevron open={!collapsed} size={12} className="text-gray-400" />
                     <span className="min-w-0 flex-1" />
@@ -854,17 +882,14 @@ export function Sidebar({
                   </button>
                 </div>
 
-                {/* A workspace group can span Agents: "More" fans out to every contributing Agent that still
-                    has pages. Only the active (user-created) rows count — the subagent / scheduled / archived
-                    folders are collapsed by default, so their unfetched pages must not drive the active list's "More". */}
+                {/* A workspace group can span Agents: the group body fans folder loads and "More"
+                    out to every contributing Agent (per category — the active list and each
+                    folder page independently). */}
                 {collapsed
                   ? null
-                  : renderGroupBody(
-                      group.key,
-                      parts,
-                      true,
-                      groupAgentsWithMore(parts.active, hasMoreByAgent),
-                    )}
+                  : renderGroupBody(group.key, parts, true, [
+                      ...new Set(group.sessions.map((s) => s.agentId)),
+                    ])}
               </div>
             );
           })

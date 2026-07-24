@@ -475,8 +475,20 @@ export interface SessionInfo {
   archived: boolean;
 }
 
+/**
+ * Session list category, the sidebar's four-way split applied server-side: archived wins
+ * regardless of origin (archiving is an explicit user action), then the origin's bucket,
+ * and a Session with no (or an unknown) source is `active` — user-created rows.
+ */
+export type SessionCategory = "active" | SessionSource | "archived";
+
+/** Per-category totals across an Agent's whole Session list (returned when the list is requested with counts). */
+export type SessionCategoryCounts = Record<SessionCategory, number>;
+
 export interface SessionsResponse {
   sessions: SessionInfo[];
+  /** Present when the request asked for counts (`counts=1`): totals per category over the full list, not just the returned page. */
+  counts?: SessionCategoryCounts;
 }
 
 /** Server directory browsing (advanced new-Workspace picker): starts from the home directory by default, can navigate up to the root. */

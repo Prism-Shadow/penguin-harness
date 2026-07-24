@@ -13,15 +13,22 @@
  * added to session-manager's active table (state idle).
  */
 import path from "node:path";
-import { readdir } from "node:fs/promises";
+import { open, readdir } from "node:fs/promises";
 import {
   createAgent,
   isSessionMeta,
+  parseTraceLines,
   readTraceTolerant,
   tracesDir,
 } from "@prismshadow/penguin-core";
 import type { SessionMetaMessage } from "@prismshadow/penguin-core";
-import type { ApprovalMode, SessionInfo, SessionSource } from "../api/types.js";
+import type {
+  ApprovalMode,
+  SessionCategory,
+  SessionCategoryCounts,
+  SessionInfo,
+  SessionSource,
+} from "../api/types.js";
 import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
 import type { SessionRow, SessionsRepo } from "../db/repos/sessions.js";
@@ -32,6 +39,38 @@ import type { ProjectConfigService } from "./project-config-service.js";
 
 const TRACE_FILE_RE = /^(.+)_(\d{3})\.jsonl$/;
 const SESSION_ID_TS_RE = /^session-(\d{4})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-[0-9a-f]{8}$/;
+
+/** Head window for session_meta reads: generous for a long system prompt, far below a whole multi-MB shard. */
+const TRACE_HEAD_BYTES = 256 * 1024;
+
+/**
+ * Parse a Trace file's head window only. session_meta is the first line core writes to
+ * every shard, so a bounded read finds it without pulling the whole file into memory —
+ * category filtering / counts may need every Session's source in a single request.
+ * The window is cut at its last newline (the tail fragment is incomplete); a first line
+ * larger than the whole window falls back to the full tolerant read.
+ */
+async function readTraceHead(filePath: string) {
+  const fh = await open(filePath, "r");
+  let text: string;
+  let truncated: boolean;
+  try {
+    const { buffer, bytesRead } = await fh.read(
+      Buffer.alloc(TRACE_HEAD_BYTES),
+      0,
+      TRACE_HEAD_BYTES,
+      0,
+    );
+    text = buffer.subarray(0, bytesRead).toString("utf8");
+    truncated = bytesRead === TRACE_HEAD_BYTES;
+  } finally {
+    await fh.close();
+  }
+  if (!truncated) return parseTraceLines(text);
+  const nl = text.lastIndexOf("\n");
+  if (nl === -1) return readTraceTolerant(filePath);
+  return parseTraceLines(text.slice(0, nl + 1));
+}
 
 /** Derives creation time from the local timestamp embedded in session_id; returns null if it doesn't match. */
 export function sessionIdCreatedAt(sessionId: string): string | null {
@@ -105,17 +144,40 @@ export class SessionService {
   }
 
   /**
+   * The list category of a row: archived wins (an explicit user action), then the
+   * origin's bucket, and no/unknown source is `active` — the same precedence the
+   * sidebar's partition applies to loaded rows, so server filtering and client
+   * rendering can never disagree.
+   */
+  private async categoryOf(row: SessionRow, hasTrace: boolean): Promise<SessionCategory> {
+    if ((row.archivedAt ?? null) !== null) return "archived";
+    return (await this.sourceOf(row, hasTrace)) ?? "active";
+  }
+
+  /**
    * List: DB ∪ Trace directory discovery, sorted by createdAt descending. Optional
    * `paging` returns just that slice (the sidebar pages with limit+1 to detect "has
    * more"); slicing happens before toInfo, so per-request source derivation (lazy
    * Trace-head reads) stays bounded by the page size. Discovery/adoption still scans
    * the whole directory — the union and global ordering need every id.
+   *
+   * `category` filters to one sidebar bucket **before** paging, so offset/limit page
+   * within the category. Filtering needs each walked row's category (a possible
+   * Trace-head read per row, cached in the sources registry); without `withCounts`
+   * the walk stops as soon as the requested page is complete. `withCounts` classifies
+   * every row and returns per-category totals over the whole list — the sidebar asks
+   * for them on its first page to label the collapsed folders without loading them.
    */
   async listSessions(
     projectId: string,
     agentId: string,
-    paging?: { offset: number; limit: number },
-  ): Promise<SessionInfo[]> {
+    opts: {
+      paging?: { offset: number; limit: number };
+      category?: SessionCategory;
+      withCounts?: boolean;
+    } = {},
+  ): Promise<{ sessions: SessionInfo[]; counts?: SessionCategoryCounts }> {
+    const { paging, category, withCounts } = opts;
     const traceIds = await this.discoverTraceSessionIds(projectId, agentId);
     const rows = new Map(
       this.deps.sessions.listByAgent(projectId, agentId).map((r) => [r.sessionId, r]),
@@ -131,8 +193,29 @@ export class SessionService {
     const sorted = [...rows.values()].sort(
       (a, b) => b.createdAt.localeCompare(a.createdAt) || b.sessionId.localeCompare(a.sessionId),
     );
-    const page = paging ? sorted.slice(paging.offset, paging.offset + paging.limit) : sorted;
-    return Promise.all(page.map((row) => this.toInfo(row, traceIds.has(row.sessionId))));
+    const toPage = (page: SessionRow[]) =>
+      Promise.all(page.map((row) => this.toInfo(row, traceIds.has(row.sessionId))));
+
+    // No classification asked for: slice straight away (the pre-category behavior).
+    if (category === undefined && !withCounts) {
+      return {
+        sessions: await toPage(
+          paging ? sorted.slice(paging.offset, paging.offset + paging.limit) : sorted,
+        ),
+      };
+    }
+
+    const want = paging ? paging.offset + paging.limit : Infinity;
+    const counts: SessionCategoryCounts = { active: 0, subagent: 0, schedule: 0, archived: 0 };
+    const matched: SessionRow[] = [];
+    for (const row of sorted) {
+      if (!withCounts && matched.length >= want) break;
+      const cat = await this.categoryOf(row, traceIds.has(row.sessionId));
+      counts[cat] += 1;
+      if ((category === undefined || cat === category) && matched.length < want) matched.push(row);
+    }
+    const sessions = await toPage(paging ? matched.slice(paging.offset, want) : matched);
+    return withCounts ? { sessions, counts } : { sessions };
   }
 
   /**
@@ -311,7 +394,7 @@ export class SessionService {
     if (!earliest) return null;
     let messages;
     try {
-      messages = await readTraceTolerant(earliest.path);
+      messages = await readTraceHead(earliest.path);
     } catch {
       return null; // Corrupt file: skip (does not block the list)
     }

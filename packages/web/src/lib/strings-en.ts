@@ -666,13 +666,13 @@ When done, open index.html in a browser and self-test once.`,
       `Delete "${title}"? Its messages and Trace will be removed permanently.`,
     archiveSession: "Archive",
     unarchiveSession: "Unarchive",
-    archivedGroup: (n: number) => `Archived (${n})`,
     /** Sidebar group "reveal/load next page" row (display cap + server paging). */
     loadMore: "More",
-    /** Sidebar folders for automation-created sessions (one per origin), parallel to Archived; wording matches the sourceNames badges. */
-    sourceGroups: {
-      subagent: (n: number) => `Subagents (${n})`,
-      schedule: (n: number) => `Scheduled (${n})`,
+    /** Collapsed sidebar folders inside a group (lazy-loaded); null count = share unknown until first opened (workspace mode). */
+    folderGroups: {
+      subagent: (n: number | null) => (n === null ? "Subagents" : `Subagents (${n})`),
+      schedule: (n: number | null) => (n === null ? "Scheduled" : `Scheduled (${n})`),
+      archived: (n: number | null) => (n === null ? "Archived" : `Archived (${n})`),
     },
     skillsBanner: (names: string[]): string =>
       `Using skill${names.length === 1 ? "" : "s"}: ${names.join(", ")}`,
