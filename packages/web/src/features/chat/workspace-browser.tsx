@@ -21,8 +21,11 @@ import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { useAuth } from "../../state/auth";
 import { S } from "../../lib/strings";
+import { apiErrorText } from "../../lib/api-error";
 import { formatBytes, formatDateTime } from "../../lib/format";
 import { Button } from "../../components/ui/button";
+import { ConfirmModal } from "../../components/ui/confirm-modal";
+import { toastError, toastSuccess } from "../../components/ui/toast";
 import { Dropdown } from "../../components/ui/dropdown";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { CodeBlock } from "./code-block";
@@ -195,8 +198,11 @@ export function WorkspaceBrowser({
   const [data, setData] = useState<WorkspaceFilesResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  /** Picked files whose names collide with the loaded listing (non-null shows the overwrite confirm). */
+  const [pendingUpload, setPendingUpload] = useState<{ files: File[]; clashes: string[] } | null>(
+    null,
+  );
   const [reloadTick, setReloadTick] = useState(0);
   const [showPath, setShowPath] = useState(false);
   /** HTML / Markdown preview: rendered view (HTML via sandboxed iframe, Markdown via md-body) / source toggle. */
@@ -223,7 +229,6 @@ export function WorkspaceBrowser({
     setPath("");
     setPreview(null);
     setData(null);
-    setNotice(null);
   }, [session.sessionId]);
 
   // Edge-triggered refresh on the panel's hidden -> visible transition (doesn't count the initial mount: mounting itself already fetches once).
@@ -307,11 +312,8 @@ export function WorkspaceBrowser({
     void previewPath(joinPath(path, name));
   };
 
-  const onUpload = (e: ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
+  const doUpload = (files: File[]) => {
     setUploading(true);
-    setNotice(null);
     setError(null);
     void (async () => {
       try {
@@ -327,15 +329,26 @@ export function WorkspaceBrowser({
           });
           await api.uploadWorkspaceFile(session.sessionId, joinPath(path, file.name), b64);
         }
-        setNotice(S.files.uploaded);
+        toastSuccess(S.files.uploaded);
         setReloadTick((t) => t + 1);
       } catch (err) {
-        setError(err instanceof ApiError ? err.message : S.common.unknownError);
+        toastError(apiErrorText(err));
       } finally {
         setUploading(false);
       }
     })();
+  };
+
+  const onUpload = (e: ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files ? [...e.target.files] : [];
     e.target.value = "";
+    if (files.length === 0) return;
+    // Uploads overwrite same-name files: names already present in the loaded listing
+    // confirm first (the picker is stashed — confirm continues, cancel drops it).
+    const existing = new Set((data?.entries ?? []).map((entry) => entry.name));
+    const clashes = files.filter((f) => existing.has(f.name)).map((f) => f.name);
+    if (clashes.length > 0) setPendingUpload({ files, clashes });
+    else doUpload(files);
   };
 
   const crumbs = path === "" ? [] : path.split("/");
@@ -693,10 +706,33 @@ export function WorkspaceBrowser({
             ))}
           </ul>
         )}
-        {notice && (
-          <p className="px-3 py-2 text-xs text-emerald-600 dark:text-emerald-400">{notice}</p>
-        )}
       </div>
+
+      {/* Upload-overwrite confirmation: same-name files in this directory get replaced. */}
+      <ConfirmModal
+        open={pendingUpload !== null}
+        title={S.files.overwriteTitle}
+        tone="primary"
+        confirmLabel={S.files.upload}
+        onClose={() => setPendingUpload(null)}
+        onConfirm={() => {
+          if (pendingUpload) doUpload(pendingUpload.files);
+          setPendingUpload(null);
+        }}
+      >
+        <div className="space-y-2">
+          <p className="text-sm text-gray-600 dark:text-gray-300">
+            {S.files.overwriteConfirm(pendingUpload?.clashes.length ?? 0)}
+          </p>
+          <ul className="max-h-40 overflow-y-auto rounded-md border border-gray-200 px-3 py-1.5 dark:border-gray-800">
+            {(pendingUpload?.clashes ?? []).map((name) => (
+              <li key={name} className="truncate py-0.5 font-mono text-xs" title={name}>
+                {name}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </ConfirmModal>
     </div>
   );
 }

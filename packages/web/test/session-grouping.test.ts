@@ -9,15 +9,17 @@
  *   concatenates per-Agent server responses, so its order isn't globally chronological.
  */
 import { describe, expect, it } from "vitest";
-import type { SessionInfo } from "@prismshadow/penguin-server/api";
+import type { SessionCategoryCounts, SessionInfo } from "@prismshadow/penguin-server/api";
 import {
   SIDEBAR_PAGE_SIZE,
   TEMP_WORKSPACE_GROUP_KEY,
-  groupAgentsWithMore,
+  aggregateWorkspaceCounts,
   groupSessionsByWorkspace,
   isTempWorkspace,
+  latestConversation,
   partitionSessions,
   pinnedFirst,
+  sessionCategory,
   splitPage,
   workspaceGroupKey,
   workspaceLabel,
@@ -148,6 +150,19 @@ describe("groupSessionsByWorkspace", () => {
   });
 });
 
+describe("sessionCategory (the bucket a Session renders under = the server's list filter)", () => {
+  it("archived wins over source; a source names its bucket; no source is active", () => {
+    const at = "2026-07-01T10:00:00.000Z";
+    expect(sessionCategory(session("/srv/a", at))).toBe("active");
+    expect(sessionCategory(session("/srv/a", at, { source: "subagent" }))).toBe("subagent");
+    expect(sessionCategory(session("/srv/a", at, { source: "schedule" }))).toBe("schedule");
+    expect(sessionCategory(session("/srv/a", at, { archived: true }))).toBe("archived");
+    expect(sessionCategory(session("/srv/a", at, { source: "subagent", archived: true }))).toBe(
+      "archived",
+    );
+  });
+});
+
 describe("partitionSessions (per-group user / subagent / scheduled / archived split)", () => {
   it("splits user rows and one bucket per origin, preserving order within each part", () => {
     const user1 = session("/srv/alpha", "2026-07-06T10:00:00.000Z");
@@ -189,6 +204,31 @@ describe("partitionSessions (per-group user / subagent / scheduled / archived sp
   });
 });
 
+describe("latestConversation (the auto-opened 'last conversation')", () => {
+  it("picks the newest active/schedule row regardless of input order; archived and subagent rows never win", () => {
+    const oldActive = session("/srv/a", "2026-07-01T10:00:00.000Z");
+    const newActive = session("/srv/a", "2026-07-03T10:00:00.000Z");
+    // Newer than every conversation, but never auto-opened:
+    const newerSub = session("/srv/a", "2026-07-08T10:00:00.000Z", { source: "subagent" });
+    const newerGone = session("/srv/a", "2026-07-09T10:00:00.000Z", { archived: true });
+    expect(latestConversation([newerSub, oldActive, newerGone, newActive])).toBe(newActive);
+
+    // A schedule-created run is the user's conversation: the newest one qualifies.
+    const newerSched = session("/srv/a", "2026-07-05T10:00:00.000Z", { source: "schedule" });
+    expect(latestConversation([newActive, newerSched, newerSub])).toBe(newerSched);
+  });
+
+  it("ties on createdAt break by sessionId, and no qualifying row yields null", () => {
+    const at = "2026-07-02T10:00:00.000Z";
+    const a = session("/srv/a", at, { sessionId: "session-a" });
+    const b = session("/srv/a", at, { sessionId: "session-b" });
+    expect(latestConversation([a, b])).toBe(b);
+    expect(latestConversation([b, a])).toBe(b);
+    expect(latestConversation([])).toBeNull();
+    expect(latestConversation([session("/srv/a", at, { source: "subagent" })])).toBeNull();
+  });
+});
+
 describe("splitPage (limit+1 fetch trick)", () => {
   it("an overflow row proves the server has more and is never shown", () => {
     const fetched = [1, 2, 3, 4];
@@ -202,21 +242,55 @@ describe("splitPage (limit+1 fetch trick)", () => {
   });
 });
 
-describe("groupAgentsWithMore (workspace groups span Agents)", () => {
-  it("returns each contributing Agent with unfetched pages once; others are skipped", () => {
-    const rows = [
-      session("/srv/alpha", "2026-07-03T10:00:00.000Z", { agentId: "agent_a" }),
-      session("/srv/alpha", "2026-07-02T10:00:00.000Z", { agentId: "agent_b" }),
-      session("/srv/alpha", "2026-07-01T10:00:00.000Z", { agentId: "agent_a" }),
-    ];
-    const hasMore = new Map([
-      ["agent_a", true],
-      ["agent_b", false],
-      ["agent_c", true], // not contributing to this group
+describe("aggregateWorkspaceCounts (per-group exact server share)", () => {
+  const zero = { active: 0, subagent: 0, schedule: 0, archived: 0 };
+
+  it("sums each Workspace path across Agents and records which Agents hold each category", () => {
+    const byAgent = new Map<string, Record<string, SessionCategoryCounts>>([
+      [
+        "agent_a",
+        {
+          "/srv/alpha": { ...zero, active: 2, subagent: 1 },
+          "/srv/beta": { ...zero, archived: 3 },
+        },
+      ],
+      ["agent_b", { "/srv/alpha": { ...zero, active: 1, schedule: 2 } }],
     ]);
-    expect(groupAgentsWithMore(rows, hasMore)).toEqual(["agent_a"]);
-    expect(groupAgentsWithMore(rows, new Map())).toEqual([]);
-    expect(groupAgentsWithMore([], hasMore)).toEqual([]);
+    const groups = aggregateWorkspaceCounts(byAgent);
+    expect(groups.get("/srv/alpha")).toEqual({
+      totals: { active: 3, subagent: 1, schedule: 2, archived: 0 },
+      agents: {
+        active: ["agent_a", "agent_b"],
+        subagent: ["agent_a"],
+        schedule: ["agent_b"],
+        archived: [],
+      },
+    });
+    expect(groups.get("/srv/beta")).toEqual({
+      totals: { ...zero, archived: 3 },
+      agents: { active: [], subagent: [], schedule: [], archived: ["agent_a"] },
+    });
+    // A group only in another Workspace never appears — its content can't surface elsewhere.
+    expect(groups.has("/srv/gamma")).toBe(false);
+    expect(aggregateWorkspaceCounts(new Map()).size).toBe(0);
+  });
+
+  it("folds every auto-temp path into the merged temp group, deduplicating agents", () => {
+    const byAgent = new Map([
+      [
+        "agent_a",
+        {
+          [TEMP_A]: { ...zero, active: 1 },
+          [TEMP_B]: { ...zero, active: 2, archived: 1 },
+        },
+      ],
+    ]);
+    const groups = aggregateWorkspaceCounts(byAgent);
+    expect(groups.size).toBe(1);
+    expect(groups.get(TEMP_WORKSPACE_GROUP_KEY)).toEqual({
+      totals: { ...zero, active: 3, archived: 1 },
+      agents: { active: ["agent_a"], subagent: [], schedule: [], archived: ["agent_a"] },
+    });
   });
 });
 

@@ -39,7 +39,6 @@ import type {
   TaskInputPart,
 } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useAuth } from "../../state/auth";
@@ -245,7 +244,7 @@ export function DraftView({
         })
         .catch((e: unknown) => {
           setThinkingLevel(rollback);
-          toastError(e instanceof ApiError ? e.message : S.common.unknownError);
+          toastError(apiErrorText(e));
         });
     },
     [projectId, agentId],
@@ -810,7 +809,7 @@ function WorkspaceSelect({
       api
         .listDirs(projectId, abs)
         .then(setDir)
-        .catch((e: unknown) => setError(e instanceof ApiError ? e.message : S.common.unknownError))
+        .catch((e: unknown) => setError(apiErrorText(e)))
         .finally(() => setLoading(false));
     },
     [projectId],

@@ -21,13 +21,15 @@ import type { ToolDefinitionConfig, ToolPermission } from "@prismshadow/penguin-
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
+import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useProject } from "../../state/project";
 import { Tabs } from "../../components/ui/tabs";
 import { Button } from "../../components/ui/button";
+import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 import { Input, Textarea } from "../../components/ui/input";
 import { OptionMenu, type OptionMenuChoice } from "../../components/ui/option-menu";
-import { Modal } from "../../components/ui/modal";
+import { ConfirmModal, useSaveConfirm } from "../../components/ui/confirm-modal";
 import { Skeleton } from "../../components/ui/skeleton";
 import { VaultTab } from "./vault-tab";
 import { SchedulesTab } from "./schedules-tab";
@@ -54,50 +56,6 @@ export function optionRows(
       label: value,
       description,
     }));
-}
-
-/**
- * OptionMenu whose pick can be explicitly rewound: the runtime menus no longer offer an
- * inherit row, so without this an accidental pick could not be backed out before saving.
- * The reset link (top-right of the label line, visible only while a value is picked) sets
- * the LOCAL edit state back to "" — the save guard skips empty values, nothing is written.
- * The unset trigger shows the (default) placeholder, matching the tools-table permission menu.
- */
-function ResettableOptionMenu({
-  label,
-  value,
-  onChange,
-  options,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  options: ReadonlyArray<OptionMenuChoice<string>>;
-}) {
-  return (
-    <div className="relative">
-      <OptionMenu
-        label={label}
-        fullWidth
-        size="sm"
-        placeholder={S.agent.defaultValue}
-        value={value}
-        onChange={onChange}
-        options={options}
-      />
-      {value !== "" && (
-        <button
-          type="button"
-          title={S.agent.resetToDefault}
-          aria-label={S.agent.resetToDefault}
-          onClick={() => onChange("")}
-          className="absolute right-0 top-0 text-xs text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:hover:text-gray-300"
-        >
-          {S.agent.resetToDefault}
-        </button>
-      )}
-    </div>
-  );
 }
 
 /** Numeric input's string state → number (empty/invalid = undefined, meaning no change). */
@@ -131,8 +89,8 @@ export function AgentSettingsPage() {
 
   const [data, setData] = useState<AgentConfigResponse | null>(null);
   const [tab, setTab] = useState<TabKey>("overview");
+  // Only the initial config load failure renders inline (the page can't show without it); saves/imports report via toast.
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
 
   const load = useCallback(() => {
     if (!projectId || !agentId) return;
@@ -141,7 +99,7 @@ export function AgentSettingsPage() {
     api
       .getAgentConfig(projectId, agentId)
       .then(setData)
-      .catch((e: unknown) => setError(e instanceof ApiError ? e.message : S.common.unknownError));
+      .catch((e: unknown) => setError(apiErrorText(e)));
   }, [projectId, agentId]);
 
   useEffect(() => {
@@ -151,7 +109,7 @@ export function AgentSettingsPage() {
   /** Snapshot import succeeded: show the new version and reload the whole config (import overwrites the entire Agent State, so every tab's data needs a refresh). */
   const onImported = useCallback(
     (version: number) => {
-      setNotice(S.agent.importDone(version));
+      toastSuccess(S.agent.importDone(version));
       load();
       void reloadAgents();
     },
@@ -161,18 +119,16 @@ export function AgentSettingsPage() {
   const save = useCallback(
     async (update: AgentConfigUpdateRequest) => {
       if (!projectId || !agentId) return;
-      setError(null);
-      setNotice(null);
       try {
         const res = await api.putAgentConfig(projectId, agentId, update);
         setData(res);
-        setNotice(S.common.saved);
+        toastSuccess(S.common.saved);
         // Name/description changes affect the breadcrumb and list display.
         if (update.config?.name !== undefined || update.config?.description !== undefined) {
           void reloadAgents();
         }
       } catch (e) {
-        setError(e instanceof ApiError ? e.message : S.common.unknownError);
+        toastError(apiErrorText(e));
       }
     },
     [projectId, agentId, reloadAgents],
@@ -229,8 +185,6 @@ export function AgentSettingsPage() {
           {tab === "vault" && <VaultTab agentId={agentId} />}
           {tab === "schedules" && <SchedulesTab agentId={agentId} />}
         </div>
-        {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
-        {notice && <p className="text-xs text-emerald-600 dark:text-emerald-400">{notice}</p>}
       </div>
     </div>
   );
@@ -265,6 +219,7 @@ function OverviewTab({
   const [importError, setImportError] = useState<string | null>(null);
   // base64 of the snapshot package pending confirmation for a version conflict (409 version_conflict); non-null shows the confirm modal.
   const [conflict, setConflict] = useState<string | null>(null);
+  const { requestSave, element: saveConfirm } = useSaveConfirm();
 
   const submit = () => {
     const config: NonNullable<AgentConfigUpdateRequest["config"]> = {};
@@ -272,8 +227,11 @@ function OverviewTab({
     if (description.trim() !== (data.config.description ?? "")) {
       config.description = description.trim();
     }
-    if (Object.keys(config).length === 0) return;
-    void onSave({ config });
+    if (Object.keys(config).length === 0) {
+      toastInfo(S.common.noChangesToSave);
+      return;
+    }
+    requestSave(() => void onSave({ config }));
   };
 
   const runImport = async (dataBase64: string, confirm: boolean) => {
@@ -292,7 +250,7 @@ function OverviewTab({
         setConflict(dataBase64); // resend with confirm: true after confirming
       } else {
         setConflict(null);
-        setImportError(e instanceof ApiError ? e.message : S.common.unknownError);
+        setImportError(apiErrorText(e));
       }
     } finally {
       setImporting(false);
@@ -317,7 +275,7 @@ function OverviewTab({
     <div className="space-y-4">
       <Input
         size="sm"
-        label={S.agent.name}
+        label={S.common.name}
         value={name}
         onChange={(e) => setName(e.target.value)}
       />
@@ -381,29 +339,20 @@ function OverviewTab({
       <Button size="sm" variant="primary" onClick={submit}>
         {S.common.save}
       </Button>
+      {saveConfirm}
 
       {/* Version conflict confirmation: resend the same package with confirm: true after confirming. */}
-      <Modal
+      <ConfirmModal
         open={conflict !== null}
         title={S.agent.importConflictTitle}
+        busy={importing}
         onClose={() => setConflict(null)}
-        footer={
-          <>
-            <Button onClick={() => setConflict(null)}>{S.common.cancel}</Button>
-            <Button
-              variant="danger"
-              disabled={importing}
-              onClick={() => {
-                if (conflict !== null) void runImport(conflict, true);
-              }}
-            >
-              {S.common.confirm}
-            </Button>
-          </>
-        }
+        onConfirm={() => {
+          if (conflict !== null) void runImport(conflict, true);
+        }}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">{S.agent.importConflictBody}</p>
-      </Modal>
+      </ConfirmModal>
     </div>
   );
 }
@@ -412,13 +361,17 @@ function PromptTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn
   const [agentsMd, setAgentsMd] = useState(data.agentsMd);
   const [systemPrompt, setSystemPrompt] = useState(data.config.systemPrompt);
   const promptRef = useRef<HTMLTextAreaElement>(null);
+  const { requestSave, element: saveConfirm } = useSaveConfirm();
 
   const submit = () => {
     const update: AgentConfigUpdateRequest = {};
     if (agentsMd !== data.agentsMd) update.agentsMd = agentsMd;
     if (systemPrompt !== data.config.systemPrompt) update.config = { systemPrompt };
-    if (update.agentsMd === undefined && update.config === undefined) return;
-    void onSave(update);
+    if (update.agentsMd === undefined && update.config === undefined) {
+      toastInfo(S.common.noChangesToSave);
+      return;
+    }
+    requestSave(() => void onSave(update));
   };
 
   /**
@@ -487,6 +440,7 @@ function PromptTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn
       <Button size="sm" variant="primary" onClick={submit}>
         {S.common.save}
       </Button>
+      {saveConfirm}
     </div>
   );
 }
@@ -503,16 +457,18 @@ function RuntimeTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveF
   const [maxSessionTurns, setMaxSessionTurns] = useState(numToStr(cfg.compaction?.maxSessionTurns));
   const [mode, setMode] = useState(cfg.compaction?.mode ?? "");
   const [prompt, setPrompt] = useState(cfg.compaction?.prompt ?? "");
-  const [localError, setLocalError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<{ maxTurns?: string; timeoutMs?: string }>({});
+  const clearFieldErrors = () => setFieldErrors((p) => (p.maxTurns || p.timeoutMs ? {} : p));
+  const { requestSave, element: saveConfirm } = useSaveConfirm();
 
   const submit = () => {
-    setLocalError(null);
+    setFieldErrors({});
     const config: NonNullable<AgentConfigUpdateRequest["config"]> = {};
 
     const mt = parseNum(maxTurns);
     if (mt !== undefined && mt !== cfg.maxTurns) {
       if (mt <= 0 && mt !== -1) {
-        setLocalError(S.agent.maxTurnsInvalid);
+        setFieldErrors({ maxTurns: S.agent.maxTurnsInvalid });
         return;
       }
       config.maxTurns = mt;
@@ -527,7 +483,7 @@ function RuntimeTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveF
     const tmo = parseNum(timeoutMs);
     if (tmo !== undefined && tmo !== cfg.model?.timeoutMs) {
       if (tmo <= 0 && tmo !== -1) {
-        setLocalError(S.agent.timeoutInvalid);
+        setFieldErrors({ timeoutMs: S.agent.timeoutInvalid });
         return;
       }
       model.timeoutMs = tmo;
@@ -549,8 +505,11 @@ function RuntimeTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveF
     if (prompt !== (cfg.compaction?.prompt ?? "")) compaction.prompt = prompt;
     if (Object.keys(compaction).length > 0) config.compaction = compaction;
 
-    if (Object.keys(config).length === 0) return;
-    void onSave({ config });
+    if (Object.keys(config).length === 0) {
+      toastInfo(S.common.noChangesToSave);
+      return;
+    }
+    requestSave(() => void onSave({ config }));
   };
 
   // S is reassigned on language switch (live binding), so read it during render rather than hoisting to a module-level constant.
@@ -576,7 +535,11 @@ function RuntimeTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveF
               label={S.agent.maxTurns}
               size="sm"
               value={maxTurns}
-              onChange={(e) => setMaxTurns(e.target.value)}
+              error={fieldErrors.maxTurns}
+              onChange={(e) => {
+                setMaxTurns(e.target.value);
+                clearFieldErrors();
+              }}
               inputMode="numeric"
               className="font-mono"
             />
@@ -588,8 +551,11 @@ function RuntimeTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveF
               inputMode="numeric"
               className="font-mono"
             />
-            <ResettableOptionMenu
+            <OptionMenu
               label={S.agent.thinkingLevel}
+              fullWidth
+              size="sm"
+              placeholder={S.agent.defaultValue}
               value={thinkingLevel}
               onChange={setThinkingLevel}
               options={thinkingLevelOptions}
@@ -599,7 +565,11 @@ function RuntimeTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveF
               hint={S.agent.timeoutMsHint}
               size="sm"
               value={timeoutMs}
-              onChange={(e) => setTimeoutMs(e.target.value)}
+              error={fieldErrors.timeoutMs}
+              onChange={(e) => {
+                setTimeoutMs(e.target.value);
+                clearFieldErrors();
+              }}
               inputMode="numeric"
               className="font-mono"
             />
@@ -629,8 +599,11 @@ function RuntimeTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveF
               inputMode="numeric"
               className="font-mono"
             />
-            <ResettableOptionMenu
+            <OptionMenu
               label={S.agent.compactionMode}
+              fullWidth
+              size="sm"
+              placeholder={S.agent.defaultValue}
               value={mode}
               onChange={setMode}
               options={compactionModeOptions}
@@ -653,10 +626,10 @@ function RuntimeTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveF
         </div>
       </div>
 
-      {localError && <p className="text-xs text-red-600 dark:text-red-400">{localError}</p>}
       <Button size="sm" variant="primary" onClick={submit}>
         {S.common.save}
       </Button>
+      {saveConfirm}
     </div>
   );
 }
@@ -691,17 +664,28 @@ function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn 
       maxOutputLength: numToStr(t.maxOutputLength),
     })),
   );
-  const [localError, setLocalError] = useState<string | null>(null);
+  // Per-cell validation errors, keyed `${rowIndex}-${column}`, shown red under the offending numeric input.
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const { requestSave, element: saveConfirm } = useSaveConfirm();
 
   const update = (index: number, patch: Partial<ToolRowState>) => {
     setRows((prev) => prev.map((r, i) => (i === index ? { ...r, ...patch } : r)));
+    setFieldErrors((p) => {
+      const kt = `${index}-timeoutMs`;
+      const km = `${index}-maxOutputLength`;
+      if (!p[kt] && !p[km]) return p;
+      const next = { ...p };
+      delete next[kt];
+      delete next[km];
+      return next;
+    });
   };
 
   const submit = () => {
-    setLocalError(null);
     // toolsBuiltin is submitted as a full table: an empty string omits that key (revert to default); non-empty values are validated per the server's rules.
+    const errs: Record<string, string> = {};
     const tools: ToolDefinitionConfig[] = [];
-    for (const row of rows) {
+    for (const [i, row] of rows.entries()) {
       const tool: ToolDefinitionConfig = { ...row.base };
       delete tool.timeoutMs;
       delete tool.maxOutputLength;
@@ -709,23 +693,41 @@ function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn 
       if (timeout) {
         const n = Number(timeout);
         if (!Number.isInteger(n) || (n <= 0 && n !== -1)) {
-          setLocalError(S.agent.toolFieldInvalid(row.base.name, "timeoutMs"));
-          return;
-        }
-        tool.timeoutMs = n;
+          errs[`${i}-timeoutMs`] = S.agent.toolFieldInvalid(row.base.name, "timeoutMs");
+        } else tool.timeoutMs = n;
       }
       const maxOutput = row.maxOutputLength.trim();
       if (maxOutput) {
         const n = Number(maxOutput);
         if (!Number.isInteger(n) || (n <= 0 && n !== -1)) {
-          setLocalError(S.agent.toolFieldInvalid(row.base.name, "maxOutputLength"));
-          return;
-        }
-        tool.maxOutputLength = n;
+          errs[`${i}-maxOutputLength`] = S.agent.toolFieldInvalid(row.base.name, "maxOutputLength");
+        } else tool.maxOutputLength = n;
       }
       tools.push(tool);
     }
-    void onSave({ config: { toolsBuiltin: tools } });
+    if (Object.keys(errs).length > 0) {
+      setFieldErrors(errs);
+      return;
+    }
+    setFieldErrors({});
+    // The table is submitted whole, so compare the editable columns against the loaded
+    // config to detect a no-op save (row order is stable — both sides map the same list).
+    const orig = data.config.toolsBuiltin;
+    const dirty =
+      tools.length !== orig.length ||
+      tools.some((t, i) => {
+        const o = orig[i]!;
+        return (
+          t.permission !== o.permission ||
+          t.timeoutMs !== o.timeoutMs ||
+          t.maxOutputLength !== o.maxOutputLength
+        );
+      });
+    if (!dirty) {
+      toastInfo(S.common.noChangesToSave);
+      return;
+    }
+    requestSave(() => void onSave({ config: { toolsBuiltin: tools } }));
   };
 
   return (
@@ -734,7 +736,7 @@ function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn 
         <table className="w-full min-w-[520px] text-left text-sm">
           <thead>
             <tr className="border-b border-gray-200 bg-gray-50/80 text-xs text-gray-500 dark:border-gray-800 dark:bg-gray-900">
-              <th className="px-3 py-2">{S.agent.toolName}</th>
+              <th className="px-3 py-2">{S.common.name}</th>
               <th className="px-3 py-2">{S.agent.toolPermission}</th>
               <th className="px-3 py-2">{S.agent.toolTimeout}</th>
               <th className="px-3 py-2">{S.agent.toolMaxOutput}</th>
@@ -743,8 +745,8 @@ function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn 
           <tbody>
             {rows.map((row, i) => (
               <tr key={row.base.name} className="border-b border-gray-100 dark:border-gray-800/60">
-                <td className="px-3 py-2 font-mono text-xs">{row.base.name}</td>
-                <td className="px-3 py-2">
+                <td className="px-3 py-2 align-top font-mono text-xs">{row.base.name}</td>
+                <td className="px-3 py-2 align-top">
                   <OptionMenu
                     mono
                     size="sm"
@@ -755,19 +757,21 @@ function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn 
                     onChange={(v) => update(i, { base: { ...row.base, permission: v } })}
                   />
                 </td>
-                <td className="px-3 py-2">
+                <td className="px-3 py-2 align-top">
                   <Input
                     size="sm"
                     value={row.timeoutMs}
+                    error={fieldErrors[`${i}-timeoutMs`]}
                     inputMode="numeric"
                     className="font-mono"
                     onChange={(e) => update(i, { timeoutMs: e.target.value })}
                   />
                 </td>
-                <td className="px-3 py-2">
+                <td className="px-3 py-2 align-top">
                   <Input
                     size="sm"
                     value={row.maxOutputLength}
+                    error={fieldErrors[`${i}-maxOutputLength`]}
                     inputMode="numeric"
                     className="font-mono"
                     onChange={(e) => update(i, { maxOutputLength: e.target.value })}
@@ -779,8 +783,6 @@ function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn 
         </table>
       </div>
 
-      {localError && <p className="text-xs text-red-600 dark:text-red-400">{localError}</p>}
-
       <div>
         <p className="mb-1 text-xs font-medium text-gray-500">{S.agent.mcpServers}</p>
         <pre className="max-h-64 overflow-auto rounded-md border border-gray-200 bg-gray-50 p-3 text-xs dark:border-gray-800 dark:bg-gray-900">
@@ -791,6 +793,7 @@ function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn 
       <Button size="sm" variant="primary" onClick={submit}>
         {S.common.save}
       </Button>
+      {saveConfirm}
     </div>
   );
 }

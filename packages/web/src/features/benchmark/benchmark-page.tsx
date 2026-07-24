@@ -20,8 +20,8 @@ import type {
   BenchmarkSummary,
 } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
+import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { formatDateTime, formatMoney, formatScore, humanizeDuration } from "../../lib/format";
 import { agentDisplayName, useProject } from "../../state/project";
@@ -75,7 +75,7 @@ function AgentNode({
     api
       .listBenchmarks(projectId, agentId)
       .then((data) => setBenchmarks(data.benchmarks))
-      .catch((e: unknown) => setError(e instanceof ApiError ? e.message : S.common.unknownError));
+      .catch((e: unknown) => setError(apiErrorText(e)));
   }, [open, benchmarks, projectId, agentId]);
 
   return (
@@ -147,7 +147,7 @@ function metricLabel(metric: BenchmarkMetric): string {
   return metric === "score"
     ? S.benchmark.colScore
     : metric === "cost"
-      ? S.benchmark.colCost
+      ? S.common.cost
       : S.benchmark.colDuration;
 }
 
@@ -399,7 +399,7 @@ function EvaluationRow({
                 <tr className="text-xs text-gray-500">
                   <th className="px-2 py-1 font-medium">{S.benchmark.colCase}</th>
                   <th className="px-2 py-1 font-medium">{S.benchmark.colScore}</th>
-                  <th className="px-2 py-1 font-medium">{S.benchmark.colCost}</th>
+                  <th className="px-2 py-1 font-medium">{S.common.cost}</th>
                   <th className="px-2 py-1 font-medium">{S.benchmark.colDuration}</th>
                   <th className="px-2 py-1 font-medium">{S.benchmark.colSession}</th>
                 </tr>
@@ -565,11 +565,11 @@ export function BenchmarkPage() {
                     <table className="w-full min-w-[600px] text-left text-sm">
                       <thead>
                         <tr className="border-b border-gray-200 bg-gray-50/80 text-xs text-gray-500 dark:border-gray-800 dark:bg-gray-900">
-                          <th className="px-3 py-2.5">{S.benchmark.colTime}</th>
+                          <th className="px-3 py-2.5">{S.common.time}</th>
                           <th className="px-3 py-2.5">{S.benchmark.colVersion}</th>
                           <th className="px-3 py-2.5">{S.benchmark.colModel}</th>
                           <th className="px-3 py-2.5">{S.benchmark.colScore}</th>
-                          <th className="px-3 py-2.5">{S.benchmark.colCost}</th>
+                          <th className="px-3 py-2.5">{S.common.cost}</th>
                           <th className="px-3 py-2.5">{S.benchmark.colDuration}</th>
                         </tr>
                       </thead>

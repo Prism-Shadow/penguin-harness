@@ -31,8 +31,8 @@ import type {
   TraceToolSpan,
 } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
+import { apiErrorText } from "../../lib/api-error";
 import {
   cacheHitRate,
   computeTps,
@@ -209,7 +209,7 @@ export function TraceFileView({
         setModels(m);
       })
       .catch((err: unknown) => {
-        if (!cancelled) setError(err instanceof ApiError ? err.message : S.common.unknownError);
+        if (!cancelled) setError(apiErrorText(err));
       });
     return () => {
       cancelled = true;
@@ -425,7 +425,7 @@ export function TraceFileView({
           {/* Duration · cost · TPS (cost above duration, same order as the conversation page's stats row). */}
           <div>
             <SummaryRow
-              label={S.chat.statCost}
+              label={S.common.cost}
               value={formatMoney(costOf(global.buckets), currency)}
             />
             <SummaryRow
@@ -497,7 +497,7 @@ export function TraceFileView({
                 <StatChip
                   icon={STAT_ICONS.cost}
                   value={formatMoney(costOf(tokens), currency)}
-                  label={`${S.chat.statCost}（${currency}）`}
+                  label={`${S.common.cost}（${currency}）`}
                 />
                 <StatChip
                   icon={STAT_ICONS.elapsed}

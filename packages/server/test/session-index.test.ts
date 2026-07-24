@@ -237,6 +237,113 @@ describe("session-index", () => {
     expect((await api.get(`${base()}?limit=2&offset=-1`)).status).toBe(400);
   });
 
+  it("category filter: each sidebar bucket lists only its rows, paging applies within the category, counts return full totals", async () => {
+    await configureModels();
+    // Two active user Sessions + one archived (HTTP), two schedule-created (service, one
+    // then archived — archived must win over the origin), and one subagent Session whose
+    // source only exists in its Trace head (cold-registry derivation during the walk).
+    const mkUser = async () =>
+      ((await (await api.post(base(), {})).json()) as SessionCreateResponse).session.sessionId;
+    const activeA = await mkUser();
+    const activeB = await mkUser();
+    const archivedC = await mkUser();
+    expect((await api.patch(`/api/sessions/${archivedC}`, { archived: true })).status).toBe(200);
+    const mkSchedule = async () =>
+      (
+        await t.deps.sessionService.createSession({
+          projectId,
+          agentId: "default_agent",
+          source: "schedule",
+        })
+      ).sessionId;
+    const scheduleD = await mkSchedule();
+    const archivedScheduleF = await mkSchedule();
+    expect((await api.patch(`/api/sessions/${archivedScheduleF}`, { archived: true })).status).toBe(
+      200,
+    );
+    const subagentE = "session-2026-07-02-09-30-00-cafe0001";
+    t.deps.sessionsRepo.insert({
+      sessionId: subagentE,
+      projectId,
+      agentId: "default_agent",
+      provider: "custom",
+      modelId: "m-x",
+      workspace: "/tmp/w-sub",
+      approvalMode: "allow-all",
+      title: null,
+      createdAt: "2026-07-02T09:30:00.000Z",
+    });
+    await writeTraceFile(t.root, projectId, "default_agent", "2026-07-02", subagentE, 1, [
+      sessionMeta({
+        session_id: subagentE,
+        model_id: "m-x",
+        provider: "custom",
+        model_context_window: 1000,
+        system_prompt: "",
+        tools: [],
+        thinking_level: "default",
+        agent_state: "/tmp/a",
+        workspace: "/tmp/w-sub",
+        source: "subagent",
+      }),
+      userText("child work"),
+    ]);
+
+    const list = async (qs: string) => {
+      const res = await api.get(`${base()}${qs}`);
+      expect(res.status, qs).toBe(200);
+      return (await res.json()) as SessionsResponse;
+    };
+    const idSet = (body: SessionsResponse) => new Set(body.sessions.map((s) => s.sessionId));
+
+    expect(idSet(await list("?category=active"))).toEqual(new Set([activeA, activeB]));
+    expect(idSet(await list("?category=schedule"))).toEqual(new Set([scheduleD]));
+    expect(idSet(await list("?category=subagent"))).toEqual(new Set([subagentE]));
+    expect(idSet(await list("?category=archived"))).toEqual(
+      new Set([archivedC, archivedScheduleF]),
+    );
+
+    // Paging applies within the category: the two archived rows page one at a time.
+    const page1 = await list("?category=archived&limit=1&offset=0");
+    const page2 = await list("?category=archived&limit=1&offset=1");
+    expect(page1.sessions).toHaveLength(1);
+    expect(page2.sessions).toHaveLength(1);
+    expect(new Set([...idSet(page1), ...idSet(page2)])).toEqual(
+      new Set([archivedC, archivedScheduleF]),
+    );
+    expect((await list("?category=archived&limit=1&offset=2")).sessions).toEqual([]);
+
+    // counts=1 returns totals over the whole list, not the returned page — with or without a filter.
+    const counted = await list("?category=active&counts=1&limit=1");
+    expect(counted.sessions).toHaveLength(1);
+    expect(counted.counts).toEqual({ active: 2, subagent: 1, schedule: 1, archived: 2 });
+    const full = await list("?counts=1");
+    expect(full.sessions).toHaveLength(6);
+    expect(full.counts).toEqual({ active: 2, subagent: 1, schedule: 1, archived: 2 });
+    expect((await list("")).counts).toBeUndefined();
+    expect((await list("")).workspaceCounts).toBeUndefined();
+
+    // The per-Workspace breakdown accompanies the totals and sums back to them: the
+    // subagent Session sits alone in its path; every other row lives in its own auto
+    // temp directory.
+    const byWorkspace = full.workspaceCounts!;
+    expect(byWorkspace["/tmp/w-sub"]).toEqual({
+      active: 0,
+      subagent: 1,
+      schedule: 0,
+      archived: 0,
+    });
+    const summed = { active: 0, subagent: 0, schedule: 0, archived: 0 };
+    for (const ws of Object.values(byWorkspace)) {
+      for (const key of Object.keys(summed) as (keyof typeof summed)[]) summed[key] += ws[key];
+    }
+    expect(summed).toEqual(full.counts);
+
+    // Junk values are rejected, never silently unfiltered.
+    expect((await api.get(`${base()}?category=weird`)).status).toBe(400);
+    expect((await api.get(`${base()}?counts=yes`)).status).toBe(400);
+  });
+
   it("half a model reference is 400: the missing half is never inferred", async () => {
     await configureModels();
     // Only modelId: even though it names the one configured model, the provider is never

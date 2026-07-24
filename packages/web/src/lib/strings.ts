@@ -5,7 +5,9 @@
  * state/locale.tsx, which calls `setActiveStrings` to switch and remounts the whole
  * tree keyed by locale, so `S.x` reads in components always reflect the current
  * language (module-level constants do not update on switch — keep reads inside components).
- * Keep domain terms capitalized in English — Agent, Workspace, Token, Task, etc.
+ * Keep domain terms capitalized in English — Workspace, Token, Task, Session, Project, Trace.
+ * "agent" is a common noun: lowercase mid-sentence, capitalized only at the start of a
+ * label/sentence or in a proper name (Agent State, AgentHub). zh keeps "Agent" as-is.
  */
 export const zh = {
   appName: "PenguinHarness",
@@ -63,20 +65,28 @@ export const zh = {
     confirm: "确认",
     close: "关闭",
     loading: "加载中…",
-    loadMore: "加载更多",
     saved: "已保存",
     saving: "保存中…",
+    /** Clicking save with nothing changed: an info toast instead of a silent no-op. */
+    noChangesToSave: "当前没有需要保存的修改",
+    /** Confirm-before-save dialog shared by the settings forms (writes go to server-side config files). */
+    confirmSaveTitle: "保存修改",
+    confirmSaveBody: "确定保存这些修改吗？修改将写入服务器上的配置文件。",
     none: "（无）",
     retry: "重试",
     unknownError: "请求失败，请稍后重试",
     requiredField: "此项必填",
     copied: "已复制",
-    ownerOnly: "仅 owner 可修改",
+    name: "名称",
+    username: "用户名",
+    role: "角色",
+    actions: "操作",
+    created: "创建时间",
+    cost: "成本",
+    time: "时间",
   },
 
   auth: {
-    loginTitle: "登录 PenguinHarness",
-    username: "用户名",
     usernameHint: "2~32 位：小写字母开头，仅小写字母、数字与下划线",
     password: "密码",
     passwordHint: "至少 8 个字符",
@@ -101,12 +111,8 @@ export const zh = {
 
   admin: {
     users: "用户管理",
-    userId: "用户名",
-    role: "角色",
     roleAdmin: "管理员",
     roleUser: "用户",
-    createdAt: "创建时间",
-    actions: "操作",
     createUser: "新增用户",
     initialPassword: "初始密码",
     initialPasswordFlag: "初始密码",
@@ -114,7 +120,6 @@ export const zh = {
     resetPassword: "重置密码",
     resetPasswordTitle: (u: string): string => `重置 ${u} 的密码`,
     resetPasswordNote: "重置后该用户的登录会话全部失效，需用新密码重新登录",
-    deleteUser: "删除",
     deleteUserTitle: (u: string): string => `删除用户 ${u}`,
     deleteUserConfirm: (u: string): string =>
       `将删除用户 ${u} 及其名下全部 Project（含数据目录），不可恢复。`,
@@ -132,12 +137,7 @@ export const zh = {
     settingsTitle: "Project 设置",
     members: "成员",
     addMember: "添加成员",
-    memberUsername: "用户名",
-    memberRole: "角色",
-    memberActions: "操作",
     removeMember: "移除",
-    owner: "owner",
-    member: "member",
     deleteProject: "删除 Project",
     deleteConfirm: "确认删除该 Project？项目目录将被递归删除，不可恢复。",
     deleteDefaultForbidden: "default_project 与 CLI 共用，不允许在 Web 端删除",
@@ -155,7 +155,6 @@ export const zh = {
     createTitle: "创建 Agent",
     id: "Agent id",
     idHint: "2~64 位：小写字母开头，仅小写字母、数字与下划线；创建后不可修改",
-    name: "名称",
     nameHint: "留空则使用 Agent id 作为名称",
     description: "描述",
     activeSessions: "活跃 Session",
@@ -220,8 +219,6 @@ export const zh = {
     maxTurnsInvalid: "max_turns 必须 > 0 或为 -1",
     timeoutInvalid: "timeoutMs 必须 > 0 或为 -1",
     toolFieldInvalid: (name: string, field: string) => `${name}: ${field} 必须是 > 0 的整数或 -1`,
-    builtinTools: "内置工具",
-    toolName: "名称",
     toolPermission: "permission",
     permissionReadLabel: "Read-only",
     permissionReadDescription: "仅读取。审批模式为 read-only 时自动放行，无需确认。",
@@ -232,7 +229,6 @@ export const zh = {
     mcpServers: "MCP Server（只读）",
     defaultValue: "（缺省）",
     /** Reset link next to the runtime dropdowns: rewinds the local pick back to "not overridden" (the menus offer no inherit row). */
-    resetToDefault: "恢复缺省",
     deleteAgent: "删除 Agent",
     builtinUndeletable: "内置 Agent 不可被删除",
     deleteConfirm: (name: string): string =>
@@ -254,11 +250,14 @@ export const zh = {
     addToGroup: "新增模型",
     editTitle: "模型配置",
     addTitle: "新增模型（OpenAI 协议）",
-    addTitleVendor: "新增模型（按 id 自动路由）",
+    addTitleVendor: "新增模型",
     addProtocolHint:
       "新增模型固定走 OpenAI Chat Completions 兼容协议（不按模型 id 自动路由），base URL 填其兼容端点",
     addAutoRouteHint:
       "该分组的新模型按上游 id 由 AgentHub 自动路由到厂商官方客户端：base URL 留空即官方端点，API key 留空按解析出的客户端读取环境变量",
+    /** Caution beside the base URL when the entry uses a vendor's official protocol (everything except the OpenAI-protocol path). */
+    baseUrlOfficialNote:
+      "注意：该模型走厂商官方协议——自定义 base URL 必须是兼容官方协议的端点，不会因此切换为 OpenAI 协议",
     autoRouteNone:
       "该 id 无法被 AgentHub 自动路由：请核对 id，或改在 Custom / 自建分组下以 OpenAI 协议接入",
     addGroup: "新增分组",
@@ -317,21 +316,15 @@ export const zh = {
     testing: "测试中…",
     testOk: (ms: number): string => `连通正常（${ms} ms）`,
     testFailed: (msg: string): string => `连通失败：${msg}`,
-    modelIdRenameHint: "改 id 后原配置与 API key 一并迁移",
     priceCacheRead: "缓存读取价格",
     priceCacheWrite: "缓存写入价格",
     priceOutput: "输出价格",
-    priceUnit: "每百万 Token",
     currency: "币种",
     currencyUsd: "美元 $",
     currencyCny: "人民币 ¥",
-    currencyHint: "价格按 1 美元 ≈ 7 人民币折算；存储始终为美元",
-    firstModelDefault: "已自动设为默认模型",
-    credential: "凭据",
     apiKey: "API key",
     apiKeyKeepHint: "留空保留现有 key",
     apiKeyEnvHint: (envKey: string): string => `留空则使用环境变量 ${envKey}`,
-    useEnvVar: (envKey: string): string => `环境变量 ${envKey}`,
     keyConfigured: "已配置 key",
     clearApiKey: "清除已存 API key",
     baseUrl: "自定义 base URL",
@@ -364,17 +357,14 @@ export const zh = {
     confirmDefaultTitle: "设为默认模型",
     confirmDefault: (name: string): string =>
       `确定把「${name}」设为默认模型？新建的 Session 将默认使用它。`,
-    createdAt: "创建时间",
     default: "默认",
     setDefault: "设为默认模型",
     remove: "删除模型",
-    saveAll: "保存全部",
     readOnlyHint: "member 只读；模型与 credential 修改仅 owner 可执行",
     empty: "尚未配置任何模型",
     noKey: "未配置 key",
     /** Chat model dropdown's bottom expander row: reveals the models hidden by the configured-key filter. */
     showModelsWithoutKey: (n: number): string => `显示未配置 key 的模型（${n} 个）`,
-    pendingSave: "（待保存）",
     modelIdExists: "该模型 id 已存在",
     pricingAllOrNone: "三项价格需一并填写",
     pricingInvalid: "必须为数字",
@@ -391,6 +381,8 @@ export const zh = {
     remove: "删除",
     deleteTitle: "删除环境变量",
     deleteConfirm: (key: string): string => `确认删除环境变量「${key}」？值不可恢复。`,
+    overwriteTitle: "覆盖已有环境变量",
+    overwriteConfirm: (key: string): string => `「${key}」已存在，保存将覆盖原值且不可恢复。`,
     empty: "尚未配置任何环境变量",
     readOnlyHint: "member 只读；Vault 修改仅 owner 可执行",
     keyHint: "字母、数字与下划线，不能以数字开头",
@@ -401,7 +393,6 @@ export const zh = {
   schedule: {
     desc: "定时任务（agent_state/schedule/*.toml）：到点自动向目标 Session 发送 prompt；文件亦可手工编辑，Web 端修改后即时生效。",
     readOnlyHint: "member 只读；定时任务修改仅 owner 可执行",
-    colName: "名称",
     colStatus: "状态",
     colPeriod: "周期",
     colTarget: "目标",
@@ -424,7 +415,6 @@ export const zh = {
     disable: "停用",
     addTitle: "新建定时任务",
     editTitle: (name: string): string => `编辑定时任务「${name}」`,
-    name: "名称",
     nameHint: "即文件名（不含 .toml），创建后不可改",
     prompt: "Prompt",
     enabled: "启用",
@@ -462,9 +452,16 @@ export const zh = {
     installedToast: (skill: string, agent: string): string => `已将 ${skill} 安装到 ${agent}`,
     updateOutdated: (n: number): string => `有新版本：更新 ${n} 个 Agent 的安装`,
     updateAction: "更新",
+    updateConfirmTitle: (name: string): string => `更新 ${name}`,
+    updateConfirmWarning: (name: string): string =>
+      `更新 ${name} 会把库内当前副本重装到各 Agent，覆盖其已安装的文件——对已装技能的本地改动会丢失，如有需要请先导出备份。`,
     updatedToast: (skill: string, n: number): string =>
       `已将 ${skill} 更新到最新版（${n} 个 Agent）`,
     uninstalledToast: (skill: string, agent: string): string => `已从 ${agent} 卸载 ${skill}`,
+    /** Uninstall confirmation: removing the installed copy deletes its files (local edits included). */
+    uninstallConfirmTitle: (name: string): string => `卸载 ${name}`,
+    uninstallConfirmBody: (skill: string, agent: string): string =>
+      `确定从 ${agent} 卸载 ${skill} 吗？已安装的技能文件（含本地改动）将被删除。`,
   },
 
   chat: {
@@ -494,7 +491,7 @@ export const zh = {
     draftSubtitle: "最擅长 AI 开发任务的自进化 Agent",
     /**
      * Example task cards on the draft screen: one click auto-submits the canned prompt (game
-     * card first, RAG card below/after it). These are the FULL working prompts — the README and
+     * card, then the LoL-player card, then the RAG card). These are the FULL working prompts — the README and
      * landing page show a condensed one-sentence version of the RAG example for reading, and
      * the cards' own desc lines stay short, but what actually gets submitted stays detailed:
      * build quality depends on it.
@@ -571,7 +568,6 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
       "read-only": "放行只读（read-only）",
       "always-ask": "总是询问（always-ask）",
     } as Record<string, string>,
-    statusIdle: "空闲",
     statusRunning: "运行中",
     statusCompacting: "压缩中",
     pendingApprovals: (n: number) => `${n} 个待审批`,
@@ -580,7 +576,6 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     inputPlaceholderShort: "输入消息…",
     send: "发送",
     stop: "停止",
-    compactingHint: "上下文压缩中，暂不接受新输入",
     compact: "压缩上下文",
     approve: "允许",
     deny: "拒绝",
@@ -613,7 +608,6 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     infoPanel: "Session 信息",
     sessionStats: "统计",
     statTokens: "Token 累计",
-    statCost: "成本",
     statElapsed: "用时",
     statInput: "输入 tokens",
     statCached: "已缓存",
@@ -625,7 +619,6 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     noSessions: "还没有 Session",
     emptyStream: "发送一条消息开始对话",
     historyLoadFailed: "历史消息加载失败",
-    sessionHealed: "Session 已自愈为新 id",
     statsLabel: "统计信息",
     removeImage: "移除图片",
     openWorkspace: "打开工作区",
@@ -650,12 +643,6 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     handoffFrom: (agent: string) => `由 ${agent} 的对话交接而来`,
     handoffBack: (title?: string) => (title ? `回到原对话：${title}` : "回到原对话"),
     scheduledFrom: (name: string) => `由定时任务「${name}」触发`,
-    /** Source badge on session list rows (user-created sessions have no source). */
-    sourceNames: {
-      schedule: "定时",
-      subagent: "子",
-    } as Record<string, string>,
-    commandCompact: "/compact",
     emptyGreeting: "开始一段新对话",
     compactionRunning: (mode: string) => `压缩进行中（${mode}）…`,
     compactionDone: (mode: string): string =>
@@ -663,17 +650,13 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     compactionFailed: (status: string) =>
       `[压缩] ${status === "aborted" ? "已中断" : "失败"}，保留当前上下文`,
     unknownTool: "（未知工具）",
-    toolCall: "工具调用",
-    workGroupTitle: "推理与工具",
     workRunning: "运行中",
     workDone: "运行完毕",
     workGroupSteps: (n: number) => `${n} 步`,
     approvalWaiting: "待审批",
     copyCode: "复制代码",
-    copyStats: "复制统计",
     copyReply: "复制回复",
     copyMessage: "复制消息",
-    copied: "已复制",
     deleteSession: "删除对话",
     renameSession: "重命名对话",
     renameSessionLabel: "标题",
@@ -681,13 +664,13 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
       `确定删除「${title}」？该对话的消息与 Trace 将被移除，且不可恢复。`,
     archiveSession: "归档",
     unarchiveSession: "取消归档",
-    archivedGroup: (n: number) => `已归档（${n}）`,
     /** Sidebar group "reveal/load next page" row (display cap + server paging). */
     loadMore: "更多",
-    /** Sidebar folders for automation-created sessions (one per origin), parallel to 已归档; wording matches the sourceNames badges. */
-    sourceGroups: {
+    /** Collapsed sidebar folders inside a group (lazy-loaded); the count is the group's exact server share. */
+    folderGroups: {
       subagent: (n: number) => `子智能体（${n}）`,
       schedule: (n: number) => `定时任务（${n}）`,
+      archived: (n: number) => `已归档（${n}）`,
     },
     skillsBanner: (names: string[]): string => `使用技能：${names.join("、")}`,
   },
@@ -702,11 +685,11 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     refresh: "刷新",
     root: "根目录",
     empty: "空目录",
-    name: "名称",
-    size: "大小",
-    modified: "修改时间",
     previewUnsupported: "该类型不支持预览，请下载查看",
     uploaded: "已上传",
+    /** Upload-overwrite confirmation: same-name files in the current directory will be replaced. */
+    overwriteTitle: "覆盖同名文件",
+    overwriteConfirm: (n: number): string => `当前目录已存在以下 ${n} 个同名文件，上传将覆盖：`,
     loadFailed: "加载失败",
     previewTruncated: "内容过大，预览已截断，请下载查看完整文件",
     details: "详情",
@@ -723,16 +706,13 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     last7d: "近 7 天",
     total: "累计",
     tokens: "Token",
-    cost: "成本",
     requests: "Requests",
     from: "起始日期",
     to: "结束日期",
     colCacheRead: "cache_read",
     colCacheWrite: "cache_write",
     colOutput: "output",
-    colCost: "成本",
-    trendTitle: "近 30 天趋势",
-    uncostedNote: "* 含未配置 pricing 的记录，成本为不完全统计",
+    uncostedNote: "* 只计入配置了价格的模型成本",
     filterAllAgents: "全部 Agent",
     filterAllModels: "全部模型",
     chartAgentCalls: "各 Agent 调用次数",
@@ -746,7 +726,6 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     errorsUnexpected: "未预期",
     errorsExpected: "预期内",
     errorsTopCode: "最常见",
-    errorsColTime: "时间",
     errorsColCode: "来源 · 错误码",
     errorsColKind: "类型",
     errorsColMessage: "消息",
@@ -755,15 +734,8 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
 
   traces: {
     title: "轨迹观测",
-    filterAll: "全部",
-    filterModel: "model_msg",
-    filterEvent: "event_msg",
-    analysis: "轨迹观测",
     timeline: "执行时间线",
     laneLLM: "模型",
-    laneTools: "工具",
-    phaseApproval: "审批",
-    phaseExec: "执行",
     kindThinking: "思考",
     kindModelReply: "模型回复",
     kindToolGen: "工具调用生成",
@@ -787,16 +759,9 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     taskOutput: "本轮输出 tokens",
     cacheHit: "命中缓存",
     hitRate: "命中率",
-    toolFailRate: "失败率",
     compactions: "压缩次数",
     compactionRound: "压缩",
-    usageTrend: "Token 用量趋势",
-    selectFile: "在左侧选择一个 Trace 文件",
     empty: "该 Agent 暂无 Trace",
-    colTime: "时间",
-    colType: "类型",
-    colSummary: "摘要",
-    lines: (n: number) => `${n} 行`,
     inProgress: "进行中",
     systemPrompt: "系统提示词",
     toolDefs: (n: number) => `工具定义（${n}）`,
@@ -815,11 +780,9 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     summaryLabel: "评估说明",
     /** Chart legend: older evaluation records with no model label (gray series). */
     legendUnlabeled: "未标注模型",
-    colTime: "时间",
     colVersion: "版本",
     colModel: "模型",
     colScore: "总分",
-    colCost: "成本",
     colDuration: "耗时",
     colCase: "题目",
     colRun: "运行",
@@ -828,11 +791,38 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
 
   // Server error code → localized copy (the server's message is hardcoded Chinese; this is only a fallback for unknown codes).
   errors: {
-    unauthorized: "登录已过期，请重新登录",
     networkError: "网络错误，请检查连接",
     modelCredentialMissing: (modelId: string) =>
       `模型 ${modelId} 还没有可用的 API key，请先在「模型」页为它配置`,
     noDefaultModel: "该 Project 还没有默认模型，请先在「模型」页添加模型并设为默认",
+    /** Localized text for the common server error codes (server error messages are English-only); looked up by ApiError.code in apiErrorText, falling back to the raw message for unmapped codes. */
+    byCode: {
+      invalid_credentials: "用户名或密码错误。",
+      password_mismatch: "当前密码不正确。",
+      invalid_password: "密码至少 8 位。",
+      admin_required: "仅管理员可执行此操作。",
+      not_found: "资源不存在，或你没有访问权限。",
+      agent_not_found: "该 Agent 已不存在。",
+      agent_exists: "该 Agent id 已被占用。",
+      project_exists: "该 Project id 已被占用。",
+      user_exists: "该用户名已被占用。",
+      user_not_found: "该用户已不存在。",
+      cannot_delete_admin: "内置 admin 不可删除。",
+      member_not_found: "该用户不是本 Project 的成员。",
+      schedule_exists: "已存在同名定时任务。",
+      schedule_not_found: "该定时任务已不存在。",
+      unknown_skill: "该技能不在技能库中。",
+      file_not_found: "该文件已不存在。",
+      file_too_large: "文件过大。",
+      payload_too_large: "请求体过大。",
+      dir_not_absolute: "目录必须是绝对路径。",
+      not_a_dir: "该路径不是目录。",
+      path_not_found: "该路径不存在。",
+      workspace_missing: "该 Session 的 Workspace 已不存在。",
+      task_in_progress: "该 Session 已有任务在运行。",
+      version_conflict: "快照版本不高于当前版本。",
+      invalid_title: "标题无效。",
+    },
   },
 };
 

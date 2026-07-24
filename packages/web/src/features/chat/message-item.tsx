@@ -69,7 +69,7 @@ function MessageMeta({
       {text !== undefined && (
         <button
           type="button"
-          title={copied ? S.chat.copied : S.chat.copyMessage}
+          title={copied ? S.common.copied : S.chat.copyMessage}
           aria-label={S.chat.copyMessage}
           onClick={copy}
           className="rounded p-0.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"

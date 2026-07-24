@@ -17,6 +17,7 @@ import type {
   FilesStatResponse,
   MessagesResponse,
   ServerEvent,
+  SessionCategory,
   SessionCreateResponse,
   SessionResponse,
   SessionsResponse,
@@ -55,6 +56,14 @@ const APPROVAL_MODES: readonly ApprovalMode[] = [
   "deny-all",
   "read-only",
   "always-ask",
+];
+
+/** Accepted `category` query values of the list endpoint (SessionCategory, spelled out for validation). */
+const SESSION_CATEGORIES: readonly SessionCategory[] = [
+  "active",
+  "subagent",
+  "schedule",
+  "archived",
 ];
 
 /** Validate Prompt input parts: text or image (data: / http(s) URL). */
@@ -101,12 +110,28 @@ export function agentSessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     // Optional paging (absent = full list, the pre-paging contract): the sidebar requests
     // limit+1 and shows limit, detecting "has more" without a response-envelope change.
     const paging = optionalPagingQuery(c);
-    const sessions = await deps.sessionService.listSessions(
+    // Optional category filter (paging then applies within the category) and per-category
+    // totals — the sidebar loads active rows only and labels the collapsed folders from counts.
+    const rawCategory = c.req.query("category");
+    if (rawCategory !== undefined && !SESSION_CATEGORIES.includes(rawCategory as SessionCategory)) {
+      throw badRequest(`category must be one of ${SESSION_CATEGORIES.join(" / ")}.`);
+    }
+    const rawCounts = c.req.query("counts");
+    if (rawCounts !== undefined && rawCounts !== "1") throw badRequest("counts only accepts 1.");
+    const { sessions, counts, workspaceCounts } = await deps.sessionService.listSessions(
       projectId,
       agentId,
-      ...(paging ? [paging] : []),
+      {
+        ...(paging ? { paging } : {}),
+        ...(rawCategory !== undefined ? { category: rawCategory as SessionCategory } : {}),
+        ...(rawCounts !== undefined ? { withCounts: true } : {}),
+      },
     );
-    return c.json({ sessions } satisfies SessionsResponse);
+    return c.json({
+      sessions,
+      ...(counts ? { counts } : {}),
+      ...(workspaceCounts ? { workspaceCounts } : {}),
+    } satisfies SessionsResponse);
   });
 
   app.post("/", async (c) => {

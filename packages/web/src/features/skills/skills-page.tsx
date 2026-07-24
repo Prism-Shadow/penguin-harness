@@ -17,10 +17,12 @@
  * localizedShortText), and groups have no description. Icon buttons for
  * actions (copy goes into aria-label and title) —
  * - Rotate "update installs" (shown only when some Agent's installed copy has
- *   a lower version than the library): one click reinstalls the current
- *   library copy on every outdated Agent (install-again-is-update semantics),
- *   with a single success toast; the manage-installs Modal marks outdated
- *   rows with an accent "更新"/"Update" button doing the same per Agent;
+ *   a lower version than the library): opens a confirm dialog (lists each
+ *   Agent's v_old → v_new and warns the overwriting reinstall drops local
+ *   edits), then reinstalls the current library copy on every outdated Agent
+ *   (install-again-is-update semantics), with a single success toast; the
+ *   manage-installs Modal marks outdated rows with an accent "更新"/"Update"
+ *   button doing the same per Agent (through the same confirm);
  * - Paper plane "quick invoke": enters /chat/new draft mode with default_agent,
  *   pre-selects the skill, and pre-fills the invocation text per UI language
  *   (zh "使用 X 技能" / en "use the X skill", overwriting any existing draft body);
@@ -47,6 +49,7 @@ import { Button } from "../../components/ui/button";
 import { Chevron } from "../../components/ui/chevron";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { Modal } from "../../components/ui/modal";
+import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { Skeleton, SkeletonCard } from "../../components/ui/skeleton";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
@@ -353,6 +356,25 @@ function SkillCard({
   const { locale } = useLocale();
   const { agents } = useProject();
   const [installOpen, setInstallOpen] = useState(false);
+  // Agents pending an update confirmation (null = none): an update is an overwriting reinstall, so it needs a confirm + a per-agent version list before it runs.
+  const [pendingUpdate, setPendingUpdate] = useState<string[] | null>(null);
+  const [updating, setUpdating] = useState(false);
+  // Agent pending an uninstall confirmation (null = none): uninstalling deletes the installed files, local edits included.
+  const [pendingUninstall, setPendingUninstall] = useState<string | null>(null);
+
+  const confirmUpdate = async () => {
+    if (!pendingUpdate) return;
+    setUpdating(true);
+    await onUpdateOutdated(skill.name, pendingUpdate);
+    setUpdating(false);
+    setPendingUpdate(null);
+  };
+
+  /** Display name of the Agent pending uninstall (falls back to the raw id below). */
+  const uninstallAgent =
+    pendingUninstall !== null ? agents.find((a) => a.agentId === pendingUninstall) : undefined;
+  const uninstallAgentName = uninstallAgent ? agentDisplayName(uninstallAgent) : undefined;
+
   let installedCount = 0;
   for (const m of installed.values()) if (m.has(skill.name)) installedCount += 1;
   const outdated = outdatedAgentIds(
@@ -416,7 +438,7 @@ function SkillCard({
             className="h-8 w-8 shrink-0 justify-center p-0"
             aria-label={`${S.skills.updateOutdated(outdated.length)} ${skill.name}`}
             title={S.skills.updateOutdated(outdated.length)}
-            onClick={() => void onUpdateOutdated(skill.name, outdated)}
+            onClick={() => setPendingUpdate(outdated)}
           >
             <GlyphIcon d={UPDATE_ICON} size={13} />
           </Button>
@@ -457,12 +479,70 @@ function SkillCard({
                 name={agentDisplayName(a)}
                 installed={installed.get(a.agentId)?.has(skill.name) ?? false}
                 outdated={outdated.includes(a.agentId)}
-                onToggle={(on) => void onToggleInstall(a.agentId, skill.name, on, skill.version)}
-                onUpdate={() => void onUpdateOutdated(skill.name, [a.agentId])}
+                onToggle={(on) => {
+                  // Install runs directly; uninstall deletes the installed files, so it confirms first.
+                  if (on) void onToggleInstall(a.agentId, skill.name, true, skill.version);
+                  else setPendingUninstall(a.agentId);
+                }}
+                onUpdate={() => setPendingUpdate([a.agentId])}
               />
             ))}
           </div>
         </Modal>
+      )}
+      {pendingUpdate && (
+        <ConfirmModal
+          open
+          title={S.skills.updateConfirmTitle(skill.name)}
+          tone="primary"
+          confirmLabel={S.skills.updateAction}
+          busy={updating}
+          onClose={() => setPendingUpdate(null)}
+          onConfirm={() => void confirmUpdate()}
+        >
+          <div className="space-y-3">
+            <p className="text-sm text-gray-600 dark:text-gray-300">
+              {S.skills.updateConfirmWarning(skill.name)}
+            </p>
+            {/* Per-agent old → new version, so it's clear exactly which installs get overwritten. */}
+            <ul className="divide-y divide-gray-100 overflow-hidden rounded-md border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
+              {pendingUpdate.map((agentId) => {
+                const oldVersion = installed.get(agentId)?.get(skill.name);
+                const target = agents.find((a) => a.agentId === agentId);
+                return (
+                  <li
+                    key={agentId}
+                    className="flex items-center justify-between gap-3 px-3 py-1.5 text-xs"
+                  >
+                    <span className="min-w-0 truncate">
+                      {target ? agentDisplayName(target) : agentId}
+                    </span>
+                    <span className="shrink-0 font-mono text-gray-500 dark:text-gray-400">
+                      v{oldVersion ?? "?"} → v{skill.version}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        </ConfirmModal>
+      )}
+      {pendingUninstall !== null && (
+        <ConfirmModal
+          open
+          title={S.skills.uninstallConfirmTitle(skill.name)}
+          confirmLabel={S.skills.uninstall}
+          onClose={() => setPendingUninstall(null)}
+          onConfirm={() => {
+            const agentId = pendingUninstall;
+            setPendingUninstall(null);
+            void onToggleInstall(agentId, skill.name, false, skill.version);
+          }}
+        >
+          <p className="text-sm text-gray-600 dark:text-gray-300">
+            {S.skills.uninstallConfirmBody(skill.name, uninstallAgentName ?? pendingUninstall)}
+          </p>
+        </ConfirmModal>
       )}
     </div>
   );

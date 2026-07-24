@@ -8,14 +8,15 @@
  * intercept mouse events (pointer-events-none) — only the toast itself is
  * interactive (clicking it dismisses immediately).
  *
- * Usage: call `toastSuccess("Saved")` / `toastError("Connection failed: ...")`
- * from anywhere, no context needed — a module-level subscriber list plus a
- * single `<Toaster />` mounted at the app root is all it takes.
+ * Usage: call `toastSuccess("Saved")` / `toastInfo("Already up to date")` /
+ * `toastError("Connection failed: ...")` from anywhere, no context needed — a
+ * module-level subscriber list plus a single `<Toaster />` mounted at the app
+ * root is all it takes.
  */
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
-type ToastKind = "success" | "error";
+type ToastKind = "success" | "error" | "info";
 
 interface ToastItem {
   id: number;
@@ -25,8 +26,8 @@ interface ToastItem {
   leaving?: boolean;
 }
 
-/** Display duration: error messages are usually longer and more important to read, so give them more time. */
-const DURATION: Record<ToastKind, number> = { success: 2500, error: 6000 };
+/** Display duration: error messages are usually longer and more important to read, so give them more time; info sits in between. */
+const DURATION: Record<ToastKind, number> = { success: 2500, info: 4000, error: 6000 };
 
 let items: ToastItem[] = [];
 let nextId = 1;
@@ -61,12 +62,14 @@ function push(kind: ToastKind, text: string): void {
 
 export const toastSuccess = (text: string): void => push("success", text);
 export const toastError = (text: string): void => push("error", text);
+export const toastInfo = (text: string): void => push("info", text);
 
 const KIND_CLASS: Record<ToastKind, string> = {
   success:
     "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200",
   error:
     "border-red-200 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200",
+  info: "border-sky-200 bg-sky-50 text-sky-800 dark:border-sky-900 dark:bg-sky-950 dark:text-sky-200",
 };
 
 /** Toast container: mount once at the app root. */

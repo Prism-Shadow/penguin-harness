@@ -5,8 +5,8 @@
 import { useEffect, useState } from "react";
 import type { MemberInfo } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
+import { apiErrorText } from "../../lib/api-error";
 import {
   PROJECT_ID_MAX_LENGTH,
   PROJECT_SUFFIX_PATTERN,
@@ -16,7 +16,10 @@ import { projectDisplayName, useProject } from "../../state/project";
 import { useAuth } from "../../state/auth";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
+import { FieldError, FieldHint, FieldLabel } from "../ui/field";
+import { toastError } from "../ui/toast";
 import { Modal } from "../ui/modal";
+import { ConfirmModal } from "../ui/confirm-modal";
 import { Badge } from "../ui/badge";
 
 export function CreateProjectDialog({
@@ -33,7 +36,8 @@ export function CreateProjectDialog({
   const prefix = user && !user.isAdmin ? `${user.userId}-` : "";
   const [idInput, setIdInput] = useState("");
   const [name, setName] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  // The id is the only validated field; format problems and the server's rejection (e.g. duplicate id) both land beside it.
+  const [idError, setIdError] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
 
   // No draft is kept: the form starts empty every time it opens.
@@ -41,13 +45,13 @@ export function CreateProjectDialog({
     if (!open) return;
     setIdInput("");
     setName("");
-    setError(null);
+    setIdError(undefined);
   }, [open]);
 
   const submit = async () => {
     const id = prefix + idInput.trim();
     if (!idInput.trim()) {
-      setError(S.common.requiredField);
+      setIdError(S.common.requiredField);
       return;
     }
     // Non-admin: validate the suffix segment (the hyphen is a reserved separator, appearing only once at the prefix join); admin: validate the whole string.
@@ -55,11 +59,11 @@ export function CreateProjectDialog({
       ? PROJECT_SUFFIX_PATTERN.test(idInput.trim()) && id.length <= PROJECT_ID_MAX_LENGTH
       : SEMANTIC_ID_PATTERN.test(id);
     if (!valid) {
-      setError(prefix ? S.project.idPrefixHint : S.project.idHint);
+      setIdError(prefix ? S.project.idPrefixHint : S.project.idHint);
       return;
     }
     setBusy(true);
-    setError(null);
+    setIdError(undefined);
     try {
       const res = await api.createProject({
         projectId: id,
@@ -67,7 +71,7 @@ export function CreateProjectDialog({
       });
       onCreated(res.project.projectId);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : S.common.unknownError);
+      setIdError(apiErrorText(e));
     } finally {
       setBusy(false);
     }
@@ -90,9 +94,7 @@ export function CreateProjectDialog({
       <div className="space-y-3">
         {prefix ? (
           <div>
-            <span className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-400">
-              {S.project.id}
-            </span>
+            <FieldLabel required>{S.project.id}</FieldLabel>
             <div className="flex items-stretch">
               <span className="flex shrink-0 items-center rounded-l-md border border-r-0 border-gray-300 bg-gray-100 px-2 font-mono text-xs text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400">
                 {prefix}
@@ -101,20 +103,31 @@ export function CreateProjectDialog({
                 size="sm"
                 className="rounded-l-none"
                 value={idInput}
-                onChange={(e) => setIdInput(e.target.value)}
+                invalid={Boolean(idError)}
+                onChange={(e) => {
+                  setIdInput(e.target.value);
+                  setIdError(undefined);
+                }}
                 autoFocus
               />
             </div>
-            <span className="mt-1 block text-xs text-gray-500 dark:text-gray-500">
-              {S.project.idPrefixHint}
-            </span>
+            {idError ? (
+              <FieldError>{idError}</FieldError>
+            ) : (
+              <FieldHint>{S.project.idPrefixHint}</FieldHint>
+            )}
           </div>
         ) : (
           <Input
             label={S.project.id}
+            required
             size="sm"
             value={idInput}
-            onChange={(e) => setIdInput(e.target.value)}
+            error={idError}
+            onChange={(e) => {
+              setIdInput(e.target.value);
+              setIdError(undefined);
+            }}
             hint={S.project.idHint}
             autoFocus
           />
@@ -125,7 +138,6 @@ export function CreateProjectDialog({
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
-        {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
       </div>
     </Modal>
   );
@@ -137,7 +149,8 @@ export function ProjectSettingsDialog({ open, onClose }: { open: boolean; onClos
   const { currentProject, setCurrentProjectId, projects, reloadProjects } = useProject();
   const [members, setMembers] = useState<MemberInfo[] | null>(null);
   const [newMemberId, setNewMemberId] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  // Only the initial member-list load shows inline (in place of the table); action failures pop a toast.
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const projectId = currentProject?.projectId;
@@ -146,42 +159,39 @@ export function ProjectSettingsDialog({ open, onClose }: { open: boolean; onClos
   useEffect(() => {
     if (!open || !projectId) return;
     setMembers(null);
-    setError(null);
+    setLoadError(null);
     setConfirmDelete(false);
     api
       .listMembers(projectId)
       .then((res) => setMembers(res.members))
-      .catch((e: unknown) => setError(e instanceof ApiError ? e.message : S.common.unknownError));
+      .catch((e: unknown) => setLoadError(apiErrorText(e)));
   }, [open, projectId]);
 
   if (!currentProject || !projectId) return null;
 
   const addMember = async () => {
     if (!newMemberId.trim()) return;
-    setError(null);
     try {
       await api.addMember(projectId, { userId: newMemberId.trim() });
       setNewMemberId("");
       const res = await api.listMembers(projectId);
       setMembers(res.members);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : S.common.unknownError);
+      toastError(apiErrorText(e));
     }
   };
 
   const doRemove = async (memberId: string) => {
-    setError(null);
     try {
       await api.removeMember(projectId, memberId);
       const res = await api.listMembers(projectId);
       setMembers(res.members);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : S.common.unknownError);
+      toastError(apiErrorText(e));
     }
   };
 
   const doDelete = async () => {
-    setError(null);
     try {
       await api.deleteProject(projectId);
       onClose();
@@ -189,7 +199,7 @@ export function ProjectSettingsDialog({ open, onClose }: { open: boolean; onClos
       await reloadProjects();
       if (next) setCurrentProjectId(next.projectId);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : S.common.unknownError);
+      toastError(apiErrorText(e));
     }
   };
 
@@ -206,7 +216,9 @@ export function ProjectSettingsDialog({ open, onClose }: { open: boolean; onClos
 
         <div>
           <p className="mb-2 text-xs font-medium text-gray-500">{S.project.members}</p>
-          {members === null ? (
+          {loadError ? (
+            <p className="text-xs text-red-600 dark:text-red-400">{loadError}</p>
+          ) : members === null ? (
             <p className="text-xs text-gray-400">{S.common.loading}</p>
           ) : (
             // Member permission table: username / role / actions; cells never wrap.
@@ -216,13 +228,11 @@ export function ProjectSettingsDialog({ open, onClose }: { open: boolean; onClos
                 <thead>
                   <tr className="border-b border-gray-100 bg-gray-50 text-left text-gray-500 dark:border-gray-800 dark:bg-gray-900/60 dark:text-gray-400">
                     <th className="whitespace-nowrap px-2.5 py-1.5 font-medium">
-                      {S.project.memberUsername}
+                      {S.common.username}
                     </th>
-                    <th className="whitespace-nowrap px-2.5 py-1.5 font-medium">
-                      {S.project.memberRole}
-                    </th>
+                    <th className="whitespace-nowrap px-2.5 py-1.5 font-medium">{S.common.role}</th>
                     <th className="w-20 whitespace-nowrap px-2.5 py-1.5 text-right font-medium">
-                      {S.project.memberActions}
+                      {S.common.actions}
                     </th>
                   </tr>
                 </thead>
@@ -246,7 +256,7 @@ export function ProjectSettingsDialog({ open, onClose }: { open: boolean; onClos
                     <tr>
                       <td className="px-2.5 py-1.5">
                         <Input
-                          placeholder={S.project.memberUsername}
+                          placeholder={S.common.username}
                           size="sm"
                           value={newMemberId}
                           onChange={(e) => setNewMemberId(e.target.value)}
@@ -283,18 +293,6 @@ export function ProjectSettingsDialog({ open, onClose }: { open: boolean; onClos
               // Last accessible Project: deleting it would leave the account with no Project to select
               // (the page would get stuck on the skeleton screen), so the frontend hides the entry point outright, matching the server's 409 rejection.
               <p className="text-xs text-gray-400">{S.project.deleteLastForbidden}</p>
-            ) : confirmDelete ? (
-              <div className="space-y-2">
-                <p className="text-xs text-red-600 dark:text-red-400">{S.project.deleteConfirm}</p>
-                <div className="flex gap-2">
-                  <Button size="sm" onClick={() => setConfirmDelete(false)}>
-                    {S.common.cancel}
-                  </Button>
-                  <Button size="sm" variant="danger" onClick={() => void doDelete()}>
-                    {S.common.confirm}
-                  </Button>
-                </div>
-              </div>
             ) : (
               <Button size="sm" variant="danger" onClick={() => setConfirmDelete(true)}>
                 {S.project.deleteProject}
@@ -302,9 +300,17 @@ export function ProjectSettingsDialog({ open, onClose }: { open: boolean; onClos
             )}
           </div>
         )}
-
-        {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
       </div>
+
+      {/* Delete confirmation (shared ConfirmModal, stacked above the settings dialog). */}
+      <ConfirmModal
+        open={confirmDelete}
+        title={S.project.deleteProject}
+        onClose={() => setConfirmDelete(false)}
+        onConfirm={() => void doDelete()}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">{S.project.deleteConfirm}</p>
+      </ConfirmModal>
     </Modal>
   );
 }

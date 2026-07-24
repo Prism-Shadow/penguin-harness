@@ -7,8 +7,9 @@
  * shift out of place. So error is only passed down as `invalid` (red border), and
  * the error text is rendered below the box by this component.
  */
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Input, type InputProps } from "./input";
+import { Field } from "./field";
 import { S } from "../../lib/strings";
 
 /** Eye (click to show) and a crossed-out closed eye (click to hide). */
@@ -21,25 +22,27 @@ export function PasswordInput({
   hint,
   error,
   invalid,
+  required,
   size = "base",
   className,
   ...rest
 }: Omit<InputProps, "type">) {
   const [visible, setVisible] = useState(false);
   const toggleLabel = visible ? S.auth.hidePassword : S.auth.showPassword;
+  // The error text renders in THIS component's Field (see the header comment), so the
+  // association is wired here too: the inner Input only gets `invalid` and points its
+  // aria-describedby at the outer FieldError.
+  const errorId = useId();
   return (
-    <label className="block">
-      {label && (
-        <span className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-400">
-          {label}
-        </span>
-      )}
+    <Field label={label} hint={hint} error={error} errorId={errorId} required={required}>
       <div className="relative">
         <Input
           {...rest}
+          required={required}
           size={size}
           type={visible ? "text" : "password"}
           invalid={Boolean(error) || Boolean(invalid)}
+          aria-describedby={error ? errorId : undefined}
           className={`${size === "sm" ? "pr-8" : "pr-10"} ${className ?? ""}`}
         />
         <button
@@ -68,11 +71,6 @@ export function PasswordInput({
           </svg>
         </button>
       </div>
-      {error ? (
-        <span className="mt-1 block text-xs text-red-600 dark:text-red-400">{error}</span>
-      ) : hint ? (
-        <span className="mt-1 block text-xs text-gray-500 dark:text-gray-500">{hint}</span>
-      ) : null}
-    </label>
+    </Field>
   );
 }

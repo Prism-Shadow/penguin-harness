@@ -14,16 +14,19 @@
 import { useEffect } from "react";
 import { createPortal } from "react-dom";
 import type { ReactNode } from "react";
-import { S } from "../../lib/strings";
+import { CloseButton } from "./icons";
 
 export interface ModalProps {
   open: boolean;
+  /** Dialog name: rendered as the header bar, or (headerless) exposed as the panel's aria-label only. */
   title: string;
   onClose: () => void;
   children: ReactNode;
   footer?: ReactNode;
   /** Panel width class (defaults to sm:max-w-md). */
   widthClass?: string;
+  /** No header bar (no visible title, no close button): compact dialogs like confirmations — the title still names the dialog for assistive tech. */
+  headerless?: boolean;
 }
 
 /**
@@ -36,7 +39,15 @@ export interface ModalProps {
  */
 const modalStack: symbol[] = [];
 
-export function Modal({ open, title, onClose, children, footer, widthClass }: ModalProps) {
+export function Modal({
+  open,
+  title,
+  onClose,
+  children,
+  footer,
+  widthClass,
+  headerless,
+}: ModalProps) {
   useEffect(() => {
     if (!open) return;
     const id = Symbol("modal");
@@ -61,21 +72,15 @@ export function Modal({ open, title, onClose, children, footer, widthClass }: Mo
       }}
     >
       <div
+        {...(headerless ? { role: "dialog", "aria-label": title } : {})}
         className={`anim-pop w-full ${widthClass ?? "sm:max-w-md"} rounded-t-lg border border-gray-200 bg-white pb-[env(safe-area-inset-bottom)] shadow-xl sm:rounded-lg sm:pb-0 dark:border-gray-800 dark:bg-gray-900`}
       >
-        <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-gray-800">
-          <h2 className="text-base font-semibold">{title}</h2>
-          <button
-            type="button"
-            aria-label={S.common.close}
-            onClick={onClose}
-            className="rounded-md p-1.5 text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"
-          >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor">
-              <path d="M2 2l10 10M12 2L2 12" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
-          </button>
-        </div>
+        {!headerless && (
+          <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-gray-800">
+            <h2 className="text-base font-semibold">{title}</h2>
+            <CloseButton onClose={onClose} />
+          </div>
+        )}
         <div className="max-h-[70vh] overflow-y-auto px-4 py-4">{children}</div>
         {footer && (
           <div className="flex justify-end gap-2 border-t border-gray-200 px-4 py-3 dark:border-gray-800">
