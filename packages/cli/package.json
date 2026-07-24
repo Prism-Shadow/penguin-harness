@@ -19,7 +19,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
     "build": "tsup",
-    "penguin": "tsx src/index.ts"
+    "penguin": "PENGUIN_HOME=\"${PENGUIN_HOME:-$HOME/.penguin/dev-data}\" tsx src/index.ts"
   },
   "dependencies": {
     "@prismshadow/agenthub": "^0.4.1",

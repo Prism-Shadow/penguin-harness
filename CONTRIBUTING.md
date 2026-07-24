@@ -31,6 +31,11 @@ core) with back-to-back builds deduped: starting `dev:server` and `dev:web` at t
 time (or just `pnpm dev`) installs and builds exactly once. `dev:docs` / `dev:landing`
 run the install check only (`--install-only`).
 
+Dev entry points that touch data (`pnpm dev`, `pnpm dev:server`, `pnpm penguin`) default
+to a separate data root, `~/.penguin/dev-data`, kept apart from the installed CLI/server's
+`~/.penguin/data` — hacking on the repo never mixes state with your real agents. Export
+`PENGUIN_HOME` to point them anywhere else; an explicit value always wins.
+
 Copy `.env.example` to `.env` for model credentials in development.
 
 ## Repo layout
