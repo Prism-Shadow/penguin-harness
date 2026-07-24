@@ -13,7 +13,7 @@ Included skills, in the order of the `SKILL_GROUPS` manifest in `src/index.ts` (
 | AI App Development | `penguin-sdk`, `penguin-cli`, `agenthub-models`, `vllm`, `ollama`, `llamafactory` |
 | Agent Tuning | `agent-creation`, `benchmark-design`, `agent-evaluation`, `agent-optimization` |
 
-Agent Tuning powers the self-improvement loop: create the Target Agent, design a Benchmark, evaluate it, and optimize it to a tested later version.
+Agent Tuning powers the self-improvement loop: create the Target Agent, design a Benchmark, evaluate it, optimize it to version N+1 with a snapshot before every round.
 
 ## Documentation
 
