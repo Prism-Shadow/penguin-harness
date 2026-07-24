@@ -114,7 +114,14 @@ export interface Messages {
   };
 
   // —— Runtime output ——
-  header(kind: "chat" | "run", agentId: string, workspace: string, model: string): string;
+  /** Startup banner: product + subcommand + CLI version on the first line, then Agent / Workspace / Model each on its own line. */
+  header(
+    kind: "chat" | "run",
+    version: string,
+    agentId: string,
+    workspace: string,
+    model: string,
+  ): string;
   chatHints(): string;
   confirmExit(): string;
   taskInterrupted(): string;
@@ -187,8 +194,34 @@ export interface Messages {
   webTimeout(url: string): string;
 }
 
-function header(kind: "chat" | "run", agentId: string, workspace: string, model: string): string {
-  return `PenguinHarness ${kind} — agent=${agentId}  workspace=${workspace}  model=${model}`;
+function headerEn(
+  kind: "chat" | "run",
+  version: string,
+  agentId: string,
+  workspace: string,
+  model: string,
+): string {
+  return [
+    `PenguinHarness ${kind} v${version}`,
+    `Agent: ${agentId}`,
+    `Workspace: ${workspace}`,
+    `Model: ${model}`,
+  ].join("\n");
+}
+
+function headerZh(
+  kind: "chat" | "run",
+  version: string,
+  agentId: string,
+  workspace: string,
+  model: string,
+): string {
+  return [
+    `PenguinHarness ${kind} v${version}`,
+    `Agent：${agentId}`,
+    `Workspace：${workspace}`,
+    `模型：${model}`,
+  ].join("\n");
 }
 
 const en: Messages = {
@@ -308,7 +341,7 @@ const en: Messages = {
     installerFetchFailed: (url) => `Could not download the installer from ${url}.`,
   },
 
-  header,
+  header: headerEn,
   chatHints: () =>
     "Type a message to start a conversation; end a line with \\; /compact to compact the context; /exit to quit; and Ctrl-C interrupts the current conversation.",
   confirmExit: () => "Exit penguin? [y/N] ",
@@ -473,7 +506,7 @@ const zh: Messages = {
     installerFetchFailed: (url) => `无法从 ${url} 下载安装脚本。`,
   },
 
-  header,
+  header: headerZh,
   chatHints: () =>
     "输入消息发起对话；行尾 \\ 续行；/compact 压缩上下文；/exit 退出；Ctrl-C 中断对话。",
   confirmExit: () => "确认退出 penguin？[y/N] ",

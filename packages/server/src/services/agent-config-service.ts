@@ -150,10 +150,6 @@ export class AgentConfigService {
       ...(Object.keys(compactionDto).length > 0 ? { compaction: compactionDto } : {}),
       toolsBuiltin: Array.isArray(tools.builtin) ? (tools.builtin as ToolDefinitionConfig[]) : [],
       mcpServers: Array.isArray(tools.mcpServers) ? (tools.mcpServers as MCPServerConfig[]) : [],
-      // Only a stored boolean is surfaced; a missing field stays missing (semantics: enabled).
-      ...(typeof tools.call_descriptions === "boolean"
-        ? { callDescriptions: tools.call_descriptions }
-        : {}),
     };
     return {
       agentsMd,
@@ -258,10 +254,6 @@ export class AgentConfigService {
     if (cfg.mcpServers !== undefined) {
       doc.setIn(["tools", "mcpServers"], validateMcpServers(cfg.mcpServers));
     }
-    setIfProvided(
-      ["tools", "call_descriptions"],
-      optionalBoolean(cfg, "callDescriptions", "callDescriptions"),
-    );
 
     await fs.writeFile(yamlPath, doc.toString(), "utf8");
   }
@@ -342,6 +334,7 @@ function validateToolsBuiltin(value: unknown): ToolDefinitionConfig[] {
     if (t.forModel !== undefined && t.forModel !== "vision" && t.forModel !== "text-only") {
       throw badRequest(`toolsBuiltin[${i}].forModel must be one of vision / text-only.`);
     }
+    optionalBoolean(t, "call_description", `toolsBuiltin[${i}].call_description`);
     optionalNumber(t, "timeoutMs", {
       integer: true,
       positiveOrMinusOne: true,

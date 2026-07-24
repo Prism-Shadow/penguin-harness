@@ -58,6 +58,7 @@ interface ToolResult {
 | `forModel` | `"vision"` / `"text-only"`：按 Session 模型类别装配；缺省对所有模型可用 |
 | `timeoutMs` | 单次调用超时(ms)，默认 120000;`<=0` 关闭 |
 | `maxOutputLength` | 输出长度上限(字符);`<=0` 关闭 |
+| `call_description` | 条目级开关：控制 `parameters` 中声明的可选 `description` 调用参数；缺省保留，`false` 时装配阶段从 schema 滤除 |
 
 ## 内置工具
 
@@ -77,9 +78,11 @@ interface ToolResult {
 
 `run_command` 旧名为 `exec_command`；磁盘上仍写着 `exec_command` 的 `system_config.yaml` 继续有效——注册表把两个名字映射到同一个 Shell 工具，装配出的工具以配置条目的名字为运行时名字。
 
+注意：既有 Agent 已落盘的 `tools.builtin` 列表按原样冻结（设置页只能编辑行、不能增行）：本工具集之前创建的 Agent 不会自动获得文件工具——需手工编辑该 Agent 的 `system_config.yaml`，把新条目补进去（可从 `packages/core/src/state/default-config.ts` 的默认定义复制）。
+
 ### 调用描述
 
-命令 / Subagent 类工具（`run_command`、`input_command`、`run_subagent`、`input_subagent`）接受可选的 `description` 参数：由模型写一句"本次调用在做什么"，CLI 与 Web 在调用运行期间展示给用户。该参数在装配时注入工具 schema，由 `system_config.yaml` 的 `tools.call_descriptions` 控制（缺省视为开启；写 `false` 关闭）。文件工具不带此参数——其 `file_path` 参数本身已说明用途。
+命令 / Subagent 类工具（`run_command`、`input_command`、`run_subagent`、`input_subagent`）接受可选的 `description` 参数：由模型写一句"本次调用在做什么"，CLI 与 Web 在调用运行期间展示给用户。该参数作为普通的 `description` 属性直接写在各条目的 `parameters` 中（工具 schema 完全存于可编辑配置）；由条目级 `call_description` 字段控制——缺省保留，写 `call_description: false` 时装配阶段将该属性从 schema 中滤除（仅内存内，不改写 YAML）。文件工具不带此参数——其 `file_path` 参数本身已说明用途。
 
 ### 命令会话
 
@@ -102,7 +105,7 @@ run_command(cmd)
   cmd: string;             // 必填:要执行的 shell 命令
   workdir?: string;        // 工作目录;缺省为 Workspace 根,相对路径按其解析
   yield_time_ms?: number;  // 前台等待时长;默认 60000,最小 250,上限受工具超时约束
-  description?: string;    // 可选(随 tools.call_descriptions):一句话说明,调用运行期间展示给用户
+  description?: string;    // 可选(由条目级 call_description 控制):一句话说明,调用运行期间展示给用户
 }
 
 // input_command
@@ -110,7 +113,7 @@ run_command(cmd)
   process_id: string;      // 必填:run_command 返回的命令会话 id
   chars?: string;          // 写入 stdin 的字符;单独发送 "\u0003" 传递 Ctrl-C;缺省仅轮询
   yield_time_ms?: number;  // 等待时长;有写入默认 250,空轮询默认 5000
-  description?: string;    // 可选(随 tools.call_descriptions)
+  description?: string;    // 可选(由条目级 call_description 控制)
 }
 ```
 
@@ -154,7 +157,7 @@ run_command(cmd)
   agent_id?: string;       // 子 Agent;缺省复用当前 Agent
   model_id?: string;       // 子 Session 模型;缺省继承父 Session 的模型
   yield_time_ms?: number;  // 前台等待时长;默认 300000
-  description?: string;    // 可选(随 tools.call_descriptions)
+  description?: string;    // 可选(由条目级 call_description 控制)
 }
 
 // input_subagent
@@ -162,7 +165,7 @@ run_command(cmd)
   subagent_id: string;     // 必填:run_subagent 返回的后台 Subagent id
   prompt?: string;         // 追加任务,仅在子 Session 空闲时接受;缺省仅轮询
   yield_time_ms?: number;  // 等待时长;有追加默认 300000,空轮询默认 10000
-  description?: string;    // 可选(随 tools.call_descriptions)
+  description?: string;    // 可选(由条目级 call_description 控制)
 }
 ```
 
@@ -222,11 +225,12 @@ tools:
     - name: run_command
       description: Run a shell command in the workspace.
       permission: rw
+      # 可选的条目级开关:false 时从 schema 滤除 parameters.properties 里声明的
+      # description 调用参数(缺省保留)。
+      call_description: false
       timeoutMs: 120000
       maxOutputLength: 16000
       # parameters: 必须携带完整 JSON Schema(默认定义见
       # packages/core/src/state/default-config.ts),此处从略。
   mcpServers: []
-  # 可选:写 false 时,命令/Subagent 类工具不再携带 description 调用参数(缺省视为开启)。
-  call_descriptions: true
 ```

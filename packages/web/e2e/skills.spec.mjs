@@ -223,7 +223,7 @@ test("skills: library groups and cards -> manage-install Modal -> quick-invoke p
   await expect(page.getByText("使用 agent-creation 技能", { exact: true })).toBeVisible();
   await expect(skillsBtn).not.toContainText("1");
 
-  // The mock LLM's fallback reply completes a full round (allow-all auto-approves exec_command).
+  // The mock LLM's fallback reply completes a full round (allow-all auto-approves run_command).
   await expect(page.getByText("Command finished; the result looks as expected.")).toBeVisible();
 
   // —— Slash invocation: typing /agent-opt shows a skill command item; pressing Enter selects it and clears the input box (without sending) ——

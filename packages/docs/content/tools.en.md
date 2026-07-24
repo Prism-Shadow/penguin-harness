@@ -58,6 +58,7 @@ Each tool is described by one `ToolDefinitionConfig`:
 | `forModel` | `"vision"` / `"text-only"`: selected by the Session model's class; omitted = available to all models |
 | `timeoutMs` | Per-call timeout (ms), default 120000; `<=0` disables |
 | `maxOutputLength` | Output length cap (characters); `<=0` disables |
+| `call_description` | Per-tool toggle for the optional `description` call argument declared in `parameters`; missing = kept, `false` filters it out of the schema at assembly |
 
 ## Built-in tools
 
@@ -77,9 +78,11 @@ There are 9 built-in tools (assembled via `packages/core/src/environment/tools/r
 
 `run_command` was formerly named `exec_command`; existing `system_config.yaml` files that still say `exec_command` keep working — the registry maps both names to the same shell tool, and the assembled tool takes its runtime name from the config entry.
 
+Note that an existing agent's persisted `tools.builtin` list is frozen as written (the settings UI edits rows but adds none): agents created before this toolset do not pick up the file tools automatically — hand-edit the agent's `system_config.yaml` and add the new entries (copy them from the default definitions in `packages/core/src/state/default-config.ts`) to adopt them.
+
 ### Call descriptions
 
-The command/subagent tools (`run_command`, `input_command`, `run_subagent`, `input_subagent`) accept an optional `description` argument: one model-written sentence about what the call is doing, shown by the CLI and Web UI while the call runs. It is injected into the tool schemas at assembly time and controlled by `tools.call_descriptions` in `system_config.yaml` (missing = enabled; set `false` to turn it off). The file tools don't take it — their `file_path` argument is self-describing.
+The command/subagent tools (`run_command`, `input_command`, `run_subagent`, `input_subagent`) accept an optional `description` argument: one model-written sentence about what the call is doing, shown by the CLI and Web UI while the call runs. The argument is declared as a normal `description` property in each entry's `parameters` in `system_config.yaml` (tool schemas live entirely in the editable config); the per-entry `call_description` field toggles it — missing = kept, `call_description: false` filters the property out of the schema at assembly time (in-memory only, the YAML is never rewritten). The file tools don't take it — their `file_path` argument is self-describing.
 
 ### Command sessions
 
@@ -103,7 +106,7 @@ Both tools' arguments (explicit keys):
   cmd: string;             // required: the shell command to run
   workdir?: string;        // working directory; defaults to the Workspace root, relative paths resolve against it
   yield_time_ms?: number;  // foreground wait; default 60000, minimum 250, capped below the tool timeout
-  description?: string;    // optional (with tools.call_descriptions): one sentence shown to the user while the call runs
+  description?: string;    // optional (toggled per tool via call_description): one sentence shown to the user while the call runs
 }
 
 // input_command
@@ -111,7 +114,7 @@ Both tools' arguments (explicit keys):
   process_id: string;      // required: the command-session id returned by run_command
   chars?: string;          // characters for stdin; send "\u0003" alone to deliver Ctrl-C; empty = poll only
   yield_time_ms?: number;  // wait; defaults 250 for writes, 5000 for empty polls
-  description?: string;    // optional (with tools.call_descriptions)
+  description?: string;    // optional (toggled per tool via call_description)
 }
 ```
 
@@ -155,7 +158,7 @@ Both tools' arguments (explicit keys):
   agent_id?: string;       // the child Agent; defaults to the current Agent
   model_id?: string;       // the child Session's model; inherits the parent Session's model when omitted
   yield_time_ms?: number;  // foreground wait; default 300000
-  description?: string;    // optional (with tools.call_descriptions)
+  description?: string;    // optional (toggled per tool via call_description)
 }
 
 // input_subagent
@@ -163,7 +166,7 @@ Both tools' arguments (explicit keys):
   subagent_id: string;     // required: the background Subagent id returned by run_subagent
   prompt?: string;         // follow-up task, accepted only while the child Session is idle; empty = poll only
   yield_time_ms?: number;  // wait; defaults 300000 with a prompt, 10000 for empty polls
-  description?: string;    // optional (with tools.call_descriptions)
+  description?: string;    // optional (toggled per tool via call_description)
 }
 ```
 
@@ -224,12 +227,12 @@ tools:
     - name: run_command
       description: Run a shell command in the workspace.
       permission: rw
+      # Optional per-tool toggle: false filters the `description` call argument
+      # (declared in parameters.properties) out of the schema (missing = kept).
+      call_description: false
       timeoutMs: 120000
       maxOutputLength: 16000
       # parameters: the complete JSON Schema is required (see the default definition
       # in packages/core/src/state/default-config.ts); elided here.
   mcpServers: []
-  # Optional: set false to drop the `description` call argument from the
-  # command/subagent tools (missing = enabled).
-  call_descriptions: true
 ```

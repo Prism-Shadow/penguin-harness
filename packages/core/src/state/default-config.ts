@@ -73,18 +73,10 @@ export interface SystemConfig {
   /** Context compaction (enabled by default, max_context_length 128k, mode summarize). */
   compaction?: CompactionConfig;
   tools?: {
-    /** Built-in system tool configuration. */
+    /** Built-in system tool configuration (per-entry fields incl. the `call_description` toggle live on ToolDefinitionConfig). */
     builtin?: ToolDefinitionConfig[];
     /** MCP Server configuration. */
     mcpServers?: MCPServerConfig[];
-    /**
-     * Whether the command/subagent tools (run_command / exec_command / input_command /
-     * run_subagent / input_subagent) accept an optional `description` argument — one
-     * model-written sentence about what the call is doing, surfaced by the frontends while
-     * the call runs. Injected into the tool schemas at assembly time (the stored YAML is
-     * never rewritten); defaults to true when missing, set false to turn it off.
-     */
-    call_descriptions?: boolean;
   };
 }
 
@@ -148,7 +140,7 @@ The vault holds this agent's per-agent secrets (agent_state/.vault.toml). Each e
 {{VAULT_KEYS}}
 
 # Skills
-Skills are reusable instruction packages stored under <app_data_dir>/agents/<agent_id>/agent_state/skills/<skill_name>/SKILL.md. There is no skill tool: when a task matches an installed skill below, or the user asks to use one (a message may start with a <use_skills> block listing skill names), first read that skill's SKILL.md in full with a shell command, then follow it. If a request only names a skill without a concrete task, ask the user what they need before starting.
+Skills are reusable instruction packages stored under <app_data_dir>/agents/<agent_id>/agent_state/skills/<skill_name>/SKILL.md. There is no skill tool: when a task matches an installed skill below, or the user asks to use one (a message may start with a <use_skills> block listing skill names), first read that skill's SKILL.md in full with the read_file tool, then follow it. If a request only names a skill without a concrete task, ask the user what they need before starting.
 {{SKILL_METADATA}}
 
 # Environment
@@ -177,73 +169,12 @@ export const DEFAULT_COMPACTION_PROMPT =
   "tools while writing the summary; respond with text only.";
 
 /**
- * Default built-in system tools: bash execution, file reading/editing/writing, and
- * subagent spawning.
+ * Default built-in system tools: file reading/editing/writing first, then bash execution
+ * and subagent spawning.
  * Docs: /docs/tools § "Built-in tools".
  */
 function defaultBuiltinTools(): ToolDefinitionConfig[] {
   return [
-    {
-      name: "run_command",
-      description:
-        "Run a shell command in the workspace to run programs, search, install dependencies, and " +
-        "everything the file tools don't cover. " +
-        "Run long-lived commands (servers, watchers, builds) in the foreground: past yield_time_ms " +
-        "they keep running in the background with a process_id. Do not background them with `&` — " +
-        "the whole process group is cleaned up when the foreground command exits.",
-      parameters: {
-        type: "object",
-        properties: {
-          cmd: {
-            type: "string",
-            description: "Shell command to execute.",
-          },
-          workdir: {
-            type: "string",
-            description:
-              "Working directory for the command; defaults to the cwd. Optionally a path relative to the cwd, or an absolute path.",
-          },
-          yield_time_ms: {
-            type: "number",
-            description:
-              "How long to wait for the command before yielding. If it is still running when this elapses, the tool returns the output so far plus a process_id, and the command keeps running in the background (drive it with input_command). Defaults to 60000; minimum 250, capped below the tool timeout.",
-          },
-        },
-        required: ["cmd"],
-      },
-      permission: "rw",
-      timeoutMs: 120000,
-      maxOutputLength: 16000,
-    },
-    {
-      name: "input_command",
-      description:
-        "Interact with a running command session started by run_command: write to its stdin, send Ctrl-C, or poll for new output. Identify the session with its process_id.",
-      parameters: {
-        type: "object",
-        properties: {
-          process_id: {
-            type: "string",
-            description: "The process_id returned by run_command for the running command session.",
-          },
-          chars: {
-            type: "string",
-            description:
-              'Characters to write to the command\'s stdin. Send "\\u0003" alone to deliver Ctrl-C (SIGINT); mixing it with other characters is an error. Empty (the default) writes nothing and only polls for new output and exit status.',
-          },
-          yield_time_ms: {
-            type: "number",
-            description:
-              "How long to wait for new output or exit before returning. Non-empty writes default to 250; empty polls default to 5000. Minimum 250, capped below the tool timeout.",
-          },
-        },
-        required: ["process_id"],
-      },
-      permission: "rw",
-      // An empty poll can wait out a build/test run (the yield ceiling is derived from timeoutMs, clamped inside the tool).
-      timeoutMs: 130000,
-      maxOutputLength: 16000,
-    },
     {
       name: "read_file",
       description:
@@ -332,6 +263,79 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
       maxOutputLength: 16000,
     },
     {
+      name: "run_command",
+      description:
+        "Run a shell command in the workspace to run programs, search, install dependencies, and " +
+        "everything the file tools don't cover. " +
+        "Run long-lived commands (servers, watchers, builds) in the foreground: past yield_time_ms " +
+        "they keep running in the background with a process_id. Do not background them with `&` — " +
+        "the whole process group is cleaned up when the foreground command exits.",
+      parameters: {
+        type: "object",
+        properties: {
+          description: {
+            type: "string",
+            description:
+              "One short sentence describing what this call is doing and why, shown to the user while the call runs. Write it in the user's language.",
+          },
+          cmd: {
+            type: "string",
+            description: "Shell command to execute.",
+          },
+          workdir: {
+            type: "string",
+            description:
+              "Working directory for the command; defaults to the cwd. Optionally a path relative to the cwd, or an absolute path.",
+          },
+          yield_time_ms: {
+            type: "number",
+            description:
+              "How long to wait for the command before yielding. If it is still running when this elapses, the tool returns the output so far plus a process_id, and the command keeps running in the background (drive it with input_command). Defaults to 60000; minimum 250, capped below the tool timeout.",
+          },
+        },
+        required: ["cmd"],
+      },
+      permission: "rw",
+      call_description: true,
+      timeoutMs: 120000,
+      maxOutputLength: 16000,
+    },
+    {
+      name: "input_command",
+      description:
+        "Interact with a running command session started by run_command: write to its stdin, send Ctrl-C, or poll for new output. Identify the session with its process_id.",
+      parameters: {
+        type: "object",
+        properties: {
+          description: {
+            type: "string",
+            description:
+              "One short sentence describing what this call is doing and why, shown to the user while the call runs. Write it in the user's language.",
+          },
+          process_id: {
+            type: "string",
+            description: "The process_id returned by run_command for the running command session.",
+          },
+          chars: {
+            type: "string",
+            description:
+              'Characters to write to the command\'s stdin. Send "\\u0003" alone to deliver Ctrl-C (SIGINT); mixing it with other characters is an error. Empty (the default) writes nothing and only polls for new output and exit status.',
+          },
+          yield_time_ms: {
+            type: "number",
+            description:
+              "How long to wait for new output or exit before returning. Non-empty writes default to 250; empty polls default to 5000. Minimum 250, capped below the tool timeout.",
+          },
+        },
+        required: ["process_id"],
+      },
+      permission: "rw",
+      call_description: true,
+      // An empty poll can wait out a build/test run (the yield ceiling is derived from timeoutMs, clamped inside the tool).
+      timeoutMs: 130000,
+      maxOutputLength: 16000,
+    },
+    {
       name: "run_subagent",
       description:
         "Delegate a self-contained subtask to a subagent that runs autonomously in the same workspace and returns its final answer. Use it for focused sub-tasks you can fully specify in one prompt. Optionally choose a specific agent via `agent_id` and a model via `model_id`. " +
@@ -339,6 +343,11 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
       parameters: {
         type: "object",
         properties: {
+          description: {
+            type: "string",
+            description:
+              "One short sentence describing what this call is doing and why, shown to the user while the call runs. Write it in the user's language.",
+          },
           prompt: {
             type: "string",
             description:
@@ -368,6 +377,7 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
         required: ["prompt"],
       },
       permission: "rw",
+      call_description: true,
       // Subagent tasks typically run far longer than a single command, so the timeout ceiling is raised accordingly.
       timeoutMs: 600000,
       maxOutputLength: 16000,
@@ -379,6 +389,11 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
       parameters: {
         type: "object",
         properties: {
+          description: {
+            type: "string",
+            description:
+              "One short sentence describing what this call is doing and why, shown to the user while the call runs. Write it in the user's language.",
+          },
           subagent_id: {
             type: "string",
             description: "The subagent_id returned by run_subagent for the background subagent.",
@@ -397,6 +412,7 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
         required: ["subagent_id"],
       },
       permission: "rw",
+      call_description: true,
       // Same generous timeout tier as run_subagent: an empty poll can wait a long time for the subagent to wrap up.
       timeoutMs: 600000,
       maxOutputLength: 16000,

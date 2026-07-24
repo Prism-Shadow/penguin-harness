@@ -456,60 +456,30 @@ export function selectBuiltinToolsForModel(
 }
 
 /**
- * Tools that accept the optional `description` call argument (canonical names plus the
- * legacy exec_command alias, so pre-rename configs get the feature too). Config-level
- * name literals, matching defaultBuiltinTools() / the registry alias.
+ * Applies a tool entry's per-tool `call_description` toggle: the optional `description`
+ * call argument is declared as a normal property in the entry's `parameters` (editable
+ * config is the single source of truth); when the entry sets `call_description: false`,
+ * that property is filtered out of the schema handed to the LLM — on an in-memory clone
+ * only, the stored YAML is never rewritten. Missing/true, entries without a parameter
+ * schema, and entries whose properties declare no `description` all pass through
+ * unchanged (old configs predating the field are a no-op).
  */
-const CALL_DESCRIPTION_TOOLS = new Set([
-  "run_command",
-  "exec_command",
-  "input_command",
-  "run_subagent",
-  "input_subagent",
-]);
-
-/** Schema of the injected `description` property (a fresh object per injection; never shared with config). */
-function callDescriptionProperty(): Record<string, unknown> {
-  return {
-    type: "string",
-    description:
-      "One short sentence describing what this call is doing and why, shown to the user " +
-      "while the call runs. Write it in the user's language.",
-  };
-}
-
-/**
- * Injects the optional `description` property into a command/subagent tool entry's
- * parameters (in-memory only — the stored YAML is never rewritten; the injected schema
- * flows into the LLM tool list and session_meta.tools automatically). Entries that are
- * not description-capable, have no parameter schema in config, or already define a
- * `description` property pass through unchanged. Never added to `required`.
- */
-function injectCallDescription(def: ToolDefinitionConfig): ToolDefinitionConfig {
-  if (!CALL_DESCRIPTION_TOOLS.has(def.name)) return def;
+function applyCallDescriptionToggle(def: ToolDefinitionConfig): ToolDefinitionConfig {
+  if (def.call_description !== false) return def;
   const params = def.parameters;
   if (params === undefined) return def;
   const properties = params["properties"];
   if (properties === null || typeof properties !== "object") return def;
-  if ((properties as Record<string, unknown>)["description"] !== undefined) return def;
-  return {
-    ...def,
-    parameters: {
-      ...params,
-      properties: { ...properties, description: callDescriptionProperty() },
-    },
-  };
+  if (!("description" in (properties as Record<string, unknown>))) return def;
+  const { description: _dropped, ...rest } = properties as Record<string, unknown>;
+  return { ...def, parameters: { ...params, properties: rest } };
 }
 
 export function buildToolConfig(state: AgentState): ToolConfig {
   const systemTools = state.systemConfig.tools;
   const builtin = systemTools?.builtin ?? defaultSystemConfig().tools?.builtin ?? [];
-  // tools.call_descriptions defaults to ON: a missing field (all pre-existing configs)
-  // gets the feature; only an explicit false turns it off.
-  const customTools =
-    systemTools?.call_descriptions === false ? builtin : builtin.map(injectCallDescription);
   return {
-    customTools,
+    customTools: builtin.map(applyCallDescriptionToggle),
     mcpServers: systemTools?.mcpServers ?? [],
   };
 }

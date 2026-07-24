@@ -41,12 +41,23 @@ const DESCRIBED_TOOLS = new Set([
 const FILE_TOOLS = new Set(["read_file", "edit_file", "write_file"]);
 
 /**
+ * Shortens a path for one-line display: at most one parent directory plus the filename
+ * (`…/parent/file.ts`); paths already within that shape are shown as-is (same rule as the
+ * CLI's tool-render). The full path stays in the expanded arguments block.
+ */
+export function shortenPath(p: string): string {
+  const segments = p.split("/").filter((s) => s.length > 0);
+  if (segments.length <= 2) return p;
+  return `…/${segments[segments.length - 2]}/${segments[segments.length - 1]}`;
+}
+
+/**
  * Argument preview (same approach as the CLI's tool-render): run_command (legacy name
- * exec_command) shows `$ <cmd>`, the file tools show their file path, other tools show a
- * single-line `name(args)` prefix. Arguments may be incomplete JSON (mid-stream), so
+ * exec_command) shows `$ <cmd>`, the file tools show their shortened file path, other tools
+ * show a single-line `name(args)` prefix. Arguments may be incomplete JSON (mid-stream), so
  * extraction is done leniently. The preview deliberately keeps the real arguments (not the
- * model-written description): it is what the approval row shows, and the user must approve
- * the actual command, not the model's summary of it.
+ * model-written description): it heads the approval row, and the user must approve the
+ * actual command, not the model's summary of it.
  */
 export function previewArguments(name: string, argsJson: string): string {
   if (name === "run_command" || name === "exec_command") {
@@ -55,16 +66,17 @@ export function previewArguments(name: string, argsJson: string): string {
   }
   if (FILE_TOOLS.has(name)) {
     const filePath = extractStringField(argsJson, "file_path");
-    if (filePath !== null) return filePath.replace(/\s+/g, " ").trim();
+    if (filePath !== null) return shortenPath(filePath.replace(/\s+/g, " ").trim());
   }
   return argsJson.replace(/\s+/g, " ").trim();
 }
 
 /**
  * Collapsed-header subtitle: the human-readable line next to the tool name — the
- * model-written `description` argument for the command/subagent tools (present only when
- * tools.call_descriptions is enabled; renderers simply show it when sent), or the file
- * path for the file tools. Null when there is nothing beyond the raw arguments.
+ * model-written `description` argument for the command/subagent tools (declared in their
+ * config schema; per-tool `call_description: false` removes it, in which case the model
+ * never sends it), or the shortened file path for the file tools. Null when there is
+ * nothing beyond the raw arguments.
  */
 export function headerSubtitle(name: string, argsJson: string): string | null {
   if (DESCRIBED_TOOLS.has(name)) {
@@ -79,10 +91,49 @@ export function headerSubtitle(name: string, argsJson: string): string | null {
     const filePath = extractStringField(argsJson, "file_path");
     if (filePath !== null) {
       const line = filePath.replace(/\s+/g, " ").trim();
-      if (line) return line;
+      if (line) return shortenPath(line);
     }
   }
   return null;
+}
+
+/**
+ * Decoded file-tool payload for the pending-approval block: the user is approving a
+ * concrete rewrite (old_string/new_string/content), so the bare path is not enough — the
+ * actual arguments are rendered in the scrollable expanded style while the call is PENDING.
+ * Null for other tools or unparseable arguments (arguments are complete by approval time).
+ */
+export function pendingFilePayload(name: string, argsJson: string): string | null {
+  if (!FILE_TOOLS.has(name)) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(argsJson);
+  } catch {
+    return null;
+  }
+  if (parsed === null || typeof parsed !== "object") return null;
+  const args = parsed as Record<string, unknown>;
+  const sections: string[] = [];
+  const push = (label: string, value: unknown): void => {
+    if (value === undefined) return;
+    if (typeof value === "string" && value.includes("\n")) {
+      sections.push(`${label}:\n${value}`);
+    } else {
+      sections.push(`${label}: ${typeof value === "string" ? value : JSON.stringify(value)}`);
+    }
+  };
+  push("file_path", args["file_path"]);
+  if (name === "read_file") {
+    push("offset", args["offset"]);
+    push("limit", args["limit"]);
+  } else if (name === "edit_file") {
+    push("old_string", args["old_string"]);
+    push("new_string", args["new_string"]);
+    if (args["replace_all"] === true) push("replace_all", true);
+  } else if (name === "write_file") {
+    push("content", args["content"]);
+  }
+  return sections.join("\n");
 }
 
 /** Extracts the current value of a string field from a possibly-incomplete JSON object string (a simplified version, good enough for preview purposes). */
@@ -240,6 +291,17 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
               {preview}
             </span>
           </div>
+          {/* File tools: the one-line preview shows only the (shortened) path, but the user is
+              approving a concrete rewrite — render the decoded payload (old_string/new_string/
+              content) in the scrollable expanded style while pending. */}
+          {(() => {
+            const payload = pendingFilePayload(item.name, item.argumentsText);
+            return payload !== null ? (
+              <pre className="mb-2 max-h-72 overflow-auto whitespace-pre-wrap break-all rounded-md bg-white/70 px-2 py-1.5 text-xs leading-5 text-gray-700 dark:bg-gray-950/40 dark:text-gray-300">
+                {payload}
+              </pre>
+            ) : null;
+          })()}
           <ApprovalButtons
             onDecide={(decision) => ctx.onApprove(item.toolCallId, decision, ctx.origin)}
           />

@@ -275,7 +275,7 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   expect(second.session.provider).toBe("custom");
   expect(second.session.approvalMode).toBe("allow-all");
 
-  // Under allow-all, the mock's exec_command is auto-approved, so the round runs to completion (turn 2 text lands).
+  // Under allow-all, the mock's run_command is auto-approved, so the round runs to completion (turn 2 text lands).
   await expect(page.getByText("Command finished; the result looks as expected.")).toBeVisible();
 
   // —— Input draft for an existing session: cached by user x Session, restored on reload, cleared once sending succeeds ——

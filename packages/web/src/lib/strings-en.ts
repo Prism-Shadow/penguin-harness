@@ -254,9 +254,9 @@ export const en: Strings = {
       "Can modify things. Needs manual confirmation when the approval mode is read-only.",
     toolTimeout: "timeoutMs",
     toolMaxOutput: "maxOutputLength",
-    callDescriptions: "Tool call descriptions (call_descriptions)",
-    callDescriptionsHint:
-      "When enabled, run_command / input_command / run_subagent / input_subagent accept a model-written one-sentence description of each call, shown to the user while it runs.",
+    toolCallDescription: "call_description",
+    callDescriptionHint:
+      "call_description: when on (the default), the tool's schema keeps the optional description argument — a model-written sentence about each call, shown to the user while it runs; when off, the argument is filtered out of the schema at assembly. Only tools whose parameters declare a description property can be toggled.",
     mcpServers: "MCP Servers (read-only)",
     defaultValue: "(default)",
     deleteAgent: "Delete agent",

@@ -6,7 +6,7 @@
  *  - subagent's own turn (its prompt is the only user text) -> final text
  *  - parent asked to delegate ("run a subagent") -> tool_use(run_subagent)
  *  - last message has tool_result -> final text (turn 2)
- *  - otherwise (first user turn) -> thinking + text + tool_use(exec_command)
+ *  - otherwise (first user turn) -> thinking + text + tool_use(run_command)
  */
 import http from "node:http";
 
@@ -145,7 +145,7 @@ const server = http.createServer((req, res) => {
           content_block: {
             type: "tool_use",
             id: "toolu_broken_1",
-            name: "exec_command",
+            name: "run_command",
             input: {},
           },
         });
@@ -159,7 +159,7 @@ const server = http.createServer((req, res) => {
         return;
       }
       // Retry (original input resent): return a complete tool_use, then proceed normally.
-      block(res, 0, { type: "tool_use", id: "toolu_retry_1", name: "exec_command", input: {} }, [
+      block(res, 0, { type: "tool_use", id: "toolu_retry_1", name: "run_command", input: {} }, [
         { type: "input_json_delta", partial_json: '{"cmd"' },
         { type: "input_json_delta", partial_json: ': "echo ok"}' },
       ]);
@@ -230,7 +230,7 @@ const server = http.createServer((req, res) => {
       ]),
     );
     steps.push(() =>
-      block(res, 2, { type: "tool_use", id: "toolu_mock_1", name: "exec_command", input: {} }, [
+      block(res, 2, { type: "tool_use", id: "toolu_mock_1", name: "run_command", input: {} }, [
         { type: "input_json_delta", partial_json: '{"cmd"' },
         { type: "input_json_delta", partial_json: ': "ls -la"}' },
       ]),

@@ -23,7 +23,7 @@
  *
  * **Pairing tags**: a tool call and its output may be separated by several segments, so
  * both are tagged with a shared word for pairing: the call line reads
- * `[tool-653] $ cmd`, the output line `[tool-653] >> ...` (653 being the last 3
+ * `[tool-653] $ cmd`, the output line `[tool-653] -> ...` (653 being the last 3
  * characters of tool_call_id); nested (subagent) tools use
  * `[agent-f2a-tool-653] $ cmd` (f2a being the last 3 characters of the direct child
  * Session id). Approval lines carry no tag (they immediately follow the matching call
@@ -55,7 +55,7 @@ import type {
   TokenUsagePayload,
   ToolCallPayload,
 } from "@prismshadow/penguin-core";
-import { renderPartialToolCall } from "./tool-render.js";
+import { renderFileToolApprovalPayload, renderPartialToolCall } from "./tool-render.js";
 import { defaultMessages } from "./i18n.js";
 import type { Messages } from "./i18n.js";
 
@@ -175,11 +175,11 @@ export function renderHistory(
       case "tool_call_output": {
         const tag = callTag(p.tool_call_id ?? "");
         for (const line of (p.output ?? "").split("\n")) {
-          out.write(`${DIM}[${tag}] >> ${RESET}${line}\n`);
+          out.write(`${DIM}[${tag}] -> ${RESET}${line}\n`);
         }
         // Attached images aren't rendered by the terminal; print one placeholder line per image.
         for (const _ of p.images ?? []) {
-          out.write(`${DIM}[${tag}] >> [image]${RESET}\n`);
+          out.write(`${DIM}[${tag}] -> [image]${RESET}\n`);
         }
         break;
       }
@@ -318,6 +318,21 @@ export class StreamRenderer {
   beginUserPrompt(toolCall?: OmniMessage<ToolCallPayload>): void {
     if (toolCall) this.ensureAdjacentCallLine(toolCall);
     this.finishLine();
+    // File-tool approvals: the one-line preview shows only the (shortened) path, but the
+    // user is approving a concrete rewrite — print the decoded payload
+    // (old_string/new_string/content), bounded with an explicit elision note, right before
+    // the prompt.
+    if (toolCall) {
+      const payload = renderFileToolApprovalPayload(
+        toolCall.payload.name,
+        toolCall.payload.arguments,
+      );
+      if (payload !== null) {
+        for (const line of payload.split("\n")) this.out.write(`${dim(line)}\n`);
+        // lastLineKey stays on the call's key: the payload lines belong to this call, so
+        // the later noteApprovalDecision must not re-render the call line as "not adjacent".
+      }
+    }
     this.promptActive = true;
     this.promptKey = toolCall
       ? this.callLineKey(toolCall.payload.tool_call_id, toolCall.origin)
@@ -739,7 +754,7 @@ export class StreamRenderer {
       this.finishLine();
       const tag = callTag(p.tool_call_id);
       for (const _ of p.images) {
-        this.out.write(`${DIM}[${tag}] >> [image]${RESET}\n`);
+        this.out.write(`${DIM}[${tag}] -> [image]${RESET}\n`);
       }
       this.lastLineKey = null;
     }
@@ -747,7 +762,7 @@ export class StreamRenderer {
 
   /**
    * Writes tool-call **output** line by line, each line starting with the dim gutter
-   * `[tool-<last 3 chars of id>] >> `, paired with the call line (cyan `[tool-xxx] $
+   * `[tool-<last 3 chars of id>] -> `, paired with the call line (cyan `[tool-xxx] $
    * cmd`). Streaming chunks arrive incrementally; whether to write the gutter is
    * decided by the current line-start state.
    */
@@ -755,7 +770,7 @@ export class StreamRenderer {
     let i = 0;
     while (i < chunk.length) {
       if (this.toolOutLineStart) {
-        this.out.write(`${DIM}[${tag}] >> ${RESET}`);
+        this.out.write(`${DIM}[${tag}] -> ${RESET}`);
         this.toolOutLineStart = false;
         this.inLine = true;
       }

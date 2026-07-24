@@ -719,8 +719,6 @@ function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn 
   );
   // Per-cell validation errors, keyed `${rowIndex}-${column}`, shown red under the offending numeric input.
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  // tools.call_descriptions: a missing field means enabled (the toggle exists to turn it off).
-  const [callDesc, setCallDesc] = useState<boolean>(data.config.callDescriptions ?? true);
   const { requestSave, element: saveConfirm } = useSaveConfirm();
 
   const update = (index: number, patch: Partial<ToolRowState>) => {
@@ -758,6 +756,12 @@ function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn 
           errs[`${i}-maxOutputLength`] = S.agent.toolFieldInvalid(row.base.name, "maxOutputLength");
         } else tool.maxOutputLength = n;
       }
+      // call_description: missing = true, so flipping a stored-missing row back to on
+      // rewinds to "not written" instead of writing the default explicitly.
+      const origRow = data.config.toolsBuiltin[i];
+      if (tool.call_description === true && origRow?.call_description === undefined) {
+        delete tool.call_description;
+      }
       tools.push(tool);
     }
     if (Object.keys(errs).length > 0) {
@@ -768,45 +772,42 @@ function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn 
     // The table is submitted whole, so compare the editable columns against the loaded
     // config to detect a no-op save (row order is stable — both sides map the same list).
     const orig = data.config.toolsBuiltin;
-    const tableDirty =
+    const dirty =
       tools.length !== orig.length ||
       tools.some((t, i) => {
         const o = orig[i]!;
         return (
           t.permission !== o.permission ||
           t.timeoutMs !== o.timeoutMs ||
-          t.maxOutputLength !== o.maxOutputLength
+          t.maxOutputLength !== o.maxOutputLength ||
+          t.call_description !== o.call_description
         );
       });
-    // The toggle compares against the effective value (missing = enabled), so flipping it
-    // off and back on writes nothing.
-    const callDescDirty = callDesc !== (data.config.callDescriptions ?? true);
-    if (!tableDirty && !callDescDirty) {
+    if (!dirty) {
       toastInfo(S.common.noChangesToSave);
       return;
     }
-    // Send only the changed keys (PUT accepts any subset).
-    requestSave(
-      () =>
-        void onSave({
-          config: {
-            ...(tableDirty ? { toolsBuiltin: tools } : {}),
-            ...(callDescDirty ? { callDescriptions: callDesc } : {}),
-          },
-        }),
-    );
+    requestSave(() => void onSave({ config: { toolsBuiltin: tools } }));
+  };
+
+  /** Whether a tool's config schema declares the optional `description` call argument (only then does the per-row switch make sense). */
+  const hasDescriptionProperty = (t: ToolDefinitionConfig): boolean => {
+    const props = (t.parameters as { properties?: Record<string, unknown> } | undefined)
+      ?.properties;
+    return props !== undefined && props !== null && props["description"] !== undefined;
   };
 
   return (
     <div className="space-y-4">
       <div className="overflow-x-auto overflow-y-clip rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-        <table className="w-full min-w-[520px] text-left text-sm">
+        <table className="w-full min-w-[640px] text-left text-sm">
           <thead>
             <tr className="border-b border-gray-200 bg-gray-50/80 text-xs text-gray-500 dark:border-gray-800 dark:bg-gray-900">
               <th className="px-3 py-2">{S.common.name}</th>
               <th className="px-3 py-2">{S.agent.toolPermission}</th>
               <th className="px-3 py-2">{S.agent.toolTimeout}</th>
               <th className="px-3 py-2">{S.agent.toolMaxOutput}</th>
+              <th className="px-3 py-2">{S.agent.toolCallDescription}</th>
             </tr>
           </thead>
           <tbody>
@@ -844,25 +845,25 @@ function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn 
                     onChange={(e) => update(i, { maxOutputLength: e.target.value })}
                   />
                 </td>
+                <td className="px-3 py-2 align-top">
+                  {/* Per-tool call_description switch (missing = on): shown only for tools whose
+                      config schema actually declares the description argument. */}
+                  {hasDescriptionProperty(row.base) ? (
+                    <Switch
+                      checked={row.base.call_description !== false}
+                      onChange={(v) => update(i, { base: { ...row.base, call_description: v } })}
+                      aria-label={`${row.base.name} ${S.agent.toolCallDescription}`}
+                    />
+                  ) : (
+                    <span className="text-xs text-gray-300 dark:text-gray-600">—</span>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-
-      {/* tools.call_descriptions toggle: the command/subagent tools accept a model-written
-          per-call description shown during runs (see core buildToolConfig injection). */}
-      <div>
-        <label className="inline-flex cursor-pointer items-center gap-2">
-          <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
-            {S.agent.callDescriptions}
-          </span>
-          <Switch checked={callDesc} onChange={setCallDesc} aria-label={S.agent.callDescriptions} />
-        </label>
-        <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
-          {S.agent.callDescriptionsHint}
-        </p>
-      </div>
+      <p className="text-xs text-gray-400 dark:text-gray-500">{S.agent.callDescriptionHint}</p>
 
       <div>
         <p className="mb-1 text-xs font-medium text-gray-500">{S.agent.mcpServers}</p>

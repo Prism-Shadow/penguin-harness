@@ -1,28 +1,40 @@
 /**
  * Streaming tool-call rendering (CLI side).
  *
- * The CLI only consumes `partial_tool_call` for visible rendering. run_command (legacy name
- * exec_command — old traces and pre-rename agents still emit it) is shown as `$ <cmd>` as
- * early as possible; input_command / input_subagent show the target session id, with a
- * non-empty payload (chars / prompt) appended as `<< <content>` — the payload is critical
- * for approval and later audit (writing to stdin is equivalent to running a command), so the
- * session id alone is not enough; run_subagent shows the prompt; the file tools
- * (read_file / edit_file / write_file) show the tool name plus the file path; other tools
+ * The CLI only consumes `partial_tool_call` for visible rendering. Formats (the `<-` marker
+ * reads "input to the tool", paired with the `->` output gutter in render.ts):
+ * - run_command (legacy name exec_command — old traces still emit it):
+ *   `run_command <- $ {cmd}`, or with a model-written description
+ *   `run_command <- {description} ($ {cmd})`;
+ * - input_command: `input_command <- {process_id} << {chars}` (`<< …` only when writing;
+ *   an empty payload just polls), or `input_command <- {description} ({process_id} << {chars})`;
+ * - run_subagent: `run_subagent <- {prompt}` or `run_subagent <- {description} ({prompt})`;
+ * - input_subagent: `input_subagent <- {subagent_id} << {prompt}` or
+ *   `input_subagent <- {description} ({subagent_id} << {prompt})`;
+ * - file tools (read_file / edit_file / write_file): `{name} {shortened path}` — the path is
+ *   shortened to at most one parent directory (`…/parent/file.ts`); the full path stays in
+ *   the arguments.
+ * The payload (chars / prompt) is critical for approval and later audit (writing to stdin
+ * is equivalent to running a command), so the session id alone is never enough; other tools
  * fall back to `name(args-prefix)`.
  *
- * The command/subagent tools accept an optional model-written `description` argument (see
- * tools.call_descriptions); when present it is appended as a `— <description>` suffix, but
- * only once the argument JSON is complete — appending it while other fields still stream
- * would rewrite the middle of the preview.
- *
- * The render layer streams by appending to the preview (see render.ts), so the preview format
- * must stay append-only: rendering only starts once the target id has fully appeared, the
- * payload is only appended at the end, and the preview stops growing once it hits the
- * truncation limit.
+ * The render layer streams by appending to the preview (see render.ts), so the preview must
+ * stay append-only. The description is therefore only adopted once its own value is
+ * complete (closing quote seen): with the description streamed first (its position in the
+ * default schema), the preview grows `name <- desc` → ` ({payload…}` → `)`; when a model
+ * emits it after the payload instead, the preview switches format once at the end and the
+ * render layer falls back to a new line. File-tool paths render only once complete —
+ * shortening a still-growing path would rewrite the line.
  */
 
-/** Max length of the single-line preview for a payload (chars / prompt); truncated with an ellipsis beyond this, after which the preview stops growing. */
+/** Max length of the single-line preview for a payload (chars / prompt / description); truncated with an ellipsis beyond this, after which the preview stops growing. */
 const MAX_PAYLOAD_PREVIEW = 120;
+
+/** Max lines of a file-tool payload printed before the approval prompt; the rest is elided with a count. */
+const MAX_APPROVAL_PAYLOAD_LINES = 24;
+
+/** Max characters per printed approval-payload line (the full text stays in the trace). */
+const MAX_APPROVAL_PAYLOAD_LINE = 200;
 
 /** Collapse to a single line: newlines/runs of whitespace become a single space, and leading/trailing whitespace is trimmed. */
 function toSingleLine(text: string): string {
@@ -51,8 +63,14 @@ function capPreview(text: string): string {
   return text.length > MAX_PAYLOAD_PREVIEW ? `${text.slice(0, MAX_PAYLOAD_PREVIEW)}…` : text;
 }
 
-/** Extract the current value of a string field from a possibly-incomplete JSON object string. */
-function extractPartialStringField(argsJson: string, field: string): string | null {
+/** A string field extracted from possibly-incomplete JSON: its value so far, and whether the closing quote was seen. */
+interface PartialField {
+  value: string;
+  complete: boolean;
+}
+
+/** Extract a string field from a possibly-incomplete JSON object string, reporting completeness. */
+function extractField(argsJson: string, field: string): PartialField | null {
   const key = `"${field}"`;
   const keyIndex = argsJson.indexOf(key);
   if (keyIndex === -1) return null;
@@ -96,7 +114,7 @@ function extractPartialStringField(argsJson: string, field: string): string | nu
           // emitting the incomplete hex as a literal would cause a rollback once the next
           // increment completes it (breaking append-only preview); the render layer falls
           // back to a new line in that case.
-          if (i + 5 > argsJson.length) return out;
+          if (i + 5 > argsJson.length) return { value: out, complete: false };
           const hex = argsJson.slice(i + 1, i + 5);
           if (/^[0-9a-fA-F]{4}$/.test(hex)) {
             out += String.fromCharCode(Number.parseInt(hex, 16));
@@ -115,75 +133,180 @@ function extractPartialStringField(argsJson: string, field: string): string | nu
       escaped = true;
       continue;
     }
-    if (ch === '"') return out;
+    if (ch === '"') return { value: out, complete: true };
     out += ch;
   }
-  return out;
+  return { value: out, complete: false };
 }
 
-/** The three file tools: previewed as `<name> <file_path>`. */
+/** Extract the current value of a string field from a possibly-incomplete JSON object string. */
+function extractPartialStringField(argsJson: string, field: string): string | null {
+  return extractField(argsJson, field)?.value ?? null;
+}
+
+/** The three file tools: previewed as `<name> <shortened file_path>`. */
 const FILE_TOOL_NAMES = new Set(["read_file", "edit_file", "write_file"]);
 
 /**
- * The optional model-written `description` argument, as a ` — <description>` suffix.
- * Only appended once the whole argument JSON parses (i.e. streaming is finished): before
- * that, other fields may still be growing and a suffix after them would break the
- * append-only preview. The suffix itself then appends onto the settled base preview.
+ * Shortens a path for one-line display: at most one parent directory plus the filename
+ * (`…/parent/file.ts`); paths already within that shape are shown as-is. The full path
+ * stays in the argument JSON (and the expanded web card).
  */
-function descriptionSuffix(argsJson: string): string {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(argsJson);
-  } catch {
-    return "";
-  }
-  const desc = (parsed as Record<string, unknown> | null)?.["description"];
-  if (typeof desc !== "string") return "";
-  const line = toSingleLine(desc);
-  return line ? ` — ${capPreview(line)}` : "";
+export function shortenPath(p: string): string {
+  const segments = p.split("/").filter((s) => s.length > 0);
+  if (segments.length <= 2) return p;
+  return `…/${segments[segments.length - 2]}/${segments[segments.length - 1]}`;
 }
 
 /**
- * Streaming argument preview: run_command (and its legacy name exec_command) shows `$ <cmd>`
- * once cmd can be read; input_command / input_subagent show `⌨ <name> → <id>` once the target
- * id is available, with a non-empty chars / prompt appended as `<< <content>` (an empty
- * payload just means polling, left as-is); run_subagent shows `run_subagent << <prompt>` once
- * prompt can be read; read_file / edit_file / write_file show `<name> <file_path>`; other
- * tools fall back to name(args-prefix). The command/subagent tools append the optional
- * `description` argument as a ` — <description>` suffix once the arguments are complete.
+ * The model-written `description` argument, single-lined and capped — adopted only once its
+ * value is complete (closing quote seen), so a still-streaming description never rewrites
+ * the middle of an append-only preview. Null when absent, incomplete, or empty.
+ */
+function completedDescription(argsJson: string): string | null {
+  const field = extractField(argsJson, "description");
+  if (field === null || !field.complete) return null;
+  const line = toSingleLine(field.value);
+  return line ? capPreview(line) : null;
+}
+
+/** Whether the whole argument JSON parses (i.e. argument streaming is finished). */
+function argsComplete(argsJson: string): boolean {
+  try {
+    JSON.parse(argsJson);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Wraps a payload preview in the description form: `{name} <- {description} ({payload…}`,
+ * closing the parenthesis once `closed`. The open parenthesis mid-stream keeps the preview
+ * append-only while the payload grows.
+ */
+function describedForm(name: string, desc: string, payload: string, closed: boolean): string {
+  return `${name} <- ${desc} (${payload}${closed ? ")" : ""}`;
+}
+
+/**
+ * Streaming argument preview (formats documented in the module header). Returns null while
+ * nothing presentable has streamed in yet.
  */
 export function renderPartialToolCall(name: string, argsJson: string): string | null {
   if (!argsJson) return null;
   if (name === "run_command" || name === "exec_command") {
-    const cmd = extractPartialStringField(argsJson, "cmd");
-    if (cmd !== null) return `$ ${toSingleLine(cmd)}${descriptionSuffix(argsJson)}`;
+    const desc = completedDescription(argsJson);
+    const cmd = extractField(argsJson, "cmd");
+    if (desc !== null) {
+      if (cmd === null) return `${name} <- ${desc}`;
+      return describedForm(name, desc, `$ ${toSingleLine(cmd.value)}`, cmd.complete);
+    }
+    if (cmd !== null) return `${name} <- $ ${toSingleLine(cmd.value)}`;
     return null;
   }
   if (name === "run_subagent") {
-    const prompt = extractPartialStringField(argsJson, "prompt");
-    if (prompt !== null) {
-      return `run_subagent << ${capPreview(toSingleLine(prompt))}${descriptionSuffix(argsJson)}`;
+    const desc = completedDescription(argsJson);
+    const prompt = extractField(argsJson, "prompt");
+    if (desc !== null) {
+      if (prompt === null) return `${name} <- ${desc}`;
+      return describedForm(name, desc, capPreview(toSingleLine(prompt.value)), prompt.complete);
     }
+    if (prompt !== null) return `${name} <- ${capPreview(toSingleLine(prompt.value))}`;
     return null;
   }
   if (name === "input_command") {
-    const pid = extractPartialStringField(argsJson, "process_id");
-    if (pid === null) return null;
+    const desc = completedDescription(argsJson);
+    const pid = extractField(argsJson, "process_id");
+    if (desc === null && pid === null) return null;
     const chars = extractPartialStringField(argsJson, "chars");
-    const payload = chars ? ` << ${capPreview(visualizeControlChars(chars))}` : "";
-    return `⌨ input_command → ${toSingleLine(pid)}${payload}${descriptionSuffix(argsJson)}`;
+    const payloadSuffix = chars ? ` << ${capPreview(visualizeControlChars(chars))}` : "";
+    if (desc !== null) {
+      if (pid === null) return `${name} <- ${desc}`;
+      return describedForm(
+        name,
+        desc,
+        `${toSingleLine(pid.value)}${payloadSuffix}`,
+        argsComplete(argsJson),
+      );
+    }
+    return `${name} <- ${toSingleLine(pid!.value)}${payloadSuffix}`;
   }
   if (name === "input_subagent") {
-    const sid = extractPartialStringField(argsJson, "subagent_id");
-    if (sid === null) return null;
+    const desc = completedDescription(argsJson);
+    const sid = extractField(argsJson, "subagent_id");
+    if (desc === null && sid === null) return null;
     const prompt = extractPartialStringField(argsJson, "prompt");
-    const payload = prompt ? ` << ${capPreview(toSingleLine(prompt))}` : "";
-    return `⌨ input_subagent → ${toSingleLine(sid)}${payload}${descriptionSuffix(argsJson)}`;
+    const payloadSuffix = prompt ? ` << ${capPreview(toSingleLine(prompt))}` : "";
+    if (desc !== null) {
+      if (sid === null) return `${name} <- ${desc}`;
+      return describedForm(
+        name,
+        desc,
+        `${toSingleLine(sid.value)}${payloadSuffix}`,
+        argsComplete(argsJson),
+      );
+    }
+    return `${name} <- ${toSingleLine(sid!.value)}${payloadSuffix}`;
   }
   if (FILE_TOOL_NAMES.has(name)) {
-    const filePath = extractPartialStringField(argsJson, "file_path");
-    if (filePath !== null) return `${name} ${toSingleLine(filePath)}`;
+    // Path rendered only once complete: shortening a still-growing path would rewrite the line.
+    const filePath = extractField(argsJson, "file_path");
+    if (filePath !== null && filePath.complete) {
+      return `${name} ${shortenPath(toSingleLine(filePath.value))}`;
+    }
     return null;
   }
   return `${name || "tool_call"}(${toSingleLine(argsJson)}`;
+}
+
+/**
+ * File-tool payload for the interactive approval prompt: the full decoded arguments
+ * (old_string / new_string / content …), bounded to MAX_APPROVAL_PAYLOAD_LINES lines with
+ * an explicit elision note — under always-ask/read-only approval the user must see what
+ * they are approving, not just the file path. Returns null for other tools or unparseable
+ * arguments (arguments are complete by approval time).
+ */
+export function renderFileToolApprovalPayload(name: string, argsJson: string): string | null {
+  if (!FILE_TOOL_NAMES.has(name)) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(argsJson);
+  } catch {
+    return null;
+  }
+  if (parsed === null || typeof parsed !== "object") return null;
+  const args = parsed as Record<string, unknown>;
+  const lines: string[] = [];
+  const pushField = (label: string, value: unknown): void => {
+    if (value === undefined) return;
+    if (typeof value === "string" && value.includes("\n")) {
+      lines.push(`${label}:`);
+      for (const line of value.split("\n")) lines.push(`  | ${line}`);
+    } else {
+      lines.push(`${label}: ${typeof value === "string" ? value : JSON.stringify(value)}`);
+    }
+  };
+  pushField("file_path", args["file_path"]);
+  if (name === "read_file") {
+    pushField("offset", args["offset"]);
+    pushField("limit", args["limit"]);
+  } else if (name === "edit_file") {
+    pushField("old_string", args["old_string"]);
+    pushField("new_string", args["new_string"]);
+    if (args["replace_all"] === true) pushField("replace_all", true);
+  } else if (name === "write_file") {
+    pushField("content", args["content"]);
+  }
+  let shown = lines;
+  let elided = 0;
+  if (shown.length > MAX_APPROVAL_PAYLOAD_LINES) {
+    elided = shown.length - MAX_APPROVAL_PAYLOAD_LINES;
+    shown = shown.slice(0, MAX_APPROVAL_PAYLOAD_LINES);
+  }
+  const capped = shown.map((l) =>
+    l.length > MAX_APPROVAL_PAYLOAD_LINE ? `${l.slice(0, MAX_APPROVAL_PAYLOAD_LINE)}…` : l,
+  );
+  if (elided > 0) capped.push(`[… ${elided} more line${elided === 1 ? "" : "s"} not shown]`);
+  return capped.join("\n");
 }

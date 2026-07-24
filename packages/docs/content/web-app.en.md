@@ -64,7 +64,7 @@ The list page creates and deletes Agents; clicking through opens the `/agents/:a
 | Overview | Basic info, export / import of Agent State snapshots, and restoring the default configuration (overwrites customizations, keeping only name/description) |
 | Prompt | AGENTS.md and system_prompt |
 | Runtime | Runtime parameters such as max_turns, model.*, compaction.* |
-| Tools | Built-in tool table, the call-descriptions toggle, and MCP server JSON configuration |
+| Tools | Built-in tool table (incl. per-tool call_description switches) and MCP server JSON configuration |
 | Vault | Environment-variable entries with masked values |
 | Schedule | Scheduled tasks (TOML-defined): create, edit, toggle, delete |
 

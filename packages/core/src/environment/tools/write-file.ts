@@ -4,19 +4,23 @@
  * Writes `content` to a file, creating it (including missing parent directories) or
  * overwriting it entirely; an empty string is a valid content (creates an empty file).
  * The output distinguishes "Created" from "Overwrote" and reports the size written, so
- * the model notices when it clobbered an existing file. Relative paths resolve against
- * the Workspace; absolute paths are allowed (tools run with the user's full permissions,
- * same as the shell tool). For surgical changes to an existing file, edit_file is the
- * better tool — this one replaces the whole content.
+ * the model notices when it clobbered an existing file. The write is atomic (temp file +
+ * rename, preserving an overwritten file's permission bits), so a crash mid-write cannot
+ * leave the target half-written. Relative paths resolve against the Workspace; absolute
+ * paths are allowed (tools run with the user's full permissions, same as the shell tool).
+ * For surgical changes to an existing file, edit_file is the better tool — this one
+ * replaces the whole content.
  *
  * Division of responsibility with Environment (see environment.ts): non-streaming — yields
- * one final text delta; all failures (path is a directory, permission errors) are
- * explanatory text closed out with `failed`, **never throwing**; if interrupted, only
- * reports `aborted` — the interruption note is appended by Environment.
+ * one final text delta; failures (path is a directory, permission errors) are explanatory
+ * text finalized as `failed`; anything unexpected that still throws is caught by
+ * Environment and likewise finalized as failed. If interrupted, only reports `aborted` —
+ * the interruption note is appended by Environment.
  * Docs: /docs/tools § "File tools".
  */
 import path from "node:path";
-import { mkdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, stat } from "node:fs/promises";
+import { atomicWriteFile } from "./file-utils.js";
 import { partialToolCallOutput } from "../../omnimessage/index.js";
 import type { OmniMessage } from "../../omnimessage/index.js";
 import type { ToolDefinitionConfig } from "../../interfaces.js";
@@ -67,6 +71,7 @@ export function createWriteFileTool(definition: ToolDefinitionConfig): BuiltinTo
       // Determine created-vs-overwrote before writing; also reject directories up front
       // (writeFile's raw EISDIR is not model-friendly).
       let existed = false;
+      let fileMode: number | undefined;
       try {
         const st = await stat(resolved);
         if (st.isDirectory()) {
@@ -74,6 +79,7 @@ export function createWriteFileTool(definition: ToolDefinitionConfig): BuiltinTo
           return { stopReason: "failed" };
         }
         existed = true;
+        fileMode = st.mode & 0o777; // Preserved across the atomic temp-file + rename write
       } catch {
         // Missing file (or unstatable path): proceed to create; real write errors surface below.
       }
@@ -81,7 +87,10 @@ export function createWriteFileTool(definition: ToolDefinitionConfig): BuiltinTo
 
       try {
         await mkdir(path.dirname(resolved), { recursive: true });
-        await writeFile(resolved, content, "utf8");
+        await atomicWriteFile(resolved, content, {
+          ...(fileMode !== undefined ? { mode: fileMode } : {}),
+          ...(signal ? { signal } : {}),
+        });
       } catch (err) {
         if (signal?.aborted) return { stopReason: "aborted" };
         const message = err instanceof Error ? err.message : String(err);

@@ -6,23 +6,26 @@
  * occur exactly once — zero or multiple occurrences fail with an explanation telling the
  * model to fix the match or widen the context. On success the output confirms the
  * replacement count and shows a short line-numbered snippet around the first replacement so
- * the model can verify the result without re-reading the file. Relative paths resolve
- * against the Workspace; absolute paths are allowed (tools run with the user's full
- * permissions, same as the shell tool).
+ * the model can verify the result without re-reading the file. The write is atomic (temp
+ * file + rename, preserving the original permission bits), so a crash mid-write cannot
+ * leave the file half-edited. Relative paths resolve against the Workspace; absolute paths
+ * are allowed (tools run with the user's full permissions, same as the shell tool).
  *
  * Division of responsibility with Environment (see environment.ts): non-streaming — yields
- * one final text delta; all failures are explanatory text closed out with `failed`,
- * **never throwing**; if interrupted, only reports `aborted` — the interruption note is
- * appended by Environment.
+ * one final text delta; failures are explanatory text finalized as `failed`; anything
+ * unexpected that still throws is caught by Environment and likewise finalized as failed.
+ * If interrupted, only reports `aborted` — the interruption note is appended by
+ * Environment.
  * Docs: /docs/tools § "File tools".
  */
 import path from "node:path";
-import { readFile, stat, writeFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { partialToolCallOutput } from "../../omnimessage/index.js";
 import type { OmniMessage } from "../../omnimessage/index.js";
 import type { ToolDefinitionConfig } from "../../interfaces.js";
 import type { BuiltinTool, ToolExecutionContext, ToolResult } from "./types.js";
 import { numberedLine } from "./read-file.js";
+import { atomicWriteFile } from "./file-utils.js";
 
 /** Tool name constant (used only within this tool module, never exposed to Environment). */
 export const EDIT_FILE_NAME = "edit_file";
@@ -43,11 +46,13 @@ function countOccurrences(haystack: string, needle: string): number {
 
 /**
  * Builds the post-edit verification snippet: line-numbered lines of the new content
- * spanning the replaced text plus a few lines of context on each side.
+ * spanning the replaced text plus a few lines of context on each side. Empty when the new
+ * content has no lines (e.g. the edit erased the whole file).
  */
 function buildSnippet(newContent: string, replaceStart: number, insertedLength: number): string {
   const lines = newContent.split("\n");
   if (lines[lines.length - 1] === "") lines.pop();
+  if (lines.length === 0) return "";
   // 1-based line numbers of the replacement's first and last affected line.
   const startLine = newContent.slice(0, replaceStart).split("\n").length;
   const endLine = newContent.slice(0, replaceStart + insertedLength).split("\n").length;
@@ -60,7 +65,7 @@ function buildSnippet(newContent: string, replaceStart: number, insertedLength: 
 
 /**
  * edit_file builtin tool: reads the file, validates the uniqueness of `old_string`,
- * writes the replaced content back, and reports a verification snippet.
+ * writes the replaced content back atomically, and reports a verification snippet.
  * `definition` is overridden by Environment at construction time with the same-named entry
  * from ToolConfig (description/arguments/permissions/limits).
  */
@@ -82,8 +87,14 @@ export function createEditFileTool(definition: ToolDefinitionConfig): BuiltinToo
         return { stopReason: "failed" };
       }
       const oldString = args["old_string"];
-      if (typeof oldString !== "string" || oldString.length === 0) {
+      if (typeof oldString !== "string") {
         yield delta(`Missing required argument "old_string" for ${definition.name}.`);
+        return { stopReason: "failed" };
+      }
+      if (oldString.length === 0) {
+        yield delta(
+          "old_string must not be empty — edit_file replaces existing text. To create a file or rewrite it wholesale, use write_file.",
+        );
         return { stopReason: "failed" };
       }
       const newString = args["new_string"];
@@ -101,13 +112,15 @@ export function createEditFileTool(definition: ToolDefinitionConfig): BuiltinToo
 
       const resolved = path.resolve(ctx.workspaceDir, filePath);
       let content: string;
+      let fileMode: number | undefined;
       try {
         const st = await stat(resolved);
         if (st.isDirectory()) {
           yield delta(`Cannot edit "${filePath}": it is a directory.`);
           return { stopReason: "failed" };
         }
-        content = await readFile(resolved, "utf8");
+        fileMode = st.mode & 0o777;
+        content = await readFile(resolved, { encoding: "utf8", ...(signal ? { signal } : {}) });
       } catch (err) {
         if (signal?.aborted) return { stopReason: "aborted" };
         const code = (err as NodeJS.ErrnoException).code;
@@ -125,8 +138,13 @@ export function createEditFileTool(definition: ToolDefinitionConfig): BuiltinToo
 
       const occurrences = countOccurrences(content, oldString);
       if (occurrences === 0) {
+        // A CRLF file is the classic silent mismatch: text copied from read_file's display
+        // has bare \n while the file has \r\n — say so explicitly.
+        const crlfHint = content.includes("\r\n")
+          ? " Note: the file uses CRLF (\\r\\n) line endings — a multi-line old_string must include the \\r characters."
+          : "";
         yield delta(
-          `old_string not found in "${filePath}". Make sure it matches the file content exactly, including whitespace and indentation.`,
+          `old_string not found in "${filePath}". Make sure it matches the file content exactly, including whitespace and indentation.${crlfHint}`,
         );
         return { stopReason: "failed" };
       }
@@ -144,7 +162,10 @@ export function createEditFileTool(definition: ToolDefinitionConfig): BuiltinToo
           newString +
           content.slice(replaceStart + oldString.length);
       try {
-        await writeFile(resolved, newContent, "utf8");
+        await atomicWriteFile(resolved, newContent, {
+          ...(fileMode !== undefined ? { mode: fileMode } : {}),
+          ...(signal ? { signal } : {}),
+        });
       } catch (err) {
         if (signal?.aborted) return { stopReason: "aborted" };
         const message = err instanceof Error ? err.message : String(err);
@@ -155,7 +176,7 @@ export function createEditFileTool(definition: ToolDefinitionConfig): BuiltinToo
       const replaced = replaceAll ? occurrences : 1;
       const snippet = buildSnippet(newContent, replaceStart, newString.length);
       yield delta(
-        `Replaced ${replaced} occurrence${replaced === 1 ? "" : "s"} in "${filePath}".\n${snippet}`,
+        `Replaced ${replaced} occurrence${replaced === 1 ? "" : "s"} in "${filePath}".${snippet ? `\n${snippet}` : ""}`,
       );
       return;
     },

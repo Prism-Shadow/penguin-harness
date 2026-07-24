@@ -101,9 +101,8 @@ Edit this file via the CLI (`penguin config model â€¦`) or the Web Models page â
 | `compaction.max_session_turns` | `-1` | Cumulative Session turn threshold (`-1` = unlimited) |
 | `compaction.mode` | `summarize` | `summarize` / `discard` |
 | `compaction.prompt` | built-in template | Prompt used for summarize compaction |
-| `tools.builtin` | full default toolset when omitted | Tool entries: `name` / `description` / `parameters` / `permission` (`r` or `rw`) / `forModel` / `timeoutMs` / `maxOutputLength`; once written it replaces the default list wholesale |
+| `tools.builtin` | full default toolset when omitted | Tool entries: `name` / `description` / `parameters` / `permission` (`r` or `rw`) / `forModel` / `timeoutMs` / `maxOutputLength` / `call_description` (per-tool toggle for the optional `description` call argument; missing = kept); once written it replaces the default list wholesale |
 | `tools.mcpServers` | `[]` | MCP Server configuration (`name` + `config`); reserved for the MCP adapter layer |
-| `tools.call_descriptions` | missing = enabled | Whether the command/subagent tools accept the optional `description` call argument (a model-written sentence shown while the call runs); `false` turns it off |
 
 Tool permissions and approval semantics are covered in [Tools & Approval](/tools).
 

@@ -13,7 +13,7 @@
  * Docs: /docs/cli § "penguin run".
  */
 import type { Command } from "commander";
-import { createAgent, userText } from "@prismshadow/penguin-core";
+import { createAgent, userText, VERSION } from "@prismshadow/penguin-core";
 import { StreamRenderer } from "../render.js";
 import { runTask } from "../task-loop.js";
 import { denyActivePrompt, resolveApprovalMode } from "../approval.js";
@@ -53,7 +53,9 @@ export function registerRunCommand(program: Command, t: Messages): void {
       });
 
       const out = process.stdout;
-      out.write(`${t.header("run", agent.state.agentId, session.workspaceDir, session.modelId)}\n`);
+      out.write(
+        `${t.header("run", VERSION, agent.state.agentId, session.workspaceDir, session.modelId)}\n`,
+      );
 
       const controller = new AbortController();
       const onSigint = () => {

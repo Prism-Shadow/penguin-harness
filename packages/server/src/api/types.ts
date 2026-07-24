@@ -420,8 +420,6 @@ export interface AgentConfigDto {
   compaction?: AgentCompactionConfigDto;
   toolsBuiltin: ToolDefinitionConfig[];
   mcpServers: MCPServerConfig[];
-  /** tools.call_descriptions: the command/subagent tools' optional `description` call argument; missing = enabled. */
-  callDescriptions?: boolean;
 }
 
 export interface AgentConfigResponse {
@@ -446,7 +444,6 @@ export interface AgentConfigUpdateRequest {
     compaction?: AgentCompactionConfigDto;
     toolsBuiltin?: ToolDefinitionConfig[];
     mcpServers?: MCPServerConfig[];
-    callDescriptions?: boolean;
   };
 }
 

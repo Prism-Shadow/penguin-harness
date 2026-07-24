@@ -13,11 +13,11 @@
  */
 import type { EnvironmentServices, ToolDefinitionConfig } from "../../interfaces.js";
 import type { BuiltinTool } from "./types.js";
-import { EXEC_COMMAND_NAME, RUN_COMMAND_NAME, createRunCommandTool } from "./run-command.js";
-import { INPUT_COMMAND_NAME, createInputCommandTool } from "./input-command.js";
 import { READ_FILE_NAME, createReadFileTool } from "./read-file.js";
 import { EDIT_FILE_NAME, createEditFileTool } from "./edit-file.js";
 import { WRITE_FILE_NAME, createWriteFileTool } from "./write-file.js";
+import { EXEC_COMMAND_NAME, RUN_COMMAND_NAME, createRunCommandTool } from "./run-command.js";
+import { INPUT_COMMAND_NAME, createInputCommandTool } from "./input-command.js";
 import { SUBAGENT_NAME, createSubagentTool } from "./run-subagent.js";
 import { INPUT_SUBAGENT_NAME, createInputSubagentTool } from "./input-subagent.js";
 import { READ_IMAGE_NAME, createReadImageTool } from "./read-image.js";
@@ -35,6 +35,9 @@ export type BuiltinToolFactory = (
 
 /** Tool name -> factory. */
 export const BUILTIN_TOOL_FACTORIES: Record<string, BuiltinToolFactory> = {
+  [READ_FILE_NAME]: createReadFileTool,
+  [EDIT_FILE_NAME]: createEditFileTool,
+  [WRITE_FILE_NAME]: createWriteFileTool,
   [RUN_COMMAND_NAME]: createRunCommandTool,
   // Legacy alias: an on-disk system_config.yaml is loaded verbatim (no default-merge), so
   // agents created before the exec_command -> run_command rename still list "exec_command".
@@ -42,9 +45,6 @@ export const BUILTIN_TOOL_FACTORIES: Record<string, BuiltinToolFactory> = {
   // the config entry — old agents and old traces keep working unchanged.
   [EXEC_COMMAND_NAME]: createRunCommandTool,
   [INPUT_COMMAND_NAME]: createInputCommandTool,
-  [READ_FILE_NAME]: createReadFileTool,
-  [EDIT_FILE_NAME]: createEditFileTool,
-  [WRITE_FILE_NAME]: createWriteFileTool,
   [SUBAGENT_NAME]: createSubagentTool,
   [INPUT_SUBAGENT_NAME]: createInputSubagentTool,
   [READ_IMAGE_NAME]: createReadImageTool,

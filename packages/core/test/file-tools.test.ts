@@ -6,13 +6,14 @@
  * read-image.test.ts); Environment-side framing is covered by environment.test.ts.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   DEFAULT_READ_FILE_LIMIT,
   MAX_LINE_LENGTH,
   READ_FILE_NAME,
+  READ_FILE_SCAN_CAP_BYTES,
   createReadFileTool,
 } from "../src/environment/tools/read-file.js";
 import { EDIT_FILE_NAME, createEditFileTool } from "../src/environment/tools/edit-file.js";
@@ -321,5 +322,162 @@ describe("write_file", () => {
     const { result, text } = await run(tool(), { file_path: "nocontent.txt" }, tmp);
     expect(result?.stopReason).toBe("failed");
     expect(text).toContain('"content"');
+  });
+});
+
+describe("read_file — argument coercion, CRLF, secret guard", () => {
+  const tool = () => createReadFileTool(def(READ_FILE_NAME, "r"));
+
+  it("accepts numeric strings for offset/limit", async () => {
+    const lines = Array.from({ length: 10 }, (_, i) => `line-${i + 1}`).join("\n");
+    await writeFile(path.join(tmp, "many.txt"), `${lines}\n`);
+    const { result, text } = await run(
+      tool(),
+      { file_path: "many.txt", offset: "3", limit: "4" },
+      tmp,
+    );
+    expect(result?.stopReason).toBeUndefined();
+    expect(text).toContain("     3\tline-3");
+    expect(text).toContain("showing 3-6");
+  });
+
+  it("fails on non-numeric offset/limit instead of silently defaulting", async () => {
+    await writeFile(path.join(tmp, "a.txt"), "x\n");
+    const badOffset = await run(tool(), { file_path: "a.txt", offset: "abc" }, tmp);
+    expect(badOffset.result?.stopReason).toBe("failed");
+    expect(badOffset.text).toContain('Invalid "offset"');
+    const badLimit = await run(tool(), { file_path: "a.txt", limit: 0 }, tmp);
+    expect(badLimit.result?.stopReason).toBe("failed");
+    expect(badLimit.text).toContain('Invalid "limit"');
+  });
+
+  it("strips trailing \\r from displayed lines and notes CRLF line endings", async () => {
+    await writeFile(path.join(tmp, "crlf.txt"), "alpha\r\nbeta\r\n");
+    const { result, text } = await run(tool(), { file_path: "crlf.txt" }, tmp);
+    expect(result?.stopReason).toBeUndefined();
+    expect(text).toContain("     1\talpha\n");
+    expect(text).not.toContain("\r");
+    expect(text).toContain("(file uses CRLF line endings)");
+  });
+
+  it("refuses the secret stores by basename regardless of directory", async () => {
+    await writeFile(path.join(tmp, ".vault.toml"), "SECRET=1\n");
+    await mkdir(path.join(tmp, "sub"));
+    await writeFile(path.join(tmp, "sub", ".project_config.toml"), "key=1\n");
+    const vault = await run(tool(), { file_path: ".vault.toml" }, tmp);
+    expect(vault.result?.stopReason).toBe("failed");
+    expect(vault.text).toContain("Refusing to read");
+    const cfg = await run(tool(), { file_path: "sub/.project_config.toml" }, tmp);
+    expect(cfg.result?.stopReason).toBe("failed");
+    expect(cfg.text).toContain("Refusing to read");
+  });
+});
+
+describe("read_file — bounded scan and output budget", () => {
+  it("self-budgets the window so the continuation note survives a small maxOutputLength", async () => {
+    const lines = Array.from({ length: 10 }, (_, i) => `line-${i + 1}`).join("\n");
+    await writeFile(path.join(tmp, "many.txt"), `${lines}\n`);
+    const tool = createReadFileTool({
+      name: READ_FILE_NAME,
+      description: "test",
+      permission: "r",
+      maxOutputLength: 300,
+    });
+    const { result, text } = await run(tool, { file_path: "many.txt" }, tmp);
+    expect(result?.stopReason).toBeUndefined();
+    // The whole output fits under the tool's own cap, so Environment cannot cut the note.
+    expect(text.length).toBeLessThanOrEqual(300);
+    expect(text).toMatch(
+      /\[file has 10 lines total; showing 1-\d+ \(output limit reached\) — call again with offset to continue\]/,
+    );
+    expect(text).not.toContain("line-10");
+  });
+
+  it("fails with guidance when the scan cap is hit before the window (one huge line)", async () => {
+    await writeFile(path.join(tmp, "huge-line.txt"), "x".repeat(READ_FILE_SCAN_CAP_BYTES + 1024));
+    const tool = () => createReadFileTool(def(READ_FILE_NAME, "r"));
+    const { result, text } = await run(tool(), { file_path: "huge-line.txt" }, tmp);
+    expect(result?.stopReason).toBe("failed");
+    expect(text).toContain("Stopped after scanning 8 MB");
+    expect(text).toContain("sed -n");
+  });
+
+  it("reports a lower-bound total when the file outruns the scan cap after the window", async () => {
+    // > 8MB of two-byte lines: the window (1-2000) completes early, counting stops at the cap.
+    await writeFile(path.join(tmp, "long.txt"), "x\n".repeat(READ_FILE_SCAN_CAP_BYTES / 2 + 4096));
+    const tool = () => createReadFileTool(def(READ_FILE_NAME, "r"));
+    const { result, text } = await run(tool(), { file_path: "long.txt" }, tmp);
+    expect(result?.stopReason).toBeUndefined();
+    expect(text).toMatch(
+      /\[file has more than \d+ lines; showing 1-2000 — call again with offset to continue\]/,
+    );
+  });
+});
+
+describe("edit_file — review follow-ups", () => {
+  const tool = () => createEditFileTool(def(EDIT_FILE_NAME, "rw"));
+
+  it("gives an explicitly-empty old_string its own message", async () => {
+    await writeFile(path.join(tmp, "f.txt"), "hello\n");
+    const { result, text } = await run(
+      tool(),
+      { file_path: "f.txt", old_string: "", new_string: "x" },
+      tmp,
+    );
+    expect(result?.stopReason).toBe("failed");
+    expect(text).toContain("old_string must not be empty");
+    expect(text).toContain("write_file");
+  });
+
+  it("mentions CRLF in the not-found error when the file uses \\r\\n", async () => {
+    await writeFile(path.join(tmp, "crlf.txt"), "alpha\r\nbeta\r\n");
+    const { result, text } = await run(
+      tool(),
+      { file_path: "crlf.txt", old_string: "alpha\nbeta", new_string: "gamma" },
+      tmp,
+    );
+    expect(result?.stopReason).toBe("failed");
+    expect(text).toContain("old_string not found");
+    expect(text).toContain("CRLF");
+  });
+
+  it("erasing the whole content produces no dangling snippet newline", async () => {
+    const file = path.join(tmp, "erase.txt");
+    await writeFile(file, "abc");
+    const { result, text } = await run(
+      tool(),
+      { file_path: "erase.txt", old_string: "abc", new_string: "" },
+      tmp,
+    );
+    expect(result?.stopReason).toBeUndefined();
+    expect(text).toBe('Replaced 1 occurrence in "erase.txt".');
+    expect(await readFile(file, "utf8")).toBe("");
+  });
+
+  it("writes atomically: no temp files are left behind", async () => {
+    await writeFile(path.join(tmp, "at.txt"), "a b a\n");
+    await run(tool(), { file_path: "at.txt", old_string: "b", new_string: "c" }, tmp);
+    const entries = await readdir(tmp);
+    expect(entries.filter((e) => e.includes(".tmp-"))).toEqual([]);
+  });
+});
+
+describe("write_file — review follow-ups", () => {
+  const tool = () => createWriteFileTool(def(WRITE_FILE_NAME, "rw"));
+
+  it("preserves the permission bits of an overwritten file (atomic rename)", async () => {
+    const file = path.join(tmp, "mode.txt");
+    await writeFile(file, "old");
+    await chmod(file, 0o600);
+    const { result } = await run(tool(), { file_path: "mode.txt", content: "new" }, tmp);
+    expect(result?.stopReason).toBeUndefined();
+    expect((await stat(file)).mode & 0o777).toBe(0o600);
+    expect(await readFile(file, "utf8")).toBe("new");
+  });
+
+  it("writes atomically: no temp files are left behind", async () => {
+    await run(tool(), { file_path: "fresh.txt", content: "x" }, tmp);
+    const entries = await readdir(tmp);
+    expect(entries.filter((e) => e.includes(".tmp-"))).toEqual([]);
   });
 });

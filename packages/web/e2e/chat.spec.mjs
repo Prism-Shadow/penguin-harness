@@ -56,11 +56,11 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   await page.getByRole("button", { name: "发送" }).click();
 
   // Tool name is shown on the collapsed tool row + in the pending-approval block.
-  await expect(page.getByText("exec_command").first()).toBeVisible();
+  await expect(page.getByText("run_command").first()).toBeVisible();
   // Thinking + tool calls are wrapped in a work group; header shows running/done status.
   await expect(page.getByText("运行中").first()).toBeVisible();
   // The user takes control of the running work group (toggle = userToggled), keeps it open, and
-  // opens the exec_command card to watch the arguments. Both must survive the end of the turn.
+  // opens the run_command card to watch the arguments. Both must survive the end of the turn.
   //
   // The group deliberately auto-collapses once it is no longer the last segment — but only when the
   // user has NOT toggled it (WorkGroup keeps that in a ref). A remount wipes both the ref and the
@@ -74,10 +74,7 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   await runningGroup.click(); // toggle → marks the group user-toggled (open := false)
   await runningGroup.click(); // toggle back → the user is deliberately keeping it open
 
-  const toolCard = page
-    .locator("button[aria-expanded]")
-    .filter({ hasText: "exec_command" })
-    .first();
+  const toolCard = page.locator("button[aria-expanded]").filter({ hasText: "run_command" }).first();
   await toolCard.click();
   await expect(toolCard).toHaveAttribute("aria-expanded", "true");
 
@@ -116,7 +113,7 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   // Turn is over and the stats line has landed. The card is still open — which also proves the
   // group did not collapse (a collapsed group unmounts its body, so the card would be gone).
   await expect(
-    page.locator("button[aria-expanded]").filter({ hasText: "exec_command" }).first(),
+    page.locator("button[aria-expanded]").filter({ hasText: "run_command" }).first(),
   ).toHaveAttribute("aria-expanded", "true");
 
   // The stats line IS the AI reply's footer (bottom-left, mirroring the user footer's bottom-right):
@@ -210,7 +207,7 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   const overflowY = await timeline.evaluate((el) => getComputedStyle(el).overflowY);
   expect(overflowY).toBe("hidden");
   // Hover a timeline tool-exec segment → the matching event row highlights (cross-link).
-  const seg = main.getByTitle(/exec_command · 工具调用执行/).first();
+  const seg = main.getByTitle(/run_command · 工具调用执行/).first();
   await expect(seg).toBeVisible();
   await seg.hover();
   await expect(main.locator("button.bg-amber-50").first()).toBeVisible();
