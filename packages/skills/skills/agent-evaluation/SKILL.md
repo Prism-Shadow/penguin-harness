@@ -3,13 +3,17 @@ name: agent-evaluation
 description: Run and score exactly one Benchmark Case run with CLI execution, Trace provenance checks, and private Rubric isolation.
 short_description: Run and score one isolated Benchmark Case.
 short_description_zh: 隔离执行并评分一个 Benchmark Case。
-version: 5
-updated: 2026-07-24T04:48:33Z
+version: 6
+updated: 2026-07-24T09:47:04Z
 ---
 
 # Agent Evaluation
 
 Act as an internal leaf worker. For one valid request, run and score exactly one Benchmark Case once, then return minimal protocol metadata. Do not design or refine the Benchmark, modify the Test Agent State, or write `scoreboard.yaml`. Do not use `run_subagent` or `input_subagent`.
+
+The output contract is part of the privacy boundary: emit no assistant text while working, and make
+the final assistant message exactly one plain protocol YAML document. Commentary, code fences,
+summaries, scoring rationale, and any text before or after that document are forbidden.
 
 ## Before you start
 
@@ -17,7 +21,11 @@ This Skill is invoked by `benchmark-design` or Benchmark mode in `agent-optimiza
 
 ## Privacy boundary
 
-Before the final protocol YAML, emit no assistant text; use private reasoning and tool calls only. Never serialize Statement or artifact contents, Rubric items, expected values, correct outcomes, per-item scoring, diagnostics, secret configuration, Workspace paths, or Trace paths into an assistant message. The final assistant message is the protocol YAML only. It may echo the public identity fields supplied by the caller.
+Use private reasoning and tool calls only. Never serialize Statement or artifact contents, Rubric
+items, expected values, correct outcomes, per-item scoring, diagnostics, secret configuration,
+Workspace paths, or Trace paths into an assistant message. Do not narrate validation, launch,
+binding, or scoring. The final protocol may echo only the public identity fields supplied by the
+caller and the protocol result fields defined below.
 
 A valid request contains exactly one value for each field:
 

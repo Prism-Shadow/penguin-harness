@@ -3,8 +3,8 @@ name: agent-optimization
 description: Improve an Agent State from direct feedback or versioned Benchmark scores and score-linked Traces.
 short_description: Improve an Agent from feedback or measured Benchmark results.
 short_description_zh: 根据反馈或 Benchmark 结果改进 Agent。
-version: 14
-updated: 2026-07-24T08:24:00Z
+version: 15
+updated: 2026-07-24T09:47:04Z
 ---
 
 # Agent Optimization
@@ -69,7 +69,9 @@ Make the smallest complete edit supported by evidence and preserve unrelated con
 Every change must generalize beyond the observed run. Do not encode Case ids, expected answers,
 Benchmark-specific constants, private scoring conditions, or rules that apply to only one Case.
 Prefer improving general analysis, validation, and execution methods over memorizing Benchmark
-answers.
+answers. Do not turn one high-scoring Trace's apparent choice into an unconditional domain rule;
+prefer a conditional analysis procedure that determines which semantics the available evidence
+supports.
 
 ## Snapshot, version, and rollback
 
@@ -122,7 +124,21 @@ If the current Agent State has no complete Evaluation, evaluate it without chang
 that result as the Reference.
 
 Every Candidate Evaluation must use the same Benchmark, Cases, Runs, Provider, and Model as the
-Reference.
+Reference. Use the exact `(provider, model_id)` pair stored by the Reference; do not translate,
+alias, or fall back to a different Model identifier.
+
+## Evaluation dispatch
+
+Maintain a Case × Run ledger. Never dispatch a cell that is already pending or valid, and retry a
+cell only after an explicit infrastructure failure. Use bounded batches that fit the available
+subagent capacity, and collect one batch before launching more work.
+
+Accept an Evaluator result only when the entire response is one plain protocol YAML document with
+exactly the fields allowed by `agent-evaluation`; do not salvage YAML from commentary, code fences,
+or additional text. If an Evaluator response reveals Rubric content, Gold, scoring details, or
+other private data, the current Session's privacy boundary is compromised. Roll back any active
+Candidate, stop without launching more evaluations or writing the Scoreboard, and report only an
+Evaluator protocol violation. A fresh top-level Session is required to continue.
 
 ## Optimization loop
 

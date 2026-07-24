@@ -3,8 +3,8 @@ name: benchmark-design
 description: Design and calibrate a multi-Case capability Benchmark with repeated independent evaluations and a traceable baseline.
 short_description: Design and calibrate an Agent capability Benchmark.
 short_description_zh: 设计并校准 Agent 能力评测 Benchmark。
-version: 15
-updated: 2026-07-24T08:49:25Z
+version: 16
+updated: 2026-07-24T09:47:04Z
 ---
 
 # Benchmark Design
@@ -119,6 +119,26 @@ scoring rules, or established point allocations in response to Test Agent answer
 
 Use atomic, observable scoring items with explicit points and meaningful partial credit for
 reasonable partially correct results. Never execute Test Agent-produced code while scoring.
+
+Before the first evaluation, perform a semantic isolation review of every public Statement and
+supporting file against its private Rubric. Public material may describe the task, available
+evidence, required artifact, and any rules intentionally given to the Test Agent; it must not state
+or paraphrase a rule, mapping, expected outcome, Gold answer, or scoring condition that the Test
+Agent is meant to recover. Remove runtime-generated answers or other accidental leaks before
+freezing the Benchmark.
+
+## Evaluation dispatch
+
+Maintain a Case × Run ledger. Never dispatch a cell that is already pending or valid, and retry a
+cell only after an explicit infrastructure failure. Use bounded batches that fit the available
+subagent capacity, and collect one batch before launching more work.
+
+Accept an Evaluator result only when the entire response is one plain protocol YAML document with
+exactly the fields allowed by `agent-evaluation`; do not salvage YAML from commentary, code fences,
+or additional text. If an Evaluator response reveals Rubric content, Gold, scoring details, or
+other private data, the current Session's privacy boundary is compromised: stop without launching
+more evaluations or writing a baseline, and report only an Evaluator protocol violation. A fresh
+top-level Session is required to continue.
 
 ## Calibration
 
