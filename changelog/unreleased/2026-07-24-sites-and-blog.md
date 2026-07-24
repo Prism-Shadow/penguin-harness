@@ -1,0 +1,3 @@
+# Sites: a free-models post, featured in the announcement bar
+
+The blog gains a bilingual post, `free-models-in-penguin-harness` (#60): the free lineup now in the catalog — Nemotron 3 Ultra (free), the newly added Ling 3.0 Flash free tier, and the `openrouter/free` Free Models Router — how to enable it (a free OpenRouter key; presets automatic on new Projects, Sync presets on the web Models page or `penguin config model add` from the CLI), and honest caveats: free-tier rate limits, upstream data terms, availability and quality variance, and the router's per-request target — fine for trying things out and light automation, paid models for serious work. The post is featured as the newest announcement-bar slide, at the head of the rotation.
