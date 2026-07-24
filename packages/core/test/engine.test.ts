@@ -331,6 +331,47 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
     ).toBe(true);
   });
 
+  it("maxTurns -1 removes the cap instead of stopping before the first turn (issue #55)", async () => {
+    // Two tool-call turns followed by a final text turn: with the old `0 >= -1` guard the
+    // engine emitted the stop note without ever calling the LLM.
+    let calls = 0;
+    const llm: LLMInterface = {
+      async *streamGenerate() {
+        calls += 1;
+        if (calls <= 2) {
+          yield toolCall({
+            name: "exec_command",
+            arguments: JSON.stringify({ cmd: "true" }),
+            toolCallId: `c${calls}`,
+            stopReason: "completed",
+          });
+        } else {
+          yield assistantText("Done");
+        }
+        yield tokenUsage(emptyTokenCounts(), {
+          cache_read: 0,
+          cache_write: 0,
+          output: 1,
+          total: 1,
+        });
+        return { status: "completed" };
+      },
+    };
+    const environment = new Environment({
+      workspaceDir: workspace,
+      toolConfig: execCommandToolConfig(),
+    });
+    const engine = new ContextEngine({ llm, environment, maxTurns: -1 });
+
+    const all = await collectRun(engine, [userText("go")], allowAll);
+    expect(calls).toBe(3);
+    const texts = all
+      .filter((m) => isCompleteModelMessage(m) && m.payload.type === "text")
+      .map((m) => (m.payload as TextPayload).text);
+    expect(texts.some((t) => t.includes("reached max turns"))).toBe(false);
+    expect(texts.some((t) => t === "Done")).toBe(true);
+  });
+
   it("max turns with pending tool outputs carries them over so the next run pairs the tool_call (issue #33)", async () => {
     const received: OmniMessage[][] = [];
     const llm: LLMInterface = {
