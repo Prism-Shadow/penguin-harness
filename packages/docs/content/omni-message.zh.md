@@ -41,7 +41,6 @@ interface SessionMetaPayload {
   agent_state: string;                    // Agent State 绝对路径
   workspace: string;                      // Workspace 绝对路径
   source?: "subagent" | "schedule";       // Session 来源；缺省 = 用户创建
-  forked_from?: string;                   // 模型切换分叉的来源 session_id；缺省 = 非分叉会话
 }
 
 interface ToolDefinition {

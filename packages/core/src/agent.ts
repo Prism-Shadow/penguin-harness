@@ -37,7 +37,6 @@ import {
   latestSessionId as latestTraceSessionId,
   readTraceTolerant,
   resumeTrace,
-  sanitizeForkRecords,
 } from "./trace/index.js";
 import { Session } from "./session.js";
 import {
@@ -45,12 +44,10 @@ import {
   formatSessionId,
   sessionEnvironment,
 } from "./internal/session-support.js";
-import { isSessionMeta, sessionMeta, userText, withOrigin } from "./omnimessage/index.js";
+import { userText, withOrigin } from "./omnimessage/index.js";
 import type {
   MessageOrigin,
   OmniMessage,
-  SessionMetaMessage,
-  SessionMetaPayload,
   TokenCounts,
   ToolCallPayload,
 } from "./omnimessage/index.js";
@@ -136,22 +133,6 @@ export interface CreateSessionOptions {
 export interface ResumeSessionOptions {
   /** Id of the Session to resume. */
   sessionId: string;
-  /** Explicit credentials; if unspecified, falls back to credentials in the Project config, then to AgentHub reading environment variables. */
-  apiKey?: string;
-  baseUrl?: string;
-}
-
-export interface ForkSessionOptions {
-  /** Id of the source Session whose conversation the fork carries over. */
-  fromSessionId: string;
-  /**
-   * Upstream model_id of the NEW Session — required, paired with `provider` (a model
-   * reference is always the complete pair, validated against the Project config exactly
-   * like createSession).
-   */
-  modelId: string;
-  /** Provider group for `modelId`; required. */
-  provider: string;
   /** Explicit credentials; if unspecified, falls back to credentials in the Project config, then to AgentHub reading environment variables. */
   apiKey?: string;
   baseUrl?: string;
@@ -478,10 +459,6 @@ export class Agent {
         ...(meta.source === "subagent" || meta.source === "schedule"
           ? { source: meta.source }
           : {}),
-        // The fork provenance is an invariant too: a resumed forked Session stays marked.
-        ...(typeof meta.forked_from === "string" && meta.forked_from
-          ? { forked_from: meta.forked_from }
-          : {}),
       },
       llm: rt.llm,
       environment: rt.environment,
@@ -502,185 +479,6 @@ export class Agent {
         ? { maxTurns: this.state.systemConfig.max_turns }
         : {}),
       // session_meta is already in the original Trace file, so it isn't rewritten; on the first write after a compaction-triggered rotation, the file is split first.
-      metaAlreadyWritten: true,
-      initialEngineState: {
-        carryOver: resumed.carryOver,
-        ...(resumed.pendingSummary ? { pendingSummary: resumed.pendingSummary } : {}),
-        sessionTurns: resumed.sessionTurns,
-        sessionTokens: resumed.sessionTokens,
-        lastRequestTotal: resumed.lastRequestTotal,
-        pendingTraceRotation: resumed.contextClosed,
-      },
-      resumedHistory: resumed.renderMessages,
-    });
-  }
-
-  /**
-   * Fork a Session onto another model: creates a NEW Session for the same Agent that
-   * **carries the source Session's conversation as real history** (not a reference note)
-   * and continues on the given model.
-   *
-   * The source is the source Session's latest-index Trace file. Its records are sanitized
-   * **always** — even when the target model shares the source provider — because forked
-   * contexts never replay thinking fidelity (see `sanitizeForkRecords`: thinking payloads
-   * dropped, `fidelity` stripped, token_usage and subagent pointers dropped; request/abort/
-   * compaction events and all other complete model_msgs kept). The sanitized records are
-   * written — after the new Session's own session_meta — as the new Session's fresh Trace
-   * file (index 001, today's date directory), then the SAME records are replayed through
-   * `resumeTrace` to seed the model context, so the Trace on disk equals the injected
-   * context exactly.
-   *
-   * The new session_meta holds the NEW model reference, a freshly assembled system prompt
-   * (same as createSession), tools per the new model (vision filtering may differ), the
-   * SAME Workspace as the source (a real continuation), and `forked_from` = the source
-   * session id. Whether the source Session is currently running is a host-level concern —
-   * the server enforces idleness before calling this.
-   */
-  async forkSession(opts: ForkSessionOptions): Promise<Session> {
-    const { fromSessionId } = opts;
-    const dir = tracesDir(this.state.root, this.state.projectId, this.state.agentId);
-    const located = await findLatestTraceFile(dir, fromSessionId);
-    if (!located) {
-      throw new Error(
-        `Cannot fork Session ${fromSessionId}: it has no Trace record yet (no matching Trace file found under ${dir}). Only a Session with at least one recorded message can be forked.`,
-      );
-    }
-    const sourceRecords = await readTraceTolerant(located.path);
-    const sourceMetaMsg = sourceRecords.find(isSessionMeta) as SessionMetaMessage | undefined;
-    if (!sourceMetaMsg) {
-      throw new Error(`Trace is missing session_meta and cannot be forked: ${located.path}`);
-    }
-    const sourceMeta = sourceMetaMsg.payload;
-    if (typeof sourceMeta.provider !== "string") {
-      throw new Error(
-        `Trace is from legacy data (session_meta is missing provider; the model reference is not split into separate fields): ${located.path}. Delete the data directory and recreate the Session.`,
-      );
-    }
-
-    // The NEW model pair is validated exactly like createSession (both halves required by
-    // the options type; the pair must name a configured entry so credentials, vision, and
-    // the context window are all resolvable).
-    const ref = resolveModelRef(this.projectConfig, opts.modelId, opts.provider);
-    const modelEntry = getModel(this.projectConfig, ref);
-    if (!modelEntry) {
-      throw new Error(
-        `Model is not in the Project config: ${formatModelRef(ref)}. Use \`penguin config model list\` to see the configured models, or \`penguin config model add\` to add one.`,
-      );
-    }
-    const apiKey = opts.apiKey ?? modelEntry.api_key;
-    const baseUrl = opts.baseUrl ?? modelEntry.base_url;
-
-    // The Workspace carries over from the source Session (a real continuation) and must
-    // still exist (throw if missing, never auto-create — same rule as resumeSession).
-    const workspaceDir = sourceMeta.workspace;
-    let stat;
-    try {
-      stat = await fs.stat(workspaceDir);
-    } catch {
-      throw new Error(
-        `The source Session's Workspace no longer exists: ${workspaceDir}; cannot fork.`,
-      );
-    }
-    if (!stat.isDirectory()) {
-      throw new Error(
-        `The source Session's Workspace is not a directory: ${workspaceDir}; cannot fork.`,
-      );
-    }
-
-    const sessionId = formatSessionId();
-    // The fork is a fresh user-facing Session for this Agent: its default thinking level
-    // comes from the Agent config, exactly like createSession with no explicit option.
-    const thinkingLevel = this.state.systemConfig.model?.thinking_level;
-    const vault = await loadAgentVault(this.state.root, this.state.projectId, this.state.agentId);
-    const installedSkills = await listInstalledSkills(
-      this.state.root,
-      this.state.projectId,
-      this.state.agentId,
-    );
-    // The system prompt is freshly assembled for this Agent and the NEW model (same as
-    // createSession) — the fork runs a different model, so the source's recorded prompt
-    // (with the old model's environment placeholders) is not reused.
-    const systemPrompt = assembleSystemPrompt(
-      this.state,
-      sessionEnvironment(workspaceDir, sessionId, {
-        agentId: this.state.agentId,
-        projectDir: projectDir(this.state.root, this.state.projectId),
-        provider: modelEntry.provider,
-        modelId: modelEntry.model_id,
-      }),
-      Object.keys(vault),
-      installedSkills,
-    );
-
-    const rt = await this.buildRuntime({
-      workspaceDir,
-      modelEntry,
-      apiKey,
-      baseUrl,
-      systemPrompt,
-      thinkingLevel,
-      subagentDepth: 0,
-      vault,
-    });
-
-    const meta: SessionMetaPayload = {
-      session_id: sessionId,
-      provider: modelEntry.provider,
-      model_id: modelEntry.model_id,
-      model_context_window: modelEntry.context_window ?? "unknown",
-      system_prompt: systemPrompt,
-      tools: rt.tools,
-      agent_state: this.state.stateDir,
-      workspace: workspaceDir,
-      forked_from: fromSessionId,
-    };
-    // The forked record list: the new Session's own meta first, then the sanitized source
-    // records (source session_meta dropped by the sanitizer).
-    const forkedRecords: OmniMessage[] = [sessionMeta(meta), ...sanitizeForkRecords(sourceRecords)];
-
-    // Written as the new Session's fresh Trace file (Writer defaults: index 001, today's
-    // date directory); the Session then continues appending to this same file.
-    const trace = new Writer({ tracesDir: dir, sessionId });
-    await trace.writeAll(forkedRecords);
-
-    // Replay the SAME records to seed the new Session exactly like resumeSession does —
-    // this guarantees the Trace on disk equals the injected model context. Wrap conversion
-    // errors descriptively (bad tool-argument JSON in the source history).
-    const resumed = resumeTrace(forkedRecords);
-    if (resumed.history.length > 0) {
-      try {
-        rt.llm.setHistory(resumed.history);
-      } catch (err) {
-        const detail = err instanceof Error ? err.message : String(err);
-        throw new Error(
-          `Fork failed: the Trace history could not be injected (records may be corrupted, e.g. invalid tool-argument JSON): ${detail}`,
-        );
-      }
-    }
-    // token_usage records were dropped by the sanitizer, so usage restarts at zero.
-    rt.llm.sessionTokens = resumed.sessionTokens;
-
-    return new Session({
-      meta,
-      llm: rt.llm,
-      environment: rt.environment,
-      trace,
-      createLLM: rt.createLLM,
-      createBareLLM: rt.createBareLLM,
-      compaction: rt.compaction,
-      // Model doesn't support images: input images are written to the session scratchpad and their paths appended to the text (viewed via describe_image).
-      ...(modelEntry.vision === false
-        ? {
-            inputImagesDir: path.join(
-              scratchpadDir(this.state.root, this.state.projectId, this.state.agentId),
-              sessionId,
-            ),
-          }
-        : {}),
-      ...(this.state.systemConfig.max_turns !== undefined
-        ? { maxTurns: this.state.systemConfig.max_turns }
-        : {}),
-      // session_meta was already written above as the forked Trace's first record.
       metaAlreadyWritten: true,
       initialEngineState: {
         carryOver: resumed.carryOver,

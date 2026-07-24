@@ -473,6 +473,14 @@ export interface SessionInfo {
   hasTrace: boolean;
   /** Whether archived (hidden from the default list, grouped under "Archived"). */
   archived: boolean;
+  /**
+   * Absolute path of the session's latest Trace file (the current context shard); absent
+   * when no Trace exists yet. Populated on the **single-session GET only** — list rows omit
+   * it (locating it costs a directory walk per Session). The web's `/model` switch puts it
+   * into the new session's `<model_switch_from>` block so the model can read the source
+   * history itself when it needs it.
+   */
+  tracePath?: string;
 }
 
 /**
@@ -542,25 +550,6 @@ export interface SessionPatchRequest {
   archived?: boolean;
   /** Manual rename; non-empty string, overrides the auto-generated title. */
   title?: string;
-}
-
-/**
- * POST /api/sessions/:sessionId/fork — model switch: creates a NEW Session for the same
- * Agent that carries the source Session's conversation (sanitized real history) and
- * continues on the given model. Both halves of the model reference are required.
- */
-export interface SessionForkRequest {
-  /** Upstream id of the NEW session's model; required, paired with provider. */
-  modelId: string;
-  /** Provider group for `modelId`; required (a model reference is always the complete pair). */
-  provider: string;
-}
-
-export interface SessionForkResponse {
-  /** The new Session (same shape as session creation). */
-  session: SessionInfo;
-  /** The source session id (also recorded as `forked_from` in the new session_meta). */
-  forkedFrom: string;
 }
 
 /** Message history: the full messages and events from concatenating all of this Session's Trace files in order (excludes partial_*). */

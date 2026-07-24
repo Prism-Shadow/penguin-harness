@@ -162,8 +162,12 @@ function SessionMetaBody({ p }: { p: Record<string, unknown> }) {
     ["source", String(p.source ?? "")],
     ["model_id", String(p.model_id ?? "")],
     ["context_window", String(p.model_context_window ?? "")],
-    // Fork provenance (model switch): the source session id; non-forked sessions show the empty dash.
-    ["forked_from", String(p.forked_from ?? "")],
+    // Legacy metas only: current traces no longer record a thinking level (it became a
+    // per-turn Task parameter), but old traces still carry the field — keep showing it
+    // for them (loose read) instead of losing the display.
+    ...(typeof p.thinking_level === "string" && p.thinking_level
+      ? ([["thinking_level", p.thinking_level]] as Array<[string, string]>)
+      : []),
     ["agent_state", String(p.agent_state ?? "")],
     ["workspace", String(p.workspace ?? "")],
   ];

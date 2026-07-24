@@ -241,13 +241,6 @@ export interface StreamModel {
   items: ChatItem[];
   /** A nested sub-session model (produces no stats row; its stats count toward the parent). */
   nested: boolean;
-  /**
-   * The source session id when this session was forked from another one (the model-switch
-   * command), captured from the main session's `session_meta.forked_from` on history replay;
-   * null when the session is not a fork (or no session_meta has been seen). Drives the
-   * "continued from an earlier session" banner at the top of the conversation.
-   */
-  forkedFrom: string | null;
   stats: TaskStatsTracker;
   /** The currently open text/thinking fragment (opened by start, closed by stop). */
   openText: AssistantTextItem | null;
@@ -325,7 +318,6 @@ function newModel(nested: boolean, localDecisions: Set<string>): StreamModel {
   return {
     items: [],
     nested,
-    forkedFrom: null,
     stats: createTaskStatsTracker(),
     openText: null,
     openThinking: null,
@@ -400,13 +392,9 @@ export function pushMessage(
     advanceLastTs(model, msg.timestamp);
     return;
   }
-  // session_meta (main session): not rendered as an item, but the fork provenance is captured
-  // for the "continued from an earlier session" banner (an invariant: every meta of a forked
-  // session carries it, including rotated files).
-  if (msg.type === "session_meta") {
-    const forked = (msg.payload as { forked_from?: unknown }).forked_from;
-    if (typeof forked === "string" && forked) model.forkedFrom = forked;
-  }
+  // session_meta (main session): not rendered as an item and carries nothing the view model
+  // needs — session_meta holds per-session invariants (identity/config), all surfaced through
+  // the Session DTO instead.
 }
 
 /** ISO timestamp → milliseconds (returns undefined if invalid). */

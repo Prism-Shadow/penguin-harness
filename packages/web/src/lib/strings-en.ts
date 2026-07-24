@@ -671,10 +671,14 @@ When done, open index.html in a browser and self-test once.`,
     handoffFrom: (agent: string) => `Handed off from ${agent}'s conversation`,
     handoffBack: (title?: string) =>
       title ? `Back to the original conversation: ${title}` : "Back to the original conversation",
-    switchModel: "Continue with another model (a new session carries this conversation)",
+    switchModel: "Switch model — continue this conversation in a new session",
     switchModelTitle: "Switch model",
     thinkingFollowConfig: "Follow agent config",
-    forkedFrom: "Continued from an earlier session with a different model",
+    modelSwitchFrom: (prevModel?: string) =>
+      prevModel
+        ? `Switched model (was ${prevModel}) — continued from the earlier conversation`
+        : "Switched model — continued from the earlier conversation",
+    modelSwitchAutoMessage: "Continue this conversation on the new model",
     scheduledFrom: (name: string) => `Triggered by scheduled task "${name}"`,
     emptyGreeting: "Start a new conversation",
     compactionRunning: (mode: string) => `Compaction in progress (${mode})…`,

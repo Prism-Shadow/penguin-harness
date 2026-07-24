@@ -19,7 +19,6 @@ import type {
   ServerEvent,
   SessionCategory,
   SessionCreateResponse,
-  SessionForkResponse,
   SessionResponse,
   SessionsResponse,
   TaskCreateResponse,
@@ -40,7 +39,6 @@ import {
   positiveIntParam,
   readJson,
   requireEnum,
-  requireString,
   requireValidId,
 } from "../validate.js";
 import type { AppDeps } from "../../app.js";
@@ -206,8 +204,13 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
   app.get("/:sessionId", async (c) => {
     const row = resolveSession(c);
     const hasTrace = await deps.sessionService.hasTrace(row);
+    const info = await deps.sessionService.toInfo(row, hasTrace);
+    // Single-session GET only: the latest Trace file's absolute path (a directory walk per
+    // call — too costly for list rows). The web's /model switch hands it to the new session's
+    // <model_switch_from> block so the model can read the source history itself.
+    const tracePath = hasTrace ? await deps.sessionService.latestTracePath(row) : undefined;
     return c.json({
-      session: await deps.sessionService.toInfo(row, hasTrace),
+      session: { ...info, ...(tracePath !== undefined ? { tracePath } : {}) },
     } satisfies SessionResponse);
   });
 
@@ -372,23 +375,6 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
     });
     return c.json({ sessionId } satisfies TaskCreateResponse, 202);
-  });
-
-  // Model switch: fork this Session onto another model. The new Session (same Agent, same
-  // Workspace) carries the source conversation as sanitized real history; the source Session
-  // stays untouched. 409 while the source is running/compacting; both halves of the model
-  // reference are required (400 otherwise; an unknown pair is a 400 from the service).
-  app.post("/:sessionId/fork", async (c) => {
-    const row = resolveSession(c);
-    const body = await readJson(c);
-    const modelId = requireString(body, "modelId", { minLen: 1, label: "modelId" });
-    const provider = requireString(body, "provider", { minLen: 1, label: "provider" });
-    const { session, forkedFrom } = await deps.sessionService.forkSession({
-      row,
-      modelId,
-      provider,
-    });
-    return c.json({ session, forkedFrom } satisfies SessionForkResponse, 201);
   });
 
   app.post("/:sessionId/approvals/:toolCallId", async (c) => {

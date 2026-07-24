@@ -45,8 +45,6 @@ import type {
   SessionCategory,
   SessionCreateRequest,
   SessionCreateResponse,
-  SessionForkRequest,
-  SessionForkResponse,
   SessionPatchRequest,
   SessionResponse,
   SessionsResponse,
@@ -238,13 +236,6 @@ export const patchSession = (sessionId: string, body: SessionPatchRequest) =>
 
 export const deleteSession = (sessionId: string) =>
   apiFetch<void>(`/api/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
-
-/** Model switch: fork the Session onto another model — a NEW Session carrying this conversation (409 while the source is running/compacting). */
-export const postForkSession = (sessionId: string, body: SessionForkRequest) =>
-  apiFetch<SessionForkResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/fork`, {
-    method: "POST",
-    body,
-  });
 
 export const getMessages = (sessionId: string) =>
   apiFetch<MessagesResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/messages`);

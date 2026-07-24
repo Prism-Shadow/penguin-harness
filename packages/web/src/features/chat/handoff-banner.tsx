@@ -1,12 +1,15 @@
 /**
- * Handoff notice for a chat created via @ delegation: the source block (<handoff_from>) isn't
- * shown verbatim, it's collapsed into a single line reading "Handed off from <agent>'s chat";
- * when there's a source Session, the whole line is clickable and jumps back to the original chat
- * (the source Session's title goes into the title hover tooltip, taking no space in the body).
+ * Provenance banners for conversations opened from another conversation — each collapses a
+ * machine-inserted source block (the raw text is never shown; the model still sees it):
+ * - `HandoffBanner` (`<handoff_from>`, @ delegation): "Handed off from <agent>'s chat";
+ * - `ModelSwitchBanner` (`<model_switch_from>`, the /model command): "switched model —
+ *   continued from the earlier conversation".
+ * When there's a source Session, the whole line is clickable and jumps back to it (the
+ * source Session's title goes into the title hover tooltip, taking no space in the body).
  */
 import { useNavigate } from "react-router";
 import { S } from "../../lib/strings";
-import type { HandoffOrigin } from "./agent-mentions";
+import type { HandoffOrigin, ModelSwitchOrigin } from "./agent-mentions";
 
 /** Display name of the source agent: `displayName (@id)` when the display name differs from the id, otherwise just `@id`. */
 function agentLabel(origin: HandoffOrigin): string {
@@ -40,20 +43,21 @@ export function HandoffBanner({ origin }: { origin: HandoffOrigin }) {
 }
 
 /**
- * Provenance banner for a session created by the model-switch fork (session_meta carries
- * `forked_from`): a single line at the top of the conversation, clickable to jump back to
- * the source session — the same interaction as the handoff banner's back-link.
+ * Notice for a conversation opened by the `/model` switch (`<model_switch_from>` first
+ * message): a single line naming the previous model, clickable to jump back to the source
+ * session — the same interaction as the handoff banner's back-link.
  */
-export function ForkedBanner({ sessionId }: { sessionId: string }) {
+export function ModelSwitchBanner({ origin }: { origin: ModelSwitchOrigin }) {
   const navigate = useNavigate();
+  const sessionId = origin.sessionId;
   return (
     <button
       type="button"
-      title={S.chat.handoffBack()}
+      title={S.chat.handoffBack(origin.sessionTitle)}
       onClick={() => navigate(`/chat/${sessionId}`)}
       className={`${bannerFrame} transition-colors hover:bg-gray-100 hover:text-gray-800 dark:hover:bg-gray-800 dark:hover:text-gray-200`}
     >
-      {S.chat.forkedFrom}
+      {S.chat.modelSwitchFrom(origin.prevModelId)}
       <span aria-hidden className="text-gray-400 dark:text-gray-500">
         →
       </span>

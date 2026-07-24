@@ -69,7 +69,7 @@ function out(n: number): TokenCounts {
   return { cache_read: 0, cache_write: 0, output: n, total: n };
 }
 
-function meta(sessionId: string, forkedFrom?: string): OmniMessage<SessionMetaPayload> {
+function meta(sessionId: string): OmniMessage<SessionMetaPayload> {
   return sessionMeta({
     session_id: sessionId,
     model_id: "m",
@@ -79,7 +79,6 @@ function meta(sessionId: string, forkedFrom?: string): OmniMessage<SessionMetaPa
     tools: [],
     agent_state: "/a",
     workspace: "/w",
-    ...(forkedFrom !== undefined ? { forked_from: forkedFrom } : {}),
   });
 }
 
@@ -277,21 +276,6 @@ describe("approvals and events", () => {
     pushMessage(m, requestBegin());
     pushMessage(m, requestEnd("completed"));
     expect(items(m)).toHaveLength(0);
-  });
-
-  it("captures forked_from from the main session_meta (fork provenance banner)", () => {
-    const m = createStreamModel();
-    expect(m.forkedFrom).toBeNull();
-    // A non-forked session's meta carries no forked_from: stays null.
-    pushMessage(m, meta("session-x"));
-    expect(m.forkedFrom).toBeNull();
-
-    const m2 = createStreamModel();
-    pushMessage(m2, meta("session-y", "session-src"));
-    expect(m2.forkedFrom).toBe("session-src");
-    // An origin-tagged (sub-session) session_meta routes to the nested model and must not clobber the main session's provenance.
-    pushMessage(m2, withOrigin(meta("child"), "child"));
-    expect(m2.forkedFrom).toBe("session-src");
   });
 
   it("request_end final state timeout/malformed produces a retry notice item (with attempt number); request_begin marks it as resent", () => {

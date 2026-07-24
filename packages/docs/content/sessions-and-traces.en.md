@@ -79,9 +79,9 @@ Recovery requires that the Workspace and the model still exist. What recovery gu
 
 Special case: if the latest Trace file ends with a completed compaction, that context is closed as a whole — resume starts from an empty context; in summarize mode the `<context_summary>` is reconstructed and prepended to the first input after resume.
 
-## Model-switch fork
+## Model switch (/model)
 
-`forkSession` derives a new Session under the same Agent that **carries the current conversation** and continues on another model (the Web's `/model` command): it reads the source Session's latest Trace file and sanitizes the records **unconditionally** — thinking / inline_thinking messages are dropped, every `fidelity` payload is stripped (thinking fidelity is bound to the source model and gets rejected when replayed elsewhere), `token_usage` is dropped (usage restarts at zero), and `subagent` pointers are dropped (child sessions belong to the source) — then writes them as the new Session's fresh Trace file (opening with a new session_meta that records `forked_from`), and replays the same records through the recovery path into the model context, so the Trace on disk equals the injected history exactly. The Workspace carries over from the source (a real continuation); the source session is untouched.
+The Web's `/model` command changes models the way the @ handoff does: it creates a new Session under the same Agent via the ordinary session-creation API (the chosen model, **the source session's Workspace** — so files stay reachable), and the first message opens with a `<model_switch_from>` source block — the source session id, the absolute path of its latest Trace file, the Workspace, and the previous model pair — followed by whatever the user typed. The history is **not injected** into the new context: some models require thinking payloads and `fidelity` byte-for-byte when history is replayed, which cannot cross models — instead the model reads the source Trace file itself (JSONL, one message envelope per line) when it needs the earlier context. The source session and its Trace are untouched.
 
 ## Field fidelity
 

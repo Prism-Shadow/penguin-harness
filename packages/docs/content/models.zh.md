@@ -83,7 +83,7 @@ api_key = "sk-..."
 
 ## 模型与 Agent 解耦
 
-Agent 从不绑定模型：模型在创建 Session 时选定，并在该 Session 内锁定不变；同一个 Agent 可以在不同 Session 用不同模型运行。会话内的 `/model` 命令通过**分叉**换模型：创建一个携带当前对话（净化后的真实历史——思考负载与 Provider 保真数据不跨模型回放）的新 Session 并继续，原会话保持不变。`pricing` 三档价格供用量/成本中心按 Token 计费。
+Agent 从不绑定模型：模型在创建 Session 时选定，并在该 Session 内锁定不变；同一个 Agent 可以在不同 Session 用不同模型运行。会话内的 `/model` 命令按 handoff 方式换模型：在同一 Agent 下新建一个使用新模型、沿用当前 Workspace 的会话，首条消息携带 `<model_switch_from>` 源块（源会话 id 与其 Trace 文件路径）——历史不注入新上下文（部分模型回放历史时必须携带 thinking 与 `fidelity`，不能跨模型），模型需要时按路径自行读取；原会话保持不变。`pricing` 三档价格供用量/成本中心按 Token 计费。
 
 凭证处理：
 

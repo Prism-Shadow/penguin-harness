@@ -1,8 +1,9 @@
 /**
  * agent-mentions.ts unit tests: @ mention matching (cursor prefix / boundary
  * rules), candidate filtering, send-time parsing of a leading @ mention,
- * generation of the first new-conversation <handoff_from> origin block, and
- * <scheduled_task> origin block parsing.
+ * generation of the first new-conversation <handoff_from> origin block,
+ * <scheduled_task> origin block parsing, and the /model switch's
+ * <model_switch_from> origin block round-trip.
  */
 import { describe, expect, it } from "vitest";
 import type { AgentSummary } from "@prismshadow/penguin-server/api";
@@ -10,7 +11,9 @@ import {
   filterAgents,
   handoffMessage,
   matchMention,
+  modelSwitchMessage,
   parseHandoffMessage,
+  parseModelSwitchMessage,
   parseScheduledMessage,
   splitLeadingMention,
 } from "../src/features/chat/agent-mentions";
@@ -209,6 +212,40 @@ describe("parseScheduledMessage (parses the scheduled-task origin block, driving
       parseScheduledMessage(
         "<scheduled_task>\nfired_at: 2026-01-01T00:00:00Z\n</scheduled_task>\n\np",
       ),
+    ).toBeNull();
+  });
+});
+
+describe("modelSwitchMessage / parseModelSwitchMessage (the /model switch origin block)", () => {
+  it("round-trips a full origin (session title with parentheses, trace path, workspace, previous pair)", () => {
+    const origin = {
+      sessionId: "session-2026-07-24-10-00-00-abcdef01",
+      sessionTitle: "Fix (the) parser",
+      tracePath: "/data/p/agents/a/traces/2026-07-24/session-x_001.jsonl",
+      workspace: "/data/ws",
+      prevProvider: "deepseek",
+      prevModelId: "deepseek-v4-pro",
+    };
+    expect(parseModelSwitchMessage(modelSwitchMessage(origin))).toEqual(origin);
+  });
+
+  it("minimal origin (session id only) round-trips; optional lines are omitted from the block", () => {
+    const text = modelSwitchMessage({ sessionId: "session-01" });
+    expect(text).not.toContain("trace:");
+    expect(text).not.toContain("workspace:");
+    expect(text).not.toContain("previous_model:");
+    expect(parseModelSwitchMessage(text)).toEqual({ sessionId: "session-01" });
+  });
+
+  it("plain messages and longer messages merely containing the block are not misdetected", () => {
+    expect(parseModelSwitchMessage("hello /model")).toBeNull();
+    expect(
+      parseModelSwitchMessage(`before\n${modelSwitchMessage({ sessionId: "s1" })}`),
+    ).toBeNull();
+    expect(parseModelSwitchMessage(`${modelSwitchMessage({ sessionId: "s1" })}\nafter`)).toBeNull();
+    // A block without a session line is not an origin block.
+    expect(
+      parseModelSwitchMessage("<model_switch_from>\ntrace: /t.jsonl\n</model_switch_from>"),
     ).toBeNull();
   });
 });

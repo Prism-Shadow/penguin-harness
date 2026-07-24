@@ -41,7 +41,6 @@ interface SessionMetaPayload {
   agent_state: string;                    // absolute path of the Agent State
   workspace: string;                      // absolute path of the Workspace
   source?: "subagent" | "schedule";       // session origin; absent = user-created
-  forked_from?: string;                   // source session_id of a model-switch fork; absent = not a fork
 }
 
 interface ToolDefinition {

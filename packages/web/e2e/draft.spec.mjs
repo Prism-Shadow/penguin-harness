@@ -146,15 +146,16 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   expect(first.session.provider).toBe("custom");
   expect(first.session.approvalMode).toBe("read-only");
 
-  // The written-through thinking level reached the session: its trace's session_meta records
-  // the level llmConfig was assembled with (per-session fixed), and the input area shows the
-  // read-only tag next to the locked model.
+  // session_meta holds per-session invariants only: the thinking level became a per-turn
+  // Task parameter and is no longer recorded in the trace meta. The session composer shows
+  // the editable per-turn picker instead of the old read-only tag, defaulting to
+  // "follow agent config" (an explicit pick rides on each send, never written back).
   const replay = await (
     await page.request.get(`${BASE}/api/sessions/${firstSessionId}/messages`)
   ).json();
   const meta = replay.messages.find((m) => m.type === "session_meta");
-  expect(meta?.payload?.thinking_level).toBe("high");
-  await expect(page.getByTitle("思考等级：高")).toBeVisible();
+  expect(meta?.payload?.thinking_level).toBeUndefined();
+  await expect(page.getByTitle("思考等级：跟随 Agent 配置")).toBeVisible();
 
   // On a successful send the cache clears — except the model selection, which carries over as
   // the next conversation's default (switch-becomes-default, like the thinking level above).

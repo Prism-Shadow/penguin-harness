@@ -139,7 +139,7 @@ The paths below omit the `/api/sessions/:sessionId` prefix. For the storage mode
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | / | Session info |
+| GET | / | Session info (the single-session GET additionally carries `tracePath`, the absolute path of the latest Trace file; list rows omit it) |
 | PATCH | / | Update: `{approvalMode?, archived?, title?}` |
 | DELETE | / | Delete the Session (along with its Traces and scratch files) |
 | GET | /messages | Full OmniMessage history |
@@ -148,7 +148,6 @@ The paths below omit the `/api/sessions/:sessionId` prefix. For the storage mode
 | POST | /approvals/:toolCallId | Approval decision: `{decision}` is `allow` or `deny` → 204 |
 | POST | /abort | Interrupt the current Task: 202 when triggered, 204 when idle |
 | POST | /compact | Trigger context compaction: 202; 409 `nothing_to_compact` when there is nothing to compact |
-| POST | /fork | Model-switch fork: `{modelId, provider}` (both required) → 201, a NEW Session carrying this conversation; 409 while the source is running |
 | GET | /files?path= | Browse the Workspace directory |
 | GET | /files/content?path=&download=&preview= | Read a Workspace file (`download=1` serves it as an attachment, `preview=1` renders it in a sandbox — see below) |
 | GET | /files/preview-redirect?path= | "Open in a new tab" for html: mints a signed token and 302s to the separate preview origin |
@@ -207,15 +206,9 @@ type TaskInputPart =
 interface ApprovalDecisionRequest {
   decision: "allow" | "deny";
 }
-
-// POST /api/sessions/:sessionId/fork — model-switch fork (a NEW Session for the same Agent
-// and Workspace, carrying this conversation as sanitized real history; session_meta records
-// forked_from)
-interface SessionForkRequest {
-  modelId: string;    // the model reference pair — both required
-  provider: string;
-}
 ```
+
+The Web's `/model` switch has no dedicated endpoint: like the @ handoff, it composes the ordinary APIs above — session creation opens a new Session for the same Agent (the chosen model, the source Workspace carried over), then POST /tasks sends a first message opening with a `<model_switch_from>` source block (the source session id, its `tracePath`, the Workspace, and the previous model pair); the model reads that Trace file itself when it needs the earlier history.
 
 ## Streaming (SSE)
 

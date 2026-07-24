@@ -136,6 +136,12 @@ describe("session-title", () => {
     expect(stripConversationMarkers("<handoff_from>data_analyst</handoff_from>继续分析")).toBe(
       "继续分析",
     );
+    // The /model switch origin block (the new session's first message) must not leak into the title either.
+    expect(
+      stripConversationMarkers(
+        "<model_switch_from>\nsession: session-01\ntrace: /t/x_001.jsonl\n</model_switch_from>\n继续这个任务",
+      ),
+    ).toBe("继续这个任务");
     expect(stripConversationMarkers("render a <div> element")).toBe("render a <div> element");
   });
 

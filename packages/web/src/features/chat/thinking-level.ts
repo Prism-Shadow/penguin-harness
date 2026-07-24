@@ -1,14 +1,18 @@
 /**
- * Pure logic for the conversation-time thinking-level picker (chat draft view).
+ * Pure logic for the conversation-time thinking-level pickers (chat draft + active session).
  *
- * The picker is backed by the **Agent settings** (`system_config.model.thinking_level`):
- * it shows the selected Agent's current level and writes a picked level straight through
- * to the Agent config, so the session created on first send — which reads systemConfig
- * fresh — runs with it, and it becomes the Agent's new default (switch-becomes-default).
- * Per review: the menu lists the levels with short names only (no descriptions, no
- * "default" row) under a title bar naming the control — and it does **not** offer "none"
+ * Two variants share these levels and labels:
+ * - Draft view: backed by the **Agent settings** (`system_config.model.thinking_level`) —
+ *   shows the selected Agent's current level and writes a picked level straight through to
+ *   the Agent config, so the session created on first send runs with it and it becomes the
+ *   Agent's new default (switch-becomes-default).
+ * - Active session: the level is a **per-turn override** — local UI state defaulting to
+ *   "follow agent config" (nothing sent); an explicit pick rides on each task as
+ *   `thinkingLevel` and never writes through to the Agent config.
+ * Per review: the menus list the levels with short names only (no descriptions, no
+ * "default" row) under a title bar naming the control — and they do **not** offer "none"
  * (many models cannot disable thinking): "none" stays a valid stored/wire value, so a
- * legacy config or session that carries it still displays via the label table below.
+ * legacy config or trace that carries it still displays via the label table below.
  */
 
 /** All five stored/wire levels, for display lookup (mirrors core's ThinkingLevelName). */

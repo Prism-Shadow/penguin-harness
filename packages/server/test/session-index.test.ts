@@ -533,4 +533,53 @@ describe("session-index", () => {
     );
     expect(sessionIdCreatedAt("not-a-session")).toBeNull();
   });
+
+  it("single-session GET exposes tracePath (the LATEST shard); absent without a trace; list rows omit it", async () => {
+    await configureModels();
+    const res = await api.post(base(), {});
+    const { session } = (await res.json()) as SessionCreateResponse;
+    // No trace yet: no tracePath.
+    const before = (await (
+      await api.get(`/api/sessions/${session.sessionId}`)
+    ).json()) as SessionResponse;
+    expect(before.session.tracePath).toBeUndefined();
+
+    const meta: SessionMetaPayload = {
+      session_id: session.sessionId,
+      model_id: session.modelId,
+      provider: session.provider,
+      model_context_window: 128000,
+      system_prompt: "",
+      tools: [],
+      agent_state: "/tmp/a",
+      workspace: session.workspace,
+    };
+    await writeTraceFile(t.root, projectId, "default_agent", "2026-07-02", session.sessionId, 1, [
+      sessionMeta(meta),
+      userText("a"),
+    ]);
+    await writeTraceFile(t.root, projectId, "default_agent", "2026-07-03", session.sessionId, 2, [
+      sessionMeta(meta),
+      userText("b"),
+    ]);
+    const after = (await (
+      await api.get(`/api/sessions/${session.sessionId}`)
+    ).json()) as SessionResponse;
+    // The /model switch block hands this to the model: it must point at the latest shard.
+    expect(after.session.tracePath?.endsWith(`${session.sessionId}_002.jsonl`)).toBe(true);
+    // List rows omit it (locating it would cost a directory walk per row).
+    const list = (await (await api.get(base())).json()) as SessionsResponse;
+    expect(list.sessions.find((s) => s.sessionId === session.sessionId)?.tracePath).toBeUndefined();
+  });
+
+  it("rejects an invalid per-task thinkingLevel with 400 (five names only)", async () => {
+    await configureModels();
+    const res = await api.post(base(), {});
+    const { session } = (await res.json()) as SessionCreateResponse;
+    const bad = await api.post(`/api/sessions/${session.sessionId}/tasks`, {
+      input: [{ type: "text", text: "hi" }],
+      thinkingLevel: "ultra",
+    });
+    expect(bad.status).toBe(400);
+  });
 });

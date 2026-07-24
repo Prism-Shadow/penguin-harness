@@ -44,8 +44,7 @@ import { MessageStream } from "./message-stream";
 import type { StreamRenderContext } from "./message-stream";
 import { ChatInput } from "./chat-input";
 import { DraftView } from "./draft-view";
-import { ForkedBanner } from "./handoff-banner";
-import { handoffMessage } from "./agent-mentions";
+import { handoffMessage, modelSwitchMessage } from "./agent-mentions";
 import { sameModelRef } from "../models/model-grouping";
 import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
 import { FilesPanel } from "./files-panel";
@@ -382,35 +381,59 @@ export function ChatPage() {
     [selected, turnThinkingLevel, discardSessionDraft, syncHealedSessionId],
   );
 
-  // /model switch: forks the current session onto the picked model — a NEW session (same
-  // Agent, same Workspace) carrying this conversation — then navigates to it, mirroring the
-  // @ handoff's create→postTask flow: any text left after the command is posted as the new
-  // session's first task once the fork exists. Failure of the fork itself keeps the draft
-  // (returns false); a failed first task after a successful fork only toasts — the fork
-  // already carries the full conversation and must not be torn down for it.
+  // /model switch (handoff-style, mirroring onHandoff exactly): opens a NEW session for the
+  // SAME agent on the picked model via the normal createSession API — deliberately with the
+  // SOURCE session's Workspace, so files the conversation refers to stay reachable — then
+  // posts a first task whose input starts with a <model_switch_from> source block (source
+  // session id / its latest trace path / workspace / previous model pair) followed by the
+  // user's remainder text and images. The earlier history is NOT injected into the new
+  // context (some models require thinking payloads and provider fidelity byte-for-byte on
+  // history replay, which cannot cross models); the model reads the source trace file itself
+  // when it needs the context. Returns false on failure, keeping the draft so it can be
+  // resent (the empty session that never got its first message is deleted, like handoff).
   const onSwitchModel = useCallback(
     async (ref: ModelRefDto, input: TaskInputPart[]): Promise<boolean> => {
-      if (!selected) return false;
+      if (!projectId || !selected) return false;
+      // The source's latest trace file path comes from the single-session GET (list rows
+      // don't carry it); best-effort — a brand-new source has no trace, the block then
+      // simply omits the line.
+      const tracePath = await api
+        .getSession(selected.sessionId)
+        .then((res) => res.session.tracePath)
+        .catch(() => undefined);
+      const origin: TaskInputPart = {
+        type: "text",
+        text: modelSwitchMessage({
+          sessionId: selected.sessionId,
+          ...(selected.title !== undefined ? { sessionTitle: selected.title } : {}),
+          ...(tracePath !== undefined ? { tracePath } : {}),
+          workspace: selected.workspace,
+          prevProvider: selected.provider,
+          prevModelId: selected.modelId,
+        }),
+      };
+      let createdId: string | null = null;
       try {
-        const res = await api.postForkSession(selected.sessionId, {
+        const created = await api.createSession(projectId, selected.agentId, {
           provider: ref.provider,
           modelId: ref.modelId,
+          workspace: selected.workspace,
+          approvalMode: selected.approvalMode,
         });
-        addSession(res.session);
+        createdId = created.session.sessionId;
+        const res = await api.postTask(createdId, { input: [origin, ...input] });
+        addSession(created.session);
+        // The remainder text has been carried into the new chat: discard the source session's input draft along with it.
         discardSessionDraft();
-        navigate(`/chat/${res.session.sessionId}`);
-        if (input.length > 0) {
-          void api
-            .postTask(res.session.sessionId, { input })
-            .catch((e: unknown) => toastError(apiErrorText(e, { modelId: ref.modelId })));
-        }
+        navigate(`/chat/${res.sessionId}`);
         return true;
       } catch (e) {
+        if (createdId) void api.deleteSession(createdId).catch(() => undefined);
         toastError(apiErrorText(e, { modelId: ref.modelId }));
         return false;
       }
     },
-    [selected, addSession, discardSessionDraft, navigate],
+    [projectId, selected, addSession, discardSessionDraft, navigate],
   );
 
   // @ handoff: doesn't use the current Session — creates a new chat for the @-mentioned agent
@@ -783,13 +806,6 @@ export function ChatPage() {
                           items={stream.model.items}
                           version={stream.version}
                           ctx={ctx}
-                          // Fork provenance (session_meta.forked_from): a banner at the top of
-                          // the conversation linking back to the source session.
-                          {...(stream.model.forkedFrom
-                            ? {
-                                header: <ForkedBanner sessionId={stream.model.forkedFrom} />,
-                              }
-                            : {})}
                         />
                       )}
                     </div>

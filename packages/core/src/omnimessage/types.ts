@@ -98,12 +98,6 @@ export interface SessionMetaPayload {
   workspace: string;
   /** Session origin: spawned by a subagent / triggered by a scheduled task; absent = user-created. */
   source?: "subagent" | "schedule";
-  /**
-   * Present when this Session was forked from another Session (the model-switch command):
-   * the source session_id. The forked Session carries the source conversation as real history
-   * (sanitized — no thinking payloads, no provider fidelity) and continues on its own model.
-   */
-  forked_from?: string;
 }
 
 // ---------------------------------------------------------------------------

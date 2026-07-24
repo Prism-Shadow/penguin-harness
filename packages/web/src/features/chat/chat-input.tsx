@@ -226,27 +226,21 @@ const NO_KEY_ICON =
   "M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4M2 2l20 20";
 
 /**
- * Model selector (draft state only; docked to the left of the send button): both the button and
- * candidate items show the provider logo. The menu opens **downward** — the draft card is
- * vertically centered with room below; a top quick-search box (reusing the model page's rule:
- * filters by id / display name / provider name), with the candidate list capped by an internal
- * scroll (max-h-56) so it never overflows the browser's viewport height no matter how many models
- * there are. On narrow screens only the logo remains (name hidden); list items mark the project
- * default.
- * By default only models with a configured API key are listed (stored masked key — the same
- * standard as the model page's key status; `envKey` is merely the NAME of a fallback env var and
- * doesn't count), with the selected and the default model always visible even without a key; a
- * muted bottom row reveals the remaining key-less models (marked by a struck-through key icon,
- * with the "no key" text in its title) without closing the menu or changing the selection. When
- * no model has a key at all, everything is listed directly.
- */
-/**
  * Model candidate panel (search box + grouped list + "show all" expander) shared by the
  * draft-state ModelSelect dropdown and the in-session `/model` switch picker. Search and
  * expanded state are internal and reset by remount (both hosts only render the panel while
- * open). Dropdown order mirrors the model library page (visibleChatModels): by default only
- * key-configured models are listed (selected/default always included; everything listed
- * when no model has a key), and the query filters what's visible.
+ * open); the list is capped by an internal scroll (max-h-56) so it never overflows the
+ * viewport no matter how many models there are.
+ * Dropdown order mirrors the model library page (visibleChatModels): a top quick-search box
+ * (the model page's rule — filters by id / display name / provider name); by default only
+ * models with a configured API key are listed (stored masked key — the same standard as the
+ * model page's key status; `envKey` is merely the NAME of a fallback env var and doesn't
+ * count), with the selected and the default model always visible even without a key; a muted
+ * bottom row reveals the remaining key-less models (marked by a struck-through key icon, with
+ * the "no key" text in its title) without closing the menu or changing the selection — when
+ * no model has a key at all, everything is listed directly. Rows carry the provider logo, the
+ * light-yellow "Free" badge for zero-cost models (same as the model library card), the
+ * project-default marker, and the selected checkmark.
  */
 function ModelMenuList({
   models,
@@ -347,6 +341,13 @@ function ModelMenuList({
   );
 }
 
+/**
+ * Model selector (draft state only; docked to the left of the send button): the button shows
+ * the provider logo + name (logo only when the card is narrower than @md; the title carries
+ * the full name), and the menu opens **downward** — the draft card is vertically centered
+ * with room below. The candidate list itself is the shared ModelMenuList panel (search,
+ * key-configured-first grouping, Free badge, "show all" expander — documented there).
+ */
 function ModelSelect({
   models,
   value,
@@ -878,11 +879,12 @@ export function ChatInput({
   const [slashIndex, setSlashIndex] = useState(0);
   // Slash token start where Escape closed the menu (mirrors mentionDismissed: the menu stays shut for that one token).
   const [slashDismissed, setSlashDismissed] = useState<number | null>(null);
-  // /model switch picker (session state): opened by the /model command. The triggering slash
-  // token is captured at open, so picking a model removes just that token and posts whatever
-  // remains as the new session's first task; cancelling leaves the draft untouched.
+  // /model switch picker (session state): opened by the /model command. The command consumes
+  // its slash token immediately (same as /compact), so closing the picker — Escape, click
+  // outside, or the picked-current-model no-op — can never re-open the slash menu, and there
+  // is no stale token range to recompute at pick time; whatever text remains is the draft
+  // (and becomes the new session's first message on a successful pick).
   const [modelSwitchOpen, setModelSwitchOpen] = useState(false);
-  const modelSwitchMatchRef = useRef<ReturnType<typeof matchSlash>>(null);
   const modelSwitchRef = useRef<HTMLDivElement>(null);
   // Anchor for the popups that open upward, and the room actually available above them.
   const anchorRef = useRef<HTMLDivElement>(null);
@@ -943,16 +945,16 @@ export function ChatInput({
         },
       },
       // Model switch (active idle session only — the parent passes onSwitchModel just there;
-      // draft state has its own model picker): opens the model picker. The token is NOT
-      // removed yet — cancelling the picker must leave the draft untouched; picking a model
-      // removes it (see pickSwitchModel).
-      ...(onSwitchModel
+      // draft state has its own model picker). Gated on the model list being loaded: without
+      // it the picker would open empty. Running the command consumes the /model token (like
+      // /compact) and opens the picker; the rest of the draft stays.
+      ...(onSwitchModel && models && models.length > 0
         ? [
             {
               cmd: "/model",
               desc: S.chat.switchModel,
               run: () => {
-                modelSwitchMatchRef.current = slashMatchRef.current;
+                clearInput();
                 setModelSwitchOpen(true);
               },
             },
@@ -968,7 +970,7 @@ export function ChatInput({
         },
       })),
     ];
-  }, [onCompact, onSwitchModel, onTextChange, skills, locale, toggleSkill]);
+  }, [onCompact, onSwitchModel, models, onTextChange, skills, locale, toggleSkill]);
   // Positional matching (like @ mentions): a slash opens the menu from any caret position;
   // running a command removes just the token, leaving the rest of the text intact. Doesn't
   // reopen after Escape until the caret sits on a different token; suppressed while the
@@ -982,8 +984,10 @@ export function ChatInput({
   const slashOpen = slashMatches.length > 0;
   const activeSlash = slashMatches[Math.min(slashIndex, slashMatches.length - 1)];
 
-  // @ subagent menu: the `@prefix` currently being typed at the cursor drives candidate filtering (slash menu takes priority; doesn't reopen after Escape).
-  const mention = !running && !compacting && !slashOpen ? matchMention(text, caret) : null;
+  // @ subagent menu: the `@prefix` currently being typed at the cursor drives candidate
+  // filtering (the slash menu and the /model picker take priority; doesn't reopen after Escape).
+  const mention =
+    !running && !compacting && !slashOpen && !modelSwitchOpen ? matchMention(text, caret) : null;
   const mentionMatches =
     mention && mention.start !== mentionDismissed ? filterAgents(agents, mention.query) : [];
   const mentionOpen = mentionMatches.length > 0;
@@ -1011,25 +1015,36 @@ export function ChatInput({
   }, [modelSwitchOpen]);
 
   /**
-   * /model pick: the CURRENT model is a no-op (close only); otherwise fork the session onto
-   * the picked model via onSwitchModel — the `/model` token is removed from the draft and
-   * whatever remains rides along as the new session's first task. On failure the draft is
-   * kept (token included) so the user can retry.
+   * /model pick: the CURRENT model is a no-op (close only), and the run state is re-checked
+   * — the picker may have survived a status flip (a task/compaction starting while it was
+   * open). Otherwise the pick opens a new session on the chosen model via onSwitchModel,
+   * with the first-task input assembled **like a normal send**: the remaining draft text
+   * (wrapped with the selected skills; an interface-language auto-line when empty — same
+   * convention as the skills auto message) plus the attached images. On failure the draft
+   * is kept so the user can retry.
    */
   const pickSwitchModel = async (m: ModelInfo) => {
     setModelSwitchOpen(false);
-    if (!onSwitchModel || busy) return;
+    if (!onSwitchModel || busy || running || compacting) return;
     if (sameModelRef(m, modelRef)) return;
-    const match = modelSwitchMatchRef.current;
-    modelSwitchMatchRef.current = null;
-    const rest = (match ? removeSlashToken(textRef.current, match) : textRef.current).trim();
-    const input: TaskInputPart[] = rest ? [{ type: "text", text: rest }] : [];
+    const rest = textRef.current.trim();
+    const bodyText =
+      rest ||
+      (selectedSkills.length > 0
+        ? S.chat.skillsAutoMessage(selectedSkills)
+        : S.chat.modelSwitchAutoMessage);
+    const body = buildSkillsMessage(selectedSkills, bodyText);
+    const input: TaskInputPart[] = [{ type: "text", text: body }];
+    for (const url of images) input.push({ type: "image_url", imageUrl: url });
     setBusy(true);
     try {
       const ok = await onSwitchModel({ provider: m.provider, modelId: m.modelId }, input);
       if (ok) {
+        // Consumed into the new session's first task (the parent has already discarded the
+        // draft cache — no change callbacks here, same as send()).
         setText("");
         setImages([]);
+        setSelectedSkills([]);
         requestAnimationFrame(autoGrow);
       }
     } finally {
@@ -1312,7 +1327,9 @@ export function ChatInput({
 
       {/* /model switch picker (session state): reuses the draft model dropdown's list —
           search + configured-key-first grouping + "show all"; the current model is marked and
-          picking it is a no-op. Cancelling (Escape / click outside) keeps the draft intact. */}
+          picking it is a no-op. The /model token was already consumed when the command ran,
+          so cancelling (Escape / click outside) keeps the remaining draft and cannot re-open
+          the slash menu. */}
       {modelSwitchOpen && models && (
         <div
           ref={modelSwitchRef}

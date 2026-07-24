@@ -8,4 +8,3 @@ export {
   resumeTrace,
 } from "./resume.js";
 export type { LocatedTraceFile, ResumeResult } from "./resume.js";
-export { sanitizeForkRecords } from "./fork.js";

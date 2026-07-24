@@ -79,9 +79,9 @@ Trace 是恢复的唯一事实来源，没有独立的会话数据库需要与�
 
 特殊情形：若最新 Trace 文件以一次完成的压缩收尾，则该上下文已整体关闭——恢复从空上下文开始；summarize 模式下会重建 `<context_summary>` 摘要，前置到恢复后第一轮输入中。
 
-## 模型切换分叉
+## 模型切换（/model）
 
-`forkSession` 在同一 Agent 下派生一个**携带当前对话**的新 Session 并换用另一个模型（Web 的 `/model` 命令）：读取源 Session 最新的 Trace 文件，对记录做**无条件净化**——丢弃 thinking / inline_thinking 消息、剥除所有 `fidelity`（思考保真负载绑定原模型，跨模型回放会被拒绝）、丢弃 `token_usage`（用量归零重计）与 `subagent` 指针（子会话属于源 Session）——写成新 Session 的全新 Trace 文件（开头是记录 `forked_from` 的新 session_meta），再按恢复流程回放同一份记录注入模型上下文，保证磁盘 Trace 与注入历史完全一致。Workspace 沿用源会话（真实延续），源会话不受影响。
+Web 的 `/model` 命令按 @ handoff 的方式换模型：用普通的会话创建接口在同一 Agent 下新建一个 Session（选定新模型，**沿用源会话的 Workspace**，文件因此保持可达），首条消息以 `<model_switch_from>` 源块开头——携带源会话 id、其最新 Trace 文件的绝对路径、Workspace 与原模型二元组，用户输入的剩余文字紧随其后。历史**不注入**新上下文：部分模型回放历史时要求 thinking 与 `fidelity` 逐字一致，跨模型注入不可行——模型需要早前上下文时按路径自行读取源 Trace 文件（JSONL，每行一个消息信封）。源会话与其 Trace 不受任何影响。
 
 ## 字段保真
 
