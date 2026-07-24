@@ -125,7 +125,7 @@ export interface ContextEngineDeps {
   trace?: TraceSink;
   /** Engine initial state (derived by replaying Trace on Session resumption). */
   initialState?: EngineInitialState;
-  /** Maximum LLM turns for a single Task. Defaults to 100. */
+  /** Maximum LLM turns for a single Task. Defaults to 100; -1 removes the cap. */
   maxTurns?: number;
   /** Maximum automatic retries for LLM timeout/reconnect within a single run. Defaults to 2. */
   maxReconnects?: number;
@@ -298,8 +298,11 @@ export class ContextEngine {
     let nextInput: OmniMessage[] = input;
 
     for (;;) {
-      // max_turns guard: emit a length notice and stop once exceeded.
-      if (turnCount >= this.maxTurns) {
+      // max_turns guard: emit a length notice and stop once exceeded. A non-positive cap
+      // (-1 per the config contract "must be > 0 or -1") disables the guard entirely —
+      // same convention as maxSessionTurns in shouldCompact (issue #55: -1 used to trip
+      // `0 >= -1` and stop before the first turn).
+      if (this.maxTurns > 0 && turnCount >= this.maxTurns) {
         // This turn's pending input (usually the previous turn's tool outputs) was never
         // submitted to the LLM: hold it as carry-over, to be resent merged with new input on
         // the next `run` (same as interruption-cleanup case A) — the previous turn's assistant

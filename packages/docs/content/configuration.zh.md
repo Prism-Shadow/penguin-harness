@@ -93,8 +93,8 @@ output = 0.857143
 | `description` | — | Agent 描述 |
 | `version` | `1` | Agent State 版本号（自然数），每次成功优化自增 |
 | `system_prompt` | 内置模板 | 必填；唯一进行占位符替换的模板 |
-| `max_turns` | `100` | 单个 Task 的最大 LLM 轮数 |
-| `model.max_tokens` | `32000` | 单次输出 Token 上限 |
+| `max_turns` | `100` | 单个 Task 的最大 LLM 轮数（-1 不限制） |
+| `model.max_tokens` | `32000` | 单次输出 Token 上限（-1 不设上限，用服务商默认） |
 | `model.thinking_level` | `medium` | `none` / `low` / `medium` / `high` / `xhigh` |
 | `model.timeoutMs` | `120000` | 单次 Request 超时（毫秒） |
 | `compaction.max_context_length` | `128000` | 触发压缩的上下文 Token 阈值 |

@@ -155,10 +155,11 @@ export function effectiveMaxContextLength(configured: number, contextWindow: unk
  * Output cap for meta requests (title generation / vision describing): these carry their own
  * small hardcoded budget, tightened further by the entry's per-model `max_tokens` when that is
  * smaller — a cap the user pinned below the budget must bind every request to that model. The
- * budget is never raised.
+ * budget is never raised. A non-positive cap (-1 = uncapped) never tightens: Math.min against
+ * it would send max_tokens -1 on the wire, and meta requests must keep their small budget.
  */
 export function metaMaxTokens(budget: number, modelCap: number | undefined): number {
-  return modelCap !== undefined ? Math.min(budget, modelCap) : budget;
+  return modelCap !== undefined && modelCap > 0 ? Math.min(budget, modelCap) : budget;
 }
 
 /** Create or load an Agent. */

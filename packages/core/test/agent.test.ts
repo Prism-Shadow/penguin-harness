@@ -78,6 +78,7 @@ describe("metaMaxTokens (meta-request budget tightened by the per-model cap)", (
     expect(metaMaxTokens(300, 8000)).toBe(300); // ample cap: the small budget stays
     expect(metaMaxTokens(300, 128)).toBe(128); // pinned below the budget: the cap binds
     expect(metaMaxTokens(2048, 1024)).toBe(1024); // vision-describer budget, same rule
+    expect(metaMaxTokens(300, -1)).toBe(300); // -1 = uncapped: never tightens to -1 (issue #55 sibling)
   });
 });
 
