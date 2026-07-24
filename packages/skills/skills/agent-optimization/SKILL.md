@@ -3,8 +3,8 @@ name: agent-optimization
 description: Improve an Agent State from direct feedback or versioned Benchmark scores and score-linked Traces.
 short_description: Improve an Agent from feedback or measured Benchmark results.
 short_description_zh: 根据反馈或 Benchmark 结果改进 Agent。
-version: 17
-updated: 2026-07-24T11:19:26Z
+version: 18
+updated: 2026-07-24T12:38:51Z
 ---
 
 # Agent Optimization
@@ -55,6 +55,13 @@ Workspace, Evaluator Trace, or another Agent.
 
 In Benchmark mode, you may read the target Agent State, public Case Statements, the Scoreboard,
 and Test Traces and artifacts explicitly referenced by the Scoreboard.
+
+Never read, search, list, or open a path under a Case's `rubric/` directory in Benchmark mode.
+Use exact public Statement and Scoreboard paths rather than enumerating private Benchmark
+contents. If private Rubric content, Gold answers, or private scoring conditions enter the
+Optimizer context, the optimization Session is contaminated: do not use that information, do not
+retain or score a Candidate derived from it, restore any active Candidate, and report the result as
+invalid.
 
 Never modify the Benchmark, Test Traces, Project configuration, or another Agent.
 
@@ -159,7 +166,8 @@ For each round:
 
    State one falsifiable behavioral hypothesis that identifies the observed failure, the missing
    general capability, and the behavioral change expected from a minimal Agent State edit. Stop if
-   no credible hypothesis remains.
+   no credible hypothesis remains. One round must isolate one behavioral strategy family; split
+   independent strategy changes into separate Candidates rather than bundling them into one edit.
 
 3. **Create a Candidate**
 
