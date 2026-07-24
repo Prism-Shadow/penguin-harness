@@ -100,13 +100,13 @@ describe("agent tuning workflow contracts", () => {
     expect(creation).toContain("Stop after the requested Agent");
   });
 
-  it("defines black-box adaptation and freezes the scored benchmark", () => {
+  it("keeps benchmark design capability-focused and freezes comparable results", () => {
     const benchmark = content("benchmark-design");
-    expect(benchmark).toContain("black-box adaptation");
-    expect(benchmark).toContain("finite set of candidate mechanisms");
-    expect(benchmark).toContain("freeze the Rubric and points before evaluation");
-    expect(benchmark).toContain("across more than one Case");
-    expect(benchmark).toContain("Stop after recording and reporting the baseline");
+    expect(benchmark).toContain("individual evaluation and score");
+    expect(benchmark).toContain("Fix every Rubric before the first evaluation");
+    expect(benchmark).toContain("every Case and Run is valid and complete");
+    expect(benchmark).toContain("representative Test Traces");
+    expect(benchmark).toContain("Stop after writing and reporting the baseline");
   });
 
   it("binds evaluation to the new trace delta and bounded accounting work", () => {
