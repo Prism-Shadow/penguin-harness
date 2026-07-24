@@ -6,8 +6,8 @@
  */
 import { useMemo, useState } from "react";
 import { NavLink, Outlet, useMatch, useNavigate } from "react-router";
-import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
+import { latestConversation } from "../../lib/session-grouping";
 import { useAuth } from "../../state/auth";
 import { useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
@@ -43,16 +43,8 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
   /** On some conversation (any non-draft /chat/:id): the "you are here" state of the last-conversation entry. */
   const onConversation = activeSessionId !== null && activeSessionId !== DRAFT_SESSION_ID;
 
-  /** Newest non-archived Session across the current Project by createdAt (the flat list is only ordered per Agent). */
-  const lastSession = useMemo(
-    () =>
-      sessions.reduce<SessionInfo | null>(
-        (best, s) =>
-          !s.archived && (!best || Date.parse(s.createdAt) > Date.parse(best.createdAt)) ? s : best,
-        null,
-      ),
-    [sessions],
-  );
+  /** Newest loaded conversation across the current Project (active/schedule only — archived and subagent rows are never auto-opened; the flat list is only ordered per Agent). */
+  const lastSession = useMemo(() => latestConversation(sessions), [sessions]);
 
   /** Mirrors Sidebar.openSession: the current Agent follows the opened Session's Agent. */
   const openLastSession = () => {

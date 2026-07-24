@@ -42,6 +42,7 @@ import type {
   ScheduleItem,
   SchedulesResponse,
   ScheduleUpsertRequest,
+  SessionCategory,
   SessionCreateRequest,
   SessionCreateResponse,
   SessionPatchRequest,
@@ -185,17 +186,25 @@ export const getAgentTraces = (projectId: string, agentId: string) =>
 
 // Session ---------------------------------------------------------------------
 
-/** Optional paging (both absent = full list): the store requests `limit+1` per page to detect "has more". */
+/**
+ * Optional paging (absent = full unfiltered list): the store requests `limit+1` per page to
+ * detect "has more". `category` filters server-side (paging applies within the category);
+ * `withCounts` asks for per-category totals over the whole list alongside the page.
+ */
 export const listSessions = (
   projectId: string,
   agentId: string,
-  paging?: { offset: number; limit: number },
-) =>
-  apiFetch<SessionsResponse>(
-    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/sessions${
-      paging ? `?limit=${paging.limit}&offset=${paging.offset}` : ""
-    }`,
+  opts?: { offset: number; limit: number; category?: SessionCategory; withCounts?: boolean },
+) => {
+  const qs = opts
+    ? `?limit=${opts.limit}&offset=${opts.offset}` +
+      (opts.category ? `&category=${opts.category}` : "") +
+      (opts.withCounts ? "&counts=1" : "")
+    : "";
+  return apiFetch<SessionsResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/sessions${qs}`,
   );
+};
 
 /** Server directory browsing: `path` is an absolute path; empty means start from the server's home directory. */
 export const listDirs = (projectId: string, path = "") =>
@@ -337,9 +346,21 @@ export const listWorkspaceFiles = (sessionId: string, path: string) =>
 export const workspaceFileUrl = (sessionId: string, path: string, download = false): string =>
   `/api/sessions/${sessionId}/files/content?path=${encodeURIComponent(path)}${download ? "&download=1" : ""}`;
 
-/** Sandboxed top-level preview URL (open an html file in a new tab): real content type under a CSP sandbox, see the server route. */
+/**
+ * "Open in a new tab" for a Workspace html file: an App-origin link that mints a signed
+ * token and 302s to the separate preview origin, where the page gets a real origin with
+ * working storage, cookies and third-party embeds.
+ *
+ * A link (not a fetch + `window.open`) on purpose — opening a tab after an await trips
+ * popup blockers, and a script-opened window keeps an `opener` handle back to the App,
+ * which is precisely the reference the separate origin exists to deny. Use it with
+ * `rel="noopener noreferrer"`.
+ *
+ * Falls back server-side to the sandboxed same-origin preview when the deployment has no
+ * usable preview origin; `previewIsolated` from /api/me says so in advance.
+ */
 export const workspaceFilePreviewUrl = (sessionId: string, path: string): string =>
-  `/api/sessions/${sessionId}/files/content?path=${encodeURIComponent(path)}&preview=1`;
+  `/api/sessions/${sessionId}/files/preview-redirect?path=${encodeURIComponent(path)}`;
 
 export const uploadWorkspaceFile = (sessionId: string, path: string, dataBase64: string) =>
   apiFetch<void>(`/api/sessions/${sessionId}/files/content`, {

@@ -86,6 +86,11 @@ pnpm test:e2e                                        # core live-model e2e, need
   `changelog/<version>/README.md`. The layout is documented in
   [`changelog/README.md`](changelog/README.md). Related changes may share one entry
   file (extending its details) instead of opening a new file per small change.
+- **A release ships its own announcement**: `changelog/<version>/RELEASE.md` is published
+  verbatim as the GitHub Release body. Write it during release preparation and **commit it
+  before creating the tag** — the release workflow reads it from the tag's checkout, so a
+  file added later never reaches the Release page. Without it the workflow falls back to
+  GitHub's auto-generated notes.
 - README assets under `assets/readme/` are generated — the benchmark charts from the
   landing benchmark data, and the demo screenshots via
   `node packages/landing/scripts/capture-readme-demo.mjs` (build first; needs Playwright

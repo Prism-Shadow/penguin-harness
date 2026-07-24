@@ -4,7 +4,7 @@
  */
 import { useEffect } from "react";
 import type { ReactNode } from "react";
-import { S } from "../../lib/strings";
+import { CloseButton } from "./icons";
 
 export interface DrawerProps {
   open: boolean;
@@ -39,16 +39,7 @@ export function Drawer({ open, side = "left", title, onClose, children, widthCla
       >
         <div className="flex shrink-0 items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-gray-800">
           <span className="text-base font-semibold">{title ?? ""}</span>
-          <button
-            type="button"
-            aria-label={S.common.close}
-            onClick={onClose}
-            className="rounded-md p-1.5 text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"
-          >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor">
-              <path d="M2 2l10 10M12 2L2 12" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
-          </button>
+          <CloseButton onClose={onClose} />
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto pb-[env(safe-area-inset-bottom)]">
           {children}

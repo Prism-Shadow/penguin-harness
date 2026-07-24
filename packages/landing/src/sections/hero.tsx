@@ -1,8 +1,8 @@
 /**
- * Hero: enlarged logo + product name, the slogan inside the pill badge, then a
- * bilingual headline whose rotating word crossfades through a gaussian blur
- * (Developers <-> Enterprises), three keywords, the install one-liner and stats.
- * The rotating word is a stacked inline-grid so line width never jumps.
+ * Hero: enlarged logo + product name, the slogan inside the pill badge, then the
+ * one-line headline whose rotating word crossfades through a gaussian blur
+ * (Desktop <-> Server / 桌面 <-> 服务器), three keywords, the install one-liner
+ * and stats. The rotating word is a stacked inline-grid so line width never jumps.
  */
 import { Fragment, useEffect, useState } from "react";
 import { Link } from "react-router";
@@ -57,16 +57,19 @@ export function Hero() {
           <span className="h-1.5 w-1.5 rounded-full bg-brand-500" aria-hidden="true" />
           {S.hero.badge}
         </p>
+        {/* No text-balance: balance may break inside the breakable prefix ("…Agent /
+            Builder…"); greedy wrapping + the nowrap span pins the desktop break to
+            "Your Automated Agent Builder / Lives on Your Desktop". */}
         <h1
-          className="anim-rise mx-auto mt-6 max-w-full text-3xl font-semibold tracking-tight text-balance sm:text-5xl"
+          className="anim-rise mx-auto mt-6 max-w-full text-3xl font-semibold tracking-tight sm:text-5xl"
           style={{ animationDelay: "80ms" }}
         >
           {S.hero.titlePrefix}
-          <RotatingWord words={S.hero.titleWords} />
-          {S.hero.titleSuffix}
-          {S.hero.titleSuffixNoWrap && (
-            <span className="whitespace-nowrap">{S.hero.titleSuffixNoWrap}</span>
-          )}
+          <span className="whitespace-nowrap">
+            {S.hero.titleNoWrap}
+            <RotatingWord words={S.hero.titleWords} />
+            {S.hero.titleSuffix}
+          </span>
         </h1>
 
         <div

@@ -5,6 +5,12 @@
  * page, after which all 21 rows are visible and the "更多" row disappears (no more hidden
  * rows, no more server pages).
  *
+ * A list taller than the viewport must scroll INSIDE the sidebar: the document itself
+ * stays unscrollable before and after "更多". Each row's sr-only Agent name is
+ * position:absolute, and without a positioned scroller those boxes anchored to the
+ * initial containing block, stretched the document, and let the whole page scroll (the
+ * composer could be pushed up, leaving blank space below).
+ *
  * Standalone spec: shares one server with the other specs, so it registers its own user
  * (auto-provisions a default Project) and seeds sessions via the API.
  */
@@ -59,8 +65,19 @@ test("sidebar shows 20 sessions plus a More row; More loads the 21st and then di
   const more = sidebar.getByRole("button", { name: "更多" });
   await expect(more).toBeVisible();
 
+  // The 20-row list already exceeds the 720px viewport: it must scroll inside the
+  // sidebar, never stretch the document (the sr-only regression described up top).
+  const docScrollable = () =>
+    page.evaluate(
+      () => document.documentElement.scrollHeight > document.documentElement.clientHeight + 1,
+    );
+  expect(await docScrollable(), "document scrollable before 更多").toBe(false);
+
   // More: raises the display cap and fetches the next server page → all 21 rows, no More left.
   await more.click();
   await expect(rows).toHaveCount(TOTAL);
   await expect(more).toHaveCount(0);
+
+  // Still only the sidebar scrolls after the list grew past one page.
+  expect(await docScrollable(), "document scrollable after 更多").toBe(false);
 });

@@ -16,7 +16,10 @@ The CLI and the server automatically load a `.env` file from the working directo
 | `HOST` | Web service listen address | `127.0.0.1` |
 | `PENGUIN_WEB_DB` | Server SQLite database path | `<root>/web.db` |
 | `PENGUIN_WEB_DIST` | Front-end static assets directory | the npm server package falls back to its bundled web-dist |
+| `PENGUIN_PREVIEW_ORIGIN` | Origin that serves Workspace HTML previews, e.g. `https://preview.example.com` | unset — the loopback counterpart is derived per request |
 | `PENGUIN_LANG` | CLI language (`en` / `zh`), set via `penguin config lang` | `en` |
+
+`PENGUIN_PREVIEW_ORIGIN` must differ from the app's origin by **hostname**, not just port: cookies ignore ports, so a second port would still share the session cookie. Leave it unset for local use — the app is canonicalized onto `localhost` and previews are served from `127.0.0.1`, which needs no configuration and no DNS. Set it when the app is reached over a LAN address or a real domain; otherwise previews there fall back to a same-origin sandbox where `localStorage`, cookies and third-party embeds do not work. When you do set it on a real domain, keep the session cookie host-only (no `Domain=`), or a sibling subdomain shares it. An unparseable value is a startup error rather than a silent fallback.
 
 ### Provider credential variables
 
@@ -90,8 +93,8 @@ Edit this file via the CLI (`penguin config model …`) or the Web Models page �
 | `description` | — | Agent description |
 | `version` | `1` | Agent State version (a natural number), incremented on each successful optimization |
 | `system_prompt` | built-in template | Required; the only template with placeholder substitution |
-| `max_turns` | `100` | Maximum LLM turns per Task |
-| `model.max_tokens` | `32000` | Output Token limit per Request |
+| `max_turns` | `100` | Maximum LLM turns per Task (-1 removes the cap) |
+| `model.max_tokens` | `32000` | Output Token limit per Request (-1 = no cap, provider default) |
 | `model.thinking_level` | `medium` | `none` / `low` / `medium` / `high` / `xhigh` |
 | `model.timeoutMs` | `120000` | Per-Request timeout (milliseconds) |
 | `compaction.max_context_length` | `128000` | Context Token threshold that triggers compaction |

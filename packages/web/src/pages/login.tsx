@@ -8,13 +8,13 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
 import { S } from "../lib/strings";
+import { apiErrorText } from "../lib/api-error";
 import { useDocumentTitle } from "../lib/use-document-title";
 import { useAuth } from "../state/auth";
 import { useLocale } from "../state/locale";
 import type { LangPref } from "../state/locale";
 import { useTheme } from "../state/theme";
 import type { ThemeMode } from "../state/theme";
-import { ApiError } from "../api/client";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { PasswordInput } from "../components/ui/password-input";
@@ -30,21 +30,26 @@ export function LoginPage() {
   const navigate = useNavigate();
   const [userId, setUserId] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  // Per-field required errors sit next to their input; `form` holds the auth failure (wrong user/password), which isn't specific to one field.
+  const [errors, setErrors] = useState<{ userId?: string; password?: string; form?: string }>({});
   const [busy, setBusy] = useState(false);
+  const clearErrors = () => setErrors((p) => (p.userId || p.password || p.form ? {} : p));
 
   const submit = async () => {
-    if (!userId.trim() || !password) {
-      setError(S.common.requiredField);
+    const next: { userId?: string; password?: string } = {};
+    if (!userId.trim()) next.userId = S.common.requiredField;
+    if (!password) next.password = S.common.requiredField;
+    if (next.userId || next.password) {
+      setErrors(next);
       return;
     }
     setBusy(true);
-    setError(null);
+    setErrors({});
     try {
       await login(userId.trim(), password);
       navigate("/chat", { replace: true });
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : S.common.unknownError);
+      setErrors({ form: apiErrorText(e) });
     } finally {
       setBusy(false);
     }
@@ -90,21 +95,31 @@ export function LoginPage() {
             }}
           >
             <Input
-              label={S.auth.username}
+              label={S.common.username}
+              required
               value={userId}
-              onChange={(e) => setUserId(e.target.value)}
+              onChange={(e) => {
+                setUserId(e.target.value);
+                clearErrors();
+              }}
+              error={errors.userId}
               autoComplete="username"
               autoFocus
             />
             <PasswordInput
               label={S.auth.password}
+              required
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                clearErrors();
+              }}
+              error={errors.password}
               autoComplete="current-password"
             />
-            {error && (
+            {errors.form && (
               <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300">
-                {error}
+                {errors.form}
               </p>
             )}
             <Button

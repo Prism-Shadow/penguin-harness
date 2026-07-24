@@ -1,22 +1,27 @@
 /**
- * Example: an Agent that improves itself — one turn of the self-improvement loop, in code.
+ * Example: the SCORING LOOP in miniature — evaluate → edit → re-evaluate → keep-or-roll-back.
  *
- * This is the "Recursive Self-Improvement" pillar made runnable. It runs entirely on a local
- * open-weight model (Ollama serving qwen3.6:35b) — see README.md for the one-time setup.
+ * This is the simplest of the three scripts here, and it is deliberately NOT self-evolution: the
+ * EDIT step is hardcoded by this script (`fs.writeFile(agentsMd, DISCIPLINE)`), i.e. the HUMAN
+ * writes the fix and the agent just benefits. It demonstrates the measurement machinery — a
+ * deterministic rubric, averaging over runs, and the strict keep-or-roll-back rule — not an agent
+ * improving itself. For GENUINE self-evolution, where the agent diagnoses its own failure and
+ * writes its own AGENTS.md, see `self-evolve.ts` (single round) and `self-evolve-recursive.ts`.
  *
- * The loop, exactly as the docs describe it:
- *   1. EVALUATE  — run the agent on a constrained task, score it against a rubric.
- *   2. DIAGNOSE  — read the result to see which rubric points were lost.
- *   3. EDIT      — rewrite the agent's own AGENTS.md to address the failure (version N+1).
- *   4. RE-EVALUATE — run the same task again; keep the change only if the score improved.
+ * The loop this script runs:
+ *   1. EVALUATE     — run the agent on a constrained task, score it against a rubric.
+ *   2. EDIT (by us) — the script writes a fixed "working discipline" into the agent's AGENTS.md.
+ *   3. RE-EVALUATE  — run the same task again.
+ *   4. KEEP / ROLL BACK — keep the edit only if the mean score improved.
  *
  * The rubric here is a *deterministic, transparent* scorer (plain code you can read below), so the
  * before/after numbers are objective and reproducible — no hidden judge. In the full product the
  * Evaluator is driven by the `agent-evaluation` skill against a private rubric; this example
- * distills that idea to its runnable core.
+ * distills that scoring idea to its runnable core.
  *
- * It uses a dedicated agent id (`self-improve-demo`) created on the fly, so your existing agents
- * are never touched.
+ * It runs entirely on a local open-weight model (Ollama serving qwen3.6:35b) — see README.md for
+ * the one-time setup. It uses a dedicated agent id (`self-improve-demo`) created on the fly, so
+ * your existing agents are never touched.
  *
  * Run:  pnpm --dir examples/self-improving-agent start
  *   or: npx tsx examples/self-improving-agent/self-improve.ts
@@ -176,7 +181,7 @@ async function main(): Promise<void> {
   const improved = await evaluate("N+1 (with working discipline)");
 
   // --- Keep-or-roll-back: the loop's decision rule ------------------------------------
-  console.log("\n=== Self-improvement result ===");
+  console.log("\n=== Scoring-loop result (edit was hardcoded, not self-authored) ===");
   console.log(`  baseline: ${baseline.toFixed(2)}/5   →   N+1: ${improved.toFixed(2)}/5`);
   if (improved > baseline) {
     console.log("  Mean score improved — keep version N+1. ✔");

@@ -17,11 +17,13 @@ import type {
   FilesStatResponse,
   MessagesResponse,
   ServerEvent,
+  SessionCategory,
   SessionCreateResponse,
   SessionResponse,
   SessionsResponse,
   TaskCreateResponse,
 } from "../../api/types.js";
+import { PREVIEW_TOKEN_TTL_MS, resolvePreviewTarget } from "../../services/preview-token.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { SessionRow } from "../../db/repos/sessions.js";
 import { assertWorkspaceAllowed } from "../../services/workspace-guard.js";
@@ -54,6 +56,14 @@ const APPROVAL_MODES: readonly ApprovalMode[] = [
   "deny-all",
   "read-only",
   "always-ask",
+];
+
+/** Accepted `category` query values of the list endpoint (SessionCategory, spelled out for validation). */
+const SESSION_CATEGORIES: readonly SessionCategory[] = [
+  "active",
+  "subagent",
+  "schedule",
+  "archived",
 ];
 
 /** Validate Prompt input parts: text or image (data: / http(s) URL). */
@@ -100,12 +110,28 @@ export function agentSessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     // Optional paging (absent = full list, the pre-paging contract): the sidebar requests
     // limit+1 and shows limit, detecting "has more" without a response-envelope change.
     const paging = optionalPagingQuery(c);
-    const sessions = await deps.sessionService.listSessions(
+    // Optional category filter (paging then applies within the category) and per-category
+    // totals — the sidebar loads active rows only and labels the collapsed folders from counts.
+    const rawCategory = c.req.query("category");
+    if (rawCategory !== undefined && !SESSION_CATEGORIES.includes(rawCategory as SessionCategory)) {
+      throw badRequest(`category must be one of ${SESSION_CATEGORIES.join(" / ")}.`);
+    }
+    const rawCounts = c.req.query("counts");
+    if (rawCounts !== undefined && rawCounts !== "1") throw badRequest("counts only accepts 1.");
+    const { sessions, counts, workspaceCounts } = await deps.sessionService.listSessions(
       projectId,
       agentId,
-      ...(paging ? [paging] : []),
+      {
+        ...(paging ? { paging } : {}),
+        ...(rawCategory !== undefined ? { category: rawCategory as SessionCategory } : {}),
+        ...(rawCounts !== undefined ? { withCounts: true } : {}),
+      },
     );
-    return c.json({ sessions } satisfies SessionsResponse);
+    return c.json({
+      sessions,
+      ...(counts ? { counts } : {}),
+      ...(workspaceCounts ? { workspaceCounts } : {}),
+    } satisfies SessionsResponse);
   });
 
   app.post("/", async (c) => {
@@ -407,6 +433,55 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
           : {}),
       },
     });
+  });
+
+  // "Open in a new tab" for Workspace HTML: mints a token and redirects to the separate
+  // preview origin (see design § "Workspace 文件预览").
+  //
+  // A redirect rather than a JSON endpoint the UI fetches, because the alternative is
+  // worse on two counts: opening the tab after an await trips popup blockers, and a
+  // window opened by script keeps an `opener` handle back to the App — exactly the
+  // reference this design exists to deny. A plain link with rel="noopener noreferrer"
+  // has neither problem.
+  //
+  // Minting on GET is safe: a cross-site request can make the browser follow the
+  // redirect, but the response is opaque to the initiating page, so no token leaks — and
+  // what it would grant is a preview of the victim's own file.
+  //
+  // With no usable preview origin (the App is reached on something other than a loopback
+  // name and PENGUIN_PREVIEW_ORIGIN is unset), this falls back to the sandboxed
+  // same-origin preview: the page still renders, but storage and third-party embeds do
+  // not. The UI flags that ahead of time via `previewIsolated` on /api/me.
+  app.get("/:sessionId/files/preview-redirect", async (c) => {
+    const row = resolveSession(c);
+    const rel = c.req.query("path") ?? "";
+    // Validate existence + containment while the caller is still authenticated, so a bad
+    // path fails here rather than as an opaque 404 from the unauthenticated preview origin.
+    // A stat, not a read: the file itself is fetched later, on the preview origin — reading
+    // it here (up to 50MB) only to discard the bytes would be wasted work on every click.
+    const [exists] = await deps.workspaceFiles.statExisting(row.workspace, [rel]);
+    if (!exists) throw new HttpError(404, "file_not_found", "File does not exist.");
+
+    const target = resolvePreviewTarget(
+      c.req.url,
+      c.req.header("host"),
+      deps.config.previewOrigin,
+      deps.config,
+    );
+    if (!target) {
+      return c.redirect(
+        `/api/sessions/${row.sessionId}/files/content?path=${encodeURIComponent(rel)}&preview=1`,
+        302,
+      );
+    }
+
+    const token = deps.previewTokens.sign({
+      sessionId: row.sessionId,
+      host: target.host,
+      expiresAt: Date.now() + PREVIEW_TOKEN_TTL_MS,
+    });
+    const encoded = rel.split("/").map(encodeURIComponent).join("/");
+    return c.redirect(`${target.origin}/preview/${token}/${encoded}`, 302);
   });
 
   // Bulk existence check (message file cards list only files that actually exist):

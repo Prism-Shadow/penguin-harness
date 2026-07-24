@@ -16,7 +16,10 @@ CLI 与服务端启动时会自动加载工作目录下的 `.env` 文件。
 | `HOST` | Web 服务监听地址 | `127.0.0.1` |
 | `PENGUIN_WEB_DB` | 服务端 SQLite 数据库路径 | `<root>/web.db` |
 | `PENGUIN_WEB_DIST` | 前端静态资源目录 | npm 安装的服务端包回退到内置 web-dist |
+| `PENGUIN_PREVIEW_ORIGIN` | 提供 Workspace HTML 预览的独立源，如 `https://preview.example.com` | 未设置，按请求推导回环对应名 |
 | `PENGUIN_LANG` | CLI 语言（`en` / `zh`），用 `penguin config lang` 设置 | `en` |
+
+`PENGUIN_PREVIEW_ORIGIN` 必须与应用源在**主机名**上不同，只换端口不行：Cookie 不区分端口，换端口仍然共用会话 Cookie。本地使用不必配置——App 固定在规范主机 `localhost`，预览用 `127.0.0.1`，既不需要配置也不需要 DNS。经 LAN 地址或真实域名访问时才需要设置，否则那里的预览会回退到同源沙箱，`localStorage`、Cookie 与第三方 embed 都不可用。在真实域名上设置时，会话 Cookie 必须保持 host-only（不带 `Domain=`），否则同注册域下的兄弟子域会共享它。取值无法解析时启动即报错，不会静默回退。
 
 ### Provider 凭证环境变量
 
@@ -90,8 +93,8 @@ output = 0.857143
 | `description` | — | Agent 描述 |
 | `version` | `1` | Agent State 版本号（自然数），每次成功优化自增 |
 | `system_prompt` | 内置模板 | 必填；唯一进行占位符替换的模板 |
-| `max_turns` | `100` | 单个 Task 的最大 LLM 轮数 |
-| `model.max_tokens` | `32000` | 单次输出 Token 上限 |
+| `max_turns` | `100` | 单个 Task 的最大 LLM 轮数（-1 不限制） |
+| `model.max_tokens` | `32000` | 单次输出 Token 上限（-1 不设上限，用服务商默认） |
 | `model.thinking_level` | `medium` | `none` / `low` / `medium` / `high` / `xhigh` |
 | `model.timeoutMs` | `120000` | 单次 Request 超时（毫秒） |
 | `compaction.max_context_length` | `128000` | 触发压缩的上下文 Token 阈值 |

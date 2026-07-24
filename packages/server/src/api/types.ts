@@ -63,6 +63,15 @@ export interface AuthResponse {
 
 export interface MeResponse {
   user: UserInfo;
+  /**
+   * Whether Workspace HTML previews open on a separate origin (see design §
+   * "Workspace 文件预览"). False means this deployment has no usable preview origin —
+   * the App is reached on something other than a loopback name and
+   * PENGUIN_PREVIEW_ORIGIN is unset — so previews fall back to the same-origin sandbox,
+   * where `localStorage`, cookies and third-party embeds do not work. Computed per
+   * request, since it depends on the host the caller is using.
+   */
+  previewIsolated: boolean;
 }
 
 export interface PasswordChangeRequest {
@@ -466,8 +475,27 @@ export interface SessionInfo {
   archived: boolean;
 }
 
+/**
+ * Session list category, the sidebar's four-way split applied server-side: archived wins
+ * regardless of origin (archiving is an explicit user action), then the origin's bucket,
+ * and a Session with no (or an unknown) source is `active` — user-created rows.
+ */
+export type SessionCategory = "active" | SessionSource | "archived";
+
+/** Per-category totals across an Agent's whole Session list (returned when the list is requested with counts). */
+export type SessionCategoryCounts = Record<SessionCategory, number>;
+
 export interface SessionsResponse {
   sessions: SessionInfo[];
+  /** Present when the request asked for counts (`counts=1`): totals per category over the full list, not just the returned page. */
+  counts?: SessionCategoryCounts;
+  /**
+   * Present with `counts`: the same totals broken down by Workspace path (only paths
+   * with at least one Session appear). The sidebar's workspace grouping decides each
+   * group's folders and "More" from its own share, so a group never advertises
+   * content that lives in other Workspaces.
+   */
+  workspaceCounts?: Record<string, SessionCategoryCounts>;
 }
 
 /** Server directory browsing (advanced new-Workspace picker): starts from the home directory by default, can navigate up to the root. */

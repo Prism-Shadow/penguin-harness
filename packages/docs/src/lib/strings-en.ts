@@ -7,6 +7,8 @@ export const en: Strings = {
   nav: {
     highlights: "Highlights",
     quickstart: "Quick start",
+    cases: "Cases",
+    scenarios: "Scenarios",
     benchmark: "Benchmark",
     contract: "CONTRACT.md",
     features: "Features",

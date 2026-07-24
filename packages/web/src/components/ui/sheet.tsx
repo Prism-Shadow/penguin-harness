@@ -26,7 +26,7 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
-import { S } from "../../lib/strings";
+import { CloseButton } from "./icons";
 import { SPRING_DEFAULT, SPRING_MOMENTUM, createSpringDriver } from "../../lib/spring";
 import type { SpringDriver } from "../../lib/spring";
 import { nearestSnap, project, rubberband } from "../../lib/sheet-physics";
@@ -301,17 +301,7 @@ export function Sheet({ open, snap, onSnapChange, onClose, title, children }: Sh
           <div className="mx-auto mt-2 h-1 w-9 rounded-full bg-gray-300 dark:bg-gray-600" />
           <div className="flex items-center justify-between px-4 pb-2 pt-1.5">
             <span className="text-base font-semibold">{title ?? ""}</span>
-            <button
-              type="button"
-              aria-label={S.common.close}
-              onClick={onClose}
-              onPointerDown={(e) => e.stopPropagation()}
-              className="rounded-md p-1.5 text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"
-            >
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor">
-                <path d="M2 2l10 10M12 2L2 12" strokeWidth="1.5" strokeLinecap="round" />
-              </svg>
-            </button>
+            <CloseButton onClose={onClose} onPointerDown={(e) => e.stopPropagation()} />
           </div>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-[env(safe-area-inset-bottom)]">

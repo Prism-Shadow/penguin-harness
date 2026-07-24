@@ -19,9 +19,13 @@ import remarkGfm from "remark-gfm";
 import type { SessionInfo, WorkspaceFilesResponse } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
+import { useAuth } from "../../state/auth";
 import { S } from "../../lib/strings";
+import { apiErrorText } from "../../lib/api-error";
 import { formatBytes, formatDateTime } from "../../lib/format";
 import { Button } from "../../components/ui/button";
+import { ConfirmModal } from "../../components/ui/confirm-modal";
+import { toastError, toastSuccess } from "../../components/ui/toast";
 import { Dropdown } from "../../components/ui/dropdown";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { CodeBlock } from "./code-block";
@@ -187,12 +191,18 @@ export function WorkspaceBrowser({
   /** Callback when entering file preview (used by the mobile Sheet to raise its snap point to full). */
   onPreviewOpen?: () => void;
 }) {
+  // Whether "open in new tab" lands on a separate origin; false downgrades it to the
+  // same-origin sandbox, which the link flags rather than failing silently in the page.
+  const { previewIsolated } = useAuth();
   const [path, setPath] = useState("");
   const [data, setData] = useState<WorkspaceFilesResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  /** Picked files whose names collide with the loaded listing (non-null shows the overwrite confirm). */
+  const [pendingUpload, setPendingUpload] = useState<{ files: File[]; clashes: string[] } | null>(
+    null,
+  );
   const [reloadTick, setReloadTick] = useState(0);
   const [showPath, setShowPath] = useState(false);
   /** HTML / Markdown preview: rendered view (HTML via sandboxed iframe, Markdown via md-body) / source toggle. */
@@ -219,7 +229,6 @@ export function WorkspaceBrowser({
     setPath("");
     setPreview(null);
     setData(null);
-    setNotice(null);
   }, [session.sessionId]);
 
   // Edge-triggered refresh on the panel's hidden -> visible transition (doesn't count the initial mount: mounting itself already fetches once).
@@ -303,11 +312,8 @@ export function WorkspaceBrowser({
     void previewPath(joinPath(path, name));
   };
 
-  const onUpload = (e: ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
+  const doUpload = (files: File[]) => {
     setUploading(true);
-    setNotice(null);
     setError(null);
     void (async () => {
       try {
@@ -323,15 +329,26 @@ export function WorkspaceBrowser({
           });
           await api.uploadWorkspaceFile(session.sessionId, joinPath(path, file.name), b64);
         }
-        setNotice(S.files.uploaded);
+        toastSuccess(S.files.uploaded);
         setReloadTick((t) => t + 1);
       } catch (err) {
-        setError(err instanceof ApiError ? err.message : S.common.unknownError);
+        toastError(apiErrorText(err));
       } finally {
         setUploading(false);
       }
     })();
+  };
+
+  const onUpload = (e: ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files ? [...e.target.files] : [];
     e.target.value = "";
+    if (files.length === 0) return;
+    // Uploads overwrite same-name files: names already present in the loaded listing
+    // confirm first (the picker is stashed — confirm continues, cancel drops it).
+    const existing = new Set((data?.entries ?? []).map((entry) => entry.name));
+    const clashes = files.filter((f) => existing.has(f.name)).map((f) => f.name);
+    if (clashes.length > 0) setPendingUpload({ files, clashes });
+    else doUpload(files);
   };
 
   const crumbs = path === "" ? [] : path.split("/");
@@ -402,14 +419,26 @@ export function WorkspaceBrowser({
             </div>
           )}
           {/* Ghost style, matching the toolbar's upload label (text-xs, transparent until hover) — the bordered secondary look stood out from every neighbor. */}
+          {/* rel="noopener noreferrer" is load-bearing, not boilerplate: the preview must
+              not keep a handle back to this window, which is the whole point of serving
+              it from a separate origin. */}
           {/\.html?$/i.test(preview.name) && (
             <a
               href={api.workspaceFilePreviewUrl(session.sessionId, preview.path)}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex shrink-0 items-center rounded-md border border-transparent bg-transparent px-2.5 py-1 text-xs font-medium text-gray-600 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100"
+              title={previewIsolated ? undefined : S.files.previewNotIsolatedHint}
+              className="inline-flex shrink-0 items-center gap-1 rounded-md border border-transparent bg-transparent px-2.5 py-1 text-xs font-medium text-gray-600 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100"
             >
               {S.files.openInNewTab}
+              {!previewIsolated && (
+                <span
+                  aria-label={S.files.previewNotIsolatedHint}
+                  className="text-amber-600 dark:text-amber-500"
+                >
+                  ⚠
+                </span>
+              )}
             </a>
           )}
           <a
@@ -677,10 +706,33 @@ export function WorkspaceBrowser({
             ))}
           </ul>
         )}
-        {notice && (
-          <p className="px-3 py-2 text-xs text-emerald-600 dark:text-emerald-400">{notice}</p>
-        )}
       </div>
+
+      {/* Upload-overwrite confirmation: same-name files in this directory get replaced. */}
+      <ConfirmModal
+        open={pendingUpload !== null}
+        title={S.files.overwriteTitle}
+        tone="primary"
+        confirmLabel={S.files.upload}
+        onClose={() => setPendingUpload(null)}
+        onConfirm={() => {
+          if (pendingUpload) doUpload(pendingUpload.files);
+          setPendingUpload(null);
+        }}
+      >
+        <div className="space-y-2">
+          <p className="text-sm text-gray-600 dark:text-gray-300">
+            {S.files.overwriteConfirm(pendingUpload?.clashes.length ?? 0)}
+          </p>
+          <ul className="max-h-40 overflow-y-auto rounded-md border border-gray-200 px-3 py-1.5 dark:border-gray-800">
+            {(pendingUpload?.clashes ?? []).map((name) => (
+              <li key={name} className="truncate py-0.5 font-mono text-xs" title={name}>
+                {name}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </ConfirmModal>
     </div>
   );
 }

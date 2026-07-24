@@ -1,0 +1,125 @@
+<!doctype html>
+<!--
+  Source for the social share card (public/og-cover.png), rendered by
+  capture-og-cover.mjs. Static and dependency-free, like the other mockups here:
+  edit this file, re-run the script, commit the PNG.
+
+  Sized 1200x630 — the ratio X, Facebook, LinkedIn, Discord and WeChat all crop
+  from. Colors are the landing page's dark theme: gray-950 behind the brand-500 and
+  sky-500 glows the NeonBackground drifts across the real site.
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <style>
+      html,
+      body {
+        margin: 0;
+        width: 1200px;
+        height: 630px;
+        font-family:
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          Roboto,
+          "PingFang SC",
+          "Microsoft YaHei",
+          sans-serif;
+      }
+      .card {
+        position: relative;
+        width: 1200px;
+        height: 630px;
+        overflow: hidden;
+        background: #030712;
+        color: #f9fafb;
+      }
+      /* Same two glows as .neon-blob-a / .neon-blob-b, without the drift animation. */
+      .glow {
+        position: absolute;
+        border-radius: 9999px;
+        filter: blur(90px);
+        opacity: 0.22;
+      }
+      .glow-a {
+        top: -180px;
+        left: -140px;
+        width: 700px;
+        height: 700px;
+        background: radial-gradient(circle, #4285f4 0%, transparent 66%);
+      }
+      .glow-b {
+        right: -200px;
+        bottom: -260px;
+        width: 760px;
+        height: 760px;
+        background: radial-gradient(circle, #0ea5e9 0%, transparent 66%);
+      }
+      .inner {
+        position: relative;
+        display: flex;
+        height: 100%;
+        flex-direction: column;
+        justify-content: space-between;
+        box-sizing: border-box;
+        padding: 72px 76px;
+      }
+      .logo {
+        width: 108px;
+        height: 108px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 82px;
+        font-weight: 700;
+        letter-spacing: -0.025em;
+        line-height: 1;
+      }
+      .tagline {
+        margin: 22px 0 0;
+        font-size: 34px;
+        font-weight: 500;
+        line-height: 1.25;
+        color: #8ab4f8;
+      }
+      .foot {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-top: 1px solid rgba(148, 163, 184, 0.22);
+        padding-top: 28px;
+        font-size: 25px;
+        color: #cbd5e1;
+      }
+      .facts span + span::before {
+        content: "·";
+        margin: 0 14px;
+        color: #64748b;
+      }
+      .domain {
+        font-weight: 600;
+        color: #8ab4f8;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="glow glow-a"></div>
+      <div class="glow glow-b"></div>
+      <div class="inner">
+        <img class="logo" src="../public/penguin-logo.svg" alt="" />
+        <div>
+          <h1>PenguinHarness</h1>
+          <p class="tagline">Efficient Self-Improving Harness for Everyone</p>
+        </div>
+        <div class="foot">
+          <div class="facts">
+            <span>Zero-code CLI &amp; Web UI</span><span>1,000+ models</span><span>Apache-2.0</span>
+          </div>
+          <div class="domain">penguin.ooo</div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

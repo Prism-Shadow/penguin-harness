@@ -7,7 +7,9 @@ ROOT="$(cd "$HERE/../../.." && pwd)"
 DATA="$(mktemp -d)"
 MOCK_PORT="${MOCK_PORT:-8931}"
 SRV_PORT="${SRV_PORT:-8930}"
-export BASE_URL="http://127.0.0.1:$SRV_PORT"
+# localhost, not 127.0.0.1: since the Workspace-preview split the server canonicalizes the
+# App onto localhost and reserves 127.0.0.1 as the preview host, where /api answers 401.
+export BASE_URL="http://localhost:$SRV_PORT"
 export MOCK_URL="http://127.0.0.1:$MOCK_PORT"
 
 cleanup() {

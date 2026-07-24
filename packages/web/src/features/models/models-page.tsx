@@ -39,8 +39,8 @@ import type {
   ModelUpdateEntry,
 } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
+import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useProject } from "../../state/project";
 import { useAuth } from "../../state/auth";
@@ -48,11 +48,13 @@ import { USD_TO_CNY, useTheme } from "../../state/theme";
 import type { Currency } from "../../state/theme";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
+import { FieldError, FieldLabel } from "../../components/ui/field";
 import { PasswordInput } from "../../components/ui/password-input";
 import { Modal } from "../../components/ui/modal";
+import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { Select } from "../../components/ui/select";
 import { Switch } from "../../components/ui/switch";
-import { toastError, toastSuccess } from "../../components/ui/toast";
+import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 import { Badge } from "../../components/ui/badge";
 import { Chevron } from "../../components/ui/chevron";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
@@ -233,11 +235,6 @@ export function nextPointers(args: {
   };
 }
 
-/** Field-level error text: placed directly below the offending input (the input itself is highlighted red via Input's invalid prop). */
-function FieldError({ text }: { text: string }) {
-  return <span className="mt-1 block text-xs text-red-600 dark:text-red-400">{text}</span>;
-}
-
 /** Fields in the config dialog that can be highlighted red on error (keys match RowState field names, so they can be cleared per edit action). */
 type FieldErrors = Partial<
   Record<
@@ -383,7 +380,7 @@ export function ModelsPage() {
       setDefaultModel(res.defaultModel);
       setVisionModel(res.visionModel);
     } catch (e) {
-      setLoadError(e instanceof ApiError ? e.message : S.common.unknownError);
+      setLoadError(apiErrorText(e));
     }
   }, [projectId]);
 
@@ -431,7 +428,7 @@ export function ModelsPage() {
       setRows(nextRows);
       if (nextDefault !== undefined) setDefaultModel(nextDefault);
       if (effectiveVision !== undefined) setVisionModel(effectiveVision);
-      toastError(e instanceof ApiError ? e.message : S.common.unknownError);
+      toastError(apiErrorText(e));
       return false;
     } finally {
       setBusy(false);
@@ -449,7 +446,7 @@ export function ModelsPage() {
     if (!rows) return;
     const merged = syncRowsWithCatalog(rows);
     if (merged.added === 0 && merged.updated === 0) {
-      toastSuccess(S.models.syncUpToDate);
+      toastInfo(S.models.syncUpToDate);
       return;
     }
     await persist(
@@ -484,7 +481,7 @@ export function ModelsPage() {
           setSpeedResults((prev) =>
             new Map(prev).set(key, {
               ok: false,
-              message: e instanceof ApiError ? e.message : S.common.unknownError,
+              message: apiErrorText(e),
             }),
           );
         }
@@ -813,6 +810,7 @@ export function ModelsPage() {
             <Input
               size="sm"
               label={S.models.groupNameLabel}
+              required
               value={groupName}
               invalid={Boolean(groupNameError)}
               onChange={(e) => {
@@ -826,7 +824,7 @@ export function ModelsPage() {
               className="font-mono"
               autoFocus
             />
-            {groupNameError && <FieldError text={groupNameError} />}
+            {groupNameError && <FieldError>{groupNameError}</FieldError>}
           </label>
           <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">{S.models.addGroupDesc}</p>
         </Modal>
@@ -1121,7 +1119,7 @@ function ModelDialog({
       if (res.ok) toastSuccess(S.models.testOk(res.latencyMs ?? 0));
       else toastError(S.models.testFailed(res.message ?? ""));
     } catch (e) {
-      toastError(S.models.testFailed(e instanceof ApiError ? e.message : S.common.unknownError));
+      toastError(S.models.testFailed(apiErrorText(e)));
     } finally {
       setTesting(false);
     }
@@ -1133,6 +1131,17 @@ function ModelDialog({
    * top-level banner: it's too far from the error site, and with three price fields it's
    * hard to tell which one is wrong).
    */
+  // base URL required-field policy: an OpenAI-protocol endpoint can't be
+  // inferred — required for custom / user-defined groups and entries with an explicit
+  // openai protocol (gateway groups already have it pre-filled); optional for entries
+  // auto-routed within a first-party vendor group (the client has its own official
+  // default endpoint). Shared by validation and the label's required "*" mark.
+  const openAiLike =
+    form.clientType.trim().toLowerCase().includes("openai") ||
+    form.provider === "custom" ||
+    providerInfo(form.provider) === undefined;
+  const baseUrlRequired = !preset && openAiLike;
+
   const validated = (): RowState | null => {
     const modelId = form.modelId.trim();
     const ref: ModelRefDto = { provider: form.provider, modelId };
@@ -1143,16 +1152,7 @@ function ModelDialog({
     else if (!sameModelRef(ref, form.original) && existingRefs.some((r) => sameModelRef(r, ref))) {
       errs.modelId = S.models.modelIdExists;
     }
-    // base URL required-field policy: an OpenAI-protocol endpoint can't be
-    // inferred — required for custom / user-defined groups and entries with an explicit
-    // openai protocol (gateway groups already have it pre-filled); optional for entries
-    // auto-routed within a first-party vendor group (the client has its own official
-    // default endpoint).
-    const openAiLike =
-      form.clientType.trim().toLowerCase().includes("openai") ||
-      form.provider === "custom" ||
-      providerInfo(form.provider) === undefined;
-    if (!preset && openAiLike && !baseUrl) errs.baseUrl = S.models.baseUrlRequired;
+    if (baseUrlRequired && !baseUrl) errs.baseUrl = S.models.baseUrlRequired;
 
     // Under PUT full-table replace semantics, omitting pricing means deleting it: all three
     // prices must be either all empty or all filled, to avoid a partial entry silently
@@ -1241,6 +1241,10 @@ function ModelDialog({
         <span className="mb-1 flex items-baseline justify-between gap-2">
           <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
             {S.models.modelId}
+            {/* Required mark, hand-placed: this label row is custom (link on the right), so FieldLabel's asterisk doesn't apply. */}
+            <span className="ml-0.5 text-red-500 dark:text-red-400" aria-hidden>
+              *
+            </span>
           </span>
           <span className="flex shrink-0 items-baseline gap-2.5">
             {/* The model-homepage entry lives in the dialog header (top-right button); only the "get model ids" provider link stays here. */}
@@ -1258,6 +1262,7 @@ function ModelDialog({
         </span>
         <Input
           size="sm"
+          required
           value={form.modelId}
           disabled={!canEdit}
           invalid={Boolean(fieldErrors.modelId)}
@@ -1266,7 +1271,7 @@ function ModelDialog({
           autoFocus={isNew}
           placeholder={S.models.modelIdHint}
         />
-        {fieldErrors.modelId && <FieldError text={fieldErrors.modelId} />}
+        {fieldErrors.modelId && <FieldError>{fieldErrors.modelId}</FieldError>}
         {/* Hint when auto-routing misses (first-party provider group, adding): warns without blocking. */}
         {autoRouteMiss && (
           <span className="mt-1 block text-xs text-amber-600 dark:text-amber-400">
@@ -1346,10 +1351,26 @@ function ModelDialog({
             <Button
               variant="primary"
               onClick={() => {
-                // Validate first: if validation fails, show it via the top-level hint right away without popping the confirm dialog.
+                // Validate first: if validation fails, the inline field errors show right away without popping the confirm dialog.
                 if (!validated()) return;
-                if (isNew) submit("save");
-                else setConfirming("save");
+                if (isNew || row === null) {
+                  submit("save");
+                  return;
+                }
+                // Nothing changed: report it instead of confirming a no-op write (the
+                // baseline is rebuilt exactly like the form's initial state, so a plain
+                // JSON compare is field-exact).
+                const initial: RowState = {
+                  ...row,
+                  cacheRead: usdToInput(row.cacheRead, currency),
+                  cacheWrite: usdToInput(row.cacheWrite, currency),
+                  output: usdToInput(row.output, currency),
+                };
+                if (JSON.stringify(form) === JSON.stringify(initial)) {
+                  toastInfo(S.common.noChangesToSave);
+                  return;
+                }
+                setConfirming("save");
               }}
             >
               {S.common.confirm}
@@ -1498,7 +1519,7 @@ function ModelDialog({
             <span className="font-mono">{form.credential.apiKeyMasked}</span>
             {form.credential.createdAt && (
               <span className="text-gray-400">
-                {S.models.createdAt} {formatDateTime(form.credential.createdAt)}
+                {S.common.created} {formatDateTime(form.credential.createdAt)}
               </span>
             )}
             {canEdit && (
@@ -1514,16 +1535,20 @@ function ModelDialog({
           </div>
         )}
 
-        {/* 2) base URL */}
+        {/* 2) base URL (required for custom / user-defined groups and explicit openai protocol — see
+            baseUrlRequired). Official-protocol entries (everything except the OpenAI-protocol path)
+            carry a caution: a custom endpoint must still speak the vendor's official protocol. */}
         <Input
           size="sm"
           label={S.models.baseUrl}
+          required={baseUrlRequired}
           value={form.baseUrl}
           disabled={!canEdit}
           onChange={(e) => set({ baseUrl: e.target.value })}
           className="font-mono"
           placeholder={preset ? S.models.baseUrlHint : "https://…"}
           {...(fieldErrors.baseUrl ? { error: fieldErrors.baseUrl } : {})}
+          {...(!openAiLike ? { hint: S.models.baseUrlOfficialNote } : {})}
         />
 
         {/* 3) Context window + max output tokens side by side (one row): the "Token" unit
@@ -1536,9 +1561,7 @@ function ModelDialog({
             model stay under its window). */}
         <div className="grid grid-cols-2 items-start gap-2">
           <label className="block">
-            <span className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-400">
-              {S.models.contextWindow}
-            </span>
+            <FieldLabel>{S.models.contextWindow}</FieldLabel>
             <span className="relative block">
               <Input
                 size="sm"
@@ -1564,12 +1587,10 @@ function ModelDialog({
                 {S.models.tokenUnit}
               </span>
             </span>
-            {fieldErrors.contextWindow && <FieldError text={fieldErrors.contextWindow} />}
+            {fieldErrors.contextWindow && <FieldError>{fieldErrors.contextWindow}</FieldError>}
           </label>
           <label className="block">
-            <span className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-400">
-              {S.models.maxTokens}
-            </span>
+            <FieldLabel>{S.models.maxTokens}</FieldLabel>
             <span className="relative block">
               <Input
                 size="sm"
@@ -1587,7 +1608,7 @@ function ModelDialog({
                 {S.models.tokenUnit}
               </span>
             </span>
-            {fieldErrors.maxTokens && <FieldError text={fieldErrors.maxTokens} />}
+            {fieldErrors.maxTokens && <FieldError>{fieldErrors.maxTokens}</FieldError>}
           </label>
         </div>
 
@@ -1604,9 +1625,7 @@ function ModelDialog({
             ] as Array<[keyof FieldErrors & keyof RowState, string, string]>
           ).map(([key, label, value]) => (
             <label key={key} className="block">
-              <span className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-400">
-                {label}
-              </span>
+              <FieldLabel>{label}</FieldLabel>
               <span className="relative block">
                 <span className="pointer-events-none absolute inset-y-0 left-2 flex items-center text-xs text-gray-400">
                   {CURRENCY_SYMBOL[currency]}
@@ -1624,7 +1643,7 @@ function ModelDialog({
                   {S.models.priceUnitShort}
                 </span>
               </span>
-              {fieldErrors[key] && <FieldError text={fieldErrors[key]} />}
+              {fieldErrors[key] && <FieldError>{fieldErrors[key]}</FieldError>}
             </label>
           ))}
         </div>
@@ -1669,30 +1688,21 @@ function ModelDialog({
 
       {/* Confirmation before writing config (save / set default / set as vision proxy model / remove): stacked on top of the config dialog. */}
       {confirming && (
-        <Modal
+        <ConfirmModal
           open
           title={CONFIRM_TITLE[confirming]()}
+          tone={confirming === "remove" ? "danger" : "primary"}
           onClose={() => setConfirming(null)}
-          footer={
-            <>
-              <Button onClick={() => setConfirming(null)}>{S.common.cancel}</Button>
-              <Button
-                variant={confirming === "remove" ? "danger" : "primary"}
-                onClick={() => {
-                  const action = confirming;
-                  setConfirming(null);
-                  submit(action);
-                }}
-              >
-                {S.common.confirm}
-              </Button>
-            </>
-          }
+          onConfirm={() => {
+            const action = confirming;
+            setConfirming(null);
+            submit(action);
+          }}
         >
           <p className="text-sm text-gray-700 dark:text-gray-300">
             {CONFIRM_BODY[confirming](form.displayName ?? form.modelId)}
           </p>
-        </Modal>
+        </ConfirmModal>
       )}
     </Modal>
   );
@@ -1733,6 +1743,7 @@ function GroupKeyDialog({
         <Input
           size="sm"
           label={S.models.apiKey}
+          required
           type="password"
           value={key}
           onChange={(e) => setKey(e.target.value)}

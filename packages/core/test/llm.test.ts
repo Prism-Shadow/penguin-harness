@@ -1052,6 +1052,11 @@ describe("config helpers", () => {
     expect("system_prompt" in minimal).toBe(false);
     expect("max_tokens" in minimal).toBe(false);
     expect("thinking_level" in minimal).toBe(false);
+
+    // max_tokens -1 (the config's "no cap" sentinel) stays OFF the wire — sent literally,
+    // providers reject a negative max_tokens with a 400.
+    const uncapped = buildUniConfig({ modelId: "m", tools: [], maxTokens: -1 });
+    expect("max_tokens" in uncapped).toBe(false);
   });
 
   it("omits tools when empty and never sets tool_choice (strict endpoints reject both)", () => {

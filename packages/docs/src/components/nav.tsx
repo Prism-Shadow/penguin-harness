@@ -20,7 +20,15 @@ import { GitHubIcon, MenuIcon, XIcon } from "./icons";
 import { ThemeToggle } from "./theme-toggle";
 import { LangToggle } from "./lang-toggle";
 
-const SECTION_IDS = ["highlights", "quickstart", "benchmark", "contract", "features"] as const;
+const SECTION_IDS = [
+  "highlights",
+  "quickstart",
+  "cases",
+  "scenarios",
+  "benchmark",
+  "contract",
+  "features",
+] as const;
 
 export function Nav({ menuOpen, onToggleMenu }: { menuOpen: boolean; onToggleMenu: () => void }) {
   const pillRef = useRef<HTMLSpanElement | null>(null);
@@ -29,6 +37,8 @@ export function Nav({ menuOpen, onToggleMenu }: { menuOpen: boolean; onToggleMen
   const sectionLabel: Record<(typeof SECTION_IDS)[number], string> = {
     highlights: S.nav.highlights,
     quickstart: S.nav.quickstart,
+    cases: S.nav.cases,
+    scenarios: S.nav.scenarios,
     benchmark: S.nav.benchmark,
     contract: S.nav.contract,
     features: S.nav.features,
@@ -102,7 +112,7 @@ export function Nav({ menuOpen, onToggleMenu }: { menuOpen: boolean; onToggleMen
         </a>
 
         <nav
-          className="relative ml-4 hidden items-center gap-0.5 md:flex"
+          className="relative ml-4 hidden items-center gap-0.5 xl:flex"
           aria-label="Primary"
           onMouseLeave={hidePill}
         >

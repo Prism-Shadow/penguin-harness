@@ -24,6 +24,14 @@ export interface ServerConfig {
   dbPath: string;
   /** Frontend static assets directory; whether it's enabled is decided by checking existence when the app is assembled. */
   webDist: string;
+  /**
+   * Origin that serves Workspace HTML previews (PENGUIN_PREVIEW_ORIGIN), e.g.
+   * `https://preview.example.com`. It must differ from the App origin by **hostname** —
+   * cookies ignore ports, so a second port would still share the session cookie. Unset
+   * is the norm locally: the loopback counterpart (`127.0.0.1` <-> `localhost`) is
+   * derived per request instead. See design § "Workspace 文件预览".
+   */
+  previewOrigin: string | null;
   /** Login session validity period (7 days). */
   authSessionTtlMs: number;
   /** Sliding renewal threshold: if the remaining validity is below this value when validation succeeds, it's renewed to the full TTL (renews under 6 days). */
@@ -46,7 +54,26 @@ function defaultWebDist(): string {
   return path.resolve(here, "..", "..", "web", "dist");
 }
 
-/** Parses server config from environment variables (PORT / HOST / PENGUIN_HOME / PENGUIN_WEB_DIST / PENGUIN_WEB_DB). */
+/**
+ * Validates PENGUIN_PREVIEW_ORIGIN into a bare origin, or throws. An unparseable value
+ * is a hard failure rather than a silent fallback: falling back would quietly serve
+ * previews same-origin, which is the configuration this variable exists to avoid.
+ */
+function normalizePreviewOrigin(raw: string | undefined): string | null {
+  if (!raw || raw.trim() === "") return null;
+  let url: URL;
+  try {
+    url = new URL(raw.trim());
+  } catch {
+    throw new Error(`Invalid PENGUIN_PREVIEW_ORIGIN=${raw} (expected an absolute origin)`);
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error(`Invalid PENGUIN_PREVIEW_ORIGIN=${raw} (only http/https are supported)`);
+  }
+  return url.origin;
+}
+
+/** Parses server config from environment variables (PORT / HOST / PENGUIN_HOME / PENGUIN_WEB_DIST / PENGUIN_WEB_DB / PENGUIN_PREVIEW_ORIGIN). */
 export function resolveServerConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
   const root = env.PENGUIN_HOME ?? resolveRoot();
   // An empty PORT string is treated as unset (the common `.env` case of an empty
@@ -62,6 +89,7 @@ export function resolveServerConfig(env: NodeJS.ProcessEnv = process.env): Serve
     port,
     dbPath: env.PENGUIN_WEB_DB ?? path.join(root, "web.db"),
     webDist: env.PENGUIN_WEB_DIST ?? defaultWebDist(),
+    previewOrigin: normalizePreviewOrigin(env.PENGUIN_PREVIEW_ORIGIN),
     authSessionTtlMs: 7 * DAY_MS,
     authSessionRenewMs: 6 * DAY_MS,
   };

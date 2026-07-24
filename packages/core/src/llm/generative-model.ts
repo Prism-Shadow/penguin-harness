@@ -702,6 +702,35 @@ export function translateEvents(
 // ---------------------------------------------------------------------------
 
 /**
+ * A fuller error string than `err.message` for the LLM request outcome. Node's `fetch`
+ * wraps the real transport failure as `TypeError: terminated` and puts the actual reason
+ * on `err.cause` (a socket close, `ECONNRESET`, a provider stream abort, …); taking only
+ * `.message` throws that away and leaves a bare, unactionable "terminated". This walks the
+ * `cause` chain and appends each level's message and error `code`, so it surfaces as e.g.
+ * "terminated: other side closed (UND_ERR_SOCKET)". Segments are de-duplicated and the
+ * chain walk guards against cycles; a non-Error cause tail (string/number) is still kept.
+ */
+export function describeError(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+  const parts: string[] = [];
+  const seen = new Set<unknown>();
+  let cur: unknown = error;
+  while (cur instanceof Error && !seen.has(cur)) {
+    seen.add(cur);
+    const code = (cur as { code?: unknown }).code;
+    let piece = cur.message || cur.name;
+    if (typeof code === "string" && code && !piece.includes(code)) piece = `${piece} (${code})`;
+    if (piece && !parts.includes(piece)) parts.push(piece);
+    cur = (cur as { cause?: unknown }).cause;
+  }
+  if (cur != null && !(cur instanceof Error)) {
+    const tail = String(cur);
+    if (tail && !parts.includes(tail)) parts.push(tail);
+  }
+  return parts.join(": ") || error.message || String(error);
+}
+
+/**
  * Determines whether an error is an AgentHub / Provider "response delivered but unusable"
  * parse or validation error. Two shapes (@prismshadow/agenthub 0.4.x):
  *
@@ -906,7 +935,7 @@ export class GenerativeModel implements LLMInterface {
     } catch (err) {
       return {
         status: "failed",
-        message: err instanceof Error ? err.message : String(err),
+        message: describeError(err),
       };
     }
 
@@ -984,7 +1013,7 @@ export class GenerativeModel implements LLMInterface {
         // malformed to reconnect and retry — must not be classified as failed.
         outcome = {
           status: "malformed",
-          message: error instanceof Error ? error.message : String(error),
+          message: describeError(error),
         };
       } else if (isRetryableError(error)) {
         outcome = { status: "timeout" }; // Network drop/network error -> needs reconnection
@@ -993,7 +1022,7 @@ export class GenerativeModel implements LLMInterface {
       } else {
         outcome = {
           status: "failed",
-          message: error instanceof Error ? error.message : String(error),
+          message: describeError(error),
         };
       }
     } finally {
@@ -1113,7 +1142,10 @@ export function buildUniConfig(config: GenerativeModelConfig): UniConfig {
   if (config.systemPrompt !== undefined) {
     uniConfig.system_prompt = config.systemPrompt;
   }
-  if (config.maxTokens !== undefined) {
+  // Non-positive (-1 per the config contract) means "no explicit cap": the key is left off
+  // the wire so the provider default applies — sent literally, every provider rejects a
+  // negative max_tokens with a 400 (issue #55's sibling).
+  if (config.maxTokens !== undefined && config.maxTokens > 0) {
     uniConfig.max_tokens = config.maxTokens;
   }
   const thinking = mapThinkingLevel(config.thinkingLevel);

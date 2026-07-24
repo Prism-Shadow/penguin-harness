@@ -10,12 +10,25 @@ import { toUserInfo } from "../../auth/service.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { readJson, requireString } from "../validate.js";
 import type { AppDeps } from "../../app.js";
+import { resolvePreviewTarget } from "../../services/preview-token.js";
 
 export function meRoutes(deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   app.get("/", (c) => {
-    return c.json({ user: toUserInfo(c.var.user) } satisfies MeResponse);
+    // previewIsolated depends on the host this request came in on, so it is computed
+    // here rather than stored: the same server answers on 127.0.0.1, localhost and
+    // possibly a LAN address, and only the first two have a loopback counterpart.
+    const target = resolvePreviewTarget(
+      c.req.url,
+      c.req.header("host"),
+      deps.config.previewOrigin,
+      deps.config,
+    );
+    return c.json({
+      user: toUserInfo(c.var.user),
+      previewIsolated: target !== null,
+    } satisfies MeResponse);
   });
 
   // Self-service password change (user settings): validates the old password; on success, the initial-password prompt disappears from GET /api/me.

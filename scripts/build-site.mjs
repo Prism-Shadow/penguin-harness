@@ -11,9 +11,10 @@
  * single artifact — one GitHub Pages deployment hosts both sites.
  */
 import { execSync } from "node:child_process";
-import { cpSync, rmSync } from "node:fs";
+import { cpSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { absoluteUrl, blogRoutes, docsRoutes } from "../packages/landing/scripts/site-routes.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const base = process.env.BASE_PATH ?? "/";
@@ -34,4 +35,27 @@ const landingDist = join(root, "packages", "landing", "dist");
 const docsTarget = join(landingDist, "docs");
 rmSync(docsTarget, { recursive: true, force: true });
 cpSync(join(root, "packages", "docs", "dist"), docsTarget, { recursive: true });
+
+// sitemap.xml goes in last, because only here do both dists exist: it is the one file
+// that has to name routes from both sites. It is also the only way a crawler learns
+// those routes — both pages ship an empty <div id="root"> and build their navigation
+// in JS, so following links is not an option.
+const routes = [{ route: "/" }, ...blogRoutes(), ...docsRoutes()];
+const sitemap = [
+  '<?xml version="1.0" encoding="UTF-8"?>',
+  '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+  ...routes.map(({ route, lastmod }) =>
+    [
+      "  <url>",
+      `    <loc>${absoluteUrl(route)}</loc>`,
+      ...(lastmod === undefined ? [] : [`    <lastmod>${lastmod}</lastmod>`]),
+      "  </url>",
+    ].join("\n"),
+  ),
+  "</urlset>",
+  "",
+].join("\n");
+writeFileSync(join(landingDist, "sitemap.xml"), sitemap);
+
 console.log(`\n[build-site] assembled site at ${landingDist} (docs under /docs/)`);
+console.log(`[build-site] wrote sitemap.xml (${routes.length} URLs)`);

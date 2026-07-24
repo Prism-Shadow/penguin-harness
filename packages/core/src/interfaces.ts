@@ -101,6 +101,7 @@ export interface GenerativeModelConfig {
   /** Full system Prompt after placeholder substitution in the system_config.system_prompt template. */
   systemPrompt?: string;
   contextWindow?: number;
+  /** Output token cap per Request; non-positive (-1) means no explicit cap (omitted from the request). */
   maxTokens?: number;
   thinkingLevel?: ThinkingLevelName;
   /** LLM Request timeout (ms): from system_config.model.timeoutMs; <=0 disables it. Defaults to 120000. */

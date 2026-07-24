@@ -159,11 +159,37 @@ jobs:
             sha256sum "$f" > "$f.sha256"
           done
 
+      # Release notes come from changelog/<version>/RELEASE.md, written during release preparation and
+      # committed BEFORE the tag (the release job runs on the tag's checkout, so a file added afterwards
+      # is invisible here). Present and non-empty -> published verbatim as the body; absent -> GitHub
+      # generates a body from the merged PRs. Either way the Release can never ship an empty body, which
+      # is what happened to v0.1.1: the step passed neither body nor generate_release_notes, the action
+      # left the body unset, and the omission was only visible once the Release was public.
+      - name: Resolve release notes
+        id: notes
+        env:
+          TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+        run: |
+          NOTES="changelog/${TAG#v}/RELEASE.md"
+          if [ -s "$NOTES" ]; then
+            echo "Publishing curated release notes from $NOTES"
+            echo "body_path=$NOTES" >> "$GITHUB_OUTPUT"
+            echo "generate=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "No $NOTES; falling back to GitHub-generated notes."
+            echo "body_path=" >> "$GITHUB_OUTPUT"
+            echo "generate=true" >> "$GITHUB_OUTPUT"
+          fi
+
       # On tag-push use the ref name; on manual dispatch use the input tag.
+      # An empty body_path is falsy for the action and simply ignored (it never tries to read it), so the
+      # fallback branch cleanly leaves generate_release_notes to compose the body on its own.
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          body_path: ${{ steps.notes.outputs.body_path }}
+          generate_release_notes: ${{ steps.notes.outputs.generate }}
           files: |
             dist-artifacts/*.tar.gz
             dist-artifacts/*.sha256

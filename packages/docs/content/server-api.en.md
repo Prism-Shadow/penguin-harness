@@ -150,6 +150,7 @@ The paths below omit the `/api/sessions/:sessionId` prefix. For the storage mode
 | POST | /compact | Trigger context compaction: 202; 409 `nothing_to_compact` when there is nothing to compact |
 | GET | /files?path= | Browse the Workspace directory |
 | GET | /files/content?path=&download=&preview= | Read a Workspace file (`download=1` serves it as an attachment, `preview=1` renders it in a sandbox — see below) |
+| GET | /files/preview-redirect?path= | "Open in a new tab" for html: mints a signed token and 302s to the separate preview origin |
 | POST | /files/stat | Batch existence check: `{paths}` |
 | PUT | /files/content?path= | Upload a file: `{dataBase64}`, capped at 14MB |
 | GET | /traces | List this Session's Trace files |
@@ -167,7 +168,24 @@ Workspace files may be Agent-generated, so `GET /files/content` treats them as u
 | `preview=1` | the real type (`text/html`, `image/svg+xml`, …) | `inline` | `sandbox allow-scripts allow-popups allow-modals allow-forms`, sent only for `.html` / `.htm` / `.svg` |
 | `download=1` | the real type | `attachment` | — |
 
-The filename always rides along as `filename*=UTF-8''` with percent-encoding. `preview=1` is what backs "open in a new tab": the document keeps its real type and does render and run, but the sandbox deliberately omits `allow-same-origin`, so it lands in an opaque origin and can reach neither this origin's cookies nor the API — while the request itself still authenticates, because a top-level GET sends the SameSite=Lax session cookie.
+The filename always rides along as `filename*=UTF-8''` with percent-encoding. `preview=1` renders inside the Files panel's sandboxed iframe, and is also the fallback for "open in a new tab" when no separate preview origin is available: the document keeps its real type and does render and run, but the sandbox deliberately omits `allow-same-origin`, so it lands in an opaque origin and can reach neither this origin's cookies nor the API. That isolation is also why `localStorage`, `document.cookie` and third-party embeds do not work there.
+
+### Preview on a separate origin
+
+"Open in a new tab" goes through `GET /files/preview-redirect?path=`, which authenticates the caller, then mints a short-lived HMAC token and 302s to a **different origin**:
+
+```text
+GET  /api/sessions/:sessionId/files/preview-redirect?path=index.html
+302  Location: http://localhost:7364/preview/<token>/index.html
+GET  /preview/<token>/<relative path>          (unauthenticated; the token is the credential)
+```
+
+- **Why a separate origin.** The page needs a real origin to have working storage, cookies and third-party embeds — but it must not be the app's origin, or Agent-written HTML would run with the session cookie. Locally the app is canonicalized onto `localhost` and previews are served from `127.0.0.1`; cookies are keyed by host and ignore port, so those are separate cookie jars while a second port would not be. Otherwise `PENGUIN_PREVIEW_ORIGIN` applies; with neither (a wildcard or non-loopback bind, or the variable unset), the redirect falls back to the same-origin sandbox above and `previewIsolated` on `GET /api/me` reports `false` so the UI can say so first.
+- **The preview host serves only `/preview/*`.** It is the same process as the app, so it answers `/api` with `401` and `302`s every other route to the canonical app host. A session cookie is therefore never set or honored on the preview host, and Agent HTML there cannot reach the API same-origin. (For a deployed `PENGUIN_PREVIEW_ORIGIN`, the reverse proxy must enforce the equivalent: route only `/preview/*` to the app on that origin.)
+- **Path-based, not a query parameter**, so a page's relative subresources (`app.js`, `style.css`, images) resolve against the document and load under the same token.
+- **The token binds the Session, the preview host and an expiry.** The host binding is load-bearing: the same process also answers on the app origin, so `/preview/...` refuses to serve there — otherwise it would be a same-origin XSS. Access is read-only and scoped to that Session's Workspace, and the path is re-resolved server-side, so `..` and symlink escapes are rejected as before.
+- **Responses carry `Referrer-Policy: no-referrer`**, or the token-bearing URL would leak through `Referer` to every third party the page embeds — a risk that exists precisely because embeds now work.
+- Bad token, expired token, wrong host and out-of-bounds path all answer a bare 404: the endpoint is unauthenticated and must not confirm what exists.
 
 Key request bodies (explicit keys):
 

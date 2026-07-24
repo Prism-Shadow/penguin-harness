@@ -18,9 +18,9 @@
  * Scope: excludes deepseek-chat / deepseek-reasoner legacy aliases that AgentHub cannot
  * auto-route (deprecated 2026-07-24), glm-5v-turbo (image input unsupported by AgentHub's GLM
  * client), non-chat models (embedding / image generation / TTS), and Bedrock. Direct-vendor
- * ids are auto-routed by AgentHub and leave client_type unset; gateway entries (OpenRouter /
- * SiliconFlow / Qwen Token Plan) can't be auto-routed, so they set `client_type: "openai"`
- * and inline their preset base URL.
+ * ids are auto-routed by AgentHub and leave client_type unset; the five gateway groups
+ * (OpenRouter, Fireworks AI, SiliconFlow, Qwen Token Plan, Qwen Pay-As-You-Go) can't be
+ * auto-routed, so they set `client_type: "openai"` and inline their preset base URL.
  *
  * This file imports no Node built-ins (type-only imports only), so it can be bundled directly
  * for the browser.
@@ -74,8 +74,9 @@ const FIREWORKS_BASE_URL = "https://api.fireworks.ai/inference/v1";
 
 /**
  * Provider list (web model page groups in this order): DeepSeek first (the default model's
- * provider), followed by the OpenRouter, SiliconFlow, and Qwen Token Plan gateways, then
- * Google Gemini before Anthropic; custom groups custom OpenAI-protocol models and comes last.
+ * provider), followed by the five gateways (OpenRouter, Fireworks AI, SiliconFlow, Qwen Token
+ * Plan, Qwen Pay-As-You-Go), then the first-party providers Google Gemini, Anthropic, OpenAI,
+ * Z.AI (GLM) and Moonshot (Kimi); custom groups custom OpenAI-protocol models and comes last.
  */
 export const MODEL_PROVIDERS: ModelProviderInfo[] = [
   {

@@ -7,15 +7,30 @@
     <meta name="theme-color" content="#030712" media="(prefers-color-scheme: dark)" />
     <meta
       name="description"
-      content="PenguinHarness — Efficient Self-Improving Harness for Everyone. Open-source infrastructure that builds AI agents for you, from automatic agent construction to recursive self-improvement."
+      content="A zero-code CLI and Web UI for building AI agents, connected to 1,000+ models. Open source, local-first, and recursively self-improving."
     />
+    <!-- Self-referencing URLs for the home page: scripts/postbuild.mjs rewrites both per
+         route as it stamps out the blog shells, and drops the canonical from 404.html.
+         Absolute because rel=canonical and Open Graph both ignore relative URLs, so
+         these name the production origin whatever BASE_PATH a build uses. -->
+    <link rel="canonical" href="https://penguin.ooo/" />
+    <meta property="og:url" content="https://penguin.ooo/" />
     <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="PenguinHarness" />
     <meta property="og:title" content="PenguinHarness" />
     <meta
       property="og:description"
       content="Efficient Self-Improving Harness for Everyone — open-source, local-first infrastructure that builds AI agents for you."
     />
-    <meta name="twitter:card" content="summary" />
+    <meta property="og:image" content="https://penguin.ooo/og-cover.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="PenguinHarness — Efficient Self-Improving Harness for Everyone"
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content="https://penguin.ooo/og-cover.png" />
     <link rel="icon" type="image/svg+xml" href="./penguin-logo.svg" />
     <title>PenguinHarness — Efficient Self-Improving Harness for Everyone</title>
     <!-- Apply the stored/system theme before first paint so the page doesn't flash the
