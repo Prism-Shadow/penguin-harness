@@ -221,9 +221,10 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   },
   // -- OpenRouter (gateway: OpenAI-compatible protocol, preset base URL). Entries added
   // 2026-07-20 list no cache pricing on their OpenRouter pages, so cache_read carries the
-  // standard input price; their :free tier stores a genuine $0 price (not "unknown"), so
-  // costs correctly compute to 0. GPT models are uniformly vision-capable (OpenAI
-  // product-line policy) even where the gateway page omits the modality.
+  // standard input price; the :free tier and the openrouter/free Free Models Router store a
+  // genuine $0 price (not "unknown"), so costs correctly compute to 0. GPT models are
+  // uniformly vision-capable (OpenAI product-line policy) even where the gateway page omits
+  // the modality.
   // Two cache_read conventions coexist in this block: rows whose upstream publishes a
   // cache-hit price store that real price (the google/gemini-3.6-flash and
   // google/gemini-3.5-flash-lite entries below), while the 2026-07-20 rows still repeat the
@@ -329,6 +330,19 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
+    // inclusionAI's free tier of Ling-3.0-flash (released 2026-07-23): 124B-param MoE with
+    // ~5.1B active params per token, text-only; context and $0 pricing per the OpenRouter
+    // models API (2026-07-24).
+    modelId: "inclusionai/ling-3.0-flash:free",
+    displayName: "Ling 3.0 Flash (free)",
+    provider: "openrouter",
+    contextWindow: 262144,
+    pricing: usd(0, 0, 0),
+    supportsVision: false,
+    clientType: "openai",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
     // No official separate cache price published: cache_read uses the standard input price (no discount assumed).
     modelId: "minimax/minimax-m3",
     displayName: "MiniMax M3",
@@ -396,6 +410,20 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(5, 5, 30),
     supportsVision: true,
+    clientType: "openai",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
+    // OpenRouter's unified Free Models Router: each request is routed to a random free model
+    // currently on OpenRouter, filtered by the features the request needs (tool calling,
+    // structured outputs, ...). The routed target varies per request, so no context window is
+    // recorded, and supportsVision stays false deliberately: the harness must not send images
+    // to a router whose target may be text-only.
+    modelId: "openrouter/free",
+    displayName: "Free Models Router",
+    provider: "openrouter",
+    pricing: usd(0, 0, 0),
+    supportsVision: false,
     clientType: "openai",
     baseUrl: OPENROUTER_BASE_URL,
   },

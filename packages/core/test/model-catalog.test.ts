@@ -68,7 +68,7 @@ describe("model-catalog", () => {
     }
   });
 
-  it("price buckets are positive (preview models without a list price omit pricing); context_window is a positive integer", () => {
+  it("price buckets are positive (preview models without a list price omit pricing); context_window is a positive integer (the free router omits it)", () => {
     // Models with no obtainable published price. qwen3.8-max-preview: the plan runs a
     // quota-multiplier promotion instead of a per-token list price. The three SiliconFlow
     // entries: AgentHub's registry publishes no pricing for them and SiliconFlow's price list
@@ -83,8 +83,9 @@ describe("model-catalog", () => {
     for (const m of MODEL_CATALOG) {
       if (UNPRICED.has(`${m.provider}\0${m.modelId}`)) {
         expect(m.pricing, m.modelId).toBeUndefined();
-      } else if (m.modelId.endsWith(":free")) {
-        // Free-tier gateway model: a genuine $0 price (not "unknown"), so costs compute to 0.
+      } else if (m.modelId.endsWith(":free") || m.modelId.endsWith("/free")) {
+        // Free-tier gateway model (:free variants and the openrouter/free router): a genuine
+        // $0 price (not "unknown"), so costs compute to 0.
         expect(m.pricing, m.modelId).toBeDefined();
         expect([m.pricing!.cache_read, m.pricing!.cache_write, m.pricing!.output]).toEqual([
           0, 0, 0,
@@ -96,8 +97,14 @@ describe("model-catalog", () => {
         expect(m.pricing!.cache_write).toBeGreaterThan(0);
         expect(m.pricing!.output).toBeGreaterThan(0);
       }
-      expect(Number.isInteger(m.contextWindow)).toBe(true);
-      expect(m.contextWindow!).toBeGreaterThan(0);
+      if (m.modelId === "openrouter/free") {
+        // The Free Models Router's target (and thus its effective context window) changes per
+        // request, so the catalog records none.
+        expect(m.contextWindow).toBeUndefined();
+      } else {
+        expect(Number.isInteger(m.contextWindow)).toBe(true);
+        expect(m.contextWindow!).toBeGreaterThan(0);
+      }
     }
   });
 
@@ -160,6 +167,7 @@ describe("model-catalog", () => {
       "google/gemini-3.6-flash",
       "google/gemini-3.5-flash",
       "google/gemini-3.5-flash-lite",
+      "inclusionai/ling-3.0-flash:free",
       "minimax/minimax-m3",
       "moonshotai/kimi-k3",
       "moonshotai/kimi-k2.6",
@@ -167,6 +175,7 @@ describe("model-catalog", () => {
       "openai/gpt-5.6-sol",
       "openai/gpt-5.6-terra",
       "openai/gpt-5.5",
+      "openrouter/free",
       "qwen/qwen3.6-35b-a3b",
       "stepfun/step-3.7-flash",
       "tencent/hy3",

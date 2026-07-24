@@ -73,6 +73,8 @@ Built-in groups and their env-var fallbacks (catalog source: `packages/core/src/
 
 The gateway groups (openrouter / fireworks / siliconflow / qwen-token-plan / qwen-pay-as-you-go) go through AgentHub's OpenAI client, so with blank credentials they read `OPENAI_API_KEY` — not a gateway-specific variable.
 
+The preset catalog also carries OpenRouter's free tier: `:free` model variants (e.g. `inclusionai/ling-3.0-flash:free`) and the `openrouter/free` unified Free Models Router. They cost nothing, but are subject to OpenRouter's free-tier rate limits and data policy.
+
 Some models in the preset catalog: deepseek-v4-pro / deepseek-v4-flash, gemini-3.1-pro-preview, claude-opus-4-8 / claude-sonnet-4-6, gpt-5.5, glm-5.2, kimi-k2.6, qwen3.8-max-preview (not exhaustive).
 
 ## Thinking levels
