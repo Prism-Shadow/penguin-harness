@@ -129,7 +129,7 @@ describe("Agents Dir / Agent ID placeholders", () => {
       date: "2026-07-08",
     });
     expect(prompt).toContain("Agent ID: env_agent");
-    expect(prompt).toContain("Agents Dir: /tmp/proj/agents");
+    expect(prompt).toContain(`Agents Dir: ${path.join("/tmp/proj", "agents")}`);
     expect(prompt).not.toContain("{{AGENT_ID}}");
     expect(prompt).not.toContain("{{AGENTS_DIR}}");
     expect(prompt).not.toContain("{{PROJECT_DIR}}");

@@ -3,8 +3,8 @@ name: penguin-cli
 description: Manage model API keys, default models and per-agent vault secrets with the penguin CLI.
 short_description: Manage models and secrets with the penguin CLI.
 short_description_zh: 用 penguin CLI 管理模型与密钥。
-version: 6
-updated: 2026-07-24T00:00:00Z
+version: 7
+updated: 2026-07-24T12:00:00Z
 ---
 
 # Penguin CLI
@@ -69,5 +69,7 @@ penguin config lang <en|zh>   # persist the CLI language via PENGUIN_LANG in you
 
 ## Storage
 
-- `.project_config.toml`, in the parent directory of the agents dir — the project's single hidden config file: model list, settings and per-model credentials (`api_key` etc. inlined in each model entry). Configuration is CLI-only — never read, print or hand-edit this file.
+Paths use `<agents_dir>`, the Agents Dir value from your Environment section (on an older agent whose Environment lists Project Dir instead, the agents dir is `<Project Dir>/agents`).
+
+- `<agents_dir>/../.project_config.toml` — the project's single hidden config file: model list, settings and per-model credentials (`api_key` etc. inlined in each model entry). Configuration is CLI-only — never read, print or hand-edit this file.
 - `<agents_dir>/<agent_id>/agent_state/.vault.toml` — that agent's vault entries, hidden file; same rule, manage it with `penguin config vault`.

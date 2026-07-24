@@ -3,8 +3,8 @@ name: agent-creation
 description: Turn a user requirement into a concrete agent — write the target agent's AGENTS.md and install the skills it needs.
 short_description: Turn a requirement into a working agent.
 short_description_zh: 把需求变成可用的 Agent。
-version: 3
-updated: 2026-07-24T00:00:00Z
+version: 4
+updated: 2026-07-24T12:00:00Z
 ---
 
 # Agent Creation
@@ -20,7 +20,7 @@ If the user's message only invokes this skill (e.g. "use agent-creation skill") 
 All agents of this project live side by side in the agents directory:
 
 ```bash
-AGENTS_DIR="<agents_dir>"         # the Agents Dir value from your Environment section
+AGENTS_DIR="<agents_dir>"         # the Agents Dir value from your Environment section (on an older agent that lists Project Dir instead, use <Project Dir>/agents)
 ls "$AGENTS_DIR"                  # existing agents (each is a folder here)
 TARGET="$AGENTS_DIR/<agent_id>"   # the agent to configure
 ```

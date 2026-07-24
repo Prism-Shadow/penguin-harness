@@ -29,9 +29,18 @@ export function projectDir(root: string, projectId: string): string {
   return path.join(root, projectId);
 }
 
+/**
+ * `<projectDir>/agents` from an already-resolved Project directory path — the single
+ * definition point of the agents-container layout (also used to render the system
+ * prompt's `{{AGENTS_DIR}}` placeholder).
+ */
+export function agentsDirFrom(projectDirPath: string): string {
+  return path.join(projectDirPath, "agents");
+}
+
 /** `<projectDir>/agents`, the container directory holding every Agent in the Project. */
 export function agentsDir(root: string, projectId: string): string {
-  return path.join(projectDir(root, projectId), "agents");
+  return agentsDirFrom(projectDir(root, projectId));
 }
 
 /** `<projectDir>/agents/<agentId>`. */

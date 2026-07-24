@@ -378,7 +378,7 @@ describe("assembleSystemPrompt", () => {
         "sid=session-1",
         "cwd=/tmp/ws",
         "aid=agent-x",
-        "adir=/tmp/proj/agents",
+        `adir=${path.join("/tmp/proj", "agents")}`,
         "platform=darwin",
         "os=Darwin 25.0.0",
         "date=2026-06-30",
@@ -415,7 +415,7 @@ describe("assembleSystemPrompt", () => {
       osVersion: "Darwin 25.0.0",
       date: "2026-06-30",
     });
-    expect(prompt).toBe("pdir=/tmp/proj\nadir=/tmp/proj/agents");
+    expect(prompt).toBe(`pdir=/tmp/proj\nadir=${path.join("/tmp/proj", "agents")}`);
   });
 
   it("replaces the placeholder with an empty string when AGENTS.md is blank", () => {
@@ -533,7 +533,7 @@ describe("assembleSystemPrompt", () => {
     expect(prompt).toContain("Session ID: session-test-1");
     expect(prompt).toContain("CWD: /tmp/penguin-ws");
     expect(prompt).toContain("Agent ID: agent-x");
-    expect(prompt).toContain("Agents Dir: /tmp/proj/agents");
+    expect(prompt).toContain(`Agents Dir: ${path.join("/tmp/proj", "agents")}`);
     expect(prompt).toContain("Provider: openai");
     expect(prompt).toContain("Model ID: gpt-5.5");
     expect(prompt).toContain("Platform:");

@@ -3,8 +3,8 @@ name: benchmark-design
 description: Design and calibrate a multi-Case capability Benchmark with repeated independent evaluations and a traceable baseline.
 short_description: Design and calibrate an Agent capability Benchmark.
 short_description_zh: 设计并校准 Agent 能力评测 Benchmark。
-version: 2
-updated: 2026-07-24T00:00:00Z
+version: 3
+updated: 2026-07-24T12:00:00Z
 ---
 
 # Benchmark Design
@@ -19,7 +19,7 @@ Require a Test Agent and the capability to measure. If either is missing, ask th
 
 Access only the explicit Test Agent and Benchmark paths. Do not inspect another Agent, Project configuration files, Agent Evaluator State, Evaluator Workspace, or Evaluator Trace. Consume only each Evaluator's terminal protocol response and the returned Test Session id.
 
-Use the Environment's Agents Dir and the explicit Test Agent id:
+Use the Environment's Agents Dir (on an older agent whose Environment lists Project Dir instead, the agents dir is `<Project Dir>/agents`) and the explicit Test Agent id:
 
 ```text
 AGENTS_DIR = <agents_dir>

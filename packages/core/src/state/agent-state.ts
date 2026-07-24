@@ -41,6 +41,7 @@ import {
 import { builtinProjectAgentPresets, type AgentPreset } from "./builtin-agents.js";
 import { provisionExampleBenchmark } from "./example-benchmark.js";
 import {
+  agentsDirFrom,
   agentsMdPath,
   agentStateDir,
   DEFAULT_AGENT_ID,
@@ -377,7 +378,7 @@ export function assembleSystemPrompt(
     .split(AGENT_ID_PLACEHOLDER)
     .join(sessionEnvironment?.agentId ?? state.agentId)
     .split(AGENTS_DIR_PLACEHOLDER)
-    .join(sessionEnvironment?.projectDir ? path.join(sessionEnvironment.projectDir, "agents") : "")
+    .join(sessionEnvironment?.projectDir ? agentsDirFrom(sessionEnvironment.projectDir) : "")
     .split(PROJECT_DIR_PLACEHOLDER)
     .join(sessionEnvironment?.projectDir ?? "")
     .split(SESSION_ID_PLACEHOLDER)

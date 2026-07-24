@@ -3,8 +3,8 @@ name: agent-evaluation
 description: Run and score exactly one Benchmark Case run with CLI execution, Trace provenance checks, and private Rubric isolation.
 short_description: Run and score one isolated Benchmark Case.
 short_description_zh: 隔离执行并评分一个 Benchmark Case。
-version: 2
-updated: 2026-07-24T00:00:00Z
+version: 3
+updated: 2026-07-24T12:00:00Z
 ---
 
 # Agent Evaluation
@@ -34,7 +34,7 @@ model_id: <upstream_model_id>
 
 ## Validate and prepare
 
-Resolve the Project, Test Agent, Benchmark, and Case only from the explicit request and Environment Agents Dir. Reject traversal, symlink escape, or any path outside the requested Test Agent. Never read a Project configuration file, credential, or vault.
+Resolve the Project, Test Agent, Benchmark, and Case only from the explicit request and Environment Agents Dir (on an older agent whose Environment lists Project Dir instead, the agents dir is `<Project Dir>/agents`). Reject traversal, symlink escape, or any path outside the requested Test Agent. Never read a Project configuration file, credential, or vault.
 
 Require:
 
