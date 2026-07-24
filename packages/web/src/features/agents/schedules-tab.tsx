@@ -29,8 +29,9 @@ import { Button } from "../../components/ui/button";
 import { Input, Textarea } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
 import { Modal } from "../../components/ui/modal";
+import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { SkeletonList } from "../../components/ui/skeleton";
-import { toastError, toastSuccess } from "../../components/ui/toast";
+import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 
 /** Display status → badge tone. */
 const STATUS_TONE: Record<ScheduleStatus, BadgeTone> = {
@@ -123,6 +124,8 @@ export function SchedulesTab({ agentId }: { agentId: string }) {
   const [busy, setBusy] = useState(false);
   // Modal form: non-null means open (EMPTY_FORM for create / prefilled row for edit).
   const [form, setForm] = useState<FormState | null>(null);
+  // The form as opened — an edit submit with nothing changed reports "no changes" instead of rewriting the file.
+  const [initialForm, setInitialForm] = useState<FormState | null>(null);
   // Per-field required errors sit next to their input; formError holds a submit rejection that isn't attributable to one field.
   const [fieldErrors, setFieldErrors] = useState<{
     name?: string;
@@ -169,6 +172,7 @@ export function SchedulesTab({ agentId }: { agentId: string }) {
     setFieldErrors({});
     setFormError(null);
     setForm(next);
+    setInitialForm(next);
   };
 
   const submit = async () => {
@@ -187,6 +191,12 @@ export function SchedulesTab({ agentId }: { agentId: string }) {
       return;
     }
     setFieldErrors({});
+    // Editing with nothing changed: report it instead of rewriting the same file (both
+    // sides are FormState built by openForm, so a field-wise JSON compare is exact).
+    if (form.editing !== null && JSON.stringify(form) === JSON.stringify(initialForm)) {
+      toastInfo(S.common.noChangesToSave);
+      return;
+    }
     // Empty-string keys are always omitted; target is one of two choices — sessionId is
     // sent only when binding to a Session, and workspace plus the model reference
     // (modelId + provider pair) only when creating a new Session.
@@ -553,24 +563,18 @@ export function SchedulesTab({ agentId }: { agentId: string }) {
         )}
       </Modal>
 
-      {/* Delete confirmation (same pattern as Vault / Agent deletion: Modal + cancel/danger-confirm). */}
-      <Modal
+      {/* Delete confirmation (shared ConfirmModal, same pattern as Vault / Agent deletion). */}
+      <ConfirmModal
         open={deleting !== null}
         title={S.schedule.deleteTitle}
+        busy={busy}
         onClose={() => setDeleting(null)}
-        footer={
-          <>
-            <Button onClick={() => setDeleting(null)}>{S.common.cancel}</Button>
-            <Button variant="danger" disabled={busy} onClick={() => void confirmRemove()}>
-              {S.common.confirm}
-            </Button>
-          </>
-        }
+        onConfirm={() => void confirmRemove()}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">
           {deleting !== null ? S.schedule.deleteConfirm(deleting) : ""}
         </p>
-      </Modal>
+      </ConfirmModal>
 
       {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
     </div>

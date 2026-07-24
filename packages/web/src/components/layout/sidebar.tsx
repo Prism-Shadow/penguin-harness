@@ -52,6 +52,7 @@ import { toastError } from "../ui/toast";
 import { Truncated } from "../ui/truncated";
 import { Badge } from "../ui/badge";
 import { Modal } from "../ui/modal";
+import { ConfirmModal } from "../ui/confirm-modal";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Segmented } from "../ui/segmented";
@@ -1060,32 +1061,21 @@ export function Sidebar({
         />
       </Modal>
 
-      {/* Delete chat confirmation */}
-      <Modal
+      {/* Delete chat confirmation (shared ConfirmModal) */}
+      <ConfirmModal
         open={deletingSession !== null}
         title={S.chat.deleteSession}
+        confirmLabel={S.common.delete}
+        busy={deletingBusy}
         onClose={() => (deletingBusy ? undefined : setDeletingSession(null))}
-        footer={
-          <>
-            <Button onClick={() => setDeletingSession(null)} disabled={deletingBusy}>
-              {S.common.cancel}
-            </Button>
-            <Button
-              variant="danger"
-              disabled={deletingBusy}
-              onClick={() => void confirmDeleteSession()}
-            >
-              {S.common.delete}
-            </Button>
-          </>
-        }
+        onConfirm={() => void confirmDeleteSession()}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">
           {deletingSession
             ? S.chat.deleteSessionConfirm(deletingSession.title ?? S.chat.defaultSessionTitle)
             : ""}
         </p>
-      </Modal>
+      </ConfirmModal>
     </div>
   );
 }

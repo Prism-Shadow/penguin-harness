@@ -19,6 +19,7 @@ import { Input } from "../ui/input";
 import { FieldError, FieldHint, FieldLabel } from "../ui/field";
 import { toastError } from "../ui/toast";
 import { Modal } from "../ui/modal";
+import { ConfirmModal } from "../ui/confirm-modal";
 import { Badge } from "../ui/badge";
 
 export function CreateProjectDialog({
@@ -292,18 +293,6 @@ export function ProjectSettingsDialog({ open, onClose }: { open: boolean; onClos
               // Last accessible Project: deleting it would leave the account with no Project to select
               // (the page would get stuck on the skeleton screen), so the frontend hides the entry point outright, matching the server's 409 rejection.
               <p className="text-xs text-gray-400">{S.project.deleteLastForbidden}</p>
-            ) : confirmDelete ? (
-              <div className="space-y-2">
-                <p className="text-xs text-red-600 dark:text-red-400">{S.project.deleteConfirm}</p>
-                <div className="flex gap-2">
-                  <Button size="sm" onClick={() => setConfirmDelete(false)}>
-                    {S.common.cancel}
-                  </Button>
-                  <Button size="sm" variant="danger" onClick={() => void doDelete()}>
-                    {S.common.confirm}
-                  </Button>
-                </div>
-              </div>
             ) : (
               <Button size="sm" variant="danger" onClick={() => setConfirmDelete(true)}>
                 {S.project.deleteProject}
@@ -312,6 +301,16 @@ export function ProjectSettingsDialog({ open, onClose }: { open: boolean; onClos
           </div>
         )}
       </div>
+
+      {/* Delete confirmation (shared ConfirmModal, stacked above the settings dialog). */}
+      <ConfirmModal
+        open={confirmDelete}
+        title={S.project.deleteProject}
+        onClose={() => setConfirmDelete(false)}
+        onConfirm={() => void doDelete()}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">{S.project.deleteConfirm}</p>
+      </ConfirmModal>
     </Modal>
   );
 }

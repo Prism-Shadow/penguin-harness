@@ -359,6 +359,8 @@ function SkillCard({
   // Agents pending an update confirmation (null = none): an update is an overwriting reinstall, so it needs a confirm + a per-agent version list before it runs.
   const [pendingUpdate, setPendingUpdate] = useState<string[] | null>(null);
   const [updating, setUpdating] = useState(false);
+  // Agent pending an uninstall confirmation (null = none): uninstalling deletes the installed files, local edits included.
+  const [pendingUninstall, setPendingUninstall] = useState<string | null>(null);
 
   const confirmUpdate = async () => {
     if (!pendingUpdate) return;
@@ -367,6 +369,11 @@ function SkillCard({
     setUpdating(false);
     setPendingUpdate(null);
   };
+
+  /** Display name of the Agent pending uninstall (falls back to the raw id below). */
+  const uninstallAgent =
+    pendingUninstall !== null ? agents.find((a) => a.agentId === pendingUninstall) : undefined;
+  const uninstallAgentName = uninstallAgent ? agentDisplayName(uninstallAgent) : undefined;
 
   let installedCount = 0;
   for (const m of installed.values()) if (m.has(skill.name)) installedCount += 1;
@@ -472,7 +479,11 @@ function SkillCard({
                 name={agentDisplayName(a)}
                 installed={installed.get(a.agentId)?.has(skill.name) ?? false}
                 outdated={outdated.includes(a.agentId)}
-                onToggle={(on) => void onToggleInstall(a.agentId, skill.name, on, skill.version)}
+                onToggle={(on) => {
+                  // Install runs directly; uninstall deletes the installed files, so it confirms first.
+                  if (on) void onToggleInstall(a.agentId, skill.name, true, skill.version);
+                  else setPendingUninstall(a.agentId);
+                }}
                 onUpdate={() => setPendingUpdate([a.agentId])}
               />
             ))}
@@ -514,6 +525,23 @@ function SkillCard({
               })}
             </ul>
           </div>
+        </ConfirmModal>
+      )}
+      {pendingUninstall !== null && (
+        <ConfirmModal
+          open
+          title={S.skills.uninstallConfirmTitle(skill.name)}
+          confirmLabel={S.skills.uninstall}
+          onClose={() => setPendingUninstall(null)}
+          onConfirm={() => {
+            const agentId = pendingUninstall;
+            setPendingUninstall(null);
+            void onToggleInstall(agentId, skill.name, false, skill.version);
+          }}
+        >
+          <p className="text-sm text-gray-600 dark:text-gray-300">
+            {S.skills.uninstallConfirmBody(skill.name, uninstallAgentName ?? pendingUninstall)}
+          </p>
         </ConfirmModal>
       )}
     </div>

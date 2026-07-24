@@ -67,6 +67,11 @@ export const zh = {
     loading: "加载中…",
     saved: "已保存",
     saving: "保存中…",
+    /** Clicking save with nothing changed: an info toast instead of a silent no-op. */
+    noChangesToSave: "当前没有需要保存的修改",
+    /** Confirm-before-save dialog shared by the settings forms (writes go to server-side config files). */
+    confirmSaveTitle: "保存修改",
+    confirmSaveBody: "确定保存这些修改吗？修改将写入服务器上的配置文件。",
     none: "（无）",
     retry: "重试",
     unknownError: "请求失败，请稍后重试",
@@ -373,6 +378,8 @@ export const zh = {
     remove: "删除",
     deleteTitle: "删除环境变量",
     deleteConfirm: (key: string): string => `确认删除环境变量「${key}」？值不可恢复。`,
+    overwriteTitle: "覆盖已有环境变量",
+    overwriteConfirm: (key: string): string => `「${key}」已存在，保存将覆盖原值且不可恢复。`,
     empty: "尚未配置任何环境变量",
     readOnlyHint: "member 只读；Vault 修改仅 owner 可执行",
     keyHint: "字母、数字与下划线，不能以数字开头",
@@ -448,6 +455,10 @@ export const zh = {
     updatedToast: (skill: string, n: number): string =>
       `已将 ${skill} 更新到最新版（${n} 个 Agent）`,
     uninstalledToast: (skill: string, agent: string): string => `已从 ${agent} 卸载 ${skill}`,
+    /** Uninstall confirmation: removing the installed copy deletes its files (local edits included). */
+    uninstallConfirmTitle: (name: string): string => `卸载 ${name}`,
+    uninstallConfirmBody: (skill: string, agent: string): string =>
+      `确定从 ${agent} 卸载 ${skill} 吗？已安装的技能文件（含本地改动）将被删除。`,
   },
 
   chat: {
@@ -674,6 +685,9 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     empty: "空目录",
     previewUnsupported: "该类型不支持预览，请下载查看",
     uploaded: "已上传",
+    /** Upload-overwrite confirmation: same-name files in the current directory will be replaced. */
+    overwriteTitle: "覆盖同名文件",
+    overwriteConfirm: (n: number): string => `当前目录已存在以下 ${n} 个同名文件，上传将覆盖：`,
     loadFailed: "加载失败",
     previewTruncated: "内容过大，预览已截断，请下载查看完整文件",
     details: "详情",

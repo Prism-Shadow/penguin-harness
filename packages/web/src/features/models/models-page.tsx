@@ -51,6 +51,7 @@ import { Input } from "../../components/ui/input";
 import { FieldError, FieldLabel } from "../../components/ui/field";
 import { PasswordInput } from "../../components/ui/password-input";
 import { Modal } from "../../components/ui/modal";
+import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { Select } from "../../components/ui/select";
 import { Switch } from "../../components/ui/switch";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
@@ -1344,8 +1345,24 @@ function ModelDialog({
               onClick={() => {
                 // Validate first: if validation fails, the inline field errors show right away without popping the confirm dialog.
                 if (!validated()) return;
-                if (isNew) submit("save");
-                else setConfirming("save");
+                if (isNew || row === null) {
+                  submit("save");
+                  return;
+                }
+                // Nothing changed: report it instead of confirming a no-op write (the
+                // baseline is rebuilt exactly like the form's initial state, so a plain
+                // JSON compare is field-exact).
+                const initial: RowState = {
+                  ...row,
+                  cacheRead: usdToInput(row.cacheRead, currency),
+                  cacheWrite: usdToInput(row.cacheWrite, currency),
+                  output: usdToInput(row.output, currency),
+                };
+                if (JSON.stringify(form) === JSON.stringify(initial)) {
+                  toastInfo(S.common.noChangesToSave);
+                  return;
+                }
+                setConfirming("save");
               }}
             >
               {S.common.confirm}
@@ -1659,30 +1676,21 @@ function ModelDialog({
 
       {/* Confirmation before writing config (save / set default / set as vision proxy model / remove): stacked on top of the config dialog. */}
       {confirming && (
-        <Modal
+        <ConfirmModal
           open
           title={CONFIRM_TITLE[confirming]()}
+          tone={confirming === "remove" ? "danger" : "primary"}
           onClose={() => setConfirming(null)}
-          footer={
-            <>
-              <Button onClick={() => setConfirming(null)}>{S.common.cancel}</Button>
-              <Button
-                variant={confirming === "remove" ? "danger" : "primary"}
-                onClick={() => {
-                  const action = confirming;
-                  setConfirming(null);
-                  submit(action);
-                }}
-              >
-                {S.common.confirm}
-              </Button>
-            </>
-          }
+          onConfirm={() => {
+            const action = confirming;
+            setConfirming(null);
+            submit(action);
+          }}
         >
           <p className="text-sm text-gray-700 dark:text-gray-300">
             {CONFIRM_BODY[confirming](form.displayName ?? form.modelId)}
           </p>
-        </Modal>
+        </ConfirmModal>
       )}
     </Modal>
   );

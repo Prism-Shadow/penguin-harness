@@ -25,6 +25,7 @@ import { agentDisplayName, useProject } from "../../state/project";
 import { Button } from "../../components/ui/button";
 import { Input, Textarea } from "../../components/ui/input";
 import { Modal } from "../../components/ui/modal";
+import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { Badge } from "../../components/ui/badge";
 import { Skeleton, SkeletonCard } from "../../components/ui/skeleton";
 import { EmptyState } from "../../components/ui/empty-state";
@@ -399,29 +400,16 @@ export function AgentsPage() {
         </div>
       </Modal>
 
-      {/* Delete confirmation */}
-      <Modal
+      {/* Delete confirmation (shared ConfirmModal) */}
+      <ConfirmModal
         open={deleting !== null}
         title={S.agent.deleteAgent}
+        busy={busy}
         onClose={() => {
           setDeleting(null);
           setDeleteError(null);
         }}
-        footer={
-          <>
-            <Button
-              onClick={() => {
-                setDeleting(null);
-                setDeleteError(null);
-              }}
-            >
-              {S.common.cancel}
-            </Button>
-            <Button variant="danger" disabled={busy} onClick={() => void doDelete()}>
-              {S.common.confirm}
-            </Button>
-          </>
-        }
+        onConfirm={() => void doDelete()}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">
           {deleting ? S.agent.deleteConfirm(deleting.name) : ""}
@@ -429,7 +417,7 @@ export function AgentsPage() {
         {deleteError && (
           <p className="mt-2 text-xs text-red-600 dark:text-red-400">{deleteError}</p>
         )}
-      </Modal>
+      </ConfirmModal>
     </div>
   );
 }

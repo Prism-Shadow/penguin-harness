@@ -24,6 +24,7 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatBytes, formatDateTime } from "../../lib/format";
 import { Button } from "../../components/ui/button";
+import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { Dropdown } from "../../components/ui/dropdown";
 import { SkeletonList } from "../../components/ui/skeleton";
@@ -198,6 +199,10 @@ export function WorkspaceBrowser({
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [uploading, setUploading] = useState(false);
+  /** Picked files whose names collide with the loaded listing (non-null shows the overwrite confirm). */
+  const [pendingUpload, setPendingUpload] = useState<{ files: File[]; clashes: string[] } | null>(
+    null,
+  );
   const [reloadTick, setReloadTick] = useState(0);
   const [showPath, setShowPath] = useState(false);
   /** HTML / Markdown preview: rendered view (HTML via sandboxed iframe, Markdown via md-body) / source toggle. */
@@ -307,9 +312,7 @@ export function WorkspaceBrowser({
     void previewPath(joinPath(path, name));
   };
 
-  const onUpload = (e: ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
+  const doUpload = (files: File[]) => {
     setUploading(true);
     setError(null);
     void (async () => {
@@ -334,7 +337,18 @@ export function WorkspaceBrowser({
         setUploading(false);
       }
     })();
+  };
+
+  const onUpload = (e: ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files ? [...e.target.files] : [];
     e.target.value = "";
+    if (files.length === 0) return;
+    // Uploads overwrite same-name files: names already present in the loaded listing
+    // confirm first (the picker is stashed — confirm continues, cancel drops it).
+    const existing = new Set((data?.entries ?? []).map((entry) => entry.name));
+    const clashes = files.filter((f) => existing.has(f.name)).map((f) => f.name);
+    if (clashes.length > 0) setPendingUpload({ files, clashes });
+    else doUpload(files);
   };
 
   const crumbs = path === "" ? [] : path.split("/");
@@ -693,6 +707,32 @@ export function WorkspaceBrowser({
           </ul>
         )}
       </div>
+
+      {/* Upload-overwrite confirmation: same-name files in this directory get replaced. */}
+      <ConfirmModal
+        open={pendingUpload !== null}
+        title={S.files.overwriteTitle}
+        tone="primary"
+        confirmLabel={S.files.upload}
+        onClose={() => setPendingUpload(null)}
+        onConfirm={() => {
+          if (pendingUpload) doUpload(pendingUpload.files);
+          setPendingUpload(null);
+        }}
+      >
+        <div className="space-y-2">
+          <p className="text-sm text-gray-600 dark:text-gray-300">
+            {S.files.overwriteConfirm(pendingUpload?.clashes.length ?? 0)}
+          </p>
+          <ul className="max-h-40 overflow-y-auto rounded-md border border-gray-200 px-3 py-1.5 dark:border-gray-800">
+            {(pendingUpload?.clashes ?? []).map((name) => (
+              <li key={name} className="truncate py-0.5 font-mono text-xs" title={name}>
+                {name}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </ConfirmModal>
     </div>
   );
 }

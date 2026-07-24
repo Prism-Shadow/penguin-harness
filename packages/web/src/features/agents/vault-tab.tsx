@@ -19,6 +19,7 @@ import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { PasswordInput } from "../../components/ui/password-input";
 import { Modal } from "../../components/ui/modal";
+import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 
@@ -42,6 +43,8 @@ export function VaultTab({ agentId }: { agentId: string }) {
   const clearAddErrors = () => setAddErrors((p) => (p.key || p.value ? {} : p));
   // Key pending deletion confirmation (non-null shows the confirm modal).
   const [deleting, setDeleting] = useState<string | null>(null);
+  // Existing key pending overwrite confirmation (adding a key that's already configured replaces its value).
+  const [overwriting, setOverwriting] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!projectId || !agentId) return;
@@ -100,6 +103,12 @@ export function VaultTab({ agentId }: { agentId: string }) {
       return;
     }
     setAddErrors({});
+    // Submitting an already-configured key overwrites its value (unrecoverable): confirm first.
+    if (overwriting !== key && (entries ?? []).some((e) => e.key === key)) {
+      setOverwriting(key);
+      return;
+    }
+    setOverwriting(null);
     // Upsert by same key name: don't resend the existing entry too, to avoid a 400 from PUT's duplicate-key validation.
     const err = await persist({ entries: [...keepEntries(key), { key, value: valueInput }] });
     if (err !== null) {
@@ -228,24 +237,33 @@ export function VaultTab({ agentId }: { agentId: string }) {
         </div>
       </Modal>
 
-      {/* Delete confirmation (same pattern as Agent / Session deletion: Modal + cancel/danger-confirm). */}
-      <Modal
+      {/* Overwrite confirmation: the add modal stays underneath, so cancel returns to the form. */}
+      <ConfirmModal
+        open={overwriting !== null}
+        title={S.vault.overwriteTitle}
+        tone="primary"
+        confirmLabel={S.common.save}
+        busy={busy}
+        onClose={() => setOverwriting(null)}
+        onConfirm={() => void addEntry()}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          {overwriting !== null ? S.vault.overwriteConfirm(overwriting) : ""}
+        </p>
+      </ConfirmModal>
+
+      {/* Delete confirmation (shared ConfirmModal, same pattern as Agent / Session deletion). */}
+      <ConfirmModal
         open={deleting !== null}
         title={S.vault.deleteTitle}
+        busy={busy}
         onClose={() => setDeleting(null)}
-        footer={
-          <>
-            <Button onClick={() => setDeleting(null)}>{S.common.cancel}</Button>
-            <Button variant="danger" disabled={busy} onClick={() => void confirmRemove()}>
-              {S.common.confirm}
-            </Button>
-          </>
-        }
+        onConfirm={() => void confirmRemove()}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">
           {deleting !== null ? S.vault.deleteConfirm(deleting) : ""}
         </p>
-      </Modal>
+      </ConfirmModal>
 
       {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
     </div>

@@ -26,10 +26,10 @@ import { useDocumentTitle } from "../../lib/use-document-title";
 import { useProject } from "../../state/project";
 import { Tabs } from "../../components/ui/tabs";
 import { Button } from "../../components/ui/button";
-import { toastError, toastSuccess } from "../../components/ui/toast";
+import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 import { Input, Textarea } from "../../components/ui/input";
 import { OptionMenu, type OptionMenuChoice } from "../../components/ui/option-menu";
-import { Modal } from "../../components/ui/modal";
+import { ConfirmModal, useSaveConfirm } from "../../components/ui/confirm-modal";
 import { Skeleton } from "../../components/ui/skeleton";
 import { VaultTab } from "./vault-tab";
 import { SchedulesTab } from "./schedules-tab";
@@ -219,6 +219,7 @@ function OverviewTab({
   const [importError, setImportError] = useState<string | null>(null);
   // base64 of the snapshot package pending confirmation for a version conflict (409 version_conflict); non-null shows the confirm modal.
   const [conflict, setConflict] = useState<string | null>(null);
+  const { requestSave, element: saveConfirm } = useSaveConfirm();
 
   const submit = () => {
     const config: NonNullable<AgentConfigUpdateRequest["config"]> = {};
@@ -226,8 +227,11 @@ function OverviewTab({
     if (description.trim() !== (data.config.description ?? "")) {
       config.description = description.trim();
     }
-    if (Object.keys(config).length === 0) return;
-    void onSave({ config });
+    if (Object.keys(config).length === 0) {
+      toastInfo(S.common.noChangesToSave);
+      return;
+    }
+    requestSave(() => void onSave({ config }));
   };
 
   const runImport = async (dataBase64: string, confirm: boolean) => {
@@ -335,29 +339,20 @@ function OverviewTab({
       <Button size="sm" variant="primary" onClick={submit}>
         {S.common.save}
       </Button>
+      {saveConfirm}
 
       {/* Version conflict confirmation: resend the same package with confirm: true after confirming. */}
-      <Modal
+      <ConfirmModal
         open={conflict !== null}
         title={S.agent.importConflictTitle}
+        busy={importing}
         onClose={() => setConflict(null)}
-        footer={
-          <>
-            <Button onClick={() => setConflict(null)}>{S.common.cancel}</Button>
-            <Button
-              variant="danger"
-              disabled={importing}
-              onClick={() => {
-                if (conflict !== null) void runImport(conflict, true);
-              }}
-            >
-              {S.common.confirm}
-            </Button>
-          </>
-        }
+        onConfirm={() => {
+          if (conflict !== null) void runImport(conflict, true);
+        }}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">{S.agent.importConflictBody}</p>
-      </Modal>
+      </ConfirmModal>
     </div>
   );
 }
@@ -366,13 +361,17 @@ function PromptTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn
   const [agentsMd, setAgentsMd] = useState(data.agentsMd);
   const [systemPrompt, setSystemPrompt] = useState(data.config.systemPrompt);
   const promptRef = useRef<HTMLTextAreaElement>(null);
+  const { requestSave, element: saveConfirm } = useSaveConfirm();
 
   const submit = () => {
     const update: AgentConfigUpdateRequest = {};
     if (agentsMd !== data.agentsMd) update.agentsMd = agentsMd;
     if (systemPrompt !== data.config.systemPrompt) update.config = { systemPrompt };
-    if (update.agentsMd === undefined && update.config === undefined) return;
-    void onSave(update);
+    if (update.agentsMd === undefined && update.config === undefined) {
+      toastInfo(S.common.noChangesToSave);
+      return;
+    }
+    requestSave(() => void onSave(update));
   };
 
   /**
@@ -441,6 +440,7 @@ function PromptTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn
       <Button size="sm" variant="primary" onClick={submit}>
         {S.common.save}
       </Button>
+      {saveConfirm}
     </div>
   );
 }
@@ -459,6 +459,7 @@ function RuntimeTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveF
   const [prompt, setPrompt] = useState(cfg.compaction?.prompt ?? "");
   const [fieldErrors, setFieldErrors] = useState<{ maxTurns?: string; timeoutMs?: string }>({});
   const clearFieldErrors = () => setFieldErrors((p) => (p.maxTurns || p.timeoutMs ? {} : p));
+  const { requestSave, element: saveConfirm } = useSaveConfirm();
 
   const submit = () => {
     setFieldErrors({});
@@ -504,8 +505,11 @@ function RuntimeTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveF
     if (prompt !== (cfg.compaction?.prompt ?? "")) compaction.prompt = prompt;
     if (Object.keys(compaction).length > 0) config.compaction = compaction;
 
-    if (Object.keys(config).length === 0) return;
-    void onSave({ config });
+    if (Object.keys(config).length === 0) {
+      toastInfo(S.common.noChangesToSave);
+      return;
+    }
+    requestSave(() => void onSave({ config }));
   };
 
   // S is reassigned on language switch (live binding), so read it during render rather than hoisting to a module-level constant.
@@ -625,6 +629,7 @@ function RuntimeTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveF
       <Button size="sm" variant="primary" onClick={submit}>
         {S.common.save}
       </Button>
+      {saveConfirm}
     </div>
   );
 }
@@ -661,6 +666,7 @@ function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn 
   );
   // Per-cell validation errors, keyed `${rowIndex}-${column}`, shown red under the offending numeric input.
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const { requestSave, element: saveConfirm } = useSaveConfirm();
 
   const update = (index: number, patch: Partial<ToolRowState>) => {
     setRows((prev) => prev.map((r, i) => (i === index ? { ...r, ...patch } : r)));
@@ -704,7 +710,24 @@ function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn 
       return;
     }
     setFieldErrors({});
-    void onSave({ config: { toolsBuiltin: tools } });
+    // The table is submitted whole, so compare the editable columns against the loaded
+    // config to detect a no-op save (row order is stable — both sides map the same list).
+    const orig = data.config.toolsBuiltin;
+    const dirty =
+      tools.length !== orig.length ||
+      tools.some((t, i) => {
+        const o = orig[i]!;
+        return (
+          t.permission !== o.permission ||
+          t.timeoutMs !== o.timeoutMs ||
+          t.maxOutputLength !== o.maxOutputLength
+        );
+      });
+    if (!dirty) {
+      toastInfo(S.common.noChangesToSave);
+      return;
+    }
+    requestSave(() => void onSave({ config: { toolsBuiltin: tools } }));
   };
 
   return (
@@ -770,6 +793,7 @@ function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn 
       <Button size="sm" variant="primary" onClick={submit}>
         {S.common.save}
       </Button>
+      {saveConfirm}
     </div>
   );
 }

@@ -66,6 +66,12 @@ export const en: Strings = {
     loading: "Loading…",
     saved: "Saved",
     saving: "Saving…",
+    /** Clicking save with nothing changed: an info toast instead of a silent no-op. */
+    noChangesToSave: "No changes to save",
+    /** Confirm-before-save dialog shared by the settings forms (writes go to server-side config files). */
+    confirmSaveTitle: "Save changes",
+    confirmSaveBody:
+      "Save these changes? They will be written to the configuration files on the server.",
     none: "(none)",
     retry: "Retry",
     unknownError: "Request failed, please try again later",
@@ -392,6 +398,9 @@ export const en: Strings = {
     deleteTitle: "Delete variable",
     deleteConfirm: (key: string): string =>
       `Delete variable "${key}"? Its value cannot be recovered.`,
+    overwriteTitle: "Overwrite existing variable",
+    overwriteConfirm: (key: string): string =>
+      `"${key}" already exists — saving will overwrite its value, which cannot be recovered.`,
     empty: "No variables configured yet",
     readOnlyHint: "Members are read-only; only the owner can edit the vault",
     keyHint: "Letters, digits and underscores; must not start with a digit",
@@ -465,6 +474,10 @@ export const en: Strings = {
       `Updated ${skill} to the latest version (${n} agent(s))`,
     uninstalledToast: (skill: string, agent: string): string =>
       `Uninstalled ${skill} from ${agent}`,
+    /** Uninstall confirmation: removing the installed copy deletes its files (local edits included). */
+    uninstallConfirmTitle: (name: string): string => `Uninstall ${name}`,
+    uninstallConfirmBody: (skill: string, agent: string): string =>
+      `Uninstall ${skill} from ${agent}? Its installed files (local edits included) will be deleted.`,
   },
 
   chat: {
@@ -690,6 +703,10 @@ When done, open index.html in a browser and self-test once.`,
     empty: "Empty directory",
     previewUnsupported: "Preview not supported for this type; download instead",
     uploaded: "Uploaded",
+    /** Upload-overwrite confirmation: same-name files in the current directory will be replaced. */
+    overwriteTitle: "Overwrite existing files",
+    overwriteConfirm: (n: number): string =>
+      `The current directory already has ${n} file(s) with these names — uploading will overwrite:`,
     loadFailed: "Failed to load",
     previewTruncated: "File too large; preview truncated, download for the full file",
     details: "Details",
