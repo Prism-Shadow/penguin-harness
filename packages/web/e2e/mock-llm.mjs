@@ -93,7 +93,7 @@ const server = http.createServer((req, res) => {
     // the connection (no message_stop), so AgentHub reports "stream incomplete" -> GenerativeModel
     // resolves it as malformed. On reconnect the engine **resends the input verbatim** — in this
     // scenario the failed attempt only has a half tool_call (never committed to the ledger), so
-    // the retry request carries no <turn_retried> block and is byte-for-byte identical to the
+    // the retry request carries no [turn_retried] block and is byte-for-byte identical to the
     // first request; the mock can only tell them apart by request count (see the malformedTurns counter).
     const wantsMalformed = flat.includes("bad stream test");
 

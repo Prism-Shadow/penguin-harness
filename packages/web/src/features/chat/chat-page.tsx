@@ -368,7 +368,7 @@ export function ChatPage() {
 
   // @ handoff: doesn't use the current Session — creates a new chat for the @-mentioned agent
   // (approval mode carries over from the input area's current value; model/Workspace use the
-  // creation defaults). The first input = a <handoff_from> source block (current agent / Session
+  // creation defaults). The first input = a [handoff_from] source block (current agent / Session
   // / Workspace info) + the user's input and images with the @ mention stripped; jumps to the new
   // chat once sent.
   // Returns false on failure, keeping the draft so it can be resent (deletes the empty Session that never got its first message sent).
@@ -413,6 +413,27 @@ export function ChatPage() {
     if (!selected) return;
     await api.postAbort(selected.sessionId).catch(() => undefined);
   }, [selected]);
+
+  // Mid-run steering: the text is queued on the server and delivered inside the next completed
+  // tool output as a `[user_steering]` block (visible once that tool_call_output arrives over
+  // SSE). A 409 means no Task is in progress anymore (race with completion) — fall back to
+  // sending the same text as a normal task.
+  const onSteer = useCallback(
+    async (text: string): Promise<boolean> => {
+      if (!selected) return false;
+      try {
+        await api.postSteer(selected.sessionId, { text });
+        return true;
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 409) {
+          return onSend([{ type: "text", text }]);
+        }
+        toastError(apiErrorText(e, { modelId: selected.modelId }));
+        return false;
+      }
+    },
+    [selected, onSend],
+  );
 
   const onApprove = useCallback(
     async (toolCallId: string, decision: "allow" | "deny", origin: string[]) => {
@@ -517,6 +538,7 @@ export function ChatPage() {
     <ChatInput
       status={stream.taskState}
       onSend={onSend}
+      onSteer={onSteer}
       onStop={onStop}
       onCompact={onCompact}
       modelRef={activeModelRef}

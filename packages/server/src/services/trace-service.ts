@@ -370,7 +370,7 @@ export class TraceService {
             if (compactionActive) t.compaction = true; // This turn is a compaction turn
             // This turn's duration starts at the first request_begin. It doesn't
             // use the timestamp of the user Prompt / compaction summary or other
-            // user text: `<context_summary>` is created during compaction but only
+            // user text: `[context_summary]` is created during compaction but only
             // written to disk on the next run, so resuming the next day would
             // stretch the first turn out by a whole day for no reason; the Prompt
             // to request-dispatch gap is only ever milliseconds anyway.

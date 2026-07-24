@@ -589,6 +589,12 @@ When done, open index.html in a browser and self-test once.`,
     jumpToLatest: "Jump to latest",
     inputPlaceholder: "Type a message. Enter to send, Shift+Enter for newline, paste images",
     inputPlaceholderShort: "Type a message…",
+    /** Placeholder while a Task is running (mid-run steering): the message rides on the next tool result. */
+    steerPlaceholder: "Message the running agent — delivered with the next tool result",
+    steerPlaceholderShort: "Message the running agent…",
+    steerSend: "Send to the running agent",
+    /** Label of the [user_steering] chip inside a tool output (a mid-run user message delivered with the tool result). */
+    userSteering: "User steering",
     send: "Send",
     stop: "Stop",
     compact: "Compact context",

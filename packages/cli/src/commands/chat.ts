@@ -219,8 +219,19 @@ export function registerChatCommand(program: Command, t: Messages): void {
           pendingApproval = null;
           // Tool approval defaults to allow: pressing Enter (empty input) is treated as allow.
           resolve(parseApprovalAnswer(line, "allow"));
+          return;
         }
-        // running: ignore any line typed at this moment.
+        // running: a non-empty line becomes a steering message for the running Task — core
+        // appends it to the next completed tool output as a [user_steering] block, so the
+        // model sees it without the loop being interrupted. Empty lines are still ignored,
+        // and steer() returning false (race: the task just finished) falls through to the
+        // old ignore behavior.
+        if (state === "running") {
+          const text = line.trim();
+          if (text.length > 0 && session.steer(text)) {
+            out.write(`${dim(t.steerQueued())}\n`);
+          }
+        }
       });
 
       rl.on("SIGINT", () => {

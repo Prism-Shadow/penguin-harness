@@ -95,9 +95,9 @@ function execCommandToolConfig() {
 const isToolCall = (m: OmniMessage): boolean =>
   isCompleteModelMessage(m) && m.payload.type === "tool_call";
 
-/** Count of text messages in the list starting with `<turn_aborted>` (flatten carry-over count). */
+/** Count of text messages in the list starting with `[turn_aborted]` (flatten carry-over count). */
 const turnAbortedCount = (msgs: OmniMessage[]): number =>
-  msgs.filter((m) => ((m.payload as { text?: string }).text ?? "").startsWith("<turn_aborted>"))
+  msgs.filter((m) => ((m.payload as { text?: string }).text ?? "").startsWith("[turn_aborted]"))
     .length;
 
 /** An approval callback that allows everything. */
@@ -453,7 +453,7 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
     const texts = received[0]!.map((m) => (m.payload as { text?: string }).text ?? "");
     expect(texts).toContain("go");
     expect(texts).toContain("next");
-    expect(texts.join("\n")).not.toContain("<turn_aborted>");
+    expect(texts.join("\n")).not.toContain("[turn_aborted]");
   });
 
   it("never writes the flatten carry-over to trace (case B): synthesized carry-over is memory-only", async () => {
@@ -617,7 +617,7 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
     expect(rows.some((m) => m.origin !== undefined)).toBe(false);
   });
 
-  it("in-run reconnect never writes the synthesized <turn_retried> to trace", async () => {
+  it("in-run reconnect never writes the synthesized [turn_retried] to trace", async () => {
     let calls = 0;
     const inputs: OmniMessage[][] = [];
     const llm: LLMInterface = {
@@ -653,15 +653,15 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
 
     await collectRun(engine, [userText("go")], allowAll);
     expect(calls).toBe(2);
-    // Retry = original input + <turn_retried> (carrying the partial text).
-    expect((inputs[1]![1]!.payload as { text?: string }).text ?? "").toContain("<turn_retried>");
-    // The synthesized message is only sent to the model: Trace has no <turn_retried> /
-    // <turn_aborted>; the original input is written only on its first occurrence.
+    // Retry = original input + [turn_retried] (carrying the partial text).
+    expect((inputs[1]![1]!.payload as { text?: string }).text ?? "").toContain("[turn_retried]");
+    // The synthesized message is only sent to the model: Trace has no [turn_retried] /
+    // [turn_aborted]; the original input is written only on its first occurrence.
     const recorded = await readTrace(trace.currentPath());
     expect(turnAbortedCount(recorded)).toBe(0);
     expect(
       recorded.some((m) =>
-        ((m.payload as { text?: string }).text ?? "").startsWith("<turn_retried>"),
+        ((m.payload as { text?: string }).text ?? "").startsWith("[turn_retried]"),
       ),
     ).toBe(false);
     expect(recorded.filter((m) => (m.payload as { text?: string }).text === "go")).toHaveLength(1);
@@ -1113,12 +1113,12 @@ describe("ContextEngine abort during execution", () => {
     );
     expect(out).toBeDefined();
     expect((out!.payload as { tool_call_id?: string }).tool_call_id).toBe("slow");
-    // Case A must be a structured backfill and must **not** be flattened into <turn_aborted>
+    // Case A must be a structured backfill and must **not** be flattened into [turn_aborted]
     // (otherwise the already-committed tool_call would lose its pairing).
     const carriedText = received[1]!
       .map((m) => (m.payload as { text?: string }).text ?? "")
       .join("");
-    expect(carriedText).not.toContain("<turn_aborted>");
+    expect(carriedText).not.toContain("[turn_aborted]");
   });
 
   it("case A backfills outputs for committed-but-undispatched tool_calls (preserves pairing)", async () => {
@@ -1199,7 +1199,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     await rm(workspace, { recursive: true, force: true });
   });
 
-  it("auto-retries on LLM timeout: original input + <turn_retried> carrying partial products", async () => {
+  it("auto-retries on LLM timeout: original input + [turn_retried] carrying partial products", async () => {
     let calls = 0;
     const inputs: OmniMessage[][] = [];
     const llm: LLMInterface = {
@@ -1240,14 +1240,14 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     const all = await collectRun(engine, [userText("go")], allowAll);
 
     expect(calls).toBe(2); // Initial timeout -> auto-retries once within the same run and succeeds.
-    // Retry = original input kept as-is + one <turn_retried> carrying the partial products
-    // already produced (not <turn_aborted>, to avoid the model mistaking it for a user interrupt).
+    // Retry = original input kept as-is + one [turn_retried] carrying the partial products
+    // already produced (not [turn_aborted], to avoid the model mistaking it for a user interrupt).
     expect(inputs[1]).toHaveLength(2);
     expect(inputs[1]![0]).toEqual(inputs[0]![0]);
     const retried = (inputs[1]![1]!.payload as { text?: string }).text ?? "";
-    expect(retried).toContain("<turn_retried>");
-    expect(retried).toContain("<text>thinking...</text>");
-    expect(retried).not.toContain("<turn_aborted>");
+    expect(retried).toContain("[turn_retried]");
+    expect(retried).toContain("[text]thinking...[/text]");
+    expect(retried).not.toContain("[turn_aborted]");
     // The final reply is produced, with no abort throughout.
     expect(
       all.some(
@@ -1318,7 +1318,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     expect(retryText).toBe("go");
   });
 
-  it("auto-retries on LLM malformed: original input + <turn_retried> carrying partial products", async () => {
+  it("auto-retries on LLM malformed: original input + [turn_retried] carrying partial products", async () => {
     let calls = 0;
     const inputs: OmniMessage[][] = [];
     const llm: LLMInterface = {
@@ -1360,13 +1360,13 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
 
     expect(calls).toBe(2);
     // The malformed attempt never entered AgentHub history: the original input is resent,
-    // plus <turn_retried> carrying the partial products already produced.
+    // plus [turn_retried] carrying the partial products already produced.
     expect(inputs[1]).toHaveLength(2);
     expect(inputs[1]![0]).toEqual(inputs[0]![0]);
     const retried = (inputs[1]![1]!.payload as { text?: string }).text ?? "";
-    expect(retried).toContain("<turn_retried>");
+    expect(retried).toContain("[turn_retried]");
     expect(retried).toContain("partial json response");
-    expect(retried).not.toContain("<turn_aborted>");
+    expect(retried).not.toContain("[turn_aborted]");
     expect(
       all.some(
         (m) => isCompleteModelMessage(m) && m.payload.type === "text" && m.payload.text === "done",
@@ -1403,17 +1403,17 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     expect(abort).toBeDefined();
     expect((abort!.payload as { reason?: string }).reason).toContain("reconnect failed");
 
-    // carry-over = original input + <turn_retried> (accumulating partial products from both
+    // carry-over = original input + [turn_retried] (accumulating partial products from both
     // failed attempts): the next run resends it merged with the new input, without producing
-    // <turn_aborted>.
+    // [turn_aborted].
     await collectRun(engine, [userText("next")], allowAll);
     const nextRunTexts = inputs[2]!.map((m) => (m.payload as { text?: string }).text ?? "");
     expect(nextRunTexts).toHaveLength(3);
     expect(nextRunTexts[0]).toBe("go");
-    expect(nextRunTexts[1]).toContain("<turn_retried>");
+    expect(nextRunTexts[1]).toContain("[turn_retried]");
     expect(nextRunTexts[1]).toContain("partial...");
     expect(nextRunTexts[2]).toBe("next");
-    expect(nextRunTexts.join("\n")).not.toContain("<turn_aborted>");
+    expect(nextRunTexts.join("\n")).not.toContain("[turn_aborted]");
   });
 
   it("surfaces a non-retryable LLM failure (outcome=failed) as a graceful abort (run does not throw)", async () => {
@@ -1452,7 +1452,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     expect(text).toContain("next");
   });
 
-  it("LLM timeout after a tool already executed: retry carries the call/result via <turn_retried> (tool runs once)", async () => {
+  it("LLM timeout after a tool already executed: retry carries the call/result via [turn_retried] (tool runs once)", async () => {
     let calls = 0;
     const inputs: OmniMessage[][] = [];
     const llm: LLMInterface = {
@@ -1493,7 +1493,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
 
     const all = await collectRun(engine, [userText("go")], allowAll);
 
-    // The tool executes exactly once: retry input = original input + <turn_retried> (containing
+    // The tool executes exactly once: retry input = original input + [turn_retried] (containing
     // a text transcript of the t1 call/result), so the model does not call it again; the
     // transcript is plain text and is never dispatched again.
     const content = await readFile(join(workspace, "count.txt"), "utf8").catch(() => "");
@@ -1501,9 +1501,9 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     expect(calls).toBe(2); // Completes after one retry within the same run.
     expect(inputs[1]![0]).toEqual(inputs[0]![0]);
     const retried = (inputs[1]![1]!.payload as { text?: string }).text ?? "";
-    expect(retried).toContain("<turn_retried>");
-    expect(retried).toContain('<tool_call name="exec_command" id="t1">');
-    expect(retried).toContain('<tool_call_output id="t1"');
+    expect(retried).toContain("[turn_retried]");
+    expect(retried).toContain('[tool_call name="exec_command" id="t1"]');
+    expect(retried).toContain('[tool_call_output id="t1"');
     // Completes, no abort.
     expect(
       all.some(
@@ -1551,14 +1551,14 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     // (both completed and incomplete messages are carried over).
     await collectRun(engine, [userText("next")], allowAll);
     const text = inputs[1]!.map((m) => (m.payload as { text?: string }).text ?? "").join("\n");
-    expect(text).toContain("<turn_aborted>");
-    expect(text).toContain("<thinking>half-thought</thinking>");
-    expect(text).toContain("<text>half-text</text>");
+    expect(text).toContain("[turn_aborted]");
+    expect(text).toContain("[thinking]half-thought[/thinking]");
+    expect(text).toContain("[text]half-text[/text]");
     expect(text).toContain("go");
     expect(text).toContain("next");
   });
 
-  it("carry-over after exhausted retries: raw original input + <turn_retried> with all attempts' products", async () => {
+  it("carry-over after exhausted retries: raw original input + [turn_retried] with all attempts' products", async () => {
     let calls = 0;
     const inputs: OmniMessage[][] = [];
     const llm: LLMInterface = {
@@ -1606,31 +1606,31 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
 
     await collectRun(engine, [userText("go")], allowAll);
     expect(calls).toBe(2);
-    // Retry = original input + <turn_retried> (attempt 1's t1 call/result).
+    // Retry = original input + [turn_retried] (attempt 1's t1 call/result).
     expect(inputs[1]![0]).toEqual(inputs[0]![0]);
-    expect((inputs[1]![1]!.payload as { text?: string }).text ?? "").toContain("<turn_retried>");
+    expect((inputs[1]![1]!.payload as { text?: string }).text ?? "").toContain("[turn_retried]");
 
-    // Next run: carry-over = original input + <turn_retried> (accumulating attempt 1's t1
+    // Next run: carry-over = original input + [turn_retried] (accumulating attempt 1's t1
     // call/result and attempt 2's partial thinking), a single un-nested block; produces no
-    // <turn_aborted>.
+    // [turn_aborted].
     await collectRun(engine, [userText("next")], allowAll);
     const nextRunTexts = inputs[2]!.map((m) => (m.payload as { text?: string }).text ?? "");
     expect(nextRunTexts).toHaveLength(3);
     expect(nextRunTexts[0]).toBe("go");
     const block = nextRunTexts[1]!;
-    expect(block).toContain('<tool_call name="exec_command" id="t1">');
-    expect(block).toContain('<tool_call_output id="t1"');
-    expect(block).toContain("<thinking>retry-thought</thinking>");
-    expect((block.match(/<turn_retried>/g) ?? []).length).toBe(1);
+    expect(block).toContain('[tool_call name="exec_command" id="t1"]');
+    expect(block).toContain('[tool_call_output id="t1"');
+    expect(block).toContain("[thinking]retry-thought[/thinking]");
+    expect((block.match(/\[turn_retried\]/g) ?? []).length).toBe(1);
     expect(nextRunTexts[2]).toBe("next");
-    expect(nextRunTexts.join("\n")).not.toContain("<turn_aborted>");
+    expect(nextRunTexts.join("\n")).not.toContain("[turn_aborted]");
     // t1 already executed once during the failed attempts (side effect occurred); the
     // transcript is plain text and is not dispatched again by either the retry or the next run.
     const content = await readFile(join(workspace, "chain.txt"), "utf8").catch(() => "");
     expect(content).toBe("x");
   });
 
-  it("user abort after a failed retry: <turn_retried> un-nests into the <turn_aborted> flatten", async () => {
+  it("user abort after a failed retry: [turn_retried] un-nests into the [turn_aborted] flatten", async () => {
     const controller = new AbortController();
     let calls = 0;
     const inputs: OmniMessage[][] = [];
@@ -1670,17 +1670,17 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
 
     await collectRun(engine, [userText("go")], allowAll, controller.signal);
     expect(calls).toBe(2);
-    // The retry input carries <turn_retried>.
-    expect((inputs[1]![1]!.payload as { text?: string }).text ?? "").toContain("<turn_retried>");
+    // The retry input carries [turn_retried].
+    expect((inputs[1]![1]!.payload as { text?: string }).text ?? "").toContain("[turn_retried]");
 
-    // The next run after the interrupt: flattens into a single-level <turn_aborted>, with
-    // <turn_retried>'s content un-nested and merged in.
+    // The next run after the interrupt: flattens into a single-level [turn_aborted], with
+    // [turn_retried]'s content un-nested and merged in.
     await collectRun(engine, [userText("next")], allowAll);
     const text = inputs[2]!.map((m) => (m.payload as { text?: string }).text ?? "").join("\n");
-    expect(text).toContain("<turn_aborted>");
-    expect(text).toContain("<thinking>half-1</thinking>");
-    expect(text).not.toContain("<turn_retried>");
-    expect((text.match(/<turn_aborted>/g) ?? []).length).toBe(1);
+    expect(text).toContain("[turn_aborted]");
+    expect(text).toContain("[thinking]half-1[/thinking]");
+    expect(text).not.toContain("[turn_retried]");
+    expect((text.match(/\[turn_aborted\]/g) ?? []).length).toBe(1);
   });
 
   it("keeps raw inputs across repeated pre-request aborts (no flatten)", async () => {
@@ -1714,11 +1714,159 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     await collectRun(engine, [userText("next")], allowAll, c2.signal);
 
     // Run 3 is normal: its first LLM input = the as-is preserved "go", "next" + "more",
-    // producing no <turn_aborted> (input that never made it to a Request is kept as-is
+    // producing no [turn_aborted] (input that never made it to a Request is kept as-is
     // per the trailing-input semantics).
     await collectRun(engine, [userText("more")], allowAll);
     const texts = received[0]!.map((m) => (m.payload as { text?: string }).text ?? "");
     expect(texts).toEqual(["go", "next", "more"]);
-    expect(texts.join("\n")).not.toContain("<turn_aborted>");
+    expect(texts.join("\n")).not.toContain("[turn_aborted]");
+  });
+});
+
+describe("ContextEngine mid-run steering ([user_steering])", () => {
+  let workspace: string;
+  let traces: string;
+
+  beforeEach(async () => {
+    workspace = await mkdtemp(join(tmpdir(), "penguin-ws-"));
+    traces = await mkdtemp(join(tmpdir(), "penguin-tr-"));
+  });
+
+  afterEach(async () => {
+    await rm(workspace, { recursive: true, force: true });
+    await rm(traces, { recursive: true, force: true });
+  });
+
+  /** Fake environment: streams a delta then closes with a fixed complete output (no real shell). */
+  function steeringEnvironment(result = "tool result"): EnvironmentInterface {
+    return {
+      listTools: async () => [],
+      toolPermission: (): ToolPermission => "rw",
+      async *executeTool({ toolCall: tc }) {
+        const toolCallId = tc.payload.tool_call_id;
+        yield partialToolCallOutput({ eventType: "start", toolCallId });
+        yield partialToolCallOutput({ eventType: "delta", output: result, toolCallId });
+        yield partialToolCallOutput({ eventType: "stop", toolCallId });
+        yield toolCallOutput({ output: result, toolCallId });
+      },
+    };
+  }
+
+  it("appends queued steering to the next completed tool output — exact format, order kept, one consistent message in stream/trace/next input", async () => {
+    const llm = new FakeLLM();
+    const trace = new Writer({ tracesDir: traces, sessionId: "sess_steer" });
+    const engine = new ContextEngine({ llm, environment: steeringEnvironment(), trace });
+
+    // Idle: nothing running yet -> steer refuses, the host falls back to a normal task.
+    expect(engine.steer("too early")).toBe(false);
+
+    // Queue two messages while the task runs (deterministically: from the approval callback,
+    // i.e. after the tool_call streamed but before the tool executed).
+    const approve: ApproveFn = async () => {
+      expect(engine.steer("focus on the tests")).toBe(true);
+      expect(engine.steer("also update the docs")).toBe(true);
+      return "allow";
+    };
+    const all = await collectRun(engine, [userText("go")], approve);
+
+    const expected =
+      "tool result" +
+      "\n\n[user_steering]\nfocus on the tests\n[/user_steering]" +
+      "\n\n[user_steering]\nalso update the docs\n[/user_steering]";
+
+    // Streamed complete output carries the blocks (exactly one complete tool_call_output).
+    const streamed = all.filter(
+      (m) => isCompleteModelMessage(m) && m.payload.type === "tool_call_output",
+    );
+    expect(streamed).toHaveLength(1);
+    expect((streamed[0]!.payload as { output: string }).output).toBe(expected);
+
+    // The next turn's LLM input got the same modified message.
+    const fedBack = llm.receivedSecondInput!.filter(
+      (m) => (m.payload as { type?: string }).type === "tool_call_output",
+    );
+    expect(fedBack).toHaveLength(1);
+    expect((fedBack[0]!.payload as { output: string }).output).toBe(expected);
+
+    // Trace recorded the same modified message (and only that one).
+    const recorded = (await readTrace(trace.currentPath())).filter(
+      (m) => (m.payload as { type?: string }).type === "tool_call_output",
+    );
+    expect(recorded).toHaveLength(1);
+    expect((recorded[0]!.payload as { output: string }).output).toBe(expected);
+
+    // Task over: the queue window is closed again.
+    expect(engine.steer("late")).toBe(false);
+  });
+
+  it("delivers steering left at loop end as a plain continuation user turn (traced, streamed, no marker)", async () => {
+    // Turn 1 ends with no tool calls while steering is queued mid-stream -> the engine keeps
+    // looping and sends the queued text as the next user input.
+    let engineRef: ContextEngine | null = null;
+    const inputs: OmniMessage[][] = [];
+    const llm: LLMInterface = {
+      async *streamGenerate(params): AsyncGenerator<OmniMessage, LLMOutcome> {
+        inputs.push(params.newMessages);
+        if (inputs.length === 1) {
+          yield assistantText("final answer");
+          expect(engineRef!.steer("one more thing")).toBe(true);
+          return { status: "completed" };
+        }
+        yield assistantText("handled the follow-up");
+        return { status: "completed" };
+      },
+    };
+    const trace = new Writer({ tracesDir: traces, sessionId: "sess_steer_loop" });
+    const engine = new ContextEngine({ llm, environment: steeringEnvironment(), trace });
+    engineRef = engine;
+
+    const all = await collectRun(engine, [userText("go")], allowAll);
+
+    // Turn 2 received the steering text as a normal user message (no [user_steering] marker).
+    expect(inputs).toHaveLength(2);
+    const turn2 = inputs[1]!.map((m) => (m.payload as { text?: string }).text ?? "");
+    expect(turn2).toEqual(["one more thing"]);
+    // The continuation user turn is streamed (live consumers never saw this text otherwise)...
+    const userTexts = all.filter(
+      (m) =>
+        isCompleteModelMessage(m) &&
+        m.payload.type === "text" &&
+        (m.payload as { role?: string }).role === "user",
+    );
+    expect(userTexts.map((m) => (m.payload as TextPayload).text)).toEqual(["one more thing"]);
+    // ...and written to Trace like any user Prompt (resume replays it as that turn's input).
+    const recorded = await readTrace(trace.currentPath());
+    expect(
+      recorded.some(
+        (m) =>
+          (m.payload as { role?: string; text?: string }).role === "user" &&
+          (m.payload as { text?: string }).text === "one more thing",
+      ),
+    ).toBe(true);
+  });
+
+  it("discards the queue on abort — the next run sees no leftover steering", async () => {
+    const llm = new FakeLLM();
+    const engine = new ContextEngine({ llm, environment: steeringEnvironment() });
+    const ac = new AbortController();
+    const approve: ApproveFn = async () => {
+      expect(engine.steer("stale steering")).toBe(true);
+      ac.abort();
+      return "allow";
+    };
+    const first = await collectRun(engine, [userText("go")], approve, ac.signal);
+    expect(first.some((m) => (m.payload as { type?: string }).type === "abort")).toBe(true);
+
+    // Aborted: whatever was queued is dropped with the run (documented steering contract).
+    expect(engine.steer("after abort")).toBe(false);
+    await collectRun(engine, [userText("continue")], allowAll);
+    const followUpTexts = (llm.receivedSecondInput ?? [])
+      .map((m) => {
+        const p = m.payload as { text?: string; output?: string };
+        return p.text ?? p.output ?? "";
+      })
+      .join("\n");
+    expect(followUpTexts).not.toContain("stale steering");
+    expect(followUpTexts).not.toContain("[user_steering]");
   });
 });

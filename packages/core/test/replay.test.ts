@@ -5,7 +5,7 @@
  *   a start but no stop) are dropped entirely, keeping only outputs paired with already-committed
  *   tool_calls; trailing input is kept as-is as carry-over.
  * - Pairing fallback: committed tool_calls with no paired output get an interrupted-state placeholder.
- * - Compaction wrap-up (file level): summarize rebuilds <context_summary>, discard leaves no
+ * - Compaction wrap-up (file level): summarize rebuilds [context_summary], discard leaves no
  *   pending input; failed compaction rounds are dropped by the generic rule.
  * - Tolerates a truncated trailing line left by an abnormal process exit.
  * - Round-trip: a Trace written out by the engine, once replayed, matches the history the model actually received.
@@ -185,7 +185,7 @@ describe("resumeTrace", () => {
       compactionBegin({ reason: "context", mode: "summarize", context: 10, turns: 1 }),
       userText("please summarize"),
       requestBegin(),
-      assistantText("<summary>the gist</summary>"),
+      assistantText("[summary]the gist[/summary]"),
       requestEnd("completed"),
       tokenUsage(usage(20), usage(20)),
       compactionEnd({ reason: "context", mode: "summarize", status: "completed" }),
@@ -194,9 +194,87 @@ describe("resumeTrace", () => {
     expect(result.history).toEqual([]);
     expect(result.renderMessages).toEqual([]);
     const summary = result.pendingSummary!.payload as { text: string };
-    expect(summary.text).toBe("<context_summary>\nthe gist\n</context_summary>");
+    expect(summary.text).toBe("[context_summary]\nthe gist\n[/context_summary]");
     expect(result.sessionTurns).toBe(0);
     expect(result.sessionTokens.total).toBe(20); // Token carry-over includes compaction consumption
+  });
+
+  it("closed context (summarize): the legacy <summary> form in an old Trace still rebuilds the summary", () => {
+    // Dual-form regression: compaction.prompt is persisted in old agents' system_config.yaml,
+    // so old Traces contain angle-bracket compaction output; extractSummary must keep
+    // accepting it (the rebuilt pending input always uses the current square form).
+    const result = resumeTrace([
+      meta(),
+      userText("hello"),
+      requestBegin(),
+      assistantText("hi"),
+      requestEnd("completed"),
+      tokenUsage(usage(10), usage(10)),
+      compactionBegin({ reason: "context", mode: "summarize", context: 10, turns: 1 }),
+      userText("please summarize"),
+      requestBegin(),
+      assistantText("<summary>the old-form gist</summary>"),
+      requestEnd("completed"),
+      tokenUsage(usage(20), usage(20)),
+      compactionEnd({ reason: "context", mode: "summarize", status: "completed" }),
+    ]);
+    expect(result.contextClosed).toBe(true);
+    const summary = result.pendingSummary!.payload as { text: string };
+    expect(summary.text).toBe("[context_summary]\nthe old-form gist\n[/context_summary]");
+  });
+
+  it("replays a trace with a [user_steering] block in a tool output and a steering continuation turn", () => {
+    // Mid-run steering rewrites the tool output before it is traced, so the block is part of
+    // the persisted output: replay must keep it verbatim (pairing intact) — both in committed
+    // history and, when trailing, in carry-over. The loop-end continuation turn is a plain
+    // user message and replays like any Prompt.
+    const steered = "result-1\n\n[user_steering]\nswitch to the staging config\n[/user_steering]";
+    const result = resumeTrace([
+      meta(),
+      userText("run it"),
+      requestBegin(),
+      toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc1" }),
+      requestEnd("completed"),
+      tokenUsage(usage(10), usage(10)),
+      toolCallOutput({ output: steered, toolCallId: "tc1" }),
+      requestBegin(),
+      assistantText("done"),
+      requestEnd("completed"),
+      tokenUsage(usage(20), usage(20)),
+      // Loop-end steering delivery: a plain continuation user turn in the trace.
+      userText("one more thing"),
+      requestBegin(),
+      assistantText("handled"),
+      requestEnd("completed"),
+      tokenUsage(usage(30), usage(30)),
+    ]);
+    expect(textsOf(result.history)).toEqual([
+      "run it",
+      "exec_command",
+      steered,
+      "done",
+      "one more thing",
+      "handled",
+    ]);
+    expect(result.sessionTurns).toBe(3);
+    expect(result.carryOver).toEqual([]);
+  });
+
+  it("keeps a trailing steered tool output as carry-over verbatim (block included)", () => {
+    // The steered output was persisted but its answering request never committed: it is
+    // resent as-is on resume, [user_steering] block and all.
+    const steered = "late\n\n[user_steering]\nalso check CI\n[/user_steering]";
+    const result = resumeTrace([
+      meta(),
+      userText("run it"),
+      requestBegin(),
+      toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc1" }),
+      requestEnd("completed"),
+      tokenUsage(usage(10), usage(10)),
+      toolCallOutput({ output: steered, toolCallId: "tc1" }),
+    ]);
+    expect(textsOf(result.history)).toEqual(["run it", "exec_command"]);
+    expect(textsOf(result.carryOver)).toEqual([steered]);
   });
 
   it("closed context (discard): empty history and no pending summary", () => {
@@ -360,7 +438,7 @@ describe("engine trace round-trip", () => {
     const recorded = await readTrace(trace.currentPath());
     expect(
       recorded.some((m) =>
-        ((m.payload as { text?: string }).text ?? "").includes("<turn_aborted>"),
+        ((m.payload as { text?: string }).text ?? "").includes("[turn_aborted]"),
       ),
     ).toBe(false);
     const result = resumeTrace(recorded);
@@ -463,7 +541,7 @@ describe("resumeTrace regressions (PR #39 review)", () => {
     ]);
     expect(result.contextClosed).toBe(true);
     const summary = result.pendingSummary!.payload as { text: string };
-    expect(summary.text).toBe("<context_summary>\n\n</context_summary>");
+    expect(summary.text).toBe("[context_summary]\n\n[/context_summary]");
     expect(summary.text).not.toContain("42");
   });
 });

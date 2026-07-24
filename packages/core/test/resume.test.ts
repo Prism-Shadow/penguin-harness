@@ -243,7 +243,7 @@ describe("agent.resumeSession", () => {
       SID,
       [
         metaFor(SID, workspace),
-        userText("<context_summary>gist</context_summary>"),
+        userText("[context_summary]gist[/context_summary]"),
         requestBegin(),
         assistantText("resumed context"),
         requestEnd("completed"),
@@ -256,7 +256,7 @@ describe("agent.resumeSession", () => {
     const texts = (session.resumedHistory ?? []).map(
       (m) => (m.payload as { text?: string }).text ?? "",
     );
-    expect(texts).toEqual(["<context_summary>gist</context_summary>", "resumed context"]);
+    expect(texts).toEqual(["[context_summary]gist[/context_summary]", "resumed context"]);
   });
 
   it("errors when the session does not exist", async () => {

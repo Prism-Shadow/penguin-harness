@@ -120,8 +120,8 @@ describe("session-title", () => {
     expect(sanitizeTitle("『标题』！")).toBe("标题");
     expect(sanitizeTitle("  \n ")).toBeNull();
     expect(sanitizeTitle("x".repeat(50))).toHaveLength(30);
-    // A leaked <use_skills> block is stripped from the model output.
-    expect(sanitizeTitle("<use_skills>\nskills: web-design\n</use_skills>\n构建落地页")).toBe(
+    // A leaked [use_skills] block is stripped from the model output.
+    expect(sanitizeTitle("[use_skills]\nskills: web-design\n[/use_skills]\n构建落地页")).toBe(
       "构建落地页",
     );
   });
@@ -130,14 +130,26 @@ describe("session-title", () => {
     // The skill-invocation block that wraps a first user message must not reach the title.
     expect(
       stripConversationMarkers(
-        "<use_skills>\nskills: penguin-sdk, web-design\n</use_skills>\n做一个 RAG 应用",
+        "[use_skills]\nskills: penguin-sdk, web-design\n[/use_skills]\n做一个 RAG 应用",
       ),
     ).toBe("做一个 RAG 应用");
-    // Handoff and scheduled-task markers are stripped too; ordinary angle-bracket text stays.
-    expect(stripConversationMarkers("<handoff_from>data_analyst</handoff_from>继续分析")).toBe(
+    // Handoff and scheduled-task markers are stripped too; ordinary bracketed text stays.
+    expect(stripConversationMarkers("[handoff_from]data_analyst[/handoff_from]继续分析")).toBe(
       "继续分析",
     );
     expect(stripConversationMarkers("render a <div> element")).toBe("render a <div> element");
+    expect(stripConversationMarkers("check the [config] section")).toBe(
+      "check the [config] section",
+    );
+  });
+
+  it("stripConversationMarkers: the old angle-bracket marker form is still stripped (material from old Traces)", () => {
+    expect(
+      stripConversationMarkers("<use_skills>\nskills: web-design\n</use_skills>\n做一个落地页"),
+    ).toBe("做一个落地页");
+    expect(stripConversationMarkers("<handoff_from>data_analyst</handoff_from>继续分析")).toBe(
+      "继续分析",
+    );
   });
 
   it("Session.generateTitle: sends via createBareLLM; returns null when no factory is provided", async () => {

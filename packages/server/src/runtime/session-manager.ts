@@ -75,6 +75,8 @@ export interface RuntimeSession {
   compact(opts: { signal: AbortSignal }): AsyncGenerator<OmniMessage>;
   /** Whether compaction is possible and why; when not ok, compact() yields no messages (see core ContextEngine.compactability). */
   compactability(): CompactAvailability;
+  /** Queues a mid-run steering message (core `Session.steer`); false when no Task is running. */
+  steer(text: string): boolean;
   toolPermission(name: string): "r" | "rw" | undefined;
   /**
    * Out-of-band one-shot request for title generation (core `Session.generateTitle`,
@@ -456,6 +458,25 @@ export class SessionManager {
     const entry = this.entries.get(sessionId);
     if (!entry) return false;
     return entry.approvals.decide(toolCallId, decision);
+  }
+
+  /**
+   * Mid-run steering: forward the text to the running Session (core appends it to the next
+   * completed tool output as a `[user_steering]` block — no SSE event of its own; the block
+   * arrives inside the tool_call_output the drive loop already publishes). 409 when the
+   * Session isn't running a Task (idle / compacting / not loaded) or the run finished in the
+   * race window — the caller falls back to submitting a normal task.
+   */
+  steer(sessionId: string, text: string): void {
+    const entry = this.entries.get(sessionId);
+    if (!entry || entry.status !== "running" || !entry.session.steer(text)) {
+      throw new HttpError(
+        409,
+        "not_running",
+        "This Session has no Task in progress; send the message as a new task instead.",
+      );
+    }
+    entry.lastActivityMs = Date.now();
   }
 
   /**

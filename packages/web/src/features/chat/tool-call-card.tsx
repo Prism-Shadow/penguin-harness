@@ -14,12 +14,14 @@
  * segment is shown, with a separate "Waiting for approval" badge attached.
  */
 import { useEffect, useRef, useState } from "react";
+import { splitUserSteering } from "@prismshadow/penguin-core/omnimessage";
 import { S } from "../../lib/strings";
 import { humanizeDuration } from "../../lib/format";
 import { approvalKey } from "../../lib/omni/stream-model";
 import type { ToolCallItem } from "../../lib/omni/stream-model";
 import { Badge, stopReasonTone } from "../../components/ui/badge";
 import { Chevron } from "../../components/ui/chevron";
+import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { ZoomableImage } from "../../components/ui/image-zoom";
 import { StatusIcon } from "../../components/ui/status-icon";
 import type { RunState } from "../../components/ui/status-icon";
@@ -27,6 +29,9 @@ import { ApprovalButtons } from "./approval-buttons";
 import { LiveDuration } from "./live-duration";
 import { SubagentCard } from "./subagent-card";
 import type { StreamRenderContext } from "./message-stream";
+
+/** User glyph (24×24 line path) for the [user_steering] chip inside tool output. */
+const USER_ICON = "M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0";
 
 /**
  * Argument preview (same approach as the CLI's tool-render): exec_command shows `$ <cmd>`,
@@ -207,10 +212,34 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
             </pre>
           )}
           {(item.output || item.outputStreaming) && (
-            <pre className="max-h-72 overflow-auto whitespace-pre-wrap border-t border-gray-100 px-3 py-2 text-xs leading-5 text-gray-600 dark:border-gray-800 dark:text-gray-300">
-              {item.output}
+            // Output with any appended [user_steering] blocks (mid-run user messages riding on
+            // this tool result) split out: the tool's own output stays raw preformatted text,
+            // each steering block renders as a small user-styled banner instead of raw markers
+            // (the Trace page still shows the raw text as-is).
+            <div className="max-h-72 overflow-auto border-t border-gray-100 px-3 py-2 text-xs leading-5 text-gray-600 dark:border-gray-800 dark:text-gray-300">
+              {splitUserSteering(item.output).map((seg, i) =>
+                seg.kind === "steering" ? (
+                  <div
+                    key={i}
+                    className="my-1.5 flex w-fit items-start gap-1.5 rounded-md border border-gray-200 bg-gray-100 px-2.5 py-1.5 text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+                  >
+                    <GlyphIcon
+                      d={USER_ICON}
+                      className="mt-0.5 shrink-0 text-gray-400 dark:text-gray-500"
+                    />
+                    <span>
+                      <span className="mr-1.5 font-semibold">{S.chat.userSteering}</span>
+                      <span className="whitespace-pre-wrap">{seg.text}</span>
+                    </span>
+                  </div>
+                ) : (
+                  <pre key={i} className="whitespace-pre-wrap">
+                    {seg.text}
+                  </pre>
+                ),
+              )}
               {item.outputStreaming && <span className="animate-pulse">▌</span>}
-            </pre>
+            </div>
           )}
           {/* Tool output images (e.g. read_image): shown as thumbnails, click to zoom (ZoomableImage). */}
           {item.images && item.images.length > 0 && (

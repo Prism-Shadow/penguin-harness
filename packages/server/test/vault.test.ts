@@ -21,6 +21,7 @@ function fakeRuntimeSession(sessionId: string): RuntimeSession {
     toolPermission: () => "rw",
     generateTitle: async () => ({ title: null, usage: null }),
     compactability: () => "ok" as const,
+    steer: () => false,
     async *run() {},
     async *compact() {},
   };

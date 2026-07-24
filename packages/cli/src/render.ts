@@ -38,7 +38,7 @@
  *
  * No third-party color library is used; only minimal ANSI escapes.
  */
-import { isEventMessage, isModelMessage } from "@prismshadow/penguin-core";
+import { isEventMessage, isModelMessage, splitUserSteering } from "@prismshadow/penguin-core";
 import type {
   AbortPayload,
   ApprovalDecision,
@@ -53,6 +53,7 @@ import type {
   PartialToolCallOutputPayload,
   RequestEndPayload,
   TokenUsagePayload,
+  ToolCallOutputPayload,
   ToolCallPayload,
 } from "@prismshadow/penguin-core";
 import { renderPartialToolCall } from "./tool-render.js";
@@ -61,6 +62,7 @@ import type { Messages } from "./i18n.js";
 
 const DIM = "\x1b[2m";
 const CYAN = "\x1b[36m";
+const MAGENTA = "\x1b[35m";
 const RESET = "\x1b[0m";
 
 export function dim(text: string): string {
@@ -174,8 +176,16 @@ export function renderHistory(
       }
       case "tool_call_output": {
         const tag = callTag(p.tool_call_id ?? "");
-        for (const line of (p.output ?? "").split("\n")) {
-          out.write(`${DIM}[${tag}] >> ${RESET}${line}\n`);
+        // A [user_steering] block appended to the output (a mid-run user message) is rendered
+        // as distinct user-speech lines instead of raw markers.
+        for (const seg of splitUserSteering(p.output ?? "")) {
+          for (const line of seg.text.split("\n")) {
+            if (seg.kind === "steering") {
+              out.write(`${DIM}[${tag}] ${RESET}${MAGENTA}${t.steerLinePrefix()}${line}${RESET}\n`);
+            } else {
+              out.write(`${DIM}[${tag}] >> ${RESET}${line}\n`);
+            }
+          }
         }
         // Attached images aren't rendered by the terminal; print one placeholder line per image.
         for (const _ of p.images ?? []) {
@@ -500,6 +510,13 @@ export class StreamRenderer {
         case "partial_tool_call_output":
           this.handlePartialToolOutput(payload as PartialToolCallOutputPayload);
           return;
+        case "tool_call_output":
+          // Complete messages are otherwise never rendered (content already streamed), but
+          // the engine appends mid-run [user_steering] blocks only to the complete message —
+          // the partial stream never carries them — so the steering lines are rendered here
+          // (exactly once; the streamed output itself is not repeated).
+          this.renderSteering(payload as ToolCallOutputPayload);
+          return;
         // Complete (non-streaming) model_msg is never rendered (including image_url/inline_*); the content has already been shown by partial_*.
         default:
           return;
@@ -544,7 +561,7 @@ export class StreamRenderer {
         this.lastLineKey = null;
       } else if (payload.type === "request_begin") {
         // The previous request ended in timeout/malformed -> this request is a retry
-        // carrying <turn_retried>: printed when the retry **actually starts** (when
+        // carrying [turn_retried]: printed when the retry **actually starts** (when
         // retries are exhausted, there's no retry after the last failure, only an abort
         // explaining why).
         if (this.pendingRetry) {
@@ -743,6 +760,27 @@ export class StreamRenderer {
       }
       this.lastLineKey = null;
     }
+  }
+
+  /**
+   * Renders the `[user_steering]` blocks appended to a completed tool output (mid-run user
+   * messages riding on this tool result): each block's lines are written with the tool's
+   * pairing tag and a colored user prefix, visually distinct from the dim `>>` output gutter.
+   * The tool's own output is not repeated (it already streamed).
+   */
+  private renderSteering(p: ToolCallOutputPayload): void {
+    const steering = splitUserSteering(p.output).filter((seg) => seg.kind === "steering");
+    if (steering.length === 0) return;
+    this.finishLine();
+    const tag = callTag(p.tool_call_id);
+    for (const seg of steering) {
+      for (const line of seg.text.split("\n")) {
+        this.out.write(
+          `${DIM}[${tag}] ${RESET}${MAGENTA}${this.t.steerLinePrefix()}${line}${RESET}\n`,
+        );
+      }
+    }
+    this.lastLineKey = null;
   }
 
   /**

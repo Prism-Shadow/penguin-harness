@@ -714,3 +714,61 @@ describe("renderHistory (resume)", () => {
     expect(text()).toBe("");
   });
 });
+
+describe("mid-run steering rendering ([user_steering] in tool output)", () => {
+  it("streaming: the complete tool_call_output renders only the steering lines (output already streamed), tagged and prefixed", () => {
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t);
+    r.handle(partialToolCallOutput({ eventType: "start", toolCallId: "call_abc" }));
+    r.handle(
+      partialToolCallOutput({
+        eventType: "delta",
+        output: "tool says hi\n",
+        toolCallId: "call_abc",
+      }),
+    );
+    r.handle(partialToolCallOutput({ eventType: "stop", toolCallId: "call_abc" }));
+    r.handle(
+      toolCallOutput({
+        output: "tool says hi\n\n\n[user_steering]\nfocus on tests\nand docs\n[/user_steering]",
+        toolCallId: "call_abc",
+      }),
+    );
+    const plain = stripAnsi(text());
+    // The streamed output appears once (via the delta), never repeated by the complete message.
+    expect(plain.match(/tool says hi/g)).toHaveLength(1);
+    // Each steering line carries the pairing tag and the user prefix.
+    expect(plain).toContain("[tool-abc] ↪ user: focus on tests");
+    expect(plain).toContain("[tool-abc] ↪ user: and docs");
+    expect(plain).not.toContain("[user_steering]");
+  });
+
+  it("streaming: a complete output without steering renders nothing extra", () => {
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t);
+    r.handle(partialToolCallOutput({ eventType: "start", toolCallId: "call_x" }));
+    r.handle(partialToolCallOutput({ eventType: "delta", output: "plain", toolCallId: "call_x" }));
+    r.handle(partialToolCallOutput({ eventType: "stop", toolCallId: "call_x" }));
+    const before = text();
+    r.handle(toolCallOutput({ output: "plain", toolCallId: "call_x" }));
+    expect(text()).toBe(before);
+  });
+
+  it("renderHistory: steering lines are distinct from the >> output gutter", () => {
+    const { stream, text } = collector();
+    renderHistory(
+      [
+        toolCallOutput({
+          output: "result line\n\n[user_steering]\nswitch branch\n[/user_steering]",
+          toolCallId: "call_hh1",
+        }),
+      ],
+      stream,
+      t,
+    );
+    const plain = stripAnsi(text());
+    expect(plain).toContain("[tool-hh1] >> result line");
+    expect(plain).toContain("[tool-hh1] ↪ user: switch branch");
+    expect(plain).not.toContain(">> [user_steering]");
+  });
+});

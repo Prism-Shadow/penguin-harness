@@ -148,8 +148,8 @@ describe("scheduler", () => {
     await scheduler.tickOnce();
     expect(started).toHaveLength(1);
     expect(started[0]?.sessionId).toBe("session-1");
-    // Trigger input = <scheduled_task> source block + the prompt body (tells the model this is a scheduled task).
-    expect(started[0]?.text).toContain("<scheduled_task>");
+    // Trigger input = [scheduled_task] source block + the prompt body (tells the model this is a scheduled task).
+    expect(started[0]?.text).toContain("[scheduled_task]");
     expect(started[0]?.text).toContain("schedule: report");
     expect(started[0]?.text).toContain("Write the daily report");
     expect(events.map((e) => e.event.type)).toContain("schedule_fired");

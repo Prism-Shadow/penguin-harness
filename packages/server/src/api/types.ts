@@ -569,6 +569,17 @@ export interface TaskCreateResponse {
   sessionId: string;
 }
 
+/**
+ * Mid-run steering (POST /api/sessions/:id/steer): a user message for the **running** Task,
+ * appended by core to the next completed tool output as a `[user_steering]` block. 202 on
+ * queue; 409 `not_running` when no Task is in progress (the frontend falls back to a normal
+ * task POST).
+ */
+export interface SteerRequest {
+  /** Non-empty message text (trimmed server-side). */
+  text: string;
+}
+
 export interface ApprovalDecisionRequest {
   decision: "allow" | "deny";
 }
@@ -693,7 +704,7 @@ export interface TraceTaskStats {
   /**
    * This turn's duration span: `startTs` = the moment of this turn's **first `request_begin`**
    * — duration only looks at LLM requests, not the timestamp of user text like the user
-   * Prompt / compaction summary (`<context_summary>` is created during compaction but only
+   * Prompt / compaction summary (`[context_summary]` is created during compaction but only
    * persisted on the next run; resuming the next day would inflate the first turn by a whole
    * day for no reason); `endTs` = the moment of the last non-session_meta message in the
    * range. For a degenerate turn with no Request at all (interrupted right after sending),

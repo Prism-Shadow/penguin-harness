@@ -116,15 +116,16 @@ describe("loadOrInitAgentState", () => {
     expect(state.systemConfig.system_prompt).toContain(OS_VERSION_PLACEHOLDER);
     expect(state.systemConfig.system_prompt).toContain(DATE_PLACEHOLDER);
     // AGENTS.md and the Environment injection sit at the end of the template, with AGENTS.md
-    // before Environment; the <developer_instructions> wrapper text is written directly into
+    // before Environment; the [developer_instructions] wrapper text is written directly into
     // the template (the Prompt is transparent about the config).
-    expect(state.systemConfig.system_prompt).toContain("<developer_instructions>");
-    expect(state.systemConfig.system_prompt).toContain("</developer_instructions>");
+    expect(state.systemConfig.system_prompt).toContain("[developer_instructions]");
+    expect(state.systemConfig.system_prompt).toContain("[/developer_instructions]");
     // The default template explains the semantics of system-synthesized markers to the model,
     // and recommends preferring tool use.
-    expect(state.systemConfig.system_prompt).toContain("<turn_aborted>");
-    expect(state.systemConfig.system_prompt).toContain("<turn_retried>");
-    expect(state.systemConfig.system_prompt).toContain("<context_summary>");
+    expect(state.systemConfig.system_prompt).toContain("[turn_aborted]");
+    expect(state.systemConfig.system_prompt).toContain("[turn_retried]");
+    expect(state.systemConfig.system_prompt).toContain("[context_summary]");
+    expect(state.systemConfig.system_prompt).toContain("[user_steering]");
     expect(state.systemConfig.system_prompt).toContain("# Tool use");
     // Privacy hardening: explicitly forbids reading .project_config.toml (the sole config file,
     // which holds API keys) and each Agent's .vault.toml, and states that config can only be
@@ -139,7 +140,7 @@ describe("loadOrInitAgentState", () => {
       state.systemConfig.system_prompt.indexOf("# Environment"),
     );
     // The # Vault and # Skills body sections plus their placeholders: the default template
-    // places them after </developer_instructions> and before # Environment, in the order
+    // places them after [/developer_instructions] and before # Environment, in the order
     // Vault -> Skills (the statement text is part of the template body, kept even with no
     // keys/skills).
     const tpl = state.systemConfig.system_prompt;
@@ -147,8 +148,8 @@ describe("loadOrInitAgentState", () => {
     expect(tpl).toContain(VAULT_KEYS_PLACEHOLDER);
     expect(tpl).toContain("# Skills");
     expect(tpl).toContain(SKILL_METADATA_PLACEHOLDER);
-    expect(tpl).toContain("<use_skills>");
-    expect(tpl.indexOf("</developer_instructions>")).toBeLessThan(tpl.indexOf("# Vault"));
+    expect(tpl).toContain("[use_skills]");
+    expect(tpl.indexOf("[/developer_instructions]")).toBeLessThan(tpl.indexOf("# Vault"));
     expect(tpl.indexOf("# Vault")).toBeLessThan(tpl.indexOf(VAULT_KEYS_PLACEHOLDER));
     expect(tpl.indexOf(VAULT_KEYS_PLACEHOLDER)).toBeLessThan(tpl.indexOf("# Skills"));
     expect(tpl.indexOf("# Skills")).toBeLessThan(tpl.indexOf(SKILL_METADATA_PLACEHOLDER));
@@ -301,10 +302,10 @@ describe("assembleSystemPrompt", () => {
     // land in the Workspace.
     expect(prompt).toContain("mention its workspace-relative path in backticks");
     expect(prompt).toContain("always place final deliverables in the workspace");
-    // The default template wraps AGENTS.md in a <developer_instructions> XML block.
-    expect(prompt).toContain("<developer_instructions>");
-    expect(prompt).toContain("</developer_instructions>");
-    expect(prompt.indexOf("<developer_instructions>")).toBeLessThan(
+    // The default template wraps AGENTS.md in a [developer_instructions] block.
+    expect(prompt).toContain("[developer_instructions]");
+    expect(prompt).toContain("[/developer_instructions]");
+    expect(prompt.indexOf("[developer_instructions]")).toBeLessThan(
       prompt.indexOf("# Environment"),
     );
     expect(prompt).not.toContain(AGENTS_MD_PLACEHOLDER);

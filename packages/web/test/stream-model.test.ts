@@ -585,7 +585,7 @@ describe("Task segmentation and stats triggering", () => {
   });
 
   it("round end takes the last request_end: the next round's injection arriving after it does not inflate this round's elapsed time", () => {
-    // During history rebuild, the compaction summary `<context_summary>` is written alongside the
+    // During history rebuild, the compaction summary `[context_summary]` is written alongside the
     // next round, with its timestamp landing in that next round — it arrives while the previous
     // round is still open. If round-end took the latest message seen, this injection would
     // artificially inflate the previous round's elapsed time (the old bug where elapsed grows
@@ -597,7 +597,7 @@ describe("Task segmentation and stats triggering", () => {
       at(tokenUsage(out(100), out(100)), "2026-07-05T00:00:02.000Z"),
       at(requestEnd("completed"), "2026-07-05T00:00:03.000Z"), // this round's last request_end
       // Next round's summary injection, timestamped much later; it arrives while this round hasn't closed yet.
-      at(userText("<context_summary>\nsummary\n</context_summary>"), "2026-07-05T00:00:50.000Z"),
+      at(userText("[context_summary]\nsummary\n[/context_summary]"), "2026-07-05T00:00:50.000Z"),
       at(userText("next question"), "2026-07-05T00:01:00.000Z"), // startTask: closes the previous round
     ]);
     finalizeHistory(m);
@@ -822,7 +822,7 @@ describe("compaction attribution by position: in-round counts toward the round, 
         compactionEnd({ reason: "manual", mode: "summarize", status: "completed" }),
         "2026-07-05T00:00:33.000Z",
       ),
-      at(userText("<context_summary>\nsummary\n</context_summary>"), "2026-07-05T00:00:33.000Z"),
+      at(userText("[context_summary]\nsummary\n[/context_summary]"), "2026-07-05T00:00:33.000Z"),
     ]);
     finalizeHistory(m);
     const stats = items(m).find((i) => i.kind === "task_stats") as TaskStatsItem;
@@ -847,7 +847,7 @@ describe("compaction-internal messages (#17: history rebuild aligned with the li
       ),
       // Compaction prompt (user text) and the compaction request's summary output (assistant text): internal messages.
       at(userText("Summarize the above (compaction prompt)"), "2026-07-05T00:00:06.100Z"),
-      at(assistantText("<summary>summary content</summary>"), "2026-07-05T00:00:09.000Z"),
+      at(assistantText("[summary]summary content[/summary]"), "2026-07-05T00:00:09.000Z"),
       at(tokenUsage(counts(11000), counts(1000)), "2026-07-05T00:00:09.500Z"),
       at(
         compactionEnd({ reason: "context", mode: "summarize", status: "completed" }),
@@ -855,7 +855,7 @@ describe("compaction-internal messages (#17: history rebuild aligned with the li
       ),
       // Summary injected at the start of the new context file: internal input.
       at(
-        userText("<context_summary>\nsummary content\n</context_summary>"),
+        userText("[context_summary]\nsummary content\n[/context_summary]"),
         "2026-07-05T00:00:10.500Z",
       ),
       at(userText("next question"), "2026-07-05T00:01:00.000Z"),
@@ -899,14 +899,14 @@ describe("compaction-internal messages (#17: history rebuild aligned with the li
         "2026-07-05T00:00:06.000Z",
       ),
       at(userText("compaction prompt"), "2026-07-05T00:00:06.100Z"),
-      at(assistantText("<summary>progress summary</summary>"), "2026-07-05T00:00:08.000Z"),
+      at(assistantText("[summary]progress summary[/summary]"), "2026-07-05T00:00:08.000Z"),
       at(
         compactionEnd({ reason: "context", mode: "summarize", status: "completed" }),
         "2026-07-05T00:00:09.000Z",
       ),
       // Mid-round compaction: the summary is written as the new context's first input, after end.
       at(
-        userText("<context_summary>\nprogress summary\n</context_summary>"),
+        userText("[context_summary]\nprogress summary\n[/context_summary]"),
         "2026-07-05T00:00:09.500Z",
       ),
       at(assistantText("continue fixing and finish"), "2026-07-05T00:00:12.000Z"),
@@ -917,6 +917,23 @@ describe("compaction-internal messages (#17: history rebuild aligned with the li
     expect(kinds).toEqual(["user_text", "compaction", "assistant_text", "task_stats"]);
     expect((items(m)[2] as AssistantTextItem).text).toBe("continue fixing and finish");
     expect(items(m).filter((i) => i.kind === "user_text")).toHaveLength(1);
+  });
+
+  it("legacy <context_summary> prefix (old Traces) is still treated as internal input, not a user bubble", () => {
+    // Old Traces contain the angle-bracket form; re-rendering them must keep hiding the
+    // summary injection exactly like the current [context_summary] form.
+    const m = createStreamModel();
+    pushMessages(m, [
+      at(
+        userText("<context_summary>\nold summary\n</context_summary>"),
+        "2026-07-05T00:00:00.000Z",
+      ),
+      at(userText("continue the task"), "2026-07-05T00:00:01.000Z"),
+      at(assistantText("resuming"), "2026-07-05T00:00:02.000Z"),
+    ]);
+    finalizeHistory(m);
+    const users = items(m).filter((i) => i.kind === "user_text") as UserTextItem[];
+    expect(users.map((u) => u.text)).toEqual(["continue the task"]);
   });
 });
 

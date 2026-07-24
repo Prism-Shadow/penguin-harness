@@ -38,7 +38,7 @@ Parsing is tolerant: only `key: value` scalar lines inside the first `---` block
 
 Skills follow an "index first, body on demand" design: the system prompt injects only each installed Skill's metadata (name + description) through the `{{SKILL_METADATA}}` placeholder, and instructs the model to read the matching `SKILL.md` in full via the shell before following it. There is no dedicated skill tool — reading the body is just one `exec_command` call (see [Tools & Approval](/tools)).
 
-Chat can also pin skills explicitly: the message then starts with a `<use_skills>` block listing the skill names.
+Chat can also pin skills explicitly: the message then starts with a `[use_skills]` block listing the skill names (the earlier `<use_skills>` form is still recognized when re-rendering old Traces).
 
 If a message only names a skill without a concrete task, the model is instructed to ask what is needed before starting.
 

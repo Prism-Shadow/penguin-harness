@@ -1,12 +1,12 @@
 /**
  * Skill invocation for the chat input area (pure logic, shared by chat-input / message-item /
  * the Skill library page, and unit tests).
- * The `<use_skills>` block is a globally agreed-upon format (shared by frontend, backend, and the
+ * The `[use_skills]` block is a globally agreed-upon format (shared by frontend, backend, and the
  * core prompt template):
  *
- *   <use_skills>
+ *   [use_skills]
  *   skills: name1, name2
- *   </use_skills>
+ *   [/use_skills]
  *   (blank line) body text…
  *
  * - `buildSkillsMessage`: prepends the source block to the body when selected skills are
@@ -23,21 +23,25 @@ import type { SkillMetadataItem } from "@prismshadow/penguin-server/api";
 export const BOOK_ICON =
   "M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2zM22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z";
 
-/** Generates a message body with a `<use_skills>` block: an empty list omits the block; when there's no body text, only the block is returned (no trailing blank line). */
+/** Generates a message body with a `[use_skills]` block: an empty list omits the block; when there's no body text, only the block is returned (no trailing blank line). */
 export function buildSkillsMessage(names: string[], text: string): string {
   if (names.length === 0) return text;
-  const block = `<use_skills>\nskills: ${names.join(", ")}\n</use_skills>`;
+  const block = `[use_skills]\nskills: ${names.join(", ")}\n[/use_skills]`;
   return text ? `${block}\n\n${text}` : block;
 }
 
 /**
- * Reverse parse of `buildSkillsMessage`: when the message **starts with** a `<use_skills>`
+ * Reverse parse of `buildSkillsMessage`: when the message **starts with** a `[use_skills]`
  * block, returns the skill names and the remaining body; otherwise returns null (a block
  * appearing mid-body is treated as plain text and not parsed). The `skills:` line is split by
- * comma and whitespace-trimmed; an empty list is treated as not a source block.
+ * comma and whitespace-trimmed; an empty list is treated as not a source block. The old
+ * `<use_skills>` form is still recognized: messages persisted in old Traces are re-rendered
+ * through this parser.
  */
 export function parseSkillsMessage(text: string): { skills: string[]; rest: string } | null {
-  const m = /^<use_skills>\nskills: ([^\n]+)\n<\/use_skills>/.exec(text);
+  const m =
+    /^\[use_skills\]\nskills: ([^\n]+)\n\[\/use_skills\]/.exec(text) ??
+    /^<use_skills>\nskills: ([^\n]+)\n<\/use_skills>/.exec(text);
   if (!m) return null;
   const skills = m[1]!
     .split(",")

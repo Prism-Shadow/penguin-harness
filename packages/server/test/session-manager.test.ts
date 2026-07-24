@@ -57,6 +57,7 @@ function approvalFakeSession(sessionId: string, toolName = "exec_command"): Runt
     toolPermission: (name) => (name === "read_tool" ? "r" : "rw"),
     generateTitle: async () => ({ title: null, usage: null }),
     compactability: () => "ok" as const,
+    steer: () => false,
     async *run(_input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
       const tc = toolCall({ name: toolName, arguments: "{}", toolCallId: "tc-1" });
       yield tc;
@@ -166,6 +167,7 @@ describe("session-manager", () => {
       toolPermission: () => "rw",
       generateTitle: async () => ({ title: null, usage: null }),
       compactability: () => "ok" as const,
+      steer: () => false,
       async *run(): AsyncGenerator<OmniMessage> {
         yield requestBegin();
         yield toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc-1" });
@@ -205,6 +207,45 @@ describe("session-manager", () => {
 
     manager.decideApproval("session-1", "tc-1", "allow");
     await waitFor(() => manager.statusOf("session-1") === "idle");
+  });
+
+  it("steer: forwards to the running session; idle / lost race → 409 not_running", async () => {
+    const steered: string[] = [];
+    const fake = approvalFakeSession("session-1");
+    fake.steer = (text: string) => {
+      steered.push(text);
+      return true;
+    };
+    const manager = makeManager(loaderOf(fake));
+    const steerErr = (text: string): unknown => {
+      try {
+        manager.steer("session-1", text);
+        return null;
+      } catch (e) {
+        return e;
+      }
+    };
+
+    // Not running (entry not even loaded): 409 not_running (typed like task_in_progress).
+    const before = steerErr("early") as HttpError;
+    expect(before.status).toBe(409);
+    expect(before.code).toBe("not_running");
+
+    await manager.startTask("session-1", [userText("go")]);
+    await waitFor(() => manager.pendingApprovalCount("session-1") === 1);
+    // Running: forwarded to the core session (no SSE event of its own).
+    expect(steerErr("focus on tests")).toBeNull();
+    expect(steered).toEqual(["focus on tests"]);
+
+    // The core session lost the race (its run just finished): also 409, so the
+    // caller falls back to a normal task.
+    fake.steer = () => false;
+    expect((steerErr("late") as HttpError).code).toBe("not_running");
+
+    manager.decideApproval("session-1", "tc-1", "allow");
+    await waitFor(() => manager.statusOf("session-1") === "idle");
+    // Idle again after the run: 409.
+    expect((steerErr("post") as HttpError).code).toBe("not_running");
   });
 
   it("always-ask: registers a pending approval and pushes approval_request; continues after the decision", async () => {
@@ -260,6 +301,7 @@ describe("session-manager", () => {
       toolPermission: () => "rw",
       generateTitle: async () => ({ title: null, usage: null }),
       compactability: () => "ok" as const,
+      steer: () => false,
       async *run() {
         // The parent-level run_subagent call (no origin): its prompt becomes the sub-session title.
         yield toolCall({
@@ -336,6 +378,7 @@ describe("session-manager", () => {
       toolPermission: () => "rw",
       generateTitle: async () => ({ title: null, usage: null }),
       compactability: () => "ok" as const,
+      steer: () => false,
       async *run(_input, opts) {
         const tc1 = toolCall({ name: "t1", arguments: "{}", toolCallId: "tc-1" });
         yield tc1;
@@ -573,6 +616,7 @@ describe("session-manager", () => {
       toolPermission: () => "rw",
       generateTitle: async () => ({ title: null, usage: null }),
       compactability: () => "ok" as const,
+      steer: () => false,
       async *run() {
         yield thinkingMessage("thinking");
         yield assistantText("answer A");
@@ -626,6 +670,7 @@ describe("session-manager", () => {
       toolPermission: () => "rw",
       generateTitle: async () => ({ title: null, usage: null }),
       compactability: () => "ok" as const,
+      steer: () => false,
       async *run() {
         yield assistantText("x".repeat(600));
         // Sub-session text doesn't count toward the main-session body threshold
@@ -676,6 +721,7 @@ describe("session-manager", () => {
       toolPermission: () => "rw",
       generateTitle: async () => ({ title: null, usage: null }),
       compactability: () => "ok" as const,
+      steer: () => false,
       async *run() {
         yield toolCall({
           name: "run_subagent",

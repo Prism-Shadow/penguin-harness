@@ -3,7 +3,7 @@
  *
  * Replay produces two results: the **history** injected via setHistory (committed turns only),
  * and the **carry-over** input resent with the first `run` after resume. Resume is **best-effort**:
- * Trace only records real messages, so synthesized carry-over (`<turn_aborted>` flattening, pairing
+ * Trace only records real messages, so synthesized carry-over (`[turn_aborted]` flattening, pairing
  * placeholders) is never written to Trace — replay reconstructs from the original messages
  * (unanswered input is resent as-is, pairing placeholders are resynthesized as needed). History is
  * guaranteed to be **structurally valid** (turns complete, tool_call pairs matched), not a
@@ -60,7 +60,7 @@ export interface ResumeResult {
   carryOver: OmniMessage[];
   /** Compaction closure (file-level): this file's context is fully closed; resume starts a new, empty context. */
   contextClosed: boolean;
-  /** Compaction closure in summarize mode: the reconstructed `<context_summary>` summary, prepended to the next run's input. */
+  /** Compaction closure in summarize mode: the reconstructed `[context_summary]` summary, prepended to the next run's input. */
   pendingSummary?: OmniMessage;
   /** Session-level cumulative Token carry-over (the session value from the last token_usage). */
   sessionTokens: TokenCounts;
@@ -228,10 +228,11 @@ export function resumeTrace(messages: OmniMessage[]): ResumeResult {
       };
       if (p.mode === "summarize") {
         // Reconstruct the summary from the compaction request's output (the assistant text of
-        // the last completed Request).
+        // the last completed Request). Always rebuilt in the current [context_summary] form —
+        // extractSummary itself still accepts the old <summary> tags an old Trace may contain.
         const summaryText = lastCompletedRequestText(messages);
         result.pendingSummary = userText(
-          `<context_summary>\n${extractSummary(summaryText)}\n</context_summary>`,
+          `[context_summary]\n${extractSummary(summaryText)}\n[/context_summary]`,
         );
       }
       return result;

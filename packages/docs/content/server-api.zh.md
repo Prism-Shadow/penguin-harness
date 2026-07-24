@@ -145,6 +145,7 @@ Schedule 写操作仅限 Owner。新建 Session 模式的任务，`modelId` 与 
 | GET | /messages | 完整 OmniMessage 历史 |
 | GET | /stream | SSE 事件流（见下节） |
 | POST | /tasks | 发起 Task：`{input: TaskInputPart[]}` → 202 |
+| POST | /steer | 运行中插话：`{text}` 为运行中的 Task 排队一条消息（以 `[user_steering]` 块随下一个完成的工具输出送达）→ 202；无 Task 运行返回 409 `not_running` |
 | POST | /approvals/:toolCallId | 审批决定：`{decision}` 取 `allow` 或 `deny` → 204 |
 | POST | /abort | 中断当前 Task：已触发返回 202，无任务返回 204 |
 | POST | /compact | 触发上下文压缩：202；无可压缩内容返回 409 `nothing_to_compact` |
