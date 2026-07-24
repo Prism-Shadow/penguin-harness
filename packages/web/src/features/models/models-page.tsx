@@ -1535,7 +1535,9 @@ function ModelDialog({
           </div>
         )}
 
-        {/* 2) base URL (required for custom / user-defined groups and explicit openai protocol — see baseUrlRequired) */}
+        {/* 2) base URL (required for custom / user-defined groups and explicit openai protocol — see
+            baseUrlRequired). Official-protocol entries (everything except the OpenAI-protocol path)
+            carry a caution: a custom endpoint must still speak the vendor's official protocol. */}
         <Input
           size="sm"
           label={S.models.baseUrl}
@@ -1546,6 +1548,7 @@ function ModelDialog({
           className="font-mono"
           placeholder={preset ? S.models.baseUrlHint : "https://…"}
           {...(fieldErrors.baseUrl ? { error: fieldErrors.baseUrl } : {})}
+          {...(!openAiLike ? { hint: S.models.baseUrlOfficialNote } : {})}
         />
 
         {/* 3) Context window + max output tokens side by side (one row): the "Token" unit
