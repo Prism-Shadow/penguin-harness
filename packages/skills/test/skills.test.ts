@@ -107,6 +107,8 @@ describe("agent tuning workflow contracts", () => {
     expect(benchmark).toContain("every Case and Run is valid and complete");
     expect(benchmark).toContain("representative Test Traces");
     expect(benchmark).toContain("semantic isolation review");
+    expect(benchmark).toContain("explicit hard gate");
+    expect(benchmark).toContain("do not claim successful calibration");
     expect(benchmark).toContain("Case × Run ledger");
     expect(benchmark).toContain("missing_run_subagent");
     expect(benchmark).toContain('generic "do the work yourself" fallback');

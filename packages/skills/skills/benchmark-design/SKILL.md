@@ -3,8 +3,8 @@ name: benchmark-design
 description: Design and calibrate a multi-Case capability Benchmark with repeated independent evaluations and a traceable baseline.
 short_description: Design and calibrate an Agent capability Benchmark.
 short_description_zh: 设计并校准 Agent 能力评测 Benchmark。
-version: 18
-updated: 2026-07-24T11:19:26Z
+version: 19
+updated: 2026-07-24T11:25:34Z
 ---
 
 # Benchmark Design
@@ -155,8 +155,11 @@ terminate the whole calibration solely because the Evaluator formatted its respo
    Benchmark needs adjustment. Do not read every Trace indiscriminately.
 5. A material change to a Statement, Rubric, Case set, or `runs` invalidates the old result and
    requires a new complete evaluation.
-6. Respect the user's calibration target and adjustment budget. Do not revise indefinitely merely
-   to hit an exact score.
+6. Determine whether the user's calibration target is a preference or an explicit hard gate. For a
+   preference, respect the adjustment budget and do not revise indefinitely merely to hit an exact
+   score. For a hard gate, do not report the Benchmark as calibrated until the gate is met. Continue
+   credible structural adjustments, or report the unmet gate and blocker when no such adjustment
+   remains.
 
 Use the same `(provider, model_id)` pair throughout one calibration.
 
@@ -166,8 +169,9 @@ After a complete valid matrix, validate the updated Scoreboard through a tempora
 `scoreboard.yaml` atomically.
 
 If the complete matrix misses the user's preferred score range, still record the measured baseline
-and report the calibration limitation. Leave `evaluations: []` only when no complete valid matrix
-exists.
+and report the calibration limitation. If it misses an explicit hard gate, the complete measurement
+may be recorded, but report the gate as unmet and do not claim successful calibration. Leave
+`evaluations: []` only when no complete valid matrix exists.
 
 A public Scoreboard summary may describe scores, stability, and capability performance, but must
 not reveal Rubrics, Gold answers, or private scoring rules.
