@@ -3,8 +3,8 @@ name: benchmark-design
 description: Design and calibrate a multi-Case capability Benchmark with repeated independent evaluations and a traceable baseline.
 short_description: Design and calibrate an Agent capability Benchmark.
 short_description_zh: 设计并校准 Agent 能力评测 Benchmark。
-version: 20
-updated: 2026-07-24T17:04:47Z
+version: 2
+updated: 2026-07-24T17:34:13Z
 ---
 
 # Benchmark Design

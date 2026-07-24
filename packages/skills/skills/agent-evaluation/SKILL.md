@@ -3,8 +3,8 @@ name: agent-evaluation
 description: Run and score exactly one Benchmark Case run with CLI execution, Trace provenance checks, and private Rubric isolation.
 short_description: Run and score one isolated Benchmark Case.
 short_description_zh: 隔离执行并评分一个 Benchmark Case。
-version: 7
-updated: 2026-07-24T10:31:41Z
+version: 2
+updated: 2026-07-24T17:34:13Z
 ---
 
 # Agent Evaluation

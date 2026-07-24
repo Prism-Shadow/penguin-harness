@@ -3,8 +3,8 @@ name: agent-creation
 description: Turn a user requirement into a concrete agent — write the target agent's AGENTS.md and install the skills it needs.
 short_description: Turn a requirement into a working agent.
 short_description_zh: 把需求变成可用的 Agent。
-version: 13
-updated: 2026-07-24T07:47:44Z
+version: 3
+updated: 2026-07-24T17:34:13Z
 ---
 
 # Agent Creation
@@ -63,18 +63,7 @@ Library skills can be copied from any agent that already has them (e.g. `default
 - **Knowledge expert** (answers questions over a document set): usually **no** harness agent is needed — build a RAG app with the penguin-sdk skill instead, and configure the app's embedded agent (below).
 - **Evaluation loop**: `benchmark-design`, `agent-evaluation`, `agent-optimization`.
 
-When creating a Test Agent, install only the capabilities it needs to solve ordinary tasks. Do not
-install evaluation or optimization Skills merely because another Session will later test it.
-
-## Set name and description
-
-For a new Agent, set the top-level `name:` and `description:` fields in
-`agent_state/system_config.yaml` so the Agent is recognizable in lists, and explicitly set the
-top-level `version` to `1`.
-
-When modifying an existing Agent, do not copy the default configuration over it, reset its
-version, or rewrite its name or description without a relevant user request. Change only the
-Agent State files required by the current request.
+When creating a Test Agent, install only the capabilities it needs to solve ordinary tasks.
 
 ## Creating a brand-new agent
 
@@ -90,11 +79,8 @@ mkdir -p "$TARGET/agent_state/skills" "$TARGET/agent_state/memory" "$TARGET/agen
 cp "$PROJECT_DIR/agents/default_agent/agent_state/system_config.yaml" "$TARGET/agent_state/"
 ```
 
-A new Agent starts with no Skills. Set its top-level version to `1`, set its name and description,
-write its AGENTS.md, and install only the Skills it needs.
-
-Stop after the requested Agent has been created and verified. Do not design a Benchmark or optimize
-the Agent as part of this Skill.
+Then set the top-level `name`, `description`, and `version: 1` in `system_config.yaml`, write
+`AGENTS.md`, and install only the Skills required by the user's requirement.
 
 ## The embedded agent of an SDK app
 

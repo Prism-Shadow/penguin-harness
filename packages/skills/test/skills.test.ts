@@ -92,13 +92,6 @@ describe("agent tuning workflow contracts", () => {
     return skill!.content;
   };
 
-  it("keeps creation generic and free of downstream evaluation knowledge", () => {
-    const creation = content("agent-creation");
-    expect(creation).toContain("ordinary tasks");
-    expect(creation).toMatch(/Do not\s+install evaluation or optimization Skills/);
-    expect(creation).toContain("Stop after the requested Agent");
-  });
-
   it("keeps benchmark design capability-focused and freezes comparable results", () => {
     const benchmark = content("benchmark-design");
     expect(benchmark).toContain("individual evaluation and score");

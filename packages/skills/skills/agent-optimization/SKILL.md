@@ -3,8 +3,8 @@ name: agent-optimization
 description: Improve an Agent State from direct feedback or versioned Benchmark scores and score-linked Traces.
 short_description: Improve an Agent from feedback or measured Benchmark results.
 short_description_zh: 根据反馈或 Benchmark 结果改进 Agent。
-version: 19
-updated: 2026-07-24T17:04:47Z
+version: 2
+updated: 2026-07-24T17:34:13Z
 ---
 
 # Agent Optimization
