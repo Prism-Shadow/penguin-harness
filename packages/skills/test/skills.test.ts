@@ -120,11 +120,12 @@ describe("agent tuning workflow contracts", () => {
 
   it("keeps score-only optimization versioned, hypothesis-led, and generalizable", () => {
     const optimization = content("agent-optimization");
-    expect(optimization).toMatch(/at least\s+two Cases/);
     expect(optimization).toContain("snapshots/v<version>.tar.gz");
     expect(optimization).toContain("without `.vault.toml`");
-    expect(optimization).toContain("complete frozen Case × `runs` matrix");
-    expect(optimization).toContain("Accept only a score strictly higher");
+    expect(optimization).toContain("complete Case × Run matrix");
+    expect(optimization).toContain("one falsifiable behavioral hypothesis");
+    expect(optimization).toContain("strictly higher than the Reference");
+    expect(optimization).toContain("rules that apply to only one Case");
   });
 });
 
