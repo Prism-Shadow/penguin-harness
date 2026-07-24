@@ -76,6 +76,14 @@ export interface SystemConfig {
     builtin?: ToolDefinitionConfig[];
     /** MCP Server configuration. */
     mcpServers?: MCPServerConfig[];
+    /**
+     * Whether the command/subagent tools (run_command / exec_command / input_command /
+     * run_subagent / input_subagent) accept an optional `description` argument — one
+     * model-written sentence about what the call is doing, surfaced by the frontends while
+     * the call runs. Injected into the tool schemas at assembly time (the stored YAML is
+     * never rewritten); defaults to true when missing, set false to turn it off.
+     */
+    call_descriptions?: boolean;
   };
 }
 
@@ -167,15 +175,17 @@ export const DEFAULT_COMPACTION_PROMPT =
   "tools while writing the summary; respond with text only.";
 
 /**
- * Default built-in system tools: bash execution and subagent spawning.
+ * Default built-in system tools: bash execution, file reading/editing/writing, and
+ * subagent spawning.
  * Docs: /docs/tools § "Built-in tools".
  */
 function defaultBuiltinTools(): ToolDefinitionConfig[] {
   return [
     {
-      name: "exec_command",
+      name: "run_command",
       description:
-        "Run a shell command in the workspace to read, write, edit files and run programs. " +
+        "Run a shell command in the workspace to run programs, search, install dependencies, and " +
+        "everything the file tools don't cover. " +
         "Run long-lived commands (servers, watchers, builds) in the foreground: past yield_time_ms " +
         "they keep running in the background with a process_id. Do not background them with `&` — " +
         "the whole process group is cleaned up when the foreground command exits.",
@@ -206,13 +216,13 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
     {
       name: "input_command",
       description:
-        "Interact with a running command session started by exec_command: write to its stdin, send Ctrl-C, or poll for new output. Identify the session with its process_id.",
+        "Interact with a running command session started by run_command: write to its stdin, send Ctrl-C, or poll for new output. Identify the session with its process_id.",
       parameters: {
         type: "object",
         properties: {
           process_id: {
             type: "string",
-            description: "The process_id returned by exec_command for the running command session.",
+            description: "The process_id returned by run_command for the running command session.",
           },
           chars: {
             type: "string",
@@ -230,6 +240,93 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
       permission: "rw",
       // An empty poll can wait out a build/test run (the yield ceiling is derived from timeoutMs, clamped inside the tool).
       timeoutMs: 130000,
+      maxOutputLength: 16000,
+    },
+    {
+      name: "read_file",
+      description:
+        "Read a text file and return its content with line numbers (cat -n style) — the preferred " +
+        "way to inspect a file. Returns up to 2000 lines starting at the given offset; for longer " +
+        "files call again with offset to continue. Use the image tools for images and the shell " +
+        "tool for binary files.",
+      parameters: {
+        type: "object",
+        properties: {
+          file_path: {
+            type: "string",
+            description: "Path to the file to read; absolute, or relative to the workspace.",
+          },
+          offset: {
+            type: "number",
+            description: "1-based line number to start reading from; defaults to 1.",
+          },
+          limit: {
+            type: "number",
+            description: "Max lines to read; defaults to 2000.",
+          },
+        },
+        required: ["file_path"],
+      },
+      permission: "r",
+      timeoutMs: 30000,
+      // Wider than the other tools' cap: a 2000-line window of code rarely fits in 16k characters.
+      maxOutputLength: 64000,
+    },
+    {
+      name: "edit_file",
+      description:
+        "Edit a file by exact string replacement — the preferred way to make a precise change. " +
+        "old_string must match the file content exactly (including whitespace) and be unique " +
+        "unless replace_all is set; read the file first to copy the text verbatim. The result " +
+        "echoes a line-numbered snippet around the change for verification.",
+      parameters: {
+        type: "object",
+        properties: {
+          file_path: {
+            type: "string",
+            description: "Path to the file to edit; absolute, or relative to the workspace.",
+          },
+          old_string: {
+            type: "string",
+            description: "Exact text to replace, including whitespace/indentation.",
+          },
+          new_string: {
+            type: "string",
+            description: "Replacement text; must differ from old_string.",
+          },
+          replace_all: {
+            type: "boolean",
+            description: "Replace every occurrence of old_string; defaults to false.",
+          },
+        },
+        required: ["file_path", "old_string", "new_string"],
+      },
+      permission: "rw",
+      timeoutMs: 30000,
+      maxOutputLength: 16000,
+    },
+    {
+      name: "write_file",
+      description:
+        "Create or overwrite a file with the given content, creating parent directories as " +
+        "needed. Use it for new files or full rewrites; for precise changes to an existing file " +
+        "prefer edit_file.",
+      parameters: {
+        type: "object",
+        properties: {
+          file_path: {
+            type: "string",
+            description: "Path to the file to write; absolute, or relative to the workspace.",
+          },
+          content: {
+            type: "string",
+            description: "Full file content to write; an empty string creates an empty file.",
+          },
+        },
+        required: ["file_path", "content"],
+      },
+      permission: "rw",
+      timeoutMs: 30000,
       maxOutputLength: 16000,
     },
     {

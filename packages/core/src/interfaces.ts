@@ -234,7 +234,7 @@ export interface EnvironmentServices {
   subagentRunner?: SubagentRunner;
   /** Injected when the session model doesn't support images: for describe_image's single-shot vision-model proxy reading. */
   visionDescriber?: VisionDescriberService;
-  /** Registry of long-running command sessions (shared by `exec_command` / `input_command`); constructed and injected internally by Environment. */
+  /** Registry of long-running command sessions (shared by `run_command` / `input_command`); constructed and injected internally by Environment. */
   commandSessions?: CommandSessionManager;
   /** Registry of background subagent sessions (shared by `run_subagent` / `input_subagent`); constructed and injected internally by Environment. */
   subagentSessions?: SubagentSessionManager;
@@ -248,7 +248,7 @@ export interface EnvironmentConfig {
   services?: EnvironmentServices;
   /**
    * Agent vault environment variables (key-value pairs, taken from the Agent's
-   * `agent_state/.vault.toml`): injected into the exec_command / input_command subprocess
+   * `agent_state/.vault.toml`): injected into the run_command / input_command subprocess
    * environment; hardened entries cannot be overridden.
    */
   vault?: Record<string, string>;

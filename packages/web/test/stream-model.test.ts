@@ -134,7 +134,7 @@ describe("partial aggregation and full-message convergence", () => {
 
   it("tool cards: partial_tool_call attaches by tool_call_id; the full message replaces the arguments", () => {
     const m = createStreamModel();
-    pushMessage(m, partialToolCall({ eventType: "start", name: "exec_command", toolCallId: "t1" }));
+    pushMessage(m, partialToolCall({ eventType: "start", name: "run_command", toolCallId: "t1" }));
     pushMessage(
       m,
       partialToolCall({ eventType: "delta", name: "", arguments: '{"cmd":"ls', toolCallId: "t1" }),
@@ -142,11 +142,11 @@ describe("partial aggregation and full-message convergence", () => {
     pushMessage(m, partialToolCall({ eventType: "stop", name: "", toolCallId: "t1" }));
     const card = items(m)[0] as ToolCallItem;
     expect(card.kind).toBe("tool_call");
-    expect(card.name).toBe("exec_command");
+    expect(card.name).toBe("run_command");
     expect(card.argumentsText).toBe('{"cmd":"ls');
     expect(card.callStreaming).toBe(false);
 
-    pushMessage(m, toolCall({ name: "exec_command", arguments: '{"cmd":"ls"}', toolCallId: "t1" }));
+    pushMessage(m, toolCall({ name: "run_command", arguments: '{"cmd":"ls"}', toolCallId: "t1" }));
     expect(items(m)).toHaveLength(1);
     expect(card.argumentsText).toBe('{"cmd":"ls"}');
     expect(card.callComplete).toBe(true);
@@ -376,7 +376,7 @@ describe("approvals and events", () => {
     pushMessage(
       m,
       toolCall({
-        name: "exec_command",
+        name: "run_command",
         arguments: '{"cmd": "ec',
         toolCallId: "tc-broken",
         stopReason: "malformed",
@@ -652,7 +652,7 @@ describe("output TPS (request event pair timing)", () => {
     pushMessage(
       m,
       at(
-        toolCall({ name: "exec_command", arguments: "{}", toolCallId: "t1" }),
+        toolCall({ name: "run_command", arguments: "{}", toolCallId: "t1" }),
         "2026-07-05T00:00:02.000Z",
       ),
     );
@@ -968,13 +968,13 @@ describe("approval keys and tool-card lookup (#7/#19)", () => {
     pushMessage(m, withOrigin(meta("c1"), "c1"));
     pushMessage(
       m,
-      withOrigin(toolCall({ name: "exec_command", arguments: "{}", toolCallId: "t1" }), "c1"),
+      withOrigin(toolCall({ name: "run_command", arguments: "{}", toolCallId: "t1" }), "c1"),
     );
 
     const main = findToolCard(m, undefined, "t1");
     const nested = findToolCard(m, ["c1"], "t1");
     expect(main?.name).toBe("run_subagent");
-    expect(nested?.name).toBe("exec_command");
+    expect(nested?.name).toBe("run_command");
     expect(main).not.toBe(nested);
     expect(findToolCard(m, ["cX"], "t1")).toBeNull();
     expect(findToolCard(m, ["c1"], "tX")).toBeNull();
@@ -1043,7 +1043,7 @@ describe("thinking/tool durations (collapsed-row display data)", () => {
     const m = createStreamModel();
     pushMessage(
       m,
-      at(partialToolCall({ eventType: "start", name: "exec_command", toolCallId: "ta" }), T0),
+      at(partialToolCall({ eventType: "start", name: "run_command", toolCallId: "ta" }), T0),
     );
     pushMessage(m, at(partialToolCall({ eventType: "stop", name: "", toolCallId: "ta" }), T1));
     // Approval waits between T1 and TAPPROVE (1.8s), which isn't counted toward duration.
@@ -1077,7 +1077,7 @@ describe("thinking/tool durations (collapsed-row display data)", () => {
 
   it("tool duration: tool_call close → full tool_call_output (same convention as Trace analysis)", () => {
     const m = createStreamModel();
-    pushMessage(m, at(toolCall({ name: "exec_command", arguments: "{}", toolCallId: "t1" }), T1));
+    pushMessage(m, at(toolCall({ name: "run_command", arguments: "{}", toolCallId: "t1" }), T1));
     const card = items(m)[0] as ToolCallItem;
     expect(card.callStartedAtMs).toBe(Date.parse(T1));
     expect(card.durationMs).toBeUndefined();
@@ -1088,7 +1088,7 @@ describe("thinking/tool durations (collapsed-row display data)", () => {
   it("tool duration subtracts the approval wait: measured from approval time (not call time) to output", () => {
     const m = createStreamModel();
     const Ta = "2026-07-07T00:00:05.000Z"; // approval granted: after call(T1), before output(T2)
-    pushMessage(m, at(toolCall({ name: "exec_command", arguments: "{}", toolCallId: "t1" }), T1));
+    pushMessage(m, at(toolCall({ name: "run_command", arguments: "{}", toolCallId: "t1" }), T1));
     pushMessage(m, at(approvalDecision("allow", "t1"), Ta));
     pushMessage(m, at(toolCallOutput({ output: "ok", toolCallId: "t1" }), T2));
     const card = items(m)[0] as ToolCallItem;
@@ -1099,7 +1099,7 @@ describe("thinking/tool durations (collapsed-row display data)", () => {
   it("abort close-out: running tool cards stop ticking (outputComplete set, duration left unset)", () => {
     const m = createStreamModel();
     pushMessage(m, at(userText("Q"), T0));
-    pushMessage(m, at(toolCall({ name: "exec_command", arguments: "{}", toolCallId: "ta" }), T1));
+    pushMessage(m, at(toolCall({ name: "run_command", arguments: "{}", toolCallId: "ta" }), T1));
     pushMessage(m, at(abortEvent("user"), T2));
     const card = items(m).find((i) => i.kind === "tool_call") as ToolCallItem;
     expect(card.outputComplete).toBe(true);
@@ -1125,7 +1125,7 @@ describe("thinking/tool durations (collapsed-row display data)", () => {
     // generation segment (the model emits arguments token by token, often the bulk of the time).
     const m = createStreamModel();
     pushMessage(m, at(userText("question"), T0));
-    pushMessage(m, at(toolCall({ name: "exec_command", arguments: "{}", toolCallId: "th" }), T1));
+    pushMessage(m, at(toolCall({ name: "run_command", arguments: "{}", toolCallId: "th" }), T1));
     const card = items(m).find((i) => i.kind === "tool_call") as ToolCallItem;
     expect(card.argStartedAtMs).toBe(Date.parse(T0));
     pushMessage(m, at(toolCallOutput({ output: "ok", toolCallId: "th" }), T2));

@@ -138,25 +138,25 @@ describe("PartialAggregator", () => {
 
   it("accumulates partial_tool_call arguments and preserves tool_call_id", () => {
     const out = aggregateAll([
-      partialToolCall({ eventType: "start", name: "exec_command", toolCallId: "c1" }),
+      partialToolCall({ eventType: "start", name: "run_command", toolCallId: "c1" }),
       partialToolCall({
         eventType: "delta",
-        name: "exec_command",
+        name: "run_command",
         arguments: '{"cmd":"ls',
         toolCallId: "c1",
       }),
       partialToolCall({
         eventType: "delta",
-        name: "exec_command",
+        name: "run_command",
         arguments: ' -la"}',
         toolCallId: "c1",
       }),
-      partialToolCall({ eventType: "stop", name: "exec_command", toolCallId: "c1" }),
+      partialToolCall({ eventType: "stop", name: "run_command", toolCallId: "c1" }),
     ]);
     expect(out).toHaveLength(1);
     const p = out[0]!.payload as ToolCallPayload;
     expect(p.type).toBe("tool_call");
-    expect(p.name).toBe("exec_command");
+    expect(p.name).toBe("run_command");
     expect(p.tool_call_id).toBe("c1");
     expect(p.arguments).toBe('{"cmd":"ls -la"}');
   });

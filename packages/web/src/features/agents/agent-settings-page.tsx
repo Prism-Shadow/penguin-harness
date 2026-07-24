@@ -29,6 +29,7 @@ import { Button } from "../../components/ui/button";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 import { Input, Textarea } from "../../components/ui/input";
 import { OptionMenu, type OptionMenuChoice } from "../../components/ui/option-menu";
+import { Switch } from "../../components/ui/switch";
 import { ConfirmModal, useSaveConfirm } from "../../components/ui/confirm-modal";
 import { Skeleton } from "../../components/ui/skeleton";
 import { VaultTab } from "./vault-tab";
@@ -666,6 +667,8 @@ function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn 
   );
   // Per-cell validation errors, keyed `${rowIndex}-${column}`, shown red under the offending numeric input.
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  // tools.call_descriptions: a missing field means enabled (the toggle exists to turn it off).
+  const [callDesc, setCallDesc] = useState<boolean>(data.config.callDescriptions ?? true);
   const { requestSave, element: saveConfirm } = useSaveConfirm();
 
   const update = (index: number, patch: Partial<ToolRowState>) => {
@@ -713,7 +716,7 @@ function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn 
     // The table is submitted whole, so compare the editable columns against the loaded
     // config to detect a no-op save (row order is stable — both sides map the same list).
     const orig = data.config.toolsBuiltin;
-    const dirty =
+    const tableDirty =
       tools.length !== orig.length ||
       tools.some((t, i) => {
         const o = orig[i]!;
@@ -723,11 +726,23 @@ function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn 
           t.maxOutputLength !== o.maxOutputLength
         );
       });
-    if (!dirty) {
+    // The toggle compares against the effective value (missing = enabled), so flipping it
+    // off and back on writes nothing.
+    const callDescDirty = callDesc !== (data.config.callDescriptions ?? true);
+    if (!tableDirty && !callDescDirty) {
       toastInfo(S.common.noChangesToSave);
       return;
     }
-    requestSave(() => void onSave({ config: { toolsBuiltin: tools } }));
+    // Send only the changed keys (PUT accepts any subset).
+    requestSave(
+      () =>
+        void onSave({
+          config: {
+            ...(tableDirty ? { toolsBuiltin: tools } : {}),
+            ...(callDescDirty ? { callDescriptions: callDesc } : {}),
+          },
+        }),
+    );
   };
 
   return (
@@ -781,6 +796,20 @@ function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn 
             ))}
           </tbody>
         </table>
+      </div>
+
+      {/* tools.call_descriptions toggle: the command/subagent tools accept a model-written
+          per-call description shown during runs (see core buildToolConfig injection). */}
+      <div>
+        <label className="inline-flex cursor-pointer items-center gap-2">
+          <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
+            {S.agent.callDescriptions}
+          </span>
+          <Switch checked={callDesc} onChange={setCallDesc} aria-label={S.agent.callDescriptions} />
+        </label>
+        <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+          {S.agent.callDescriptionsHint}
+        </p>
       </div>
 
       <div>

@@ -111,7 +111,7 @@ describe("resumeTrace", () => {
       meta(),
       userText("run it"),
       requestBegin(),
-      toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc1" }),
+      toolCall({ name: "run_command", arguments: "{}", toolCallId: "tc1" }),
       requestEnd("completed"),
       tokenUsage(usage(10), usage(10)),
       toolCallOutput({ output: "result-1", toolCallId: "tc1" }),
@@ -119,7 +119,7 @@ describe("resumeTrace", () => {
       thinkingMessage("half", "aborted"), // the replay request was interrupted
       requestEnd("aborted"),
     ]);
-    expect(textsOf(result.history)).toEqual(["run it", "exec_command"]);
+    expect(textsOf(result.history)).toEqual(["run it", "run_command"]);
     // tc1 was committed but unanswered: its output is kept pending (structured re-delivery); the half-finished thinking is discarded.
     expect(textsOf(result.carryOver)).toEqual(["result-1"]);
   });
@@ -144,8 +144,8 @@ describe("resumeTrace", () => {
       meta(),
       userText("go"),
       requestBegin(),
-      toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc1" }),
-      toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc2" }),
+      toolCall({ name: "run_command", arguments: "{}", toolCallId: "tc1" }),
+      toolCall({ name: "run_command", arguments: "{}", toolCallId: "tc2" }),
       requestEnd("completed"),
       tokenUsage(usage(10), usage(10)),
       toolCallOutput({ output: "done-1", toolCallId: "tc1" }),
@@ -164,13 +164,13 @@ describe("resumeTrace", () => {
       meta(),
       userText("go"),
       requestBegin(),
-      toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc1" }),
+      toolCall({ name: "run_command", arguments: "{}", toolCallId: "tc1" }),
       // A parallel tool finished during the request: its output lands between start and stop.
       toolCallOutput({ output: "early", toolCallId: "tc1" }),
       requestEnd("completed"),
       tokenUsage(usage(10), usage(10)),
     ]);
-    expect(textsOf(result.history)).toEqual(["go", "exec_command"]);
+    expect(textsOf(result.history)).toEqual(["go", "run_command"]);
     expect(textsOf(result.carryOver)).toEqual(["early"]);
   });
 
@@ -278,7 +278,7 @@ describe("engine trace round-trip", () => {
         call += 1;
         if (call === 1) {
           yield toolCall({
-            name: "exec_command",
+            name: "run_command",
             arguments: JSON.stringify({ cmd: "printf ok" }),
             toolCallId: "rt1",
           });
@@ -295,7 +295,7 @@ describe("engine trace round-trip", () => {
       toolConfig: {
         customTools: [
           {
-            name: "exec_command",
+            name: "run_command",
             description: "Run a shell command.",
             parameters: { type: "object", properties: { cmd: { type: "string" } } },
             permission: "rw" as const,
@@ -379,8 +379,8 @@ describe("resumeTrace regressions (PR #39 review)", () => {
       meta(),
       userText("go"),
       requestBegin(),
-      toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc1" }),
-      toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc2" }),
+      toolCall({ name: "run_command", arguments: "{}", toolCallId: "tc1" }),
+      toolCall({ name: "run_command", arguments: "{}", toolCallId: "tc2" }),
       toolCallOutput({ output: "early", toolCallId: "tc1" }),
       requestEnd("aborted"),
       toolCallOutput({ output: "late", toolCallId: "tc2", stopReason: "aborted" }),
@@ -399,7 +399,7 @@ describe("resumeTrace regressions (PR #39 review)", () => {
       meta(),
       userText("go"),
       requestBegin(),
-      toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc1" }),
+      toolCall({ name: "run_command", arguments: "{}", toolCallId: "tc1" }),
       toolCallOutput({ output: "ran-during-timeout", toolCallId: "tc1" }),
       requestEnd("timeout"), // this round is dropped: tc1 never entered AgentHub history
       requestBegin(),
@@ -424,7 +424,7 @@ describe("resumeTrace regressions (PR #39 review)", () => {
       meta(),
       userText("go"),
       requestBegin(),
-      toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc1" }),
+      toolCall({ name: "run_command", arguments: "{}", toolCallId: "tc1" }),
       requestEnd("completed"),
       tokenUsage(usage(10), usage(10)),
       // (process exits -> resume -> placeholder sent out with the next round but never persisted)

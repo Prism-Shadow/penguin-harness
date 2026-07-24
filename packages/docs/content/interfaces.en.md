@@ -17,7 +17,7 @@ The context_engine depends on three interfaces: Human, LLM and Environment. All 
         LLMInterface │            │ EnvironmentInterface
                      ▼            ▼
         GenerativeModel        Environment
-         └─ AgentHub gateway    └─ BuiltinTool registry (exec_command …)
+         └─ AgentHub gateway    └─ BuiltinTool registry (run_command …)
 ```
 
 | Interface | Contract | Built-in implementation |
@@ -121,7 +121,7 @@ interface EnvironmentConfig {
   workspaceDir: string;
   toolConfig: ToolConfig;                   // { customTools: ToolDefinitionConfig[]; mcpServers: MCPServerConfig[] }
   services?: EnvironmentServices;           // runtime services injected into individual tools
-  vault?: Record<string, string>;           // Vault env vars, injected into exec_command / input_command subprocesses
+  vault?: Record<string, string>;           // Vault env vars, injected into run_command / input_command subprocesses
 }
 
 interface EnvironmentServices {

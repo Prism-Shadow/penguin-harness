@@ -58,7 +58,7 @@ Trace 是 append-only 的 JSON Lines 文件，每行一个 OmniMessage 信封（
 {"timestamp":"2026-07-18T03:10:22.531Z","type":"session_meta","payload":{"session_id":"session-2026-07-18-11-10-22-3f8a1c2d","provider":"deepseek","model_id":"deepseek-v4-pro","model_context_window":1000000,"system_prompt":"…","tools":[…],"thinking_level":"medium","agent_state":"/home/u/.penguin/data/default_project/agents/default_agent/agent_state","workspace":"/home/u/work"}}
 {"timestamp":"…","type":"event_msg","payload":{"type":"request_begin"}}
 {"timestamp":"…","type":"model_msg","payload":{"type":"text","role":"user","text":"创建 hello.txt"}}
-{"timestamp":"…","type":"model_msg","payload":{"type":"tool_call","role":"assistant","name":"exec_command","arguments":"{\"cmd\":\"printf hi > hello.txt\"}","tool_call_id":"call_0"}}
+{"timestamp":"…","type":"model_msg","payload":{"type":"tool_call","role":"assistant","name":"run_command","arguments":"{\"cmd\":\"printf hi > hello.txt\"}","tool_call_id":"call_0"}}
 {"timestamp":"…","type":"event_msg","payload":{"type":"approval_decision","decision":"allow","tool_call_id":"call_0"}}
 {"timestamp":"…","type":"model_msg","payload":{"type":"tool_call_output","role":"user","output":"[no output]","tool_call_id":"call_0"}}
 {"timestamp":"…","type":"event_msg","payload":{"type":"request_end","status":"completed"}}

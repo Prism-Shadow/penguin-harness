@@ -13,10 +13,10 @@ import type { OmniMessage } from "../src/omnimessage/index.js";
 import { BUILTIN_TOOL_FACTORIES } from "../src/environment/tools/registry.js";
 import type { ToolConfig, ToolDefinitionConfig } from "../src/interfaces.js";
 
-/** Tool config for exec_command (permission/maxOutputLength adjustable). */
+/** Tool config for run_command (permission/maxOutputLength adjustable). */
 function execTool(overrides: Partial<ToolDefinitionConfig> = {}): ToolDefinitionConfig {
   return {
-    name: "exec_command",
+    name: "run_command",
     description: "Run a shell command in the workspace.",
     parameters: {
       type: "object",
@@ -54,7 +54,7 @@ let originalHome: string | undefined;
 
 beforeEach(async () => {
   tmp = await mkdtemp(path.join(tmpdir(), "penguin-env-"));
-  // exec_command runs via a `bash -l` login shell (product behavior): a login shell loads the
+  // run_command runs via a `bash -l` login shell (product behavior): a login shell loads the
   // developer's ~/.bash_profile and similar files, whose latency (e.g. nvm taking hundreds of
   // ms) and stderr output (e.g. nvm warnings) can leak into tool output, letting the local
   // profile hijack timeout/truncation test cases. Pointing HOME at an empty temp directory makes
@@ -71,7 +71,7 @@ afterEach(async () => {
 });
 
 describe("Environment.listTools", () => {
-  it("returns exactly one exec_command tool with only definition fields", async () => {
+  it("returns exactly one run_command tool with only definition fields", async () => {
     const env = new Environment({
       workspaceDir: tmp,
       toolConfig: makeToolConfig(),
@@ -81,7 +81,7 @@ describe("Environment.listTools", () => {
     // Deep-equal to exactly the definition fields -- also proves permission / maxOutputLength
     // do not leak into the LLM tool definition.
     expect(tools[0]).toEqual({
-      name: "exec_command",
+      name: "run_command",
       description: "Run a shell command in the workspace.",
       parameters: {
         type: "object",
@@ -107,7 +107,7 @@ describe("Environment.listTools", () => {
     });
     // An unrecognized tool name is neither executable nor exposed to the LLM.
     const tools = await env.listTools();
-    expect(tools.map((t) => t.name)).toEqual(["exec_command"]);
+    expect(tools.map((t) => t.name)).toEqual(["run_command"]);
   });
 });
 
@@ -118,7 +118,7 @@ describe("Environment.executeTool — basic file write", () => {
       toolConfig: makeToolConfig(),
     });
     const call = toolCall({
-      name: "exec_command",
+      name: "run_command",
       arguments: JSON.stringify({ cmd: "printf 'Hello, Penguin' > note.txt" }),
       toolCallId: "call_write",
     });
@@ -155,6 +155,35 @@ describe("Environment.executeTool — basic file write", () => {
   });
 });
 
+describe("Environment — legacy exec_command alias", () => {
+  it("assembles and dispatches a config entry still named exec_command (pre-rename on-disk configs)", async () => {
+    // Old agents' system_config.yaml is loaded verbatim, so the entry keeps the old name;
+    // the registry alias must route it to the same shell tool under that name.
+    const env = new Environment({
+      workspaceDir: tmp,
+      toolConfig: makeToolConfig(execTool({ name: "exec_command" })),
+    });
+    // Exposed to the LLM under the config entry's (legacy) name.
+    const tools = await env.listTools();
+    expect(tools.map((t) => t.name)).toEqual(["exec_command"]);
+    expect(env.toolPermission("exec_command")).toBe("rw");
+    // Dispatches by the legacy name and actually runs the command.
+    const messages = await collect(
+      env.executeTool({
+        toolCall: toolCall({
+          name: "exec_command",
+          arguments: JSON.stringify({ cmd: "printf legacy > legacy.txt" }),
+          toolCallId: "call_legacy",
+        }),
+      }),
+    );
+    const last = messages[messages.length - 1]!.payload as { type?: string; stop_reason?: string };
+    expect(last.type).toBe("tool_call_output");
+    expect(last.stop_reason).toBe("completed");
+    expect(await readFile(path.join(tmp, "legacy.txt"), "utf8")).toBe("legacy");
+  });
+});
+
 describe("Environment.executeTool — vault env injection", () => {
   it("injects vault entries into the command env; hardened entries are not overridable", async () => {
     const env = new Environment({
@@ -164,7 +193,7 @@ describe("Environment.executeTool — vault env injection", () => {
       vault: { PENGUIN_VAULT_TEST_KEY: "vault-secret-value", PAGER: "less" },
     });
     const call = toolCall({
-      name: "exec_command",
+      name: "run_command",
       arguments: JSON.stringify({ cmd: 'echo "k=$PENGUIN_VAULT_TEST_KEY pager=$PAGER"' }),
       toolCallId: "call_vault",
     });
@@ -184,7 +213,7 @@ describe("Environment.executeTool — vault env injection", () => {
       toolConfig: makeToolConfig(),
     });
     const call = toolCall({
-      name: "exec_command",
+      name: "run_command",
       arguments: JSON.stringify({ cmd: 'echo "k=[$PENGUIN_VAULT_TEST_KEY]"' }),
       toolCallId: "call_no_vault",
     });
@@ -206,7 +235,7 @@ describe("Environment.executeTool — edit file", () => {
     await collect(
       env.executeTool({
         toolCall: toolCall({
-          name: "exec_command",
+          name: "run_command",
           arguments: JSON.stringify({ cmd: "printf 'Hello' > note.txt" }),
           toolCallId: "c1",
         }),
@@ -215,7 +244,7 @@ describe("Environment.executeTool — edit file", () => {
     await collect(
       env.executeTool({
         toolCall: toolCall({
-          name: "exec_command",
+          name: "run_command",
           arguments: JSON.stringify({ cmd: "printf '!' >> note.txt" }),
           toolCallId: "c2",
         }),
@@ -238,7 +267,7 @@ describe("Environment.executeTool — maxOutputLength truncation", () => {
     const messages = await collect(
       env.executeTool({
         toolCall: toolCall({
-          name: "exec_command",
+          name: "run_command",
           arguments: JSON.stringify({ cmd: "seq 1 100000" }),
           toolCallId: "call_big",
         }),
@@ -275,7 +304,7 @@ describe("Environment.executeTool — maxOutputLength truncation", () => {
     const messages = await collect(
       env.executeTool({
         toolCall: toolCall({
-          name: "exec_command",
+          name: "run_command",
           arguments: JSON.stringify({ cmd: "seq 1 100" }),
           toolCallId: "call_nolimit",
         }),
@@ -494,7 +523,7 @@ describe("Environment.executeTool — timeoutMs (PRN-013)", () => {
     const messages = await collect(
       env.executeTool({
         toolCall: toolCall({
-          name: "exec_command",
+          name: "run_command",
           arguments: JSON.stringify({ cmd: "echo begin; sleep 5" }),
           toolCallId: "call_timeout",
         }),
@@ -537,7 +566,7 @@ describe("Environment.executeTool — timeoutMs (PRN-013)", () => {
     const messagesPromise = collect(
       env.executeTool({
         toolCall: toolCall({
-          name: "exec_command",
+          name: "run_command",
           arguments: JSON.stringify({ cmd: "sleep 5" }),
           toolCallId: "call_user_abort",
         }),
@@ -602,7 +631,7 @@ describe("Environment.executeTool — robustness", () => {
     const env = new Environment({ workspaceDir: tmp, toolConfig: makeToolConfig() });
     const messages = await collect(
       env.executeTool({
-        toolCall: toolCall({ name: "exec_command", arguments: args, toolCallId }),
+        toolCall: toolCall({ name: "run_command", arguments: args, toolCallId }),
       }),
     );
     return messages[messages.length - 1]!.payload as {
@@ -649,7 +678,7 @@ describe("Environment.executeTool — robustness", () => {
     const messages = await collect(
       env.executeTool({
         toolCall: toolCall({
-          name: "exec_command",
+          name: "run_command",
           arguments: JSON.stringify({ workdir: "." }),
           toolCallId: "call_nocmd",
         }),
@@ -671,7 +700,7 @@ describe("Environment.executeTool — robustness", () => {
     const messages = await collect(
       env.executeTool({
         toolCall: toolCall({
-          name: "exec_command",
+          name: "run_command",
           arguments: JSON.stringify({ cmd: "exit 3" }),
           toolCallId: "call_fail",
         }),
@@ -710,7 +739,7 @@ describe("Environment.executeTool — robustness", () => {
     const messagesPromise = collect(
       env.executeTool({
         toolCall: toolCall({
-          name: "exec_command",
+          name: "run_command",
           arguments: JSON.stringify({
             cmd: 'node -e "setTimeout(()=>{},5000)" & wait',
           }),
@@ -738,7 +767,7 @@ describe("Environment.toolPermission", () => {
       workspaceDir: "/tmp",
       toolConfig: makeToolConfig(execTool({ permission: "rw" })),
     });
-    expect(env.toolPermission("exec_command")).toBe("rw");
+    expect(env.toolPermission("run_command")).toBe("rw");
   });
 
   it("returns undefined for an unknown tool", () => {

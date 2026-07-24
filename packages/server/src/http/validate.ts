@@ -187,6 +187,17 @@ export function optionalNumber(
   return v;
 }
 
+export function optionalBoolean(
+  obj: Record<string, unknown>,
+  key: string,
+  label = key,
+): boolean | undefined {
+  const v = obj[key];
+  if (v === undefined) return undefined;
+  if (typeof v !== "boolean") throw badRequest(`${label} must be a boolean.`);
+  return v;
+}
+
 /** Validate a yyyy-mm-dd query parameter (defaults to undefined). */
 export function optionalDateParam(value: string | undefined, label: string): string | undefined {
   if (value === undefined || value === "") return undefined;

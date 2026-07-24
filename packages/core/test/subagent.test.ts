@@ -289,7 +289,7 @@ describe("run_subagent tool (foreground)", () => {
     const runner = runnerOf(async function* ({ approve: childApprove }) {
       const decision = childApprove
         ? await childApprove(
-            withOrigin(toolCall({ name: "exec_command", arguments: "{}", toolCallId: "t1" }), HOP),
+            withOrigin(toolCall({ name: "run_command", arguments: "{}", toolCallId: "t1" }), HOP),
           )
         : "deny";
       yield withOrigin(partialText("delta", `decision:${decision}`), HOP);
@@ -301,7 +301,7 @@ describe("run_subagent tool (foreground)", () => {
     );
     expect(result?.stopReason).toBe("completed");
     expect(ownDeltas(out)).toContain("decision:allow");
-    expect(askedFor).toEqual(["exec_command"]);
+    expect(askedFor).toEqual(["run_command"]);
   });
 
   it("kills the child and reports aborted when interrupted during the start window", async () => {
@@ -440,7 +440,7 @@ describe("run_subagent backgrounding + input_subagent", () => {
       yield withOrigin(partialText("delta", "working "), HOP);
       const decision = approve
         ? await approve(
-            withOrigin(toolCall({ name: "exec_command", arguments: "{}", toolCallId: "t1" }), HOP),
+            withOrigin(toolCall({ name: "run_command", arguments: "{}", toolCallId: "t1" }), HOP),
           )
         : "deny";
       yield withOrigin(partialText("delta", `approved:${decision}`), HOP);
@@ -499,7 +499,7 @@ describe("run_subagent backgrounding + input_subagent", () => {
       yield withOrigin(partialText("delta", "working"), HOP);
       if (approve) {
         decision = await approve(
-          withOrigin(toolCall({ name: "exec_command", arguments: "{}", toolCallId: "t1" }), HOP),
+          withOrigin(toolCall({ name: "run_command", arguments: "{}", toolCallId: "t1" }), HOP),
         );
       }
       await aborted(signal);

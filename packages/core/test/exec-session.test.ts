@@ -1,5 +1,5 @@
 /**
- * Behavior tests for long-running command sessions (exec_command yield + input_command).
+ * Behavior tests for long-running command sessions (run_command yield + input_command).
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -12,7 +12,7 @@ import type { ToolConfig, ToolDefinitionConfig } from "../src/interfaces.js";
 
 function execTool(overrides: Partial<ToolDefinitionConfig> = {}): ToolDefinitionConfig {
   return {
-    name: "exec_command",
+    name: "run_command",
     description: "Run a shell command.",
     parameters: {
       type: "object",
@@ -94,14 +94,14 @@ afterEach(async () => {
   await rm(tmp, { recursive: true, force: true });
 });
 
-describe("exec_command — long-running command sessions", () => {
+describe("run_command — long-running command sessions", () => {
   it("returns promptly when a command backgrounds a long-lived child", async () => {
     // node stays resident in the background and inherits the pipes; bash exits immediately
     // after the foreground echo. The old implementation waited for close (pipe EOF) -> stuck
     // for 5s; the new implementation goes by the foreground exit + a short drain, returning
     // within seconds, and reaps the leftover background process.
     const startedAt = Date.now();
-    const res = await runTool(env, "exec_command", {
+    const res = await runTool(env, "run_command", {
       cmd: 'node -e "setTimeout(()=>{},5000)" & echo hello',
     });
     const elapsed = Date.now() - startedAt;
@@ -117,7 +117,7 @@ describe("exec_command — long-running command sessions", () => {
     const deltas: string[] = [];
     for await (const msg of env.executeTool({
       toolCall: toolCall({
-        name: "exec_command",
+        name: "run_command",
         arguments: JSON.stringify({ cmd: "echo first; sleep 0.4; echo second" }),
         toolCallId: "call_stream",
       }),
@@ -134,7 +134,7 @@ describe("exec_command — long-running command sessions", () => {
   });
 
   it("yields a process_id when the command is still running past yield_time_ms", async () => {
-    const res = await runTool(env, "exec_command", {
+    const res = await runTool(env, "run_command", {
       cmd: "sleep 30",
       yield_time_ms: 300,
     });
@@ -143,7 +143,7 @@ describe("exec_command — long-running command sessions", () => {
   });
 
   it("input_command drives a running session: write stdin, get output and exit status", async () => {
-    const start = await runTool(env, "exec_command", {
+    const start = await runTool(env, "run_command", {
       cmd: "read line; echo got:$line",
       yield_time_ms: 300,
     });
@@ -159,7 +159,7 @@ describe("exec_command — long-running command sessions", () => {
   });
 
   it("input_command with an empty chars polls new output without writing", async () => {
-    const start = await runTool(env, "exec_command", {
+    const start = await runTool(env, "run_command", {
       cmd: "for i in 1 2 3; do echo line$i; sleep 0.2; done",
       yield_time_ms: 100,
     });
@@ -176,7 +176,7 @@ describe("exec_command — long-running command sessions", () => {
   });
 
   it("input_command sends Ctrl-C (U+0003) to interrupt a running session", async () => {
-    const start = await runTool(env, "exec_command", {
+    const start = await runTool(env, "run_command", {
       cmd: "sleep 30",
       yield_time_ms: 300,
     });
@@ -195,7 +195,7 @@ describe("exec_command — long-running command sessions", () => {
   });
 
   it("input_command rejects chars mixing U+0003 with other content", async () => {
-    const start = await runTool(env, "exec_command", {
+    const start = await runTool(env, "run_command", {
       cmd: "sleep 30",
       yield_time_ms: 300,
     });
@@ -221,7 +221,7 @@ describe("exec_command — long-running command sessions", () => {
   });
 
   it("input_command ignores writes to a closed stdin pipe without crashing", async () => {
-    const start = await runTool(env, "exec_command", {
+    const start = await runTool(env, "run_command", {
       cmd: "exec 0<&-; sleep 30",
       yield_time_ms: 300,
     });
@@ -237,7 +237,7 @@ describe("exec_command — long-running command sessions", () => {
   });
 
   it("runs commands through pipes, not a TTY (isTTY=false)", async () => {
-    const res = await runTool(env, "exec_command", {
+    const res = await runTool(env, "run_command", {
       cmd: 'node -e "process.stdout.write(String(Boolean(process.stdout.isTTY)))"',
       yield_time_ms: 3000,
     });
@@ -246,7 +246,7 @@ describe("exec_command — long-running command sessions", () => {
   });
 
   it("hardens the child env against interactive hangs (editor/credentials/pager)", async () => {
-    const res = await runTool(env, "exec_command", {
+    const res = await runTool(env, "run_command", {
       cmd: 'echo "$GIT_EDITOR|$GIT_TERMINAL_PROMPT|$PAGER|$TERM"',
       yield_time_ms: 3000,
     });
@@ -256,7 +256,7 @@ describe("exec_command — long-running command sessions", () => {
 
   it("does not start new command sessions after the environment is disposed", async () => {
     env.dispose();
-    const res = await runTool(env, "exec_command", {
+    const res = await runTool(env, "run_command", {
       cmd: "echo should-not-run",
       yield_time_ms: 3000,
     });

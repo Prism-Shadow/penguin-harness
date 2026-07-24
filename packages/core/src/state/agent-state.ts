@@ -215,7 +215,7 @@ export async function provisionProjectAgents(opts?: {
 /**
  * The vault key-name list: the replacement value for `{{VAULT_KEYS}}`, one `- KEY` per line;
  * returns an empty string when there are no keys.
- * **Contains only key names, never values** — values are only injected into the exec_command
+ * **Contains only key names, never values** — values are only injected into the run_command
  * subprocess environment, never the model context. The statement of the vault's purpose is part
  * of the default template body (the # Vault section) and is kept even with no vault.
  */
@@ -411,11 +411,61 @@ export function selectBuiltinToolsForModel(
   return tools.filter((t) => t.forModel === undefined || t.forModel === kind);
 }
 
+/**
+ * Tools that accept the optional `description` call argument (canonical names plus the
+ * legacy exec_command alias, so pre-rename configs get the feature too). Config-level
+ * name literals, matching defaultBuiltinTools() / the registry alias.
+ */
+const CALL_DESCRIPTION_TOOLS = new Set([
+  "run_command",
+  "exec_command",
+  "input_command",
+  "run_subagent",
+  "input_subagent",
+]);
+
+/** Schema of the injected `description` property (a fresh object per injection; never shared with config). */
+function callDescriptionProperty(): Record<string, unknown> {
+  return {
+    type: "string",
+    description:
+      "One short sentence describing what this call is doing and why, shown to the user " +
+      "while the call runs. Write it in the user's language.",
+  };
+}
+
+/**
+ * Injects the optional `description` property into a command/subagent tool entry's
+ * parameters (in-memory only — the stored YAML is never rewritten; the injected schema
+ * flows into the LLM tool list and session_meta.tools automatically). Entries that are
+ * not description-capable, have no parameter schema in config, or already define a
+ * `description` property pass through unchanged. Never added to `required`.
+ */
+function injectCallDescription(def: ToolDefinitionConfig): ToolDefinitionConfig {
+  if (!CALL_DESCRIPTION_TOOLS.has(def.name)) return def;
+  const params = def.parameters;
+  if (params === undefined) return def;
+  const properties = params["properties"];
+  if (properties === null || typeof properties !== "object") return def;
+  if ((properties as Record<string, unknown>)["description"] !== undefined) return def;
+  return {
+    ...def,
+    parameters: {
+      ...params,
+      properties: { ...properties, description: callDescriptionProperty() },
+    },
+  };
+}
+
 export function buildToolConfig(state: AgentState): ToolConfig {
   const systemTools = state.systemConfig.tools;
   const builtin = systemTools?.builtin ?? defaultSystemConfig().tools?.builtin ?? [];
+  // tools.call_descriptions defaults to ON: a missing field (all pre-existing configs)
+  // gets the feature; only an explicit false turns it off.
+  const customTools =
+    systemTools?.call_descriptions === false ? builtin : builtin.map(injectCallDescription);
   return {
-    customTools: builtin,
+    customTools,
     mcpServers: systemTools?.mcpServers ?? [],
   };
 }

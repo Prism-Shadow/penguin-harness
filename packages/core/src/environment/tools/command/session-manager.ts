@@ -2,7 +2,7 @@
  * CommandSessionManager — registry and lifecycle management for long-running command sessions.
  *
  * Constructed by Environment (one per Session), injected via services and shared by the
- * `exec_command` and `input_command` tools. Registry responsibilities (id allocation, concurrency
+ * `run_command` and `input_command` tools. Registry responsibilities (id allocation, concurrency
  * cap, dispose, process 'exit' fallback) are handled by the generic `BackgroundRegistry` (shared
  * with subagent sessions, see `../background/registry.ts`); this class only retains
  * command-domain logic: spawning processes and assembling the child process environment (vault

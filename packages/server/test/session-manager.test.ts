@@ -51,7 +51,7 @@ const ROW: SessionRow = {
 };
 
 /** A simple, scriptable fake Session: run yields one tool_call and requests approval for it. */
-function approvalFakeSession(sessionId: string, toolName = "exec_command"): RuntimeSession {
+function approvalFakeSession(sessionId: string, toolName = "run_command"): RuntimeSession {
   return {
     sessionId,
     toolPermission: (name) => (name === "read_tool" ? "r" : "rw"),
@@ -168,7 +168,7 @@ describe("session-manager", () => {
       compactability: () => "ok" as const,
       async *run(): AsyncGenerator<OmniMessage> {
         yield requestBegin();
-        yield toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc-1" });
+        yield toolCall({ name: "run_command", arguments: "{}", toolCallId: "tc-1" });
         yield toolCallOutput({
           output: "ls: /nope\n[tool error] exit code 2",
           toolCallId: "tc-1",
@@ -184,7 +184,7 @@ describe("session-manager", () => {
     await waitFor(() => manager.statusOf("session-1") === "idle" && captured.length >= 2);
 
     expect(captured.map((a) => [a.source, a.code, a.kind])).toEqual([
-      ["environment", "tool_failed:exec_command", "expected"], // error fed back to the model; the Agent adjusts on its own
+      ["environment", "tool_failed:run_command", "expected"], // error fed back to the model; the Agent adjusts on its own
       ["llm", "llm_failed", "unexpected"], // not retryable, requires human intervention
     ]);
     expect(captured[0]!.ctx).toEqual({ projectId: "p1", agentId: "a1", sessionId: "session-1" });

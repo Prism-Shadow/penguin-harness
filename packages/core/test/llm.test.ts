@@ -108,7 +108,7 @@ describe("mergeOmniToUniMessage", () => {
   it("maps assistant tool_call OmniMessage (args JSON string → object)", () => {
     const uni = mergeOmniToUniMessage([
       toolCall({
-        name: "exec_command",
+        name: "run_command",
         arguments: '{"cmd":"ls -la"}',
         toolCallId: "call_1",
       }),
@@ -117,7 +117,7 @@ describe("mergeOmniToUniMessage", () => {
     const item = uni.content_items[0]!;
     expect(item).toEqual({
       type: "tool_call",
-      name: "exec_command",
+      name: "run_command",
       arguments: { cmd: "ls -la" },
       tool_call_id: "call_1",
     });
@@ -282,14 +282,14 @@ describe("translateEvents", () => {
       ev({
         event_type: "start",
         content_items: [
-          { type: "partial_tool_call", name: "exec_command", arguments: "", tool_call_id: "c1" },
+          { type: "partial_tool_call", name: "run_command", arguments: "", tool_call_id: "c1" },
         ],
       }),
       ev({
         content_items: [
           {
             type: "partial_tool_call",
-            name: "exec_command",
+            name: "run_command",
             arguments: '{"cmd":"ls',
             tool_call_id: "c1",
           },
@@ -299,7 +299,7 @@ describe("translateEvents", () => {
         content_items: [
           {
             type: "partial_tool_call",
-            name: "exec_command",
+            name: "run_command",
             arguments: ' -la"}',
             tool_call_id: "c1",
           },
@@ -311,7 +311,7 @@ describe("translateEvents", () => {
         content_items: [
           {
             type: "tool_call",
-            name: "exec_command",
+            name: "run_command",
             arguments: { cmd: "ls -la" },
             tool_call_id: "c1",
           },
@@ -343,7 +343,7 @@ describe("translateEvents", () => {
     // complete tool_call uses the authoritative complete content item.
     const tc = messages.find((m) => (m.payload as { type: string }).type === "tool_call")!
       .payload as ToolCallPayload;
-    expect(tc.name).toBe("exec_command");
+    expect(tc.name).toBe("run_command");
     expect(tc.tool_call_id).toBe("c1");
     expect(tc.arguments).toBe('{"cmd":"ls -la"}');
     expect(tc.stop_reason).toBe("completed");
@@ -379,7 +379,7 @@ describe("translateEvents", () => {
       ev({
         event_type: "start",
         content_items: [
-          { type: "partial_tool_call", name: "exec_command", arguments: "", tool_call_id: "real1" },
+          { type: "partial_tool_call", name: "run_command", arguments: "", tool_call_id: "real1" },
         ],
       }),
       // A streamed fragment with an empty id mixed in.
@@ -390,7 +390,7 @@ describe("translateEvents", () => {
         content_items: [
           {
             type: "partial_tool_call",
-            name: "exec_command",
+            name: "run_command",
             arguments: '{"cmd":"ls"}',
             tool_call_id: "real1",
           },
@@ -402,7 +402,7 @@ describe("translateEvents", () => {
         content_items: [
           {
             type: "tool_call",
-            name: "exec_command",
+            name: "run_command",
             arguments: { cmd: "ls" },
             tool_call_id: "real1",
           },
@@ -427,7 +427,7 @@ describe("translateEvents", () => {
       ev({
         event_type: "start",
         content_items: [
-          { type: "partial_tool_call", name: "exec_command", arguments: "", tool_call_id: "real1" },
+          { type: "partial_tool_call", name: "run_command", arguments: "", tool_call_id: "real1" },
         ],
       }),
       ev({
@@ -446,7 +446,7 @@ describe("translateEvents", () => {
         content_items: [
           {
             type: "tool_call",
-            name: "exec_command",
+            name: "run_command",
             arguments: { cmd: "ls" },
             tool_call_id: "real1",
           },
@@ -475,7 +475,7 @@ describe("translateEvents", () => {
         content_items: [
           {
             type: "partial_tool_call",
-            name: "exec_command",
+            name: "run_command",
             arguments: '{"cmd":"a"}',
             tool_call_id: "t1",
           },
@@ -484,18 +484,18 @@ describe("translateEvents", () => {
       // t1's complete content item arrives early (before t2), and should finish t1 immediately.
       ev({
         content_items: [
-          { type: "tool_call", name: "exec_command", arguments: { cmd: "a" }, tool_call_id: "t1" },
+          { type: "tool_call", name: "run_command", arguments: { cmd: "a" }, tool_call_id: "t1" },
         ],
       }),
       ev({
         content_items: [
           {
             type: "partial_tool_call",
-            name: "exec_command",
+            name: "run_command",
             arguments: '{"cmd":"b"}',
             tool_call_id: "t2",
           },
-          { type: "tool_call", name: "exec_command", arguments: { cmd: "b" }, tool_call_id: "t2" },
+          { type: "tool_call", name: "run_command", arguments: { cmd: "b" }, tool_call_id: "t2" },
         ],
       }),
       ev({ event_type: "stop", finish_reason: "tool_call", content_items: [] }),
@@ -532,14 +532,14 @@ describe("translateEvents", () => {
       ev({
         event_type: "start",
         content_items: [
-          { type: "partial_tool_call", name: "exec_command", arguments: "", tool_call_id: "c1" },
+          { type: "partial_tool_call", name: "run_command", arguments: "", tool_call_id: "c1" },
         ],
       }),
       ev({
         content_items: [
           {
             type: "partial_tool_call",
-            name: "exec_command",
+            name: "run_command",
             arguments: '{"cmd":"ls"}',
             tool_call_id: "c1",
           },
@@ -554,7 +554,7 @@ describe("translateEvents", () => {
     const start = partials.find((p) => p.payload.event_type === "start")!;
     const delta = partials.find((p) => p.payload.event_type === "delta")!;
     const stop = partials.find((p) => p.payload.event_type === "stop")!;
-    expect(start.payload.name).toBe("exec_command"); // start still carries name.
+    expect(start.payload.name).toBe("run_command"); // start still carries name.
     expect(delta.payload.name).toBe(""); // delta does not carry name.
     expect(stop.payload.name).toBe(""); // stop does not carry name.
   });
@@ -591,11 +591,11 @@ describe("translateEvents", () => {
         content_items: [
           {
             type: "partial_tool_call",
-            name: "exec_command",
+            name: "run_command",
             arguments: '{"cmd":"ls"}',
             tool_call_id: "c1",
           },
-          { type: "tool_call", name: "exec_command", arguments: { cmd: "ls" }, tool_call_id: "c1" },
+          { type: "tool_call", name: "run_command", arguments: { cmd: "ls" }, tool_call_id: "c1" },
         ],
       }),
       ev({ event_type: "stop", finish_reason: "tool_call", content_items: [] }),
@@ -634,11 +634,11 @@ describe("translateEvents", () => {
         content_items: [
           {
             type: "partial_tool_call",
-            name: "exec_command",
+            name: "run_command",
             arguments: '{"cmd":"ls"}',
             tool_call_id: "c1",
           },
-          { type: "tool_call", name: "exec_command", arguments: { cmd: "ls" }, tool_call_id: "c1" },
+          { type: "tool_call", name: "run_command", arguments: { cmd: "ls" }, tool_call_id: "c1" },
         ],
       }),
       ev({ content_items: [{ type: "text", text: "after call" }] }),
@@ -756,7 +756,7 @@ describe("translateEvents", () => {
         content_items: [
           {
             type: "partial_tool_call",
-            name: "exec_command",
+            name: "run_command",
             arguments: '{"cmd":',
             tool_call_id: "p1",
           },
@@ -790,7 +790,7 @@ describe("translateEvents", () => {
         content_items: [
           {
             type: "partial_tool_call",
-            name: "exec_command",
+            name: "run_command",
             arguments: '{"a":',
             tool_call_id: "k1",
           },
@@ -943,14 +943,14 @@ describe("EventTranslator.finishInterrupted (PRN-012 structural closure)", () =>
       ev({
         event_type: "start",
         content_items: [
-          { type: "partial_tool_call", name: "exec_command", arguments: "", tool_call_id: "c1" },
+          { type: "partial_tool_call", name: "run_command", arguments: "", tool_call_id: "c1" },
         ],
       }),
       ev({
         content_items: [
           {
             type: "partial_tool_call",
-            name: "exec_command",
+            name: "run_command",
             arguments: '{"cmd":"ls',
             tool_call_id: "c1",
           },
@@ -987,7 +987,7 @@ describe("EventTranslator.finishInterrupted (PRN-012 structural closure)", () =>
         content_items: [
           {
             type: "partial_tool_call",
-            name: "exec_command",
+            name: "run_command",
             arguments: '{"cmd":"ls"}',
             tool_call_id: "c1",
           },
@@ -995,7 +995,7 @@ describe("EventTranslator.finishInterrupted (PRN-012 structural closure)", () =>
       }),
       ev({
         content_items: [
-          { type: "tool_call", name: "exec_command", arguments: { cmd: "ls" }, tool_call_id: "c1" },
+          { type: "tool_call", name: "run_command", arguments: { cmd: "ls" }, tool_call_id: "c1" },
         ],
       }),
     ]) {
@@ -1135,7 +1135,7 @@ describe("isMalformedJsonParseError", () => {
       isMalformedJsonParseError(
         new ToolCallArgumentParseError({
           client: "Claude5Client",
-          toolName: "exec_command",
+          toolName: "run_command",
           toolCallId: "toolu_broken_1",
           rawArguments: '{"cmd": "ec',
           reason: "Unterminated string in JSON at position 11",
@@ -1555,7 +1555,7 @@ describe("provider fidelity payloads (opaque, AgentHub 0.4 semantics)", () => {
         content_items: [
           {
             type: "tool_call",
-            name: "exec_command",
+            name: "run_command",
             arguments: { cmd: "ls" },
             tool_call_id: "tc1",
             fidelity: { signature: "sig-tool" },

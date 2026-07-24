@@ -43,6 +43,7 @@ import {
   toolsDir,
   type ModelRef,
   type ProjectConfig,
+  type SystemConfig,
 } from "../src/state/index.js";
 import { sessionEnvironment } from "../src/internal/session-support.js";
 
@@ -168,7 +169,7 @@ describe("loadOrInitAgentState", () => {
     expect(second.systemConfig.system_prompt).toContain("PenguinHarness");
     expect(second.agentsMd).toBe(first.agentsMd);
     // The tool config is fully preserved on the load path.
-    expect(second.systemConfig.tools?.builtin?.[0]?.name).toBe("exec_command");
+    expect(second.systemConfig.tools?.builtin?.[0]?.name).toBe("run_command");
   });
 
   it("respects custom agentId / projectId", async () => {
@@ -180,19 +181,22 @@ describe("loadOrInitAgentState", () => {
 });
 
 describe("buildToolConfig", () => {
-  it("exposes exec/input command, run/input subagent (rw) and read_image (r)", async () => {
+  it("exposes command, file, subagent (rw) and image (r) tools", async () => {
     const state = await loadOrInitAgentState();
     const cfg = buildToolConfig(state);
     expect(cfg.mcpServers).toEqual([]);
     expect(cfg.customTools.map((t) => t.name)).toEqual([
-      "exec_command",
+      "run_command",
       "input_command",
+      "read_file",
+      "edit_file",
+      "write_file",
       "run_subagent",
       "input_subagent",
       "read_image",
       "describe_image",
     ]);
-    const exec = cfg.customTools.find((t) => t.name === "exec_command")!;
+    const exec = cfg.customTools.find((t) => t.name === "run_command")!;
     expect(exec.permission).toBe("rw");
     expect(exec.timeoutMs).toBe(120000);
     expect(exec.maxOutputLength).toBe(16000);
@@ -200,6 +204,32 @@ describe("buildToolConfig", () => {
     const write = cfg.customTools.find((t) => t.name === "input_command")!;
     expect(write.permission).toBe("rw");
     expect((write.parameters as { required?: string[] }).required).toEqual(["process_id"]);
+    // File tools: read_file is read-only with a wider output cap; edit/write are rw.
+    const readFile = cfg.customTools.find((t) => t.name === "read_file")!;
+    expect(readFile.permission).toBe("r");
+    expect(readFile.timeoutMs).toBe(30000);
+    expect(readFile.maxOutputLength).toBe(64000);
+    expect((readFile.parameters as { required?: string[] }).required).toEqual(["file_path"]);
+    expect(Object.keys((readFile.parameters as { properties: object }).properties)).toEqual([
+      "file_path",
+      "offset",
+      "limit",
+    ]);
+    const editFile = cfg.customTools.find((t) => t.name === "edit_file")!;
+    expect(editFile.permission).toBe("rw");
+    expect(editFile.timeoutMs).toBe(30000);
+    expect(editFile.maxOutputLength).toBe(16000);
+    expect((editFile.parameters as { required?: string[] }).required).toEqual([
+      "file_path",
+      "old_string",
+      "new_string",
+    ]);
+    const writeFile = cfg.customTools.find((t) => t.name === "write_file")!;
+    expect(writeFile.permission).toBe("rw");
+    expect((writeFile.parameters as { required?: string[] }).required).toEqual([
+      "file_path",
+      "content",
+    ]);
     const sub = cfg.customTools.find((t) => t.name === "run_subagent")!;
     expect(sub.permission).toBe("rw");
     expect((sub.parameters as { required?: string[] }).required).toEqual(["prompt"]);
@@ -231,12 +261,12 @@ describe("buildToolConfig", () => {
     const forVision = selectBuiltinToolsForModel(all, true);
     expect(forVision.some((t) => t.name === "read_image")).toBe(true);
     expect(forVision.some((t) => t.name === "describe_image")).toBe(false);
-    expect(forVision.filter((t) => t.name === "exec_command")).toHaveLength(1);
+    expect(forVision.filter((t) => t.name === "run_command")).toHaveLength(1);
     // Text-only model: describe_image is kept.
     const forText = selectBuiltinToolsForModel(all, false);
     expect(forText.some((t) => t.name === "read_image")).toBe(false);
     expect(forText.some((t) => t.name === "describe_image")).toBe(true);
-    expect(forText.filter((t) => t.name === "exec_command")).toHaveLength(1);
+    expect(forText.filter((t) => t.name === "run_command")).toHaveLength(1);
   });
 
   it("loads MCP Server config from system_config.yaml", () => {
@@ -271,13 +301,94 @@ describe("buildToolConfig", () => {
     };
     const cfg = buildToolConfig(state);
     expect(cfg.customTools.map((t) => t.name)).toEqual([
-      "exec_command",
+      "run_command",
       "input_command",
+      "read_file",
+      "edit_file",
+      "write_file",
       "run_subagent",
       "input_subagent",
       "read_image",
       "describe_image",
     ]);
+  });
+});
+
+describe("buildToolConfig — call description injection", () => {
+  const makeState = (tools: NonNullable<SystemConfig["tools"]>) => ({
+    root: tmpRoot,
+    projectId: DEFAULT_PROJECT_ID,
+    agentId: DEFAULT_AGENT_ID,
+    stateDir: agentStateDir(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID),
+    systemConfig: { system_prompt: "x", tools },
+    agentsMd: "y",
+  });
+  const properties = (t: { parameters?: Record<string, unknown> }) =>
+    (t.parameters as { properties: Record<string, unknown> }).properties;
+  const required = (t: { parameters?: Record<string, unknown> }) =>
+    (t.parameters as { required?: string[] }).required;
+
+  it("injects an optional description property into the command/subagent tools by default (missing toggle = on)", async () => {
+    const state = await loadOrInitAgentState();
+    expect(state.systemConfig.tools?.call_descriptions).toBeUndefined();
+    const cfg = buildToolConfig(state);
+    for (const name of ["run_command", "input_command", "run_subagent", "input_subagent"]) {
+      const tool = cfg.customTools.find((t) => t.name === name)!;
+      const desc = properties(tool)["description"] as { type?: string; description?: string };
+      expect(desc.type).toBe("string");
+      expect(desc.description).toContain("shown to the user");
+      // Never added to required.
+      expect(required(tool)).not.toContain("description");
+    }
+    // The file tools' path argument is self-describing: no description parameter.
+    for (const name of ["read_file", "edit_file", "write_file", "read_image", "describe_image"]) {
+      const tool = cfg.customTools.find((t) => t.name === name)!;
+      expect(properties(tool)["description"]).toBeUndefined();
+    }
+  });
+
+  it("does not mutate the stored config when injecting (in-memory only)", async () => {
+    const state = await loadOrInitAgentState();
+    buildToolConfig(state);
+    const stored = state.systemConfig.tools?.builtin?.find((t) => t.name === "run_command")!;
+    expect(properties(stored)["description"]).toBeUndefined();
+  });
+
+  it("skips injection when call_descriptions is false", () => {
+    const builtin = [
+      {
+        name: "run_command",
+        description: "shell",
+        parameters: { type: "object", properties: { cmd: { type: "string" } }, required: ["cmd"] },
+      },
+    ];
+    const cfg = buildToolConfig(makeState({ builtin, call_descriptions: false }));
+    expect(properties(cfg.customTools[0]!)["description"]).toBeUndefined();
+  });
+
+  it("injects into a legacy exec_command entry and leaves unrelated or schema-less entries alone", () => {
+    const builtin = [
+      {
+        name: "exec_command",
+        description: "legacy shell",
+        parameters: { type: "object", properties: { cmd: { type: "string" } }, required: ["cmd"] },
+      },
+      // No parameters in config: nothing to inject into (left untouched rather than inventing a schema).
+      { name: "input_command", description: "no schema" },
+      {
+        name: "read_file",
+        description: "reader",
+        parameters: { type: "object", properties: { file_path: { type: "string" } } },
+      },
+    ];
+    const cfg = buildToolConfig(makeState({ builtin, call_descriptions: true }));
+    const legacy = cfg.customTools.find((t) => t.name === "exec_command")!;
+    expect(properties(legacy)["description"]).toBeDefined();
+    expect(required(legacy)).toEqual(["cmd"]);
+    expect(cfg.customTools.find((t) => t.name === "input_command")!.parameters).toBeUndefined();
+    expect(
+      properties(cfg.customTools.find((t) => t.name === "read_file")!)["description"],
+    ).toBeUndefined();
   });
 });
 

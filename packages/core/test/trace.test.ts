@@ -24,7 +24,7 @@ function meta() {
     model_id: "test-model",
     model_context_window: 200000,
     system_prompt: "test system prompt",
-    tools: [{ name: "exec_command", description: "test tool" }],
+    tools: [{ name: "run_command", description: "test tool" }],
     thinking_level: "medium",
     agent_state: "/tmp/agent_state",
     workspace: "/tmp/workspace",

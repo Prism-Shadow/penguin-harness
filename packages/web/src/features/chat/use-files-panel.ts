@@ -4,7 +4,7 @@
  * tree" navigation command (driven by clicking a file chip inside a message).
  *
  * The panel's content is just WorkspaceBrowser's single directory-tree view — the protocol has no
- * structured file-write signal at all (the only built-in tool is the opaque exec_command shell),
+ * structured file-write signal at all (file writes can happen inside the opaque run_command shell),
  * so there's no "Agent output" list to maintain; a file clicked in a message jumps straight to
  * locating it in the tree.
  *
