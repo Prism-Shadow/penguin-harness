@@ -3,8 +3,8 @@ name: benchmark-design
 description: Design and calibrate a multi-Case capability Benchmark with repeated independent evaluations and a traceable baseline.
 short_description: Design and calibrate an Agent capability Benchmark.
 short_description_zh: 设计并校准 Agent 能力评测 Benchmark。
-version: 14
-updated: 2026-07-24T08:10:45Z
+version: 15
+updated: 2026-07-24T08:49:25Z
 ---
 
 # Benchmark Design
@@ -155,6 +155,9 @@ longer comparable and establish a new baseline. Evaluator never writes the Score
 
 Report the Benchmark path, configuration, Test Agent State version, aggregate and Case scores,
 Test Session ids, main adjustments, and known limitations.
+
+The report must not describe Rubrics, Gold answers, hidden rules, per-item scores, specific Test
+Agent errors, or any diagnostic that could reveal private scoring conditions.
 
 Stop after writing and reporting the baseline. Do not modify the Test Agent or begin Agent
 optimization.

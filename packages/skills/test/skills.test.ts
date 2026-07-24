@@ -106,6 +106,8 @@ describe("agent tuning workflow contracts", () => {
     expect(benchmark).toContain("Fix every Rubric before the first evaluation");
     expect(benchmark).toContain("every Case and Run is valid and complete");
     expect(benchmark).toContain("representative Test Traces");
+    expect(benchmark).toContain("per-item scores");
+    expect(benchmark).toContain("could reveal private scoring conditions");
     expect(benchmark).toContain("Stop after writing and reporting the baseline");
   });
 
