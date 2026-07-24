@@ -493,11 +493,9 @@ export const zh = {
     newSessionInWorkspace: "在此工作区新建对话",
     draftSubtitle: "最擅长 AI 开发任务的自进化 Agent",
     /**
-     * Example task cards on the draft screen: one click auto-submits the canned prompt (game
-     * card first, RAG card below/after it). These are the FULL working prompts — the README and
-     * landing page show a condensed one-sentence version of the RAG example for reading, and
-     * the cards' own desc lines stay short, but what actually gets submitted stays detailed:
-     * build quality depends on it.
+     * Example task cards on the draft screen: one click auto-submits the canned prompt. These
+     * are the FULL working prompts — descriptions stay short, but the submitted instructions
+     * remain detailed because execution quality depends on them.
      */
     exampleTasks: {
       game: {

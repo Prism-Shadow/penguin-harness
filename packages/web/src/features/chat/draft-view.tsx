@@ -52,6 +52,7 @@ import { PenguinLogo } from "../../components/ui/penguin-logo";
 import { toastError } from "../../components/ui/toast";
 import { ChatInput } from "./chat-input";
 import { buildSkillsMessage } from "./skill-use";
+import { EXAMPLE_TASKS, type ExampleTask, type ExampleTaskId } from "./example-tasks";
 import { clearDraft, draftKey, loadDraft, saveDraft } from "./draft-cache";
 import type { DraftCache } from "./draft-cache";
 import { handoffMessage } from "./agent-mentions";
@@ -85,20 +86,6 @@ function saveAppliedRouteKey(field: RouteStateField, key: string): void {
     /* best-effort: the dedup marker falls back to the per-mount ref */
   }
 }
-
-/**
- * Example tasks on the draft screen, in display order (game card first, LoL music player,
- * RAG build, then black-box Agent tuning). Copy lives in S.chat.exampleTasks[id]; skills are pinned via a
- * `<use_skills>` block — only those the selected Agent actually has installed are included,
- * so the block never references a skill the agent can't read.
- */
-type ExampleTaskId = "game" | "lol" | "rag" | "tuning";
-const EXAMPLE_TASKS: { id: ExampleTaskId; skills: string[] }[] = [
-  { id: "game", skills: ["web-design"] },
-  { id: "lol", skills: ["web-design"] },
-  { id: "rag", skills: ["penguin-sdk", "web-design"] },
-  { id: "tuning", skills: [] },
-];
 
 export function DraftView({
   projectId,
@@ -427,7 +414,7 @@ export function DraftView({
   // typed-but-unsent draft must survive. The selected model / Workspace / approval mode apply as-is.
   const [exampleBusy, setExampleBusy] = useState<ExampleTaskId | null>(null);
   const runExample = useCallback(
-    async (task: (typeof EXAMPLE_TASKS)[number]) => {
+    async (task: ExampleTask) => {
       if (exampleBusy !== null) return;
       setExampleBusy(task.id);
       try {
