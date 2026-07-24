@@ -144,10 +144,11 @@ Schedule 写操作仅限 Owner。新建 Session 模式的任务，`modelId` 与 
 | DELETE | / | 删除 Session（连同 Trace 与暂存文件） |
 | GET | /messages | 完整 OmniMessage 历史 |
 | GET | /stream | SSE 事件流（见下节） |
-| POST | /tasks | 发起 Task：`{input: TaskInputPart[]}` → 202 |
+| POST | /tasks | 发起 Task：`{input: TaskInputPart[], thinkingLevel?}` → 202 |
 | POST | /approvals/:toolCallId | 审批决定：`{decision}` 取 `allow` 或 `deny` → 204 |
 | POST | /abort | 中断当前 Task：已触发返回 202，无任务返回 204 |
 | POST | /compact | 触发上下文压缩：202；无可压缩内容返回 409 `nothing_to_compact` |
+| POST | /fork | 模型切换分叉：`{modelId, provider}`（二者必填）→ 201，新 Session 携带当前对话继续；源会话运行中返回 409 |
 | GET | /files?path= | 浏览 Workspace 目录 |
 | GET | /files/content?path=&download=&preview= | 读取 Workspace 文件（`download=1` 时作为附件下载，`preview=1` 以沙箱方式预览 —— 见下） |
 | GET | /files/preview-redirect?path= | html 的“新页面打开”：签发令牌并 302 跳转到独立预览源 |
@@ -193,6 +194,8 @@ GET  /preview/<token>/<相对路径>              （不鉴权，令牌即凭证
 // POST /api/sessions/:sessionId/tasks —— 发起一个 Task
 interface TaskCreateRequest {
   input: TaskInputPart[];
+  // 本次 Task 的思考等级（逐轮参数，五档之一；非法值 400）；缺省 = 跟随 Agent 配置
+  thinkingLevel?: "none" | "low" | "medium" | "high" | "xhigh";
 }
 type TaskInputPart =
   | { type: "text"; text: string }
@@ -201,6 +204,13 @@ type TaskInputPart =
 // POST /api/sessions/:sessionId/approvals/:toolCallId
 interface ApprovalDecisionRequest {
   decision: "allow" | "deny";
+}
+
+// POST /api/sessions/:sessionId/fork —— 模型切换分叉（同 Agent、同 Workspace 的新
+// Session，携带当前对话的净化真实历史；session_meta 记录 forked_from）
+interface SessionForkRequest {
+  modelId: string;    // 模型引用二元组，两者都必填
+  provider: string;
 }
 ```
 

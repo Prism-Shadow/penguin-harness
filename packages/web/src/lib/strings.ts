@@ -642,6 +642,11 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     skillsAutoMessage: (names: string[]): string => `使用 ${names.join("、")} 技能`,
     handoffFrom: (agent: string) => `由 ${agent} 的对话交接而来`,
     handoffBack: (title?: string) => (title ? `回到原对话：${title}` : "回到原对话"),
+    /** Model-switch fork: the /model command entry, the per-turn thinking "follow config" row, and the forked-session provenance banner. */
+    switchModel: "切换模型继续对话（新会话携带当前上下文）",
+    switchModelTitle: "切换模型",
+    thinkingFollowConfig: "跟随 Agent 配置",
+    forkedFrom: "由另一会话切换模型延续而来",
     scheduledFrom: (name: string) => `由定时任务「${name}」触发`,
     emptyGreeting: "开始一段新对话",
     compactionRunning: (mode: string) => `压缩进行中（${mode}）…`,

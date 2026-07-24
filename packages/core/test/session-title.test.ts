@@ -55,7 +55,6 @@ const META: SessionMetaPayload = {
   model_context_window: 1000,
   system_prompt: "sp",
   tools: [],
-  thinking_level: "default",
   agent_state: "/tmp/state",
   workspace: "/tmp/w",
 };

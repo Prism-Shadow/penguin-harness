@@ -234,31 +234,29 @@ const NO_KEY_ICON =
  * with the "no key" text in its title) without closing the menu or changing the selection. When
  * no model has a key at all, everything is listed directly.
  */
-function ModelSelect({
+/**
+ * Model candidate panel (search box + grouped list + "show all" expander) shared by the
+ * draft-state ModelSelect dropdown and the in-session `/model` switch picker. Search and
+ * expanded state are internal and reset by remount (both hosts only render the panel while
+ * open). Dropdown order mirrors the model library page (visibleChatModels): by default only
+ * key-configured models are listed (selected/default always included; everything listed
+ * when no model has a key), and the query filters what's visible.
+ */
+function ModelMenuList({
   models,
   value,
   defaultModel,
-  onChange,
-  disabled,
+  onPick,
 }: {
   models: ModelInfo[];
   /** Currently selected (provider, modelId) pair; null = not yet chosen. */
   value: ModelRefDto | null;
   defaultModel?: ModelRefDto;
-  onChange: (ref: ModelRefDto) => void;
-  disabled: boolean;
+  onPick: (m: ModelInfo) => void;
 }) {
-  const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  // Expanded "show all" state: collapses back to key-configured models on each open.
+  // Expanded "show all" state: collapses back to key-configured models on each open (remount).
   const [showAll, setShowAll] = useState(false);
-  const current = models.find((m) => sameModelRef(m, value));
-  // Display rule matches the model page's card: display name, or falls back to the upstream id (grouping is already conveyed by the provider logo).
-  const label = current ? modelLabel(current) : (value?.modelId ?? "…");
-  // Dropdown order mirrors the model library page: provider groups in MODEL_PROVIDERS order
-  // (user-defined groups after, custom last), in-group order preserved. By default the list
-  // keeps only key-configured models (selected/default always included; lists everything when
-  // no model has a key); the query filters what's visible.
   const visible = visibleChatModels(models, { showAll, query, selected: value, defaultModel });
   // How many models the key filter hides under the current query (0 when expanded): drives the bottom "show all" row.
   const hiddenCount = showAll
@@ -266,57 +264,7 @@ function ModelSelect({
     : visibleChatModels(models, { showAll: true, query, selected: value, defaultModel }).length -
       visible.length;
   return (
-    <Dropdown
-      open={open}
-      setOpen={setOpen}
-      // right-0 docks the panel's right edge to the button, which itself sits ~4.5rem in from
-      // the viewport's right edge (page + card padding, gap, send button) — so the width clamp
-      // must reserve that anchor offset too, or the w-max panel's LEFT edge runs off-screen on
-      // phones (~34px off-screen at 375px with a 100vw-2rem clamp). Desktop is untouched:
-      // w-max stays far below the clamp there.
-      menuClass="right-0 top-full mt-1 w-max min-w-56 max-w-[calc(100vw-6rem)] origin-top-right"
-      button={
-        <button
-          type="button"
-          title={`${S.chat.chooseModel}：${label}`}
-          aria-label={S.chat.chooseModel}
-          disabled={disabled || models.length === 0}
-          onClick={() => {
-            const next = !open;
-            setOpen(next);
-            if (next) {
-              // Each open starts from the unsearched, collapsed (configured-only) list.
-              setQuery("");
-              setShowAll(false);
-            }
-          }}
-          className="flex h-8 max-w-44 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-        >
-          <ProviderLogo
-            provider={current?.provider ?? value?.provider ?? "custom"}
-            className="h-4 w-4 shrink-0"
-          />
-          {/* When the card is narrower than @md, only the provider logo remains (title shows the full name). */}
-          <span className="hidden min-w-0 truncate @md:block">{label}</span>
-          <svg
-            width="10"
-            height="10"
-            viewBox="0 0 12 12"
-            fill="none"
-            stroke="currentColor"
-            className="shrink-0"
-            aria-hidden
-          >
-            <path
-              d="M3 4.5l3 3 3-3"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
-      }
-    >
+    <>
       {/* Quick search: supports model id / display name / provider name */}
       <div className="border-b border-gray-100 px-2 pb-1.5 pt-0.5 dark:border-gray-800">
         <input
@@ -336,10 +284,7 @@ function ModelSelect({
           <button
             key={`${m.provider}:${m.modelId}`}
             type="button"
-            onClick={() => {
-              onChange({ provider: m.provider, modelId: m.modelId });
-              setOpen(false);
-            }}
+            onClick={() => onPick(m)}
             className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800 ${
               sameModelRef(m, value)
                 ? "font-medium text-gray-900 dark:text-gray-100"
@@ -385,6 +330,81 @@ function ModelSelect({
           </button>
         </div>
       )}
+    </>
+  );
+}
+
+function ModelSelect({
+  models,
+  value,
+  defaultModel,
+  onChange,
+  disabled,
+}: {
+  models: ModelInfo[];
+  /** Currently selected (provider, modelId) pair; null = not yet chosen. */
+  value: ModelRefDto | null;
+  defaultModel?: ModelRefDto;
+  onChange: (ref: ModelRefDto) => void;
+  disabled: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const current = models.find((m) => sameModelRef(m, value));
+  // Display rule matches the model page's card: display name, or falls back to the upstream id (grouping is already conveyed by the provider logo).
+  const label = current ? modelLabel(current) : (value?.modelId ?? "…");
+  return (
+    <Dropdown
+      open={open}
+      setOpen={setOpen}
+      // right-0 docks the panel's right edge to the button, which itself sits ~4.5rem in from
+      // the viewport's right edge (page + card padding, gap, send button) — so the width clamp
+      // must reserve that anchor offset too, or the w-max panel's LEFT edge runs off-screen on
+      // phones (~34px off-screen at 375px with a 100vw-2rem clamp). Desktop is untouched:
+      // w-max stays far below the clamp there.
+      menuClass="right-0 top-full mt-1 w-max min-w-56 max-w-[calc(100vw-6rem)] origin-top-right"
+      button={
+        <button
+          type="button"
+          title={`${S.chat.chooseModel}：${label}`}
+          aria-label={S.chat.chooseModel}
+          disabled={disabled || models.length === 0}
+          onClick={() => setOpen(!open)}
+          className="flex h-8 max-w-44 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+        >
+          <ProviderLogo
+            provider={current?.provider ?? value?.provider ?? "custom"}
+            className="h-4 w-4 shrink-0"
+          />
+          {/* When the card is narrower than @md, only the provider logo remains (title shows the full name). */}
+          <span className="hidden min-w-0 truncate @md:block">{label}</span>
+          <svg
+            width="10"
+            height="10"
+            viewBox="0 0 12 12"
+            fill="none"
+            stroke="currentColor"
+            className="shrink-0"
+            aria-hidden
+          >
+            <path
+              d="M3 4.5l3 3 3-3"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+      }
+    >
+      <ModelMenuList
+        models={models}
+        value={value}
+        {...(defaultModel !== undefined ? { defaultModel } : {})}
+        onPick={(m) => {
+          onChange({ provider: m.provider, modelId: m.modelId });
+          setOpen(false);
+        }}
+      />
     </Dropdown>
   );
 }
@@ -393,34 +413,50 @@ function ModelSelect({
 const SPARK_ICON = "M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z";
 
 /**
- * Conversation-time thinking-level picker (draft state only, docked left of the model
- * selector): shows the **selected Agent's** current `model.thinking_level` and writes a picked
- * level straight through to the Agent settings — llmConfig is assembled once per session, so
- * the level applies to the session created on first send and becomes the Agent's new default
- * (switch-becomes-default). Per review: a title bar names the control, and the menu lists
- * the selectable levels with short names only (no descriptions, no "default" row, and no
- * "none" — many models cannot disable thinking); an Agent without an explicit override shows
- * an em dash until a level is picked, and a stored legacy "none" still displays via the
- * label table (just never offered).
+ * Conversation-time thinking-level picker, used in two places:
+ * - Draft state (docked left of the model selector): shows the **selected Agent's** current
+ *   `model.thinking_level` and writes a picked level straight through to the Agent settings —
+ *   it applies to the session created on first send and becomes the Agent's new default
+ *   (switch-becomes-default). Per review: a title bar names the control, and the menu lists
+ *   the selectable levels with short names only (no descriptions, no "default" row, and no
+ *   "none" — many models cannot disable thinking); an Agent without an explicit override
+ *   shows an em dash until a level is picked, and a stored legacy "none" still displays via
+ *   the label table (just never offered).
+ * - Active session (`followLabel` given): the level is a **per-turn parameter** sent with
+ *   each task — the menu gains a leading "follow agent config" row (value ""), the default;
+ *   an explicit pick applies to this session's subsequent sends only and never writes
+ *   through to the Agent config.
  */
 function ThinkingLevelSelect({
   value,
   onChange,
   disabled,
+  followLabel,
+  direction = "down",
 }: {
   /** Current level ("" = no override yet); null = the Agent config is still loading. */
   value: string | null;
   onChange: (level: string) => void;
   disabled: boolean;
+  /** When given, prepends a "follow agent config" row (value "") and uses this label for it (the session variant). */
+  followLabel?: string;
+  /** Popup direction: down for the draft card (room below), up for the bottom-docked session composer. */
+  direction?: "down" | "up";
 }) {
   const [open, setOpen] = useState(false);
   const label =
-    value === null ? "…" : (thinkingLevelLabel(S.chat.thinkingLevelNames, value) ?? "—");
+    value === null
+      ? "…"
+      : (thinkingLevelLabel(S.chat.thinkingLevelNames, value) ?? followLabel ?? "—");
   return (
     <Dropdown
       open={open}
       setOpen={setOpen}
-      menuClass="right-0 top-full mt-1 w-36 origin-top-right"
+      menuClass={
+        direction === "down"
+          ? "right-0 top-full mt-1 w-max min-w-36 origin-top-right"
+          : "bottom-full right-0 mb-1 w-max min-w-36 origin-bottom-right"
+      }
       button={
         <button
           type="button"
@@ -452,13 +488,20 @@ function ThinkingLevelSelect({
         </button>
       }
     >
-      {/* Title bar: names the control (the rows themselves are just the five short names). */}
+      {/* Title bar: names the control (the rows themselves are just the short names). */}
       <div className="border-b border-gray-100 px-3 pb-1.5 pt-0.5 text-xs font-semibold text-gray-500 dark:border-gray-800 dark:text-gray-400">
         {S.chat.thinkingLevel}
       </div>
-      {SELECTABLE_THINKING_LEVELS.map((level) => (
+      {[
+        // Session variant: the leading "follow agent config" row (value "") is the default.
+        ...(followLabel !== undefined ? [{ level: "", name: followLabel }] : []),
+        ...SELECTABLE_THINKING_LEVELS.map((level) => ({
+          level: level as string,
+          name: S.chat.thinkingLevelNames[level] ?? level,
+        })),
+      ].map(({ level, name }) => (
         <button
-          key={level}
+          key={level || "follow"}
           type="button"
           onClick={() => {
             onChange(level);
@@ -470,9 +513,7 @@ function ThinkingLevelSelect({
               : "text-gray-600 dark:text-gray-400"
           }`}
         >
-          <span className="min-w-0 flex-1 truncate">
-            {S.chat.thinkingLevelNames[level] ?? level}
-          </span>
+          <span className="min-w-0 flex-1 truncate">{name}</span>
           <span className="w-3 shrink-0 text-center">{level === value ? "✓" : ""}</span>
         </button>
       ))}
@@ -693,10 +734,12 @@ export function ChatInput({
   modelRef,
   models,
   onChangeModel,
+  onSwitchModel,
   defaultModel,
   thinkingLevel,
   onChangeThinkingLevel,
-  sessionThinkingLevel,
+  turnThinkingLevel,
+  onChangeTurnThinkingLevel,
   contextWindow,
   contextNow,
   contextStale = false,
@@ -736,6 +779,14 @@ export function ChatInput({
   models?: ModelInfo[];
   /** Changes the selected model in draft state; no longer passed once the Session is created and the model is locked. */
   onChangeModel?: (ref: ModelRefDto) => void;
+  /**
+   * Session state: model switch via the `/model` command — forks the session onto the picked
+   * model (a NEW session carrying this conversation) and navigates there; any text remaining
+   * after the command token is posted as the new session's first task. Returns whether it
+   * succeeded (draft kept on failure). Only passed for an active session (the command is
+   * additionally gated on not running/compacting); picking the current model is a no-op.
+   */
+  onSwitchModel?: (ref: ModelRefDto, input: TaskInputPart[]) => Promise<boolean>;
   /** Project default model (marked "default" on the selector's candidate item). */
   defaultModel?: ModelRefDto;
   /**
@@ -751,11 +802,14 @@ export function ChatInput({
    */
   onChangeThinkingLevel?: (level: string) => void;
   /**
-   * Session state: the session's fixed thinking level (captured from session_meta on replay;
-   * llmConfig is assembled once per session, so it cannot change mid-session). Rendered as a
-   * read-only tag next to the locked model; null/undefined = unknown (nothing shown).
+   * Session state: the per-turn thinking level for this session's sends ("" = follow the
+   * Agent config — nothing is sent). Local UI state owned by the parent; an explicit pick is
+   * sent with each task as `thinkingLevel` and never writes through to the Agent config
+   * (that behavior stays draft-only).
    */
-  sessionThinkingLevel?: string | null;
+  turnThinkingLevel?: string;
+  /** Session state: changes the per-turn thinking level; also enables the editable picker. */
+  onChangeTurnThinkingLevel?: (level: string) => void;
   /** Model's context window (from models config; when not configured, the ring's cap falls back to 128000 via resolveContextWindow). */
   contextWindow?: number;
   /** Current context usage (total of the most recent main-session Request). */
@@ -811,6 +865,12 @@ export function ChatInput({
   const [slashIndex, setSlashIndex] = useState(0);
   // Slash token start where Escape closed the menu (mirrors mentionDismissed: the menu stays shut for that one token).
   const [slashDismissed, setSlashDismissed] = useState<number | null>(null);
+  // /model switch picker (session state): opened by the /model command. The triggering slash
+  // token is captured at open, so picking a model removes just that token and posts whatever
+  // remains as the new session's first task; cancelling leaves the draft untouched.
+  const [modelSwitchOpen, setModelSwitchOpen] = useState(false);
+  const modelSwitchMatchRef = useRef<ReturnType<typeof matchSlash>>(null);
+  const modelSwitchRef = useRef<HTMLDivElement>(null);
   // Anchor for the popups that open upward, and the room actually available above them.
   const anchorRef = useRef<HTMLDivElement>(null);
   const [upwardMaxH, setUpwardMaxH] = useState<number>();
@@ -869,6 +929,22 @@ export function ChatInput({
           void onCompact();
         },
       },
+      // Model switch (active idle session only — the parent passes onSwitchModel just there;
+      // draft state has its own model picker): opens the model picker. The token is NOT
+      // removed yet — cancelling the picker must leave the draft untouched; picking a model
+      // removes it (see pickSwitchModel).
+      ...(onSwitchModel
+        ? [
+            {
+              cmd: "/model",
+              desc: S.chat.switchModel,
+              run: () => {
+                modelSwitchMatchRef.current = slashMatchRef.current;
+                setModelSwitchOpen(true);
+              },
+            },
+          ]
+        : []),
       // Each installed skill gets its own entry: `/<skill_name>` toggles that skill's selection (without sending), description follows the UI language.
       ...skillSlashItems(skills, locale).map((s) => ({
         cmd: s.cmd,
@@ -879,11 +955,12 @@ export function ChatInput({
         },
       })),
     ];
-  }, [onCompact, onTextChange, skills, locale, toggleSkill]);
+  }, [onCompact, onSwitchModel, onTextChange, skills, locale, toggleSkill]);
   // Positional matching (like @ mentions): a slash opens the menu from any caret position;
   // running a command removes just the token, leaving the rest of the text intact. Doesn't
-  // reopen after Escape until the caret sits on a different token.
-  const slashTok = !running && !compacting ? matchSlash(text, caret) : null;
+  // reopen after Escape until the caret sits on a different token; suppressed while the
+  // /model picker is open (its trigger token is still in the text).
+  const slashTok = !running && !compacting && !modelSwitchOpen ? matchSlash(text, caret) : null;
   slashMatchRef.current = slashTok;
   const slashMatches =
     slashTok && slashTok.start !== slashDismissed
@@ -899,12 +976,61 @@ export function ChatInput({
   const mentionOpen = mentionMatches.length > 0;
   const activeMention = mentionMatches[Math.min(mentionIndex, mentionMatches.length - 1)];
 
-  // Both menus above are drawn upward (`bottom-full`) from the composer, so their ceiling is
+  // Close the /model picker on click-outside / Escape (same convention as Dropdown; the
+  // panel has no trigger button of its own, so the handling lives here).
+  useEffect(() => {
+    if (!modelSwitchOpen) return;
+    // globalThis.* event types: the React ones imported above would shadow the DOM ones here.
+    const onClick = (e: globalThis.MouseEvent) => {
+      if (modelSwitchRef.current && !modelSwitchRef.current.contains(e.target as Node)) {
+        setModelSwitchOpen(false);
+      }
+    };
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === "Escape") setModelSwitchOpen(false);
+    };
+    window.addEventListener("mousedown", onClick);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("mousedown", onClick);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [modelSwitchOpen]);
+
+  /**
+   * /model pick: the CURRENT model is a no-op (close only); otherwise fork the session onto
+   * the picked model via onSwitchModel — the `/model` token is removed from the draft and
+   * whatever remains rides along as the new session's first task. On failure the draft is
+   * kept (token included) so the user can retry.
+   */
+  const pickSwitchModel = async (m: ModelInfo) => {
+    setModelSwitchOpen(false);
+    if (!onSwitchModel || busy) return;
+    if (sameModelRef(m, modelRef)) return;
+    const match = modelSwitchMatchRef.current;
+    modelSwitchMatchRef.current = null;
+    const rest = (match ? removeSlashToken(textRef.current, match) : textRef.current).trim();
+    const input: TaskInputPart[] = rest ? [{ type: "text", text: rest }] : [];
+    setBusy(true);
+    try {
+      const ok = await onSwitchModel({ provider: m.provider, modelId: m.modelId }, input);
+      if (ok) {
+        setText("");
+        setImages([]);
+        requestAnimationFrame(autoGrow);
+      }
+    } finally {
+      setBusy(false);
+      textareaRef.current?.focus();
+    }
+  };
+
+  // The menus above are drawn upward (`bottom-full`) from the composer, so their ceiling is
   // whatever ancestor clips overflow — on the draft page that's the centered scroll area, whose
   // top edge sits well below the viewport's. A static `40vh` cap can't know that distance and
   // clipped the first rows on shorter windows, so measure the real gap when a menu opens.
   useEffect(() => {
-    if (!slashOpen && !mentionOpen) return;
+    if (!slashOpen && !mentionOpen && !modelSwitchOpen) return;
     const measure = () => {
       const el = anchorRef.current;
       if (!el) return;
@@ -922,7 +1048,7 @@ export function ChatInput({
     measure();
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
-  }, [slashOpen, mentionOpen]);
+  }, [slashOpen, mentionOpen, modelSwitchOpen]);
 
   /** Auto-grow the textarea (caps at roughly 6 lines, scrolls internally beyond that). */
   const autoGrow = () => {
@@ -1171,6 +1297,27 @@ export function ChatInput({
         </div>
       )}
 
+      {/* /model switch picker (session state): reuses the draft model dropdown's list —
+          search + configured-key-first grouping + "show all"; the current model is marked and
+          picking it is a no-op. Cancelling (Escape / click outside) keeps the draft intact. */}
+      {modelSwitchOpen && models && (
+        <div
+          ref={modelSwitchRef}
+          style={{ maxHeight: upwardMaxH }}
+          className="anim-pop absolute bottom-full left-0 z-40 mb-1.5 flex w-80 max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900"
+        >
+          <div className="border-b border-gray-100 px-3 pb-1.5 pt-0.5 text-xs font-semibold text-gray-500 dark:border-gray-800 dark:text-gray-400">
+            {S.chat.switchModelTitle}
+          </div>
+          <ModelMenuList
+            models={models}
+            value={modelRef}
+            {...(defaultModel !== undefined ? { defaultModel } : {})}
+            onPick={(m) => void pickSwitchModel(m)}
+          />
+        </div>
+      )}
+
       {/* @ subagent menu (triggered by typing @; interaction matches the slash menu) */}
       {mentionOpen && (
         <div
@@ -1400,23 +1547,18 @@ export function ChatInput({
               disabled={busy}
             />
           )}
-          {/* Session state: the session's fixed thinking level (from session_meta), read-only next
-              to the locked model; hidden when it isn't one of the five levels (e.g. "default"). */}
-          {!onChangeModel &&
-            (() => {
-              const label = thinkingLevelLabel(S.chat.thinkingLevelNames, sessionThinkingLevel);
-              return (
-                label && (
-                  <span
-                    title={`${S.chat.thinkingLevel}：${label}`}
-                    className="hidden h-8 shrink-0 items-center gap-1 px-1 text-xs text-gray-400 @md:flex dark:text-gray-500"
-                  >
-                    <GlyphIcon d={SPARK_ICON} size={13} className="shrink-0" />
-                    {label}
-                  </span>
-                )
-              );
-            })()}
+          {/* Session state: per-turn thinking level (editable) — "" follows the Agent config
+              (nothing is sent); an explicit pick rides on each send as `thinkingLevel` and
+              never writes through to the Agent config. */}
+          {!onChangeModel && onChangeTurnThinkingLevel && (
+            <ThinkingLevelSelect
+              value={turnThinkingLevel ?? ""}
+              onChange={onChangeTurnThinkingLevel}
+              disabled={busy}
+              followLabel={S.chat.thinkingFollowConfig}
+              direction="up"
+            />
+          )}
           {/* Left of the send button: model selector in draft state; once the Session is created the model is locked, shown read-only (still with the provider logo). */}
           {models && onChangeModel ? (
             <ModelSelect

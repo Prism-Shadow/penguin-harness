@@ -77,11 +77,11 @@ Some models in the preset catalog: deepseek-v4-pro / deepseek-v4-flash, gemini-3
 
 ## Thinking levels
 
-Five levels: `none | low | medium | high | xhigh`, configured per Agent as `model.thinking_level` in `system_config.yaml`, default medium. The Web pickers offer `low` and above only (many models cannot disable thinking; `none` stays a valid stored value and still displays). The chat draft view offers a quick picker next to the model selector: a picked level is written back to the selected Agent's setting immediately (the switched-to level becomes that Agent's new default and applies from the next session; a running session keeps the level it was created with). See [Configuration](/configuration).
+Five levels: `none | low | medium | high | xhigh`, configured per Agent as `model.thinking_level` in `system_config.yaml`, default medium. The Web pickers offer `low` and above only (many models cannot disable thinking; `none` stays a valid stored value and still displays). The chat draft view offers a quick picker next to the model selector: a picked level is written back to the selected Agent's setting immediately (the switched-to level becomes that Agent's new default and applies from the next session). Inside an active session the thinking level is a **per-turn parameter**: the composer's picker defaults to "follow agent config", and an explicit pick rides on each send (it applies to that session's subsequent Tasks only and never writes back to the Agent config). See [Configuration](/configuration).
 
 ## Models decoupled from Agents
 
-An Agent never binds a model: the model is chosen when a Session is created and stays locked for that Session; the same Agent can run different Sessions on different models. The three `pricing` buckets feed the usage/cost center's per-Token accounting.
+An Agent never binds a model: the model is chosen when a Session is created and stays locked for that Session; the same Agent can run different Sessions on different models. The in-session `/model` command changes models by **forking**: it creates a new Session that carries the current conversation (sanitized real history — thinking payloads and provider fidelity never replay across models) and continues there, leaving the source session untouched. The three `pricing` buckets feed the usage/cost center's per-Token accounting.
 
 Credential handling:
 

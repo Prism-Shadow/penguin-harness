@@ -390,6 +390,74 @@ export class SessionService {
   }
 
   /**
+   * Model switch: fork a Session onto another model. Creates a NEW Session for the same
+   * Agent that carries the source Session's conversation as sanitized real history (core
+   * `agent.forkSession`); the source Session is left untouched. Rejected with 409 while
+   * the source is running or compacting (same task_in_progress / compacting semantics as
+   * starting a Task); the model reference must be the complete pair (the route enforces
+   * presence; an unknown pair is a 400 from core validation). The new row copies the
+   * source's approval mode and title (a real continuation).
+   */
+  async forkSession(args: {
+    row: SessionRow;
+    modelId: string;
+    provider: string;
+  }): Promise<{ session: SessionInfo; forkedFrom: string }> {
+    const { row, modelId, provider } = args;
+    // The source must be idle: forking mid-run would snapshot a half-written turn.
+    const status = this.deps.manager.statusOf(row.sessionId);
+    if (status === "running") {
+      throw new HttpError(409, "task_in_progress", "This Session already has a Task in progress.");
+    }
+    if (status === "compacting") {
+      throw new HttpError(
+        409,
+        "compacting",
+        "This Session is compacting its context; not accepting new input.",
+      );
+    }
+    const agent = await createAgent({
+      root: this.deps.root,
+      projectId: row.projectId,
+      agentId: row.agentId,
+    });
+    let session;
+    try {
+      session = await agent.forkSession({ fromSessionId: row.sessionId, modelId, provider });
+    } catch (err) {
+      if (isMissingCredential(err)) throw modelCredentialMissing(modelId);
+      throw new HttpError(
+        400,
+        "session_fork_failed",
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+    // A fork is a user action: its origin derives from the new core session_meta (which
+    // carries none), same single-source-of-truth convention as createSession.
+    const metaMsg = session.metaMessage;
+    this.deps.sources.set(
+      session.sessionId,
+      isSessionMeta(metaMsg) ? (asSessionSource(metaMsg.payload.source) ?? null) : null,
+    );
+    const newRow: SessionRow = {
+      sessionId: session.sessionId,
+      projectId: row.projectId,
+      agentId: row.agentId,
+      provider: session.provider,
+      modelId: session.modelId,
+      workspace: session.workspaceDir,
+      // The fork continues the source conversation: its approval mode and title carry over.
+      approvalMode: row.approvalMode,
+      title: row.title,
+      createdAt: new Date().toISOString(),
+    };
+    this.deps.sessions.insert(newRow);
+    this.deps.manager.adopt(newRow, session);
+    // hasTrace is true from birth: the forked Trace file was just written.
+    return { session: await this.toInfo(newRow, true), forkedFrom: row.sessionId };
+  }
+
+  /**
    * One walk over the Trace directory: session_id → its **earliest** shard (the shard
    * whose head carries the original session_meta). Discovery (which Sessions have
    * records) and the meta-read location come out of a single pass, so classifying every

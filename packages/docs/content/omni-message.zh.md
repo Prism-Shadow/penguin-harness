@@ -38,10 +38,10 @@ interface SessionMetaPayload {
   model_context_window: number | string;
   system_prompt: string;                  // 占位符替换完成后的完整系统提示词
   tools: ToolDefinition[];                // 发给模型的完整工具 schema
-  thinking_level: string;                 // 未配置时为 "default"
   agent_state: string;                    // Agent State 绝对路径
   workspace: string;                      // Workspace 绝对路径
   source?: "subagent" | "schedule";       // Session 来源；缺省 = 用户创建
+  forked_from?: string;                   // 模型切换分叉的来源 session_id；缺省 = 非分叉会话
 }
 
 interface ToolDefinition {
@@ -51,7 +51,7 @@ interface ToolDefinition {
 }
 ```
 
-恢复 Session 时，引擎直接以 Trace 中的这条消息为运行时配置——模型、系统提示词、Workspace 在 Session 生命周期内不可变，见 [Session 与 Trace](/sessions-and-traces)。
+session_meta 只承载**会话级不变量**——模型、系统提示词、Workspace 在 Session 生命周期内不可变；恢复 Session 时引擎直接以 Trace 中的这条消息为运行时配置，见 [Session 与 Trace](/sessions-and-traces)。思考等级是逐轮参数（随每次 Task 下发），不记录在此；旧版 Trace 的 meta 里可能仍带 `thinking_level` 字段，恢复时按兼容逻辑继续生效。
 
 ## model_msg：完整消息
 
