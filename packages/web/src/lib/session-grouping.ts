@@ -91,8 +91,8 @@ export interface SessionPartition {
  * Partitions a group's Sessions for rendering. Classification precedence: archived wins
  * regardless of `source` (archiving is an explicit user action, so the Archived folder
  * must show everything the user put there); otherwise a Session goes to its origin's
- * bucket, and an unrecognized future source falls through to the user rows (visible,
- * with its badge) rather than vanishing into the wrong folder. The sidebar renders the
+ * bucket, and an unrecognized future source falls through to the active user rows
+ * (visible) rather than vanishing into the wrong folder. The sidebar renders the
  * parts top to bottom in the interface's field order — user rows, Subagents folder,
  * Scheduled folder, Archived folder. Input order is preserved within each part.
  */

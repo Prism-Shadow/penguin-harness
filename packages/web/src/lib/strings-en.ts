@@ -643,10 +643,6 @@ When done, open index.html in a browser and self-test once.`,
       title ? `Back to the original conversation: ${title}` : "Back to the original conversation",
     scheduledFrom: (name: string) => `Triggered by scheduled task "${name}"`,
     /** Source badge on session list rows (user-created sessions have no source). */
-    sourceNames: {
-      schedule: "Scheduled",
-      subagent: "Sub",
-    } as Record<string, string>,
     emptyGreeting: "Start a new conversation",
     compactionRunning: (mode: string) => `Compaction in progress (${mode})…`,
     compactionDone: (mode: string) =>

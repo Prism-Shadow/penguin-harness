@@ -791,7 +791,11 @@ export function Sidebar({
                         agent.agentId,
                         parts,
                         false,
-                        hasMoreByAgent.get(agent.agentId) === true ? [agent.agentId] : [],
+                        // Only fetch more when this group has active rows: a group holding only collapsed
+                        // (subagent / scheduled / archived) Sessions must not show "More" over an empty active list.
+                        parts.active.length > 0 && hasMoreByAgent.get(agent.agentId) === true
+                          ? [agent.agentId]
+                          : [],
                       )}
                 </div>
               );
@@ -850,14 +854,16 @@ export function Sidebar({
                   </button>
                 </div>
 
-                {/* A workspace group can span Agents: "More" fans out to every contributing Agent that still has pages. */}
+                {/* A workspace group can span Agents: "More" fans out to every contributing Agent that still
+                    has pages. Only the active (user-created) rows count — the subagent / scheduled / archived
+                    folders are collapsed by default, so their unfetched pages must not drive the active list's "More". */}
                 {collapsed
                   ? null
                   : renderGroupBody(
                       group.key,
                       parts,
                       true,
-                      groupAgentsWithMore(group.sessions, hasMoreByAgent),
+                      groupAgentsWithMore(parts.active, hasMoreByAgent),
                     )}
               </div>
             );
@@ -1115,8 +1121,7 @@ function SessionRow({
                   : "text-gray-700 dark:text-gray-300"
             }`}
           />
-          {/* Source badge: schedule / sub-session (user-created sessions have no source and show nothing). */}
-          {s.source && <Badge tone="gray">{S.chat.sourceNames[s.source] ?? s.source}</Badge>}
+          {/* No per-row source tag: subagent / scheduled Sessions live in their own labelled, collapsed folders, so a badge on the title would just repeat the folder. */}
           <StatusDot session={s} />
           {s.pendingApprovalCount > 0 && (
             <span title={S.chat.pendingApprovals(s.pendingApprovalCount)}>
