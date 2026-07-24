@@ -31,13 +31,14 @@
  * clicking a row toggles its selection without closing the menu; the button = book icon + label +
  * selected-count badge, disabled while running/compacting). With skills selected, sending with an
  * empty text body is allowed — the sent text automatically falls back to S.chat.skillsAutoMessage.
- * When sent, the text body wraps in a `<use_skills>` block (the handoff's rest-of-message body is
+ * When sent, the text body wraps in a `[use_skills]` block (the handoff's rest-of-message body is
  * wrapped the same way); the selection clears once sending succeeds. Quick-invoke pre-selects via
  * initialSkills (read once on mount; once the installed list is ready, names not in that list are
  * pruned); the slash menu also lists installed skills, and pressing Enter on `/<skill_name>`
  * selects it.
- * Switches to a "Stop" button while a Task is running; disabled with a reason shown while
- * compacting.
+ * While a Task is running the Stop button appears next to the send button, and the input stays
+ * enabled for mid-run steering (Enter/send queues the text, delivered with the next tool
+ * result); disabled with a reason shown while compacting.
  * Renders only the card body itself: outer positioning such as bottom-docking or vertical
  * centering is decided by the page.
  */
@@ -688,6 +689,7 @@ function ContextGauge({
 export function ChatInput({
   status,
   onSend,
+  onSteer,
   onStop,
   onCompact,
   modelRef,
@@ -718,6 +720,14 @@ export function ChatInput({
   status: SessionStatus;
   /** Returns whether it succeeded: on failure the input draft is kept (not cleared). */
   onSend: (input: TaskInputPart[]) => Promise<boolean>;
+  /**
+   * Mid-run steering (session state only): while a Task is running, Enter/send queues the
+   * trimmed text for the running agent — it is delivered inside the next completed tool
+   * output as a `[user_steering]` block. Returns whether it succeeded (the caller falls back
+   * to a normal task POST on a 409 race with completion). When absent (draft state), the
+   * input stays send-disabled while running, as before.
+   */
+  onSteer?: (text: string) => Promise<boolean>;
   /**
    * Used instead of onSend when an @ target is present (chip or a leading @ typed manually):
    * opens a new chat for the target agent (the text body carries no @ marker, and the current
@@ -829,13 +839,19 @@ export function ChatInput({
   const running = status === "running";
   const compacting = status === "compacting";
   // Sending is also allowed with only an @ target (chip) or skills selected and no text: a handoff's
-  // first message may be just a <handoff_from> source block; with skills and empty text, the sent
+  // first message may be just a [handoff_from] source block; with skills and empty text, the sent
   // text automatically falls back to S.chat.skillsAutoMessage (see send).
   const canSend =
     !running &&
     !compacting &&
     !busy &&
     (text.trim().length > 0 || images.length > 0 || target !== null || selectedSkills.length > 0);
+  // Mid-run steering: while running, Enter/send queues plain text for the running agent
+  // (delivered with the next tool result). Text only — images / skills / @ target stay in the
+  // draft for a later normal send (an @ target also blocks steering: a leading mention means a
+  // handoff, not a message to this agent).
+  const canSteer =
+    running && !busy && onSteer !== undefined && target === null && text.trim().length > 0;
 
   /** Toggle a skill on/off (shared by dropdown option clicks and the slash skill command); the change callback lets the parent write it into the draft. */
   const toggleSkill = useCallback(
@@ -1006,6 +1022,24 @@ export function ChatInput({
   };
 
   const send = async () => {
+    // Steering branch (Task running): queue the trimmed text for the running agent; only the
+    // text is sent and cleared — attached images / selected skills stay for a normal send.
+    if (running) {
+      if (!canSteer) return;
+      const steerText = text.trim();
+      setBusy(true);
+      try {
+        const ok = await onSteer!(steerText);
+        if (ok) {
+          setText("");
+          requestAnimationFrame(autoGrow);
+        }
+      } finally {
+        setBusy(false);
+        textareaRef.current?.focus();
+      }
+      return;
+    }
     if (!canSend) return;
     const t = text.trim();
     // @ target = the chip (selected via menu), or a leading `@<agentId>` typed/pasted manually
@@ -1017,7 +1051,7 @@ export function ChatInput({
     const rest = lead ? lead.rest : t;
     const bodyText =
       selectedSkills.length > 0 && rest === "" ? S.chat.skillsAutoMessage(selectedSkills) : rest;
-    // With non-empty selected skills: the text body is replaced with a <use_skills> block + the text (the handoff branch wraps rest the same way).
+    // With non-empty selected skills: the text body is replaced with a [use_skills] block + the text (the handoff branch wraps rest the same way).
     const body = buildSkillsMessage(selectedSkills, bodyText);
     const input: TaskInputPart[] = [];
     if (body) input.push({ type: "text", text: body });
@@ -1325,7 +1359,15 @@ export function ChatInput({
           onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
           onKeyDown={onKeyDown}
           onPaste={onPaste}
-          placeholder={narrow ? S.chat.inputPlaceholderShort : S.chat.inputPlaceholder}
+          placeholder={
+            running && onSteer
+              ? narrow
+                ? S.chat.steerPlaceholderShort
+                : S.chat.steerPlaceholder
+              : narrow
+                ? S.chat.inputPlaceholderShort
+                : S.chat.inputPlaceholder
+          }
           className="block max-h-44 min-h-[60px] w-full resize-none bg-transparent px-1 py-0.5 text-base leading-6 placeholder:text-gray-400 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60 dark:placeholder:text-gray-500"
         />
 
@@ -1444,7 +1486,11 @@ export function ChatInput({
               </span>
             </span>
           )}
-          {running ? (
+          {/* While running: Stop stays available, and — when the host supports steering — the
+              send button remains next to it so Enter/click queues a steering message for the
+              running agent. Idle/compacting keeps the single send button (disabled while
+              compacting via canSend). */}
+          {running && (
             <button
               type="button"
               title={S.chat.stop}
@@ -1456,12 +1502,13 @@ export function ChatInput({
                 <rect x="2" y="2" width="10" height="10" rx="2" fill="currentColor" />
               </svg>
             </button>
-          ) : (
+          )}
+          {(!running || onSteer) && (
             <button
               type="button"
-              title={S.chat.send}
-              aria-label={S.chat.send}
-              disabled={!canSend}
+              title={running ? S.chat.steerSend : S.chat.send}
+              aria-label={running ? S.chat.steerSend : S.chat.send}
+              disabled={running ? !canSteer : !canSend}
               onClick={() => void send()}
               className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-gray-900 text-white transition-colors duration-150 hover:bg-gray-700 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-300 dark:disabled:bg-gray-800 dark:disabled:text-gray-600"
             >

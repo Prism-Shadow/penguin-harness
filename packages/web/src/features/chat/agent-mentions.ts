@@ -10,7 +10,7 @@
  * - `splitLeadingMention`: on send, parses a leading `@<agentId>`, splitting off the target
  *   agent from the remaining text;
  * - `handoffMessage`: generates the first message for the @-mentioned agent's **new
- *   conversation** — an origin note (`<handoff_from>` block) carrying the source agent /
+ *   conversation** — an origin note (`[handoff_from]` block) carrying the source agent /
  *   Session / Workspace, followed by the user's text as a subsequent text part).
  */
 import type { AgentSummary } from "@prismshadow/penguin-server/api";
@@ -84,7 +84,7 @@ export interface HandoffOrigin {
 }
 
 /**
- * First message of an @-handoff new conversation (in English): the `<handoff_from>` block
+ * First message of an @-handoff new conversation (in English): the `[handoff_from]` block
  * states that this conversation was opened by an @ mention and carries the source agent /
  * Session / Workspace, so the @-mentioned agent knows its origin (e.g. defaulting to the
  * source agent as its working target, or reaching source files via the Workspace path);
@@ -102,22 +102,25 @@ export function handoffMessage(origin: HandoffOrigin): string {
   }
   if (origin.workspace) lines.push(`workspace: ${origin.workspace}`);
   return [
-    "<handoff_from>",
+    "[handoff_from]",
     "This conversation was opened by @-mentioning you from another conversation; its origin is listed below and the user's message, if any, follows. When the request refers to an agent, session, or files without naming them, it means this origin.",
     ...lines,
-    "</handoff_from>",
+    "[/handoff_from]",
   ].join("\n");
 }
 
 /**
  * Inverse parse of `handoffMessage` (lets the message stream collapse the origin block into
  * a handoff notice): returns origin info when the whole message is strictly one
- * `<handoff_from>` block, otherwise returns null (a normal user message renders as-is).
+ * `[handoff_from]` block, otherwise returns null (a normal user message renders as-is).
  * Field lines are parsed as `key: id (label)`; non-field lines such as the explanation
- * sentence are ignored.
+ * sentence are ignored. The old `<handoff_from>` form is still recognized: messages
+ * persisted in old Traces are re-rendered through this parser.
  */
 export function parseHandoffMessage(text: string): HandoffOrigin | null {
-  const block = /^<handoff_from>\n([\s\S]*)\n<\/handoff_from>$/.exec(text.trim());
+  const block =
+    /^\[handoff_from\]\n([\s\S]*)\n\[\/handoff_from\]$/.exec(text.trim()) ??
+    /^<handoff_from>\n([\s\S]*)\n<\/handoff_from>$/.exec(text.trim());
   if (!block) return null;
   const origin: HandoffOrigin = { agentId: "" };
   for (const line of block[1]!.split("\n")) {
@@ -143,7 +146,7 @@ export function parseHandoffMessage(text: string): HandoffOrigin | null {
   return origin.agentId ? origin : null;
 }
 
-/** Origin info for a scheduled-task trigger (the server's scheduledMessage `<scheduled_task>` block). */
+/** Origin info for a scheduled-task trigger (the server's scheduledMessage `[scheduled_task]` block). */
 export interface ScheduledOrigin {
   /** Task name (filename minus .toml). */
   name: string;
@@ -154,15 +157,18 @@ export interface ScheduledOrigin {
 /**
  * Inverse parse of the server's scheduledMessage (lets the message stream collapse the
  * origin block into a scheduled-task notice): returns origin info and the remaining text
- * when the message **starts with** a `<scheduled_task>` block, otherwise returns null.
+ * when the message **starts with** a `[scheduled_task]` block, otherwise returns null.
  * Unlike handoff, the block is followed by the task's Prompt body, which must be returned
  * alongside it for normal rendering (the raw block isn't shown; the Trace page shows it
- * as-is).
+ * as-is). The old `<scheduled_task>` form is still recognized: messages persisted in old
+ * Traces are re-rendered through this parser.
  */
 export function parseScheduledMessage(
   text: string,
 ): { origin: ScheduledOrigin; rest: string } | null {
-  const m = /^<scheduled_task>\n([\s\S]*?)\n<\/scheduled_task>/.exec(text);
+  const m =
+    /^\[scheduled_task\]\n([\s\S]*?)\n\[\/scheduled_task\]/.exec(text) ??
+    /^<scheduled_task>\n([\s\S]*?)\n<\/scheduled_task>/.exec(text);
   if (!m) return null;
   const origin: ScheduledOrigin = { name: "", firedAt: "" };
   for (const line of m[1]!.split("\n")) {

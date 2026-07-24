@@ -17,7 +17,7 @@
  * - selections are written into the draft (#74 comment): in draft state, checking the dropdown
  *   then reloading keeps both the body and the selection; in session state, selecting via slash
  *   then reloading likewise persists (keyed by user x Session);
- * - sending the prefilled body directly -> the message stream collapses the <use_skills> block
+ * - sending the prefilled body directly -> the message stream collapses the [use_skills] block
  *   into a "使用技能" ("Use skills") banner, the invoke text still renders normally, the stored
  *   message really does start with the block, and the selection clears once sending succeeds;
  * - slash invocation: typing /<prefix> shows a skill command item, and pressing Enter selects
@@ -243,14 +243,14 @@ test("skills: library groups and cards -> manage-install Modal -> quick-invoke p
   await expect(row("agent-optimization")).toHaveAttribute("aria-pressed", "true");
   await page.keyboard.press("Escape");
 
-  // The stored message really does start with the <use_skills> block (the banner is only a
+  // The stored message really does start with the [use_skills] block (the banner is only a
   // rendering-layer collapse; Trace/storage keeps the raw text), with the body being the invoke
   // text prefilled by quick invoke.
   const messages = await (
     await page.request.get(`${BASE}/api/sessions/${sessionId}/messages`)
   ).json();
   const flat = JSON.stringify(messages);
-  expect(flat, "stored message keeps the <use_skills> block").toContain("<use_skills>");
+  expect(flat, "stored message keeps the [use_skills] block").toContain("[use_skills]");
   expect(flat, "block lists the selected skill").toContain("skills: agent-creation");
   expect(flat, "prefilled body follows the block").toContain("使用 agent-creation 技能");
 });

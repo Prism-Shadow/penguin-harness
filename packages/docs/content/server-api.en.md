@@ -145,6 +145,7 @@ The paths below omit the `/api/sessions/:sessionId` prefix. For the storage mode
 | GET | /messages | Full OmniMessage history |
 | GET | /stream | SSE event stream (next section) |
 | POST | /tasks | Start a Task: `{input: TaskInputPart[]}` → 202 |
+| POST | /steer | Mid-run steering: `{text}` queues a message for the running Task (delivered inside the next completed tool output as a `[user_steering]` block) → 202; 409 `not_running` when no Task is in progress |
 | POST | /approvals/:toolCallId | Approval decision: `{decision}` is `allow` or `deny` → 204 |
 | POST | /abort | Interrupt the current Task: 202 when triggered, 204 when idle |
 | POST | /compact | Trigger context compaction: 202; 409 `nothing_to_compact` when there is nothing to compact |

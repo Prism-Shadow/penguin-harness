@@ -341,7 +341,7 @@ describe("trace-service", () => {
     // (the frontend uses this to list it on this turn's card), but the duration
     // only looks at the LLM request — the start point is the first request_begin,
     // and the user text's timestamp doesn't participate (the compaction summary
-    // `<context_summary>` is created during compaction but only persisted on the
+    // `[context_summary]` is created during compaction but only persisted on the
     // next run; using it as the start point would stretch the first turn out for
     // no reason). Also, if the turn list were built only from turns with "a model
     // segment or a tool span", a turn that fails outright with no output at all
@@ -605,7 +605,7 @@ describe("trace-service", () => {
         compactionBegin({ reason: "context", mode: "summarize", context: 1, turns: 1 }),
       ),
       at(T("04.500"), requestBegin()),
-      at(T("05.000"), assistantText("<summary>…</summary>")),
+      at(T("05.000"), assistantText("[summary]…[/summary]")),
       at(T("05.500"), requestEnd("completed")),
       at(T("06.000"), compactionEnd({ reason: "context", mode: "summarize", status: "completed" })),
     ]);

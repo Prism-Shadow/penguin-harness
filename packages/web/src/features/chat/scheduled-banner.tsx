@@ -1,5 +1,5 @@
 /**
- * Origin hint for a scheduled-task-triggered message: the origin block (<scheduled_task>) is
+ * Origin hint for a scheduled-task-triggered message: the origin block ([scheduled_task]) is
  * not rendered verbatim on screen; it collapses into one line reading "Triggered by scheduled
  * task '<name>'" plus a localized trigger timestamp (a static display with no navigation — task
  * management lives on the Agent settings page's "Scheduled Tasks" tab). The task prompt body

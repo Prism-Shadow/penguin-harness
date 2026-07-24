@@ -344,7 +344,7 @@ export function skillMetadataSection(skills: SkillMetadata[]): string {
  * Renders the complete runtime system Prompt: substitutes `AGENTS.md`, vault key names, Skill
  * metadata, and the concrete Session runtime environment placeholders into the system Prompt
  * template. The assembly layer only does placeholder substitution and adds no extra text —
- * wrapper text such as `<developer_instructions>` and the # Vault / # Skills statements are
+ * wrapper text such as `[developer_instructions]` and the # Vault / # Skills statements are
  * written directly into the system Prompt template itself (the Prompt is fully
  * transparent and editable via `system_config.yaml`). Other files in Agent State / Workspace are
  * never auto-injected.

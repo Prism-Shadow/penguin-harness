@@ -574,6 +574,12 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     jumpToLatest: "回到最新消息",
     inputPlaceholder: "输入消息，Enter 发送，Shift+Enter 换行，可粘贴图片",
     inputPlaceholderShort: "输入消息…",
+    /** Placeholder while a Task is running (mid-run steering): the message rides on the next tool result. */
+    steerPlaceholder: "给运行中的 Agent 留言，随下一个工具结果送达",
+    steerPlaceholderShort: "给运行中的 Agent 留言…",
+    steerSend: "发送给运行中的 Agent",
+    /** Label of the [user_steering] chip inside a tool output (a mid-run user message delivered with the tool result). */
+    userSteering: "用户插话",
     send: "发送",
     stop: "停止",
     compact: "压缩上下文",
@@ -638,7 +644,7 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     skillsSearchPlaceholder: "搜索技能",
     skillsNoMatch: "没有匹配的技能",
     skillsEmptyHint: "暂无已装技能，去技能库添加",
-    /** Auto-generated invocation text when skills are selected and the body is empty (wrapped in <use_skills> before sending). */
+    /** Auto-generated invocation text when skills are selected and the body is empty (wrapped in [use_skills] before sending). */
     skillsAutoMessage: (names: string[]): string => `使用 ${names.join("、")} 技能`,
     handoffFrom: (agent: string) => `由 ${agent} 的对话交接而来`,
     handoffBack: (title?: string) => (title ? `回到原对话：${title}` : "回到原对话"),

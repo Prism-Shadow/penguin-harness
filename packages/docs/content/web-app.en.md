@@ -47,7 +47,7 @@ There are four approval modes: `allow-all`, `deny-all`, `read-only` (only read-o
 ### Input and Shortcuts
 
 - Enter sends, Shift+Enter inserts a newline, and images can be pasted;
-- Typing `/` opens the slash menu: trigger context compaction (`/compact`) or toggle installed Skills — chosen Skills are sent along with the message in a `<use_skills>` block;
+- Typing `/` opens the slash menu: trigger context compaction (`/compact`) or toggle installed Skills — chosen Skills are sent along with the message in a `[use_skills]` block;
 - Typing `@` mentions another Agent to hand the conversation over to it;
 - When human approval is required, tool calls show inline allow/deny buttons in the message stream; the approval mode can be changed mid-Session.
 

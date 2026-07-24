@@ -6,7 +6,7 @@
  *   request emits token_usage, both mid-task and at the wrap-up round (reaching the threshold at
  *   task end triggers compaction immediately, without waiting for the next task).
  * - summarize: appends a compaction prompt to the old LLM (merging in all of this round's tool
- *   results first if mid-task); the summary is wrapped as a `<context_summary>` user text and fed
+ *   results first if mid-task); the summary is wrapped as a `[context_summary]` user text and fed
  *   as the first input to the new LLM instance; on failure the original context is kept, never downgraded to discard.
  * - discard: deferred until task end if mid-task; sends no compaction request, just swaps in a new LLM instance directly.
  * - Process visibility: the compaction request's streamed output is never surfaced to the human,
@@ -41,7 +41,7 @@ import type {
   LLMInterface,
   LLMOutcome,
 } from "../src/interfaces.js";
-import { ContextEngine } from "../src/engine/context-engine.js";
+import { ContextEngine, extractSummary } from "../src/engine/context-engine.js";
 import type { CompactionSettings } from "../src/engine/context-engine.js";
 import { Writer, readTrace } from "../src/trace/index.js";
 
@@ -163,7 +163,7 @@ describe("context compaction", () => {
         { messages: [assistantText("answer one"), usage(150, 150)] },
         // Compaction request: summary + usage (counted into the session cumulative total).
         {
-          messages: [assistantText("<summary>the distilled summary</summary>"), usage(160, 310)],
+          messages: [assistantText("[summary]the distilled summary[/summary]"), usage(160, 310)],
         },
       ],
       "llm1",
@@ -224,7 +224,7 @@ describe("context compaction", () => {
     expect(llm1.calls).toHaveLength(2);
     expect(llm2.calls).toHaveLength(1);
     const firstInput = llm2.calls[0]!.map(textOf);
-    expect(firstInput[0]).toBe("<context_summary>\nthe distilled summary\n</context_summary>");
+    expect(firstInput[0]).toBe("[context_summary]\nthe distilled summary\n[/context_summary]");
     expect(firstInput[1]).toBe("task two");
 
     // Trace splits into files: the old file contains the compaction dialogue and paired events; the new file starts with session_meta.
@@ -239,7 +239,7 @@ describe("context compaction", () => {
     expect(newTrace[0]!.type).toBe("session_meta");
     expect(
       newTrace.some((m) =>
-        ((m.payload as { text?: string }).text ?? "").startsWith("<context_summary>"),
+        ((m.payload as { text?: string }).text ?? "").startsWith("[context_summary]"),
       ),
     ).toBe(true);
   });
@@ -252,7 +252,7 @@ describe("context compaction", () => {
           messages: [toolCall({ name: "t", arguments: "{}", toolCallId: "c1" }), usage(150, 150)],
         },
         // Compaction request (should include c1's tool_call_output plus the compaction prompt).
-        { messages: [assistantText("<summary>continue: finish step 2</summary>")] },
+        { messages: [assistantText("[summary]continue: finish step 2[/summary]")] },
       ],
       "llm1",
     );
@@ -280,7 +280,7 @@ describe("context compaction", () => {
     // The summary itself is the new instance's first input (no hardcoded continuation instruction appended); the task is finished by the new context.
     expect(llm2.calls).toHaveLength(1);
     expect(llm2.calls[0]!.map(textOf)).toEqual([
-      "<context_summary>\ncontinue: finish step 2\n</context_summary>",
+      "[context_summary]\ncontinue: finish step 2\n[/context_summary]",
     ]);
     const finalTexts = out
       .filter((m) => (m.payload as { type?: string }).type === "text")
@@ -303,7 +303,7 @@ describe("context compaction", () => {
         // Original context is kept: the task continues, tool outputs feed back into the old instance as usual (context usage keeps growing).
         { messages: [assistantText("finished on old context"), usage(190, 340)] },
         // Second trigger (context still over the limit) -> retries compaction at the boundary, this time succeeding.
-        { messages: [assistantText("<summary>second try</summary>")] },
+        { messages: [assistantText("[summary]second try[/summary]")] },
       ],
       "llm1",
     );
@@ -351,7 +351,7 @@ describe("context compaction", () => {
     const llm1 = new ScriptedLLM(
       [
         { messages: [assistantText("answer"), usage(150, 150)] },
-        { messages: [assistantText("<summary>s</summary>")] },
+        { messages: [assistantText("[summary]s[/summary]")] },
       ],
       "llm1",
     );
@@ -381,7 +381,7 @@ describe("context compaction", () => {
     const newTrace = await readTrace(trace.currentPath());
     expect(newTrace[0]!.type).toBe("session_meta");
     expect(
-      ((newTrace[1]!.payload as { text?: string }).text ?? "").startsWith("<context_summary>"),
+      ((newTrace[1]!.payload as { text?: string }).text ?? "").startsWith("[context_summary]"),
     ).toBe(true);
     expect((newTrace[2]!.payload as { text?: string }).text).toBe("task 2");
   });
@@ -422,7 +422,7 @@ describe("context compaction", () => {
         },
         { messages: [assistantText("t1 done"), usage(10, 20)] },
         // Compaction request (sent out immediately when task 1 ends).
-        { messages: [assistantText("<summary>s</summary>")] },
+        { messages: [assistantText("[summary]s[/summary]")] },
       ],
       "llm1",
     );
@@ -446,7 +446,7 @@ describe("context compaction", () => {
     expect(compactionEvents(out2)).toHaveLength(0);
     expect(llm2.calls).toHaveLength(1);
     expect(llm2.calls[0]!.map(textOf)).toEqual([
-      "<context_summary>\ns\n</context_summary>",
+      "[context_summary]\ns\n[/context_summary]",
       "task 2",
     ]);
   });
@@ -456,7 +456,7 @@ describe("context compaction", () => {
       [
         // Wrap-up round context usage 100 == threshold 100 -> triggers.
         { messages: [assistantText("answer"), usage(100, 100)] },
-        { messages: [assistantText("<summary>eq</summary>")] },
+        { messages: [assistantText("[summary]eq[/summary]")] },
       ],
       "llm1",
     );
@@ -512,7 +512,7 @@ describe("context compaction", () => {
     ]);
     expect(llm1.calls).toHaveLength(2);
 
-    // The next round's input is used as-is as the new instance's first input (no <context_summary>).
+    // The next round's input is used as-is as the new instance's first input (no [context_summary]).
     await collect(engine.run([userText("next task")], { approve: allowAll }));
     expect(llm2.calls[0]!.map(textOf)).toEqual(["next task"]);
 
@@ -522,7 +522,7 @@ describe("context compaction", () => {
     expect(newTrace[0]!.type).toBe("session_meta");
   });
 
-  it("lenient extraction: output without <summary> tags is used verbatim", async () => {
+  it("lenient extraction: output without [summary] tags is used verbatim", async () => {
     const llm1 = new ScriptedLLM(
       [
         { messages: [assistantText("answer"), usage(150, 150)] },
@@ -541,7 +541,7 @@ describe("context compaction", () => {
     await collect(engine.run([userText("go")], { approve: allowAll }));
     await collect(engine.run([userText("next")], { approve: allowAll }));
     expect(textOf(llm2.calls[0]![0]!)).toBe(
-      "<context_summary>\nplain summary text without tags\n</context_summary>",
+      "[context_summary]\nplain summary text without tags\n[/context_summary]",
     );
   });
 
@@ -551,7 +551,7 @@ describe("context compaction", () => {
         // One ordinary task (well under the limit).
         { messages: [assistantText("small"), usage(10, 10)] },
         // Manual compaction request.
-        { messages: [assistantText("<summary>manual s</summary>")] },
+        { messages: [assistantText("[summary]manual s[/summary]")] },
       ],
       "llm1",
     );
@@ -571,7 +571,7 @@ describe("context compaction", () => {
 
     await collect(engine.run([userText("next")], { approve: allowAll }));
     expect(llm2.calls[0]!.map(textOf)).toEqual([
-      "<context_summary>\nmanual s\n</context_summary>",
+      "[context_summary]\nmanual s\n[/context_summary]",
       "next",
     ]);
   });
@@ -608,7 +608,7 @@ describe("context compaction", () => {
       [
         // Usage is kept under maxContextLength (100 per settings()) so automatic compaction doesn't jump in first and reset sessionTurns.
         { messages: [assistantText("hi"), usage(10, 10)] },
-        { messages: [assistantText("<summary>s</summary>")] }, // manual compaction request
+        { messages: [assistantText("[summary]s[/summary]")] }, // manual compaction request
       ],
       "llm1",
     );
@@ -679,5 +679,17 @@ describe("context compaction", () => {
     expect(events[1]).toMatchObject({ type: "compaction_end", status: "aborted" });
     // Interrupt cleanup: the tool output is held as carry-over per case A, and the run wraps up with an abort event.
     expect(payloadTypes(out)).toContain("abort");
+  });
+});
+
+describe("extractSummary dual-form", () => {
+  it("accepts the current [summary] form, the legacy <summary> form, and tagless output", () => {
+    // The legacy angle form must stay accepted indefinitely: compaction.prompt is persisted in
+    // existing agents' system_config.yaml, so old agents keep instructing <summary> tags.
+    expect(extractSummary("preamble [summary]new form[/summary] postscript")).toBe("new form");
+    expect(extractSummary("preamble <summary>old form</summary> postscript")).toBe("old form");
+    expect(extractSummary("  tagless output used verbatim  ")).toBe("tagless output used verbatim");
+    // The current form wins when both appear (a model echoing the instruction).
+    expect(extractSummary("[summary]a[/summary] <summary>b</summary>")).toBe("a");
   });
 });

@@ -25,7 +25,7 @@ session.run(newMessages, { approve, signal })
 │    │     Environment.executeTool ──► 并发执行,输出流式回传    │
 │    └─ LLMOutcome:                                             │
 │         timeout / malformed ──► 同轮自动重连(≤2 次,          │
-│                                 附 <turn_retried>,工具不重跑) │
+│                                 附 [turn_retried],工具不重跑) │
 │  token_usage + request_end(LLM 流结束即产出,不等工具)         │
 │                                                               │
 │  工具输出按原始调用顺序重排 ──► 作为下一轮输入                 │
@@ -77,13 +77,17 @@ Task 由若干连续的 Request(轮)组成，每轮：
 `signal` 触发中断后，引擎产出 `abort` 事件并立即返回，同时为下一次 `run` 构造补发内容：
 
 - **场景 A：模型输出已完成**(该轮 `tool_call` 已提交)——已完成的工具结果按结构化 `tool_call_output` 补发；未执行完的调用补上 `[interrupted: tool aborted by user]` 占位，保证 `tool_call` 与输出严格配对；
-- **场景 B：模型输出未完成**——整轮压平为一段 `<turn_aborted>` 用户文本，携带已产生的部分输出。
+- **场景 B：模型输出未完成**——整轮压平为一段 `[turn_aborted]` 用户文本，携带已产生的部分输出。
 
 补发内容只进入模型上下文，不写入 Trace——Trace 永远只记录真实发生的消息。
 
+## 运行中插话(Steering)
+
+Task 运行期间，宿主可通过 `session.steer(text)` 排队一条用户消息而不打断循环：引擎会把它以 `[user_steering]` 块追加到下一个**完成**的工具输出末尾（改写后的消息是持久化消息本身——Trace、输出流与下一轮输入携带同一份内容）。若该轮没有工具调用而插话仍在队列中，排队文本会作为普通用户轮继续循环，不会被丢弃。没有 Task 运行时 `steer` 返回 `false`（宿主转为发起普通 Task）；运行被中断时未送达的插话随之丢弃。
+
 ## 自动重连
 
-只有 LLM 侧的 `timeout`(网络超时、限流、5xx)与 `malformed`(流截断、JSON 解析失败)会触发引擎内自动重连：同一次 `run` 内重发原始输入，并附加 `<turn_retried>` 块携带上一次的部分输出，避免工具重复执行。默认最多重连 2 次，线性退避(基数 250ms)；超限后该轮以 `failed` 收场。工具错误从不重试——它们作为 `tool_call_output` 反馈给模型，由模型决定下一步。
+只有 LLM 侧的 `timeout`(网络超时、限流、5xx)与 `malformed`(流截断、JSON 解析失败)会触发引擎内自动重连：同一次 `run` 内重发原始输入，并附加 `[turn_retried]` 块携带上一次的部分输出，避免工具重复执行。默认最多重连 2 次，线性退避(基数 250ms)；超限后该轮以 `failed` 收场。工具错误从不重试——它们作为 `tool_call_output` 反馈给模型，由模型决定下一步。
 
 ## 上下文压缩(Compaction)
 
@@ -106,7 +110,7 @@ interface CompactionSettings {
 | `turns` | Session 轮数 ≥ `maxSessionTurns`(默认 -1，即不限) |
 | `manual` | 用户执行 `/compact` 或调用 `session.compact()` |
 
-两种模式：`summarize`(默认)向旧上下文追加压缩 Prompt，提取 `<summary>` 后包装为 `<context_summary>` 用户文本，在**全新的模型上下文**中继续；`discard` 直接丢弃旧上下文。压缩时 [Trace 文件随之轮转](/sessions-and-traces)(`_002`、`_003`……)，一个 Trace 文件恒等于一个完整模型上下文。`session.compact()` 前可用 `compactability()` 探询可行性(`ok | unsupported | empty | just_compacted`)。
+两种模式：`summarize`(默认)向旧上下文追加压缩 Prompt，提取 `[summary]` 后包装为 `[context_summary]` 用户文本，在**全新的模型上下文**中继续；`discard` 直接丢弃旧上下文。系统标记统一写作 `[tag]…[/tag]`；读取旧 Trace 与旧压缩 Prompt 时仍识别早期的尖括号形式（`<summary>`、`<context_summary>` 等）。压缩时 [Trace 文件随之轮转](/sessions-and-traces)(`_002`、`_003`……)，一个 Trace 文件恒等于一个完整模型上下文。`session.compact()` 前可用 `compactability()` 探询可行性(`ok | unsupported | empty | just_compacted`)。
 
 ## 并发模型
 

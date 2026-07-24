@@ -1,8 +1,8 @@
 /**
  * agent-mentions.ts unit tests: @ mention matching (cursor prefix / boundary
  * rules), candidate filtering, send-time parsing of a leading @ mention,
- * generation of the first new-conversation <handoff_from> origin block, and
- * <scheduled_task> origin block parsing.
+ * generation of the first new-conversation [handoff_from] origin block, and
+ * [scheduled_task] origin block parsing.
  */
 import { describe, expect, it } from "vitest";
 import type { AgentSummary } from "@prismshadow/penguin-server/api";
@@ -113,7 +113,7 @@ describe("splitLeadingMention (send-time parsing of a leading @)", () => {
   });
 });
 
-describe("handoffMessage (the first new-conversation <handoff_from> origin block)", () => {
+describe("handoffMessage (the first new-conversation [handoff_from] origin block)", () => {
   it("full origin: agent display name and Session title as parentheticals, Workspace on its own line", () => {
     const text = handoffMessage({
       agentId: "default_agent",
@@ -122,8 +122,8 @@ describe("handoffMessage (the first new-conversation <handoff_from> origin block
       sessionTitle: "Fix the parser",
       workspace: "/data/ws",
     });
-    expect(text.startsWith("<handoff_from>\n")).toBe(true);
-    expect(text.endsWith("\n</handoff_from>")).toBe(true);
+    expect(text.startsWith("[handoff_from]\n")).toBe(true);
+    expect(text.endsWith("\n[/handoff_from]")).toBe(true);
     expect(text).toContain("agent: default_agent (General Agent)");
     expect(text).toContain("session: session-01ABC (Fix the parser)");
     expect(text).toContain("workspace: /data/ws");
@@ -179,11 +179,11 @@ describe("parseScheduledMessage (parses the scheduled-task origin block, driving
   /** Shape of the server-side scheduledMessage output (scheduler.ts). */
   const scheduled = (name: string, firedAt: string, prompt: string): string =>
     [
-      "<scheduled_task>",
+      "[scheduled_task]",
       "This message was sent automatically by a scheduled task; its origin is listed below and the task prompt follows.",
       `schedule: ${name}`,
       `fired_at: ${firedAt}`,
-      "</scheduled_task>",
+      "[/scheduled_task]",
       "",
       prompt,
     ].join("\n");
@@ -207,8 +207,38 @@ describe("parseScheduledMessage (parses the scheduled-task origin block, driving
     ).toBeNull();
     expect(
       parseScheduledMessage(
-        "<scheduled_task>\nfired_at: 2026-01-01T00:00:00Z\n</scheduled_task>\n\np",
+        "[scheduled_task]\nfired_at: 2026-01-01T00:00:00Z\n[/scheduled_task]\n\np",
       ),
     ).toBeNull();
+  });
+});
+
+describe("legacy angle-bracket origin blocks (old Traces re-rendered)", () => {
+  it("parseHandoffMessage still recognizes <handoff_from>", () => {
+    const old = [
+      "<handoff_from>",
+      "This conversation was opened by @-mentioning you from another conversation.",
+      "agent: default_agent (General Agent)",
+      "workspace: /data/ws",
+      "</handoff_from>",
+    ].join("\n");
+    expect(parseHandoffMessage(old)).toEqual({
+      agentId: "default_agent",
+      agentName: "General Agent",
+      workspace: "/data/ws",
+    });
+  });
+
+  it("parseScheduledMessage still recognizes <scheduled_task>", () => {
+    const old =
+      "<scheduled_task>\nschedule: daily\nfired_at: 2026-01-01T00:00:00Z\n</scheduled_task>\n\nbody";
+    expect(parseScheduledMessage(old)).toEqual({
+      origin: { name: "daily", firedAt: "2026-01-01T00:00:00Z" },
+      rest: "body",
+    });
+  });
+
+  it("handoffMessage emits only the current square-bracket form", () => {
+    expect(handoffMessage({ agentId: "a" }).startsWith("[handoff_from]\n")).toBe(true);
   });
 });

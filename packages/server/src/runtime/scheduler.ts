@@ -51,17 +51,17 @@ export interface ScheduleSessionCreator {
 }
 
 /**
- * Trigger input = a `<scheduled_task>` origin block (task name and fire time) + the prompt body:
+ * Trigger input = a `[scheduled_task]` origin block (task name and fire time) + the prompt body:
  * tells the model this was fired by a schedule; the frontend collapses the origin block into a
  * one-line schedule hint (Trace shows it verbatim).
  */
 export function scheduledMessage(name: string, firedAt: string, prompt: string): string {
   return [
-    "<scheduled_task>",
+    "[scheduled_task]",
     "This message was sent automatically by a scheduled task; its origin is listed below and the task prompt follows.",
     `schedule: ${name}`,
     `fired_at: ${firedAt}`,
-    "</scheduled_task>",
+    "[/scheduled_task]",
     "",
     prompt,
   ].join("\n");

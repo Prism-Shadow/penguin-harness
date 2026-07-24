@@ -38,7 +38,7 @@ updated: 2026-07-17
 
 Skill 采用「先索引、后正文」的设计：系统 Prompt 经 `{{SKILL_METADATA}}` 占位符只注入每个已安装 Skill 的元数据(name + description)，并指示模型在任务匹配某个 Skill 时，先用 Shell 完整读取对应的 `SKILL.md`，再遵循执行。系统不设专门的 Skill 工具，读取正文就是一次 `exec_command` 调用(见 [工具与审批](/tools))。
 
-对话中也可以显式指定 Skill：此时消息以 `<use_skills>` 块开头，列出要使用的 Skill 名。
+对话中也可以显式指定 Skill：此时消息以 `[use_skills]` 块开头，列出要使用的 Skill 名（重新渲染旧 Trace 时仍识别早期的 `<use_skills>` 形式）。
 
 若消息只点名 Skill 而没有给出具体任务，模型会先询问需求再开始。
 

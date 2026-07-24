@@ -1,5 +1,5 @@
 /**
- * Handoff notice for a chat created via @ delegation: the source block (<handoff_from>) isn't
+ * Handoff notice for a chat created via @ delegation: the source block ([handoff_from]) isn't
  * shown verbatim, it's collapsed into a single line reading "Handed off from <agent>'s chat";
  * when there's a source Session, the whole line is clickable and jumps back to the original chat
  * (the source Session's title goes into the title hover tooltip, taking no space in the body).
