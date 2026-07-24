@@ -215,9 +215,12 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   await seg.hover();
   await expect(main.locator("button.bg-amber-50").first()).toBeVisible();
 
-  // --- files: HTML preview (scripts run in sandbox, localStorage shim) + path hidden ---
-  // Script uses localStorage: without the shim it would throw SecurityError (opaque origin);
-  // with the shim it runs and appends #shim-ok.
+  // --- files: HTML preview (isolated separate-origin iframe, scripts + storage) + path hidden ---
+  // run.sh binds 127.0.0.1 and the spec browses on localhost, so previewIsolated=true and the
+  // in-app rendered view loads via /files/preview-redirect on the separate preview origin
+  // (127.0.0.1) — a real origin where localStorage works natively. The #shim-ok marker (id kept
+  // from the old srcDoc-plus-shim path, which now only engages when no preview origin exists)
+  // proves the page's script ran and storage was writable.
   const html = Buffer.from(
     "<html><body><h1>Hello E2E</h1><script>localStorage.setItem('e2e','1');" +
       "document.body.insertAdjacentHTML('beforeend','<p id=\\'shim-ok\\'>'+localStorage.getItem('e2e')+'</p>')" +
@@ -234,7 +237,7 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   const fileNode = page.getByText("demo.html").first();
   await expect(fileNode).toBeVisible();
   await fileNode.click();
-  // Rendered iframe present; the localStorage script ran (shim) → #shim-ok appended.
+  // Rendered iframe present; the localStorage script ran on the preview origin → #shim-ok appended.
   await expect(page.locator("iframe")).toBeVisible();
   await expect(page.frameLocator("iframe").locator("#shim-ok")).toHaveText("1");
   // The list and the preview are mutually exclusive: the toolbar only appears after

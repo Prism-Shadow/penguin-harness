@@ -176,7 +176,10 @@ interface Preview {
   nonce: number;
 }
 
-/** Monotonic source for Preview.nonce (only uniqueness matters; sharing across instances is fine). */
+/** Monotonic counter behind Preview.nonce. Doubles as the staleness guard: previewPath
+ *  captures its value up front and publishes only while still the latest, so two rapid
+ *  calls can't have the slower loser overwrite the winner. Module scope is fine — the
+ *  docked panel and the drawer never mount WorkspaceBrowser at the same time. */
 let previewSeq = 0;
 
 export function WorkspaceBrowser({
@@ -215,6 +218,14 @@ export function WorkspaceBrowser({
   const [showPath, setShowPath] = useState(false);
   /** HTML / Markdown preview: rendered view (HTML via sandboxed iframe, Markdown via md-body) / source toggle. */
   const [richView, setRichView] = useState<"rendered" | "source">("rendered");
+  /** Error from the lazy source fetch of an isolated HTML preview: scoped to the source
+   *  view — the rendered iframe keeps working no matter what happens to this fetch. */
+  const [sourceError, setSourceError] = useState<string | null>(null);
+  /** Mirror for previewPath: reading previewIsolated through a ref keeps the callback's
+   *  identity stable when /api/me refreshes it (previewPath drives the openRequest locate
+   *  effect, which must not replay on an auth-context change). */
+  const previewIsolatedRef = useRef(previewIsolated);
+  previewIsolatedRef.current = previewIsolated;
 
   useEffect(() => {
     let cancelled = false;
@@ -260,27 +271,42 @@ export function WorkspaceBrowser({
         : filePath;
       const ext = extOf(name);
       const nonce = ++previewSeq;
+      /** Publishes this call's result unless a newer previewPath call has started since:
+       *  two rapid calls interleave across the await, and the late loser must not
+       *  overwrite the winner's preview. */
+      const present = (p: Preview) => {
+        if (nonce === previewSeq) setPreview(p);
+      };
       setRichView("rendered");
+      setSourceError(null);
       if (IMAGE_EXTS.has(ext)) {
-        setPreview({ path: filePath, name, kind: "image", nonce });
+        present({ path: filePath, name, kind: "image", nonce });
         return;
       }
       // PDF: the server returns it inline as application/pdf, embedded directly in an iframe and rendered by the browser.
       if (ext === "pdf") {
-        setPreview({ path: filePath, name, kind: "pdf", nonce });
+        present({ path: filePath, name, kind: "pdf", nonce });
         return;
       }
       const isHtml = HTML_EXTS.has(ext);
       const isMd = ext === "md";
       if (!isHtml && !TEXT_EXTS.has(ext)) {
-        setPreview({ path: filePath, name, kind: "unsupported", nonce });
+        present({ path: filePath, name, kind: "unsupported", nonce });
+        return;
+      }
+      // Isolated HTML: the rendered view is an iframe onto the preview origin and needs no
+      // text here, so the iframe mounts with no upfront fetch — a large file isn't
+      // downloaded twice, and a transient fetch failure can't downgrade a page the iframe
+      // would serve fine. The source text is fetched lazily on the first Source toggle
+      // (see the effect below).
+      if (isHtml && previewIsolatedRef.current) {
+        present({ path: filePath, name, kind: "html", nonce });
         return;
       }
       try {
         // The server downgrades html/svg served inline to text/plain (a same-origin XSS
-        // defense); this fetches the raw content back. For HTML the content feeds the source
-        // view (and, without an isolated preview origin, the srcDoc fallback rendered view);
-        // the isolated rendered view loads the file itself from the preview origin instead.
+        // defense); this fetches the raw content back for text/Markdown previews and for
+        // the srcDoc fallback rendered view of non-isolated HTML.
         const res = await fetch(api.workspaceFileUrl(session.sessionId, filePath), {
           credentials: "same-origin",
         });
@@ -290,8 +316,8 @@ export function WorkspaceBrowser({
         // Oversized Markdown defaults to the source view (benefiting from the unhighlighted
         // highlight=false path): feeding the whole block to remark for parsing is a one-time
         // main-thread cost; the user can still manually switch to "rendered view" as an informed choice.
-        if (isMd && full.length > HIGHLIGHT_LIMIT) setRichView("source");
-        setPreview({
+        if (isMd && full.length > HIGHLIGHT_LIMIT && nonce === previewSeq) setRichView("source");
+        present({
           path: filePath,
           name,
           kind: isHtml ? "html" : isMd ? "md" : "text",
@@ -300,11 +326,48 @@ export function WorkspaceBrowser({
           nonce,
         });
       } catch {
-        setPreview({ path: filePath, name, kind: "unsupported", nonce });
+        present({ path: filePath, name, kind: "unsupported", nonce });
       }
     },
     [session.sessionId],
   );
+
+  // Lazy source fetch for isolated HTML previews: previewPath mounted the iframe without
+  // downloading the text, so the first switch to the Source view fetches it here (as does
+  // the rare case of previewIsolated flipping to false with such a preview open, which
+  // strands the srcDoc fallback without content). Failure sets sourceError and touches
+  // nothing else — a broken source fetch must not take down the rendered view.
+  useEffect(() => {
+    if (preview?.kind !== "html" || preview.content !== undefined) return;
+    if (richView !== "source" && previewIsolated) return;
+    const target = preview.path;
+    let cancelled = false;
+    setSourceError(null);
+    void (async () => {
+      try {
+        const res = await fetch(api.workspaceFileUrl(session.sessionId, target), {
+          credentials: "same-origin",
+        });
+        if (!res.ok) throw new Error(String(res.status));
+        const full = await res.text();
+        if (cancelled) return;
+        const truncated = full.length > TEXT_PREVIEW_LIMIT;
+        // Functional update with its own guard (not `present`): this must only fill the
+        // still-current, still-contentless HTML preview for the same path, never revive
+        // a preview the user has since navigated away from.
+        setPreview((p) =>
+          p !== null && p.kind === "html" && p.path === target && p.content === undefined
+            ? { ...p, content: truncated ? full.slice(0, TEXT_PREVIEW_LIMIT) : full, truncated }
+            : p,
+        );
+      } catch {
+        if (!cancelled) setSourceError(S.files.loadFailed);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [preview, richView, previewIsolated, session.sessionId]);
 
   // External navigation command (clicking a file chip in a message / a file card): navigates to
   // the directory and previews the target path. Also refreshes the list: the target is most
@@ -482,16 +545,26 @@ export function WorkspaceBrowser({
               // allow-same-origin is safe here precisely because the document IS on a separate
               // origin: it grants the preview origin's identity, not the app's, so the frame
               // still can't reach the app's cookies or DOM. Popups stay sandboxed (no
-              // allow-popups-to-escape-sandbox). The key remounts the iframe on every
-              // previewPath call — its src alone wouldn't change when the same file is
+              // allow-popups-to-escape-sandbox); allow-downloads keeps download links inside
+              // the page working, as they do in the new tab. The key remounts the iframe on
+              // every previewPath call — its src alone wouldn't change when the same file is
               // re-opened after the Agent rewrote it.
               <iframe
                 key={preview.nonce}
                 src={api.workspaceFilePreviewUrl(session.sessionId, preview.path)}
                 title={preview.name}
-                sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+                sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads"
                 className="h-full min-h-[60vh] w-full rounded-md border border-gray-200 bg-white dark:border-gray-800"
               />
+            ) : preview.content === undefined ? (
+              // Only reachable when previewIsolated flipped to false after an isolated
+              // preview mounted without content: the lazy source effect is already fetching
+              // it, and the srcDoc fallback renders once it lands.
+              sourceError !== null ? (
+                <p className="text-sm text-red-600 dark:text-red-400">{sourceError}</p>
+              ) : (
+                <SkeletonList rows={6} />
+              )
             ) : (
               // No separate preview origin: srcDoc fallback. sandbox allows scripts but
               // **without allow-same-origin**: the iframe has an opaque origin, so scripts can
@@ -501,7 +574,7 @@ export function WorkspaceBrowser({
               // base URL, so relative subresources cannot resolve here — that's what the
               // isolated branch above fixes.
               <iframe
-                srcDoc={withStorageShim(preview.content ?? "")}
+                srcDoc={withStorageShim(preview.content)}
                 title={preview.name}
                 sandbox="allow-scripts"
                 className="h-full min-h-[60vh] w-full rounded-md border border-gray-200 bg-white dark:border-gray-800"
@@ -567,19 +640,30 @@ export function WorkspaceBrowser({
               )}
             </>
           ) : preview.kind === "text" || preview.kind === "html" || preview.kind === "md" ? (
-            // The source view reuses the message stream's CodeBlock: Shiki dual-theme
-            // highlighting + language label + copy button, no line wrapping, horizontal scroll
-            // instead (wrapping code is a disaster for readability, see the old mobile styling).
-            <>
-              <CodeBlock
-                language={langForExt(extOf(preview.name))}
-                code={preview.content ?? ""}
-                highlight={(preview.content?.length ?? 0) <= HIGHLIGHT_LIMIT}
-              />
-              {preview.truncated && (
-                <p className="mt-1 text-xs text-gray-400">… {S.files.previewTruncated}</p>
-              )}
-            </>
+            preview.content === undefined ? (
+              // Isolated HTML reaches the Source view before its lazy fetch lands: show a
+              // skeleton (or the fetch's own error) — toggling back to Rendered is
+              // unaffected, and re-entering Source retries the fetch.
+              sourceError !== null ? (
+                <p className="text-sm text-red-600 dark:text-red-400">{sourceError}</p>
+              ) : (
+                <SkeletonList rows={6} />
+              )
+            ) : (
+              // The source view reuses the message stream's CodeBlock: Shiki dual-theme
+              // highlighting + language label + copy button, no line wrapping, horizontal scroll
+              // instead (wrapping code is a disaster for readability, see the old mobile styling).
+              <>
+                <CodeBlock
+                  language={langForExt(extOf(preview.name))}
+                  code={preview.content}
+                  highlight={preview.content.length <= HIGHLIGHT_LIMIT}
+                />
+                {preview.truncated && (
+                  <p className="mt-1 text-xs text-gray-400">… {S.files.previewTruncated}</p>
+                )}
+              </>
+            )
           ) : (
             <p className="text-sm text-gray-500 dark:text-gray-400">{S.files.previewUnsupported}</p>
           )}

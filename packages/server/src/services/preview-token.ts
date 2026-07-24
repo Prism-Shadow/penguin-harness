@@ -151,7 +151,8 @@ export function requestAuthority(requestUrl: string, hostHeader: string | undefi
 /**
  * Where previews for this request should be served from: the configured origin when
  * PENGUIN_PREVIEW_ORIGIN is set, otherwise the loopback counterpart of the host the
- * caller is using. Null when neither applies — the caller degrades to the same-origin
+ * caller is using. Null when neither applies — or when the configured origin's host is
+ * the request's own host (no boundary) — and the caller degrades to the same-origin
  * sandbox rather than silently serving unisolated content.
  *
  * The port comes from **this server's own binding**, never from the request. Those differ
@@ -169,13 +170,23 @@ export function resolvePreviewTarget(
   configuredOrigin: string | null,
   serverBind: { host: string; port: number },
 ): { origin: string; host: string } | null {
+  const requestHost = hostOnly(requestAuthority(requestUrl, hostHeader)).toLowerCase();
   if (configuredOrigin) {
     const url = new URL(configuredOrigin);
+    // A configured origin that lands on the very host this request is using is no
+    // boundary at all: "isolated" previews would be same-origin with the App, and the
+    // allow-same-origin iframe the UI mounts for them would hand Agent HTML the App's
+    // origin. Such a misconfiguration degrades to null — previewIsolated reports false
+    // and the redirect falls back to the same-origin sandbox — instead of claiming an
+    // isolation that does not exist. Host-only comparison on purpose: cookies ignore
+    // ports, so a port difference would not separate anything either.
+    if (url.hostname.toLowerCase() === requestHost) return null;
     return { origin: url.origin, host: url.hostname };
   }
-  const raw = requestAuthority(requestUrl, hostHeader);
-  if (raw === "") return null;
-  const counterpart = loopbackCounterpart(hostOnly(raw));
+  if (requestHost === "") return null;
+  // The loopback counterpart differs from the request host by construction, so the
+  // same-host guard above is only needed for the configured branch.
+  const counterpart = loopbackCounterpart(requestHost);
   if (!counterpart) return null;
   if (!loopbackHostRoles(serverBind.host)) return null;
 
