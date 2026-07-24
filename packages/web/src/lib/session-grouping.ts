@@ -107,6 +107,31 @@ export function partitionSessions(sessions: SessionInfo[]): SessionPartition {
   return parts;
 }
 
+/**
+ * The Session the UI opens as "the last conversation" (the chat home's auto-select and
+ * the collapsed rail's entry): the newest loaded row that is a conversation of the
+ * user's own. Archived rows are hidden by choice and a subagent Session is a child of
+ * some other conversation, so neither is ever auto-opened; schedule-created runs are
+ * the user's conversations and qualify. Newest by createdAt (uniform ISO-8601 UTC, so
+ * string comparison is chronological), ties broken by sessionId — the list's ordering
+ * convention. Input order doesn't matter.
+ */
+export function latestConversation(sessions: readonly SessionInfo[]): SessionInfo | null {
+  let best: SessionInfo | null = null;
+  for (const s of sessions) {
+    const category = sessionCategory(s);
+    if (category !== "active" && category !== "schedule") continue;
+    if (
+      !best ||
+      s.createdAt > best.createdAt ||
+      (s.createdAt === best.createdAt && s.sessionId > best.sessionId)
+    ) {
+      best = s;
+    }
+  }
+  return best;
+}
+
 export interface WorkspaceGroup {
   /** Stable group key: the Workspace path, or TEMP_WORKSPACE_GROUP_KEY for the merged temp group. */
   key: string;

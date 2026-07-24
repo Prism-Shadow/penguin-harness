@@ -375,13 +375,17 @@ export function Sidebar({
       // The session is gone, so clear its input draft too (no orphaned keys left in localStorage; keys are scoped per user, #68).
       if (user) clearDraft(sessionDraftKey(user.userId, target.sessionId));
       setDeletingSession(null);
-      // The deleted session was the one open: jump to another **unarchived** Session in the same
-      // group, otherwise fall back to the chat home page (never jump into an archived session —
-      // it's hidden by default, so landing there would look like the chat vanished into thin air).
+      // The deleted session was the one open: jump to this Agent's next conversation, otherwise
+      // fall back to the chat home page. Auto-opened conversations are never archived (hidden by
+      // default — landing there would look like the chat vanished into thin air) and never
+      // subagent children (they belong to some other conversation).
       if (activeSessionId === target.sessionId) {
-        const rest = (byAgent.get(target.agentId) ?? []).filter(
-          (s) => s.sessionId !== target.sessionId && !s.archived,
-        );
+        const rest = (byAgent.get(target.agentId) ?? []).filter((s) => {
+          const category = sessionCategory(s);
+          return (
+            s.sessionId !== target.sessionId && (category === "active" || category === "schedule")
+          );
+        });
         navigate(rest[0] ? `/chat/${rest[0].sessionId}` : "/chat");
       }
     } catch (e) {

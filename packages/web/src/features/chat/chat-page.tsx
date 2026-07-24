@@ -26,6 +26,7 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { formatDateTime, formatMoney, humanizeDuration, humanizeTokens } from "../../lib/format";
+import { latestConversation } from "../../lib/session-grouping";
 import { approvalKey } from "../../lib/omni/stream-model";
 import { useTheme } from "../../state/theme";
 import { useProject } from "../../state/project";
@@ -203,14 +204,17 @@ export function ChatPage() {
     };
   }, [draft, routeSessionId, sessionsLoading, sessions, addSession]);
 
-  // Auto-select the most recent Session when the route doesn't select one; if there are none at all, fall back to draft state (instead of auto-creating one).
+  // Auto-select the most recent conversation when the route doesn't select one (newest loaded
+  // active/schedule Session — archived rows are hidden by choice and subagent Sessions belong
+  // to their parent, so neither is auto-opened); if there is none, fall back to draft state
+  // (instead of auto-creating one).
   useEffect(() => {
     if (sessionsLoading || draft) return;
     if (routeSessionId && sessions.some((s) => s.sessionId === routeSessionId)) return;
     // A routed id missing from the paged list isn't gone until the direct lookup fails.
     if (routeSessionId && probeFailedId !== routeSessionId) return;
-    const first = sessions[0];
-    navigate(first ? `/chat/${first.sessionId}` : `/chat/${DRAFT_SESSION_ID}`, { replace: true });
+    const last = latestConversation(sessions);
+    navigate(last ? `/chat/${last.sessionId}` : `/chat/${DRAFT_SESSION_ID}`, { replace: true });
   }, [sessionsLoading, draft, routeSessionId, probeFailedId, sessions, navigate]);
 
   // Sync task_state to the sidebar list badge.

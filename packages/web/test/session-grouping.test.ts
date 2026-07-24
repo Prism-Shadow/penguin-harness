@@ -16,6 +16,7 @@ import {
   groupAgentsWithMore,
   groupSessionsByWorkspace,
   isTempWorkspace,
+  latestConversation,
   partitionSessions,
   pinnedFirst,
   sessionCategory,
@@ -200,6 +201,31 @@ describe("partitionSessions (per-group user / subagent / scheduled / archived sp
       schedule: [],
       archived: [],
     });
+  });
+});
+
+describe("latestConversation (the auto-opened 'last conversation')", () => {
+  it("picks the newest active/schedule row regardless of input order; archived and subagent rows never win", () => {
+    const oldActive = session("/srv/a", "2026-07-01T10:00:00.000Z");
+    const newActive = session("/srv/a", "2026-07-03T10:00:00.000Z");
+    // Newer than every conversation, but never auto-opened:
+    const newerSub = session("/srv/a", "2026-07-08T10:00:00.000Z", { source: "subagent" });
+    const newerGone = session("/srv/a", "2026-07-09T10:00:00.000Z", { archived: true });
+    expect(latestConversation([newerSub, oldActive, newerGone, newActive])).toBe(newActive);
+
+    // A schedule-created run is the user's conversation: the newest one qualifies.
+    const newerSched = session("/srv/a", "2026-07-05T10:00:00.000Z", { source: "schedule" });
+    expect(latestConversation([newActive, newerSched, newerSub])).toBe(newerSched);
+  });
+
+  it("ties on createdAt break by sessionId, and no qualifying row yields null", () => {
+    const at = "2026-07-02T10:00:00.000Z";
+    const a = session("/srv/a", at, { sessionId: "session-a" });
+    const b = session("/srv/a", at, { sessionId: "session-b" });
+    expect(latestConversation([a, b])).toBe(b);
+    expect(latestConversation([b, a])).toBe(b);
+    expect(latestConversation([])).toBeNull();
+    expect(latestConversation([session("/srv/a", at, { source: "subagent" })])).toBeNull();
   });
 });
 
