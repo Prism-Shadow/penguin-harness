@@ -3,8 +3,8 @@ name: benchmark-design
 description: Design and calibrate a multi-Case capability Benchmark with repeated independent evaluations and a traceable baseline.
 short_description: Design and calibrate an Agent capability Benchmark.
 short_description_zh: 设计并校准 Agent 能力评测 Benchmark。
-version: 17
-updated: 2026-07-24T10:31:41Z
+version: 18
+updated: 2026-07-24T11:19:26Z
 ---
 
 # Benchmark Design
@@ -21,8 +21,10 @@ Delegate every individual evaluation and score to the `agent-evaluation` Skill.
 Require both the Test Agent and the capability to measure. If either is missing, ask the user.
 
 Evaluation also requires a top-level Session with `run_subagent`, and the current Agent must have
-the `agent-evaluation` Skill installed. If either condition is missing, stop and explain the
-blocker rather than creating a Benchmark that cannot be completed.
+the `agent-evaluation` Skill installed. If `run_subagent` is absent, immediately return
+`missing_run_subagent`. Do not create or modify a Benchmark, launch the Test Agent through
+`penguin run`, score a Case, or use the generic "do the work yourself" fallback. If the Skill is
+missing, stop and explain the blocker rather than creating a Benchmark that cannot be completed.
 
 ## Paths and access boundaries
 
@@ -131,7 +133,9 @@ freezing the Benchmark.
 
 Maintain a Case × Run ledger. Never dispatch a cell that is already pending or valid, and retry a
 cell only after an explicit infrastructure failure. Use bounded batches that fit the available
-subagent capacity, and collect one batch before launching more work.
+subagent capacity. For independent cells in one batch, launch one `agent-evaluation` subagent per
+cell before waiting for any of them to finish, then poll those exact subagent ids until the batch is
+complete. Do not wait for one cell to finish before launching the next independent cell.
 
 Prefer an Evaluator response that is one plain protocol YAML document with the fields defined by
 `agent-evaluation`. If the response also contains commentary or a code fence, extract one

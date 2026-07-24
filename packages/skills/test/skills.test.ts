@@ -108,6 +108,9 @@ describe("agent tuning workflow contracts", () => {
     expect(benchmark).toContain("representative Test Traces");
     expect(benchmark).toContain("semantic isolation review");
     expect(benchmark).toContain("Case × Run ledger");
+    expect(benchmark).toContain("missing_run_subagent");
+    expect(benchmark).toContain('generic "do the work yourself" fallback');
+    expect(benchmark).toContain("before waiting for any of them to finish");
     expect(benchmark).toContain("extract one");
     expect(benchmark).toMatch(/do not\s+terminate the whole calibration/);
     expect(benchmark).toContain("per-item scores");
@@ -134,6 +137,9 @@ describe("agent tuning workflow contracts", () => {
     expect(optimization).toContain("one falsifiable behavioral hypothesis");
     expect(optimization).toContain("conditional analysis procedure");
     expect(optimization).toContain("Case × Run ledger");
+    expect(optimization).toContain("missing_run_subagent");
+    expect(optimization).toContain('generic "do the work');
+    expect(optimization).toContain("before waiting for any of them to finish");
     expect(optimization).toMatch(/do not terminate the whole\s+optimization/);
     expect(optimization).toMatch(/every fully evaluated Candidate/);
     expect(optimization).toContain("visual curve");

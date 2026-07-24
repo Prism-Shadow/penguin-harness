@@ -3,8 +3,8 @@ name: agent-optimization
 description: Improve an Agent State from direct feedback or versioned Benchmark scores and score-linked Traces.
 short_description: Improve an Agent from feedback or measured Benchmark results.
 short_description_zh: 根据反馈或 Benchmark 结果改进 Agent。
-version: 16
-updated: 2026-07-24T10:31:41Z
+version: 17
+updated: 2026-07-24T11:19:26Z
 ---
 
 # Agent Optimization
@@ -33,8 +33,10 @@ Benchmark mode requires:
 - a top-level Session with `run_subagent`;
 - the `agent-evaluation` Skill installed on the current Agent.
 
-If a requirement is missing, stop and explain what is needed rather than starting a change that
-cannot be compared completely.
+If `run_subagent` is absent, immediately return `missing_run_subagent`. Do not edit Agent State,
+launch the Test Agent through `penguin run`, score a Case, or use the generic "do the work
+yourself" fallback. If another requirement is missing, stop and explain what is needed rather than
+starting a change that cannot be compared completely.
 
 ## Target and access boundaries
 
@@ -131,7 +133,9 @@ alias, or fall back to a different Model identifier.
 
 Maintain a Case × Run ledger. Never dispatch a cell that is already pending or valid, and retry a
 cell only after an explicit infrastructure failure. Use bounded batches that fit the available
-subagent capacity, and collect one batch before launching more work.
+subagent capacity. For independent cells in one batch, launch one `agent-evaluation` subagent per
+cell before waiting for any of them to finish, then poll those exact subagent ids until the batch is
+complete. Do not wait for one cell to finish before launching the next independent cell.
 
 Prefer an Evaluator response that is one plain protocol YAML document with the fields defined by
 `agent-evaluation`. If the response also contains commentary or a code fence, extract one
