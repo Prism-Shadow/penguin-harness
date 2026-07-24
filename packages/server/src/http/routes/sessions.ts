@@ -385,8 +385,8 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     return c.json({ sessionId, queued } satisfies TaskCreateResponse, 202);
   });
 
-  // Mid-run steering: queue a user message for the running Task; core appends it to the next
-  // completed tool output as a `[user_steering]` block (the model sees it without the loop
+  // Mid-run steering: queue a user message for the running Task; core delivers it between
+  // turns as a standalone `[user_steering]` user message (the model sees it without the loop
   // being interrupted). 409 not_running when no Task is in progress — the frontend then falls
   // back to a normal task POST.
   app.post("/:sessionId/steer", async (c) => {

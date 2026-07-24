@@ -188,12 +188,13 @@ export class Session {
   }
 
   /**
-   * Queues a steering message for the running Task: the engine appends it to the next
-   * completed tool output as a `[user_steering]` block (or, if the turn ends without tool
-   * calls first, delivers it as the next user turn), so the model sees it without the loop
-   * being interrupted. Returns false when no Task is running — the host should then submit
-   * the text as a normal task instead. Rides on tool outputs regardless of approval mode;
-   * anything still queued when the run exits (abort included) is discarded.
+   * Queues a steering message for the running Task: the engine delivers it between turns as
+   * a standalone `[user_steering]` user message — sent with the next request input alongside
+   * that turn's tool outputs, or alone as the continuation input when the turn produced no
+   * tool calls — so the model sees it without the loop being interrupted. Returns false when
+   * no Task is running — the host should then submit the text as a normal task instead.
+   * Delivery is independent of approval mode; anything still queued when the run exits
+   * (abort included) is discarded.
    */
   steer(text: string): boolean {
     return this.engine.steer(text);

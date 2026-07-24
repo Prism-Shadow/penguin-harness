@@ -540,9 +540,9 @@ export class SessionManager {
   }
 
   /**
-   * Mid-run steering: forward the text to the running Session (core appends it to the next
-   * completed tool output as a `[user_steering]` block — no SSE event of its own; the block
-   * arrives inside the tool_call_output the drive loop already publishes). 409 when the
+   * Mid-run steering: forward the text to the running Session (core delivers it between
+   * turns as a standalone `[user_steering]` user message — no SSE event of its own; the
+   * message arrives through the stream the drive loop already publishes). 409 when the
    * Session isn't running a Task (idle / compacting / not loaded) or the run finished in the
    * race window — the caller falls back to submitting a normal task.
    */

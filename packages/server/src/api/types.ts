@@ -596,7 +596,7 @@ export interface TaskCreateResponse {
 
 /**
  * Mid-run steering (POST /api/sessions/:id/steer): a user message for the **running** Task,
- * appended by core to the next completed tool output as a `[user_steering]` block. 202 on
+ * delivered by core between turns as a standalone `[user_steering]` user message. 202 on
  * queue; 409 `not_running` when no Task is in progress (the frontend falls back to a normal
  * task POST).
  */
