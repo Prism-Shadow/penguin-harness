@@ -72,6 +72,7 @@ import {
   localizedShortText,
   skillSlashItems,
 } from "./skill-use";
+import { GOAL_ICON, parseBudgetInput } from "./goal-use";
 
 const APPROVAL_MODES: ApprovalMode[] = ["always-ask", "read-only", "allow-all", "deny-all"];
 
@@ -616,6 +617,85 @@ function SkillSelect({
   );
 }
 
+/** One entry of the composer's "+" extension menu. */
+interface PlusMenuItem {
+  key: string;
+  icon: string;
+  label: string;
+  desc: string;
+  /** Whether the entry is currently engaged (rendered with a check mark; clicking toggles). */
+  active: boolean;
+  onSelect: () => void;
+}
+
+/**
+ * The composer's "+" extension menu: a general-purpose entry point for input add-ons (goal
+ * mode today; future modes, plugins, apps, files slot in as further items). Data-driven —
+ * the caller passes the item list; the menu itself knows nothing about the entries.
+ */
+function PlusMenu({
+  items,
+  disabled,
+  direction = "up",
+}: {
+  items: PlusMenuItem[];
+  disabled: boolean;
+  direction?: "up" | "down";
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Dropdown
+      open={open}
+      setOpen={setOpen}
+      menuClass={
+        direction === "down"
+          ? "left-0 top-full mt-1 w-72 max-w-[calc(100vw-10rem)] origin-top-left"
+          : "bottom-full left-0 mb-1 w-72 max-w-[calc(100vw-10rem)] origin-bottom-left"
+      }
+      button={
+        <button
+          type="button"
+          aria-label={S.chat.plusMenu}
+          title={S.chat.plusMenu}
+          disabled={disabled}
+          onClick={() => setOpen(!open)}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+        >
+          <GlyphIcon d="M12 5v14M5 12h14" size={15} className="shrink-0" />
+        </button>
+      }
+    >
+      {items.map((item) => (
+        <button
+          key={item.key}
+          type="button"
+          aria-pressed={item.active}
+          onClick={() => {
+            setOpen(false);
+            item.onSelect();
+          }}
+          className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800 ${
+            item.active
+              ? "font-medium text-gray-900 dark:text-gray-100"
+              : "text-gray-600 dark:text-gray-400"
+          }`}
+        >
+          <GlyphIcon
+            d={item.icon}
+            size={14}
+            className="shrink-0 text-gray-400 dark:text-gray-500"
+          />
+          <span className="shrink-0">{item.label}</span>
+          <span className="min-w-0 flex-1 truncate text-gray-400 dark:text-gray-500">
+            {item.desc}
+          </span>
+          <span className="w-3 shrink-0 text-center">{item.active ? "✓" : ""}</span>
+        </button>
+      ))}
+    </Dropdown>
+  );
+}
+
 interface SlashCommand {
   cmd: string;
   desc: string;
@@ -716,8 +796,12 @@ export function ChatInput({
   onHandoffTargetChange,
 }: {
   status: SessionStatus;
-  /** Returns whether it succeeded: on failure the input draft is kept (not cleared). */
-  onSend: (input: TaskInputPart[]) => Promise<boolean>;
+  /**
+   * Returns whether it succeeded: on failure the input draft is kept (not cleared).
+   * `goal` is non-null when goal mode is engaged: the text is the objective and the server
+   * loops the Session until the goal reaches a terminal state (budget -1 = unlimited).
+   */
+  onSend: (input: TaskInputPart[], goal: { budget: number } | null) => Promise<boolean>;
   /**
    * Used instead of onSend when an @ target is present (chip or a leading @ typed manually):
    * opens a new chat for the target agent (the text body carries no @ marker, and the current
@@ -828,14 +912,45 @@ export function ChatInput({
 
   const running = status === "running";
   const compacting = status === "compacting";
+  // Goal mode (engaged via the "+" menu or /goal): the text body becomes the objective. It is
+  // exclusive with the @ handoff target (engaging either clears the other) and with skills /
+  // images (the objective is re-injected every round as plain text).
+  const [goalOn, setGoalOn] = useState(false);
+  const [goalBudgetText, setGoalBudgetText] = useState("");
+  /** Parsed budget while goal mode is on ("" = unlimited); null = invalid input, blocks sending. */
+  const goalBudget = goalOn ? parseBudgetInput(goalBudgetText) : null;
+  const goalInvalid = goalOn && goalBudget === null;
   // Sending is also allowed with only an @ target (chip) or skills selected and no text: a handoff's
   // first message may be just a <handoff_from> source block; with skills and empty text, the sent
-  // text automatically falls back to S.chat.skillsAutoMessage (see send).
+  // text automatically falls back to S.chat.skillsAutoMessage (see send). Goal mode instead
+  // requires a text objective and a parseable budget.
   const canSend =
     !running &&
     !compacting &&
     !busy &&
-    (text.trim().length > 0 || images.length > 0 || target !== null || selectedSkills.length > 0);
+    (goalOn
+      ? text.trim().length > 0 && images.length === 0 && !goalInvalid
+      : text.trim().length > 0 ||
+        images.length > 0 ||
+        target !== null ||
+        selectedSkills.length > 0);
+
+  /** Engage/exit goal mode; engaging clears the @ target and skills (mutually exclusive input add-ons). */
+  const toggleGoal = useCallback(
+    (on: boolean) => {
+      setGoalOn(on);
+      if (on) {
+        setGoalBudgetText("");
+        setTarget(null);
+        onHandoffTargetChange?.(null);
+        if (selectedSkills.length > 0) {
+          setSelectedSkills([]);
+          onSkillsChange?.([]);
+        }
+      }
+    },
+    [onHandoffTargetChange, onSkillsChange, selectedSkills],
+  );
 
   /** Toggle a skill on/off (shared by dropdown option clicks and the slash skill command); the change callback lets the parent write it into the draft. */
   const toggleSkill = useCallback(
@@ -869,6 +984,14 @@ export function ChatInput({
           void onCompact();
         },
       },
+      {
+        cmd: "/goal",
+        desc: S.chat.goalModeDesc,
+        run: () => {
+          clearInput();
+          toggleGoal(!goalOn);
+        },
+      },
       // Each installed skill gets its own entry: `/<skill_name>` toggles that skill's selection (without sending), description follows the UI language.
       ...skillSlashItems(skills, locale).map((s) => ({
         cmd: s.cmd,
@@ -879,7 +1002,7 @@ export function ChatInput({
         },
       })),
     ];
-  }, [onCompact, onTextChange, skills, locale, toggleSkill]);
+  }, [onCompact, onTextChange, skills, locale, toggleSkill, toggleGoal, goalOn]);
   // Positional matching (like @ mentions): a slash opens the menu from any caret position;
   // running a command removes just the token, leaving the rest of the text intact. Doesn't
   // reopen after Escape until the caret sits on a different token.
@@ -998,6 +1121,7 @@ export function ChatInput({
     el.focus();
     setTarget(agent);
     onHandoffTargetChange?.(agent.agentId);
+    setGoalOn(false); // exclusive with goal mode: picking an @ target exits it (latest wins)
     setText(value);
     onTextChange?.(value);
     setCaret(start);
@@ -1008,6 +1132,23 @@ export function ChatInput({
   const send = async () => {
     if (!canSend) return;
     const t = text.trim();
+    // Goal mode: the trimmed text is the objective, sent verbatim (no skills block, no images,
+    // no @ handoff — all cleared/blocked while the chip is on; a leading @ stays plain text).
+    if (goalOn) {
+      setBusy(true);
+      try {
+        const ok = await onSend([{ type: "text", text: t }], { budget: goalBudget! });
+        if (ok) {
+          setText("");
+          toggleGoal(false);
+          requestAnimationFrame(autoGrow);
+        }
+      } finally {
+        setBusy(false);
+        textareaRef.current?.focus();
+      }
+      return;
+    }
     // @ target = the chip (selected via menu), or a leading `@<agentId>` typed/pasted manually
     // (an @ in the middle of the text is plain text); with a target present, this becomes a
     // handoff to a new chat, the current Session isn't sent to, and the text carries no @ marker.
@@ -1024,7 +1165,7 @@ export function ChatInput({
     for (const url of images) input.push({ type: "image_url", imageUrl: url });
     setBusy(true);
     try {
-      const ok = lead ? await onHandoff(lead.agent, input) : await onSend(input);
+      const ok = lead ? await onHandoff(lead.agent, input) : await onSend(input, null);
       // Only clear the draft after a successful send: on failure (network / conflict / server error) keep the user's input and images.
       if (ok) {
         setText("");
@@ -1242,8 +1383,43 @@ export function ChatInput({
         {/* Chip row above the text body: the @ handoff target (fixed at the front — send-time
             @ semantics stay leading-only) followed by the selected skills, mirroring the
             agent chip's look. Remove buttons recolor the x on hover (no background wash). */}
-        {(target !== null || selectedSkills.length > 0) && (
+        {(target !== null || selectedSkills.length > 0 || goalOn) && (
           <div className="mb-1 flex flex-wrap items-center gap-1">
+            {/* Goal-mode chip: label + inline budget input (empty = unlimited; invalid input
+                turns the field red and blocks sending) + exit button. */}
+            {goalOn && (
+              <span
+                className="anim-pop flex items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 text-sm text-gray-800 dark:bg-gray-800 dark:text-gray-200"
+                title={S.chat.goalModeDesc}
+              >
+                <GlyphIcon
+                  d={GOAL_ICON}
+                  size={13}
+                  className="shrink-0 text-gray-500 dark:text-gray-400"
+                />
+                <span className="shrink-0">{S.chat.goalMode}</span>
+                <input
+                  value={goalBudgetText}
+                  onChange={(e) => setGoalBudgetText(e.target.value)}
+                  placeholder={S.chat.goalBudgetPlaceholder}
+                  aria-label={S.chat.goalBudgetPlaceholder}
+                  {...(goalInvalid ? { title: S.chat.goalBudgetInvalid } : {})}
+                  className={`w-40 rounded border bg-white px-1.5 py-0 font-mono text-xs leading-5 placeholder:text-gray-400 focus:outline-none dark:bg-gray-900 dark:placeholder:text-gray-500 ${
+                    goalInvalid
+                      ? "border-red-400 text-red-600 dark:border-red-500 dark:text-red-400"
+                      : "border-gray-300 text-gray-700 dark:border-gray-700 dark:text-gray-200"
+                  }`}
+                />
+                <button
+                  type="button"
+                  aria-label={S.chat.goalRemove}
+                  onClick={() => toggleGoal(false)}
+                  className="shrink-0 rounded p-0.5 text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:hover:text-gray-200"
+                >
+                  ×
+                </button>
+              </span>
+            )}
             {target !== null && (
               <span
                 className="anim-pop flex max-w-48 items-center gap-0.5 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 font-mono text-sm text-gray-800 dark:bg-gray-800 dark:text-gray-200"
@@ -1369,6 +1545,21 @@ export function ChatInput({
             skills={skills}
             selected={selectedSkills}
             onToggle={toggleSkill}
+            disabled={running || compacting || busy || goalOn}
+            direction={models && onChangeModel ? "down" : "up"}
+          />
+          {/* "+" extension menu (input add-ons; goal mode today, more entries later). */}
+          <PlusMenu
+            items={[
+              {
+                key: "goal",
+                icon: GOAL_ICON,
+                label: S.chat.goalMode,
+                desc: S.chat.goalModeDesc,
+                active: goalOn,
+                onSelect: () => toggleGoal(!goalOn),
+              },
+            ]}
             disabled={running || compacting || busy}
             direction={models && onChangeModel ? "down" : "up"}
           />

@@ -30,12 +30,17 @@ import path from "node:path";
 import {
   createAgent,
   findLatestTraceFile,
+  goalFilePath,
+  goalTokenDelta,
+  isGoalRoundInput,
   isSessionMeta,
+  runGoal,
   tracesDir,
 } from "@prismshadow/penguin-core";
 import type {
   ApproveFn,
   CompactAvailability,
+  GoalSession,
   OmniMessage,
   SessionMetaPayload,
   SessionTitleResult,
@@ -43,6 +48,7 @@ import type {
 } from "@prismshadow/penguin-core";
 import type { ServerEvent, SessionStatus } from "../api/types.js";
 import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/errors.js";
+import type { GoalsRepo } from "../db/repos/goals.js";
 import type { SessionRow, SessionsRepo } from "../db/repos/sessions.js";
 import { ApprovalRegistry, makeApprove } from "./approvals.js";
 import type { PendingApproval } from "./approvals.js";
@@ -186,6 +192,10 @@ export interface SessionManagerDeps {
   /** Error persistence (optional: without it, only logs — same as before this was wired up). */
   errors?: ErrorSink;
   log?: (line: string) => void;
+  /** Data root directory; goal mode needs it to place GOAL.yaml (startGoal 409s without it). */
+  root?: string;
+  /** Goal run-state persistence (optional like `titles`: without it, goals run but leave no restorable record). */
+  goals?: GoalsRepo;
 }
 
 /** Active-table entry: a loaded runtime Session plus its running state. */
@@ -420,6 +430,153 @@ export class SessionManager {
       entry.running = this.drive(entry, gen, { userExcerpt });
       return { sessionId: entry.sessionId };
     });
+  }
+
+  /**
+   * Start a goal run: like startTask, but the driven generator is core's `runGoal` — the
+   * Session stays `running` for the whole goal (every round), so the existing abort endpoint
+   * interrupts the entire loop and schedules queue behind it as usual. Round inputs are
+   * yielded by the runner and published like any streamed message; progress additionally
+   * goes out as goal_* server events and into goal_state (when a repo is wired).
+   */
+  async startGoal(
+    sessionId: string,
+    args: { objective: string; budget: number },
+  ): Promise<{ sessionId: string }> {
+    return this.withLock(sessionId, async () => {
+      this.assertOpen();
+      this.assertAgentNotDeleting(sessionId);
+      this.assertSessionNotDeleting(sessionId);
+      const root = this.deps.root;
+      if (root === undefined) {
+        throw new HttpError(409, "goal_unavailable", "Goal mode is not configured on this server.");
+      }
+      const entry = await this.ensureEntry(sessionId);
+      this.assertIdle(entry);
+      const ac = new AbortController();
+      entry.status = "running";
+      entry.abort = ac;
+      entry.lastActivityMs = Date.now();
+      this.publishState(entry, "running");
+      const approve = makeApprove({
+        getMode: () => this.deps.sessions.findById(entry.sessionId)?.approvalMode ?? "always-ask",
+        toolPermission: (name) => entry.session.toolPermission(name),
+        registry: entry.approvals,
+        publishRequest: (pending) =>
+          this.publishEvent(entry, {
+            type: "approval_request",
+            toolCall: pending.toolCall,
+            ...(pending.origin !== undefined ? { origin: pending.origin } : {}),
+          }),
+      });
+      const goalId = this.deps.goals?.create({
+        sessionId: entry.sessionId,
+        projectId: entry.projectId,
+        agentId: entry.agentId,
+        objective: args.objective,
+        budget: args.budget,
+      });
+      this.publishEvent(entry, {
+        type: "goal_started",
+        sessionId: entry.sessionId,
+        objective: args.objective,
+        budget: args.budget,
+      });
+      const gen = this.goalStream(entry, {
+        objective: args.objective,
+        budget: args.budget,
+        filePath: goalFilePath(root, entry.projectId, entry.agentId, entry.sessionId),
+        approve,
+        signal: ac.signal,
+        ...(goalId !== undefined ? { goalId } : {}),
+      });
+      // The objective doubles as the title material (same role as a task's input text).
+      entry.running = this.drive(entry, gen, { userExcerpt: args.objective });
+      return { sessionId: entry.sessionId };
+    });
+  }
+
+  /**
+   * Wraps core `runGoal` into a plain message generator for `drive`, tapping the stream for
+   * goal progress: round boundaries (the injected `<goal_task>` inputs) become goal_round
+   * events + goal_state refreshes, and the runner's outcome becomes goal_finished. Token
+   * numbers mirror the runner's own accounting (same `goalTokenDelta`), so the UI shows
+   * exactly what the budget check uses.
+   */
+  private async *goalStream(
+    entry: RuntimeEntry,
+    args: {
+      objective: string;
+      budget: number;
+      filePath: string;
+      approve: ApproveFn;
+      signal: AbortSignal;
+      goalId?: number;
+    },
+  ): AsyncGenerator<OmniMessage> {
+    // Approval/interrupt wiring is applied here once: every round of the goal runs with
+    // this manager's callback and signal (the runner's own opts stay empty).
+    const goalSession: GoalSession = {
+      run: (msgs) => entry.session.run(msgs, { approve: args.approve, signal: args.signal }),
+    };
+    const gen = runGoal(goalSession, {
+      objective: args.objective,
+      goalFilePath: args.filePath,
+      budget: args.budget,
+    });
+    let round = 0;
+    let used = 0;
+    try {
+      for (;;) {
+        const next = await gen.next();
+        if (next.done) {
+          const outcome = next.value;
+          if (args.goalId !== undefined) {
+            this.deps.goals?.finish(
+              args.goalId,
+              outcome.outcome,
+              outcome.rounds,
+              outcome.tokensUsed,
+            );
+          }
+          this.publishEvent(entry, {
+            type: "goal_finished",
+            sessionId: entry.sessionId,
+            outcome: outcome.outcome,
+            rounds: outcome.rounds,
+            used: outcome.tokensUsed,
+          });
+          return;
+        }
+        const msg = next.value;
+        used += goalTokenDelta(msg);
+        if (isGoalRoundInput(msg)) {
+          round++;
+          if (args.goalId !== undefined) this.deps.goals?.progress(args.goalId, round, used);
+          this.publishEvent(entry, {
+            type: "goal_round",
+            sessionId: entry.sessionId,
+            round,
+            used,
+            budget: args.budget,
+          });
+        }
+        yield msg;
+      }
+    } catch (err) {
+      // The runner throws only on infrastructure failures (e.g. GOAL.yaml writes): close
+      // the run state as aborted so the UI never shows a forever-active goal, then let
+      // drive's defensive catch record the error.
+      if (args.goalId !== undefined) this.deps.goals?.finish(args.goalId, "aborted", round, used);
+      this.publishEvent(entry, {
+        type: "goal_finished",
+        sessionId: entry.sessionId,
+        outcome: "aborted",
+        rounds: round,
+        used,
+      });
+      throw err;
+    }
   }
 
   /** Manually compact the context: 409 if already running; compaction output also flows into the SSE channel. */

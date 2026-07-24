@@ -706,6 +706,23 @@ When done, open index.html in a browser and self-test once.`,
     },
     skillsBanner: (names: string[]): string =>
       `Using skill${names.length === 1 ? "" : "s"}: ${names.join(", ")}`,
+    /** Composer "+" extension menu (currently only goal mode; more entries later) and the goal chip. */
+    plusMenu: "More input options",
+    goalMode: "Goal mode",
+    goalModeDesc: "Loop until the goal completes; optional token budget",
+    goalBudgetPlaceholder: "Budget (e.g. 500k, empty = unlimited)",
+    goalBudgetInvalid:
+      "Invalid budget: use a positive number with an optional k/m suffix (500k, 2m)",
+    goalRemove: "Exit goal mode",
+    goalRoundBanner: (round: number): string => `Goal · round ${round}`,
+    goalProgress: (rounds: number, tokens: string): string => `round ${rounds} · tokens ${tokens}`,
+    goalStatus: {
+      active: "running",
+      complete: "complete",
+      blocked: "blocked",
+      budget_limited: "budget exhausted",
+      aborted: "interrupted",
+    } as Record<string, string>,
   },
 
   files: {

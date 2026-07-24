@@ -19,6 +19,7 @@ import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
 import { ErrorsRepo } from "./db/repos/errors.js";
 import { MembersRepo } from "./db/repos/members.js";
 import { ProjectsRepo } from "./db/repos/projects.js";
+import { GoalsRepo } from "./db/repos/goals.js";
 import { SchedulesRepo } from "./db/repos/schedules.js";
 import { SessionsRepo } from "./db/repos/sessions.js";
 import { UiPrefsRepo } from "./db/repos/ui-prefs.js";
@@ -99,6 +100,7 @@ export interface AppDeps {
   benchmarks: BenchmarkService;
   snapshots: SnapshotService;
   schedulesRepo: SchedulesRepo;
+  goalsRepo: GoalsRepo;
   scheduler: Scheduler;
   channels: ChannelHub;
   manager: SessionManager;
@@ -134,6 +136,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
   const errorsRepo = new ErrorsRepo(db);
   const prefsRepo = new UiPrefsRepo(db);
   const schedulesRepo = new SchedulesRepo(db);
+  const goalsRepo = new GoalsRepo(db);
 
   const projectConfigService = new ProjectConfigService(config.root);
   const agentConfigService = new AgentConfigService(config.root);
@@ -178,6 +181,8 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     errors,
     titles,
     log,
+    root: config.root,
+    goals: goalsRepo,
   });
   managerRef = manager;
 
@@ -191,6 +196,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     usage: usageRepo,
     errors: errorsRepo,
     schedules: schedulesRepo,
+    goals: goalsRepo,
     projectConfig: projectConfigService,
     manager,
   });
@@ -252,6 +258,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     benchmarks,
     snapshots,
     schedulesRepo,
+    goalsRepo,
     scheduler,
     channels,
     manager,

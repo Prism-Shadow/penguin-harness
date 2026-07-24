@@ -543,6 +543,28 @@ export type TaskInputPart =
 
 export interface TaskCreateRequest {
   input: TaskInputPart[];
+  /**
+   * Present = goal mode: the input's text becomes the objective and the server loops the
+   * Session until the goal reaches a terminal state. `budget` is the token budget
+   * (uncached input + output); omitted or -1 = unlimited.
+   */
+  goal?: { budget?: number };
+}
+
+/** Goal-mode run state (from goal_state; the chat page's banner restores from the latest row). */
+export interface GoalStateView {
+  objective: string;
+  status: "active" | "complete" | "blocked" | "budget_limited" | "aborted";
+  /** Token budget; -1 = unlimited. */
+  budget: number;
+  used: number;
+  rounds: number;
+  updatedAt: string;
+}
+
+export interface GoalResponse {
+  /** The Session's most recent goal run; null if it never ran one. */
+  goal: GoalStateView | null;
 }
 
 export interface TaskCreateResponse {
@@ -581,7 +603,23 @@ export type ServerEvent =
       sessionId: string;
       source: SessionSource;
     }
-  | ScheduleServerEvent;
+  | ScheduleServerEvent
+  | GoalServerEvent;
+
+/** Goal-mode progress on the session channel (the chat page drives its goal banner from these). */
+export type GoalServerEvent =
+  /** A goal run began (published before the first round). */
+  | { type: "goal_started"; sessionId: string; objective: string; budget: number }
+  /** A round is starting; `used` is the runner's accounting up to this point. */
+  | { type: "goal_round"; sessionId: string; round: number; used: number; budget: number }
+  /** The goal reached a terminal state. */
+  | {
+      type: "goal_finished";
+      sessionId: string;
+      outcome: "complete" | "blocked" | "budget_limited" | "aborted";
+      rounds: number;
+      used: number;
+    };
 
 /** Schedule notification (user-level event stream; firing and delivery are notified via /api/events). */
 export type ScheduleServerEvent =

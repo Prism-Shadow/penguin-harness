@@ -25,6 +25,7 @@ import type {
   DirListResponse,
   FilesStatRequest,
   FilesStatResponse,
+  GoalResponse,
   MeResponse,
   MemberAddRequest,
   MemberAddResponse,
@@ -231,6 +232,9 @@ export const postTask = (sessionId: string, body: TaskCreateRequest) =>
     method: "POST",
     body,
   });
+
+export const getGoal = (sessionId: string) =>
+  apiFetch<GoalResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/goal`);
 
 export const postApproval = (
   sessionId: string,

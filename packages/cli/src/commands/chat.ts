@@ -4,7 +4,8 @@
  *   penguin chat [--model-id <id> --provider <group>] [--project-id <id>] [--agent-id <id>]
  *                [--workspace <path>] [--approve <allow-all|deny-all|read-only|always-ask>]
  *
- * Each line of input starts one conversation turn; `/compact` proactively compacts the
+ * Each line of input starts one conversation turn; `/goal[:<budget>] <objective>` runs goal
+ * mode (looping until the goal reaches a terminal state); `/compact` proactively compacts the
  * context (reason=manual); `/exit` or `/quit` exits.
  * Uses the current directory when no Workspace is specified. A model reference is always an
  * explicit `(provider, model_id)` pair, so `--model-id` and `--provider` must be given
@@ -26,10 +27,12 @@
  */
 import { createInterface, type Interface } from "node:readline";
 import type { Command } from "commander";
-import { createAgent, userText } from "@prismshadow/penguin-core";
+import { createAgent, goalFilePath, userText } from "@prismshadow/penguin-core";
 import type { ApprovalDecision, OmniMessage, ToolCallPayload } from "@prismshadow/penguin-core";
 import { StreamRenderer, dim, renderHistory } from "../render.js";
 import { runTask } from "../task-loop.js";
+import { runGoalLoop } from "../goal-loop.js";
+import { parseGoalCommand } from "../goal-command.js";
 import { parseApprovalAnswer, resolveApprovalMode } from "../approval.js";
 import { LineComposer, PasteFilter } from "../input.js";
 import type { Messages } from "../i18n.js";
@@ -333,6 +336,31 @@ export function registerChatCommand(program: Command, t: Messages): void {
                 renderer.endCompact(Date.now() - startedAt);
               }
               if (!sawMessage) out.write(`${t.compactNothing()}\n`);
+            } else if (text === "/goal" || text.startsWith("/goal:") || text.startsWith("/goal ")) {
+              // Goal mode: one command drives the whole loop; Ctrl-C aborts the entire
+              // goal (a single signal spans every round), never just the current round.
+              const parsed = parseGoalCommand(text);
+              if (!parsed.ok) {
+                out.write(
+                  `${t.error(parsed.reason === "budget" ? t.goalBudgetInvalid(parsed.value) : t.goalUsage())}\n`,
+                );
+              } else {
+                resumable = true;
+                await runGoalLoop(
+                  session,
+                  {
+                    objective: parsed.objective,
+                    goalFilePath: goalFilePath(
+                      agent.state.root,
+                      agent.state.projectId,
+                      agent.state.agentId,
+                      session.sessionId,
+                    ),
+                    budget: parsed.budget,
+                  },
+                  { mode, signal: taskAbort.signal, renderer, interactivePrompt, t, out },
+                );
+              }
             } else {
               resumable = true;
               await runTask(session, [userText(text)], {

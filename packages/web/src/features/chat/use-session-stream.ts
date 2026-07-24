@@ -16,13 +16,14 @@
  *    server re-sends still-pending requests.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { SessionStatus } from "@prismshadow/penguin-server/api";
-import { getMe, getMessages } from "../../api/endpoints";
+import type { GoalServerEvent, SessionStatus } from "@prismshadow/penguin-server/api";
+import { getGoal, getMe, getMessages } from "../../api/endpoints";
 import { openSessionStream } from "../../api/sse";
 import { createStreamController } from "../../lib/omni/stream-controller";
 import type { PendingApproval, StreamController } from "../../lib/omni/stream-controller";
 import { createStreamModel } from "../../lib/omni/stream-model";
 import type { StreamModel } from "../../lib/omni/stream-model";
+import type { GoalBannerState } from "./goal-use";
 
 export type { PendingApproval } from "../../lib/omni/stream-controller";
 
@@ -46,6 +47,12 @@ export interface SessionStreamState {
   error: string | null;
   /** Re-fetch history (only meaningful after a load failure). */
   retry: () => void;
+  /**
+   * Goal-banner state: an in-flight goal restored from goal_state on load (only when still
+   * active), then kept live by goal_* server events; terminal states reached during this
+   * page's lifetime stay visible until the session changes. Null = no banner.
+   */
+  goal: GoalBannerState | null;
 }
 
 const EMPTY_PENDING: ReadonlyMap<string, PendingApproval> = new Map();
@@ -63,6 +70,32 @@ export function useSessionStream(
   const [taskState, setTaskState] = useState<SessionStatus>(initialStatus);
   const [error, setError] = useState<string | null>(null);
   const [pendingTick, setPendingTick] = useState(0);
+  const [goal, setGoal] = useState<GoalBannerState | null>(null);
+
+  /** Fold one goal_* event into the banner state (a mid-goal join without goal_started keeps prior fields where known). */
+  const onGoalEvent = useCallback((ev: GoalServerEvent) => {
+    setGoal((prev) => {
+      if (ev.type === "goal_started") {
+        return { objective: ev.objective, status: "active", budget: ev.budget, used: 0, rounds: 0 };
+      }
+      if (ev.type === "goal_round") {
+        return {
+          objective: prev?.objective ?? "",
+          status: "active",
+          budget: ev.budget,
+          used: ev.used,
+          rounds: ev.round,
+        };
+      }
+      return {
+        objective: prev?.objective ?? "",
+        status: ev.outcome,
+        budget: prev?.budget ?? -1,
+        used: ev.used,
+        rounds: ev.rounds,
+      };
+    });
+  }, []);
   const onTitleRef = useRef(onSessionTitle);
   onTitleRef.current = onSessionTitle;
   const onCreatedRef = useRef(onSessionCreated);
@@ -113,6 +146,7 @@ export function useSessionStream(
       setTaskState("idle");
       setLoading(false);
       setError(null);
+      setGoal(null);
       setPendingTick((t) => t + 1);
       setVersion((v) => v + 1);
       return;
@@ -123,7 +157,18 @@ export function useSessionStream(
     // First-frame placeholder: the task_state snapshot from the stream (pushed on subscribe)
     // subsequently overrides it as the authoritative state.
     setTaskState(initialStatus);
+    setGoal(null);
     setPendingTick((t) => t + 1);
+
+    // Restore an in-flight goal's banner (only when still active — a long-finished goal
+    // shouldn't greet every visit); live goal_* events override this snapshot.
+    let goalFetchStale = false;
+    void getGoal(sessionId)
+      .then((res) => {
+        if (goalFetchStale || !res.goal || res.goal.status !== "active") return;
+        setGoal((prev) => prev ?? res.goal);
+      })
+      .catch(() => undefined);
 
     const controller = createStreamController({
       loadMessages: async () => (await getMessages(sessionId)).messages,
@@ -134,6 +179,7 @@ export function useSessionStream(
       onPendingChange: () => setPendingTick((t) => t + 1),
       onSessionTitle: (sid, title) => onTitleRef.current?.(sid, title),
       onSessionCreated: () => onCreatedRef.current?.(),
+      onGoalEvent,
     });
     controllerRef.current = controller;
 
@@ -151,6 +197,7 @@ export function useSessionStream(
     void controller.load();
 
     return () => {
+      goalFetchStale = true;
       controller.dispose();
       conn.close();
       if (rafRef.current !== null) {
@@ -192,5 +239,6 @@ export function useSessionStream(
     resolveApproval,
     error,
     retry,
+    goal,
   };
 }

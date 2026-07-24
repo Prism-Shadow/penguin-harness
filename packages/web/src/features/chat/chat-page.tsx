@@ -41,6 +41,7 @@ import { MessageStream } from "./message-stream";
 import type { StreamRenderContext } from "./message-stream";
 import { ChatInput } from "./chat-input";
 import { DraftView } from "./draft-view";
+import { GoalStatusBanner } from "./goal-banner";
 import { handoffMessage } from "./agent-mentions";
 import { sameModelRef } from "../models/model-grouping";
 import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
@@ -346,10 +347,13 @@ export function ChatPage() {
   );
 
   const onSend = useCallback(
-    async (input: TaskInputPart[]): Promise<boolean> => {
+    async (input: TaskInputPart[], goal: { budget: number } | null): Promise<boolean> => {
       if (!selected) return false;
       try {
-        const res = await api.postTask(selected.sessionId, { input });
+        const res = await api.postTask(selected.sessionId, {
+          input,
+          ...(goal ? { goal } : {}),
+        });
         discardSessionDraft();
         await syncHealedSessionId(selected.sessionId, res.sessionId);
         return true;
@@ -733,7 +737,14 @@ export function ChatPage() {
                       )}
                     </div>
                     <div className="shrink-0 border-t border-gray-200 bg-white px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 md:pb-3 dark:border-gray-800 dark:bg-gray-950">
-                      <div className="mx-auto max-w-3xl">{input}</div>
+                      <div className="mx-auto max-w-3xl">
+                        {/* Goal banner docked above the composer: an in-flight goal's progress
+                            (restored on load while still active), or the terminal state reached
+                            during this page's lifetime. The stop button is the composer's
+                            regular stop (one abort ends the whole goal loop). */}
+                        {stream.goal && <GoalStatusBanner goal={stream.goal} />}
+                        {input}
+                      </div>
                     </div>
                   </>
                 )

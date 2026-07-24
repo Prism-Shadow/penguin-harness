@@ -27,6 +27,7 @@ export * from "./state/index.js";
 export * from "./llm/index.js";
 export * from "./environment/index.js";
 export * from "./trace/index.js";
+export * from "./goal/index.js";
 
 // Runtime entry points
 export { ContextEngine } from "./engine/context-engine.js";

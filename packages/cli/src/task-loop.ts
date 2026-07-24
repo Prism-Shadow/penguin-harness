@@ -30,11 +30,12 @@ export interface RunTaskResult {
   aborted: boolean;
 }
 
-export async function runTask(
-  session: Session,
-  prompt: OmniMessage[],
-  opts: RunTaskOptions,
-): Promise<RunTaskResult> {
+/**
+ * Builds the per-call approval callback for one Task or goal run: permission mode ->
+ * decision, interactive prompts serialized and rendered in place (shared by `runTask` and
+ * the goal loop, so goal rounds approve exactly like regular Tasks).
+ */
+export function buildApprove(session: Session, opts: RunTaskOptions): ApproveFn {
   const basePrompt: ApproveFn = opts.interactivePrompt ?? (() => promptApproval({ t: opts.t }));
   // Lock the renderer while waiting for the user's approval input: messages from concurrent
   // tools/subsessions are queued and released together once the Q&A finishes, so the prompt
@@ -76,11 +77,19 @@ export async function runTask(
   // The auto-approval path (allow-all / deny-all / read-only approvals) has no prompt: it
   // likewise renders the "call line → approval result" pair in place; the interactive path's
   // already-rendered copy is idempotently de-duplicated inside note.
-  const approve: ApproveFn = async (tc) => {
+  return async (tc) => {
     const decision = await approveByMode(tc);
     opts.renderer.noteApprovalDecision(tc, decision);
     return decision;
   };
+}
+
+export async function runTask(
+  session: Session,
+  prompt: OmniMessage[],
+  opts: RunTaskOptions,
+): Promise<RunTaskResult> {
+  const approve = buildApprove(session, opts);
 
   // A single run drives the whole ReAct loop (the engine requests approval per call and runs
   // tools concurrently within a turn). Once the task ends (including on error), endTask

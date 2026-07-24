@@ -17,6 +17,7 @@ import { HttpError } from "../http/errors.js";
 import type { AgentsRepo } from "../db/repos/agents.js";
 import type { ErrorsRepo } from "../db/repos/errors.js";
 import type { MembersRepo } from "../db/repos/members.js";
+import type { GoalsRepo } from "../db/repos/goals.js";
 import type { ProjectRow, ProjectsRepo } from "../db/repos/projects.js";
 import type { SessionsRepo } from "../db/repos/sessions.js";
 import type { SchedulesRepo } from "../db/repos/schedules.js";
@@ -53,6 +54,7 @@ export interface ProjectServiceDeps {
   usage: UsageRepo;
   errors: ErrorsRepo;
   schedules: SchedulesRepo;
+  goals: GoalsRepo;
   projectConfig: ProjectConfigService;
   manager: SessionManager;
 }
@@ -290,6 +292,7 @@ export class ProjectService {
     this.deps.usage.deleteByProject(projectId);
     this.deps.errors.deleteByProject(projectId);
     this.deps.schedules.deleteByProject(projectId);
+    this.deps.goals.deleteByProject(projectId);
     await fs.rm(projectDir(this.deps.root, projectId), { recursive: true, force: true });
   }
 

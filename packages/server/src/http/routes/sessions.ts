@@ -15,6 +15,7 @@ import type { OmniMessage } from "@prismshadow/penguin-core";
 import type {
   ApprovalMode,
   FilesStatResponse,
+  GoalResponse,
   MessagesResponse,
   ServerEvent,
   SessionCreateResponse,
@@ -86,6 +87,24 @@ function parseTaskInput(body: Record<string, unknown>): OmniMessage[] {
     }
     throw badRequest(`input[${i}].type must be one of text / image_url.`);
   });
+}
+
+/**
+ * Validate the optional `goal` field of a task request: absent = a regular task (null);
+ * present = goal mode with a token budget (a positive integer, or -1/omitted = unlimited).
+ */
+function parseGoalField(body: Record<string, unknown>): { budget: number } | null {
+  const goal = body.goal;
+  if (goal === undefined) return null;
+  if (goal === null || typeof goal !== "object" || Array.isArray(goal)) {
+    throw badRequest("goal must be an object.");
+  }
+  const budget = (goal as Record<string, unknown>).budget;
+  if (budget === undefined) return { budget: -1 };
+  if (typeof budget !== "number" || !Number.isInteger(budget) || (budget <= 0 && budget !== -1)) {
+    throw badRequest("goal.budget must be a positive integer, or -1 for unlimited.");
+  }
+  return { budget };
 }
 
 /** Agent-level entry: /api/projects/:p/agents/:a/sessions. */
@@ -255,6 +274,7 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
         { recursive: true, force: true },
       );
       deps.sessionsRepo.deleteById(row.sessionId);
+      deps.goalsRepo.deleteBySession(row.sessionId);
       // Drop the derived-origin entry along with the Session (bulk Agent/Project deletion
       // may leave stale entries; session ids are never reused, so they are never matched).
       deps.sessionSources.delete(row.sessionId);
@@ -332,10 +352,48 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
 
   app.post("/:sessionId/tasks", async (c) => {
     const row = resolveSession(c);
-    const input = parseTaskInput(await readJson(c));
+    const body = await readJson(c);
+    const goal = parseGoalField(body);
+    if (goal) {
+      // Goal mode: the input must be plain text (it becomes the objective, re-injected
+      // every round — images have no place in the goal block).
+      const input = parseTaskInput(body);
+      const objective = input
+        .filter((m) => (m.payload as { type?: string }).type === "text")
+        .map((m) => (m.payload as { text: string }).text)
+        .join("\n")
+        .trim();
+      if (!objective || input.some((m) => (m.payload as { type?: string }).type !== "text")) {
+        throw badRequest("goal mode requires text-only input (the objective).");
+      }
+      const { sessionId } = await deps.manager.startGoal(row.sessionId, {
+        objective,
+        budget: goal.budget,
+      });
+      return c.json({ sessionId } satisfies TaskCreateResponse, 202);
+    }
+    const input = parseTaskInput(body);
     // 202: the Task executes on the server, decoupled from the SSE connection; sessionId is the current actual id (the new id after self-heal).
     const { sessionId } = await deps.manager.startTask(row.sessionId, input);
     return c.json({ sessionId } satisfies TaskCreateResponse, 202);
+  });
+
+  // The Session's most recent goal run (for restoring the chat page's goal banner on load).
+  app.get("/:sessionId/goal", (c) => {
+    const row = resolveSession(c);
+    const g = deps.goalsRepo.latestForSession(row.sessionId);
+    return c.json({
+      goal: g
+        ? {
+            objective: g.objective,
+            status: g.status,
+            budget: g.budget,
+            used: g.used,
+            rounds: g.rounds,
+            updatedAt: g.updatedAt,
+          }
+        : null,
+    } satisfies GoalResponse);
   });
 
   app.post("/:sessionId/approvals/:toolCallId", async (c) => {

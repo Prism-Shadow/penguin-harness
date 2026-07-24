@@ -60,6 +60,19 @@ export function workspacesDir(root: string, projectId: string, agentId: string):
 }
 
 /**
+ * `<agentDir>/scratchpad/<sessionId>/GOAL.yaml`, the goal-mode control file of one Session
+ * (sibling of the model's PLAN.md convention; see goal/goal-file.ts for field ownership).
+ */
+export function goalFilePath(
+  root: string,
+  projectId: string,
+  agentId: string,
+  sessionId: string,
+): string {
+  return path.join(scratchpadDir(root, projectId, agentId), sessionId, "GOAL.yaml");
+}
+
+/**
  * `<projectDir>/.project_config.toml`, the Project's single config file (a hidden file, not
  * shown by default `ls`, written with mode 0600; model entries are inlined with their credential,
  * see state/project-config.ts).

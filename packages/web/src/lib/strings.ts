@@ -690,6 +690,22 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
       schedule: (n: number) => `定时任务（${n}）`,
     },
     skillsBanner: (names: string[]): string => `使用技能：${names.join("、")}`,
+    /** Composer "+" extension menu (currently only goal mode; more entries later) and the goal chip. */
+    plusMenu: "更多输入方式",
+    goalMode: "目标模式",
+    goalModeDesc: "循环运行直至目标完成，可设 token 预算",
+    goalBudgetPlaceholder: "预算（如 500k，留空不限）",
+    goalBudgetInvalid: "无效预算：应为正数，可带 k/m 后缀（500k、2m）",
+    goalRemove: "退出目标模式",
+    goalRoundBanner: (round: number): string => `目标 · 第 ${round} 轮`,
+    goalProgress: (rounds: number, tokens: string): string => `第 ${rounds} 轮 · tokens ${tokens}`,
+    goalStatus: {
+      active: "进行中",
+      complete: "已完成",
+      blocked: "受阻",
+      budget_limited: "预算耗尽",
+      aborted: "已中断",
+    } as Record<string, string>,
   },
 
   files: {
