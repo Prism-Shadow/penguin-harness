@@ -40,6 +40,7 @@ import type {
   SessionMetaPayload,
   SessionTitleResult,
   TextPayload,
+  ThinkingLevelName,
 } from "@prismshadow/penguin-core";
 import type { ServerEvent, SessionStatus } from "../api/types.js";
 import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/errors.js";
@@ -70,7 +71,7 @@ export interface RuntimeSession {
   readonly sessionId: string;
   run(
     newMessages: OmniMessage[],
-    opts: { approve: ApproveFn; signal: AbortSignal },
+    opts: { approve: ApproveFn; signal: AbortSignal; thinkingLevel?: ThinkingLevelName },
   ): AsyncGenerator<OmniMessage>;
   compact(opts: { signal: AbortSignal }): AsyncGenerator<OmniMessage>;
   /** Whether compaction is possible and why; when not ok, compact() yields no messages (see core ContextEngine.compactability). */
@@ -379,8 +380,14 @@ export class SessionManager {
    * Start a Task: get-or-load → 409
    * mutual-exclusion check → publish the input messages first → drive run in the
    * background. Returns the current actual session_id (the new id after self-heal).
+   * `opts.thinkingLevel` (optional, validated by the route) rides into this run's
+   * `session.run` options — a per-turn parameter, applied to this Task only.
    */
-  async startTask(sessionId: string, input: OmniMessage[]): Promise<{ sessionId: string }> {
+  async startTask(
+    sessionId: string,
+    input: OmniMessage[],
+    opts?: { thinkingLevel?: ThinkingLevelName },
+  ): Promise<{ sessionId: string }> {
     return this.withLock(sessionId, async () => {
       this.assertOpen();
       this.assertAgentNotDeleting(sessionId);
@@ -409,7 +416,11 @@ export class SessionManager {
             ...(pending.origin !== undefined ? { origin: pending.origin } : {}),
           }),
       });
-      const gen = entry.session.run(input, { approve, signal: ac.signal });
+      const gen = entry.session.run(input, {
+        approve,
+        signal: ac.signal,
+        ...(opts?.thinkingLevel !== undefined ? { thinkingLevel: opts.thinkingLevel } : {}),
+      });
       // Title material is collected by the core Session itself during run; here we only
       // keep this call's input user text, used both as the "material present → attempt
       // generation" criterion and as the fallback title source if the LLM call fails.

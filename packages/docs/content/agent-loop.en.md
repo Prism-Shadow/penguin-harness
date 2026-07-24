@@ -59,6 +59,7 @@ for await (const output of session.run([userText("Clean up the CSV files under d
 interface RunOptions {
   signal?: AbortSignal;    // interrupt (e.g. Ctrl-C)
   approve?: ApproveFn;     // per-tool approval; denies everything when omitted (conservative default)
+  thinkingLevel?: ThinkingLevelName;   // this run's thinking level (per-turn, carried through reconnect retries; compaction requests keep the default)
 }
 ```
 

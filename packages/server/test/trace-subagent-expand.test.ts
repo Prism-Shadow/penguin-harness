@@ -39,7 +39,6 @@ function meta(sessionId: string, agentId: string): OmniMessage {
     model_context_window: 1000,
     system_prompt: "",
     tools: [],
-    thinking_level: "medium",
     agent_state: `/root/${PROJECT}/${agentId}/agent_state`,
     workspace: "/tmp/w",
   };

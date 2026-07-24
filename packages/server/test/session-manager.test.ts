@@ -155,6 +155,29 @@ describe("session-manager", () => {
     });
   });
 
+  it("startTask forwards thinkingLevel into session.run options (per-turn, this Task only)", async () => {
+    sessions.updateApprovalMode("session-1", "allow-all");
+    const seen: (string | undefined)[] = [];
+    const fake: RuntimeSession = {
+      sessionId: "session-1",
+      toolPermission: () => "rw",
+      generateTitle: async () => ({ title: null, usage: null }),
+      compactability: () => "ok" as const,
+      async *run(_input: OmniMessage[], opts: { thinkingLevel?: string }) {
+        seen.push(opts.thinkingLevel);
+        yield assistantText("ok");
+      },
+      async *compact(): AsyncGenerator<OmniMessage> {},
+    };
+    const manager = makeManager(loaderOf(fake));
+    await manager.startTask("session-1", [userText("a")], { thinkingLevel: "high" });
+    await waitFor(() => manager.statusOf("session-1") === "idle" && seen.length === 1);
+    // Omitted on the next Task: the session falls back to its default (nothing forwarded).
+    await manager.startTask("session-1", [userText("b")]);
+    await waitFor(() => manager.statusOf("session-1") === "idle" && seen.length === 2);
+    expect(seen).toEqual(["high", undefined]);
+  });
+
   it("LLM / tool failures in the message stream are persisted via drive (source=llm / environment, with the current Session context)", async () => {
     sessions.updateApprovalMode("session-1", "allow-all");
     const captured: ErrorRecordArgs[] = [];
@@ -276,7 +299,6 @@ describe("session-manager", () => {
             model_context_window: 1000,
             system_prompt: "sys",
             tools: [],
-            thinking_level: "default",
             agent_state: "/root/p1/child_agent/agent_state",
             workspace: "/tmp/w-child",
           }),
@@ -691,7 +713,6 @@ describe("session-manager", () => {
             model_context_window: 1000,
             system_prompt: "sys",
             tools: [],
-            thinking_level: "default",
             agent_state: "/root/p1/child_agent/agent_state",
             workspace: "/tmp/w-child",
           }),

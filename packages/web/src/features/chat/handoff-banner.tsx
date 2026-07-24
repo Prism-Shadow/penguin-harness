@@ -15,22 +15,45 @@ function agentLabel(origin: HandoffOrigin): string {
     : `@${origin.agentId}`;
 }
 
+const bannerFrame =
+  "anim-msg my-2 flex w-fit items-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400";
+
 export function HandoffBanner({ origin }: { origin: HandoffOrigin }) {
   const navigate = useNavigate();
   const text = S.chat.handoffFrom(agentLabel(origin));
-  const frame =
-    "anim-msg my-2 flex w-fit items-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400";
   // A handoff initiated from draft state has no source Session: only the origin is shown, with nowhere to jump to.
-  if (!origin.sessionId) return <p className={frame}>{text}</p>;
+  if (!origin.sessionId) return <p className={bannerFrame}>{text}</p>;
   const sessionId = origin.sessionId;
   return (
     <button
       type="button"
       title={S.chat.handoffBack(origin.sessionTitle)}
       onClick={() => navigate(`/chat/${sessionId}`)}
-      className={`${frame} transition-colors hover:bg-gray-100 hover:text-gray-800 dark:hover:bg-gray-800 dark:hover:text-gray-200`}
+      className={`${bannerFrame} transition-colors hover:bg-gray-100 hover:text-gray-800 dark:hover:bg-gray-800 dark:hover:text-gray-200`}
     >
       {text}
+      <span aria-hidden className="text-gray-400 dark:text-gray-500">
+        →
+      </span>
+    </button>
+  );
+}
+
+/**
+ * Provenance banner for a session created by the model-switch fork (session_meta carries
+ * `forked_from`): a single line at the top of the conversation, clickable to jump back to
+ * the source session — the same interaction as the handoff banner's back-link.
+ */
+export function ForkedBanner({ sessionId }: { sessionId: string }) {
+  const navigate = useNavigate();
+  return (
+    <button
+      type="button"
+      title={S.chat.handoffBack()}
+      onClick={() => navigate(`/chat/${sessionId}`)}
+      className={`${bannerFrame} transition-colors hover:bg-gray-100 hover:text-gray-800 dark:hover:bg-gray-800 dark:hover:text-gray-200`}
+    >
+      {S.chat.forkedFrom}
       <span aria-hidden className="text-gray-400 dark:text-gray-500">
         →
       </span>

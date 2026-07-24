@@ -144,10 +144,11 @@ The paths below omit the `/api/sessions/:sessionId` prefix. For the storage mode
 | DELETE | / | Delete the Session (along with its Traces and scratch files) |
 | GET | /messages | Full OmniMessage history |
 | GET | /stream | SSE event stream (next section) |
-| POST | /tasks | Start a Task: `{input: TaskInputPart[]}` → 202 |
+| POST | /tasks | Start a Task: `{input: TaskInputPart[], thinkingLevel?}` → 202 |
 | POST | /approvals/:toolCallId | Approval decision: `{decision}` is `allow` or `deny` → 204 |
 | POST | /abort | Interrupt the current Task: 202 when triggered, 204 when idle |
 | POST | /compact | Trigger context compaction: 202; 409 `nothing_to_compact` when there is nothing to compact |
+| POST | /fork | Model-switch fork: `{modelId, provider}` (both required) → 201, a NEW Session carrying this conversation; 409 while the source is running |
 | GET | /files?path= | Browse the Workspace directory |
 | GET | /files/content?path=&download=&preview= | Read a Workspace file (`download=1` serves it as an attachment, `preview=1` renders it in a sandbox — see below) |
 | GET | /files/preview-redirect?path= | "Open in a new tab" for html: mints a signed token and 302s to the separate preview origin |
@@ -193,6 +194,9 @@ Key request bodies (explicit keys):
 // POST /api/sessions/:sessionId/tasks — start a Task
 interface TaskCreateRequest {
   input: TaskInputPart[];
+  // Thinking level for this Task (a per-turn parameter, one of the five names; 400 otherwise);
+  // omitted = follow the Agent config
+  thinkingLevel?: "none" | "low" | "medium" | "high" | "xhigh";
 }
 type TaskInputPart =
   | { type: "text"; text: string }
@@ -201,6 +205,14 @@ type TaskInputPart =
 // POST /api/sessions/:sessionId/approvals/:toolCallId
 interface ApprovalDecisionRequest {
   decision: "allow" | "deny";
+}
+
+// POST /api/sessions/:sessionId/fork — model-switch fork (a NEW Session for the same Agent
+// and Workspace, carrying this conversation as sanitized real history; session_meta records
+// forked_from)
+interface SessionForkRequest {
+  modelId: string;    // the model reference pair — both required
+  provider: string;
 }
 ```
 

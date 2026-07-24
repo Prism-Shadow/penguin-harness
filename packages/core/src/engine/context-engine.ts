@@ -58,7 +58,13 @@ import type {
   ToolCallOutputPayload,
   ToolCallPayload,
 } from "../omnimessage/index.js";
-import type { ApproveFn, EnvironmentInterface, LLMInterface, LLMOutcome } from "../interfaces.js";
+import type {
+  ApproveFn,
+  EnvironmentInterface,
+  LLMInterface,
+  LLMOutcome,
+  ThinkingLevelName,
+} from "../interfaces.js";
 
 /** Trace sink: `write` a complete/event/meta message; `rotate` starts a new file (compaction splits files). */
 export interface TraceSink {
@@ -96,6 +102,12 @@ export interface RunOptions {
   signal?: AbortSignal;
   /** Per-tool approval callback; defaults to denying everything (conservative, to avoid accidental approval when unattended). */
   approve?: ApproveFn;
+  /**
+   * Thinking level for this run's LLM requests (a per-turn parameter): forwarded to every
+   * `streamGenerate` of this run — reconnect retries included; compaction requests keep the
+   * construction-time default (no override). Omitted = the LLM object's default.
+   */
+  thinkingLevel?: ThinkingLevelName;
 }
 
 /**
@@ -260,6 +272,9 @@ export class ContextEngine {
     const signal = opts?.signal;
     // Default approval policy: deny (conservative). CLI/Web will inject a real callback (interactive or permission-mode based).
     const approve: ApproveFn = opts?.approve ?? (async () => "deny");
+    // Per-turn thinking level: applies to each of this run's LLM requests (reconnects included);
+    // compaction requests are out of scope and keep the LLM default.
+    const thinkingLevel = opts?.thinkingLevel;
 
     // Merge the Task-boundary compaction summary (the new context's first input, merged with
     // this Prompt), the carry-over left over from the last interruption, and this call's new
@@ -329,7 +344,7 @@ export class ContextEngine {
         // Both LLM and Environment handle errors internally and guarantee a complete, closed
         // output with no thrown exceptions; the engine doesn't handle exceptions —
         // it decides retry/resend purely from `outcome`.
-        turn = yield* this.runTurn(attemptInput, approve, signal);
+        turn = yield* this.runTurn(attemptInput, approve, signal, thinkingLevel);
 
         // User interruption (the LLM stream was aborted, outcome=aborted, or `signal` fired
         // during tool execution): stop and hand control back to the user.
@@ -517,6 +532,7 @@ export class ContextEngine {
     input: OmniMessage[],
     approve: ApproveFn,
     signal?: AbortSignal,
+    thinkingLevel?: ThinkingLevelName,
   ): AsyncGenerator<OmniMessage, TurnResult> {
     const queue = new MergeQueue();
     // Tool outputs are collected in **completion order** (for streaming yield to the frontend);
@@ -547,6 +563,7 @@ export class ContextEngine {
         const gen = this.llm.streamGenerate({
           newMessages: input,
           ...(signal ? { signal } : {}),
+          ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
         });
         for (;;) {
           const res = await gen.next();

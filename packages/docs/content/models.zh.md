@@ -77,11 +77,11 @@ api_key = "sk-..."
 
 ## 思考等级
 
-思考等级共五档：`none | low | medium | high | xhigh`，按 Agent 在 `system_config.yaml` 的 `model.thinking_level` 配置，默认 medium。Web 拾取器只提供 `low` 及以上档位（多数模型不支持关闭思考；`none` 仍是合法的已存值，能正常显示）。对话草稿页在模型选择器旁提供快捷拾取器：选定档位立即写回所选 Agent 的该项配置（切换后的档位即成为该 Agent 的新默认，自下一个 Session 生效；进行中的 Session 沿用创建时的档位）。见 [配置参考](/configuration)。
+思考等级共五档：`none | low | medium | high | xhigh`，按 Agent 在 `system_config.yaml` 的 `model.thinking_level` 配置，默认 medium。Web 拾取器只提供 `low` 及以上档位（多数模型不支持关闭思考；`none` 仍是合法的已存值，能正常显示）。对话草稿页在模型选择器旁提供快捷拾取器：选定档位立即写回所选 Agent 的该项配置（切换后的档位即成为该 Agent 的新默认，自下一个 Session 生效）。进行中的会话里，思考等级是**逐轮参数**：输入区的拾取器默认“跟随 Agent 配置”，显式选定的档位随每次发送下发（仅作用于该会话的后续 Task，不写回 Agent 配置）。见 [配置参考](/configuration)。
 
 ## 模型与 Agent 解耦
 
-Agent 从不绑定模型：模型在创建 Session 时选定，并在该 Session 内锁定不变；同一个 Agent 可以在不同 Session 用不同模型运行。`pricing` 三档价格供用量/成本中心按 Token 计费。
+Agent 从不绑定模型：模型在创建 Session 时选定，并在该 Session 内锁定不变；同一个 Agent 可以在不同 Session 用不同模型运行。会话内的 `/model` 命令通过**分叉**换模型：创建一个携带当前对话（净化后的真实历史——思考负载与 Provider 保真数据不跨模型回放）的新 Session 并继续，原会话保持不变。`pricing` 三档价格供用量/成本中心按 Token 计费。
 
 凭证处理：
 

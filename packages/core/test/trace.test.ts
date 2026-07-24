@@ -25,7 +25,6 @@ function meta() {
     model_context_window: 200000,
     system_prompt: "test system prompt",
     tools: [{ name: "exec_command", description: "test tool" }],
-    thinking_level: "medium",
     agent_state: "/tmp/agent_state",
     workspace: "/tmp/workspace",
   });
@@ -87,7 +86,6 @@ describe("Writer", () => {
       model_context_window: 200000,
       system_prompt: "child prompt",
       tools: [],
-      thinking_level: "medium",
       agent_state: "/tmp/child_agent/agent_state",
       workspace: "/tmp/workspace",
     });

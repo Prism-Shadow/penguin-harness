@@ -15,8 +15,8 @@ import {
   ThinkingLevel,
   ToolCallArgumentParseError,
 } from "@prismshadow/agenthub";
-import type { UniEvent, UniMessage, UsageMetadata } from "@prismshadow/agenthub";
-import type { LLMOutcome } from "../src/interfaces.js";
+import type { UniConfig, UniEvent, UniMessage, UsageMetadata } from "@prismshadow/agenthub";
+import type { LLMOutcome, ThinkingLevelName } from "../src/interfaces.js";
 
 import {
   EventTranslator,
@@ -1034,7 +1034,7 @@ describe("config helpers", () => {
     expect("parameters" in schemas[1]!).toBe(false);
   });
 
-  it("builds UniConfig with only provided fields", () => {
+  it("builds UniConfig with only provided fields (thinking level stays out — it is per-request)", () => {
     const cfg = buildUniConfig({
       modelId: "claude-sonnet-4-6",
       tools: [{ name: "t", description: "d" }],
@@ -1044,7 +1044,9 @@ describe("config helpers", () => {
     });
     expect(cfg.system_prompt).toBe("You are concise.");
     expect(cfg.max_tokens).toBe(256);
-    expect(cfg.thinking_level).toBe(ThinkingLevel.HIGH);
+    // The thinking level is applied per request (override ?? construction default), never
+    // baked into the frozen config — see the request-config test below.
+    expect("thinking_level" in cfg).toBe(false);
     expect(cfg.tools).toEqual([{ name: "t", description: "d" }]);
 
     const minimal = buildUniConfig({ modelId: "m", tools: [] });
@@ -1178,6 +1180,72 @@ describe("isIncompleteStreamError", () => {
     ).toBe(true);
     expect(isIncompleteStreamError(new Error("socket hang up"))).toBe(false);
     expect(isIncompleteStreamError(null)).toBe(false);
+  });
+});
+
+describe("GenerativeModel per-request thinking level", () => {
+  // Captures the UniConfig each request goes out with (the openStream seam now receives the
+  // per-request resolved config): the effective level = params.thinkingLevel ?? the
+  // construction default, mapped onto the wire enum; neither → the key stays off the wire.
+  function capturingModel(defaultLevel?: ThinkingLevelName): {
+    model: GenerativeModel;
+    configs: (UniConfig | undefined)[];
+  } {
+    const configs: (UniConfig | undefined)[] = [];
+    class CapturingModel extends GenerativeModel {
+      protected override openStream(
+        _uni: UniMessage,
+        _signal: AbortSignal,
+        config?: UniConfig,
+      ): AsyncIterable<UniEvent> {
+        configs.push(config);
+        return (async function* () {
+          yield ev({
+            content_items: [{ type: "text", text: "ok" }],
+            finish_reason: "stop",
+            usage_metadata: {
+              cached_tokens: 0,
+              prompt_tokens: 1,
+              thoughts_tokens: 0,
+              response_tokens: 1,
+            },
+          });
+        })();
+      }
+    }
+    const model = new CapturingModel({
+      modelId: "claude-sonnet-4-6",
+      tools: [],
+      ...(defaultLevel !== undefined ? { thinkingLevel: defaultLevel } : {}),
+    });
+    return { model, configs };
+  }
+
+  async function drainAll(gen: AsyncGenerator<OmniMessage, LLMOutcome | void>): Promise<void> {
+    let res = await gen.next();
+    while (!res.done) res = await gen.next();
+  }
+
+  it("applies the construction default when no override is given, per request", async () => {
+    const { model, configs } = capturingModel("medium");
+    await drainAll(model.streamGenerate({ newMessages: [userText("hi")] }));
+    expect(configs[0]?.thinking_level).toBe(ThinkingLevel.MEDIUM);
+  });
+
+  it("a per-request override wins for that request only; the default returns afterwards", async () => {
+    const { model, configs } = capturingModel("medium");
+    await drainAll(model.streamGenerate({ newMessages: [userText("a")], thinkingLevel: "high" }));
+    await drainAll(model.streamGenerate({ newMessages: [userText("b")] }));
+    expect(configs[0]?.thinking_level).toBe(ThinkingLevel.HIGH);
+    expect(configs[1]?.thinking_level).toBe(ThinkingLevel.MEDIUM);
+  });
+
+  it("no default and no override: thinking_level stays off the wire; an override still applies", async () => {
+    const { model, configs } = capturingModel();
+    await drainAll(model.streamGenerate({ newMessages: [userText("a")] }));
+    await drainAll(model.streamGenerate({ newMessages: [userText("b")], thinkingLevel: "xhigh" }));
+    expect(configs[0] !== undefined && "thinking_level" in configs[0]).toBe(false);
+    expect(configs[1]?.thinking_level).toBe(ThinkingLevel.XHIGH);
   });
 });
 

@@ -16,8 +16,10 @@ import { useNavigate, useParams } from "react-router";
 import type {
   AgentSummary,
   ApprovalMode,
+  ModelRefDto,
   ModelsResponse,
   SkillMetadataItem,
+  TaskCreateRequest,
   TaskInputPart,
 } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
@@ -42,6 +44,7 @@ import { MessageStream } from "./message-stream";
 import type { StreamRenderContext } from "./message-stream";
 import { ChatInput } from "./chat-input";
 import { DraftView } from "./draft-view";
+import { ForkedBanner } from "./handoff-banner";
 import { handoffMessage } from "./agent-mentions";
 import { sameModelRef } from "../models/model-grouping";
 import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
@@ -118,6 +121,10 @@ export function ChatPage() {
   const [infoOpen, setInfoOpen] = useState(false);
   const [modeSaving, setModeSaving] = useState(false);
   const [models, setModels] = useState<ModelsResponse | null>(null);
+  // Per-turn thinking level, local per-session UI state: "" = follow the Agent config
+  // (nothing is sent); an explicit pick rides on each postTask as `thinkingLevel`. Never
+  // written through to the Agent config (that behavior stays draft-only).
+  const [turnThinkingLevel, setTurnThinkingLevel] = useState("");
 
   const routeSessionId = params.sessionId ?? null;
   const filesPanel = useFilesPanel(routeSessionId);
@@ -240,11 +247,13 @@ export function ChatPage() {
   // concurrent mounts only issues one files/stat call.
   const statCacheRef = useRef(new Map<string, boolean | Promise<boolean>>());
 
-  // Session switch: resets the cost and the file-card existence cache, avoiding stale data from
-  // the previous Session (Files panel state resets itself keyed on sessionId inside use-files-panel).
+  // Session switch: resets the cost, the file-card existence cache, and the per-turn thinking
+  // level (it's per-session UI state), avoiding stale data from the previous Session (Files
+  // panel state resets itself keyed on sessionId inside use-files-panel).
   useEffect(() => {
     setSessionCost(null);
     setCostUncosted(false);
+    setTurnThinkingLevel("");
     statCacheRef.current = new Map();
   }, [routeSessionId]);
 
@@ -353,7 +362,14 @@ export function ChatPage() {
     async (input: TaskInputPart[]): Promise<boolean> => {
       if (!selected) return false;
       try {
-        const res = await api.postTask(selected.sessionId, { input });
+        // An explicitly picked per-turn thinking level rides on each task; "" (follow the
+        // Agent config) sends nothing.
+        const res = await api.postTask(selected.sessionId, {
+          input,
+          ...(turnThinkingLevel
+            ? { thinkingLevel: turnThinkingLevel as TaskCreateRequest["thinkingLevel"] }
+            : {}),
+        });
         discardSessionDraft();
         await syncHealedSessionId(selected.sessionId, res.sessionId);
         return true;
@@ -363,7 +379,38 @@ export function ChatPage() {
         return false;
       }
     },
-    [selected, discardSessionDraft, syncHealedSessionId],
+    [selected, turnThinkingLevel, discardSessionDraft, syncHealedSessionId],
+  );
+
+  // /model switch: forks the current session onto the picked model — a NEW session (same
+  // Agent, same Workspace) carrying this conversation — then navigates to it, mirroring the
+  // @ handoff's create→postTask flow: any text left after the command is posted as the new
+  // session's first task once the fork exists. Failure of the fork itself keeps the draft
+  // (returns false); a failed first task after a successful fork only toasts — the fork
+  // already carries the full conversation and must not be torn down for it.
+  const onSwitchModel = useCallback(
+    async (ref: ModelRefDto, input: TaskInputPart[]): Promise<boolean> => {
+      if (!selected) return false;
+      try {
+        const res = await api.postForkSession(selected.sessionId, {
+          provider: ref.provider,
+          modelId: ref.modelId,
+        });
+        addSession(res.session);
+        discardSessionDraft();
+        navigate(`/chat/${res.session.sessionId}`);
+        if (input.length > 0) {
+          void api
+            .postTask(res.session.sessionId, { input })
+            .catch((e: unknown) => toastError(apiErrorText(e, { modelId: ref.modelId })));
+        }
+        return true;
+      } catch (e) {
+        toastError(apiErrorText(e, { modelId: ref.modelId }));
+        return false;
+      }
+    },
+    [selected, addSession, discardSessionDraft, navigate],
   );
 
   // @ handoff: doesn't use the current Session — creates a new chat for the @-mentioned agent
@@ -510,9 +557,9 @@ export function ChatPage() {
     selected !== null && !stream.loading && !stream.error && stream.model.items.length === 0;
 
   // Input area in session state: Agent / Workspace / Model are already locked by the Session
-  // (the model selector isn't rendered; models is only used to look up the locked model's
-  // provider logo and display name for a read-only display) — only approval mode can still be
-  // changed (saved immediately on change).
+  // (the model selector isn't rendered; models feeds the locked model's read-only display and
+  // the /model switch picker) — approval mode and the per-turn thinking level stay editable;
+  // /model forks the conversation onto another model.
   const input = selected && (
     <ChatInput
       status={stream.taskState}
@@ -521,7 +568,10 @@ export function ChatPage() {
       onCompact={onCompact}
       modelRef={activeModelRef}
       {...(models !== null ? { models: models.models } : {})}
-      sessionThinkingLevel={stream.model.thinkingLevel}
+      {...(models?.defaultModel !== undefined ? { defaultModel: models.defaultModel } : {})}
+      onSwitchModel={onSwitchModel}
+      turnThinkingLevel={turnThinkingLevel}
+      onChangeTurnThinkingLevel={setTurnThinkingLevel}
       {...(contextWindow !== undefined ? { contextWindow } : {})}
       contextNow={stream.model.stats.contextNow}
       contextStale={stream.model.stats.contextStale}
@@ -733,6 +783,13 @@ export function ChatPage() {
                           items={stream.model.items}
                           version={stream.version}
                           ctx={ctx}
+                          // Fork provenance (session_meta.forked_from): a banner at the top of
+                          // the conversation linking back to the source session.
+                          {...(stream.model.forkedFrom
+                            ? {
+                                header: <ForkedBanner sessionId={stream.model.forkedFrom} />,
+                              }
+                            : {})}
                         />
                       )}
                     </div>

@@ -69,7 +69,7 @@ function out(n: number): TokenCounts {
   return { cache_read: 0, cache_write: 0, output: n, total: n };
 }
 
-function meta(sessionId: string): OmniMessage<SessionMetaPayload> {
+function meta(sessionId: string, forkedFrom?: string): OmniMessage<SessionMetaPayload> {
   return sessionMeta({
     session_id: sessionId,
     model_id: "m",
@@ -77,9 +77,9 @@ function meta(sessionId: string): OmniMessage<SessionMetaPayload> {
     model_context_window: 200000,
     system_prompt: "",
     tools: [],
-    thinking_level: "default",
     agent_state: "/a",
     workspace: "/w",
+    ...(forkedFrom !== undefined ? { forked_from: forkedFrom } : {}),
   });
 }
 
@@ -279,32 +279,19 @@ describe("approvals and events", () => {
     expect(items(m)).toHaveLength(0);
   });
 
-  it("captures the session's thinking level from the main session_meta (read-only input-area tag)", () => {
+  it("captures forked_from from the main session_meta (fork provenance banner)", () => {
     const m = createStreamModel();
-    expect(m.thinkingLevel).toBeNull();
-    // The shared helper's meta carries thinking_level "default" (Agent config leaves it unset).
+    expect(m.forkedFrom).toBeNull();
+    // A non-forked session's meta carries no forked_from: stays null.
     pushMessage(m, meta("session-x"));
-    expect(m.thinkingLevel).toBe("default");
+    expect(m.forkedFrom).toBeNull();
 
     const m2 = createStreamModel();
-    pushMessage(
-      m2,
-      sessionMeta({
-        session_id: "session-y",
-        model_id: "m",
-        provider: "custom",
-        model_context_window: 200000,
-        system_prompt: "",
-        tools: [],
-        thinking_level: "medium",
-        agent_state: "/a",
-        workspace: "/w",
-      }),
-    );
-    expect(m2.thinkingLevel).toBe("medium");
-    // An origin-tagged (sub-session) session_meta routes to the nested model and must not clobber the main session's level.
+    pushMessage(m2, meta("session-y", "session-src"));
+    expect(m2.forkedFrom).toBe("session-src");
+    // An origin-tagged (sub-session) session_meta routes to the nested model and must not clobber the main session's provenance.
     pushMessage(m2, withOrigin(meta("child"), "child"));
-    expect(m2.thinkingLevel).toBe("medium");
+    expect(m2.forkedFrom).toBe("session-src");
   });
 
   it("request_end final state timeout/malformed produces a retry notice item (with attempt number); request_begin marks it as resent", () => {

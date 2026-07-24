@@ -134,11 +134,14 @@ export function MessageStream({
   items,
   version,
   ctx,
+  header,
 }: {
   items: ChatItem[];
   /** View-model version number (a repaint signal for in-place updates that also drives auto-scroll). */
   version: number;
   ctx: StreamRenderContext;
+  /** Rendered at the top of the conversation, scrolling with it (e.g. the forked-session provenance banner). */
+  header?: ReactNode;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   // An upward-swipe intent immediately exits auto-follow; scrolling back near the bottom resumes it — see stream-follow.ts (#75) for the exact rule.
@@ -278,6 +281,7 @@ export function MessageStream({
         className="anim-fade h-full overflow-y-auto px-4 py-4 md:px-6"
       >
         <div className="mx-auto max-w-3xl">
+          {header}
           {items.length === 0 ? (
             <EmptyState title={S.chat.emptyStream} />
           ) : (

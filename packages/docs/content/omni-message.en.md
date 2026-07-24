@@ -38,10 +38,10 @@ interface SessionMetaPayload {
   model_context_window: number | string;
   system_prompt: string;                  // fully assembled, placeholders substituted
   tools: ToolDefinition[];                // the complete tool schema sent to the model
-  thinking_level: string;                 // "default" when unconfigured
   agent_state: string;                    // absolute path of the Agent State
   workspace: string;                      // absolute path of the Workspace
   source?: "subagent" | "schedule";       // session origin; absent = user-created
+  forked_from?: string;                   // source session_id of a model-switch fork; absent = not a fork
 }
 
 interface ToolDefinition {
@@ -51,7 +51,7 @@ interface ToolDefinition {
 }
 ```
 
-On resume, the engine takes this Trace line as the runtime config — the model, system prompt and Workspace are immutable for the Session's lifetime. See [Sessions & Traces](/sessions-and-traces).
+session_meta holds **per-session invariants only** — the model, system prompt and Workspace are immutable for the Session's lifetime; on resume, the engine takes this Trace line as the runtime config. See [Sessions & Traces](/sessions-and-traces). The thinking level is a per-turn parameter (sent with each Task) and is not recorded here; legacy Traces may still carry a `thinking_level` field in their meta, which resume keeps honoring for back-compat.
 
 ## model_msg: complete payloads
 
