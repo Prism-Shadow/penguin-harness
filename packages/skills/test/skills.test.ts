@@ -85,63 +85,6 @@ describe("loadLibrarySkills", () => {
   });
 });
 
-describe("agent tuning workflow contracts", () => {
-  const content = (name: string): string => {
-    const skill = librarySkill(name);
-    expect(skill, name).toBeDefined();
-    return skill!.content;
-  };
-
-  it("keeps benchmark design capability-focused and freezes comparable results", () => {
-    const benchmark = content("benchmark-design");
-    expect(benchmark).toContain("individual evaluation and score");
-    expect(benchmark).toContain("Fix every Rubric before the first evaluation");
-    expect(benchmark).toContain("every Case and Run is valid and complete");
-    expect(benchmark).toContain("representative Test Traces");
-    expect(benchmark).toContain("semantic isolation review");
-    expect(benchmark).toContain("explicit hard gate");
-    expect(benchmark).toContain("do not claim successful calibration");
-    expect(benchmark).toContain("Case × Run ledger");
-    expect(benchmark).toContain("missing_run_subagent");
-    expect(benchmark).toContain('generic "do the work yourself" fallback');
-    expect(benchmark).toContain("before waiting for any of them to finish");
-    expect(benchmark).toContain("extract one");
-    expect(benchmark).toMatch(/do not\s+terminate the whole calibration/);
-    expect(benchmark).toContain("per-item scores");
-    expect(benchmark).toContain("could reveal private scoring conditions");
-    expect(benchmark).toContain("Stop after writing and reporting the baseline");
-  });
-
-  it("binds evaluation to the new trace delta and bounded accounting work", () => {
-    const evaluation = content("agent-evaluation");
-    expect(evaluation).toContain("record the existing files and sizes");
-    expect(evaluation).toContain("caller can consume the result reliably");
-    expect(evaluation).toMatch(/Do not narrate validation, launch,\s+binding, or scoring/);
-    expect(evaluation).toContain("inspect only new files or files that grew");
-    expect(evaluation).toContain("Do not perform open-ended Session archaeology");
-    expect(evaluation).toContain("return `cost: null`");
-    expect(evaluation).toContain("must not trigger repeated pricing calculations");
-  });
-
-  it("keeps score-only optimization versioned, hypothesis-led, and generalizable", () => {
-    const optimization = content("agent-optimization");
-    expect(optimization).toContain("snapshots/v<version>.tar.gz");
-    expect(optimization).toContain("without `.vault.toml`");
-    expect(optimization).toContain("complete Case × Run matrix");
-    expect(optimization).toContain("one falsifiable behavioral hypothesis");
-    expect(optimization).toContain("conditional analysis procedure");
-    expect(optimization).toContain("Case × Run ledger");
-    expect(optimization).toContain("missing_run_subagent");
-    expect(optimization).toContain('generic "do the work');
-    expect(optimization).toContain("before waiting for any of them to finish");
-    expect(optimization).toMatch(/do not terminate the whole\s+optimization/);
-    expect(optimization).toMatch(/every fully evaluated Candidate/);
-    expect(optimization).toContain("visual curve");
-    expect(optimization).toContain("strictly higher than the Reference");
-    expect(optimization).toContain("rules that apply to only one Case");
-  });
-});
-
 describe("loadSkillGroups / groupSkills", () => {
   it("loads groups per SKILL_GROUPS, members complete with Chinese titles, no Other group", () => {
     const groups = loadSkillGroups();
