@@ -3,8 +3,8 @@ name: benchmark-design
 description: Design and calibrate a multi-Case capability Benchmark with repeated independent evaluations and a traceable baseline.
 short_description: Design and calibrate an Agent capability Benchmark.
 short_description_zh: 设计并校准 Agent 能力评测 Benchmark。
-version: 1
-updated: 2026-07-17T17:08:17Z
+version: 2
+updated: 2026-07-24T00:00:00Z
 ---
 
 # Benchmark Design
@@ -19,14 +19,15 @@ Require a Test Agent and the capability to measure. If either is missing, ask th
 
 Access only the explicit Test Agent and Benchmark paths. Do not inspect another Agent, Project configuration files, Agent Evaluator State, Evaluator Workspace, or Evaluator Trace. Consume only each Evaluator's terminal protocol response and the returned Test Session id.
 
-Use the Environment's Project Dir and the explicit Test Agent id:
+Use the Environment's Agents Dir and the explicit Test Agent id:
 
 ```text
-PROJECT_DIR = <project_dir>
+AGENTS_DIR = <agents_dir>
+PROJECT_DIR = <parent_of_agents_dir>
 PROJECT_ID = <basename_of_project_dir>
 PENGUIN_HOME = <parent_of_project_dir>
-TEST_AGENT_DIR = <project_dir>/agents/<test_agent_id>
-BENCHMARK_DIR = <project_dir>/agents/<test_agent_id>/benchmarks/<benchmark_id>
+TEST_AGENT_DIR = <agents_dir>/<test_agent_id>
+BENCHMARK_DIR = <agents_dir>/<test_agent_id>/benchmarks/<benchmark_id>
 SCOREBOARD = <benchmark_dir>/scoreboard.yaml
 ```
 

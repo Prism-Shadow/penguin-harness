@@ -195,7 +195,7 @@ export const en: Strings = {
       ["{{DATE}}", "Current date"],
       ["{{CWD}}", "Absolute Workspace path"],
       ["{{AGENT_ID}}", "Current agent id"],
-      ["{{PROJECT_DIR}}", "Absolute Project directory (Agent State/scratchpad derive from it)"],
+      ["{{AGENTS_DIR}}", "Absolute agents directory (Agent State/scratchpad derive from it)"],
       ["{{SESSION_ID}}", "Current Session id"],
     ] as ReadonlyArray<readonly [string, string]>,
     maxTurns: "max_turns (max turns per Task, -1 = unlimited)",

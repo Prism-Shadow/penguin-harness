@@ -3,8 +3,8 @@ name: penguin-sdk
 description: Build AI apps on the Penguin Harness SDK — self-contained projects, the createSession/run streaming loop, and a complete RAG recipe that ingests documents into a knowledge base and answers with citations behind a web UI.
 short_description: Build AI and RAG apps on the Penguin Harness SDK.
 short_description_zh: 基于 Penguin SDK 构建 AI 与 RAG 应用。
-version: 11
-updated: 2026-07-21T00:00:00Z
+version: 12
+updated: 2026-07-24T00:00:00Z
 ---
 
 # Penguin Harness SDK
@@ -23,7 +23,7 @@ If the user's message only invokes this skill (e.g. "use penguin-sdk skill") wit
 
 ## Project location
 
-Create the app in the current workspace directory by default (the `CWD` value from your Environment section), as a self-contained project — do not place it under `<project_dir>` or depend on any path outside the project folder. When creating the app's agent, the data root defaults **under the working directory (CWD)** too: point `createAgent({ root })` at a directory inside the project, resolved from the source file so it stays relative:
+Create the app in the current workspace directory by default (the `CWD` value from your Environment section), as a self-contained project — do not place it under `<agents_dir>` or its parent project directory, or depend on any path outside the project folder. When creating the app's agent, the data root defaults **under the working directory (CWD)** too: point `createAgent({ root })` at a directory inside the project, resolved from the source file so it stays relative:
 
 ```ts
 const agent = await createAgent({ root: path.join(import.meta.dirname, "penguin_data") });

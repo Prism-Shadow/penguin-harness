@@ -22,6 +22,7 @@ import {
 import type { ToolConfig, ToolDefinitionConfig } from "../interfaces.js";
 import {
   AGENT_ID_PLACEHOLDER,
+  AGENTS_DIR_PLACEHOLDER,
   AGENTS_MD_PLACEHOLDER,
   VAULT_KEYS_PLACEHOLDER,
   SKILL_METADATA_PLACEHOLDER,
@@ -83,7 +84,7 @@ export interface SessionEnvironmentValues {
   cwd: string;
   /** The Agent id this Session belongs to (system Prompt placeholder {{AGENT_ID}}). */
   agentId: string;
-  /** Absolute path to this Project's directory (system Prompt placeholder {{PROJECT_DIR}}; Agent State/scratchpad paths are derived from it). */
+  /** Absolute path to this Project's directory. Feeds the {{AGENTS_DIR}} placeholder (`<projectDir>/agents`, where Agent State/scratchpad paths live) and the legacy {{PROJECT_DIR}} placeholder. */
   projectDir: string;
   /** The session model's provider group (system Prompt placeholder {{PROVIDER}}; paired with modelId to form the model reference). */
   provider: string;
@@ -354,6 +355,10 @@ export function skillMetadataSection(skills: SkillMetadata[]): string {
  * injected. `{{SKILL_METADATA}}` is replaced with the installed Skills' metadata lines (an empty
  * string if empty/not provided). A custom template that removes a placeholder gets no
  * corresponding content injected.
+ *
+ * Directory placeholders: `{{AGENTS_DIR}}` resolves to `<projectDir>/agents` (the container
+ * holding every Agent of the Project); the legacy `{{PROJECT_DIR}}` still resolves to the
+ * Project directory itself, so custom prompts saved before the switch keep working.
  * Docs: /docs/configuration § "System prompt placeholders".
  */
 export function assembleSystemPrompt(
@@ -371,6 +376,8 @@ export function assembleSystemPrompt(
     .join(skillMetadataSection(skillMetadata ?? []))
     .split(AGENT_ID_PLACEHOLDER)
     .join(sessionEnvironment?.agentId ?? state.agentId)
+    .split(AGENTS_DIR_PLACEHOLDER)
+    .join(sessionEnvironment?.projectDir ? path.join(sessionEnvironment.projectDir, "agents") : "")
     .split(PROJECT_DIR_PLACEHOLDER)
     .join(sessionEnvironment?.projectDir ?? "")
     .split(SESSION_ID_PLACEHOLDER)

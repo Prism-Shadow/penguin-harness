@@ -73,7 +73,7 @@ const MAX_TMP_ID_ATTEMPTS = 16;
  * directory name is the workspace_id, shaped like `tmp-<8hex>`; if it collides with
  * an existing directory, regenerate the id. No symlinks are created inside the Workspace:
  * the model composes absolute paths (to Agent State, scratchpad, etc.) directly from the
- * Environment placeholders (Project Dir / Agent ID) in the system prompt.
+ * Environment placeholders (Agents Dir / Agent ID) in the system prompt.
  */
 export async function createTempWorkspace(
   root: string,

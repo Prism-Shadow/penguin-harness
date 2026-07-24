@@ -186,7 +186,7 @@ export const zh = {
       ["{{DATE}}", "当前日期"],
       ["{{CWD}}", "Workspace 绝对路径"],
       ["{{AGENT_ID}}", "当前 Agent id"],
-      ["{{PROJECT_DIR}}", "Project 目录绝对路径（Agent State/scratchpad 由此拼出）"],
+      ["{{AGENTS_DIR}}", "agents 目录绝对路径（Agent State/scratchpad 由此拼出）"],
       ["{{SESSION_ID}}", "当前 Session id"],
     ] as ReadonlyArray<readonly [string, string]>,
     maxTurns: "max_turns（单 Task 最大轮次，-1 不限制）",
