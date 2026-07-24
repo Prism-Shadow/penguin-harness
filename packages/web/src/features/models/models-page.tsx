@@ -810,6 +810,7 @@ export function ModelsPage() {
             <Input
               size="sm"
               label={S.models.groupNameLabel}
+              required
               value={groupName}
               invalid={Boolean(groupNameError)}
               onChange={(e) => {
@@ -1130,6 +1131,17 @@ function ModelDialog({
    * top-level banner: it's too far from the error site, and with three price fields it's
    * hard to tell which one is wrong).
    */
+  // base URL required-field policy: an OpenAI-protocol endpoint can't be
+  // inferred — required for custom / user-defined groups and entries with an explicit
+  // openai protocol (gateway groups already have it pre-filled); optional for entries
+  // auto-routed within a first-party vendor group (the client has its own official
+  // default endpoint). Shared by validation and the label's required "*" mark.
+  const openAiLike =
+    form.clientType.trim().toLowerCase().includes("openai") ||
+    form.provider === "custom" ||
+    providerInfo(form.provider) === undefined;
+  const baseUrlRequired = !preset && openAiLike;
+
   const validated = (): RowState | null => {
     const modelId = form.modelId.trim();
     const ref: ModelRefDto = { provider: form.provider, modelId };
@@ -1140,16 +1152,7 @@ function ModelDialog({
     else if (!sameModelRef(ref, form.original) && existingRefs.some((r) => sameModelRef(r, ref))) {
       errs.modelId = S.models.modelIdExists;
     }
-    // base URL required-field policy: an OpenAI-protocol endpoint can't be
-    // inferred — required for custom / user-defined groups and entries with an explicit
-    // openai protocol (gateway groups already have it pre-filled); optional for entries
-    // auto-routed within a first-party vendor group (the client has its own official
-    // default endpoint).
-    const openAiLike =
-      form.clientType.trim().toLowerCase().includes("openai") ||
-      form.provider === "custom" ||
-      providerInfo(form.provider) === undefined;
-    if (!preset && openAiLike && !baseUrl) errs.baseUrl = S.models.baseUrlRequired;
+    if (baseUrlRequired && !baseUrl) errs.baseUrl = S.models.baseUrlRequired;
 
     // Under PUT full-table replace semantics, omitting pricing means deleting it: all three
     // prices must be either all empty or all filled, to avoid a partial entry silently
@@ -1238,6 +1241,10 @@ function ModelDialog({
         <span className="mb-1 flex items-baseline justify-between gap-2">
           <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
             {S.models.modelId}
+            {/* Required mark, hand-placed: this label row is custom (link on the right), so FieldLabel's asterisk doesn't apply. */}
+            <span className="ml-0.5 text-red-500 dark:text-red-400" aria-hidden>
+              *
+            </span>
           </span>
           <span className="flex shrink-0 items-baseline gap-2.5">
             {/* The model-homepage entry lives in the dialog header (top-right button); only the "get model ids" provider link stays here. */}
@@ -1255,6 +1262,7 @@ function ModelDialog({
         </span>
         <Input
           size="sm"
+          required
           value={form.modelId}
           disabled={!canEdit}
           invalid={Boolean(fieldErrors.modelId)}
@@ -1527,10 +1535,11 @@ function ModelDialog({
           </div>
         )}
 
-        {/* 2) base URL */}
+        {/* 2) base URL (required for custom / user-defined groups and explicit openai protocol — see baseUrlRequired) */}
         <Input
           size="sm"
           label={S.models.baseUrl}
+          required={baseUrlRequired}
           value={form.baseUrl}
           disabled={!canEdit}
           onChange={(e) => set({ baseUrl: e.target.value })}
@@ -1731,6 +1740,7 @@ function GroupKeyDialog({
         <Input
           size="sm"
           label={S.models.apiKey}
+          required
           type="password"
           value={key}
           onChange={(e) => setKey(e.target.value)}
