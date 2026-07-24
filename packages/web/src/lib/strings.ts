@@ -710,7 +710,7 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     colCacheRead: "cache_read",
     colCacheWrite: "cache_write",
     colOutput: "output",
-    uncostedNote: "* 含未配置 pricing 的记录，成本为不完全统计",
+    uncostedNote: "* 只计入配置了价格的模型成本",
     filterAllAgents: "全部 Agent",
     filterAllModels: "全部模型",
     chartAgentCalls: "各 Agent 调用次数",
