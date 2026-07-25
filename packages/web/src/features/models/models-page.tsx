@@ -963,8 +963,9 @@ function ModelCard({
         <span className="text-sm font-medium">{row.displayName ?? row.modelId}</span>
         {isDefault && <Badge tone="brand">{S.models.default}</Badge>}
         {/* Free rows (all three price buckets 0, e.g. :free variants / openrouter/free): a
-            green badge so zero-cost models stand out at a glance. */}
-        {isFreeModel(row) && <Badge tone="green">{S.models.freeBadge}</Badge>}
+            light-yellow badge so zero-cost models stand out at a glance (informational, kept
+            distinct from the amber warning tone the proxy-vision badge uses). */}
+        {isFreeModel(row) && <Badge tone="yellow">{S.models.freeBadge}</Badge>}
         {row.vision && <Badge tone="green">{S.models.visionBadge}</Badge>}
         {isVisionModel && <Badge tone="amber">{S.models.visionModelBadge}</Badge>}
       </span>

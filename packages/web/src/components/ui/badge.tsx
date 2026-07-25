@@ -3,12 +3,16 @@
  */
 import type { ReactNode } from "react";
 
-export type BadgeTone = "gray" | "brand" | "green" | "amber" | "red";
+export type BadgeTone = "gray" | "brand" | "green" | "yellow" | "amber" | "red";
 
 const toneClass: Record<BadgeTone, string> = {
   gray: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300",
   brand: "bg-gray-200/80 text-gray-700 dark:bg-gray-700/60 dark:text-gray-200",
   green: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
+  // Light-yellow: a neutral informational tag (the "Free" model badge). Kept on the yellow
+  // palette so it stays visually distinct from the amber tone below, which existing badges
+  // use with warning semantics (aborted stop_reason, the proxy-vision badge on the same card).
+  yellow: "bg-yellow-50 text-yellow-700 dark:bg-yellow-950 dark:text-yellow-300",
   amber: "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
   red: "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300",
 };

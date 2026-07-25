@@ -115,8 +115,8 @@ export function hasConfiguredKey(m: ModelCredentialRowLike): boolean {
 }
 
 /**
- * Free model detection (drives the green "Free" badge on the model card and in the chat model
- * picker): the entry carries explicit pricing and all three buckets are 0 — covers the
+ * Free model detection (drives the light-yellow "Free" badge on the model card and in the
+ * chat model picker): the entry carries explicit pricing and all three buckets are 0 — covers the
  * catalog's :free variants and the openrouter/free router — while unpriced models (no pricing
  * at all, costs merely unknown) stay unbadged. Accepts the DTO's numeric pricing buckets or
  * the model page's string-typed edit fields ("" = unpriced).

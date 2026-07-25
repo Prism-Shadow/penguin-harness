@@ -354,11 +354,11 @@ function ModelSelect({
           >
             <ProviderLogo provider={m.provider} className="h-4 w-4 shrink-0" />
             <span className="min-w-0 flex-1 truncate">{modelLabel(m)}</span>
-            {/* Zero-cost rows (all three price buckets 0): same green "Free" badge as the
-                model library card, so free models stand out while picking. */}
+            {/* Zero-cost rows (all three price buckets 0): same light-yellow "Free" badge as
+                the model library card, so free models stand out while picking. */}
             {isFreeModel(m.pricing) && (
               <span className="shrink-0">
-                <Badge tone="green">{S.models.freeBadge}</Badge>
+                <Badge tone="yellow">{S.models.freeBadge}</Badge>
               </span>
             )}
             {/* Key-less rows (visible via show-all / selected / default / no-key-at-all) carry a

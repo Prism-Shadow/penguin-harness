@@ -45,7 +45,7 @@ penguin config model add --provider openrouter --model-id inclusionai/ling-3.0-f
 penguin config model list
 ```
 
-Set a free row as the Project default, or leave the default alone and pick one in the model selector when starting a Session — models are chosen per Session, not bound to an Agent. Free rows carry a green "Free" badge on the Models page and in the model picker, so they are easy to spot.
+Set a free row as the Project default, or leave the default alone and pick one in the model selector when starting a Session — models are chosen per Session, not bound to an Agent. Free rows carry a light-yellow "Free" badge on the Models page and in the model picker, so they are easy to spot.
 
 ## What free buys you, and what it does not
 

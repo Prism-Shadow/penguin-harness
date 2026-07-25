@@ -45,7 +45,7 @@ penguin config model add --provider openrouter --model-id inclusionai/ling-3.0-f
 penguin config model list
 ```
 
-把某条免费行设为 Project 默认，或者不动默认、在创建会话时于模型选择器里现选一条——模型按 Session 选择，不绑定 Agent。免费行在 Models 页面与模型选择器中都带绿色「免费」标签，一眼可辨。
+把某条免费行设为 Project 默认，或者不动默认、在创建会话时于模型选择器里现选一条——模型按 Session 选择，不绑定 Agent。免费行在 Models 页面与模型选择器中都带淡黄色「免费」标签，一眼可辨。
 
 ## 免费换来什么，换不来什么
 
