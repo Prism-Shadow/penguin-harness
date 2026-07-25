@@ -564,7 +564,7 @@ When done, open index.html in a browser and self-test once.`,
           "When done, run the app, verify one streamed answer yourself, and tell me how to access it.",
       },
       selfImprovement: {
-        label: "Example: Agent self-improvement from black-box feedback",
+        label: "Example: Agent self-improvement",
         desc: "Create an Agent, build a Benchmark, then iteratively improve it from score feedback",
         prompt: `Coordinate one complete Agent creation, Benchmark construction, and Agent optimization experiment.
 
