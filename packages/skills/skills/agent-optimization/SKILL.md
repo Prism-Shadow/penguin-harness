@@ -4,7 +4,7 @@ description: Improve an Agent State from direct feedback or versioned Benchmark 
 short_description: Improve an Agent from feedback or measured Benchmark results.
 short_description_zh: 根据反馈或 Benchmark 结果改进 Agent。
 version: 2
-updated: 2026-07-24T17:34:13Z
+updated: 2026-07-25T04:18:00Z
 ---
 
 # Agent Optimization
@@ -126,7 +126,7 @@ Freeze the Case set, Statements, Rubrics, `runs`, and evaluation Model throughou
 A Reference Evaluation must:
 
 - match the current Agent State version;
-- use one fixed `(provider, model_id)` pair;
+- use the exact `(provider, model_id)` pair stored in `benchmark_config.toml`;
 - contain the complete Case × Run matrix.
 
 If the current Agent State has no complete Evaluation, evaluate it without changing State and use
@@ -153,7 +153,7 @@ case_id: <case_id>
 run: <1_based_run_index>
 expected_version: <test_agent_state_version>
 test_agent_id: <test_agent_id>
-benchmark_dir: <absolute_benchmark_dir>
+benchmark_id: <benchmark_id>
 provider: <provider>
 model_id: <model_id>
 ```

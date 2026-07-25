@@ -4,7 +4,7 @@ description: Design and calibrate a multi-Case capability Benchmark with repeate
 short_description: Design and calibrate an Agent capability Benchmark.
 short_description_zh: 设计并校准 Agent 能力评测 Benchmark。
 version: 2
-updated: 2026-07-24T17:34:13Z
+updated: 2026-07-25T04:18:00Z
 ---
 
 # Benchmark Design
@@ -73,10 +73,13 @@ Never mention the Rubric, private paths, scoring conditions, or Gold answers in 
 title = "<benchmark_title>"
 description = "<capability_and_scope>"
 runs = 3
+provider = "<provider>"
+model_id = "<upstream_model_id>"
 ```
 
-Use `runs = 3` unless the user explicitly requests another positive integer. Initialize the
-Scoreboard with:
+Use `runs = 3` unless the user explicitly requests another positive integer. Select one exact
+evaluation `(provider, model_id)` pair before the first evaluation and keep it fixed in the
+Benchmark configuration. Initialize the Scoreboard with:
 
 ```yaml
 evaluations: []
@@ -146,7 +149,7 @@ case_id: <case_id>
 run: <1_based_run_index>
 expected_version: <test_agent_state_version>
 test_agent_id: <test_agent_id>
-benchmark_dir: <absolute_benchmark_dir>
+benchmark_id: <benchmark_id>
 provider: <provider>
 model_id: <model_id>
 ```
@@ -175,7 +178,8 @@ terminate the whole calibration solely because the Evaluator formatted its respo
    credible structural adjustments, or report the unmet gate and blocker when no such adjustment
    remains.
 
-Use the same `(provider, model_id)` pair throughout one calibration.
+Use the exact `(provider, model_id)` pair stored in `benchmark_config.toml` throughout one
+calibration.
 
 ## Write the baseline
 

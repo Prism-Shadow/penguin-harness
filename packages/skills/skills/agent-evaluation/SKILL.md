@@ -4,7 +4,7 @@ description: Run and score exactly one Benchmark Case run with CLI execution, Tr
 short_description: Run and score one isolated Benchmark Case.
 short_description_zh: 隔离执行并评分一个 Benchmark Case。
 version: 2
-updated: 2026-07-25T03:44:14Z
+updated: 2026-07-25T04:18:00Z
 ---
 
 # Agent Evaluation
@@ -34,7 +34,7 @@ case_id: <case_id>
 run: <1_based_run_index>
 expected_version: <tested_agent_state_version>
 test_agent_id: <test_agent_id>
-benchmark_dir: <absolute_benchmark_dir>
+benchmark_id: <benchmark_id>
 provider: <provider>
 model_id: <upstream_model_id>
 ```
@@ -42,6 +42,13 @@ model_id: <upstream_model_id>
 ## Validate and prepare
 
 Resolve the Project, Test Agent, Benchmark, and Case only from the explicit request and Environment Project Dir. Reject traversal, symlink escape, or any path outside the requested Test Agent. Never read a Project configuration file, credential, or vault.
+
+Derive paths from the Environment and request:
+
+```text
+TEST_AGENT_DIR = <project_dir>/agents/<test_agent_id>
+BENCHMARK_DIR = <test_agent_dir>/benchmarks/<benchmark_id>
+```
 
 Require:
 
@@ -52,9 +59,17 @@ Require:
 <benchmark_dir>/<case_id>/rubric/README.md
 ```
 
-Require `benchmark_config.toml` to contain a positive integer `runs`; the requested `run` must be within `1..runs`. The canonical State version is the top-level `version` in `system_config.yaml`, defaulting to 1, and must equal `expected_version`.
+Require `benchmark_config.toml` to contain a positive integer `runs` and exactly one non-empty
+`provider` and `model_id`. The requested `run` must be within `1..runs`, and the requested
+`(provider, model_id)` pair must exactly match the Benchmark configuration. The canonical State
+version is the top-level `version` in `system_config.yaml`, defaulting to 1, and must equal
+`expected_version`.
 
-Read and retain the exact Statement and Rubric bytes before launch. Reject an unusable, contradictory, non-atomic, or unbounded Rubric. The Rubric must declare a finite Case maximum; the returned score must fall within `0..case_max`.
+Before launch, record a deterministic manifest of every entry under the Case's complete
+`statement/` and `rubric/` directories, including each relative path, entry type, and regular-file
+bytes. Reject symlinks or other entries that escape either directory. Reject an unusable,
+contradictory, non-atomic, or unbounded Rubric. The Rubric must declare a finite Case maximum; the
+returned score must fall within `0..case_max`.
 
 Create a collision-checked Workspace at `<test_agent_dir>/workspaces/tmp-<8hex>`. Copy only the contents of `statement/` into it. Never copy, link, or disclose `rubric/`, and never reuse another Case or run's Workspace.
 
@@ -77,7 +92,9 @@ penguin run --message "Read README.md in the current Workspace and complete the 
 
 Use the exact Project, Test Agent, Model pair, and Workspace. Do not fall back to another value. Poll the same process until it exits. A nonzero, interrupted, or misrouted launch is `cli_failed`, not score zero. Do not relaunch within the same run or target processes by a global name or pattern.
 
-Read the canonical State version before and after the Test run; any change is `version_changed`. Confirm the Statement and Rubric bytes are unchanged before scoring.
+Read the canonical State version before and after the Test run; any change is `version_changed`.
+Rebuild both directory manifests before scoring. Any Statement change is `invalid_statement`; any
+Rubric change is `invalid_rubric`.
 
 Before launch, record the existing files and sizes under the requested Test Agent's `traces/`
 tree. After launch, inspect only new files or files that grew. Never inspect another Agent's
