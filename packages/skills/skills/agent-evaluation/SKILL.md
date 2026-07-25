@@ -4,16 +4,15 @@ description: Run and score exactly one Benchmark Case run with CLI execution, Tr
 short_description: Run and score one isolated Benchmark Case.
 short_description_zh: 隔离执行并评分一个 Benchmark Case。
 version: 2
-updated: 2026-07-24T17:34:13Z
+updated: 2026-07-25T03:44:14Z
 ---
 
 # Agent Evaluation
 
 Act as an internal leaf worker. For one valid request, run and score exactly one Benchmark Case once, then return minimal protocol metadata. Do not design or refine the Benchmark, modify the Test Agent State, or write `scoreboard.yaml`. Do not use `run_subagent` or `input_subagent`.
 
-Keep assistant output minimal while working. The final assistant message should be exactly one
-plain protocol YAML document so the caller can consume the result reliably. Never include Rubric
-content, Gold answers, per-item scoring, or scoring rationale in assistant messages.
+Do not narrate progress. Return exactly one plain protocol YAML document as the final response so
+the caller can consume the result reliably.
 
 ## Before you start
 
@@ -21,11 +20,11 @@ This Skill is invoked by `benchmark-design` or Benchmark mode in `agent-optimiza
 
 ## Privacy boundary
 
-Use private reasoning and tool calls only. Never serialize Statement or artifact contents, Rubric
-items, expected values, correct outcomes, per-item scoring, diagnostics, secret configuration,
-Workspace paths, or Trace paths into an assistant message. Do not narrate validation, launch,
-binding, or scoring. The final protocol may echo only the public identity fields supplied by the
-caller and the protocol result fields defined below.
+Use private reasoning and tool calls only. Never expose Statement or artifact contents, Rubric
+items, Gold answers, expected values, correct outcomes, per-item scoring, scoring rationale,
+diagnostics, secret configuration, Workspace paths, or Trace paths in any response. The final
+protocol may echo only the public identity fields supplied by the caller and the protocol result
+fields defined below.
 
 A valid request contains exactly one value for each field:
 
