@@ -1,31 +1,20 @@
 ---
 name: agent-optimization
-description: Improve an Agent State from direct feedback or versioned Benchmark scores and score-linked Traces.
-short_description: Improve an Agent from feedback or measured Benchmark results.
-short_description_zh: 根据反馈或 Benchmark 结果改进 Agent。
+description: Improve an Agent State from versioned Benchmark scores and score-linked Traces.
+short_description: Improve an Agent from measured Benchmark results.
+short_description_zh: 根据 Benchmark 结果改进 Agent。
 version: 2
-updated: 2026-07-25T05:01:31Z
+updated: 2026-07-25T05:05:26Z
 ---
 
 # Agent Optimization
 
-Improve an existing Agent State.
-
-Use one of two modes:
-
-- **One-shot feedback mode** makes one change from direct user feedback.
-- **Benchmark optimization mode** makes measured improvements from Benchmark scores.
-
-Determine the mode before editing any file. Do not mix the two execution paths.
-
-In Benchmark mode, delegate every evaluation and score to the `agent-evaluation` Skill. Optimizer
-must not run or score the Test Agent directly.
+Improve an existing Agent State through measured Benchmark results. Delegate every evaluation and
+score to the `agent-evaluation` Skill; do not run or score the Test Agent directly.
 
 ## Before you start
 
-One-shot mode requires a target Agent and concrete feedback or a problem to correct.
-
-Benchmark mode requires:
+Require:
 
 - an explicit Test Agent;
 - an explicit Benchmark;
@@ -53,15 +42,14 @@ SCOREBOARD = <benchmark>/scoreboard.yaml
 Do not read Project secrets, credentials, a vault, a private Rubric, Evaluator State, Evaluator
 Workspace, Evaluator Trace, or another Agent.
 
-In Benchmark mode, you may read the target Agent State, public Case Statements, the Scoreboard,
-and Test Traces and artifacts explicitly referenced by the Scoreboard.
+You may read the target Agent State, public Case Statements, the Scoreboard, and Test Traces and
+artifacts explicitly referenced by the Scoreboard.
 
-Never read, search, list, or open a path under a Case's `rubric/` directory in Benchmark mode.
-Use exact public Statement and Scoreboard paths rather than enumerating private Benchmark
-contents. If private Rubric content, Gold answers, or private scoring conditions enter the
-Optimizer context, the optimization Session is contaminated: do not use that information, do not
-retain or score a Candidate derived from it, restore any active Candidate, and report the result as
-invalid.
+Never read, search, list, or open a path under a Case's `rubric/` directory. Use exact public
+Statement and Scoreboard paths rather than enumerating private Benchmark contents. If private
+Rubric content, Gold answers, or private scoring conditions enter the Optimizer context, the
+optimization Session is contaminated: do not use that information, do not retain or score a
+Candidate derived from it, restore any active Candidate, and report the result as invalid.
 
 Never modify the Benchmark, Test Traces, Project configuration, or another Agent.
 
@@ -110,16 +98,7 @@ If a candidate is rejected or cannot complete a valid comparison:
 
 If another process changes the Agent State, stop without overwriting its work.
 
-## One-shot feedback mode
-
-Use the user's feedback and any necessary recent Trace to make the smallest targeted change.
-
-After a successful edit, keep the new Agent State, increment the version once, and report the
-evidence, change, new version, and reason. If the edit fails, roll back the round.
-
-This mode has no Benchmark comparison, so do not claim a measured score or capability improvement.
-
-## Benchmark optimization mode
+## Optimization contract
 
 Freeze the Case set, Statements, Rubrics, `runs`, and evaluation Model throughout optimization.
 
