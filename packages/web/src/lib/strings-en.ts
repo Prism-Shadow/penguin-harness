@@ -329,6 +329,7 @@ export const en: Strings = {
     vision: "Vision support",
     visionOffProxyHint: "Images are read via the vision proxy model",
     visionBadge: "Vision",
+    freeBadge: "Free",
     visionModelBadge: "Proxy vision",
     setVisionModel: "Set as proxy vision model",
     visionModelHint: "Describes images via describe_image for models without vision",

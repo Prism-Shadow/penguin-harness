@@ -153,6 +153,7 @@ describe("model-catalog", () => {
     // opus-4.8 before 4.7) — precomputed in the catalog, no runtime sorting.
     expect(or.map((m) => m.modelId)).toEqual([
       "anthropic/claude-fable-5",
+      "anthropic/claude-opus-5",
       "anthropic/claude-opus-4.8",
       "anthropic/claude-opus-4.7",
       "anthropic/claude-sonnet-5",

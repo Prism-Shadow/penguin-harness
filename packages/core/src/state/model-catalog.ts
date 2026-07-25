@@ -241,6 +241,20 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
+    // Upstream publishes full cache pricing for this row (2026-07-24, per the OpenRouter
+    // models API: $0.50/mtok cache hit, $6.25 cache write = 1.25 x input, $5 input, $25
+    // output), so cache_read stores the real discounted price — same convention as the
+    // Gemini rows below — instead of repeating the input price.
+    modelId: "anthropic/claude-opus-5",
+    displayName: "Claude Opus 5",
+    provider: "openrouter",
+    contextWindow: 1000000,
+    pricing: usd(0.5, 6.25, 25),
+    supportsVision: true,
+    clientType: "openai",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
     modelId: "anthropic/claude-opus-4.8",
     displayName: "Claude Opus 4.8",
     provider: "openrouter",

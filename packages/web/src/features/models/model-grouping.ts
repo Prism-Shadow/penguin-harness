@@ -114,6 +114,24 @@ export function hasConfiguredKey(m: ModelCredentialRowLike): boolean {
   return !!m.credential?.apiKeyMasked;
 }
 
+/**
+ * Free model detection (drives the green "Free" badge on the model card and in the chat model
+ * picker): the entry carries explicit pricing and all three buckets are 0 — covers the
+ * catalog's :free variants and the openrouter/free router — while unpriced models (no pricing
+ * at all, costs merely unknown) stay unbadged. Accepts the DTO's numeric pricing buckets or
+ * the model page's string-typed edit fields ("" = unpriced).
+ */
+export function isFreeModel(
+  pricing:
+    | { cacheRead: number | string; cacheWrite: number | string; output: number | string }
+    | undefined,
+): boolean {
+  if (!pricing) return false;
+  return [pricing.cacheRead, pricing.cacheWrite, pricing.output].every((b) =>
+    typeof b === "string" ? b.trim() !== "" && Number(b) === 0 : b === 0,
+  );
+}
+
 export interface VisibleChatModelsOptions {
   /** true = list every model (the dropdown's expanded "show all" state). */
   showAll: boolean;
