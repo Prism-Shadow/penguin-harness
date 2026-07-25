@@ -4,7 +4,7 @@ description: Design and calibrate a multi-Case capability Benchmark with repeate
 short_description: Design and calibrate an Agent capability Benchmark.
 short_description_zh: 设计并校准 Agent 能力评测 Benchmark。
 version: 2
-updated: 2026-07-25T04:18:00Z
+updated: 2026-07-25T05:34:19Z
 ---
 
 # Benchmark Design
@@ -18,7 +18,8 @@ Delegate every individual evaluation and score to the `agent-evaluation` Skill.
 
 ## Before you start
 
-Require both the Test Agent and the capability to measure. If either is missing, ask the user.
+Require the Test Agent, the capability to measure, and the evaluation `(provider, model_id)` pair.
+If any is missing, ask the user.
 
 Evaluation also requires a top-level Session with `run_subagent`, and the current Agent must have
 the `agent-evaluation` Skill installed. If `run_subagent` is absent, immediately return
@@ -94,16 +95,22 @@ evaluations:
     provider: <provider>
     model_id: <model_id>
     score: <total score>
+    cost: <total cost or null>
+    duration_ms: <total duration>
     cases:
       - case: <case_id>
         score: <mean score across runs>
+        cost: <mean cost or null>
+        duration_ms: <mean duration>
         runs:
           - score: <single-run score>
+            cost: <number or null>
             duration_ms: <Test Agent duration>
             session_id: <Test Session id>
 ```
 
-The Rubric maxima across all Cases must total 100 points.
+The Rubric maxima across all Cases must total 100 points. If any contributing run has unknown cost,
+use `null` for its Case and evaluation cost rather than treating it as zero.
 
 ## Case and Rubric design
 
@@ -154,12 +161,10 @@ provider: <provider>
 model_id: <model_id>
 ```
 
-Prefer an Evaluator response that is one plain protocol YAML document with the fields defined by
-`agent-evaluation`. If the response also contains commentary or a code fence, extract one
-unambiguous, complete protocol document and ignore the surrounding text. Do not copy private
-Evaluator commentary into the Scoreboard or final report. If no valid protocol result can be
-extracted, treat the cell as an infrastructure failure and retry it according to the ledger; do not
-terminate the whole calibration solely because the Evaluator formatted its response incorrectly.
+Extract one unambiguous protocol YAML document with the fields defined by `agent-evaluation` and
+ignore any surrounding text. Do not copy Evaluator commentary into the Scoreboard or final report.
+If no valid protocol can be extracted, treat the cell as an infrastructure failure and retry it
+according to the ledger.
 
 ## Calibration
 
