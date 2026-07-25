@@ -4,7 +4,7 @@ description: Improve an Agent State from direct feedback or versioned Benchmark 
 short_description: Improve an Agent from feedback or measured Benchmark results.
 short_description_zh: 根据反馈或 Benchmark 结果改进 Agent。
 version: 2
-updated: 2026-07-25T04:18:00Z
+updated: 2026-07-25T05:01:31Z
 ---
 
 # Agent Optimization
@@ -93,8 +93,8 @@ Ensure this snapshot exists:
 <target>/snapshots/v<version>.tar.gz
 ```
 
-When the current-version snapshot is absent, package `agent_state/` without `.vault.toml`. Never
-overwrite an existing snapshot for the same version.
+When the current-version snapshot is absent, create it from `agent_state/` without `.vault.toml`.
+Never overwrite an existing snapshot for the same version.
 
 Use `current + 1` as the candidate version.
 
@@ -132,9 +132,9 @@ A Reference Evaluation must:
 If the current Agent State has no complete Evaluation, evaluate it without changing State and use
 that result as the Reference.
 
-Every Candidate Evaluation must use the same Benchmark, Cases, Runs, Provider, and Model as the
-Reference. Use the exact `(provider, model_id)` pair stored by the Reference; do not translate,
-alias, or fall back to a different Model identifier.
+Every Candidate Evaluation must use the same Benchmark, Cases, Runs, and exact
+`(provider, model_id)` pair as the Reference and `benchmark_config.toml`. Do not translate, alias,
+or fall back to another Model identifier.
 
 ## Evaluation dispatch
 
@@ -158,13 +158,10 @@ provider: <provider>
 model_id: <model_id>
 ```
 
-Prefer an Evaluator response that is one plain protocol YAML document with the fields defined by
-`agent-evaluation`. If the response also contains commentary or a code fence, extract one
-unambiguous, complete protocol document and ignore all surrounding text. Never use private
-Evaluator commentary, Rubric content, Gold answers, or per-item scoring to form an optimization
-hypothesis or Agent State edit. If no valid protocol result can be extracted, treat the cell as an
-infrastructure failure and retry it according to the ledger; do not terminate the whole
-optimization solely because the Evaluator formatted its response incorrectly.
+Extract one unambiguous protocol YAML document with the fields defined by `agent-evaluation` and
+ignore any surrounding text. Never use Evaluator commentary, Rubric content, Gold answers, or
+per-item scoring to form an optimization hypothesis or Agent State edit. If no valid protocol can
+be extracted, treat the cell as an infrastructure failure and retry it according to the ledger.
 
 ## Optimization loop
 
@@ -202,8 +199,8 @@ For each round:
 
 Each accepted Candidate becomes the next Reference.
 
-Unless the user asks only for analysis, complete at least one Candidate evaluation before stopping
-when infrastructure permits and a credible general edit can be made.
+Unless the user asks only for analysis, evaluate at least one credible Candidate when
+infrastructure permits.
 
 Stop when the user's target or round limit is reached, no credible new hypothesis remains, or
 infrastructure prevents a valid comparison. Do not search the score by making random Agent State
