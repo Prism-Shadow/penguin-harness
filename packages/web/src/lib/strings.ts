@@ -639,8 +639,8 @@ Gold、Rubric 或分值。
 
 ## Phase 3：Agent Optimization
 
-Phase 2 完成后，通过新的独立 CLI Session 使用 \`agent-optimization\` Skill，
-以 Benchmark optimization mode 优化 \`finite_choice_agent\`。
+Phase 2 完成后，通过新的独立 CLI Session 使用 \`agent-optimization\` Skill
+优化 \`finite_choice_agent\`。
 
 - Benchmark：\`contextual-choice-adaptation\`
 - Reference：Scoreboard 中现有的完整 Baseline

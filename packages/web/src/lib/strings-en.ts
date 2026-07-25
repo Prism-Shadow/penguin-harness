@@ -662,8 +662,7 @@ must not read, search, or repeat Rubrics, Gold answers, or private mappings.
 ## Phase 3: Agent Optimization
 
 After Phase 2 completes, start a new independent CLI Session and use the
-\`agent-optimization\` Skill in Benchmark optimization mode to improve
-\`finite_choice_agent\`.
+\`agent-optimization\` Skill to improve \`finite_choice_agent\`.
 
 - Benchmark: \`contextual-choice-adaptation\`
 - Reference: the complete Baseline already recorded in the Scoreboard
