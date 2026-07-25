@@ -1,4 +1,4 @@
-# Models and core: file tools, mid-run steering, /model switches, and free models
+# Models and core: file tools, mid-run steering, /model switches, and new OpenRouter models
 
 ## File tools: read_file, edit_file, write_file
 
@@ -40,6 +40,8 @@ Models kept mistaking the Environment section's Project Dir for the user's worki
 
 Existing agents keep their on-disk `system_config.yaml` verbatim — the old prompt and a frozen tool list — so default changes never reach them by themselves. The adoption path is a new update-config operation: `POST /api/projects/:projectId/agents/:agentId/config/reset` and a matching action on the agent settings Overview tab, behind a confirm dialog, overwrite the stored config with the current defaults, preserving only the agent's name, description and version — the config-side analogue of a skill update. Other Agent State files (AGENTS.md, skills, vault) are untouched.
 
-## OpenRouter free models
+## OpenRouter additions: three free models and Claude Opus 5
 
-The catalog gains three $0 OpenRouter rows: `inclusionai/ling-3.0-flash:free` and `poolside/laguna-m.1:free` — free tiers of Ling 3.0 Flash (a 124B-parameter MoE) and Laguna M.1, both with a 262,144 context — and `openrouter/free`, the Free Models Router that sends each request to a random free model. The router deliberately claims no vision support, since the harness must not send images to a router whose target may be text-only, and records a conservative 65,536-token context floor: with no window recorded, the 75% compaction clamp was silently disabled, and a long Session routed to a small-window target would hard-fail instead of compacting early. The catalog test's free-pricing invariant covers exactly the `:free` suffix and the router id, and the models docs (zh + en) note the free variants, their zero cost, and OpenRouter's free-tier rate limits and data policy.
+The catalog gains three $0 OpenRouter rows: `inclusionai/ling-3.0-flash:free` and `poolside/laguna-m.1:free` — free tiers of Ling 3.0 Flash (a 124B-parameter MoE) and Laguna M.1, both with a 262,144 context — and `openrouter/free`, the Free Models Router that sends each request to a random free model. The router deliberately claims no vision support, since the harness must not send images to a router whose target may be text-only, and records a conservative 65,536-token context floor: with no window recorded, the 75% compaction clamp was silently disabled, and a long Session routed to a small-window target would hard-fail instead of compacting early. The catalog test's free-pricing invariant covers exactly the `:free` suffix and the router id, the web UI badges such rows as Free, and the models docs (zh + en) note the free variants, their zero cost, and OpenRouter's free-tier rate limits and data policy.
+
+Requested alongside the free lineup, `anthropic/claude-opus-5` joins the OpenRouter block as a paid flagship: context 1,000,000, vision, and per-million pricing of $5 input / $25 output with the real published cache prices ($0.50 read, $6.25 write) rather than the repeat-input convention — positioned newest-of-series first, right after `claude-fable-5`.
