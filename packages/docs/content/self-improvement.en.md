@@ -23,7 +23,7 @@ The roles are defined by Skills, not hardcoded: the Evaluator follows the `agent
 4. The Optimizer edits the Target Agent's editable state — `AGENTS.md`, Skills, config — to produce version N+1;
 5. A Snapshot is taken before each round; the candidate version is kept only if the total score strictly improves, otherwise rolled back.
 
-Benchmark optimization mode requires a complete baseline series in the scoreboard — without a calibrated baseline there is no improvement to compare against. Besides this loop, `agent-optimization` also supports a one-shot feedback mode: a concrete correction is applied directly as edits to the Target Agent's state, without going through the evaluation loop.
+Agent optimization requires a complete baseline series in the scoreboard — without a calibrated baseline there is no improvement to compare against.
 
 ## Benchmark storage
 
@@ -68,6 +68,6 @@ Scores are not black-box output: every number can be traced back to the run that
 | `agent-creation` | Turn a requirement into a working Agent: write its `AGENTS.md`, install the Skills it needs |
 | `benchmark-design` | Design and calibrate a multi-Case capability Benchmark |
 | `agent-evaluation` | Run and score one isolated Benchmark Case run |
-| `agent-optimization` | Improve an Agent from feedback or Benchmark results |
+| `agent-optimization` | Improve an Agent from Benchmark results |
 
 How Skills are organized and installed is covered in the [Skill System](/skills).

@@ -74,13 +74,11 @@ Never mention the Rubric, private paths, scoring conditions, or Gold answers in 
 title = "<benchmark_title>"
 description = "<capability_and_scope>"
 runs = 3
-provider = "<provider>"
-model_id = "<upstream_model_id>"
 ```
 
 Use `runs = 3` unless the user explicitly requests another positive integer. Select one exact
-evaluation `(provider, model_id)` pair before the first evaluation and keep it fixed in the
-Benchmark configuration. Initialize the Scoreboard with:
+evaluation `(provider, model_id)` pair before the first evaluation and keep it fixed throughout
+calibration. Record the pair on each Scoreboard Evaluation. Initialize the Scoreboard with:
 
 ```yaml
 evaluations: []
@@ -94,6 +92,8 @@ evaluations:
     version: <Agent State version>
     provider: <provider>
     model_id: <model_id>
+    summary_title: <one_line_public_summary>
+    summary: <public_evaluation_summary>
     score: <total score>
     cost: <total cost or null>
     duration_ms: <total duration>
@@ -183,8 +183,7 @@ according to the ledger.
    credible structural adjustments, or report the unmet gate and blocker when no such adjustment
    remains.
 
-Use the exact `(provider, model_id)` pair stored in `benchmark_config.toml` throughout one
-calibration.
+Use the selected exact `(provider, model_id)` pair throughout one calibration.
 
 ## Write the baseline
 

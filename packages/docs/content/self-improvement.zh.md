@@ -23,7 +23,7 @@ PenguinHarness 中的自我进化不依赖专用引擎代码，而是由 Skill �
 4. Optimizer 编辑 Target Agent 的可编辑状态——`AGENTS.md`、Skills、配置——产出版本 N+1；
 5. 每轮开始前先打 Snapshot；总分严格提升才保留候选版本，否则回滚。
 
-Benchmark 优化模式要求 scoreboard 中已有完整的基线序列——没有校准过的基线，就没有可比较的提升。除此之外 `agent-optimization` 还支持一次性反馈模式：把一条具体的纠正意见直接落实为对 Target Agent 状态的编辑，不经过评测循环。
+Agent 优化要求 scoreboard 中已有完整的基线序列——没有校准过的基线，就没有可比较的提升。
 
 ## Benchmark 存储
 
@@ -68,6 +68,6 @@ benchmarks/<id>/
 | `agent-creation` | 把需求变成可用的 Agent：撰写其 `AGENTS.md`、安装所需 Skill |
 | `benchmark-design` | 设计并校准多 Case 的能力 Benchmark |
 | `agent-evaluation` | 隔离执行并评分一次 Benchmark Case 运行 |
-| `agent-optimization` | 根据反馈或 Benchmark 结果改进 Agent |
+| `agent-optimization` | 根据 Benchmark 结果改进 Agent |
 
 Skill 的组织与安装方式见[技能系统](/skills)。

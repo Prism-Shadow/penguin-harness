@@ -105,15 +105,15 @@ Freeze the Case set, Statements, Rubrics, `runs`, and evaluation Model throughou
 A Reference Evaluation must:
 
 - match the current Agent State version;
-- use the exact `(provider, model_id)` pair stored in `benchmark_config.toml`;
+- contain one non-empty `(provider, model_id)` pair;
 - contain the complete Case × Run matrix.
 
 If the current Agent State has no complete Evaluation, evaluate it without changing State and use
 that result as the Reference.
 
 Every Candidate Evaluation must use the same Benchmark, Cases, Runs, and exact
-`(provider, model_id)` pair as the Reference and `benchmark_config.toml`. Do not translate, alias,
-or fall back to another Model identifier.
+`(provider, model_id)` pair as the Reference. Do not translate, alias, or fall back to another
+Model identifier.
 
 ## Evaluation dispatch
 
@@ -173,8 +173,9 @@ For each round:
 5. **Accept or roll back**
 
    If the Candidate score is strictly higher than the Reference, keep the Candidate State and
-   append its Evaluation to the Scoreboard atomically. If the score is equal, lower, or cannot be
-   compared validly, roll back the Candidate and do not write it to the Scoreboard.
+   append its Evaluation, including a public `summary_title` and `summary`, to the Scoreboard
+   atomically. If the score is equal, lower, or cannot be compared validly, roll back the Candidate
+   and do not write it to the Scoreboard.
 
 Each accepted Candidate becomes the next Reference.
 

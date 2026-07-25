@@ -706,8 +706,9 @@ Continue until the total score reaches at least 85, and retain the highest-scori
 
 ## Final checks and report
 
-After all three CLI Sessions finish, the main Session must inspect the Phase 3 Trace for any
-\`/rubric/\` path access. If one occurred, do not count the contaminated score as valid.
+After all three CLI Sessions finish, the main Session must check whether the Phase 3 root Session
+actually opened, searched, or listed files under \`/rubric/\`. A mention in the Prompt or ordinary
+text is not an access. If an actual access occurred, do not count the contaminated score as valid.
 
 Report:
 

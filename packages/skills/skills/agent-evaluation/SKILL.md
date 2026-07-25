@@ -55,10 +55,9 @@ Require:
 <benchmark_dir>/<case_id>/rubric/README.md
 ```
 
-Require `benchmark_config.toml` to contain a positive integer `runs` and exactly one non-empty
-`provider` and `model_id`. The requested `run` must be within `1..runs`, and the requested
-`(provider, model_id)` pair must exactly match the Benchmark configuration. The canonical State
-version is the top-level `version` in `system_config.yaml`, defaulting to 1, and must equal
+Require `benchmark_config.toml` to contain a positive integer `runs`. The requested `run` must be
+within `1..runs`, and the requested `provider` and `model_id` must both be non-empty. The canonical
+State version is the top-level `version` in `system_config.yaml`, defaulting to 1, and must equal
 `expected_version`. Any mismatch is `invalid_request`.
 
 Before launch, snapshot all files under the Case's complete `statement/` and `rubric/` directories,

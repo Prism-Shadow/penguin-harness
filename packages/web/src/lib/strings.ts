@@ -683,8 +683,9 @@ Agent State。不得写入 Case ID、具体实例答案或逐题答案表。
 
 ## 最终检查与汇报
 
-三个 CLI Session 完成后，主 Session 检查 Phase 3 Trace 是否出现
-\`/rubric/\` 路径访问。若出现，不得把受污染分数计入有效结果。
+三个 CLI Session 完成后，主 Session 检查 Phase 3 根 Session 是否实际打开、
+搜索或列举了 \`/rubric/\` 下的文件。Prompt 或普通文本中提到该路径不算访问；
+若发生实际访问，不得把受污染分数计入有效结果。
 
 最终汇报：
 
