@@ -546,8 +546,8 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
           "按 web-design 技能提供美观的 Web 聊天界面，空态展示几个示例问题。" +
           "完成后运行应用、自测一个问题验证流式回答，并告诉我访问方式。",
       },
-      tuning: {
-        label: "示例：黑盒反馈驱动的 Agent 自优化",
+      selfImprovement: {
+        label: "示例：黑盒反馈驱动的 Agent 自进化",
         desc: "依次创建 Agent、构建 Benchmark，并根据分数反馈迭代优化到目标水平",
         prompt: `请协调完成一次 Agent 创建、Benchmark 构建和 Agent 优化实验。
 

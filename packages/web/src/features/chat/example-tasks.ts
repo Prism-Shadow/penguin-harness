@@ -9,7 +9,7 @@ export const EXAMPLE_TASKS = [
   { id: "game", skills: ["web-design"] },
   { id: "lol", skills: ["web-design"] },
   { id: "rag", skills: ["penguin-sdk", "web-design"] },
-  { id: "tuning", skills: [] },
+  { id: "selfImprovement", skills: [] },
 ] as const;
 
 export type ExampleTask = (typeof EXAMPLE_TASKS)[number];

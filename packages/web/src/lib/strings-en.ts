@@ -563,8 +563,8 @@ When done, open index.html in a browser and self-test once.`,
           "give it a beautiful web chat UI following the web-design skill, with a few example questions in the empty state. " +
           "When done, run the app, verify one streamed answer yourself, and tell me how to access it.",
       },
-      tuning: {
-        label: "Example: optimize an Agent from black-box feedback",
+      selfImprovement: {
+        label: "Example: Agent self-improvement from black-box feedback",
         desc: "Create an Agent, build a Benchmark, then iteratively improve it from score feedback",
         prompt: `Coordinate one complete Agent creation, Benchmark construction, and Agent optimization experiment.
 
