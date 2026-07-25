@@ -564,7 +564,7 @@ When done, open index.html in a browser and self-test once.`,
           "When done, run the app, verify one streamed answer yourself, and tell me how to access it.",
       },
       selfImprovement: {
-        label: "Example: self-improving finite-choice Agent",
+        label: "Example: an Agent that improves at prediction and investing",
         desc: "Improve choices from evaluation scores across football, lottery, and investing tasks",
         prompt: `Coordinate one complete Agent creation, Benchmark construction, and Agent optimization experiment.
 
