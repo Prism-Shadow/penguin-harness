@@ -58,7 +58,7 @@ interface ToolResult {
 | `forModel` | `"vision"` / `"text-only"`：按 Session 模型类别装配；缺省对所有模型可用 |
 | `timeoutMs` | 单次调用超时(ms)，默认 120000;`<=0` 关闭 |
 | `maxOutputLength` | 输出长度上限(字符);`<=0` 关闭 |
-| `call_description` | 条目级开关：控制 `parameters` 中声明的可选 `description` 调用参数；缺省保留，`false` 时装配阶段从 schema 滤除 |
+| `call_description` | 条目级开关：控制 `parameters` 中声明的 `description` 调用参数（开启时为必填）；缺省保留，`false` 时装配阶段将其连同 `required` 项从 schema 滤除 |
 
 ## 内置工具
 
@@ -80,7 +80,7 @@ interface ToolResult {
 
 ### 调用描述
 
-命令 / Subagent 类工具（`exec_command`、`input_command`、`run_subagent`、`input_subagent`）接受可选的 `description` 参数：由模型写一句"本次调用在做什么"，CLI 与 Web 在调用运行期间展示给用户。该参数作为普通的 `description` 属性直接写在各条目的 `parameters` 中（工具 schema 完全存于可编辑配置）；由条目级 `call_description` 字段控制——缺省保留，写 `call_description: false` 时装配阶段将该属性从 schema 中滤除（仅内存内，不改写 YAML）。文件工具不带此参数——其 `file_path` 参数本身已说明用途。
+命令 / Subagent 类工具（`exec_command`、`input_command`、`run_subagent`、`input_subagent`）带 `description` 参数：由模型写一句"本次调用在做什么"，CLI 与 Web 在调用运行期间展示给用户。该参数作为普通的 `description` 属性直接写在各条目的 `parameters` 中（工具 schema 完全存于可编辑配置），并且是**必填**的——提供该参数的工具每次调用都会带上它，前端据 schema 即可确定这次调用的展示形态，无需在参数流式过程中猜测；同时要求模型最先输出它。整个参数由条目级 `call_description` 字段控制——缺省保留，写 `call_description: false` 时装配阶段将该属性连同其 `required` 项一起从 schema 中滤除（仅内存内，不改写 YAML）。文件工具不带此参数——其 `file_path` 参数本身已说明用途。
 
 ### 命令会话
 
@@ -103,7 +103,7 @@ exec_command(cmd)
   cmd: string;             // 必填:要执行的 shell 命令
   workdir?: string;        // 工作目录;缺省为 Workspace 根,相对路径按其解析
   yield_time_ms?: number;  // 前台等待时长;默认 60000,最小 250,上限受工具超时约束
-  description?: string;    // 可选(由条目级 call_description 控制):一句话说明,调用运行期间展示给用户
+  description: string;     // 开关开启时必填:一句话说明,最先输出,调用运行期间展示给用户
 }
 
 // input_command
@@ -111,7 +111,7 @@ exec_command(cmd)
   process_id: string;      // 必填:exec_command 返回的命令会话 id
   chars?: string;          // 写入 stdin 的字符;单独发送 "\u0003" 传递 Ctrl-C;缺省仅轮询
   yield_time_ms?: number;  // 等待时长;有写入默认 250,空轮询默认 5000
-  description?: string;    // 可选(由条目级 call_description 控制)
+  description: string;     // 开关开启时必填
 }
 ```
 
@@ -158,7 +158,7 @@ exec_command(cmd)
   agent_id?: string;       // 子 Agent;缺省复用当前 Agent
   model_id?: string;       // 子 Session 模型;缺省继承父 Session 的模型
   yield_time_ms?: number;  // 前台等待时长;默认 300000
-  description?: string;    // 可选(由条目级 call_description 控制)
+  description: string;     // 开关开启时必填
 }
 
 // input_subagent
@@ -166,7 +166,7 @@ exec_command(cmd)
   subagent_id: string;     // 必填:run_subagent 返回的后台 Subagent id
   prompt?: string;         // 追加任务,仅在子 Session 空闲时接受;缺省仅轮询
   yield_time_ms?: number;  // 等待时长;有追加默认 300000,空轮询默认 10000
-  description?: string;    // 可选(由条目级 call_description 控制)
+  description: string;     // 开关开启时必填
 }
 ```
 

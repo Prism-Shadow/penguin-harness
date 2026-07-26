@@ -276,7 +276,7 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
           description: {
             type: "string",
             description:
-              "One short sentence describing what this call is doing and why, shown to the user while the call runs. Write it in the user's language.",
+              "Required, and emit it first, before the other arguments: it is shown to the user while the call runs. One short sentence describing what this call is doing and why, written in the user's language.",
           },
           cmd: {
             type: "string",
@@ -293,7 +293,7 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
               "How long to wait for the command before yielding. If it is still running when this elapses, the tool returns the output so far plus a process_id, and the command keeps running in the background (drive it with input_command). Defaults to 60000; minimum 250, capped below the tool timeout.",
           },
         },
-        required: ["cmd"],
+        required: ["description", "cmd"],
       },
       permission: "rw",
       call_description: true,
@@ -310,7 +310,7 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
           description: {
             type: "string",
             description:
-              "One short sentence describing what this call is doing and why, shown to the user while the call runs. Write it in the user's language.",
+              "Required, and emit it first, before the other arguments: it is shown to the user while the call runs. One short sentence describing what this call is doing and why, written in the user's language.",
           },
           process_id: {
             type: "string",
@@ -327,7 +327,7 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
               "How long to wait for new output or exit before returning. Non-empty writes default to 250; empty polls default to 5000. Minimum 250, capped below the tool timeout.",
           },
         },
-        required: ["process_id"],
+        required: ["description", "process_id"],
       },
       permission: "rw",
       call_description: true,
@@ -346,7 +346,7 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
           description: {
             type: "string",
             description:
-              "One short sentence describing what this call is doing and why, shown to the user while the call runs. Write it in the user's language.",
+              "Required, and emit it first, before the other arguments: it is shown to the user while the call runs. One short sentence describing what this call is doing and why, written in the user's language.",
           },
           prompt: {
             type: "string",
@@ -374,7 +374,7 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
               "How long to wait for the subagent before yielding. If it is still working when this elapses, the tool returns the output so far plus a subagent_id, and the subagent keeps running in the background (drive it with input_subagent). Defaults to 300000; minimum 250, capped below the tool timeout.",
           },
         },
-        required: ["prompt"],
+        required: ["description", "prompt"],
       },
       permission: "rw",
       call_description: true,
@@ -392,7 +392,7 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
           description: {
             type: "string",
             description:
-              "One short sentence describing what this call is doing and why, shown to the user while the call runs. Write it in the user's language.",
+              "Required, and emit it first, before the other arguments: it is shown to the user while the call runs. One short sentence describing what this call is doing and why, written in the user's language.",
           },
           subagent_id: {
             type: "string",
@@ -409,7 +409,7 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
               "How long to wait for new output or completion before returning. Follow-up prompts default to 300000; empty polls default to 10000. Minimum 250, capped below the tool timeout.",
           },
         },
-        required: ["subagent_id"],
+        required: ["description", "subagent_id"],
       },
       permission: "rw",
       call_description: true,

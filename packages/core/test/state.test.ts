@@ -202,7 +202,7 @@ describe("buildToolConfig", () => {
     expect(exec.permission).toBe("rw");
     expect(exec.timeoutMs).toBe(120000);
     expect(exec.maxOutputLength).toBe(16000);
-    expect((exec.parameters as { required?: string[] }).required).toEqual(["cmd"]);
+    expect((exec.parameters as { required?: string[] }).required).toEqual(["description", "cmd"]);
     // The four command/subagent tools declare the description call argument in config,
     // toggled by the per-entry call_description field (default true).
     expect(exec.call_description).toBe(true);
@@ -212,7 +212,10 @@ describe("buildToolConfig", () => {
     const write = cfg.customTools.find((t) => t.name === "input_command")!;
     expect(write.permission).toBe("rw");
     expect(write.call_description).toBe(true);
-    expect((write.parameters as { required?: string[] }).required).toEqual(["process_id"]);
+    expect((write.parameters as { required?: string[] }).required).toEqual([
+      "description",
+      "process_id",
+    ]);
     // File tools: read_file is read-only with a wider output cap; edit/write are rw.
     const readFile = cfg.customTools.find((t) => t.name === "read_file")!;
     expect(readFile.permission).toBe("r");
@@ -241,10 +244,13 @@ describe("buildToolConfig", () => {
     ]);
     const sub = cfg.customTools.find((t) => t.name === "run_subagent")!;
     expect(sub.permission).toBe("rw");
-    expect((sub.parameters as { required?: string[] }).required).toEqual(["prompt"]);
+    expect((sub.parameters as { required?: string[] }).required).toEqual(["description", "prompt"]);
     const writeSub = cfg.customTools.find((t) => t.name === "input_subagent")!;
     expect(writeSub.permission).toBe("rw");
-    expect((writeSub.parameters as { required?: string[] }).required).toEqual(["subagent_id"]);
+    expect((writeSub.parameters as { required?: string[] }).required).toEqual([
+      "description",
+      "subagent_id",
+    ]);
     // Both image-reading tool entries are explicitly in the config, each declaring its
     // applicable model kind via the forModel annotation.
     const readImage = cfg.customTools.find((t) => t.name === "read_image")!;
@@ -345,8 +351,9 @@ describe("buildToolConfig — per-tool call_description filter", () => {
       const desc = properties(tool)["description"] as { type?: string; description?: string };
       expect(desc.type).toBe("string");
       expect(desc.description).toContain("shown to the user");
-      // Never part of required.
-      expect(required(tool)).not.toContain("description");
+      // Required whenever the tool offers it, so a call always carries one: the frontends
+      // pick the call's display form from the schema instead of guessing mid-stream.
+      expect(required(tool)).toContain("description");
     }
     // The file tools' path argument is self-describing: no description parameter in config.
     for (const name of ["read_file", "edit_file", "write_file", "read_image", "describe_image"]) {
@@ -364,7 +371,7 @@ describe("buildToolConfig — per-tool call_description filter", () => {
         parameters: {
           type: "object",
           properties: { description: { type: "string" }, cmd: { type: "string" } },
-          required: ["cmd"],
+          required: ["description", "cmd"],
         },
       },
     ];
@@ -373,7 +380,10 @@ describe("buildToolConfig — per-tool call_description filter", () => {
     const assembled = cfg.customTools[0]!;
     expect(properties(assembled)["description"]).toBeUndefined();
     expect(properties(assembled)["cmd"]).toBeDefined();
+    // The property and its `required` entry go together: a filtered-out argument must not
+    // stay mandatory.
     expect(required(assembled)).toEqual(["cmd"]);
+    expect((builtin[0]!.parameters.required as string[]).includes("description")).toBe(true);
     // In-memory clone only: the stored entry still declares the property.
     expect(properties(builtin[0]!)["description"]).toBeDefined();
   });

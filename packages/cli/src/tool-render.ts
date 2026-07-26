@@ -28,10 +28,12 @@
  * - schema with it → the description is awaited: it streams live as it grows
  *   (`name <- desc…`) and the payload is appended once its value completes
  *   (`name <- desc ({payload…` → `)`), so the plain form never reaches the screen whichever
- *   order the model emits its arguments in. The model may still omit the optional argument;
- *   that is only knowable once the arguments parse, so nothing renders until then.
+ *   order the model emits its arguments in. The wait is bounded: the argument is declared
+ *   **required**, so a schema-abiding model always sends one, and it is asked to send it
+ *   first.
  * A `final` fragment (stream ended, or arguments from a complete message) is settled by
- * definition and renders whichever form the arguments actually carry.
+ * definition and renders whichever form the arguments actually carry — which is also what
+ * catches a model that violates the schema and omits the required argument.
  * File-tool paths render only once complete — shortening a still-growing path would rewrite
  * the line.
  */

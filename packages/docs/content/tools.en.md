@@ -58,7 +58,7 @@ Each tool is described by one `ToolDefinitionConfig`:
 | `forModel` | `"vision"` / `"text-only"`: selected by the Session model's class; omitted = available to all models |
 | `timeoutMs` | Per-call timeout (ms), default 120000; `<=0` disables |
 | `maxOutputLength` | Output length cap (characters); `<=0` disables |
-| `call_description` | Per-tool toggle for the optional `description` call argument declared in `parameters`; missing = kept, `false` filters it out of the schema at assembly |
+| `call_description` | Per-tool toggle for the `description` call argument declared in `parameters` (required while on); missing = kept, `false` filters it and its `required` entry out of the schema at assembly |
 
 ## Built-in tools
 
@@ -80,7 +80,7 @@ Note that an existing agent's persisted `tools.builtin` list is frozen as writte
 
 ### Call descriptions
 
-The command/subagent tools (`exec_command`, `input_command`, `run_subagent`, `input_subagent`) accept an optional `description` argument: one model-written sentence about what the call is doing, shown by the CLI and Web UI while the call runs. The argument is declared as a normal `description` property in each entry's `parameters` in `system_config.yaml` (tool schemas live entirely in the editable config); the per-entry `call_description` field toggles it — missing = kept, `call_description: false` filters the property out of the schema at assembly time (in-memory only, the YAML is never rewritten). The file tools don't take it — their `file_path` argument is self-describing.
+The command/subagent tools (`exec_command`, `input_command`, `run_subagent`, `input_subagent`) take a `description` argument: one model-written sentence about what the call is doing, shown by the CLI and Web UI while the call runs. The argument is declared as a normal `description` property in each entry's `parameters` in `system_config.yaml` (tool schemas live entirely in the editable config), and it is **required** there — a tool that offers the argument always gets one, so the frontends can pick a call's display form from the schema instead of guessing while the arguments stream; the model is also asked to emit it first. The per-entry `call_description` field toggles the whole thing — missing = kept, `call_description: false` filters the property (and its `required` entry) out of the schema at assembly time (in-memory only, the YAML is never rewritten). The file tools don't take it — their `file_path` argument is self-describing.
 
 ### Command sessions
 
@@ -104,7 +104,7 @@ Both tools' arguments (explicit keys):
   cmd: string;             // required: the shell command to run
   workdir?: string;        // working directory; defaults to the Workspace root, relative paths resolve against it
   yield_time_ms?: number;  // foreground wait; default 60000, minimum 250, capped below the tool timeout
-  description?: string;    // optional (toggled per tool via call_description): one sentence shown to the user while the call runs
+  description: string;     // required while call_description is on: one sentence shown to the user while the call runs, emitted first
 }
 
 // input_command
@@ -112,7 +112,7 @@ Both tools' arguments (explicit keys):
   process_id: string;      // required: the command-session id returned by exec_command
   chars?: string;          // characters for stdin; send "\u0003" alone to deliver Ctrl-C; empty = poll only
   yield_time_ms?: number;  // wait; defaults 250 for writes, 5000 for empty polls
-  description?: string;    // optional (toggled per tool via call_description)
+  description: string;     // required while call_description is on
 }
 ```
 
@@ -160,7 +160,7 @@ Both tools' arguments (explicit keys):
   agent_id?: string;       // the child Agent; defaults to the current Agent
   model_id?: string;       // the child Session's model; inherits the parent Session's model when omitted
   yield_time_ms?: number;  // foreground wait; default 300000
-  description?: string;    // optional (toggled per tool via call_description)
+  description: string;     // required while call_description is on
 }
 
 // input_subagent
@@ -168,7 +168,7 @@ Both tools' arguments (explicit keys):
   subagent_id: string;     // required: the background Subagent id returned by run_subagent
   prompt?: string;         // follow-up task, accepted only while the child Session is idle; empty = poll only
   yield_time_ms?: number;  // wait; defaults 300000 with a prompt, 10000 for empty polls
-  description?: string;    // optional (toggled per tool via call_description)
+  description: string;     // required while call_description is on
 }
 ```
 
