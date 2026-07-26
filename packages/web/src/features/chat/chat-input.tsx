@@ -778,11 +778,10 @@ function PlusMenu({
     <Dropdown
       open={open}
       setOpen={setOpen}
-      menuClass={
-        direction === "down"
-          ? "left-0 top-full mt-1 w-72 max-w-[calc(100vw-10rem)] origin-top-left"
-          : "bottom-full left-0 mb-1 w-72 max-w-[calc(100vw-10rem)] origin-bottom-left"
-      }
+      // Placement is portal-driven like the rest of the toolbar (its scroll container would
+      // clip an absolutely-positioned panel); only size classes belong here.
+      menuClass="w-72"
+      portal={{ direction, align: "left" }}
       button={
         <button
           type="button"
