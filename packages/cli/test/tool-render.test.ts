@@ -6,16 +6,28 @@ import {
 } from "../src/tool-render.js";
 
 describe("renderPartialToolCall — exec_command", () => {
-  it("withholds the plain form until the arguments settle, then renders it", () => {
-    // A description may still follow the command (models don't always honour schema order),
-    // and showing the plain form first would strand it above the described one.
+  it("streams `exec_command <- $ {cmd}` when the schema has no description argument", () => {
+    // The default path: the switch is off (or the tool is unknown), so nothing can supersede
+    // the plain form and it streams character by character.
     expect(renderPartialToolCall("exec_command", '{"cmd":')).toBeNull();
-    expect(renderPartialToolCall("exec_command", '{"cmd":"l')).toBeNull();
+    expect(renderPartialToolCall("exec_command", '{"cmd":"l')).toBe("exec_command <- $ l");
     expect(renderPartialToolCall("exec_command", '{"cmd":"ls"}')).toBe("exec_command <- $ ls");
-    // `final` settles the question for an interrupted stream: render what is there.
-    expect(renderPartialToolCall("exec_command", '{"cmd":"echo \\"hi\\"', true)).toBe(
+    expect(renderPartialToolCall("exec_command", '{"cmd":"echo \\"hi\\"')).toBe(
       'exec_command <- $ echo "hi"',
     );
+  });
+
+  it("waits for the description when the schema carries the argument", () => {
+    const described = { expectDescription: true };
+    // Nothing renders while the description could still be the first thing shown...
+    expect(renderPartialToolCall("exec_command", '{"cmd":"ls -la', described)).toBeNull();
+    // ...until the arguments settle without one, or the fragment is final.
+    expect(renderPartialToolCall("exec_command", '{"cmd":"ls -la"}', described)).toBe(
+      "exec_command <- $ ls -la",
+    );
+    expect(
+      renderPartialToolCall("exec_command", '{"cmd":"ls -la', { ...described, final: true }),
+    ).toBe("exec_command <- $ ls -la");
   });
 
   it("renders `exec_command <- {description} ($ {cmd})` when a description is present", () => {
@@ -42,7 +54,9 @@ describe("renderPartialToolCall — exec_command", () => {
       '{"description":"List files","cmd":"ls', // cmd streaming inside the open parenthesis
       '{"description":"List files","cmd":"ls -la"}', // cmd complete: parenthesis closes
     ];
-    const previews = stages.map((s) => renderPartialToolCall("exec_command", s));
+    const previews = stages.map((s) =>
+      renderPartialToolCall("exec_command", s, { expectDescription: true }),
+    );
     expect(previews[0]).toBe("exec_command <- List fi");
     expect(previews[1]).toBe("exec_command <- List files");
     expect(previews[2]).toBe("exec_command <- List files ($ ls");
@@ -55,11 +69,13 @@ describe("renderPartialToolCall — exec_command", () => {
   it("never shows the plain form first when the model emits the payload before the description", () => {
     // The regression this guards: a plain line followed by a described one for the same call.
     const stages = [
-      '{"cmd":"ls -la', // withheld: a description may still follow
+      '{"cmd":"ls -la', // withheld: the schema says a description is coming
       '{"cmd":"ls -la","description":"List fi', // description streams; payload waits for it
       '{"cmd":"ls -la","description":"List files"}', // settled: payload appended
     ];
-    const previews = stages.map((s) => renderPartialToolCall("exec_command", s));
+    const previews = stages.map((s) =>
+      renderPartialToolCall("exec_command", s, { expectDescription: true }),
+    );
     expect(previews[0]).toBeNull();
     expect(previews[1]).toBe("exec_command <- List fi");
     expect(previews[2]).toBe("exec_command <- List files ($ ls -la)");
@@ -71,10 +87,7 @@ describe("renderPartialToolCall — exec_command", () => {
 describe("renderPartialToolCall — run_subagent", () => {
   it("renders `run_subagent <- {prompt}` and the description form", () => {
     expect(renderPartialToolCall("run_subagent", '{"prompt":')).toBeNull();
-    expect(renderPartialToolCall("run_subagent", '{"prompt":"analy')).toBeNull();
-    expect(renderPartialToolCall("run_subagent", '{"prompt":"analy', true)).toBe(
-      "run_subagent <- analy",
-    );
+    expect(renderPartialToolCall("run_subagent", '{"prompt":"analy')).toBe("run_subagent <- analy");
     expect(renderPartialToolCall("run_subagent", '{"prompt":"line1\\nline2"}')).toBe(
       "run_subagent <- line1 line2",
     );
@@ -134,7 +147,9 @@ describe("renderPartialToolCall — input_command / input_subagent", () => {
       '{"description":"Confirm","process_id":"proc-1a2b3c4d","chars":"y\\u0',
       '{"description":"Confirm","process_id":"proc-1a2b3c4d","chars":"y\\u0003',
     ];
-    const previews = stages.map((s) => renderPartialToolCall("input_command", s)!);
+    const previews = stages.map((s) =>
+      renderPartialToolCall("input_command", s, { expectDescription: true })!,
+    );
     expect(previews[0]).toBe("input_command <- Confirm (proc-1a2b3c4d << y");
     // An incomplete \u escape is treated as "stop here" rather than emitting the raw hex as literal text.
     expect(previews[1]).toBe("input_command <- Confirm (proc-1a2b3c4d << y");

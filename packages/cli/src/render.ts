@@ -54,8 +54,10 @@ import type {
   PartialToolCallPayload,
   PartialToolCallOutputPayload,
   RequestEndPayload,
+  SessionMetaPayload,
   TokenUsagePayload,
   ToolCallPayload,
+  ToolDefinition,
 } from "@prismshadow/penguin-core";
 import { renderFileToolApprovalPayload, renderPartialToolCall } from "./tool-render.js";
 import { defaultMessages } from "./i18n.js";
@@ -139,6 +141,15 @@ export function formatAbort(p: AbortPayload, t: Messages): string {
 }
 
 /**
+ * The Session's assembled tool schemas, read off its `session_meta` — the definitions
+ * actually exposed to the model, so the per-tool `call_description` switch is already
+ * applied. Feeds `StreamRenderer.useToolSchemas`.
+ */
+export function sessionMetaTools(session: { metaMessage: OmniMessage }): readonly ToolDefinition[] {
+  return (session.metaMessage.payload as SessionMetaPayload).tools ?? [];
+}
+
+/**
  * Statically renders resumed history messages (`--resume`: full-message semantics, no
  * partial_*, including interrupted messages and their markers). Uses the
  * same color scheme as streaming rendering: user input `> `, dim thinking, cyan tool
@@ -188,7 +199,7 @@ export function renderHistory(
       case "tool_call": {
         if (p.name) toolNames.set(nameKey(msg, p.tool_call_id ?? ""), p.name);
         const preview =
-          renderPartialToolCall(p.name ?? "", p.arguments ?? "", true) ??
+          renderPartialToolCall(p.name ?? "", p.arguments ?? "", { final: true }) ??
           `${p.name} ${p.arguments}`;
         out.write(`${cyan(`[${callTag(p.tool_call_id ?? "")}] ${preview}`)}${marker}\n`);
         break;
@@ -277,6 +288,14 @@ export class StreamRenderer {
    * call always precedes its output); cleared with the other per-task registrations.
    */
   private toolNames = new Map<string, string>();
+  /**
+   * Names of the tools whose assembled schema carries the `description` argument (from
+   * `session_meta.tools`, i.e. after the per-tool `call_description` switch has been
+   * applied). Decides the preview path before a call's arguments stream: awaiting the
+   * description, or streaming the plain form right away (see tool-render.ts). An unknown
+   * tool falls back to "no description".
+   */
+  private describedTools = new Set<string>();
   /** Buffer for partial_tool_call; each delta streams out the newly appended suffix of the preview. */
   private partialToolCalls = new Map<
     string,
@@ -441,7 +460,8 @@ export class StreamRenderer {
     // Parent-session calls feed the output-gutter name map (nested outputs are not
     // gutter-rendered, and a child id could collide with a parent id).
     if (!origin || origin.length === 0) this.toolNames.set(p.tool_call_id, p.name);
-    const preview = renderPartialToolCall(p.name, p.arguments, true) ?? `${p.name} ${p.arguments}`;
+    const preview =
+      renderPartialToolCall(p.name, p.arguments, { final: true }) ?? `${p.name} ${p.arguments}`;
     this.finishLine();
     this.out.write(`${cyan(`[${callTag(p.tool_call_id, origin)}] ${preview}`)}\n`);
     this.lastLineKey = key;
@@ -667,7 +687,26 @@ export class StreamRenderer {
       }
       return;
     }
-    // session_meta: not rendered.
+    // session_meta: not rendered, but its tool list settles each tool's preview path.
+    if (msg.type === "session_meta") {
+      this.useToolSchemas((msg.payload as SessionMetaPayload).tools);
+    }
+  }
+
+  /**
+   * Registers the Session's assembled tool schemas (`session_meta.tools`), which decide each
+   * tool's preview path before its arguments stream (see `describedTools`). The host calls
+   * this as soon as the Session exists; a `session_meta` flowing through the stream (resume,
+   * sub-sessions) registers the same way.
+   */
+  useToolSchemas(tools: readonly ToolDefinition[]): void {
+    for (const tool of tools) {
+      const properties = (tool.parameters as { properties?: Record<string, unknown> } | undefined)
+        ?.properties;
+      if (properties && Object.hasOwn(properties, "description"))
+        this.describedTools.add(tool.name);
+      else this.describedTools.delete(tool.name);
+    }
   }
 
   /**
@@ -753,7 +792,7 @@ export class StreamRenderer {
   ): void {
     const key = this.callLineKey(toolCallId);
     if (this.ensuredCallLines.has(key)) return;
-    const preview = renderPartialToolCall(partial.name, partial.arguments, true);
+    const preview = renderPartialToolCall(partial.name, partial.arguments, { final: true });
     if (preview === null) return;
     this.finishLine();
     this.out.write(`${cyan(`[${callTag(toolCallId)}] ${preview}`)}\n`);
@@ -791,7 +830,9 @@ export class StreamRenderer {
     if (!p.arguments) return;
 
     if (this.inDim) this.finishLine();
-    const preview = renderPartialToolCall(partial.name, partial.arguments);
+    const preview = renderPartialToolCall(partial.name, partial.arguments, {
+      expectDescription: this.describedTools.has(partial.name),
+    });
     if (preview === null) return;
 
     // The line starts with a pairing tag [tool-<last 3 chars of id>], matching the output line that follows.

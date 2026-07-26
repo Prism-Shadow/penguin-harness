@@ -19,16 +19,19 @@
  *
  * The render layer streams by appending to the preview (see render.ts), so the preview must
  * stay append-only — a preview that is not an extension of the previous one costs a fresh
- * line, leaving the superseded one on screen. For the four tools that can carry a
- * `description` that means the plain form must never be shown when a description is still
- * possible, so rendering follows the argument stream:
- * - the description streams live as it grows (`name <- desc…`), and the payload is appended
- *   only once the description's own value is complete (`name <- desc ({payload…` → `)`);
- * - while no `"description"` key has appeared yet, the preview is **withheld**: the model
- *   may still emit one after the payload (schema order puts it first, but not every model
- *   follows), and showing the plain form first would strand it above the described one;
- * - once the arguments parse (or the fragment is final), the answer is known and the plain
- *   form renders in one shot.
+ * line, leaving the superseded one on screen. Which of the two forms a call will take is
+ * therefore decided **before** its arguments stream, from the tool's assembled schema
+ * (`expectDescription`, taken from `session_meta.tools` — the per-tool `call_description`
+ * switch decides whether the argument exists at all; see the docs on tool configuration):
+ * - schema without the argument (and the unknown case) → the plain form streams immediately,
+ *   character by character, and any stray `description` is ignored;
+ * - schema with it → the description is awaited: it streams live as it grows
+ *   (`name <- desc…`) and the payload is appended once its value completes
+ *   (`name <- desc ({payload…` → `)`), so the plain form never reaches the screen whichever
+ *   order the model emits its arguments in. The model may still omit the optional argument;
+ *   that is only knowable once the arguments parse, so nothing renders until then.
+ * A `final` fragment (stream ended, or arguments from a complete message) is settled by
+ * definition and renders whichever form the arguments actually carry.
  * File-tool paths render only once complete — shortening a still-growing path would rewrite
  * the line.
  */
@@ -164,27 +167,41 @@ export function shortenPath(p: string): string {
   return `…/${segments[segments.length - 2]}/${segments[segments.length - 1]}`;
 }
 
+/** How a tool call is previewed while its arguments stream (see the module header). */
+export interface ToolCallPreviewOptions {
+  /**
+   * Whether this tool's assembled schema carries the `description` argument (from
+   * `session_meta.tools`). Unknown ⇒ `false`: fall back to the plain form, matching a
+   * configuration with the argument switched off.
+   */
+  expectDescription?: boolean;
+  /** The call's last fragment (its stream ended) or arguments from a complete message: settled, so render whichever form they carry. */
+  final?: boolean;
+}
+
 /**
  * State of the model-written `description` argument within a possibly-incomplete arguments
  * fragment:
- * - `absent`: no `"description"` key has streamed in yet — one may still arrive (see the
- *   module header on why the plain form is withheld until this is settled);
- * - `none`: the arguments are settled (parsed, or the fragment is final) without a usable
- *   description, so the plain form is correct;
+ * - `pending`: it is expected but hasn't produced anything showable yet — nothing renders;
+ * - `none`: no usable description (not expected, or the settled arguments carry none), so
+ *   the plain form is correct;
  * - `{ text, complete }`: the description's value so far, single-lined and capped. Payload
  *   is appended only once `complete`, keeping the preview append-only whichever order the
  *   model emits its arguments in.
  */
-type DescriptionState = "absent" | "none" | { text: string; complete: boolean };
+type DescriptionState = "pending" | "none" | { text: string; complete: boolean };
 
-function describedState(argsJson: string, final: boolean): DescriptionState {
-  const settled = final || argsComplete(argsJson);
+function describedState(argsJson: string, opts: ToolCallPreviewOptions): DescriptionState {
+  const settled = opts.final === true || argsComplete(argsJson);
+  // Not expected and not settled: the schema has no such argument, so stream the plain form
+  // right away. Settled fragments are read for real — a complete call renders what it carries.
+  if (!settled && opts.expectDescription !== true) return "none";
   const field = extractField(argsJson, "description");
-  if (field === null) return settled ? "none" : "absent";
+  if (field === null) return settled ? "none" : "pending";
   const text = toSingleLine(field.value);
   // An empty description (still opening, or explicitly "") carries nothing to show: once
   // settled it means "no description", otherwise keep waiting for its first characters.
-  if (!text) return settled ? "none" : "absent";
+  if (!text) return settled ? "none" : "pending";
   return { text: capPreview(text), complete: field.complete };
 }
 
@@ -209,19 +226,18 @@ function describedForm(name: string, desc: string, payload: string, closed: bool
 
 /**
  * Streaming argument preview (formats documented in the module header). Returns null while
- * nothing presentable has streamed in yet, or while a description may still arrive and would
- * supersede the plain form. `final` marks the last fragment of a call (its stream ended, or
- * the arguments come from a complete message), settling that question for good.
+ * nothing presentable has streamed in yet — including a call whose schema carries the
+ * `description` argument (`opts.expectDescription`) whose value hasn't started streaming.
  */
 export function renderPartialToolCall(
   name: string,
   argsJson: string,
-  final = false,
+  opts: ToolCallPreviewOptions = {},
 ): string | null {
   if (!argsJson) return null;
   if (name === "exec_command") {
-    const desc = describedState(argsJson, final);
-    if (desc === "absent") return null;
+    const desc = describedState(argsJson, opts);
+    if (desc === "pending") return null;
     const cmd = extractField(argsJson, "cmd");
     if (desc !== "none") {
       if (!desc.complete || cmd === null) return `${name} <- ${desc.text}`;
@@ -231,8 +247,8 @@ export function renderPartialToolCall(
     return null;
   }
   if (name === "run_subagent") {
-    const desc = describedState(argsJson, final);
-    if (desc === "absent") return null;
+    const desc = describedState(argsJson, opts);
+    if (desc === "pending") return null;
     const prompt = extractField(argsJson, "prompt");
     if (desc !== "none") {
       if (!desc.complete || prompt === null) return `${name} <- ${desc.text}`;
@@ -247,8 +263,8 @@ export function renderPartialToolCall(
     return null;
   }
   if (name === "input_command") {
-    const desc = describedState(argsJson, final);
-    if (desc === "absent") return null;
+    const desc = describedState(argsJson, opts);
+    if (desc === "pending") return null;
     const pid = extractField(argsJson, "process_id");
     if (desc === "none" && pid === null) return null;
     const chars = extractPartialStringField(argsJson, "chars");
@@ -265,8 +281,8 @@ export function renderPartialToolCall(
     return `${name} <- ${toSingleLine(pid!.value)}${payloadSuffix}`;
   }
   if (name === "input_subagent") {
-    const desc = describedState(argsJson, final);
-    if (desc === "absent") return null;
+    const desc = describedState(argsJson, opts);
+    if (desc === "pending") return null;
     const sid = extractField(argsJson, "subagent_id");
     if (desc === "none" && sid === null) return null;
     const prompt = extractPartialStringField(argsJson, "prompt");

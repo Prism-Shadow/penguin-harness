@@ -123,8 +123,16 @@ describe("StreamRenderer", () => {
   it("renders one call line when the description arrives after the command", () => {
     const { stream, text } = collector();
     const r = new StreamRenderer(stream, t);
-    // Payload-first emission (models don't always honour schema order): the plain form must
-    // never reach the screen, or it would be stranded above the described one.
+    // The assembled schema carries the description argument, so the preview waits for it:
+    // with payload-first emission (models don't always honour schema order) the plain form
+    // must never reach the screen, or it would be stranded above the described one.
+    r.useToolSchemas([
+      {
+        name: "exec_command",
+        description: "run a command",
+        parameters: { type: "object", properties: { description: {}, cmd: {} } },
+      },
+    ]);
     r.handle(partialToolCall({ eventType: "start", name: "exec_command", toolCallId: "c9" }));
     r.handle(
       partialToolCall({
@@ -146,10 +154,41 @@ describe("StreamRenderer", () => {
     expect(stripAnsi(text())).toBe("[tool-c9] exec_command <- 列出当前目录的文件 ($ ls -la)\n");
   });
 
+  it("streams the command live when the schema has no description argument", () => {
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t);
+    // call_description switched off for this tool: nothing can supersede the plain form, so
+    // it streams as the arguments arrive rather than waiting for them to settle.
+    r.useToolSchemas([
+      {
+        name: "exec_command",
+        description: "run a command",
+        parameters: { type: "object", properties: { cmd: {} } },
+      },
+    ]);
+    r.handle(partialToolCall({ eventType: "start", name: "exec_command", toolCallId: "c7" }));
+    r.handle(
+      partialToolCall({ eventType: "delta", name: "", arguments: '{"cmd":"ls', toolCallId: "c7" }),
+    );
+    expect(stripAnsi(text())).toBe("[tool-c7] exec_command <- $ ls");
+    r.handle(
+      partialToolCall({ eventType: "delta", name: "", arguments: ' -la"}', toolCallId: "c7" }),
+    );
+    r.handle(partialToolCall({ eventType: "stop", name: "", toolCallId: "c7" }));
+    expect(stripAnsi(text())).toBe("[tool-c7] exec_command <- $ ls -la\n");
+  });
+
   it("still renders a call line whose arguments never settled", () => {
     const { stream, text } = collector();
     const r = new StreamRenderer(stream, t);
-    // Interrupted mid-arguments: withholding must not swallow the call entirely.
+    // Interrupted mid-arguments while awaiting a description: the call must not vanish.
+    r.useToolSchemas([
+      {
+        name: "exec_command",
+        description: "run a command",
+        parameters: { type: "object", properties: { description: {}, cmd: {} } },
+      },
+    ]);
     r.handle(partialToolCall({ eventType: "start", name: "exec_command", toolCallId: "c8" }));
     r.handle(
       partialToolCall({ eventType: "delta", name: "", arguments: '{"cmd":"sle', toolCallId: "c8" }),
