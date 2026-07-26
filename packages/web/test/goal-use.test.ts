@@ -14,7 +14,7 @@ describe("parseGoalTaskMessage", () => {
     expect(parseGoalTaskMessage(block(12))).toEqual({ round: 12, objective: "" });
   });
 
-  it("extracts and unescapes the objective (round 1's banner shows it)", () => {
+  it("extracts and unescapes the objective (every round's bubble shows it)", () => {
     const withObjective = block(
       1,
       "intro\n<objective>\nfix a &amp; b &lt;now&gt;\n</objective>\nrules",

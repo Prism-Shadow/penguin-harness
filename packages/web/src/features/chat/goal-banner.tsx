@@ -1,13 +1,11 @@
 /**
  * Goal-mode banners.
  *
- * - `GoalRoundBanner`: the per-round `<goal_task>` injected input collapsed into a one-line
- *   notice in the message stream (same treatment as the scheduled-task origin block; the
- *   Trace page shows the raw block). Round 1 instead renders the objective as a REGULAR
- *   user message bubble with the round notice tucked beneath it — the submission moment
- *   should read like any other message the user sent, and it is the only place the
- *   objective survives in the conversation once the goal ends and the live status banner
- *   (active-only on reload) is gone.
+ * - `GoalRoundBanner`: the per-round `<goal_task>` injected input rendered as a REGULAR
+ *   user message bubble (the system re-sends the user's request each round, so each round
+ *   reads like any other message the user sent) with a "Goal · round N" notice tucked
+ *   beneath it; the Trace page shows the raw block. A block whose objective can't be
+ *   parsed falls back to the one-line notice alone.
  * - `GoalStatusBanner`: the live goal card above the composer — objective excerpt, round
  *   count, token usage against the budget, and the terminal state once the run ends. The
  *   stop control is the regular abort (one signal spans the whole goal loop server-side).
@@ -19,8 +17,8 @@ import { GOAL_ICON, UNLIMITED_BUDGET } from "./goal-use";
 import type { GoalBannerState } from "./goal-use";
 
 export function GoalRoundBanner({ round, objective }: { round: number; objective?: string }) {
-  // Round 1 (objective present): a regular right-aligned user bubble (same classes as
-  // message-item's user_text rendering), with the round notice under the bubble.
+  // A regular right-aligned user bubble (same classes as message-item's user_text
+  // rendering), with the round notice under the bubble.
   if (objective !== undefined && objective !== "") {
     return (
       <div className="anim-msg my-4 flex flex-col items-end">

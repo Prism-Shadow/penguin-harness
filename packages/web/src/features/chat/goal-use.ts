@@ -25,9 +25,10 @@ function unescapeXmlText(input: string): string {
 /**
  * Recognizes a goal round's injected input: a message that **starts with** a `<goal_task>`
  * block whose first line carries `round: N`. Returns the round number plus the block's
- * objective (unescaped — round 1's banner shows it, so the user's submitted text stays
- * visible in the conversation even after the goal ends and the live banner is gone), or
- * null when the message isn't a goal block (rendered as normal user text then).
+ * objective (unescaped — every round renders it as a regular user bubble, so the user's
+ * submitted text stays visible in the conversation even after the goal ends and the live
+ * banner is gone), or null when the message isn't a goal block (rendered as normal user
+ * text then).
  */
 export function parseGoalTaskMessage(text: string): { round: number; objective: string } | null {
   const m = /^<goal_task>\nround: (\d+)\n[\s\S]*?<\/goal_task>/.exec(text);
