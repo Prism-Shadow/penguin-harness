@@ -1025,9 +1025,7 @@ export function ChatInput({
    * commits a valid draft — so typing a budget and clicking straight onto Send keeps it (the
    * Send mousedown closes the popover before the click lands). An INVALID draft refuses to
    * close: silently reverting would let the very next click fire the goal with the stale
-   * committed budget — fix the draft or cancel with Escape (handled on the chip container,
-   * so it cancels no matter which editor control has focus, bypassing this via
-   * setGoalBudgetOpen directly).
+   * committed budget — fix the draft or cancel with Escape (cancelGoalBudget below).
    */
   const setGoalBudgetEditorOpen = useCallback(
     (open: boolean) => {
@@ -1042,6 +1040,17 @@ export function ChatInput({
     },
     [goalBudgetText, goalBudgetDraft],
   );
+
+  /**
+   * Cancel the budget editor: close WITHOUT committing (reopening re-copies the committed
+   * value). Wired to the Dropdown's window-level Escape, so it is genuinely
+   * focus-independent — including after an invalid draft refused an outside-click close and
+   * focus already left the chip (e.g. sits in the objective textarea).
+   */
+  const cancelGoalBudget = useCallback(() => {
+    setGoalBudgetOpen(false);
+    textareaRef.current?.focus();
+  }, []);
 
   /** Commit only valid input; Enter and the check button share this path. */
   const saveGoalBudget = useCallback(() => {
@@ -1630,21 +1639,7 @@ export function ChatInput({
             {/* Goal-mode chip: the budget stays compact as a value button; its editor is a
                 fixed upward popover so it never covers the objective textarea below. */}
             {goalOn && (
-              <span
-                className="anim-pop flex max-w-full items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 text-sm text-gray-800 dark:bg-gray-800 dark:text-gray-200"
-                onKeyDown={(e) => {
-                  // Escape = cancel the budget editor from ANY of its controls (input, save
-                  // button, trigger): close without the commit-on-close of
-                  // setGoalBudgetEditorOpen — reopening re-copies the committed value.
-                  // stopPropagation keeps the Dropdown's window-level Escape (which would
-                  // commit) from double-handling it.
-                  if (e.key !== "Escape" || !goalBudgetOpen) return;
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setGoalBudgetOpen(false);
-                  textareaRef.current?.focus();
-                }}
-              >
+              <span className="anim-pop flex max-w-full items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 text-sm text-gray-800 dark:bg-gray-800 dark:text-gray-200">
                 <span className="flex shrink-0 items-center gap-1" title={S.chat.goalModeDesc}>
                   <GlyphIcon d={GOAL_ICON} size={13} className="text-gray-500 dark:text-gray-400" />
                   <span>{S.chat.goalMode}</span>
@@ -1656,6 +1651,7 @@ export function ChatInput({
                 <Dropdown
                   open={goalBudgetOpen}
                   setOpen={setGoalBudgetEditorOpen}
+                  onEscape={cancelGoalBudget}
                   className="min-w-0"
                   menuClass="bottom-full left-1/2 -ml-32 mb-2 w-64 max-w-[calc(100vw-2rem)] origin-bottom"
                   button={
@@ -1699,7 +1695,8 @@ export function ChatInput({
                         onChange={(e) => setGoalBudgetDraft(e.target.value)}
                         onFocus={(e) => e.currentTarget.select()}
                         onKeyDown={(e) => {
-                          // Escape is handled by the chip container (focus-independent cancel).
+                          // Escape is handled at the window level (Dropdown onEscape →
+                          // cancelGoalBudget), so it cancels no matter where focus sits.
                           if (e.key === "Enter") {
                             e.preventDefault();
                             e.stopPropagation();

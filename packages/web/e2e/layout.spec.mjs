@@ -155,7 +155,9 @@ test("layout: en draft + context gauge + mobile models", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Send", exact: true })).toBeDisabled();
   await page.getByPlaceholder(/Type a message/).click();
   await expect(budget).toBeVisible();
-  await budget.press("Escape");
+  // Escape is focus-independent: after the refused outside click, focus sits in the
+  // objective textarea — Escape must still cancel the editor from there.
+  await page.keyboard.press("Escape");
   await expect(recommittedBudget).toBeVisible();
 
   // Escape cancels from any editor control, not just the input: a valid uncommitted draft
