@@ -28,6 +28,7 @@ import { test, expect } from "@playwright/test";
 import { provisionAndLogin } from "./auth.mjs";
 
 const BASE = process.env.BASE_URL;
+const MOCK = process.env.MOCK_URL;
 const U = "layoutuser";
 const P = "password123";
 
@@ -256,7 +257,13 @@ test("layout: mobile chat dropdowns stay inside the viewport", async ({ page }) 
     data: {
       defaultModel: { provider: "custom", modelId: "claude-4-8" },
       models: [
-        { provider: "custom", modelId: "claude-4-8", apiKey: "sk-mock", contextWindow: 200000 },
+        {
+          provider: "custom",
+          modelId: "claude-4-8",
+          apiKey: "sk-mock",
+          baseUrl: MOCK,
+          contextWindow: 200000,
+        },
         { provider: "openai", modelId: "gpt-5.5", apiKey: "sk-mock2" },
         {
           provider: "custom",
@@ -289,6 +296,24 @@ test("layout: mobile chat dropdowns stay inside the viewport", async ({ page }) 
     expect(m.scrolled, `${name}: page not scrolled sideways`).toBe(0);
     const d = await docWidths(page);
     expect(d.scrollWidth, `${name}: no horizontal overflow`).toBeLessThanOrEqual(d.clientWidth);
+    // On-screen coordinates alone don't prove the panel is *painted*: an ancestor with a
+    // non-visible overflow (the composer toolbar scrolls horizontally on phones) clips it
+    // while leaving its rect intact. Hit-test a point inside the panel's **visible** area —
+    // the rect's intersection with the viewport, since a long menu may legitimately extend
+    // past the fold on a page that scrolls.
+    await expect(panel, `${name}: panel visible`).toBeInViewport();
+    const hit = await panel.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const top = Math.max(r.top, 0);
+      const bottom = Math.min(r.bottom, window.innerHeight);
+      if (bottom - top < 2) return "no visible area";
+      const x = Math.round(Math.max(r.left, 0) + Math.min(r.width / 2, 40));
+      const y = Math.round(top + Math.min((bottom - top) / 2, 20));
+      const hitEl = document.elementFromPoint(x, y);
+      if (!hitEl) return "nothing at the sampled point";
+      return el.contains(hitEl) || el === hitEl ? true : `covered by ${hitEl.tagName}`;
+    });
+    expect(hit, `${name}: panel not clipped by an ancestor`).toBe(true);
   };
   const open = async (label, name) => {
     await page.locator(`button[aria-label="${label}"]`).click();
@@ -329,19 +354,47 @@ test("layout: mobile chat dropdowns stay inside the viewport", async ({ page }) 
     await close();
   }
 
-  // Session state (bottom-docked composer, menus open upward): approval + skills render there
-  // too and share the left-anchored geometry; still at 390x844 from the loop above.
+  // Session state (bottom-docked composer, menus open upward). The composer toolbar scrolls
+  // horizontally at phone widths, so every picker in it must escape that clipping ancestor —
+  // checked idle **and** while a Task runs (an always-ask session parks on a pending
+  // approval), at the narrowest widths we support.
   const sess = await (
     await page.request.post(`${BASE}/api/projects/${projectId}/agents/default_agent/sessions`, {
-      data: { provider: "custom", modelId: "claude-4-8" },
+      data: { provider: "custom", modelId: "claude-4-8", approvalMode: "always-ask" },
     })
   ).json();
-  await page.goto(`${BASE}/chat/${sess.session.sessionId}`);
-  await page.getByPlaceholder(/Type a message/).waitFor();
-  await open("Approval mode", "approval @session");
-  await close();
-  await open("Skills", "skills @session");
-  await close();
+  const sessionPickers = ["Approval mode", "Skills", "More settings", "Thinking level"];
+  for (const vp of [
+    { width: 320, height: 640 },
+    { width: 375, height: 667 },
+  ]) {
+    await page.setViewportSize(vp);
+    await page.goto(`${BASE}/chat/${sess.session.sessionId}`);
+    await page.getByPlaceholder(/Type a message/).waitFor();
+    for (const label of sessionPickers) {
+      await open(label, `${label} @session ${vp.width}`);
+      await close();
+    }
+  }
+
+  // Running state: send a message, wait for the pending approval (the run stays running), then
+  // re-open every picker. The composer stays enabled for steering, so the row is at its
+  // busiest here — this is the state the toolbar overflowed in.
+  await page.getByPlaceholder(/Type a message/).fill("Help me set up @theme");
+  await page.locator('button[aria-label="Send"]').click();
+  await page.getByRole("button", { name: /^Allow$/ }).waitFor();
+  // Skills are deliberately locked mid-run; the rest must still open.
+  await expect(page.locator('button[aria-label="Skills"]')).toBeDisabled();
+  for (const label of ["Approval mode", "More settings", "Thinking level"]) {
+    await open(label, `${label} @running 375`);
+    await close();
+  }
+  // …and the toolbar itself still fits, with the merged Stop/Send button reachable.
+  const running = await docWidths(page);
+  expect(running.scrollWidth, "running toolbar: no horizontal overflow").toBeLessThanOrEqual(
+    running.clientWidth,
+  );
+  await expect(page.locator('button[aria-label="Stop"]')).toBeVisible();
 });
 
 test("layout: login — blank start, non-crossing traces, lang/theme controls", async ({ page }) => {

@@ -49,12 +49,7 @@
  * centering is decided by the page.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type {
-  ChangeEvent,
-  ClipboardEvent,
-  KeyboardEvent,
-  MouseEvent as ReactMouseEvent,
-} from "react";
+import type { ChangeEvent, ClipboardEvent, KeyboardEvent } from "react";
 import type {
   AgentSummary,
   ApprovalMode,
@@ -132,12 +127,11 @@ function ApprovalModeSelect({
     <Dropdown
       open={open}
       setOpen={setOpen}
-      menuClass={
-        // w-max: width exactly wraps the longest line (no wrapping within a line), avoiding an overly wide panel.
-        direction === "down"
-          ? "left-0 top-full mt-1 w-max max-w-[calc(100vw-2rem)] origin-top-left"
-          : "bottom-full left-0 mb-1 w-max max-w-[calc(100vw-2rem)] origin-bottom-left"
-      }
+      // w-max: width exactly wraps the longest line (no wrapping within a line), avoiding an
+      // overly wide panel. Placement is portal-driven (the toolbar scrolls horizontally on
+      // phones, which would otherwise clip the panel); only size classes belong here.
+      menuClass="w-max"
+      portal={{ direction, align: "left" }}
       button={
         // Button styling matches the model selector (h-8 / rounded-md / solid hover background).
         <button
@@ -382,12 +376,11 @@ function ModelSelect({
     <Dropdown
       open={open}
       setOpen={setOpen}
-      // right-0 docks the panel's right edge to the button, which itself sits ~4.5rem in from
-      // the viewport's right edge (page + card padding, gap, send button) — so the width clamp
-      // must reserve that anchor offset too, or the w-max panel's LEFT edge runs off-screen on
-      // phones (~34px off-screen at 375px with a 100vw-2rem clamp). Desktop is untouched:
-      // w-max stays far below the clamp there.
-      menuClass="right-0 top-full mt-1 w-max min-w-56 max-w-[calc(100vw-6rem)] origin-top-right"
+      // The panel's right edge docks to the button; portal placement then clamps both edges
+      // inside the viewport, so a w-max panel can no longer run off-screen on phones (it used
+      // to need a hand-tuned width clamp reserving the anchor offset).
+      menuClass="w-max min-w-56 origin-top-right"
+      portal={{ direction: "down", align: "right" }}
       button={
         <button
           type="button"
@@ -474,11 +467,8 @@ function ThinkingLevelSelect({
     <Dropdown
       open={open}
       setOpen={setOpen}
-      menuClass={
-        direction === "down"
-          ? "right-0 top-full mt-1 w-max min-w-36 origin-top-right"
-          : "bottom-full right-0 mb-1 w-max min-w-36 origin-bottom-right"
-      }
+      menuClass="w-max min-w-36"
+      portal={{ direction, align: "right" }}
       button={
         <button
           type="button"
@@ -554,9 +544,6 @@ function initialSteerMode(): SteerMode {
 /** Sliders icon (24×24 line path) for the More-settings popover button. */
 const SLIDERS_ICON = "M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6";
 
-/** More-settings panel width cap in px (compact rows; genuinely fits a 320px viewport with room to spare). */
-const MORE_SETTINGS_PANEL_MAX_W = 176;
-
 /**
  * "More settings" popover (bottom toolbar): a compact icon button opening a small panel of
  * setting rows — deliberately extensible, future toggles land here as additional rows. The
@@ -564,11 +551,10 @@ const MORE_SETTINGS_PANEL_MAX_W = 176;
  * follow-up; the full explanation lives in each pill's hover title (not rendered by
  * default). Never disabled — the preference is settable before and during a run.
  *
- * Docking is measured on each open (same pattern as the draft Workspace picker): the
- * trigger sits mid-toolbar, so a statically left-anchored panel can cross a phone
- * viewport's right edge — a max-width clamp alone can't save it (it caps the width, not the
- * position). Left anchoring is kept whenever the panel fits; otherwise the panel docks to
- * the trigger's right edge, capping to the available room.
+ * The panel renders through the shared portal layer (Dropdown's `portal`): the toolbar
+ * scrolls horizontally on phones, and a panel anchored inside a scrolling container would be
+ * clipped away — the portal also clamps both edges into the viewport, which is what the old
+ * hand-measured docking did.
  */
 function MoreSettingsSelect({
   steerMode,
@@ -580,26 +566,6 @@ function MoreSettingsSelect({
   direction?: "up" | "down";
 }) {
   const [open, setOpen] = useState(false);
-  const [menuDock, setMenuDock] = useState<{ right: boolean; maxWidth?: number }>({
-    right: false,
-  });
-  const toggle = (e: ReactMouseEvent<HTMLButtonElement>) => {
-    const next = !open;
-    if (next) {
-      const r = e.currentTarget.getBoundingClientRect();
-      const margin = 12; // breathing room against the viewport edge
-      const roomRight = window.innerWidth - margin - r.left; // room for a left-anchored panel
-      const roomLeft = r.right - margin; // room for a right-anchored panel
-      if (roomRight >= MORE_SETTINGS_PANEL_MAX_W) setMenuDock({ right: false });
-      else if (roomLeft > roomRight)
-        setMenuDock({
-          right: true,
-          ...(roomLeft < MORE_SETTINGS_PANEL_MAX_W ? { maxWidth: roomLeft } : {}),
-        });
-      else setMenuDock({ right: false, maxWidth: roomRight });
-    }
-    setOpen(next);
-  };
   // Compact pill (small-control sizing, sized to its label): the explanation is hover-only
   // via title, per the toolbar's "full meaning on hover" convention.
   const modeButton = (mode: SteerMode, label: string, hint: string) => (
@@ -617,27 +583,18 @@ function MoreSettingsSelect({
       {label}
     </button>
   );
-  const dockX = menuDock.right ? "right-0" : "left-0";
-  const origin =
-    direction === "down"
-      ? menuDock.right
-        ? "top-full mt-1 origin-top-right"
-        : "top-full mt-1 origin-top-left"
-      : menuDock.right
-        ? "bottom-full mb-1 origin-bottom-right"
-        : "bottom-full mb-1 origin-bottom-left";
   return (
     <Dropdown
       open={open}
       setOpen={setOpen}
-      menuClass={`${dockX} ${origin} w-max max-w-44`}
-      {...(menuDock.maxWidth !== undefined ? { menuStyle: { maxWidth: menuDock.maxWidth } } : {})}
+      menuClass="w-max max-w-44"
+      portal={{ direction, align: "left" }}
       button={
         <button
           type="button"
           aria-label={S.chat.moreSettings}
           title={S.chat.moreSettings}
-          onClick={toggle}
+          onClick={() => setOpen((v) => !v)}
           className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
         >
           <GlyphIcon d={SLIDERS_ICON} size={15} />
@@ -693,18 +650,10 @@ function SkillSelect({
     <Dropdown
       open={open}
       setOpen={setOpen}
-      menuClass={
-        // As wide as reasonably possible so descriptions stay readable. The panel is
-        // left-anchored to a button ~8rem into the toolbar (icon-only card; ~17rem once the
-        // card is wide enough for button labels, @md), so a plain 100vw clamp still let the
-        // right edge overrun the viewport on phones (~92px at 375px — the search box's
-        // autofocus then dragged the whole page sideways); the clamp must reserve the anchor
-        // offset plus a margin. Desktop is untouched: the fixed 26rem width stays below both
-        // clamps there.
-        direction === "down"
-          ? "left-0 top-full mt-1 w-[26rem] max-w-[calc(100vw-10rem)] @md:max-w-[calc(100vw-17rem)] origin-top-left"
-          : "bottom-full left-0 mb-1 w-[26rem] max-w-[calc(100vw-10rem)] @md:max-w-[calc(100vw-17rem)] origin-bottom-left"
-      }
+      // As wide as reasonably possible so descriptions stay readable; portal placement clamps
+      // it to the viewport, so the old hand-tuned anchor-offset clamps are no longer needed.
+      menuClass="w-[26rem]"
+      portal={{ direction, align: "left" }}
       button={
         <button
           type="button"
