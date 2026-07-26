@@ -48,10 +48,16 @@ describe("getMessages", () => {
     expect(getMessages("zh").langInvalid("fr")).toContain("fr");
   });
 
-  it("header order is agent → workspace → model", () => {
-    const h = getMessages("en").header("run", "ag", "/ws", "mod");
-    expect(h.indexOf("agent=ag")).toBeLessThan(h.indexOf("workspace=/ws"));
-    expect(h.indexOf("workspace=/ws")).toBeLessThan(h.indexOf("model=mod"));
+  it("header shows the version and Agent / Workspace / Model on their own lines", () => {
+    for (const lang of ["en", "zh"] as const) {
+      const lines = getMessages(lang).header("run", "1.2.3", "ag", "/ws", "mod").split("\n");
+      expect(lines).toHaveLength(4);
+      expect(lines[0]).toContain("run");
+      expect(lines[0]).toContain("v1.2.3");
+      expect(lines[1]).toContain("ag");
+      expect(lines[2]).toContain("/ws");
+      expect(lines[3]).toContain("mod");
+    }
   });
 });
 

@@ -21,13 +21,15 @@
  * - when the head of the queue is held, the holder's own subsequent messages are let
  *   through first (preserving in-segment order), avoiding deadlock.
  *
- * **Pairing tags**: a tool call and its output may be separated by several segments, so
- * both are tagged with a shared word for pairing: the call line reads
- * `[tool-653] $ cmd`, the output line `[tool-653] >> ...` (653 being the last 3
- * characters of tool_call_id); nested (subagent) tools use
- * `[agent-f2a-tool-653] $ cmd` (f2a being the last 3 characters of the direct child
- * Session id). Approval lines carry no tag (they immediately follow the matching call
- * line, so context makes the pairing clear): `[approved]`.
+ * **Call/output pairing**: both sides carry the same `[tool-653] <toolName>` prefix
+ * (653 being the last 3 characters of tool_call_id) — the call line reads
+ * `[tool-653] exec_command <- $ cmd`, each output line `[tool-653] exec_command -> ...`;
+ * nested (subagent) tools use `[agent-f2a-tool-653] …` (f2a being the last 3 characters
+ * of the direct child Session id). The output-side tool name is resolved from the
+ * preceding call via a tool_call_id → name map (the call always precedes its output; if
+ * no call was seen, the bare `[tool-653]` tag remains). Approval lines carry no tag
+ * (they immediately follow the matching call line, so context makes the pairing clear):
+ * `[approved]`.
  *
  * **Nested sub-session messages** (those carrying an origin) are handled separately:
  * child tool calls (so the user can see what the subagent is calling before approval)
@@ -52,19 +54,34 @@ import type {
   PartialToolCallPayload,
   PartialToolCallOutputPayload,
   RequestEndPayload,
+  SessionMetaPayload,
   TokenUsagePayload,
   ToolCallPayload,
+  ToolDefinition,
 } from "@prismshadow/penguin-core";
-import { renderPartialToolCall } from "./tool-render.js";
+import { renderFileToolApprovalPayload, renderPartialToolCall } from "./tool-render.js";
 import { defaultMessages } from "./i18n.js";
 import type { Messages } from "./i18n.js";
 
 const DIM = "\x1b[2m";
+const GREEN = "\x1b[32m";
+const RED = "\x1b[31m";
 const CYAN = "\x1b[36m";
 const RESET = "\x1b[0m";
 
 export function dim(text: string): string {
   return `${DIM}${text}${RESET}`;
+}
+
+/** The two file tools whose outputs carry git-style diffs; their `+`/`-`/`@@` lines get colored. */
+const DIFF_OUTPUT_TOOLS = new Set(["edit_file", "write_file"]);
+
+/** Color for one diff-output line, picked from its first character (null = plain). */
+function diffLineColor(firstChar: string | undefined): string | null {
+  if (firstChar === "+") return GREEN;
+  if (firstChar === "-") return RED;
+  if (firstChar === "@") return DIM;
+  return null;
 }
 
 /** Colors a tool call line cyan, distinguishing it from body text/thinking (review comment #5). */
@@ -124,6 +141,15 @@ export function formatAbort(p: AbortPayload, t: Messages): string {
 }
 
 /**
+ * The Session's assembled tool schemas, read off its `session_meta` — the definitions
+ * actually exposed to the model, so the per-tool `call_description` switch is already
+ * applied. Feeds `StreamRenderer.useToolSchemas`.
+ */
+export function sessionMetaTools(session: { metaMessage: OmniMessage }): readonly ToolDefinition[] {
+  return (session.metaMessage.payload as SessionMetaPayload).tools ?? [];
+}
+
+/**
  * Statically renders resumed history messages (`--resume`: full-message semantics, no
  * partial_*, including interrupted messages and their markers). Uses the
  * same color scheme as streaming rendering: user input `> `, dim thinking, cyan tool
@@ -135,6 +161,10 @@ export function renderHistory(
   out: NodeJS.WritableStream,
   t: Messages = defaultMessages(),
 ): void {
+  // tool_call_id -> tool name (keyed with the origin chain: parent/child ids may collide),
+  // so output lines can be labeled with the tool name of their preceding call.
+  const toolNames = new Map<string, string>();
+  const nameKey = (msg: OmniMessage, id: string): string => `${msg.origin?.join("/") ?? ""}:${id}`;
   for (const msg of messages) {
     if (isEventMessage(msg)) {
       const p = msg.payload as { type?: string } & AbortPayload;
@@ -167,19 +197,31 @@ export function renderHistory(
         out.write(`${dim(p.thinking ?? "")}${marker}\n`);
         break;
       case "tool_call": {
+        if (p.name) toolNames.set(nameKey(msg, p.tool_call_id ?? ""), p.name);
         const preview =
-          renderPartialToolCall(p.name ?? "", p.arguments ?? "") ?? `${p.name} ${p.arguments}`;
+          renderPartialToolCall(p.name ?? "", p.arguments ?? "", { final: true }) ??
+          `${p.name} ${p.arguments}`;
         out.write(`${cyan(`[${callTag(p.tool_call_id ?? "")}] ${preview}`)}${marker}\n`);
         break;
       }
       case "tool_call_output": {
-        const tag = callTag(p.tool_call_id ?? "");
+        // Output lines carry the pairing tag plus the tool name (the bare tag when the
+        // transcript has no matching call); file-tool diff lines are colored like git's.
+        const tag = `[${callTag(p.tool_call_id ?? "")}]`;
+        const name = toolNames.get(nameKey(msg, p.tool_call_id ?? ""));
+        const label = name ? `${tag} ${name}` : tag;
+        const colorDiff = name !== undefined && DIFF_OUTPUT_TOOLS.has(name);
         for (const line of (p.output ?? "").split("\n")) {
-          out.write(`${DIM}[${tag}] >> ${RESET}${line}\n`);
+          const color = colorDiff ? diffLineColor(line[0]) : null;
+          out.write(
+            color
+              ? `${DIM}${label} -> ${RESET}${color}${line}${RESET}\n`
+              : `${DIM}${label} -> ${RESET}${line}\n`,
+          );
         }
         // Attached images aren't rendered by the terminal; print one placeholder line per image.
         for (const _ of p.images ?? []) {
-          out.write(`${DIM}[${tag}] >> [image]${RESET}\n`);
+          out.write(`${DIM}${label} -> [image]${RESET}\n`);
         }
         break;
       }
@@ -238,6 +280,22 @@ export class StreamRenderer {
   private inDim = false;
   /** Whether tool-call output is at the start of a line (decides whether the gutter needs to be written). */
   private toolOutLineStart = true;
+
+  /**
+   * tool_call_id -> tool name for the current task's parent-session calls (nested tool
+   * outputs are not gutter-rendered), so output lines can be prefixed with the tool name
+   * of the call that produced them. Populated from partial/complete call messages (the
+   * call always precedes its output); cleared with the other per-task registrations.
+   */
+  private toolNames = new Map<string, string>();
+  /**
+   * Names of the tools whose assembled schema carries the `description` argument (from
+   * `session_meta.tools`, i.e. after the per-tool `call_description` switch has been
+   * applied). Decides the preview path before a call's arguments stream: awaiting the
+   * description, or streaming the plain form right away (see tool-render.ts). An unknown
+   * tool falls back to "no description".
+   */
+  private describedTools = new Set<string>();
   /** Buffer for partial_tool_call; each delta streams out the newly appended suffix of the preview. */
   private partialToolCalls = new Map<
     string,
@@ -318,6 +376,21 @@ export class StreamRenderer {
   beginUserPrompt(toolCall?: OmniMessage<ToolCallPayload>): void {
     if (toolCall) this.ensureAdjacentCallLine(toolCall);
     this.finishLine();
+    // File-tool approvals: the one-line preview shows only the (shortened) path, but the
+    // user is approving a concrete rewrite — print the decoded payload
+    // (old_string/new_string/content), bounded with an explicit elision note, right before
+    // the prompt.
+    if (toolCall) {
+      const payload = renderFileToolApprovalPayload(
+        toolCall.payload.name,
+        toolCall.payload.arguments,
+      );
+      if (payload !== null) {
+        for (const line of payload.split("\n")) this.out.write(`${dim(line)}\n`);
+        // lastLineKey stays on the call's key: the payload lines belong to this call, so
+        // the later noteApprovalDecision must not re-render the call line as "not adjacent".
+      }
+    }
     this.promptActive = true;
     this.promptKey = toolCall
       ? this.callLineKey(toolCall.payload.tool_call_id, toolCall.origin)
@@ -384,7 +457,11 @@ export class StreamRenderer {
     key: string,
   ): void {
     this.ensuredCallLines.add(key);
-    const preview = renderPartialToolCall(p.name, p.arguments) ?? `${p.name} ${p.arguments}`;
+    // Parent-session calls feed the output-gutter name map (nested outputs are not
+    // gutter-rendered, and a child id could collide with a parent id).
+    if (!origin || origin.length === 0) this.toolNames.set(p.tool_call_id, p.name);
+    const preview =
+      renderPartialToolCall(p.name, p.arguments, { final: true }) ?? `${p.name} ${p.arguments}`;
     this.finishLine();
     this.out.write(`${cyan(`[${callTag(p.tool_call_id, origin)}] ${preview}`)}\n`);
     this.lastLineKey = key;
@@ -500,7 +577,14 @@ export class StreamRenderer {
         case "partial_tool_call_output":
           this.handlePartialToolOutput(payload as PartialToolCallOutputPayload);
           return;
-        // Complete (non-streaming) model_msg is never rendered (including image_url/inline_*); the content has already been shown by partial_*.
+        // Complete (non-streaming) model_msg is never rendered (including image_url/inline_*);
+        // the content has already been shown by partial_*. A complete tool_call still feeds
+        // the name map so its output gutter can carry the tool name.
+        case "tool_call": {
+          const p = payload as ToolCallPayload;
+          this.toolNames.set(p.tool_call_id, p.name);
+          return;
+        }
         default:
           return;
       }
@@ -603,7 +687,26 @@ export class StreamRenderer {
       }
       return;
     }
-    // session_meta: not rendered.
+    // session_meta: not rendered, but its tool list settles each tool's preview path.
+    if (msg.type === "session_meta") {
+      this.useToolSchemas((msg.payload as SessionMetaPayload).tools);
+    }
+  }
+
+  /**
+   * Registers the Session's assembled tool schemas (`session_meta.tools`), which decide each
+   * tool's preview path before its arguments stream (see `describedTools`). The host calls
+   * this as soon as the Session exists; a `session_meta` flowing through the stream (resume,
+   * sub-sessions) registers the same way.
+   */
+  useToolSchemas(tools: readonly ToolDefinition[]): void {
+    for (const tool of tools) {
+      const properties = (tool.parameters as { properties?: Record<string, unknown> } | undefined)
+        ?.properties;
+      if (properties && Object.hasOwn(properties, "description"))
+        this.describedTools.add(tool.name);
+      else this.describedTools.delete(tool.name);
+    }
   }
 
   /**
@@ -677,6 +780,25 @@ export class StreamRenderer {
     }
   }
 
+  /**
+   * Renders a call line whose preview was withheld for the whole stream (the arguments never
+   * settled — e.g. the turn was interrupted mid-arguments — so a description could still have
+   * arrived, see tool-render.ts). Called once at `stop` with the fragment marked final, so an
+   * in-flight call is never left invisible.
+   */
+  private renderWithheldCallLine(
+    toolCallId: string,
+    partial: { name: string; arguments: string },
+  ): void {
+    const key = this.callLineKey(toolCallId);
+    if (this.ensuredCallLines.has(key)) return;
+    const preview = renderPartialToolCall(partial.name, partial.arguments, { final: true });
+    if (preview === null) return;
+    this.finishLine();
+    this.out.write(`${cyan(`[${callTag(toolCallId)}] ${preview}`)}\n`);
+    this.lastLineKey = key;
+  }
+
   private handlePartialToolCall(p: PartialToolCallPayload): void {
     // The call line was already rendered in place from the complete message at approval time: skip the whole late-arriving streaming copy (clean up the buffer on stop).
     if (this.ensuredCallLines.has(this.callLineKey(p.tool_call_id))) {
@@ -689,13 +811,18 @@ export class StreamRenderer {
       partial = { name: p.name, arguments: "", lastPreview: "" };
       this.partialToolCalls.set(p.tool_call_id, partial);
     }
-    if (p.name) partial.name = p.name;
+    if (p.name) {
+      partial.name = p.name;
+      // Remember the name for this call's output gutter (`<name> -> …`).
+      this.toolNames.set(p.tool_call_id, p.name);
+    }
     if (p.arguments) {
       partial.arguments += p.arguments;
     }
 
     if (p.event_type === "stop") {
       if (partial.lastPreview) this.finishLine();
+      else this.renderWithheldCallLine(p.tool_call_id, partial);
       this.partialToolCalls.delete(p.tool_call_id);
       return;
     }
@@ -703,7 +830,9 @@ export class StreamRenderer {
     if (!p.arguments) return;
 
     if (this.inDim) this.finishLine();
-    const preview = renderPartialToolCall(partial.name, partial.arguments);
+    const preview = renderPartialToolCall(partial.name, partial.arguments, {
+      expectDescription: this.describedTools.has(partial.name),
+    });
     if (preview === null) return;
 
     // The line starts with a pairing tag [tool-<last 3 chars of id>], matching the output line that follows.
@@ -731,40 +860,59 @@ export class StreamRenderer {
       return;
     }
     if (this.inDim) this.finishLine();
-    if (p.output) this.writeToolOutput(p.output, callTag(p.tool_call_id));
+    const label = this.outputLabel(p.tool_call_id);
+    const name = this.toolNames.get(p.tool_call_id);
+    const colorDiff = name !== undefined && DIFF_OUTPUT_TOOLS.has(name);
+    if (p.output) this.writeToolOutput(p.output, label, colorDiff);
     // Image delta (carried whole in a single delta): the terminal doesn't render the
-    // image itself, so print one placeholder line per image, using the same pairing tag
-    // as the output gutter.
+    // image itself, so print one placeholder line per image, using the same gutter label
+    // as the text output.
     if (p.images && p.images.length > 0) {
       this.finishLine();
-      const tag = callTag(p.tool_call_id);
       for (const _ of p.images) {
-        this.out.write(`${DIM}[${tag}] >> [image]${RESET}\n`);
+        this.out.write(`${DIM}${label} -> [image]${RESET}\n`);
       }
       this.lastLineKey = null;
     }
   }
 
+  /** Output-gutter label: the `[tool-xxx]` pairing tag plus the tool name of the preceding call (the bare tag when no call was seen). */
+  private outputLabel(toolCallId: string): string {
+    const tag = `[${callTag(toolCallId)}]`;
+    const name = this.toolNames.get(toolCallId);
+    return name ? `${tag} ${name}` : tag;
+  }
+
   /**
    * Writes tool-call **output** line by line, each line starting with the dim gutter
-   * `[tool-<last 3 chars of id>] >> `, paired with the call line (cyan `[tool-xxx] $
-   * cmd`). Streaming chunks arrive incrementally; whether to write the gutter is
-   * decided by the current line-start state.
+   * `[tool-xxx] <toolName> -> ` (the same prefix as the call line, cyan
+   * `[tool-xxx] <name> <- …`; the bare tag when no call was seen). Streaming chunks
+   * arrive incrementally; whether to write the gutter is decided by the current
+   * line-start state.
    */
-  private writeToolOutput(chunk: string, tag: string): void {
+  private writeToolOutput(chunk: string, label: string, colorDiff: boolean): void {
     let i = 0;
     while (i < chunk.length) {
+      let lineColor: string | null = null;
       if (this.toolOutLineStart) {
-        this.out.write(`${DIM}[${tag}] >> ${RESET}`);
+        this.out.write(`${DIM}${label} -> ${RESET}`);
         this.toolOutLineStart = false;
         this.inLine = true;
+        // Diff coloring keys off the line's first character. File-tool outputs arrive as
+        // one delta of whole lines, so the first character is always in this chunk; a
+        // line continued from a previous chunk stays plain.
+        if (colorDiff) lineColor = diffLineColor(chunk[i]);
       }
       const nl = chunk.indexOf("\n", i);
+      const end = nl === -1 ? chunk.length : nl;
+      const segment = chunk.slice(i, end);
+      if (segment) {
+        this.out.write(lineColor ? `${lineColor}${segment}${RESET}` : segment);
+      }
       if (nl === -1) {
-        this.out.write(chunk.slice(i));
         i = chunk.length;
       } else {
-        this.out.write(chunk.slice(i, nl + 1));
+        this.out.write("\n");
         this.toolOutLineStart = true;
         this.inLine = false;
         i = nl + 1;
@@ -833,6 +981,7 @@ export class StreamRenderer {
     this.ensuredCallLines.clear();
     this.renderedDecisions.clear();
     this.partialToolCalls.clear();
+    this.toolNames.clear();
   }
 
   /**

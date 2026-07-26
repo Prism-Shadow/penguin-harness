@@ -13,8 +13,8 @@
  * Docs: /docs/cli § "penguin run".
  */
 import type { Command } from "commander";
-import { createAgent, userText } from "@prismshadow/penguin-core";
-import { StreamRenderer } from "../render.js";
+import { createAgent, userText, VERSION } from "@prismshadow/penguin-core";
+import { StreamRenderer, sessionMetaTools } from "../render.js";
 import { runTask } from "../task-loop.js";
 import { denyActivePrompt, resolveApprovalMode } from "../approval.js";
 import type { Messages } from "../i18n.js";
@@ -53,7 +53,9 @@ export function registerRunCommand(program: Command, t: Messages): void {
       });
 
       const out = process.stdout;
-      out.write(`${t.header("run", agent.state.agentId, session.workspaceDir, session.modelId)}\n`);
+      out.write(
+        `${t.header("run", VERSION, agent.state.agentId, session.workspaceDir, session.modelId)}\n`,
+      );
 
       const controller = new AbortController();
       const onSigint = () => {
@@ -65,6 +67,8 @@ export function registerRunCommand(program: Command, t: Messages): void {
       process.on("SIGINT", onSigint);
 
       const renderer = new StreamRenderer(out, t);
+      // The assembled tool schemas decide each tool's call-line preview path (see render.ts).
+      renderer.useToolSchemas(sessionMetaTools(session));
       try {
         const result = await runTask(session, [userText(opts.message)], {
           mode,

@@ -33,7 +33,9 @@ export const EXEC_COMMAND_NAME = "exec_command";
  * exec_command built-in tool: parses arguments, resolves workdir, and delegates to
  * `CommandSessionManager` to spawn the process and collect output.
  * `definition` is overridden by Environment at construction time with the matching entry
- * from ToolConfig (description/parameters/permission/limits).
+ * from ToolConfig (description/parameters/permission/limits); the runtime tool name and
+ * self-referential messages follow `definition.name` (the config entry is the single
+ * source of truth for naming).
  * `services.commandSessions` is injected by Environment (shares the same registry with
  * input_command).
  */
@@ -43,7 +45,7 @@ export function createExecCommandTool(
 ): BuiltinTool {
   const manager = services?.commandSessions;
   return {
-    name: EXEC_COMMAND_NAME,
+    name: definition.name,
     definition,
     async *execute(
       args: Record<string, unknown>,
@@ -54,13 +56,13 @@ export function createExecCommandTool(
         partialToolCallOutput({ eventType: "delta", output, toolCallId });
 
       if (!manager) {
-        yield delta("[exec_command unavailable: no command session manager configured]");
+        yield delta(`[${definition.name} unavailable: no command session manager configured]`);
         return { stopReason: "failed" };
       }
 
       const cmd = args["cmd"];
       if (typeof cmd !== "string" || cmd.length === 0) {
-        yield delta('Missing required argument "cmd" for exec_command.');
+        yield delta(`Missing required argument "cmd" for ${definition.name}.`);
         return { stopReason: "failed" };
       }
       // workdir defaults to workspaceDir; relative paths are resolved against workspaceDir.

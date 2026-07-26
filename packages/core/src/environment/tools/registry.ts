@@ -4,7 +4,7 @@
  * Environment uses this table to assemble entries from ToolConfig into BuiltinTool instances:
  * a tool is only assembled if its name is in the table (i.e. a supported built-in tool); the
  * description/parameters/permission/maxOutputLength from config are injected into the tool's
- * `definition` by each factory.
+ * `definition` by each factory, and the runtime tool name follows the config entry's name.
  * When adding a new built-in tool, just register one factory entry here — no changes to
  * Environment needed.
  *
@@ -13,6 +13,9 @@
  */
 import type { EnvironmentServices, ToolDefinitionConfig } from "../../interfaces.js";
 import type { BuiltinTool } from "./types.js";
+import { READ_FILE_NAME, createReadFileTool } from "./read-file.js";
+import { EDIT_FILE_NAME, createEditFileTool } from "./edit-file.js";
+import { WRITE_FILE_NAME, createWriteFileTool } from "./write-file.js";
 import { EXEC_COMMAND_NAME, createExecCommandTool } from "./exec-command.js";
 import { INPUT_COMMAND_NAME, createInputCommandTool } from "./input-command.js";
 import { SUBAGENT_NAME, createSubagentTool } from "./run-subagent.js";
@@ -32,6 +35,9 @@ export type BuiltinToolFactory = (
 
 /** Tool name -> factory. */
 export const BUILTIN_TOOL_FACTORIES: Record<string, BuiltinToolFactory> = {
+  [READ_FILE_NAME]: createReadFileTool,
+  [EDIT_FILE_NAME]: createEditFileTool,
+  [WRITE_FILE_NAME]: createWriteFileTool,
   [EXEC_COMMAND_NAME]: createExecCommandTool,
   [INPUT_COMMAND_NAME]: createInputCommandTool,
   [SUBAGENT_NAME]: createSubagentTool,
