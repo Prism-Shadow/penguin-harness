@@ -17,16 +17,26 @@ export const UNLIMITED_BUDGET = -1;
 export const GOAL_ICON =
   "M21 12A9 9 0 1 1 12 3M17 12A5 5 0 1 1 12 7M12 12L15 9V5L18 2V6H22L19 9H15";
 
+/** Reverse of core's escapeXmlText. `&amp;` must go LAST, or an escaped literal `&amp;lt;` would double-unescape into `<`. */
+function unescapeXmlText(input: string): string {
+  return input.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+}
+
 /**
  * Recognizes a goal round's injected input: a message that **starts with** a `<goal_task>`
- * block whose first line carries `round: N`. Returns the round number, or null when the
- * message isn't a goal block (rendered as normal user text then).
+ * block whose first line carries `round: N`. Returns the round number plus the block's
+ * objective (unescaped — round 1's banner shows it, so the user's submitted text stays
+ * visible in the conversation even after the goal ends and the live banner is gone), or
+ * null when the message isn't a goal block (rendered as normal user text then).
  */
-export function parseGoalTaskMessage(text: string): { round: number } | null {
+export function parseGoalTaskMessage(text: string): { round: number; objective: string } | null {
   const m = /^<goal_task>\nround: (\d+)\n[\s\S]*?<\/goal_task>/.exec(text);
   if (!m) return null;
   const round = Number(m[1]);
-  return Number.isInteger(round) && round > 0 ? { round } : null;
+  if (!Number.isInteger(round) || round <= 0) return null;
+  // The escaped objective cannot contain a literal `</objective>`, so non-greedy is exact.
+  const obj = /<objective>\n([\s\S]*?)\n<\/objective>/.exec(m[0]);
+  return { round, objective: obj ? unescapeXmlText(obj[1]!) : "" };
 }
 
 /** What the goal banner shows (fed from goal_* server events, or the goal_state row on load). */

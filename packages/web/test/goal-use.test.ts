@@ -10,8 +10,26 @@ describe("parseGoalTaskMessage", () => {
     `<goal_task>\nround: ${round}\n${body}\n</goal_task>`;
 
   it("recognizes a goal round block and extracts the round", () => {
-    expect(parseGoalTaskMessage(block(1))).toEqual({ round: 1 });
-    expect(parseGoalTaskMessage(block(12))).toEqual({ round: 12 });
+    expect(parseGoalTaskMessage(block(1))).toEqual({ round: 1, objective: "" });
+    expect(parseGoalTaskMessage(block(12))).toEqual({ round: 12, objective: "" });
+  });
+
+  it("extracts and unescapes the objective (round 1's banner shows it)", () => {
+    const withObjective = block(
+      1,
+      "intro\n<objective>\nfix a &amp; b &lt;now&gt;\n</objective>\nrules",
+    );
+    expect(parseGoalTaskMessage(withObjective)).toEqual({
+      round: 1,
+      objective: "fix a & b <now>",
+    });
+    // Multi-line objectives come back intact; &amp; unescapes LAST (an escaped literal
+    // `&amp;lt;` must yield `&lt;`, not `<`).
+    const multiline = block(2, "<objective>\nline one\nline two &amp;lt;\n</objective>");
+    expect(parseGoalTaskMessage(multiline)).toEqual({
+      round: 2,
+      objective: "line one\nline two &lt;",
+    });
   });
 
   it("rejects non-goal messages, mid-text blocks, and malformed rounds", () => {

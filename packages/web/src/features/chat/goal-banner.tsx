@@ -3,7 +3,10 @@
  *
  * - `GoalRoundBanner`: the per-round `<goal_task>` injected input collapsed into a one-line
  *   notice in the message stream (same treatment as the scheduled-task origin block; the
- *   Trace page shows the raw block).
+ *   Trace page shows the raw block). Round 1 additionally carries the objective text — the
+ *   submission moment must show what the user asked for, and it is the only place the
+ *   objective survives in the conversation once the goal ends and the live status banner
+ *   (active-only on reload) is gone.
  * - `GoalStatusBanner`: the live goal card above the composer — objective excerpt, round
  *   count, token usage against the budget, and the terminal state once the run ends. The
  *   stop control is the regular abort (one signal spans the whole goal loop server-side).
@@ -14,12 +17,19 @@ import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { GOAL_ICON, UNLIMITED_BUDGET } from "./goal-use";
 import type { GoalBannerState } from "./goal-use";
 
-export function GoalRoundBanner({ round }: { round: number }) {
+export function GoalRoundBanner({ round, objective }: { round: number; objective?: string }) {
   return (
-    <p className="anim-msg my-2 flex w-fit items-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
-      <GlyphIcon d={GOAL_ICON} className="text-gray-400 dark:text-gray-500" />
-      {S.chat.goalRoundBanner(round)}
-    </p>
+    <div className="anim-msg my-2 w-fit rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
+      <p className="flex items-center gap-2">
+        <GlyphIcon d={GOAL_ICON} className="shrink-0 text-gray-400 dark:text-gray-500" />
+        {S.chat.goalRoundBanner(round)}
+      </p>
+      {objective !== undefined && objective !== "" && (
+        <p className="mt-1.5 whitespace-pre-wrap break-words text-sm text-gray-800 dark:text-gray-200">
+          {objective}
+        </p>
+      )}
+    </div>
   );
 }
 

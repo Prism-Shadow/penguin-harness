@@ -103,7 +103,15 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
       // A goal round's injected input (the whole message is the <goal_task> block): collapsed
       // into a one-line round notice (the Trace page shows the raw block).
       const goalRound = parseGoalTaskMessage(item.text);
-      if (goalRound) return <GoalRoundBanner round={goalRound.round} />;
+      // Round 1 carries the objective (the submission moment; also the objective's only home
+      // in the conversation after the goal ends); later rounds stay a one-line notice.
+      if (goalRound)
+        return (
+          <GoalRoundBanner
+            round={goalRound.round}
+            {...(goalRound.round === 1 ? { objective: goalRound.objective } : {})}
+          />
+        );
       // Source block for a scheduled-task trigger: collapsed into a single-line notice, with the task's prompt body rendered as usual (verbatim on the Trace page).
       const scheduled = parseScheduledMessage(item.text);
       // Source block for a skill invocation: parsing continues on scheduled's remaining body
