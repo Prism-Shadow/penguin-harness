@@ -45,7 +45,12 @@
  * centering is decided by the page.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ChangeEvent, ClipboardEvent, KeyboardEvent } from "react";
+import type {
+  ChangeEvent,
+  ClipboardEvent,
+  KeyboardEvent,
+  MouseEvent as ReactMouseEvent,
+} from "react";
 import type {
   AgentSummary,
   ApprovalMode,
@@ -545,13 +550,21 @@ function initialSteerMode(): SteerMode {
 /** Sliders icon (24×24 line path) for the More-settings popover button. */
 const SLIDERS_ICON = "M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6";
 
+/** More-settings panel width cap in px (compact rows; genuinely fits a 320px viewport with room to spare). */
+const MORE_SETTINGS_PANEL_MAX_W = 176;
+
 /**
  * "More settings" popover (bottom toolbar): a compact icon button opening a small panel of
  * setting rows — deliberately extensible, future toggles land here as additional rows. The
  * first (currently only) row is the mid-run send mode: Steer (default) / Queue as a
- * follow-up. Same Dropdown behavior as the toolbar's other pickers (upward expansion at the
- * bottom-docked composer, `max-w-[calc(100vw-2rem)]` viewport clamp on narrow screens);
- * never disabled — the preference is settable before and during a run.
+ * follow-up; the full explanation lives in each pill's hover title (not rendered by
+ * default). Never disabled — the preference is settable before and during a run.
+ *
+ * Docking is measured on each open (same pattern as the draft Workspace picker): the
+ * trigger sits mid-toolbar, so a statically left-anchored panel can cross a phone
+ * viewport's right edge — a max-width clamp alone can't save it (it caps the width, not the
+ * position). Left anchoring is kept whenever the panel fits; otherwise the panel docks to
+ * the trigger's right edge, capping to the available room.
  */
 function MoreSettingsSelect({
   steerMode,
@@ -563,13 +576,35 @@ function MoreSettingsSelect({
   direction?: "up" | "down";
 }) {
   const [open, setOpen] = useState(false);
+  const [menuDock, setMenuDock] = useState<{ right: boolean; maxWidth?: number }>({
+    right: false,
+  });
+  const toggle = (e: ReactMouseEvent<HTMLButtonElement>) => {
+    const next = !open;
+    if (next) {
+      const r = e.currentTarget.getBoundingClientRect();
+      const margin = 12; // breathing room against the viewport edge
+      const roomRight = window.innerWidth - margin - r.left; // room for a left-anchored panel
+      const roomLeft = r.right - margin; // room for a right-anchored panel
+      if (roomRight >= MORE_SETTINGS_PANEL_MAX_W) setMenuDock({ right: false });
+      else if (roomLeft > roomRight)
+        setMenuDock({
+          right: true,
+          ...(roomLeft < MORE_SETTINGS_PANEL_MAX_W ? { maxWidth: roomLeft } : {}),
+        });
+      else setMenuDock({ right: false, maxWidth: roomRight });
+    }
+    setOpen(next);
+  };
+  // Compact pill (small-control sizing, sized to its label): the explanation is hover-only
+  // via title, per the toolbar's "full meaning on hover" convention.
   const modeButton = (mode: SteerMode, label: string, hint: string) => (
     <button
       type="button"
       title={hint}
       aria-pressed={steerMode === mode}
       onClick={() => onChangeSteerMode(mode)}
-      className={`h-7 flex-1 rounded px-2 text-xs transition-colors duration-150 ${
+      className={`h-6 rounded px-2 text-xs transition-colors duration-150 ${
         steerMode === mode
           ? "bg-gray-200 font-medium text-gray-800 dark:bg-gray-700 dark:text-gray-100"
           : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
@@ -578,43 +613,46 @@ function MoreSettingsSelect({
       {label}
     </button>
   );
+  const dockX = menuDock.right ? "right-0" : "left-0";
+  const origin =
+    direction === "down"
+      ? menuDock.right
+        ? "top-full mt-1 origin-top-right"
+        : "top-full mt-1 origin-top-left"
+      : menuDock.right
+        ? "bottom-full mb-1 origin-bottom-right"
+        : "bottom-full mb-1 origin-bottom-left";
   return (
     <Dropdown
       open={open}
       setOpen={setOpen}
-      menuClass={
-        direction === "down"
-          ? "left-0 top-full mt-1 w-64 max-w-[calc(100vw-2rem)] origin-top-left"
-          : "bottom-full left-0 mb-1 w-64 max-w-[calc(100vw-2rem)] origin-bottom-left"
-      }
+      menuClass={`${dockX} ${origin} w-max max-w-44`}
+      {...(menuDock.maxWidth !== undefined ? { menuStyle: { maxWidth: menuDock.maxWidth } } : {})}
       button={
         <button
           type="button"
           aria-label={S.chat.moreSettings}
           title={S.chat.moreSettings}
-          onClick={() => setOpen((v) => !v)}
+          onClick={toggle}
           className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
         >
           <GlyphIcon d={SLIDERS_ICON} size={15} />
         </button>
       }
     >
-      {/* Setting row: label + control + current-choice description. New settings append as further rows. */}
-      <div className="px-3 py-2">
-        <p className="mb-1.5 text-xs font-medium text-gray-700 dark:text-gray-300">
+      {/* Setting row: label + compact control (descriptions hover-only). New settings append as further rows. */}
+      <div className="px-2.5 py-1.5">
+        <p className="mb-1 text-xs font-medium text-gray-700 dark:text-gray-300">
           {S.chat.steerModeLabel}
         </p>
         <div
           role="group"
           aria-label={S.chat.steerModeLabel}
-          className="flex items-center gap-0.5 rounded-md border border-gray-200 p-0.5 dark:border-gray-700"
+          className="flex w-max items-center gap-0.5 rounded-md border border-gray-200 p-0.5 dark:border-gray-700"
         >
           {modeButton("steer", S.chat.steerModeSteer, S.chat.steerModeSteerHint)}
           {modeButton("followup", S.chat.steerModeFollowUp, S.chat.steerModeFollowUpHint)}
         </div>
-        <p className="mt-1.5 text-xs leading-4 text-gray-400 dark:text-gray-500">
-          {steerMode === "followup" ? S.chat.steerModeFollowUpHint : S.chat.steerModeSteerHint}
-        </p>
       </div>
     </Dropdown>
   );
