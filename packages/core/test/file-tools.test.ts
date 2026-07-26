@@ -153,7 +153,7 @@ describe("read_file", () => {
 describe("edit_file", () => {
   const tool = () => createEditFileTool(def(EDIT_FILE_NAME, "rw"));
 
-  it("replaces a unique occurrence and echoes a numbered verification snippet", async () => {
+  it("replaces a unique occurrence and echoes a git-style unified diff", async () => {
     const file = path.join(tmp, "src.ts");
     await writeFile(file, "const a = 1;\nconst b = 2;\nconst c = 3;\n");
     const { result, text } = await run(
@@ -162,14 +162,20 @@ describe("edit_file", () => {
       tmp,
     );
     expect(result?.stopReason).toBeUndefined();
-    expect(text).toContain('Replaced 1 occurrence in "src.ts"');
-    // The snippet is cat -n numbered and shows the replaced line with context.
-    expect(text).toContain("     2\tconst b = 20;");
-    expect(text).toContain("     1\tconst a = 1;");
+    expect(text).toBe(
+      [
+        'Replaced 1 occurrence in "src.ts".',
+        "@@ -1,3 +1,3 @@",
+        " const a = 1;",
+        "-const b = 2;",
+        "+const b = 20;",
+        " const c = 3;",
+      ].join("\n"),
+    );
     expect(await readFile(file, "utf8")).toBe("const a = 1;\nconst b = 20;\nconst c = 3;\n");
   });
 
-  it("replaces every occurrence with replace_all", async () => {
+  it("replaces every occurrence with replace_all and diffs same-line hits in one hunk", async () => {
     const file = path.join(tmp, "multi.txt");
     await writeFile(file, "foo bar foo baz foo\n");
     const { result, text } = await run(
@@ -178,7 +184,14 @@ describe("edit_file", () => {
       tmp,
     );
     expect(result?.stopReason).toBeUndefined();
-    expect(text).toContain('Replaced 3 occurrences in "multi.txt"');
+    expect(text).toBe(
+      [
+        'Replaced 3 occurrences in "multi.txt".',
+        "@@ -1,1 +1,1 @@",
+        "-foo bar foo baz foo",
+        "+qux bar qux baz qux",
+      ].join("\n"),
+    );
     expect(await readFile(file, "utf8")).toBe("qux bar qux baz qux\n");
   });
 
@@ -441,7 +454,7 @@ describe("edit_file — review follow-ups", () => {
     expect(text).toContain("CRLF");
   });
 
-  it("erasing the whole content produces no dangling snippet newline", async () => {
+  it("erasing the whole content diffs to a pure removal hunk", async () => {
     const file = path.join(tmp, "erase.txt");
     await writeFile(file, "abc");
     const { result, text } = await run(
@@ -450,7 +463,7 @@ describe("edit_file — review follow-ups", () => {
       tmp,
     );
     expect(result?.stopReason).toBeUndefined();
-    expect(text).toBe('Replaced 1 occurrence in "erase.txt".');
+    expect(text).toBe('Replaced 1 occurrence in "erase.txt".\n@@ -1,1 +0,0 @@\n-abc');
     expect(await readFile(file, "utf8")).toBe("");
   });
 
@@ -479,5 +492,109 @@ describe("write_file — review follow-ups", () => {
     await run(tool(), { file_path: "fresh.txt", content: "x" }, tmp);
     const entries = await readdir(tmp);
     expect(entries.filter((e) => e.includes(".tmp-"))).toEqual([]);
+  });
+});
+
+describe("edit_file — diff output caps", () => {
+  const tool = () => createEditFileTool(def(EDIT_FILE_NAME, "rw"));
+
+  it("caps replace_all storms at a handful of hunks plus an elision note", async () => {
+    // 8 far-apart sites (gaps wider than twice the context) -> 8 hunks, capped at 5.
+    const block = ["target", ...Array.from({ length: 9 }, (_, i) => `filler-${i}`)].join("\n");
+    await writeFile(
+      path.join(tmp, "cap.txt"),
+      `${Array.from({ length: 8 }, () => block).join("\n")}\n`,
+    );
+    const { result, text } = await run(
+      tool(),
+      { file_path: "cap.txt", old_string: "target", new_string: "changed", replace_all: true },
+      tmp,
+    );
+    expect(result?.stopReason).toBeUndefined();
+    expect(text).toContain('Replaced 8 occurrences in "cap.txt".');
+    expect(text.match(/@@ /g)).toHaveLength(5);
+    expect(text).toContain("…and 3 more replacements");
+  });
+
+  it("self-budgets under a tiny maxOutputLength: the summary and note survive, hunks are dropped", async () => {
+    await writeFile(path.join(tmp, "tiny.txt"), "a\nb\na\n");
+    const budgetTool = createEditFileTool({
+      name: EDIT_FILE_NAME,
+      description: "test",
+      permission: "rw",
+      maxOutputLength: 150,
+    });
+    const { result, text } = await run(
+      budgetTool,
+      { file_path: "tiny.txt", old_string: "a", new_string: "z", replace_all: true },
+      tmp,
+    );
+    expect(result?.stopReason).toBeUndefined();
+    expect(text.length).toBeLessThanOrEqual(150);
+    expect(text).toContain('Replaced 2 occurrences in "tiny.txt".');
+    expect(text).not.toContain("@@");
+    expect(text).toContain("…and 2 more replacements");
+  });
+
+  it("strips \\r from diff lines on CRLF files", async () => {
+    await writeFile(path.join(tmp, "crlfdiff.txt"), "alpha\r\nbeta\r\n");
+    const { result, text } = await run(
+      tool(),
+      { file_path: "crlfdiff.txt", old_string: "alpha", new_string: "gamma" },
+      tmp,
+    );
+    expect(result?.stopReason).toBeUndefined();
+    expect(text).toContain("-alpha");
+    expect(text).toContain("+gamma");
+    expect(text).toContain(" beta");
+    expect(text).not.toContain("\r");
+  });
+});
+
+describe("write_file — overwrite diffs", () => {
+  const tool = () => createWriteFileTool(def(WRITE_FILE_NAME, "rw"));
+
+  it("appends a small unified diff when overwriting", async () => {
+    await writeFile(path.join(tmp, "d.txt"), "one\ntwo\nthree\n");
+    const { result, text } = await run(
+      tool(),
+      { file_path: "d.txt", content: "one\nTWO\nthree\n" },
+      tmp,
+    );
+    expect(result?.stopReason).toBeUndefined();
+    expect(text).toBe(
+      [
+        'Overwrote "d.txt" (3 lines, 14 bytes).',
+        "@@ -1,3 +1,3 @@",
+        " one",
+        "-two",
+        "+TWO",
+        " three",
+      ].join("\n"),
+    );
+  });
+
+  it("notes an unchanged overwrite", async () => {
+    await writeFile(path.join(tmp, "same.txt"), "keep\n");
+    const { text } = await run(tool(), { file_path: "same.txt", content: "keep\n" }, tmp);
+    expect(text).toContain('Overwrote "same.txt"');
+    expect(text).toContain("(content unchanged)");
+    expect(text).not.toContain("@@");
+  });
+
+  it("collapses a large rewrite to a one-line +X/−Y summary", async () => {
+    const oldContent = Array.from({ length: 200 }, (_, i) => `a${i}`).join("\n");
+    const newContent = Array.from({ length: 200 }, (_, i) => `b${i}`).join("\n");
+    await writeFile(path.join(tmp, "big.txt"), oldContent);
+    const { text } = await run(tool(), { file_path: "big.txt", content: newContent }, tmp);
+    expect(text).toContain('Overwrote "big.txt"');
+    expect(text).toContain("+200/−200 lines vs the previous content (diff too large to show)");
+    expect(text).not.toContain("@@");
+  });
+
+  it("created files carry no diff", async () => {
+    const { text } = await run(tool(), { file_path: "fresh2.txt", content: "x\ny\n" }, tmp);
+    expect(text).toContain('Created "fresh2.txt"');
+    expect(text).not.toContain("@@");
   });
 });

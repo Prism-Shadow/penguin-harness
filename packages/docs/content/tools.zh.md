@@ -129,7 +129,9 @@ exec_command(cmd)
 }
 
 // edit_file — 文件必须已存在;old_string 必须恰好出现一次(或设 replace_all);
-// 成功时回显 "Replaced N occurrence(s)" 及改动处的带行号片段。
+// 成功时回显 "Replaced N occurrence(s)" 及改动区域的 git 风格 unified diff
+// (每个替换点一个 hunk,相邻替换点合并;replace_all 大量命中时截断为少量 hunk
+// 并附 "…and N more replacements" 注记)。
 {
   file_path: string;       // 必填
   old_string: string;      // 必填:要替换的原文,须与文件内容(含空白/缩进)完全一致
@@ -138,6 +140,7 @@ exec_command(cmd)
 }
 
 // write_file — 按需创建父目录;报告 "Created" 或 "Overwrote" 及行数/字节数。
+// 覆写时还会附上与旧内容的小型 unified diff;改动过大时改为一行 +X/−Y 摘要。
 {
   file_path: string;       // 必填
   content: string;         // 必填:完整文件内容;空字符串创建空文件

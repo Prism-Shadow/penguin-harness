@@ -62,11 +62,24 @@ import { defaultMessages } from "./i18n.js";
 import type { Messages } from "./i18n.js";
 
 const DIM = "\x1b[2m";
+const GREEN = "\x1b[32m";
+const RED = "\x1b[31m";
 const CYAN = "\x1b[36m";
 const RESET = "\x1b[0m";
 
 export function dim(text: string): string {
   return `${DIM}${text}${RESET}`;
+}
+
+/** The two file tools whose outputs carry git-style diffs; their `+`/`-`/`@@` lines get colored. */
+const DIFF_OUTPUT_TOOLS = new Set(["edit_file", "write_file"]);
+
+/** Color for one diff-output line, picked from its first character (null = plain). */
+function diffLineColor(firstChar: string | undefined): string | null {
+  if (firstChar === "+") return GREEN;
+  if (firstChar === "-") return RED;
+  if (firstChar === "@") return DIM;
+  return null;
 }
 
 /** Colors a tool call line cyan, distinguishing it from body text/thinking (review comment #5). */
@@ -181,12 +194,18 @@ export function renderHistory(
       }
       case "tool_call_output": {
         // Output lines carry the pairing tag plus the tool name (the bare tag when the
-        // transcript has no matching call).
+        // transcript has no matching call); file-tool diff lines are colored like git's.
         const tag = `[${callTag(p.tool_call_id ?? "")}]`;
         const name = toolNames.get(nameKey(msg, p.tool_call_id ?? ""));
         const label = name ? `${tag} ${name}` : tag;
+        const colorDiff = name !== undefined && DIFF_OUTPUT_TOOLS.has(name);
         for (const line of (p.output ?? "").split("\n")) {
-          out.write(`${DIM}${label} -> ${RESET}${line}\n`);
+          const color = colorDiff ? diffLineColor(line[0]) : null;
+          out.write(
+            color
+              ? `${DIM}${label} -> ${RESET}${color}${line}${RESET}\n`
+              : `${DIM}${label} -> ${RESET}${line}\n`,
+          );
         }
         // Attached images aren't rendered by the terminal; print one placeholder line per image.
         for (const _ of p.images ?? []) {
@@ -780,7 +799,9 @@ export class StreamRenderer {
     }
     if (this.inDim) this.finishLine();
     const label = this.outputLabel(p.tool_call_id);
-    if (p.output) this.writeToolOutput(p.output, label);
+    const name = this.toolNames.get(p.tool_call_id);
+    const colorDiff = name !== undefined && DIFF_OUTPUT_TOOLS.has(name);
+    if (p.output) this.writeToolOutput(p.output, label, colorDiff);
     // Image delta (carried whole in a single delta): the terminal doesn't render the
     // image itself, so print one placeholder line per image, using the same gutter label
     // as the text output.
@@ -807,20 +828,29 @@ export class StreamRenderer {
    * arrive incrementally; whether to write the gutter is decided by the current
    * line-start state.
    */
-  private writeToolOutput(chunk: string, label: string): void {
+  private writeToolOutput(chunk: string, label: string, colorDiff: boolean): void {
     let i = 0;
     while (i < chunk.length) {
+      let lineColor: string | null = null;
       if (this.toolOutLineStart) {
         this.out.write(`${DIM}${label} -> ${RESET}`);
         this.toolOutLineStart = false;
         this.inLine = true;
+        // Diff coloring keys off the line's first character. File-tool outputs arrive as
+        // one delta of whole lines, so the first character is always in this chunk; a
+        // line continued from a previous chunk stays plain.
+        if (colorDiff) lineColor = diffLineColor(chunk[i]);
       }
       const nl = chunk.indexOf("\n", i);
+      const end = nl === -1 ? chunk.length : nl;
+      const segment = chunk.slice(i, end);
+      if (segment) {
+        this.out.write(lineColor ? `${lineColor}${segment}${RESET}` : segment);
+      }
       if (nl === -1) {
-        this.out.write(chunk.slice(i));
         i = chunk.length;
       } else {
-        this.out.write(chunk.slice(i, nl + 1));
+        this.out.write("\n");
         this.toolOutLineStart = true;
         this.inLine = false;
         i = nl + 1;

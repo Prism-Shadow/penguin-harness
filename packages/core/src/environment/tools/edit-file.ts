@@ -5,11 +5,13 @@
  * file content exactly (including whitespace/indentation) and, unless `replace_all` is set,
  * occur exactly once — zero or multiple occurrences fail with an explanation telling the
  * model to fix the match or widen the context. On success the output confirms the
- * replacement count and shows a short line-numbered snippet around the first replacement so
- * the model can verify the result without re-reading the file. The write is atomic (temp
- * file + rename, preserving the original permission bits), so a crash mid-write cannot
- * leave the file half-edited. Relative paths resolve against the Workspace; absolute paths
- * are allowed (tools run with the user's full permissions, same as the shell tool).
+ * replacement count and shows a git-style unified diff of the changed regions (one hunk
+ * per replacement site, nearby sites merged; capped for replace_all storms), so both the
+ * model and the user can verify exactly what changed without re-reading the file. The
+ * write is atomic (temp file + rename, preserving the original permission bits), so a
+ * crash mid-write cannot leave the file half-edited. Relative paths resolve against the
+ * Workspace; absolute paths are allowed (tools run with the user's full permissions, same
+ * as the shell tool).
  *
  * Division of responsibility with Environment (see environment.ts): non-streaming — yields
  * one final text delta; failures are explanatory text finalized as `failed`; anything
@@ -24,14 +26,20 @@ import { partialToolCallOutput } from "../../omnimessage/index.js";
 import type { OmniMessage } from "../../omnimessage/index.js";
 import type { ToolDefinitionConfig } from "../../interfaces.js";
 import type { BuiltinTool, ToolExecutionContext, ToolResult } from "./types.js";
-import { numberedLine } from "./read-file.js";
 import { atomicWriteFile } from "./file-utils.js";
+import { buildReplacementHunks, renderHunk } from "./diff.js";
 
 /** Tool name constant (used only within this tool module, never exposed to Environment). */
 export const EDIT_FILE_NAME = "edit_file";
 
-/** Lines of context shown on each side of the first replacement in the verification snippet. */
-const SNIPPET_CONTEXT_LINES = 4;
+/** Max diff hunks shown in the result (replace_all over a large file stays readable). */
+const MAX_DIFF_HUNKS = 5;
+
+/** Output-budget headroom reserved for the trailing "…and N more replacements" note. */
+const NOTE_RESERVE = 120;
+
+/** Fallback output budget when the definition carries no maxOutputLength (mirrors the default config entry). */
+const DEFAULT_OUTPUT_BUDGET = 16000;
 
 /** Counts non-overlapping occurrences of `needle` in `haystack` (needle is non-empty here). */
 function countOccurrences(haystack: string, needle: string): number {
@@ -45,27 +53,8 @@ function countOccurrences(haystack: string, needle: string): number {
 }
 
 /**
- * Builds the post-edit verification snippet: line-numbered lines of the new content
- * spanning the replaced text plus a few lines of context on each side. Empty when the new
- * content has no lines (e.g. the edit erased the whole file).
- */
-function buildSnippet(newContent: string, replaceStart: number, insertedLength: number): string {
-  const lines = newContent.split("\n");
-  if (lines[lines.length - 1] === "") lines.pop();
-  if (lines.length === 0) return "";
-  // 1-based line numbers of the replacement's first and last affected line.
-  const startLine = newContent.slice(0, replaceStart).split("\n").length;
-  const endLine = newContent.slice(0, replaceStart + insertedLength).split("\n").length;
-  const from = Math.max(1, startLine - SNIPPET_CONTEXT_LINES);
-  const to = Math.min(lines.length, endLine + SNIPPET_CONTEXT_LINES);
-  const out: string[] = [];
-  for (let n = from; n <= to; n += 1) out.push(numberedLine(n, lines[n - 1]!));
-  return out.join("\n");
-}
-
-/**
  * edit_file builtin tool: reads the file, validates the uniqueness of `old_string`,
- * writes the replaced content back atomically, and reports a verification snippet.
+ * writes the replaced content back atomically, and reports a unified diff of the change.
  * `definition` is overridden by Environment at construction time with the same-named entry
  * from ToolConfig (description/arguments/permissions/limits).
  */
@@ -174,10 +163,37 @@ export function createEditFileTool(definition: ToolDefinitionConfig): BuiltinToo
       }
 
       const replaced = replaceAll ? occurrences : 1;
-      const snippet = buildSnippet(newContent, replaceStart, newString.length);
-      yield delta(
-        `Replaced ${replaced} occurrence${replaced === 1 ? "" : "s"} in "${filePath}".${snippet ? `\n${snippet}` : ""}`,
+      // Git-style unified diff of the changed regions, self-budgeted below the tool's
+      // output cap so the leading summary line (and the elision note) always survive
+      // Environment's front-keep truncation.
+      const { hunks } = buildReplacementHunks(
+        content,
+        oldString,
+        newString,
+        replaceAll,
+        MAX_DIFF_HUNKS,
       );
+      const budget =
+        definition.maxOutputLength !== undefined && definition.maxOutputLength > 0
+          ? definition.maxOutputLength
+          : DEFAULT_OUTPUT_BUDGET;
+      const out: string[] = [
+        `Replaced ${replaced} occurrence${replaced === 1 ? "" : "s"} in "${filePath}".`,
+      ];
+      let used = out[0]!.length;
+      let shownSites = 0;
+      for (const { hunk, sites } of hunks) {
+        const rendered = renderHunk(hunk);
+        if (used + 1 + rendered.length > budget - NOTE_RESERVE) break;
+        out.push(rendered);
+        used += 1 + rendered.length;
+        shownSites += sites;
+      }
+      const omitted = replaced - shownSites;
+      if (omitted > 0) {
+        out.push(`…and ${omitted} more replacement${omitted === 1 ? "" : "s"}`);
+      }
+      yield delta(out.join("\n"));
       return;
     },
   };

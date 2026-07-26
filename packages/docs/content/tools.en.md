@@ -130,7 +130,9 @@ Both tools' arguments (explicit keys):
 }
 
 // edit_file — the file must exist; old_string must occur exactly once (or set replace_all);
-// success echoes "Replaced N occurrence(s)" plus a numbered snippet around the change.
+// success echoes "Replaced N occurrence(s)" plus a git-style unified diff of the changed
+// regions (one hunk per site, nearby sites merged; replace_all storms are capped at a few
+// hunks plus an "…and N more replacements" note).
 {
   file_path: string;       // required
   old_string: string;      // required: exact text to replace, including whitespace/indentation
@@ -138,7 +140,9 @@ Both tools' arguments (explicit keys):
   replace_all?: boolean;   // replace every occurrence; default false
 }
 
-// write_file — creates parent directories as needed; reports "Created" vs "Overwrote" with lines/bytes.
+// write_file — creates parent directories as needed; reports "Created" vs "Overwrote" with
+// lines/bytes. An overwrite also shows a small unified diff against the previous content,
+// or a one-line +X/−Y summary when the change is large.
 {
   file_path: string;       // required
   content: string;         // required: full file content; an empty string creates an empty file

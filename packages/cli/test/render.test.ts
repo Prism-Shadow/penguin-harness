@@ -145,6 +145,53 @@ describe("StreamRenderer", () => {
     );
   });
 
+  it("colors edit_file diff output lines green/red and dims hunk headers", () => {
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t);
+    r.handle(partialToolCall({ eventType: "start", name: "edit_file", toolCallId: "d1" }));
+    r.handle(
+      partialToolCall({
+        eventType: "delta",
+        name: "",
+        arguments: '{"file_path":"x.ts","old_string":"old","new_string":"new"}',
+        toolCallId: "d1",
+      }),
+    );
+    r.handle(partialToolCall({ eventType: "stop", name: "", toolCallId: "d1" }));
+    r.handle(partialToolCallOutput({ eventType: "start", toolCallId: "d1" }));
+    r.handle(
+      partialToolCallOutput({
+        eventType: "delta",
+        output: 'Replaced 1 occurrence in "x.ts".\n@@ -1,1 +1,1 @@\n-old\n+new\n',
+        toolCallId: "d1",
+      }),
+    );
+    r.handle(partialToolCallOutput({ eventType: "stop", toolCallId: "d1" }));
+    const raw = text();
+    // Diff lines are wrapped in green/red; the hunk header is dimmed; the summary line stays plain.
+    expect(raw).toContain("\x1b[32m+new\x1b[0m");
+    expect(raw).toContain("\x1b[31m-old\x1b[0m");
+    expect(raw).toContain("\x1b[2m@@ -1,1 +1,1 @@\x1b[0m");
+    // The stripped view still reads as labeled gutter lines.
+    const plain = stripAnsi(raw);
+    expect(plain).toContain("[tool-d1] edit_file -> -old");
+    expect(plain).toContain("[tool-d1] edit_file -> +new");
+  });
+
+  it("does not diff-color non-file-tool output", () => {
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t);
+    r.handle(partialToolCall({ eventType: "start", name: "exec_command", toolCallId: "d2" }));
+    r.handle(
+      partialToolCall({ eventType: "delta", name: "", arguments: '{"cmd":"x"}', toolCallId: "d2" }),
+    );
+    r.handle(partialToolCall({ eventType: "stop", name: "", toolCallId: "d2" }));
+    r.handle(partialToolCallOutput({ eventType: "start", toolCallId: "d2" }));
+    r.handle(partialToolCallOutput({ eventType: "delta", output: "+plus\n", toolCallId: "d2" }));
+    r.handle(partialToolCallOutput({ eventType: "stop", toolCallId: "d2" }));
+    expect(text()).not.toContain("\x1b[32m");
+  });
+
   it("falls back to the pairing tag on output whose call was never seen", () => {
     const { stream, text } = collector();
     const r = new StreamRenderer(stream, t);
