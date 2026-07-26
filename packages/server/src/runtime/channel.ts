@@ -73,6 +73,17 @@ export class Channel {
     return this.listeners.size;
   }
 
+  /**
+   * Id of the most recently assigned event (`<epoch>-<seq>`; seq 0 when none was assigned
+   * yet). Unicast (sendTo) seqs count too — the value is a position marker, not a buffer
+   * lookup key. Used as the live-tail cursor on GET /messages: captured in the same
+   * synchronous tick as the fragment snapshot, it tells the client which buffered events
+   * the snapshot already covers.
+   */
+  get lastEventId(): string {
+    return `${this.epoch}-${this.nextSeq - 1}`;
+  }
+
   /** Broadcast an event: number it, buffer it (evicting the oldest), notify all subscribers. */
   publish(data: unknown, event?: string): ChannelEvent {
     const entry = this.makeEvent(data, event);

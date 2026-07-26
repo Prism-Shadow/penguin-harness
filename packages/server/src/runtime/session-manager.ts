@@ -49,6 +49,7 @@ import { ApprovalRegistry, makeApprove } from "./approvals.js";
 import type { PendingApproval } from "./approvals.js";
 import type { ChannelHub } from "./channel.js";
 import type { ErrorSink } from "./error-recorder.js";
+import { LiveTailTracker } from "./live-tail.js";
 import { asSessionSource } from "./session-sources.js";
 import type { SessionSources } from "./session-sources.js";
 import { StreamErrorWatcher } from "./stream-error-watcher.js";
@@ -327,6 +328,8 @@ export class SessionManager {
   private readonly deletingSessions = new Set<string>();
   /** Per-Agent config generation (key = agentKey), bumped by invalidateAgentRuntimes on vault updates. */
   private readonly agentGenerations = new Map<string, number>();
+  /** Open streaming fragments of running sessions (fed by drive, served to GET /messages; see live-tail.ts). */
+  private readonly liveTail = new LiveTailTracker();
   private readonly sweepTimer: NodeJS.Timeout;
 
   constructor(private readonly deps: SessionManagerDeps) {
@@ -352,6 +355,16 @@ export class SessionManager {
   /** Number of queued follow-up tasks (`queueIfBusy`) awaiting auto-start. */
   pendingFollowUpCount(sessionId: string): number {
     return this.entries.get(sessionId)?.followUps.length ?? 0;
+  }
+
+  /**
+   * Live tail of a running session: one synthetic `partial_* start` OmniMessage per open
+   * streaming fragment, carrying the full accumulated content so far (see live-tail.ts).
+   * Empty when idle or when nothing is streaming. GET /messages attaches this (with a
+   * channel cursor) so a client joining mid-stream can render the in-progress message.
+   */
+  liveFragments(sessionId: string): OmniMessage[] {
+    return this.liveTail.fragments(sessionId);
   }
 
   /** Number of Sessions for this Agent that are currently running / compacting. */
@@ -909,6 +922,10 @@ export class SessionManager {
             }
           }
         }
+        // Live-tail bookkeeping in the same synchronous tick as the publish below: the
+        // messages endpoint captures "channel cursor + open fragments" between two
+        // publishes, so the pair is always a consistent snapshot (see live-tail.ts).
+        this.liveTail.observe(entry.sessionId, msg);
         // Re-fetch the channel before every publish (matches publishEvent): the channel
         // may have been recycled and recreated during a long wait on approval, and
         // holding a stale reference would send output to an orphaned, detached channel.
@@ -931,6 +948,9 @@ export class SessionManager {
     } finally {
       // Wrap-up: persist any still-pending LLM failure and clear the tool-name cache (the watcher's state doesn't carry across runs).
       watcher?.close();
+      // The run is over: no fragment will ever continue, so drop the live tail before the
+      // idle flip (GET /messages stops attaching `live` the moment status reads idle).
+      this.liveTail.clear(entry.sessionId);
       entry.approvals.denyAll();
       entry.status = "idle";
       entry.abort = null;

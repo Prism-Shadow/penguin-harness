@@ -554,9 +554,42 @@ export interface SessionPatchRequest {
   title?: string;
 }
 
+/**
+ * Live in-progress tail of a running Session, carried by `MessagesResponse.live`.
+ *
+ * Contract (see runtime/live-tail.ts and the GET /messages route): the server captures
+ * `cursor` and `fragments` atomically — in one synchronous tick, before starting the
+ * trace read — while the Session is running/compacting.
+ *   - `cursor`: the Session channel's most recently assigned SSE event id
+ *     (`<epoch>-<seq>`); every event published up to and including this id is already
+ *     reflected in `fragments`.
+ *   - `fragments`: one synthetic `partial_* start` OmniMessage per open streaming
+ *     fragment, whose payload carries the full accumulated content so far (text/thinking
+ *     prefix, tool-call name + accumulated arguments, tool-output prefix + images), with
+ *     the original `origin` chain preserved.
+ *
+ * Client usage (the bundled Web App's connect-first flow): after applying `messages`,
+ * when the cursor's epoch matches the epoch of the SSE events seen on the current
+ * connection, drop every buffered **partial** event with seq <= cursor (its content is
+ * already inside `fragments`), feed `fragments` through the normal reducer path, then
+ * replay the rest of the buffer. Buffered **complete** messages are never dropped by the
+ * cursor — the regular overlap dedup decides for them — so nothing is lost even when a
+ * complete message's trace append is still in flight at read time.
+ */
+export interface MessagesLiveTail {
+  cursor: string;
+  fragments: OmniMessage[];
+}
+
 /** Message history: the full messages and events from concatenating all of this Session's Trace files in order (excludes partial_*). */
 export interface MessagesResponse {
   messages: OmniMessage[];
+  /**
+   * Present only while the Session is running/compacting: the in-progress stream tail
+   * (open streaming fragments + the channel cursor they cover), so a client joining
+   * mid-stream can render the currently streaming message. Omitted when idle.
+   */
+  live?: MessagesLiveTail;
 }
 
 // ---------------------------------------------------------------------------

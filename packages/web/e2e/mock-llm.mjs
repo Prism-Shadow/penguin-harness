@@ -5,6 +5,10 @@
  *  - files-card probe ("files card test") -> text with two backtick paths (one real, one missing)
  *  - subagent's own turn (its prompt is the only user text) -> final text
  *  - parent asked to delegate ("run a subagent") -> tool_use(run_subagent)
+ *  - "slow stream test" -> tool_use(exec_command) with a command that prints one line
+ *    every 200ms for ~8s (reload-midstream.spec reloads while its output streams)
+ *  - "slow text test" -> a long text streamed one delta every 200ms for ~8s
+ *    (reload-midstream.spec reloads while the TEXT streams)
  *  - last message has tool_result -> final text (turn 2)
  *  - otherwise (first user turn) -> thinking + text + tool_use(exec_command)
  */
@@ -172,6 +176,46 @@ const server = http.createServer((req, res) => {
         { type: "text_delta", text: "Subagent report: 3 TODOs" },
       ]);
       messageStop(res, "end_turn", 12);
+      return;
+    }
+
+    // Slow tool-output test case (reload-midstream.spec): a real exec_command whose output
+    // streams one line every 200ms for ~8s — long enough to reload the page mid-stream and
+    // watch the output keep growing afterwards.
+    if (flat.includes("slow stream test") && !hasToolResult) {
+      block(res, 0, { type: "tool_use", id: "toolu_slow_1", name: "exec_command", input: {} }, [
+        { type: "input_json_delta", partial_json: '{"cmd": "for i in $(seq 1 40); do' },
+        { type: "input_json_delta", partial_json: ' echo line $i; sleep 0.2; done"}' },
+      ]);
+      messageStop(res, "tool_use", 14);
+      return;
+    }
+
+    // Slow TEXT test case (reload-midstream.spec): a single text block streamed one delta
+    // every 200ms (~8s total) so the page can be reloaded while the assistant text is
+    // still streaming. Single turn: ends with end_turn, no tool call.
+    if (flat.includes("slow text test")) {
+      sse(res, "content_block_start", {
+        type: "content_block_start",
+        index: 0,
+        content_block: { type: "text", text: "" },
+      });
+      let n = 0;
+      const tick = () => {
+        n += 1;
+        sse(res, "content_block_delta", {
+          type: "content_block_delta",
+          index: 0,
+          delta: { type: "text_delta", text: `chunk-${n} ` },
+        });
+        if (n < 40) {
+          setTimeout(tick, 200);
+        } else {
+          sse(res, "content_block_stop", { type: "content_block_stop", index: 0 });
+          messageStop(res, "end_turn", 80);
+        }
+      };
+      tick();
       return;
     }
 

@@ -142,7 +142,7 @@ The paths below omit the `/api/sessions/:sessionId` prefix. For the storage mode
 | GET | / | Session info (the single-session GET additionally carries `tracePath`, the absolute path of the latest Trace file; list rows omit it) |
 | PATCH | / | Update: `{approvalMode?, archived?, title?}` |
 | DELETE | / | Delete the Session (along with its Traces and scratch files) |
-| GET | /messages | Full OmniMessage history |
+| GET | /messages | Full OmniMessage history; while a Task runs the response also carries `live` (the in-progress stream tail, see below) |
 | GET | /stream | SSE event stream (next section) |
 | POST | /tasks | Start a Task: `{input: TaskInputPart[], thinkingLevel?, queueIfBusy?}` → 202. With `queueIfBusy`, a busy session holds the input as a follow-up (`queued: true`) and auto-starts it as an ordinary next task once idle; `task_state` events report the queued count |
 | POST | /steer | Mid-run steering: `{text}` queues a message for the running Task (delivered between turns as a standalone `[user_steering]` user message) → 202; 409 `not_running` when no Task is in progress |
@@ -160,6 +160,28 @@ The paths below omit the `/api/sessions/:sessionId` prefix. For the storage mode
 | GET | /scratchpad/:fileName | Read a session scratch file (e.g. input images) |
 
 General conventions: Sessions the user cannot access always return 404 — their existence is never leaked; only one Task or compaction runs per Session at a time, and conflicts return 409 (`task_in_progress` / `compacting`).
+
+#### The `live` field on GET /messages
+
+The Trace stores only complete messages (streaming `partial_*` never reaches disk), so history alone cannot show a message that is still streaming. While the Session is running or compacting, the messages response therefore also carries the in-progress stream tail:
+
+```ts
+interface MessagesResponse {
+  messages: OmniMessage[];
+  live?: {
+    // The Session channel's most recently assigned SSE event id (`<epoch>-<seq>`):
+    // every event published up to and including this id is already reflected in `fragments`.
+    cursor: string;
+    // One synthetic `partial_* start` OmniMessage per open streaming fragment, whose
+    // payload carries the full accumulated content so far (text/thinking prefix,
+    // tool-call name + accumulated arguments, tool-output prefix + images), with the
+    // original `origin` chain preserved (subagent fragments included).
+    fragments: OmniMessage[];
+  };
+}
+```
+
+`cursor` and `fragments` are captured atomically before the trace read starts. A client using the connect-first pattern (below) applies them after history: when the cursor's epoch matches the epoch of the SSE events it has buffered, it drops every buffered **partial** event with seq ≤ cursor (their content is already accumulated inside `fragments`), feeds `fragments` through its normal reducer, then replays the rest of the buffer. Buffered **complete** messages are never dropped by the cursor — the regular overlap dedup decides for them. `live` is omitted while idle.
 
 Workspace files may be Agent-generated, so `GET /files/content` treats them as untrusted: every response carries `X-Content-Type-Options: nosniff`, and the rest of the headers depend on the two flags (`download=1` wins over `preview=1`):
 
@@ -250,7 +272,7 @@ export type ServerEvent =
 ### Delivery Guarantees
 
 - Event ids are monotonic per channel, shaped `<epoch>-<seq>`;
-- Each channel keeps a bounded replay buffer (most recent 1000 events or 2MB);
+- Each channel keeps a bounded replay buffer (most recent 10,000 events or 8MB);
 - Reconnecting with `Last-Event-ID` replays the gap on a buffer hit; on a miss the server first sends `resync_required`, and the client refetches `/messages` before continuing;
 - A heartbeat comment line is written every 20 seconds;
 - Event order: on a reconnect carrying `Last-Event-ID`, **the replayed gap (or `resync_required`) arrives first**, then the initial events — the authoritative `task_state` snapshot and still-pending approval_requests — then the live stream. A fresh connection (no `Last-Event-ID`) skips replay, so its first event is the `task_state` snapshot.
@@ -261,8 +283,9 @@ The order the bundled Web App uses:
 
 1. Connect `/stream` first and buffer incoming events;
 2. GET `/messages` for the full history;
-3. Replay the buffer, deduplicating the overlap;
-4. Go live.
+3. If the response carries `live` (a Task is running), drop the buffered partials the cursor already covers and seed the `live.fragments` on top of history — the in-progress message reappears with its streamed prefix intact;
+4. Replay the buffer, deduplicating the overlap;
+5. Go live.
 
 ## Type Imports
 

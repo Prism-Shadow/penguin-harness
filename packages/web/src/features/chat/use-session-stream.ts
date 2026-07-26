@@ -131,7 +131,9 @@ export function useSessionStream(
     setPendingTick((t) => t + 1);
 
     const controller = createStreamController({
-      loadMessages: async () => (await getMessages(sessionId)).messages,
+      // The whole response rides through: `live` (in-progress stream tail) lets the
+      // controller seed the currently streaming message after a reload (see stream-controller).
+      loadMessages: () => getMessages(sessionId),
       onTaskState: setTaskState,
       onQueuedFollowUps: setQueuedFollowUps,
       onLoading: setLoading,

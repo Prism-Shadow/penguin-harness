@@ -223,6 +223,110 @@ describe("partial aggregation and full-message convergence", () => {
   });
 });
 
+describe("live-tail synthetic starts (mid-stream join seeding)", () => {
+  it("a text start carrying the accumulated prefix opens a streaming item on top of history; deltas continue and the full message replaces", () => {
+    const m = createStreamModel();
+    pushMessage(m, userText("question"));
+    pushMessage(m, partialText("start", "Already streamed prefix"));
+    const item = items(m)[1] as AssistantTextItem;
+    expect(item.kind).toBe("assistant_text");
+    expect(item.text).toBe("Already streamed prefix");
+    expect(item.streaming).toBe(true);
+    pushMessage(m, partialText("delta", " + live tail"));
+    expect(item.text).toBe("Already streamed prefix + live tail");
+    pushMessage(m, partialText("stop"));
+    pushMessage(m, assistantText("Already streamed prefix + live tail."));
+    expect(items(m).filter((i) => i.kind === "assistant_text")).toHaveLength(1);
+    expect(item.text).toBe("Already streamed prefix + live tail.");
+  });
+
+  it("a thinking start carrying the accumulated prefix seeds a streaming thinking item with its start time", () => {
+    const m = createStreamModel();
+    pushMessage(m, at(partialThinking("start", "half a thought"), "2026-07-05T00:00:01.000Z"));
+    const item = items(m)[0] as ThinkingItem;
+    expect(item.thinking).toBe("half a thought");
+    expect(item.streaming).toBe(true);
+    expect(item.startedAtMs).toBe(Date.parse("2026-07-05T00:00:01.000Z"));
+  });
+
+  it("an output start seeds the prefix (and images) onto a call-complete card; a start on an outputComplete card is ignored", () => {
+    const dataUrl = "data:image/png;base64,AAAA";
+    const m = createStreamModel();
+    pushMessage(m, toolCall({ name: "exec_command", arguments: '{"cmd":"x"}', toolCallId: "t1" }));
+    const card = items(m)[0] as ToolCallItem;
+    // Synthetic start carries the accumulated prefix + the whole image set.
+    pushMessage(
+      m,
+      partialToolCallOutput({
+        eventType: "start",
+        output: "line 1\nline 2\n",
+        toolCallId: "t1",
+        images: [dataUrl],
+      }),
+    );
+    expect(card.output).toBe("line 1\nline 2\n");
+    expect(card.outputStreaming).toBe(true);
+    expect(card.images).toEqual([dataUrl]);
+    pushMessage(
+      m,
+      partialToolCallOutput({ eventType: "delta", output: "line 3\n", toolCallId: "t1" }),
+    );
+    expect(card.output).toBe("line 1\nline 2\nline 3\n");
+    // Once the output is complete, a stray synthetic start must not reopen or append.
+    pushMessage(m, toolCallOutput({ output: "final", toolCallId: "t1" }));
+    pushMessage(
+      m,
+      partialToolCallOutput({ eventType: "start", output: "stale", toolCallId: "t1" }),
+    );
+    expect(card.output).toBe("final");
+    expect(card.outputStreaming).toBe(false);
+  });
+
+  it("an arguments start for an id whose call is already complete is ignored (no duplicate card, no reset)", () => {
+    const m = createStreamModel();
+    pushMessage(m, toolCall({ name: "exec_command", arguments: '{"cmd":"x"}', toolCallId: "t1" }));
+    pushMessage(
+      m,
+      partialToolCall({
+        eventType: "start",
+        name: "exec_command",
+        arguments: '{"cmd":"x"}',
+        toolCallId: "t1",
+      }),
+    );
+    expect(items(m)).toHaveLength(1);
+    expect((items(m)[0] as ToolCallItem).argumentsText).toBe('{"cmd":"x"}');
+  });
+
+  it("an arguments start carrying accumulated arguments seeds a card that the full message then completes", () => {
+    const m = createStreamModel();
+    pushMessage(
+      m,
+      partialToolCall({
+        eventType: "start",
+        name: "exec_command",
+        arguments: '{"cmd":"seq 1',
+        toolCallId: "t1",
+      }),
+    );
+    const card = items(m)[0] as ToolCallItem;
+    expect(card.argumentsText).toBe('{"cmd":"seq 1');
+    expect(card.callStreaming).toBe(true);
+    pushMessage(
+      m,
+      partialToolCall({ eventType: "delta", name: "", arguments: ' 40"}', toolCallId: "t1" }),
+    );
+    pushMessage(m, partialToolCall({ eventType: "stop", name: "", toolCallId: "t1" }));
+    pushMessage(
+      m,
+      toolCall({ name: "exec_command", arguments: '{"cmd":"seq 1 40"}', toolCallId: "t1" }),
+    );
+    expect(items(m)).toHaveLength(1);
+    expect(card.argumentsText).toBe('{"cmd":"seq 1 40"}');
+    expect(card.callComplete).toBe(true);
+  });
+});
+
 describe("approvals and events", () => {
   it("approval_decision annotates the matching tool card; locally registered ones are manual, the rest remote", () => {
     const m = createStreamModel();
