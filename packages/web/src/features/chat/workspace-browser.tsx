@@ -243,12 +243,22 @@ export function WorkspaceBrowser({
     };
   }, [session.sessionId, path, reloadTick]);
 
-  // Returns to the root directory and clears the preview when the Session changes.
-  useEffect(() => {
+  // Session switched: back to the root directory with no preview. Reset during render
+  // (React's documented "adjust state when a prop changes" pattern), not in an effect —
+  // an effect-based reset lets one frame commit in which the old session's preview
+  // renders against the new session, flipping the isolated iframe's src to the new
+  // session + the old path and firing a doomed request. Bumping previewSeq also
+  // invalidates any in-flight previewPath from the old session (its present() guard
+  // fails), so a late result can't resurrect old-session content after the reset.
+  const [renderedSessionId, setRenderedSessionId] = useState(session.sessionId);
+  if (renderedSessionId !== session.sessionId) {
+    setRenderedSessionId(session.sessionId);
     setPath("");
     setPreview(null);
     setData(null);
-  }, [session.sessionId]);
+    setSourceError(null);
+    previewSeq++;
+  }
 
   // Edge-triggered refresh on the panel's hidden -> visible transition (doesn't count the initial mount: mounting itself already fetches once).
   const prevActive = useRef(active);
@@ -373,8 +383,18 @@ export function WorkspaceBrowser({
   // the directory and previews the target path. Also refreshes the list: the target is most
   // likely a file the Agent just wrote, so the cached list is very likely stale; and when it's
   // the same directory, setPath is a same-value no-op that won't trigger the fetch effect, so it must be explicitly bumped.
+  //
+  // Each openRequest object is handled exactly once (the ref guard): this effect also
+  // re-runs when previewPath's identity changes with session.sessionId, at which point
+  // openRequest is still the OLD session's request — the parent clears it only after
+  // child effects. Replaying it against the new session would resurrect the preview the
+  // session-switch reset just cleared, for isolated HTML as a committed iframe onto a
+  // path the new Workspace doesn't have (a raw 404 page). browsePath creates a fresh
+  // object per click, so re-clicking the same file still re-triggers.
+  const handledOpenRequest = useRef<{ path: string } | null>(null);
   useEffect(() => {
-    if (!openRequest) return;
+    if (!openRequest || handledOpenRequest.current === openRequest) return;
+    handledOpenRequest.current = openRequest;
     const target = openRequest.path;
     const dir = target.includes("/") ? target.slice(0, target.lastIndexOf("/")) : "";
     setPath(dir);
