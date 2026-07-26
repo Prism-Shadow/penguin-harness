@@ -45,6 +45,19 @@ import {
   toolCallOutput,
   userText,
 } from "../omnimessage/index.js";
+import {
+  buildContextSummaryText,
+  buildTurnAbortedBlock,
+  extractSummary,
+  buildTurnRetriedBlock,
+  transcribeText,
+  transcribeThinking,
+  transcribeToolCall,
+  transcribeToolCallOutput,
+  transcribeUserInput,
+  unwrapSyntheticBlock,
+  userSteeringText,
+} from "../omnimessage/markers/index.js";
 import type {
   ApprovalDecision,
   CompactionMode,
@@ -243,6 +256,21 @@ export class ContextEngine {
    * compaction, we don't create an empty file containing only session_meta.
    */
   private pendingTraceRotation = false;
+  /**
+   * Steering queue: user messages sent mid-run (`steer`). Drained at every next-input
+   * assembly — after each turn (delivered as standalone `[user_steering]` user messages
+   * alongside that turn's tool outputs, or alone as the continuation input when the turn
+   * produced no tool calls) and after a completed mid-run compaction (so steering that
+   * arrived during the compaction request is delivered, never swallowed). Only accepts
+   * entries while a run is in flight; the queue is discarded **only when the run exits**
+   * — abort, LLM failure, or a plain race with completion (the abort event / task end
+   * already hands control back to the user, and silently replaying stale steering into a
+   * later Task would be more surprising than losing it; hosts get `steer() === false`
+   * after that point and fall back to a normal task).
+   */
+  private steeringQueue: string[] = [];
+  /** Whether a `run` is currently in flight (gates `steer`; compaction does not count). */
+  private taskRunning = false;
 
   constructor(private readonly deps: ContextEngineDeps) {
     this.maxTurns = deps.maxTurns ?? 100;
@@ -269,6 +297,55 @@ export class ContextEngine {
    * Docs: /docs/agent-loop § "The loop at a glance".
    */
   async *run(newMessages: OmniMessage[], opts?: RunOptions): AsyncGenerator<OmniMessage> {
+    // Steering window: only while this generator is being driven. The finally also covers
+    // abort/failure exits — anything still queued is discarded (see steeringQueue).
+    this.taskRunning = true;
+    try {
+      yield* this.runToCompletion(newMessages, opts);
+    } finally {
+      this.taskRunning = false;
+      this.steeringQueue = [];
+    }
+  }
+
+  /**
+   * Queues a steering message for the running Task: it is delivered with the next request
+   * input as a standalone `[user_steering]` user message — alongside that turn's tool
+   * outputs, or alone as the continuation input when the turn produced no tool calls.
+   * Returns false when no Task is running (the host should then submit the text as a
+   * normal task instead).
+   */
+  steer(text: string): boolean {
+    if (!this.taskRunning) return false;
+    this.steeringQueue.push(text);
+    return true;
+  }
+
+  /**
+   * Drains the steering queue into standalone `[user_steering]` user messages (one per
+   * queued text, in arrival order), yielding each to the output stream and writing it to
+   * Trace — steering is real user input: unlike a normal Prompt (which the render layer
+   * already holds locally) this text never reached the consumer, and replay attributes it
+   * positionally to the next turn's input like any other user message. Returns the messages
+   * for the caller to append to the next request input; an empty queue is a no-op.
+   */
+  private async *deliverSteering(): AsyncGenerator<OmniMessage, OmniMessage[]> {
+    if (this.steeringQueue.length === 0) return [];
+    const drained = this.steeringQueue;
+    this.steeringQueue = [];
+    const messages = drained.map((text) => userText(userSteeringText(text)));
+    for (const msg of messages) {
+      yield msg;
+      await this.write(msg);
+    }
+    return messages;
+  }
+
+  /** The actual Task loop behind `run` (split out so run's finally can close the steering window on every exit path). */
+  private async *runToCompletion(
+    newMessages: OmniMessage[],
+    opts?: RunOptions,
+  ): AsyncGenerator<OmniMessage> {
     const signal = opts?.signal;
     // Default approval policy: deny (conservative). CLI/Web will inject a real callback (interactive or permission-mode based).
     const approve: ApproveFn = opts?.approve ?? (async () => "deny");
@@ -332,9 +409,9 @@ export class ContextEngine {
 
       // This turn's input. A timeout/malformed attempt is never committed to history by
       // AgentHub (an abnormally interrupted stream doesn't land in history), so reconnect
-      // resends this turn's input unchanged, appending a `<turn_retried>` block carrying what
+      // resends this turn's input unchanged, appending a `[turn_retried]` block carrying what
       // the failed attempt already produced — the model continues from there instead of
-      // re-running tools; the tag is distinct from the user-interruption `<turn_aborted>`.
+      // re-running tools; the tag is distinct from the user-interruption `[turn_aborted]`.
       const failedTurns: TurnResult[] = [];
       let attemptInput = nextInput;
       let reconnects = 0;
@@ -392,9 +469,10 @@ export class ContextEngine {
       if (compactionReason) {
         const mode = this.deps.compaction!.mode;
         if (mode === "discard") {
-          // Once discarded, the current Task can't continue: if mid-Task, defer until this
-          // Task ends.
-          if (!midTask) {
+          // Once discarded, the current Task can't continue: defer until the Task really
+          // ends (mid-Task, or steering still queued that must continue the loop). The
+          // queue is only peeked here — delivery happens at the input assembly below.
+          if (!midTask && this.steeringQueue.length === 0) {
             yield* this.discardContext(compactionReason);
             return;
           }
@@ -406,7 +484,8 @@ export class ContextEngine {
           );
           if (result.status === "aborted") {
             // User interrupted compaction: keep the original context; if mid-Task, hold the
-            // tool outputs as carry-over per case A.
+            // tool outputs as carry-over per case A. Abort is the one path that discards the
+            // steering queue (run's finally — control goes back to the user).
             if (midTask) {
               this.pendingCarryOver = this.buildCarryOver(attemptInput, turn);
               yield* this.emitAbort("aborted during compaction");
@@ -414,7 +493,10 @@ export class ContextEngine {
             return;
           }
           if (result.status === "completed") {
-            if (!midTask) {
+            // Boundary check against the **live** queue: steering may have arrived during
+            // the multi-second compaction request and must not be swallowed (no await sits
+            // between this check and the return, so the window cannot reopen).
+            if (!midTask && this.steeringQueue.length === 0) {
               // Task boundary: the summary is merged with the next user Prompt as the new
               // context's first input.
               this.pendingSummary = result.summary!;
@@ -423,9 +505,12 @@ export class ContextEngine {
             // Mid-Task: the summary itself becomes the new LLM object's first input (this
             // turn's tool results were already folded into the compaction request and absorbed
             // into the summary); continuation relies on the model's own next-step plan written
-            // into the summary, with no hardcoded continuation instruction appended.
+            // into the summary, with no hardcoded continuation instruction appended. Queued
+            // steering (including anything that arrived during the compaction request) is
+            // delivered right after the summary as standalone [user_steering] user turns.
             await this.write(result.summary!);
-            nextInput = [result.summary!];
+            const steering = yield* this.deliverSteering();
+            nextInput = [result.summary!, ...steering];
             continue;
           }
           // failed: keep the original context and Trace index; the current Task continues and
@@ -433,10 +518,15 @@ export class ContextEngine {
         }
       }
 
-      // No tool_call this turn -> the Task ends (the final reply has already been streamed out).
-      if (!midTask) return;
-      // Otherwise continue, using the tool outputs as the next turn's LLM input.
-      nextInput = turn.toolOutputs;
+      // Next-input assembly — the steering delivery point: everything queued so far becomes
+      // standalone [user_steering] user messages riding alongside this turn's tool outputs
+      // (or alone as the continuation input when the turn produced no tool calls, instead of
+      // ending the Task — subject to the max-turns guard at the top of the loop).
+      const steering = yield* this.deliverSteering();
+      // No tool_call this turn and no steering left -> the Task ends (the final reply has
+      // already been streamed out).
+      if (!midTask && steering.length === 0) return;
+      nextInput = [...turn.toolOutputs, ...steering];
     }
   }
 
@@ -815,7 +905,7 @@ export class ContextEngine {
   /**
    * `summarize` compaction: appends the compaction Prompt to the **old** LLM object (first
    * folding in all of this turn's tool results when mid-Task, to keep tool_use/tool_result
-   * pairing), then extracts the `<summary>` and wraps it as `<context_summary>` user text. The
+   * pairing), then extracts the `[summary]` and wraps it as `[context_summary]` user text. The
    * compaction request's streamed output is not pushed to the Human output stream (it emits
    * paired compaction events, plus the compaction request's `token_usage` — positioned between
    * the two events, so the frontend can count compaction cost into its stats), but it is written
@@ -854,11 +944,9 @@ export class ContextEngine {
         // the frontend uses this to count compaction cost into stats and display it on the
         // compaction-complete line.
         if (attempt.usage) yield attempt.usage;
-        // Lenient extraction: if the output lacks a <summary> tag, use the entire compaction
+        // Lenient extraction: if the output lacks a [summary] tag, use the entire compaction
         // output as-is rather than treating it as a failure.
-        const summary = userText(
-          `<context_summary>\n${extractSummary(attempt.text)}\n</context_summary>`,
-        );
+        const summary = userText(buildContextSummaryText(extractSummary(attempt.text)));
         yield* this.emitCompactionEnd(reason, "summarize", "completed");
         await this.startNewContext();
         return { status: "completed", summary };
@@ -974,15 +1062,15 @@ export class ContextEngine {
    * Builds the interruption resend content (carry-over, interruption cleanup)
    * based on the LLM's terminal state. Used only for the **exit** cleanup of
    * aborted / failed (reconnect retry doesn't go through here — retry input is assembled by
-   * withRetriedTurns, appending `<turn_retried>` with the failed attempt's output, distinct
-   * from the user-interruption `<turn_aborted>`):
+   * withRetriedTurns, appending `[turn_retried]` with the failed attempt's output, distinct
+   * from the user-interruption `[turn_aborted]`):
    * - Model output completed (case A, outcome=completed): AgentHub already committed an
    *   assistant turn containing `tool_call`, so it can only be resent as a structured
    *   `tool_call_output` to pair with it (cannot flatten, or the already-committed tool_call
    *   would be left unanswered and rejected).
    * - Model output incomplete (case B): the `tool_call_output` in this turn's input (paired
    *   with the previous completed turn) is kept as-is; the text input and this turn's
-   *   thinking/text/tool call/result are flattened into a single `<turn_aborted>` plain-text
+   *   thinking/text/tool call/result are flattened into a single `[turn_aborted]` plain-text
    *   user message.
    * Docs: /docs/agent-loop § "Interruption and carry-over".
    */
@@ -1022,13 +1110,13 @@ export class ContextEngine {
    * Case B: flattens this attempt's input and its produced content into carry-over. Structured
    * `tool_call_output` in the input (paired with the previous completed turn) is kept as-is;
    * everything else (text input, model thinking/text, this attempt's tool calls/results) is
-   * transcribed into a single `<turn_aborted>` plain-text user message (includes all
+   * transcribed into a single `[turn_aborted]` plain-text user message (includes all
    * completed and incomplete messages, including partial thinking/text). If the input text is
-   * itself already a `<turn_aborted>` block (from a previous attempt or a previous run's
+   * itself already a `[turn_aborted]` block (from a previous attempt or a previous run's
    * carry-over), its content is unwrapped and merged in, keeping a single-level structure.
    *
    * TODO(multimodal): only text input is currently kept — `image_url` / `inline_data` input is
-   * lost during flatten (the `<turn_aborted>` structure has no corresponding transcription yet);
+   * lost during flatten (the `[turn_aborted]` structure has no corresponding transcription yet);
    * multimodal carry-over support to be added later.
    */
   private flattenCarryOver(
@@ -1050,35 +1138,34 @@ export class ContextEngine {
     return [...structured, flattened];
   }
 
-  /** Transcribes the interrupted turn's input, model thinking/text, and tool calls/results into a single `<turn_aborted>` plain-text block. */
+  /** Transcribes the interrupted turn's input, model thinking/text, and tool calls/results into a single `[turn_aborted]` plain-text block. */
   private buildTurnAbortedText(
     textInputs: OmniMessage[],
     assistantSegments: OmniMessage[],
     toolCalls: OmniMessage<ToolCallPayload>[],
     toolOutputs: OmniMessage[],
   ): string {
-    const lines: string[] = ["<turn_aborted>"];
+    const lines: string[] = [];
     for (const m of textInputs) {
       const t = (m.payload as TextPayload).text;
-      // If this text is itself already a synthetic block — a previous run's `<turn_aborted>`,
-      // or this turn's reconnect-appended `<turn_retried>` — extract its inner lines and merge
+      // If this text is itself already a synthetic block — a previous run's `[turn_aborted]`,
+      // or this turn's reconnect-appended `[turn_retried]` — extract its inner lines and merge
       // them in directly, avoiding layered nesting / unbounded growth (keeping a single-level
       // structure).
       const inner = unwrapSyntheticBlock(t);
       if (inner !== null) {
         if (inner) lines.push(inner);
       } else {
-        lines.push(`  <user_input>${t}</user_input>`);
+        lines.push(transcribeUserInput(t));
       }
     }
     lines.push(...transcribeTurnLines(assistantSegments, toolCalls, toolOutputs));
-    lines.push("</turn_aborted>");
-    return lines.join("\n");
+    return buildTurnAbortedBlock(lines);
   }
 
   /**
    * Assembles the reconnect retry input: the original input is kept as-is (structure and
-   * multimodal content preserved), with a `<turn_retried>` text appended at the end carrying
+   * multimodal content preserved), with a `[turn_retried]` text appended at the end carrying
    * each failed attempt's thinking/text and tool calls/results produced so far; if nothing has
    * been produced yet, it's just the original input. The synthetic message is sent to the model
    * only and not written to Trace (same rule as flatten carry-over).
@@ -1089,7 +1176,7 @@ export class ContextEngine {
       transcribeTurnLines(t.assistantSegments, t.toolCalls, t.toolOutputs),
     );
     if (lines.length === 0) return input;
-    return [...input, userText(["<turn_retried>", ...lines, "</turn_retried>"].join("\n"))];
+    return [...input, userText(buildTurnRetriedBlock(lines))];
   }
 
   /**
@@ -1118,19 +1205,7 @@ export class ContextEngine {
   }
 }
 
-/**
- * If the text is an engine-synthesized whole block (`<turn_aborted>` or `<turn_retried>`),
- * strips the outer tags and returns the inner lines (may be an empty string); otherwise returns
- * null. Both kinds of synthetic blocks use identical inner markup (thinking/text/tool_call/
- * tool_call_output), so it can be merged directly into a new block while keeping a single-level
- * structure.
- */
-function unwrapSyntheticBlock(text: string): string | null {
-  const m = /^<(turn_aborted|turn_retried)>\n?([\s\S]*?)\n?<\/\1>\s*$/.exec(text);
-  return m ? m[2]! : null;
-}
-
-/** Transcribes the model's produced thinking/text and tool calls/results into tagged lines (shared by `<turn_aborted>`/`<turn_retried>`). */
+/** Transcribes the model's produced thinking/text and tool calls/results into tagged lines (shared by `[turn_aborted]`/`[turn_retried]`). */
 function transcribeTurnLines(
   assistantSegments: OmniMessage[],
   toolCalls: OmniMessage<ToolCallPayload>[],
@@ -1142,31 +1217,18 @@ function transcribeTurnLines(
   for (const seg of assistantSegments) {
     const p = seg.payload as { type?: string };
     if (p.type === "thinking") {
-      lines.push(`  <thinking>${(seg.payload as ThinkingPayload).thinking}</thinking>`);
+      lines.push(transcribeThinking((seg.payload as ThinkingPayload).thinking));
     } else if (p.type === "text") {
-      lines.push(`  <text>${(seg.payload as TextPayload).text}</text>`);
+      lines.push(transcribeText((seg.payload as TextPayload).text));
     }
   }
   for (const tc of toolCalls) {
     const p = tc.payload;
-    lines.push(`  <tool_call name="${p.name}" id="${p.tool_call_id}">${p.arguments}</tool_call>`);
+    lines.push(transcribeToolCall(p.name, p.tool_call_id, p.arguments));
   }
   for (const out of toolOutputs) {
     const p = out.payload as ToolCallOutputPayload;
-    lines.push(
-      `  <tool_call_output id="${p.tool_call_id}" status="${p.stop_reason ?? "completed"}">${p.output}</tool_call_output>`,
-    );
+    lines.push(transcribeToolCallOutput(p.tool_call_id, p.stop_reason ?? "completed", p.output));
   }
   return lines;
-}
-
-/**
- * Extracts the summary within `<summary></summary>` from compaction output; when the tag is
- * missing, leniently uses the entire output as-is (not treated as a failure). Also used by
- * Session resumption's "compaction closure" replay to
- * reconstruct the `<context_summary>` pending input from the old Trace's compaction output.
- */
-export function extractSummary(raw: string): string {
-  const match = /<summary>([\s\S]*?)<\/summary>/.exec(raw);
-  return (match ? match[1]! : raw).trim();
 }

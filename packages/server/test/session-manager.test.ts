@@ -57,6 +57,7 @@ function approvalFakeSession(sessionId: string, toolName = "exec_command"): Runt
     toolPermission: (name) => (name === "read_tool" ? "r" : "rw"),
     generateTitle: async () => ({ title: null, usage: null }),
     compactability: () => "ok" as const,
+    steer: () => false,
     async *run(_input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
       const tc = toolCall({ name: toolName, arguments: "{}", toolCallId: "tc-1" });
       yield tc;
@@ -163,6 +164,7 @@ describe("session-manager", () => {
       toolPermission: () => "rw",
       generateTitle: async () => ({ title: null, usage: null }),
       compactability: () => "ok" as const,
+      steer: () => false,
       async *run(_input: OmniMessage[], opts: { thinkingLevel?: string }) {
         seen.push(opts.thinkingLevel);
         yield assistantText("ok");
@@ -189,6 +191,7 @@ describe("session-manager", () => {
       toolPermission: () => "rw",
       generateTitle: async () => ({ title: null, usage: null }),
       compactability: () => "ok" as const,
+      steer: () => false,
       async *run(): AsyncGenerator<OmniMessage> {
         yield requestBegin();
         yield toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc-1" });
@@ -227,6 +230,136 @@ describe("session-manager", () => {
     expect((compact as { status: number }).status).toBe(409);
 
     manager.decideApproval("session-1", "tc-1", "allow");
+    await waitFor(() => manager.statusOf("session-1") === "idle");
+  });
+
+  it("steer: forwards to the running session; idle / lost race → 409 not_running", async () => {
+    const steered: string[] = [];
+    const fake = approvalFakeSession("session-1");
+    fake.steer = (text: string) => {
+      steered.push(text);
+      return true;
+    };
+    const manager = makeManager(loaderOf(fake));
+    const steerErr = (text: string): unknown => {
+      try {
+        manager.steer("session-1", text);
+        return null;
+      } catch (e) {
+        return e;
+      }
+    };
+
+    // Not running (entry not even loaded): 409 not_running (typed like task_in_progress).
+    const before = steerErr("early") as HttpError;
+    expect(before.status).toBe(409);
+    expect(before.code).toBe("not_running");
+
+    await manager.startTask("session-1", [userText("go")]);
+    await waitFor(() => manager.pendingApprovalCount("session-1") === 1);
+    // Running: forwarded to the core session (no SSE event of its own).
+    expect(steerErr("focus on tests")).toBeNull();
+    expect(steered).toEqual(["focus on tests"]);
+
+    // The core session lost the race (its run just finished): also 409, so the
+    // caller falls back to a normal task.
+    fake.steer = () => false;
+    expect((steerErr("late") as HttpError).code).toBe("not_running");
+
+    manager.decideApproval("session-1", "tc-1", "allow");
+    await waitFor(() => manager.statusOf("session-1") === "idle");
+    // Idle again after the run: 409.
+    expect((steerErr("post") as HttpError).code).toBe("not_running");
+  });
+
+  it("queueIfBusy: enqueues while running, auto-starts in order after each finish; abort keeps the queue", async () => {
+    sessions.updateApprovalMode("session-1", "always-ask");
+    const runInputs: string[][] = [];
+    const fake = approvalFakeSession("session-1");
+    const origRun = fake.run.bind(fake);
+    fake.run = function (input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
+      runInputs.push(input.map((m) => (m.payload as { text?: string }).text ?? ""));
+      return origRun(input, opts);
+    };
+    const manager = makeManager(loaderOf(fake));
+    const events = capture("session-1");
+
+    const first = await manager.startTask("session-1", [userText("task 1")]);
+    expect(first.queued).toBe(false);
+    await waitFor(() => manager.pendingApprovalCount("session-1") === 1);
+
+    // Busy + queueIfBusy: held server-side instead of 409 (order preserved); without the
+    // flag the 409 mutual exclusion is unchanged.
+    const q1 = await manager.startTask("session-1", [userText("follow-up 1")], {
+      queueIfBusy: true,
+    });
+    const q2 = await manager.startTask("session-1", [userText("follow-up 2")], {
+      queueIfBusy: true,
+    });
+    expect([q1.queued, q2.queued]).toEqual([true, true]);
+    expect(manager.pendingFollowUpCount("session-1")).toBe(2);
+    const conflict = await manager.startTask("session-1", [userText("x")]).catch((e: unknown) => e);
+    expect((conflict as HttpError).code).toBe("task_in_progress");
+
+    // Abort the running task: queued follow-ups are future tasks — NOT discarded; the next
+    // one auto-starts as an ordinary task once the aborted run settles.
+    manager.abortTask("session-1");
+    await waitFor(() => runInputs.length === 2);
+    expect(runInputs[1]).toEqual(["follow-up 1"]);
+    expect(manager.pendingFollowUpCount("session-1")).toBe(1);
+
+    // Finishing each run starts the next queued input, in order, one at a time.
+    await waitFor(() => manager.pendingApprovalCount("session-1") === 1);
+    manager.decideApproval("session-1", "tc-1", "allow");
+    await waitFor(() => runInputs.length === 3);
+    expect(runInputs[2]).toEqual(["follow-up 2"]);
+    await waitFor(() => manager.pendingApprovalCount("session-1") === 1);
+    manager.decideApproval("session-1", "tc-1", "allow");
+    await waitFor(
+      () =>
+        manager.statusOf("session-1") === "idle" && manager.pendingFollowUpCount("session-1") === 0,
+    );
+
+    // task_state events report the queued count (for the input area's "N queued" hint).
+    const states = serverEvents(events).filter((e) => e.type === "task_state");
+    expect(states.some((s) => s.queued === 2)).toBe(true);
+    expect(states[states.length - 1]).toMatchObject({ state: "idle", queued: 0 });
+  });
+
+  it("queueIfBusy during compaction: the queue drains once the compaction ends", async () => {
+    const runInputs: string[][] = [];
+    let releaseCompact: (() => void) | null = null;
+    const fake: RuntimeSession = {
+      sessionId: "session-1",
+      toolPermission: () => "rw",
+      generateTitle: async () => ({ title: null, usage: null }),
+      compactability: () => "ok" as const,
+      steer: () => false,
+      // eslint-disable-next-line require-yield
+      async *run(input: OmniMessage[]): AsyncGenerator<OmniMessage> {
+        runInputs.push(input.map((m) => (m.payload as { text?: string }).text ?? ""));
+      },
+      async *compact(): AsyncGenerator<OmniMessage> {
+        await new Promise<void>((resolve) => {
+          releaseCompact = resolve;
+        });
+        yield compactionBegin({ reason: "manual", mode: "summarize", context: 1, turns: 1 });
+        yield compactionEnd({ reason: "manual", mode: "summarize", status: "completed" });
+      },
+    };
+    const manager = makeManager(loaderOf(fake));
+    await manager.startCompact("session-1");
+    await waitFor(() => releaseCompact !== null);
+
+    const q = await manager.startTask("session-1", [userText("after compact")], {
+      queueIfBusy: true,
+    });
+    expect(q.queued).toBe(true);
+    expect(manager.pendingFollowUpCount("session-1")).toBe(1);
+
+    releaseCompact!();
+    await waitFor(() => runInputs.length === 1 && manager.pendingFollowUpCount("session-1") === 0);
+    expect(runInputs[0]).toEqual(["after compact"]);
     await waitFor(() => manager.statusOf("session-1") === "idle");
   });
 
@@ -283,6 +416,7 @@ describe("session-manager", () => {
       toolPermission: () => "rw",
       generateTitle: async () => ({ title: null, usage: null }),
       compactability: () => "ok" as const,
+      steer: () => false,
       async *run() {
         // The parent-level run_subagent call (no origin): its prompt becomes the sub-session title.
         yield toolCall({
@@ -358,6 +492,7 @@ describe("session-manager", () => {
       toolPermission: () => "rw",
       generateTitle: async () => ({ title: null, usage: null }),
       compactability: () => "ok" as const,
+      steer: () => false,
       async *run(_input, opts) {
         const tc1 = toolCall({ name: "t1", arguments: "{}", toolCallId: "tc-1" });
         yield tc1;
@@ -595,6 +730,7 @@ describe("session-manager", () => {
       toolPermission: () => "rw",
       generateTitle: async () => ({ title: null, usage: null }),
       compactability: () => "ok" as const,
+      steer: () => false,
       async *run() {
         yield thinkingMessage("thinking");
         yield assistantText("answer A");
@@ -648,6 +784,7 @@ describe("session-manager", () => {
       toolPermission: () => "rw",
       generateTitle: async () => ({ title: null, usage: null }),
       compactability: () => "ok" as const,
+      steer: () => false,
       async *run() {
         yield assistantText("x".repeat(600));
         // Sub-session text doesn't count toward the main-session body threshold
@@ -698,6 +835,7 @@ describe("session-manager", () => {
       toolPermission: () => "rw",
       generateTitle: async () => ({ title: null, usage: null }),
       compactability: () => "ok" as const,
+      steer: () => false,
       async *run() {
         yield toolCall({
           name: "run_subagent",

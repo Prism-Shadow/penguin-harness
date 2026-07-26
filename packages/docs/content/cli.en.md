@@ -42,6 +42,7 @@ In-REPL commands:
 
 | Input | Behavior |
 | --- | --- |
+| any text while a Task runs | Mid-run steering: queued and delivered to the model between turns as a `[user_steering]` user message (a `»` acknowledgment echoes the text); rendering is held while you type so streamed output doesn't scribble over the line. If the Task finishes first, the line is sent as the next normal prompt |
 | `/compact` | Proactively compact the current context |
 | `/exit`, `/quit` | Quit |
 

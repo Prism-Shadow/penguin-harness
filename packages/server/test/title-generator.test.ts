@@ -164,14 +164,24 @@ describe("title-generator", () => {
     await waitFor(() => recorded.length > 0);
   });
 
-  it("fallback strips a leading <use_skills> block so the marker never becomes the title", async () => {
+  it("fallback strips a leading [use_skills] block so the marker never becomes the title", async () => {
+    const calls = { count: 0, args: [] as unknown[] };
+    const gen = makeGenerator();
+    gen.maybeGenerate(CTX, fakeSession({ title: null, usage: null }, calls), {
+      fallbackText: "[use_skills]\nskills: web-design\n[/use_skills]\n做一个落地页",
+    });
+    await waitFor(() => sessions.findById(ROW.sessionId)?.title !== null);
+    // Not "[use_skills]" — the marker block is removed before the first line is taken.
+    expect(sessions.findById(ROW.sessionId)?.title).toBe("做一个落地页");
+  });
+
+  it("fallback also strips the legacy angle-bracket <use_skills> block (material from old Traces)", async () => {
     const calls = { count: 0, args: [] as unknown[] };
     const gen = makeGenerator();
     gen.maybeGenerate(CTX, fakeSession({ title: null, usage: null }, calls), {
       fallbackText: "<use_skills>\nskills: web-design\n</use_skills>\n做一个落地页",
     });
     await waitFor(() => sessions.findById(ROW.sessionId)?.title !== null);
-    // Not "<use_skills>" — the marker block is removed before the first line is taken.
     expect(sessions.findById(ROW.sessionId)?.title).toBe("做一个落地页");
   });
 

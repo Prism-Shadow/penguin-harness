@@ -82,6 +82,8 @@ export interface RuntimeSession {
   compact(opts: { signal: AbortSignal }): AsyncGenerator<OmniMessage>;
   /** Whether compaction is possible and why; when not ok, compact() yields no messages (see core ContextEngine.compactability). */
   compactability(): CompactAvailability;
+  /** Queues a mid-run steering message (core `Session.steer`); false when no Task is running. */
+  steer(text: string): boolean;
   toolPermission(name: string): "r" | "rw" | undefined;
   /**
    * Out-of-band one-shot request for title generation (core `Session.generateTitle`,
@@ -199,6 +201,12 @@ export interface SessionManagerDeps {
   goals?: GoalsRepo;
 }
 
+/** One queued follow-up task (`queueIfBusy`): the task input plus the per-turn thinking level it was posted with. */
+interface QueuedFollowUp {
+  input: OmniMessage[];
+  thinkingLevel?: ThinkingLevelName;
+}
+
 /** Active-table entry: a loaded runtime Session plus its running state. */
 interface RuntimeEntry {
   sessionId: string;
@@ -219,6 +227,14 @@ interface RuntimeEntry {
    * the entry is discarded on its next idle access and re-resumed via the loader.
    */
   generation: number;
+  /**
+   * Queued follow-up tasks (`queueIfBusy`): task inputs accepted while a Task/compaction was
+   * in progress, auto-started one at a time (in order) once the session returns to idle —
+   * ordinary tasks with normal semantics, unlike the mid-run steering queue. Each entry
+   * keeps the per-turn thinkingLevel it was posted with (applied at auto-start).
+   * Deliberately NOT discarded on abort: they are future tasks the user explicitly queued.
+   */
+  followUps: QueuedFollowUp[];
   /** Timestamp of last activity (refreshed on load / status flip / drive completion), used for idle-eviction checks. */
   lastActivityMs: number;
 }
@@ -343,6 +359,11 @@ export class SessionManager {
     return this.entries.get(sessionId)?.approvals.list() ?? [];
   }
 
+  /** Number of queued follow-up tasks (`queueIfBusy`) awaiting auto-start. */
+  pendingFollowUpCount(sessionId: string): number {
+    return this.entries.get(sessionId)?.followUps.length ?? 0;
+  }
+
   /** Number of Sessions for this Agent that are currently running / compacting. */
   activeCountForAgent(projectId: string, agentId: string): number {
     let n = 0;
@@ -366,6 +387,7 @@ export class SessionManager {
       abort: null,
       running: null,
       generation: this.generationOf(row.projectId, row.agentId),
+      followUps: [],
       lastActivityMs: Date.now(),
     });
   }
@@ -392,54 +414,35 @@ export class SessionManager {
    * background. Returns the current actual session_id (the new id after self-heal).
    * `opts.thinkingLevel` (optional, validated by the route) rides into this run's
    * `session.run` options — a per-turn parameter, applied to this Task only.
+   * With `queueIfBusy`, a busy session (running/compacting) enqueues the input as a
+   * follow-up instead of 409: it auto-starts as an ordinary next task once the session
+   * returns to idle (`queued: true` in the result; see startQueuedFollowUp), keeping its
+   * thinkingLevel for that auto-start.
    */
   async startTask(
     sessionId: string,
     input: OmniMessage[],
-    opts?: { thinkingLevel?: ThinkingLevelName },
-  ): Promise<{ sessionId: string }> {
+    opts?: { thinkingLevel?: ThinkingLevelName; queueIfBusy?: boolean },
+  ): Promise<{ sessionId: string; queued: boolean }> {
     return this.withLock(sessionId, async () => {
       this.assertOpen();
       this.assertAgentNotDeleting(sessionId);
       this.assertSessionNotDeleting(sessionId);
       const entry = await this.ensureEntry(sessionId);
+      if (entry.status !== "idle" && opts?.queueIfBusy) {
+        entry.followUps.push({
+          input,
+          ...(opts.thinkingLevel !== undefined ? { thinkingLevel: opts.thinkingLevel } : {}),
+        });
+        entry.lastActivityMs = Date.now();
+        // Re-publish the current state so subscribers pick up the new queued count (the
+        // input itself is published when the follow-up actually starts).
+        this.publishState(entry, entry.status);
+        return { sessionId: entry.sessionId, queued: true };
+      }
       this.assertIdle(entry);
-      const channel = this.deps.channels.get(entry.sessionId);
-      const ac = new AbortController();
-      entry.status = "running";
-      entry.abort = ac;
-      entry.lastActivityMs = Date.now();
-      // Publish the input messages first (visible to other subscribers; the Trace is
-      // persisted by the SDK), then flip the running status.
-      for (const msg of input) channel.publish(msg);
-      this.publishState(entry, "running");
-
-      const approve = makeApprove({
-        // Re-reads approval_mode from the DB on every decision (a PATCH takes effect immediately).
-        getMode: () => this.deps.sessions.findById(entry.sessionId)?.approvalMode ?? "always-ask",
-        toolPermission: (name) => entry.session.toolPermission(name),
-        registry: entry.approvals,
-        publishRequest: (pending) =>
-          this.publishEvent(entry, {
-            type: "approval_request",
-            toolCall: pending.toolCall,
-            ...(pending.origin !== undefined ? { origin: pending.origin } : {}),
-          }),
-      });
-      const gen = entry.session.run(input, {
-        approve,
-        signal: ac.signal,
-        ...(opts?.thinkingLevel !== undefined ? { thinkingLevel: opts.thinkingLevel } : {}),
-      });
-      // Title material is collected by the core Session itself during run; here we only
-      // keep this call's input user text, used both as the "material present → attempt
-      // generation" criterion and as the fallback title source if the LLM call fails.
-      const userExcerpt = input
-        .filter(isPlainText("user"))
-        .map((m) => m.payload.text)
-        .join("\n");
-      entry.running = this.drive(entry, gen, { userExcerpt });
-      return { sessionId: entry.sessionId };
+      this.launchTask(entry, input, opts?.thinkingLevel);
+      return { sessionId: entry.sessionId, queued: false };
     });
   }
 
@@ -607,6 +610,73 @@ export class SessionManager {
     }
   }
 
+  /** Shared task launch (fresh tasks and auto-started follow-ups): flips to running, publishes the input, and drives the run with the per-turn thinking level (if any). Caller holds the session lock and has verified idle. */
+  private launchTask(
+    entry: RuntimeEntry,
+    input: OmniMessage[],
+    thinkingLevel?: ThinkingLevelName,
+  ): void {
+    const channel = this.deps.channels.get(entry.sessionId);
+    const ac = new AbortController();
+    entry.status = "running";
+    entry.abort = ac;
+    entry.lastActivityMs = Date.now();
+    // Publish the input messages first (visible to other subscribers; the Trace is
+    // persisted by the SDK), then flip the running status.
+    for (const msg of input) channel.publish(msg);
+    this.publishState(entry, "running");
+
+    const approve = makeApprove({
+      // Re-reads approval_mode from the DB on every decision (a PATCH takes effect immediately).
+      getMode: () => this.deps.sessions.findById(entry.sessionId)?.approvalMode ?? "always-ask",
+      toolPermission: (name) => entry.session.toolPermission(name),
+      registry: entry.approvals,
+      publishRequest: (pending) =>
+        this.publishEvent(entry, {
+          type: "approval_request",
+          toolCall: pending.toolCall,
+          ...(pending.origin !== undefined ? { origin: pending.origin } : {}),
+        }),
+    });
+    const gen = entry.session.run(input, {
+      approve,
+      signal: ac.signal,
+      ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
+    });
+    // Title material is collected by the core Session itself during run; here we only
+    // keep this call's input user text, used both as the "material present → attempt
+    // generation" criterion and as the fallback title source if the LLM call fails.
+    const userExcerpt = input
+      .filter(isPlainText("user"))
+      .map((m) => m.payload.text)
+      .join("\n");
+    entry.running = this.drive(entry, gen, { userExcerpt });
+  }
+
+  /**
+   * Auto-start of queued follow-ups: called from drive's finally whenever a Task or
+   * compaction finishes (abort included — follow-ups are future tasks the user queued, so
+   * an abort of the current run does not discard them). Re-validates everything under the
+   * session lock (another task may have snuck in, the server may be shutting down, the
+   * session may be getting deleted) and launches exactly one queued input — the next
+   * finish picks up the one after, keeping order and one-at-a-time semantics.
+   */
+  private async startQueuedFollowUp(sessionId: string): Promise<void> {
+    try {
+      await this.withLock(sessionId, async () => {
+        if (this.closed || this.deletingSessions.has(sessionId)) return;
+        const row = this.deps.sessions.findById(sessionId);
+        if (row && this.deletingAgents.has(agentKey(row.projectId, row.agentId))) return;
+        const entry = this.entries.get(sessionId);
+        if (!entry || entry.status !== "idle" || entry.followUps.length === 0) return;
+        const next = entry.followUps.shift()!;
+        this.launchTask(entry, next.input, next.thinkingLevel);
+      });
+    } catch (err) {
+      this.log(`[followup] auto-start failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
   /** Manually compact the context: 409 if already running; compaction output also flows into the SSE channel. */
   async startCompact(sessionId: string): Promise<{ sessionId: string }> {
     return this.withLock(sessionId, async () => {
@@ -641,6 +711,25 @@ export class SessionManager {
     const entry = this.entries.get(sessionId);
     if (!entry) return false;
     return entry.approvals.decide(toolCallId, decision);
+  }
+
+  /**
+   * Mid-run steering: forward the text to the running Session (core delivers it between
+   * turns as a standalone `[user_steering]` user message — no SSE event of its own; the
+   * message arrives through the stream the drive loop already publishes). 409 when the
+   * Session isn't running a Task (idle / compacting / not loaded) or the run finished in the
+   * race window — the caller falls back to submitting a normal task.
+   */
+  steer(sessionId: string, text: string): void {
+    const entry = this.entries.get(sessionId);
+    if (!entry || entry.status !== "running" || !entry.session.steer(text)) {
+      throw new HttpError(
+        409,
+        "not_running",
+        "This Session has no Task in progress; send the message as a new task instead.",
+      );
+    }
+    entry.lastActivityMs = Date.now();
   }
 
   /**
@@ -755,6 +844,7 @@ export class SessionManager {
   sweepIdle(now: number = Date.now(), idleMs: number = ENTRY_IDLE_MS): void {
     for (const [key, entry] of this.entries) {
       if (entry.status !== "idle" || entry.approvals.size !== 0 || entry.running !== null) continue;
+      if (entry.followUps.length > 0) continue; // queued follow-ups must not be evicted with the entry
       if (now - entry.lastActivityMs <= idleMs) continue;
       this.entries.delete(key);
     }
@@ -867,6 +957,7 @@ export class SessionManager {
       abort: null,
       running: null,
       generation,
+      followUps: [],
       lastActivityMs: Date.now(),
     };
     this.entries.set(currentId, entry);
@@ -1029,6 +1120,10 @@ export class SessionManager {
           fallbackText: titleSource.userExcerpt,
         });
       }
+      // Queued follow-ups: whenever a run finishes (Task or compaction, abort included),
+      // the next queued input auto-starts as an ordinary task. Fire-and-forget — it
+      // revalidates under the session lock.
+      if (entry.followUps.length > 0) void this.startQueuedFollowUp(entry.sessionId);
       // A subagent's title is likewise generated by the model, with material being the
       // subagent's **own conversation**: the prompt that spawned it plus its own reply
       // (material the parent Session collects belongs to the parent, hence the explicit
@@ -1116,7 +1211,9 @@ export class SessionManager {
   }
 
   private publishState(entry: RuntimeEntry, state: SessionStatus): void {
-    this.publishEvent(entry, { type: "task_state", state });
+    // Every state flip also reports the queued follow-up count, so subscribers can render
+    // the "N queued" hint without a dedicated event type.
+    this.publishEvent(entry, { type: "task_state", state, queued: entry.followUps.length });
   }
 
   private publishEvent(entry: RuntimeEntry, event: ServerEvent): void {

@@ -469,6 +469,8 @@ export interface SessionInfo {
   status: SessionStatus;
   /** Number of approvals awaiting human decision (a persisted count outside server events, for list badges). */
   pendingApprovalCount: number;
+  /** Number of queued follow-up tasks (`queueIfBusy`) awaiting auto-start once the session is idle. */
+  pendingFollowUpCount: number;
   /** Whether a Trace record exists (a Task has been started). */
   hasTrace: boolean;
   /** Whether archived (hidden from the default list, grouped under "Archived"). */
@@ -477,7 +479,7 @@ export interface SessionInfo {
    * Absolute path of the session's latest Trace file (the current context shard); absent
    * when no Trace exists yet. Populated on the **single-session GET only** — list rows omit
    * it (locating it costs a directory walk per Session). The web's `/model` switch puts it
-   * into the new session's `<model_switch_from>` block so the model can read the source
+   * into the new session's `[model_switch_from]` block so the model can read the source
    * history itself when it needs it.
    */
   tracePath?: string;
@@ -573,9 +575,16 @@ export interface TaskCreateRequest {
   /**
    * Thinking level for this Task's LLM requests (a per-turn parameter; one of
    * `none | low | medium | high | xhigh`, anything else is a 400). Omitted = falls back to
-   * the session's default (the Agent config's `model.thinking_level`).
+   * the session's default (the Agent config's `model.thinking_level`). A queued follow-up
+   * (`queueIfBusy`) keeps its level and applies it when it auto-starts.
    */
   thinkingLevel?: ThinkingLevelName;
+  /**
+   * Queue instead of 409 when a Task/compaction is already in progress: the input is held
+   * server-side and auto-starts as an ordinary next task once the session returns to idle
+   * (in queue order, one at a time). The response then carries `queued: true`.
+   */
+  queueIfBusy?: boolean;
   /**
    * Present = goal mode: the input's text becomes the objective and the server loops the
    * Session until the goal reaches a terminal state. `budget` is the token budget
@@ -605,6 +614,19 @@ export interface GoalResponse {
 export interface TaskCreateResponse {
   /** Current actual session_id: a Trace-less invalid Session self-heals and returns a new id; the frontend updates its route accordingly. */
   sessionId: string;
+  /** True when `queueIfBusy` enqueued the input as a follow-up instead of starting it (absent/false: the task started). */
+  queued?: boolean;
+}
+
+/**
+ * Mid-run steering (POST /api/sessions/:id/steer): a user message for the **running** Task,
+ * delivered by core between turns as a standalone `[user_steering]` user message. 202 on
+ * queue; 409 `not_running` when no Task is in progress (the frontend falls back to a normal
+ * task POST).
+ */
+export interface SteerRequest {
+  /** Non-empty message text (trimmed server-side). */
+  text: string;
 }
 
 export interface ApprovalDecisionRequest {
@@ -622,8 +644,8 @@ export type ServerEvent =
    * calls under read-only (see runtime/approvals.ts); pending approvals are resent on reconnect.
    */
   | { type: "approval_request"; toolCall: OmniMessage<ToolCallPayload>; origin?: string[] }
-  /** Session run status flip (for toggling the input area and list). */
-  | { type: "task_state"; state: SessionStatus }
+  /** Session run status flip (for toggling the input area and list); `queued` = queued follow-up count (see TaskCreateRequest.queueIfBusy). */
+  | { type: "task_state"; state: SessionStatus; queued?: number }
   /** The model-generated title after the first turn has been persisted (for in-place list updates). */
   | { type: "session_title"; sessionId: string; title: string }
   /** Last-Event-ID has been evicted from the buffer: the frontend should re-fetch the history endpoint before continuing to consume this connection. */
@@ -747,7 +769,7 @@ export interface TraceTaskStats {
   /**
    * This turn's duration span: `startTs` = the moment of this turn's **first `request_begin`**
    * — duration only looks at LLM requests, not the timestamp of user text like the user
-   * Prompt / compaction summary (`<context_summary>` is created during compaction but only
+   * Prompt / compaction summary (`[context_summary]` is created during compaction but only
    * persisted on the next run; resuming the next day would inflate the first turn by a whole
    * day for no reason); `endTs` = the moment of the last non-session_meta message in the
    * range. For a degenerate turn with no Request at all (interrupted right after sending),

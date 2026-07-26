@@ -3,8 +3,8 @@ name: agent-optimization
 description: Improve an Agent State from direct feedback or versioned multi-Case Benchmark scores and score-linked Traces.
 short_description: Improve an Agent from feedback or measured Benchmark results.
 short_description_zh: 根据反馈或 Benchmark 结果改进 Agent。
-version: 4
-updated: 2026-07-25T00:00:00Z
+version: 5
+updated: 2026-07-26T00:00:00Z
 ---
 
 # Agent Optimization
@@ -19,7 +19,7 @@ Benchmark mode requires a top-level Session with `run_subagent`, a complete base
 
 ## Pick the target Agent
 
-A one-shot request normally names the target. A delegated request begins with `Caller agent: <agent_id>`, and an @-mention handoff contains `<handoff_from>`. When one-shot mode has no explicit target, use that caller or origin; if neither exists, ask. Benchmark mode always requires an explicit Test Agent and Benchmark.
+A one-shot request normally names the target. A delegated request begins with `Caller agent: <agent_id>`, and an @-mention handoff contains `[handoff_from]`. When one-shot mode has no explicit target, use that caller or origin; if neither exists, ask. Benchmark mode always requires an explicit Test Agent and Benchmark.
 
 Resolve paths from the Environment's App Data Dir without recursively discovering the Project:
 

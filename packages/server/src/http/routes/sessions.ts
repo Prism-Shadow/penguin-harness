@@ -249,7 +249,7 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     const info = await deps.sessionService.toInfo(row, hasTrace);
     // Single-session GET only: the latest Trace file's absolute path (a directory walk per
     // call — too costly for list rows). The web's /model switch hands it to the new session's
-    // <model_switch_from> block so the model can read the source history itself.
+    // [model_switch_from] block so the model can read the source history itself.
     const tracePath = hasTrace ? await deps.sessionService.latestTracePath(row) : undefined;
     return c.json({
       session: { ...info, ...(tracePath !== undefined ? { tracePath } : {}) },
@@ -396,7 +396,11 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     // caused by a stale running/idle in the list; followed by replaying all still-pending
     // approval requests.
     const initialEvents: ServerEvent[] = [
-      { type: "task_state", state: deps.manager.statusOf(row.sessionId) },
+      {
+        type: "task_state",
+        state: deps.manager.statusOf(row.sessionId),
+        queued: deps.manager.pendingFollowUpCount(row.sessionId),
+      },
       ...deps.manager.pendingApprovals(row.sessionId).map((p) => ({
         type: "approval_request" as const,
         toolCall: p.toolCall,
@@ -411,7 +415,8 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     const body = await readJson(c);
     const goal = parseGoalField(body);
     // Per-turn thinking level (optional): validated against the five names; omitted follows
-    // the session's default. In goal mode it rides every round of the goal.
+    // the session's default. In goal mode it rides every round of the goal; a queued
+    // follow-up keeps its level for its auto-start.
     const thinkingLevel = optionalEnum(body, "thinkingLevel", THINKING_LEVELS);
     if (goal) {
       // Goal mode: the input must be plain text (it becomes the objective, re-injected
@@ -449,11 +454,28 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       return c.json({ sessionId } satisfies TaskCreateResponse, 202);
     }
     const input = parseTaskInput(body);
+    // Follow-up queue: with queueIfBusy, a busy session enqueues the input instead of 409
+    // (auto-starts as an ordinary next task once idle; the response says which happened).
+    const queueIfBusy = body.queueIfBusy === true;
     // 202: the Task executes on the server, decoupled from the SSE connection; sessionId is the current actual id (the new id after self-heal).
-    const { sessionId } = await deps.manager.startTask(row.sessionId, input, {
+    const { sessionId, queued } = await deps.manager.startTask(row.sessionId, input, {
       ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
+      queueIfBusy,
     });
-    return c.json({ sessionId } satisfies TaskCreateResponse, 202);
+    return c.json({ sessionId, queued } satisfies TaskCreateResponse, 202);
+  });
+
+  // Mid-run steering: queue a user message for the running Task; core delivers it between
+  // turns as a standalone `[user_steering]` user message (the model sees it without the loop
+  // being interrupted). 409 not_running when no Task is in progress — the frontend then falls
+  // back to a normal task POST.
+  app.post("/:sessionId/steer", async (c) => {
+    const row = resolveSession(c);
+    const body = await readJson(c);
+    const text = typeof body.text === "string" ? body.text.trim() : "";
+    if (!text) throw badRequest("text must be a non-empty string.");
+    deps.manager.steer(row.sessionId, text);
+    return c.body(null, 202);
   });
 
   // The Session's most recent goal run (for restoring the chat page's goal banner on load).

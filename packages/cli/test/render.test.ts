@@ -13,6 +13,7 @@ import {
   toolCallOutput,
   tokenUsage,
   sessionMeta,
+  userText,
   partialText,
   partialThinking,
   partialToolCall,
@@ -880,5 +881,63 @@ describe("renderHistory (resume)", () => {
       stream,
     );
     expect(text()).toBe("");
+  });
+});
+
+describe("mid-run steering rendering ([user_steering] user messages)", () => {
+  it("streaming: a complete [user_steering] user text renders as prefixed steering lines (other complete texts stay unrendered)", () => {
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t);
+    r.handle(userText("[user_steering]\nfocus on tests\nand docs\n[/user_steering]"));
+    r.handle(userText("a plain prompt")); // normal prompts are local echoes: never re-rendered
+    r.handle(assistantText("complete assistant text")); // complete assistant text: already streamed
+    const plain = stripAnsi(text());
+    expect(plain).toContain("↪ user: focus on tests");
+    expect(plain).toContain("↪ user: and docs");
+    expect(plain).not.toContain("[user_steering]");
+    expect(plain).not.toContain("a plain prompt");
+    expect(plain).not.toContain("complete assistant text");
+  });
+
+  it("renderHistory: steering user texts render with the steering prefix, not as a prompt line", () => {
+    const { stream, text } = collector();
+    renderHistory(
+      [userText("run the tests"), userText("[user_steering]\nswitch branch\n[/user_steering]")],
+      stream,
+      t,
+    );
+    const plain = stripAnsi(text());
+    expect(plain).toContain("> run the tests");
+    expect(plain).toContain("↪ user: switch branch");
+    expect(plain).not.toContain("> [user_steering]");
+  });
+
+  it("setInputHold: rendering is held while the user composes a line and flushes on release; printLine lands before the flush", () => {
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t);
+    r.setInputHold(true);
+    r.handle(partialText("start", ""));
+    r.handle(partialText("delta", "streamed while typing"));
+    expect(stripAnsi(text())).not.toContain("streamed while typing");
+    // The steering ack prints immediately (through the renderer, ahead of held output).
+    r.printLine("» steering queued: do it");
+    expect(stripAnsi(text())).toContain("» steering queued: do it");
+    expect(stripAnsi(text())).not.toContain("streamed while typing");
+    r.setInputHold(false);
+    expect(stripAnsi(text())).toContain("streamed while typing");
+    expect(stripAnsi(text()).indexOf("» steering queued")).toBeLessThan(
+      stripAnsi(text()).indexOf("streamed while typing"),
+    );
+  });
+
+  it("endTask force-releases the input hold (safety net)", () => {
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t);
+    r.setInputHold(true);
+    r.handle(partialText("start", ""));
+    r.handle(partialText("delta", "tail output"));
+    r.handle(partialText("stop"));
+    r.endTask(10);
+    expect(stripAnsi(text())).toContain("tail output");
   });
 });

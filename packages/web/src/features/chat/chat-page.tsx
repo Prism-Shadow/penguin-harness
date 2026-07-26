@@ -413,7 +413,7 @@ export function ChatPage() {
   // /model switch (handoff-style, mirroring onHandoff exactly): opens a NEW session for the
   // SAME agent on the picked model via the normal createSession API — deliberately with the
   // SOURCE session's Workspace, so files the conversation refers to stay reachable — then
-  // posts a first task whose input starts with a <model_switch_from> source block (source
+  // posts a first task whose input starts with a [model_switch_from] source block (source
   // session id / its latest trace path / workspace / previous model pair) followed by the
   // user's remainder text and images. The earlier history is NOT injected into the new
   // context (some models require thinking payloads and provider fidelity byte-for-byte on
@@ -467,7 +467,7 @@ export function ChatPage() {
 
   // @ handoff: doesn't use the current Session — creates a new chat for the @-mentioned agent
   // (approval mode carries over from the input area's current value; model/Workspace use the
-  // creation defaults). The first input = a <handoff_from> source block (current agent / Session
+  // creation defaults). The first input = a [handoff_from] source block (current agent / Session
   // / Workspace info) + the user's input and images with the @ mention stripped; jumps to the new
   // chat once sent.
   // Returns false on failure, keeping the draft so it can be resent (deletes the empty Session that never got its first message sent).
@@ -512,6 +512,46 @@ export function ChatPage() {
     if (!selected) return;
     await api.postAbort(selected.sessionId).catch(() => undefined);
   }, [selected]);
+
+  // Follow-up queue: post the full input with queueIfBusy — a busy session holds it
+  // server-side and auto-sends it as an ordinary next task once this run finishes (the
+  // "N queued" count arrives via task_state). Succeeds either way (queued or started
+  // directly in the completion race), so the input area clears the draft on true.
+  const onQueueFollowUp = useCallback(
+    async (input: TaskInputPart[]): Promise<boolean> => {
+      if (!selected) return false;
+      try {
+        const res = await api.postTask(selected.sessionId, { input, queueIfBusy: true });
+        discardSessionDraft();
+        await syncHealedSessionId(selected.sessionId, res.sessionId);
+        return true;
+      } catch (e) {
+        toastError(apiErrorText(e, { modelId: selected.modelId }));
+        return false;
+      }
+    },
+    [selected, discardSessionDraft, syncHealedSessionId],
+  );
+
+  // Mid-run steering: the text is queued on the server and delivered between turns as a
+  // standalone `[user_steering]` user message (visible once it arrives over SSE / from the
+  // Trace). "not_running" (409) means no Task is in progress anymore (race with completion):
+  // the input area then falls back to its **full** normal send path — images / skills / the
+  // whole draft included — rather than a text-only task.
+  const onSteer = useCallback(
+    async (text: string): Promise<"queued" | "not_running" | "failed"> => {
+      if (!selected) return "failed";
+      try {
+        await api.postSteer(selected.sessionId, { text });
+        return "queued";
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 409) return "not_running";
+        toastError(apiErrorText(e, { modelId: selected.modelId }));
+        return "failed";
+      }
+    },
+    [selected],
+  );
 
   const onApprove = useCallback(
     async (toolCallId: string, decision: "allow" | "deny", origin: string[]) => {
@@ -616,6 +656,12 @@ export function ChatPage() {
     <ChatInput
       status={stream.taskState}
       onSend={onSend}
+      onSteer={onSteer}
+      // Count of steering messages already visible in the stream: the input area keeps its
+      // "queued" indicator up until this count increases (i.e. the steering message arrived).
+      steeringDeliveredCount={stream.model.items.filter((i) => i.kind === "user_steering").length}
+      onQueueFollowUp={onQueueFollowUp}
+      queuedFollowUps={stream.queuedFollowUps}
       onStop={onStop}
       onCompact={onCompact}
       modelRef={activeModelRef}

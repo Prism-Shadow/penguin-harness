@@ -1,9 +1,8 @@
 /**
  * agent-mentions.ts unit tests: @ mention matching (cursor prefix / boundary
  * rules), candidate filtering, send-time parsing of a leading @ mention,
- * generation of the first new-conversation <handoff_from> origin block,
- * <scheduled_task> origin block parsing, and the /model switch's
- * <model_switch_from> origin block round-trip.
+ * and the re-export wiring for the origin marker blocks (their own semantics — both forms,
+ * anchoring, legacy compat — are covered by packages/core/test/markers.test.ts).
  */
 import { describe, expect, it } from "vitest";
 import type { AgentSummary } from "@prismshadow/penguin-server/api";
@@ -116,136 +115,27 @@ describe("splitLeadingMention (send-time parsing of a leading @)", () => {
   });
 });
 
-describe("handoffMessage (the first new-conversation <handoff_from> origin block)", () => {
-  it("full origin: agent display name and Session title as parentheticals, Workspace on its own line", () => {
-    const text = handoffMessage({
+describe("origin marker blocks are re-exported from core", () => {
+  it("handoff / model-switch producers emit the square form and round-trip through the feature module", () => {
+    const handoff = handoffMessage({ agentId: "default_agent", workspace: "/data/ws" });
+    expect(handoff.startsWith("[handoff_from]\n")).toBe(true);
+    expect(parseHandoffMessage(handoff)).toEqual({
       agentId: "default_agent",
-      agentName: "General Agent",
-      sessionId: "session-01ABC",
-      sessionTitle: "Fix the parser",
       workspace: "/data/ws",
     });
-    expect(text.startsWith("<handoff_from>\n")).toBe(true);
-    expect(text.endsWith("\n</handoff_from>")).toBe(true);
-    expect(text).toContain("agent: default_agent (General Agent)");
-    expect(text).toContain("session: session-01ABC (Fix the parser)");
-    expect(text).toContain("workspace: /data/ws");
-  });
-
-  it("draft state (no Session) carries only the source agent; the parenthetical is omitted when the display name equals the id or is absent", () => {
-    const text = handoffMessage({ agentId: "researcher", agentName: "researcher" });
-    expect(text).toContain("agent: researcher\n");
-    expect(text).not.toContain("session:");
-    expect(text).not.toContain("workspace:");
-    expect(handoffMessage({ agentId: "researcher" })).toContain("agent: researcher\n");
-  });
-
-  it("the parenthetical is omitted when the Session title is absent", () => {
-    const text = handoffMessage({
-      agentId: "default_agent",
-      sessionId: "session-01ABC",
-      workspace: "/data/ws",
-    });
-    expect(text).toContain("session: session-01ABC\n");
-  });
-});
-
-describe("parseHandoffMessage (reverse-parses the origin block, driving the handoff notice rendering)", () => {
-  it("round-trips with handoffMessage (including a Session title containing parentheses)", () => {
-    const origin = {
-      agentId: "default_agent",
-      agentName: "General Agent",
-      sessionId: "session-01ABC",
-      sessionTitle: "Fix (the) parser",
-      workspace: "/data/ws",
-    };
-    expect(parseHandoffMessage(handoffMessage(origin))).toEqual(origin);
-  });
-
-  it("minimal origin (agent only) round-trips; with display name equal to the id, generation omits the parenthetical and parsing restores only the id", () => {
-    expect(parseHandoffMessage(handoffMessage({ agentId: "researcher" }))).toEqual({
-      agentId: "researcher",
-    });
-    expect(
-      parseHandoffMessage(handoffMessage({ agentId: "researcher", agentName: "researcher" })),
-    ).toEqual({ agentId: "researcher" });
-  });
-
-  it("plain messages and longer messages merely containing an origin block are not misdetected", () => {
-    expect(parseHandoffMessage("hello @default_agent")).toBeNull();
-    expect(parseHandoffMessage(`before\n${handoffMessage({ agentId: "a1" })}`)).toBeNull();
-    expect(parseHandoffMessage(`${handoffMessage({ agentId: "a1" })}\nafter`)).toBeNull();
-  });
-});
-
-describe("parseScheduledMessage (parses the scheduled-task origin block, driving the schedule notice rendering)", () => {
-  /** Shape of the server-side scheduledMessage output (scheduler.ts). */
-  const scheduled = (name: string, firedAt: string, prompt: string): string =>
-    [
-      "<scheduled_task>",
-      "This message was sent automatically by a scheduled task; its origin is listed below and the task prompt follows.",
-      `schedule: ${name}`,
-      `fired_at: ${firedAt}`,
-      "</scheduled_task>",
-      "",
-      prompt,
-    ].join("\n");
-
-  it("parses the origin block and returns the remaining body (rendered as usual)", () => {
-    const text = scheduled(
-      "daily_report",
-      "2026-07-16T01:00:00.000Z",
-      "Write the daily report\nattach yesterday's data",
-    );
-    expect(parseScheduledMessage(text)).toEqual({
-      origin: { name: "daily_report", firedAt: "2026-07-16T01:00:00.000Z" },
-      rest: "Write the daily report\nattach yesterday's data",
+    const switched = modelSwitchMessage({ sessionId: "session-01", tracePath: "/t.jsonl" });
+    expect(switched.startsWith("[model_switch_from]\n")).toBe(true);
+    expect(parseModelSwitchMessage(switched)).toEqual({
+      sessionId: "session-01",
+      tracePath: "/t.jsonl",
     });
   });
 
-  it("plain messages and mid-text blocks are not misdetected; a missing task name means it is not an origin block", () => {
-    expect(parseScheduledMessage("hello")).toBeNull();
-    expect(
-      parseScheduledMessage(`preamble\n${scheduled("t", "2026-01-01T00:00:00Z", "p")}`),
-    ).toBeNull();
+  it("the scheduled-task parser (server-produced block) is reachable here for the banner", () => {
     expect(
       parseScheduledMessage(
-        "<scheduled_task>\nfired_at: 2026-01-01T00:00:00Z\n</scheduled_task>\n\np",
+        "[scheduled_task]\nschedule: daily\nfired_at: 2026-01-01T00:00:00Z\n[/scheduled_task]\n\nbody",
       ),
-    ).toBeNull();
-  });
-});
-
-describe("modelSwitchMessage / parseModelSwitchMessage (the /model switch origin block)", () => {
-  it("round-trips a full origin (session title with parentheses, trace path, workspace, previous pair)", () => {
-    const origin = {
-      sessionId: "session-2026-07-24-10-00-00-abcdef01",
-      sessionTitle: "Fix (the) parser",
-      tracePath: "/data/p/agents/a/traces/2026-07-24/session-x_001.jsonl",
-      workspace: "/data/ws",
-      prevProvider: "deepseek",
-      prevModelId: "deepseek-v4-pro",
-    };
-    expect(parseModelSwitchMessage(modelSwitchMessage(origin))).toEqual(origin);
-  });
-
-  it("minimal origin (session id only) round-trips; optional lines are omitted from the block", () => {
-    const text = modelSwitchMessage({ sessionId: "session-01" });
-    expect(text).not.toContain("trace:");
-    expect(text).not.toContain("workspace:");
-    expect(text).not.toContain("previous_model:");
-    expect(parseModelSwitchMessage(text)).toEqual({ sessionId: "session-01" });
-  });
-
-  it("plain messages and longer messages merely containing the block are not misdetected", () => {
-    expect(parseModelSwitchMessage("hello /model")).toBeNull();
-    expect(
-      parseModelSwitchMessage(`before\n${modelSwitchMessage({ sessionId: "s1" })}`),
-    ).toBeNull();
-    expect(parseModelSwitchMessage(`${modelSwitchMessage({ sessionId: "s1" })}\nafter`)).toBeNull();
-    // A block without a session line is not an origin block.
-    expect(
-      parseModelSwitchMessage("<model_switch_from>\ntrace: /t.jsonl\n</model_switch_from>"),
-    ).toBeNull();
+    ).toEqual({ origin: { name: "daily", firedAt: "2026-01-01T00:00:00Z" }, rest: "body" });
   });
 });

@@ -32,7 +32,7 @@
  *     compaction_begin↔end range (the compaction prompt and summary output)
  *     are never rendered and never counted toward Task segmentation — aligned
  *     with the live stream (which only pushes the event pair + token_usage);
- *     user text prefixed with `<context_summary>` is a compaction-summary
+ *     user text prefixed with `[context_summary]` is a compaction-summary
  *     injection, treated as internal input (not rendered, doesn't start a new Task).
  *   - Task segmentation: a complete text/image message on the main
  *     session's user side starts a new Task; a Task ends when the live
@@ -46,7 +46,11 @@
  *     message hits the dedup check, discardFragmentFor also discards the corresponding in-flight fragment.
  * Docs: /docs/omni-message § "The streaming discipline".
  */
-import { isEventMessage, isPartialPayload } from "@prismshadow/penguin-core/omnimessage";
+import {
+  isEventMessage,
+  isPartialPayload,
+  parseUserSteeringText,
+} from "@prismshadow/penguin-core/omnimessage";
 import type {
   ApprovalDecision,
   CompactionMode,
@@ -83,6 +87,19 @@ export interface UserTextItem {
   id: number;
   text: string;
   /** Message timestamp (milliseconds): shown on footer hover. History and real time share the same source — this message's own timestamp. */
+  atMs?: number;
+}
+
+/**
+ * Mid-run steering: a `[user_steering]`-wrapped user text delivered between turns
+ * (see core `Session.steer`). Rendered as a compact user-styled chip **inside** the running
+ * Task's flow — it never starts a new Task (`text` is the inner message, marker stripped).
+ */
+export interface UserSteeringItem {
+  kind: "user_steering";
+  id: number;
+  text: string;
+  /** Message timestamp (milliseconds): shown on footer hover. */
   atMs?: number;
 }
 
@@ -223,6 +240,7 @@ export interface TaskStatsItem {
 
 export type ChatItem =
   | UserTextItem
+  | UserSteeringItem
   | UserImageItem
   | AssistantTextItem
   | ThinkingItem
@@ -303,7 +321,7 @@ export interface StreamModel {
    *     the round's duration — which is correct, since compaction did occupy this round's wall-clock time;
    *   - Compaction **after the round ends** (finalization's automatic
    *     compaction / manual /compact), the next round's injected
-   *     `<context_summary>`, and the session_meta rewritten after a file
+   *     `[context_summary]`, and the session_meta rewritten after a file
    *     rotation all come **after** it, and are naturally excluded from the round.
    * So no compaction wall-clock addition/subtraction is needed at all —
    * just take the span directly (history rebuild and live share the same
@@ -704,10 +722,28 @@ function handleComplete(
   switch (p.type) {
     case "text": {
       if (p.role === "user") {
-        // Compaction-summary injection (`<context_summary>` prefix, an
-        // internal input in the new context file): not rendered as a user bubble, doesn't start a new Task.
-        if (p.text.startsWith("<context_summary>")) {
+        // Compaction-summary injection (`[context_summary]` prefix, an
+        // internal input in the new context file): not rendered as a user bubble, doesn't
+        // start a new Task. The old `<context_summary>` prefix is still recognized — old
+        // Traces containing it are re-rendered through this reducer.
+        if (p.text.startsWith("[context_summary]") || p.text.startsWith("<context_summary>")) {
           touchTask(model, timestamp);
+          return;
+        }
+        // Mid-run steering (`[user_steering]`-wrapped user text, delivered between turns):
+        // stays inside the running Task — it must NOT start a new Task (same exclusion idea
+        // as [context_summary]) — but unlike the summary it IS rendered, as a compact
+        // user-styled steering chip in-flow.
+        const steering = parseUserSteeringText(p.text);
+        if (steering !== null) {
+          touchTask(model, timestamp);
+          const steerMs = tsOf(timestamp);
+          model.items.push({
+            kind: "user_steering",
+            id: nextId(model),
+            text: steering,
+            ...(steerMs !== undefined ? { atMs: steerMs } : {}),
+          });
           return;
         }
         // A complete text message on the main session's user side: starts a new Task.

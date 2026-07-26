@@ -36,6 +36,10 @@ import type { StreamRenderContext } from "./message-stream";
 /** Duration the "Copied" tooltip stays visible (milliseconds). */
 const COPIED_MS = 1200;
 
+/** User glyph (24×24 line path) for the mid-run steering chip. */
+const USER_STEERING_ICON =
+  "M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0";
+
 /**
  * Message footer: timestamp + copy. **Invisible but takes up space by default** (`opacity-0`
  * rather than `hidden`) — it surfaces on hovering the message list, and because the space is
@@ -149,6 +153,32 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
         </>
       );
     }
+    case "user_steering":
+      // Mid-run steering ([user_steering]-wrapped user text delivered between turns): a
+      // compact right-aligned user-styled chip inside the running Task's flow — visually
+      // lighter than a full prompt bubble, since it doesn't start a new Task (the Trace page
+      // still shows the raw marker text as-is).
+      return (
+        <div className="anim-msg group my-2 flex flex-col items-end">
+          <div className="flex max-w-[88%] items-start gap-1.5 rounded-md border border-gray-200 bg-gray-100 px-3 py-1.5 md:max-w-[75%] dark:border-gray-700 dark:bg-gray-800">
+            <GlyphIcon
+              d={USER_STEERING_ICON}
+              className="mt-1 shrink-0 text-gray-400 dark:text-gray-500"
+            />
+            <p className="wrap-anywhere whitespace-pre-wrap text-sm leading-relaxed text-gray-800 dark:text-gray-100">
+              <span className="mr-1.5 text-xs font-semibold text-gray-500 dark:text-gray-400">
+                {S.chat.userSteering}
+              </span>
+              {item.text}
+            </p>
+          </div>
+          <MessageMeta
+            {...(item.atMs !== undefined ? { atMs: item.atMs } : {})}
+            text={item.text}
+            align="right"
+          />
+        </div>
+      );
     case "user_image":
       return (
         <div className="anim-msg group my-4 flex flex-col items-end">

@@ -31,13 +31,20 @@
  * clicking a row toggles its selection without closing the menu; the button = book icon + label +
  * selected-count badge, disabled while running/compacting). With skills selected, sending with an
  * empty text body is allowed — the sent text automatically falls back to S.chat.skillsAutoMessage.
- * When sent, the text body wraps in a `<use_skills>` block (the handoff's rest-of-message body is
+ * When sent, the text body wraps in a `[use_skills]` block (the handoff's rest-of-message body is
  * wrapped the same way); the selection clears once sending succeeds. Quick-invoke pre-selects via
  * initialSkills (read once on mount; once the installed list is ready, names not in that list are
  * pruned); the slash menu also lists installed skills, and pressing Enter on `/<skill_name>`
  * selects it.
- * Switches to a "Stop" button while a Task is running; disabled with a reason shown while
- * compacting.
+ * While a Task is running the input stays enabled and the toolbar keeps ONE action button:
+ * an empty composer shows Stop (abort), and typing turns that same button into Send, which
+ * follows the remembered mid-run send mode — steer (delivered between turns as a
+ * [user_steering] user message) or queue-as-follow-up — chosen from the toolbar's
+ * More-settings popover (available in draft state too, persisted in localStorage); sending is
+ * disabled with a reason shown while compacting.
+ * The toolbar is a single left/right row: settings controls left (scrolling horizontally when
+ * the card is too narrow), status + model + the action button right (never shrinking), so a
+ * phone viewport never pushes the action button off-screen.
  * Renders only the card body itself: outer positioning such as bottom-docking or vertical
  * centering is decided by the page.
  */
@@ -121,12 +128,11 @@ function ApprovalModeSelect({
     <Dropdown
       open={open}
       setOpen={setOpen}
-      menuClass={
-        // w-max: width exactly wraps the longest line (no wrapping within a line), avoiding an overly wide panel.
-        direction === "down"
-          ? "left-0 top-full mt-1 w-max max-w-[calc(100vw-2rem)] origin-top-left"
-          : "bottom-full left-0 mb-1 w-max max-w-[calc(100vw-2rem)] origin-bottom-left"
-      }
+      // w-max: width exactly wraps the longest line (no wrapping within a line), avoiding an
+      // overly wide panel. Placement is portal-driven (the toolbar scrolls horizontally on
+      // phones, which would otherwise clip the panel); only size classes belong here.
+      menuClass="w-max"
+      portal={{ direction, align: "left" }}
       button={
         // Button styling matches the model selector (h-8 / rounded-md / solid hover background).
         <button
@@ -371,12 +377,11 @@ function ModelSelect({
     <Dropdown
       open={open}
       setOpen={setOpen}
-      // right-0 docks the panel's right edge to the button, which itself sits ~4.5rem in from
-      // the viewport's right edge (page + card padding, gap, send button) — so the width clamp
-      // must reserve that anchor offset too, or the w-max panel's LEFT edge runs off-screen on
-      // phones (~34px off-screen at 375px with a 100vw-2rem clamp). Desktop is untouched:
-      // w-max stays far below the clamp there.
-      menuClass="right-0 top-full mt-1 w-max min-w-56 max-w-[calc(100vw-6rem)] origin-top-right"
+      // The panel's right edge docks to the button; portal placement then clamps both edges
+      // inside the viewport, so a w-max panel can no longer run off-screen on phones (it used
+      // to need a hand-tuned width clamp reserving the anchor offset).
+      menuClass="w-max min-w-56 origin-top-right"
+      portal={{ direction: "down", align: "right" }}
       button={
         <button
           type="button"
@@ -463,11 +468,8 @@ function ThinkingLevelSelect({
     <Dropdown
       open={open}
       setOpen={setOpen}
-      menuClass={
-        direction === "down"
-          ? "right-0 top-full mt-1 w-max min-w-36 origin-top-right"
-          : "bottom-full right-0 mb-1 w-max min-w-36 origin-bottom-right"
-      }
+      menuClass="w-max min-w-36"
+      portal={{ direction, align: "right" }}
       button={
         <button
           type="button"
@@ -528,6 +530,97 @@ function ThinkingLevelSelect({
 }
 
 /**
+ * Mid-run send mode: steer (delivered mid-run as a [user_steering] input) vs follow-up
+ * (queued server-side until the run ends). A remembered per-user UI preference, persisted
+ * the same way as the sidebar grouping mode (validated localStorage read under a
+ * `penguin.*` key); configurable from the More-settings popover in draft state and active
+ * sessions alike.
+ */
+type SteerMode = "steer" | "followup";
+const STEER_MODE_KEY = "penguin.steerMode";
+function initialSteerMode(): SteerMode {
+  return localStorage.getItem(STEER_MODE_KEY) === "followup" ? "followup" : "steer";
+}
+
+/** Sliders icon (24×24 line path) for the More-settings popover button. */
+const SLIDERS_ICON = "M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6";
+
+/**
+ * "More settings" popover (bottom toolbar): a compact icon button opening a small panel of
+ * setting rows — deliberately extensible, future toggles land here as additional rows. The
+ * first (currently only) row is the mid-run send mode: Steer (default) / Queue as a
+ * follow-up; the full explanation lives in each pill's hover title (not rendered by
+ * default). Never disabled — the preference is settable before and during a run.
+ *
+ * The panel renders through the shared portal layer (Dropdown's `portal`): the toolbar
+ * scrolls horizontally on phones, and a panel anchored inside a scrolling container would be
+ * clipped away — the portal also clamps both edges into the viewport, which is what the old
+ * hand-measured docking did.
+ */
+function MoreSettingsSelect({
+  steerMode,
+  onChangeSteerMode,
+  direction = "up",
+}: {
+  steerMode: SteerMode;
+  onChangeSteerMode: (mode: SteerMode) => void;
+  direction?: "up" | "down";
+}) {
+  const [open, setOpen] = useState(false);
+  // Compact pill (small-control sizing, sized to its label): the explanation is hover-only
+  // via title, per the toolbar's "full meaning on hover" convention.
+  const modeButton = (mode: SteerMode, label: string, hint: string) => (
+    <button
+      type="button"
+      title={hint}
+      aria-pressed={steerMode === mode}
+      onClick={() => onChangeSteerMode(mode)}
+      className={`h-6 rounded px-2 text-xs transition-colors duration-150 ${
+        steerMode === mode
+          ? "bg-gray-200 font-medium text-gray-800 dark:bg-gray-700 dark:text-gray-100"
+          : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
+      }`}
+    >
+      {label}
+    </button>
+  );
+  return (
+    <Dropdown
+      open={open}
+      setOpen={setOpen}
+      menuClass="w-max max-w-44"
+      portal={{ direction, align: "left" }}
+      button={
+        <button
+          type="button"
+          aria-label={S.chat.moreSettings}
+          title={S.chat.moreSettings}
+          onClick={() => setOpen((v) => !v)}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+        >
+          <GlyphIcon d={SLIDERS_ICON} size={15} />
+        </button>
+      }
+    >
+      {/* Setting row: label + compact control (descriptions hover-only). New settings append as further rows. */}
+      <div className="px-2.5 py-1.5">
+        <p className="mb-1 text-xs font-medium text-gray-700 dark:text-gray-300">
+          {S.chat.steerModeLabel}
+        </p>
+        <div
+          role="group"
+          aria-label={S.chat.steerModeLabel}
+          className="flex w-max items-center gap-0.5 rounded-md border border-gray-200 p-0.5 dark:border-gray-700"
+        >
+          {modeButton("steer", S.chat.steerModeSteer, S.chat.steerModeSteerHint)}
+          {modeButton("followup", S.chat.steerModeFollowUp, S.chat.steerModeFollowUpHint)}
+        </div>
+      </div>
+    </Dropdown>
+  );
+}
+
+/**
  * Multi-select skills dropdown (bottom toolbar, after approval mode): styled like the model
  * selector — button = book icon + "Skills" label + selected-count badge (no badge at 0; when the
  * card is narrower than @md the label hides, leaving just icon + badge); menu = top search box
@@ -558,18 +651,10 @@ function SkillSelect({
     <Dropdown
       open={open}
       setOpen={setOpen}
-      menuClass={
-        // As wide as reasonably possible so descriptions stay readable. The panel is
-        // left-anchored to a button ~8rem into the toolbar (icon-only card; ~17rem once the
-        // card is wide enough for button labels, @md), so a plain 100vw clamp still let the
-        // right edge overrun the viewport on phones (~92px at 375px — the search box's
-        // autofocus then dragged the whole page sideways); the clamp must reserve the anchor
-        // offset plus a margin. Desktop is untouched: the fixed 26rem width stays below both
-        // clamps there.
-        direction === "down"
-          ? "left-0 top-full mt-1 w-[26rem] max-w-[calc(100vw-10rem)] @md:max-w-[calc(100vw-17rem)] origin-top-left"
-          : "bottom-full left-0 mb-1 w-[26rem] max-w-[calc(100vw-10rem)] @md:max-w-[calc(100vw-17rem)] origin-bottom-left"
-      }
+      // As wide as reasonably possible so descriptions stay readable; portal placement clamps
+      // it to the viewport, so the old hand-tuned anchor-offset clamps are no longer needed.
+      menuClass="w-[26rem]"
+      portal={{ direction, align: "left" }}
       button={
         <button
           type="button"
@@ -806,7 +891,12 @@ function ContextGauge({
           transform="rotate(-90 7 7)"
         />
       </svg>
-      {unknown ? "—" : humanizeTokens(now)}/{humanizeTokens(max)}
+      {/* The ring alone carries the meaning on phones: the numbers hide below @md (the title
+          still shows the exact usage), keeping the right-hand control group inside a 320px
+          viewport in the running state. */}
+      <span className="hidden @md:inline">
+        {unknown ? "—" : humanizeTokens(now)}/{humanizeTokens(max)}
+      </span>
     </span>
   );
 }
@@ -814,6 +904,10 @@ function ContextGauge({
 export function ChatInput({
   status,
   onSend,
+  onSteer,
+  steeringDeliveredCount,
+  onQueueFollowUp,
+  queuedFollowUps = 0,
   onStop,
   onCompact,
   modelRef,
@@ -854,6 +948,29 @@ export function ChatInput({
     input: TaskInputPart[],
     goal: { budget: number; skills?: string[] } | null,
   ) => Promise<boolean>;
+  /**
+   * Mid-run steering (session state only): while a Task is running, Enter/send queues the
+   * trimmed text for the running agent — it is delivered between turns as a standalone
+   * `[user_steering]` user message. `"queued"` clears the text and shows the queued hint;
+   * `"not_running"` (409 race with completion) makes the input fall back to its full normal
+   * send path; `"failed"` keeps the draft. When absent (draft state), the input stays
+   * send-disabled while running, as before.
+   */
+  onSteer?: (text: string) => Promise<"queued" | "not_running" | "failed">;
+  /**
+   * Count of steering messages already visible in the message stream: the queued hint stays
+   * up until this increases past its value at queue time (i.e. the message was delivered).
+   */
+  steeringDeliveredCount?: number;
+  /**
+   * Follow-up queue (session state only): posts the full input with `queueIfBusy` — a busy
+   * session holds it server-side and auto-sends it as an ordinary next task once the current
+   * run finishes. Offered as the "follow-up" choice of the mid-run mode switch; when absent,
+   * only steering is offered while running.
+   */
+  onQueueFollowUp?: (input: TaskInputPart[]) => Promise<boolean>;
+  /** Server-reported queued follow-up count (from task_state): renders the "N queued" hint until they auto-send. */
+  queuedFollowUps?: number;
   /**
    * Used instead of onSend when an @ target is present (chip or a leading @ typed manually):
    * opens a new chat for the target agent (the text body carries no @ marker, and the current
@@ -1001,7 +1118,7 @@ export function ChatInput({
       ? S.chat.goalBudgetValue(humanizeTokens(goalBudget))
       : S.chat.goalBudgetUnlimited;
   // Sending is also allowed with only an @ target (chip) or skills selected and no text: a handoff's
-  // first message may be just a <handoff_from> source block; with skills and empty text, the sent
+  // first message may be just a [handoff_from] source block; with skills and empty text, the sent
   // text automatically falls back to S.chat.skillsAutoMessage (see send). Goal mode instead
   // requires a text objective and a parseable budget — and an open editor showing an invalid
   // draft disables Send outright: combined with the editor refusing to close over an invalid
@@ -1081,6 +1198,62 @@ export function ChatInput({
     },
     [onHandoffTargetChange],
   );
+
+  // Mid-run steering: while running, Enter/send queues plain text for the running agent
+  // (delivered between turns as a [user_steering] user message). Text only — images / skills /
+  // @ target stay in the draft for a later normal send (an @ target also blocks steering: a
+  // leading mention means a handoff, not a message to this agent).
+  // `!goalOn`: with the goal chip engaged the text is an OBJECTIVE — steering it into a run
+  // that happens to be active (e.g. a schedule fired) would silently repurpose it.
+  const canSteer =
+    running &&
+    !busy &&
+    !goalOn &&
+    onSteer !== undefined &&
+    target === null &&
+    text.trim().length > 0;
+  // Mid-run send mode (owner directive): the user chooses between "steer" (delivered
+  // mid-run as a [user_steering] input) and "follow-up" (held server-side and auto-sent as
+  // an ordinary next task once this run finishes). Set from the More-settings popover on
+  // the toolbar — available in draft state and active sessions alike — and **remembered**
+  // across sessions/reloads (localStorage, see STEER_MODE_KEY); the running-state send
+  // simply follows the remembered mode.
+  const [steerMode, setSteerModeState] = useState<SteerMode>(initialSteerMode);
+  const setSteerMode = (mode: SteerMode): void => {
+    setSteerModeState(mode);
+    localStorage.setItem(STEER_MODE_KEY, mode);
+  };
+  const followUpMode = steerMode === "followup" && onQueueFollowUp !== undefined;
+  // A follow-up is a full normal message: the whole draft (text / images / skills / handoff)
+  // is eligible, same content rule as canSend.
+  const canFollowUp =
+    running &&
+    !busy &&
+    !goalOn &&
+    followUpMode &&
+    (text.trim().length > 0 || images.length > 0 || target !== null || selectedSkills.length > 0);
+  // The single action button's mode: while running, an **empty** composer means Stop
+  // (abort); as soon as there is something to send it becomes the send button (steer or
+  // follow-up per the remembered mode). Idle/compacting is always send.
+  const canMidRunSend = followUpMode ? canFollowUp : canSteer;
+  const midRunSendLabel = followUpMode ? S.chat.followUpSend : S.chat.steerSend;
+  const stopAction =
+    running &&
+    text.trim().length === 0 &&
+    images.length === 0 &&
+    target === null &&
+    selectedSkills.length === 0;
+  // Queued hint: shown after a successful steer until the message shows up in the stream
+  // (steeringDeliveredCount increases past the baseline captured at queue time) or the run
+  // stops being observable (task no longer running).
+  const [steerPending, setSteerPending] = useState(false);
+  const steerBaseline = useRef(0);
+  useEffect(() => {
+    if (!steerPending) return;
+    if (!running || (steeringDeliveredCount ?? 0) > steerBaseline.current) {
+      setSteerPending(false);
+    }
+  }, [steerPending, running, steeringDeliveredCount]);
 
   /** Toggle a skill on/off (shared by dropdown option clicks and the slash skill command); the change callback lets the parent write it into the draft. */
   const toggleSkill = useCallback(
@@ -1348,8 +1521,23 @@ export function ChatInput({
     autoGrow();
   };
 
-  const send = async () => {
-    if (!canSend) return;
+  /**
+   * The full normal send path (task / handoff), also the follow-up queue path and the
+   * fallback target when a steer hits the completion race: assembles the [use_skills]
+   * block, images and @ handoff from the whole draft; `post` decides where a non-handoff
+   * message goes (default: onSend; follow-up mode: onQueueFollowUp). Deliberately not
+   * gated on `running` — the caller decides (send() gates the normal path; the steering
+   * fallback calls this directly after the server said 409 not_running, when the local
+   * `status` may still lag behind).
+   */
+  // `post` accepts onSend's goal parameter so onSend can be its default; the follow-up queue
+  // (fewer params) is assignable too. Non-goal calls always pass null.
+  const sendNormal = async (
+    post: (
+      input: TaskInputPart[],
+      goal: { budget: number; skills?: string[] } | null,
+    ) => Promise<boolean> = onSend,
+  ) => {
     const t = text.trim();
     // Goal mode: the trimmed text is the objective, sent verbatim (no images, no @ handoff —
     // cleared/blocked while the chip is on; a leading @ stays plain text). Selected skills
@@ -1383,14 +1571,14 @@ export function ChatInput({
     const rest = lead ? lead.rest : t;
     const bodyText =
       selectedSkills.length > 0 && rest === "" ? S.chat.skillsAutoMessage(selectedSkills) : rest;
-    // With non-empty selected skills: the text body is replaced with a <use_skills> block + the text (the handoff branch wraps rest the same way).
+    // With non-empty selected skills: the text body is replaced with a [use_skills] block + the text (the handoff branch wraps rest the same way).
     const body = buildSkillsMessage(selectedSkills, bodyText);
     const input: TaskInputPart[] = [];
     if (body) input.push({ type: "text", text: body });
     for (const url of images) input.push({ type: "image_url", imageUrl: url });
     setBusy(true);
     try {
-      const ok = lead ? await onHandoff(lead.agent, input) : await onSend(input, null);
+      const ok = lead ? await onHandoff(lead.agent, input) : await post(input, null);
       // Only clear the draft after a successful send: on failure (network / conflict / server error) keep the user's input and images.
       if (ok) {
         setText("");
@@ -1403,6 +1591,46 @@ export function ChatInput({
       setBusy(false);
       textareaRef.current?.focus();
     }
+  };
+
+  const send = async () => {
+    if (running) {
+      // Follow-up branch: the whole draft goes out through the normal composition path,
+      // but posted with queueIfBusy — the server holds it and auto-sends once this run
+      // finishes (an @ handoff still opens a new chat directly: the target session isn't
+      // the one running).
+      if (followUpMode) {
+        if (!canFollowUp) return;
+        await sendNormal(onQueueFollowUp!);
+        return;
+      }
+      // Steering branch: queue the trimmed text for the running agent; only the text is
+      // sent and cleared — attached images / selected skills stay for a normal send.
+      if (!canSteer) return;
+      const steerText = text.trim();
+      setBusy(true);
+      let res: "queued" | "not_running" | "failed" = "failed";
+      try {
+        res = await onSteer!(steerText);
+        if (res === "queued") {
+          // Show the "queued" hint until the steering message shows up in the stream
+          // (steeringDeliveredCount increases) — see the effect below.
+          steerBaseline.current = steeringDeliveredCount ?? 0;
+          setSteerPending(true);
+          setText("");
+          requestAnimationFrame(autoGrow);
+        }
+      } finally {
+        setBusy(false);
+        textareaRef.current?.focus();
+      }
+      // Completion race (server: no Task running anymore): deliver the whole draft — images,
+      // skills and all — through the full normal send path instead of a text-only task.
+      if (res === "not_running") await sendNormal();
+      return;
+    }
+    if (!canSend) return;
+    await sendNormal();
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -1624,6 +1852,22 @@ export function ChatInput({
         </p>
       )}
 
+      {/* Mid-run steering queued: lightweight hint until the steering message appears in the
+          stream (or the run ends). */}
+      {steerPending && (
+        <p className="anim-fade mb-1 text-xs text-gray-400 dark:text-gray-500">
+          {S.chat.steerQueuedIndicator}
+        </p>
+      )}
+
+      {/* Queued follow-ups (server-side, auto-sent once this run finishes): count from
+          task_state — survives reloads because the queue lives on the server. */}
+      {queuedFollowUps > 0 && (
+        <p className="anim-fade mb-1 text-xs text-gray-400 dark:text-gray-500">
+          {S.chat.followUpQueuedChip(queuedFollowUps)}
+        </p>
+      )}
+
       {/* Unified input card: the multi-line text body occupies the top area, with all controls
           collected onto a single bottom row that never shares a line with the text.
           @container: the bottom toolbar row collapses based on the **card's actual width**
@@ -1829,180 +2073,208 @@ export function ChatInput({
           onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
           onKeyDown={onKeyDown}
           onPaste={onPaste}
-          placeholder={narrow ? S.chat.inputPlaceholderShort : S.chat.inputPlaceholder}
+          placeholder={
+            running && followUpMode
+              ? narrow
+                ? S.chat.followUpPlaceholderShort
+                : S.chat.followUpPlaceholder
+              : running && onSteer
+                ? narrow
+                  ? S.chat.steerPlaceholderShort
+                  : S.chat.steerPlaceholder
+                : narrow
+                  ? S.chat.inputPlaceholderShort
+                  : S.chat.inputPlaceholder
+          }
           className="block max-h-44 min-h-[60px] w-full resize-none bg-transparent px-1 py-0.5 text-base leading-6 placeholder:text-gray-400 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60 dark:placeholder:text-gray-500"
         />
 
-        {/* Bottom toolbar row: attachments + approval mode + help text | context usage + Model + send */}
-        <div className="mt-1 flex items-center gap-2 text-xs">
-          <label
-            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 ${
-              goalOn
-                ? "cursor-not-allowed opacity-40"
-                : "cursor-pointer hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"
-            }`}
-            title={
-              goalOn ? S.chat.goalModeDesc : vision ? S.chat.imageAlt : S.chat.imagesAsPathHint
-            }
-          >
-            <input
-              type="file"
-              accept="image/*"
-              multiple
-              disabled={goalOn}
-              className="hidden"
-              onChange={onPickFiles}
-            />
-            <svg
-              width="17"
-              height="17"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.7"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden
-              className="block"
+        {/* Bottom toolbar row — one line, two groups: the settings controls sit left, the
+            status/model/action controls right (`justify-between`). The left group is the only
+            one allowed to give way: `min-w-0` + horizontal scroll means a crowded phone
+            viewport scrolls those controls instead of pushing the right group (and with it the
+            action button) off-screen. The right group is `shrink-0` so the action button is
+            always reachable. */}
+        <div className="mt-1 flex items-center justify-between gap-2 text-xs">
+          <div className="no-scrollbar flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">
+            <label
+              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 ${
+                goalOn
+                  ? "cursor-not-allowed opacity-40"
+                  : "cursor-pointer hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+              }`}
+              title={
+                goalOn ? S.chat.goalModeDesc : vision ? S.chat.imageAlt : S.chat.imagesAsPathHint
+              }
             >
-              <rect x="3" y="5" width="18" height="14" rx="3" />
-              <path d="M3 15l5-5 4 4 3-3 6 6" />
-            </svg>
-          </label>
-          <ApprovalModeSelect
-            value={approvalMode}
-            onChange={onChangeApprovalMode}
-            disabled={modeSaving}
-            direction={models && onChangeModel ? "down" : "up"}
-          />
-          {/* Multi-select skills dropdown (after approval mode): selected state is conveyed via the button badge. */}
-          <SkillSelect
-            skills={skills}
-            selected={selectedSkills}
-            onToggle={toggleSkill}
-            disabled={running || compacting || busy}
-            direction={models && onChangeModel ? "down" : "up"}
-          />
-          {/* "+" extension menu (input add-ons; goal mode today, more entries later). */}
-          <PlusMenu
-            items={[
-              {
-                key: "goal",
-                icon: GOAL_ICON,
-                label: S.chat.goalMode,
-                desc: S.chat.goalModeDesc,
-                active: goalOn,
-                onSelect: () => toggleGoal(!goalOn),
-              },
-            ]}
-            disabled={running || compacting || busy}
-            direction={models && onChangeModel ? "down" : "up"}
-          />
-          {/* Help text also serves as a flexible spacer: truncated first when space is short
-              (min-w-0 truncate, full text goes into the title); hidden entirely when the card is
-              narrower than @lg, leaving only the spacer to push the right-side controls to the
-              end of the row — long copy (in English) still won't break the card layout. */}
-          <span className="min-w-0 flex-1">
-            <span
-              title={`${S.chat.slashHint} · ${S.chat.mentionHint}`}
-              className="hidden truncate text-gray-300 @lg:block dark:text-gray-600"
-            >
-              {S.chat.slashHint} · {S.chat.mentionHint}
-            </span>
-          </span>
-          {/* Draft state (model still changeable = no session created yet) has no context usage to speak of: the ring isn't shown, it displays as usual once the session is created. */}
-          {!onChangeModel && (
-            <ContextGauge
-              now={contextNow}
-              unknown={contextStale}
-              {...(contextWindow !== undefined ? { window: contextWindow } : {})}
-            />
-          )}
-          {/* Draft state: conversation-time thinking level (backed by Agent settings), docked left of the model selector. */}
-          {models && onChangeModel && onChangeThinkingLevel && (
-            <ThinkingLevelSelect
-              value={thinkingLevel ?? null}
-              onChange={onChangeThinkingLevel}
-              disabled={busy}
-            />
-          )}
-          {/* Session state: per-turn thinking level (editable) — displays the user's pick,
-              else the Agent config's level (auto-follow; the parent resolves it). While
-              untouched nothing rides on tasks; a pick sticks for the session and is sent
-              with every subsequent send, never writing through to the Agent config. */}
-          {!onChangeModel && onChangeTurnThinkingLevel && (
-            <ThinkingLevelSelect
-              value={turnThinkingLevel ?? ""}
-              onChange={onChangeTurnThinkingLevel}
-              disabled={busy}
-              direction="up"
-            />
-          )}
-          {/* Left of the send button: model selector in draft state; once the Session is created the model is locked, shown read-only (still with the provider logo). */}
-          {models && onChangeModel ? (
-            <ModelSelect
-              models={models}
-              value={modelRef}
-              {...(defaultModel !== undefined ? { defaultModel } : {})}
-              onChange={onChangeModel}
-              disabled={busy}
-            />
-          ) : (
-            <span
-              title={modelRef?.modelId ?? ""}
-              className="flex h-8 min-w-0 max-w-44 shrink items-center gap-1.5 px-1 text-gray-400 dark:text-gray-500"
-            >
-              {/* Read-only display in session state: both the logo and the name come from the Session DTO's paired fields (no prefix parsing). */}
-              <ProviderLogo
-                provider={modelRef?.provider ?? "custom"}
-                className="h-4 w-4 shrink-0"
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                disabled={goalOn}
+                className="hidden"
+                onChange={onPickFiles}
               />
-              <span className="hidden min-w-0 truncate @md:block">
-                {(() => {
-                  const m = models?.find((x) => sameModelRef(x, modelRef));
-                  return m ? modelLabel(m) : (modelRef?.modelId ?? "…");
-                })()}
-              </span>
-            </span>
-          )}
-          {running ? (
-            <button
-              type="button"
-              title={S.chat.stop}
-              aria-label={S.chat.stop}
-              onClick={() => void onStop()}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-red-50 text-red-600 transition-colors duration-150 hover:bg-red-100 dark:bg-red-950/60 dark:text-red-400 dark:hover:bg-red-950"
-            >
-              <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden className="block">
-                <rect x="2" y="2" width="10" height="10" rx="2" fill="currentColor" />
-              </svg>
-            </button>
-          ) : (
-            <button
-              type="button"
-              title={S.chat.send}
-              aria-label={S.chat.send}
-              disabled={!canSend}
-              onClick={() => void send()}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-gray-900 text-white transition-colors duration-150 hover:bg-gray-700 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-300 dark:disabled:bg-gray-800 dark:disabled:text-gray-600"
-            >
-              {/* Up arrow (send) */}
               <svg
                 width="17"
                 height="17"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
-                strokeWidth="2"
+                strokeWidth="1.7"
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 aria-hidden
                 className="block"
               >
-                <path d="M12 19V5M5 12l7-7 7 7" />
+                <rect x="3" y="5" width="18" height="14" rx="3" />
+                <path d="M3 15l5-5 4 4 3-3 6 6" />
               </svg>
+            </label>
+            <ApprovalModeSelect
+              value={approvalMode}
+              onChange={onChangeApprovalMode}
+              disabled={modeSaving}
+              direction={models && onChangeModel ? "down" : "up"}
+            />
+            {/* Multi-select skills dropdown (after approval mode): selected state is conveyed via the button badge. */}
+            <SkillSelect
+              skills={skills}
+              selected={selectedSkills}
+              onToggle={toggleSkill}
+              disabled={running || compacting || busy}
+              direction={models && onChangeModel ? "down" : "up"}
+            />
+            {/* "+" extension menu (input add-ons; goal mode today, more entries later). */}
+            <PlusMenu
+              items={[
+                {
+                  key: "goal",
+                  icon: GOAL_ICON,
+                  label: S.chat.goalMode,
+                  desc: S.chat.goalModeDesc,
+                  active: goalOn,
+                  onSelect: () => toggleGoal(!goalOn),
+                },
+              ]}
+              disabled={running || compacting || busy}
+              direction={models && onChangeModel ? "down" : "up"}
+            />
+            {/* More settings popover (extensible; currently the mid-run send mode): available in
+                draft state and while running alike, the choice persists across sessions. */}
+            <MoreSettingsSelect
+              steerMode={steerMode}
+              onChangeSteerMode={setSteerMode}
+              direction={models && onChangeModel ? "down" : "up"}
+            />
+            {/* Help text: shown only when the card is wide enough (@lg); it never competes for
+                space on phones, where the group scrolls instead. */}
+            <span
+              title={`${S.chat.slashHint} · ${S.chat.mentionHint}`}
+              className="hidden min-w-0 truncate text-gray-300 @lg:block dark:text-gray-600"
+            >
+              {S.chat.slashHint} · {S.chat.mentionHint}
+            </span>
+          </div>
+
+          {/* Right group: status + model + the single action button; never shrinks. */}
+          <div className="flex shrink-0 items-center gap-2">
+            {/* Draft state (model still changeable = no session created yet) has no context usage to speak of: the ring isn't shown, it displays as usual once the session is created. */}
+            {!onChangeModel && (
+              <ContextGauge
+                now={contextNow}
+                unknown={contextStale}
+                {...(contextWindow !== undefined ? { window: contextWindow } : {})}
+              />
+            )}
+            {/* Draft state: conversation-time thinking level (backed by Agent settings), docked left of the model selector. */}
+            {models && onChangeModel && onChangeThinkingLevel && (
+              <ThinkingLevelSelect
+                value={thinkingLevel ?? null}
+                onChange={onChangeThinkingLevel}
+                disabled={busy}
+              />
+            )}
+            {/* Session state: per-turn thinking level (editable) — displays the user's pick,
+              else the Agent config's level (auto-follow; the parent resolves it). While
+              untouched nothing rides on tasks; a pick sticks for the session and is sent
+              with every subsequent send, never writing through to the Agent config. */}
+            {!onChangeModel && onChangeTurnThinkingLevel && (
+              <ThinkingLevelSelect
+                value={turnThinkingLevel ?? ""}
+                onChange={onChangeTurnThinkingLevel}
+                disabled={busy}
+                direction="up"
+              />
+            )}
+            {/* Left of the send button: model selector in draft state; once the Session is created the model is locked, shown read-only (still with the provider logo). */}
+            {models && onChangeModel ? (
+              <ModelSelect
+                models={models}
+                value={modelRef}
+                {...(defaultModel !== undefined ? { defaultModel } : {})}
+                onChange={onChangeModel}
+                disabled={busy}
+              />
+            ) : (
+              <span
+                title={modelRef?.modelId ?? ""}
+                className="flex h-8 min-w-0 max-w-44 shrink items-center gap-1.5 px-1 text-gray-400 dark:text-gray-500"
+              >
+                {/* Read-only display in session state: both the logo and the name come from the Session DTO's paired fields (no prefix parsing). */}
+                <ProviderLogo
+                  provider={modelRef?.provider ?? "custom"}
+                  className="h-4 w-4 shrink-0"
+                />
+                <span className="hidden min-w-0 truncate @md:block">
+                  {(() => {
+                    const m = models?.find((x) => sameModelRef(x, modelRef));
+                    return m ? modelLabel(m) : (modelRef?.modelId ?? "…");
+                  })()}
+                </span>
+              </span>
+            )}
+            {/* One action button, never two: while running an empty composer means "Stop"
+              (abort), and typing turns the very same button into "Send" — which, mid-run,
+              steers or queues per the remembered More-settings mode. Idle/compacting keeps
+              the ordinary send button (disabled while compacting via canSend). Merging the
+              pair keeps the running-state row within a 320px viewport. */}
+            <button
+              type="button"
+              title={stopAction ? S.chat.stop : running ? midRunSendLabel : S.chat.send}
+              aria-label={stopAction ? S.chat.stop : running ? midRunSendLabel : S.chat.send}
+              disabled={stopAction ? false : running ? !canMidRunSend : !canSend}
+              onClick={() => (stopAction ? void onStop() : void send())}
+              className={
+                stopAction
+                  ? "flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-red-50 text-red-600 transition-colors duration-150 hover:bg-red-100 dark:bg-red-950/60 dark:text-red-400 dark:hover:bg-red-950"
+                  : "flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-gray-900 text-white transition-colors duration-150 hover:bg-gray-700 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-300 dark:disabled:bg-gray-800 dark:disabled:text-gray-600"
+              }
+            >
+              {stopAction ? (
+                /* Stop (filled square) */
+                <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden className="block">
+                  <rect x="2" y="2" width="10" height="10" rx="2" fill="currentColor" />
+                </svg>
+              ) : (
+                /* Up arrow (send) */
+                <svg
+                  width="17"
+                  height="17"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden
+                  className="block"
+                >
+                  <path d="M12 19V5M5 12l7-7 7 7" />
+                </svg>
+              )}
             </button>
-          )}
+          </div>
         </div>
       </div>
     </div>

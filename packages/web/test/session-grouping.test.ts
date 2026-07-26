@@ -48,6 +48,7 @@ function session(
     createdAt,
     status: "idle",
     pendingApprovalCount: 0,
+    pendingFollowUpCount: 0,
     hasTrace: false,
     archived: over.archived ?? false,
     ...(over.source !== undefined ? { source: over.source } : {}),

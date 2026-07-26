@@ -159,6 +159,7 @@ describe("SessionManager.startGoal", () => {
       toolPermission: () => "rw",
       generateTitle: async () => ({ title: null, usage: null }),
       compactability: () => "ok" as const,
+      steer: () => false,
       async *run(input: OmniMessage[], opts) {
         round++;
         runOpts.push({
