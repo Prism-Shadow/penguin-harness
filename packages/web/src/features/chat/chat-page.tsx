@@ -120,9 +120,11 @@ export function ChatPage() {
   const [infoOpen, setInfoOpen] = useState(false);
   const [modeSaving, setModeSaving] = useState(false);
   const [models, setModels] = useState<ModelsResponse | null>(null);
-  // Per-turn thinking level, local per-session UI state: "" = follow the Agent config
-  // (nothing is sent); an explicit pick rides on each postTask as `thinkingLevel`. Never
-  // written through to the Agent config (that behavior stays draft-only).
+  // Per-turn thinking level, local per-session UI state: "" = untouched — the picker then
+  // displays the Agent config's level and postTask omits thinkingLevel (auto-follow: the
+  // server/core fallback applies, so mid-session Agent-config edits keep taking effect).
+  // Once the user picks a level it sticks for the session and rides on every subsequent
+  // postTask. Never written through to the Agent config (that behavior stays draft-only).
   const [turnThinkingLevel, setTurnThinkingLevel] = useState("");
 
   const routeSessionId = params.sessionId ?? null;
@@ -182,6 +184,27 @@ export function ChatPage() {
       .getAgentSkills(projectId, selectedAgentId)
       .then((res) => {
         if (!cancelled) setAgentSkills(res.skills);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, selectedAgentId]);
+
+  // The session Agent's configured thinking level ("" = unset/loading), via the same
+  // agent-config endpoint the draft picker uses: the in-session picker DISPLAYS this while
+  // the user hasn't picked a level (auto-follow — sending still omits the level until
+  // touched, see turnThinkingLevel). Refetched when the session's Agent changes; a failed
+  // fetch leaves it unset (the picker then shows an em dash until picked).
+  const [agentThinkingLevel, setAgentThinkingLevel] = useState("");
+  useEffect(() => {
+    setAgentThinkingLevel("");
+    if (!projectId || !selectedAgentId) return;
+    let cancelled = false;
+    api
+      .getAgentConfig(projectId, selectedAgentId)
+      .then((res) => {
+        if (!cancelled) setAgentThinkingLevel(res.config.model?.thinkingLevel ?? "");
       })
       .catch(() => undefined);
     return () => {
@@ -361,8 +384,9 @@ export function ChatPage() {
     async (input: TaskInputPart[]): Promise<boolean> => {
       if (!selected) return false;
       try {
-        // An explicitly picked per-turn thinking level rides on each task; "" (follow the
-        // Agent config) sends nothing.
+        // An explicitly picked per-turn thinking level rides on each task; "" (untouched)
+        // sends nothing — the server/core falls back to the Agent config, so config edits
+        // keep taking effect mid-session until the user pins a level.
         const res = await api.postTask(selected.sessionId, {
           input,
           ...(turnThinkingLevel
@@ -593,7 +617,9 @@ export function ChatPage() {
       {...(models !== null ? { models: models.models } : {})}
       {...(models?.defaultModel !== undefined ? { defaultModel: models.defaultModel } : {})}
       onSwitchModel={onSwitchModel}
-      turnThinkingLevel={turnThinkingLevel}
+      // Display value: the user's pick for this session, else the Agent config's level
+      // (auto-follow while untouched; the send path uses the raw pick — see onSend).
+      turnThinkingLevel={turnThinkingLevel || agentThinkingLevel}
       onChangeTurnThinkingLevel={setTurnThinkingLevel}
       {...(contextWindow !== undefined ? { contextWindow } : {})}
       contextNow={stream.model.stats.contextNow}

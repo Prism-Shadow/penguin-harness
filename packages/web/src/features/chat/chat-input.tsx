@@ -427,41 +427,37 @@ function ModelSelect({
 const SPARK_ICON = "M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z";
 
 /**
- * Conversation-time thinking-level picker, used in two places:
+ * Conversation-time thinking-level picker, used in two places. Both variants list only the
+ * concrete levels (per review: a title bar names the control; short names only, no
+ * descriptions, no "default"/"follow" row, and no "none" — many models cannot disable
+ * thinking; a stored legacy "none" still displays via the label table, just never offered):
  * - Draft state (docked left of the model selector): shows the **selected Agent's** current
  *   `model.thinking_level` and writes a picked level straight through to the Agent settings —
  *   it applies to the session created on first send and becomes the Agent's new default
- *   (switch-becomes-default). Per review: a title bar names the control, and the menu lists
- *   the selectable levels with short names only (no descriptions, no "default" row, and no
- *   "none" — many models cannot disable thinking); an Agent without an explicit override
- *   shows an em dash until a level is picked, and a stored legacy "none" still displays via
- *   the label table (just never offered).
- * - Active session (`followLabel` given): the level is a **per-turn parameter** sent with
- *   each task — the menu gains a leading "follow agent config" row (value ""), the default;
- *   an explicit pick applies to this session's subsequent sends only and never writes
- *   through to the Agent config.
+ *   (switch-becomes-default). An Agent without an explicit override shows an em dash until a
+ *   level is picked.
+ * - Active session: the level is a **per-turn parameter** sent with each task. The displayed
+ *   value initializes to the Agent config's level and auto-follows it while the user hasn't
+ *   picked (the parent resolves the display value and keeps omitting the level from tasks
+ *   until touched); an explicit pick sticks for the session and rides on every subsequent
+ *   send, never writing through to the Agent config.
  */
 function ThinkingLevelSelect({
   value,
   onChange,
   disabled,
-  followLabel,
   direction = "down",
 }: {
-  /** Current level ("" = no override yet); null = the Agent config is still loading. */
+  /** Level to display and mark selected ("" = none to show yet); null = the Agent config is still loading (draft). */
   value: string | null;
   onChange: (level: string) => void;
   disabled: boolean;
-  /** When given, prepends a "follow agent config" row (value "") and uses this label for it (the session variant). */
-  followLabel?: string;
   /** Popup direction: down for the draft card (room below), up for the bottom-docked session composer. */
   direction?: "down" | "up";
 }) {
   const [open, setOpen] = useState(false);
   const label =
-    value === null
-      ? "…"
-      : (thinkingLevelLabel(S.chat.thinkingLevelNames, value) ?? followLabel ?? "—");
+    value === null ? "…" : (thinkingLevelLabel(S.chat.thinkingLevelNames, value) ?? "—");
   return (
     <Dropdown
       open={open}
@@ -506,16 +502,9 @@ function ThinkingLevelSelect({
       <div className="border-b border-gray-100 px-3 pb-1.5 pt-0.5 text-xs font-semibold text-gray-500 dark:border-gray-800 dark:text-gray-400">
         {S.chat.thinkingLevel}
       </div>
-      {[
-        // Session variant: the leading "follow agent config" row (value "") is the default.
-        ...(followLabel !== undefined ? [{ level: "", name: followLabel }] : []),
-        ...SELECTABLE_THINKING_LEVELS.map((level) => ({
-          level: level as string,
-          name: S.chat.thinkingLevelNames[level] ?? level,
-        })),
-      ].map(({ level, name }) => (
+      {SELECTABLE_THINKING_LEVELS.map((level) => (
         <button
-          key={level || "follow"}
+          key={level}
           type="button"
           onClick={() => {
             onChange(level);
@@ -527,7 +516,9 @@ function ThinkingLevelSelect({
               : "text-gray-600 dark:text-gray-400"
           }`}
         >
-          <span className="min-w-0 flex-1 truncate">{name}</span>
+          <span className="min-w-0 flex-1 truncate">
+            {S.chat.thinkingLevelNames[level] ?? level}
+          </span>
           <span className="w-3 shrink-0 text-center">{level === value ? "✓" : ""}</span>
         </button>
       ))}
@@ -816,13 +807,16 @@ export function ChatInput({
    */
   onChangeThinkingLevel?: (level: string) => void;
   /**
-   * Session state: the per-turn thinking level for this session's sends ("" = follow the
-   * Agent config — nothing is sent). Local UI state owned by the parent; an explicit pick is
-   * sent with each task as `thinkingLevel` and never writes through to the Agent config
-   * (that behavior stays draft-only).
+   * Session state: the per-turn thinking level to DISPLAY — the parent resolves it as "the
+   * user's pick for this session, else the Agent config's level" ("" = neither known yet),
+   * so the picker auto-follows the config until touched. The send path is the parent's own
+   * state: while untouched nothing is sent with tasks (the server/core fallback applies and
+   * mid-session Agent-config edits keep taking effect); an explicit pick sticks and is sent
+   * with every subsequent task, never writing through to the Agent config (that behavior
+   * stays draft-only).
    */
   turnThinkingLevel?: string;
-  /** Session state: changes the per-turn thinking level; also enables the editable picker. */
+  /** Session state: pins the per-turn thinking level for this session; also enables the editable picker. */
   onChangeTurnThinkingLevel?: (level: string) => void;
   /** Model's context window (from models config; when not configured, the ring's cap falls back to 128000 via resolveContextWindow). */
   contextWindow?: number;
@@ -1577,15 +1571,15 @@ export function ChatInput({
               disabled={busy}
             />
           )}
-          {/* Session state: per-turn thinking level (editable) — "" follows the Agent config
-              (nothing is sent); an explicit pick rides on each send as `thinkingLevel` and
-              never writes through to the Agent config. */}
+          {/* Session state: per-turn thinking level (editable) — displays the user's pick,
+              else the Agent config's level (auto-follow; the parent resolves it). While
+              untouched nothing rides on tasks; a pick sticks for the session and is sent
+              with every subsequent send, never writing through to the Agent config. */}
           {!onChangeModel && onChangeTurnThinkingLevel && (
             <ThinkingLevelSelect
               value={turnThinkingLevel ?? ""}
               onChange={onChangeTurnThinkingLevel}
               disabled={busy}
-              followLabel={S.chat.thinkingFollowConfig}
               direction="up"
             />
           )}

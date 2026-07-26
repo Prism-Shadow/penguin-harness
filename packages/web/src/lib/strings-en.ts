@@ -673,7 +673,6 @@ When done, open index.html in a browser and self-test once.`,
       title ? `Back to the original conversation: ${title}` : "Back to the original conversation",
     switchModel: "Switch model — continue this conversation in a new session",
     switchModelTitle: "Switch model",
-    thinkingFollowConfig: "Follow agent config",
     modelSwitchFrom: (prevModel?: string) =>
       prevModel
         ? `Switched model (was ${prevModel}) — continued from the earlier conversation`

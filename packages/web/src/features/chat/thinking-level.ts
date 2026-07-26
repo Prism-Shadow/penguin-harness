@@ -1,14 +1,18 @@
 /**
  * Pure logic for the conversation-time thinking-level pickers (chat draft + active session).
  *
- * Two variants share these levels and labels:
+ * Two variants share these levels and labels, and both list only concrete levels — there is
+ * no "follow config" row anywhere:
  * - Draft view: backed by the **Agent settings** (`system_config.model.thinking_level`) —
  *   shows the selected Agent's current level and writes a picked level straight through to
  *   the Agent config, so the session created on first send runs with it and it becomes the
  *   Agent's new default (switch-becomes-default).
- * - Active session: the level is a **per-turn override** — local UI state defaulting to
- *   "follow agent config" (nothing sent); an explicit pick rides on each task as
- *   `thinkingLevel` and never writes through to the Agent config.
+ * - Active session: the level is a **per-turn override**. The picker's displayed value
+ *   initializes to the Agent config's level and auto-follows it while the user hasn't
+ *   picked (internally the "" state remains as "untouched": tasks then omit the level, so
+ *   the server/core fallback applies and config edits keep taking effect); an explicit pick
+ *   sticks for the session and rides on every subsequent task as `thinkingLevel`, never
+ *   writing through to the Agent config.
  * Per review: the menus list the levels with short names only (no descriptions, no
  * "default" row) under a title bar naming the control — and they do **not** offer "none"
  * (many models cannot disable thinking): "none" stays a valid stored/wire value, so a

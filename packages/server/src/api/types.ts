@@ -572,8 +572,8 @@ export interface TaskCreateRequest {
   input: TaskInputPart[];
   /**
    * Thinking level for this Task's LLM requests (a per-turn parameter; one of
-   * `none | low | medium | high | xhigh`, anything else is a 400). Omitted = follow the
-   * session's default (the Agent config's `model.thinking_level`).
+   * `none | low | medium | high | xhigh`, anything else is a 400). Omitted = falls back to
+   * the session's default (the Agent config's `model.thinking_level`).
    */
   thinkingLevel?: ThinkingLevelName;
 }

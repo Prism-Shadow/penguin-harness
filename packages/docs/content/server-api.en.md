@@ -195,7 +195,7 @@ Key request bodies (explicit keys):
 interface TaskCreateRequest {
   input: TaskInputPart[];
   // Thinking level for this Task (a per-turn parameter, one of the five names; 400 otherwise);
-  // omitted = follow the Agent config
+  // omitted = falls back to the Agent config
   thinkingLevel?: "none" | "low" | "medium" | "high" | "xhigh";
 }
 type TaskInputPart =

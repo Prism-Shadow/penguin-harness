@@ -1,8 +1,10 @@
 /**
- * thinking-level.ts unit tests: the conversation-time picker's short-name lookup and the
- * selectable list — the picker offers only low/medium/high/xhigh (many models cannot disable
- * thinking), while "none" stays a displayable stored value; "" (no override yet) and
- * session_meta's "default" resolve to null (trigger shows a placeholder; the session tag hides).
+ * thinking-level.ts unit tests: the conversation-time pickers' short-name lookup and the
+ * selectable list — both pickers offer only low/medium/high/xhigh (many models cannot disable
+ * thinking; there is no "follow config" row — the session picker auto-follows the Agent
+ * config by initializing its display to it), while "none" stays a displayable stored value;
+ * "" (internally "untouched"/no override) and a legacy meta's "default" resolve to null so
+ * callers substitute the config level or a placeholder.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -40,7 +42,7 @@ describe("thinking level lists", () => {
 });
 
 describe("thinkingLevelLabel", () => {
-  it("returns null for non-levels: '' (no override yet), session_meta's 'default', unknown, null", () => {
+  it("returns null for non-levels: '' (untouched/no override), a legacy meta's 'default', unknown, null", () => {
     expect(thinkingLevelLabel(NAMES, "")).toBeNull();
     expect(thinkingLevelLabel(NAMES, "default")).toBeNull();
     expect(thinkingLevelLabel(NAMES, "ultra")).toBeNull();
