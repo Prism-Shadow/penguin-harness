@@ -37,8 +37,10 @@
  * pruned); the slash menu also lists installed skills, and pressing Enter on `/<skill_name>`
  * selects it.
  * While a Task is running the Stop button appears next to the send button, and the input stays
- * enabled for mid-run steering (Enter/send queues the text, delivered with the next tool
- * result); disabled with a reason shown while compacting.
+ * enabled: Enter/send follows the remembered mid-run send mode — steer (delivered between
+ * turns as a [user_steering] user message) or queue-as-follow-up — chosen from the toolbar's
+ * More-settings popover (available in draft state too, persisted in localStorage); disabled
+ * with a reason shown while compacting.
  * Renders only the card body itself: outer positioning such as bottom-docking or vertical
  * centering is decided by the page.
  */
@@ -528,6 +530,97 @@ function ThinkingLevelSelect({
 }
 
 /**
+ * Mid-run send mode: steer (delivered mid-run as a [user_steering] input) vs follow-up
+ * (queued server-side until the run ends). A remembered per-user UI preference, persisted
+ * the same way as the sidebar grouping mode (validated localStorage read under a
+ * `penguin.*` key); configurable from the More-settings popover in draft state and active
+ * sessions alike.
+ */
+type SteerMode = "steer" | "followup";
+const STEER_MODE_KEY = "penguin.steerMode";
+function initialSteerMode(): SteerMode {
+  return localStorage.getItem(STEER_MODE_KEY) === "followup" ? "followup" : "steer";
+}
+
+/** Sliders icon (24×24 line path) for the More-settings popover button. */
+const SLIDERS_ICON = "M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6";
+
+/**
+ * "More settings" popover (bottom toolbar): a compact icon button opening a small panel of
+ * setting rows — deliberately extensible, future toggles land here as additional rows. The
+ * first (currently only) row is the mid-run send mode: Steer (default) / Queue as a
+ * follow-up. Same Dropdown behavior as the toolbar's other pickers (upward expansion at the
+ * bottom-docked composer, `max-w-[calc(100vw-2rem)]` viewport clamp on narrow screens);
+ * never disabled — the preference is settable before and during a run.
+ */
+function MoreSettingsSelect({
+  steerMode,
+  onChangeSteerMode,
+  direction = "up",
+}: {
+  steerMode: SteerMode;
+  onChangeSteerMode: (mode: SteerMode) => void;
+  direction?: "up" | "down";
+}) {
+  const [open, setOpen] = useState(false);
+  const modeButton = (mode: SteerMode, label: string, hint: string) => (
+    <button
+      type="button"
+      title={hint}
+      aria-pressed={steerMode === mode}
+      onClick={() => onChangeSteerMode(mode)}
+      className={`h-7 flex-1 rounded px-2 text-xs transition-colors duration-150 ${
+        steerMode === mode
+          ? "bg-gray-200 font-medium text-gray-800 dark:bg-gray-700 dark:text-gray-100"
+          : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
+      }`}
+    >
+      {label}
+    </button>
+  );
+  return (
+    <Dropdown
+      open={open}
+      setOpen={setOpen}
+      menuClass={
+        direction === "down"
+          ? "left-0 top-full mt-1 w-64 max-w-[calc(100vw-2rem)] origin-top-left"
+          : "bottom-full left-0 mb-1 w-64 max-w-[calc(100vw-2rem)] origin-bottom-left"
+      }
+      button={
+        <button
+          type="button"
+          aria-label={S.chat.moreSettings}
+          title={S.chat.moreSettings}
+          onClick={() => setOpen((v) => !v)}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+        >
+          <GlyphIcon d={SLIDERS_ICON} size={15} />
+        </button>
+      }
+    >
+      {/* Setting row: label + control + current-choice description. New settings append as further rows. */}
+      <div className="px-3 py-2">
+        <p className="mb-1.5 text-xs font-medium text-gray-700 dark:text-gray-300">
+          {S.chat.steerModeLabel}
+        </p>
+        <div
+          role="group"
+          aria-label={S.chat.steerModeLabel}
+          className="flex items-center gap-0.5 rounded-md border border-gray-200 p-0.5 dark:border-gray-700"
+        >
+          {modeButton("steer", S.chat.steerModeSteer, S.chat.steerModeSteerHint)}
+          {modeButton("followup", S.chat.steerModeFollowUp, S.chat.steerModeFollowUpHint)}
+        </div>
+        <p className="mt-1.5 text-xs leading-4 text-gray-400 dark:text-gray-500">
+          {steerMode === "followup" ? S.chat.steerModeFollowUpHint : S.chat.steerModeSteerHint}
+        </p>
+      </div>
+    </Dropdown>
+  );
+}
+
+/**
  * Multi-select skills dropdown (bottom toolbar, after approval mode): styled like the model
  * selector — button = book icon + "Skills" label + selected-count badge (no badge at 0; when the
  * card is narrower than @md the label hides, leaving just icon + badge); menu = top search box
@@ -941,12 +1034,15 @@ export function ChatInput({
     running && !busy && onSteer !== undefined && target === null && text.trim().length > 0;
   // Mid-run send mode (owner directive): the user chooses between "steer" (delivered
   // mid-run as a [user_steering] input) and "follow-up" (held server-side and auto-sent as
-  // an ordinary next task once this run finishes). Defaults to steer; resets when the run
-  // ends so the next run starts from the default again.
-  const [steerMode, setSteerMode] = useState<"steer" | "followup">("steer");
-  useEffect(() => {
-    if (!running) setSteerMode("steer");
-  }, [running]);
+  // an ordinary next task once this run finishes). Set from the More-settings popover on
+  // the toolbar — available in draft state and active sessions alike — and **remembered**
+  // across sessions/reloads (localStorage, see STEER_MODE_KEY); the running-state send
+  // simply follows the remembered mode.
+  const [steerMode, setSteerModeState] = useState<SteerMode>(initialSteerMode);
+  const setSteerMode = (mode: SteerMode): void => {
+    setSteerModeState(mode);
+    localStorage.setItem(STEER_MODE_KEY, mode);
+  };
   const followUpMode = steerMode === "followup" && onQueueFollowUp !== undefined;
   // A follow-up is a full normal message: the whole draft (text / images / skills / handoff)
   // is eligible, same content rule as canSend.
@@ -1680,6 +1776,13 @@ export function ChatInput({
             disabled={running || compacting || busy}
             direction={models && onChangeModel ? "down" : "up"}
           />
+          {/* More settings popover (extensible; currently the mid-run send mode): available in
+              draft state and while running alike, the choice persists across sessions. */}
+          <MoreSettingsSelect
+            steerMode={steerMode}
+            onChangeSteerMode={setSteerMode}
+            direction={models && onChangeModel ? "down" : "up"}
+          />
           {/* Help text also serves as a flexible spacer: truncated first when space is short
               (min-w-0 truncate, full text goes into the title); hidden entirely when the card is
               narrower than @lg, leaving only the spacer to push the right-side controls to the
@@ -1747,45 +1850,11 @@ export function ChatInput({
               </span>
             </span>
           )}
-          {/* While running: Stop stays available; when the host supports both mid-run paths, a
-              compact segmented switch chooses between steering (default, delivered mid-run)
-              and follow-up (queued server-side, auto-sent after this run); the send button
-              stays next to them. Idle/compacting keeps the single send button (disabled while
-              compacting via canSend). */}
-          {running && onSteer && onQueueFollowUp && (
-            <div
-              role="group"
-              aria-label={S.chat.steerModeLabel}
-              className="flex h-8 shrink-0 items-center rounded-md border border-gray-200 p-0.5 text-xs dark:border-gray-700"
-            >
-              <button
-                type="button"
-                title={S.chat.steerModeSteerHint}
-                aria-pressed={steerMode === "steer"}
-                onClick={() => setSteerMode("steer")}
-                className={`h-full rounded px-2 transition-colors duration-150 ${
-                  steerMode === "steer"
-                    ? "bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-100"
-                    : "text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
-                }`}
-              >
-                {S.chat.steerModeSteer}
-              </button>
-              <button
-                type="button"
-                title={S.chat.steerModeFollowUpHint}
-                aria-pressed={steerMode === "followup"}
-                onClick={() => setSteerMode("followup")}
-                className={`h-full rounded px-2 transition-colors duration-150 ${
-                  steerMode === "followup"
-                    ? "bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-100"
-                    : "text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
-                }`}
-              >
-                {S.chat.steerModeFollowUp}
-              </button>
-            </div>
-          )}
+          {/* While running: Stop stays available next to the send button — no inline mode
+              switch here (it overflowed on narrow screens); the mid-run send mode lives in
+              the More-settings popover on the left side of this toolbar and the send simply
+              follows the remembered choice. Idle/compacting keeps the single send button
+              (disabled while compacting via canSend). */}
           {running && (
             <button
               type="button"

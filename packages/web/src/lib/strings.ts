@@ -600,7 +600,9 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     steerQueuedIndicator: "插话已排队，将随下一轮送达",
     /** Label of the [user_steering] chip (a mid-run user message delivered between turns). */
     userSteering: "用户插话",
-    /** Mid-run send-mode switch: steer (delivered mid-run) vs follow-up (queued until the run ends). */
+    /** More-settings popover on the input toolbar (extensible setting rows; holds the mid-run send mode). */
+    moreSettings: "更多设置",
+    /** Mid-run send-mode setting: steer (delivered mid-run) vs follow-up (queued until the run ends). */
     steerModeLabel: "运行中发送方式",
     steerModeSteer: "插话",
     steerModeSteerHint: "立即插话：随下一轮对话送达运行中的 Agent",
