@@ -91,7 +91,9 @@ beforeEach(async () => {
 
 afterEach(async () => {
   env.dispose();
-  await rm(tmp, { recursive: true, force: true });
+  // Retries: on Windows a just-killed process tree releases its cwd/file locks asynchronously,
+  // so an immediate recursive rm can hit EBUSY; fs.rm retries those with a linear backoff.
+  await rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 });
 
 describe("exec_command — long-running command sessions", () => {

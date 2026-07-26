@@ -67,7 +67,9 @@ beforeEach(async () => {
 afterEach(async () => {
   if (originalHome === undefined) delete process.env.HOME;
   else process.env.HOME = originalHome;
-  await rm(tmp, { recursive: true, force: true });
+  // Retries: on Windows a just-killed process tree releases its cwd/file locks asynchronously,
+  // so an immediate recursive rm can hit EBUSY; fs.rm retries those with a linear backoff.
+  await rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 });
 
 describe("Environment.listTools", () => {
@@ -485,9 +487,12 @@ describe("Environment.executeTool — relaxed tool contract", () => {
 
 describe("Environment.executeTool — timeoutMs (PRN-013)", () => {
   it("fails a tool exceeding timeoutMs, keeps prior output, and streams the timeout reason", async () => {
+    // Windows: a Git-Bash login shell takes several hundred ms to start, so the timeout must
+    // leave room for `echo begin` to run first — otherwise there is no prior output to keep.
+    const timeoutMs = process.platform === "win32" ? 1500 : 200;
     const env = new Environment({
       workspaceDir: tmp,
-      toolConfig: makeToolConfig(execTool({ timeoutMs: 200 })),
+      toolConfig: makeToolConfig(execTool({ timeoutMs })),
     });
     const startedAt = Date.now();
 
@@ -502,7 +507,7 @@ describe("Environment.executeTool — timeoutMs (PRN-013)", () => {
     );
 
     const elapsedMs = Date.now() - startedAt;
-    expect(elapsedMs).toBeLessThan(3000); // Did not wait the full 5s -> timeout aborts execution
+    expect(elapsedMs).toBeLessThan(timeoutMs + 2800); // Did not wait the full 5s -> timeout aborts execution
 
     // A timeout is a failure: stop_reason failed, the timeout reason is written into
     // tool_call_output, and the already-produced output is kept.
@@ -514,7 +519,7 @@ describe("Environment.executeTool — timeoutMs (PRN-013)", () => {
     expect(last.type).toBe("tool_call_output");
     expect(last.stop_reason).toBe("failed");
     expect(last.output).toContain("begin");
-    expect(last.output).toContain("[tool timeout: exceeded 200ms]");
+    expect(last.output).toContain(`[tool timeout: exceeded ${timeoutMs}ms]`);
     // The timeout marker is also produced via streaming: concatenating the streamed deltas ==
     // the complete content.
     const streamed = messages
