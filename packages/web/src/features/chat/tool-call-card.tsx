@@ -256,8 +256,10 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
             )
           ) : null}
         </span>
+        {/* Below sm only the amber hourglass StatusIcon (labeled) marks the wait: the text would
+            crowd the one-line row out of a phone's width. */}
         {pending && (
-          <span className="shrink-0 font-mono text-xs text-amber-600 dark:text-amber-400">
+          <span className="hidden shrink-0 font-mono text-xs text-amber-600 sm:inline dark:text-amber-400">
             {S.chat.approvalWaiting}
           </span>
         )}
@@ -282,7 +284,9 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
       {/* Pending approval: always visible regardless of collapsed state — shows the tool name and arguments so the user knows what they're approving. */}
       {pending && (
         <div className="border-t border-gray-100 bg-amber-50 px-3 py-2 dark:border-gray-800 dark:bg-amber-950/30">
-          <div className="mb-2 flex flex-wrap items-center gap-2">
+          {/* One line always: the preview truncates (min-w-0) rather than wrapping under the
+              name pill — wrapping grew the card on phones. */}
+          <div className="mb-2 flex items-center gap-2">
             <span className="shrink-0 rounded-md bg-white px-1.5 py-0.5 font-mono text-xs font-semibold text-gray-700 dark:bg-gray-900 dark:text-gray-300">
               {item.name || S.chat.unknownTool}
             </span>

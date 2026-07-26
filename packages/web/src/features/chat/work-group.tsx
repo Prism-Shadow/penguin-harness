@@ -104,9 +104,11 @@ export function WorkGroup({
         >
           {active ? S.chat.workRunning : S.chat.workDone}
         </span>
-        {/* A pure-thinking group (no tool calls) doesn't show "0 steps". */}
+        {/* A pure-thinking group (no tool calls) doesn't show "0 steps"; below sm the count is
+            dropped entirely (title on the header carries nothing extra — the header must stay
+            a single uncut line on phones). */}
         {steps > 0 && (
-          <span className="shrink-0 font-mono text-xs text-gray-400">
+          <span className="hidden shrink-0 font-mono text-xs text-gray-400 sm:inline">
             {S.chat.workGroupSteps(steps)}
           </span>
         )}
@@ -132,9 +134,19 @@ export function WorkGroup({
               </span>
             )}
         {pending && !shown && (
-          <span className="shrink-0 rounded bg-amber-100 px-1 text-[10px] font-medium text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
-            {S.chat.approvalWaiting}
-          </span>
+          <>
+            {/* Below sm the pill collapses to a bare amber dot (title/aria carry the meaning):
+                the text pill would push the header past one line on phones. */}
+            <span className="hidden shrink-0 rounded bg-amber-100 px-1 text-[10px] font-medium text-amber-700 sm:inline dark:bg-amber-950/50 dark:text-amber-300">
+              {S.chat.approvalWaiting}
+            </span>
+            <span
+              role="status"
+              title={S.chat.approvalWaiting}
+              aria-label={S.chat.approvalWaiting}
+              className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500 sm:hidden"
+            />
+          </>
         )}
         <span className="min-w-0 flex-1" />
         <Chevron open={shown} className="text-gray-400" />

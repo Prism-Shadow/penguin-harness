@@ -395,6 +395,40 @@ test("layout: mobile chat dropdowns stay inside the viewport", async ({ page }) 
     running.clientWidth,
   );
   await expect(page.locator('button[aria-label="Stop"]')).toBeVisible();
+
+  // Running + pending approval at 390x844: every running-state row must stay one line below
+  // sm — the page must not scroll sideways, the work-group header must not wrap to a second
+  // line, and the icon-only Allow/Deny buttons must keep their accessible names (aria-label),
+  // since specs and screen readers resolve them by role+name.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForTimeout(200);
+  const d390 = await docWidths(page);
+  expect(d390.scrollWidth, "running @390 no horizontal overflow").toBeLessThanOrEqual(
+    d390.clientWidth,
+  );
+  // Single line = ~33px (py-2 + one text line); a wrapped header would measure ~48px+.
+  const workHeader = page.locator("button[aria-expanded]").filter({ hasText: "Running" }).first();
+  expect(
+    await workHeader.evaluate((el) => el.clientHeight),
+    "work-group header stays single-line @390",
+  ).toBeLessThanOrEqual(40);
+  await expect(page.getByRole("button", { name: /^Allow$/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Deny$/ })).toBeVisible();
+  expect(await textOverlapCount(page), "running @390 no overlapping text").toBe(0);
+
+  // Approve and let the turn finish: the per-reply stats footer must keep to its one fixed
+  // line at 390 (it used to wrap its chips onto a clipped second row that painted over the
+  // content below).
+  await page.getByRole("button", { name: /^Allow$/ }).click();
+  await expect(page.getByText("Command finished; the result looks as expected.")).toBeVisible();
+  const footer = page.getByRole("button", { name: "Copy reply" }).first().locator("xpath=..");
+  const footerH = await footer.evaluate((el) => ({
+    client: el.clientHeight,
+    scroll: el.scrollHeight,
+  }));
+  expect(footerH.scroll, "stats footer stays single-line @390").toBeLessThanOrEqual(
+    footerH.client + 1,
+  );
 });
 
 test("layout: login — blank start, non-crossing traces, lang/theme controls", async ({ page }) => {
