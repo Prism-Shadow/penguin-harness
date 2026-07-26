@@ -1003,13 +1003,18 @@ export function ChatInput({
   // Sending is also allowed with only an @ target (chip) or skills selected and no text: a handoff's
   // first message may be just a <handoff_from> source block; with skills and empty text, the sent
   // text automatically falls back to S.chat.skillsAutoMessage (see send). Goal mode instead
-  // requires a text objective and a parseable budget.
+  // requires a text objective and a parseable budget — and an open editor showing an invalid
+  // draft disables Send outright: combined with the editor refusing to close over an invalid
+  // draft (below), no click sequence can fire a goal with a stale committed budget.
   const canSend =
     !running &&
     !compacting &&
     !busy &&
     (goalOn
-      ? text.trim().length > 0 && images.length === 0 && goalBudget !== null
+      ? text.trim().length > 0 &&
+        images.length === 0 &&
+        goalBudget !== null &&
+        !(goalBudgetOpen && goalBudgetDraftInvalid)
       : text.trim().length > 0 ||
         images.length > 0 ||
         target !== null ||
@@ -1017,17 +1022,23 @@ export function ChatInput({
 
   /**
    * The budget editor is a fixed upward popover. Opening copies the committed value; closing
-   * commits a valid draft and reverts an invalid one — so typing a budget and clicking
-   * straight onto Send keeps it (the Send mousedown closes the popover before the click
-   * lands). Escape in the field is the explicit cancel: it bypasses this via
-   * setGoalBudgetOpen directly.
+   * commits a valid draft — so typing a budget and clicking straight onto Send keeps it (the
+   * Send mousedown closes the popover before the click lands). An INVALID draft refuses to
+   * close: silently reverting would let the very next click fire the goal with the stale
+   * committed budget — fix the draft or cancel with Escape (handled on the chip container,
+   * so it cancels no matter which editor control has focus, bypassing this via
+   * setGoalBudgetOpen directly).
    */
   const setGoalBudgetEditorOpen = useCallback(
     (open: boolean) => {
-      if (open) setGoalBudgetDraft(goalBudgetText);
-      else if (parseBudgetInput(goalBudgetDraft) !== null)
-        setGoalBudgetText(goalBudgetDraft.trim());
-      setGoalBudgetOpen(open);
+      if (open) {
+        setGoalBudgetDraft(goalBudgetText);
+        setGoalBudgetOpen(true);
+        return;
+      }
+      if (parseBudgetInput(goalBudgetDraft) === null) return;
+      setGoalBudgetText(goalBudgetDraft.trim());
+      setGoalBudgetOpen(false);
     },
     [goalBudgetText, goalBudgetDraft],
   );
@@ -1619,7 +1630,21 @@ export function ChatInput({
             {/* Goal-mode chip: the budget stays compact as a value button; its editor is a
                 fixed upward popover so it never covers the objective textarea below. */}
             {goalOn && (
-              <span className="anim-pop flex max-w-full items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 text-sm text-gray-800 dark:bg-gray-800 dark:text-gray-200">
+              <span
+                className="anim-pop flex max-w-full items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 text-sm text-gray-800 dark:bg-gray-800 dark:text-gray-200"
+                onKeyDown={(e) => {
+                  // Escape = cancel the budget editor from ANY of its controls (input, save
+                  // button, trigger): close without the commit-on-close of
+                  // setGoalBudgetEditorOpen — reopening re-copies the committed value.
+                  // stopPropagation keeps the Dropdown's window-level Escape (which would
+                  // commit) from double-handling it.
+                  if (e.key !== "Escape" || !goalBudgetOpen) return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setGoalBudgetOpen(false);
+                  textareaRef.current?.focus();
+                }}
+              >
                 <span className="flex shrink-0 items-center gap-1" title={S.chat.goalModeDesc}>
                   <GlyphIcon d={GOAL_ICON} size={13} className="text-gray-500 dark:text-gray-400" />
                   <span>{S.chat.goalMode}</span>
@@ -1674,17 +1699,11 @@ export function ChatInput({
                         onChange={(e) => setGoalBudgetDraft(e.target.value)}
                         onFocus={(e) => e.currentTarget.select()}
                         onKeyDown={(e) => {
+                          // Escape is handled by the chip container (focus-independent cancel).
                           if (e.key === "Enter") {
                             e.preventDefault();
                             e.stopPropagation();
                             saveGoalBudget();
-                          } else if (e.key === "Escape") {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            // Explicit cancel: close WITHOUT the commit-on-close of
-                            // setGoalBudgetEditorOpen (reopening re-copies the committed value).
-                            setGoalBudgetOpen(false);
-                            textareaRef.current?.focus();
                           }
                         }}
                         placeholder={S.chat.goalBudgetPlaceholder}

@@ -147,6 +147,26 @@ test("layout: en draft + context gauge + mobile models", async ({ page }) => {
   const recommittedBudget = page.getByRole("button", { name: "Budget 750k" });
   await expect(recommittedBudget).toBeVisible();
 
+  // An invalid draft refuses to close (outside clicks included) and disables Send — no click
+  // sequence can fire a goal with the stale committed budget while the editor shows garbage.
+  await page.getByPlaceholder(/Type a message/).fill("goal objective");
+  await recommittedBudget.click();
+  await budget.fill("not-a-budget");
+  await expect(page.getByRole("button", { name: "Send", exact: true })).toBeDisabled();
+  await page.getByPlaceholder(/Type a message/).click();
+  await expect(budget).toBeVisible();
+  await budget.press("Escape");
+  await expect(recommittedBudget).toBeVisible();
+
+  // Escape cancels from any editor control, not just the input: a valid uncommitted draft
+  // Tab-bed onto the save button still reverts instead of committing.
+  await recommittedBudget.click();
+  await budget.fill("123k");
+  await budget.press("Tab");
+  await page.keyboard.press("Escape");
+  await expect(recommittedBudget).toBeVisible();
+  await page.getByPlaceholder(/Type a message/).fill("");
+
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(200);
   await recommittedBudget.click();

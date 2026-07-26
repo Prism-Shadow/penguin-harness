@@ -120,4 +120,28 @@ describe("parseGoalCommand", () => {
       value: "bad!",
     });
   });
+
+  it("rejects a --skills token with a missing or empty value instead of starting a goal", () => {
+    // Each of these used to fall through as objective text — an unintended unlimited goal.
+    expect(parseGoalCommand("/goal --skills")).toEqual({ ok: false, reason: "skills", value: "" });
+    expect(parseGoalCommand("/goal --skills= fix it")).toEqual({
+      ok: false,
+      reason: "skills",
+      value: "",
+    });
+    expect(parseGoalCommand("/goal --skills\nfix it")).toEqual({
+      ok: false,
+      reason: "skills",
+      value: "",
+    });
+  });
+
+  it("keeps an unbroken longer --skills… word as plain objective text", () => {
+    expect(parseGoalCommand("/goal --skillsful objective")).toEqual({
+      ok: true,
+      budget: UNLIMITED_BUDGET,
+      objective: "--skillsful objective",
+      skills: [],
+    });
+  });
 });

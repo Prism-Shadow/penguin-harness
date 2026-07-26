@@ -49,12 +49,17 @@ export function parseGoalCommand(line: string): GoalCommandResult {
   if (!m) return { ok: false, reason: "usage" };
   let rest = m[2]?.trim() ?? "";
   let skills: string[] = [];
-  const sm = /^--skills[ =](\S+)([\s\S]*)$/.exec(rest);
-  if (sm) {
-    const names = parseSkillNames(sm[1]!);
-    if (names === null) return { ok: false, reason: "skills", value: sm[1]! };
+  // A leading `--skills` TOKEN (followed by `=`, whitespace, or end of input) is always the
+  // option — a missing or empty value is a skills error, never objective text, so a typo'd
+  // command can't silently start an unlimited goal named "--skills…". Only an unbroken
+  // longer word (e.g. `--skillsful`) stays plain objective text.
+  if (/^--skills($|[= \t\n])/.test(rest)) {
+    const sm = /^--skills(?:=(\S*)|[ \t]+(\S+))([\s\S]*)$/.exec(rest);
+    const value = sm?.[1] ?? sm?.[2] ?? "";
+    const names = value === "" ? null : parseSkillNames(value);
+    if (names === null) return { ok: false, reason: "skills", value };
     skills = names;
-    rest = sm[2]!.trim();
+    rest = sm![3]!.trim();
   }
   if (!rest) return { ok: false, reason: "usage" };
   if (m[1] === undefined) return { ok: true, budget: UNLIMITED_BUDGET, objective: rest, skills };
