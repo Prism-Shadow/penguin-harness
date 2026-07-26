@@ -11,10 +11,10 @@ Start a goal from any of the three surfaces:
 
 | Surface | How |
 | --- | --- |
-| Web App | The composer's `+` menu → **Goal mode** (or type `/goal`); the chip takes an optional token budget (`500k`, `2m`, empty = unlimited) |
+| Web App | The composer's `+` menu → **Goal mode** (or type `/goal`); the chip takes an optional token budget (`500k`, `2m`, empty = unlimited). Skills selected in the composer ride along and apply to every round |
 | CLI chat | `/goal[:<budget>] <objective>`, e.g. `/goal:500k make all tests pass` |
 | CLI one-shot | `penguin run --goal [budget] -m "<objective>"`; exit code 0 only when the goal completes |
-| Server API | `POST /api/sessions/:id/tasks` with `{ input, goal: { budget } }` (budget `-1` or omitted = unlimited) |
+| Server API | `POST /api/sessions/:id/tasks` with `{ input, goal: { budget, skills } }` (budget `-1` or omitted = unlimited; `skills` = optional installed-skill names, validated to `[A-Za-z0-9._-]`) |
 
 ## The control file: GOAL.yaml
 
@@ -41,7 +41,7 @@ Reads are tolerant: a missing file, unparseable YAML, or an out-of-protocol stat
 
 ## The loop
 
-Each round injects a `<goal_task>` user message (collapsed to a one-line "Goal · round N" notice in the Web App; verbatim in the Trace) carrying the objective, current budget numbers, and the working rules — evidence-based verification before claiming completion, no shrinking the objective to an easier subset, and key progress recorded in `PLAN.md` so it survives context compaction. After the Task ends, the system reads `status`:
+Each round injects a `<goal_task>` user message (collapsed to a one-line "Goal · round N" notice in the Web App; verbatim in the Trace) carrying the objective, the goal's skills (if any), current budget numbers, and the working rules — evidence-based verification before claiming completion, no shrinking the objective to an easier subset, and key progress recorded in `PLAN.md` so it survives context compaction. After the Task ends, the system reads `status`:
 
 - `complete` → the goal is done; the loop stops.
 - `blocked` → the loop stops; what the model needs from you is in its final reply. The injected rules require the **same blocking condition to persist for three consecutive rounds** before the model may claim `blocked`, so a transient obstacle doesn't end the goal.

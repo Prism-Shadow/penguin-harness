@@ -103,20 +103,38 @@ function parseTaskInput(body: Record<string, unknown>): OmniMessage[] {
 
 /**
  * Validate the optional `goal` field of a task request: absent = a regular task (null);
- * present = goal mode with a token budget (a positive integer, or -1/omitted = unlimited).
+ * present = goal mode with a token budget (a positive integer, or -1/omitted = unlimited)
+ * and optional skill names. Names are strictly shape-validated ([A-Za-z0-9._-], ≤64 chars,
+ * ≤16 of them) because they render as TRUSTED prompt text inside every round's goal block —
+ * unlike the objective, which is escaped and downgraded to data.
  */
-function parseGoalField(body: Record<string, unknown>): { budget: number } | null {
+function parseGoalField(
+  body: Record<string, unknown>,
+): { budget: number; skills: string[] } | null {
   const goal = body.goal;
   if (goal === undefined) return null;
   if (goal === null || typeof goal !== "object" || Array.isArray(goal)) {
     throw badRequest("goal must be an object.");
   }
   const budget = (goal as Record<string, unknown>).budget;
-  if (budget === undefined) return { budget: -1 };
-  if (typeof budget !== "number" || !Number.isInteger(budget) || (budget <= 0 && budget !== -1)) {
+  if (
+    budget !== undefined &&
+    (typeof budget !== "number" || !Number.isInteger(budget) || (budget <= 0 && budget !== -1))
+  ) {
     throw badRequest("goal.budget must be a positive integer, or -1 for unlimited.");
   }
-  return { budget };
+  const skills = (goal as Record<string, unknown>).skills;
+  if (
+    skills !== undefined &&
+    (!Array.isArray(skills) ||
+      skills.length > 16 ||
+      skills.some((s) => typeof s !== "string" || !/^[A-Za-z0-9._-]{1,64}$/.test(s)))
+  ) {
+    throw badRequest(
+      "goal.skills must be at most 16 skill names of [A-Za-z0-9._-], 1-64 chars each.",
+    );
+  }
+  return { budget: (budget as number | undefined) ?? -1, skills: (skills as string[]) ?? [] };
 }
 
 /** Agent-level entry: /api/projects/:p/agents/:a/sessions. */
@@ -402,6 +420,7 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       const { sessionId } = await deps.manager.startGoal(row.sessionId, {
         objective,
         budget: goal.budget,
+        skills: goal.skills,
       });
       return c.json({ sessionId } satisfies TaskCreateResponse, 202);
     }

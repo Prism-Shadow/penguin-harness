@@ -20,6 +20,13 @@ export interface GoalPromptArgs {
   tokensUsed: number;
   /** Token budget; `UNLIMITED_BUDGET` (-1) renders as unbounded. */
   budget: number;
+  /**
+   * Installed skill names to apply to the goal's work, repeated every round like the rest of
+   * the protocol (a long goal crosses compactions). Rendered OUTSIDE the escaped objective —
+   * hosts must validate the names (the server rejects anything but `[A-Za-z0-9._-]`), since
+   * this block is trusted prompt text.
+   */
+  skills?: string[];
 }
 
 /** Escapes text for embedding inside the `<objective>` tag. */
@@ -45,6 +52,17 @@ function goalFileLines(goalFilePath: string): string {
   ].join("\n");
 }
 
+/** The skills paragraph of a regular round: empty (no lines) when the goal has no skills. */
+function skillsLines(skills: string[] | undefined): string[] {
+  if (!skills || skills.length === 0) return [];
+  return [
+    "",
+    `Skills to use: ${skills.join(", ")}. Unless already done this round, read each listed`,
+    "skill's SKILL.md in full (its location is described in your system instructions) and",
+    "follow it for this goal's work.",
+  ];
+}
+
 /**
  * The user message of a regular goal round. Drives one Task; afterwards the system reads the
  * goal file's status to decide whether to continue.
@@ -63,6 +81,7 @@ export function goalTaskMessage(args: GoalPromptArgs): string {
     "<objective>",
     escapeXmlText(args.objective),
     "</objective>",
+    ...skillsLines(args.skills),
     "",
     budgetLines(args.tokensUsed, args.budget),
     "",

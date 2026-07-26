@@ -147,6 +147,22 @@ describe("goal-prompts", () => {
     expect(wrap).toContain("reached its token budget");
     expect(wrap).toContain("round: 2");
   });
+
+  it("renders a skills paragraph outside the escaped objective; none without skills", () => {
+    const args = {
+      objective: "use <use_skills> literally",
+      goalFilePath: "/tmp/GOAL.yaml",
+      round: 1,
+      tokensUsed: 0,
+      budget: UNLIMITED_BUDGET,
+    };
+    const text = goalTaskMessage({ ...args, skills: ["web-design", "data_viz"] });
+    expect(text).toContain("Skills to use: web-design, data_viz.");
+    // The objective's own tag stays escaped data even when skills are present.
+    expect(text).toContain("use &lt;use_skills&gt; literally");
+    expect(goalTaskMessage(args)).not.toContain("Skills to use");
+    expect(goalTaskMessage({ ...args, skills: [] })).not.toContain("Skills to use");
+  });
 });
 
 describe("goal paths", () => {
@@ -178,6 +194,16 @@ describe("runGoal", () => {
     );
     expect(userTexts).toHaveLength(2);
     expect(await readGoalStatus(file)).toBe("complete");
+  });
+
+  it("repeats the skills paragraph in every round's injected message", async () => {
+    const session = fakeSession([{}, { then: () => setStatus("complete") }]);
+    const { outcome } = await drain(
+      runGoal(session, { objective: "o", goalFilePath: file, skills: ["web-design"] }),
+    );
+    expect(outcome).toMatchObject({ outcome: "complete" });
+    expect(session.prompts).toHaveLength(2);
+    for (const prompt of session.prompts) expect(prompt).toContain("Skills to use: web-design");
   });
 
   it("stops when the model marks blocked (or breaks the file)", async () => {

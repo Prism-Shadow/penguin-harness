@@ -188,14 +188,20 @@ describe("SessionManager.startGoal", () => {
     const events: ChannelEvent[] = [];
     channels.get(ROW.sessionId).subscribe((e) => events.push(e));
 
-    await manager.startGoal(ROW.sessionId, { objective: "make it work", budget: -1 });
+    await manager.startGoal(ROW.sessionId, {
+      objective: "make it work",
+      budget: -1,
+      skills: ["web-design"],
+    });
     await waitFor(() => manager.statusOf(ROW.sessionId) === "idle");
 
-    // The model saw a <goal_task> block each round, with the objective embedded.
+    // The model saw a <goal_task> block each round, with the objective embedded and the
+    // goal's skills repeated as a per-round paragraph.
     expect(session.prompts).toHaveLength(2);
     expect(session.prompts[0]).toContain("<goal_task>");
     expect(session.prompts[0]).toContain("make it work");
     expect(session.prompts[1]).toContain("round: 2");
+    for (const prompt of session.prompts) expect(prompt).toContain("Skills to use: web-design");
 
     const server = events
       .filter((e) => e.event === "server_event")

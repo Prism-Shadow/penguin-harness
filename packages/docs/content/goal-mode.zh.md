@@ -11,10 +11,10 @@ description: 给 Agent 一个目标而不是一条消息——系统在同一 Se
 
 | 入口 | 用法 |
 | --- | --- |
-| Web App | 输入框的 `+` 菜单 →「目标模式」（或输入 `/goal`）；chip 上可填 token 预算（`500k`、`2m`，留空不限） |
+| Web App | 输入框的 `+` 菜单 →「目标模式」（或输入 `/goal`）；chip 上可填 token 预算（`500k`、`2m`，留空不限）。输入框选中的技能会随目标一起生效，作用于每一轮 |
 | CLI chat | `/goal[:<预算>] <目标>`，例如 `/goal:500k 让所有测试通过` |
 | CLI 单次运行 | `penguin run --goal [预算] -m "<目标>"`；仅目标完成时退出码为 0 |
-| Server API | `POST /api/sessions/:id/tasks`，body 带 `{ input, goal: { budget } }`（budget 为 `-1` 或缺省 = 不限额） |
+| Server API | `POST /api/sessions/:id/tasks`，body 带 `{ input, goal: { budget, skills } }`（budget 为 `-1` 或缺省 = 不限额；`skills` 为可选的已安装技能名列表，仅接受 `[A-Za-z0-9._-]`） |
 
 ## 控制文件：GOAL.yaml
 
@@ -41,7 +41,7 @@ tokens:
 
 ## 循环
 
-每一轮注入一条 `<goal_task>` user 消息（Web App 折叠为「目标 · 第 N 轮」一行提示；Trace 中原样保留），内容包括目标、当前预算数字和工作规则——声明完成前必须基于证据逐项核验、不许把目标缩水成更容易的子集、关键进展写入 `PLAN.md` 以跨越上下文压缩。Task 结束后系统读取 `status`：
+每一轮注入一条 `<goal_task>` user 消息（Web App 折叠为「目标 · 第 N 轮」一行提示；Trace 中原样保留），内容包括目标、随目标选定的技能（如有）、当前预算数字和工作规则——声明完成前必须基于证据逐项核验、不许把目标缩水成更容易的子集、关键进展写入 `PLAN.md` 以跨越上下文压缩。Task 结束后系统读取 `status`：
 
 - `complete` → 目标完成，循环停止。
 - `blocked` → 循环停止；模型缺什么写在它最后一条回复里。注入规则要求**同一阻塞条件持续三个连续轮次**后才允许声明 `blocked`，临时性障碍不会终结目标。

@@ -582,4 +582,23 @@ describe("session-index", () => {
     });
     expect(bad.status).toBe(400);
   });
+
+  it("rejects malformed goal.skills with 400 (they render as trusted prompt text)", async () => {
+    await configureModels();
+    const res = await api.post(base(), {});
+    const { session } = (await res.json()) as SessionCreateResponse;
+    const malformed = [
+      "web-design", // not an array
+      ["ok", "bad name!"], // char outside [A-Za-z0-9._-]
+      ["a".repeat(65)], // name too long
+      Array.from({ length: 17 }, (_, i) => `s${i}`), // too many names
+    ];
+    for (const skills of malformed) {
+      const bad = await api.post(`/api/sessions/${session.sessionId}/tasks`, {
+        input: [{ type: "text", text: "objective" }],
+        goal: { skills },
+      });
+      expect(bad.status).toBe(400);
+    }
+  });
 });

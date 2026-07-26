@@ -382,7 +382,10 @@ export function ChatPage() {
   );
 
   const onSend = useCallback(
-    async (input: TaskInputPart[], goal: { budget: number } | null): Promise<boolean> => {
+    async (
+      input: TaskInputPart[],
+      goal: { budget: number; skills?: string[] } | null,
+    ): Promise<boolean> => {
       if (!selected) return false;
       try {
         // An explicitly picked per-turn thinking level rides on each task; "" (untouched)

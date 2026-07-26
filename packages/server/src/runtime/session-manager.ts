@@ -452,7 +452,7 @@ export class SessionManager {
    */
   async startGoal(
     sessionId: string,
-    args: { objective: string; budget: number },
+    args: { objective: string; budget: number; skills?: string[] },
   ): Promise<{ sessionId: string }> {
     return this.withLock(sessionId, async () => {
       this.assertOpen();
@@ -496,6 +496,7 @@ export class SessionManager {
       const gen = this.goalStream(entry, {
         objective: args.objective,
         budget: args.budget,
+        ...(args.skills !== undefined && args.skills.length > 0 ? { skills: args.skills } : {}),
         filePath: goalFilePath(root, entry.projectId, entry.agentId, entry.sessionId),
         approve,
         signal: ac.signal,
@@ -519,6 +520,7 @@ export class SessionManager {
     args: {
       objective: string;
       budget: number;
+      skills?: string[];
       filePath: string;
       approve: ApproveFn;
       signal: AbortSignal;
@@ -534,6 +536,7 @@ export class SessionManager {
       objective: args.objective,
       goalFilePath: args.filePath,
       budget: args.budget,
+      ...(args.skills !== undefined ? { skills: args.skills } : {}),
     });
     let round = 0;
     let used = 0;

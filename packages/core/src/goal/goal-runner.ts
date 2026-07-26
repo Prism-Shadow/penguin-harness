@@ -36,6 +36,8 @@ export interface RunGoalOptions {
   goalFilePath: string;
   /** Token budget; omitted or `UNLIMITED_BUDGET` (-1) means no budget. */
   budget?: number;
+  /** Installed skill names applied every regular round (host-validated; see GoalPromptArgs). */
+  skills?: string[];
   signal?: AbortSignal;
   approve?: RunOptions["approve"];
 }
@@ -119,6 +121,7 @@ export async function* runGoal(
         round: rounds + 1,
         tokensUsed: used,
         budget,
+        ...(opts.skills !== undefined ? { skills: opts.skills } : {}),
       }),
     );
     // Abort wins over whatever is in the file: the goal stays active on disk (the workspace

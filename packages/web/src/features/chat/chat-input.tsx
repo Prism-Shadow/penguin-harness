@@ -847,9 +847,13 @@ export function ChatInput({
   /**
    * Returns whether it succeeded: on failure the input draft is kept (not cleared).
    * `goal` is non-null when goal mode is engaged: the text is the objective and the server
-   * loops the Session until the goal reaches a terminal state (budget -1 = unlimited).
+   * loops the Session until the goal reaches a terminal state (budget -1 = unlimited;
+   * `skills` = the selected skills, applied to every round's work).
    */
-  onSend: (input: TaskInputPart[], goal: { budget: number } | null) => Promise<boolean>;
+  onSend: (
+    input: TaskInputPart[],
+    goal: { budget: number; skills?: string[] } | null,
+  ) => Promise<boolean>;
   /**
    * Used instead of onSend when an @ target is present (chip or a leading @ typed manually):
    * opens a new chat for the target agent (the text body carries no @ marker, and the current
@@ -1036,7 +1040,11 @@ export function ChatInput({
     textareaRef.current?.focus();
   }, [goalBudgetDraft]);
 
-  /** Engage/exit goal mode; engaging clears the @ target, skills, and images (mutually exclusive input add-ons — the objective is re-injected every round as plain text). */
+  /**
+   * Engage/exit goal mode; engaging clears the @ target and images (genuinely exclusive:
+   * a handoff opens another session, and the server rejects non-text goal input). Selected
+   * skills stay — they ride the goal as `goal.skills` and apply to every round's work.
+   */
   const toggleGoal = useCallback(
     (on: boolean) => {
       setGoalOn(on);
@@ -1049,13 +1057,9 @@ export function ChatInput({
         // Images can't ride a goal (the server rejects non-text goal input): clear any already
         // attached, or canSend would stay silently false with the objective looking ready.
         setImages([]);
-        if (selectedSkills.length > 0) {
-          setSelectedSkills([]);
-          onSkillsChange?.([]);
-        }
       }
     },
-    [onHandoffTargetChange, onSkillsChange, selectedSkills],
+    [onHandoffTargetChange],
   );
 
   /** Toggle a skill on/off (shared by dropdown option clicks and the slash skill command); the change callback lets the parent write it into the draft. */
@@ -1327,14 +1331,20 @@ export function ChatInput({
   const send = async () => {
     if (!canSend) return;
     const t = text.trim();
-    // Goal mode: the trimmed text is the objective, sent verbatim (no skills block, no images,
-    // no @ handoff — all cleared/blocked while the chip is on; a leading @ stays plain text).
+    // Goal mode: the trimmed text is the objective, sent verbatim (no images, no @ handoff —
+    // cleared/blocked while the chip is on; a leading @ stays plain text). Selected skills
+    // ride as goal.skills — the server renders them into every round's goal block — NOT as a
+    // <use_skills> text prefix, which would be XML-escaped into inert data with the objective.
     if (goalOn) {
       setBusy(true);
       try {
-        const ok = await onSend([{ type: "text", text: t }], { budget: goalBudget! });
+        const ok = await onSend([{ type: "text", text: t }], {
+          budget: goalBudget!,
+          ...(selectedSkills.length > 0 ? { skills: selectedSkills } : {}),
+        });
         if (ok) {
           setText("");
+          setSelectedSkills([]);
           toggleGoal(false);
           requestAnimationFrame(autoGrow);
         }
@@ -1854,7 +1864,7 @@ export function ChatInput({
             skills={skills}
             selected={selectedSkills}
             onToggle={toggleSkill}
-            disabled={running || compacting || busy || goalOn}
+            disabled={running || compacting || busy}
             direction={models && onChangeModel ? "down" : "up"}
           />
           {/* "+" extension menu (input add-ons; goal mode today, more entries later). */}
