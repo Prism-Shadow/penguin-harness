@@ -10,7 +10,12 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { Hono } from "hono";
 import type { Context } from "hono";
-import { imageUrlMessage, scratchpadDir, userText } from "@prismshadow/penguin-core";
+import {
+  imageUrlMessage,
+  listInstalledSkills,
+  scratchpadDir,
+  userText,
+} from "@prismshadow/penguin-core";
 import type { OmniMessage, ThinkingLevelName } from "@prismshadow/penguin-core";
 import type {
   ApprovalMode,
@@ -405,6 +410,9 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     const row = resolveSession(c);
     const body = await readJson(c);
     const goal = parseGoalField(body);
+    // Per-turn thinking level (optional): validated against the five names; omitted follows
+    // the session's default. In goal mode it rides every round of the goal.
+    const thinkingLevel = optionalEnum(body, "thinkingLevel", THINKING_LEVELS);
     if (goal) {
       // Goal mode: the input must be plain text (it becomes the objective, re-injected
       // every round — images have no place in the goal block).
@@ -417,17 +425,30 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       if (!objective || input.some((m) => (m.payload as { type?: string }).type !== "text")) {
         throw badRequest("goal mode requires text-only input (the objective).");
       }
+      // Beyond the shape rule, only skills actually installed for this agent pass (the
+      // CLI's unknownSkills check, mirrored): the names render as trusted prompt text in
+      // every round, so free-form strings must not reach them — and a typo'd name would
+      // send the model hunting for a nonexistent SKILL.md each round.
+      if (goal.skills.length > 0) {
+        const installed = new Set(
+          (await listInstalledSkills(deps.config.root, row.projectId, row.agentId)).map(
+            (s) => s.name,
+          ),
+        );
+        const unknown = goal.skills.filter((n) => !installed.has(n));
+        if (unknown.length > 0) {
+          throw badRequest(`goal.skills not installed for this agent: ${unknown.join(", ")}.`);
+        }
+      }
       const { sessionId } = await deps.manager.startGoal(row.sessionId, {
         objective,
         budget: goal.budget,
         skills: goal.skills,
+        ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
       });
       return c.json({ sessionId } satisfies TaskCreateResponse, 202);
     }
     const input = parseTaskInput(body);
-    // Per-turn thinking level (optional): validated against the five names; omitted follows
-    // the session's default.
-    const thinkingLevel = optionalEnum(body, "thinkingLevel", THINKING_LEVELS);
     // 202: the Task executes on the server, decoupled from the SSE connection; sessionId is the current actual id (the new id after self-heal).
     const { sessionId } = await deps.manager.startTask(row.sessionId, input, {
       ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),

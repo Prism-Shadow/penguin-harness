@@ -7,13 +7,20 @@
  * message is yielded **before** the round runs — `session.run` never yields its own input, and
  * subscribers need the round input on the stream (the Trace is written by the engine as usual).
  *
- * Termination is decided from two sources only:
+ * Termination is decided from these sources only:
  * - the goal file's status (`complete` / `blocked`, written by the model; parse failures
- *   normalize to `blocked` — see goal-file.ts), and
+ *   normalize to `blocked` — see goal-file.ts),
  * - the runner's own token accounting against the budget (the file's tokens block is
- *   display-only and never read back).
- * A round that ends with a main-session abort (LLM failure, user interrupt) stops the loop
- * without re-firing: the goal stays `active` on disk and the file is left untouched.
+ *   display-only and never read back),
+ * - a round the engine cut off rather than finished — a main-session abort (LLM failure,
+ *   user interrupt) or a final assistant notice with `stop_reason: "failed"` (the engine's
+ *   max_turns cutoff emits exactly that, and no abort event): the model never got to write
+ *   the file, so re-firing would loop the same cutoff forever, and
+ * - a hard round cap (`maxRounds`, default 100) as a runaway backstop independent of the
+ *   budget — without it an unbudgeted goal whose model simply never writes the file would
+ *   loop without bound.
+ * All of these stop the loop without re-firing: the goal stays `active` on disk and the
+ * file is left untouched (the workspace and goal file are the resume point).
  *
  * Token accounting is incremental, "uncached input + output": every `token_usage` event on the
  * stream — including origin-marked ones from subagent sessions, which are part of the goal's
@@ -38,9 +45,18 @@ export interface RunGoalOptions {
   budget?: number;
   /** Installed skill names applied every regular round (host-validated; see GoalPromptArgs). */
   skills?: string[];
+  /**
+   * Hard cap on rounds (wrap-up included), a runaway backstop independent of the budget.
+   * Default 100 — far above any legitimate goal (each round is a full Task), so hosts don't
+   * expose it as a knob.
+   */
+  maxRounds?: number;
   signal?: AbortSignal;
   approve?: RunOptions["approve"];
 }
+
+/** Default `maxRounds`: the runaway backstop for goals with no (or a huge) budget. */
+export const GOAL_MAX_ROUNDS = 100;
 
 /** How the goal ended: the file's terminal status, or `aborted` when a round was interrupted. */
 export type GoalOutcomeStatus = "complete" | "blocked" | "budget_limited" | "aborted";
@@ -82,11 +98,25 @@ function isMainAbort(msg: OmniMessage): boolean {
   return isEventMessage(msg) && msg.payload.type === "abort" && (msg.origin?.length ?? 0) === 0;
 }
 
+/**
+ * The main session's assistant text, or null. Used to track how a round ended: the engine's
+ * max_turns cutoff finishes the stream with an assistant notice carrying
+ * `stop_reason: "failed"` (and no abort event) — the only failure mode that neither
+ * `isMainAbort` nor the goal file can see.
+ */
+function mainAssistantStopReason(msg: OmniMessage): string | null {
+  if (msg.origin && msg.origin.length > 0) return null;
+  if (!isModelMessage(msg) || msg.payload.type !== "text") return null;
+  const p = msg.payload as { role?: string; stop_reason?: string };
+  return p.role === "assistant" ? (p.stop_reason ?? "completed") : null;
+}
+
 export async function* runGoal(
   session: GoalSession,
   opts: RunGoalOptions,
 ): AsyncGenerator<OmniMessage, GoalOutcome> {
   const budget = opts.budget ?? UNLIMITED_BUDGET;
+  const maxRounds = opts.maxRounds ?? GOAL_MAX_ROUNDS;
   const runOpts: RunOptions = {
     ...(opts.signal ? { signal: opts.signal } : {}),
     ...(opts.approve ? { approve: opts.approve } : {}),
@@ -94,15 +124,21 @@ export async function* runGoal(
   let used = 0;
   let rounds = 0;
   let aborted = false;
+  let roundFailed = false;
 
   /** Runs one round: yields the injected input, then the Task's stream, accounting as it goes. */
   async function* round(text: string): AsyncGenerator<OmniMessage> {
     rounds++;
+    roundFailed = false;
     const input = userText(text);
     yield input;
     for await (const msg of session.run([input], runOpts)) {
       used += goalTokenDelta(msg);
       if (isMainAbort(msg)) aborted = true;
+      // The LAST assistant text decides: a mid-round failed notice followed by normal text
+      // means the round recovered; the max_turns cutoff is always the final message.
+      const stop = mainAssistantStopReason(msg);
+      if (stop !== null) roundFailed = stop === "failed";
       yield msg;
     }
   }
@@ -114,6 +150,12 @@ export async function* runGoal(
   });
 
   for (;;) {
+    // An abort landing BETWEEN rounds produces no abort event on any stream — without this
+    // check the loop would fire a phantom round whose <goal_task> input the already-aborted
+    // engine holds as carry-over, leaking the block into the user's next message.
+    if (opts.signal?.aborted) return { outcome: "aborted", rounds, tokensUsed: used };
+    // Runaway backstop, independent of the budget (which may be unlimited).
+    if (rounds >= maxRounds) return { outcome: "aborted", rounds, tokensUsed: used };
     yield* round(
       goalTaskMessage({
         objective: opts.objective,
@@ -137,8 +179,15 @@ export async function* runGoal(
       });
       return { outcome: status, rounds, tokensUsed: used };
     }
+    // A round the engine cut off (final assistant notice with stop_reason "failed" — the
+    // max_turns path) is terminal, not a reason to re-fire: the model never reached the
+    // file, and the next round would hit the same cutoff. A written terminal status above
+    // still wins (a post-completion cutoff doesn't undo the completion).
+    if (roundFailed) return { outcome: "aborted", rounds, tokensUsed: used };
 
     if (budget > 0 && used >= budget) {
+      // Same phantom-round guard as at the loop top, for the wrap-up round.
+      if (opts.signal?.aborted) return { outcome: "aborted", rounds, tokensUsed: used };
       // One wrap-up round, then the system-side terminal state — unless the model could
       // truthfully complete during wrap-up (its template forbids a courtesy `complete`).
       yield* round(

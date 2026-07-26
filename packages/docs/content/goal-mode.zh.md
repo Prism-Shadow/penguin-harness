@@ -14,7 +14,7 @@ description: 给 Agent 一个目标而不是一条消息——系统在同一 Se
 | Web App | 输入框的 `+` 菜单 →「目标模式」（或输入 `/goal`）；chip 上可填 token 预算（`500k`、`2m`，留空不限）。输入框选中的技能会随目标一起生效，作用于每一轮 |
 | CLI chat | `/goal[:<预算>] [--skills <a,b>] <目标>`，例如 `/goal:500k 让所有测试通过` |
 | CLI 单次运行 | `penguin run --goal [预算] [--skills <a,b>] -m "<目标>"`；仅目标完成时退出码为 0 |
-| Server API | `POST /api/sessions/:id/tasks`，body 带 `{ input, goal: { budget, skills } }`（budget 为 `-1` 或缺省 = 不限额；`skills` 为可选的已安装技能名列表，仅接受 `[A-Za-z0-9._-]`） |
+| Server API | `POST /api/sessions/:id/tasks`，body 带 `{ input, goal: { budget, skills } }`（budget 为 `-1` 或缺省 = 不限额；`skills` 为可选技能名列表，除形状校验外还要求已实际安装） |
 
 ## 控制文件：GOAL.yaml
 
@@ -47,13 +47,13 @@ tokens:
 - `blocked` → 循环停止；模型缺什么写在它最后一条回复里。注入规则要求**同一阻塞条件持续三个连续轮次**后才允许声明 `blocked`，临时性障碍不会终结目标。
 - `active` → 预算允许则进入下一轮。
 
-某一轮以中断结束（用户停止、LLM 故障）时整个目标随之结束、不再续推——磁盘上的状态保持 `active`，工作区与目标文件就是干净的断点。Web App 中常规停止按钮即中止整个循环；CLI 中是 Ctrl-C。
+某一轮以中断结束（用户停止、LLM 故障）时整个目标随之结束、不再续推——磁盘上的状态保持 `active`，工作区与目标文件就是干净的断点。Web App 中常规停止按钮即中止整个循环；CLI 中是 Ctrl-C。被单 Task 轮次上限（`max_turns`）掐断的轮同理：模型没来得及写目标文件，循环以 `aborted` 结束，而不是永远重演同一次掐断。
 
 ## Token 预算
 
 计数是增量制——**非缓存 input + output**（`request.total − cache_read`），对每一轮的每个请求累加，*包括 `run_subagent` 派生的子 Session*。`used` 从 0 开始；缓存命中不计费。
 
-预算在轮与轮之间检查。耗尽时不会把模型拦腰斩断：系统注入最后一个收尾轮——总结进展、列出剩余工作、给出明确的下一步，并且不许因为钱花完了就标 `complete`——之后系统写入 `budget_limited` 并停止。未设预算时循环一直跑到 `complete` 或 `blocked`；没有轮数上限，无预算目标的边界只剩模型对两个终态的诚实。
+预算在轮与轮之间检查。耗尽时不会把模型拦腰斩断：系统注入最后一个收尾轮——总结进展、列出剩余工作、给出明确的下一步，并且不许因为钱花完了就标 `complete`——之后系统写入 `budget_limited` 并停止。正因为只在轮间检查，进行中的一轮不会被截断：实际花费最多可超出预算一轮，外加收尾轮。未设预算时循环一直跑到 `complete` 或 `blocked`——边界是模型对两个终态的诚实，外加 100 轮的硬性兜底上限，防止一个从不写目标文件的模型无限循环。
 
 ## 服务端状态与事件
 

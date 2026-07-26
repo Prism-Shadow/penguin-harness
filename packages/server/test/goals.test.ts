@@ -145,18 +145,25 @@ describe("SessionManager.startGoal", () => {
   });
 
   /** Fake session: consumes goal rounds, marking the on-disk GOAL.yaml complete on round N. */
-  function goalFakeSession(completeOnRound: number): RuntimeSession & { prompts: string[] } {
+  function goalFakeSession(
+    completeOnRound: number,
+  ): RuntimeSession & { prompts: string[]; runOpts: { thinkingLevel?: string }[] } {
     const file = goalFilePath(root, ROW.projectId, ROW.agentId, ROW.sessionId);
     let round = 0;
     const prompts: string[] = [];
+    const runOpts: { thinkingLevel?: string }[] = [];
     return {
       sessionId: ROW.sessionId,
       prompts,
+      runOpts,
       toolPermission: () => "rw",
       generateTitle: async () => ({ title: null, usage: null }),
       compactability: () => "ok" as const,
-      async *run(input: OmniMessage[]) {
+      async *run(input: OmniMessage[], opts) {
         round++;
+        runOpts.push({
+          ...(opts.thinkingLevel !== undefined ? { thinkingLevel: opts.thinkingLevel } : {}),
+        });
         prompts.push((input[0]!.payload as { text: string }).text);
         yield assistantText(`round ${round} work`);
         yield tokenUsage(usage(100 * round), usage(100 * round));
@@ -192,16 +199,19 @@ describe("SessionManager.startGoal", () => {
       objective: "make it work",
       budget: -1,
       skills: ["web-design"],
+      thinkingLevel: "high",
     });
     await waitFor(() => manager.statusOf(ROW.sessionId) === "idle");
 
-    // The model saw a <goal_task> block each round, with the objective embedded and the
-    // goal's skills repeated as a per-round paragraph.
+    // The model saw a <goal_task> block each round, with the objective embedded, the
+    // goal's skills repeated as a per-round paragraph, and the per-goal thinking level
+    // riding every round's run options.
     expect(session.prompts).toHaveLength(2);
     expect(session.prompts[0]).toContain("<goal_task>");
     expect(session.prompts[0]).toContain("make it work");
     expect(session.prompts[1]).toContain("round: 2");
     for (const prompt of session.prompts) expect(prompt).toContain("Skills to use: web-design");
+    expect(session.runOpts).toEqual([{ thinkingLevel: "high" }, { thinkingLevel: "high" }]);
 
     const server = events
       .filter((e) => e.event === "server_event")

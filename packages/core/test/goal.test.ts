@@ -6,6 +6,7 @@ import { parse as parseYaml } from "yaml";
 import {
   UNLIMITED_BUDGET,
   abortEvent,
+  assistantText,
   budgetLimitMessage,
   emptyTokenCounts,
   goalFilePath,
@@ -194,6 +195,58 @@ describe("runGoal", () => {
     );
     expect(userTexts).toHaveLength(2);
     expect(await readGoalStatus(file)).toBe("complete");
+  });
+
+  it("treats a round the engine cut off (failed final assistant text) as terminal", async () => {
+    // The max_turns cutoff: a final assistant notice with stop_reason "failed", no abort
+    // event, and the model never reached the goal file — re-firing would loop forever.
+    const session = fakeSession([
+      { messages: [assistantText("[reached max turns (100); stopping]", "failed")] },
+    ]);
+    const { outcome } = await drain(runGoal(session, { objective: "o", goalFilePath: file }));
+    expect(outcome).toEqual({ outcome: "aborted", rounds: 1, tokensUsed: 0 });
+    // The on-disk goal stays active: the workspace and goal file remain the resume point.
+    expect(await readGoalStatus(file)).toBe("active");
+  });
+
+  it("a mid-round failed notice followed by normal text does not end the goal", async () => {
+    const session = fakeSession([
+      {
+        messages: [assistantText("tool hiccup", "failed"), assistantText("recovered, done")],
+        then: () => setStatus("complete"),
+      },
+    ]);
+    const { outcome } = await drain(runGoal(session, { objective: "o", goalFilePath: file }));
+    expect(outcome).toEqual({ outcome: "complete", rounds: 1, tokensUsed: 0 });
+  });
+
+  it("stops at the round cap when the model never writes the goal file", async () => {
+    const session = fakeSession([{}, {}, {}]);
+    const { outcome } = await drain(
+      runGoal(session, { objective: "o", goalFilePath: file, maxRounds: 3 }),
+    );
+    expect(outcome).toEqual({ outcome: "aborted", rounds: 3, tokensUsed: 0 });
+    expect(session.prompts).toHaveLength(3);
+    expect(await readGoalStatus(file)).toBe("active");
+  });
+
+  it("an abort landing between rounds stops the loop without a phantom round", async () => {
+    const ac = new AbortController();
+    // The signal aborts AFTER round 1's stream ends — no abort event ever hits the stream,
+    // which is exactly the window where a phantom round used to fire (and its <goal_task>
+    // input would leak into the user's next message as engine carry-over).
+    const session = fakeSession([
+      {
+        then: async () => {
+          ac.abort();
+        },
+      },
+    ]);
+    const { outcome } = await drain(
+      runGoal(session, { objective: "o", goalFilePath: file, signal: ac.signal }),
+    );
+    expect(outcome).toEqual({ outcome: "aborted", rounds: 1, tokensUsed: 0 });
+    expect(session.prompts).toHaveLength(1);
   });
 
   it("repeats the skills paragraph in every round's injected message", async () => {

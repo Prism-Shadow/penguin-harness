@@ -452,7 +452,13 @@ export class SessionManager {
    */
   async startGoal(
     sessionId: string,
-    args: { objective: string; budget: number; skills?: string[] },
+    args: {
+      objective: string;
+      budget: number;
+      skills?: string[];
+      /** Optional per-goal thinking level: rides every round's `session.run` (route-validated). */
+      thinkingLevel?: ThinkingLevelName;
+    },
   ): Promise<{ sessionId: string }> {
     return this.withLock(sessionId, async () => {
       this.assertOpen();
@@ -497,6 +503,7 @@ export class SessionManager {
         objective: args.objective,
         budget: args.budget,
         ...(args.skills !== undefined && args.skills.length > 0 ? { skills: args.skills } : {}),
+        ...(args.thinkingLevel !== undefined ? { thinkingLevel: args.thinkingLevel } : {}),
         filePath: goalFilePath(root, entry.projectId, entry.agentId, entry.sessionId),
         approve,
         signal: ac.signal,
@@ -521,6 +528,7 @@ export class SessionManager {
       objective: string;
       budget: number;
       skills?: string[];
+      thinkingLevel?: ThinkingLevelName;
       filePath: string;
       approve: ApproveFn;
       signal: AbortSignal;
@@ -528,9 +536,15 @@ export class SessionManager {
     },
   ): AsyncGenerator<OmniMessage> {
     // Approval/interrupt wiring is applied here once: every round of the goal runs with
-    // this manager's callback and signal (the runner's own opts stay empty).
+    // this manager's callback, signal, and (optional) thinking level (the runner's own
+    // opts stay empty).
     const goalSession: GoalSession = {
-      run: (msgs) => entry.session.run(msgs, { approve: args.approve, signal: args.signal }),
+      run: (msgs) =>
+        entry.session.run(msgs, {
+          approve: args.approve,
+          signal: args.signal,
+          ...(args.thinkingLevel !== undefined ? { thinkingLevel: args.thinkingLevel } : {}),
+        }),
     };
     const gen = runGoal(goalSession, {
       objective: args.objective,

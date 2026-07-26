@@ -14,7 +14,7 @@ Start a goal from any of the three surfaces:
 | Web App | The composer's `+` menu → **Goal mode** (or type `/goal`); the chip takes an optional token budget (`500k`, `2m`, empty = unlimited). Skills selected in the composer ride along and apply to every round |
 | CLI chat | `/goal[:<budget>] [--skills <a,b>] <objective>`, e.g. `/goal:500k make all tests pass` |
 | CLI one-shot | `penguin run --goal [budget] [--skills <a,b>] -m "<objective>"`; exit code 0 only when the goal completes |
-| Server API | `POST /api/sessions/:id/tasks` with `{ input, goal: { budget, skills } }` (budget `-1` or omitted = unlimited; `skills` = optional installed-skill names, validated to `[A-Za-z0-9._-]`) |
+| Server API | `POST /api/sessions/:id/tasks` with `{ input, goal: { budget, skills } }` (budget `-1` or omitted = unlimited; `skills` = optional skill names, shape-validated and checked against the installed set) |
 
 ## The control file: GOAL.yaml
 
@@ -47,13 +47,13 @@ Each round injects a `<goal_task>` user message (collapsed to a one-line "Goal �
 - `blocked` → the loop stops; what the model needs from you is in its final reply. The injected rules require the **same blocking condition to persist for three consecutive rounds** before the model may claim `blocked`, so a transient obstacle doesn't end the goal.
 - `active` → budget permitting, the next round fires.
 
-A round that ends in an abort (user stop, LLM failure) ends the whole goal without re-firing — on-disk state stays `active`, so the workspace and goal file remain a clean resume point. In the Web App the regular stop button aborts the entire loop; in the CLI, Ctrl-C does.
+A round that ends in an abort (user stop, LLM failure) ends the whole goal without re-firing — on-disk state stays `active`, so the workspace and goal file remain a clean resume point. In the Web App the regular stop button aborts the entire loop; in the CLI, Ctrl-C does. The same applies to a round the engine cut off at the per-Task turn cap (`max_turns`): the model never got to write the goal file, so the loop ends as `aborted` instead of re-firing the same cutoff forever.
 
 ## Token budget
 
 Accounting is incremental — **uncached input + output** (`request.total − cache_read`), summed over every request of every round, *including subagent sessions* spawned by `run_subagent`. `used` starts at 0; cache hits are free.
 
-The budget is checked between rounds. When it is exhausted the goal is not cut off mid-thought: one final wrap-up round is injected — summarize progress, list remaining work, leave a clear next step, and no claiming `complete` just because the money ran out — after which the system writes `budget_limited` and stops. With no budget set, the loop runs until `complete` or `blocked`; there is no round cap, so an unbudgeted goal is bounded only by the model's honesty about the two terminal states.
+The budget is checked between rounds. When it is exhausted the goal is not cut off mid-thought: one final wrap-up round is injected — summarize progress, list remaining work, leave a clear next step, and no claiming `complete` just because the money ran out — after which the system writes `budget_limited` and stops. Because the check runs between rounds only, a round already in flight is never cut short: actual spend can overshoot the budget by up to one round, plus the wrap-up round. With no budget set, the loop runs until `complete` or `blocked` — bounded by the model's honesty about the two terminal states, plus a hard backstop of 100 rounds so a model that simply never writes the goal file cannot loop forever.
 
 ## Server state and events
 
