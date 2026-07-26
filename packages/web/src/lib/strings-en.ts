@@ -268,13 +268,13 @@ export const en: Strings = {
     importConflictTitle: "Version conflict",
     importConflictBody:
       "The snapshot's version is not newer than the current one; importing will overwrite the existing Agent State. Continue?",
-    resetConfigTitle: "Update config",
+    resetConfigTitle: "Restore default configuration",
     resetConfigDesc:
-      "Rewrites system_config.yaml to the current built-in defaults (same semantics as a skill update): the custom system prompt, tool list, model/compaction settings and MCP servers are overwritten; only name, description and the State version are kept.",
-    resetConfigAction: "Update to current defaults",
+      "Restores system_config.yaml to the current built-in defaults (same semantics as a skill update): the custom system prompt, tool list, model/compaction settings and MCP servers are overwritten; only name, description and the State version are kept.",
+    resetConfigAction: "Restore default configuration",
     resetConfigConfirmBody:
       "This overwrites the agent's existing configuration with the current defaults: the custom system prompt, tool list, model/compaction settings and MCP servers are all replaced, keeping only name and description. Like a skill update this cannot be undone. Continue?",
-    resetConfigDone: "Config updated to the current defaults",
+    resetConfigDone: "Configuration restored to the current defaults",
   },
 
   models: {

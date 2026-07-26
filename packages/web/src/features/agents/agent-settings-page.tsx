@@ -1,7 +1,7 @@
 /**
  * Agent settings page: six tabs —
  * Overview (name/description/State path/active count/State version + snapshot
- * export-import + update config to current defaults), Prompt (AGENTS.md and system_prompt editors + placeholder
+ * export-import + restore default configuration), Prompt (AGENTS.md and system_prompt editors + placeholder
  * reference), Runtime (max_turns, model.*, compaction.*), Tools (editable built-in
  * tools table, MCP Server read-only JSON), Vault (vault-tab.tsx), Schedule
  * (schedules-tab.tsx).
@@ -367,7 +367,7 @@ function OverviewTab({
         )}
       </div>
 
-      {/* Config update: overwrite system_config.yaml with the current defaults (name/description/version kept) — the config-side analogue of a skill update. */}
+      {/* Restore default configuration: overwrite system_config.yaml with the current defaults (name/description/version kept) — the config-side analogue of a skill update. */}
       <div>
         <p className="mb-1 text-xs font-medium text-gray-500">{S.agent.resetConfigTitle}</p>
         <p className="mb-2 text-xs text-gray-500 dark:text-gray-400">{S.agent.resetConfigDesc}</p>
