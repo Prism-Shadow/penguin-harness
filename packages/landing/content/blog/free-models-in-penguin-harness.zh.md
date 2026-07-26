@@ -14,7 +14,7 @@ excerpt: 预置目录现有四条 $0 价格的 OpenRouter 条目——已有的 
 | OpenRouter | `nvidia/nemotron-3-ultra-550b-a55b:free` |        1,000,000 | $0   |
 | OpenRouter | `inclusionai/ling-3.0-flash:free`        |          262,144 | $0   |
 | OpenRouter | `poolside/laguna-m.1:free`               |          262,144 | $0   |
-| OpenRouter | `openrouter/free`                        | 65,536(保守下限) | $0   |
+| OpenRouter | `openrouter/free`                        | 128,000(保守值) | $0   |
 
 ![模型仓库的 OpenRouter 分组：Ling 3.0 Flash (free)、Nemotron 3 Ultra (free)、Laguna M.1 (free) 与 Free Models Router 均带淡黄色「免费」标签，首行还能看到 Claude Opus 5](/blog-assets/free-models-page-zh-light.webp)
 
@@ -34,7 +34,7 @@ inclusionAI 于 7 月 23 日发布，次日进入目录。Ling-3.0-flash 是一�
 
 `openrouter/free` 不是一个模型，而是 OpenRouter 的统一免费端点：每个请求被随机路由到 OpenRouter 上当前可用的某个免费模型，并按请求真正需要的能力过滤——工具调用、结构化输出等。上游的免费模型来来去去，这个路由始终有答案，你不必自己盯着最新清单。
 
-有两个目录层面的决定值得说明。被路由到的目标随请求变化，其真实上下文窗口也随之变化，所以这一行刻意记录一个保守值 65,536——长会话会提前压缩，而不是在某个小窗口模型接到请求时直接失败。它也被刻意标记为仅文本：路由本身接受图片，但任一请求背后的模型未必支持，所以 PenguinHarness 不向这条路由发送图片，改走常规的纯文本交接（文件路径加 `describe_image`）。
+有两个目录层面的决定值得说明。被路由到的目标随请求变化，其真实上下文窗口也随之变化，所以这一行刻意记录一个保守值 128,000，而非任何单一目标的真实窗口——长会话会提前压缩，而不是向被路由模型未必拥有的窗口继续膨胀。它也被刻意标记为仅文本：路由本身接受图片，但任一请求背后的模型未必支持，所以 PenguinHarness 不向这条路由发送图片，改走常规的纯文本交接（文件路径加 `describe_image`）。
 
 ## 开启方式
 
@@ -56,7 +56,7 @@ penguin config model list
 - **速率限制。** OpenRouter 免费档限制每分钟与每天的请求数；一段长会话或一轮评测就可能碰到上限。
 - **数据政策。** 免费模型按 OpenRouter 的免费模型条款运行，Prompt 可能在上游条款允许的范围内被其使用。不要发送任何你不愿意公开的内容。
 - **可用性与质量会波动。** 免费容量取决于提供方的意愿；模型会变忙、变慢，也会下线。
-- **路由目标逐请求变化。** 目标的真实上下文窗口也随之变化——因此目录记录的是上面那个保守值，让长会话提前压缩而不是失败；一致性本就不是 `openrouter/free` 的目标，固定选一条免费行会更一致，付费行最一致。
+- **路由目标逐请求变化。** 目标的真实上下文窗口也随之变化——因此目录记录的是上面那个保守值，让长会话尽早压缩；一致性本就不是 `openrouter/free` 的目标，固定选一条免费行会更一致，付费行最一致。
 
 免费模型足以真实地体验完整的 Harness——Workspace、工具、Skill、子 Agent，以及费用中心里干干净净的 $0——也能承担轻量自动化。正经的工作请换付费模型，同一份目录里有的是。
 

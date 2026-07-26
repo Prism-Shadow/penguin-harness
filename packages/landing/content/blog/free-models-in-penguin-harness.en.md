@@ -14,7 +14,7 @@ As of today the free lineup is four entries, all in the OpenRouter group:
 | OpenRouter     | `nvidia/nemotron-3-ultra-550b-a55b:free` |      1,000,000 | $0    |
 | OpenRouter     | `inclusionai/ling-3.0-flash:free`        |        262,144 | $0    |
 | OpenRouter     | `poolside/laguna-m.1:free`               |        262,144 | $0    |
-| OpenRouter     | `openrouter/free`                        | 65,536 (floor) | $0    |
+| OpenRouter     | `openrouter/free`                        | 128,000 (conservative) | $0    |
 
 ![The Models page's OpenRouter group: Ling 3.0 Flash (free), Nemotron 3 Ultra (free), Laguna M.1 (free) and the Free Models Router all carry the light-yellow Free badge, with Claude Opus 5 in the first card row](/blog-assets/free-models-page-en-light.webp)
 
@@ -34,7 +34,7 @@ Alongside Ling comes the free tier of Poolside's flagship coding-agent model. La
 
 `openrouter/free` is not a model but OpenRouter's unified free-tier endpoint: each request is routed to a random free model currently available on OpenRouter, filtered so the target supports what the request actually needs — tool calling, structured outputs, and so on. Free models come and go upstream; the router keeps answering, and you never chase the current list yourself.
 
-Two catalog decisions are worth knowing. The routed target's real context window varies per request, so the row records a deliberately conservative 65,536 — long Sessions compact early instead of failing when a small-window model picks up the request. And it is marked text-only on purpose: the router itself accepts images, but the model behind any given request may not, so PenguinHarness keeps images off this route and falls back to its usual text-only hand-off (file path plus `describe_image`).
+Two catalog decisions are worth knowing. The routed target's real context window varies per request, so the row records a deliberately conservative 128,000 rather than any single target's real figure — long Sessions compact early instead of growing toward a window the routed model may not have. And it is marked text-only on purpose: the router itself accepts images, but the model behind any given request may not, so PenguinHarness keeps images off this route and falls back to its usual text-only hand-off (file path plus `describe_image`).
 
 ## Switching it on
 
@@ -56,7 +56,7 @@ The caveats, plainly:
 - **Rate limits.** OpenRouter's free tier caps requests per minute and per day; a long Session or a benchmark run can hit them.
 - **Data policy.** Free models run under OpenRouter's free-model terms, and prompts may be used by the upstream provider as its terms allow. Send nothing you would not share.
 - **Availability and quality vary.** Free capacity is whatever providers choose to offer; models get busy, get slower, and get withdrawn.
-- **The router's target changes per request.** Its real context window varies with it — hence the conservative window above, so long Sessions compact early instead of failing — and consistency is not what `openrouter/free` is for; a fixed free row gives you more of it, a paid row the most.
+- **The router's target changes per request.** Its real context window varies with it — hence the conservative recorded window, which makes long Sessions compact early — and consistency is not what `openrouter/free` is for; a fixed free row gives you more of it, a paid row the most.
 
 Free models are a genuine way to experience the full harness — Workspaces, tools, Skills, subagents, the Cost center reading a clean $0 — and to run light automation. For serious work, pick a paid model; the same catalog carries plenty.
 

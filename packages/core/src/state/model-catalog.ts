@@ -430,15 +430,15 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   {
     // OpenRouter's unified Free Models Router: each request is routed to a random free model
     // currently on OpenRouter, filtered by the features the request needs (tool calling,
-    // structured outputs, ...). Routed targets vary, so the context window is a conservative
-    // floor rather than any single target's real window: it keeps the 75% compaction clamp
-    // meaningful and avoids hard context-length 400s on small-window targets.
-    // supportsVision stays false deliberately: the harness must not send images to a router
-    // whose target may be text-only.
+    // structured outputs, ...). Routed targets vary, so the context window is a deliberately
+    // conservative figure rather than any single target's real window: it keeps the 75%
+    // compaction clamp meaningful (compaction fires at 96000) and reduces hard context-length
+    // 400s on small-window targets. supportsVision stays false deliberately: the harness must
+    // not send images to a router whose target may be text-only.
     modelId: "openrouter/free",
     displayName: "Free Models Router",
     provider: "openrouter",
-    contextWindow: 65536,
+    contextWindow: 128000,
     pricing: usd(0, 0, 0),
     supportsVision: false,
     clientType: "openai",
