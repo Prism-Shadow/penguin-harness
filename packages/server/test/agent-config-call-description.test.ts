@@ -37,10 +37,10 @@ describe("agent config: per-tool call_description", () => {
     const initial = (await (await owner.get(configPath)).json()) as AgentConfigResponse;
     const names = initial.config.toolsBuiltin.map((tool) => tool.name);
     // File tools lead the default toolset; the renamed shell tool follows.
-    expect(names.slice(0, 4)).toEqual(["read_file", "edit_file", "write_file", "run_command"]);
+    expect(names.slice(0, 4)).toEqual(["read_file", "edit_file", "write_file", "exec_command"]);
     const propsOf = (tool: ToolDefinitionConfig): Record<string, unknown> =>
       (tool.parameters as { properties: Record<string, unknown> }).properties;
-    for (const name of ["run_command", "input_command", "run_subagent", "input_subagent"]) {
+    for (const name of ["exec_command", "input_command", "run_subagent", "input_subagent"]) {
       const tool = initial.config.toolsBuiltin.find((row) => row.name === name)!;
       expect(tool.call_description).toBe(true);
       expect(propsOf(tool)["description"]).toBeDefined();
@@ -51,15 +51,15 @@ describe("agent config: per-tool call_description", () => {
       expect(propsOf(tool)["description"]).toBeUndefined();
     }
 
-    // Flip run_command's toggle off via the whole-table PUT.
+    // Flip exec_command's toggle off via the whole-table PUT.
     const tools = initial.config.toolsBuiltin.map((row) =>
-      row.name === "run_command" ? { ...row, call_description: false } : row,
+      row.name === "exec_command" ? { ...row, call_description: false } : row,
     );
     const putRes = await owner.put(configPath, { config: { toolsBuiltin: tools } });
     expect(putRes.status).toBe(200);
     const updated = (await putRes.json()) as AgentConfigResponse;
     expect(
-      updated.config.toolsBuiltin.find((row) => row.name === "run_command")!.call_description,
+      updated.config.toolsBuiltin.find((row) => row.name === "exec_command")!.call_description,
     ).toBe(false);
     // Written into the YAML itself; the rest of the config is preserved.
     const yaml = await fs.readFile(systemConfigPath(t.root, projectId, "default_agent"), "utf8");
@@ -67,7 +67,7 @@ describe("agent config: per-tool call_description", () => {
     expect(updated.config.systemPrompt).toBe(initial.config.systemPrompt);
     // The property stays declared in the stored parameters (filtering happens at assembly, not in the config).
     expect(
-      propsOf(updated.config.toolsBuiltin.find((row) => row.name === "run_command")!)[
+      propsOf(updated.config.toolsBuiltin.find((row) => row.name === "exec_command")!)[
         "description"
       ],
     ).toBeDefined();
@@ -76,7 +76,7 @@ describe("agent config: per-tool call_description", () => {
   it("rejects a non-boolean call_description with 400", async () => {
     const initial = (await (await owner.get(configPath)).json()) as AgentConfigResponse;
     const tools = initial.config.toolsBuiltin.map((row) =>
-      row.name === "run_command" ? { ...row, call_description: "yes" } : row,
+      row.name === "exec_command" ? { ...row, call_description: "yes" } : row,
     );
     const res = await owner.put(configPath, { config: { toolsBuiltin: tools } });
     expect(res.status).toBe(400);

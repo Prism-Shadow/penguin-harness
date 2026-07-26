@@ -14,11 +14,10 @@ import {
 } from "../src/features/chat/tool-call-card";
 
 describe("previewArguments", () => {
-  it("renders run_command and the legacy exec_command name as $ <cmd>", () => {
-    expect(previewArguments("run_command", '{"cmd":"ls -la"}')).toBe("$ ls -la");
+  it("renders exec_command as $ <cmd>", () => {
     expect(previewArguments("exec_command", '{"cmd":"ls -la"}')).toBe("$ ls -la");
     // Mid-stream (incomplete JSON) still extracts the cmd prefix.
-    expect(previewArguments("run_command", '{"cmd":"echo h')).toBe("$ echo h");
+    expect(previewArguments("exec_command", '{"cmd":"echo h')).toBe("$ echo h");
   });
 
   it("renders the file tools by their shortened file_path", () => {
@@ -35,7 +34,7 @@ describe("previewArguments", () => {
 
   it("keeps the real command even when a description argument is present (approval fidelity)", () => {
     expect(
-      previewArguments("run_command", '{"cmd":"rm -rf build","description":"Clean caches"}'),
+      previewArguments("exec_command", '{"cmd":"rm -rf build","description":"Clean caches"}'),
     ).toBe("$ rm -rf build");
   });
 
@@ -57,12 +56,9 @@ describe("shortenPath", () => {
 
 describe("headerSubtitle", () => {
   it("shows the description for the command/subagent tools when present", () => {
-    expect(headerSubtitle("run_command", '{"cmd":"ls","description":"List workspace files"}')).toBe(
-      "List workspace files",
-    );
-    expect(headerSubtitle("exec_command", '{"cmd":"ls","description":"Legacy name"}')).toBe(
-      "Legacy name",
-    );
+    expect(
+      headerSubtitle("exec_command", '{"cmd":"ls","description":"List workspace files"}'),
+    ).toBe("List workspace files");
     expect(
       headerSubtitle("run_subagent", '{"prompt":"p","description":"Delegating research"}'),
     ).toBe("Delegating research");
@@ -75,8 +71,8 @@ describe("headerSubtitle", () => {
   });
 
   it("is null when the description is absent or empty (call_description off = the model never sends it)", () => {
-    expect(headerSubtitle("run_command", '{"cmd":"ls"}')).toBeNull();
-    expect(headerSubtitle("run_command", '{"cmd":"ls","description":""}')).toBeNull();
+    expect(headerSubtitle("exec_command", '{"cmd":"ls"}')).toBeNull();
+    expect(headerSubtitle("exec_command", '{"cmd":"ls","description":""}')).toBeNull();
   });
 
   it("shows the shortened file path for the file tools and nothing for others", () => {
@@ -89,7 +85,9 @@ describe("headerSubtitle", () => {
   });
 
   it("folds a multi-line description to one line", () => {
-    expect(headerSubtitle("run_command", '{"cmd":"ls","description":"one\\ntwo"}')).toBe("one two");
+    expect(headerSubtitle("exec_command", '{"cmd":"ls","description":"one\\ntwo"}')).toBe(
+      "one two",
+    );
   });
 });
 
@@ -112,7 +110,7 @@ describe("pendingFilePayload", () => {
   });
 
   it("returns null for non-file tools and incomplete JSON", () => {
-    expect(pendingFilePayload("run_command", '{"cmd":"ls"}')).toBeNull();
+    expect(pendingFilePayload("exec_command", '{"cmd":"ls"}')).toBeNull();
     expect(pendingFilePayload("edit_file", '{"file_path":"a.txt","old_str')).toBeNull();
   });
 });

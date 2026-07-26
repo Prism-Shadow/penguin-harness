@@ -263,7 +263,7 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
       maxOutputLength: 16000,
     },
     {
-      name: "run_command",
+      name: "exec_command",
       description:
         "Run a shell command in the workspace to run programs, search, install dependencies, and " +
         "everything the file tools don't cover. " +
@@ -303,7 +303,7 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
     {
       name: "input_command",
       description:
-        "Interact with a running command session started by run_command: write to its stdin, send Ctrl-C, or poll for new output. Identify the session with its process_id.",
+        "Interact with a running command session started by exec_command: write to its stdin, send Ctrl-C, or poll for new output. Identify the session with its process_id.",
       parameters: {
         type: "object",
         properties: {
@@ -314,7 +314,7 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
           },
           process_id: {
             type: "string",
-            description: "The process_id returned by run_command for the running command session.",
+            description: "The process_id returned by exec_command for the running command session.",
           },
           chars: {
             type: "string",

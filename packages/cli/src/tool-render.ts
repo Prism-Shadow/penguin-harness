@@ -3,9 +3,8 @@
  *
  * The CLI only consumes `partial_tool_call` for visible rendering. Formats (the `<-` marker
  * reads "input to the tool", paired with the `->` output gutter in render.ts):
- * - run_command (legacy name exec_command — old traces still emit it):
- *   `run_command <- $ {cmd}`, or with a model-written description
- *   `run_command <- {description} ($ {cmd})`;
+ * - exec_command: `exec_command <- $ {cmd}`, or with a model-written description
+ *   `exec_command <- {description} ($ {cmd})`;
  * - input_command: `input_command <- {process_id} << {chars}` (`<< …` only when writing;
  *   an empty payload just polls), or `input_command <- {description} ({process_id} << {chars})`;
  * - run_subagent: `run_subagent <- {prompt}` or `run_subagent <- {description} ({prompt})`;
@@ -195,7 +194,7 @@ function describedForm(name: string, desc: string, payload: string, closed: bool
  */
 export function renderPartialToolCall(name: string, argsJson: string): string | null {
   if (!argsJson) return null;
-  if (name === "run_command" || name === "exec_command") {
+  if (name === "exec_command") {
     const desc = completedDescription(argsJson);
     const cmd = extractField(argsJson, "cmd");
     if (desc !== null) {

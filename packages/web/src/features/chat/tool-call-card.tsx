@@ -28,9 +28,8 @@ import { LiveDuration } from "./live-duration";
 import { SubagentCard } from "./subagent-card";
 import type { StreamRenderContext } from "./message-stream";
 
-/** Tools that accept the optional model-written `description` argument (canonical names + the legacy exec_command). */
+/** Tools that accept the optional model-written `description` argument. */
 const DESCRIBED_TOOLS = new Set([
-  "run_command",
   "exec_command",
   "input_command",
   "run_subagent",
@@ -52,15 +51,15 @@ export function shortenPath(p: string): string {
 }
 
 /**
- * Argument preview (same approach as the CLI's tool-render): run_command (legacy name
- * exec_command) shows `$ <cmd>`, the file tools show their shortened file path, other tools
- * show a single-line `name(args)` prefix. Arguments may be incomplete JSON (mid-stream), so
- * extraction is done leniently. The preview deliberately keeps the real arguments (not the
- * model-written description): it heads the approval row, and the user must approve the
- * actual command, not the model's summary of it.
+ * Argument preview (same approach as the CLI's tool-render): exec_command shows `$ <cmd>`,
+ * the file tools show their shortened file path, other tools show a single-line
+ * `name(args)` prefix. Arguments may be incomplete JSON (mid-stream), so extraction is done
+ * leniently. The preview deliberately keeps the real arguments (not the model-written
+ * description): it heads the approval row, and the user must approve the actual command,
+ * not the model's summary of it.
  */
 export function previewArguments(name: string, argsJson: string): string {
-  if (name === "run_command" || name === "exec_command") {
+  if (name === "exec_command") {
     const cmd = extractStringField(argsJson, "cmd");
     if (cmd !== null) return `$ ${cmd.replace(/\s+/g, " ").trim()}`;
   }

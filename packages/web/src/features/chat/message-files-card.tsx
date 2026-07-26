@@ -11,7 +11,7 @@
  * it also doesn't render if none of the candidates exist — the heuristic extraction inevitably
  * matches error message examples, external paths, and other strings that can't actually be
  * opened, so this card is only responsible for "if you click it, it really opens".
- * Doesn't include diff stats — file writes may happen inside opaque run_command shells, so
+ * Doesn't include diff stats — file writes may happen inside opaque exec_command shells, so
  * the protocol has no reliable structured edit signal; this is just an aggregated view of
  * text references, hence the neutral "N files" title.
  */

@@ -286,7 +286,7 @@ function anthropicReply(res, body) {
     const json = JSON.stringify({ cmd: turn.cmd });
     block(
       index++,
-      { type: "tool_use", id: `toolu_shot_${toolResults + 1}`, name: "run_command", input: {} },
+      { type: "tool_use", id: `toolu_shot_${toolResults + 1}`, name: "exec_command", input: {} },
       (json.match(/[\s\S]{1,32}/g) ?? []).map((partial_json) => ({
         type: "input_json_delta",
         partial_json,
@@ -346,7 +346,7 @@ function openaiReply(res, body) {
           index: 0,
           id: `call_shot_${toolResults + 1}`,
           type: "function",
-          function: { name: "run_command", arguments: "" },
+          function: { name: "exec_command", arguments: "" },
         },
       ],
     });
@@ -628,11 +628,11 @@ try {
       // Trace view: the product's canonical deep link carries BOTH agentId and
       // sessionId (?sessionId= alone is ignored by TracesPage's focus wiring), and
       // auto-selects the Session once its trace list loads. Waiting for the
-      // execution timeline's run_command lanes guarantees every language captures
+      // execution timeline's exec_command lanes guarantees every language captures
       // the same opened trace — stats + a timeline with tool calls — never the
       // empty "select a Session" state.
       await page.goto(`${BASE}/traces?agentId=default_agent&sessionId=${sessionId}`);
-      await page.getByText("run_command").first().waitFor({ timeout: 20000 });
+      await page.getByText("exec_command").first().waitFor({ timeout: 20000 });
       await page.waitForTimeout(2000);
       await saveWebp(await page.screenshot(), `traces-${lang}-${theme}.webp`);
 

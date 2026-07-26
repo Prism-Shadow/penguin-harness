@@ -191,14 +191,14 @@ describe("buildToolConfig", () => {
       "read_file",
       "edit_file",
       "write_file",
-      "run_command",
+      "exec_command",
       "input_command",
       "run_subagent",
       "input_subagent",
       "read_image",
       "describe_image",
     ]);
-    const exec = cfg.customTools.find((t) => t.name === "run_command")!;
+    const exec = cfg.customTools.find((t) => t.name === "exec_command")!;
     expect(exec.permission).toBe("rw");
     expect(exec.timeoutMs).toBe(120000);
     expect(exec.maxOutputLength).toBe(16000);
@@ -270,12 +270,12 @@ describe("buildToolConfig", () => {
     const forVision = selectBuiltinToolsForModel(all, true);
     expect(forVision.some((t) => t.name === "read_image")).toBe(true);
     expect(forVision.some((t) => t.name === "describe_image")).toBe(false);
-    expect(forVision.filter((t) => t.name === "run_command")).toHaveLength(1);
+    expect(forVision.filter((t) => t.name === "exec_command")).toHaveLength(1);
     // Text-only model: describe_image is kept.
     const forText = selectBuiltinToolsForModel(all, false);
     expect(forText.some((t) => t.name === "read_image")).toBe(false);
     expect(forText.some((t) => t.name === "describe_image")).toBe(true);
-    expect(forText.filter((t) => t.name === "run_command")).toHaveLength(1);
+    expect(forText.filter((t) => t.name === "exec_command")).toHaveLength(1);
   });
 
   it("loads MCP Server config from system_config.yaml", () => {
@@ -313,7 +313,7 @@ describe("buildToolConfig", () => {
       "read_file",
       "edit_file",
       "write_file",
-      "run_command",
+      "exec_command",
       "input_command",
       "run_subagent",
       "input_subagent",
@@ -340,7 +340,7 @@ describe("buildToolConfig — per-tool call_description filter", () => {
   it("keeps the config-declared description property when call_description is missing or true (defaults)", async () => {
     const state = await loadOrInitAgentState();
     const cfg = buildToolConfig(state);
-    for (const name of ["run_command", "input_command", "run_subagent", "input_subagent"]) {
+    for (const name of ["exec_command", "input_command", "run_subagent", "input_subagent"]) {
       const tool = cfg.customTools.find((t) => t.name === name)!;
       const desc = properties(tool)["description"] as { type?: string; description?: string };
       expect(desc.type).toBe("string");
@@ -358,7 +358,7 @@ describe("buildToolConfig — per-tool call_description filter", () => {
   it("filters the description property out when call_description is false, without mutating the stored config", () => {
     const builtin = [
       {
-        name: "run_command",
+        name: "exec_command",
         description: "shell",
         call_description: false,
         parameters: {
@@ -378,11 +378,11 @@ describe("buildToolConfig — per-tool call_description filter", () => {
     expect(properties(builtin[0]!)["description"]).toBeDefined();
   });
 
-  it("also filters a legacy exec_command entry, and is a no-op elsewhere", () => {
+  it("is a no-op for entries without the property, a schema, or with the toggle on", () => {
     const builtin = [
       {
         name: "exec_command",
-        description: "legacy shell",
+        description: "shell",
         call_description: false,
         parameters: {
           type: "object",

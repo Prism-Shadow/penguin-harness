@@ -5,7 +5,7 @@ description: 极简内置工具集的设计与执行契约、Environment 统一�
 
 ## 设计取向
 
-PenguinHarness 刻意维持一个极小的内置工具集：文件的精确读取与编辑交给专门的文件工具（`read_file` / `edit_file` / `write_file`）——带行号的输出与精确字符串替换比拼 `sed` 命令更可靠；Shell（`run_command`）仍是通用兜底接口，负责运行程序、搜索、装依赖等其余一切。保留下来的每个工具都对得起它占用的 schema Token。
+PenguinHarness 刻意维持一个极小的内置工具集：文件的精确读取与编辑交给专门的文件工具（`read_file` / `edit_file` / `write_file`）——带行号的输出与精确字符串替换比拼 `sed` 命令更可靠；Shell（`exec_command`）仍是通用兜底接口，负责运行程序、搜索、装依赖等其余一切。保留下来的每个工具都对得起它占用的 schema Token。
 
 ## 执行契约
 
@@ -66,7 +66,7 @@ interface ToolResult {
 
 | 工具 | 权限 | 超时(ms) | 用途 |
 | --- | --- | --- | --- |
-| `run_command` | rw | 120000 | 在 Workspace 内以 `bash -lc` 运行命令，流式返回 stdout/stderr |
+| `exec_command` | rw | 120000 | 在 Workspace 内以 `bash -lc` 运行命令，流式返回 stdout/stderr |
 | `input_command` | rw | 130000 | 按 `process_id` 驱动运行中的命令：写 stdin、发 Ctrl-C、轮询输出 |
 | `read_file` | r | 30000 | 按 `cat -n` 风格带行号读取文本文件，以 offset/limit 分页 |
 | `edit_file` | rw | 30000 | 对既有文件做精确字符串替换，回显校验片段 |
@@ -76,20 +76,18 @@ interface ToolResult {
 | `read_image` | r | 60000 | 读取图片并作为图像内容返回(vision 模型) |
 | `describe_image` | r | 90000 | 由 `vision_model` 代读图片并返回文字回答(text-only 模型) |
 
-`run_command` 旧名为 `exec_command`；磁盘上仍写着 `exec_command` 的 `system_config.yaml` 继续有效——注册表把两个名字映射到同一个 Shell 工具，装配出的工具以配置条目的名字为运行时名字。
-
 注意：既有 Agent 已落盘的 `tools.builtin` 列表按原样冻结（设置页只能编辑行、不能增行）：本工具集之前创建的 Agent 不会自动获得文件工具——需手工编辑该 Agent 的 `system_config.yaml`，把新条目补进去（可从 `packages/core/src/state/default-config.ts` 的默认定义复制）。
 
 ### 调用描述
 
-命令 / Subagent 类工具（`run_command`、`input_command`、`run_subagent`、`input_subagent`）接受可选的 `description` 参数：由模型写一句"本次调用在做什么"，CLI 与 Web 在调用运行期间展示给用户。该参数作为普通的 `description` 属性直接写在各条目的 `parameters` 中（工具 schema 完全存于可编辑配置）；由条目级 `call_description` 字段控制——缺省保留，写 `call_description: false` 时装配阶段将该属性从 schema 中滤除（仅内存内，不改写 YAML）。文件工具不带此参数——其 `file_path` 参数本身已说明用途。
+命令 / Subagent 类工具（`exec_command`、`input_command`、`run_subagent`、`input_subagent`）接受可选的 `description` 参数：由模型写一句"本次调用在做什么"，CLI 与 Web 在调用运行期间展示给用户。该参数作为普通的 `description` 属性直接写在各条目的 `parameters` 中（工具 schema 完全存于可编辑配置）；由条目级 `call_description` 字段控制——缺省保留，写 `call_description: false` 时装配阶段将该属性从 schema 中滤除（仅内存内，不改写 YAML）。文件工具不带此参数——其 `file_path` 参数本身已说明用途。
 
 ### 命令会话
 
-`run_command` 先在前台等待；命令超过 `yield_time_ms` 仍未结束时转入后台，返回已有输出和一个 `process_id`，之后用 `input_command` 驱动：
+`exec_command` 先在前台等待；命令超过 `yield_time_ms` 仍未结束时转入后台，返回已有输出和一个 `process_id`，之后用 `input_command` 驱动：
 
 ```text
-run_command(cmd)
+exec_command(cmd)
   ├─ 前台窗口(yield_time_ms,默认 60000)内结束 ──► 完整输出 + 退出码
   └─ 未结束 ──► 转入后台,返回已有输出 + process_id
                      │
@@ -100,7 +98,7 @@ run_command(cmd)
 两个工具的参数（明确键名）：
 
 ```ts
-// run_command
+// exec_command
 {
   cmd: string;             // 必填:要执行的 shell 命令
   workdir?: string;        // 工作目录;缺省为 Workspace 根,相对路径按其解析
@@ -110,7 +108,7 @@ run_command(cmd)
 
 // input_command
 {
-  process_id: string;      // 必填:run_command 返回的命令会话 id
+  process_id: string;      // 必填:exec_command 返回的命令会话 id
   chars?: string;          // 写入 stdin 的字符;单独发送 "\u0003" 传递 Ctrl-C;缺省仅轮询
   yield_time_ms?: number;  // 等待时长;有写入默认 250,空轮询默认 5000
   description?: string;    // 可选(由条目级 call_description 控制)
@@ -222,7 +220,7 @@ deny 会合成一条 aborted 的 `tool_call_output`(内容为 `Tool call denied 
 tools:
   # 写出 builtin 即整体替换默认工具集(此例刻意只保留一个最小工具集)。
   builtin:
-    - name: run_command
+    - name: exec_command
       description: Run a shell command in the workspace.
       permission: rw
       # 可选的条目级开关:false 时从 schema 滤除 parameters.properties 里声明的

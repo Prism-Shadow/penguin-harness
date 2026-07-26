@@ -5,7 +5,7 @@ description: The deliberately minimal built-in toolset, its execution contract w
 
 ## Design
 
-PenguinHarness ships a deliberately minimal built-in toolset: dedicated file tools (`read_file` / `edit_file` / `write_file`) cover precise reading and editing — line-numbered output and exact-string replacement beat quoting `sed` one-liners — while the shell (`run_command`) remains the general-purpose fallback for everything else: running programs, searching, installing dependencies. Every tool that remains earns its schema tokens.
+PenguinHarness ships a deliberately minimal built-in toolset: dedicated file tools (`read_file` / `edit_file` / `write_file`) cover precise reading and editing — line-numbered output and exact-string replacement beat quoting `sed` one-liners — while the shell (`exec_command`) remains the general-purpose fallback for everything else: running programs, searching, installing dependencies. Every tool that remains earns its schema tokens.
 
 ## Execution contract
 
@@ -66,7 +66,7 @@ There are 9 built-in tools (assembled via `packages/core/src/environment/tools/r
 
 | Tool | Permission | Timeout (ms) | Purpose |
 | --- | --- | --- | --- |
-| `run_command` | rw | 120000 | Run a shell command in the Workspace via `bash -lc`, streaming stdout/stderr |
+| `exec_command` | rw | 120000 | Run a shell command in the Workspace via `bash -lc`, streaming stdout/stderr |
 | `input_command` | rw | 130000 | Drive a running command by `process_id`: write stdin, send Ctrl-C, poll output |
 | `read_file` | r | 30000 | Read a text file as a line-numbered (`cat -n`) window, paged by offset/limit |
 | `edit_file` | rw | 30000 | Exact-string replacement in an existing file, echoing a verification snippet |
@@ -76,20 +76,18 @@ There are 9 built-in tools (assembled via `packages/core/src/environment/tools/r
 | `read_image` | r | 60000 | Read an image and return it as image content (vision models) |
 | `describe_image` | r | 90000 | Have the configured `vision_model` read the image and answer in text (text-only models) |
 
-`run_command` was formerly named `exec_command`; existing `system_config.yaml` files that still say `exec_command` keep working — the registry maps both names to the same shell tool, and the assembled tool takes its runtime name from the config entry.
-
 Note that an existing agent's persisted `tools.builtin` list is frozen as written (the settings UI edits rows but adds none): agents created before this toolset do not pick up the file tools automatically — hand-edit the agent's `system_config.yaml` and add the new entries (copy them from the default definitions in `packages/core/src/state/default-config.ts`) to adopt them.
 
 ### Call descriptions
 
-The command/subagent tools (`run_command`, `input_command`, `run_subagent`, `input_subagent`) accept an optional `description` argument: one model-written sentence about what the call is doing, shown by the CLI and Web UI while the call runs. The argument is declared as a normal `description` property in each entry's `parameters` in `system_config.yaml` (tool schemas live entirely in the editable config); the per-entry `call_description` field toggles it — missing = kept, `call_description: false` filters the property out of the schema at assembly time (in-memory only, the YAML is never rewritten). The file tools don't take it — their `file_path` argument is self-describing.
+The command/subagent tools (`exec_command`, `input_command`, `run_subagent`, `input_subagent`) accept an optional `description` argument: one model-written sentence about what the call is doing, shown by the CLI and Web UI while the call runs. The argument is declared as a normal `description` property in each entry's `parameters` in `system_config.yaml` (tool schemas live entirely in the editable config); the per-entry `call_description` field toggles it — missing = kept, `call_description: false` filters the property out of the schema at assembly time (in-memory only, the YAML is never rewritten). The file tools don't take it — their `file_path` argument is self-describing.
 
 ### Command sessions
 
-`run_command` waits in the foreground first; if the command outruns `yield_time_ms` it moves to the background and the call returns the output so far plus a `process_id`, driven from then on by `input_command`:
+`exec_command` waits in the foreground first; if the command outruns `yield_time_ms` it moves to the background and the call returns the output so far plus a `process_id`, driven from then on by `input_command`:
 
 ```text
-run_command(cmd)
+exec_command(cmd)
   ├─ finishes within the foreground window (yield_time_ms, default 60000)
   │        ──► full output + exit code
   └─ still running ──► backgrounds, returns output so far + process_id
@@ -101,7 +99,7 @@ run_command(cmd)
 Both tools' arguments (explicit keys):
 
 ```ts
-// run_command
+// exec_command
 {
   cmd: string;             // required: the shell command to run
   workdir?: string;        // working directory; defaults to the Workspace root, relative paths resolve against it
@@ -111,7 +109,7 @@ Both tools' arguments (explicit keys):
 
 // input_command
 {
-  process_id: string;      // required: the command-session id returned by run_command
+  process_id: string;      // required: the command-session id returned by exec_command
   chars?: string;          // characters for stdin; send "\u0003" alone to deliver Ctrl-C; empty = poll only
   yield_time_ms?: number;  // wait; defaults 250 for writes, 5000 for empty polls
   description?: string;    // optional (toggled per tool via call_description)
@@ -224,7 +222,7 @@ tools:
   # Writing builtin replaces the default toolset wholesale (this example deliberately
   # keeps a minimal single-tool set).
   builtin:
-    - name: run_command
+    - name: exec_command
       description: Run a shell command in the workspace.
       permission: rw
       # Optional per-tool toggle: false filters the `description` call argument

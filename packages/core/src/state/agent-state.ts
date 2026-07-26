@@ -258,7 +258,7 @@ export async function resetSystemConfigToDefaults(
 /**
  * The vault key-name list: the replacement value for `{{VAULT_KEYS}}`, one `- KEY` per line;
  * returns an empty string when there are no keys.
- * **Contains only key names, never values** — values are only injected into the run_command
+ * **Contains only key names, never values** — values are only injected into the exec_command
  * subprocess environment, never the model context. The statement of the vault's purpose is part
  * of the default template body (the # Vault section) and is kept even with no vault.
  */

@@ -1,7 +1,5 @@
 /**
- * run_command —— local shell executor, a built-in tool implementation (BuiltinTool).
- * (Formerly named exec_command; configs that still use the old name keep working — see
- * the legacy alias in registry.ts.)
+ * exec_command —— local shell executor, a built-in tool implementation (BuiltinTool).
  *
  * Spawns a process inside the Workspace via `bash -lc <cmd>` and streams content deltas as
  * stdout/stderr chunks arrive. Waits up to `yield_time_ms`: if the command finishes in time,
@@ -29,26 +27,19 @@ import { DEFAULT_EXEC_YIELD_MS, resultForExit } from "./command/index.js";
 import { clampYield } from "./background/index.js";
 
 /** Tool name constant (used only inside this tool module, not exposed to Environment). */
-export const RUN_COMMAND_NAME = "run_command";
-
-/**
- * Legacy tool name: agents whose on-disk `system_config.yaml` predates the rename still list
- * the shell tool as `exec_command`; the registry maps both names to the same factory.
- * @deprecated Use {@link RUN_COMMAND_NAME}; kept only for old configs and traces.
- */
 export const EXEC_COMMAND_NAME = "exec_command";
 
 /**
- * run_command built-in tool: parses arguments, resolves workdir, and delegates to
+ * exec_command built-in tool: parses arguments, resolves workdir, and delegates to
  * `CommandSessionManager` to spawn the process and collect output.
  * `definition` is overridden by Environment at construction time with the matching entry
- * from ToolConfig (description/parameters/permission/limits); the runtime tool name follows
- * `definition.name`, so a legacy `exec_command` config entry keeps its original name in
- * dispatch, self-referential messages, and the LLM tool list.
+ * from ToolConfig (description/parameters/permission/limits); the runtime tool name and
+ * self-referential messages follow `definition.name` (the config entry is the single
+ * source of truth for naming).
  * `services.commandSessions` is injected by Environment (shares the same registry with
  * input_command).
  */
-export function createRunCommandTool(
+export function createExecCommandTool(
   definition: ToolDefinitionConfig,
   services?: EnvironmentServices,
 ): BuiltinTool {

@@ -5,34 +5,30 @@ import {
   shortenPath,
 } from "../src/tool-render.js";
 
-describe("renderPartialToolCall — run_command", () => {
-  it("renders `run_command <- $ {cmd}` growing with partial args", () => {
-    expect(renderPartialToolCall("run_command", '{"cmd":')).toBeNull();
-    expect(renderPartialToolCall("run_command", '{"cmd":"l')).toBe("run_command <- $ l");
-    expect(renderPartialToolCall("run_command", '{"cmd":"ls"}')).toBe("run_command <- $ ls");
-    expect(renderPartialToolCall("run_command", '{"cmd":"echo \\"hi\\"')).toBe(
-      'run_command <- $ echo "hi"',
+describe("renderPartialToolCall — exec_command", () => {
+  it("renders `exec_command <- $ {cmd}` growing with partial args", () => {
+    expect(renderPartialToolCall("exec_command", '{"cmd":')).toBeNull();
+    expect(renderPartialToolCall("exec_command", '{"cmd":"l')).toBe("exec_command <- $ l");
+    expect(renderPartialToolCall("exec_command", '{"cmd":"ls"}')).toBe("exec_command <- $ ls");
+    expect(renderPartialToolCall("exec_command", '{"cmd":"echo \\"hi\\"')).toBe(
+      'exec_command <- $ echo "hi"',
     );
   });
 
-  it("renders the legacy exec_command name with the same shape (old traces / pre-rename agents)", () => {
-    expect(renderPartialToolCall("exec_command", '{"cmd":"ls"}')).toBe("exec_command <- $ ls");
-  });
-
-  it("renders `run_command <- {description} ($ {cmd})` when a description is present", () => {
+  it("renders `exec_command <- {description} ($ {cmd})` when a description is present", () => {
     expect(
-      renderPartialToolCall("run_command", '{"description":"List files","cmd":"ls -la"}'),
-    ).toBe("run_command <- List files ($ ls -la)");
+      renderPartialToolCall("exec_command", '{"description":"List files","cmd":"ls -la"}'),
+    ).toBe("exec_command <- List files ($ ls -la)");
     // Same final form regardless of the model's property order.
     expect(
-      renderPartialToolCall("run_command", '{"cmd":"ls -la","description":"List files"}'),
-    ).toBe("run_command <- List files ($ ls -la)");
+      renderPartialToolCall("exec_command", '{"cmd":"ls -la","description":"List files"}'),
+    ).toBe("exec_command <- List files ($ ls -la)");
     // Multi-line descriptions fold to one line; an empty description falls back to the plain form.
-    expect(renderPartialToolCall("run_command", '{"cmd":"ls","description":"a\\nb"}')).toBe(
-      "run_command <- a b ($ ls)",
+    expect(renderPartialToolCall("exec_command", '{"cmd":"ls","description":"a\\nb"}')).toBe(
+      "exec_command <- a b ($ ls)",
     );
-    expect(renderPartialToolCall("run_command", '{"cmd":"ls","description":""}')).toBe(
-      "run_command <- $ ls",
+    expect(renderPartialToolCall("exec_command", '{"cmd":"ls","description":""}')).toBe(
+      "exec_command <- $ ls",
     );
   });
 
@@ -43,11 +39,11 @@ describe("renderPartialToolCall — run_command", () => {
       '{"description":"List files","cmd":"ls', // cmd streaming inside the open parenthesis
       '{"description":"List files","cmd":"ls -la"}', // cmd complete: parenthesis closes
     ];
-    const previews = stages.map((s) => renderPartialToolCall("run_command", s));
+    const previews = stages.map((s) => renderPartialToolCall("exec_command", s));
     expect(previews[0]).toBeNull();
-    expect(previews[1]).toBe("run_command <- List files");
-    expect(previews[2]).toBe("run_command <- List files ($ ls");
-    expect(previews[3]).toBe("run_command <- List files ($ ls -la)");
+    expect(previews[1]).toBe("exec_command <- List files");
+    expect(previews[2]).toBe("exec_command <- List files ($ ls");
+    expect(previews[3]).toBe("exec_command <- List files ($ ls -la)");
     for (let i = 2; i < previews.length; i++) {
       expect(previews[i]!.startsWith(previews[i - 1]!)).toBe(true);
     }
@@ -56,8 +52,8 @@ describe("renderPartialToolCall — run_command", () => {
   it("withholds a still-streaming description instead of rewriting the preview", () => {
     // cmd first, description incomplete: stays in the plain form (one format switch happens
     // only once the description completes — the render layer starts a new line then).
-    expect(renderPartialToolCall("run_command", '{"cmd":"ls -la","description":"List fi')).toBe(
-      "run_command <- $ ls -la",
+    expect(renderPartialToolCall("exec_command", '{"cmd":"ls -la","description":"List fi')).toBe(
+      "exec_command <- $ ls -la",
     );
   });
 });
@@ -241,6 +237,6 @@ describe("renderFileToolApprovalPayload", () => {
   });
 
   it("returns null for non-file tools", () => {
-    expect(renderFileToolApprovalPayload("run_command", '{"cmd":"ls"}')).toBeNull();
+    expect(renderFileToolApprovalPayload("exec_command", '{"cmd":"ls"}')).toBeNull();
   });
 });

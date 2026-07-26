@@ -43,7 +43,7 @@ test("a malformed tool_call settles unpaired; the retry line shows and the retry
   await page.getByPlaceholder(/输入消息/).fill("bad stream test");
   await page.getByRole("button", { name: "发送" }).click();
 
-  // The retried run_command finishes → final answer, proving the retry and the following
+  // The retried exec_command finishes → final answer, proving the retry and the following
   // tool call complete normally.
   await expect(page.getByText("Command finished; the result looks as expected.")).toBeVisible({
     timeout: 20000,
