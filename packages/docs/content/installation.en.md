@@ -60,7 +60,7 @@ cd penguin-harness
 pnpm install && pnpm build
 ```
 
-After the build, run `pnpm penguin <args>` inside the repo as the dev runner, or use the globally linked `penguin` command.
+After the build, run `pnpm penguin <args>` inside the repo as the dev runner, or use the globally linked `penguin` command. Dev entry points (`pnpm penguin`, `pnpm dev`) default to a separate data root `~/.penguin/dev-data`, while the linked/installed `penguin` keeps `~/.penguin/data`; export `PENGUIN_HOME` to override.
 
 ## Published npm packages
 
