@@ -52,3 +52,7 @@ export type { CreateAgentOptions, CreateSessionOptions, ResumeSessionOptions } f
 
 /** SDK version number. */
 export const VERSION = "0.1.2";
+/** Release build date (UTC yyyy-mm-dd), stamped by the release workflow next to VERSION; null in a dev/source build. */
+export const BUILD_DATE: string | null = null;
+// Version-string helpers (shared by the CLI's `penguin update` and the server's update check).
+export { compareVersions, normalizeVersion } from "./internal/version.js";

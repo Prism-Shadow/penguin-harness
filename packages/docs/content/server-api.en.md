@@ -66,7 +66,15 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 | POST | /api/admin/users/:userId/password | Reset a password (invalidates all of that user's login sessions) |
 | DELETE | /api/admin/users/:userId | Delete a user |
 
-### Projects and Members
+### Version and Self-Update
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | /api/version | Running release identity: `{version, buildDate}` (`buildDate` is null in a dev/source build) |
+| GET | /api/version/update-check | Compares the newest GitHub release with the running version: `{currentVersion, latestVersion, updateAvailable, releaseUrl, publishedAt, checkedAt, disabled?, error?}` |
+| POST | /api/version/update | **Admin only.** Runs the CLI self-update (`penguin update --yes`) on the server host: `{status, output, needsRestart}` |
+
+`update-check` is the server's only outbound internet call and is strictly fail-soft: a failed lookup still returns 200 with `error` set (`network` / `rate_limited` / `bad_response`) and `latestVersion: null`, results are cached in memory (success 1 h, failure 10 min), and setting `PENGUIN_UPDATE_CHECK=off` disables the lookup entirely (`disabled: true`, no network call). The update `status` is `updated` (restart the service to run the new version), `failed`, or `unsupported` — the latter both when the server was not started via `penguin server|web` (`reason: "not_launched_via_cli"`) and when the CLI refuses (source checkout, unrecognized install layout, Windows); `output` carries the tail of the CLI's own output.
 
 | Method | Path | Description |
 | --- | --- | --- |

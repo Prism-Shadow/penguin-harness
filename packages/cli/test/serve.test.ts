@@ -6,6 +6,7 @@ import {
   DEFAULT_PORT,
   browserCommand,
   browserUrl,
+  cliEntryFor,
   registerServeCommands,
   resolvePort,
 } from "../src/commands/serve.js";
@@ -72,5 +73,18 @@ describe("registerServeCommands (command registration)", () => {
     expect(names).toContain("web");
     const web = program.commands.find((c) => c.name() === "web")!;
     expect(web.opts().open).toBe(true);
+  });
+});
+
+describe("cliEntryFor (the entry advertised for the web self-update)", () => {
+  it("advertises only entries plain node can re-run (.js/.mjs/.cjs), resolved absolute", () => {
+    expect(cliEntryFor("/opt/penguin/lib/dist/index.js")).toBe("/opt/penguin/lib/dist/index.js");
+    expect(cliEntryFor("/x/cli.MJS")).toBe("/x/cli.MJS");
+    expect(cliEntryFor("/x/cli.cjs")).toBe("/x/cli.cjs");
+  });
+  it("refuses a tsx dev entry and a missing argv[1] (the endpoint then reports unsupported)", () => {
+    expect(cliEntryFor("/repo/packages/cli/src/index.ts")).toBeNull();
+    expect(cliEntryFor(undefined)).toBeNull();
+    expect(cliEntryFor("")).toBeNull();
   });
 });

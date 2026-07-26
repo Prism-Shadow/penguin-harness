@@ -98,6 +98,10 @@ Read-only scoreboards per Benchmark: switch the metric (score / cost / duration)
 
 Admin only: list and create users, reset passwords, and delete users (the built-in admin cannot be deleted).
 
+## Version and Updates
+
+The sidebar user menu shows the running version (and, for release builds, its build date) and — once the menu has been opened — checks GitHub for a newer release: when one exists, a dot appears on the user button and the menu gains a release-notes link, plus an "Update now" action for admins that runs `penguin update` on the server (the data directory is untouched). The service must be restarted afterwards for the update to take effect. Set `PENGUIN_UPDATE_CHECK=off` to disable the update check entirely — see the [Configuration Reference](/configuration).
+
 ## Projects and Members
 
 The sidebar provides a Project switcher and supports creating new Projects. Members have two roles, owner and member: owners manage membership and exclusively edit models, Vault, and Schedules, as well as perform deletions.

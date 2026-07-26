@@ -54,6 +54,21 @@ export const en: Strings = {
     } as Record<string, string>,
   },
 
+  /** Version footer, update reminder, and admin self-update in the sidebar user menu. */
+  update: {
+    version: "Version",
+    newVersion: (v: string) => `New version v${v} available`,
+    releaseNotes: "Release notes",
+    updateNow: "Update now",
+    updating: "Updating…",
+    updated: "Update complete — restart the service to apply",
+    restartHint: "Restart by re-running penguin web (or penguin server) in a terminal",
+    failed: "Update failed",
+    unsupported: "This install cannot be updated from the web UI",
+    confirmBody:
+      "Downloads the latest release and installs it into the install directory on the server (the data directory is not touched). Restart the service afterwards for the update to take effect.",
+  },
+
   common: {
     save: "Save",
     cancel: "Cancel",

@@ -61,6 +61,8 @@ import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
 import { clearDraft, sessionDraftKey } from "../../features/chat/draft-cache";
 import { CreateProjectDialog, ProjectSettingsDialog } from "./project-dialogs";
 import { ChangePasswordDialog } from "../account/change-password-dialog";
+import { UpdateDialog } from "../account/update-dialog";
+import { useVersionInfo } from "../../lib/use-version-info";
 
 function Icon({ d, size = 16 }: { d: string; size?: number }) {
   return (
@@ -220,6 +222,10 @@ export function Sidebar({
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+  const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
+  // Version footer + update reminder: nothing is fetched until the dropdown first opens.
+  const { version, update } = useVersionInfo(userOpen);
+  const updateAvailable = update?.updateAvailable === true;
   const currentProjectId = currentProject?.projectId ?? null;
   const collapseStoreKey = currentProjectId === null ? null : collapsedGroupsKey(currentProjectId);
   const pinStoreKey = currentProjectId === null ? null : pinnedGroupsKey(currentProjectId);
@@ -958,8 +964,17 @@ export function Sidebar({
               onClick={() => setUserOpen(!userOpen)}
               className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors duration-150 hover:bg-gray-200/70 dark:hover:bg-gray-800"
             >
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-900 text-xs font-bold text-white dark:bg-gray-200 dark:text-gray-900">
+              <span className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-900 text-xs font-bold text-white dark:bg-gray-200 dark:text-gray-900">
                 {(user?.userId ?? "?").slice(0, 1).toUpperCase()}
+                {/* Update reminder dot: only once the lazy check has actually run and found a
+                    newer release. The border (sidebar background color) separates it from the
+                    avatar for every accent — the neutral accent matches the avatar fill. */}
+                {updateAvailable && (
+                  <span
+                    aria-hidden
+                    className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-gray-50 bg-[var(--accent-bg)] dark:border-gray-900"
+                  />
+                )}
               </span>
               <span className="min-w-0 flex-1 truncate text-sm font-medium">{user?.userId}</span>
               {user?.isAdmin && (
@@ -990,6 +1005,41 @@ export function Sidebar({
               <Segmented options={langOptions} value={lang} onChange={setLang} />
             </SettingRow>
           </div>
+          {/* Update reminder: release-notes link, plus the self-update action for admins.
+              Only rendered after the lazy check found a newer release. */}
+          {update !== null && update.updateAvailable && update.latestVersion !== null && (
+            <div className="mt-1 border-t border-gray-100 pt-1 dark:border-gray-800">
+              {update.releaseUrl !== null ? (
+                <a
+                  href={update.releaseUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={S.update.releaseNotes}
+                  className={`${menuItemClass} flex items-center gap-2 font-medium`}
+                >
+                  <span aria-hidden className="h-2 w-2 rounded-full bg-[var(--accent-bg)]" />
+                  {S.update.newVersion(update.latestVersion)}
+                </a>
+              ) : (
+                <span className={`${menuItemClass} flex items-center gap-2 font-medium`}>
+                  <span aria-hidden className="h-2 w-2 rounded-full bg-[var(--accent-bg)]" />
+                  {S.update.newVersion(update.latestVersion)}
+                </span>
+              )}
+              {user?.isAdmin && (
+                <button
+                  type="button"
+                  className={menuItemClass}
+                  onClick={() => {
+                    setUserOpen(false);
+                    setUpdateDialogOpen(true);
+                  }}
+                >
+                  {S.update.updateNow}
+                </button>
+              )}
+            </div>
+          )}
           <div className="mt-1 border-t border-gray-100 pt-1 dark:border-gray-800">
             <button
               type="button"
@@ -1025,12 +1075,28 @@ export function Sidebar({
               {S.auth.logout}
             </button>
           </div>
+          {/* Muted version footer (lazily fetched on first open; absent until it resolves). */}
+          {version !== null && (
+            <div
+              className="mt-1 border-t border-gray-100 px-3.5 py-2 text-xs text-gray-400 dark:border-gray-800 dark:text-gray-500"
+              title={S.update.version}
+            >
+              {`PenguinHarness v${version.version}${
+                version.buildDate !== null ? ` · ${version.buildDate}` : ""
+              }`}
+            </div>
+          )}
         </Dropdown>
       </div>
 
       <ChangePasswordDialog
         open={changePasswordOpen}
         onClose={() => setChangePasswordOpen(false)}
+      />
+      <UpdateDialog
+        open={updateDialogOpen}
+        onClose={() => setUpdateDialogOpen(false)}
+        latestVersion={update?.latestVersion ?? null}
       />
 
       <CreateProjectDialog

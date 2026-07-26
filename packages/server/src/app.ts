@@ -47,6 +47,7 @@ import { agentConfigRoutes } from "./http/routes/agent-config.js";
 import { agentTracesRoutes } from "./http/routes/agent-traces.js";
 import { usageRoutes } from "./http/routes/usage.js";
 import { agentSessionsRoutes, sessionsRoutes } from "./http/routes/sessions.js";
+import { versionRoutes } from "./http/routes/version.js";
 import { ChannelHub } from "./runtime/channel.js";
 import { ErrorRecorder } from "./runtime/error-recorder.js";
 import { createCoreSessionLoader, SessionManager } from "./runtime/session-manager.js";
@@ -65,6 +66,7 @@ import { ProjectConfigService } from "./services/project-config-service.js";
 import { ProjectService } from "./services/project-service.js";
 import { SessionService } from "./services/session-service.js";
 import { TraceService } from "./services/trace-service.js";
+import { UpdateCheckService } from "./services/update-check-service.js";
 import { UsageService } from "./services/usage-service.js";
 import { WorkspaceFilesService } from "./services/workspace-files-service.js";
 import {
@@ -93,6 +95,8 @@ export interface AppDeps {
   sessionService: SessionService;
   traceService: TraceService;
   usageService: UsageService;
+  /** GitHub latest-release lookup for the web UI's update reminder (cached, fail-soft). */
+  updateCheck: UpdateCheckService;
   workspaceFiles: WorkspaceFilesService;
   /** Signs/verifies short-lived Workspace preview tokens (separate preview origin). */
   previewTokens: PreviewTokenSigner;
@@ -115,6 +119,8 @@ export interface BuildDepsOverrides {
   loader?: SessionLoader;
   /** Test double: Session title generator (avoids real LLM requests). */
   titles?: TitleNotifier;
+  /** Test double: update-check service with a stubbed fetch/clock (avoids real network calls). */
+  updateCheck?: UpdateCheckService;
   log?: (line: string) => void;
   now?: () => Date;
 }
@@ -151,6 +157,8 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     (projectId, provider, modelId) => projectConfigService.getPricing(projectId, provider, modelId),
     overrides.now ?? (() => new Date()),
   );
+  const updateCheck =
+    overrides.updateCheck ?? new UpdateCheckService(overrides.now ? { now: overrides.now } : {});
 
   // Channel idle reclamation skips active Sessions (running/compacting can go a long time
   // without a publish, e.g. while waiting for approval).
@@ -247,6 +255,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     sessionService,
     traceService,
     usageService,
+    updateCheck,
     workspaceFiles,
     previewTokens,
     benchmarks,
@@ -331,6 +340,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   const auth = authMiddleware(deps.authService);
   app.use("/api/*", auth);
   app.route("/api/me", meRoutes(deps));
+  app.route("/api/version", versionRoutes(deps));
   app.route("/api/admin/users", adminUsersRoutes(deps));
   app.route("/api/events", eventsRoutes(deps));
   // Skill library listing: readable once logged in, not nested under a Project prefix.

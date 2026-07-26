@@ -88,12 +88,16 @@ jobs:
 
       # Inject the release tag into core's VERSION constant (the source for CLI --version and the install-complete
       # message); otherwise artifacts always carry the in-repo dev version and multiple installs can't be told apart.
+      # BUILD_DATE is stamped alongside it with this run's UTC date (the repo keeps null for dev builds).
       - name: Stamp release version
         run: |
           TAG="${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
           V="${TAG#v}"
           grep -q 'export const VERSION = "' packages/core/src/index.ts
           sed -i "s/export const VERSION = \"[^\"]*\"/export const VERSION = \"$V\"/" packages/core/src/index.ts
+          D="$(date -u +%Y-%m-%d)"
+          grep -q 'export const BUILD_DATE: string | null = ' packages/core/src/index.ts
+          sed -i "s/export const BUILD_DATE: string | null = [^;]*/export const BUILD_DATE: string | null = \"$D\"/" packages/core/src/index.ts
 
       - name: Build (tsup + vite)
         run: pnpm build
@@ -236,12 +240,16 @@ jobs:
       # Version always comes from the tag: package version and core's VERSION constant are injected together (the
       # repo keeps the dev version). All published packages must bump in lockstep -- pnpm publish rewrites every
       # workspace:* dep to the dependency's current version, so the versions must match.
+      # BUILD_DATE is stamped alongside VERSION with this run's UTC date (the repo keeps null for dev builds).
       - name: Stamp release version
         run: |
           TAG="${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
           V="${TAG#v}"
           grep -q 'export const VERSION = "' packages/core/src/index.ts
           sed -i "s/export const VERSION = \"[^\"]*\"/export const VERSION = \"$V\"/" packages/core/src/index.ts
+          D="$(date -u +%Y-%m-%d)"
+          grep -q 'export const BUILD_DATE: string | null = ' packages/core/src/index.ts
+          sed -i "s/export const BUILD_DATE: string | null = [^;]*/export const BUILD_DATE: string | null = \"$D\"/" packages/core/src/index.ts
           (cd packages/skills && npm version --no-git-tag-version --allow-same-version "$V")
           (cd packages/core && npm version --no-git-tag-version --allow-same-version "$V")
           (cd packages/server && npm version --no-git-tag-version --allow-same-version "$V")
