@@ -40,7 +40,7 @@
  *
  * No third-party color library is used; only minimal ANSI escapes.
  */
-import { isEventMessage, isModelMessage } from "@prismshadow/penguin-core";
+import { isEventMessage, isModelMessage, parseUserSteeringText } from "@prismshadow/penguin-core";
 import type {
   AbortPayload,
   ApprovalDecision,
@@ -55,6 +55,7 @@ import type {
   PartialToolCallOutputPayload,
   RequestEndPayload,
   SessionMetaPayload,
+  TextPayload,
   TokenUsagePayload,
   ToolCallPayload,
   ToolDefinition,
@@ -67,6 +68,7 @@ const DIM = "\x1b[2m";
 const GREEN = "\x1b[32m";
 const RED = "\x1b[31m";
 const CYAN = "\x1b[36m";
+const MAGENTA = "\x1b[35m";
 const RESET = "\x1b[0m";
 
 export function dim(text: string): string {
@@ -187,8 +189,18 @@ export function renderHistory(
     const marker = p.stop_reason && p.stop_reason !== "completed" ? dim(` [${p.stop_reason}]`) : "";
     switch (p.type) {
       case "text":
-        if (p.role === "user") out.write(`\n> ${p.text ?? ""}\n`);
-        else out.write(`${p.text ?? ""}${marker}\n`);
+        if (p.role === "user") {
+          // Mid-run steering ([user_steering]-wrapped user text delivered between turns):
+          // rendered as distinct user-speech lines instead of a raw marker block or a prompt.
+          const steering = parseUserSteeringText(p.text ?? "");
+          if (steering !== null) {
+            writeSteeringLines(out, steering, t);
+          } else {
+            out.write(`\n> ${p.text ?? ""}\n`);
+          }
+        } else {
+          out.write(`${p.text ?? ""}${marker}\n`);
+        }
         break;
       case "image_url":
         out.write(`\n> ${dim("[image]")}\n`);
@@ -231,6 +243,13 @@ export function renderHistory(
   }
 }
 
+/** Writes a steering message's lines with the colored user prefix (shared by history rendering and the streaming renderer). */
+function writeSteeringLines(out: NodeJS.WritableStream, text: string, t: Messages): void {
+  for (const line of text.split("\n")) {
+    out.write(`${MAGENTA}${t.steerLinePrefix()}${line}${RESET}\n`);
+  }
+}
+
 /**
  * Streaming renderer: writes the OmniMessage stream to the output stream. The display
  * text for tool calls is decided locally by `tool-render.ts`; it no longer accepts a
@@ -246,6 +265,13 @@ export class StreamRenderer {
   private holder: string | null = null;
   /** Awaiting user input (approval prompt): locks the screen, all messages queue up. */
   private promptActive = false;
+  /**
+   * The user is composing an input line mid-run (chat REPL): streaming output must not
+   * scribble over the half-typed line, so rendering is held (messages queue up) until the
+   * line is submitted or cleared (see `setInputHold`). Independent of the approval-prompt
+   * lock — approval answers use `beginUserPrompt`/`endUserPrompt`.
+   */
+  private inputHold = false;
   /** Key of the call the current interactive prompt belongs to (the tool_call passed to beginUserPrompt); null = unattached. */
   private promptKey: string | null = null;
   /**
@@ -467,6 +493,29 @@ export class StreamRenderer {
     this.lastLineKey = key;
   }
 
+  /**
+   * Chat REPL typing hold: while the user is composing a line mid-run, hold rendering so
+   * streamed output doesn't scribble over the input; releasing flushes everything queued in
+   * the meantime. Idempotent; `endTask` force-releases it as a safety net.
+   */
+  setInputHold(active: boolean): void {
+    if (this.inputHold === active) return;
+    this.inputHold = active;
+    if (!active) this.drain();
+  }
+
+  /**
+   * Writes one standalone line through the renderer at the current position (finishing any
+   * open streamed line first). Meant for host notices tied to the input flow — e.g. the chat
+   * REPL's steering acknowledgment — printed while the screen is held so they don't
+   * interleave with streamed output.
+   */
+  printLine(text: string): void {
+    this.finishLine();
+    this.out.write(`${text}\n`);
+    this.lastLineKey = null;
+  }
+
   /** User interaction ends: unlocks the screen, first renders approval results deferred during the lock, then drains the queue. */
   endUserPrompt(): void {
     this.promptActive = false;
@@ -512,7 +561,7 @@ export class StreamRenderer {
     if (this.draining) return;
     this.draining = true;
     try {
-      while (!this.promptActive && this.pending.length > 0) {
+      while (!this.promptActive && !this.inputHold && this.pending.length > 0) {
         if (this.holder === null) {
           const msg = this.pending.shift()!;
           const owner = this.streamOwner(msg);
@@ -527,7 +576,7 @@ export class StreamRenderer {
         const keep: OmniMessage[] = [];
         let progressed = false;
         for (let i = 0; i < this.pending.length; i++) {
-          if (this.promptActive || this.holder === null) {
+          if (this.promptActive || this.inputHold || this.holder === null) {
             keep.push(...this.pending.slice(i));
             break;
           }
@@ -585,6 +634,21 @@ export class StreamRenderer {
           this.toolNames.set(p.tool_call_id, p.name);
           return;
         }
+        case "text": {
+          // Another exception: a mid-run steering message ([user_steering]-wrapped user text
+          // delivered between turns) has no streamed copy — it is rendered here, in the
+          // steering style.
+          const p = payload as TextPayload;
+          if (p.role === "user") {
+            const steering = parseUserSteeringText(p.text);
+            if (steering !== null) {
+              this.finishLine();
+              writeSteeringLines(this.out, steering, this.t);
+              this.lastLineKey = null;
+            }
+          }
+          return;
+        }
         default:
           return;
       }
@@ -628,7 +692,7 @@ export class StreamRenderer {
         this.lastLineKey = null;
       } else if (payload.type === "request_begin") {
         // The previous request ended in timeout/malformed -> this request is a retry
-        // carrying <turn_retried>: printed when the retry **actually starts** (when
+        // carrying [turn_retried]: printed when the retry **actually starts** (when
         // retries are exhausted, there's no retry after the last failure, only an abort
         // explaining why).
         if (this.pendingRetry) {
@@ -935,6 +999,7 @@ export class StreamRenderer {
   endTask(elapsedMs = 0): void {
     this.promptActive = false;
     this.promptKey = null;
+    this.inputHold = false;
     this.flushDeferredDecisions();
     this.holder = null;
     this.drain();

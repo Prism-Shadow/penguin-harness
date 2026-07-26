@@ -51,6 +51,7 @@ import type {
   SessionTracesResponse,
   SkillInstallRequest,
   SkillLibraryResponse,
+  SteerRequest,
   TaskCreateRequest,
   TaskCreateResponse,
   TraceAnalysisResponse,
@@ -262,6 +263,13 @@ export const postAbort = (sessionId: string) =>
   apiFetch<void>(`/api/sessions/${encodeURIComponent(sessionId)}/abort`, {
     method: "POST",
     body: {},
+  });
+
+/** Mid-run steering: queues a message for the running Task (delivered between turns as a standalone `[user_steering]` user message); 409 not_running when no Task is in progress. */
+export const postSteer = (sessionId: string, body: SteerRequest) =>
+  apiFetch<void>(`/api/sessions/${encodeURIComponent(sessionId)}/steer`, {
+    method: "POST",
+    body,
   });
 
 export const postCompact = (sessionId: string) =>

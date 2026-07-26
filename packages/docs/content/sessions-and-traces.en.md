@@ -77,11 +77,11 @@ The Trace is the single source of truth for recovery — there is no separate se
 
 Recovery requires that the Workspace and the model still exist. What recovery guarantees is structural legality: only committed turns are replayed, with `tool_call` / `tool_call_output` pairing intact; incomplete model output (thinking, text) is allowed to be lost. A truncated last line left by an abnormal process exit is tolerated and ignored. See `packages/core/src/trace/resume.ts`.
 
-Special case: if the latest Trace file ends with a completed compaction, that context is closed as a whole — resume starts from an empty context; in summarize mode the `<context_summary>` is reconstructed and prepended to the first input after resume.
+Special case: if the latest Trace file ends with a completed compaction, that context is closed as a whole — resume starts from an empty context; in summarize mode the `[context_summary]` is reconstructed and prepended to the first input after resume (old Traces using the earlier angle-bracket `<summary>` form are still understood).
 
 ## Model switch (/model)
 
-The Web's `/model` command changes models the way the @ handoff does: it creates a new Session under the same Agent via the ordinary session-creation API (the chosen model, **the source session's Workspace** — so files stay reachable), and the first message opens with a `<model_switch_from>` source block — the source session id, the absolute path of its latest Trace file, the Workspace, and the previous model pair — followed by whatever the user typed. The history is **not injected** into the new context: some models require thinking payloads and `fidelity` byte-for-byte when history is replayed, which cannot cross models — instead the model reads the source Trace file itself (JSONL, one message envelope per line) when it needs the earlier context. The source session and its Trace are untouched.
+The Web's `/model` command changes models the way the @ handoff does: it creates a new Session under the same Agent via the ordinary session-creation API (the chosen model, **the source session's Workspace** — so files stay reachable), and the first message opens with a `[model_switch_from]` source block — the source session id, the absolute path of its latest Trace file, the Workspace, and the previous model pair — followed by whatever the user typed. The history is **not injected** into the new context: some models require thinking payloads and `fidelity` byte-for-byte when history is replayed, which cannot cross models — instead the model reads the source Trace file itself (JSONL, one message envelope per line) when it needs the earlier context. The source session and its Trace are untouched.
 
 ## Field fidelity
 

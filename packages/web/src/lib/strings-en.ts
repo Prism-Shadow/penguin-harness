@@ -606,6 +606,29 @@ When done, open index.html in a browser and self-test once.`,
     jumpToLatest: "Jump to latest",
     inputPlaceholder: "Type a message. Enter to send, Shift+Enter for newline, paste images",
     inputPlaceholderShort: "Type a message…",
+    /** Placeholder while a Task is running (mid-run steering): the message is delivered between turns with the next request. */
+    steerPlaceholder: "Message the running agent — delivered with the next turn",
+    steerPlaceholderShort: "Message the running agent…",
+    steerSend: "Send to the running agent",
+    /** Queued hint shown after a successful steer, until the steering message appears in the stream. */
+    steerQueuedIndicator: "Steering queued — delivered with the next turn",
+    /** Label of the [user_steering] chip (a mid-run user message delivered between turns). */
+    userSteering: "User steering",
+    /** More-settings popover on the input toolbar (extensible setting rows; holds the mid-run send mode). */
+    moreSettings: "More settings",
+    /** Mid-run send-mode setting: steer (delivered mid-run) vs follow-up (queued until the run ends). */
+    steerModeLabel: "Mid-run send mode",
+    steerModeSteer: "Steer",
+    steerModeSteerHint: "Steer now: delivered to the running agent with the next turn",
+    steerModeFollowUp: "Queue",
+    steerModeFollowUpHint:
+      "Queue a follow-up: sent automatically as a new message when this run finishes",
+    followUpPlaceholder: "Queue as the next message — sent automatically when this run finishes",
+    followUpPlaceholderShort: "Queue as the next message…",
+    followUpSend: "Queue as the next message",
+    /** Server-side queued follow-up count (auto-sent once the current run finishes). */
+    followUpQueuedChip: (n: number) =>
+      `${n} follow-up ${n === 1 ? "message" : "messages"} queued — sent when this run finishes`,
     send: "Send",
     stop: "Stop",
     compact: "Compact context",

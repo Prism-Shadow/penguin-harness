@@ -592,6 +592,27 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     jumpToLatest: "回到最新消息",
     inputPlaceholder: "输入消息，Enter 发送，Shift+Enter 换行，可粘贴图片",
     inputPlaceholderShort: "输入消息…",
+    /** Placeholder while a Task is running (mid-run steering): the message is delivered between turns with the next request. */
+    steerPlaceholder: "给运行中的 Agent 留言，随下一轮对话送达",
+    steerPlaceholderShort: "给运行中的 Agent 留言…",
+    steerSend: "发送给运行中的 Agent",
+    /** Queued hint shown after a successful steer, until the steering message appears in the stream. */
+    steerQueuedIndicator: "插话已排队，将随下一轮送达",
+    /** Label of the [user_steering] chip (a mid-run user message delivered between turns). */
+    userSteering: "用户插话",
+    /** More-settings popover on the input toolbar (extensible setting rows; holds the mid-run send mode). */
+    moreSettings: "更多设置",
+    /** Mid-run send-mode setting: steer (delivered mid-run) vs follow-up (queued until the run ends). */
+    steerModeLabel: "运行中发送方式",
+    steerModeSteer: "插话",
+    steerModeSteerHint: "立即插话：随下一轮对话送达运行中的 Agent",
+    steerModeFollowUp: "排队",
+    steerModeFollowUpHint: "排队跟进：本轮结束后自动作为新消息发送",
+    followUpPlaceholder: "排队为下一条消息，本轮结束后自动发送",
+    followUpPlaceholderShort: "排队为下一条消息…",
+    followUpSend: "排队为下一条消息",
+    /** Server-side queued follow-up count (auto-sent once the current run finishes). */
+    followUpQueuedChip: (n: number) => `${n} 条跟进消息已排队，本轮结束后自动发送`,
     send: "发送",
     stop: "停止",
     compact: "压缩上下文",
@@ -656,7 +677,7 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     skillsSearchPlaceholder: "搜索技能",
     skillsNoMatch: "没有匹配的技能",
     skillsEmptyHint: "暂无已装技能，去技能库添加",
-    /** Auto-generated invocation text when skills are selected and the body is empty (wrapped in <use_skills> before sending). */
+    /** Auto-generated invocation text when skills are selected and the body is empty (wrapped in [use_skills] before sending). */
     skillsAutoMessage: (names: string[]): string => `使用 ${names.join("、")} 技能`,
     handoffFrom: (agent: string) => `由 ${agent} 的对话交接而来`,
     handoffBack: (title?: string) => (title ? `回到原对话：${title}` : "回到原对话"),

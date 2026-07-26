@@ -188,6 +188,19 @@ export class Session {
   }
 
   /**
+   * Queues a steering message for the running Task: the engine delivers it between turns as
+   * a standalone `[user_steering]` user message — sent with the next request input alongside
+   * that turn's tool outputs, or alone as the continuation input when the turn produced no
+   * tool calls — so the model sees it without the loop being interrupted. Returns false when
+   * no Task is running — the host should then submit the text as a normal task instead.
+   * Delivery is independent of approval mode; anything still queued when the run exits
+   * (abort included) is discarded.
+   */
+  steer(text: string): boolean {
+    return this.engine.steer(text);
+  }
+
+  /**
    * User-initiated request to compact context (e.g. a CLI command): reuses the automatic
    * compaction flow but skips the threshold check (reason=manual). Only callable at Task
    * boundaries (between runs); streams out paired `compaction` events. The summarize digest

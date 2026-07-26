@@ -18,6 +18,10 @@
       "types": "./dist/omnimessage/index.d.ts",
       "import": "./dist/omnimessage/index.js"
     },
+    "./markers": {
+      "types": "./dist/omnimessage/markers/index.d.ts",
+      "import": "./dist/omnimessage/markers/index.js"
+    },
     "./interfaces": {
       "types": "./dist/interfaces.d.ts",
       "import": "./dist/interfaces.js"
