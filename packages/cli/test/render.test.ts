@@ -117,19 +117,165 @@ describe("StreamRenderer", () => {
     r.handle(partialToolCall({ eventType: "stop", name: "", toolCallId: "c4" }));
     r.handle(toolCall({ name: "exec_command", arguments: '{"cmd":"ls"}', toolCallId: "c4" }));
     // The call line carries a [tool-<last-3-chars-of-id>] pairing tag matching the output line.
-    expect(stripAnsi(text())).toBe("[tool-c4] $ ls\n");
+    expect(stripAnsi(text())).toBe("[tool-c4] exec_command <- $ ls\n");
   });
 
-  it("streams partial_tool_call_output with a tagged gutter and skips the complete tool_call_output", () => {
+  it("renders one call line when the description arrives after the command", () => {
     const { stream, text } = collector();
     const r = new StreamRenderer(stream, t);
+    // The assembled schema carries the description argument, so the preview waits for it:
+    // with payload-first emission (models don't always honour schema order) the plain form
+    // must never reach the screen, or it would be stranded above the described one.
+    r.useToolSchemas([
+      {
+        name: "exec_command",
+        description: "run a command",
+        parameters: { type: "object", properties: { description: {}, cmd: {} } },
+      },
+    ]);
+    r.handle(partialToolCall({ eventType: "start", name: "exec_command", toolCallId: "c9" }));
+    r.handle(
+      partialToolCall({
+        eventType: "delta",
+        name: "",
+        arguments: '{"cmd":"ls -la",',
+        toolCallId: "c9",
+      }),
+    );
+    r.handle(
+      partialToolCall({
+        eventType: "delta",
+        name: "",
+        arguments: '"description":"列出当前目录的文件"}',
+        toolCallId: "c9",
+      }),
+    );
+    r.handle(partialToolCall({ eventType: "stop", name: "", toolCallId: "c9" }));
+    expect(stripAnsi(text())).toBe("[tool-c9] exec_command <- 列出当前目录的文件 ($ ls -la)\n");
+  });
+
+  it("streams the command live when the schema has no description argument", () => {
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t);
+    // call_description switched off for this tool: nothing can supersede the plain form, so
+    // it streams as the arguments arrive rather than waiting for them to settle.
+    r.useToolSchemas([
+      {
+        name: "exec_command",
+        description: "run a command",
+        parameters: { type: "object", properties: { cmd: {} } },
+      },
+    ]);
+    r.handle(partialToolCall({ eventType: "start", name: "exec_command", toolCallId: "c7" }));
+    r.handle(
+      partialToolCall({ eventType: "delta", name: "", arguments: '{"cmd":"ls', toolCallId: "c7" }),
+    );
+    expect(stripAnsi(text())).toBe("[tool-c7] exec_command <- $ ls");
+    r.handle(
+      partialToolCall({ eventType: "delta", name: "", arguments: ' -la"}', toolCallId: "c7" }),
+    );
+    r.handle(partialToolCall({ eventType: "stop", name: "", toolCallId: "c7" }));
+    expect(stripAnsi(text())).toBe("[tool-c7] exec_command <- $ ls -la\n");
+  });
+
+  it("still renders a call line whose arguments never settled", () => {
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t);
+    // Interrupted mid-arguments while awaiting a description: the call must not vanish.
+    r.useToolSchemas([
+      {
+        name: "exec_command",
+        description: "run a command",
+        parameters: { type: "object", properties: { description: {}, cmd: {} } },
+      },
+    ]);
+    r.handle(partialToolCall({ eventType: "start", name: "exec_command", toolCallId: "c8" }));
+    r.handle(
+      partialToolCall({ eventType: "delta", name: "", arguments: '{"cmd":"sle', toolCallId: "c8" }),
+    );
+    r.handle(partialToolCall({ eventType: "stop", name: "", toolCallId: "c8" }));
+    expect(stripAnsi(text())).toBe("[tool-c8] exec_command <- $ sle\n");
+  });
+
+  it("prefixes streamed tool output with the tool name and skips the complete tool_call_output", () => {
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t);
+    // The call precedes its output and supplies the gutter's tool name.
+    r.handle(partialToolCall({ eventType: "start", name: "exec_command", toolCallId: "c3" }));
+    r.handle(
+      partialToolCall({
+        eventType: "delta",
+        name: "",
+        arguments: '{"cmd":"ls"}',
+        toolCallId: "c3",
+      }),
+    );
+    r.handle(partialToolCall({ eventType: "stop", name: "", toolCallId: "c3" }));
     r.handle(partialToolCallOutput({ eventType: "start", toolCallId: "c3" }));
     r.handle(partialToolCallOutput({ eventType: "delta", output: "line1\n", toolCallId: "c3" }));
     r.handle(partialToolCallOutput({ eventType: "delta", output: "line2", toolCallId: "c3" }));
     r.handle(partialToolCallOutput({ eventType: "stop", toolCallId: "c3" }));
     r.handle(toolCallOutput({ output: "line1\nline2", toolCallId: "c3" })); // must not be re-rendered
-    // Each line starts with a tagged gutter (no indent) matching the call line.
-    expect(stripAnsi(text())).toBe("[tool-c3] >> line1\n[tool-c3] >> line2\n");
+    // Call line first, then each output line repeats the `[tool-xxx] <toolName>` prefix.
+    expect(stripAnsi(text())).toBe(
+      "[tool-c3] exec_command <- $ ls\n[tool-c3] exec_command -> line1\n[tool-c3] exec_command -> line2\n",
+    );
+  });
+
+  it("colors edit_file diff output lines green/red and dims hunk headers", () => {
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t);
+    r.handle(partialToolCall({ eventType: "start", name: "edit_file", toolCallId: "d1" }));
+    r.handle(
+      partialToolCall({
+        eventType: "delta",
+        name: "",
+        arguments: '{"file_path":"x.ts","old_string":"old","new_string":"new"}',
+        toolCallId: "d1",
+      }),
+    );
+    r.handle(partialToolCall({ eventType: "stop", name: "", toolCallId: "d1" }));
+    r.handle(partialToolCallOutput({ eventType: "start", toolCallId: "d1" }));
+    r.handle(
+      partialToolCallOutput({
+        eventType: "delta",
+        output: 'Replaced 1 occurrence in "x.ts".\n@@ -1,1 +1,1 @@\n-old\n+new\n',
+        toolCallId: "d1",
+      }),
+    );
+    r.handle(partialToolCallOutput({ eventType: "stop", toolCallId: "d1" }));
+    const raw = text();
+    // Diff lines are wrapped in green/red; the hunk header is dimmed; the summary line stays plain.
+    expect(raw).toContain("\x1b[32m+new\x1b[0m");
+    expect(raw).toContain("\x1b[31m-old\x1b[0m");
+    expect(raw).toContain("\x1b[2m@@ -1,1 +1,1 @@\x1b[0m");
+    // The stripped view still reads as labeled gutter lines.
+    const plain = stripAnsi(raw);
+    expect(plain).toContain("[tool-d1] edit_file -> -old");
+    expect(plain).toContain("[tool-d1] edit_file -> +new");
+  });
+
+  it("does not diff-color non-file-tool output", () => {
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t);
+    r.handle(partialToolCall({ eventType: "start", name: "exec_command", toolCallId: "d2" }));
+    r.handle(
+      partialToolCall({ eventType: "delta", name: "", arguments: '{"cmd":"x"}', toolCallId: "d2" }),
+    );
+    r.handle(partialToolCall({ eventType: "stop", name: "", toolCallId: "d2" }));
+    r.handle(partialToolCallOutput({ eventType: "start", toolCallId: "d2" }));
+    r.handle(partialToolCallOutput({ eventType: "delta", output: "+plus\n", toolCallId: "d2" }));
+    r.handle(partialToolCallOutput({ eventType: "stop", toolCallId: "d2" }));
+    expect(text()).not.toContain("\x1b[32m");
+  });
+
+  it("falls back to the pairing tag on output whose call was never seen", () => {
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t);
+    r.handle(partialToolCallOutput({ eventType: "start", toolCallId: "c3" }));
+    r.handle(partialToolCallOutput({ eventType: "delta", output: "line1", toolCallId: "c3" }));
+    r.handle(partialToolCallOutput({ eventType: "stop", toolCallId: "c3" }));
+    expect(stripAnsi(text())).toBe("[tool-c3] -> line1\n");
   });
 
   it("prints the retry line only when the retry request actually begins", () => {
@@ -165,10 +311,11 @@ describe("StreamRenderer", () => {
     r.handle(partialText("start", ""));
     r.handle(partialText("delta", "hello"));
     r.handle(partialToolCallOutput({ eventType: "delta", output: "a2\n", toolCallId: "tA" }));
-    expect(stripAnsi(text())).toBe("[tool-tA] >> a1\n[tool-tA] >> a2\n"); // hello is still queued
+    // No call preceded tA in this stream: the gutter falls back to the pairing tag.
+    expect(stripAnsi(text())).toBe("[tool-tA] -> a1\n[tool-tA] -> a2\n"); // hello is still queued
     r.handle(partialToolCallOutput({ eventType: "stop", toolCallId: "tA" }));
     r.handle(partialText("stop", "", "completed"));
-    expect(stripAnsi(text())).toBe("[tool-tA] >> a1\n[tool-tA] >> a2\nhello\n");
+    expect(stripAnsi(text())).toBe("[tool-tA] -> a1\n[tool-tA] -> a2\nhello\n");
   });
 
   it("queues everything while a user prompt is active and flushes after it ends", () => {
@@ -411,10 +558,30 @@ describe("StreamRenderer", () => {
     r.beginUserPrompt(tc);
     r.noteApprovalDecision(tc, "allow");
     r.endUserPrompt();
-    expect(stripAnsi(text())).toBe("[tool-p8] $ pwd\n✓ [approved]\n");
+    expect(stripAnsi(text())).toBe("[tool-p8] exec_command <- $ pwd\n✓ [approved]\n");
     // A late approval_decision event is deduped by key and not re-rendered.
     r.handle(approvalDecision("allow", "p8"));
-    expect(stripAnsi(text())).toBe("[tool-p8] $ pwd\n✓ [approved]\n");
+    expect(stripAnsi(text())).toBe("[tool-p8] exec_command <- $ pwd\n✓ [approved]\n");
+  });
+
+  it("prints the decoded file-tool payload before the approval prompt, without duplicating the call line", () => {
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t);
+    const tc = toolCall({
+      name: "edit_file",
+      arguments: JSON.stringify({ file_path: "src/x.ts", old_string: "a", new_string: "b" }),
+      toolCallId: "fp1",
+    });
+    r.beginUserPrompt(tc);
+    r.noteApprovalDecision(tc, "allow");
+    r.endUserPrompt();
+    // Call line, payload lines (what the user is approving), then the result — with no
+    // duplicated call line after the payload.
+    expect(stripAnsi(text())).toBe(
+      "[tool-fp1] edit_file src/x.ts\n" +
+        "file_path: src/x.ts\nold_string: a\nnew_string: b\n" +
+        "✓ [approved]\n",
+    );
   });
 
   it("re-renders a half-streamed call line at approval and suppresses its late tail deltas", () => {
@@ -447,7 +614,7 @@ describe("StreamRenderer", () => {
     // At approval time, the full call line is re-rendered in place from the complete message, right next to
     // the result; after unlocking, the late tail is deduped and must not start a duplicate call line after
     // the result line.
-    expect(s).toContain("[tool-h7] $ git status\n✓ [approved]\n");
+    expect(s).toContain("[tool-h7] exec_command <- $ git status\n✓ [approved]\n");
     expect(s.slice(s.indexOf("[approved]"))).not.toContain("[tool-h7]");
   });
 
@@ -531,7 +698,9 @@ describe("StreamRenderer", () => {
       toolCall({ name: "exec_command", arguments: '{"cmd":"ls"}', toolCallId: "c5" }),
       "allow",
     );
-    expect(stripAnsi(text())).toBe("[tool-c5] $ ls\nhi\n[tool-c5] $ ls\n✓ [approved]\n");
+    expect(stripAnsi(text())).toBe(
+      "[tool-c5] exec_command <- $ ls\nhi\n[tool-c5] exec_command <- $ ls\n✓ [approved]\n",
+    );
   });
 
   it("does not re-render the call line when it is already adjacent to the decision", () => {
@@ -551,7 +720,7 @@ describe("StreamRenderer", () => {
       toolCall({ name: "exec_command", arguments: '{"cmd":"ls"}', toolCallId: "c6" }),
       "deny",
     );
-    expect(stripAnsi(text())).toBe("[tool-c6] $ ls\n× [denied]\n");
+    expect(stripAnsi(text())).toBe("[tool-c6] exec_command <- $ ls\n× [denied]\n");
   });
 });
 
@@ -574,7 +743,7 @@ describe("StreamRenderer — nested (origin-tagged) subagent messages", () => {
       ),
     );
     r.handle(withOrigin(approvalDecision("allow", "cc1"), hop));
-    expect(stripAnsi(text())).toBe("[agent-ild-tool-cc1] $ ls\n✓ [approved]\n");
+    expect(stripAnsi(text())).toBe("[agent-ild-tool-cc1] exec_command <- $ ls\n✓ [approved]\n");
   });
 
   it("renders the pending nested tool call at approval time when its stream copy has not arrived; dedupes the late copy", () => {
@@ -586,11 +755,11 @@ describe("StreamRenderer — nested (origin-tagged) subagent messages", () => {
     );
     // The approval callback arrives before the forwarded message: beginUserPrompt renders the call line directly from the complete message.
     r.beginUserPrompt(tc);
-    expect(stripAnsi(text())).toBe("[agent-ild-tool-cc9] $ ls\n");
+    expect(stripAnsi(text())).toBe("[agent-ild-tool-cc9] exec_command <- $ ls\n");
     r.endUserPrompt();
     // The late forwarded copy is deduped by key and not re-rendered.
     r.handle(tc);
-    expect(stripAnsi(text())).toBe("[agent-ild-tool-cc9] $ ls\n");
+    expect(stripAnsi(text())).toBe("[agent-ild-tool-cc9] exec_command <- $ ls\n");
   });
 
   it("renders the pending parent tool call at approval time and suppresses its late partial stream", () => {
@@ -611,7 +780,7 @@ describe("StreamRenderer — nested (origin-tagged) subagent messages", () => {
       }),
     );
     r.handle(partialToolCall({ eventType: "stop", name: "", toolCallId: "p7" }));
-    expect(stripAnsi(text())).toBe("[tool-p7] $ pwd\n");
+    expect(stripAnsi(text())).toBe("[tool-p7] exec_command <- $ pwd\n");
   });
 
   it("adds nested token_usage request totals to the task delta and the session total", () => {
@@ -691,9 +860,9 @@ describe("renderHistory (resume)", () => {
     expect(s).toContain("> hello");
     expect(s).toContain("pondering");
     expect(s).toContain("hi there");
-    expect(s).toContain("[tool-653] $ ls");
-    expect(s).toContain("[tool-653] >> a.txt");
-    expect(s).toContain("[tool-653] >> b.txt");
+    expect(s).toContain("[tool-653] exec_command <- $ ls");
+    expect(s).toContain("[tool-653] exec_command -> a.txt");
+    expect(s).toContain("[tool-653] exec_command -> b.txt");
     // An interrupted message carries a marker (rendering includes the interrupted turn).
     expect(s).toContain("half answer [aborted]");
   });

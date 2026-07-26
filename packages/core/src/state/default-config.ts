@@ -73,7 +73,7 @@ export interface SystemConfig {
   /** Context compaction (enabled by default, max_context_length 128k, mode summarize). */
   compaction?: CompactionConfig;
   tools?: {
-    /** Built-in system tool configuration. */
+    /** Built-in system tool configuration (per-entry fields incl. the `call_description` toggle live on ToolDefinitionConfig). */
     builtin?: ToolDefinitionConfig[];
     /** MCP Server configuration. */
     mcpServers?: MCPServerConfig[];
@@ -140,7 +140,7 @@ The vault holds this agent's per-agent secrets (agent_state/.vault.toml). Each e
 {{VAULT_KEYS}}
 
 # Skills
-Skills are reusable instruction packages stored under <app_data_dir>/agents/<agent_id>/agent_state/skills/<skill_name>/SKILL.md. There is no skill tool: when a task matches an installed skill below, or the user asks to use one (a message may start with a <use_skills> block listing skill names), first read that skill's SKILL.md in full with a shell command, then follow it. If a request only names a skill without a concrete task, ask the user what they need before starting.
+Skills are reusable instruction packages stored under <app_data_dir>/agents/<agent_id>/agent_state/skills/<skill_name>/SKILL.md. There is no skill tool: when a task matches an installed skill below, or the user asks to use one (a message may start with a <use_skills> block listing skill names), first read that skill's SKILL.md in full with the read_file tool, then follow it. If a request only names a skill without a concrete task, ask the user what they need before starting.
 {{SKILL_METADATA}}
 
 # Environment
@@ -169,21 +169,115 @@ export const DEFAULT_COMPACTION_PROMPT =
   "tools while writing the summary; respond with text only.";
 
 /**
- * Default built-in system tools: bash execution and subagent spawning.
+ * Default built-in system tools: file reading/editing/writing first, then bash execution
+ * and subagent spawning.
  * Docs: /docs/tools § "Built-in tools".
  */
 function defaultBuiltinTools(): ToolDefinitionConfig[] {
   return [
     {
+      name: "read_file",
+      description:
+        "Read a text file and return its content with line numbers (cat -n style) — the preferred " +
+        "way to inspect a file. Returns up to 2000 lines starting at the given offset; for longer " +
+        "files call again with offset to continue. Use the image tools for images and the shell " +
+        "tool for binary files.",
+      parameters: {
+        type: "object",
+        properties: {
+          file_path: {
+            type: "string",
+            description: "Path to the file to read; absolute, or relative to the workspace.",
+          },
+          offset: {
+            type: "number",
+            description: "1-based line number to start reading from; defaults to 1.",
+          },
+          limit: {
+            type: "number",
+            description: "Max lines to read; defaults to 2000.",
+          },
+        },
+        required: ["file_path"],
+      },
+      permission: "r",
+      timeoutMs: 30000,
+      // Wider than the other tools' cap: a 2000-line window of code rarely fits in 16k characters.
+      maxOutputLength: 64000,
+    },
+    {
+      name: "edit_file",
+      description:
+        "Edit a file by exact string replacement — the preferred way to make a precise change. " +
+        "old_string must match the file content exactly (including whitespace) and be unique " +
+        "unless replace_all is set; read the file first to copy the text verbatim. The result " +
+        "echoes a line-numbered snippet around the change for verification.",
+      parameters: {
+        type: "object",
+        properties: {
+          file_path: {
+            type: "string",
+            description: "Path to the file to edit; absolute, or relative to the workspace.",
+          },
+          old_string: {
+            type: "string",
+            description: "Exact text to replace, including whitespace/indentation.",
+          },
+          new_string: {
+            type: "string",
+            description: "Replacement text; must differ from old_string.",
+          },
+          replace_all: {
+            type: "boolean",
+            description: "Replace every occurrence of old_string; defaults to false.",
+          },
+        },
+        required: ["file_path", "old_string", "new_string"],
+      },
+      permission: "rw",
+      timeoutMs: 30000,
+      maxOutputLength: 16000,
+    },
+    {
+      name: "write_file",
+      description:
+        "Create or overwrite a file with the given content, creating parent directories as " +
+        "needed. Use it for new files or full rewrites; for precise changes to an existing file " +
+        "prefer edit_file.",
+      parameters: {
+        type: "object",
+        properties: {
+          file_path: {
+            type: "string",
+            description: "Path to the file to write; absolute, or relative to the workspace.",
+          },
+          content: {
+            type: "string",
+            description: "Full file content to write; an empty string creates an empty file.",
+          },
+        },
+        required: ["file_path", "content"],
+      },
+      permission: "rw",
+      timeoutMs: 30000,
+      maxOutputLength: 16000,
+    },
+    {
       name: "exec_command",
       description:
-        "Run a shell command in the workspace to read, write, edit files and run programs. " +
+        "Run a shell command in the workspace to run programs, search, install dependencies, and " +
+        "everything the file tools don't cover. " +
         "Run long-lived commands (servers, watchers, builds) in the foreground: past yield_time_ms " +
         "they keep running in the background with a process_id. Do not background them with `&` — " +
         "the whole process group is cleaned up when the foreground command exits.",
       parameters: {
         type: "object",
         properties: {
+          description: {
+            type: "string",
+            description:
+              "Required, and emit it first, before the other arguments: it is shown to the user while the call runs. One short sentence describing what this call is doing and why, written in the user's language.",
+          },
           cmd: {
             type: "string",
             description: "Shell command to execute.",
@@ -199,9 +293,10 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
               "How long to wait for the command before yielding. If it is still running when this elapses, the tool returns the output so far plus a process_id, and the command keeps running in the background (drive it with input_command). Defaults to 60000; minimum 250, capped below the tool timeout.",
           },
         },
-        required: ["cmd"],
+        required: ["description", "cmd"],
       },
       permission: "rw",
+      call_description: true,
       timeoutMs: 120000,
       maxOutputLength: 16000,
     },
@@ -212,6 +307,11 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
       parameters: {
         type: "object",
         properties: {
+          description: {
+            type: "string",
+            description:
+              "Required, and emit it first, before the other arguments: it is shown to the user while the call runs. One short sentence describing what this call is doing and why, written in the user's language.",
+          },
           process_id: {
             type: "string",
             description: "The process_id returned by exec_command for the running command session.",
@@ -227,9 +327,10 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
               "How long to wait for new output or exit before returning. Non-empty writes default to 250; empty polls default to 5000. Minimum 250, capped below the tool timeout.",
           },
         },
-        required: ["process_id"],
+        required: ["description", "process_id"],
       },
       permission: "rw",
+      call_description: true,
       // An empty poll can wait out a build/test run (the yield ceiling is derived from timeoutMs, clamped inside the tool).
       timeoutMs: 130000,
       maxOutputLength: 16000,
@@ -242,6 +343,11 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
       parameters: {
         type: "object",
         properties: {
+          description: {
+            type: "string",
+            description:
+              "Required, and emit it first, before the other arguments: it is shown to the user while the call runs. One short sentence describing what this call is doing and why, written in the user's language.",
+          },
           prompt: {
             type: "string",
             description:
@@ -268,9 +374,10 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
               "How long to wait for the subagent before yielding. If it is still working when this elapses, the tool returns the output so far plus a subagent_id, and the subagent keeps running in the background (drive it with input_subagent). Defaults to 300000; minimum 250, capped below the tool timeout.",
           },
         },
-        required: ["prompt"],
+        required: ["description", "prompt"],
       },
       permission: "rw",
+      call_description: true,
       // Subagent tasks typically run far longer than a single command, so the timeout ceiling is raised accordingly.
       timeoutMs: 600000,
       maxOutputLength: 16000,
@@ -282,6 +389,11 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
       parameters: {
         type: "object",
         properties: {
+          description: {
+            type: "string",
+            description:
+              "Required, and emit it first, before the other arguments: it is shown to the user while the call runs. One short sentence describing what this call is doing and why, written in the user's language.",
+          },
           subagent_id: {
             type: "string",
             description: "The subagent_id returned by run_subagent for the background subagent.",
@@ -297,9 +409,10 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
               "How long to wait for new output or completion before returning. Follow-up prompts default to 300000; empty polls default to 10000. Minimum 250, capped below the tool timeout.",
           },
         },
-        required: ["subagent_id"],
+        required: ["description", "subagent_id"],
       },
       permission: "rw",
+      call_description: true,
       // Same generous timeout tier as run_subagent: an empty poll can wait a long time for the subagent to wrap up.
       timeoutMs: 600000,
       maxOutputLength: 16000,

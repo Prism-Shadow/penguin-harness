@@ -27,9 +27,9 @@
  */
 import { createInterface, type Interface } from "node:readline";
 import type { Command } from "commander";
-import { createAgent, goalFilePath, userText } from "@prismshadow/penguin-core";
+import { createAgent, goalFilePath, userText, VERSION } from "@prismshadow/penguin-core";
 import type { ApprovalDecision, OmniMessage, ToolCallPayload } from "@prismshadow/penguin-core";
-import { StreamRenderer, dim, renderHistory } from "../render.js";
+import { StreamRenderer, dim, renderHistory, sessionMetaTools } from "../render.js";
 import { runTask } from "../task-loop.js";
 import { runGoalLoop, unknownSkills } from "../goal-loop.js";
 import { parseGoalCommand } from "../goal-command.js";
@@ -116,9 +116,11 @@ export function registerChatCommand(program: Command, t: Messages): void {
       }
 
       const renderer = new StreamRenderer(out, t);
+      // The assembled tool schemas decide each tool's call-line preview path (see render.ts).
+      renderer.useToolSchemas(sessionMetaTools(session));
 
       out.write(
-        `${t.header("chat", agent.state.agentId, session.workspaceDir, session.modelId)}\n` +
+        `${t.header("chat", VERSION, agent.state.agentId, session.workspaceDir, session.modelId)}\n` +
           `${t.chatHints()}\n`,
       );
       // On resume, first render the history messages of the current context per Trace

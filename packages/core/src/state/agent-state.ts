@@ -455,11 +455,37 @@ export function selectBuiltinToolsForModel(
   return tools.filter((t) => t.forModel === undefined || t.forModel === kind);
 }
 
+/**
+ * Applies a tool entry's per-tool `call_description` toggle: the `description` call argument
+ * is declared as a normal property in the entry's `parameters` (editable config is the
+ * single source of truth) and is **required** there, so a tool that offers it always gets
+ * one — the frontends can then pick a call's display form up front instead of guessing while
+ * the arguments stream. When the entry sets `call_description: false`, the property is
+ * filtered out of the schema handed to the LLM, `required` along with it — on an in-memory
+ * clone only, the stored YAML is never rewritten. Missing/true, entries without a parameter
+ * schema, and entries whose properties declare no `description` all pass through unchanged
+ * (old configs predating the field are a no-op).
+ */
+function applyCallDescriptionToggle(def: ToolDefinitionConfig): ToolDefinitionConfig {
+  if (def.call_description !== false) return def;
+  const params = def.parameters;
+  if (params === undefined) return def;
+  const properties = params["properties"];
+  if (properties === null || typeof properties !== "object") return def;
+  if (!("description" in (properties as Record<string, unknown>))) return def;
+  const { description: _dropped, ...rest } = properties as Record<string, unknown>;
+  const required = params["required"];
+  const trimmed = Array.isArray(required)
+    ? { required: required.filter((name) => name !== "description") }
+    : {};
+  return { ...def, parameters: { ...params, properties: rest, ...trimmed } };
+}
+
 export function buildToolConfig(state: AgentState): ToolConfig {
   const systemTools = state.systemConfig.tools;
   const builtin = systemTools?.builtin ?? defaultSystemConfig().tools?.builtin ?? [];
   return {
-    customTools: builtin,
+    customTools: builtin.map(applyCallDescriptionToggle),
     mcpServers: systemTools?.mcpServers ?? [],
   };
 }

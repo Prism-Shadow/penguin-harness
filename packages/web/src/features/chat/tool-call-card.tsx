@@ -28,17 +28,111 @@ import { LiveDuration } from "./live-duration";
 import { SubagentCard } from "./subagent-card";
 import type { StreamRenderContext } from "./message-stream";
 
+/** Tools that accept the optional model-written `description` argument. */
+const DESCRIBED_TOOLS = new Set([
+  "exec_command",
+  "input_command",
+  "run_subagent",
+  "input_subagent",
+]);
+
+/** The three file tools: previewed by their `file_path` argument. */
+const FILE_TOOLS = new Set(["read_file", "edit_file", "write_file"]);
+
+/**
+ * Shortens a path for one-line display: at most one parent directory plus the filename
+ * (`…/parent/file.ts`); paths already within that shape are shown as-is (same rule as the
+ * CLI's tool-render). The full path stays in the expanded arguments block.
+ */
+export function shortenPath(p: string): string {
+  const segments = p.split("/").filter((s) => s.length > 0);
+  if (segments.length <= 2) return p;
+  return `…/${segments[segments.length - 2]}/${segments[segments.length - 1]}`;
+}
+
 /**
  * Argument preview (same approach as the CLI's tool-render): exec_command shows `$ <cmd>`,
- * other tools show a single-line `name(args)` prefix. Arguments may be incomplete JSON
- * (mid-stream), so extraction is done leniently.
+ * the file tools show their shortened file path, other tools show a single-line
+ * `name(args)` prefix. Arguments may be incomplete JSON (mid-stream), so extraction is done
+ * leniently. The preview deliberately keeps the real arguments (not the model-written
+ * description): it heads the approval row, and the user must approve the actual command,
+ * not the model's summary of it.
  */
-function previewArguments(name: string, argsJson: string): string {
+export function previewArguments(name: string, argsJson: string): string {
   if (name === "exec_command") {
     const cmd = extractStringField(argsJson, "cmd");
     if (cmd !== null) return `$ ${cmd.replace(/\s+/g, " ").trim()}`;
   }
+  if (FILE_TOOLS.has(name)) {
+    const filePath = extractStringField(argsJson, "file_path");
+    if (filePath !== null) return shortenPath(filePath.replace(/\s+/g, " ").trim());
+  }
   return argsJson.replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Collapsed-header subtitle: the human-readable line next to the tool name — the
+ * model-written `description` argument for the command/subagent tools (declared in their
+ * config schema; per-tool `call_description: false` removes it, in which case the model
+ * never sends it), or the shortened file path for the file tools. Null when there is
+ * nothing beyond the raw arguments.
+ */
+export function headerSubtitle(name: string, argsJson: string): string | null {
+  if (DESCRIBED_TOOLS.has(name)) {
+    const desc = extractStringField(argsJson, "description");
+    if (desc !== null) {
+      const line = desc.replace(/\s+/g, " ").trim();
+      if (line) return line;
+    }
+    return null;
+  }
+  if (FILE_TOOLS.has(name)) {
+    const filePath = extractStringField(argsJson, "file_path");
+    if (filePath !== null) {
+      const line = filePath.replace(/\s+/g, " ").trim();
+      if (line) return shortenPath(line);
+    }
+  }
+  return null;
+}
+
+/**
+ * Decoded file-tool payload for the pending-approval block: the user is approving a
+ * concrete rewrite (old_string/new_string/content), so the bare path is not enough — the
+ * actual arguments are rendered in the scrollable expanded style while the call is PENDING.
+ * Null for other tools or unparseable arguments (arguments are complete by approval time).
+ */
+export function pendingFilePayload(name: string, argsJson: string): string | null {
+  if (!FILE_TOOLS.has(name)) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(argsJson);
+  } catch {
+    return null;
+  }
+  if (parsed === null || typeof parsed !== "object") return null;
+  const args = parsed as Record<string, unknown>;
+  const sections: string[] = [];
+  const push = (label: string, value: unknown): void => {
+    if (value === undefined) return;
+    if (typeof value === "string" && value.includes("\n")) {
+      sections.push(`${label}:\n${value}`);
+    } else {
+      sections.push(`${label}: ${typeof value === "string" ? value : JSON.stringify(value)}`);
+    }
+  };
+  push("file_path", args["file_path"]);
+  if (name === "read_file") {
+    push("offset", args["offset"]);
+    push("limit", args["limit"]);
+  } else if (name === "edit_file") {
+    push("old_string", args["old_string"]);
+    push("new_string", args["new_string"]);
+    if (args["replace_all"] === true) push("replace_all", true);
+  } else if (name === "write_file") {
+    push("content", args["content"]);
+  }
+  return sections.join("\n");
 }
 
 /** Extracts the current value of a string field from a possibly-incomplete JSON object string (a simplified version, good enough for preview purposes). */
@@ -94,6 +188,7 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
   }, [hasNestedPending]);
 
   const preview = previewArguments(item.name, item.argumentsText);
+  const subtitle = headerSubtitle(item.name, item.argumentsText);
   // Executing = the call has finished streaming, output hasn't arrived yet, and it's not waiting on approval (approval wait time doesn't count toward execution).
   const executing = item.callComplete && !item.outputComplete && !pending;
   // Argument-generation segment (settled): the live execution timer accumulates on top of this as a baseline, so the displayed duration doesn't shrink back once output arrives.
@@ -135,6 +230,12 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
         <span className="shrink-0 truncate font-mono text-xs font-semibold text-gray-700 dark:text-gray-300">
           {item.name || S.chat.unknownTool}
         </span>
+        {/* Human-readable subtitle: the model-written call description (command/subagent tools) or the file path (file tools). */}
+        {subtitle && (
+          <span className="min-w-0 shrink truncate text-xs text-gray-500 dark:text-gray-400">
+            {subtitle}
+          </span>
+        )}
         <span className="shrink-0 font-mono text-xs text-gray-500 dark:text-gray-400">
           {item.durationMs !== undefined ? (
             humanizeDuration(item.durationMs)
@@ -189,6 +290,17 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
               {preview}
             </span>
           </div>
+          {/* File tools: the one-line preview shows only the (shortened) path, but the user is
+              approving a concrete rewrite — render the decoded payload (old_string/new_string/
+              content) in the scrollable expanded style while pending. */}
+          {(() => {
+            const payload = pendingFilePayload(item.name, item.argumentsText);
+            return payload !== null ? (
+              <pre className="mb-2 max-h-72 overflow-auto whitespace-pre-wrap break-all rounded-md bg-white/70 px-2 py-1.5 text-xs leading-5 text-gray-700 dark:bg-gray-950/40 dark:text-gray-300">
+                {payload}
+              </pre>
+            ) : null;
+          })()}
           <ApprovalButtons
             onDecide={(decision) => ctx.onApprove(item.toolCallId, decision, ctx.origin)}
           />

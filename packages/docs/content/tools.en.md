@@ -5,7 +5,7 @@ description: The deliberately minimal built-in toolset, its execution contract w
 
 ## Design
 
-PenguinHarness ships a deliberately minimal built-in toolset: the shell is the universal interface, and reading, writing and editing files all go through `exec_command` — there are no separate file tools. Fewer tools mean fewer schema tokens and fewer wrong calls.
+PenguinHarness ships a deliberately minimal built-in toolset: dedicated file tools (`read_file` / `edit_file` / `write_file`) cover precise reading and editing — line-numbered output and exact-string replacement beat quoting `sed` one-liners — while the shell (`exec_command`) remains the general-purpose fallback for everything else: running programs, searching, installing dependencies. Every tool that remains earns its schema tokens.
 
 ## Execution contract
 
@@ -58,19 +58,29 @@ Each tool is described by one `ToolDefinitionConfig`:
 | `forModel` | `"vision"` / `"text-only"`: selected by the Session model's class; omitted = available to all models |
 | `timeoutMs` | Per-call timeout (ms), default 120000; `<=0` disables |
 | `maxOutputLength` | Output length cap (characters); `<=0` disables |
+| `call_description` | Per-tool toggle for the `description` call argument declared in `parameters` (required while on); missing = kept, `false` filters it and its `required` entry out of the schema at assembly |
 
 ## Built-in tools
 
-There are 6 built-in tools (assembled via `packages/core/src/environment/tools/registry.ts`):
+There are 9 built-in tools (assembled via `packages/core/src/environment/tools/registry.ts`):
 
 | Tool | Permission | Timeout (ms) | Purpose |
 | --- | --- | --- | --- |
 | `exec_command` | rw | 120000 | Run a shell command in the Workspace via `bash -lc`, streaming stdout/stderr |
 | `input_command` | rw | 130000 | Drive a running command by `process_id`: write stdin, send Ctrl-C, poll output |
+| `read_file` | r | 30000 | Read a text file as a line-numbered (`cat -n`) window, paged by offset/limit |
+| `edit_file` | rw | 30000 | Exact-string replacement in an existing file, echoing a verification snippet |
+| `write_file` | rw | 30000 | Create or overwrite a whole file, creating parent directories as needed |
 | `run_subagent` | rw | 600000 | Delegate a self-contained subtask to a child Agent in the same Workspace |
 | `input_subagent` | rw | 600000 | Poll a background subagent, or send a follow-up prompt once it is idle |
 | `read_image` | r | 60000 | Read an image and return it as image content (vision models) |
 | `describe_image` | r | 90000 | Have the configured `vision_model` read the image and answer in text (text-only models) |
+
+Note that an existing agent's persisted `tools.builtin` list is frozen as written (the settings UI edits rows but adds none): agents created before this toolset do not pick up the file tools automatically — hand-edit the agent's `system_config.yaml` and add the new entries (copy them from the default definitions in `packages/core/src/state/default-config.ts`) to adopt them.
+
+### Call descriptions
+
+The command/subagent tools (`exec_command`, `input_command`, `run_subagent`, `input_subagent`) take a `description` argument: one model-written sentence about what the call is doing, shown by the CLI and Web UI while the call runs. The argument is declared as a normal `description` property in each entry's `parameters` in `system_config.yaml` (tool schemas live entirely in the editable config), and it is **required** there — a tool that offers the argument always gets one, so the frontends can pick a call's display form from the schema instead of guessing while the arguments stream; the model is also asked to emit it first. The per-entry `call_description` field toggles the whole thing — missing = kept, `call_description: false` filters the property (and its `required` entry) out of the schema at assembly time (in-memory only, the YAML is never rewritten). The file tools don't take it — their `file_path` argument is self-describing.
 
 ### Command sessions
 
@@ -94,6 +104,7 @@ Both tools' arguments (explicit keys):
   cmd: string;             // required: the shell command to run
   workdir?: string;        // working directory; defaults to the Workspace root, relative paths resolve against it
   yield_time_ms?: number;  // foreground wait; default 60000, minimum 250, capped below the tool timeout
+  description: string;     // required while call_description is on: one sentence shown to the user while the call runs, emitted first
 }
 
 // input_command
@@ -101,6 +112,40 @@ Both tools' arguments (explicit keys):
   process_id: string;      // required: the command-session id returned by exec_command
   chars?: string;          // characters for stdin; send "\u0003" alone to deliver Ctrl-C; empty = poll only
   yield_time_ms?: number;  // wait; defaults 250 for writes, 5000 for empty polls
+  description: string;     // required while call_description is on
+}
+```
+
+### File tools
+
+`read_file` / `edit_file` / `write_file` run with the user's full permissions, same as the shell tool; relative paths resolve against the Workspace and absolute paths are allowed. They are non-streaming (a single final output) and never throw — failures come back as explanatory text with `stop_reason: failed`.
+
+```ts
+// read_file — cat -n style output (line number, tab, content); overlong single lines are
+// truncated, and binary content (NUL bytes) is rejected with advice to use shell/image tools.
+{
+  file_path: string;       // required: absolute, or relative to the Workspace
+  offset?: number;         // 1-based line to start from; default 1
+  limit?: number;          // max lines returned; default 2000 — a trailing note points at the continuation
+}
+
+// edit_file — the file must exist; old_string must occur exactly once (or set replace_all);
+// success echoes "Replaced N occurrence(s)" plus a git-style unified diff of the changed
+// regions (one hunk per site, nearby sites merged; replace_all storms are capped at a few
+// hunks plus an "…and N more replacements" note).
+{
+  file_path: string;       // required
+  old_string: string;      // required: exact text to replace, including whitespace/indentation
+  new_string: string;      // required: must differ from old_string
+  replace_all?: boolean;   // replace every occurrence; default false
+}
+
+// write_file — creates parent directories as needed; reports "Created" vs "Overwrote" with
+// lines/bytes. An overwrite also shows a small unified diff against the previous content,
+// or a one-line +X/−Y summary when the change is large.
+{
+  file_path: string;       // required
+  content: string;         // required: full file content; an empty string creates an empty file
 }
 ```
 
@@ -115,6 +160,7 @@ Both tools' arguments (explicit keys):
   agent_id?: string;       // the child Agent; defaults to the current Agent
   model_id?: string;       // the child Session's model; inherits the parent Session's model when omitted
   yield_time_ms?: number;  // foreground wait; default 300000
+  description: string;     // required while call_description is on
 }
 
 // input_subagent
@@ -122,6 +168,7 @@ Both tools' arguments (explicit keys):
   subagent_id: string;     // required: the background Subagent id returned by run_subagent
   prompt?: string;         // follow-up task, accepted only while the child Session is idle; empty = poll only
   yield_time_ms?: number;  // wait; defaults 300000 with a prompt, 10000 for empty polls
+  description: string;     // required while call_description is on
 }
 ```
 
@@ -182,6 +229,9 @@ tools:
     - name: exec_command
       description: Run a shell command in the workspace.
       permission: rw
+      # Optional per-tool toggle: false filters the `description` call argument
+      # (declared in parameters.properties) out of the schema (missing = kept).
+      call_description: false
       timeoutMs: 120000
       maxOutputLength: 16000
       # parameters: the complete JSON Schema is required (see the default definition

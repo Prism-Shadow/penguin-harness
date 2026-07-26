@@ -35,7 +35,13 @@ import type {
   VaultUpdateRequest,
 } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
-import { badRequest, optionalEnum, optionalNumber, optionalString } from "../http/validate.js";
+import {
+  badRequest,
+  optionalBoolean,
+  optionalEnum,
+  optionalNumber,
+  optionalString,
+} from "../http/validate.js";
 import { maskApiKey } from "./project-config-service.js";
 
 const THINKING_LEVELS: readonly ThinkingLevelName[] = ["none", "low", "medium", "high", "xhigh"];
@@ -328,6 +334,7 @@ function validateToolsBuiltin(value: unknown): ToolDefinitionConfig[] {
     if (t.forModel !== undefined && t.forModel !== "vision" && t.forModel !== "text-only") {
       throw badRequest(`toolsBuiltin[${i}].forModel must be one of vision / text-only.`);
     }
+    optionalBoolean(t, "call_description", `toolsBuiltin[${i}].call_description`);
     optionalNumber(t, "timeoutMs", {
       integer: true,
       positiveOrMinusOne: true,

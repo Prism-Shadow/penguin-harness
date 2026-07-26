@@ -29,6 +29,7 @@ import { Button } from "../../components/ui/button";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 import { Input, Textarea } from "../../components/ui/input";
 import { OptionMenu, type OptionMenuChoice } from "../../components/ui/option-menu";
+import { Switch } from "../../components/ui/switch";
 import { ConfirmModal, useSaveConfirm } from "../../components/ui/confirm-modal";
 import { Skeleton } from "../../components/ui/skeleton";
 import { VaultTab } from "./vault-tab";
@@ -755,6 +756,12 @@ function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn 
           errs[`${i}-maxOutputLength`] = S.agent.toolFieldInvalid(row.base.name, "maxOutputLength");
         } else tool.maxOutputLength = n;
       }
+      // call_description: missing = true, so flipping a stored-missing row back to on
+      // rewinds to "not written" instead of writing the default explicitly.
+      const origRow = data.config.toolsBuiltin[i];
+      if (tool.call_description === true && origRow?.call_description === undefined) {
+        delete tool.call_description;
+      }
       tools.push(tool);
     }
     if (Object.keys(errs).length > 0) {
@@ -772,7 +779,8 @@ function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn 
         return (
           t.permission !== o.permission ||
           t.timeoutMs !== o.timeoutMs ||
-          t.maxOutputLength !== o.maxOutputLength
+          t.maxOutputLength !== o.maxOutputLength ||
+          t.call_description !== o.call_description
         );
       });
     if (!dirty) {
@@ -782,16 +790,24 @@ function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn 
     requestSave(() => void onSave({ config: { toolsBuiltin: tools } }));
   };
 
+  /** Whether a tool's config schema declares the optional `description` call argument (only then does the per-row switch make sense). */
+  const hasDescriptionProperty = (t: ToolDefinitionConfig): boolean => {
+    const props = (t.parameters as { properties?: Record<string, unknown> } | undefined)
+      ?.properties;
+    return props !== undefined && props !== null && props["description"] !== undefined;
+  };
+
   return (
     <div className="space-y-4">
       <div className="overflow-x-auto overflow-y-clip rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-        <table className="w-full min-w-[520px] text-left text-sm">
+        <table className="w-full min-w-[640px] text-left text-sm">
           <thead>
             <tr className="border-b border-gray-200 bg-gray-50/80 text-xs text-gray-500 dark:border-gray-800 dark:bg-gray-900">
               <th className="px-3 py-2">{S.common.name}</th>
               <th className="px-3 py-2">{S.agent.toolPermission}</th>
               <th className="px-3 py-2">{S.agent.toolTimeout}</th>
               <th className="px-3 py-2">{S.agent.toolMaxOutput}</th>
+              <th className="px-3 py-2">{S.agent.toolCallDescription}</th>
             </tr>
           </thead>
           <tbody>
@@ -829,11 +845,25 @@ function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn 
                     onChange={(e) => update(i, { maxOutputLength: e.target.value })}
                   />
                 </td>
+                <td className="px-3 py-2 align-top">
+                  {/* Per-tool call_description switch (missing = on): shown only for tools whose
+                      config schema actually declares the description argument. */}
+                  {hasDescriptionProperty(row.base) ? (
+                    <Switch
+                      checked={row.base.call_description !== false}
+                      onChange={(v) => update(i, { base: { ...row.base, call_description: v } })}
+                      aria-label={`${row.base.name} ${S.agent.toolCallDescription}`}
+                    />
+                  ) : (
+                    <span className="text-xs text-gray-300 dark:text-gray-600">—</span>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+      <p className="text-xs text-gray-400 dark:text-gray-500">{S.agent.callDescriptionHint}</p>
 
       <div>
         <p className="mb-1 text-xs font-medium text-gray-500">{S.agent.mcpServers}</p>

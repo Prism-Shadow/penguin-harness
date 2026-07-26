@@ -56,6 +56,16 @@ export interface ToolDefinitionConfig {
   timeoutMs?: number;
   /** Max length of tool output; Environment truncates from the front (keeping the head) if exceeded; <=0 disables it. */
   maxOutputLength?: number;
+  /**
+   * Per-tool toggle for the optional `description` call argument (a model-written sentence
+   * shown to the user while the call runs). The argument itself is declared as a normal
+   * property in this entry's `parameters` (editable config is the single source of truth);
+   * setting `call_description: false` filters that property out of the schema handed to the
+   * LLM at assembly time (in-memory only — the stored YAML is never rewritten). Missing =
+   * true (the property stays). No effect on entries whose parameters declare no
+   * `description` property.
+   */
+  call_description?: boolean;
 }
 
 export interface MCPServerConfig {

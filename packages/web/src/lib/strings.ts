@@ -232,6 +232,9 @@ export const zh = {
     permissionReadWriteDescription: "可修改。审批模式为 read-only 时需人工确认。",
     toolTimeout: "timeoutMs",
     toolMaxOutput: "maxOutputLength",
+    toolCallDescription: "call_description",
+    callDescriptionHint:
+      "call_description：开启（缺省）时该工具的 schema 保留可选的 description 参数——模型为每次调用写一句说明，运行期间展示给用户；关闭则装配时从 schema 滤除该参数。仅参数中定义了 description 属性的工具可切换。",
     mcpServers: "MCP Server（只读）",
     defaultValue: "（缺省）",
     /** Reset link next to the runtime dropdowns: rewinds the local pick back to "not overridden" (the menus offer no inherit row). */
