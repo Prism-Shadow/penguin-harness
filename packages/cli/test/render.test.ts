@@ -139,9 +139,9 @@ describe("StreamRenderer", () => {
     r.handle(partialToolCallOutput({ eventType: "delta", output: "line2", toolCallId: "c3" }));
     r.handle(partialToolCallOutput({ eventType: "stop", toolCallId: "c3" }));
     r.handle(toolCallOutput({ output: "line1\nline2", toolCallId: "c3" })); // must not be re-rendered
-    // Call line first, then each output line starts with `<toolName> -> `.
+    // Call line first, then each output line repeats the `[tool-xxx] <toolName>` prefix.
     expect(stripAnsi(text())).toBe(
-      "[tool-c3] exec_command <- $ ls\nexec_command -> line1\nexec_command -> line2\n",
+      "[tool-c3] exec_command <- $ ls\n[tool-c3] exec_command -> line1\n[tool-c3] exec_command -> line2\n",
     );
   });
 
@@ -737,8 +737,8 @@ describe("renderHistory (resume)", () => {
     expect(s).toContain("pondering");
     expect(s).toContain("hi there");
     expect(s).toContain("[tool-653] exec_command <- $ ls");
-    expect(s).toContain("exec_command -> a.txt");
-    expect(s).toContain("exec_command -> b.txt");
+    expect(s).toContain("[tool-653] exec_command -> a.txt");
+    expect(s).toContain("[tool-653] exec_command -> b.txt");
     // An interrupted message carries a marker (rendering includes the interrupted turn).
     expect(s).toContain("half answer [aborted]");
   });

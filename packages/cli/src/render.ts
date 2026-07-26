@@ -21,14 +21,15 @@
  * - when the head of the queue is held, the holder's own subsequent messages are let
  *   through first (preserving in-segment order), avoiding deadlock.
  *
- * **Call/output pairing**: the call line carries a pairing tag plus the tool name,
- * `[tool-653] exec_command <- $ cmd` (653 being the last 3 characters of tool_call_id);
+ * **Call/output pairing**: both sides carry the same `[tool-653] <toolName>` prefix
+ * (653 being the last 3 characters of tool_call_id) — the call line reads
+ * `[tool-653] exec_command <- $ cmd`, each output line `[tool-653] exec_command -> ...`;
  * nested (subagent) tools use `[agent-f2a-tool-653] …` (f2a being the last 3 characters
- * of the direct child Session id). Output lines are prefixed with the **tool name**,
- * `exec_command -> ...` — resolved from the preceding call via a tool_call_id → name map
- * (the call always precedes its output; if no call was seen, the `[tool-653]` tag is the
- * fallback prefix). Approval lines carry no tag (they immediately follow the matching
- * call line, so context makes the pairing clear): `[approved]`.
+ * of the direct child Session id). The output-side tool name is resolved from the
+ * preceding call via a tool_call_id → name map (the call always precedes its output; if
+ * no call was seen, the bare `[tool-653]` tag remains). Approval lines carry no tag
+ * (they immediately follow the matching call line, so context makes the pairing clear):
+ * `[approved]`.
  *
  * **Nested sub-session messages** (those carrying an origin) are handled separately:
  * child tool calls (so the user can see what the subagent is calling before approval)
@@ -179,10 +180,11 @@ export function renderHistory(
         break;
       }
       case "tool_call_output": {
-        // Output lines carry the tool name (falling back to the pairing tag when the
+        // Output lines carry the pairing tag plus the tool name (the bare tag when the
         // transcript has no matching call).
-        const label =
-          toolNames.get(nameKey(msg, p.tool_call_id ?? "")) ?? `[${callTag(p.tool_call_id ?? "")}]`;
+        const tag = `[${callTag(p.tool_call_id ?? "")}]`;
+        const name = toolNames.get(nameKey(msg, p.tool_call_id ?? ""));
+        const label = name ? `${tag} ${name}` : tag;
         for (const line of (p.output ?? "").split("\n")) {
           out.write(`${DIM}${label} -> ${RESET}${line}\n`);
         }
@@ -791,17 +793,19 @@ export class StreamRenderer {
     }
   }
 
-  /** Output-gutter label: the tool name of the preceding call, falling back to the `[tool-xxx]` pairing tag when no call was seen. */
+  /** Output-gutter label: the `[tool-xxx]` pairing tag plus the tool name of the preceding call (the bare tag when no call was seen). */
   private outputLabel(toolCallId: string): string {
-    return this.toolNames.get(toolCallId) ?? `[${callTag(toolCallId)}]`;
+    const tag = `[${callTag(toolCallId)}]`;
+    const name = this.toolNames.get(toolCallId);
+    return name ? `${tag} ${name}` : tag;
   }
 
   /**
    * Writes tool-call **output** line by line, each line starting with the dim gutter
-   * `<toolName> -> ` (the name of the call that produced it; `[tool-xxx]` fallback),
-   * paired with the call line (cyan `[tool-xxx] <name> <- …`). Streaming chunks arrive
-   * incrementally; whether to write the gutter is decided by the current line-start
-   * state.
+   * `[tool-xxx] <toolName> -> ` (the same prefix as the call line, cyan
+   * `[tool-xxx] <name> <- …`; the bare tag when no call was seen). Streaming chunks
+   * arrive incrementally; whether to write the gutter is decided by the current
+   * line-start state.
    */
   private writeToolOutput(chunk: string, label: string): void {
     let i = 0;
