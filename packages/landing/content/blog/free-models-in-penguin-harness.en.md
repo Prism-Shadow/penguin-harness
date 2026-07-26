@@ -1,5 +1,5 @@
 ---
-title: "Free models in PenguinHarness: run a full agent harness at zero cost"
+title: Introducing the free models in PenguinHarness
 date: 2026-07-24
 category: news
 excerpt: The preset catalog now carries four zero-cost OpenRouter entries — Nemotron 3 Ultra (free), the new Ling 3.0 Flash (free) and Laguna M.1 (free), and the new Free Models Router. One OpenRouter API key and an agent is running, no balance required. Here is the lineup, how to switch it on, and an honest account of what the free tier does and does not buy you.
@@ -15,6 +15,8 @@ As of today the free lineup is four entries, all in the OpenRouter group:
 | OpenRouter     | `inclusionai/ling-3.0-flash:free`        |        262,144 | $0    |
 | OpenRouter     | `poolside/laguna-m.1:free`               |        262,144 | $0    |
 | OpenRouter     | `openrouter/free`                        | 65,536 (floor) | $0    |
+
+![The Models page's OpenRouter group: Ling 3.0 Flash (free), Nemotron 3 Ultra (free), Laguna M.1 (free) and the Free Models Router all carry the light-yellow Free badge, with Claude Opus 5 in the first card row](/blog-assets/free-models-page-en-light.webp)
 
 ## Nemotron 3 Ultra (free)
 

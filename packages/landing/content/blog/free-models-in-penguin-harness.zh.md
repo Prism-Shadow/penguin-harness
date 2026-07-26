@@ -1,5 +1,5 @@
 ---
-title: PenguinHarness 免费模型：零成本跑起完整的 Agent Harness
+title: 介绍 PenguinHarness 里的免费模型
 date: 2026-07-24
 category: news
 excerpt: 预置目录现有四条 $0 价格的 OpenRouter 条目——已有的 Nemotron 3 Ultra (free)，以及新增的 Ling 3.0 Flash (free)、Laguna M.1 (free) 与 Free Models Router。一个免费注册的 OpenRouter API Key 就能把 Agent 跑起来，无需充值。本文介绍这套免费阵容、开启方式，以及免费档能换来什么、换不来什么。
@@ -15,6 +15,8 @@ excerpt: 预置目录现有四条 $0 价格的 OpenRouter 条目——已有的 
 | OpenRouter | `inclusionai/ling-3.0-flash:free`        |          262,144 | $0   |
 | OpenRouter | `poolside/laguna-m.1:free`               |          262,144 | $0   |
 | OpenRouter | `openrouter/free`                        | 65,536(保守下限) | $0   |
+
+![模型仓库的 OpenRouter 分组：Ling 3.0 Flash (free)、Nemotron 3 Ultra (free)、Laguna M.1 (free) 与 Free Models Router 均带淡黄色「免费」标签，首行还能看到 Claude Opus 5](/blog-assets/free-models-page-zh-light.webp)
 
 ## Nemotron 3 Ultra (free)
 
