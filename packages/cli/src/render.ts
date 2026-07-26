@@ -21,13 +21,14 @@
  * - when the head of the queue is held, the holder's own subsequent messages are let
  *   through first (preserving in-segment order), avoiding deadlock.
  *
- * **Pairing tags**: a tool call and its output may be separated by several segments, so
- * both are tagged with a shared word for pairing: the call line reads
- * `[tool-653] $ cmd`, the output line `[tool-653] -> ...` (653 being the last 3
- * characters of tool_call_id); nested (subagent) tools use
- * `[agent-f2a-tool-653] $ cmd` (f2a being the last 3 characters of the direct child
- * Session id). Approval lines carry no tag (they immediately follow the matching call
- * line, so context makes the pairing clear): `[approved]`.
+ * **Call/output pairing**: the call line carries a pairing tag plus the tool name,
+ * `[tool-653] exec_command <- $ cmd` (653 being the last 3 characters of tool_call_id);
+ * nested (subagent) tools use `[agent-f2a-tool-653] …` (f2a being the last 3 characters
+ * of the direct child Session id). Output lines are prefixed with the **tool name**,
+ * `exec_command -> ...` — resolved from the preceding call via a tool_call_id → name map
+ * (the call always precedes its output; if no call was seen, the `[tool-653]` tag is the
+ * fallback prefix). Approval lines carry no tag (they immediately follow the matching
+ * call line, so context makes the pairing clear): `[approved]`.
  *
  * **Nested sub-session messages** (those carrying an origin) are handled separately:
  * child tool calls (so the user can see what the subagent is calling before approval)
@@ -135,6 +136,10 @@ export function renderHistory(
   out: NodeJS.WritableStream,
   t: Messages = defaultMessages(),
 ): void {
+  // tool_call_id -> tool name (keyed with the origin chain: parent/child ids may collide),
+  // so output lines can be labeled with the tool name of their preceding call.
+  const toolNames = new Map<string, string>();
+  const nameKey = (msg: OmniMessage, id: string): string => `${msg.origin?.join("/") ?? ""}:${id}`;
   for (const msg of messages) {
     if (isEventMessage(msg)) {
       const p = msg.payload as { type?: string } & AbortPayload;
@@ -167,19 +172,23 @@ export function renderHistory(
         out.write(`${dim(p.thinking ?? "")}${marker}\n`);
         break;
       case "tool_call": {
+        if (p.name) toolNames.set(nameKey(msg, p.tool_call_id ?? ""), p.name);
         const preview =
           renderPartialToolCall(p.name ?? "", p.arguments ?? "") ?? `${p.name} ${p.arguments}`;
         out.write(`${cyan(`[${callTag(p.tool_call_id ?? "")}] ${preview}`)}${marker}\n`);
         break;
       }
       case "tool_call_output": {
-        const tag = callTag(p.tool_call_id ?? "");
+        // Output lines carry the tool name (falling back to the pairing tag when the
+        // transcript has no matching call).
+        const label =
+          toolNames.get(nameKey(msg, p.tool_call_id ?? "")) ?? `[${callTag(p.tool_call_id ?? "")}]`;
         for (const line of (p.output ?? "").split("\n")) {
-          out.write(`${DIM}[${tag}] -> ${RESET}${line}\n`);
+          out.write(`${DIM}${label} -> ${RESET}${line}\n`);
         }
         // Attached images aren't rendered by the terminal; print one placeholder line per image.
         for (const _ of p.images ?? []) {
-          out.write(`${DIM}[${tag}] -> [image]${RESET}\n`);
+          out.write(`${DIM}${label} -> [image]${RESET}\n`);
         }
         break;
       }
@@ -238,6 +247,14 @@ export class StreamRenderer {
   private inDim = false;
   /** Whether tool-call output is at the start of a line (decides whether the gutter needs to be written). */
   private toolOutLineStart = true;
+
+  /**
+   * tool_call_id -> tool name for the current task's parent-session calls (nested tool
+   * outputs are not gutter-rendered), so output lines can be prefixed with the tool name
+   * of the call that produced them. Populated from partial/complete call messages (the
+   * call always precedes its output); cleared with the other per-task registrations.
+   */
+  private toolNames = new Map<string, string>();
   /** Buffer for partial_tool_call; each delta streams out the newly appended suffix of the preview. */
   private partialToolCalls = new Map<
     string,
@@ -399,6 +416,9 @@ export class StreamRenderer {
     key: string,
   ): void {
     this.ensuredCallLines.add(key);
+    // Parent-session calls feed the output-gutter name map (nested outputs are not
+    // gutter-rendered, and a child id could collide with a parent id).
+    if (!origin || origin.length === 0) this.toolNames.set(p.tool_call_id, p.name);
     const preview = renderPartialToolCall(p.name, p.arguments) ?? `${p.name} ${p.arguments}`;
     this.finishLine();
     this.out.write(`${cyan(`[${callTag(p.tool_call_id, origin)}] ${preview}`)}\n`);
@@ -515,7 +535,14 @@ export class StreamRenderer {
         case "partial_tool_call_output":
           this.handlePartialToolOutput(payload as PartialToolCallOutputPayload);
           return;
-        // Complete (non-streaming) model_msg is never rendered (including image_url/inline_*); the content has already been shown by partial_*.
+        // Complete (non-streaming) model_msg is never rendered (including image_url/inline_*);
+        // the content has already been shown by partial_*. A complete tool_call still feeds
+        // the name map so its output gutter can carry the tool name.
+        case "tool_call": {
+          const p = payload as ToolCallPayload;
+          this.toolNames.set(p.tool_call_id, p.name);
+          return;
+        }
         default:
           return;
       }
@@ -704,7 +731,11 @@ export class StreamRenderer {
       partial = { name: p.name, arguments: "", lastPreview: "" };
       this.partialToolCalls.set(p.tool_call_id, partial);
     }
-    if (p.name) partial.name = p.name;
+    if (p.name) {
+      partial.name = p.name;
+      // Remember the name for this call's output gutter (`<name> -> …`).
+      this.toolNames.set(p.tool_call_id, p.name);
+    }
     if (p.arguments) {
       partial.arguments += p.arguments;
     }
@@ -746,31 +777,37 @@ export class StreamRenderer {
       return;
     }
     if (this.inDim) this.finishLine();
-    if (p.output) this.writeToolOutput(p.output, callTag(p.tool_call_id));
+    const label = this.outputLabel(p.tool_call_id);
+    if (p.output) this.writeToolOutput(p.output, label);
     // Image delta (carried whole in a single delta): the terminal doesn't render the
-    // image itself, so print one placeholder line per image, using the same pairing tag
-    // as the output gutter.
+    // image itself, so print one placeholder line per image, using the same gutter label
+    // as the text output.
     if (p.images && p.images.length > 0) {
       this.finishLine();
-      const tag = callTag(p.tool_call_id);
       for (const _ of p.images) {
-        this.out.write(`${DIM}[${tag}] -> [image]${RESET}\n`);
+        this.out.write(`${DIM}${label} -> [image]${RESET}\n`);
       }
       this.lastLineKey = null;
     }
   }
 
+  /** Output-gutter label: the tool name of the preceding call, falling back to the `[tool-xxx]` pairing tag when no call was seen. */
+  private outputLabel(toolCallId: string): string {
+    return this.toolNames.get(toolCallId) ?? `[${callTag(toolCallId)}]`;
+  }
+
   /**
    * Writes tool-call **output** line by line, each line starting with the dim gutter
-   * `[tool-<last 3 chars of id>] -> `, paired with the call line (cyan `[tool-xxx] $
-   * cmd`). Streaming chunks arrive incrementally; whether to write the gutter is
-   * decided by the current line-start state.
+   * `<toolName> -> ` (the name of the call that produced it; `[tool-xxx]` fallback),
+   * paired with the call line (cyan `[tool-xxx] <name> <- …`). Streaming chunks arrive
+   * incrementally; whether to write the gutter is decided by the current line-start
+   * state.
    */
-  private writeToolOutput(chunk: string, tag: string): void {
+  private writeToolOutput(chunk: string, label: string): void {
     let i = 0;
     while (i < chunk.length) {
       if (this.toolOutLineStart) {
-        this.out.write(`${DIM}[${tag}] -> ${RESET}`);
+        this.out.write(`${DIM}${label} -> ${RESET}`);
         this.toolOutLineStart = false;
         this.inLine = true;
       }
@@ -848,6 +885,7 @@ export class StreamRenderer {
     this.ensuredCallLines.clear();
     this.renderedDecisions.clear();
     this.partialToolCalls.clear();
+    this.toolNames.clear();
   }
 
   /**

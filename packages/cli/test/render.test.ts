@@ -120,16 +120,38 @@ describe("StreamRenderer", () => {
     expect(stripAnsi(text())).toBe("[tool-c4] exec_command <- $ ls\n");
   });
 
-  it("streams partial_tool_call_output with a tagged gutter and skips the complete tool_call_output", () => {
+  it("prefixes streamed tool output with the tool name and skips the complete tool_call_output", () => {
     const { stream, text } = collector();
     const r = new StreamRenderer(stream, t);
+    // The call precedes its output and supplies the gutter's tool name.
+    r.handle(partialToolCall({ eventType: "start", name: "exec_command", toolCallId: "c3" }));
+    r.handle(
+      partialToolCall({
+        eventType: "delta",
+        name: "",
+        arguments: '{"cmd":"ls"}',
+        toolCallId: "c3",
+      }),
+    );
+    r.handle(partialToolCall({ eventType: "stop", name: "", toolCallId: "c3" }));
     r.handle(partialToolCallOutput({ eventType: "start", toolCallId: "c3" }));
     r.handle(partialToolCallOutput({ eventType: "delta", output: "line1\n", toolCallId: "c3" }));
     r.handle(partialToolCallOutput({ eventType: "delta", output: "line2", toolCallId: "c3" }));
     r.handle(partialToolCallOutput({ eventType: "stop", toolCallId: "c3" }));
     r.handle(toolCallOutput({ output: "line1\nline2", toolCallId: "c3" })); // must not be re-rendered
-    // Each line starts with a tagged gutter (no indent) matching the call line.
-    expect(stripAnsi(text())).toBe("[tool-c3] -> line1\n[tool-c3] -> line2\n");
+    // Call line first, then each output line starts with `<toolName> -> `.
+    expect(stripAnsi(text())).toBe(
+      "[tool-c3] exec_command <- $ ls\nexec_command -> line1\nexec_command -> line2\n",
+    );
+  });
+
+  it("falls back to the pairing tag on output whose call was never seen", () => {
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t);
+    r.handle(partialToolCallOutput({ eventType: "start", toolCallId: "c3" }));
+    r.handle(partialToolCallOutput({ eventType: "delta", output: "line1", toolCallId: "c3" }));
+    r.handle(partialToolCallOutput({ eventType: "stop", toolCallId: "c3" }));
+    expect(stripAnsi(text())).toBe("[tool-c3] -> line1\n");
   });
 
   it("prints the retry line only when the retry request actually begins", () => {
@@ -165,6 +187,7 @@ describe("StreamRenderer", () => {
     r.handle(partialText("start", ""));
     r.handle(partialText("delta", "hello"));
     r.handle(partialToolCallOutput({ eventType: "delta", output: "a2\n", toolCallId: "tA" }));
+    // No call preceded tA in this stream: the gutter falls back to the pairing tag.
     expect(stripAnsi(text())).toBe("[tool-tA] -> a1\n[tool-tA] -> a2\n"); // hello is still queued
     r.handle(partialToolCallOutput({ eventType: "stop", toolCallId: "tA" }));
     r.handle(partialText("stop", "", "completed"));
@@ -714,8 +737,8 @@ describe("renderHistory (resume)", () => {
     expect(s).toContain("pondering");
     expect(s).toContain("hi there");
     expect(s).toContain("[tool-653] exec_command <- $ ls");
-    expect(s).toContain("[tool-653] -> a.txt");
-    expect(s).toContain("[tool-653] -> b.txt");
+    expect(s).toContain("exec_command -> a.txt");
+    expect(s).toContain("exec_command -> b.txt");
     // An interrupted message carries a marker (rendering includes the interrupted turn).
     expect(s).toContain("half answer [aborted]");
   });
