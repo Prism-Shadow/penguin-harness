@@ -1014,14 +1014,14 @@ export function ChatInput({
 
   const running = status === "running";
   const compacting = status === "compacting";
+  // The draft's "anything sendable at all" rule, shared by canSend / canFollowUp / the
+  // steer-mode queue fallback and (negated) by the Stop face of the action button.
+  const draftHasContent =
+    text.trim().length > 0 || images.length > 0 || target !== null || selectedSkills.length > 0;
   // Sending is also allowed with only an @ target (chip) or skills selected and no text: a handoff's
   // first message may be just a [handoff_from] source block; with skills and empty text, the sent
   // text automatically falls back to S.chat.skillsAutoMessage (see send).
-  const canSend =
-    !running &&
-    !compacting &&
-    !busy &&
-    (text.trim().length > 0 || images.length > 0 || target !== null || selectedSkills.length > 0);
+  const canSend = !running && !compacting && !busy && draftHasContent;
   // Mid-run steering: while running, Enter/send queues plain text for the running agent
   // (delivered between turns as a [user_steering] user message). Text only — images / skills /
   // @ target stay in the draft for a later normal send (an @ target also blocks steering: a
@@ -1042,22 +1042,28 @@ export function ChatInput({
   const followUpMode = steerMode === "followup" && onQueueFollowUp !== undefined;
   // A follow-up is a full normal message: the whole draft (text / images / skills / handoff)
   // is eligible, same content rule as canSend.
-  const canFollowUp =
+  const canFollowUp = running && !busy && followUpMode && draftHasContent;
+  // Steer mode holding a draft the text-only steer channel can't carry (an image with no
+  // text, skills only, or an @ target): the draft is still perfectly sendable — THIS send
+  // falls back to the follow-up queue (held server-side, auto-sent as the next ordinary
+  // message once the run finishes; an @ handoff opens its new chat directly). Without the
+  // fallback the button face flips to send (any content does that) but could never enable,
+  // stranding the user on a dead button that also displaced Stop.
+  const steerFallbackToQueue =
     running &&
     !busy &&
-    followUpMode &&
-    (text.trim().length > 0 || images.length > 0 || target !== null || selectedSkills.length > 0);
+    !followUpMode &&
+    !canSteer &&
+    onQueueFollowUp !== undefined &&
+    draftHasContent;
   // The single action button's mode: while running, an **empty** composer means Stop
-  // (abort); as soon as there is something to send it becomes the send button (steer or
-  // follow-up per the remembered mode). Idle/compacting is always send.
-  const canMidRunSend = followUpMode ? canFollowUp : canSteer;
-  const midRunSendLabel = followUpMode ? S.chat.followUpSend : S.chat.steerSend;
-  const stopAction =
-    running &&
-    text.trim().length === 0 &&
-    images.length === 0 &&
-    target === null &&
-    selectedSkills.length === 0;
+  // (abort); as soon as there is any content it becomes the send button — steer or
+  // follow-up per the remembered mode, with the label following the path this send will
+  // actually take. Idle/compacting is always send.
+  const canMidRunSend = followUpMode ? canFollowUp : canSteer || steerFallbackToQueue;
+  const midRunSendLabel =
+    followUpMode || steerFallbackToQueue ? S.chat.followUpSend : S.chat.steerSend;
+  const stopAction = running && !draftHasContent;
   // Queued hint: shown after a successful steer until the message shows up in the stream
   // (steeringDeliveredCount increases past the baseline captured at queue time) or the run
   // stops being observable (task no longer running).
@@ -1367,6 +1373,12 @@ export function ChatInput({
       // the one running).
       if (followUpMode) {
         if (!canFollowUp) return;
+        await sendNormal(onQueueFollowUp!);
+        return;
+      }
+      // Steer mode, draft the text-only steer channel can't carry: whole draft through the
+      // follow-up queue instead (one complete message; see steerFallbackToQueue).
+      if (steerFallbackToQueue) {
         await sendNormal(onQueueFollowUp!);
         return;
       }
