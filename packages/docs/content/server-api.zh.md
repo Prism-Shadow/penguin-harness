@@ -168,11 +168,11 @@ Workspace 文件可能由 Agent 生成，`GET /files/content` 一律按不可信
 | `preview=1` | 真实类型（`text/html`、`image/svg+xml` 等） | `inline` | `sandbox allow-scripts allow-popups allow-modals allow-forms`，仅对 `.html` / `.htm` / `.svg` 下发 |
 | `download=1` | 真实类型 | `attachment` | 无 |
 
-文件名始终以 `filename*=UTF-8''` 形式携带（百分号编码）。`preview=1` 用于 Files 面板内的沙箱 iframe 渲染，同时也是“新页面打开”在没有独立预览源时的回退：文档保留真实类型，可以正常渲染并执行脚本，但沙箱刻意不含 `allow-same-origin`，因此它落在一个不透明源里，既拿不到本源的 Cookie，也调不动 API。这份隔离也正是那里 `localStorage`、`document.cookie` 与第三方 embed 全都不可用的原因。
+文件名始终以 `filename*=UTF-8''` 形式携带（百分号编码）。`preview=1` 是预览跳转在没有独立预览源时的回退目标：文档保留真实类型，可以正常渲染并执行脚本，但沙箱刻意不含 `allow-same-origin`，因此它落在一个不透明源里，既拿不到本源的 Cookie，也调不动 API。这份隔离也正是那里 `localStorage`、`document.cookie` 与第三方 embed 全都不可用的原因。
 
 ### 独立源预览
 
-“新页面打开”走 `GET /files/preview-redirect?path=`：先鉴权，再签发一枚短时效 HMAC 令牌，然后 302 跳转到**另一个源**：
+Files 面板内的 HTML 渲染视图（iframe）与“新页面打开”都走 `GET /files/preview-redirect?path=`：先鉴权，再签发一枚短时效 HMAC 令牌，然后 302 跳转到**另一个源**：
 
 ```text
 GET  /api/sessions/:sessionId/files/preview-redirect?path=index.html
@@ -181,6 +181,7 @@ GET  /preview/<token>/<相对路径>              （不鉴权，令牌即凭证
 ```
 
 - **为什么要独立源。** 页面需要一个真实的源，才能有可用的 storage、Cookie 与第三方 embed；但它不能是应用自己的源，否则 Agent 写出来的 HTML 就带着会话 Cookie 在跑。本地把 App 固定在规范主机 `localhost`，预览用 `127.0.0.1`——Cookie 按主机划分且不区分端口，所以这两者天然是两个 Cookie jar，而只换端口做不到。其余情况用 `PENGUIN_PREVIEW_ORIGIN`；两者都没有时（通配或非回环绑定，或变量未设）回退到上面的同源沙箱，并由 `GET /api/me` 的 `previewIsolated` 返回 `false`，界面据此提前说明。
+- **面板内渲染共用同一 URL。** Files 面板把该跳转 URL 嵌入 iframe，沙箱为 `allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads`——`allow-same-origin` 赋予的是预览源而非应用源的身份，因此仍严格紧于不带沙箱的新标签页。没有独立预览源时，面板回退为内联 `srcdoc` 渲染（仅 `allow-scripts`，附内存版 storage 垫片），相对子资源在那里无法加载。另注意部分浏览器会对跨站 iframe 内的 storage 做分区或屏蔽，页面在面板内的行为可能与顶层标签页略有差异。
 - **预览主机只服务 `/preview/*`。** 它与 App 是同一个进程，故其 `/api` 一律 401，其余路径一律 302 回规范 App 主机——会话 Cookie 因此永远不会落在预览主机上，也不被其接受，那里的 Agent HTML 无法同源调用 API。（部署 `PENGUIN_PREVIEW_ORIGIN` 时，反向代理须做等价保证：该源上只把 `/preview/*` 路由到 App。）
 - **路径式而非查询参数**，页面里的相对子资源（`app.js`、`style.css`、图片）才能相对文档解析，并在同一个令牌下加载。
 - **令牌绑定 Session、预览主机与过期时间。** 其中主机绑定是承重的：同一个进程也在应用源上应答，因此 `/preview/...` 在应用源上一律拒绝服务——否则那就是一个同源 XSS。权限只读、限定该 Session 的 Workspace，路径仍在服务端重新解析，`..` 与符号链接逃逸照旧拒绝。

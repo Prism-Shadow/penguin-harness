@@ -65,6 +65,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(async (userId: string, password: string) => {
     const res = await api.login({ userId, password });
     setUser(res.user);
+    // previewIsolated only rides on GET /api/me, and the mount-time fetch ran before
+    // this session existed — without a refetch, a deployment with no separate preview
+    // origin would keep the optimistic `true` after a UI login (navigation is
+    // client-side, so nothing else re-asks) and the Files panel would take the isolated
+    // preview path it can't actually serve. Never fail the login over it: the session
+    // cookie is already set, so a transient /me error just leaves the default in place
+    // until the next refresh.
+    try {
+      const me = await api.getMe();
+      setUser(me.user);
+      setPreviewIsolated(me.previewIsolated);
+    } catch {
+      // Login itself succeeded; keep the optimistic default.
+    }
   }, []);
 
   const logout = useCallback(async () => {

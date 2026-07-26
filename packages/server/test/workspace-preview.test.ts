@@ -128,6 +128,39 @@ describe("preview origin derivation", () => {
       resolvePreviewTarget("http://192.168.1.5:7364/x", "192.168.1.5:7364", null, bind),
     ).toBeNull();
   });
+
+  it("refuses a configured origin that matches the App request's host", () => {
+    // PENGUIN_PREVIEW_ORIGIN pointing back at the host the App is being used on is no
+    // boundary: "isolated" previews would be same-origin with the App (and the UI would
+    // mount an allow-same-origin iframe onto them). Must degrade to null so
+    // previewIsolated reports false and the safe same-origin sandbox engages.
+    expect(
+      resolvePreviewTarget(
+        "https://app.example.com/x",
+        "app.example.com",
+        "https://app.example.com",
+        bind,
+      ),
+    ).toBeNull();
+    // Port and case differences don't rescue it: cookies ignore ports, hosts ignore case.
+    expect(
+      resolvePreviewTarget(
+        "https://app.example.com/x",
+        "app.example.com:8443",
+        "https://APP.example.com:9443",
+        bind,
+      ),
+    ).toBeNull();
+    // A genuinely different host on the same registrable domain is still accepted.
+    expect(
+      resolvePreviewTarget(
+        "https://app.example.com/x",
+        "app.example.com",
+        "https://preview.app.example.com",
+        bind,
+      ),
+    ).toEqual({ origin: "https://preview.app.example.com", host: "preview.app.example.com" });
+  });
 });
 
 describe("preview route", () => {
