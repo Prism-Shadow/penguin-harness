@@ -139,9 +139,17 @@ test("layout: en draft + context gauge + mobile models", async ({ page }) => {
   await budget.press("Escape");
   await expect(committedBudget).toBeVisible();
 
+  // Any other close (outside click, toggling the trigger) commits a valid draft instead of
+  // silently dropping it — typing a budget and clicking straight onto Send must keep it.
+  await committedBudget.click();
+  await budget.fill("750k");
+  await page.getByPlaceholder(/Type a message/).click();
+  const recommittedBudget = page.getByRole("button", { name: "Budget 750k" });
+  await expect(recommittedBudget).toBeVisible();
+
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(200);
-  await committedBudget.click();
+  await recommittedBudget.click();
   d = await docWidths(page);
   expect(d.scrollWidth, "goal-mode draft @390 no horizontal overflow").toBeLessThanOrEqual(
     d.clientWidth,

@@ -1011,13 +1011,21 @@ export function ChatInput({
         target !== null ||
         selectedSkills.length > 0);
 
-  /** The budget editor is a fixed upward popover. Opening copies the committed value; closing cancels its draft. */
+  /**
+   * The budget editor is a fixed upward popover. Opening copies the committed value; closing
+   * commits a valid draft and reverts an invalid one — so typing a budget and clicking
+   * straight onto Send keeps it (the Send mousedown closes the popover before the click
+   * lands). Escape in the field is the explicit cancel: it bypasses this via
+   * setGoalBudgetOpen directly.
+   */
   const setGoalBudgetEditorOpen = useCallback(
     (open: boolean) => {
       if (open) setGoalBudgetDraft(goalBudgetText);
+      else if (parseBudgetInput(goalBudgetDraft) !== null)
+        setGoalBudgetText(goalBudgetDraft.trim());
       setGoalBudgetOpen(open);
     },
-    [goalBudgetText],
+    [goalBudgetText, goalBudgetDraft],
   );
 
   /** Commit only valid input; Enter and the check button share this path. */
@@ -1663,7 +1671,9 @@ export function ChatInput({
                           } else if (e.key === "Escape") {
                             e.preventDefault();
                             e.stopPropagation();
-                            setGoalBudgetEditorOpen(false);
+                            // Explicit cancel: close WITHOUT the commit-on-close of
+                            // setGoalBudgetEditorOpen (reopening re-copies the committed value).
+                            setGoalBudgetOpen(false);
                             textareaRef.current?.focus();
                           }
                         }}
