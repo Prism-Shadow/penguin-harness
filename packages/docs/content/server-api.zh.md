@@ -139,12 +139,12 @@ Schedule 写操作仅限 Owner。新建 Session 模式的任务，`modelId` 与 
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | / | Session 信息 |
+| GET | / | Session 信息（单会话 GET 额外携带 `tracePath`：最新 Trace 文件的绝对路径；列表行不含） |
 | PATCH | / | 更新：`{approvalMode?, archived?, title?}` |
 | DELETE | / | 删除 Session（连同 Trace 与暂存文件） |
 | GET | /messages | 完整 OmniMessage 历史 |
 | GET | /stream | SSE 事件流（见下节） |
-| POST | /tasks | 发起 Task：`{input: TaskInputPart[]}` → 202 |
+| POST | /tasks | 发起 Task：`{input: TaskInputPart[], thinkingLevel?}` → 202 |
 | POST | /approvals/:toolCallId | 审批决定：`{decision}` 取 `allow` 或 `deny` → 204 |
 | POST | /abort | 中断当前 Task：已触发返回 202，无任务返回 204 |
 | POST | /compact | 触发上下文压缩：202；无可压缩内容返回 409 `nothing_to_compact` |
@@ -194,6 +194,8 @@ GET  /preview/<token>/<相对路径>              （不鉴权，令牌即凭证
 // POST /api/sessions/:sessionId/tasks —— 发起一个 Task
 interface TaskCreateRequest {
   input: TaskInputPart[];
+  // 本次 Task 的思考等级（逐轮参数，五档之一；非法值 400）；缺省 = 回退到 Agent 配置的档位
+  thinkingLevel?: "none" | "low" | "medium" | "high" | "xhigh";
 }
 type TaskInputPart =
   | { type: "text"; text: string }
@@ -204,6 +206,8 @@ interface ApprovalDecisionRequest {
   decision: "allow" | "deny";
 }
 ```
+
+Web 的 `/model` 模型切换没有专用接口：它按 @ handoff 的方式复用上面的普通接口——先用会话创建接口在同一 Agent 下新建 Session（选定新模型并沿用源 Workspace），再 POST /tasks 发送以 `<model_switch_from>` 源块开头的首条消息（源会话 id、其 `tracePath`、Workspace 与原模型二元组），模型需要早前历史时自行读取该 Trace 文件。
 
 ## 流式接口（SSE）
 

@@ -44,6 +44,21 @@ vi.mock("../src/environment/index.js", async (importOriginal) => {
   return { ...mod, Environment: CapturingEnvironment };
 });
 
+// Captures every GenerativeModelConfig buildRuntime constructs: the effective thinking level
+// is no longer observable through session_meta (it holds invariants only) — assertions read
+// the construction default from the captured config instead.
+const capturedLLMConfigs = vi.hoisted(() => ({ list: [] as { thinkingLevel?: string }[] }));
+vi.mock("../src/llm/index.js", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("../src/llm/index.js")>();
+  class CapturingGenerativeModel extends mod.GenerativeModel {
+    constructor(config: ConstructorParameters<typeof mod.GenerativeModel>[0]) {
+      super(config);
+      capturedLLMConfigs.list.push(config as { thinkingLevel?: string });
+    }
+  }
+  return { ...mod, GenerativeModel: CapturingGenerativeModel };
+});
+
 let tmpRoot: string;
 let prevHome: string | undefined;
 let restoreKeys: () => void;
@@ -247,12 +262,13 @@ describe("Agent.createSession session source (session_meta origin marker)", () =
 });
 
 describe("Agent.createSession thinking level (explicit option wins over the Agent config)", () => {
-  const uniThinkingOf = (llm: unknown): unknown =>
-    ((llm as { uniConfig?: { thinking_level?: unknown } }).uniConfig ?? {}).thinking_level;
-  const llmOf = (session: unknown): unknown =>
-    (session as { engine: { deps: { llm: unknown } } }).engine.deps.llm;
+  // The session's default level lives on the LLM object (per-request overrides fall back to
+  // it); session_meta holds per-session invariants only and never records a thinking level.
+  const defaultLevelOf = (session: unknown): unknown =>
+    (session as { engine: { deps: { llm: { defaultThinkingLevel?: unknown } } } }).engine.deps.llm
+      .defaultThinkingLevel;
 
-  it("falls back to the Agent config for both the meta echo and the llm config", async () => {
+  it("falls back to the Agent config for the llm default; session_meta records no level", async () => {
     const agent = await createAgent();
     // The seeded Agent config pins thinking_level "medium" — the only source when no option is given.
     expect(agent.state.systemConfig.model?.thinking_level).toBe("medium");
@@ -260,10 +276,12 @@ describe("Agent.createSession thinking level (explicit option wins over the Agen
     await fs.mkdir(ws, { recursive: true });
     const session = await agent.createSession({ workspaceDir: ws });
     try {
-      expect((session.metaMessage.payload as { thinking_level: string }).thinking_level).toBe(
-        "medium",
-      );
-      expect(uniThinkingOf(llmOf(session))).toBe(mapThinkingLevel("medium"));
+      // session_meta contains ONLY per-session invariants: the thinking level is per-turn.
+      expect(
+        "thinking_level" in (session.metaMessage.payload as unknown as Record<string, unknown>),
+      ).toBe(false);
+      expect(defaultLevelOf(session)).toBe("medium");
+      expect(mapThinkingLevel("medium")).toBeDefined(); // the name maps onto the wire enum
     } finally {
       session.dispose();
     }
@@ -275,10 +293,7 @@ describe("Agent.createSession thinking level (explicit option wins over the Agen
     await fs.mkdir(ws, { recursive: true });
     const session = await agent.createSession({ workspaceDir: ws, thinkingLevel: "high" });
     try {
-      expect((session.metaMessage.payload as { thinking_level: string }).thinking_level).toBe(
-        "high",
-      );
-      expect(uniThinkingOf(llmOf(session))).toBe(mapThinkingLevel("high"));
+      expect(defaultLevelOf(session)).toBe("high");
     } finally {
       session.dispose();
     }
@@ -297,7 +312,9 @@ describe("run_subagent spawning follows the PARENT session (never the Project de
   /**
    * Spawns through the real runner and reads the child session_meta — the first message
    * handle.run yields, emitted before any LLM request; the run generator is closed right
-   * after, so nothing is ever sent upstream.
+   * after, so nothing is ever sent upstream. The child's effective thinking level is no
+   * longer in session_meta (invariants only): it's read from the captured LLM config the
+   * spawn constructed (the last one pushed).
    */
   async function spawnedChildMeta(
     runner: SubagentRunner,
@@ -305,11 +322,12 @@ describe("run_subagent spawning follows the PARENT session (never the Project de
   ): Promise<{
     provider: string;
     model_id: string;
-    thinking_level: string;
     workspace: string;
     source?: string;
+    llm: { thinkingLevel?: string };
   }> {
     const handle = await runner.spawn(input);
+    const llm = capturedLLMConfigs.list.at(-1)!;
     try {
       const gen = handle.run({ prompt: "noop" });
       const first = await gen.next();
@@ -319,12 +337,14 @@ describe("run_subagent spawning follows the PARENT session (never the Project de
       // Child messages are stamped with the child Session id as the origin hop.
       expect(msg.origin?.[0]).toBe(handle.sessionId);
       await gen.return(undefined);
-      return msg.payload as {
-        provider: string;
-        model_id: string;
-        thinking_level: string;
-        workspace: string;
-        source?: string;
+      return {
+        ...(msg.payload as {
+          provider: string;
+          model_id: string;
+          workspace: string;
+          source?: string;
+        }),
+        llm,
       };
     } finally {
       handle.dispose();
@@ -350,7 +370,7 @@ describe("run_subagent spawning follows the PARENT session (never the Project de
       const child = await spawnedChildMeta(runner, {});
       expect(child.provider).toBe("anthropic");
       expect(child.model_id).toBe("claude-sonnet-4-6");
-      expect(child.thinking_level).toBe("high");
+      expect(child.llm.thinkingLevel).toBe("high");
       // Workspace inheritance (behavior that predates model/thinking inheritance): locked here.
       expect(child.workspace).toBe(ws);
       // The spawn site marks the child's own session_meta as subagent-created — the single
@@ -379,7 +399,7 @@ describe("run_subagent spawning follows the PARENT session (never the Project de
       expect(child.provider).toBe("deepseek");
       expect(child.model_id).toBe("deepseek-v4-pro");
       // Thinking level and workspace are inherited implicitly even with an explicit model.
-      expect(child.thinking_level).toBe("medium");
+      expect(child.llm.thinkingLevel).toBe("medium");
       expect(child.workspace).toBe(ws);
     } finally {
       parent.dispose();
@@ -396,13 +416,13 @@ describe("run_subagent spawning follows the PARENT session (never the Project de
     const ws = path.join(tmpRoot, "ws-inherit-none");
     await fs.mkdir(ws, { recursive: true });
     const parent = await agent.createSession({ workspaceDir: ws });
+    const parentLLM = capturedLLMConfigs.list.at(-1)!;
     const runner = lastSpawnedRunner();
     try {
-      expect((parent.metaMessage.payload as { thinking_level: string }).thinking_level).toBe(
-        "default",
-      );
+      expect("thinkingLevel" in parentLLM).toBe(false);
       const child = await spawnedChildMeta(runner, { agentId: "helper_agent" });
-      expect(child.thinking_level).toBe("default");
+      // The tri-state null reached the child: no level at all, not helper_agent's "medium".
+      expect("thinkingLevel" in child.llm).toBe(false);
     } finally {
       parent.dispose();
     }
@@ -447,7 +467,7 @@ describe("run_subagent spawning follows the PARENT session (never the Project de
       const child = await spawnedChildMeta(runner, { agentId: "helper_agent" });
       expect(child.provider).toBe("anthropic");
       expect(child.model_id).toBe("claude-sonnet-4-6");
-      expect(child.thinking_level).toBe("xhigh");
+      expect(child.llm.thinkingLevel).toBe("xhigh");
       expect(child.workspace).toBe(ws);
     } finally {
       parent.dispose();

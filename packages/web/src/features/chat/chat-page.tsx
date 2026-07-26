@@ -16,8 +16,10 @@ import { useNavigate, useParams } from "react-router";
 import type {
   AgentSummary,
   ApprovalMode,
+  ModelRefDto,
   ModelsResponse,
   SkillMetadataItem,
+  TaskCreateRequest,
   TaskInputPart,
 } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
@@ -42,7 +44,7 @@ import { MessageStream } from "./message-stream";
 import type { StreamRenderContext } from "./message-stream";
 import { ChatInput } from "./chat-input";
 import { DraftView } from "./draft-view";
-import { handoffMessage } from "./agent-mentions";
+import { handoffMessage, modelSwitchMessage } from "./agent-mentions";
 import { sameModelRef } from "../models/model-grouping";
 import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
 import { FilesPanel } from "./files-panel";
@@ -118,6 +120,12 @@ export function ChatPage() {
   const [infoOpen, setInfoOpen] = useState(false);
   const [modeSaving, setModeSaving] = useState(false);
   const [models, setModels] = useState<ModelsResponse | null>(null);
+  // Per-turn thinking level, local per-session UI state: "" = untouched — the picker then
+  // displays the Agent config's level and postTask omits thinkingLevel (auto-follow: the
+  // server/core fallback applies, so mid-session Agent-config edits keep taking effect).
+  // Once the user picks a level it sticks for the session and rides on every subsequent
+  // postTask. Never written through to the Agent config (that behavior stays draft-only).
+  const [turnThinkingLevel, setTurnThinkingLevel] = useState("");
 
   const routeSessionId = params.sessionId ?? null;
   const filesPanel = useFilesPanel(routeSessionId);
@@ -183,6 +191,27 @@ export function ChatPage() {
     };
   }, [projectId, selectedAgentId]);
 
+  // The session Agent's configured thinking level ("" = unset/loading), via the same
+  // agent-config endpoint the draft picker uses: the in-session picker DISPLAYS this while
+  // the user hasn't picked a level (auto-follow — sending still omits the level until
+  // touched, see turnThinkingLevel). Refetched when the session's Agent changes; a failed
+  // fetch leaves it unset (the picker then shows an em dash until picked).
+  const [agentThinkingLevel, setAgentThinkingLevel] = useState("");
+  useEffect(() => {
+    setAgentThinkingLevel("");
+    if (!projectId || !selectedAgentId) return;
+    let cancelled = false;
+    api
+      .getAgentConfig(projectId, selectedAgentId)
+      .then((res) => {
+        if (!cancelled) setAgentThinkingLevel(res.config.model?.thinkingLevel ?? "");
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, selectedAgentId]);
+
   // The Session list is paged: a deep-linked Session (old bookmark, cross-page jump) may sit
   // beyond the loaded pages. Look it up directly and insert it before the auto-select effect
   // below concludes it doesn't exist; only a failed probe releases that redirect.
@@ -240,11 +269,13 @@ export function ChatPage() {
   // concurrent mounts only issues one files/stat call.
   const statCacheRef = useRef(new Map<string, boolean | Promise<boolean>>());
 
-  // Session switch: resets the cost and the file-card existence cache, avoiding stale data from
-  // the previous Session (Files panel state resets itself keyed on sessionId inside use-files-panel).
+  // Session switch: resets the cost, the file-card existence cache, and the per-turn thinking
+  // level (it's per-session UI state), avoiding stale data from the previous Session (Files
+  // panel state resets itself keyed on sessionId inside use-files-panel).
   useEffect(() => {
     setSessionCost(null);
     setCostUncosted(false);
+    setTurnThinkingLevel("");
     statCacheRef.current = new Map();
   }, [routeSessionId]);
 
@@ -353,7 +384,15 @@ export function ChatPage() {
     async (input: TaskInputPart[]): Promise<boolean> => {
       if (!selected) return false;
       try {
-        const res = await api.postTask(selected.sessionId, { input });
+        // An explicitly picked per-turn thinking level rides on each task; "" (untouched)
+        // sends nothing — the server/core falls back to the Agent config, so config edits
+        // keep taking effect mid-session until the user pins a level.
+        const res = await api.postTask(selected.sessionId, {
+          input,
+          ...(turnThinkingLevel
+            ? { thinkingLevel: turnThinkingLevel as TaskCreateRequest["thinkingLevel"] }
+            : {}),
+        });
         discardSessionDraft();
         await syncHealedSessionId(selected.sessionId, res.sessionId);
         return true;
@@ -363,7 +402,62 @@ export function ChatPage() {
         return false;
       }
     },
-    [selected, discardSessionDraft, syncHealedSessionId],
+    [selected, turnThinkingLevel, discardSessionDraft, syncHealedSessionId],
+  );
+
+  // /model switch (handoff-style, mirroring onHandoff exactly): opens a NEW session for the
+  // SAME agent on the picked model via the normal createSession API — deliberately with the
+  // SOURCE session's Workspace, so files the conversation refers to stay reachable — then
+  // posts a first task whose input starts with a <model_switch_from> source block (source
+  // session id / its latest trace path / workspace / previous model pair) followed by the
+  // user's remainder text and images. The earlier history is NOT injected into the new
+  // context (some models require thinking payloads and provider fidelity byte-for-byte on
+  // history replay, which cannot cross models); the model reads the source trace file itself
+  // when it needs the context. Returns false on failure, keeping the draft so it can be
+  // resent (the empty session that never got its first message is deleted, like handoff).
+  const onSwitchModel = useCallback(
+    async (ref: ModelRefDto, input: TaskInputPart[]): Promise<boolean> => {
+      if (!projectId || !selected) return false;
+      // The source's latest trace file path comes from the single-session GET (list rows
+      // don't carry it); best-effort — a brand-new source has no trace, the block then
+      // simply omits the line.
+      const tracePath = await api
+        .getSession(selected.sessionId)
+        .then((res) => res.session.tracePath)
+        .catch(() => undefined);
+      const origin: TaskInputPart = {
+        type: "text",
+        text: modelSwitchMessage({
+          sessionId: selected.sessionId,
+          ...(selected.title !== undefined ? { sessionTitle: selected.title } : {}),
+          ...(tracePath !== undefined ? { tracePath } : {}),
+          workspace: selected.workspace,
+          prevProvider: selected.provider,
+          prevModelId: selected.modelId,
+        }),
+      };
+      let createdId: string | null = null;
+      try {
+        const created = await api.createSession(projectId, selected.agentId, {
+          provider: ref.provider,
+          modelId: ref.modelId,
+          workspace: selected.workspace,
+          approvalMode: selected.approvalMode,
+        });
+        createdId = created.session.sessionId;
+        const res = await api.postTask(createdId, { input: [origin, ...input] });
+        addSession(created.session);
+        // The remainder text has been carried into the new chat: discard the source session's input draft along with it.
+        discardSessionDraft();
+        navigate(`/chat/${res.sessionId}`);
+        return true;
+      } catch (e) {
+        if (createdId) void api.deleteSession(createdId).catch(() => undefined);
+        toastError(apiErrorText(e, { modelId: ref.modelId }));
+        return false;
+      }
+    },
+    [projectId, selected, addSession, discardSessionDraft, navigate],
   );
 
   // @ handoff: doesn't use the current Session — creates a new chat for the @-mentioned agent
@@ -510,9 +604,9 @@ export function ChatPage() {
     selected !== null && !stream.loading && !stream.error && stream.model.items.length === 0;
 
   // Input area in session state: Agent / Workspace / Model are already locked by the Session
-  // (the model selector isn't rendered; models is only used to look up the locked model's
-  // provider logo and display name for a read-only display) — only approval mode can still be
-  // changed (saved immediately on change).
+  // (the model selector isn't rendered; models feeds the locked model's read-only display and
+  // the /model switch picker) — approval mode and the per-turn thinking level stay editable;
+  // /model forks the conversation onto another model.
   const input = selected && (
     <ChatInput
       status={stream.taskState}
@@ -521,7 +615,12 @@ export function ChatPage() {
       onCompact={onCompact}
       modelRef={activeModelRef}
       {...(models !== null ? { models: models.models } : {})}
-      sessionThinkingLevel={stream.model.thinkingLevel}
+      {...(models?.defaultModel !== undefined ? { defaultModel: models.defaultModel } : {})}
+      onSwitchModel={onSwitchModel}
+      // Display value: the user's pick for this session, else the Agent config's level
+      // (auto-follow while untouched; the send path uses the raw pick — see onSend).
+      turnThinkingLevel={turnThinkingLevel || agentThinkingLevel}
+      onChangeTurnThinkingLevel={setTurnThinkingLevel}
       {...(contextWindow !== undefined ? { contextWindow } : {})}
       contextNow={stream.model.stats.contextNow}
       contextStale={stream.model.stats.contextStale}

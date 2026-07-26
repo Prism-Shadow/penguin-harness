@@ -19,10 +19,14 @@ import { ThinkingBlock } from "./thinking-block";
 import { ToolCallCard } from "./tool-call-card";
 import { SubagentCard } from "./subagent-card";
 import { CompactionBanner } from "./compaction-banner";
-import { HandoffBanner } from "./handoff-banner";
+import { HandoffBanner, ModelSwitchBanner } from "./handoff-banner";
 import { ScheduledBanner } from "./scheduled-banner";
 import { SkillsBanner } from "./skills-banner";
-import { parseHandoffMessage, parseScheduledMessage } from "./agent-mentions";
+import {
+  parseHandoffMessage,
+  parseModelSwitchMessage,
+  parseScheduledMessage,
+} from "./agent-mentions";
 import { parseSkillsMessage } from "./skill-use";
 import { TaskStatsLine } from "./task-stats-line";
 import type { StreamRenderContext } from "./message-stream";
@@ -87,6 +91,9 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
       // Source block for a chat created via @ handoff: collapsed into a single-line handoff notice (the raw text isn't shown), clickable to jump back to the original chat.
       const handoff = parseHandoffMessage(item.text);
       if (handoff) return <HandoffBanner origin={handoff} />;
+      // Source block for a chat opened by the /model switch: collapsed into a single-line switch notice, clickable to jump back to the source conversation.
+      const modelSwitch = parseModelSwitchMessage(item.text);
+      if (modelSwitch) return <ModelSwitchBanner origin={modelSwitch} />;
       // Source block for a scheduled-task trigger: collapsed into a single-line notice, with the task's prompt body rendered as usual (verbatim on the Trace page).
       const scheduled = parseScheduledMessage(item.text);
       // Source block for a skill invocation: parsing continues on scheduled's remaining body

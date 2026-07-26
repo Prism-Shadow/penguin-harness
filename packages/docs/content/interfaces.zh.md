@@ -40,6 +40,7 @@ interface LLMInterface {
 interface GenerativeModelParameters {
   newMessages: OmniMessage[];    // 仅本轮新增消息(实现自行维护历史,多 role 不接受)
   signal?: AbortSignal;
+  thinkingLevel?: ThinkingLevelName;   // 本次请求的思考等级覆盖;缺省用构造默认值
 }
 ```
 
@@ -78,7 +79,7 @@ interface GenerativeModelConfig {
   systemPrompt?: string;           // 占位符替换完成后的完整系统提示词
   contextWindow?: number;
   maxTokens?: number;
-  thinkingLevel?: ThinkingLevelName;   // "none" | "low" | "medium" | "high" | "xhigh"
+  thinkingLevel?: ThinkingLevelName;   // 构造期默认档位(逐请求参数可覆盖);"none" | "low" | "medium" | "high" | "xhigh"
   requestTimeoutMs?: number;       // 单次 Request 超时,默认 120000;<=0 关闭
   toolCallIds?: ToolCallIdAllocator;   // Session 级 tool_call_id 唯一性登记表(压缩重建时传同一实例)
 }
@@ -179,6 +180,7 @@ session.run(
 interface RunOptions {
   signal?: AbortSignal;    // 中断信号(如 Ctrl-C)
   approve?: ApproveFn;     // 逐工具审批;未注入时默认全部拒绝
+  thinkingLevel?: ThinkingLevelName;   // 本次 run 的思考等级(逐轮参数;压缩请求不受影响)
 }
 ```
 

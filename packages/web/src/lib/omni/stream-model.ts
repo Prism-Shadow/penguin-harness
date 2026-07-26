@@ -241,13 +241,6 @@ export interface StreamModel {
   items: ChatItem[];
   /** A nested sub-session model (produces no stats row; its stats count toward the parent). */
   nested: boolean;
-  /**
-   * The session's thinking level, captured from the main session's `session_meta` on history
-   * replay ("default" when the Agent config leaves it unset; null until a session_meta has been
-   * seen). llmConfig is assembled once per session, so this is fixed for the session's lifetime —
-   * shown read-only in the input area next to the locked model.
-   */
-  thinkingLevel: string | null;
   stats: TaskStatsTracker;
   /** The currently open text/thinking fragment (opened by start, closed by stop). */
   openText: AssistantTextItem | null;
@@ -325,7 +318,6 @@ function newModel(nested: boolean, localDecisions: Set<string>): StreamModel {
   return {
     items: [],
     nested,
-    thinkingLevel: null,
     stats: createTaskStatsTracker(),
     openText: null,
     openThinking: null,
@@ -400,13 +392,9 @@ export function pushMessage(
     advanceLastTs(model, msg.timestamp);
     return;
   }
-  // session_meta (main session): not rendered as an item, but its thinking level is captured
-  // for the input area's read-only display (fixed per session: llmConfig is assembled once at
-  // session creation, so a mid-conversation Agent-config change doesn't affect this session).
-  if (msg.type === "session_meta") {
-    const level = (msg.payload as { thinking_level?: unknown }).thinking_level;
-    if (typeof level === "string" && level) model.thinkingLevel = level;
-  }
+  // session_meta (main session): not rendered as an item and carries nothing the view model
+  // needs — session_meta holds per-session invariants (identity/config), all surfaced through
+  // the Session DTO instead.
 }
 
 /** ISO timestamp → milliseconds (returns undefined if invalid). */

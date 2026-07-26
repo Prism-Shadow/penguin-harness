@@ -139,12 +139,12 @@ The paths below omit the `/api/sessions/:sessionId` prefix. For the storage mode
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | / | Session info |
+| GET | / | Session info (the single-session GET additionally carries `tracePath`, the absolute path of the latest Trace file; list rows omit it) |
 | PATCH | / | Update: `{approvalMode?, archived?, title?}` |
 | DELETE | / | Delete the Session (along with its Traces and scratch files) |
 | GET | /messages | Full OmniMessage history |
 | GET | /stream | SSE event stream (next section) |
-| POST | /tasks | Start a Task: `{input: TaskInputPart[]}` → 202 |
+| POST | /tasks | Start a Task: `{input: TaskInputPart[], thinkingLevel?}` → 202 |
 | POST | /approvals/:toolCallId | Approval decision: `{decision}` is `allow` or `deny` → 204 |
 | POST | /abort | Interrupt the current Task: 202 when triggered, 204 when idle |
 | POST | /compact | Trigger context compaction: 202; 409 `nothing_to_compact` when there is nothing to compact |
@@ -194,6 +194,9 @@ Key request bodies (explicit keys):
 // POST /api/sessions/:sessionId/tasks — start a Task
 interface TaskCreateRequest {
   input: TaskInputPart[];
+  // Thinking level for this Task (a per-turn parameter, one of the five names; 400 otherwise);
+  // omitted = falls back to the Agent config
+  thinkingLevel?: "none" | "low" | "medium" | "high" | "xhigh";
 }
 type TaskInputPart =
   | { type: "text"; text: string }
@@ -204,6 +207,8 @@ interface ApprovalDecisionRequest {
   decision: "allow" | "deny";
 }
 ```
+
+The Web's `/model` switch has no dedicated endpoint: like the @ handoff, it composes the ordinary APIs above — session creation opens a new Session for the same Agent (the chosen model, the source Workspace carried over), then POST /tasks sends a first message opening with a `<model_switch_from>` source block (the source session id, its `tracePath`, the Workspace, and the previous model pair); the model reads that Trace file itself when it needs the earlier history.
 
 ## Streaming (SSE)
 

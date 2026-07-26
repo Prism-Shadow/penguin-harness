@@ -11,7 +11,7 @@ import path from "node:path";
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { imageUrlMessage, scratchpadDir, userText } from "@prismshadow/penguin-core";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { OmniMessage, ThinkingLevelName } from "@prismshadow/penguin-core";
 import type {
   ApprovalMode,
   FilesStatResponse,
@@ -57,6 +57,9 @@ const APPROVAL_MODES: readonly ApprovalMode[] = [
   "read-only",
   "always-ask",
 ];
+
+/** The five valid per-turn thinking level names (TaskCreateRequest.thinkingLevel). */
+const THINKING_LEVELS: readonly ThinkingLevelName[] = ["none", "low", "medium", "high", "xhigh"];
 
 /** Accepted `category` query values of the list endpoint (SessionCategory, spelled out for validation). */
 const SESSION_CATEGORIES: readonly SessionCategory[] = [
@@ -201,8 +204,13 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
   app.get("/:sessionId", async (c) => {
     const row = resolveSession(c);
     const hasTrace = await deps.sessionService.hasTrace(row);
+    const info = await deps.sessionService.toInfo(row, hasTrace);
+    // Single-session GET only: the latest Trace file's absolute path (a directory walk per
+    // call — too costly for list rows). The web's /model switch hands it to the new session's
+    // <model_switch_from> block so the model can read the source history itself.
+    const tracePath = hasTrace ? await deps.sessionService.latestTracePath(row) : undefined;
     return c.json({
-      session: await deps.sessionService.toInfo(row, hasTrace),
+      session: { ...info, ...(tracePath !== undefined ? { tracePath } : {}) },
     } satisfies SessionResponse);
   });
 
@@ -357,9 +365,15 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
 
   app.post("/:sessionId/tasks", async (c) => {
     const row = resolveSession(c);
-    const input = parseTaskInput(await readJson(c));
+    const body = await readJson(c);
+    const input = parseTaskInput(body);
+    // Per-turn thinking level (optional): validated against the five names; omitted follows
+    // the session's default.
+    const thinkingLevel = optionalEnum(body, "thinkingLevel", THINKING_LEVELS);
     // 202: the Task executes on the server, decoupled from the SSE connection; sessionId is the current actual id (the new id after self-heal).
-    const { sessionId } = await deps.manager.startTask(row.sessionId, input);
+    const { sessionId } = await deps.manager.startTask(row.sessionId, input, {
+      ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
+    });
     return c.json({ sessionId } satisfies TaskCreateResponse, 202);
   });
 
