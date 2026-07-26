@@ -12,8 +12,8 @@ Start a goal from any of the three surfaces:
 | Surface | How |
 | --- | --- |
 | Web App | The composer's `+` menu → **Goal mode** (or type `/goal`); the chip takes an optional token budget (`500k`, `2m`, empty = unlimited). Skills selected in the composer ride along and apply to every round |
-| CLI chat | `/goal[:<budget>] <objective>`, e.g. `/goal:500k make all tests pass` |
-| CLI one-shot | `penguin run --goal [budget] -m "<objective>"`; exit code 0 only when the goal completes |
+| CLI chat | `/goal[:<budget>] [--skills <a,b>] <objective>`, e.g. `/goal:500k make all tests pass` |
+| CLI one-shot | `penguin run --goal [budget] [--skills <a,b>] -m "<objective>"`; exit code 0 only when the goal completes |
 | Server API | `POST /api/sessions/:id/tasks` with `{ input, goal: { budget, skills } }` (budget `-1` or omitted = unlimited; `skills` = optional installed-skill names, validated to `[A-Za-z0-9._-]`) |
 
 ## The control file: GOAL.yaml

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { UNLIMITED_BUDGET } from "@prismshadow/penguin-core";
-import { parseGoalCommand, parseTokenBudget } from "../src/goal-command.js";
+import { parseGoalCommand, parseSkillNames, parseTokenBudget } from "../src/goal-command.js";
 
 describe("parseTokenBudget", () => {
   it("parses plain numbers and k/m suffixes (case-insensitive)", () => {
@@ -23,12 +23,29 @@ describe("parseTokenBudget", () => {
   });
 });
 
+describe("parseSkillNames", () => {
+  it("splits on commas, trims, and deduplicates", () => {
+    expect(parseSkillNames("web-design,data_viz")).toEqual(["web-design", "data_viz"]);
+    expect(parseSkillNames(" a , b ,a, ")).toEqual(["a", "b"]);
+  });
+
+  it("rejects empty lists, bad shapes, over-long names, and more than 16 names", () => {
+    expect(parseSkillNames("")).toBeNull();
+    expect(parseSkillNames(" , ")).toBeNull();
+    expect(parseSkillNames("bad name")).toBeNull();
+    expect(parseSkillNames("ok,bad!")).toBeNull();
+    expect(parseSkillNames("a".repeat(65))).toBeNull();
+    expect(parseSkillNames(Array.from({ length: 17 }, (_, i) => `s${i}`).join(","))).toBeNull();
+  });
+});
+
 describe("parseGoalCommand", () => {
   it("parses an objective without a budget as unlimited", () => {
     expect(parseGoalCommand("/goal fix the tests")).toEqual({
       ok: true,
       budget: UNLIMITED_BUDGET,
       objective: "fix the tests",
+      skills: [],
     });
   });
 
@@ -37,18 +54,55 @@ describe("parseGoalCommand", () => {
       ok: true,
       budget: 500_000,
       objective: "raise coverage to 80%",
+      skills: [],
     });
   });
 
   it("keeps a multi-line objective intact", () => {
     const r = parseGoalCommand("/goal:2m first line\nsecond line");
-    expect(r).toEqual({ ok: true, budget: 2_000_000, objective: "first line\nsecond line" });
+    expect(r).toEqual({
+      ok: true,
+      budget: 2_000_000,
+      objective: "first line\nsecond line",
+      skills: [],
+    });
+  });
+
+  it("parses a --skills token after the command, with or without a budget", () => {
+    expect(parseGoalCommand("/goal --skills web-design fix the layout")).toEqual({
+      ok: true,
+      budget: UNLIMITED_BUDGET,
+      objective: "fix the layout",
+      skills: ["web-design"],
+    });
+    expect(parseGoalCommand("/goal:500k --skills a,b do it\nproperly")).toEqual({
+      ok: true,
+      budget: 500_000,
+      objective: "do it\nproperly",
+      skills: ["a", "b"],
+    });
+    expect(parseGoalCommand("/goal --skills=a,b do it")).toEqual({
+      ok: true,
+      budget: UNLIMITED_BUDGET,
+      objective: "do it",
+      skills: ["a", "b"],
+    });
+  });
+
+  it("treats --skills mid-objective as plain text, not an option", () => {
+    expect(parseGoalCommand("/goal document the --skills flag")).toEqual({
+      ok: true,
+      budget: UNLIMITED_BUDGET,
+      objective: "document the --skills flag",
+      skills: [],
+    });
   });
 
   it("rejects a missing objective as a usage error", () => {
     expect(parseGoalCommand("/goal")).toEqual({ ok: false, reason: "usage" });
     expect(parseGoalCommand("/goal:500k")).toEqual({ ok: false, reason: "usage" });
     expect(parseGoalCommand("/goal   ")).toEqual({ ok: false, reason: "usage" });
+    expect(parseGoalCommand("/goal --skills web-design")).toEqual({ ok: false, reason: "usage" });
   });
 
   it("rejects an invalid budget, reporting the offending token", () => {
@@ -56,6 +110,14 @@ describe("parseGoalCommand", () => {
       ok: false,
       reason: "budget",
       value: "banana",
+    });
+  });
+
+  it("rejects invalid --skills values, reporting the offending token", () => {
+    expect(parseGoalCommand("/goal --skills bad! do things")).toEqual({
+      ok: false,
+      reason: "skills",
+      value: "bad!",
     });
   });
 });

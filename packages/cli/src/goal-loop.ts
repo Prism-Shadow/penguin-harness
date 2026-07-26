@@ -11,14 +11,33 @@
  * this loop prints its own dim round line and settles per-round stats via `endTask` at each
  * boundary, matching the per-Task stats rhythm of a normal chat.
  */
-import { isGoalRoundInput, runGoal } from "@prismshadow/penguin-core";
+import { isGoalRoundInput, listInstalledSkills, runGoal } from "@prismshadow/penguin-core";
 import type { GoalOutcome, Session } from "@prismshadow/penguin-core";
 import { dim, humanizeTokens } from "./render.js";
 import { buildApprove, type RunTaskOptions } from "./task-loop.js";
 
+/**
+ * Installed-skill check for goal skills (shared by chat's `/goal --skills` and run's
+ * `--skills`): returns null when every name is installed, otherwise the unknown names plus
+ * the installed list, both pre-joined for `t.goalSkillsUnknown`. Names render as trusted
+ * prompt text every round, and a typo would send the model hunting for a nonexistent
+ * SKILL.md each round — so unknown names refuse to start the goal.
+ */
+export async function unknownSkills(
+  skills: string[],
+  state: { root: string; projectId: string; agentId: string },
+): Promise<{ names: string; installed: string } | null> {
+  if (skills.length === 0) return null;
+  const installed = await listInstalledSkills(state.root, state.projectId, state.agentId);
+  const have = new Set(installed.map((s) => s.name));
+  const unknown = skills.filter((n) => !have.has(n));
+  if (unknown.length === 0) return null;
+  return { names: unknown.join(", "), installed: installed.map((s) => s.name).join(", ") };
+}
+
 export async function runGoalLoop(
   session: Session,
-  goal: { objective: string; goalFilePath: string; budget: number },
+  goal: { objective: string; goalFilePath: string; budget: number; skills?: string[] },
   opts: RunTaskOptions & { out: NodeJS.WritableStream },
 ): Promise<GoalOutcome> {
   const approve = buildApprove(session, opts);
@@ -26,6 +45,7 @@ export async function runGoalLoop(
     objective: goal.objective,
     goalFilePath: goal.goalFilePath,
     budget: goal.budget,
+    ...(goal.skills !== undefined && goal.skills.length > 0 ? { skills: goal.skills } : {}),
     approve,
     ...(opts.signal ? { signal: opts.signal } : {}),
   });

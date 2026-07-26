@@ -68,6 +68,8 @@ export interface Messages {
     message: string;
     /** run's --goal: goal mode, with an optional token budget value (`--goal 500k`). */
     goal: string;
+    /** run's --skills: goal-mode skill names (comma-separated; only valid with --goal). */
+    skills: string;
   };
   chat: { desc: string; resume: string };
   serve: {
@@ -167,6 +169,12 @@ export interface Messages {
   goalUsage(): string;
   /** Invalid token-budget value (chat `/goal:<budget>` or run `--goal <budget>`). */
   goalBudgetInvalid(value: string): string;
+  /** Invalid --skills value (empty, too many names, or a name outside [A-Za-z0-9._-]). */
+  goalSkillsInvalid(value: string): string;
+  /** Skills not installed for this agent; `installed` lists what is (empty string = none). */
+  goalSkillsUnknown(names: string, installed: string): string;
+  /** run's --skills given without --goal. */
+  skillsRequireGoal(): string;
   /** Prompt for an invalid --approve mode. */
   approveModeInvalid(value: string): string;
   /** Render label for an approval decision (frontend renders the approval_decision event; one label each for allow/deny). */
@@ -260,6 +268,8 @@ const en: Messages = {
     desc: "Run a single Task",
     message: "Prompt for this Task",
     goal: "Goal mode: loop until the goal completes; optional token budget (e.g. 500k, 2m)",
+    skills:
+      "Goal-mode skills (with --goal): comma-separated installed skill names, applied every round",
   },
   chat: {
     desc: "Open the interactive REPL",
@@ -363,9 +373,15 @@ const en: Messages = {
     }[outcome];
     return `[goal] ${label} · ${rounds} round${rounds === 1 ? "" : "s"} · tokens ${tokens}`;
   },
-  goalUsage: () => "Usage: /goal[:<budget>] <objective>  (e.g. /goal:500k fix all failing tests)",
+  goalUsage: () =>
+    "Usage: /goal[:<budget>] [--skills <a,b>] <objective>  (e.g. /goal:500k fix all failing tests)",
   goalBudgetInvalid: (value) =>
     `Invalid token budget "${value}". Use a positive number with an optional k/m suffix (500k, 2m).`,
+  goalSkillsInvalid: (value) =>
+    `Invalid --skills value "${value}". Use comma-separated installed skill names ([A-Za-z0-9._-], at most 16).`,
+  goalSkillsUnknown: (names, installed) =>
+    `Unknown skills: ${names} (installed: ${installed || "none"}).`,
+  skillsRequireGoal: () => "--skills requires --goal.",
   approveModeInvalid: (value) =>
     `Invalid approval mode "${value}". Use allow-all, deny-all, read-only, or always-ask.`,
   approvalDecision: (decision) => (decision === "allow" ? "✓ [approved]" : "× [denied]"),
@@ -446,6 +462,7 @@ const zh: Messages = {
     desc: "单次运行一个 Task",
     message: "本次 Task 的 Prompt",
     goal: "目标模式：循环运行直至目标完成；可选 token 预算（如 500k、2m）",
+    skills: "目标模式技能（需与 --goal 同用）：逗号分隔的已安装技能名，作用于每一轮",
   },
   chat: {
     desc: "打开交互式 REPL",
@@ -545,9 +562,15 @@ const zh: Messages = {
     }[outcome];
     return `[目标] ${label} · 共 ${rounds} 轮 · tokens ${tokens}`;
   },
-  goalUsage: () => "用法：/goal[:<预算>] <目标>（例如 /goal:500k 修复所有失败的测试）",
+  goalUsage: () =>
+    "用法：/goal[:<预算>] [--skills <a,b>] <目标>（例如 /goal:500k 修复所有失败的测试）",
   goalBudgetInvalid: (value) =>
     `无效的 token 预算 "${value}"：应为正数，可带 k/m 后缀（500k、2m）。`,
+  goalSkillsInvalid: (value) =>
+    `无效的 --skills 值 "${value}"：应为逗号分隔的已安装技能名（[A-Za-z0-9._-]，最多 16 个）。`,
+  goalSkillsUnknown: (names, installed) =>
+    `未安装的技能：${names}（已安装：${installed || "无"}）。`,
+  skillsRequireGoal: () => "--skills 需要与 --goal 一起使用。",
   approveModeInvalid: (value) =>
     `无效的审批模式 "${value}"。请使用 allow-all、deny-all、read-only 或 always-ask。`,
   approvalDecision: (decision) => (decision === "allow" ? "✓ [已批准]" : "× [已拒绝]"),

@@ -12,8 +12,8 @@ description: 给 Agent 一个目标而不是一条消息——系统在同一 Se
 | 入口 | 用法 |
 | --- | --- |
 | Web App | 输入框的 `+` 菜单 →「目标模式」（或输入 `/goal`）；chip 上可填 token 预算（`500k`、`2m`，留空不限）。输入框选中的技能会随目标一起生效，作用于每一轮 |
-| CLI chat | `/goal[:<预算>] <目标>`，例如 `/goal:500k 让所有测试通过` |
-| CLI 单次运行 | `penguin run --goal [预算] -m "<目标>"`；仅目标完成时退出码为 0 |
+| CLI chat | `/goal[:<预算>] [--skills <a,b>] <目标>`，例如 `/goal:500k 让所有测试通过` |
+| CLI 单次运行 | `penguin run --goal [预算] [--skills <a,b>] -m "<目标>"`；仅目标完成时退出码为 0 |
 | Server API | `POST /api/sessions/:id/tasks`，body 带 `{ input, goal: { budget, skills } }`（budget 为 `-1` 或缺省 = 不限额；`skills` 为可选的已安装技能名列表，仅接受 `[A-Za-z0-9._-]`） |
 
 ## 控制文件：GOAL.yaml
