@@ -78,7 +78,7 @@ import {
   localizedShortText,
   skillSlashItems,
 } from "./skill-use";
-import { GOAL_ICON, parseBudgetInput } from "./goal-use";
+import { GOAL_ICON, UNLIMITED_BUDGET, parseBudgetInput } from "./goal-use";
 
 const APPROVAL_MODES: ApprovalMode[] = ["always-ask", "read-only", "allow-all", "deny-all"];
 
@@ -986,9 +986,16 @@ export function ChatInput({
   // images (the objective is re-injected every round as plain text).
   const [goalOn, setGoalOn] = useState(false);
   const [goalBudgetText, setGoalBudgetText] = useState("");
-  /** Parsed budget while goal mode is on ("" = unlimited); null = invalid input, blocks sending. */
+  const [goalBudgetOpen, setGoalBudgetOpen] = useState(false);
+  const [goalBudgetDraft, setGoalBudgetDraft] = useState("");
+  /** The committed budget is always valid: the popover keeps invalid edits in its local draft. */
   const goalBudget = goalOn ? parseBudgetInput(goalBudgetText) : null;
-  const goalInvalid = goalOn && goalBudget === null;
+  const goalBudgetDraftValue = parseBudgetInput(goalBudgetDraft);
+  const goalBudgetDraftInvalid = goalBudgetDraftValue === null;
+  const goalBudgetSummary =
+    goalBudget !== null && goalBudget !== UNLIMITED_BUDGET
+      ? S.chat.goalBudgetValue(humanizeTokens(goalBudget))
+      : S.chat.goalBudgetUnlimited;
   // Sending is also allowed with only an @ target (chip) or skills selected and no text: a handoff's
   // first message may be just a <handoff_from> source block; with skills and empty text, the sent
   // text automatically falls back to S.chat.skillsAutoMessage (see send). Goal mode instead
@@ -998,16 +1005,35 @@ export function ChatInput({
     !compacting &&
     !busy &&
     (goalOn
-      ? text.trim().length > 0 && images.length === 0 && !goalInvalid
+      ? text.trim().length > 0 && images.length === 0 && goalBudget !== null
       : text.trim().length > 0 ||
         images.length > 0 ||
         target !== null ||
         selectedSkills.length > 0);
 
+  /** The budget editor is a fixed upward popover. Opening copies the committed value; closing cancels its draft. */
+  const setGoalBudgetEditorOpen = useCallback(
+    (open: boolean) => {
+      if (open) setGoalBudgetDraft(goalBudgetText);
+      setGoalBudgetOpen(open);
+    },
+    [goalBudgetText],
+  );
+
+  /** Commit only valid input; Enter and the check button share this path. */
+  const saveGoalBudget = useCallback(() => {
+    if (parseBudgetInput(goalBudgetDraft) === null) return;
+    setGoalBudgetText(goalBudgetDraft.trim());
+    setGoalBudgetOpen(false);
+    textareaRef.current?.focus();
+  }, [goalBudgetDraft]);
+
   /** Engage/exit goal mode; engaging clears the @ target, skills, and images (mutually exclusive input add-ons — the objective is re-injected every round as plain text). */
   const toggleGoal = useCallback(
     (on: boolean) => {
       setGoalOn(on);
+      setGoalBudgetOpen(false);
+      setGoalBudgetDraft("");
       if (on) {
         setGoalBudgetText("");
         setTarget(null);
@@ -1572,31 +1598,110 @@ export function ChatInput({
             agent chip's look. Remove buttons recolor the x on hover (no background wash). */}
         {(target !== null || selectedSkills.length > 0 || goalOn) && (
           <div className="mb-1 flex flex-wrap items-center gap-1">
-            {/* Goal-mode chip: label + inline budget input (empty = unlimited; invalid input
-                turns the field red and blocks sending) + exit button. */}
+            {/* Goal-mode chip: the budget stays compact as a value button; its editor is a
+                fixed upward popover so it never covers the objective textarea below. */}
             {goalOn && (
-              <span
-                className="anim-pop flex items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 text-sm text-gray-800 dark:bg-gray-800 dark:text-gray-200"
-                title={S.chat.goalModeDesc}
-              >
-                <GlyphIcon
-                  d={GOAL_ICON}
-                  size={13}
-                  className="shrink-0 text-gray-500 dark:text-gray-400"
+              <span className="anim-pop flex max-w-full items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 text-sm text-gray-800 dark:bg-gray-800 dark:text-gray-200">
+                <span className="flex shrink-0 items-center gap-1" title={S.chat.goalModeDesc}>
+                  <GlyphIcon d={GOAL_ICON} size={13} className="text-gray-500 dark:text-gray-400" />
+                  <span>{S.chat.goalMode}</span>
+                </span>
+                <span
+                  aria-hidden
+                  className="mx-0.5 h-4 w-px shrink-0 bg-gray-300 dark:bg-gray-600"
                 />
-                <span className="shrink-0">{S.chat.goalMode}</span>
-                <input
-                  value={goalBudgetText}
-                  onChange={(e) => setGoalBudgetText(e.target.value)}
-                  placeholder={S.chat.goalBudgetPlaceholder}
-                  aria-label={S.chat.goalBudgetPlaceholder}
-                  {...(goalInvalid ? { title: S.chat.goalBudgetInvalid } : {})}
-                  className={`w-40 rounded border bg-white px-1.5 py-0 font-mono text-xs leading-5 placeholder:text-gray-400 focus:outline-none dark:bg-gray-900 dark:placeholder:text-gray-500 ${
-                    goalInvalid
-                      ? "border-red-400 text-red-600 dark:border-red-500 dark:text-red-400"
-                      : "border-gray-300 text-gray-700 dark:border-gray-700 dark:text-gray-200"
-                  }`}
-                />
+                <Dropdown
+                  open={goalBudgetOpen}
+                  setOpen={setGoalBudgetEditorOpen}
+                  className="min-w-0"
+                  menuClass="bottom-full left-1/2 -ml-32 mb-2 w-64 max-w-[calc(100vw-2rem)] origin-bottom"
+                  button={
+                    <button
+                      type="button"
+                      aria-label={goalBudgetSummary}
+                      aria-expanded={goalBudgetOpen}
+                      onClick={() => setGoalBudgetEditorOpen(!goalBudgetOpen)}
+                      className="flex h-5 min-w-0 items-center gap-1 rounded px-1.5 text-xs text-gray-600 transition-colors duration-150 hover:bg-white/80 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white"
+                    >
+                      <span className="truncate">{goalBudgetSummary}</span>
+                      <svg
+                        width="9"
+                        height="9"
+                        viewBox="0 0 12 12"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="shrink-0"
+                        aria-hidden
+                      >
+                        <path d="M3 4.5l3 3 3-3" />
+                      </svg>
+                    </button>
+                  }
+                >
+                  <div className="px-3 py-2">
+                    <label
+                      htmlFor="goal-budget-input"
+                      className="block text-xs font-medium text-gray-700 dark:text-gray-200"
+                    >
+                      {S.chat.goalBudgetLabel}
+                    </label>
+                    <div className="mt-1.5 flex items-center gap-1.5">
+                      <input
+                        id="goal-budget-input"
+                        autoFocus
+                        value={goalBudgetDraft}
+                        onChange={(e) => setGoalBudgetDraft(e.target.value)}
+                        onFocus={(e) => e.currentTarget.select()}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            saveGoalBudget();
+                          } else if (e.key === "Escape") {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setGoalBudgetEditorOpen(false);
+                            textareaRef.current?.focus();
+                          }
+                        }}
+                        placeholder={S.chat.goalBudgetPlaceholder}
+                        aria-invalid={goalBudgetDraftInvalid}
+                        aria-describedby="goal-budget-hint"
+                        title={
+                          goalBudgetDraftInvalid ? S.chat.goalBudgetInvalid : S.chat.goalBudgetHint
+                        }
+                        className={`min-w-0 flex-1 rounded-md border bg-white px-2 py-1 font-mono text-sm leading-5 placeholder:text-gray-400 focus:outline-none focus:ring-2 dark:bg-gray-950 dark:placeholder:text-gray-500 ${
+                          goalBudgetDraftInvalid
+                            ? "border-red-400 text-red-600 focus:border-red-500 focus:ring-red-400/20 dark:border-red-500 dark:text-red-400"
+                            : "border-gray-300 text-gray-800 focus:border-gray-500 focus:ring-gray-400/20 dark:border-gray-700 dark:text-gray-100 dark:focus:border-gray-500"
+                        }`}
+                      />
+                      <button
+                        type="button"
+                        aria-label={S.chat.goalBudgetSave}
+                        title={S.chat.goalBudgetSave}
+                        disabled={goalBudgetDraftInvalid}
+                        onClick={saveGoalBudget}
+                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-gray-900 text-white transition-colors duration-150 hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-35 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white"
+                      >
+                        <GlyphIcon d="M5 12l4 4L19 6" size={14} />
+                      </button>
+                    </div>
+                    <p
+                      id="goal-budget-hint"
+                      className={`mt-1.5 text-[11px] leading-4 ${
+                        goalBudgetDraftInvalid
+                          ? "text-red-500 dark:text-red-400"
+                          : "text-gray-400 dark:text-gray-500"
+                      }`}
+                    >
+                      {goalBudgetDraftInvalid ? S.chat.goalBudgetInvalid : S.chat.goalBudgetHint}
+                    </p>
+                  </div>
+                </Dropdown>
                 <button
                   type="button"
                   aria-label={S.chat.goalRemove}

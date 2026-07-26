@@ -102,10 +102,65 @@ test("layout: en draft + context gauge + mobile models", async ({ page }) => {
   expect(d.scrollWidth, "draft @1280 no horizontal overflow").toBeLessThanOrEqual(d.clientWidth);
   await expect(page.locator('[title*="Context usage"]')).toHaveCount(0);
 
+  // Goal mode keeps its chip compact: the committed budget is a value button, while editing
+  // happens in a fixed upward popover (never inline and never covering the objective textarea).
+  await page.getByRole("button", { name: "More input options" }).click();
+  await page.getByRole("button", { name: /Goal mode/ }).click();
+  const budgetTrigger = page.getByRole("button", { name: "Budget unlimited" });
+  await expect(budgetTrigger).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Token budget" })).toHaveCount(0);
+
+  await budgetTrigger.click();
+  const budget = page.getByRole("textbox", { name: "Token budget" });
+  await expect(budget).toBeVisible();
+  const popoverPosition = await budget.evaluate((el) => {
+    const panel = el.closest(".absolute");
+    const trigger = panel.parentElement.querySelector('button[aria-expanded="true"]');
+    const p = panel.getBoundingClientRect();
+    const t = trigger.getBoundingClientRect();
+    return { panelBottom: p.bottom, triggerTop: t.top };
+  });
+  expect(
+    popoverPosition.panelBottom,
+    "goal budget popover stays above its trigger",
+  ).toBeLessThanOrEqual(popoverPosition.triggerTop);
+
+  await budget.fill("500k");
+  await budget.press("Enter");
+  await expect(page.getByRole("button", { name: "Budget 500k" })).toBeVisible();
+  await expect(budget).toHaveCount(0);
+
+  // Invalid edits stay local to the popover: save is disabled and Escape restores the
+  // previously committed value rather than poisoning the send state.
+  const committedBudget = page.getByRole("button", { name: "Budget 500k" });
+  await committedBudget.click();
+  await budget.fill("not-a-budget");
+  await expect(page.getByRole("button", { name: "Save budget" })).toBeDisabled();
+  await budget.press("Escape");
+  await expect(committedBudget).toBeVisible();
+
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(200);
+  await committedBudget.click();
   d = await docWidths(page);
-  expect(d.scrollWidth, "draft @390 no horizontal overflow").toBeLessThanOrEqual(d.clientWidth);
+  expect(d.scrollWidth, "goal-mode draft @390 no horizontal overflow").toBeLessThanOrEqual(
+    d.clientWidth,
+  );
+  const budgetPopoverBounds = await budget.evaluate((el) => {
+    const rect = el.closest(".absolute").getBoundingClientRect();
+    return { left: rect.left, right: rect.right, viewport: window.innerWidth };
+  });
+  expect(
+    budgetPopoverBounds.left,
+    "goal budget popover left edge on-screen",
+  ).toBeGreaterThanOrEqual(0);
+  expect(budgetPopoverBounds.right, "goal budget popover right edge on-screen").toBeLessThanOrEqual(
+    budgetPopoverBounds.viewport,
+  );
+
+  // Leave the composer in its normal mode for the remaining layout assertions.
+  await budget.press("Escape");
+  await page.getByRole("button", { name: "Exit goal mode" }).click();
 
   // --- Session state shows the ring as usual (creating a session via the API and entering it directly, no need to actually run a Task) ---
   const sess = await (

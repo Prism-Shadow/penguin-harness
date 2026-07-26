@@ -13,9 +13,9 @@
 /** Mirrors core's UNLIMITED_BUDGET (the web bundle doesn't import the core package). */
 export const UNLIMITED_BUDGET = -1;
 
-/** Crosshair/target icon (24×24 line path): goal-mode UI (chip, plus-menu item, banner). */
+/** Bullseye/arrow icon (24×24 line path): goal-mode UI (chip, plus-menu item, banner). */
 export const GOAL_ICON =
-  "M12 3v3M12 18v3M3 12h3M18 12h3M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zM12 11a1 1 0 1 0 0 2 1 1 0 0 0 0-2z";
+  "M21 12A9 9 0 1 1 12 3M17 12A5 5 0 1 1 12 7M12 12L15 9V5L18 2V6H22L19 9H15";
 
 /**
  * Recognizes a goal round's injected input: a message that **starts with** a `<goal_task>`
