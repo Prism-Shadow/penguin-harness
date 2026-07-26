@@ -120,6 +120,44 @@ describe("StreamRenderer", () => {
     expect(stripAnsi(text())).toBe("[tool-c4] exec_command <- $ ls\n");
   });
 
+  it("renders one call line when the description arrives after the command", () => {
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t);
+    // Payload-first emission (models don't always honour schema order): the plain form must
+    // never reach the screen, or it would be stranded above the described one.
+    r.handle(partialToolCall({ eventType: "start", name: "exec_command", toolCallId: "c9" }));
+    r.handle(
+      partialToolCall({
+        eventType: "delta",
+        name: "",
+        arguments: '{"cmd":"ls -la",',
+        toolCallId: "c9",
+      }),
+    );
+    r.handle(
+      partialToolCall({
+        eventType: "delta",
+        name: "",
+        arguments: '"description":"列出当前目录的文件"}',
+        toolCallId: "c9",
+      }),
+    );
+    r.handle(partialToolCall({ eventType: "stop", name: "", toolCallId: "c9" }));
+    expect(stripAnsi(text())).toBe("[tool-c9] exec_command <- 列出当前目录的文件 ($ ls -la)\n");
+  });
+
+  it("still renders a call line whose arguments never settled", () => {
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t);
+    // Interrupted mid-arguments: withholding must not swallow the call entirely.
+    r.handle(partialToolCall({ eventType: "start", name: "exec_command", toolCallId: "c8" }));
+    r.handle(
+      partialToolCall({ eventType: "delta", name: "", arguments: '{"cmd":"sle', toolCallId: "c8" }),
+    );
+    r.handle(partialToolCall({ eventType: "stop", name: "", toolCallId: "c8" }));
+    expect(stripAnsi(text())).toBe("[tool-c8] exec_command <- $ sle\n");
+  });
+
   it("prefixes streamed tool output with the tool name and skips the complete tool_call_output", () => {
     const { stream, text } = collector();
     const r = new StreamRenderer(stream, t);

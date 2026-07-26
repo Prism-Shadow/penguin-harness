@@ -18,12 +18,19 @@
  * fall back to `name(args-prefix)`.
  *
  * The render layer streams by appending to the preview (see render.ts), so the preview must
- * stay append-only. The description is therefore only adopted once its own value is
- * complete (closing quote seen): with the description streamed first (its position in the
- * default schema), the preview grows `name <- desc` → ` ({payload…}` → `)`; when a model
- * emits it after the payload instead, the preview switches format once at the end and the
- * render layer falls back to a new line. File-tool paths render only once complete —
- * shortening a still-growing path would rewrite the line.
+ * stay append-only — a preview that is not an extension of the previous one costs a fresh
+ * line, leaving the superseded one on screen. For the four tools that can carry a
+ * `description` that means the plain form must never be shown when a description is still
+ * possible, so rendering follows the argument stream:
+ * - the description streams live as it grows (`name <- desc…`), and the payload is appended
+ *   only once the description's own value is complete (`name <- desc ({payload…` → `)`);
+ * - while no `"description"` key has appeared yet, the preview is **withheld**: the model
+ *   may still emit one after the payload (schema order puts it first, but not every model
+ *   follows), and showing the plain form first would strand it above the described one;
+ * - once the arguments parse (or the fragment is final), the answer is known and the plain
+ *   form renders in one shot.
+ * File-tool paths render only once complete — shortening a still-growing path would rewrite
+ * the line.
  */
 
 /** Max length of the single-line preview for a payload (chars / prompt / description); truncated with an ellipsis beyond this, after which the preview stops growing. */
@@ -158,15 +165,27 @@ export function shortenPath(p: string): string {
 }
 
 /**
- * The model-written `description` argument, single-lined and capped — adopted only once its
- * value is complete (closing quote seen), so a still-streaming description never rewrites
- * the middle of an append-only preview. Null when absent, incomplete, or empty.
+ * State of the model-written `description` argument within a possibly-incomplete arguments
+ * fragment:
+ * - `absent`: no `"description"` key has streamed in yet — one may still arrive (see the
+ *   module header on why the plain form is withheld until this is settled);
+ * - `none`: the arguments are settled (parsed, or the fragment is final) without a usable
+ *   description, so the plain form is correct;
+ * - `{ text, complete }`: the description's value so far, single-lined and capped. Payload
+ *   is appended only once `complete`, keeping the preview append-only whichever order the
+ *   model emits its arguments in.
  */
-function completedDescription(argsJson: string): string | null {
+type DescriptionState = "absent" | "none" | { text: string; complete: boolean };
+
+function describedState(argsJson: string, final: boolean): DescriptionState {
+  const settled = final || argsComplete(argsJson);
   const field = extractField(argsJson, "description");
-  if (field === null || !field.complete) return null;
-  const line = toSingleLine(field.value);
-  return line ? capPreview(line) : null;
+  if (field === null) return settled ? "none" : "absent";
+  const text = toSingleLine(field.value);
+  // An empty description (still opening, or explicitly "") carries nothing to show: once
+  // settled it means "no description", otherwise keep waiting for its first characters.
+  if (!text) return settled ? "none" : "absent";
+  return { text: capPreview(text), complete: field.complete };
 }
 
 /** Whether the whole argument JSON parses (i.e. argument streaming is finished). */
@@ -190,41 +209,55 @@ function describedForm(name: string, desc: string, payload: string, closed: bool
 
 /**
  * Streaming argument preview (formats documented in the module header). Returns null while
- * nothing presentable has streamed in yet.
+ * nothing presentable has streamed in yet, or while a description may still arrive and would
+ * supersede the plain form. `final` marks the last fragment of a call (its stream ended, or
+ * the arguments come from a complete message), settling that question for good.
  */
-export function renderPartialToolCall(name: string, argsJson: string): string | null {
+export function renderPartialToolCall(
+  name: string,
+  argsJson: string,
+  final = false,
+): string | null {
   if (!argsJson) return null;
   if (name === "exec_command") {
-    const desc = completedDescription(argsJson);
+    const desc = describedState(argsJson, final);
+    if (desc === "absent") return null;
     const cmd = extractField(argsJson, "cmd");
-    if (desc !== null) {
-      if (cmd === null) return `${name} <- ${desc}`;
-      return describedForm(name, desc, `$ ${toSingleLine(cmd.value)}`, cmd.complete);
+    if (desc !== "none") {
+      if (!desc.complete || cmd === null) return `${name} <- ${desc.text}`;
+      return describedForm(name, desc.text, `$ ${toSingleLine(cmd.value)}`, cmd.complete);
     }
     if (cmd !== null) return `${name} <- $ ${toSingleLine(cmd.value)}`;
     return null;
   }
   if (name === "run_subagent") {
-    const desc = completedDescription(argsJson);
+    const desc = describedState(argsJson, final);
+    if (desc === "absent") return null;
     const prompt = extractField(argsJson, "prompt");
-    if (desc !== null) {
-      if (prompt === null) return `${name} <- ${desc}`;
-      return describedForm(name, desc, capPreview(toSingleLine(prompt.value)), prompt.complete);
+    if (desc !== "none") {
+      if (!desc.complete || prompt === null) return `${name} <- ${desc.text}`;
+      return describedForm(
+        name,
+        desc.text,
+        capPreview(toSingleLine(prompt.value)),
+        prompt.complete,
+      );
     }
     if (prompt !== null) return `${name} <- ${capPreview(toSingleLine(prompt.value))}`;
     return null;
   }
   if (name === "input_command") {
-    const desc = completedDescription(argsJson);
+    const desc = describedState(argsJson, final);
+    if (desc === "absent") return null;
     const pid = extractField(argsJson, "process_id");
-    if (desc === null && pid === null) return null;
+    if (desc === "none" && pid === null) return null;
     const chars = extractPartialStringField(argsJson, "chars");
     const payloadSuffix = chars ? ` << ${capPreview(visualizeControlChars(chars))}` : "";
-    if (desc !== null) {
-      if (pid === null) return `${name} <- ${desc}`;
+    if (desc !== "none") {
+      if (!desc.complete || pid === null) return `${name} <- ${desc.text}`;
       return describedForm(
         name,
-        desc,
+        desc.text,
         `${toSingleLine(pid.value)}${payloadSuffix}`,
         argsComplete(argsJson),
       );
@@ -232,16 +265,17 @@ export function renderPartialToolCall(name: string, argsJson: string): string | 
     return `${name} <- ${toSingleLine(pid!.value)}${payloadSuffix}`;
   }
   if (name === "input_subagent") {
-    const desc = completedDescription(argsJson);
+    const desc = describedState(argsJson, final);
+    if (desc === "absent") return null;
     const sid = extractField(argsJson, "subagent_id");
-    if (desc === null && sid === null) return null;
+    if (desc === "none" && sid === null) return null;
     const prompt = extractPartialStringField(argsJson, "prompt");
     const payloadSuffix = prompt ? ` << ${capPreview(toSingleLine(prompt))}` : "";
-    if (desc !== null) {
-      if (sid === null) return `${name} <- ${desc}`;
+    if (desc !== "none") {
+      if (!desc.complete || sid === null) return `${name} <- ${desc.text}`;
       return describedForm(
         name,
-        desc,
+        desc.text,
         `${toSingleLine(sid.value)}${payloadSuffix}`,
         argsComplete(argsJson),
       );

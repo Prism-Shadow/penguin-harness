@@ -188,7 +188,8 @@ export function renderHistory(
       case "tool_call": {
         if (p.name) toolNames.set(nameKey(msg, p.tool_call_id ?? ""), p.name);
         const preview =
-          renderPartialToolCall(p.name ?? "", p.arguments ?? "") ?? `${p.name} ${p.arguments}`;
+          renderPartialToolCall(p.name ?? "", p.arguments ?? "", true) ??
+          `${p.name} ${p.arguments}`;
         out.write(`${cyan(`[${callTag(p.tool_call_id ?? "")}] ${preview}`)}${marker}\n`);
         break;
       }
@@ -440,7 +441,7 @@ export class StreamRenderer {
     // Parent-session calls feed the output-gutter name map (nested outputs are not
     // gutter-rendered, and a child id could collide with a parent id).
     if (!origin || origin.length === 0) this.toolNames.set(p.tool_call_id, p.name);
-    const preview = renderPartialToolCall(p.name, p.arguments) ?? `${p.name} ${p.arguments}`;
+    const preview = renderPartialToolCall(p.name, p.arguments, true) ?? `${p.name} ${p.arguments}`;
     this.finishLine();
     this.out.write(`${cyan(`[${callTag(p.tool_call_id, origin)}] ${preview}`)}\n`);
     this.lastLineKey = key;
@@ -740,6 +741,25 @@ export class StreamRenderer {
     }
   }
 
+  /**
+   * Renders a call line whose preview was withheld for the whole stream (the arguments never
+   * settled — e.g. the turn was interrupted mid-arguments — so a description could still have
+   * arrived, see tool-render.ts). Called once at `stop` with the fragment marked final, so an
+   * in-flight call is never left invisible.
+   */
+  private renderWithheldCallLine(
+    toolCallId: string,
+    partial: { name: string; arguments: string },
+  ): void {
+    const key = this.callLineKey(toolCallId);
+    if (this.ensuredCallLines.has(key)) return;
+    const preview = renderPartialToolCall(partial.name, partial.arguments, true);
+    if (preview === null) return;
+    this.finishLine();
+    this.out.write(`${cyan(`[${callTag(toolCallId)}] ${preview}`)}\n`);
+    this.lastLineKey = key;
+  }
+
   private handlePartialToolCall(p: PartialToolCallPayload): void {
     // The call line was already rendered in place from the complete message at approval time: skip the whole late-arriving streaming copy (clean up the buffer on stop).
     if (this.ensuredCallLines.has(this.callLineKey(p.tool_call_id))) {
@@ -763,6 +783,7 @@ export class StreamRenderer {
 
     if (p.event_type === "stop") {
       if (partial.lastPreview) this.finishLine();
+      else this.renderWithheldCallLine(p.tool_call_id, partial);
       this.partialToolCalls.delete(p.tool_call_id);
       return;
     }
