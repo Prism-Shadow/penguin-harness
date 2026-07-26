@@ -3,8 +3,9 @@
  *
  * - `GoalRoundBanner`: the per-round `<goal_task>` injected input collapsed into a one-line
  *   notice in the message stream (same treatment as the scheduled-task origin block; the
- *   Trace page shows the raw block). Round 1 additionally carries the objective text — the
- *   submission moment must show what the user asked for, and it is the only place the
+ *   Trace page shows the raw block). Round 1 instead renders the objective as a REGULAR
+ *   user message bubble with the round notice tucked beneath it — the submission moment
+ *   should read like any other message the user sent, and it is the only place the
  *   objective survives in the conversation once the goal ends and the live status banner
  *   (active-only on reload) is gone.
  * - `GoalStatusBanner`: the live goal card above the composer — objective excerpt, round
@@ -18,18 +19,28 @@ import { GOAL_ICON, UNLIMITED_BUDGET } from "./goal-use";
 import type { GoalBannerState } from "./goal-use";
 
 export function GoalRoundBanner({ round, objective }: { round: number; objective?: string }) {
-  return (
-    <div className="anim-msg my-2 w-fit rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
-      <p className="flex items-center gap-2">
-        <GlyphIcon d={GOAL_ICON} className="shrink-0 text-gray-400 dark:text-gray-500" />
-        {S.chat.goalRoundBanner(round)}
-      </p>
-      {objective !== undefined && objective !== "" && (
-        <p className="mt-1.5 whitespace-pre-wrap break-words text-sm text-gray-800 dark:text-gray-200">
-          {objective}
+  // Round 1 (objective present): a regular right-aligned user bubble (same classes as
+  // message-item's user_text rendering), with the round notice under the bubble.
+  if (objective !== undefined && objective !== "") {
+    return (
+      <div className="anim-msg my-4 flex flex-col items-end">
+        <div className="max-w-[88%] rounded-lg bg-gray-100 px-4 py-2.5 md:max-w-[75%] dark:bg-gray-800">
+          <p className="wrap-anywhere whitespace-pre-wrap text-base leading-relaxed text-gray-900 dark:text-gray-100">
+            {objective}
+          </p>
+        </div>
+        <p className="mt-1 flex items-center gap-1.5 px-0.5 text-xs text-gray-400 dark:text-gray-500">
+          <GlyphIcon d={GOAL_ICON} size={12} className="shrink-0" />
+          {S.chat.goalRoundBanner(round)}
         </p>
-      )}
-    </div>
+      </div>
+    );
+  }
+  return (
+    <p className="anim-msg my-2 flex w-fit items-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
+      <GlyphIcon d={GOAL_ICON} className="text-gray-400 dark:text-gray-500" />
+      {S.chat.goalRoundBanner(round)}
+    </p>
   );
 }
 
