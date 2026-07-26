@@ -36,11 +36,15 @@
  * initialSkills (read once on mount; once the installed list is ready, names not in that list are
  * pruned); the slash menu also lists installed skills, and pressing Enter on `/<skill_name>`
  * selects it.
- * While a Task is running the Stop button appears next to the send button, and the input stays
- * enabled: Enter/send follows the remembered mid-run send mode — steer (delivered between
- * turns as a [user_steering] user message) or queue-as-follow-up — chosen from the toolbar's
- * More-settings popover (available in draft state too, persisted in localStorage); disabled
- * with a reason shown while compacting.
+ * While a Task is running the input stays enabled and the toolbar keeps ONE action button:
+ * an empty composer shows Stop (abort), and typing turns that same button into Send, which
+ * follows the remembered mid-run send mode — steer (delivered between turns as a
+ * [user_steering] user message) or queue-as-follow-up — chosen from the toolbar's
+ * More-settings popover (available in draft state too, persisted in localStorage); sending is
+ * disabled with a reason shown while compacting.
+ * The toolbar is a single left/right row: settings controls left (scrolling horizontally when
+ * the card is too narrow), status + model + the action button right (never shrinking), so a
+ * phone viewport never pushes the action button off-screen.
  * Renders only the card body itself: outer positioning such as bottom-docking or vertical
  * centering is decided by the page.
  */
@@ -858,7 +862,12 @@ function ContextGauge({
           transform="rotate(-90 7 7)"
         />
       </svg>
-      {unknown ? "—" : humanizeTokens(now)}/{humanizeTokens(max)}
+      {/* The ring alone carries the meaning on phones: the numbers hide below @md (the title
+          still shows the exact usage), keeping the right-hand control group inside a 320px
+          viewport in the running state. */}
+      <span className="hidden @md:inline">
+        {unknown ? "—" : humanizeTokens(now)}/{humanizeTokens(max)}
+      </span>
     </span>
   );
 }
@@ -1089,6 +1098,17 @@ export function ChatInput({
     !busy &&
     followUpMode &&
     (text.trim().length > 0 || images.length > 0 || target !== null || selectedSkills.length > 0);
+  // The single action button's mode: while running, an **empty** composer means Stop
+  // (abort); as soon as there is something to send it becomes the send button (steer or
+  // follow-up per the remembered mode). Idle/compacting is always send.
+  const canMidRunSend = followUpMode ? canFollowUp : canSteer;
+  const midRunSendLabel = followUpMode ? S.chat.followUpSend : S.chat.steerSend;
+  const stopAction =
+    running &&
+    text.trim().length === 0 &&
+    images.length === 0 &&
+    target === null &&
+    selectedSkills.length === 0;
   // Queued hint: shown after a successful steer until the message shows up in the stream
   // (steeringDeliveredCount increases past the baseline captured at queue time) or the run
   // stops being observable (task no longer running).
@@ -1771,68 +1791,74 @@ export function ChatInput({
           className="block max-h-44 min-h-[60px] w-full resize-none bg-transparent px-1 py-0.5 text-base leading-6 placeholder:text-gray-400 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60 dark:placeholder:text-gray-500"
         />
 
-        {/* Bottom toolbar row: attachments + approval mode + help text | context usage + Model + send */}
-        <div className="mt-1 flex items-center gap-2 text-xs">
-          <label
+        {/* Bottom toolbar row — one line, two groups: the settings controls sit left, the
+            status/model/action controls right (`justify-between`). The left group is the only
+            one allowed to give way: `min-w-0` + horizontal scroll means a crowded phone
+            viewport scrolls those controls instead of pushing the right group (and with it the
+            action button) off-screen. The right group is `shrink-0` so the action button is
+            always reachable. */}
+        <div className="mt-1 flex items-center justify-between gap-2 text-xs">
+          <div className="no-scrollbar flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">
+            <label
             className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"
             title={vision ? S.chat.imageAlt : S.chat.imagesAsPathHint}
           >
-            <input
-              type="file"
-              accept="image/*"
-              multiple
-              className="hidden"
-              onChange={onPickFiles}
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={onPickFiles}
+              />
+              <svg
+                width="17"
+                height="17"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.7"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden
+                className="block"
+              >
+                <rect x="3" y="5" width="18" height="14" rx="3" />
+                <path d="M3 15l5-5 4 4 3-3 6 6" />
+              </svg>
+            </label>
+            <ApprovalModeSelect
+              value={approvalMode}
+              onChange={onChangeApprovalMode}
+              disabled={modeSaving}
+              direction={models && onChangeModel ? "down" : "up"}
             />
-            <svg
-              width="17"
-              height="17"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.7"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden
-              className="block"
-            >
-              <rect x="3" y="5" width="18" height="14" rx="3" />
-              <path d="M3 15l5-5 4 4 3-3 6 6" />
-            </svg>
-          </label>
-          <ApprovalModeSelect
-            value={approvalMode}
-            onChange={onChangeApprovalMode}
-            disabled={modeSaving}
-            direction={models && onChangeModel ? "down" : "up"}
-          />
-          {/* Multi-select skills dropdown (after approval mode): selected state is conveyed via the button badge. */}
-          <SkillSelect
-            skills={skills}
-            selected={selectedSkills}
-            onToggle={toggleSkill}
-            disabled={running || compacting || busy}
-            direction={models && onChangeModel ? "down" : "up"}
-          />
-          {/* More settings popover (extensible; currently the mid-run send mode): available in
-              draft state and while running alike, the choice persists across sessions. */}
-          <MoreSettingsSelect
-            steerMode={steerMode}
-            onChangeSteerMode={setSteerMode}
-            direction={models && onChangeModel ? "down" : "up"}
-          />
-          {/* Help text also serves as a flexible spacer: truncated first when space is short
-              (min-w-0 truncate, full text goes into the title); hidden entirely when the card is
-              narrower than @lg, leaving only the spacer to push the right-side controls to the
-              end of the row — long copy (in English) still won't break the card layout. */}
-          <span className="min-w-0 flex-1">
+            {/* Multi-select skills dropdown (after approval mode): selected state is conveyed via the button badge. */}
+            <SkillSelect
+              skills={skills}
+              selected={selectedSkills}
+              onToggle={toggleSkill}
+              disabled={running || compacting || busy}
+              direction={models && onChangeModel ? "down" : "up"}
+            />
+            {/* More settings popover (extensible; currently the mid-run send mode): available in
+                draft state and while running alike, the choice persists across sessions. */}
+            <MoreSettingsSelect
+              steerMode={steerMode}
+              onChangeSteerMode={setSteerMode}
+              direction={models && onChangeModel ? "down" : "up"}
+            />
+            {/* Help text: shown only when the card is wide enough (@lg); it never competes for
+                space on phones, where the group scrolls instead. */}
             <span
               title={`${S.chat.slashHint} · ${S.chat.mentionHint}`}
-              className="hidden truncate text-gray-300 @lg:block dark:text-gray-600"
+              className="hidden min-w-0 truncate text-gray-300 @lg:block dark:text-gray-600"
             >
               {S.chat.slashHint} · {S.chat.mentionHint}
             </span>
-          </span>
+          </div>
+
+          {/* Right group: status + model + the single action button; never shrinks. */}
+          <div className="flex shrink-0 items-center gap-2">
           {/* Draft state (model still changeable = no session created yet) has no context usage to speak of: the ring isn't shown, it displays as usual once the session is created. */}
           {!onChangeModel && (
             <ContextGauge
@@ -1888,38 +1914,30 @@ export function ChatInput({
               </span>
             </span>
           )}
-          {/* While running: Stop stays available next to the send button — no inline mode
-              switch here (it overflowed on narrow screens); the mid-run send mode lives in
-              the More-settings popover on the left side of this toolbar and the send simply
-              follows the remembered choice. Idle/compacting keeps the single send button
-              (disabled while compacting via canSend). */}
-          {running && (
-            <button
-              type="button"
-              title={S.chat.stop}
-              aria-label={S.chat.stop}
-              onClick={() => void onStop()}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-red-50 text-red-600 transition-colors duration-150 hover:bg-red-100 dark:bg-red-950/60 dark:text-red-400 dark:hover:bg-red-950"
-            >
+          {/* One action button, never two: while running an empty composer means "Stop"
+              (abort), and typing turns the very same button into "Send" — which, mid-run,
+              steers or queues per the remembered More-settings mode. Idle/compacting keeps
+              the ordinary send button (disabled while compacting via canSend). Merging the
+              pair keeps the running-state row within a 320px viewport. */}
+          <button
+            type="button"
+            title={stopAction ? S.chat.stop : running ? midRunSendLabel : S.chat.send}
+            aria-label={stopAction ? S.chat.stop : running ? midRunSendLabel : S.chat.send}
+            disabled={stopAction ? false : running ? !canMidRunSend : !canSend}
+            onClick={() => (stopAction ? void onStop() : void send())}
+            className={
+              stopAction
+                ? "flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-red-50 text-red-600 transition-colors duration-150 hover:bg-red-100 dark:bg-red-950/60 dark:text-red-400 dark:hover:bg-red-950"
+                : "flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-gray-900 text-white transition-colors duration-150 hover:bg-gray-700 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-300 dark:disabled:bg-gray-800 dark:disabled:text-gray-600"
+            }
+          >
+            {stopAction ? (
+              /* Stop (filled square) */
               <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden className="block">
                 <rect x="2" y="2" width="10" height="10" rx="2" fill="currentColor" />
               </svg>
-            </button>
-          )}
-          {(!running || onSteer || onQueueFollowUp) && (
-            <button
-              type="button"
-              title={
-                running ? (followUpMode ? S.chat.followUpSend : S.chat.steerSend) : S.chat.send
-              }
-              aria-label={
-                running ? (followUpMode ? S.chat.followUpSend : S.chat.steerSend) : S.chat.send
-              }
-              disabled={running ? (followUpMode ? !canFollowUp : !canSteer) : !canSend}
-              onClick={() => void send()}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-gray-900 text-white transition-colors duration-150 hover:bg-gray-700 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-300 dark:disabled:bg-gray-800 dark:disabled:text-gray-600"
-            >
-              {/* Up arrow (send) */}
+            ) : (
+              /* Up arrow (send) */
               <svg
                 width="17"
                 height="17"
@@ -1934,8 +1952,9 @@ export function ChatInput({
               >
                 <path d="M12 19V5M5 12l7-7 7 7" />
               </svg>
-            </button>
-          )}
+            )}
+          </button>
+          </div>
         </div>
       </div>
     </div>
