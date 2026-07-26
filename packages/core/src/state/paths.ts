@@ -31,8 +31,7 @@ export function projectDir(root: string, projectId: string): string {
 
 /**
  * `<projectDir>/agents` from an already-resolved Project directory path — the single
- * definition point of the agents-container layout (also used to render the system
- * prompt's `{{AGENTS_DIR}}` placeholder).
+ * definition point of the agents-container layout.
  */
 export function agentsDirFrom(projectDirPath: string): string {
   return path.join(projectDirPath, "agents");

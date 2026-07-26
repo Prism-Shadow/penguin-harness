@@ -57,7 +57,7 @@ describe("POST agent config reset", () => {
     expect(body.config.version).toBe(1);
     // Everything else is back to the current defaults.
     expect(body.config.systemPrompt).toBe(defaults.system_prompt);
-    expect(body.config.systemPrompt).toContain("Agents Dir: {{AGENTS_DIR}}");
+    expect(body.config.systemPrompt).toContain("App Data Dir: {{PROJECT_DIR}}");
     expect(body.config.maxTurns).toBe(defaults.max_turns);
     expect(body.config.model?.maxTokens).toBe(defaults.model?.max_tokens);
     expect(body.config.compaction?.mode).toBe("summarize");

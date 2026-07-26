@@ -194,7 +194,10 @@ export const en: Strings = {
       ["{{PLATFORM}}", "Runtime platform"],
       ["{{OS_VERSION}}", "Operating system version"],
       ["{{DATE}}", "Current date"],
-      ["{{AGENTS_DIR}}", "Absolute agents directory (Agent State/scratchpad derive from it)"],
+      [
+        "{{PROJECT_DIR}}",
+        "PenguinHarness app data root — all agents' data and project-level data; not the task working directory",
+      ],
       ["{{AGENT_ID}}", "Current agent id"],
       ["{{CWD}}", "Absolute Workspace path"],
       ["{{PROVIDER}}", "Model provider group"],

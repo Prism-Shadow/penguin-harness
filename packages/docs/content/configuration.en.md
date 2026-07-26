@@ -148,15 +148,14 @@ An existing Agent always runs with its on-disk config verbatim — newer code de
 | `{{PLATFORM}}` | Runtime platform |
 | `{{OS_VERSION}}` | Operating system version |
 | `{{DATE}}` | Current date |
-| `{{AGENTS_DIR}}` | Agents directory (the `agents` folder under the Project directory) |
-| `{{PROJECT_DIR}}` | Project directory (legacy) |
+| `{{PROJECT_DIR}}` | App Data Dir: the PenguinHarness app data root (the Project directory) |
 | `{{AGENT_ID}}` | Agent id |
 | `{{CWD}}` | Workspace path |
 | `{{PROVIDER}}` | Model provider group |
 | `{{MODEL_ID}}` | Upstream model id |
 | `{{SESSION_ID}}` | Session id |
 
-`{{AGENTS_DIR}}` is the standard directory placeholder: it resolves to the Project's `agents/` container, where every Agent (its Agent State, scratchpad, etc.) lives. `{{PROJECT_DIR}}` is legacy — the default prompt no longer uses it, but it is still substituted so existing custom prompts keep working.
+`{{PROJECT_DIR}}` is surfaced to the model as the **App Data Dir**: PenguinHarness's application data root, holding every Agent's data files (`agents/<agent_id>/…`) and the project-level data — deliberately not described as a project or task directory, so the model does not mistake it for the task's working directory (`CWD`).
 
 `agent_state/AGENTS.md` is the developer-editable instruction file, injected via `{{AGENTS_MD}}` and empty by default — it is also the file an optimizer edits most (see [Self-Improvement](/self-improvement)).
 

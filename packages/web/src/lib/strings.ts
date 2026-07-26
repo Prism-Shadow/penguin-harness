@@ -185,7 +185,10 @@ export const zh = {
       ["{{PLATFORM}}", "运行平台"],
       ["{{OS_VERSION}}", "操作系统版本"],
       ["{{DATE}}", "当前日期"],
-      ["{{AGENTS_DIR}}", "agents 目录绝对路径（Agent State/scratchpad 由此拼出）"],
+      [
+        "{{PROJECT_DIR}}",
+        "PenguinHarness 应用数据根目录（存放全部 Agent 数据与 Project 级数据；不是本次任务的工作目录）",
+      ],
       ["{{AGENT_ID}}", "当前 Agent id"],
       ["{{CWD}}", "Workspace 绝对路径"],
       ["{{PROVIDER}}", "模型 provider 分组"],

@@ -148,15 +148,14 @@ compaction:
 | `{{PLATFORM}}` | 运行平台 |
 | `{{OS_VERSION}}` | 操作系统版本 |
 | `{{DATE}}` | 当前日期 |
-| `{{AGENTS_DIR}}` | agents 目录（Project 目录下的 `agents` 文件夹） |
-| `{{PROJECT_DIR}}` | Project 目录（legacy） |
+| `{{PROJECT_DIR}}` | App Data Dir：PenguinHarness 应用数据根目录（即 Project 目录） |
 | `{{AGENT_ID}}` | Agent id |
 | `{{CWD}}` | Workspace 路径 |
 | `{{PROVIDER}}` | 模型 provider 分组 |
 | `{{MODEL_ID}}` | 上游模型 id |
 | `{{SESSION_ID}}` | Session id |
 
-`{{AGENTS_DIR}}` 是标准的目录占位符：解析为 Project 的 `agents/` 容器目录，全部 Agent（其 Agent State、scratchpad 等）都在其中。`{{PROJECT_DIR}}` 为 legacy 占位符——默认提示词已不再使用，但仍会被替换，以兼容既有的自定义提示词。
+`{{PROJECT_DIR}}` 在提示词中以 **App Data Dir** 名义暴露给模型：PenguinHarness 的应用数据根目录，存放全部 Agent 的数据文件（`agents/<agent_id>/…`）与 Project 级数据——特意不以 Project/任务目录的口径描述，避免模型将其误认为本次任务的工作目录（`CWD`）。
 
 `agent_state/AGENTS.md` 是开发者可编辑的指令文件，经 `{{AGENTS_MD}}` 注入系统提示词，缺省为空——它也是优化器最常改动的文件（见[自我进化](/self-improvement)）。
 

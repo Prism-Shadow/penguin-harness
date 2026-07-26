@@ -22,7 +22,6 @@ import {
 import type { ToolConfig, ToolDefinitionConfig } from "../interfaces.js";
 import {
   AGENT_ID_PLACEHOLDER,
-  AGENTS_DIR_PLACEHOLDER,
   AGENTS_MD_PLACEHOLDER,
   VAULT_KEYS_PLACEHOLDER,
   SKILL_METADATA_PLACEHOLDER,
@@ -42,7 +41,6 @@ import {
 import { builtinProjectAgentPresets, type AgentPreset } from "./builtin-agents.js";
 import { provisionExampleBenchmark } from "./example-benchmark.js";
 import {
-  agentsDirFrom,
   agentsMdPath,
   agentStateDir,
   DEFAULT_AGENT_ID,
@@ -86,7 +84,7 @@ export interface SessionEnvironmentValues {
   cwd: string;
   /** The Agent id this Session belongs to (system Prompt placeholder {{AGENT_ID}}). */
   agentId: string;
-  /** Absolute path to this Project's directory. Feeds the {{AGENTS_DIR}} placeholder (`<projectDir>/agents`, where Agent State/scratchpad paths live) and the legacy {{PROJECT_DIR}} placeholder. */
+  /** Absolute path to this Project's directory — PenguinHarness's app data root, injected via {{PROJECT_DIR}} and shown to the model as the Environment's "App Data Dir" line (Agent State/scratchpad paths live under its `agents/`). */
   projectDir: string;
   /** The session model's provider group (system Prompt placeholder {{PROVIDER}}; paired with modelId to form the model reference). */
   provider: string;
@@ -398,11 +396,8 @@ export function skillMetadataSection(skills: SkillMetadata[]): string {
  * provided): this lets the model know which APIs requiring a key it can call; values are never
  * injected. `{{SKILL_METADATA}}` is replaced with the installed Skills' metadata lines (an empty
  * string if empty/not provided). A custom template that removes a placeholder gets no
- * corresponding content injected.
- *
- * Directory placeholders: `{{AGENTS_DIR}}` resolves to `<projectDir>/agents` (the container
- * holding every Agent of the Project); the legacy `{{PROJECT_DIR}}` still resolves to the
- * Project directory itself, so custom prompts saved before the switch keep working.
+ * corresponding content injected. `{{PROJECT_DIR}}` resolves to the Project directory —
+ * the app data root the default prompt labels "App Data Dir".
  * Docs: /docs/configuration § "System prompt placeholders".
  */
 export function assembleSystemPrompt(
@@ -420,8 +415,6 @@ export function assembleSystemPrompt(
     .join(skillMetadataSection(skillMetadata ?? []))
     .split(AGENT_ID_PLACEHOLDER)
     .join(sessionEnvironment?.agentId ?? state.agentId)
-    .split(AGENTS_DIR_PLACEHOLDER)
-    .join(sessionEnvironment?.projectDir ? agentsDirFrom(sessionEnvironment.projectDir) : "")
     .split(PROJECT_DIR_PLACEHOLDER)
     .join(sessionEnvironment?.projectDir ?? "")
     .split(SESSION_ID_PLACEHOLDER)
