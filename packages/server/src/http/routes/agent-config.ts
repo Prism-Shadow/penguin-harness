@@ -1,6 +1,8 @@
 /**
  * Agent config routes (reads/writes system_config.yaml and AGENTS.md):
- * GET|PUT /api/projects/:p/agents/:a/config. Members can read and write (unrestricted).
+ * GET|PUT /api/projects/:p/agents/:a/config, plus POST …/config/reset to adopt the
+ * current default config (keeps only name/description/version — the config-side
+ * analogue of a skill update). Members can read and write (unrestricted).
  */
 import { Hono } from "hono";
 import type { AgentConfigResponse, AgentConfigUpdateRequest } from "../../api/types.js";
@@ -39,6 +41,21 @@ export function agentConfigRoutes(deps: AppDeps): Hono<AppEnv> {
     }
     // Fine-grained validation (numeric ranges / enums) is done inside agent-config-service.
     await deps.agentConfigService.updateConfig(projectId, agentId, req);
+    const view = await deps.agentConfigService.getConfig(projectId, agentId);
+    return c.json({
+      ...view,
+      activeSessionCount: deps.manager.activeCountForAgent(projectId, agentId),
+    } satisfies AgentConfigResponse);
+  });
+
+  // Overwrite system_config.yaml with the current defaults (see AgentConfigService.resetConfig
+  // for the exact semantics); same authorization as PUT, and responds like GET/PUT with the
+  // fresh config so the client can refresh in place.
+  app.post("/reset", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const agentId = requireValidId(c, "agentId");
+    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    await deps.agentConfigService.resetConfig(projectId, agentId);
     const view = await deps.agentConfigService.getConfig(projectId, agentId);
     return c.json({
       ...view,

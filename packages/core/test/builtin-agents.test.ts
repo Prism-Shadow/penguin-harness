@@ -114,8 +114,8 @@ describe("provisionProjectAgents", () => {
   });
 });
 
-describe("Project Dir / Agent ID placeholders", () => {
-  it("assembleSystemPrompt injects Project Dir and Agent ID (Skill lookup uses project-relative paths, no .penguin dependency)", async () => {
+describe("App Data Dir / Agent ID placeholders", () => {
+  it("assembleSystemPrompt injects App Data Dir and Agent ID (Skill lookup uses app-data-dir-relative paths, no .penguin dependency)", async () => {
     const state = await loadOrInitAgentState({ agentId: "env_agent" });
     const prompt = assembleSystemPrompt(state, {
       sessionId: "session-x",
@@ -129,15 +129,18 @@ describe("Project Dir / Agent ID placeholders", () => {
       date: "2026-07-08",
     });
     expect(prompt).toContain("Agent ID: env_agent");
-    expect(prompt).toContain("Project Dir: /tmp/proj");
+    expect(prompt).toContain("App Data Dir: /tmp/proj");
     expect(prompt).not.toContain("{{AGENT_ID}}");
     expect(prompt).not.toContain("{{PROJECT_DIR}}");
-    // Skill execution conventions are built from project-relative paths (no longer reference .penguin).
+    // Skill execution conventions are built from app-data-dir-relative paths (no longer reference .penguin).
     expect(prompt).not.toContain(".penguin");
-    // Agent State, scratchpad and Skills are addressed under the Project's agents/ container.
-    expect(prompt).toContain("<project_dir>/agents/<agent_id>/agent_state/");
-    expect(prompt).toContain("<project_dir>/agents/<agent_id>/agent_state/skills/");
-    // The pre-agents/ layout (an agent directly under the Project dir) must never be handed to the model.
-    expect(prompt).not.toContain("<project_dir>/<agent_id>/");
+    // Agent State, scratchpad and Skills are addressed under the App Data Dir's agents/ container.
+    expect(prompt).toContain("<app_data_dir>/agents/<agent_id>/agent_state/");
+    expect(prompt).toContain("<app_data_dir>/agents/<agent_id>/agent_state/skills/");
+    // The pre-agents/ layout (an agent directly under the data root) must never be handed to the model.
+    expect(prompt).not.toContain("<app_data_dir>/<agent_id>/");
+    // The value stays the project dir, but the confusing "Project Dir" label must not.
+    expect(prompt).not.toContain("<project_dir>");
+    expect(prompt).not.toContain("Project Dir:");
   });
 });

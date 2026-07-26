@@ -181,12 +181,18 @@ export const zh = {
     placeholders: [
       ["{{AGENTS_MD}}", "注入 AGENTS.md 内容"],
       ["{{VAULT_KEYS}}", "注入密钥保险柜的键名小节（无键时为空）"],
+      ["{{SKILL_METADATA}}", "注入已安装 Skill 的元数据行（无 Skill 时为空）"],
       ["{{PLATFORM}}", "运行平台"],
       ["{{OS_VERSION}}", "操作系统版本"],
       ["{{DATE}}", "当前日期"],
-      ["{{CWD}}", "Workspace 绝对路径"],
+      [
+        "{{PROJECT_DIR}}",
+        "PenguinHarness 应用数据根目录（存放全部 Agent 数据与 Project 级数据；不是本次任务的工作目录）",
+      ],
       ["{{AGENT_ID}}", "当前 Agent id"],
-      ["{{PROJECT_DIR}}", "Project 目录绝对路径（Agent State/scratchpad 由此拼出）"],
+      ["{{CWD}}", "Workspace 绝对路径"],
+      ["{{PROVIDER}}", "模型 provider 分组"],
+      ["{{MODEL_ID}}", "上游模型 id"],
       ["{{SESSION_ID}}", "当前 Session id"],
     ] as ReadonlyArray<readonly [string, string]>,
     maxTurns: "max_turns（单 Task 最大轮次，-1 不限制）",
@@ -242,6 +248,13 @@ export const zh = {
     importDone: (v: number): string => `导入完成，Agent State 版本 v${v}`,
     importConflictTitle: "版本冲突",
     importConflictBody: "快照包版本不高于当前版本，导入将覆盖现有 Agent State。确认继续？",
+    resetConfigTitle: "还原为默认配置",
+    resetConfigDesc:
+      "把 system_config.yaml 还原为当前内置默认值（与 Skill 更新同语义）：自定义的系统提示词、工具列表、模型/压缩参数与 MCP Server 将被覆盖，仅保留名称、描述与版本号。",
+    resetConfigAction: "还原为默认配置",
+    resetConfigConfirmBody:
+      "此操作会用当前默认值覆盖该 Agent 的现有配置：自定义系统提示词、工具列表、模型/压缩参数与 MCP Server 全部被替换，仅保留名称与描述。与 Skill 更新一样不可撤销，确认继续？",
+    resetConfigDone: "配置已还原为当前默认值",
   },
 
   models: {

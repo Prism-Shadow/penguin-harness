@@ -61,7 +61,7 @@ The list page creates and deletes Agents; clicking through opens the `/agents/:a
 
 | Tab | Contents |
 | --- | --- |
-| Overview | Basic info, plus export / import of Agent State snapshots |
+| Overview | Basic info, export / import of Agent State snapshots, and restoring the default configuration (overwrites customizations, keeping only name/description) |
 | Prompt | AGENTS.md and system_prompt |
 | Runtime | Runtime parameters such as max_turns, model.*, compaction.* |
 | Tools | Built-in tool table and MCP server JSON configuration |
