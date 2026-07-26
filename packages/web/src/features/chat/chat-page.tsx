@@ -12,6 +12,7 @@
  * created. The Session list and the new-chat entry point live in the global sidebar.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { useNavigate, useParams } from "react-router";
 import type {
   AgentSummary,
@@ -27,9 +28,18 @@ import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
-import { formatDateTime, formatMoney, humanizeDuration, humanizeTokens } from "../../lib/format";
+import {
+  formatDateTime,
+  formatMoney,
+  humanizeDuration,
+  humanizeDurationLive,
+  humanizeTokens,
+} from "../../lib/format";
 import { latestConversation } from "../../lib/session-grouping";
 import { approvalKey, isModelAuthDead } from "../../lib/omni/stream-model";
+import type { StreamModel } from "../../lib/omni/stream-model";
+import { bucketCostUsd, liveSessionElapsedMs } from "../../lib/omni/task-stats";
+import type { BucketPricing, TaskStatsTracker } from "../../lib/omni/task-stats";
 import { useTheme } from "../../state/theme";
 import { useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
@@ -65,7 +75,7 @@ const STAT_ICONS = {
 } as const;
 
 /** Iconized stat item: a symbol + a value, with the title giving the full meaning. */
-function StatChip({ icon, value, label }: { icon: string; value: string; label: string }) {
+function StatChip({ icon, value, label }: { icon: string; value: ReactNode; label: string }) {
   return (
     <span
       title={label}
@@ -87,6 +97,88 @@ function StatChip({ icon, value, label }: { icon: string; value: string; label: 
       {value}
     </span>
   );
+}
+
+/**
+ * Elapsed value for the header statistics: while a Task runs it ticks once per second over the
+ * live cumulative (settled cross-Task total + the running Task's wall clock so far, see
+ * liveSessionElapsedMs); when idle no timer runs and it renders exactly the settled total.
+ * Whole seconds while ticking, decimals only on the settled value — same convention as
+ * LiveDuration on running tool/thinking cards.
+ */
+function SessionElapsed({
+  stats,
+  taskOpen,
+  taskStartLocalMs,
+}: {
+  stats: TaskStatsTracker;
+  taskOpen: boolean;
+  taskStartLocalMs: number;
+}) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!taskOpen) return;
+    setNow(Date.now());
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [taskOpen]);
+  if (!taskOpen) return <>{humanizeDuration(stats.sessionElapsedMs)}</>;
+  return <>{humanizeDurationLive(liveSessionElapsedMs(stats, taskOpen, taskStartLocalMs, now))}</>;
+}
+
+/** The header's three statistics — the chip row and the info dropdown render these verbatim. */
+interface HeaderStats {
+  tokensText: string;
+  /** Formatted session cost; null = nothing to show (no recorded figure and no live estimate). */
+  costText: string | null;
+  /** Server-reported "some usage had no pricing" flag from the last idle refetch (the chip's `*`). */
+  costUncosted: boolean;
+  elapsedNode: ReactNode;
+}
+
+/**
+ * Computes the header statistics, live while a Task runs:
+ *   - Tokens: session cumulative (main + subagents), already advancing per completed request;
+ *   - Cost: the last idle-refetched session cost, plus — while a Task is open and the session
+ *     Model has pricing — a live estimate converted from this Task's usage buckets. Subagents
+ *     may run on different models, but the estimate applies the main Model's pricing to all
+ *     live buckets: the estimate may be slightly off mid-task, and the idle getUsage refetch
+ *     reconciles to the server-recorded value (kept deliberately simple). Without pricing the
+ *     live addition is skipped (bucketCostUsd returns null, mirroring taskCost's uncosted
+ *     signal) and the value stays exactly as when idle;
+ *   - Elapsed: ticking cumulative while running, settled cumulative when idle (SessionElapsed).
+ */
+function headerStats(
+  model: StreamModel,
+  sessionCost: number | null,
+  costUncosted: boolean,
+  pricing: BucketPricing | undefined,
+  currency: "USD" | "CNY",
+): HeaderStats {
+  const stats = model.stats;
+  const liveCost = model.taskOpen
+    ? bucketCostUsd(
+        {
+          cacheRead: stats.taskCacheRead,
+          cacheWrite: stats.taskCacheWrite,
+          output: stats.taskOutput,
+        },
+        pricing,
+      )
+    : null;
+  const costUsd = liveCost != null ? (sessionCost ?? 0) + liveCost : sessionCost;
+  return {
+    tokensText: humanizeTokens(stats.sessionTotal + stats.subagentTotal),
+    costText: costUsd != null ? formatMoney(costUsd, currency) : null,
+    costUncosted,
+    elapsedNode: (
+      <SessionElapsed
+        stats={stats}
+        taskOpen={model.taskOpen}
+        taskStartLocalMs={model.taskStartLocalMs}
+      />
+    ),
+  };
 }
 
 /**
@@ -611,16 +703,7 @@ export function ChatPage() {
     // happen mid-turn, and if only running were checked, the trailing group would flash
     // "finished running" during compaction before flipping back to "running".
     taskRunning: stream.taskState !== "idle",
-    taskCost: (stats) => {
-      if (!modelPricing) return null;
-      const b = stats.tokensByBucket;
-      return (
-        (b.cacheRead * modelPricing.cacheRead +
-          b.cacheWrite * modelPricing.cacheWrite +
-          b.output * modelPricing.output) /
-        1e6
-      );
-    },
+    taskCost: (stats) => bucketCostUsd(stats.tokensByBucket, modelPricing),
     // Reconnect countdown controls (live waiting state only): retry-now skips the
     // remaining backoff server-side (benign no-op on timing races), give-up is the
     // ordinary session abort — the engine's abort-during-backoff path ends the turn.
@@ -649,7 +732,9 @@ export function ChatPage() {
     );
   }
 
-  const totalTokens = stream.model.stats.sessionTotal + stream.model.stats.subagentTotal;
+  // Header statistics (chip row + info dropdown), live while a Task runs; recomputed every
+  // stream version bump, so the in-place-mutated model stats always read fresh.
+  const hs = headerStats(stream.model, sessionCost, costUncosted, modelPricing, currency);
   const modelInfo = models?.models.find((m) => sameModelRef(m, activeModelRef));
   const contextWindow = modelInfo?.contextWindow;
   // Assumed supported by default: only models explicitly marked vision=false show a blocking hint when adding images.
@@ -742,24 +827,20 @@ export function ChatPage() {
           <div className="hidden items-center gap-3 sm:flex">
             <StatChip
               icon={STAT_ICONS.tokens}
-              value={humanizeTokens(totalTokens)}
+              value={hs.tokensText}
               label={`${S.chat.statTokens}（Token）`}
             />
             {/* When there's no cost (the Model has no pricing configured), don't render this stat
                 at all, rather than showing a "—" — that would take up space while saying
                 nothing, only making people think the cost is zero or something's broken. */}
-            {sessionCost != null && (
+            {hs.costText != null && (
               <StatChip
                 icon={STAT_ICONS.cost}
-                value={`${formatMoney(sessionCost, currency)}${costUncosted ? " *" : ""}`}
-                label={`${S.common.cost}（${currency}）${costUncosted ? ` · ${S.usage.uncostedNote}` : ""}`}
+                value={`${hs.costText}${hs.costUncosted ? " *" : ""}`}
+                label={`${S.common.cost}（${currency}）${hs.costUncosted ? ` · ${S.usage.uncostedNote}` : ""}`}
               />
             )}
-            <StatChip
-              icon={STAT_ICONS.elapsed}
-              value={humanizeDuration(stream.model.stats.sessionElapsedMs)}
-              label={S.chat.statElapsed}
-            />
+            <StatChip icon={STAT_ICONS.elapsed} value={hs.elapsedNode} label={S.chat.statElapsed} />
           </div>
 
           {/* Files panel toggle: docks on the right of the chat instead of replacing it full-screen (use-files-panel.ts). */}
@@ -848,10 +929,9 @@ export function ChatPage() {
                 </p>
                 {/* Same as above: if there's no cost, the whole item is omitted, not left as "Cost —". */}
                 <p className="font-mono text-xs">
-                  {S.chat.statTokens} {humanizeTokens(totalTokens)}
-                  {sessionCost != null &&
-                    ` · ${S.common.cost} ${formatMoney(sessionCost, currency)}`}{" "}
-                  · {S.chat.statElapsed} {humanizeDuration(stream.model.stats.sessionElapsedMs)}
+                  {S.chat.statTokens} {hs.tokensText}
+                  {hs.costText != null && ` · ${S.common.cost} ${hs.costText}`} ·{" "}
+                  {S.chat.statElapsed} {hs.elapsedNode}
                 </p>
               </div>
             </div>
