@@ -19,6 +19,12 @@ export const DOCS_URL = `${import.meta.env.BASE_URL}docs/`;
 export const INSTALL_CMD = "curl -fsSL https://penguin.ooo/install.sh | sh";
 
 /**
+ * One-line installer for Windows (PowerShell 5.1+, x64, bundled Node runtime).
+ * penguin.ooo/install.ps1 is public/install.ps1 — the same thin-forwarder design.
+ */
+export const INSTALL_CMD_WINDOWS = "irm https://penguin.ooo/install.ps1 | iex";
+
+/**
  * Demo videos live in the sibling `penguin-harness-community` repo rather than in this
  * one: they are ~9 MB each, and this repo's whole history is ~17 MB, so committing them
  * here would triple what every contributor clones for assets only the marketing site

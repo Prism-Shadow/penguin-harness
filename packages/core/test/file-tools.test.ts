@@ -478,15 +478,19 @@ describe("edit_file — review follow-ups", () => {
 describe("write_file — review follow-ups", () => {
   const tool = () => createWriteFileTool(def(WRITE_FILE_NAME, "rw"));
 
-  it("preserves the permission bits of an overwritten file (atomic rename)", async () => {
-    const file = path.join(tmp, "mode.txt");
-    await writeFile(file, "old");
-    await chmod(file, 0o600);
-    const { result } = await run(tool(), { file_path: "mode.txt", content: "new" }, tmp);
-    expect(result?.stopReason).toBeUndefined();
-    expect((await stat(file)).mode & 0o777).toBe(0o600);
-    expect(await readFile(file, "utf8")).toBe("new");
-  });
+  // POSIX-only: Windows has no owner-only mode bits to preserve (chmod maps to the read-only attribute).
+  it.skipIf(process.platform === "win32")(
+    "preserves the permission bits of an overwritten file (atomic rename)",
+    async () => {
+      const file = path.join(tmp, "mode.txt");
+      await writeFile(file, "old");
+      await chmod(file, 0o600);
+      const { result } = await run(tool(), { file_path: "mode.txt", content: "new" }, tmp);
+      expect(result?.stopReason).toBeUndefined();
+      expect((await stat(file)).mode & 0o777).toBe(0o600);
+      expect(await readFile(file, "utf8")).toBe("new");
+    },
+  );
 
   it("writes atomically: no temp files are left behind", async () => {
     await run(tool(), { file_path: "fresh.txt", content: "x" }, tmp);

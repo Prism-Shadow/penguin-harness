@@ -59,7 +59,9 @@ export const en: Strings = {
     ctaPrimary: "Get started",
     ctaGithub: "GitHub",
     installHint:
-      "One-line install (Linux / macOS, x64 / arm64, bundled Node runtime — unpack and run)",
+      "One-line install (Linux / macOS / Windows, bundled Node runtime — unpack and run)",
+    installLabelPosix: "Linux / macOS",
+    installLabelWindows: "Windows",
     stats: [
       { value: "1000+", label: "supported models" },
       { value: "1×CPU", label: "minimum footprint" },
@@ -155,7 +157,9 @@ export const en: Strings = {
       "Install with one command and let the Agent work from a desktop-grade interface — all data stays in your local ~/.penguin/data directory.",
     step1: "Install",
     step1Desc:
-      "Linux / macOS (x64 / arm64) with a bundled Node runtime — unpack and run; upgrades never touch your data.",
+      "Linux / macOS / Windows with a bundled Node runtime — unpack and run; upgrades never touch your data.",
+    installLabelPosix: "Linux / macOS",
+    installLabelWindows: "Windows (PowerShell)",
     tabWeb: "Web UI",
     tabCli: "CLI",
     webStep2: "Open the web interface",

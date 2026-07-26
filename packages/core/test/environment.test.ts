@@ -735,14 +735,14 @@ describe("Environment.executeTool — robustness", () => {
 describe("Environment.toolPermission", () => {
   it("returns the configured permission for a known tool", () => {
     const env = new Environment({
-      workspaceDir: "/tmp",
+      workspaceDir: tmpdir(),
       toolConfig: makeToolConfig(execTool({ permission: "rw" })),
     });
     expect(env.toolPermission("exec_command")).toBe("rw");
   });
 
   it("returns undefined for an unknown tool", () => {
-    const env = new Environment({ workspaceDir: "/tmp", toolConfig: makeToolConfig() });
+    const env = new Environment({ workspaceDir: tmpdir(), toolConfig: makeToolConfig() });
     expect(env.toolPermission("nope")).toBeUndefined();
   });
 });

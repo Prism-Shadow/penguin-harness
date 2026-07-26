@@ -33,6 +33,8 @@ export const PROVIDER_PLACEHOLDER = "{{PROVIDER}}";
 export const MODEL_ID_PLACEHOLDER = "{{MODEL_ID}}";
 export const PLATFORM_PLACEHOLDER = "{{PLATFORM}}";
 export const OS_VERSION_PLACEHOLDER = "{{OS_VERSION}}";
+/** The shell exec_command runs (`bash` on POSIX; on Windows whatever shell.ts resolved), so the model knows which command syntax to write. */
+export const SHELL_PLACEHOLDER = "{{SHELL}}";
 export const DATE_PLACEHOLDER = "{{DATE}}";
 
 /**
@@ -147,6 +149,7 @@ Skills are reusable instruction packages stored under <app_data_dir>/agents/<age
 # Environment
 - Platform: {{PLATFORM}}
 - OS Version: {{OS_VERSION}}
+- Shell: {{SHELL}}
 - Date: {{DATE}}
 - App Data Dir: {{PROJECT_DIR}}
 - Agent ID: {{AGENT_ID}}

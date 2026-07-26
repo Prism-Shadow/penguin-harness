@@ -36,6 +36,7 @@ import {
   PLATFORM_PLACEHOLDER,
   PROJECT_DIR_PLACEHOLDER,
   SESSION_ID_PLACEHOLDER,
+  SHELL_PLACEHOLDER,
   type SystemConfig,
 } from "./default-config.js";
 import { builtinProjectAgentPresets, type AgentPreset } from "./builtin-agents.js";
@@ -92,6 +93,8 @@ export interface SessionEnvironmentValues {
   modelId: string;
   platform: string;
   osVersion: string;
+  /** The shell command sessions run in (system Prompt placeholder {{SHELL}}; e.g. "bash", "pwsh") — tells the model which command syntax exec_command speaks. */
+  shell: string;
   date: string;
 }
 
@@ -429,6 +432,8 @@ export function assembleSystemPrompt(
     .join(sessionEnvironment?.platform ?? "")
     .split(OS_VERSION_PLACEHOLDER)
     .join(sessionEnvironment?.osVersion ?? "")
+    .split(SHELL_PLACEHOLDER)
+    .join(sessionEnvironment?.shell ?? "")
     .split(DATE_PLACEHOLDER)
     .join(sessionEnvironment?.date ?? "")
     .trim();

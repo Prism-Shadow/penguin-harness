@@ -16,6 +16,7 @@ import {
   PLATFORM_PLACEHOLDER,
   PROJECT_DIR_PLACEHOLDER,
   SESSION_ID_PLACEHOLDER,
+  SHELL_PLACEHOLDER,
   addModel,
   setVisionModel,
   agentsMdPath,
@@ -500,6 +501,7 @@ describe("assembleSystemPrompt", () => {
           `pdir=${PROJECT_DIR_PLACEHOLDER}`,
           `platform=${PLATFORM_PLACEHOLDER}`,
           `os=${OS_VERSION_PLACEHOLDER}`,
+          `shell=${SHELL_PLACEHOLDER}`,
           `date=${DATE_PLACEHOLDER}`,
           "middle",
           AGENTS_MD_PLACEHOLDER,
@@ -518,6 +520,7 @@ describe("assembleSystemPrompt", () => {
       modelId: "deepseek-v4-pro",
       platform: "darwin",
       osVersion: "Darwin 25.0.0",
+      shell: "zsh",
       date: "2026-06-30",
     });
     expect(prompt).toBe(
@@ -529,6 +532,7 @@ describe("assembleSystemPrompt", () => {
         "pdir=/tmp/proj",
         "platform=darwin",
         "os=Darwin 25.0.0",
+        "shell=zsh",
         "date=2026-06-30",
         "middle",
         "# Agent Rules\nFollow local rules.",
@@ -572,6 +576,7 @@ describe("assembleSystemPrompt", () => {
       modelId: "deepseek-v4-pro",
       platform: "darwin",
       osVersion: "Darwin 25.0.0",
+      shell: "zsh",
       date: "2026-06-30",
     });
     expect(prompt).toBe("base prompt");
@@ -657,9 +662,11 @@ describe("assembleSystemPrompt", () => {
     expect(prompt).toContain("Model ID: gpt-5.5");
     expect(prompt).toContain("Platform:");
     expect(prompt).toContain("OS Version:");
+    expect(prompt).toContain("Shell:");
     expect(prompt).toContain("Date: 2026-06-30");
     expect(prompt.indexOf("Platform:")).toBeLessThan(prompt.indexOf("OS Version:"));
-    expect(prompt.indexOf("OS Version:")).toBeLessThan(prompt.indexOf("Date:"));
+    expect(prompt.indexOf("OS Version:")).toBeLessThan(prompt.indexOf("Shell:"));
+    expect(prompt.indexOf("Shell:")).toBeLessThan(prompt.indexOf("Date:"));
     expect(prompt.indexOf("Date:")).toBeLessThan(prompt.indexOf("App Data Dir:"));
     expect(prompt.indexOf("App Data Dir:")).toBeLessThan(prompt.indexOf("Agent ID:"));
     expect(prompt.indexOf("Agent ID:")).toBeLessThan(prompt.indexOf("CWD:"));
@@ -1174,28 +1181,35 @@ describe("single hidden config file (.project_config.toml, credentials inlined)"
     // The sole config file is hidden (not shown by ls by default) and has 0600 permission
     // (owner read/write only).
     expect(path.basename(file)).toBe(".project_config.toml");
-    expect((await fs.stat(file)).mode & 0o777).toBe(0o600);
+    // POSIX-only: Windows has no owner-only mode bits (chmod maps to the read-only attribute).
+    if (process.platform !== "win32") {
+      expect((await fs.stat(file)).mode & 0o777).toBe(0o600);
+    }
     expect(await fs.readFile(file, "utf8")).toContain("sk-split-1");
     // The old two-file layout is no longer produced.
     expect(await exists(path.join(tmpRoot, DEFAULT_PROJECT_ID, "project_config.toml"))).toBe(false);
     expect(await exists(path.join(tmpRoot, DEFAULT_PROJECT_ID, ".credentials.toml"))).toBe(false);
   });
 
-  it("chmod converges an existing file back to 0600 on save", async () => {
-    await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
-      provider: "custom",
-      model_id: "m-perm",
-      api_key: "sk-1",
-    });
-    const file = projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID);
-    await fs.chmod(file, 0o644);
-    await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
-      provider: "custom",
-      model_id: "m-perm",
-      api_key: "sk-2",
-    });
-    expect((await fs.stat(file)).mode & 0o777).toBe(0o600);
-  });
+  // POSIX-only: Windows has no owner-only mode bits to converge.
+  it.skipIf(process.platform === "win32")(
+    "chmod converges an existing file back to 0600 on save",
+    async () => {
+      await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
+        provider: "custom",
+        model_id: "m-perm",
+        api_key: "sk-1",
+      });
+      const file = projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID);
+      await fs.chmod(file, 0o644);
+      await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
+        provider: "custom",
+        model_id: "m-perm",
+        api_key: "sk-2",
+      });
+      expect((await fs.stat(file)).mode & 0o777).toBe(0o600);
+    },
+  );
 
   it("writes provider and model_id as separate fields; refs are TOML inline tables", async () => {
     await addModel(
@@ -1238,7 +1252,10 @@ describe("agent vault (agent_state/.vault.toml)", () => {
     // with 0600 permission (owner read/write only).
     const file = agentVaultPath(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID);
     expect(path.basename(file)).toBe(".vault.toml");
-    expect((await fs.stat(file)).mode & 0o777).toBe(0o600);
+    // POSIX-only: Windows has no owner-only mode bits (chmod maps to the read-only attribute).
+    if (process.platform !== "win32") {
+      expect((await fs.stat(file)).mode & 0o777).toBe(0o600);
+    }
     const raw = await fs.readFile(file, "utf8");
     expect(raw).toContain("sk-secret-2");
     // The Project config no longer carries the vault.

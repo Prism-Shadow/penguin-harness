@@ -110,7 +110,12 @@ function ensureInstalled() {
     return true;
   }
   console.log("[dev-prebuild] dependencies missing or lockfile changed; running pnpm install...");
-  const res = spawnSync("pnpm", ["install"], { cwd: ROOT, stdio: "inherit" });
+  // shell on Windows: pnpm is a .cmd shim there, which Node refuses to spawn shell-less (CVE-2024-27980).
+  const res = spawnSync("pnpm", ["install"], {
+    cwd: ROOT,
+    stdio: "inherit",
+    shell: process.platform === "win32",
+  });
   if (res.status !== 0) return false;
   writeFileSync(INSTALL_STAMP, hash);
   return true;
@@ -156,7 +161,8 @@ try {
           "@prismshadow/penguin-core",
           "build",
         ],
-        { cwd: ROOT, stdio: "inherit" },
+        // shell on Windows: pnpm is a .cmd shim there (see ensureInstalled).
+        { cwd: ROOT, stdio: "inherit", shell: process.platform === "win32" },
       );
       if (res.status === 0) writeFileSync(BUILD_STAMP, String(Date.now()));
       exitCode = res.status ?? 1;

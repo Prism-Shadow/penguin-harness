@@ -176,6 +176,8 @@ export interface Messages {
   /** Example resume command shown when the REPL exits (dim print; only when this session has a resumable record). */
   resumeHint(command: string): string;
   langInvalid(value: string): string;
+  /** `config lang` persists via POSIX shell startup files; on Windows it refuses with a pointer to a user env var instead. */
+  langWindowsUnsupported(lang: string): string;
   langSet(lang: string, rcPath: string): string;
   langRestartConfirm(): string;
   langRestart(): string;
@@ -383,6 +385,9 @@ const en: Messages = {
     `[resumed] ${sessionId} · ${messageCount} message${messageCount === 1 ? "" : "s"} in the current context`,
   resumeHint: (command) => `To continue this conversation: ${command}`,
   langInvalid: (value) => `Invalid language "${value}". Use en or zh.`,
+  langWindowsUnsupported: (lang) =>
+    `penguin config lang persists via POSIX shell startup files, which Windows does not have.\n` +
+    `Set the user environment variable instead: setx PENGUIN_LANG ${lang} (new terminals pick it up).`,
   langSet: (lang, rcPath) => `Language set to ${lang}; wrote PENGUIN_LANG to ${rcPath}.`,
   langRestartConfirm: () => "Open a new shell now to apply? [y/N] ",
   langRestart: () => "Opening a new shell with the new language (type exit to return)…",
@@ -550,6 +555,9 @@ const zh: Messages = {
     `[已恢复] ${sessionId} · 当前上下文共 ${messageCount} 条消息`,
   resumeHint: (command) => `继续本次对话：${command}`,
   langInvalid: (value) => `无效的语言 "${value}"。请使用 en 或 zh。`,
+  langWindowsUnsupported: (lang) =>
+    `penguin config lang 通过 POSIX shell 启动文件持久化语言，Windows 上没有对应机制。\n` +
+    `请改为设置用户环境变量：setx PENGUIN_LANG ${lang}（新终端生效）。`,
   langSet: (lang, rcPath) => `语言已设为 ${lang}；已将 PENGUIN_LANG 写入 ${rcPath}。`,
   langRestartConfirm: () => "现在打开新 shell 使其生效？[y/N] ",
   langRestart: () => "正在打开使用新语言的新 shell（输入 exit 可返回）……",
