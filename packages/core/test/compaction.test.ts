@@ -41,7 +41,7 @@ import type {
   LLMInterface,
   LLMOutcome,
 } from "../src/interfaces.js";
-import { ContextEngine, extractSummary } from "../src/engine/context-engine.js";
+import { ContextEngine } from "../src/engine/context-engine.js";
 import type { CompactionSettings } from "../src/engine/context-engine.js";
 import { Writer, readTrace } from "../src/trace/index.js";
 
@@ -678,17 +678,5 @@ describe("context compaction", () => {
     expect(events[1]).toMatchObject({ type: "compaction_end", status: "aborted" });
     // Interrupt cleanup: the tool output is held as carry-over per case A, and the run wraps up with an abort event.
     expect(payloadTypes(out)).toContain("abort");
-  });
-});
-
-describe("extractSummary dual-form", () => {
-  it("accepts the current [summary] form, the legacy <summary> form, and tagless output", () => {
-    // The legacy angle form must stay accepted indefinitely: compaction.prompt is persisted in
-    // existing agents' system_config.yaml, so old agents keep instructing <summary> tags.
-    expect(extractSummary("preamble [summary]new form[/summary] postscript")).toBe("new form");
-    expect(extractSummary("preamble <summary>old form</summary> postscript")).toBe("old form");
-    expect(extractSummary("  tagless output used verbatim  ")).toBe("tagless output used verbatim");
-    // The current form wins when both appear (a model echoing the instruction).
-    expect(extractSummary("[summary]a[/summary] <summary>b</summary>")).toBe("a");
   });
 });

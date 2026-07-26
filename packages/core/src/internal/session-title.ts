@@ -13,6 +13,7 @@
  * by the barrel; the prompt/request internals are not.
  */
 import { userText } from "../omnimessage/index.js";
+import { TITLE_NOISE_TAGS, stripMarkerBlocks } from "../omnimessage/markers/index.js";
 import type {
   OmniMessage,
   TextPayload,
@@ -27,31 +28,15 @@ const EXCERPT_MAX_CHARS = 2000;
 const TITLE_MAX_CHARS = 30;
 
 /**
- * Special message markers that must never leak into a title. These are machine-inserted
- * blocks (a skill invocation wraps the body in `[use_skills]…[/use_skills]`, a subagent
- * handoff / scheduled task / model switch prepend their own blocks) — meaningful to the
- * runtime, noise in a title. The list is a fixed allowlist so ordinary bracketed text is
- * left untouched.
- */
-const MARKER_TAGS = ["use_skills", "handoff_from", "scheduled_task", "model_switch_from"];
-
-/**
- * Strips machine-inserted marker blocks (see MARKER_TAGS) from conversation text so titles are
- * built from the human-meaningful body only — both the material sent to the model and the
- * fallback derived from the raw first message. Removes the paired `[tag]…[/tag]` block (any
- * inner content, across lines) and any stray unpaired `[tag]` / `[/tag]` left behind. The old
- * angle-bracket `<tag>…</tag>` form is still stripped too: titles can be (re)generated from
- * material that came out of a Trace written before the marker format changed.
+ * Strips machine-inserted marker blocks from conversation text so titles are built from the
+ * human-meaningful body only — both the material sent to the model and the fallback derived
+ * from the raw first message. The tag list (TITLE_NOISE_TAGS) and the both-forms stripping
+ * live in the markers module; engine-synthesized blocks are deliberately not stripped (they
+ * are never title material).
  */
 export function stripConversationMarkers(text: string): string {
   let out = text;
-  for (const tag of MARKER_TAGS) {
-    out = out
-      .replace(new RegExp(`\\[${tag}\\][\\s\\S]*?\\[/${tag}\\]`, "g"), "")
-      .replace(new RegExp(`\\[/?${tag}\\]`, "g"), "")
-      .replace(new RegExp(`<${tag}>[\\s\\S]*?</${tag}>`, "g"), "")
-      .replace(new RegExp(`</?${tag}>`, "g"), "");
-  }
+  for (const tag of TITLE_NOISE_TAGS) out = stripMarkerBlocks(out, tag);
   return out.trim();
 }
 

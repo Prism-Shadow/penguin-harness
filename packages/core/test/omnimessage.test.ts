@@ -11,10 +11,8 @@ import {
   partialText,
   partialToolCall,
   partialToolCallOutput,
-  parseUserSteeringText,
   toolCall,
   toolCallOutput,
-  userSteeringText,
   userText,
 } from "../src/omnimessage/index.js";
 import type {
@@ -196,27 +194,5 @@ describe("PartialAggregator", () => {
     const flushed = agg.flush();
     expect(flushed).toHaveLength(1);
     expect((flushed[0]!.payload as TextPayload).text).toBe("abcdef");
-  });
-});
-
-describe("user steering messages (userSteeringText / parseUserSteeringText)", () => {
-  it("round-trips: a wrapped steering message parses back to the inner text (multiline kept)", () => {
-    expect(userSteeringText("switch branch")).toBe(
-      "[user_steering]\nswitch branch\n[/user_steering]",
-    );
-    expect(parseUserSteeringText(userSteeringText("switch branch"))).toBe("switch branch");
-    expect(parseUserSteeringText(userSteeringText("line1\nline2"))).toBe("line1\nline2");
-  });
-
-  it("normal user text is left alone (including text merely mentioning the marker)", () => {
-    expect(parseUserSteeringText("fix the bug")).toBeNull();
-    expect(parseUserSteeringText("what does [user_steering] mean?")).toBeNull();
-    // A block not spanning the whole message is not a steering message.
-    expect(parseUserSteeringText("hi\n[user_steering]\nx\n[/user_steering]")).toBeNull();
-    expect(parseUserSteeringText("")).toBeNull();
-  });
-
-  it("tolerates trailing whitespace after the closing tag", () => {
-    expect(parseUserSteeringText("[user_steering]\nok\n[/user_steering]\n")).toBe("ok");
   });
 });

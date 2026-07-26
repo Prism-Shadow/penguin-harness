@@ -16,7 +16,7 @@
  */
 import { createHash } from "node:crypto";
 import { readdir } from "node:fs/promises";
-import { agentsDir, userText } from "@prismshadow/penguin-core";
+import { agentsDir, buildScheduledMessage, userText } from "@prismshadow/penguin-core";
 import type { ProjectsRepo } from "../db/repos/projects.js";
 import type { SchedulesRepo, ScheduleStateRow } from "../db/repos/schedules.js";
 import type { SessionsRepo } from "../db/repos/sessions.js";
@@ -51,21 +51,12 @@ export interface ScheduleSessionCreator {
 }
 
 /**
- * Trigger input = a `[scheduled_task]` origin block (task name and fire time) + the prompt body:
- * tells the model this was fired by a schedule; the frontend collapses the origin block into a
- * one-line schedule hint (Trace shows it verbatim).
+ * Trigger input = a `[scheduled_task]` origin block (task name and fire time) + the prompt
+ * body: tells the model this was fired by a schedule; the frontend collapses the origin block
+ * into a one-line schedule hint (Trace shows it verbatim). The block itself is built by core's
+ * marker module, which also owns the parser the frontend uses.
  */
-export function scheduledMessage(name: string, firedAt: string, prompt: string): string {
-  return [
-    "[scheduled_task]",
-    "This message was sent automatically by a scheduled task; its origin is listed below and the task prompt follows.",
-    `schedule: ${name}`,
-    `fired_at: ${firedAt}`,
-    "[/scheduled_task]",
-    "",
-    prompt,
-  ].join("\n");
-}
+export const scheduledMessage = buildScheduledMessage;
 
 export interface SchedulerDeps {
   root: string;

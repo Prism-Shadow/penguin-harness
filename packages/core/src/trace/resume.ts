@@ -46,7 +46,7 @@ import type {
   TokenUsagePayload,
   ToolCallPayload,
 } from "../omnimessage/index.js";
-import { extractSummary } from "../engine/context-engine.js";
+import { buildContextSummaryText, extractSummary } from "../omnimessage/markers/index.js";
 
 /** Replay result: all the state needed to resume a Session. */
 export interface ResumeResult {
@@ -231,9 +231,7 @@ export function resumeTrace(messages: OmniMessage[]): ResumeResult {
         // the last completed Request). Always rebuilt in the current [context_summary] form —
         // extractSummary itself still accepts the old <summary> tags an old Trace may contain.
         const summaryText = lastCompletedRequestText(messages);
-        result.pendingSummary = userText(
-          `[context_summary]\n${extractSummary(summaryText)}\n[/context_summary]`,
-        );
+        result.pendingSummary = userText(buildContextSummaryText(extractSummary(summaryText)));
       }
       return result;
     }

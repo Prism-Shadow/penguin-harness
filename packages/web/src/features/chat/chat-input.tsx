@@ -1800,9 +1800,9 @@ export function ChatInput({
         <div className="mt-1 flex items-center justify-between gap-2 text-xs">
           <div className="no-scrollbar flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">
             <label
-            className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"
-            title={vision ? S.chat.imageAlt : S.chat.imagesAsPathHint}
-          >
+              className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+              title={vision ? S.chat.imageAlt : S.chat.imagesAsPathHint}
+            >
               <input
                 type="file"
                 accept="image/*"
@@ -1859,101 +1859,101 @@ export function ChatInput({
 
           {/* Right group: status + model + the single action button; never shrinks. */}
           <div className="flex shrink-0 items-center gap-2">
-          {/* Draft state (model still changeable = no session created yet) has no context usage to speak of: the ring isn't shown, it displays as usual once the session is created. */}
-          {!onChangeModel && (
-            <ContextGauge
-              now={contextNow}
-              unknown={contextStale}
-              {...(contextWindow !== undefined ? { window: contextWindow } : {})}
-            />
-          )}
-          {/* Draft state: conversation-time thinking level (backed by Agent settings), docked left of the model selector. */}
-          {models && onChangeModel && onChangeThinkingLevel && (
-            <ThinkingLevelSelect
-              value={thinkingLevel ?? null}
-              onChange={onChangeThinkingLevel}
-              disabled={busy}
-            />
-          )}
-          {/* Session state: per-turn thinking level (editable) — displays the user's pick,
+            {/* Draft state (model still changeable = no session created yet) has no context usage to speak of: the ring isn't shown, it displays as usual once the session is created. */}
+            {!onChangeModel && (
+              <ContextGauge
+                now={contextNow}
+                unknown={contextStale}
+                {...(contextWindow !== undefined ? { window: contextWindow } : {})}
+              />
+            )}
+            {/* Draft state: conversation-time thinking level (backed by Agent settings), docked left of the model selector. */}
+            {models && onChangeModel && onChangeThinkingLevel && (
+              <ThinkingLevelSelect
+                value={thinkingLevel ?? null}
+                onChange={onChangeThinkingLevel}
+                disabled={busy}
+              />
+            )}
+            {/* Session state: per-turn thinking level (editable) — displays the user's pick,
               else the Agent config's level (auto-follow; the parent resolves it). While
               untouched nothing rides on tasks; a pick sticks for the session and is sent
               with every subsequent send, never writing through to the Agent config. */}
-          {!onChangeModel && onChangeTurnThinkingLevel && (
-            <ThinkingLevelSelect
-              value={turnThinkingLevel ?? ""}
-              onChange={onChangeTurnThinkingLevel}
-              disabled={busy}
-              direction="up"
-            />
-          )}
-          {/* Left of the send button: model selector in draft state; once the Session is created the model is locked, shown read-only (still with the provider logo). */}
-          {models && onChangeModel ? (
-            <ModelSelect
-              models={models}
-              value={modelRef}
-              {...(defaultModel !== undefined ? { defaultModel } : {})}
-              onChange={onChangeModel}
-              disabled={busy}
-            />
-          ) : (
-            <span
-              title={modelRef?.modelId ?? ""}
-              className="flex h-8 min-w-0 max-w-44 shrink items-center gap-1.5 px-1 text-gray-400 dark:text-gray-500"
-            >
-              {/* Read-only display in session state: both the logo and the name come from the Session DTO's paired fields (no prefix parsing). */}
-              <ProviderLogo
-                provider={modelRef?.provider ?? "custom"}
-                className="h-4 w-4 shrink-0"
+            {!onChangeModel && onChangeTurnThinkingLevel && (
+              <ThinkingLevelSelect
+                value={turnThinkingLevel ?? ""}
+                onChange={onChangeTurnThinkingLevel}
+                disabled={busy}
+                direction="up"
               />
-              <span className="hidden min-w-0 truncate @md:block">
-                {(() => {
-                  const m = models?.find((x) => sameModelRef(x, modelRef));
-                  return m ? modelLabel(m) : (modelRef?.modelId ?? "…");
-                })()}
+            )}
+            {/* Left of the send button: model selector in draft state; once the Session is created the model is locked, shown read-only (still with the provider logo). */}
+            {models && onChangeModel ? (
+              <ModelSelect
+                models={models}
+                value={modelRef}
+                {...(defaultModel !== undefined ? { defaultModel } : {})}
+                onChange={onChangeModel}
+                disabled={busy}
+              />
+            ) : (
+              <span
+                title={modelRef?.modelId ?? ""}
+                className="flex h-8 min-w-0 max-w-44 shrink items-center gap-1.5 px-1 text-gray-400 dark:text-gray-500"
+              >
+                {/* Read-only display in session state: both the logo and the name come from the Session DTO's paired fields (no prefix parsing). */}
+                <ProviderLogo
+                  provider={modelRef?.provider ?? "custom"}
+                  className="h-4 w-4 shrink-0"
+                />
+                <span className="hidden min-w-0 truncate @md:block">
+                  {(() => {
+                    const m = models?.find((x) => sameModelRef(x, modelRef));
+                    return m ? modelLabel(m) : (modelRef?.modelId ?? "…");
+                  })()}
+                </span>
               </span>
-            </span>
-          )}
-          {/* One action button, never two: while running an empty composer means "Stop"
+            )}
+            {/* One action button, never two: while running an empty composer means "Stop"
               (abort), and typing turns the very same button into "Send" — which, mid-run,
               steers or queues per the remembered More-settings mode. Idle/compacting keeps
               the ordinary send button (disabled while compacting via canSend). Merging the
               pair keeps the running-state row within a 320px viewport. */}
-          <button
-            type="button"
-            title={stopAction ? S.chat.stop : running ? midRunSendLabel : S.chat.send}
-            aria-label={stopAction ? S.chat.stop : running ? midRunSendLabel : S.chat.send}
-            disabled={stopAction ? false : running ? !canMidRunSend : !canSend}
-            onClick={() => (stopAction ? void onStop() : void send())}
-            className={
-              stopAction
-                ? "flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-red-50 text-red-600 transition-colors duration-150 hover:bg-red-100 dark:bg-red-950/60 dark:text-red-400 dark:hover:bg-red-950"
-                : "flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-gray-900 text-white transition-colors duration-150 hover:bg-gray-700 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-300 dark:disabled:bg-gray-800 dark:disabled:text-gray-600"
-            }
-          >
-            {stopAction ? (
-              /* Stop (filled square) */
-              <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden className="block">
-                <rect x="2" y="2" width="10" height="10" rx="2" fill="currentColor" />
-              </svg>
-            ) : (
-              /* Up arrow (send) */
-              <svg
-                width="17"
-                height="17"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden
-                className="block"
-              >
-                <path d="M12 19V5M5 12l7-7 7 7" />
-              </svg>
-            )}
-          </button>
+            <button
+              type="button"
+              title={stopAction ? S.chat.stop : running ? midRunSendLabel : S.chat.send}
+              aria-label={stopAction ? S.chat.stop : running ? midRunSendLabel : S.chat.send}
+              disabled={stopAction ? false : running ? !canMidRunSend : !canSend}
+              onClick={() => (stopAction ? void onStop() : void send())}
+              className={
+                stopAction
+                  ? "flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-red-50 text-red-600 transition-colors duration-150 hover:bg-red-100 dark:bg-red-950/60 dark:text-red-400 dark:hover:bg-red-950"
+                  : "flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-gray-900 text-white transition-colors duration-150 hover:bg-gray-700 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-300 dark:disabled:bg-gray-800 dark:disabled:text-gray-600"
+              }
+            >
+              {stopAction ? (
+                /* Stop (filled square) */
+                <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden className="block">
+                  <rect x="2" y="2" width="10" height="10" rx="2" fill="currentColor" />
+                </svg>
+              ) : (
+                /* Up arrow (send) */
+                <svg
+                  width="17"
+                  height="17"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden
+                  className="block"
+                >
+                  <path d="M12 19V5M5 12l7-7 7 7" />
+                </svg>
+              )}
+            </button>
           </div>
         </div>
       </div>

@@ -43,9 +43,21 @@ import {
   requestEnd,
   subagentEvent,
   toolCallOutput,
-  userSteeringText,
   userText,
 } from "../omnimessage/index.js";
+import {
+  buildContextSummaryText,
+  buildTurnAbortedBlock,
+  extractSummary,
+  buildTurnRetriedBlock,
+  transcribeText,
+  transcribeThinking,
+  transcribeToolCall,
+  transcribeToolCallOutput,
+  transcribeUserInput,
+  unwrapSyntheticBlock,
+  userSteeringText,
+} from "../omnimessage/markers/index.js";
 import type {
   ApprovalDecision,
   CompactionMode,
@@ -934,9 +946,7 @@ export class ContextEngine {
         if (attempt.usage) yield attempt.usage;
         // Lenient extraction: if the output lacks a [summary] tag, use the entire compaction
         // output as-is rather than treating it as a failure.
-        const summary = userText(
-          `[context_summary]\n${extractSummary(attempt.text)}\n[/context_summary]`,
-        );
+        const summary = userText(buildContextSummaryText(extractSummary(attempt.text)));
         yield* this.emitCompactionEnd(reason, "summarize", "completed");
         await this.startNewContext();
         return { status: "completed", summary };
@@ -1135,7 +1145,7 @@ export class ContextEngine {
     toolCalls: OmniMessage<ToolCallPayload>[],
     toolOutputs: OmniMessage[],
   ): string {
-    const lines: string[] = ["[turn_aborted]"];
+    const lines: string[] = [];
     for (const m of textInputs) {
       const t = (m.payload as TextPayload).text;
       // If this text is itself already a synthetic block — a previous run's `[turn_aborted]`,
@@ -1146,12 +1156,11 @@ export class ContextEngine {
       if (inner !== null) {
         if (inner) lines.push(inner);
       } else {
-        lines.push(`  [user_input]${t}[/user_input]`);
+        lines.push(transcribeUserInput(t));
       }
     }
     lines.push(...transcribeTurnLines(assistantSegments, toolCalls, toolOutputs));
-    lines.push("[/turn_aborted]");
-    return lines.join("\n");
+    return buildTurnAbortedBlock(lines);
   }
 
   /**
@@ -1167,7 +1176,7 @@ export class ContextEngine {
       transcribeTurnLines(t.assistantSegments, t.toolCalls, t.toolOutputs),
     );
     if (lines.length === 0) return input;
-    return [...input, userText(["[turn_retried]", ...lines, "[/turn_retried]"].join("\n"))];
+    return [...input, userText(buildTurnRetriedBlock(lines))];
   }
 
   /**
@@ -1196,23 +1205,6 @@ export class ContextEngine {
   }
 }
 
-/**
- * If the text is an engine-synthesized whole block (`[turn_aborted]` or `[turn_retried]`),
- * strips the outer tags and returns the inner lines (may be an empty string); otherwise returns
- * null. Both kinds of synthetic blocks use identical inner markup (thinking/text/tool_call/
- * tool_call_output), so it can be merged directly into a new block while keeping a single-level
- * structure.
- */
-function unwrapSyntheticBlock(text: string): string | null {
-  // The old angle-bracket form (`<turn_aborted>`) stays accepted alongside the current
-  // square-bracket form: resume replays a discarded turn's original input as-is, so text
-  // written to a Trace before the marker format changed can still flow back in here.
-  const m =
-    /^\[(turn_aborted|turn_retried)\]\n?([\s\S]*?)\n?\[\/\1\]\s*$/.exec(text) ??
-    /^<(turn_aborted|turn_retried)>\n?([\s\S]*?)\n?<\/\1>\s*$/.exec(text);
-  return m ? m[2]! : null;
-}
-
 /** Transcribes the model's produced thinking/text and tool calls/results into tagged lines (shared by `[turn_aborted]`/`[turn_retried]`). */
 function transcribeTurnLines(
   assistantSegments: OmniMessage[],
@@ -1225,35 +1217,18 @@ function transcribeTurnLines(
   for (const seg of assistantSegments) {
     const p = seg.payload as { type?: string };
     if (p.type === "thinking") {
-      lines.push(`  [thinking]${(seg.payload as ThinkingPayload).thinking}[/thinking]`);
+      lines.push(transcribeThinking((seg.payload as ThinkingPayload).thinking));
     } else if (p.type === "text") {
-      lines.push(`  [text]${(seg.payload as TextPayload).text}[/text]`);
+      lines.push(transcribeText((seg.payload as TextPayload).text));
     }
   }
   for (const tc of toolCalls) {
     const p = tc.payload;
-    lines.push(`  [tool_call name="${p.name}" id="${p.tool_call_id}"]${p.arguments}[/tool_call]`);
+    lines.push(transcribeToolCall(p.name, p.tool_call_id, p.arguments));
   }
   for (const out of toolOutputs) {
     const p = out.payload as ToolCallOutputPayload;
-    lines.push(
-      `  [tool_call_output id="${p.tool_call_id}" status="${p.stop_reason ?? "completed"}"]${p.output}[/tool_call_output]`,
-    );
+    lines.push(transcribeToolCallOutput(p.tool_call_id, p.stop_reason ?? "completed", p.output));
   }
   return lines;
-}
-
-/**
- * Extracts the summary within `[summary][/summary]` from compaction output; when the tag is
- * missing, leniently uses the entire output as-is (not treated as a failure). Also used by
- * Session resumption's "compaction closure" replay to
- * reconstruct the `[context_summary]` pending input from the old Trace's compaction output.
- */
-export function extractSummary(raw: string): string {
-  // The old `<summary></summary>` form must stay accepted indefinitely: compaction.prompt is
-  // persisted in existing agents' system_config.yaml, so old agents keep instructing the
-  // model to use the angle-bracket tags.
-  const match =
-    /\[summary\]([\s\S]*?)\[\/summary\]/.exec(raw) ?? /<summary>([\s\S]*?)<\/summary>/.exec(raw);
-  return (match ? match[1]! : raw).trim();
 }
