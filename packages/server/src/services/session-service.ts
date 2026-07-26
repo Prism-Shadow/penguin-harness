@@ -395,7 +395,7 @@ export class SessionService {
    * Absolute path of a Session's **latest** Trace file (the current context shard);
    * undefined when no Trace exists. Costs a directory walk, so only the single-session
    * GET includes it in the DTO (see SessionInfo.tracePath) — the web's `/model` switch
-   * hands it to the new session's `<model_switch_from>` block so the model can read the
+   * hands it to the new session's `[model_switch_from]` block so the model can read the
    * source history itself when it needs it.
    */
   async latestTracePath(row: SessionRow): Promise<string | undefined> {

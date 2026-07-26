@@ -208,7 +208,7 @@ interface ApprovalDecisionRequest {
 }
 ```
 
-Web 的 `/model` 模型切换没有专用接口：它按 @ handoff 的方式复用上面的普通接口——先用会话创建接口在同一 Agent 下新建 Session（选定新模型并沿用源 Workspace），再 POST /tasks 发送以 `<model_switch_from>` 源块开头的首条消息（源会话 id、其 `tracePath`、Workspace 与原模型二元组），模型需要早前历史时自行读取该 Trace 文件。
+Web 的 `/model` 模型切换没有专用接口：它按 @ handoff 的方式复用上面的普通接口——先用会话创建接口在同一 Agent 下新建 Session（选定新模型并沿用源 Workspace），再 POST /tasks 发送以 `[model_switch_from]` 源块开头的首条消息（源会话 id、其 `tracePath`、Workspace 与原模型二元组），模型需要早前历史时自行读取该 Trace 文件。
 
 ## 流式接口（SSE）
 

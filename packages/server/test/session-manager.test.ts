@@ -164,6 +164,7 @@ describe("session-manager", () => {
       toolPermission: () => "rw",
       generateTitle: async () => ({ title: null, usage: null }),
       compactability: () => "ok" as const,
+      steer: () => false,
       async *run(_input: OmniMessage[], opts: { thinkingLevel?: string }) {
         seen.push(opts.thinkingLevel);
         yield assistantText("ok");

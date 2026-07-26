@@ -408,7 +408,7 @@ export function ChatPage() {
   // /model switch (handoff-style, mirroring onHandoff exactly): opens a NEW session for the
   // SAME agent on the picked model via the normal createSession API — deliberately with the
   // SOURCE session's Workspace, so files the conversation refers to stay reachable — then
-  // posts a first task whose input starts with a <model_switch_from> source block (source
+  // posts a first task whose input starts with a [model_switch_from] source block (source
   // session id / its latest trace path / workspace / previous model pair) followed by the
   // user's remainder text and images. The earlier history is NOT injected into the new
   // context (some models require thinking payloads and provider fidelity byte-for-byte on

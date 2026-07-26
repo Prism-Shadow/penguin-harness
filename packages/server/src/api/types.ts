@@ -479,7 +479,7 @@ export interface SessionInfo {
    * Absolute path of the session's latest Trace file (the current context shard); absent
    * when no Trace exists yet. Populated on the **single-session GET only** — list rows omit
    * it (locating it costs a directory walk per Session). The web's `/model` switch puts it
-   * into the new session's `<model_switch_from>` block so the model can read the source
+   * into the new session's `[model_switch_from]` block so the model can read the source
    * history itself when it needs it.
    */
   tracePath?: string;

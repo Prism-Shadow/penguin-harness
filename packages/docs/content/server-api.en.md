@@ -209,7 +209,7 @@ interface ApprovalDecisionRequest {
 }
 ```
 
-The Web's `/model` switch has no dedicated endpoint: like the @ handoff, it composes the ordinary APIs above — session creation opens a new Session for the same Agent (the chosen model, the source Workspace carried over), then POST /tasks sends a first message opening with a `<model_switch_from>` source block (the source session id, its `tracePath`, the Workspace, and the previous model pair); the model reads that Trace file itself when it needs the earlier history.
+The Web's `/model` switch has no dedicated endpoint: like the @ handoff, it composes the ordinary APIs above — session creation opens a new Session for the same Agent (the chosen model, the source Workspace carried over), then POST /tasks sends a first message opening with a `[model_switch_from]` source block (the source session id, its `tracePath`, the Workspace, and the previous model pair); the model reads that Trace file itself when it needs the earlier history.
 
 ## Streaming (SSE)
 

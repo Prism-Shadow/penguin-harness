@@ -50,7 +50,6 @@ export function shortenPath(p: string): string {
   return `…/${segments[segments.length - 2]}/${segments[segments.length - 1]}`;
 }
 
-
 /**
  * Argument preview (same approach as the CLI's tool-render): exec_command shows `$ <cmd>`,
  * the file tools show their shortened file path, other tools show a single-line

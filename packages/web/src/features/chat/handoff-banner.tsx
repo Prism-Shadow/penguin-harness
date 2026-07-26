@@ -43,7 +43,7 @@ export function HandoffBanner({ origin }: { origin: HandoffOrigin }) {
 }
 
 /**
- * Notice for a conversation opened by the `/model` switch (`<model_switch_from>` first
+ * Notice for a conversation opened by the `/model` switch (`[model_switch_from]` first
  * message): a single line naming the previous model, clickable to jump back to the source
  * session — the same interaction as the handoff banner's back-link.
  */

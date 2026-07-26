@@ -81,7 +81,7 @@ Trace 是恢复的唯一事实来源，没有独立的会话数据库需要与�
 
 ## 模型切换（/model）
 
-Web 的 `/model` 命令按 @ handoff 的方式换模型：用普通的会话创建接口在同一 Agent 下新建一个 Session（选定新模型，**沿用源会话的 Workspace**，文件因此保持可达），首条消息以 `<model_switch_from>` 源块开头——携带源会话 id、其最新 Trace 文件的绝对路径、Workspace 与原模型二元组，用户输入的剩余文字紧随其后。历史**不注入**新上下文：部分模型回放历史时要求 thinking 与 `fidelity` 逐字一致，跨模型注入不可行——模型需要早前上下文时按路径自行读取源 Trace 文件（JSONL，每行一个消息信封）。源会话与其 Trace 不受任何影响。
+Web 的 `/model` 命令按 @ handoff 的方式换模型：用普通的会话创建接口在同一 Agent 下新建一个 Session（选定新模型，**沿用源会话的 Workspace**，文件因此保持可达），首条消息以 `[model_switch_from]` 源块开头——携带源会话 id、其最新 Trace 文件的绝对路径、Workspace 与原模型二元组，用户输入的剩余文字紧随其后。历史**不注入**新上下文：部分模型回放历史时要求 thinking 与 `fidelity` 逐字一致，跨模型注入不可行——模型需要早前上下文时按路径自行读取源 Trace 文件（JSONL，每行一个消息信封）。源会话与其 Trace 不受任何影响。
 
 ## 字段保真
 
