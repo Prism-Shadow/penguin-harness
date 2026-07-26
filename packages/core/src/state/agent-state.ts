@@ -29,6 +29,7 @@ import {
   PROVIDER_PLACEHOLDER,
   MODEL_ID_PLACEHOLDER,
   DATE_PLACEHOLDER,
+  agentStateVersion,
   defaultAgentsMd,
   defaultSystemConfig,
   OS_VERSION_PLACEHOLDER,
@@ -83,7 +84,7 @@ export interface SessionEnvironmentValues {
   cwd: string;
   /** The Agent id this Session belongs to (system Prompt placeholder {{AGENT_ID}}). */
   agentId: string;
-  /** Absolute path to this Project's directory (system Prompt placeholder {{PROJECT_DIR}}; Agent State/scratchpad paths are derived from it). */
+  /** Absolute path to this Project's directory — PenguinHarness's app data root, injected via {{PROJECT_DIR}} and shown to the model as the Environment's "App Data Dir" line (Agent State/scratchpad paths live under its `agents/`). */
   projectDir: string;
   /** The session model's provider group (system Prompt placeholder {{PROVIDER}}; paired with modelId to form the model reference). */
   provider: string;
@@ -210,6 +211,48 @@ export async function provisionProjectAgents(opts?: {
     agentIds.push(agentId);
   }
   return agentIds;
+}
+
+/**
+ * Rewrites an Agent's `system_config.yaml` to the current code defaults
+ * (`defaultSystemConfig()`) — the config-side analogue of updating an installed Skill to
+ * the current library version.
+ *
+ * Exact semantics: only the identity fields of the existing file are preserved — `name`,
+ * `description` and the Agent State `version` (an invalid or missing version normalizes
+ * to 1); **everything else is replaced by the defaults**: `system_prompt`, `max_turns`,
+ * `model.*`, `compaction.*` (including its prompt) and `tools` (the builtin list and
+ * `mcpServers`). Keys outside the default schema are dropped, and YAML comments are not
+ * preserved (the file is rewritten from the default object). Other Agent State files
+ * (AGENTS.md, skills/, vault, memory/ …) are untouched. Returns the config written.
+ *
+ * Requires an existing Agent: unlike `loadOrInitAgentState` this never initializes a new
+ * one — it throws when `system_config.yaml` is missing.
+ */
+export async function resetSystemConfigToDefaults(
+  root: string,
+  projectId: string,
+  agentId: string,
+): Promise<SystemConfig> {
+  // Validate before building paths, to prevent path traversal.
+  assertValidId("project_id", projectId);
+  assertValidId("agent_id", agentId);
+  const configPath = systemConfigPath(root, projectId, agentId);
+  if (!(await fileExists(configPath))) {
+    throw new Error(`Agent State config not found: ${configPath} (the Agent does not exist).`);
+  }
+  const parsed = parseYaml(await fs.readFile(configPath, "utf8")) as unknown;
+  const prev = (
+    parsed !== null && typeof parsed === "object" ? parsed : {}
+  ) as Partial<SystemConfig>;
+  const next: SystemConfig = {
+    ...(typeof prev.name === "string" ? { name: prev.name } : {}),
+    ...(typeof prev.description === "string" ? { description: prev.description } : {}),
+    ...defaultSystemConfig(),
+    version: agentStateVersion(prev),
+  };
+  await fs.writeFile(configPath, stringifyYaml(next), "utf8");
+  return next;
 }
 
 /**
@@ -353,7 +396,8 @@ export function skillMetadataSection(skills: SkillMetadata[]): string {
  * provided): this lets the model know which APIs requiring a key it can call; values are never
  * injected. `{{SKILL_METADATA}}` is replaced with the installed Skills' metadata lines (an empty
  * string if empty/not provided). A custom template that removes a placeholder gets no
- * corresponding content injected.
+ * corresponding content injected. `{{PROJECT_DIR}}` resolves to the Project directory —
+ * the app data root the default prompt labels "App Data Dir".
  * Docs: /docs/configuration § "System prompt placeholders".
  */
 export function assembleSystemPrompt(

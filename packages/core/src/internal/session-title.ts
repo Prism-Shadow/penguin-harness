@@ -29,11 +29,11 @@ const TITLE_MAX_CHARS = 30;
 /**
  * Special message markers that must never leak into a title. These are machine-inserted
  * XML-ish blocks (a skill invocation wraps the body in `<use_skills>…</use_skills>`, a
- * subagent handoff / scheduled task prepend their own blocks) — meaningful to the runtime,
- * noise in a title. The list is a fixed allowlist so ordinary angle-bracket text (e.g. a
- * user pasting `<div>`) is left untouched.
+ * subagent handoff / scheduled task / model switch prepend their own blocks) — meaningful
+ * to the runtime, noise in a title. The list is a fixed allowlist so ordinary angle-bracket
+ * text (e.g. a user pasting `<div>`) is left untouched.
  */
-const MARKER_TAGS = ["use_skills", "handoff_from", "scheduled_task"];
+const MARKER_TAGS = ["use_skills", "handoff_from", "scheduled_task", "model_switch_from"];
 
 /**
  * Strips machine-inserted marker blocks (see MARKER_TAGS) from conversation text so titles are

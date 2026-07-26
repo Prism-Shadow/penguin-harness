@@ -3,8 +3,8 @@ name: agent-creation
 description: Turn a user requirement into a concrete agent — write the target agent's AGENTS.md and install the skills it needs.
 short_description: Turn a requirement into a working agent.
 short_description_zh: 把需求变成可用的 Agent。
-version: 2
-updated: 2026-07-20T13:00:00Z
+version: 5
+updated: 2026-07-25T00:00:00Z
 ---
 
 # Agent Creation
@@ -17,12 +17,12 @@ If the user's message only invokes this skill (e.g. "use agent-creation skill") 
 
 ## Locate the target agent
 
-All agents of this project live side by side in the project directory:
+All agents of this project live side by side under `agents/` in the App Data Dir:
 
 ```bash
-PROJECT_DIR="<project_dir>"        # the Project Dir value from your Environment section
-ls "$PROJECT_DIR/agents"          # existing agents (each is a folder here)
-TARGET="$PROJECT_DIR/agents/<agent_id>"   # the agent to configure
+APP_DATA_DIR="<app_data_dir>"     # the App Data Dir value from your Environment section
+ls "$APP_DATA_DIR/agents"         # existing agents (each is a folder here)
+TARGET="$APP_DATA_DIR/agents/<agent_id>"   # the agent to configure
 ```
 
 An agent directory contains `agent_state/` (`system_config.yaml`, `AGENTS.md`, `skills/`, `memory/`, `tools/`) plus `scratchpad/` — and `traces/`, which appears once the agent has run at least once.
@@ -73,7 +73,7 @@ Prefer configuring an agent the user already created. If you must create one fro
 
 ```bash
 mkdir -p "$TARGET/agent_state/skills" "$TARGET/agent_state/memory" "$TARGET/agent_state/tools" "$TARGET/scratchpad"
-cp "$PROJECT_DIR/agents/default_agent/agent_state/system_config.yaml" "$TARGET/agent_state/"
+cp "$APP_DATA_DIR/agents/default_agent/agent_state/system_config.yaml" "$TARGET/agent_state/"
 ```
 
 A new agent starts with no skills — install only what it needs. Then write its AGENTS.md, name and description as above.

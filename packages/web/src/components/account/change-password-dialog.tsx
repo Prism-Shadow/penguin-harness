@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
+import { apiErrorText } from "../../lib/api-error";
 import { useAuth } from "../../state/auth";
 import { Button } from "../ui/button";
 import { PasswordInput } from "../ui/password-input";
@@ -17,34 +18,42 @@ export function ChangePasswordDialog({ open, onClose }: { open: boolean; onClose
   const [oldPassword, setOldPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [errors, setErrors] = useState<{ old?: string; new?: string; confirm?: string }>({});
   const [busy, setBusy] = useState(false);
+  const clearErrors = () => setErrors((p) => (p.old || p.new || p.confirm ? {} : p));
 
   useEffect(() => {
     if (!open) return;
     setOldPassword("");
     setNewPassword("");
     setConfirmPassword("");
-    setError(null);
+    setErrors({});
   }, [open]);
 
   const submit = async () => {
-    if (!oldPassword || !newPassword || !confirmPassword) {
-      setError(S.common.requiredField);
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      setError(S.account.passwordMismatch);
+    const next: { old?: string; new?: string; confirm?: string } = {};
+    if (!oldPassword) next.old = S.common.requiredField;
+    if (!newPassword) next.new = S.common.requiredField;
+    if (!confirmPassword) next.confirm = S.common.requiredField;
+    if (!next.confirm && newPassword !== confirmPassword) next.confirm = S.account.passwordMismatch;
+    if (next.old || next.new || next.confirm) {
+      setErrors(next);
       return;
     }
     setBusy(true);
-    setError(null);
+    setErrors({});
     try {
       await api.changePassword({ oldPassword, newPassword });
       await refresh();
       onClose();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : S.common.unknownError);
+      // Route by error code: invalid_password is about the NEW password's strength;
+      // password_mismatch (and anything unrecognized) is about the current one.
+      if (e instanceof ApiError && e.code === "invalid_password") {
+        setErrors({ new: apiErrorText(e) });
+      } else {
+        setErrors({ old: apiErrorText(e) });
+      }
     } finally {
       setBusy(false);
     }
@@ -69,29 +78,43 @@ export function ChangePasswordDialog({ open, onClose }: { open: boolean; onClose
       <div className="space-y-3">
         <PasswordInput
           label={S.account.oldPassword}
+          required
           size="sm"
           value={oldPassword}
-          onChange={(e) => setOldPassword(e.target.value)}
+          onChange={(e) => {
+            setOldPassword(e.target.value);
+            clearErrors();
+          }}
+          error={errors.old}
           autoComplete="current-password"
           hint={S.account.oldPasswordHint}
           autoFocus
         />
         <PasswordInput
           label={S.account.newPassword}
+          required
           size="sm"
           value={newPassword}
-          onChange={(e) => setNewPassword(e.target.value)}
+          onChange={(e) => {
+            setNewPassword(e.target.value);
+            clearErrors();
+          }}
+          error={errors.new}
           autoComplete="new-password"
           hint={S.auth.passwordHint}
         />
         <PasswordInput
           label={S.account.confirmPassword}
+          required
           size="sm"
           value={confirmPassword}
-          onChange={(e) => setConfirmPassword(e.target.value)}
+          onChange={(e) => {
+            setConfirmPassword(e.target.value);
+            clearErrors();
+          }}
+          error={errors.confirm}
           autoComplete="new-password"
         />
-        {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
       </div>
     </Modal>
   );

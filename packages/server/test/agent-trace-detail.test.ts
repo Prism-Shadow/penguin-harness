@@ -28,7 +28,6 @@ function metaPayload(): SessionMetaPayload {
     model_context_window: 1000,
     system_prompt: "",
     tools: [],
-    thinking_level: "default",
     agent_state: "/tmp/a",
     workspace: "/tmp/w",
   };

@@ -95,7 +95,7 @@ output = 0.857143
 | `system_prompt` | 内置模板 | 必填；唯一进行占位符替换的模板 |
 | `max_turns` | `100` | 单个 Task 的最大 LLM 轮数（-1 不限制） |
 | `model.max_tokens` | `32000` | 单次输出 Token 上限（-1 不设上限，用服务商默认） |
-| `model.thinking_level` | `medium` | `none` / `low` / `medium` / `high` / `xhigh` |
+| `model.thinking_level` | `medium` | `none` / `low` / `medium` / `high` / `xhigh`；作为会话默认档位，可被逐轮 Task 参数覆盖 |
 | `model.timeoutMs` | `120000` | 单次 Request 超时（毫秒） |
 | `compaction.max_context_length` | `128000` | 触发压缩的上下文 Token 阈值 |
 | `compaction.max_session_turns` | `-1` | Session 累计轮数阈值（`-1` 不限制） |
@@ -134,6 +134,8 @@ compaction:
 # 参见「工具与审批」页。
 ```
 
+既有 Agent 始终按其磁盘上的配置原样运行——更新后的代码默认值不会自动合并。要采用当前默认值（例如更新后的内置系统提示词），可使用设置页的**还原为默认配置**操作：与 Skill 更新同语义，会用当前默认值覆盖现有配置——自定义系统提示词、工具列表、模型/压缩参数与 MCP Server——仅保留 `name`、`description` 与 `version`。
+
 ### 系统提示词占位符
 
 `system_prompt` 是唯一进行占位符替换的模板，可用占位符：
@@ -146,12 +148,14 @@ compaction:
 | `{{PLATFORM}}` | 运行平台 |
 | `{{OS_VERSION}}` | 操作系统版本 |
 | `{{DATE}}` | 当前日期 |
-| `{{PROJECT_DIR}}` | Project 目录 |
+| `{{PROJECT_DIR}}` | App Data Dir：PenguinHarness 应用数据根目录（即 Project 目录） |
 | `{{AGENT_ID}}` | Agent id |
 | `{{CWD}}` | Workspace 路径 |
 | `{{PROVIDER}}` | 模型 provider 分组 |
 | `{{MODEL_ID}}` | 上游模型 id |
 | `{{SESSION_ID}}` | Session id |
+
+`{{PROJECT_DIR}}` 在提示词中以 **App Data Dir** 名义暴露给模型：PenguinHarness 的应用数据根目录，存放全部 Agent 的数据文件（`agents/<agent_id>/…`）与 Project 级数据——特意不以 Project/任务目录的口径描述，避免模型将其误认为本次任务的工作目录（`CWD`）。
 
 `agent_state/AGENTS.md` 是开发者可编辑的指令文件，经 `{{AGENTS_MD}}` 注入系统提示词，缺省为空——它也是优化器最常改动的文件（见[自我进化](/self-improvement)）。
 

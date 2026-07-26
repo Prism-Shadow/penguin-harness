@@ -33,7 +33,7 @@ penguin web
 
 ### 新建会话
 
-新会话从草稿开始：先选择 Agent、Workspace（服务器端目录浏览器选取）、审批模式、模型与思考等级，再发送第一条消息。Session 在首次发送时才真正创建，此后该会话的模型与 Workspace 即被锁定。切换思考等级或模型时，切换后的值即成为新的默认：思考等级立即写回所选 Agent 的 `model.thinking_level`，所选模型则作为下一个新会话的默认延续；进行中的会话沿用创建时的档位与模型（输入区只读展示）。
+新会话从草稿开始：先选择 Agent、Workspace（服务器端目录浏览器选取）、审批模式、模型与思考等级，再发送第一条消息。Session 在首次发送时才真正创建，此后该会话的模型与 Workspace 即被锁定。草稿里切换思考等级或模型时，切换后的值即成为新的默认：思考等级立即写回所选 Agent 的 `model.thinking_level`，所选模型则作为下一个新会话的默认延续。进行中的会话里，思考等级是逐轮参数：输入区拾取器初始显示 Agent 配置的档位并自动跟随（未选择时发送不携带档位，配置修改持续生效），选定后即固定为该会话档位、随每次发送下发（不写回 Agent 配置）；模型仍在会话内锁定，改用 `/model` 命令切换模型——与 @ handoff 同一方式：在同一 Agent 下新建一个使用所选模型、沿用当前 Workspace 的会话并跳转，其首条消息携带 `<model_switch_from>` 源块（源会话 id、Trace 文件路径、原模型），输入框剩余文字随之发出（为空时发一句界面语言的自动消息）；新会话中该源块折叠为一条“已切换模型”横幅，可点击回到原会话，模型需要早前历史时按路径自行读取源 Trace 文件。
 
 审批模式共四种：`allow-all`（全部放行）、`deny-all`（全部拒绝）、`read-only`（仅放行只读工具）、`always-ask`（每次询问），详见[工具与审批](/tools)。
 
@@ -61,7 +61,7 @@ penguin web
 
 | 标签页 | 内容 |
 | --- | --- |
-| Overview | 基本信息，以及 Agent State 快照的导出 / 导入 |
+| Overview | 基本信息、Agent State 快照的导出 / 导入，以及还原为默认配置（覆盖自定义内容，仅保留名称与描述） |
 | Prompt | AGENTS.md 与 system_prompt |
 | Runtime | max_turns、model.*、compaction.* 等运行参数 |
 | Tools | 内置工具表格与 MCP Server 的 JSON 配置 |

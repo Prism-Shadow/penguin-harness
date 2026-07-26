@@ -55,7 +55,7 @@ Trace 是 append-only 的 JSON Lines 文件，每行一个 OmniMessage 信封（
 一条 Trace 的开头(示意，每行一个 OmniMessage 信封):
 
 ```jsonl
-{"timestamp":"2026-07-18T03:10:22.531Z","type":"session_meta","payload":{"session_id":"session-2026-07-18-11-10-22-3f8a1c2d","provider":"deepseek","model_id":"deepseek-v4-pro","model_context_window":1000000,"system_prompt":"…","tools":[…],"thinking_level":"medium","agent_state":"/home/u/.penguin/data/default_project/agents/default_agent/agent_state","workspace":"/home/u/work"}}
+{"timestamp":"2026-07-18T03:10:22.531Z","type":"session_meta","payload":{"session_id":"session-2026-07-18-11-10-22-3f8a1c2d","provider":"deepseek","model_id":"deepseek-v4-pro","model_context_window":1000000,"system_prompt":"…","tools":[…],"agent_state":"/home/u/.penguin/data/default_project/agents/default_agent/agent_state","workspace":"/home/u/work"}}
 {"timestamp":"…","type":"event_msg","payload":{"type":"request_begin"}}
 {"timestamp":"…","type":"model_msg","payload":{"type":"text","role":"user","text":"创建 hello.txt"}}
 {"timestamp":"…","type":"model_msg","payload":{"type":"tool_call","role":"assistant","name":"exec_command","arguments":"{\"cmd\":\"printf hi > hello.txt\"}","tool_call_id":"call_0"}}
@@ -78,6 +78,10 @@ Trace 是恢复的唯一事实来源，没有独立的会话数据库需要与�
 恢复的前提是 Workspace 与模型仍然存在。恢复保证的是结构合法性：只回放已提交的轮次，`tool_call` 与 `tool_call_output` 配对完整；未完成的模型输出（thinking、文本）允许丢失。异常退出留下的截断末行会被容忍并忽略。实现见 `packages/core/src/trace/resume.ts`。
 
 特殊情形：若最新 Trace 文件以一次完成的压缩收尾，则该上下文已整体关闭——恢复从空上下文开始；summarize 模式下会重建 `<context_summary>` 摘要，前置到恢复后第一轮输入中。
+
+## 模型切换（/model）
+
+Web 的 `/model` 命令按 @ handoff 的方式换模型：用普通的会话创建接口在同一 Agent 下新建一个 Session（选定新模型，**沿用源会话的 Workspace**，文件因此保持可达），首条消息以 `<model_switch_from>` 源块开头——携带源会话 id、其最新 Trace 文件的绝对路径、Workspace 与原模型二元组，用户输入的剩余文字紧随其后。历史**不注入**新上下文：部分模型回放历史时要求 thinking 与 `fidelity` 逐字一致，跨模型注入不可行——模型需要早前上下文时按路径自行读取源 Trace 文件（JSONL，每行一个消息信封）。源会话与其 Trace 不受任何影响。
 
 ## 字段保真
 

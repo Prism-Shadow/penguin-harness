@@ -21,8 +21,11 @@ import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { useAuth } from "../../state/auth";
 import { S } from "../../lib/strings";
+import { apiErrorText } from "../../lib/api-error";
 import { formatBytes, formatDateTime } from "../../lib/format";
 import { Button } from "../../components/ui/button";
+import { ConfirmModal } from "../../components/ui/confirm-modal";
+import { toastError, toastSuccess } from "../../components/ui/toast";
 import { Dropdown } from "../../components/ui/dropdown";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { CodeBlock } from "./code-block";
@@ -168,7 +171,16 @@ interface Preview {
   /** Content for kind=text/md/html (may be truncated). */
   content?: string;
   truncated?: boolean;
+  /** Bumped on every previewPath call; keys the isolated HTML iframe so re-opening the
+   *  same path remounts it and refetches fresh content (its src alone would not change). */
+  nonce: number;
 }
+
+/** Monotonic counter behind Preview.nonce. Doubles as the staleness guard: previewPath
+ *  captures its value up front and publishes only while still the latest, so two rapid
+ *  calls can't have the slower loser overwrite the winner. Module scope is fine — the
+ *  docked panel and the drawer never mount WorkspaceBrowser at the same time. */
+let previewSeq = 0;
 
 export function WorkspaceBrowser({
   session,
@@ -188,19 +200,32 @@ export function WorkspaceBrowser({
   /** Callback when entering file preview (used by the mobile Sheet to raise its snap point to full). */
   onPreviewOpen?: () => void;
 }) {
-  // Whether "open in new tab" lands on a separate origin; false downgrades it to the
-  // same-origin sandbox, which the link flags rather than failing silently in the page.
+  // Whether the HTML preview lands on a separate origin. True routes both the in-app
+  // rendered view and "open in new tab" through the preview origin; false downgrades
+  // the new tab to the same-origin sandbox (which the link flags rather than failing
+  // silently in the page) and the in-app rendered view to the srcDoc fallback.
   const { previewIsolated } = useAuth();
   const [path, setPath] = useState("");
   const [data, setData] = useState<WorkspaceFilesResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  /** Picked files whose names collide with the loaded listing (non-null shows the overwrite confirm). */
+  const [pendingUpload, setPendingUpload] = useState<{ files: File[]; clashes: string[] } | null>(
+    null,
+  );
   const [reloadTick, setReloadTick] = useState(0);
   const [showPath, setShowPath] = useState(false);
   /** HTML / Markdown preview: rendered view (HTML via sandboxed iframe, Markdown via md-body) / source toggle. */
   const [richView, setRichView] = useState<"rendered" | "source">("rendered");
+  /** Error from the lazy source fetch of an isolated HTML preview: scoped to the source
+   *  view — the rendered iframe keeps working no matter what happens to this fetch. */
+  const [sourceError, setSourceError] = useState<string | null>(null);
+  /** Mirror for previewPath: reading previewIsolated through a ref keeps the callback's
+   *  identity stable when /api/me refreshes it (previewPath drives the openRequest locate
+   *  effect, which must not replay on an auth-context change). */
+  const previewIsolatedRef = useRef(previewIsolated);
+  previewIsolatedRef.current = previewIsolated;
 
   useEffect(() => {
     let cancelled = false;
@@ -218,13 +243,22 @@ export function WorkspaceBrowser({
     };
   }, [session.sessionId, path, reloadTick]);
 
-  // Returns to the root directory and clears the preview when the Session changes.
-  useEffect(() => {
+  // Session switched: back to the root directory with no preview. Reset during render
+  // (React's documented "adjust state when a prop changes" pattern), not in an effect —
+  // an effect-based reset lets one frame commit in which the old session's preview
+  // renders against the new session, flipping the isolated iframe's src to the new
+  // session + the old path and firing a doomed request. Bumping previewSeq also
+  // invalidates any in-flight previewPath from the old session (its present() guard
+  // fails), so a late result can't resurrect old-session content after the reset.
+  const [renderedSessionId, setRenderedSessionId] = useState(session.sessionId);
+  if (renderedSessionId !== session.sessionId) {
+    setRenderedSessionId(session.sessionId);
     setPath("");
     setPreview(null);
     setData(null);
-    setNotice(null);
-  }, [session.sessionId]);
+    setSourceError(null);
+    previewSeq++;
+  }
 
   // Edge-triggered refresh on the panel's hidden -> visible transition (doesn't count the initial mount: mounting itself already fetches once).
   const prevActive = useRef(active);
@@ -246,26 +280,43 @@ export function WorkspaceBrowser({
         ? filePath.slice(filePath.lastIndexOf("/") + 1)
         : filePath;
       const ext = extOf(name);
+      const nonce = ++previewSeq;
+      /** Publishes this call's result unless a newer previewPath call has started since:
+       *  two rapid calls interleave across the await, and the late loser must not
+       *  overwrite the winner's preview. */
+      const present = (p: Preview) => {
+        if (nonce === previewSeq) setPreview(p);
+      };
       setRichView("rendered");
+      setSourceError(null);
       if (IMAGE_EXTS.has(ext)) {
-        setPreview({ path: filePath, name, kind: "image" });
+        present({ path: filePath, name, kind: "image", nonce });
         return;
       }
       // PDF: the server returns it inline as application/pdf, embedded directly in an iframe and rendered by the browser.
       if (ext === "pdf") {
-        setPreview({ path: filePath, name, kind: "pdf" });
+        present({ path: filePath, name, kind: "pdf", nonce });
         return;
       }
       const isHtml = HTML_EXTS.has(ext);
       const isMd = ext === "md";
       if (!isHtml && !TEXT_EXTS.has(ext)) {
-        setPreview({ path: filePath, name, kind: "unsupported" });
+        present({ path: filePath, name, kind: "unsupported", nonce });
+        return;
+      }
+      // Isolated HTML: the rendered view is an iframe onto the preview origin and needs no
+      // text here, so the iframe mounts with no upfront fetch — a large file isn't
+      // downloaded twice, and a transient fetch failure can't downgrade a page the iframe
+      // would serve fine. The source text is fetched lazily on the first Source toggle
+      // (see the effect below).
+      if (isHtml && previewIsolatedRef.current) {
+        present({ path: filePath, name, kind: "html", nonce });
         return;
       }
       try {
         // The server downgrades html/svg served inline to text/plain (a same-origin XSS
-        // defense); this fetches the raw content back, and the HTML rendered view is placed in a
-        // sandboxed iframe (without allow-scripts), so scripts don't execute.
+        // defense); this fetches the raw content back for text/Markdown previews and for
+        // the srcDoc fallback rendered view of non-isolated HTML.
         const res = await fetch(api.workspaceFileUrl(session.sessionId, filePath), {
           credentials: "same-origin",
         });
@@ -275,27 +326,75 @@ export function WorkspaceBrowser({
         // Oversized Markdown defaults to the source view (benefiting from the unhighlighted
         // highlight=false path): feeding the whole block to remark for parsing is a one-time
         // main-thread cost; the user can still manually switch to "rendered view" as an informed choice.
-        if (isMd && full.length > HIGHLIGHT_LIMIT) setRichView("source");
-        setPreview({
+        if (isMd && full.length > HIGHLIGHT_LIMIT && nonce === previewSeq) setRichView("source");
+        present({
           path: filePath,
           name,
           kind: isHtml ? "html" : isMd ? "md" : "text",
           content: truncated ? full.slice(0, TEXT_PREVIEW_LIMIT) : full,
           truncated,
+          nonce,
         });
       } catch {
-        setPreview({ path: filePath, name, kind: "unsupported" });
+        present({ path: filePath, name, kind: "unsupported", nonce });
       }
     },
     [session.sessionId],
   );
 
+  // Lazy source fetch for isolated HTML previews: previewPath mounted the iframe without
+  // downloading the text, so the first switch to the Source view fetches it here (as does
+  // the rare case of previewIsolated flipping to false with such a preview open, which
+  // strands the srcDoc fallback without content). Failure sets sourceError and touches
+  // nothing else — a broken source fetch must not take down the rendered view.
+  useEffect(() => {
+    if (preview?.kind !== "html" || preview.content !== undefined) return;
+    if (richView !== "source" && previewIsolated) return;
+    const target = preview.path;
+    let cancelled = false;
+    setSourceError(null);
+    void (async () => {
+      try {
+        const res = await fetch(api.workspaceFileUrl(session.sessionId, target), {
+          credentials: "same-origin",
+        });
+        if (!res.ok) throw new Error(String(res.status));
+        const full = await res.text();
+        if (cancelled) return;
+        const truncated = full.length > TEXT_PREVIEW_LIMIT;
+        // Functional update with its own guard (not `present`): this must only fill the
+        // still-current, still-contentless HTML preview for the same path, never revive
+        // a preview the user has since navigated away from.
+        setPreview((p) =>
+          p !== null && p.kind === "html" && p.path === target && p.content === undefined
+            ? { ...p, content: truncated ? full.slice(0, TEXT_PREVIEW_LIMIT) : full, truncated }
+            : p,
+        );
+      } catch {
+        if (!cancelled) setSourceError(S.files.loadFailed);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [preview, richView, previewIsolated, session.sessionId]);
+
   // External navigation command (clicking a file chip in a message / a file card): navigates to
   // the directory and previews the target path. Also refreshes the list: the target is most
   // likely a file the Agent just wrote, so the cached list is very likely stale; and when it's
   // the same directory, setPath is a same-value no-op that won't trigger the fetch effect, so it must be explicitly bumped.
+  //
+  // Each openRequest object is handled exactly once (the ref guard): this effect also
+  // re-runs when previewPath's identity changes with session.sessionId, at which point
+  // openRequest is still the OLD session's request — the parent clears it only after
+  // child effects. Replaying it against the new session would resurrect the preview the
+  // session-switch reset just cleared, for isolated HTML as a committed iframe onto a
+  // path the new Workspace doesn't have (a raw 404 page). browsePath creates a fresh
+  // object per click, so re-clicking the same file still re-triggers.
+  const handledOpenRequest = useRef<{ path: string } | null>(null);
   useEffect(() => {
-    if (!openRequest) return;
+    if (!openRequest || handledOpenRequest.current === openRequest) return;
+    handledOpenRequest.current = openRequest;
     const target = openRequest.path;
     const dir = target.includes("/") ? target.slice(0, target.lastIndexOf("/")) : "";
     setPath(dir);
@@ -307,11 +406,8 @@ export function WorkspaceBrowser({
     void previewPath(joinPath(path, name));
   };
 
-  const onUpload = (e: ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
+  const doUpload = (files: File[]) => {
     setUploading(true);
-    setNotice(null);
     setError(null);
     void (async () => {
       try {
@@ -327,15 +423,26 @@ export function WorkspaceBrowser({
           });
           await api.uploadWorkspaceFile(session.sessionId, joinPath(path, file.name), b64);
         }
-        setNotice(S.files.uploaded);
+        toastSuccess(S.files.uploaded);
         setReloadTick((t) => t + 1);
       } catch (err) {
-        setError(err instanceof ApiError ? err.message : S.common.unknownError);
+        toastError(apiErrorText(err));
       } finally {
         setUploading(false);
       }
     })();
+  };
+
+  const onUpload = (e: ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files ? [...e.target.files] : [];
     e.target.value = "";
+    if (files.length === 0) return;
+    // Uploads overwrite same-name files: names already present in the loaded listing
+    // confirm first (the picker is stashed — confirm continues, cancel drops it).
+    const existing = new Set((data?.entries ?? []).map((entry) => entry.name));
+    const clashes = files.filter((f) => existing.has(f.name)).map((f) => f.name);
+    if (clashes.length > 0) setPendingUpload({ files, clashes });
+    else doUpload(files);
   };
 
   const crumbs = path === "" ? [] : path.split("/");
@@ -450,16 +557,49 @@ export function WorkspaceBrowser({
               className="h-full min-h-[60vh] w-full rounded-md border border-gray-200 dark:border-gray-800"
             />
           ) : preview.kind === "html" && richView === "rendered" ? (
-            // sandbox allows scripts but **without allow-same-origin**: the iframe has an opaque
-            // origin, so scripts can run to fully render the page, yet can't read the app's
-            // same-origin cookies / DOM (an XSS defense). The storage shim is injected to avoid
-            // a SecurityError when a script accesses localStorage from an opaque origin.
-            <iframe
-              srcDoc={withStorageShim(preview.content ?? "")}
-              title={preview.name}
-              sandbox="allow-scripts"
-              className="h-full min-h-[60vh] w-full rounded-md border border-gray-200 bg-white dark:border-gray-800"
-            />
+            previewIsolated ? (
+              // Same URL and serving path as "open in new tab": the app-origin redirect mints
+              // a token and 302s to the separate preview origin, where the document has a real
+              // base URL — relative subresources (<img src="foo.png">, app.js, style.css)
+              // resolve and load, and storage works, exactly as in the new-page preview.
+              // allow-same-origin is safe here precisely because the document IS on a separate
+              // origin: it grants the preview origin's identity, not the app's, so the frame
+              // still can't reach the app's cookies or DOM. Popups stay sandboxed (no
+              // allow-popups-to-escape-sandbox); allow-downloads keeps download links inside
+              // the page working, as they do in the new tab. The key remounts the iframe on
+              // every previewPath call — its src alone wouldn't change when the same file is
+              // re-opened after the Agent rewrote it.
+              <iframe
+                key={preview.nonce}
+                src={api.workspaceFilePreviewUrl(session.sessionId, preview.path)}
+                title={preview.name}
+                sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads"
+                className="h-full min-h-[60vh] w-full rounded-md border border-gray-200 bg-white dark:border-gray-800"
+              />
+            ) : preview.content === undefined ? (
+              // Only reachable when previewIsolated flipped to false after an isolated
+              // preview mounted without content: the lazy source effect is already fetching
+              // it, and the srcDoc fallback renders once it lands.
+              sourceError !== null ? (
+                <p className="text-sm text-red-600 dark:text-red-400">{sourceError}</p>
+              ) : (
+                <SkeletonList rows={6} />
+              )
+            ) : (
+              // No separate preview origin: srcDoc fallback. sandbox allows scripts but
+              // **without allow-same-origin**: the iframe has an opaque origin, so scripts can
+              // run to fully render the page, yet can't read the app's same-origin cookies /
+              // DOM (an XSS defense). The storage shim is injected to avoid a SecurityError
+              // when a script accesses localStorage from an opaque origin. srcdoc has no real
+              // base URL, so relative subresources cannot resolve here — that's what the
+              // isolated branch above fixes.
+              <iframe
+                srcDoc={withStorageShim(preview.content)}
+                title={preview.name}
+                sandbox="allow-scripts"
+                className="h-full min-h-[60vh] w-full rounded-md border border-gray-200 bg-white dark:border-gray-800"
+              />
+            )
           ) : preview.kind === "md" && richView === "rendered" ? (
             // Markdown's default rendered view: uses the same md-body layout as message bodies
             // (ReactMarkdown outputs pure static HTML with no script execution surface, so no iframe sandbox is needed).
@@ -520,19 +660,30 @@ export function WorkspaceBrowser({
               )}
             </>
           ) : preview.kind === "text" || preview.kind === "html" || preview.kind === "md" ? (
-            // The source view reuses the message stream's CodeBlock: Shiki dual-theme
-            // highlighting + language label + copy button, no line wrapping, horizontal scroll
-            // instead (wrapping code is a disaster for readability, see the old mobile styling).
-            <>
-              <CodeBlock
-                language={langForExt(extOf(preview.name))}
-                code={preview.content ?? ""}
-                highlight={(preview.content?.length ?? 0) <= HIGHLIGHT_LIMIT}
-              />
-              {preview.truncated && (
-                <p className="mt-1 text-xs text-gray-400">… {S.files.previewTruncated}</p>
-              )}
-            </>
+            preview.content === undefined ? (
+              // Isolated HTML reaches the Source view before its lazy fetch lands: show a
+              // skeleton (or the fetch's own error) — toggling back to Rendered is
+              // unaffected, and re-entering Source retries the fetch.
+              sourceError !== null ? (
+                <p className="text-sm text-red-600 dark:text-red-400">{sourceError}</p>
+              ) : (
+                <SkeletonList rows={6} />
+              )
+            ) : (
+              // The source view reuses the message stream's CodeBlock: Shiki dual-theme
+              // highlighting + language label + copy button, no line wrapping, horizontal scroll
+              // instead (wrapping code is a disaster for readability, see the old mobile styling).
+              <>
+                <CodeBlock
+                  language={langForExt(extOf(preview.name))}
+                  code={preview.content}
+                  highlight={preview.content.length <= HIGHLIGHT_LIMIT}
+                />
+                {preview.truncated && (
+                  <p className="mt-1 text-xs text-gray-400">… {S.files.previewTruncated}</p>
+                )}
+              </>
+            )
           ) : (
             <p className="text-sm text-gray-500 dark:text-gray-400">{S.files.previewUnsupported}</p>
           )}
@@ -693,10 +844,33 @@ export function WorkspaceBrowser({
             ))}
           </ul>
         )}
-        {notice && (
-          <p className="px-3 py-2 text-xs text-emerald-600 dark:text-emerald-400">{notice}</p>
-        )}
       </div>
+
+      {/* Upload-overwrite confirmation: same-name files in this directory get replaced. */}
+      <ConfirmModal
+        open={pendingUpload !== null}
+        title={S.files.overwriteTitle}
+        tone="primary"
+        confirmLabel={S.files.upload}
+        onClose={() => setPendingUpload(null)}
+        onConfirm={() => {
+          if (pendingUpload) doUpload(pendingUpload.files);
+          setPendingUpload(null);
+        }}
+      >
+        <div className="space-y-2">
+          <p className="text-sm text-gray-600 dark:text-gray-300">
+            {S.files.overwriteConfirm(pendingUpload?.clashes.length ?? 0)}
+          </p>
+          <ul className="max-h-40 overflow-y-auto rounded-md border border-gray-200 px-3 py-1.5 dark:border-gray-800">
+            {(pendingUpload?.clashes ?? []).map((name) => (
+              <li key={name} className="truncate py-0.5 font-mono text-xs" title={name}>
+                {name}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </ConfirmModal>
     </div>
   );
 }

@@ -73,15 +73,17 @@ api_key = "sk-..."
 
 网关分组(openrouter / fireworks / siliconflow / qwen-token-plan / qwen-pay-as-you-go)经 AgentHub 的 OpenAI 客户端请求，因此凭证留空时读取的是 `OPENAI_API_KEY`，而非网关自己的变量名。
 
+预置目录还收录了 OpenRouter 的免费档：`:free` 模型变体(如 `inclusionai/ling-3.0-flash:free`、`poolside/laguna-m.1:free`)与统一路由 `openrouter/free`(Free Models Router)，零成本可用，但受 OpenRouter 免费档速率限制与数据政策约束。
+
 预置目录中的部分模型：deepseek-v4-pro / deepseek-v4-flash、gemini-3.1-pro-preview、claude-opus-4-8 / claude-sonnet-4-6、gpt-5.5、glm-5.2、kimi-k2.6、qwen3.8-max-preview 等(非完整清单)。
 
 ## 思考等级
 
-思考等级共五档：`none | low | medium | high | xhigh`，按 Agent 在 `system_config.yaml` 的 `model.thinking_level` 配置，默认 medium。Web 拾取器只提供 `low` 及以上档位（多数模型不支持关闭思考；`none` 仍是合法的已存值，能正常显示）。对话草稿页在模型选择器旁提供快捷拾取器：选定档位立即写回所选 Agent 的该项配置（切换后的档位即成为该 Agent 的新默认，自下一个 Session 生效；进行中的 Session 沿用创建时的档位）。见 [配置参考](/configuration)。
+思考等级共五档：`none | low | medium | high | xhigh`，按 Agent 在 `system_config.yaml` 的 `model.thinking_level` 配置，默认 medium。Web 拾取器只提供 `low` 及以上档位（多数模型不支持关闭思考；`none` 仍是合法的已存值，能正常显示）。对话草稿页在模型选择器旁提供快捷拾取器：选定档位立即写回所选 Agent 的该项配置（切换后的档位即成为该 Agent 的新默认，自下一个 Session 生效）。进行中的会话里，思考等级是**逐轮参数**：输入区拾取器只列出各档位，初始即显示 Agent 配置的档位——用户未手动选择时自动跟随配置下发（请求不携带档位，配置的修改持续生效）；选定某档后即固定为该会话的档位，随之后每次发送携带（仅作用于该会话的后续 Task，不写回 Agent 配置）。见 [配置参考](/configuration)。
 
 ## 模型与 Agent 解耦
 
-Agent 从不绑定模型：模型在创建 Session 时选定，并在该 Session 内锁定不变；同一个 Agent 可以在不同 Session 用不同模型运行。`pricing` 三档价格供用量/成本中心按 Token 计费。
+Agent 从不绑定模型：模型在创建 Session 时选定，并在该 Session 内锁定不变；同一个 Agent 可以在不同 Session 用不同模型运行。会话内的 `/model` 命令按 handoff 方式换模型：在同一 Agent 下新建一个使用新模型、沿用当前 Workspace 的会话，首条消息携带 `<model_switch_from>` 源块（源会话 id 与其 Trace 文件路径）——历史不注入新上下文（部分模型回放历史时必须携带 thinking 与 `fidelity`，不能跨模型），模型需要时按路径自行读取；原会话保持不变。`pricing` 三档价格供用量/成本中心按 Token 计费。
 
 凭证处理：
 

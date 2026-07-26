@@ -70,7 +70,7 @@ import type { ModelEntry } from "./state/index.js";
  */
 const MAX_SUBAGENT_DEPTH = 1;
 
-/** The five valid thinking level names (session_meta additionally records the literal "default" for "no level"). */
+/** The five valid thinking level names (legacy session_meta additionally recorded the literal "default" for "no level"). */
 const THINKING_LEVEL_NAMES: readonly ThinkingLevelName[] = [
   "none",
   "low",
@@ -80,9 +80,9 @@ const THINKING_LEVEL_NAMES: readonly ThinkingLevelName[] = [
 ];
 
 /**
- * Narrows a recorded session_meta `thinking_level` back to a ThinkingLevelName; the literal
- * "default" (no level recorded), a missing field (legacy Trace), and anything unknown are
- * not levels and yield undefined.
+ * Narrows a legacy session_meta `thinking_level` back to a ThinkingLevelName; the literal
+ * "default" (no level recorded), a missing field (current Traces no longer record one), and
+ * anything unknown are not levels and yield undefined.
  */
 function asThinkingLevelName(value: unknown): ThinkingLevelName | undefined {
   return typeof value === "string" && (THINKING_LEVEL_NAMES as readonly string[]).includes(value)
@@ -291,6 +291,8 @@ export class Agent {
     });
 
     return new Session({
+      // session_meta holds per-session invariants only: the thinking level is a per-turn
+      // run parameter (RunOptions.thinkingLevel) and is deliberately not recorded here.
       meta: {
         session_id: sessionId,
         provider: modelEntry.provider,
@@ -298,7 +300,6 @@ export class Agent {
         model_context_window: modelEntry.context_window ?? "unknown",
         system_prompt: systemPrompt,
         tools: rt.tools,
-        thinking_level: thinkingLevel ?? "default",
         agent_state: this.state.stateDir,
         workspace: workspaceDir,
         ...(opts.source !== undefined ? { source: opts.source } : {}),
@@ -393,12 +394,15 @@ export class Agent {
     // original history); the vault uses current values (it's injected into the
     // subprocess environment, not the history, so a resumed Session should get the
     // latest keys too).
-    // The recorded thinking level is restored with the rest of session_meta (like model,
-    // Workspace, and system prompt): a resumed subagent session keeps its inherited level
-    // instead of re-reading this Agent's config. The literal "default" (no level recorded)
-    // — and a legacy Trace without the field — falls back to the Agent's current config.
+    // Back-compat: session_meta no longer records a thinking level (it became a per-turn
+    // run parameter), but OLD Traces still carry `thinking_level` in their meta JSON — when
+    // present, keep honoring it as this Session's default level (a resumed legacy subagent
+    // session keeps its inherited level instead of re-reading this Agent's config). The
+    // field is read loosely (it's gone from SessionMetaPayload); the legacy literal
+    // "default" — and any current Trace without the field — falls back to the Agent config.
     const thinkingLevel =
-      asThinkingLevelName(meta.thinking_level) ?? this.state.systemConfig.model?.thinking_level;
+      asThinkingLevelName((meta as unknown as Record<string, unknown>).thinking_level) ??
+      this.state.systemConfig.model?.thinking_level;
 
     const rt = await this.buildRuntime({
       workspaceDir,
@@ -438,6 +442,8 @@ export class Agent {
     });
 
     return new Session({
+      // Invariants only (the legacy thinking_level, when honored above, feeds the LLM default
+      // but is not re-recorded — new meta writes never contain it).
       meta: {
         session_id: sessionId,
         provider: modelEntry.provider,
@@ -445,7 +451,6 @@ export class Agent {
         model_context_window: modelEntry.context_window ?? "unknown",
         system_prompt: meta.system_prompt,
         tools: rt.tools,
-        thinking_level: thinkingLevel ?? "default",
         agent_state: this.state.stateDir,
         workspace: workspaceDir,
         // The origin carries over from the original session_meta (a resumed scheduled/subagent

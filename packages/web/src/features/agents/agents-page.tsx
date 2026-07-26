@@ -15,8 +15,8 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
 import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
+import { apiErrorText } from "../../lib/api-error";
 import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
 import { formatDateTime, formatRelativeDays } from "../../lib/format";
 import { useDocumentTitle } from "../../lib/use-document-title";
@@ -25,6 +25,7 @@ import { agentDisplayName, useProject } from "../../state/project";
 import { Button } from "../../components/ui/button";
 import { Input, Textarea } from "../../components/ui/input";
 import { Modal } from "../../components/ui/modal";
+import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { Badge } from "../../components/ui/badge";
 import { Skeleton, SkeletonCard } from "../../components/ui/skeleton";
 import { EmptyState } from "../../components/ui/empty-state";
@@ -71,7 +72,8 @@ export function AgentsPage() {
   const [agentId, setAgentId] = useState("");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  // The id is the only validated create field; format problems and the server's duplicate-id rejection land beside it.
+  const [idError, setIdError] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
 
   /** Open the create dialog: don't keep the previous draft, always start from an empty form. */
@@ -79,7 +81,7 @@ export function AgentsPage() {
     setAgentId("");
     setName("");
     setDescription("");
-    setError(null);
+    setIdError(undefined);
     setCreateOpen(true);
   };
   /** Agent pending delete confirmation (null = none). */
@@ -92,15 +94,15 @@ export function AgentsPage() {
     if (!projectId) return;
     const id = agentId.trim();
     if (!id) {
-      setError(S.common.requiredField);
+      setIdError(S.common.requiredField);
       return;
     }
     if (!SEMANTIC_ID_PATTERN.test(id)) {
-      setError(S.agent.idHint);
+      setIdError(S.agent.idHint);
       return;
     }
     setBusy(true);
-    setError(null);
+    setIdError(undefined);
     try {
       // Name defaults to the id (leave blank to let the server fill it in from the id).
       const body: { agentId: string; name?: string; description?: string } = { agentId: id };
@@ -112,7 +114,7 @@ export function AgentsPage() {
       setCurrentAgentId(res.agent.agentId);
       navigate(`/agents/${res.agent.agentId}`);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : S.common.unknownError);
+      setIdError(apiErrorText(e));
     } finally {
       setBusy(false);
     }
@@ -139,7 +141,7 @@ export function AgentsPage() {
       setDeleting(null);
       await reloadAgents();
     } catch (e) {
-      setDeleteError(e instanceof ApiError ? e.message : S.common.unknownError);
+      setDeleteError(apiErrorText(e));
     } finally {
       setBusy(false);
     }
@@ -370,14 +372,19 @@ export function AgentsPage() {
         <div className="space-y-3">
           <Input
             label={S.agent.id}
+            required
             size="sm"
             value={agentId}
-            onChange={(e) => setAgentId(e.target.value)}
+            onChange={(e) => {
+              setAgentId(e.target.value);
+              setIdError(undefined);
+            }}
+            error={idError}
             hint={S.agent.idHint}
             autoFocus
           />
           <Input
-            label={S.agent.name}
+            label={S.common.name}
             size="sm"
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -390,33 +397,19 @@ export function AgentsPage() {
             value={description}
             onChange={(e) => setDescription(e.target.value)}
           />
-          {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
         </div>
       </Modal>
 
-      {/* Delete confirmation */}
-      <Modal
+      {/* Delete confirmation (shared ConfirmModal) */}
+      <ConfirmModal
         open={deleting !== null}
         title={S.agent.deleteAgent}
+        busy={busy}
         onClose={() => {
           setDeleting(null);
           setDeleteError(null);
         }}
-        footer={
-          <>
-            <Button
-              onClick={() => {
-                setDeleting(null);
-                setDeleteError(null);
-              }}
-            >
-              {S.common.cancel}
-            </Button>
-            <Button variant="danger" disabled={busy} onClick={() => void doDelete()}>
-              {S.common.confirm}
-            </Button>
-          </>
-        }
+        onConfirm={() => void doDelete()}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">
           {deleting ? S.agent.deleteConfirm(deleting.name) : ""}
@@ -424,7 +417,7 @@ export function AgentsPage() {
         {deleteError && (
           <p className="mt-2 text-xs text-red-600 dark:text-red-400">{deleteError}</p>
         )}
-      </Modal>
+      </ConfirmModal>
     </div>
   );
 }

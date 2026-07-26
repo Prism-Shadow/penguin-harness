@@ -473,10 +473,37 @@ export interface SessionInfo {
   hasTrace: boolean;
   /** Whether archived (hidden from the default list, grouped under "Archived"). */
   archived: boolean;
+  /**
+   * Absolute path of the session's latest Trace file (the current context shard); absent
+   * when no Trace exists yet. Populated on the **single-session GET only** — list rows omit
+   * it (locating it costs a directory walk per Session). The web's `/model` switch puts it
+   * into the new session's `<model_switch_from>` block so the model can read the source
+   * history itself when it needs it.
+   */
+  tracePath?: string;
 }
+
+/**
+ * Session list category, the sidebar's four-way split applied server-side: archived wins
+ * regardless of origin (archiving is an explicit user action), then the origin's bucket,
+ * and a Session with no (or an unknown) source is `active` — user-created rows.
+ */
+export type SessionCategory = "active" | SessionSource | "archived";
+
+/** Per-category totals across an Agent's whole Session list (returned when the list is requested with counts). */
+export type SessionCategoryCounts = Record<SessionCategory, number>;
 
 export interface SessionsResponse {
   sessions: SessionInfo[];
+  /** Present when the request asked for counts (`counts=1`): totals per category over the full list, not just the returned page. */
+  counts?: SessionCategoryCounts;
+  /**
+   * Present with `counts`: the same totals broken down by Workspace path (only paths
+   * with at least one Session appear). The sidebar's workspace grouping decides each
+   * group's folders and "More" from its own share, so a group never advertises
+   * content that lives in other Workspaces.
+   */
+  workspaceCounts?: Record<string, SessionCategoryCounts>;
 }
 
 /** Server directory browsing (advanced new-Workspace picker): starts from the home directory by default, can navigate up to the root. */
@@ -543,6 +570,12 @@ export type TaskInputPart =
 
 export interface TaskCreateRequest {
   input: TaskInputPart[];
+  /**
+   * Thinking level for this Task's LLM requests (a per-turn parameter; one of
+   * `none | low | medium | high | xhigh`, anything else is a 400). Omitted = falls back to
+   * the session's default (the Agent config's `model.thinking_level`).
+   */
+  thinkingLevel?: ThinkingLevelName;
   /**
    * Present = goal mode: the input's text becomes the objective and the server loops the
    * Session until the goal reaches a terminal state. `budget` is the token budget

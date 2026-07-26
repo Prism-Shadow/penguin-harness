@@ -9,7 +9,11 @@
  * those is single-use, so per-path groups would be one-session noise — they are all
  * merged into ONE trailing "temp workspaces" group instead.
  */
-import type { SessionInfo } from "@prismshadow/penguin-server/api";
+import type {
+  SessionCategory,
+  SessionCategoryCounts,
+  SessionInfo,
+} from "@prismshadow/penguin-server/api";
 
 /** Group key of the merged auto-temp group ("\0" can never appear in a filesystem path, so it never collides with a real Workspace). */
 export const TEMP_WORKSPACE_GROUP_KEY = "\0temp-workspaces";
@@ -42,11 +46,13 @@ export function workspaceLabel(workspace: string): string {
 }
 
 /**
- * Sidebar page size: sessions fetched per Agent per page, and the per-group display cap
- * step for active rows. Fetches use limit = SIDEBAR_PAGE_SIZE + 1 (see splitPage) so one
- * request both fills a page and answers "is there more" without a response-envelope change.
+ * Sidebar page size: sessions fetched per (Agent, category) per page, and the per-group
+ * display cap step for active rows — 10 conversations show by default and every "More"
+ * click reveals/loads 10 more. Fetches use limit = SIDEBAR_PAGE_SIZE + 1 (see splitPage)
+ * so one request both fills a page and answers "is there more" without a
+ * response-envelope change.
  */
-export const SIDEBAR_PAGE_SIZE = 20;
+export const SIDEBAR_PAGE_SIZE = 10;
 
 /**
  * Applies the limit+1 fetch trick: `fetched` came from a request with `limit = pageSize + 1`;
@@ -60,51 +66,103 @@ export function splitPage<T>(fetched: T[], pageSize: number): { items: T[]; hasM
 }
 
 /**
- * The distinct Agents contributing to a group that still have unfetched server pages —
- * a workspace-mode group can span Agents, so "load more" for the group fans out to every
- * contributing Agent with more (agent-mode groups are single-Agent and get 0..1 entries).
+ * The sidebar category a Session renders under — the same precedence the server's
+ * `category` list filter applies, so filtered fetching and client rendering can never
+ * disagree: archived wins regardless of `source` (archiving is an explicit user action,
+ * so the Archived folder must show everything the user put there); otherwise a Session
+ * goes to its origin's bucket, and no (or an unrecognized future) source falls through
+ * to the active user rows (visible) rather than vanishing into the wrong folder.
  */
-export function groupAgentsWithMore(
-  sessions: SessionInfo[],
-  hasMoreByAgent: ReadonlyMap<string, boolean>,
-): string[] {
-  const out: string[] = [];
-  for (const s of sessions) {
-    if (hasMoreByAgent.get(s.agentId) === true && !out.includes(s.agentId)) out.push(s.agentId);
+export function sessionCategory(s: SessionInfo): SessionCategory {
+  if (s.archived) return "archived";
+  return s.source === "subagent" || s.source === "schedule" ? s.source : "active";
+}
+
+/** The collapsed-folder categories of a group, in render order (below the active user rows). */
+export const FOLDER_CATEGORIES = ["subagent", "schedule", "archived"] as const;
+export type FolderCategory = (typeof FOLDER_CATEGORIES)[number];
+
+/**
+ * Four-way split of one sidebar group's Sessions by sessionCategory (rendered top to
+ * bottom in this order): active user rows in the group body, then the collapsed
+ * Subagents / Scheduled / Archived folders.
+ */
+export type SessionPartition = Record<SessionCategory, SessionInfo[]>;
+
+/** Partitions a group's Sessions for rendering. Input order is preserved within each part. */
+export function partitionSessions(sessions: SessionInfo[]): SessionPartition {
+  const parts: SessionPartition = { active: [], subagent: [], schedule: [], archived: [] };
+  for (const s of sessions) parts[sessionCategory(s)].push(s);
+  return parts;
+}
+
+const ALL_CATEGORIES: readonly SessionCategory[] = ["active", ...FOLDER_CATEGORIES];
+
+/** One workspace-mode group's aggregated server counts: exact totals plus which Agents hold rows of each category. */
+export interface GroupCounts {
+  totals: SessionCategoryCounts;
+  /** Per category, the Agents whose share of this group is non-zero — the fetch fan-out set for the group's folders and "More". */
+  agents: Record<SessionCategory, string[]>;
+}
+
+/**
+ * Folds the per-Agent per-Workspace-path category counts (SessionsResponse.workspaceCounts)
+ * into workspace-mode groups, keyed like groupSessionsByWorkspace (exact path; auto-temp
+ * paths merged into the temp group). The sidebar labels a group's folders and decides its
+ * "More" from its own share — never from an Agent's other Workspaces, which would
+ * advertise folders whose content lives in other groups.
+ */
+export function aggregateWorkspaceCounts(
+  byAgent: ReadonlyMap<string, Readonly<Record<string, SessionCategoryCounts>>>,
+): Map<string, GroupCounts> {
+  const out = new Map<string, GroupCounts>();
+  for (const [agentId, byWorkspace] of byAgent) {
+    for (const [workspace, counts] of Object.entries(byWorkspace)) {
+      const key = workspaceGroupKey(workspace);
+      let group = out.get(key);
+      if (!group) {
+        group = {
+          totals: { active: 0, subagent: 0, schedule: 0, archived: 0 },
+          agents: { active: [], subagent: [], schedule: [], archived: [] },
+        };
+        out.set(key, group);
+      }
+      for (const category of ALL_CATEGORIES) {
+        const n = counts[category];
+        // !(n > 0) rather than n <= 0: a missing key (undefined) must not slip through and poison the totals with NaN.
+        if (!(n > 0)) continue;
+        group.totals[category] += n;
+        // Several temp paths of one Agent fold into the temp group: dedupe.
+        if (!group.agents[category].includes(agentId)) group.agents[category].push(agentId);
+      }
+    }
   }
   return out;
 }
 
-/** Four-way split of one sidebar group's Sessions (rendered top to bottom in this order). */
-export interface SessionPartition {
-  /** User-created, not archived: rendered directly in the group body. */
-  active: SessionInfo[];
-  /** Subagent-created (`source === "subagent"`), not archived: the collapsed "Subagents" folder. */
-  subagent: SessionInfo[];
-  /** Schedule-created (`source === "schedule"`), not archived: the collapsed "Scheduled" folder. */
-  schedule: SessionInfo[];
-  /** Archived: the collapsed "Archived" folder. Archived wins — an archived Session with a `source` goes here only. */
-  archived: SessionInfo[];
-}
-
 /**
- * Partitions a group's Sessions for rendering. Classification precedence: archived wins
- * regardless of `source` (archiving is an explicit user action, so the Archived folder
- * must show everything the user put there); otherwise a Session goes to its origin's
- * bucket, and an unrecognized future source falls through to the user rows (visible,
- * with its badge) rather than vanishing into the wrong folder. The sidebar renders the
- * parts top to bottom in the interface's field order — user rows, Subagents folder,
- * Scheduled folder, Archived folder. Input order is preserved within each part.
+ * The Session the UI opens as "the last conversation" (the chat home's auto-select and
+ * the collapsed rail's entry): the newest loaded row that is a conversation of the
+ * user's own. Archived rows are hidden by choice and a subagent Session is a child of
+ * some other conversation, so neither is ever auto-opened; schedule-created runs are
+ * the user's conversations and qualify. Newest by createdAt (uniform ISO-8601 UTC, so
+ * string comparison is chronological), ties broken by sessionId — the list's ordering
+ * convention. Input order doesn't matter.
  */
-export function partitionSessions(sessions: SessionInfo[]): SessionPartition {
-  const parts: SessionPartition = { active: [], subagent: [], schedule: [], archived: [] };
+export function latestConversation(sessions: readonly SessionInfo[]): SessionInfo | null {
+  let best: SessionInfo | null = null;
   for (const s of sessions) {
-    if (s.archived) parts.archived.push(s);
-    else if (s.source === "subagent") parts.subagent.push(s);
-    else if (s.source === "schedule") parts.schedule.push(s);
-    else parts.active.push(s);
+    const category = sessionCategory(s);
+    if (category !== "active" && category !== "schedule") continue;
+    if (
+      !best ||
+      s.createdAt > best.createdAt ||
+      (s.createdAt === best.createdAt && s.sessionId > best.sessionId)
+    ) {
+      best = s;
+    }
   }
-  return parts;
+  return best;
 }
 
 export interface WorkspaceGroup {

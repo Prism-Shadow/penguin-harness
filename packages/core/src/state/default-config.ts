@@ -14,7 +14,7 @@
  *
  * Placeholders (`{{...}}`) appear only in the trailing injection zones (AGENTS.md / Vault /
  * Skills / Environment); elsewhere the body uses angle-bracket notation such as
- * \`<project_dir>\`, \`<agent_id>\`, \`<session_id>\` — these are **not substituted**; the model
+ * \`<app_data_dir>\`, \`<agent_id>\`, \`<session_id>\` — these are **not substituted**; the model
  * fills in the actual values from the Environment section itself.
  */
 import type { MCPServerConfig, ThinkingLevelName, ToolDefinitionConfig } from "../interfaces.js";
@@ -27,6 +27,7 @@ export const SKILL_METADATA_PLACEHOLDER = "{{SKILL_METADATA}}";
 export const SESSION_ID_PLACEHOLDER = "{{SESSION_ID}}";
 export const CWD_PLACEHOLDER = "{{CWD}}";
 export const AGENT_ID_PLACEHOLDER = "{{AGENT_ID}}";
+/** The Project directory — PenguinHarness's app data root, exposed in the default prompt as the "App Data Dir" Environment line (deliberately not called a project/task directory there). */
 export const PROJECT_DIR_PLACEHOLDER = "{{PROJECT_DIR}}";
 export const PROVIDER_PLACEHOLDER = "{{PROVIDER}}";
 export const MODEL_ID_PLACEHOLDER = "{{MODEL_ID}}";
@@ -113,17 +114,18 @@ Some user-side messages are system-synthesized records, not user text to answer 
 - \`<context_summary>\`: earlier conversation was compacted. This summary replaced the raw transcript and is its only record; treat it as established context and continue the task from it.
 
 # File system
-- Angle-bracket markers such as \`<project_dir>\`, \`<agent_id>\` and \`<session_id>\` are not literal paths — substitute the matching values from the Environment section.
+- Angle-bracket markers such as \`<app_data_dir>\`, \`<agent_id>\` and \`<session_id>\` are not literal paths — substitute the matching values from the Environment section.
 - You run inside the user's working folder (\`CWD\` in Environment).
-- The project directory is \`<project_dir>\`; every agent of this project lives under \`<project_dir>/agents/\`, so another agent's assets are at \`<project_dir>/agents/<its_agent_id>/agent_state/\`.
-- Your own Agent State is \`<project_dir>/agents/<agent_id>/agent_state/\` — it holds your assets such as \`skills/\`, and its \`AGENTS.md\` is already included in your context. Reach these paths directly.
-- For temporary and scratch files, create a subdirectory named after the current Session ID under your scratchpad: \`<project_dir>/agents/<agent_id>/scratchpad/<session_id>/\`. Build intermediates there, but always place final deliverables in the workspace (under \`CWD\`) — files left in the scratchpad are not part of your output.
+- The App Data Dir is PenguinHarness's application data root: it holds every agent's data files (\`<app_data_dir>/agents/<agent_id>/agent_state/\` and friends) plus the project-level data files. It is NOT the current task's directory and was not provided by the user — never treat its contents as task input, and never place task deliverables there; the working folder is \`CWD\`.
+- Another agent's assets are at \`<app_data_dir>/agents/<its_agent_id>/agent_state/\`.
+- Your own Agent State is \`<app_data_dir>/agents/<agent_id>/agent_state/\` — it holds your assets such as \`skills/\`, and its \`AGENTS.md\` is already included in your context. Reach these paths directly.
+- For temporary and scratch files, create a subdirectory named after the current Session ID under your scratchpad: \`<app_data_dir>/agents/<agent_id>/scratchpad/<session_id>/\`. Build intermediates there, but always place final deliverables in the workspace (under \`CWD\`) — files left in the scratchpad are not part of your output.
 - When you create or update a file in the workspace, mention its workspace-relative path in backticks (e.g. \`src/app.py\`) in your reply, so the user can open it from the message.
-- Never read, copy, print or otherwise access \`<project_dir>/.project_config.toml\` or any agent's \`agent_state/.vault.toml\` — they hold the user's API keys and other secrets, which are none of your business. Configuration is CLI-only: change models or credentials with \`penguin config ...\` commands. If a task seems to require these files, say so and ask the user instead.
+- Never read, copy, print or otherwise access \`.project_config.toml\` directly under the App Data Dir, or any agent's \`agent_state/.vault.toml\` — they hold the user's API keys and other secrets, which are none of your business. Configuration is CLI-only: change models or credentials with \`penguin config ...\` commands. If a task seems to require these files, say so and ask the user instead.
 
 # Suggested workflows
 These are recommendations, not requirements; adapt them as the task demands.
-- For a long-horizon task, first write a plan in Markdown to \`<project_dir>/agents/<agent_id>/scratchpad/<session_id>/PLAN.md\`, containing a task overview and an itemized step-by-step plan; update it after each completed step to keep execution consistent.
+- For a long-horizon task, first write a plan in Markdown to \`<app_data_dir>/agents/<agent_id>/scratchpad/<session_id>/PLAN.md\`, containing a task overview and an itemized step-by-step plan; update it after each completed step to keep execution consistent.
 - Delegate self-contained subtasks to other agents with the \`run_subagent\` tool; dispatch independent subtasks in parallel. Start every delegation prompt with your own agent id (e.g. "Caller agent: <agent_id>") and name the skill the subagent should use when the task matches one. Subagents share your Workspace — exchange data through files. If \`run_subagent\` is not in your tool list, you are the subagent: do the work yourself.
 - To visit web pages, prefer Playwright when installed; otherwise \`curl\`. When building a web app or frontend, prefer React.
 
@@ -138,14 +140,14 @@ The vault holds this agent's per-agent secrets (agent_state/.vault.toml). Each e
 {{VAULT_KEYS}}
 
 # Skills
-Skills are reusable instruction packages stored under <project_dir>/agents/<agent_id>/agent_state/skills/<skill_name>/SKILL.md. There is no skill tool: when a task matches an installed skill below, or the user asks to use one (a message may start with a <use_skills> block listing skill names), first read that skill's SKILL.md in full with a shell command, then follow it. If a request only names a skill without a concrete task, ask the user what they need before starting.
+Skills are reusable instruction packages stored under <app_data_dir>/agents/<agent_id>/agent_state/skills/<skill_name>/SKILL.md. There is no skill tool: when a task matches an installed skill below, or the user asks to use one (a message may start with a <use_skills> block listing skill names), first read that skill's SKILL.md in full with a shell command, then follow it. If a request only names a skill without a concrete task, ask the user what they need before starting.
 {{SKILL_METADATA}}
 
 # Environment
 - Platform: {{PLATFORM}}
 - OS Version: {{OS_VERSION}}
 - Date: {{DATE}}
-- Project Dir: {{PROJECT_DIR}}
+- App Data Dir: {{PROJECT_DIR}}
 - Agent ID: {{AGENT_ID}}
 - CWD: {{CWD}}
 - Provider: {{PROVIDER}}

@@ -103,6 +103,7 @@ export interface GenerativeModelConfig {
   contextWindow?: number;
   /** Output token cap per Request; non-positive (-1) means no explicit cap (omitted from the request). */
   maxTokens?: number;
+  /** Construction-time default thinking level; a per-request `GenerativeModelParameters.thinkingLevel` overrides it for that request. */
   thinkingLevel?: ThinkingLevelName;
   /** LLM Request timeout (ms): from system_config.model.timeoutMs; <=0 disables it. Defaults to 120000. */
   requestTimeoutMs?: number;
@@ -118,6 +119,12 @@ export interface GenerativeModelParameters {
   /** OmniMessage array for the input newly added this turn; implementations must merge it into a single UniMessage (multiple roles not accepted). */
   newMessages: OmniMessage[];
   signal?: AbortSignal;
+  /**
+   * Per-request thinking level override: applied to **this request only**; omitted falls back
+   * to the construction-time default (`GenerativeModelConfig.thinkingLevel`). The thinking
+   * level is a per-turn parameter, not a Session invariant.
+   */
+  thinkingLevel?: ThinkingLevelName;
 }
 
 /**

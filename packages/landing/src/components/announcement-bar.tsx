@@ -20,6 +20,7 @@ const ROTATE_MS = 6000;
  * freshest news goes at the front.
  */
 const ITEMS = [
+  { key: "freeModels", to: "/blog/free-models-in-penguin-harness" },
   { key: "gemini", to: "/blog/gemini-3-6-in-penguinharness" },
   { key: "models", to: "/blog/introducing-penguinharness" },
   { key: "fireworks", to: "/blog/fireworks-credits-amd" },
@@ -33,6 +34,7 @@ function prefersReducedMotion(): boolean {
 
 export function AnnouncementBar() {
   const texts: Record<(typeof ITEMS)[number]["key"], string> = {
+    freeModels: S.announcement.freeModels,
     gemini: S.announcement.gemini,
     models: S.announcement.models,
     fireworks: S.announcement.fireworks,

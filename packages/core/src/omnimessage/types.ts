@@ -75,6 +75,12 @@ export interface ToolDefinition {
   parameters?: Record<string, unknown>;
 }
 
+/**
+ * Session metadata. Holds **per-session invariants only** — values fixed for the Session's
+ * lifetime (model reference, assembled system prompt, tool schemas, paths, origin). Per-turn
+ * parameters (e.g. the thinking level, passed with each run) never belong here; legacy Traces
+ * may still carry a `thinking_level` field, which resume reads loosely for back-compat.
+ */
 export interface SessionMetaPayload {
   session_id: string;
   /** The session model's provider group (paired with `model_id` to form a model reference). */
@@ -86,8 +92,6 @@ export interface SessionMetaPayload {
   system_prompt: string;
   /** The list of tool definitions this Session exposes to the model (full schema, matching what's sent to the LLM). */
   tools: ToolDefinition[];
-  /** The Session's effective thinking level (an explicit createSession option — e.g. subagent inheritance — else system_config.model.thinking_level; "default" when unconfigured). */
-  thinking_level: string;
   /** Absolute path to the Agent State. */
   agent_state: string;
   /** Absolute path to the Workspace. */

@@ -702,6 +702,35 @@ export function translateEvents(
 // ---------------------------------------------------------------------------
 
 /**
+ * A fuller error string than `err.message` for the LLM request outcome. Node's `fetch`
+ * wraps the real transport failure as `TypeError: terminated` and puts the actual reason
+ * on `err.cause` (a socket close, `ECONNRESET`, a provider stream abort, …); taking only
+ * `.message` throws that away and leaves a bare, unactionable "terminated". This walks the
+ * `cause` chain and appends each level's message and error `code`, so it surfaces as e.g.
+ * "terminated: other side closed (UND_ERR_SOCKET)". Segments are de-duplicated and the
+ * chain walk guards against cycles; a non-Error cause tail (string/number) is still kept.
+ */
+export function describeError(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+  const parts: string[] = [];
+  const seen = new Set<unknown>();
+  let cur: unknown = error;
+  while (cur instanceof Error && !seen.has(cur)) {
+    seen.add(cur);
+    const code = (cur as { code?: unknown }).code;
+    let piece = cur.message || cur.name;
+    if (typeof code === "string" && code && !piece.includes(code)) piece = `${piece} (${code})`;
+    if (piece && !parts.includes(piece)) parts.push(piece);
+    cur = (cur as { cause?: unknown }).cause;
+  }
+  if (cur != null && !(cur instanceof Error)) {
+    const tail = String(cur);
+    if (tail && !parts.includes(tail)) parts.push(tail);
+  }
+  return parts.join(": ") || error.message || String(error);
+}
+
+/**
  * Determines whether an error is an AgentHub / Provider "response delivered but unusable"
  * parse or validation error. Two shapes (@prismshadow/agenthub 0.4.x):
  *
@@ -834,6 +863,13 @@ export function isRetryableError(error: unknown): boolean {
 export class GenerativeModel implements LLMInterface {
   private readonly client: AutoLLMClient;
   private readonly uniConfig: UniConfig;
+  /**
+   * Construction-time default thinking level. Kept **out of the frozen uniConfig**: the
+   * effective level is resolved per request (`params.thinkingLevel ?? default`), so a turn can
+   * override it without rebuilding the model object — the thinking level is a per-turn
+   * parameter, not a Session invariant.
+   */
+  private readonly defaultThinkingLevel: ThinkingLevelName | undefined;
   /** Streaming idle timeout (milliseconds); <= 0 disables it. A timeout is treated as needing reconnection. */
   private readonly requestTimeoutMs: number;
   /**
@@ -860,8 +896,21 @@ export class GenerativeModel implements LLMInterface {
     });
 
     this.uniConfig = buildUniConfig(config);
+    this.defaultThinkingLevel = config.thinkingLevel;
     this.requestTimeoutMs = config.requestTimeoutMs ?? 120000;
     this.toolCallIds = config.toolCallIds ?? new ToolCallIdAllocator();
+  }
+
+  /**
+   * The UniConfig for one request: the shared frozen config plus this request's effective
+   * thinking level (per-request override, else the construction-time default; neither → the
+   * key stays off the wire, preserving the provider default).
+   */
+  private requestConfig(override: ThinkingLevelName | undefined): UniConfig {
+    const thinking = mapThinkingLevel(override ?? this.defaultThinkingLevel);
+    return thinking === undefined
+      ? this.uniConfig
+      : { ...this.uniConfig, thinking_level: thinking };
   }
 
   /**
@@ -906,7 +955,7 @@ export class GenerativeModel implements LLMInterface {
     } catch (err) {
       return {
         status: "failed",
-        message: err instanceof Error ? err.message : String(err),
+        message: describeError(err),
       };
     }
 
@@ -938,7 +987,9 @@ export class GenerativeModel implements LLMInterface {
     // parse error) / aborted (user) / failed (other). null means it ended normally.
     let outcome: LLMOutcome | null = null;
     try {
-      const it = this.openStream(uniMessage, ac.signal)[Symbol.asyncIterator]();
+      const it = this.openStream(uniMessage, ac.signal, this.requestConfig(params.thinkingLevel))[
+        Symbol.asyncIterator
+      ]();
       for (;;) {
         // The interruption check must happen **before pulling from upstream**: the user may
         // interrupt while this generator is suspended at the `yield` below (the typical case —
@@ -984,7 +1035,7 @@ export class GenerativeModel implements LLMInterface {
         // malformed to reconnect and retry — must not be classified as failed.
         outcome = {
           status: "malformed",
-          message: error instanceof Error ? error.message : String(error),
+          message: describeError(error),
         };
       } else if (isRetryableError(error)) {
         outcome = { status: "timeout" }; // Network drop/network error -> needs reconnection
@@ -993,7 +1044,7 @@ export class GenerativeModel implements LLMInterface {
       } else {
         outcome = {
           status: "failed",
-          message: error instanceof Error ? error.message : String(error),
+          message: describeError(error),
         };
       }
     } finally {
@@ -1058,12 +1109,17 @@ export class GenerativeModel implements LLMInterface {
    * Opens the underlying AgentHub stream (a testing seam): defaults to
    * `streamingResponseStateful`; unit tests can subclass and override this method, feeding in a
    * controlled UniEvent stream to verify the outcome classification for timeout/network
-   * drop/interruption/error (without a real API).
+   * drop/interruption/error (without a real API). `config` is this request's resolved
+   * UniConfig (the shared frozen config plus the per-request thinking level).
    */
-  protected openStream(uniMessage: UniMessage, signal: AbortSignal): AsyncIterable<UniEvent> {
+  protected openStream(
+    uniMessage: UniMessage,
+    signal: AbortSignal,
+    config: UniConfig = this.uniConfig,
+  ): AsyncIterable<UniEvent> {
     return this.client.streamingResponseStateful({
       message: uniMessage,
-      config: this.uniConfig,
+      config,
       signal,
     });
   }
@@ -1104,6 +1160,10 @@ export function toolDefinitionsToSchemas(tools: ToolDefinition[]): ToolSchema[] 
  * protocol equivalent. `tool_choice` is likewise never set — AgentHub only puts it on the wire
  * when UniConfig defines it, and leaving it off preserves the protocol default ("auto" when
  * tools are present).
+ *
+ * `thinkingLevel` is deliberately **not** baked in here: the effective level is resolved per
+ * request (`GenerativeModelParameters.thinkingLevel ?? the construction default`, see
+ * `GenerativeModel.requestConfig`), so a turn can override it on a live session.
  */
 export function buildUniConfig(config: GenerativeModelConfig): UniConfig {
   const uniConfig: UniConfig = {};
@@ -1118,10 +1178,6 @@ export function buildUniConfig(config: GenerativeModelConfig): UniConfig {
   // negative max_tokens with a 400 (issue #55's sibling).
   if (config.maxTokens !== undefined && config.maxTokens > 0) {
     uniConfig.max_tokens = config.maxTokens;
-  }
-  const thinking = mapThinkingLevel(config.thinkingLevel);
-  if (thinking !== undefined) {
-    uniConfig.thinking_level = thinking;
   }
   return uniConfig;
 }

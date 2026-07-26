@@ -95,7 +95,7 @@ Edit this file via the CLI (`penguin config model …`) or the Web Models page �
 | `system_prompt` | built-in template | Required; the only template with placeholder substitution |
 | `max_turns` | `100` | Maximum LLM turns per Task (-1 removes the cap) |
 | `model.max_tokens` | `32000` | Output Token limit per Request (-1 = no cap, provider default) |
-| `model.thinking_level` | `medium` | `none` / `low` / `medium` / `high` / `xhigh` |
+| `model.thinking_level` | `medium` | `none` / `low` / `medium` / `high` / `xhigh`; the session default, overridable per-Task |
 | `model.timeoutMs` | `120000` | Per-Request timeout (milliseconds) |
 | `compaction.max_context_length` | `128000` | Context Token threshold that triggers compaction |
 | `compaction.max_session_turns` | `-1` | Cumulative Session turn threshold (`-1` = unlimited) |
@@ -134,6 +134,8 @@ compaction:
 # parameters JSON Schema) for every tool you keep — see Tools & Approval.
 ```
 
+An existing Agent always runs with its on-disk config verbatim — newer code defaults are never merged in automatically. To adopt the current defaults (for example an updated built-in system prompt), use the settings page's **Restore default configuration** action: like a skill update it overwrites the existing configuration — custom system prompt, tool list, model/compaction settings and MCP Servers — keeping only `name`, `description` and `version`.
+
 ### System prompt placeholders
 
 `system_prompt` is the only template with placeholder substitution. Available placeholders:
@@ -146,12 +148,14 @@ compaction:
 | `{{PLATFORM}}` | Runtime platform |
 | `{{OS_VERSION}}` | Operating system version |
 | `{{DATE}}` | Current date |
-| `{{PROJECT_DIR}}` | Project directory |
+| `{{PROJECT_DIR}}` | App Data Dir: the PenguinHarness app data root (the Project directory) |
 | `{{AGENT_ID}}` | Agent id |
 | `{{CWD}}` | Workspace path |
 | `{{PROVIDER}}` | Model provider group |
 | `{{MODEL_ID}}` | Upstream model id |
 | `{{SESSION_ID}}` | Session id |
+
+`{{PROJECT_DIR}}` is surfaced to the model as the **App Data Dir**: PenguinHarness's application data root, holding every Agent's data files (`agents/<agent_id>/…`) and the project-level data — deliberately not described as a project or task directory, so the model does not mistake it for the task's working directory (`CWD`).
 
 `agent_state/AGENTS.md` is the developer-editable instruction file, injected via `{{AGENTS_MD}}` and empty by default — it is also the file an optimizer edits most (see [Self-Improvement](/self-improvement)).
 

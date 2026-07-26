@@ -43,6 +43,7 @@ import type {
   ScheduleItem,
   SchedulesResponse,
   ScheduleUpsertRequest,
+  SessionCategory,
   SessionCreateRequest,
   SessionCreateResponse,
   SessionPatchRequest,
@@ -179,6 +180,13 @@ export const putAgentConfig = (
     { method: "PUT", body },
   );
 
+/** Overwrite system_config.yaml with the current defaults (keeps only name/description/version). */
+export const resetAgentConfig = (projectId: string, agentId: string) =>
+  apiFetch<AgentConfigResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/config/reset`,
+    { method: "POST" },
+  );
+
 export const getAgentTraces = (projectId: string, agentId: string) =>
   apiFetch<AgentTracesResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/traces`,
@@ -186,17 +194,25 @@ export const getAgentTraces = (projectId: string, agentId: string) =>
 
 // Session ---------------------------------------------------------------------
 
-/** Optional paging (both absent = full list): the store requests `limit+1` per page to detect "has more". */
+/**
+ * Optional paging (absent = full unfiltered list): the store requests `limit+1` per page to
+ * detect "has more". `category` filters server-side (paging applies within the category);
+ * `withCounts` asks for per-category totals over the whole list alongside the page.
+ */
 export const listSessions = (
   projectId: string,
   agentId: string,
-  paging?: { offset: number; limit: number },
-) =>
-  apiFetch<SessionsResponse>(
-    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/sessions${
-      paging ? `?limit=${paging.limit}&offset=${paging.offset}` : ""
-    }`,
+  opts?: { offset: number; limit: number; category?: SessionCategory; withCounts?: boolean },
+) => {
+  const qs = opts
+    ? `?limit=${opts.limit}&offset=${opts.offset}` +
+      (opts.category ? `&category=${opts.category}` : "") +
+      (opts.withCounts ? "&counts=1" : "")
+    : "";
+  return apiFetch<SessionsResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/sessions${qs}`,
   );
+};
 
 /** Server directory browsing: `path` is an absolute path; empty means start from the server's home directory. */
 export const listDirs = (projectId: string, path = "") =>

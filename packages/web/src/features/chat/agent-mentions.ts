@@ -143,6 +143,76 @@ export function parseHandoffMessage(text: string): HandoffOrigin | null {
   return origin.agentId ? origin : null;
 }
 
+/**
+ * Origin info for a `/model` switch new conversation (modeled on HandoffOrigin): the source
+ * Session, the absolute path of its latest Trace file (the model reads it for the earlier
+ * history — nothing is injected into the new context), the shared Workspace, and the
+ * previous model's paired reference.
+ */
+export interface ModelSwitchOrigin {
+  sessionId: string;
+  sessionTitle?: string;
+  /** Absolute path of the source session's latest Trace file (JSONL of OmniMessage envelopes). */
+  tracePath?: string;
+  workspace?: string;
+  /** The source session's model reference pair (never concatenated — two separate fields). */
+  prevProvider?: string;
+  prevModelId?: string;
+}
+
+/**
+ * First message of a `/model` switch new conversation (in English, mirroring
+ * `handoffMessage`): the `<model_switch_from>` block states that this conversation continues
+ * an earlier one on a different model and carries the source Session / Trace path /
+ * Workspace / previous model pair. The earlier history is deliberately NOT injected — some
+ * models require thinking payloads and provider `fidelity` byte-for-byte when history is
+ * replayed, which cannot cross models — so the model reads the Trace file itself when it
+ * needs the context. When rendering, `parseModelSwitchMessage` collapses this into a
+ * one-line switch notice (the raw text isn't shown; the model still sees it as usual).
+ */
+export function modelSwitchMessage(origin: ModelSwitchOrigin): string {
+  const title = origin.sessionTitle ? ` (${origin.sessionTitle})` : "";
+  const lines = [`session: ${origin.sessionId}${title}`];
+  if (origin.tracePath) lines.push(`trace: ${origin.tracePath}`);
+  if (origin.workspace) lines.push(`workspace: ${origin.workspace}`);
+  if (origin.prevModelId) lines.push(`previous_model: ${origin.prevModelId}`);
+  if (origin.prevProvider) lines.push(`previous_provider: ${origin.prevProvider}`);
+  return [
+    "<model_switch_from>",
+    "The user switched models: this conversation continues an earlier conversation, now on a different model. Its origin is listed below and the user's message, if any, follows. The earlier history is NOT in your context — when you need it, read the trace file at the path below (JSONL, one message envelope per line: user/assistant text, tool calls and results).",
+    ...lines,
+    "</model_switch_from>",
+  ].join("\n");
+}
+
+/**
+ * Inverse parse of `modelSwitchMessage` (lets the message stream collapse the origin block
+ * into a switch notice): returns origin info when the whole message is strictly one
+ * `<model_switch_from>` block, otherwise null (a normal user message renders as-is).
+ * Field lines parse as `key: value`; the session line's `(title)` label is split off;
+ * non-field lines such as the explanation sentence are ignored.
+ */
+export function parseModelSwitchMessage(text: string): ModelSwitchOrigin | null {
+  const block = /^<model_switch_from>\n([\s\S]*)\n<\/model_switch_from>$/.exec(text.trim());
+  if (!block) return null;
+  const origin: ModelSwitchOrigin = { sessionId: "" };
+  for (const line of block[1]!.split("\n")) {
+    const kv = /^(session|trace|workspace|previous_model|previous_provider): (.+)$/.exec(line);
+    if (!kv) continue;
+    const key = kv[1]!;
+    const value = kv[2]!;
+    if (key === "session") {
+      const labeled = /^([\w-]+) \((.*)\)$/.exec(value);
+      origin.sessionId = labeled ? labeled[1]! : value;
+      if (labeled?.[2] !== undefined) origin.sessionTitle = labeled[2];
+    } else if (key === "trace") origin.tracePath = value;
+    else if (key === "workspace") origin.workspace = value;
+    else if (key === "previous_model") origin.prevModelId = value;
+    else origin.prevProvider = value;
+  }
+  return origin.sessionId ? origin : null;
+}
+
 /** Origin info for a scheduled-task trigger (the server's scheduledMessage `<scheduled_task>` block). */
 export interface ScheduledOrigin {
   /** Task name (filename minus .toml). */

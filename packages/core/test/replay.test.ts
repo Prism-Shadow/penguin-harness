@@ -50,7 +50,6 @@ function meta(): OmniMessage {
     model_context_window: 1000000,
     system_prompt: "SP",
     tools: [],
-    thinking_level: "default",
     agent_state: "/agent/state",
     workspace: "/ws",
   });

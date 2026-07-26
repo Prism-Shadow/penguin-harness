@@ -73,15 +73,17 @@ Built-in groups and their env-var fallbacks (catalog source: `packages/core/src/
 
 The gateway groups (openrouter / fireworks / siliconflow / qwen-token-plan / qwen-pay-as-you-go) go through AgentHub's OpenAI client, so with blank credentials they read `OPENAI_API_KEY` — not a gateway-specific variable.
 
+The preset catalog also carries OpenRouter's free tier: `:free` model variants (e.g. `inclusionai/ling-3.0-flash:free`, `poolside/laguna-m.1:free`) and the `openrouter/free` unified Free Models Router. They cost nothing, but are subject to OpenRouter's free-tier rate limits and data policy.
+
 Some models in the preset catalog: deepseek-v4-pro / deepseek-v4-flash, gemini-3.1-pro-preview, claude-opus-4-8 / claude-sonnet-4-6, gpt-5.5, glm-5.2, kimi-k2.6, qwen3.8-max-preview (not exhaustive).
 
 ## Thinking levels
 
-Five levels: `none | low | medium | high | xhigh`, configured per Agent as `model.thinking_level` in `system_config.yaml`, default medium. The Web pickers offer `low` and above only (many models cannot disable thinking; `none` stays a valid stored value and still displays). The chat draft view offers a quick picker next to the model selector: a picked level is written back to the selected Agent's setting immediately (the switched-to level becomes that Agent's new default and applies from the next session; a running session keeps the level it was created with). See [Configuration](/configuration).
+Five levels: `none | low | medium | high | xhigh`, configured per Agent as `model.thinking_level` in `system_config.yaml`, default medium. The Web pickers offer `low` and above only (many models cannot disable thinking; `none` stays a valid stored value and still displays). The chat draft view offers a quick picker next to the model selector: a picked level is written back to the selected Agent's setting immediately (the switched-to level becomes that Agent's new default and applies from the next session). Inside an active session the thinking level is a **per-turn parameter**: the composer's picker lists only the levels and starts out showing the Agent config's level — while the user hasn't picked one it auto-follows the config (sends omit the level, so config edits keep taking effect); once picked, the level sticks for that session and rides on every subsequent send (it applies to that session's subsequent Tasks only and never writes back to the Agent config). See [Configuration](/configuration).
 
 ## Models decoupled from Agents
 
-An Agent never binds a model: the model is chosen when a Session is created and stays locked for that Session; the same Agent can run different Sessions on different models. The three `pricing` buckets feed the usage/cost center's per-Token accounting.
+An Agent never binds a model: the model is chosen when a Session is created and stays locked for that Session; the same Agent can run different Sessions on different models. The in-session `/model` command changes models handoff-style: it opens a new session for the same Agent on the new model, keeping the current Workspace, whose first message carries a `<model_switch_from>` source block (the source session id and its Trace file path) — the history is not injected into the new context (some models require thinking payloads and `fidelity` on history replay, which cannot cross models); the model reads the Trace file itself when it needs it, and the source session stays untouched. The three `pricing` buckets feed the usage/cost center's per-Token accounting.
 
 Credential handling:
 

@@ -118,7 +118,7 @@ export function TaskStatsLine({
             <StatChip
               icon={STAT_ICONS.cost}
               value={formatMoney(cost, currency)}
-              label={`${S.chat.statCost}（${currency}）`}
+              label={`${S.common.cost}（${currency}）`}
             />
           )}
           <StatChip
@@ -130,7 +130,7 @@ export function TaskStatsLine({
       )}
       <button
         type="button"
-        title={copied ? S.chat.copied : S.chat.copyReply}
+        title={copied ? S.common.copied : S.chat.copyReply}
         aria-label={S.chat.copyReply}
         onClick={copy}
         className="flex h-5 w-5 items-center justify-center rounded transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"

@@ -11,13 +11,14 @@ import path from "node:path";
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { imageUrlMessage, scratchpadDir, userText } from "@prismshadow/penguin-core";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { OmniMessage, ThinkingLevelName } from "@prismshadow/penguin-core";
 import type {
   ApprovalMode,
   FilesStatResponse,
   GoalResponse,
   MessagesResponse,
   ServerEvent,
+  SessionCategory,
   SessionCreateResponse,
   SessionResponse,
   SessionsResponse,
@@ -56,6 +57,17 @@ const APPROVAL_MODES: readonly ApprovalMode[] = [
   "deny-all",
   "read-only",
   "always-ask",
+];
+
+/** The five valid per-turn thinking level names (TaskCreateRequest.thinkingLevel). */
+const THINKING_LEVELS: readonly ThinkingLevelName[] = ["none", "low", "medium", "high", "xhigh"];
+
+/** Accepted `category` query values of the list endpoint (SessionCategory, spelled out for validation). */
+const SESSION_CATEGORIES: readonly SessionCategory[] = [
+  "active",
+  "subagent",
+  "schedule",
+  "archived",
 ];
 
 /** Validate Prompt input parts: text or image (data: / http(s) URL). */
@@ -120,12 +132,28 @@ export function agentSessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     // Optional paging (absent = full list, the pre-paging contract): the sidebar requests
     // limit+1 and shows limit, detecting "has more" without a response-envelope change.
     const paging = optionalPagingQuery(c);
-    const sessions = await deps.sessionService.listSessions(
+    // Optional category filter (paging then applies within the category) and per-category
+    // totals — the sidebar loads active rows only and labels the collapsed folders from counts.
+    const rawCategory = c.req.query("category");
+    if (rawCategory !== undefined && !SESSION_CATEGORIES.includes(rawCategory as SessionCategory)) {
+      throw badRequest(`category must be one of ${SESSION_CATEGORIES.join(" / ")}.`);
+    }
+    const rawCounts = c.req.query("counts");
+    if (rawCounts !== undefined && rawCounts !== "1") throw badRequest("counts only accepts 1.");
+    const { sessions, counts, workspaceCounts } = await deps.sessionService.listSessions(
       projectId,
       agentId,
-      ...(paging ? [paging] : []),
+      {
+        ...(paging ? { paging } : {}),
+        ...(rawCategory !== undefined ? { category: rawCategory as SessionCategory } : {}),
+        ...(rawCounts !== undefined ? { withCounts: true } : {}),
+      },
     );
-    return c.json({ sessions } satisfies SessionsResponse);
+    return c.json({
+      sessions,
+      ...(counts ? { counts } : {}),
+      ...(workspaceCounts ? { workspaceCounts } : {}),
+    } satisfies SessionsResponse);
   });
 
   app.post("/", async (c) => {
@@ -195,8 +223,13 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
   app.get("/:sessionId", async (c) => {
     const row = resolveSession(c);
     const hasTrace = await deps.sessionService.hasTrace(row);
+    const info = await deps.sessionService.toInfo(row, hasTrace);
+    // Single-session GET only: the latest Trace file's absolute path (a directory walk per
+    // call — too costly for list rows). The web's /model switch hands it to the new session's
+    // <model_switch_from> block so the model can read the source history itself.
+    const tracePath = hasTrace ? await deps.sessionService.latestTracePath(row) : undefined;
     return c.json({
-      session: await deps.sessionService.toInfo(row, hasTrace),
+      session: { ...info, ...(tracePath !== undefined ? { tracePath } : {}) },
     } satisfies SessionResponse);
   });
 
@@ -373,8 +406,13 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       return c.json({ sessionId } satisfies TaskCreateResponse, 202);
     }
     const input = parseTaskInput(body);
+    // Per-turn thinking level (optional): validated against the five names; omitted follows
+    // the session's default.
+    const thinkingLevel = optionalEnum(body, "thinkingLevel", THINKING_LEVELS);
     // 202: the Task executes on the server, decoupled from the SSE connection; sessionId is the current actual id (the new id after self-heal).
-    const { sessionId } = await deps.manager.startTask(row.sessionId, input);
+    const { sessionId } = await deps.manager.startTask(row.sessionId, input, {
+      ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
+    });
     return c.json({ sessionId } satisfies TaskCreateResponse, 202);
   });
 

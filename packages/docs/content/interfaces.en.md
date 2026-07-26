@@ -40,6 +40,7 @@ interface LLMInterface {
 interface GenerativeModelParameters {
   newMessages: OmniMessage[];    // only this turn's new messages (the impl owns history; mixed roles rejected)
   signal?: AbortSignal;
+  thinkingLevel?: ThinkingLevelName;   // per-request override; omitted = the construction default
 }
 ```
 
@@ -78,7 +79,7 @@ interface GenerativeModelConfig {
   systemPrompt?: string;           // fully assembled system prompt, placeholders substituted
   contextWindow?: number;
   maxTokens?: number;
-  thinkingLevel?: ThinkingLevelName;   // "none" | "low" | "medium" | "high" | "xhigh"
+  thinkingLevel?: ThinkingLevelName;   // construction default (a per-request parameter can override); "none" | "low" | "medium" | "high" | "xhigh"
   requestTimeoutMs?: number;       // per-Request timeout, default 120000; <=0 disables
   toolCallIds?: ToolCallIdAllocator;   // Session-level tool_call_id registry (pass the same instance across compaction)
 }
@@ -179,6 +180,7 @@ session.run(
 interface RunOptions {
   signal?: AbortSignal;    // interrupt (e.g. Ctrl-C)
   approve?: ApproveFn;     // per-tool approval; denies everything when omitted
+  thinkingLevel?: ThinkingLevelName;   // this run's thinking level (per-turn; compaction requests unaffected)
 }
 ```
 

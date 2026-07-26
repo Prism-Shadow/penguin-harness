@@ -20,10 +20,14 @@ import { ToolCallCard } from "./tool-call-card";
 import { SubagentCard } from "./subagent-card";
 import { CompactionBanner } from "./compaction-banner";
 import { GoalRoundBanner } from "./goal-banner";
-import { HandoffBanner } from "./handoff-banner";
+import { HandoffBanner, ModelSwitchBanner } from "./handoff-banner";
 import { ScheduledBanner } from "./scheduled-banner";
 import { SkillsBanner } from "./skills-banner";
-import { parseHandoffMessage, parseScheduledMessage } from "./agent-mentions";
+import {
+  parseHandoffMessage,
+  parseModelSwitchMessage,
+  parseScheduledMessage,
+} from "./agent-mentions";
 import { parseGoalTaskMessage } from "./goal-use";
 import { parseSkillsMessage } from "./skill-use";
 import { TaskStatsLine } from "./task-stats-line";
@@ -71,7 +75,7 @@ function MessageMeta({
       {text !== undefined && (
         <button
           type="button"
-          title={copied ? S.chat.copied : S.chat.copyMessage}
+          title={copied ? S.common.copied : S.chat.copyMessage}
           aria-label={S.chat.copyMessage}
           onClick={copy}
           className="rounded p-0.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"
@@ -89,6 +93,9 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
       // Source block for a chat created via @ handoff: collapsed into a single-line handoff notice (the raw text isn't shown), clickable to jump back to the original chat.
       const handoff = parseHandoffMessage(item.text);
       if (handoff) return <HandoffBanner origin={handoff} />;
+      // Source block for a chat opened by the /model switch: collapsed into a single-line switch notice, clickable to jump back to the source conversation.
+      const modelSwitch = parseModelSwitchMessage(item.text);
+      if (modelSwitch) return <ModelSwitchBanner origin={modelSwitch} />;
       // A goal round's injected input (the whole message is the <goal_task> block): collapsed
       // into a one-line round notice (the Trace page shows the raw block).
       const goalRound = parseGoalTaskMessage(item.text);

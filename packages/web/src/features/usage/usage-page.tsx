@@ -16,8 +16,8 @@ import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 import type { ModelRefDto, UsageBucket, UsageResponse } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
+import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { formatMoney, humanizeTokens } from "../../lib/format";
 import { catalogEntryFor } from "@prismshadow/penguin-core/model-catalog";
@@ -81,7 +81,7 @@ function SummaryCard({
         <SummaryRow label={S.usage.requests} value={String(bucket.requests)} muted />
         {/* The unpriced-records asterisk sits on the word "cost" (superscript), keeping the number clean and readable; see the footer for the explanation */}
         <SummaryRow
-          label={S.usage.colCost}
+          label={S.common.cost}
           value={formatMoney(bucket.cost, currency)}
           sup={bucket.hasUncosted}
         />
@@ -159,7 +159,7 @@ export function UsagePage() {
       });
       setData(res);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : S.common.unknownError);
+      setError(apiErrorText(e));
     }
   }, [projectId, from, to, agentFilter, modelFilter?.provider, modelFilter?.modelId]);
 
