@@ -15,6 +15,7 @@ import { MODEL_PROVIDERS } from "@prismshadow/penguin-core/model-catalog";
 import {
   groupModelRows,
   hasConfiguredKey,
+  isFreeModel,
   matchesQuery,
   orderModelsLikeLibrary,
   visibleChatModels,
@@ -250,5 +251,23 @@ describe("orderModelsLikeLibrary", () => {
       "custom my-proxy",
       "my-gateway own-1",
     ]);
+  });
+});
+
+describe("isFreeModel", () => {
+  it("numeric buckets (the DTO shape): free ⇔ pricing exists and all three buckets are 0", () => {
+    expect(isFreeModel({ cacheRead: 0, cacheWrite: 0, output: 0 })).toBe(true);
+    expect(isFreeModel({ cacheRead: 0, cacheWrite: 0, output: 1.2 })).toBe(false);
+    expect(isFreeModel({ cacheRead: 0.5, cacheWrite: 6.25, output: 25 })).toBe(false);
+    // No pricing at all = costs merely unknown, not free.
+    expect(isFreeModel(undefined)).toBe(false);
+  });
+
+  it('string-typed edit fields (the model page\'s RowState shape): "" means unpriced, not $0', () => {
+    expect(isFreeModel({ cacheRead: "0", cacheWrite: "0", output: "0" })).toBe(true);
+    expect(isFreeModel({ cacheRead: "", cacheWrite: "", output: "" })).toBe(false);
+    // Partially filled pricing never counts as free.
+    expect(isFreeModel({ cacheRead: "0", cacheWrite: "", output: "0" })).toBe(false);
+    expect(isFreeModel({ cacheRead: "0", cacheWrite: "0", output: "3" })).toBe(false);
   });
 });

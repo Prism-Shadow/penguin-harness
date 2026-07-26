@@ -61,7 +61,13 @@ import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { SkillIcon } from "../skills/skill-icon-view";
 import { ZoomableImage } from "../../components/ui/image-zoom";
 import { ProviderLogo } from "../../components/ui/provider-logo";
-import { hasConfiguredKey, sameModelRef, visibleChatModels } from "../models/model-grouping";
+import { Badge } from "../../components/ui/badge";
+import {
+  hasConfiguredKey,
+  isFreeModel,
+  sameModelRef,
+  visibleChatModels,
+} from "../models/model-grouping";
 import { filterAgents, matchMention, splitLeadingMention } from "./agent-mentions";
 import { matchSlash, removeSlashToken } from "./slash-token";
 import { SELECTABLE_THINKING_LEVELS, thinkingLevelLabel } from "./thinking-level";
@@ -348,6 +354,13 @@ function ModelSelect({
           >
             <ProviderLogo provider={m.provider} className="h-4 w-4 shrink-0" />
             <span className="min-w-0 flex-1 truncate">{modelLabel(m)}</span>
+            {/* Zero-cost rows (all three price buckets 0): same light-yellow "Free" badge as
+                the model library card, so free models stand out while picking. */}
+            {isFreeModel(m.pricing) && (
+              <span className="shrink-0">
+                <Badge tone="yellow">{S.models.freeBadge}</Badge>
+              </span>
+            )}
             {/* Key-less rows (visible via show-all / selected / default / no-key-at-all) carry a
                 struck-through key icon (the "no key" text lives in the title/aria-label). */}
             {!hasConfiguredKey(m) && (

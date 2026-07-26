@@ -70,7 +70,7 @@ import {
   resolveModelEnv,
 } from "@prismshadow/penguin-core/model-catalog";
 import type { ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
-import { groupModelRows, sameModelRef, userProviderInfo } from "./model-grouping";
+import { groupModelRows, isFreeModel, sameModelRef, userProviderInfo } from "./model-grouping";
 import { draftKey, loadDraft, saveDraft } from "../chat/draft-cache";
 import { syncRowsWithCatalog } from "./catalog-sync";
 import { tpsTone, ttftTone } from "./speed-test";
@@ -962,6 +962,10 @@ function ModelCard({
       <span className="flex flex-wrap items-center gap-1.5">
         <span className="text-sm font-medium">{row.displayName ?? row.modelId}</span>
         {isDefault && <Badge tone="brand">{S.models.default}</Badge>}
+        {/* Free rows (all three price buckets 0, e.g. :free variants / openrouter/free): a
+            light-yellow badge so zero-cost models stand out at a glance (informational, kept
+            distinct from the amber warning tone the proxy-vision badge uses). */}
+        {isFreeModel(row) && <Badge tone="yellow">{S.models.freeBadge}</Badge>}
         {row.vision && <Badge tone="green">{S.models.visionBadge}</Badge>}
         {isVisionModel && <Badge tone="amber">{S.models.visionModelBadge}</Badge>}
       </span>

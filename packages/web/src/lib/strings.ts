@@ -308,6 +308,8 @@ export const zh = {
     /** Shown only while the vision switch is OFF: images are then read via the configured vision proxy model (describe_image). */
     visionOffProxyHint: "使用视觉代理模型读图",
     visionBadge: "视觉",
+    /** Light-yellow badge on zero-cost models (all three price buckets 0, e.g. the :free variants and openrouter/free). */
+    freeBadge: "免费",
     visionModelBadge: "视觉代理",
     setVisionModel: "设为视觉代理模型",
     visionModelHint: "供不支持图片的模型经 describe_image 代读图片",
