@@ -132,6 +132,10 @@ Schedule 写操作仅限 Owner。新建 Session 模式的任务，`modelId` 与 
 | GET | /agents/:agentId/traces | Trace 文件的日期 → Session 下钻结构 |
 | GET | /agents/:agentId/traces/:sessionId/:index | 读取 Trace 事件（`offset` / `limit` 分页） |
 | GET | /agents/:agentId/traces/:sessionId/:index/analysis | Trace 性能分析结果 |
+| GET | /agents/:agentId/traces/:sessionId/:index/download | 下载 Trace 原始文件（JSONL 附件） |
+| POST | /agents/:agentId/traces/import | 导入 Trace 文件：`{dataBase64}` → `{sessionId, index, date}` |
+
+Trace 下载对任意成员开放；导入仅限 owner（同 Agent 快照导入，上限 14MB）。导入文件必须是合法的 Trace JSONL，且首条记录为携带文件名安全 `session_id` 的 `session_meta`；文件按首条记录时间戳落入对应日期目录，索引取该 Session 现有最大索引 +1——绝不覆盖已有文件。
 
 ### Session 级接口
 

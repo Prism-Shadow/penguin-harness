@@ -132,6 +132,10 @@ On Session creation, `modelId` and `provider` are both-or-neither: send the comp
 | GET | /agents/:agentId/traces | Date → Session drill-down structure of Trace files |
 | GET | /agents/:agentId/traces/:sessionId/:index | Read Trace events (`offset` / `limit` pagination) |
 | GET | /agents/:agentId/traces/:sessionId/:index/analysis | Trace performance analysis |
+| GET | /agents/:agentId/traces/:sessionId/:index/download | Download the raw Trace file (JSONL attachment) |
+| POST | /agents/:agentId/traces/import | Import a Trace file: `{dataBase64}` → `{sessionId, index, date}` |
+
+Trace download is available to any member; import is owner-only (like the Agent snapshot import, capped at 14MB). An imported file must be valid Trace JSONL whose first record is a `session_meta` with a filename-safe `session_id`; it lands in the date directory of its first record's timestamp at the session's next free index — existing files are never overwritten.
 
 ### Session-Level Endpoints
 

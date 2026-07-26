@@ -89,4 +89,4 @@ Each content message's opaque provider `fidelity` payload (thinking signatures, 
 
 ## Observability
 
-Every approval decision (`approval_decision`), abort (`abort`), compaction (`compaction_begin` / `compaction_end`), and `token_usage` lands in the Trace as an event. The Web Trace view and the usage/cost statistics are both derived from this same data — there is no second source of truth; see the [Web App Guide](/web-app). The approval mechanism itself is covered in [Tools & Approval](/tools).
+Every approval decision (`approval_decision`), abort (`abort`), compaction (`compaction_begin` / `compaction_end`), and `token_usage` lands in the Trace as an event. The Web Trace view and the usage/cost statistics are both derived from this same data — there is no second source of truth; see the [Web App Guide](/web-app). The approval mechanism itself is covered in [Tools & Approval](/tools). Trace files can also be moved across deployments from the Web Traces page: any file can be exported (downloaded verbatim as JSONL) and imported back under an Agent — an import is stored at the session's next free index and never overwrites an existing file.

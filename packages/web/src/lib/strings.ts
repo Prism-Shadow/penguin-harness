@@ -811,6 +811,9 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     inProgress: "进行中",
     systemPrompt: "系统提示词",
     toolDefs: (n: number) => `工具定义（${n}）`,
+    exportFile: "导出",
+    importTrace: "导入 Trace",
+    importing: "导入中…",
   },
 
   benchmark: {
@@ -868,6 +871,7 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
       task_in_progress: "该 Session 已有任务在运行。",
       version_conflict: "快照版本不高于当前版本。",
       invalid_title: "标题无效。",
+      invalid_trace: "该文件不是有效的 Trace 文件。",
     },
   },
 };

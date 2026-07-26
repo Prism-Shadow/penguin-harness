@@ -6,6 +6,7 @@
  * analysis (an execution timeline) + an event timeline.
  */
 import { useEffect, useRef, useState } from "react";
+import type { ChangeEvent } from "react";
 import { useSearchParams } from "react-router";
 import type { AgentTracesResponse } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
@@ -16,6 +17,7 @@ import { formatBytes } from "../../lib/format";
 import { agentDisplayName, useProject } from "../../state/project";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { Chevron } from "../../components/ui/chevron";
+import { DownloadIcon, UploadIcon } from "../../components/ui/icons";
 import { Truncated } from "../../components/ui/truncated";
 import { useSessions } from "../../state/sessions";
 import { EmptyState } from "../../components/ui/empty-state";
@@ -67,6 +69,7 @@ function AgentNode({
   name,
   defaultOpen,
   focusSessionId,
+  canImport,
   titleOf,
   selection,
   onSelect,
@@ -78,6 +81,8 @@ function AgentNode({
   defaultOpen: boolean;
   /** ?sessionId= deep link (jumped to directly from the evaluation center's runs): auto-selects that Session once the list is ready (only once). */
   focusSessionId?: string;
+  /** Trace import is owner-only on the server; non-owners don't get the button. */
+  canImport: boolean;
   titleOf: (agentId: string, sessionId: string) => string | undefined;
   selection: Selection | null;
   onSelect: (sel: Selection) => void;
@@ -85,6 +90,10 @@ function AgentNode({
   const [open, setOpen] = useState(defaultOpen);
   const [groups, setGroups] = useState<SessionGroup[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  /** Session to auto-select once the refreshed list arrives (the import response's sessionId). */
+  const importedSession = useRef<string | null>(null);
 
   useEffect(() => {
     if (!open || groups) return;
@@ -106,6 +115,48 @@ function AgentNode({
     if (target) onSelect({ agentId, sessionId: target.sessionId, files: target.files });
   }, [groups, focusSessionId, agentId, onSelect]);
 
+  // Post-import selection: once the refreshed list is in, select the imported
+  // Session — its files are newest-first and the import always lands at the
+  // session's highest index, so the default file pick is the imported file.
+  useEffect(() => {
+    const sid = importedSession.current;
+    if (sid === null || !groups) return;
+    importedSession.current = null;
+    const target = groups.find((g) => g.sessionId === sid);
+    if (target) onSelect({ agentId, sessionId: target.sessionId, files: target.files });
+  }, [groups, agentId, onSelect]);
+
+  const runImport = async (dataBase64: string) => {
+    setImporting(true);
+    try {
+      const res = await api.importAgentTrace(projectId, agentId, { dataBase64 });
+      // Drop the cached list so the fetch effect above reloads it; the effect
+      // watching `groups` then jumps to the imported Session.
+      importedSession.current = res.sessionId;
+      setGroups(null);
+      setOpen(true);
+    } catch (e: unknown) {
+      setImportError(apiErrorText(e));
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const onPickFile = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    // Reset before reading so re-picking the same file fires change again.
+    e.target.value = "";
+    if (!file) return;
+    setImportError(null);
+    const reader = new FileReader();
+    reader.onload = () => {
+      const url = reader.result as string;
+      void runImport(url.slice(url.indexOf(",") + 1)); // strip the data:...;base64, prefix
+    };
+    reader.onerror = () => setImportError(S.common.unknownError);
+    reader.readAsDataURL(file);
+  };
+
   // The group header and Session row styling matches the sidebar
   // (components/layout/sidebar.tsx): the same information appearing in two
   // places with a different shape would make it look like two different things.
@@ -126,7 +177,28 @@ function AgentNode({
           <Chevron open={open} size={12} className="text-gray-400" />
           <span className="min-w-0 flex-1" />
         </button>
+        {canImport && (
+          <label
+            title={importing ? S.traces.importing : S.traces.importTrace}
+            className={`shrink-0 cursor-pointer rounded p-1 text-gray-400 transition-colors duration-150 hover:bg-gray-200/50 hover:text-gray-600 dark:hover:bg-gray-800/50 dark:hover:text-gray-300 ${
+              importing ? "pointer-events-none opacity-60" : ""
+            }`}
+          >
+            {/* sr-only rather than hidden: keeps it keyboard-Tab-focusable (same as the snapshot import). */}
+            <input
+              type="file"
+              accept=".jsonl"
+              className="sr-only"
+              disabled={importing}
+              onChange={onPickFile}
+            />
+            <UploadIcon size={13} />
+            <span className="sr-only">{importing ? S.traces.importing : S.traces.importTrace}</span>
+          </label>
+        )}
       </div>
+      {/* Import errors show even while collapsed — the import button itself is always visible. */}
+      {importError && <p className="px-2.5 pb-1 text-xs text-red-500">{importError}</p>}
       {open && (
         <div className="anim-fade">
           {error && <p className="px-2.5 py-1 text-xs text-red-500">{error}</p>}
@@ -232,6 +304,7 @@ export function TracesPage() {
                 {...(focusSessionId !== null && focusAgentId === a.agentId
                   ? { focusSessionId }
                   : {})}
+                canImport={currentProject?.role === "owner"}
                 titleOf={titleOf}
                 selection={selection}
                 onSelect={(sel) => {
@@ -275,9 +348,25 @@ export function TracesPage() {
                 ))}
               </div>
             </div>
-            <p className="truncate font-mono text-xs text-gray-400">
-              {selection.sessionId} · {activeFile.date} · {formatBytes(activeFile.sizeBytes)}
-            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="min-w-0 flex-1 truncate font-mono text-xs text-gray-400">
+                {selection.sessionId} · {activeFile.date} · {formatBytes(activeFile.sizeBytes)}
+              </p>
+              {/* Raw-file download for the selected Trace file (same styling as the inactive file pills). */}
+              <a
+                href={api.agentTraceDownloadUrl(
+                  projectId,
+                  selection.agentId,
+                  selection.sessionId,
+                  activeFile.index,
+                )}
+                download
+                className="inline-flex shrink-0 items-center gap-1 rounded-md border border-gray-200 px-2 py-0.5 text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-100 dark:border-gray-800 dark:text-gray-400 dark:hover:bg-gray-800/60"
+              >
+                <DownloadIcon size={12} />
+                {S.traces.exportFile}
+              </a>
+            </div>
 
             <TraceFileView
               projectId={projectId}

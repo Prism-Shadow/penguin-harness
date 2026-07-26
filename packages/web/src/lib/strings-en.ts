@@ -831,6 +831,9 @@ When done, open index.html in a browser and self-test once.`,
     inProgress: "in progress",
     systemPrompt: "System prompt",
     toolDefs: (n: number) => `Tool definitions (${n})`,
+    exportFile: "Export",
+    importTrace: "Import Trace",
+    importing: "Importing…",
   },
 
   benchmark: {
@@ -884,6 +887,7 @@ When done, open index.html in a browser and self-test once.`,
       task_in_progress: "This Session already has a task running.",
       version_conflict: "The snapshot's version is not newer than the current one.",
       invalid_title: "The title is invalid.",
+      invalid_trace: "This file is not a valid Trace file.",
     },
   },
 };

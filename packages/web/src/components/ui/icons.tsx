@@ -70,6 +70,50 @@ export function PlusIcon({
   );
 }
 
+/** Download glyph (tray with a down arrow), used by export/download affordances. */
+export function DownloadIcon({ size = 13, className = "" }: { size?: number; className?: string }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      aria-hidden
+      className={`shrink-0 ${className}`}
+    >
+      <path
+        d="M12 4v11m0 0l-5-5m5 5l5-5M4 20h16"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+/** Upload glyph (tray with an up arrow), used by import/upload affordances. */
+export function UploadIcon({ size = 13, className = "" }: { size?: number; className?: string }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      aria-hidden
+      className={`shrink-0 ${className}`}
+    >
+      <path
+        d="M12 15V4m0 0L7 9m5-5l5 5M4 20h16"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 /**
  * The X close button shared by the Modal / Drawer / Sheet headers: same glyph,
  * padding and hover treatment. Extra button props (e.g. Sheet's onPointerDown
