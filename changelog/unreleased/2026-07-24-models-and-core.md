@@ -10,7 +10,7 @@ The four command/subagent tools — `exec_command`, `input_command`, `run_subage
 
 ## Exact CLI call and output formats
 
-Tool calls in the CLI render as `name <- description (payload)` — or plain `name <- payload` when no description arrives — with append-only streaming preserved, and every tool output line carries the tool name with a `->` gutter (`name -> output`), so both directions read symmetrically. File-tool previews shorten the path to one parent directory plus filename, and the chat and run startup banner now prints the version and the Agent, Workspace and Model each on its own line.
+Tool calls in the CLI render as `name <- description (payload)` — or plain `name <- payload` when no description arrives — with append-only streaming preserved, and call and output lines share an identical `[tool-NNN] name` prefix, so `[tool-NNN] exec_command <- $ date` pairs with `[tool-NNN] exec_command -> output`; an output whose call was never seen keeps the bare `[tool-NNN] ->` tag. File-tool previews shorten the path to one parent directory plus filename, and the chat and run startup banner now prints the version and the Agent, Workspace and Model each on its own line.
 
 ## Steering: message a running task
 
