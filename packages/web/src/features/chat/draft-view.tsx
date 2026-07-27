@@ -386,7 +386,7 @@ export function DraftView({
     async (
       input: TaskInputPart[],
       keepDraft = false,
-      goal: { budget: number; skills?: string[] } | null = null,
+      goal: { budget: number } | null = null,
     ): Promise<boolean> => {
       if (!agentId || sendingRef.current) return false;
       sendingRef.current = true;

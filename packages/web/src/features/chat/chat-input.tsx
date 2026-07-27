@@ -39,9 +39,9 @@
  * While a Task is running the input stays enabled and the toolbar keeps ONE action button:
  * an empty composer shows Stop (abort), and typing turns that same button into Send, which
  * follows the remembered mid-run send mode — steer (delivered between turns as a
- * [user_steering] user message) or queue-as-follow-up — chosen from the toolbar's
- * More-settings popover (available in draft state too, persisted in localStorage); sending is
- * disabled with a reason shown while compacting.
+ * [user_steering] user message) or queue-as-follow-up — chosen from the "+" menu's settings
+ * row (available in draft state too, persisted in localStorage); sending is disabled with a
+ * reason shown while compacting.
  * The toolbar is a single left/right row: settings controls left (scrolling horizontally when
  * the card is too narrow), status + model + the action button right (never shrinking), so a
  * phone viewport never pushes the action button off-screen.
@@ -2209,9 +2209,9 @@ export function ChatInput({
             )}
             {/* One action button, never two: while running an empty composer means "Stop"
               (abort), and typing turns the very same button into "Send" — which, mid-run,
-              steers or queues per the remembered More-settings mode. Idle/compacting keeps
-              the ordinary send button (disabled while compacting via canSend). Merging the
-              pair keeps the running-state row within a 320px viewport. */}
+              steers or queues per the remembered send mode (the "+" menu's settings row).
+              Idle/compacting keeps the ordinary send button (disabled while compacting via
+              canSend). Merging the pair keeps the running-state row within a 320px viewport. */}
             <button
               type="button"
               title={stopAction ? S.chat.stop : running ? midRunSendLabel : S.chat.send}
