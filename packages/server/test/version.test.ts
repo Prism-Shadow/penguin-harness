@@ -7,7 +7,7 @@
  * classifier and the "not launched via the CLI" early exit.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { VERSION } from "@prismshadow/penguin-core";
+import { BUILD_DATE, VERSION } from "@prismshadow/penguin-core";
 import type { UpdateCheckResponse, UpdateRunResponse, VersionResponse } from "../src/api/types.js";
 import {
   FAILURE_TTL_MS,
@@ -58,7 +58,11 @@ describe("GET /api/version", () => {
     const res = await apiClient(t.app, admin.cookie).get("/api/version");
     expect(res.status).toBe(200);
     const body = (await res.json()) as VersionResponse;
-    expect(body).toEqual({ version: VERSION, buildDate: null });
+    // Both values come from core's constants, which the release workflow STAMPS before it
+    // builds and tests (VERSION from the tag, BUILD_DATE with the run's UTC date). Asserting
+    // a literal null passed everywhere except the one job that matters — the npm publish —
+    // where it failed the release. Compare against the constants themselves.
+    expect(body).toEqual({ version: VERSION, buildDate: BUILD_DATE });
   });
 });
 
