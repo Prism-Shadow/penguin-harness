@@ -14,6 +14,8 @@ import type {
   CompactionReason,
   EventMessage,
   Fidelity,
+  GoalFinishedPayload,
+  GoalOutcomeStatus,
   ImageUrlPayload,
   InlineDataPayload,
   InlineThinkingPayload,
@@ -316,6 +318,15 @@ export function compactionEnd(args: {
     mode: args.mode,
     status: args.status,
   });
+}
+
+/** Goal terminal event: the last message of a goal-mode run (produced by the Session's goal loop). */
+export function goalFinished(
+  outcome: GoalOutcomeStatus,
+  rounds: number,
+  tokensUsed: number,
+): OmniMessage<GoalFinishedPayload> {
+  return event({ type: "goal_finished", outcome, rounds, tokens_used: tokensUsed });
 }
 
 /** subagent derivation pointer event: records only the direct child session's Session id (written to the parent Trace by context_engine). */

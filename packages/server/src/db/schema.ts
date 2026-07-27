@@ -96,6 +96,20 @@ CREATE TABLE IF NOT EXISTS schedule_state (    -- schedule runtime state (files 
   invalid_reason  TEXT,                        -- invalidation reason (e.g. the bound Session was deleted); NULL=healthy
   PRIMARY KEY (project_id, agent_id, name)
 );
+CREATE TABLE IF NOT EXISTS goal_state (        -- goal-mode runtime state (GOAL.yaml on disk is the model-facing protocol; this row is what the UI reads)
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,  -- one row per goal run; a Session may run goals repeatedly, latest row wins for display
+  session_id  TEXT NOT NULL,
+  project_id  TEXT NOT NULL,
+  agent_id    TEXT NOT NULL,
+  objective   TEXT NOT NULL,
+  status      TEXT NOT NULL,               -- active | complete | blocked | budget_limited | aborted (aborted is server-side only; on-disk status stays active)
+  budget      INTEGER NOT NULL,            -- token budget; -1 = unlimited
+  used        INTEGER NOT NULL DEFAULT 0,  -- uncached input + output, refreshed per round (mirrors the runner's accounting)
+  rounds      INTEGER NOT NULL DEFAULT 0,
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_goal_session ON goal_state(session_id);
 CREATE TABLE IF NOT EXISTS ui_prefs (
   user_id    TEXT PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
   prefs_json TEXT NOT NULL                    -- {theme?, lastProjectId?, ...} free-form JSON

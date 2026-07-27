@@ -6,9 +6,15 @@
  * it on allow, with execution possibly overlapping. The CLI only needs to consume the output
  * stream and supply `approve`. The approval strategy is determined by the permission mode
  * (allow-all / deny-all / read-only / always-ask per-call approval).
+ *
+ * Goal mode rides the same call (`opts.goal` → `session.run(prompt, { goal })`): core loops
+ * the rounds inside the one run, so this loop only adds the per-round rendering rhythm —
+ * a dim round line at each `[goal]` round boundary, per-round stats via `endTask`, and the
+ * outcome summary read from the stream's terminal `goal_finished` event.
  */
-import { isEventMessage } from "@prismshadow/penguin-core";
-import type { ApproveFn, OmniMessage, Session } from "@prismshadow/penguin-core";
+import { goalFinishedOf, isEventMessage, isGoalRoundInput } from "@prismshadow/penguin-core";
+import type { ApproveFn, GoalOutcome, OmniMessage, Session } from "@prismshadow/penguin-core";
+import { dim, humanizeTokens } from "./render.js";
 import type { StreamRenderer } from "./render.js";
 import { makeApprove, promptApproval, type ApprovalMode } from "./approval.js";
 import type { Messages } from "./i18n.js";
@@ -23,11 +29,18 @@ export interface RunTaskOptions {
   interactivePrompt?: ApproveFn;
   /** Message set. */
   t: Messages;
+  /**
+   * Present = goal mode: the prompt's text is the objective and the one `session.run` loops
+   * until the goal reaches a terminal state (a single AbortSignal spans every round). `out`
+   * receives the dim round/summary lines the renderer doesn't own.
+   */
+  goal?: { budget: number; out: NodeJS.WritableStream };
 }
 
-/** Result of one Task: `aborted` = the Task ended with an abort event (LLM failure/reconnect exhausted/user interrupt). */
+/** Result of one Task: `aborted` = the Task ended with an abort event (LLM failure/reconnect exhausted/user interrupt); `goal` = the outcome of a goal-mode run (absent when the stream was cut off before the terminal event). */
 export interface RunTaskResult {
   aborted: boolean;
+  goal?: GoalOutcome;
 }
 
 export async function runTask(
@@ -88,20 +101,45 @@ export async function runTask(
   // (auth errors, reconnect exhausted, etc.) into a main-session abort event rather than
   // throwing; the result reported here reflects that, for `penguin run` to map to
   // an exit code.
+  //
+  // In goal mode the round boundaries are the injected `[goal]` user messages core yields
+  // before each round: stats settle per round (the per-Task rhythm of a normal chat), so
+  // `segmentStartedAt` tracks the current round rather than the whole run.
+  const goal = opts.goal;
   const startedAt = Date.now();
+  let segmentStartedAt = startedAt;
   let aborted = false;
+  let round = 0;
+  let outcome: GoalOutcome | undefined;
   try {
     for await (const msg of session.run(prompt, {
       approve,
       ...(opts.signal ? { signal: opts.signal } : {}),
+      ...(goal ? { goal: { budget: goal.budget } } : {}),
     })) {
       if (isEventMessage(msg) && msg.payload.type === "abort" && (msg.origin?.length ?? 0) === 0) {
         aborted = true;
       }
+      if (goal) {
+        if (isGoalRoundInput(msg)) {
+          // Settle the previous round's stats before announcing the next (endTask is what
+          // prints the per-task `[stats]` line in a normal chat).
+          if (round > 0) opts.renderer.endTask(Date.now() - segmentStartedAt);
+          round++;
+          segmentStartedAt = Date.now();
+          goal.out.write(`${dim(opts.t.goalRound(round))}\n`);
+        }
+        outcome = goalFinishedOf(msg) ?? outcome;
+      }
       opts.renderer.handle(msg);
     }
   } finally {
-    opts.renderer.endTask(Date.now() - startedAt);
+    opts.renderer.endTask(Date.now() - segmentStartedAt);
   }
-  return { aborted };
+  if (goal && outcome) {
+    goal.out.write(
+      `${dim(opts.t.goalFinished(outcome.outcome, outcome.rounds, humanizeTokens(outcome.tokensUsed)))}\n`,
+    );
+  }
+  return { aborted, ...(outcome !== undefined ? { goal: outcome } : {}) };
 }

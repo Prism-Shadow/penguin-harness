@@ -624,8 +624,6 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     steerQueuedIndicator: "插话已排队，将随下一轮送达",
     /** Label of the [user_steering] chip (a mid-run user message delivered between turns). */
     userSteering: "用户插话",
-    /** More-settings popover on the input toolbar (extensible setting rows; holds the mid-run send mode). */
-    moreSettings: "更多设置",
     /** Mid-run send-mode setting: steer (delivered mid-run) vs follow-up (queued until the run ends). */
     steerModeLabel: "运行中发送方式",
     steerModeSteer: "插话",
@@ -757,6 +755,27 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
       archived: (n: number) => `已归档（${n}）`,
     },
     skillsBanner: (names: string[]): string => `使用技能：${names.join("、")}`,
+    /** Composer "+" extension menu (currently only goal mode; more entries later) and the goal chip. */
+    plusMenu: "更多输入方式",
+    goalMode: "目标模式",
+    goalModeDesc: "循环运行直至目标完成",
+    goalBudgetLabel: "Token 预算",
+    goalBudgetUnlimited: "预算不限",
+    goalBudgetValue: (value: string): string => `预算 ${value}`,
+    goalBudgetPlaceholder: "例如 500k",
+    goalBudgetHint: "支持 k/m 后缀；留空表示预算不限",
+    goalBudgetInvalid: "无效预算：应为正数，可带 k/m 后缀（500k、2m）",
+    goalBudgetSave: "保存预算",
+    goalRemove: "退出目标模式",
+    goalRoundBanner: (round: number): string => `目标 · 第 ${round} 轮`,
+    goalProgress: (rounds: number, tokens: string): string => `第 ${rounds} 轮 · tokens ${tokens}`,
+    goalStatus: {
+      active: "进行中",
+      complete: "已完成",
+      blocked: "受阻",
+      budget_limited: "预算耗尽",
+      aborted: "已中断",
+    } as Record<string, string>,
   },
 
   files: {

@@ -638,8 +638,6 @@ When done, open index.html in a browser and self-test once.`,
     steerQueuedIndicator: "Steering queued — delivered with the next turn",
     /** Label of the [user_steering] chip (a mid-run user message delivered between turns). */
     userSteering: "User steering",
-    /** More-settings popover on the input toolbar (extensible setting rows; holds the mid-run send mode). */
-    moreSettings: "More settings",
     /** Mid-run send-mode setting: steer (delivered mid-run) vs follow-up (queued until the run ends). */
     steerModeLabel: "Mid-run send mode",
     steerModeSteer: "Steer",
@@ -777,6 +775,28 @@ When done, open index.html in a browser and self-test once.`,
     },
     skillsBanner: (names: string[]): string =>
       `Using skill${names.length === 1 ? "" : "s"}: ${names.join(", ")}`,
+    /** Composer "+" extension menu (currently only goal mode; more entries later) and the goal chip. */
+    plusMenu: "More input options",
+    goalMode: "Goal mode",
+    goalModeDesc: "Loop until the goal completes",
+    goalBudgetLabel: "Token budget",
+    goalBudgetUnlimited: "Budget unlimited",
+    goalBudgetValue: (value: string): string => `Budget ${value}`,
+    goalBudgetPlaceholder: "e.g. 500k",
+    goalBudgetHint: "Use a k/m suffix; leave blank for no budget limit",
+    goalBudgetInvalid:
+      "Invalid budget: use a positive number with an optional k/m suffix (500k, 2m)",
+    goalBudgetSave: "Save budget",
+    goalRemove: "Exit goal mode",
+    goalRoundBanner: (round: number): string => `Goal · round ${round}`,
+    goalProgress: (rounds: number, tokens: string): string => `round ${rounds} · tokens ${tokens}`,
+    goalStatus: {
+      active: "running",
+      complete: "complete",
+      blocked: "blocked",
+      budget_limited: "budget exhausted",
+      aborted: "interrupted",
+    } as Record<string, string>,
   },
 
   files: {

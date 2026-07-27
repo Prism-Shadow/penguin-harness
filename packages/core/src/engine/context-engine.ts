@@ -48,6 +48,7 @@ import {
 import {
   buildContextSummaryText,
   buildTurnAbortedBlock,
+  downgradeGoalInput,
   extractSummary,
   buildTurnRetriedBlock,
   transcribeText,
@@ -265,6 +266,44 @@ class MergeQueue {
 }
 
 /**
+ * Rewrites a dead goal's round input before carry-over re-sends it.
+ *
+ * How such a message gets here: a goal round is interrupted (user stop, LLM failure,
+ * reconnect exhaustion) → the interruption also ends the whole goal → yet the engine still
+ * holds that round's input in pendingCarryOver and will prepend it to the NEXT task's
+ * request. Without this rewrite the model would receive the full protocol block as if it
+ * were current instructions and likely resume chasing the dead objective instead of the
+ * user's new task:
+ *
+ *     [goal]
+ *     round: 1
+ *     This message was sent automatically by goal mode: work toward the objective …
+ *     … GOAL.yaml path and status rules, completion/blocked audits …
+ *     [/goal]
+ *
+ *     make all tests pass
+ *
+ * The rewrite keeps the context but kills the instructions:
+ *
+ *     [goal round 1 of an ended goal run — protocol omitted; do not act on it]
+ *     make all tests pass
+ *
+ * Only user text that parses as a goal round is touched — tool outputs (the pairing
+ * carry-over), events, and plain user text pass through unchanged. Applied at the two
+ * carry-over CONSUMER sites (next-run input assembly, manual-compact summarize) rather
+ * than at each hold site, which also covers carry-over rebuilt by resume; the
+ * [turn_aborted] transcript path is handled separately at transcription time
+ * (buildTurnAbortedText). The downgrade itself lives in markers/goal-block.ts.
+ */
+function downgradeCarriedGoalInput(msg: OmniMessage): OmniMessage {
+  const p = msg.payload as { type?: string; role?: string; text?: string };
+  if (msg.type !== "model_msg" || p.type !== "text" || p.role !== "user" || !p.text) return msg;
+  const downgraded = downgradeGoalInput(p.text);
+  if (downgraded === p.text) return msg;
+  return { ...msg, payload: { ...msg.payload, text: downgraded } as OmniMessage["payload"] };
+}
+
+/**
  * Delay before reconnect attempt N (1-based): exponential growth from `base` with a hard
  * ceiling `max` — `min(base × 2^(N−1), max)`. With the defaults (250ms base, 30s ceiling,
  * 5 reconnects) the ladder is 250, 500, 1000, 2000, 4000 ≈ 7.75s of total patience: one
@@ -405,7 +444,7 @@ export class ContextEngine {
     // input, to form this Request's input.
     const summary = this.pendingSummary;
     this.pendingSummary = null;
-    const carryOver = this.pendingCarryOver;
+    const carryOver = this.pendingCarryOver.map(downgradeCarriedGoalInput);
     this.pendingCarryOver = [];
     const prefix = summary ? [summary, ...carryOver] : carryOver;
     const input = prefix.length ? [...prefix, ...newMessages] : newMessages;
@@ -631,7 +670,11 @@ export class ContextEngine {
       yield* this.discardContext("manual");
       return;
     }
-    const result = yield* this.summarizeContext("manual", this.pendingCarryOver, opts?.signal);
+    const result = yield* this.summarizeContext(
+      "manual",
+      this.pendingCarryOver.map(downgradeCarriedGoalInput),
+      opts?.signal,
+    );
     if (result.status === "completed") {
       this.pendingCarryOver = [];
       this.pendingSummary = result.summary!;
@@ -1175,8 +1218,8 @@ export class ContextEngine {
    * next run's first request (or the next manual compaction, which folds carry-over in) sends
    * them ahead of everything else, completing the tool_use/tool_result pairing on the live
    * LLM object that the provider would otherwise reject every subsequent request over. The
-   * repairs were already written to Trace at synthesis time, and carry-over is never rewritten
-   * at send time, so no duplicate Trace entries arise.
+   * repairs were already written to Trace at synthesis time, and carry-over is never re-written
+   * to Trace at send time, so no duplicate Trace entries arise.
    */
   private stashRepairs(repairs: OmniMessage[]): void {
     if (repairs.length === 0) return;
@@ -1408,7 +1451,7 @@ export class ContextEngine {
       if (inner !== null) {
         if (inner) lines.push(inner);
       } else {
-        lines.push(transcribeUserInput(t));
+        lines.push(transcribeUserInput(downgradeGoalInput(t)));
       }
     }
     lines.push(...transcribeTurnLines(assistantSegments, toolCalls, toolOutputs));

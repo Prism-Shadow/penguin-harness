@@ -21,6 +21,7 @@ import {
   loadOrInitAgentState,
   loadProjectConfig,
   projectDir,
+  goalFilePath,
   resolveModelRef,
   scratchpadDir,
   systemConfigPath,
@@ -299,6 +300,14 @@ export class Agent {
             ),
           }
         : {}),
+      // Goal mode's control file lives in the session scratchpad; the path is fixed per
+      // Session, so it is wired here rather than passed per-run.
+      goalFilePath: goalFilePath(
+        this.state.root,
+        this.state.projectId,
+        this.state.agentId,
+        sessionId,
+      ),
       // Max turns comes from the Agent's system_config (runtime parameters belong to the Agent config).
       ...(this.state.systemConfig.max_turns !== undefined
         ? { maxTurns: this.state.systemConfig.max_turns }
@@ -451,6 +460,14 @@ export class Agent {
             ),
           }
         : {}),
+      // Goal mode's control file lives in the session scratchpad; the path is fixed per
+      // Session, so it is wired here rather than passed per-run.
+      goalFilePath: goalFilePath(
+        this.state.root,
+        this.state.projectId,
+        this.state.agentId,
+        sessionId,
+      ),
       ...(this.state.systemConfig.max_turns !== undefined
         ? { maxTurns: this.state.systemConfig.max_turns }
         : {}),

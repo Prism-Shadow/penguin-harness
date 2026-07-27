@@ -582,4 +582,26 @@ describe("session-index", () => {
     });
     expect(bad.status).toBe(400);
   });
+
+  it("rejects a malformed goal.budget with 400", async () => {
+    await configureModels();
+    const res = await api.post(base(), {});
+    const { session } = (await res.json()) as SessionCreateResponse;
+    for (const budget of ["500k", 0, -2, 1.5]) {
+      const bad = await api.post(`/api/sessions/${session.sessionId}/tasks`, {
+        input: [{ type: "text", text: "objective" }],
+        goal: { budget },
+      });
+      expect(bad.status).toBe(400);
+    }
+    // Image parts have no place in the re-injected objective.
+    const image = await api.post(`/api/sessions/${session.sessionId}/tasks`, {
+      input: [
+        { type: "text", text: "objective" },
+        { type: "image_url", imageUrl: "data:image/png;base64,aGk=" },
+      ],
+      goal: {},
+    });
+    expect(image.status).toBe(400);
+  });
 });

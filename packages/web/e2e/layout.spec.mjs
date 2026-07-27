@@ -103,10 +103,95 @@ test("layout: en draft + context gauge + mobile models", async ({ page }) => {
   expect(d.scrollWidth, "draft @1280 no horizontal overflow").toBeLessThanOrEqual(d.clientWidth);
   await expect(page.locator('[title*="Context usage"]')).toHaveCount(0);
 
+  // Goal mode keeps its chip compact: the committed budget is a value button, while editing
+  // happens in a fixed upward popover (never inline and never covering the objective textarea).
+  await page.getByRole("button", { name: "More input options" }).click();
+  await page.getByRole("button", { name: /Goal mode/ }).click();
+  const budgetTrigger = page.getByRole("button", { name: "Budget unlimited" });
+  await expect(budgetTrigger).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Token budget" })).toHaveCount(0);
+
+  await budgetTrigger.click();
+  const budget = page.getByRole("textbox", { name: "Token budget" });
+  await expect(budget).toBeVisible();
+  const popoverPosition = await budget.evaluate((el) => {
+    const panel = el.closest(".absolute");
+    const trigger = panel.parentElement.querySelector('button[aria-expanded="true"]');
+    const p = panel.getBoundingClientRect();
+    const t = trigger.getBoundingClientRect();
+    return { panelBottom: p.bottom, triggerTop: t.top };
+  });
+  expect(
+    popoverPosition.panelBottom,
+    "goal budget popover stays above its trigger",
+  ).toBeLessThanOrEqual(popoverPosition.triggerTop);
+
+  await budget.fill("500k");
+  await budget.press("Enter");
+  await expect(page.getByRole("button", { name: "Budget 500k" })).toBeVisible();
+  await expect(budget).toHaveCount(0);
+
+  // Invalid edits stay local to the popover: save is disabled and Escape restores the
+  // previously committed value rather than poisoning the send state.
+  const committedBudget = page.getByRole("button", { name: "Budget 500k" });
+  await committedBudget.click();
+  await budget.fill("not-a-budget");
+  await expect(page.getByRole("button", { name: "Save budget" })).toBeDisabled();
+  await budget.press("Escape");
+  await expect(committedBudget).toBeVisible();
+
+  // Any other close (outside click, toggling the trigger) commits a valid draft instead of
+  // silently dropping it — typing a budget and clicking straight onto Send must keep it.
+  await committedBudget.click();
+  await budget.fill("750k");
+  await page.getByPlaceholder(/Type a message/).click();
+  const recommittedBudget = page.getByRole("button", { name: "Budget 750k" });
+  await expect(recommittedBudget).toBeVisible();
+
+  // An invalid draft refuses to close (outside clicks included) and disables Send — no click
+  // sequence can fire a goal with the stale committed budget while the editor shows garbage.
+  await page.getByPlaceholder(/Type a message/).fill("goal objective");
+  await recommittedBudget.click();
+  await budget.fill("not-a-budget");
+  await expect(page.getByRole("button", { name: "Send", exact: true })).toBeDisabled();
+  await page.getByPlaceholder(/Type a message/).click();
+  await expect(budget).toBeVisible();
+  // Escape is focus-independent: after the refused outside click, focus sits in the
+  // objective textarea — Escape must still cancel the editor from there.
+  await page.keyboard.press("Escape");
+  await expect(recommittedBudget).toBeVisible();
+
+  // Escape cancels from any editor control, not just the input: a valid uncommitted draft
+  // Tab-bed onto the save button still reverts instead of committing.
+  await recommittedBudget.click();
+  await budget.fill("123k");
+  await budget.press("Tab");
+  await page.keyboard.press("Escape");
+  await expect(recommittedBudget).toBeVisible();
+  await page.getByPlaceholder(/Type a message/).fill("");
+
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(200);
+  await recommittedBudget.click();
   d = await docWidths(page);
-  expect(d.scrollWidth, "draft @390 no horizontal overflow").toBeLessThanOrEqual(d.clientWidth);
+  expect(d.scrollWidth, "goal-mode draft @390 no horizontal overflow").toBeLessThanOrEqual(
+    d.clientWidth,
+  );
+  const budgetPopoverBounds = await budget.evaluate((el) => {
+    const rect = el.closest(".absolute").getBoundingClientRect();
+    return { left: rect.left, right: rect.right, viewport: window.innerWidth };
+  });
+  expect(
+    budgetPopoverBounds.left,
+    "goal budget popover left edge on-screen",
+  ).toBeGreaterThanOrEqual(0);
+  expect(budgetPopoverBounds.right, "goal budget popover right edge on-screen").toBeLessThanOrEqual(
+    budgetPopoverBounds.viewport,
+  );
+
+  // Leave the composer in its normal mode for the remaining layout assertions.
+  await budget.press("Escape");
+  await page.getByRole("button", { name: "Exit goal mode" }).click();
 
   // --- Session state shows the ring as usual (creating a session via the API and entering it directly, no need to actually run a Task) ---
   const sess = await (
@@ -363,7 +448,7 @@ test("layout: mobile chat dropdowns stay inside the viewport", async ({ page }) 
       data: { provider: "custom", modelId: "claude-4-8", approvalMode: "always-ask" },
     })
   ).json();
-  const sessionPickers = ["Approval mode", "Skills", "More settings", "Thinking level"];
+  const sessionPickers = ["Approval mode", "Skills", "More input options", "Thinking level"];
   for (const vp of [
     { width: 320, height: 640 },
     { width: 375, height: 667 },
@@ -385,7 +470,7 @@ test("layout: mobile chat dropdowns stay inside the viewport", async ({ page }) 
   await page.getByRole("button", { name: /^Allow$/ }).waitFor();
   // Skills are deliberately locked mid-run; the rest must still open.
   await expect(page.locator('button[aria-label="Skills"]')).toBeDisabled();
-  for (const label of ["Approval mode", "More settings", "Thinking level"]) {
+  for (const label of ["Approval mode", "More input options", "Thinking level"]) {
     await open(label, `${label} @running 375`);
     await close();
   }

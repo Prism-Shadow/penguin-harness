@@ -386,7 +386,11 @@ export function DraftView({
   // that did not consume the composer text (the example task), so a typed-but-unsent draft
   // survives the navigation instead of being silently discarded.
   const onSend = useCallback(
-    async (input: TaskInputPart[], keepDraft = false): Promise<boolean> => {
+    async (
+      input: TaskInputPart[],
+      keepDraft = false,
+      goal: { budget: number } | null = null,
+    ): Promise<boolean> => {
       if (!agentId || sendingRef.current) return false;
       sendingRef.current = true;
       setSending(true);
@@ -401,7 +405,7 @@ export function DraftView({
         if (workspace.trim()) body.workspace = workspace.trim();
         const created = await api.createSession(projectId, agentId, body);
         createdId = created.session.sessionId;
-        const res = await api.postTask(createdId, { input });
+        const res = await api.postTask(createdId, { input, ...(goal ? { goal } : {}) });
         add(created.session);
         if (!keepDraft) discardDraft();
         navigate(`/chat/${res.sessionId}`, { replace: true });
@@ -518,7 +522,7 @@ export function DraftView({
 
         <ChatInput
           status="idle"
-          onSend={onSend}
+          onSend={(input, goal) => onSend(input, false, goal)}
           onStop={async () => undefined}
           onCompact={async () => undefined}
           modelRef={modelRef}

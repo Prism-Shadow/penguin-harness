@@ -15,6 +15,7 @@ import type { OmniMessage, ThinkingLevelName } from "@prismshadow/penguin-core";
 import type {
   ApprovalMode,
   FilesStatResponse,
+  GoalResponse,
   MessagesLiveTail,
   MessagesResponse,
   ServerEvent,
@@ -100,6 +101,28 @@ function parseTaskInput(body: Record<string, unknown>): OmniMessage[] {
     }
     throw badRequest(`input[${i}].type must be one of text / image_url.`);
   });
+}
+
+/**
+ * Validate the optional `goal` field of a task request: absent = a regular task (null);
+ * present = goal mode with a token budget (a positive integer, or -1/omitted = unlimited).
+ * The input text is the objective — skills ride the text itself as a `[use_skills]` block,
+ * exactly like a regular task's message.
+ */
+function parseGoalField(body: Record<string, unknown>): { budget: number } | null {
+  const goal = body.goal;
+  if (goal === undefined) return null;
+  if (goal === null || typeof goal !== "object" || Array.isArray(goal)) {
+    throw badRequest("goal must be an object.");
+  }
+  const budget = (goal as Record<string, unknown>).budget;
+  if (
+    budget !== undefined &&
+    (typeof budget !== "number" || !Number.isInteger(budget) || (budget <= 0 && budget !== -1))
+  ) {
+    throw badRequest("goal.budget must be a positive integer, or -1 for unlimited.");
+  }
+  return { budget: (budget as number | undefined) ?? -1 };
 }
 
 /** Agent-level entry: /api/projects/:p/agents/:a/sessions. */
@@ -290,6 +313,7 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
         { recursive: true, force: true },
       );
       deps.sessionsRepo.deleteById(row.sessionId);
+      deps.goalsRepo.deleteBySession(row.sessionId);
       // Drop the derived-origin entry along with the Session (bulk Agent/Project deletion
       // may leave stale entries; session ids are never reused, so they are never matched).
       deps.sessionSources.delete(row.sessionId);
@@ -389,10 +413,31 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
   app.post("/:sessionId/tasks", async (c) => {
     const row = resolveSession(c);
     const body = await readJson(c);
-    const input = parseTaskInput(body);
+    const goal = parseGoalField(body);
     // Per-turn thinking level (optional): validated against the five names; omitted follows
-    // the session's default. A queued follow-up keeps its level for its auto-start.
+    // the session's default. In goal mode it rides every round of the goal; a queued
+    // follow-up keeps its level for its auto-start.
     const thinkingLevel = optionalEnum(body, "thinkingLevel", THINKING_LEVELS);
+    if (goal) {
+      // Goal mode: the input must be plain non-empty text (its marker-stripped text becomes
+      // the objective, re-injected every round — images have no place in the protocol).
+      const input = parseTaskInput(body);
+      const text = input
+        .filter((m) => (m.payload as { type?: string }).type === "text")
+        .map((m) => (m.payload as { text: string }).text)
+        .join("\n")
+        .trim();
+      if (!text || input.some((m) => (m.payload as { type?: string }).type !== "text")) {
+        throw badRequest("goal mode requires text-only input (the objective).");
+      }
+      const { sessionId } = await deps.manager.startGoal(row.sessionId, {
+        input,
+        budget: goal.budget,
+        ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
+      });
+      return c.json({ sessionId } satisfies TaskCreateResponse, 202);
+    }
+    const input = parseTaskInput(body);
     // Follow-up queue: with queueIfBusy, a busy session enqueues the input instead of 409
     // (auto-starts as an ordinary next task once idle; the response says which happened).
     const queueIfBusy = body.queueIfBusy === true;
@@ -415,6 +460,24 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     if (!text) throw badRequest("text must be a non-empty string.");
     deps.manager.steer(row.sessionId, text);
     return c.body(null, 202);
+  });
+
+  // The Session's most recent goal run (for restoring the chat page's goal banner on load).
+  app.get("/:sessionId/goal", (c) => {
+    const row = resolveSession(c);
+    const g = deps.goalsRepo.latestForSession(row.sessionId);
+    return c.json({
+      goal: g
+        ? {
+            objective: g.objective,
+            status: g.status,
+            budget: g.budget,
+            used: g.used,
+            rounds: g.rounds,
+            updatedAt: g.updatedAt,
+          }
+        : null,
+    } satisfies GoalResponse);
   });
 
   app.post("/:sessionId/approvals/:toolCallId", async (c) => {

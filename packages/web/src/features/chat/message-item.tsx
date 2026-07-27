@@ -19,6 +19,7 @@ import { ThinkingBlock } from "./thinking-block";
 import { ToolCallCard } from "./tool-call-card";
 import { SubagentCard } from "./subagent-card";
 import { CompactionBanner } from "./compaction-banner";
+import { GoalRoundBanner } from "./goal-banner";
 import { HandoffBanner, ModelSwitchBanner } from "./handoff-banner";
 import { ScheduledBanner } from "./scheduled-banner";
 import { SkillsBanner } from "./skills-banner";
@@ -27,6 +28,7 @@ import {
   parseModelSwitchMessage,
   parseScheduledMessage,
 } from "./agent-mentions";
+import { parseGoalMessage } from "./goal-use";
 import { parseSkillsMessage } from "./skill-use";
 import { TaskStatsLine } from "./task-stats-line";
 import type { StreamRenderContext } from "./message-stream";
@@ -177,18 +179,33 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
       // Source block for a chat opened by the /model switch: collapsed into a single-line switch notice, clickable to jump back to the source conversation.
       const modelSwitch = parseModelSwitchMessage(item.text);
       if (modelSwitch) return <ModelSwitchBanner origin={modelSwitch} />;
+      // A goal round's [goal] protocol prefix: collapsed into a round notice; the body after
+      // it (round 1: the user's original input, skill blocks and all; later rounds: the
+      // objective) continues down the normal parsing chain (the Trace shows the raw block).
+      const goalRound = parseGoalMessage(item.text);
+      const afterGoal = goalRound ? goalRound.rest : item.text;
       // Source block for a scheduled-task trigger: collapsed into a single-line notice, with the task's prompt body rendered as usual (verbatim on the Trace page).
-      const scheduled = parseScheduledMessage(item.text);
+      const scheduled = parseScheduledMessage(afterGoal);
       // Source block for a skill invocation: parsing continues on scheduled's remaining body
-      // (handoff -> scheduled -> skills, blocks stripped in a chain); a match collapses into a
+      // (goal -> scheduled -> skills, blocks stripped in a chain); a match collapses into a
       // "using skill" banner, with the body rendered as usual.
-      const afterScheduled = scheduled ? scheduled.rest : item.text;
+      const afterScheduled = scheduled ? scheduled.rest : afterGoal;
       const skills = parseSkillsMessage(afterScheduled);
       // Attachment row restoration: for models that don't support images, input images are
       // written to disk as a path row; this pulls that out at render time and shows the actual
       // image. Mirrors the vision-model path (user_text + user_image as separate messages) in
       // shape: one bubble for the text, one bubble per image, styled the same as user_image.
       const { text, images } = splitImageAttachments(skills ? skills.rest : afterScheduled);
+      // Every goal round reads like a normal user message: the body in a user bubble with
+      // the round notice beneath (the system IS re-sending the user's request each round).
+      if (goalRound) {
+        return (
+          <>
+            {skills && <SkillsBanner names={skills.skills} />}
+            <GoalRoundBanner round={goalRound.round} objective={text} />
+          </>
+        );
+      }
       return (
         <>
           {scheduled && <ScheduledBanner origin={scheduled.origin} />}

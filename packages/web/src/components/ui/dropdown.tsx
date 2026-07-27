@@ -33,6 +33,7 @@ export function Dropdown({
   menuStyle,
   className,
   portal,
+  onEscape,
 }: {
   button: ReactNode;
   open: boolean;
@@ -46,6 +47,12 @@ export function Dropdown({
   className?: string;
   /** Render the panel through a body portal at fixed viewport coordinates, escaping any clipping ancestor. */
   portal?: DropdownPortal;
+  /**
+   * When provided, the window-level Escape calls this instead of setOpen(false) — for panels
+   * whose close-request semantics differ from a plain dismiss (e.g. an editor where outside
+   * click means "commit" but Escape means "cancel"). Outside clicks still call setOpen(false).
+   */
+  onEscape?: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -66,7 +73,9 @@ export function Dropdown({
       setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key !== "Escape") return;
+      if (onEscape) onEscape();
+      else setOpen(false);
     };
     window.addEventListener("mousedown", onClick);
     window.addEventListener("keydown", onKey);
@@ -74,7 +83,7 @@ export function Dropdown({
       window.removeEventListener("mousedown", onClick);
       window.removeEventListener("keydown", onKey);
     };
-  }, [open, setOpen]);
+  }, [open, setOpen, onEscape]);
 
   // Portal mode: place the panel against the trigger's viewport rect, clamped to stay fully
   // on-screen. Measured after paint so the panel's own (class-driven) size is known — the
