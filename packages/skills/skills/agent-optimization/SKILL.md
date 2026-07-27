@@ -4,7 +4,7 @@ description: Improve an Agent State through versioned scores and score-linked Tr
 short_description: Improve an Agent from measured Benchmark results.
 short_description_zh: 根据 Benchmark 结果改进 Agent。
 version: 7
-updated: 2026-07-27T09:41:22Z
+updated: 2026-07-27T09:57:04Z
 ---
 
 # Agent Optimization
@@ -61,7 +61,7 @@ provider: <provider>
 model_id: <model_id>
 ```
 
-Accept one unambiguous protocol YAML document and ignore surrounding text. Never use Evaluator commentary, Rubric content, Gold answers, or per-item scoring as optimization evidence.
+Across the worker's streamed and final responses, accept only one protocol YAML document. Transport status metadata added by `run_subagent` is not commentary; any worker-authored narration makes the protocol invalid. If that narration contains Rubric content, Gold answers, private scoring conditions, or per-item scoring, restore any active Candidate and report the Session as contaminated.
 
 For `invalid_request`, correct the request and resend it. For `version_changed`, discard the matrix and stop. `benchmark_invalid`, `evaluation_failed`, or an invalid protocol leaves the matrix incomplete and stops optimization. Never redispatch the cell, convert a failure to score zero, or repair the frozen Benchmark.
 

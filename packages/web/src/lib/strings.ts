@@ -633,9 +633,10 @@ Session 只能检查公开 Benchmark 产物和最终分数，不得读取或转�
 
 ## 最终检查与汇报
 
-检查 Phase 3 根 Session 是否实际访问 \`/rubric/\` 下的路径；文本提及不算访问，实际
-访问会使相关结果无效。汇报 Agent 与 Benchmark 路径、Pilot 摘要、Baseline/Candidate
-分数曲线、关键假设、接受和回滚的版本、最终保留版本及已知限制。
+检查 Phase 3 根 Session 是否实际访问 \`/rubric/\` 下的路径，并确认每个 Evaluator
+只返回协议 YAML。文本提及路径不算访问；实际访问，或 Rubric、Gold、逐项评分等私有
+信息进入根 Session，都会使相关结果无效。汇报 Agent 与 Benchmark 路径、Pilot 摘要、
+Baseline/Candidate 分数曲线、关键假设、接受和回滚的版本、最终保留版本及已知限制。
 
 不要修改任何 Skill，不要创建永久的 Builder、Evaluator 或 Optimizer Agent。`,
       },

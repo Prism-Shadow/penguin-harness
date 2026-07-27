@@ -4,7 +4,7 @@ description: Design and calibrate a multi-Case capability Benchmark and establis
 short_description: Design and calibrate an Agent capability Benchmark.
 short_description_zh: 设计并校准 Agent 能力评测 Benchmark。
 version: 7
-updated: 2026-07-27T09:22:44Z
+updated: 2026-07-27T09:57:04Z
 ---
 
 # Benchmark Design
@@ -70,7 +70,7 @@ Create `benchmark_config.toml` with `title`, `description`, and `runs = 3`. Use 
 
 Before writing Cases, describe how an Agent with the target capability should behave differently from one without it. Every Case must require that difference. Sharing the same topic is not enough. Rubric maxima across all Cases must total 100 points. Use observable scoring items and meaningful partial credit.
 
-Before evaluating a Pilot Case, compare its public Statement and supporting files with its private Rubric. Remove any public content that reveals a hidden rule, expected outcome, Gold answer, or scoring condition. This is the leak check.
+Before evaluating a Pilot Case, compare its public Statement and supporting files with its private Rubric. Keep every public rule, piece of evidence, and example needed to answer the Case. Remove Gold answers for evaluated instances and private scoring conditions; do not remove necessary evidence merely because it helps infer the answer. This is the leak check.
 
 ## Run evaluations
 
@@ -79,7 +79,7 @@ The Benchmark Designer owns the Pilot and Formal evaluation sets. This includes 
 1. Call `run_subagent` to start an independent worker.
 2. Tell the worker to use `agent-evaluation` to run the specified Test Agent on that Case exactly once and score only that execution.
 3. Send the complete request below.
-4. Use only the returned protocol YAML as the evaluation result; ignore commentary.
+4. Across the worker's streamed and final responses, accept only one protocol YAML document. Transport status metadata added by `run_subagent` is not commentary; any worker-authored narration makes the protocol invalid.
 
    ```text
    Use the `agent-evaluation` Skill. Run the specified Test Agent on the specified Case exactly once, then score that single execution.
@@ -116,6 +116,8 @@ Treat the first draft as a hypothesis, not the final Benchmark. For Pilot iterat
 
 A high Pilot score is not a reason to freeze. Review the Case scores and returned Test Traces. Decide whether the Agent genuinely has the capability or the Cases allow a shortcut. Refine only when the Benchmark fails to require the intended behavior.
 
+A low Pilot score is also not enough to freeze. Confirm that every scored outcome is supported by public materials and that the observed misses reflect a capability a general Agent State change could improve. If the low score comes from missing evidence, an arbitrary private mapping, or unresolved ambiguity, repair the Case.
+
 For each refinement iteration:
 
 1. Identify one shortcut, missing dependency, or weak requirement that made the Pilot too easy.
@@ -125,7 +127,7 @@ For each refinement iteration:
 
 Reuse a Pilot result only when nothing that affects it changed. This includes the Statement, supporting files, Rubric, Gold answers, points, Agent State version, and evaluation Model. Otherwise, run that Case again.
 
-Use Pilot output to find a missing capability demand, not to choose the correct answer. Do not change Gold merely to contradict the Agent. Do not tighten only the private Rubric, add arbitrary ambiguity, or create a Case-specific trap. Choose hidden rules independently and keep them fixed during each iteration. State every required output or action publicly. Keep a latent rule or mapping private only when the Benchmark measures whether the Agent can recover it from score feedback.
+Use Pilot output to find a missing capability demand, not to choose the correct answer. Do not change Gold merely to contradict the Agent. Do not tighten only the private Rubric, add arbitrary ambiguity, or create a Case-specific trap. Choose hidden rules independently and keep them fixed during each iteration. State every required output or action publicly. Keep a latent rule or mapping private only when public evidence or examples make it recoverable.
 
 Stop when the user's gate is satisfied, after three Pilot iterations, or when no credible refinement remains. If the score is still high, report that the Benchmark remains too easy to measure meaningful improvement. Do not manufacture difficulty.
 
