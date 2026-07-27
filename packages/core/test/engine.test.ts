@@ -10,7 +10,7 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   assistantText,
   emptyTokenCounts,
@@ -177,6 +177,68 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
     expect(recordedTypes).toContain("tool_call");
     expect(recordedTypes).toContain("tool_call_output");
     expect(recordedTypes.some((t) => t?.startsWith("partial_"))).toBe(false);
+  });
+
+  it("a slow tool delays the run only by its own latency: the loop adds no waits, timers, or dropped wakes", async () => {
+    // Regression pin for the ci-windows timeout of the test above (goal-mode PR #66's
+    // merge-ref run): on one cold Windows runner the suite-start burst of first Git-Bash
+    // spawns ran ~28-36s and the test crossed the then-30s platform deadline, which looked
+    // like a goal-mode hang in the run loop. The loop's actual contract, pinned here with
+    // virtual tool latency instead of a real spawn (platform-neutral, deterministic): tool
+    // latency flows through 1:1 — wall time ≈ latency + ε. An engine-side wait inserted
+    // between turns would blow the upper bound, a dropped continuation wake would hang this
+    // test into its own deadline, and a timer armed alongside the tool would trip the spies
+    // (the engine's only setTimeout is the reconnect backoff, a failure-path affair).
+    const TOOL_LATENCY_MS = 300;
+    const EPSILON_MS = 1_000;
+    const realSetTimeout = globalThis.setTimeout.bind(globalThis);
+    const timeoutSpy = vi.spyOn(globalThis, "setTimeout");
+    const intervalSpy = vi.spyOn(globalThis, "setInterval");
+    try {
+      const llm = new FakeLLM();
+      const environment: EnvironmentInterface = {
+        async listTools() {
+          return [];
+        },
+        async *executeTool({ toolCall: tc }) {
+          // The injected "slow spawn" (through the pre-spy setTimeout, invisible to the spies).
+          await new Promise<void>((resolve) => realSetTimeout(resolve, TOOL_LATENCY_MS));
+          yield toolCallOutput({ output: "wrote hello.txt", toolCallId: tc.payload.tool_call_id });
+        },
+        toolPermission() {
+          return "rw";
+        },
+      };
+      const engine = new ContextEngine({ llm, environment });
+
+      const start = performance.now();
+      const collected = await collectRun(
+        engine,
+        [userText("Create hello.txt saying Hello, Penguin")],
+        allowAll,
+      );
+      const elapsed = performance.now() - start;
+      const timersArmed = timeoutSpy.mock.calls.length + intervalSpy.mock.calls.length;
+
+      // The flow completed both turns, with the slow tool's output fed back and paired.
+      expect(llm.calls).toBe(2);
+      expect(
+        llm.receivedSecondInput!.some(
+          (m) => (m.payload as { type?: string }).type === "tool_call_output",
+        ),
+      ).toBe(true);
+      expect(collected.map((m) => (m.payload as { type?: string }).type)).toContain(
+        "tool_call_output",
+      );
+      // Latency-additive: the tool's own wait, plus scheduling slack — nothing multiplied.
+      expect(elapsed).toBeGreaterThanOrEqual(TOOL_LATENCY_MS - 5);
+      expect(elapsed).toBeLessThan(TOOL_LATENCY_MS + EPSILON_MS);
+      // And no engine-armed wall-clock wait rode along.
+      expect(timersArmed).toBe(0);
+    } finally {
+      timeoutSpy.mockRestore();
+      intervalSpy.mockRestore();
+    }
   });
 
   it("streams origin-tagged nested messages to the consumer but keeps them out of trace and the next-turn input", async () => {
