@@ -113,6 +113,8 @@ interface CompactionSettings {
 
 两种模式：`summarize`(默认)向旧上下文追加压缩 Prompt，提取 `[summary]` 后包装为 `[context_summary]` 用户文本，在**全新的模型上下文**中继续；`discard` 直接丢弃旧上下文。系统标记统一写作 `[tag]…[/tag]`；读取旧 Trace 与旧压缩 Prompt 时仍识别早期的尖括号形式（`<summary>`、`<context_summary>` 等）。压缩时 [Trace 文件随之轮转](/sessions-and-traces)(`_002`、`_003`……)，一个 Trace 文件恒等于一个完整模型上下文。`session.compact()` 前可用 `compactability()` 探询可行性(`ok | unsupported | empty | just_compacted`)。
 
+压缩请求**保持会话工具集不变**——请求前缀（含工具列表）与普通轮次逐字节一致，确保上下文最大的时刻提供商的提示词缓存依然有效。只有得到有效摘要，压缩才算成功：若响应中出现工具调用、或提取出的摘要为空，则判为无效并重试——工具调用会先以合成的失败输出逐一应答（保持 `tool_use`/`tool_result` 配对完整），修复后的请求**立即重发**（无效摘要是模型行为而非传输故障，不做退避），最多允许 5 次无效尝试，之后压缩以 `failed` 结束，保留原上下文与 Trace 文件，等待下次触发。传输层 `timeout`/`malformed` 仍走上文「自动重连」一节所述的压缩专用重连上限与退避阶梯。
+
 ## 并发模型
 
 - 同一轮内：审批逐个、执行并发、下一轮输入按原始顺序；

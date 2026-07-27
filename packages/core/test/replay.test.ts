@@ -6,7 +6,9 @@
  *   tool_calls; trailing input is kept as-is as carry-over.
  * - Pairing fallback: committed tool_calls with no paired output get an interrupted-state placeholder.
  * - Compaction wrap-up (file level): summarize rebuilds [context_summary], discard leaves no
- *   pending input; failed compaction rounds are dropped by the generic rule.
+ *   pending input; failed compaction rounds are dropped by the generic rule; a "completed"
+ *   summarize closure whose output extracts to an empty summary (a pre-#83 trace shape) is
+ *   voided and the original context replays.
  * - Tolerates a truncated trailing line left by an abnormal process exit.
  * - Round-trip: a Trace written out by the engine, once replayed, matches the history the model actually received.
  */
@@ -522,10 +524,13 @@ describe("resumeTrace regressions (PR #39 review)", () => {
     expect(result.carryOver).toEqual([]);
   });
 
-  it("closed context (summarize) with a textless compaction output yields an empty summary", () => {
-    // The compaction request completed but produced no text (e.g. thinking-only): the summary is
-    // empty, and must not fall back to an earlier round's ordinary answer (consistent with the
-    // in-process extractSummary("") behavior).
+  it("closed context (summarize) with a textless compaction output voids the closure and replays the original context", () => {
+    // The compaction request completed but produced no text (e.g. thinking-only): only a
+    // pre-#83 engine wrote such a "completed" closure — the engine now fails the compaction
+    // instead of committing an empty summary that would erase the task state. Resume mirrors
+    // that contract: no empty [context_summary] is fabricated, nothing falls back to an
+    // earlier round's ordinary answer, and the original context held by this file is
+    // reconstructed (the committed compaction turn stays in history like any committed turn).
     const result = resumeTrace([
       meta(),
       userText("hello"),
@@ -541,9 +546,24 @@ describe("resumeTrace regressions (PR #39 review)", () => {
       tokenUsage(usage(20), usage(20)),
       compactionEnd({ reason: "context", mode: "summarize", status: "completed" }),
     ]);
-    expect(result.contextClosed).toBe(true);
-    const summary = result.pendingSummary!.payload as { text: string };
-    expect(summary.text).toBe("[context_summary]\n\n[/context_summary]");
-    expect(summary.text).not.toContain("42");
+    expect(result.contextClosed).toBe(false);
+    expect(result.pendingSummary).toBeUndefined();
+    // Full original history, including the committed compaction exchange (AgentHub committed
+    // it, so the next request builds on top of it).
+    expect(result.history.map((m) => (m.payload as { type?: string }).type)).toEqual([
+      "text",
+      "text",
+      "text",
+      "thinking",
+    ]);
+    expect(textsOf(result.history.slice(0, 3))).toEqual([
+      "hello",
+      "The answer is 42.",
+      "please summarize",
+    ]);
+    // The committed compaction request does not count as a Session turn (in-process, only real
+    // turns increment the counter).
+    expect(result.sessionTurns).toBe(1);
+    expect(result.carryOver).toEqual([]);
   });
 });

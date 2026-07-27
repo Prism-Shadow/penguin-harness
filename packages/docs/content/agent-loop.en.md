@@ -116,6 +116,8 @@ Three triggers (`compaction_begin.reason`):
 
 Two modes: `summarize` (default) appends the compaction Prompt to the old context, extracts the `[summary]`, wraps it as a `[context_summary]` user text and continues in a **fresh model context**; `discard` simply drops the old context. System markers are written as `[tag]…[/tag]`; the earlier angle-bracket form (`<summary>`, `<context_summary>`, …) is still recognized when reading old Traces and old persisted compaction prompts. Compaction rotates the [Trace file](/sessions-and-traces) (`_002`, `_003`, …) — one Trace file always equals one complete model context. `compactability()` probes feasibility before `session.compact()` (`ok | unsupported | empty | just_compacted`).
 
+The compaction request keeps the session's toolset **unchanged** — the request prefix (tool list included) stays byte-identical to ordinary turns, so the provider's prompt cache remains valid at the moment the context is largest. Compaction still succeeds only with a valid summary: a response that calls a tool or whose extracted summary is empty is rejected — any tool calls are answered with synthesized failed outputs (keeping `tool_use`/`tool_result` pairing intact) and the repaired request is resent immediately (a rejection is model behavior, not a transport failure, so no backoff applies), up to 5 rejected attempts; then the compaction ends `failed`, keeping the original context and Trace file until the next trigger. Transport `timeout`/`malformed` attempts follow the compaction-specific reconnect cap and backoff ladder described under "Automatic reconnect" above.
+
 ## Concurrency model
 
 - Within a turn: approvals are sequential, execution is concurrent, and the next turn's input keeps the original order;
