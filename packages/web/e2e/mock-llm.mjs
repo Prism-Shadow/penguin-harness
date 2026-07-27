@@ -18,7 +18,7 @@ const PORT = Number(process.env.MOCK_PORT || 8931);
 /** Count of non-replay requests seen in the "bad stream" conversation: the 1st is cut off (malformed), later ones are retries that get a full tool call. */
 let malformedTurns = 0;
 
-/** Count of requests seen in the "quota retry" conversation: the first 2 are rejected 403 (insufficient_user_quota), the 3rd streams normally. */
+/** Count of requests seen in the "quota retry" conversation: the first 5 are rejected 403 (insufficient_user_quota), the 6th streams normally. */
 let quotaTurns = 0;
 
 function sse(res, event, data) {
@@ -129,13 +129,28 @@ const server = http.createServer((req, res) => {
       return;
     }
 
-    // "Quota retry" test case: the first 2 requests of the conversation are rejected 403
+    // "Quota give-up" test case: EVERY request is rejected 403 with the quota code — the
+    // spec clicks the reconnect countdown's give-up button mid-wait, so the conversation
+    // must never recover on its own (the abort ends it instead).
+    if (flat.includes("quota giveup test") && !isTitle) {
+      res.writeHead(403, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          error: { code: "insufficient_user_quota", message: "no active subscription" },
+        }),
+      );
+      return;
+    }
+
+    // "Quota retry" test case: the first 5 requests of the conversation are rejected 403
     // with the provider's quota-exhaustion code (as OpenAI-compatible gateways do).
-    // GenerativeModel classifies them retryable (timeout) and the engine reconnects,
-    // resending the same input; the 3rd attempt streams a normal final answer.
+    // GenerativeModel classifies them retryable (timeout) and the engine reconnects with
+    // exponential backoff (250/500/1000/2000/4000ms) — the 4s wait before retry #5 is the
+    // window the spec uses to observe the live countdown and click "retry now"; the 6th
+    // attempt streams a normal final answer.
     if (flat.includes("quota retry test") && !isTitle) {
       quotaTurns += 1;
-      if (quotaTurns <= 2) {
+      if (quotaTurns <= 5) {
         res.writeHead(403, { "content-type": "application/json" });
         res.end(
           JSON.stringify({

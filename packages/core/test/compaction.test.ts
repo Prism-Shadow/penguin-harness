@@ -427,6 +427,7 @@ describe("context compaction", () => {
       ],
       "llm1",
     );
+    const recorded: OmniMessage[] = [];
     const engine = new ContextEngine({
       llm: llm1,
       environment: fakeEnvironment,
@@ -435,6 +436,11 @@ describe("context compaction", () => {
       maxReconnects: 8,
       compactionMaxReconnects: 2,
       reconnectBackoffMs: 1,
+      trace: {
+        write: async (m) => {
+          recorded.push(m);
+        },
+      },
     });
 
     const out = await collect(engine.run([userText("go")], { approve: allowAll }));
@@ -442,6 +448,13 @@ describe("context compaction", () => {
     expect(events[1]).toMatchObject({ type: "compaction_end", status: "failed" });
     // 1 turn request + 3 compaction attempts (initial + compactionMaxReconnects retries).
     expect(llm1.calls).toHaveLength(4);
+    // The Trace-written compaction request_ends announce the planned backoff under the
+    // COMPACTION cap (base 1ms: 1, then 2), with none on the final failure — these events
+    // are never streamed, so the value lands in the Trace record only.
+    const retryPlans = recorded
+      .filter((m) => (m.payload as { type?: string }).type === "request_end")
+      .map((m) => (m.payload as { retry_in_ms?: number }).retry_in_ms);
+    expect(retryPlans).toEqual([undefined, 1, 2, undefined]);
   });
 
   it("session turns reaching (==) the threshold compact at task end — no waiting for the next task", async () => {

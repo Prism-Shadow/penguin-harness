@@ -205,6 +205,20 @@ export interface ReconnectItem {
   retrying: boolean;
   /** Retries exhausted (set true when an abort event arrives; the subsequent interruption marker item gives the reason). */
   gaveUp?: boolean;
+  /**
+   * The engine's planned wait before the next attempt (request_end.retry_in_ms; absent
+   * when the event carried none — old Traces, or a final failure). Waits can reach the
+   * 30s backoff ceiling, so the view renders a live countdown for the waiting state when
+   * this is ≥2s (see ReconnectLine).
+   */
+  plannedDelayMs?: number;
+  /**
+   * CLIENT-clock arrival time of the request_end (the countdown anchor — client-local, so
+   * server clock skew cannot bend the ticker). On history replay the following
+   * request_begin/abort arrives immediately and flips retrying/gaveUp, so a replayed item
+   * never stays in the waiting state to tick.
+   */
+  arrivedAtMs?: number;
 }
 
 export interface CompactionItem {
@@ -438,7 +452,7 @@ export function pushMessage(
   }
   if (isEventMessage(msg)) {
     touchTask(model, msg.timestamp);
-    handleEvent(model, msg.payload as EventPayload, tsOf(msg.timestamp));
+    handleEvent(model, msg.payload as EventPayload, tsOf(msg.timestamp), nowMs);
     advanceLastTs(model, msg.timestamp);
     return;
   }
@@ -1050,7 +1064,7 @@ function createToolCard(
 // Events
 // ---------------------------------------------------------------------------
 
-function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number): void {
+function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?: number): void {
   switch (p.type) {
     case "approval_decision": {
       const card = model.toolCards.get(p.tool_call_id);
@@ -1169,13 +1183,20 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number): void {
       commitPendingCompaction(model.stats);
       if (p.status === "timeout" || p.status === "malformed") {
         model.reconnectRun += 1;
-        model.items.push({
+        const item: ReconnectItem = {
           kind: "reconnect",
           id: nextId(model),
           status: p.status,
           attempt: model.reconnectRun,
           retrying: false,
-        });
+        };
+        // The engine announced its planned backoff: keep it with the CLIENT arrival time
+        // as the countdown anchor (skew-free — see ReconnectItem.arrivedAtMs).
+        if (typeof p.retry_in_ms === "number" && p.retry_in_ms > 0) {
+          item.plannedDelayMs = p.retry_in_ms;
+          item.arrivedAtMs = nowMs ?? Date.now();
+        }
+        model.items.push(item);
       } else {
         model.reconnectRun = 0;
       }

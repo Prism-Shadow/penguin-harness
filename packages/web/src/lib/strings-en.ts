@@ -650,10 +650,12 @@ When done, open index.html in a browser and self-test once.`,
     modelAuthDeadCta: "New Session",
     modelAuthDeadPlaceholder:
       "Model authentication failed — the Session unlocks once the API key is updated, or click Retry",
+    /** Reconnect hint line; `secondsLeft` (waiting state only) switches to the live-countdown wording. */
     reconnect: (
       status: "timeout" | "malformed",
       state: "waiting" | "retried" | "gaveUp",
       attempt: number,
+      secondsLeft?: number,
     ) => {
       const cause =
         status === "timeout" ? "Connection timed out" : "Response incomplete or unparseable";
@@ -662,9 +664,15 @@ When done, open index.html in a browser and self-test once.`,
           ? "no further retries"
           : state === "retried"
             ? `retry #${attempt} sent`
-            : `starting retry #${attempt}…`;
+            : secondsLeft !== undefined
+              ? `retry #${attempt} in ${secondsLeft}s…`
+              : `starting retry #${attempt}…`;
       return `[Retry] ${cause}; ${action}`;
     },
+    /** "Retry now" on the reconnect countdown (skips the remaining backoff wait). */
+    reconnectRetryNow: "Retry now",
+    /** "Give up" on the reconnect countdown (the ordinary session abort). */
+    reconnectGiveUp: "Give up",
     imageAlt: "Image uploaded by user",
     toolImageAlt: "Image from tool output",
     imagesAsPathHint:

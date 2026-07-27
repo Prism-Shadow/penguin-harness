@@ -616,6 +616,16 @@ export interface ApprovalDecisionRequest {
   decision: "allow" | "deny";
 }
 
+/**
+ * POST /api/sessions/:sessionId/retry-now — skip the in-progress reconnect backoff and
+ * fire the next retry immediately (the "retry now" button on the reconnect countdown).
+ * `skipped: false` is the benign "no reconnect wait in progress" case (idle session, or
+ * the wait elapsed in a timing race), not an error.
+ */
+export interface RetryNowResponse {
+  skipped: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // SSE server events (OmniMessage uses the default event, only server_event here)
 // ---------------------------------------------------------------------------

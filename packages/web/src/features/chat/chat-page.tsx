@@ -621,6 +621,15 @@ export function ChatPage() {
         1e6
       );
     },
+    // Reconnect countdown controls (live waiting state only): retry-now skips the
+    // remaining backoff server-side (benign no-op on timing races), give-up is the
+    // ordinary session abort — the engine's abort-during-backoff path ends the turn.
+    onRetryNow: () => {
+      if (selected) void api.postRetryNow(selected.sessionId).catch(() => undefined);
+    },
+    onGiveUp: () => {
+      void onStop();
+    },
     onOpenFile: (path) => {
       // The file card has already normalized the text path to a Workspace-relative path
       // (toWorkspaceRelative, including stripping absolute-path prefixes and converting Windows

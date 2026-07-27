@@ -21,6 +21,7 @@ import type {
   SessionCreateResponse,
   SessionResponse,
   SessionsResponse,
+  RetryNowResponse,
   TaskCreateResponse,
 } from "../../api/types.js";
 import { PREVIEW_TOKEN_TTL_MS, resolvePreviewTarget } from "../../services/preview-token.js";
@@ -418,6 +419,16 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     const aborted = deps.manager.abortTask(row.sessionId);
     // No Task in progress → 204 no-op; interrupt was triggered → 202 (wrap-up is completed by the SDK's "interrupt cleanup").
     return c.body(null, aborted ? 202 : 204);
+  });
+
+  // "Retry now" on the reconnect countdown: skip the remaining backoff wait and fire the
+  // next retry immediately (attempt counter unchanged). Benign either way — 200 with
+  // skipped:false when no reconnect wait is in progress, so a timing race (the wait
+  // elapsed just before the click) never surfaces as an error.
+  app.post("/:sessionId/retry-now", (c) => {
+    const row = resolveSession(c);
+    const skipped = deps.manager.retryNow(row.sessionId);
+    return c.json({ skipped } satisfies RetryNowResponse);
   });
 
   app.post("/:sessionId/compact", async (c) => {

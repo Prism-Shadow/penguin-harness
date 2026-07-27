@@ -58,6 +58,7 @@ function approvalFakeSession(sessionId: string, toolName = "exec_command"): Runt
     generateTitle: async () => ({ title: null, usage: null }),
     compactability: () => "ok" as const,
     steer: () => false,
+    skipReconnectWait: () => false,
     async *run(_input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
       const tc = toolCall({ name: toolName, arguments: "{}", toolCallId: "tc-1" });
       yield tc;
@@ -165,6 +166,7 @@ describe("session-manager", () => {
       generateTitle: async () => ({ title: null, usage: null }),
       compactability: () => "ok" as const,
       steer: () => false,
+      skipReconnectWait: () => false,
       async *run(_input: OmniMessage[], opts: { thinkingLevel?: string }) {
         seen.push(opts.thinkingLevel);
         yield assistantText("ok");
@@ -192,6 +194,7 @@ describe("session-manager", () => {
       generateTitle: async () => ({ title: null, usage: null }),
       compactability: () => "ok" as const,
       steer: () => false,
+      skipReconnectWait: () => false,
       async *run(): AsyncGenerator<OmniMessage> {
         yield requestBegin();
         yield toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc-1" });
@@ -335,6 +338,7 @@ describe("session-manager", () => {
       generateTitle: async () => ({ title: null, usage: null }),
       compactability: () => "ok" as const,
       steer: () => false,
+      skipReconnectWait: () => false,
       // eslint-disable-next-line require-yield
       async *run(input: OmniMessage[]): AsyncGenerator<OmniMessage> {
         runInputs.push(input.map((m) => (m.payload as { text?: string }).text ?? ""));
@@ -417,6 +421,7 @@ describe("session-manager", () => {
       generateTitle: async () => ({ title: null, usage: null }),
       compactability: () => "ok" as const,
       steer: () => false,
+      skipReconnectWait: () => false,
       async *run() {
         // The parent-level run_subagent call (no origin): its prompt becomes the sub-session title.
         yield toolCall({
@@ -493,6 +498,7 @@ describe("session-manager", () => {
       generateTitle: async () => ({ title: null, usage: null }),
       compactability: () => "ok" as const,
       steer: () => false,
+      skipReconnectWait: () => false,
       async *run(_input, opts) {
         const tc1 = toolCall({ name: "t1", arguments: "{}", toolCallId: "tc-1" });
         yield tc1;
@@ -766,6 +772,7 @@ describe("session-manager", () => {
       generateTitle: async () => ({ title: null, usage: null }),
       compactability: () => "ok" as const,
       steer: () => false,
+      skipReconnectWait: () => false,
       async *run() {
         yield thinkingMessage("thinking");
         yield assistantText("answer A");
@@ -820,6 +827,7 @@ describe("session-manager", () => {
       generateTitle: async () => ({ title: null, usage: null }),
       compactability: () => "ok" as const,
       steer: () => false,
+      skipReconnectWait: () => false,
       async *run() {
         yield assistantText("x".repeat(600));
         // Sub-session text doesn't count toward the main-session body threshold
@@ -871,6 +879,7 @@ describe("session-manager", () => {
       generateTitle: async () => ({ title: null, usage: null }),
       compactability: () => "ok" as const,
       steer: () => false,
+      skipReconnectWait: () => false,
       async *run() {
         yield toolCall({
           name: "run_subagent",

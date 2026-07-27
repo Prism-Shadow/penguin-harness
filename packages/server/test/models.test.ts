@@ -600,6 +600,7 @@ describe("models update reaches loaded sessions (invalidation + live unlock)", (
     generateTitle: async () => ({ title: null, usage: null }),
     compactability: () => "ok" as const,
     steer: () => false,
+    skipReconnectWait: () => false,
     async *run() {},
     async *compact() {},
   });

@@ -455,8 +455,10 @@ export class ContextEngine {
       for (;;) {
         // Both LLM and Environment handle errors internally and guarantee a complete, closed
         // output with no thrown exceptions; the engine doesn't handle exceptions —
-        // it decides retry/resend purely from `outcome`.
-        turn = yield* this.runTurn(attemptInput, approve, signal, thinkingLevel);
+        // it decides retry/resend purely from `outcome`. The retry count so far is threaded
+        // in so the turn's request_end can announce the planned backoff (retry_in_ms) —
+        // the counter lives in this loop while the event is built inside the turn.
+        turn = yield* this.runTurn(attemptInput, approve, signal, thinkingLevel, reconnects);
 
         // User interruption (the LLM stream was aborted, outcome=aborted, or `signal` fired
         // during tool execution): stop and hand control back to the user.
@@ -633,11 +635,54 @@ export class ContextEngine {
   }
 
   /**
+   * The wait the engine WILL apply before retrying this failure in-run, or undefined when
+   * it won't (a non-retryable status, or `reconnectsSoFar` has reached `cap` — an abort
+   * follows instead). Announced on the failure's `request_end` as `retry_in_ms` so the
+   * frontend can render a live countdown; shares `reconnectDelayMs` with `backoff`, so the
+   * announced wait and the actual sleep cannot drift. The caps differ by loop: the turn
+   * loop passes `maxReconnects`, the compaction loop `compactionMaxReconnects`.
+   */
+  private plannedRetryDelayMs(
+    status: StopReason,
+    reconnectsSoFar: number,
+    cap: number,
+  ): number | undefined {
+    if (status !== "timeout" && status !== "malformed") return undefined;
+    if (reconnectsSoFar >= cap) return undefined;
+    return reconnectDelayMs(
+      this.reconnectBackoffMs,
+      this.reconnectBackoffMaxMs,
+      reconnectsSoFar + 1,
+    );
+  }
+
+  /** Resolves the in-progress backoff wait early ("retry now"); null when no wait is in progress. */
+  private wakeBackoff: (() => void) | null = null;
+
+  /**
+   * Skips the in-progress reconnect backoff and fires the next retry immediately (the
+   * user's "retry now" on the countdown): resolves the current wait as if its timer had
+   * elapsed — the attempt counter is untouched, so the skipped wait never consumes an
+   * extra attempt. Returns false (a benign no-op) when no reconnect wait is in progress;
+   * idempotent under races — the wait settles exactly once whether the timer, a user
+   * abort, or this skip lands first. Wakes whichever loop is waiting (the turn loop's
+   * reconnect backoff, or a compaction retry's). Mirrors `steer` as the second
+   * mid-run nudge hosts can reach through the Session.
+   */
+  skipReconnectWait(): boolean {
+    const wake = this.wakeBackoff;
+    if (!wake) return false;
+    wake();
+    return true;
+  }
+
+  /**
    * Exponential backoff before a reconnect retry (`reconnectDelayMs` of the configured
    * base/ceiling; attempt numbering starts at 1); returns false if the user interrupts
    * during the backoff — the abort listener also fires mid-wait, so even a 30s ceiling
    * wait hands control back immediately — letting the caller proceed to interruption
-   * cleanup.
+   * cleanup. A "retry now" skip (`skipReconnectWait`) resolves the wait early as true,
+   * proceeding straight to the retry.
    */
   private backoff(attempt: number, signal?: AbortSignal): Promise<boolean> {
     const ms = reconnectDelayMs(this.reconnectBackoffMs, this.reconnectBackoffMaxMs, attempt);
@@ -646,15 +691,21 @@ export class ContextEngine {
         resolve(false);
         return;
       }
-      const onAbort = (): void => {
+      // Settles exactly once: the timer, a user abort, and a "retry now" skip may race —
+      // whichever lands first wins, the rest become no-ops (no double-fire).
+      let settled = false;
+      const settle = (proceed: boolean): void => {
+        if (settled) return;
+        settled = true;
         clearTimeout(timer);
-        resolve(false);
-      };
-      const timer = setTimeout(() => {
         signal?.removeEventListener("abort", onAbort);
-        resolve(true);
-      }, ms);
+        this.wakeBackoff = null;
+        resolve(proceed);
+      };
+      const onAbort = (): void => settle(false);
+      const timer = setTimeout(() => settle(true), ms);
       signal?.addEventListener("abort", onAbort, { once: true });
+      this.wakeBackoff = () => settle(true);
     });
   }
 
@@ -671,6 +722,8 @@ export class ContextEngine {
     approve: ApproveFn,
     signal?: AbortSignal,
     thinkingLevel?: ThinkingLevelName,
+    /** Retries already performed for this turn (from the caller's reconnect loop): lets request_end announce the NEXT attempt's planned backoff. */
+    reconnectsSoFar = 0,
   ): AsyncGenerator<OmniMessage, TurnResult> {
     const queue = new MergeQueue();
     // Tool outputs are collected in **completion order** (for streaming yield to the frontend);
@@ -709,8 +762,14 @@ export class ContextEngine {
             outcome = res.value;
             // Non-completed outcomes carry the failure detail onto the event: a retried
             // request never produces an abort, so this is the only place observability
-            // (the errors panel) can learn the real reason (e.g. a quota code).
-            const stopEvt = requestEnd(outcome.status, outcome.message);
+            // (the errors panel) can learn the real reason (e.g. a quota code). When the
+            // engine will retry in-run, the planned backoff rides along as retry_in_ms
+            // (the frontend's live countdown); absent on final failures and completions.
+            const stopEvt = requestEnd(
+              outcome.status,
+              outcome.message,
+              this.plannedRetryDelayMs(outcome.status, reconnectsSoFar, this.maxReconnects),
+            );
             queue.push(stopEvt);
             await this.write(stopEvt);
             break;
@@ -989,7 +1048,7 @@ export class ContextEngine {
         yield* this.emitCompactionEnd(reason, "summarize", "aborted");
         return { status: "aborted" };
       }
-      const attempt = await this.runCompactionRequest(input, signal);
+      const attempt = await this.runCompactionRequest(input, signal, reconnects);
       if (attempt.status === "completed") {
         // The compaction request's token_usage is pushed to the Human output stream (already
         // written to Trace in runCompactionRequest, so here it's only yielded, not rewritten);
@@ -1036,6 +1095,8 @@ export class ContextEngine {
   private async runCompactionRequest(
     input: OmniMessage[],
     signal?: AbortSignal,
+    /** Retries already performed by the compaction loop (its request_end announces the next planned backoff too). */
+    reconnectsSoFar = 0,
   ): Promise<{ status: StopReason; text: string; usage: OmniMessage | null }> {
     // The compaction request is itself an ordinary Request, emitting paired request events —
     // written to the (old) Trace only, not pushed to the stream, keeping the compaction process
@@ -1050,9 +1111,22 @@ export class ContextEngine {
     for (;;) {
       const res = await gen.next();
       if (res.done) {
-        // Same failure-detail pass-through as the turn loop's request_end (this event is
-        // written to the old Trace only, so the detail lands in the Trace record).
-        await this.write(requestEnd(res.value.status, res.value.message));
+        // Same failure-detail + planned-backoff pass-through as the turn loop's
+        // request_end, under the compaction cap. Compaction request events are written to
+        // the old Trace only (never streamed), so retry_in_ms lands in the Trace record —
+        // no live countdown renders for compaction; the frontend only sees the
+        // compaction event pair.
+        await this.write(
+          requestEnd(
+            res.value.status,
+            res.value.message,
+            this.plannedRetryDelayMs(
+              res.value.status,
+              reconnectsSoFar,
+              this.compactionMaxReconnects,
+            ),
+          ),
+        );
         return { status: res.value.status, text, usage };
       }
       const msg = res.value;

@@ -51,6 +51,7 @@ import type {
   SessionTracesResponse,
   SkillInstallRequest,
   SkillLibraryResponse,
+  RetryNowResponse,
   SteerRequest,
   TaskCreateRequest,
   TaskCreateResponse,
@@ -261,6 +262,13 @@ export const postApproval = (
 
 export const postAbort = (sessionId: string) =>
   apiFetch<void>(`/api/sessions/${encodeURIComponent(sessionId)}/abort`, {
+    method: "POST",
+    body: {},
+  });
+
+/** "Retry now" on the reconnect countdown: skips the remaining backoff wait server-side (skipped:false is the benign "no wait in progress" case — e.g. the timer elapsed in a race — never an error). */
+export const postRetryNow = (sessionId: string) =>
+  apiFetch<RetryNowResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/retry-now`, {
     method: "POST",
     body: {},
   });

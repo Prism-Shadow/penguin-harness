@@ -2,11 +2,16 @@
  * LLM request-failure recovery:
  *
  * 1. Provider quota exhaustion (403 insufficient_user_quota) is retryable: the mock rejects
- *    the first two requests, GenerativeModel classifies them as timeout, the engine
- *    reconnects (amber retry lines with attempt numbers) and the turn completes normally —
- *    no abort. With the exponential ladder the two waits are 250ms + 500ms, well within
- *    timeouts, so no backoff knobs are injected.
- * 2. An authentication failure (401 invalid_api_key) marks the Session auth-dead but
+ *    the first five requests, GenerativeModel classifies them as timeout, the engine
+ *    reconnects with exponential backoff (250/500/1000/2000/4000ms — engine deps are not
+ *    env-configurable, so the mock's failure count is chosen to open a ≥2s countdown
+ *    window instead of injecting knobs). The 4s wait before retry #5 shows a live
+ *    countdown whose seconds tick DOWN; clicking "retry now" (立即重试) skips the rest of
+ *    the wait and the turn completes normally — no abort.
+ * 2. Give-up: a conversation whose quota rejections never stop — clicking 放弃 on the
+ *    countdown fires the ordinary abort; the engine's abort-during-backoff path ends the
+ *    turn and the composer is immediately usable again.
+ * 3. An authentication failure (401 invalid_api_key) marks the Session auth-dead but
  *    RECOVERABLE: only the model reference is fixed at creation — credentials come from the
  *    current Project config — so the notice points at the Models page, updating the key
  *    auto-unlocks the composer (live via the credentials_updated event; across reloads via
@@ -46,7 +51,7 @@ async function makeSession(page, userId, apiKey = "sk-mock") {
   return { sessionId: sess.session.sessionId, projectId };
 }
 
-test("a quota-403 retries like a network problem: amber retry lines, then the turn completes", async ({
+test("a quota-403 retries with a live countdown; 'retry now' skips the wait and the turn completes", async ({
   page,
 }) => {
   const { sessionId } = await makeSession(page, "quotauser");
@@ -55,31 +60,82 @@ test("a quota-403 retries like a network problem: amber retry lines, then the tu
   await page.getByPlaceholder(/输入消息/).fill("quota retry test");
   await page.getByRole("button", { name: "发送" }).click();
 
-  // Attempt 3 succeeds: the final answer streams in (exponential backoff 250ms + 500ms
-  // sits well within the timeout).
+  // Early retries flip fast (250/500ms waits — below the 2s countdown floor they keep the
+  // plain waiting/retried text).
+  await expect(page.locator("p.text-amber-600", { hasText: "已发起第 1 次重试" })).toBeVisible({
+    timeout: 20000,
+  });
+  await expect(page.locator("p.text-amber-600", { hasText: "已发起第 2 次重试" })).toBeVisible();
+
+  // The 4s wait before retry #5: a live countdown (whole seconds, ticking down).
+  const countdown = page.locator("p.text-amber-600", { hasText: /第 5 次重试，\d+ 秒后发起/ });
+  await expect(countdown).toBeVisible({ timeout: 20000 });
+  const readSecs = async () => {
+    const txt = await countdown.textContent({ timeout: 500 }).catch(() => null);
+    const m = txt === null ? null : /第 5 次重试，(\d+) 秒后发起/.exec(txt);
+    return m ? parseInt(m[1], 10) : null;
+  };
+  const first = await readSecs();
+  expect(first).not.toBeNull();
+  // Poll until the displayed seconds DECREASE (a live ticker, not a static label).
+  let second = first;
+  for (let i = 0; i < 12 && second !== null && second >= first; i++) {
+    await page.waitForTimeout(300);
+    second = await readSecs();
+  }
+  expect(second).not.toBeNull();
+  expect(second).toBeLessThan(first);
+
+  // "Retry now" skips the remaining wait: the retry fires promptly — well before the
+  // scheduled 4s would have elapsed (the 1.5s expectation window is the proof: without
+  // the skip, the natural timer still had >2s to go).
+  await page.getByRole("button", { name: "立即重试" }).click();
+  await expect(page.locator("p.text-amber-600", { hasText: "已发起第 5 次重试" })).toBeVisible({
+    timeout: 1500,
+  });
+
+  // Attempt 6 succeeds: the final answer streams in.
   await expect(page.getByText("Quota recovered; the answer is 42.")).toBeVisible({
     timeout: 20000,
   });
-
-  // Two amber retry hint lines, with attempt numbers (marked "sent" once the retry request
-  // began; both remain visible after success).
-  await expect(page.locator("p.text-amber-600", { hasText: "已发起第 1 次重试" })).toBeVisible();
-  await expect(page.locator("p.text-amber-600", { hasText: "已发起第 2 次重试" })).toBeVisible();
 
   // No abort: the run recovered, the composer stays usable.
   await expect(page.getByText(/已中断/)).toHaveCount(0);
   await expect(page.getByPlaceholder(/输入消息/)).toBeEnabled();
 
-  // Trace: both quota rejections recorded as request_end(timeout) — the reconnect path —
-  // carrying the real failure detail (the Cost center's errors panel reads it from here),
-  // and no abort event.
+  // Trace: all five quota rejections recorded as request_end(timeout) — the reconnect
+  // path — carrying the real failure detail (the Cost center's errors panel reads it from
+  // here) and the announced backoff ladder; no abort event.
   const msgs = await (await page.request.get(`${BASE}/api/sessions/${sessionId}/messages`)).json();
   const timeouts = msgs.messages.filter(
     (m) => m.payload.type === "request_end" && m.payload.status === "timeout",
   );
-  expect(timeouts.length).toBe(2);
+  expect(timeouts.length).toBe(5);
   for (const t of timeouts) expect(t.payload.message).toContain("insufficient_user_quota");
+  expect(timeouts.map((t) => t.payload.retry_in_ms)).toEqual([250, 500, 1000, 2000, 4000]);
   expect(msgs.messages.some((m) => m.payload.type === "abort")).toBe(false);
+});
+
+test("'give up' on the countdown aborts the backoff: the turn ends and the composer is usable again", async ({
+  page,
+}) => {
+  const { sessionId } = await makeSession(page, "giveupuser");
+
+  await page.goto(`${BASE}/chat/${sessionId}`);
+  await page.getByPlaceholder(/输入消息/).fill("quota giveup test");
+  await page.getByRole("button", { name: "发送" }).click();
+
+  // The mock rejects every request: by the 2s wait before retry #4 the countdown (and its
+  // inline controls) are on screen.
+  await expect(page.getByRole("button", { name: "放弃" })).toBeVisible({ timeout: 20000 });
+  await page.getByRole("button", { name: "放弃" }).click();
+
+  // The ordinary abort lands mid-backoff: the engine's abort-during-backoff path ends the
+  // turn (abort line + the waiting notice flips to "stopped"), and the composer is
+  // immediately usable again.
+  await expect(page.getByText(/已中断/)).toBeVisible({ timeout: 10000 });
+  await expect(page.locator("p.text-amber-600", { hasText: "已停止重试" })).toBeVisible();
+  await expect(page.getByPlaceholder(/输入消息/)).toBeEnabled();
 });
 
 test("an auth-401 marks the Session dead but recoverable: Models CTA, key update auto-unlocks, Retry re-arms", async ({

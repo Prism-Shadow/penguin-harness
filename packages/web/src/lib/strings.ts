@@ -633,10 +633,12 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     modelAuthDeadRetry: "重试",
     modelAuthDeadCta: "新建会话",
     modelAuthDeadPlaceholder: "模型认证失败——更新 API key 后会话自动解锁，或点击「重试」",
+    /** Reconnect hint line; `secondsLeft` (waiting state only) switches to the live-countdown wording. */
     reconnect: (
       status: "timeout" | "malformed",
       state: "waiting" | "retried" | "gaveUp",
       attempt: number,
+      secondsLeft?: number,
     ) => {
       const cause = status === "timeout" ? "连接超时或网络中断" : "响应不完整或无法解析";
       const action =
@@ -644,9 +646,15 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
           ? "已停止重试"
           : state === "retried"
             ? `已发起第 ${attempt} 次重试`
-            : `正在发起第 ${attempt} 次重试…`;
+            : secondsLeft !== undefined
+              ? `第 ${attempt} 次重试，${secondsLeft} 秒后发起…`
+              : `正在发起第 ${attempt} 次重试…`;
       return `[重试] ${cause}，${action}`;
     },
+    /** "Retry now" on the reconnect countdown (skips the remaining backoff wait). */
+    reconnectRetryNow: "立即重试",
+    /** "Give up" on the reconnect countdown (the ordinary session abort). */
+    reconnectGiveUp: "放弃",
     imageAlt: "用户上传的图片",
     toolImageAlt: "工具输出的图片",
     imagesAsPathHint:

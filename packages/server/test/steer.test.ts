@@ -27,6 +27,7 @@ function steeringFakeSession(sessionId: string, steered: string[]): RuntimeSessi
       steered.push(text);
       return true;
     },
+    skipReconnectWait: () => false,
     async *run(_input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
       const tc = toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc-steer" });
       yield tc;

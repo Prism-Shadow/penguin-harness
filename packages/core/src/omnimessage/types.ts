@@ -295,6 +295,15 @@ export interface RequestEndPayload {
    * unchanged.
    */
   message?: string;
+  /**
+   * Planned in-run retry wait (ms) — present ONLY when the engine will retry this failure
+   * within the same run (status `timeout`/`malformed` with attempts remaining under the
+   * applicable cap). Computed by the same formula as the actual backoff sleep
+   * (`reconnectDelayMs`), so the announced wait and the real one cannot drift; the Web App
+   * renders it as a live countdown to the next attempt. Absent on final failures (an abort
+   * follows instead) and on completed requests. Additive: old Traces replay unchanged.
+   */
+  retry_in_ms?: number;
 }
 
 /** Compaction trigger reason: context threshold / turn-count threshold / user-initiated request. */

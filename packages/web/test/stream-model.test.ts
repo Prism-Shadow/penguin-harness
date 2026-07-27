@@ -409,6 +409,58 @@ describe("approvals and events", () => {
     expect((items(m)[2] as ReconnectItem).attempt).toBe(1);
   });
 
+  it("request_end.retry_in_ms lands on the waiting item with the CLIENT arrival anchor (the countdown's inputs)", () => {
+    const m = createStreamModel();
+    pushMessage(m, requestBegin());
+    // The engine announced a 4s backoff before retry #1; nowMs (the injected client clock)
+    // is the countdown anchor — NOT the envelope timestamp, so server clock skew cannot
+    // bend the ticker.
+    pushMessage(m, requestEnd("timeout", "403 quota (insufficient_user_quota)", 4000), 111_000);
+    const item = items(m)[0] as ReconnectItem;
+    expect(item).toMatchObject({
+      kind: "reconnect",
+      status: "timeout",
+      attempt: 1,
+      retrying: false,
+      plannedDelayMs: 4000,
+      arrivedAtMs: 111_000,
+    });
+    // An event without the field (old Traces / final failures) leaves the fields unset —
+    // the view keeps the plain waiting text.
+    pushMessage(m, requestBegin());
+    pushMessage(m, requestEnd("timeout"));
+    const plain = items(m)[1] as ReconnectItem;
+    expect(plain.plannedDelayMs).toBeUndefined();
+    expect(plain.arrivedAtMs).toBeUndefined();
+  });
+
+  it("history replay of a retried failure leaves no live countdown: the following request_begin/abort flips the state", () => {
+    // Replay delivers the whole Trace back-to-back: the waiting state (the only state the
+    // countdown and the retry-now/give-up controls render for) never persists.
+    const retried = createStreamModel();
+    pushMessages(retried, [
+      userText("go"),
+      requestBegin(),
+      requestEnd("timeout", "quota", 30_000),
+      requestBegin(), // the engine's retry — replayed immediately after
+      requestEnd("completed"),
+    ]);
+    finalizeHistory(retried);
+    const item = items(retried).find((i) => i.kind === "reconnect") as ReconnectItem;
+    expect(item.retrying).toBe(true); // not waiting -> no countdown, no controls
+
+    const aborted = createStreamModel();
+    pushMessages(aborted, [
+      userText("go"),
+      requestBegin(),
+      requestEnd("timeout", "quota", 30_000),
+      abortEvent("aborted during reconnect backoff"), // the user gave up mid-wait
+    ]);
+    finalizeHistory(aborted);
+    const gaveUp = items(aborted).find((i) => i.kind === "reconnect") as ReconnectItem;
+    expect(gaveUp.gaveUp).toBe(true); // not waiting -> no countdown, no controls
+  });
+
   it("a new Task closes the previous Task's dangling retry notice (server died in the backoff window, no abort in the Trace)", () => {
     const m = createStreamModel();
     pushMessage(m, userText("go"));

@@ -1622,6 +1622,58 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     expect((abort!.payload as { code?: string }).code).toBe("auth");
   });
 
+  it("skipReconnectWait wakes the backoff early ('retry now'): attempt numbering unchanged; no-op without a wait", async () => {
+    let calls = 0;
+    const llm: LLMInterface = {
+      async *streamGenerate() {
+        calls += 1;
+        if (calls === 1) return { status: "timeout" };
+        yield assistantText("ok");
+        yield tokenUsage(emptyTokenCounts(), {
+          cache_read: 0,
+          cache_write: 0,
+          output: 1,
+          total: 1,
+        });
+        return { status: "completed" };
+      },
+    };
+    const environment = new Environment({
+      workspaceDir: workspace,
+      toolConfig: execCommandToolConfig(),
+    });
+    // A wait long enough that the run could only finish in time if the skip woke it.
+    const engine = new ContextEngine({
+      llm,
+      environment,
+      maxReconnects: 2,
+      reconnectBackoffMs: 60_000,
+    });
+
+    // No reconnect wait in progress yet: skip is a benign no-op.
+    expect(engine.skipReconnectWait()).toBe(false);
+
+    const started = Date.now();
+    const runP = collectRun(engine, [userText("go")], allowAll);
+    // Poll the skip itself: it keeps returning false until the engine parks in the
+    // backoff, and consumes the wait exactly once when it does.
+    while (!engine.skipReconnectWait()) {
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    const all = await runP;
+    expect(Date.now() - started).toBeLessThan(10_000); // woke early: the scheduled wait was 60s
+    // Exactly the one retry — the skipped wait consumed no extra attempt.
+    expect(calls).toBe(2);
+    const ends = all.filter((m) => (m.payload as { type?: string }).type === "request_end");
+    expect(ends.map((m) => (m.payload as { status?: string }).status)).toEqual([
+      "timeout",
+      "completed",
+    ]);
+    expect(all.map((m) => (m.payload as { type?: string }).type)).not.toContain("abort");
+    // The wait settled (skip won the race): further skips are no-ops again.
+    expect(engine.skipReconnectWait()).toBe(false);
+  });
+
   it("reconnectDelayMs: exponential-with-ceiling ladder (defaults: 250ms base, 30s cap)", () => {
     const ladder = [1, 2, 3, 4, 5, 6, 7, 8].map((n) => reconnectDelayMs(250, 30_000, n));
     expect(ladder).toEqual([250, 500, 1000, 2000, 4000, 8000, 16000, 30000]);
@@ -1661,13 +1713,48 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
 
     const all = await collectRun(engine, [userText("go")], allowAll);
     const ends = all.filter((m) => (m.payload as { type?: string }).type === "request_end") as {
-      payload: { status?: string; message?: string };
+      payload: { status?: string; message?: string; retry_in_ms?: number };
     }[];
     expect(ends).toHaveLength(2);
     expect(ends[0]!.payload.status).toBe("timeout");
     expect(ends[0]!.payload.message).toBe("403 quota exceeded (insufficient_user_quota)");
+    // The engine will retry: the planned backoff is announced (base 0 here -> 0ms).
+    expect(ends[0]!.payload.retry_in_ms).toBe(0);
     expect(ends[1]!.payload.status).toBe("completed");
     expect(ends[1]!.payload.message).toBeUndefined();
+    expect(ends[1]!.payload.retry_in_ms).toBeUndefined();
+  });
+
+  it("request_end announces the planned backoff (retry_in_ms) from the shared ladder; absent once the cap is reached", async () => {
+    let calls = 0;
+    const llm: LLMInterface = {
+      // eslint-disable-next-line require-yield
+      async *streamGenerate() {
+        calls += 1;
+        return { status: "timeout" }; // Always needs a reconnect.
+      },
+    };
+    const environment = new Environment({
+      workspaceDir: workspace,
+      toolConfig: execCommandToolConfig(),
+    });
+    const engine = new ContextEngine({
+      llm,
+      environment,
+      maxReconnects: 2,
+      reconnectBackoffMs: 10,
+      reconnectBackoffMaxMs: 15,
+    });
+
+    const all = await collectRun(engine, [userText("go")], allowAll);
+    const ends = all.filter((m) => (m.payload as { type?: string }).type === "request_end") as {
+      payload: { retry_in_ms?: number };
+    }[];
+    // Announced waits follow the same exponential-with-ceiling formula the sleep uses
+    // (10, then min(20, 15) = 15); the FINAL failure carries none — no retry follows,
+    // the exhaustion abort does.
+    expect(ends.map((e) => e.payload.retry_in_ms)).toEqual([10, 15, undefined]);
+    expect(calls).toBe(3); // Initial attempt + 2 retries.
   });
 
   it("LLM timeout after a tool already executed: retry carries the call/result via [turn_retried] (tool runs once)", async () => {
