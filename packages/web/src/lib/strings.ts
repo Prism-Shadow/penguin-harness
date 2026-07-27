@@ -626,13 +626,12 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     subagent: "子会话",
     subagentRunning: "运行中",
     aborted: (reason?: string) => `[已中断]${reason ? `：${reason}` : ""}`,
-    /** Auth-dead notice (abort with code "auth"): only the model reference is fixed at creation — credentials come from the current Project config, so fixing the key on the Models page auto-unlocks this Session. */
-    modelAuthDead:
-      "模型 API 认证失败。会话锁定的是模型引用，凭据取自当前 Project 配置——在模型配置页更新该模型的 API key 后，本会话会自动解锁并可继续；也可点击「重试」或新建会话。",
+    /** Auth-dead notice (request_end status "auth"): action-only copy — updating the key on the Models page auto-unlocks this Session. */
+    modelAuthDead: "模型 API 认证失败：请在模型配置页更新该模型的 API key，或新建会话。",
     modelAuthDeadOpenModels: "打开模型配置",
     modelAuthDeadRetry: "重试",
     modelAuthDeadCta: "新建会话",
-    modelAuthDeadPlaceholder: "模型认证失败——更新 API key 后会话自动解锁，或点击「重试」",
+    modelAuthDeadPlaceholder: "模型认证失败，请先更新 API key",
     /** Reconnect hint line; `secondsLeft` (waiting state only) switches to the live-countdown wording. */
     reconnect: (
       status: "timeout" | "malformed",

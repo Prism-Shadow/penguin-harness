@@ -5,9 +5,10 @@
  *    the first five requests, GenerativeModel classifies them as timeout, the engine
  *    reconnects with exponential backoff (250/500/1000/2000/4000ms — engine deps are not
  *    env-configurable, so the mock's failure count is chosen to open a ≥2s countdown
- *    window instead of injecting knobs). The 4s wait before retry #5 shows a live
- *    countdown whose seconds tick DOWN; clicking "retry now" (立即重试) skips the rest of
- *    the wait and the turn completes normally — no abort.
+ *    window instead of injecting knobs; five failures + five retries sits exactly at the
+ *    default cap of 5, so attempt 6 is the last allowed and succeeds). The 4s wait before
+ *    retry #5 shows a live countdown whose seconds tick DOWN; clicking "retry now"
+ *    (立即重试) skips the rest of the wait and the turn completes normally — no abort.
  * 2. Give-up: a conversation whose quota rejections never stop — clicking 放弃 on the
  *    countdown fires the ordinary abort; the engine's abort-during-backoff path ends the
  *    turn and the composer is immediately usable again.
@@ -152,15 +153,21 @@ test("an auth-401 marks the Session dead but recoverable: Models CTA, key update
   await expect(page.getByText(/已中断/)).toBeVisible({ timeout: 20000 });
   await expect(page.getByText(/llm request error/)).toBeVisible();
 
-  // Corrected notice: credentials come from the current Project config (not "locked at
-  // creation"), and the composer is disabled with the matching placeholder.
-  await expect(page.getByText(/凭据取自当前 Project 配置/)).toBeVisible();
+  // Action-only notice (per review: tell the user what to do, no explanations) and the
+  // composer disabled with the matching placeholder.
+  await expect(page.getByText(/请在模型配置页更新该模型的 API key/)).toBeVisible();
   await expect(page.getByPlaceholder(/模型认证失败/)).toBeDisabled();
 
-  // Trace: the abort event carries the machine-readable code.
+  // Trace: the credentials failure is the request's own terminal status (no abort code —
+  // "auth" is a stop reason now); the abort event only carries the prose reason.
   const msgs = await (await page.request.get(`${BASE}/api/sessions/${sessionId}/messages`)).json();
+  const authEnd = msgs.messages.find(
+    (m) => m.payload.type === "request_end" && m.payload.status === "auth",
+  );
+  expect(authEnd).toBeTruthy();
+  expect(authEnd.payload.message).toContain("invalid x-api-key");
   const abort = msgs.messages.find((m) => m.payload.type === "abort");
-  expect(abort.payload.code).toBe("auth");
+  expect(abort.payload.code).toBeUndefined();
 
   // Reload: the state is rebuilt from Trace replay (the abort event is persisted) and the
   // key has not changed, so the session stays dead.

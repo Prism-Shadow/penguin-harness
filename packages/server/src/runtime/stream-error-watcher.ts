@@ -9,7 +9,8 @@
  * (its state wraps up accordingly, see close).
  *
  * LLM (source = `llm`): reads the status of `request_end` —
- * - `failed` → unexpected (not retryable: auth failure, invalid params, etc., needs a human);
+ * - `failed` / `auth` → unexpected (not retryable: credentials rejected, invalid params,
+ *   etc., needs a human; both share the llm_failed code — no separate taxonomy);
  * - `timeout` / `malformed` → expected (the engine already reconnects and retries, part
  *   of normal operation);
  * - `aborted` / `completed` are not recorded (the former is a user-initiated interrupt,
@@ -72,11 +73,14 @@ export const TOOL_NAMES_MAX = 1000;
 export const ORIGIN_CTX_MAX = 200;
 
 /** Recorded LLM failure states (`aborted` / `completed` are not errors and aren't included here). */
-type LlmFailure = "failed" | "timeout" | "malformed";
+type LlmFailure = "failed" | "timeout" | "malformed" | "auth";
 
 /** LLM failure state → error code, classification, and fallback message (used when the abort reason isn't available). */
 const LLM_FAILURES: Record<LlmFailure, { code: string; kind: ErrorKind; text: string }> = {
   failed: { code: "llm_failed", kind: "unexpected", text: "LLM request failed (not retryable)." },
+  // Credentials rejection shares the failed bucket (no new taxonomy): same code/kind, the
+  // real reason arrives via the abort reason or the event's own message as usual.
+  auth: { code: "llm_failed", kind: "unexpected", text: "LLM request failed (not retryable)." },
   timeout: {
     code: "llm_timeout",
     kind: "expected",
@@ -93,7 +97,7 @@ const LLM_FAILURES: Record<LlmFailure, { code: string; kind: ErrorKind; text: st
 type ToolFailure = "failed" | "timeout";
 
 function isLlmFailure(s: unknown): s is LlmFailure {
-  return s === "failed" || s === "timeout" || s === "malformed";
+  return s === "failed" || s === "timeout" || s === "malformed" || s === "auth";
 }
 
 function isToolFailure(s: unknown): s is ToolFailure {

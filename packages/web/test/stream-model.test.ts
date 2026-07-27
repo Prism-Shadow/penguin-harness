@@ -246,16 +246,17 @@ describe("approvals and events", () => {
     expect((items(m)[0] as ToolCallItem).decision).toBe("allow");
   });
 
-  it("an abort carrying code=auth records the auth-abort timestamp; plain aborts do not", () => {
+  it("a main-session request_end(auth) records the failure timestamp; other aborts/events do not", () => {
     const m = createStreamModel();
     pushMessage(m, abortEvent("aborted by user"));
-    expect(m.lastAuthAbortMs).toBeNull();
-    const abort = abortEvent("llm request error: 401 invalid x-api-key", "auth");
-    pushMessage(m, abort);
+    expect(m.lastAuthFailureMs).toBeNull();
+    const end = requestEnd("auth", "401 invalid x-api-key");
+    pushMessage(m, end);
     // The recorded time is the event's envelope timestamp (so a reload can compare it
     // against the Project's credentials-updated time).
-    expect(m.lastAuthAbortMs).toBe(Date.parse(abort.timestamp));
-    // The abort line itself still renders (the notice is additional, not a replacement).
+    expect(m.lastAuthFailureMs).toBe(Date.parse(end.timestamp));
+    // The abort that follows still renders its line (the notice is additional).
+    pushMessage(m, abortEvent("llm request error: 401 invalid x-api-key"));
     expect(items(m)[1]).toMatchObject({
       kind: "abort",
       reason: "llm request error: 401 invalid x-api-key",
@@ -264,40 +265,40 @@ describe("approvals and events", () => {
     // request_begin alone proves nothing about the credential.
     pushMessage(m, userText("hello?"));
     pushMessage(m, requestBegin());
-    expect(m.lastAuthAbortMs).not.toBeNull();
+    expect(m.lastAuthFailureMs).not.toBeNull();
   });
 
-  it("a later completed request clears the auth-dead state; a re-abort re-arms it", () => {
+  it("a later completed request clears the auth-dead state; a new auth failure re-arms it", () => {
     const m = createStreamModel();
-    pushMessage(m, abortEvent("llm request error: 401", "auth"));
-    expect(m.lastAuthAbortMs).not.toBeNull();
+    pushMessage(m, requestEnd("auth", "401"));
+    expect(m.lastAuthFailureMs).not.toBeNull();
     // The key was fixed and a request succeeded: the state must not outlive the success.
     pushMessage(m, userText("again"));
     pushMessage(m, requestBegin());
     pushMessage(m, requestEnd("completed"));
-    expect(m.lastAuthAbortMs).toBeNull();
-    // A fresh auth abort re-arms (e.g. the replacement key is wrong too).
-    pushMessage(m, abortEvent("llm request error: 401", "auth"));
-    expect(m.lastAuthAbortMs).not.toBeNull();
+    expect(m.lastAuthFailureMs).toBeNull();
+    // A fresh auth failure re-arms (e.g. the replacement key is wrong too).
+    pushMessage(m, requestEnd("auth", "401"));
+    expect(m.lastAuthFailureMs).not.toBeNull();
   });
 
-  it("history replay: order decides — auth abort then completed request stays alive; completed then abort stays dead", () => {
-    // Replay of a Trace where the auth abort was followed by a successful request (the
+  it("history replay: order decides — auth failure then completed request stays alive; the reverse stays dead", () => {
+    // Replay of a Trace where the auth failure was followed by a successful request (the
     // user fixed the key and continued): reload must NOT resurrect the dead composer.
     const recovered = createStreamModel();
     pushMessages(recovered, [
       userText("go"),
       requestBegin(),
-      requestEnd("failed"),
-      abortEvent("llm request error: 401 invalid x-api-key", "auth"),
+      requestEnd("auth", "401 invalid x-api-key"),
+      abortEvent("llm request error: 401 invalid x-api-key"),
       userText("after fix"),
       requestBegin(),
       requestEnd("completed"),
     ]);
     finalizeHistory(recovered);
-    expect(recovered.lastAuthAbortMs).toBeNull();
+    expect(recovered.lastAuthFailureMs).toBeNull();
 
-    // Replay where the auth abort is the LAST word: the dead state is rebuilt.
+    // Replay where the auth failure is the LAST word: the dead state is rebuilt.
     const dead = createStreamModel();
     pushMessages(dead, [
       userText("go"),
@@ -305,27 +306,27 @@ describe("approvals and events", () => {
       requestEnd("completed"),
       userText("later"),
       requestBegin(),
-      requestEnd("failed"),
-      abortEvent("llm request error: 401 invalid x-api-key", "auth"),
+      requestEnd("auth", "401 invalid x-api-key"),
+      abortEvent("llm request error: 401 invalid x-api-key"),
     ]);
     finalizeHistory(dead);
-    expect(dead.lastAuthAbortMs).not.toBeNull();
+    expect(dead.lastAuthFailureMs).not.toBeNull();
   });
 
   it("isModelAuthDead gates on the credentials-updated timestamp", () => {
-    expect(isModelAuthDead(null, null)).toBe(false); // never aborted
+    expect(isModelAuthDead(null, null)).toBe(false); // no auth failure on record
     expect(isModelAuthDead(1000, null)).toBe(true); // no update info -> nothing proves a fix
-    expect(isModelAuthDead(1000, 2000)).toBe(false); // key updated after the abort -> alive
-    expect(isModelAuthDead(3000, 2000)).toBe(true); // a fresh abort after the update re-arms
+    expect(isModelAuthDead(1000, 2000)).toBe(false); // key updated after the failure -> alive
+    expect(isModelAuthDead(3000, 2000)).toBe(true); // a fresh failure after the update re-arms
   });
 
-  it("a subagent-origin auth abort does NOT kill the parent session's input", () => {
+  it("a subagent-origin auth failure does NOT kill the parent session's input", () => {
     const m = createStreamModel();
-    pushMessage(m, withOrigin(abortEvent("llm request error: 401", "auth"), "child1"));
+    pushMessage(m, withOrigin(requestEnd("auth", "401"), "child1"));
     // The failure belongs to the child session: its nested model carries the state, the
     // parent composer stays usable (the subagent simply surfaces as failed).
-    expect(m.lastAuthAbortMs).toBeNull();
-    expect(m.subagents.get("child1")!.lastAuthAbortMs).not.toBeNull();
+    expect(m.lastAuthFailureMs).toBeNull();
+    expect(m.subagents.get("child1")!.lastAuthFailureMs).not.toBeNull();
   });
 
   it("abort events produce an abort marker item", () => {
@@ -393,7 +394,7 @@ describe("approvals and events", () => {
     const m = createStreamModel();
     pushMessage(m, requestBegin());
     pushMessage(m, requestEnd("timeout"));
-    pushMessage(m, abortEvent("reconnect failed after 8 retries"));
+    pushMessage(m, abortEvent("reconnect failed after 5 retries"));
     const retry = items(m)[0] as ReconnectItem;
     expect(retry).toMatchObject({
       kind: "reconnect",

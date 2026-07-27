@@ -657,14 +657,14 @@ export function ChatPage() {
   const emptyChat =
     selected !== null && !stream.loading && !stream.error && stream.model.items.length === 0;
 
-  // Auth-dead gate (recoverable): an auth abort is on record AND the Project's credentials
+  // Auth-dead gate (recoverable): an auth failure is on record AND the Project's credentials
   // have not been updated since — only the model reference is fixed at creation, credentials
   // come from the current Project config, so a key update (Models page) unlocks the session
   // (live via the credentials_updated event; across reloads via this time comparison against
   // the models response's updatedAt).
   const credsUpdatedMs = models?.updatedAt !== undefined ? Date.parse(models.updatedAt) : NaN;
   const modelAuthDead = isModelAuthDead(
-    stream.lastAuthAbortMs,
+    stream.lastAuthFailureMs,
     Number.isFinite(credsUpdatedMs) ? credsUpdatedMs : null,
   );
 

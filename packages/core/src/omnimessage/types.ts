@@ -23,7 +23,7 @@ export type OmniMessageType = "session_meta" | "model_msg" | "event_msg";
 export type Role = "user" | "assistant";
 
 /**
- * The reason a model response or message generation ended. Only five protocol values are
+ * The reason a model response or message generation ended. Only six protocol values are
  * allowed:
  *   - `completed`: finished normally, including completed text, thinking, tool requests, or
  *     tool output;
@@ -31,10 +31,15 @@ export type Role = "user" | "assistant";
  *   - `aborted`: user-initiated interruption or cancellation;
  *   - `timeout`: LLM request timed out;
  *   - `malformed`: the LLM response was malformed (e.g. AgentHub JSON parsing exception).
- *     Only LLM timeout / malformed trigger a context_engine reconnect.
+ *     Only LLM timeout / malformed trigger a context_engine reconnect;
+ *   - `auth`: the LLM rejected the credentials (see `isAuthenticationError`) — a
+ *     `failed`-shaped stop that no in-run retry can fix; hosts disable input until the
+ *     model's API key is updated (only the model reference is fixed at Session creation —
+ *     credentials come from the current Project config), after which the Session
+ *     continues.
  * Docs: /docs/omni-message § "stop_reason".
  */
-export type StopReason = "completed" | "failed" | "aborted" | "timeout" | "malformed";
+export type StopReason = "completed" | "failed" | "aborted" | "timeout" | "malformed" | "auth";
 
 /** The event phase of a streaming fragment. `stop` marks the end of a fragment and usually carries no incremental content. */
 export type StreamEventType = "start" | "delta" | "stop";
@@ -253,14 +258,6 @@ export interface ApprovalDecisionPayload {
 export interface AbortPayload {
   type: "abort";
   reason?: string | null;
-  /**
-   * Machine-readable failure class; currently only `"auth"`: the run ended on a
-   * credentials/authentication error that no in-run retry can fix. Only the model
-   * REFERENCE is fixed at Session creation — credentials are read from the current
-   * Project config when the Session loads — so hosts should point the user at updating
-   * that model's API key (Models page), after which this Session can continue.
-   */
-  code?: string;
 }
 
 export interface TokenUsagePayload {
@@ -285,7 +282,7 @@ export interface RequestBeginPayload {
 
 export interface RequestEndPayload {
   type: "request_end";
-  /** Terminal state of this Request (reuses the five StopReason values, sharing its source with this turn's complete message's stop_reason / LLMOutcome). */
+  /** Terminal state of this Request (reuses the six StopReason values, sharing its source with this turn's complete message's stop_reason / LLMOutcome; `auth` is the credentials-failure signal hosts key on). */
   status: StopReason;
   /**
    * Failure detail from `LLMOutcome.message`, present only on non-completed statuses: the
@@ -316,7 +313,7 @@ export type CompactionMode = "summarize" | "discard";
  * Compaction boundary event: the compaction process exposes
  * only this event pair to Human, produced **in pairs** by `context_engine`. Both `reason` and
  * `mode` are carried on both events, for stateless frontend rendering; `status` reuses the
- * five-value `StopReason` protocol (compaction converges to a terminal state, taking
+ * six-value `StopReason` protocol (compaction converges to a terminal state, taking
  * `completed` / `failed` / `aborted` in practice — `timeout` / `malformed` are handled internally
  * by the compaction request's existing retry mechanism, collapsing to `failed` once retries are
  * exhausted).

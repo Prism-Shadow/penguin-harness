@@ -1504,8 +1504,6 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     const reason = (abort!.payload as { reason?: string }).reason ?? "";
     expect(reason).toContain("llm request error");
     expect(reason).toContain("unknown parameter");
-    // A plain failure carries no machine-readable code (only auth does).
-    expect((abort!.payload as { code?: string }).code).toBeUndefined();
 
     // The failed turn's input is flattened and stashed; the next run resends it merged with
     // the new input.
@@ -1515,15 +1513,16 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     expect(text).toContain("next");
   });
 
-  it("an auth failure aborts immediately (no retry) with the abort event carrying code=auth", async () => {
+  it("an auth outcome stops immediately like failed: no retry, request_end carries status auth", async () => {
     let calls = 0;
     const llm: LLMInterface = {
-      // GenerativeModel classifies a 401/invalid_api_key as failed + code "auth" (see
-      // llm.test.ts); the engine must pass the code through to the abort event unchanged.
+      // GenerativeModel classifies a 401/invalid_api_key as status "auth" (see
+      // llm.test.ts); the engine must stop directly — the auth/failed branch is the second
+      // belt keeping a dead credential out of the retry loop (the classifier is the first).
       // eslint-disable-next-line require-yield
       async *streamGenerate() {
         calls += 1;
-        return { status: "failed", message: "401 invalid x-api-key", code: "auth" };
+        return { status: "auth", message: "401 invalid x-api-key" };
       },
     };
     const environment = new Environment({
@@ -1533,11 +1532,16 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     const engine = new ContextEngine({ llm, environment, reconnectBackoffMs: 1 });
 
     const all = await collectRun(engine, [userText("go")], allowAll);
-    expect(calls).toBe(1); // Auth is a failed outcome: never enters the reconnect loop.
+    expect(calls).toBe(1); // Auth behaves like failed: never enters the reconnect loop.
+    // The request's own terminal status is the host signal (streams to the web).
+    const end = all.find((m) => (m.payload as { type?: string }).type === "request_end");
+    expect((end!.payload as { status?: string }).status).toBe("auth");
+    expect((end!.payload as { message?: string }).message).toBe("401 invalid x-api-key");
+    // No planned retry is announced for a terminal failure.
+    expect((end!.payload as { retry_in_ms?: number }).retry_in_ms).toBeUndefined();
     const abort = all.find((m) => (m.payload as { type?: string }).type === "abort");
     expect(abort).toBeDefined();
     expect((abort!.payload as { reason?: string }).reason).toContain("llm request error");
-    expect((abort!.payload as { code?: string }).code).toBe("auth");
   });
 
   it("a quota-403 (classified timeout) retries within the default cap and succeeds", async () => {
@@ -1546,7 +1550,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
       async *streamGenerate() {
         calls += 1;
         // Two quota rejections (GenerativeModel classifies them as timeout), then success —
-        // attempt 3 is within the default cap of 8.
+        // attempt 3 is within the default cap of 5.
         if (calls <= 2) return { status: "timeout" };
         yield assistantText("recovered");
         yield tokenUsage(emptyTokenCounts(), {
@@ -1575,7 +1579,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     expect(all.map((m) => (m.payload as { type?: string }).type)).not.toContain("abort");
   });
 
-  it("default reconnect cap is 8: the exhaustion abort message says so", async () => {
+  it("default reconnect cap is 5: the exhaustion abort message says so", async () => {
     let calls = 0;
     const llm: LLMInterface = {
       // eslint-disable-next-line require-yield
@@ -1589,37 +1593,13 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
       toolConfig: execCommandToolConfig(),
     });
     // No maxReconnects override: exercises the default cap (tiny base keeps the
-    // exponential waits at 1+2+4+…+128 ≈ 255ms total).
+    // exponential waits at 1+2+4+8+16 = 31ms total).
     const engine = new ContextEngine({ llm, environment, reconnectBackoffMs: 1 });
 
     const all = await collectRun(engine, [userText("go")], allowAll);
-    expect(calls).toBe(9); // Initial attempt + 8 retries.
+    expect(calls).toBe(6); // Initial attempt + 5 retries.
     const abort = all.find((m) => (m.payload as { type?: string }).type === "abort");
-    expect((abort!.payload as { reason?: string }).reason).toBe("reconnect failed after 8 retries");
-    // Retries exhausted without an auth signal: no machine-readable code on the abort.
-    expect((abort!.payload as { code?: string }).code).toBeUndefined();
-  });
-
-  it("exhausted retries forward the outcome's machine-readable code onto the abort (defense-in-depth)", async () => {
-    // GenerativeModel cannot produce a timeout outcome carrying code "auth" today (auth
-    // classifies failed before the retryable check) — but if a credential error ever slips
-    // into the retry loop, the exhaustion abort must still tell hosts it was auth.
-    const llm: LLMInterface = {
-      // eslint-disable-next-line require-yield
-      async *streamGenerate() {
-        return { status: "timeout", code: "auth" } as LLMOutcome;
-      },
-    };
-    const environment = new Environment({
-      workspaceDir: workspace,
-      toolConfig: execCommandToolConfig(),
-    });
-    const engine = new ContextEngine({ llm, environment, maxReconnects: 1, reconnectBackoffMs: 0 });
-
-    const all = await collectRun(engine, [userText("go")], allowAll);
-    const abort = all.find((m) => (m.payload as { type?: string }).type === "abort");
-    expect((abort!.payload as { reason?: string }).reason).toBe("reconnect failed after 1 retries");
-    expect((abort!.payload as { code?: string }).code).toBe("auth");
+    expect((abort!.payload as { reason?: string }).reason).toBe("reconnect failed after 5 retries");
   });
 
   it("skipReconnectWait wakes the backoff early ('retry now'): attempt numbering unchanged; no-op without a wait", async () => {
@@ -1675,10 +1655,12 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
   });
 
   it("reconnectDelayMs: exponential-with-ceiling ladder (defaults: 250ms base, 30s cap)", () => {
-    const ladder = [1, 2, 3, 4, 5, 6, 7, 8].map((n) => reconnectDelayMs(250, 30_000, n));
-    expect(ladder).toEqual([250, 500, 1000, 2000, 4000, 8000, 16000, 30000]);
-    // ≈62s of total patience across the default 8 reconnects.
-    expect(ladder.reduce((a, b) => a + b, 0)).toBe(61_750);
+    // The default cap (5) walks the first five steps — 250+500+1000+2000+4000 ≈ 7.75s of
+    // total patience; the formula keeps climbing to the 30s ceiling for larger caps.
+    const ladder = [1, 2, 3, 4, 5].map((n) => reconnectDelayMs(250, 30_000, n));
+    expect(ladder).toEqual([250, 500, 1000, 2000, 4000]);
+    expect(ladder.reduce((a, b) => a + b, 0)).toBe(7750);
+    expect([6, 7, 8].map((n) => reconnectDelayMs(250, 30_000, n))).toEqual([8000, 16000, 30000]);
     // Past the ceiling the delay stays pinned (no overflow, no further growth).
     expect(reconnectDelayMs(250, 30_000, 12)).toBe(30_000);
     // The cap also applies when the base itself exceeds it.

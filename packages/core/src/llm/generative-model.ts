@@ -16,8 +16,9 @@
  *      errors (network/transport drops, timeouts, 429/5xx, provider quota exhaustion, see
  *      `isRetryableError`) end with `timeout`; AgentHub JSON parse errors end with `malformed`;
  *      both are handed to `context_engine` to reconnect within the same run. User interruption
- *      ends with `aborted`; non-retryable errors (auth/parameters) end with `failed` —
- *      credentials failures additionally carry `code: "auth"` (see `isAuthenticationError`).
+ *      ends with `aborted`; non-retryable errors (parameters etc.) end with `failed`;
+ *      credentials failures end with their own terminal status `auth` (see
+ *      `isAuthenticationError`) — same engine behavior as `failed`, but hosts key on it.
  *
  * `context_engine` only consumes OmniMessage; all Uni* protocol details are encapsulated here.
  * Docs: /docs/interfaces § "The built-in implementation: GenerativeModel".
@@ -652,7 +653,7 @@ export class EventTranslator {
   }
 
   /**
-   * Converts an AgentHub finish_reason into an OmniMessage stop_reason (the five-value protocol).
+   * Converts an AgentHub finish_reason into an OmniMessage stop_reason (the six-value protocol).
    * "stop", "tool_call", and null are treated as completed; length or unknown reasons map to failed.
    */
   private omniStopReason(): StopReason {
@@ -1076,7 +1077,10 @@ export class GenerativeModel implements LLMInterface {
    *     usage → `malformed`, likewise reconnected by `context_engine` within the same run;
    *   - **User interruption**: `finishInterrupted("aborted")` closes out, produces no usage →
    *     `aborted`;
-   *   - **Other non-retryable errors** (auth/parameters etc.): `finishInterrupted("failed")`
+   *   - **Credentials failure**: `finishInterrupted("auth")` closes out, produces no usage →
+   *     `auth` (carrying `message`) — the engine stops exactly like `failed`, hosts key on
+   *     the status to gate input until the model's API key is updated;
+   *   - **Other non-retryable errors** (parameters etc.): `finishInterrupted("failed")`
    *     closes out, produces no usage → `failed` (carrying `message`), handed to
    *     `context_engine` to stop and return control to the user.
    *
@@ -1183,6 +1187,13 @@ export class GenerativeModel implements LLMInterface {
           status: "malformed",
           message: describeError(error),
         };
+      } else if (isAuthenticationError(error)) {
+        // Credentials failure: its own terminal status so hosts can tell "update this
+        // model's API key, then this Session can continue" (only the model reference is
+        // fixed at Session creation; the credential is read from the current Project
+        // config on load) apart from a one-off failure. Checked before the retryable
+        // branch as a belt — isRetryableError itself already refuses auth signals.
+        outcome = { status: "auth", message: describeError(error) };
       } else if (isRetryableError(error)) {
         // Network drop / transient provider rejection -> needs reconnection. The detail
         // (e.g. "403 … (insufficient_user_quota)") rides on the outcome so observability
@@ -1192,15 +1203,7 @@ export class GenerativeModel implements LLMInterface {
       } else if ((error as { name?: string })?.name === "AbortError") {
         outcome = { status: "aborted" }; // Fallback: an unexpected abort (neither timeout nor user)
       } else {
-        outcome = {
-          status: "failed",
-          message: describeError(error),
-          // Credentials failure: marked so hosts can tell "update this model's API key,
-          // then this Session can continue" (only the model reference is fixed at Session
-          // creation; the credential is read from the current Project config on load)
-          // apart from a one-off failure.
-          ...(isAuthenticationError(error) ? { code: "auth" as const } : {}),
-        };
+        outcome = { status: "failed", message: describeError(error) };
       }
     } finally {
       clearTimer();

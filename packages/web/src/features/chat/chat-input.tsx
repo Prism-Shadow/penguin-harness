@@ -985,7 +985,7 @@ export function ChatInput({
   onHandoffTargetChange?: (agentId: string | null) => void;
   /**
    * Session state: the Session's model credentials failed authentication (abort with
-   * code "auth") and the Project's credentials have not been updated since (the parent
+   * status "auth") and the Project's credentials have not been updated since (the parent
    * computes the time gate — see isModelAuthDead). Recoverable: only the model reference
    * is fixed at creation, credentials come from the current Project config — so the
    * composer disables and grays itself with a notice pointing at the Models page (primary),
@@ -997,7 +997,7 @@ export function ChatInput({
   onOpenModels?: () => void;
   /**
    * Clears the auth-dead state and re-enables the composer for another attempt (the state
-   * re-arms on the next auth abort). The escape hatch for credential changes the
+   * re-arms on the next auth failure). The escape hatch for credential changes the
    * timestamps miss (e.g. edited outside the UI).
    */
   onRetryModelAuth?: () => void;
@@ -1666,7 +1666,7 @@ export function ChatInput({
           width — the abort line in the stream keeps the raw reason, this adds the "what now"
           guidance. Recoverable: primary CTA opens the Models page (fixing the key there
           auto-unlocks the session), Retry clears the state for another attempt (re-arms on
-          the next auth abort), New Session stays as the escape. The composer below is
+          the next auth failure), New Session stays as the escape. The composer below is
           disabled and hazed. */}
       {modelAuthDead && (
         <div className="anim-fade mb-1.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:border-gray-700 dark:bg-gray-800/60 dark:text-gray-300">

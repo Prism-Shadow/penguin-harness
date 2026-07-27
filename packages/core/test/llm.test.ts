@@ -1584,18 +1584,18 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
     expect(outcome2.status).toBe("malformed");
   });
 
-  it("classifies a non-retryable error as failed with message, no token_usage; auth carries code", async () => {
+  it("classifies a credentials failure as its own terminal status auth; params stay failed", async () => {
     const model = new SeamModel(() => authError());
     const { messages, outcome } = await drain(
       model.streamGenerate({ newMessages: [userText("go")] }),
     );
-    expect(outcome.status).toBe("failed");
+    // 401 = credentials failure: its own stop reason so hosts can gate input until the
+    // model's API key is updated (same engine behavior as failed).
+    expect(outcome.status).toBe("auth");
     expect(outcome.message).toContain("invalid api key");
-    // 401 = credentials failure: marked so hosts can permanently disable the Session.
-    expect(outcome.code).toBe("auth");
     expect(messages.map(typeOf)).not.toContain("token_usage");
 
-    // A genuinely non-retryable parameter error stays a plain failure (no code).
+    // A genuinely non-retryable parameter error stays a plain failure.
     async function* paramError(): AsyncGenerator<UniEvent> {
       throw Object.assign(new Error("unknown parameter: max_output_tokens"), { status: 400 });
     }
@@ -1604,10 +1604,9 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
       model2.streamGenerate({ newMessages: [userText("go")] }),
     );
     expect(outcome2.status).toBe("failed");
-    expect(outcome2.code).toBeUndefined();
   });
 
-  it("an auth error dressed in quota language still funnels to failed + code auth", async () => {
+  it("an auth error dressed in quota language still funnels to status auth", async () => {
     // The adversarial case from the review: 403 + body code invalid_api_key + a message
     // mentioning the subscription. Must NOT classify as retryable quota (timeout): the
     // ordering fix keeps the dead credential out of the reconnect loop entirely.
@@ -1621,8 +1620,7 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
     const { messages, outcome } = await drain(
       model.streamGenerate({ newMessages: [userText("go")] }),
     );
-    expect(outcome.status).toBe("failed");
-    expect(outcome.code).toBe("auth");
+    expect(outcome.status).toBe("auth");
     expect(outcome.message).toContain("subscription key invalid");
     expect(messages.map(typeOf)).not.toContain("token_usage");
   });

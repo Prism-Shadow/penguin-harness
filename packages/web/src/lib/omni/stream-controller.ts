@@ -172,7 +172,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
         // and let the user simply continue (it re-arms if the new key fails too). Buffered
         // during history load like other model-affecting events, so it replays AFTER the
         // history that set the flag.
-        model.lastAuthAbortMs = null;
+        model.lastAuthFailureMs = null;
         deps.onModelChange();
         return;
       }

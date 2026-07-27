@@ -50,15 +50,10 @@ The generator yields `partial_*` fragments and complete messages, emits Token us
 
 ```ts
 interface LLMOutcome {
-  status: StopReason;   // completed | timeout | malformed | aborted | failed
-  message?: string;     // failure detail: on failed, and on timeout/malformed when a
+  status: StopReason;   // completed | timeout | malformed | aborted | failed | auth
+  message?: string;     // failure detail: on failed/auth, and on timeout/malformed when a
                         // concrete error was caught — carried onto request_end so the
                         // errors panel shows the real reason behind a retried request
-  code?: "auth";        // machine-readable failure class: a credentials error no in-run
-                        // retry can fix. Only the model reference is fixed at Session
-                        // creation — credentials come from the current Project config —
-                        // so updating that model's API key lets the Session continue;
-                        // carried onto the abort event
 }
 ```
 
@@ -68,7 +63,8 @@ interface LLMOutcome {
 | `timeout` | timeout / transport disconnect / transient provider quota error | auto-reconnect within the run |
 | `malformed` | response parse failure | auto-reconnect within the run |
 | `aborted` | user interrupt | stop, hand back to the user |
-| `failed` | non-retryable (auth/params, …) | stop, hand back to the user |
+| `failed` | non-retryable (params, …) | stop, hand back to the user |
+| `auth` | credentials rejected | stop like `failed`; hosts gate input until the model's API key is updated |
 
 Implementation constraints: never throw; no internal retries — reconnecting is the engine's job (see [The Agent Loop](/agent-loop)).
 

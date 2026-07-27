@@ -642,14 +642,13 @@ When done, open index.html in a browser and self-test once.`,
     subagent: "Subagent",
     subagentRunning: "Running",
     aborted: (reason?: string) => `[Aborted]${reason ? `: ${reason}` : ""}`,
-    /** Auth-dead notice (abort with code "auth"): only the model reference is fixed at creation — credentials come from the current Project config, so fixing the key on the Models page auto-unlocks this Session. */
+    /** Auth-dead notice (request_end status "auth"): action-only copy — updating the key on the Models page auto-unlocks this Session. */
     modelAuthDead:
-      "Model API authentication failed. The Session pins only the model reference; credentials come from the current Project config — update that model's API key on the Models page and this Session unlocks by itself. You can also Retry or start a new Session.",
+      "Model API authentication failed: update this model's API key on the Models page, or start a new Session.",
     modelAuthDeadOpenModels: "Open Models page",
     modelAuthDeadRetry: "Retry",
     modelAuthDeadCta: "New Session",
-    modelAuthDeadPlaceholder:
-      "Model authentication failed — the Session unlocks once the API key is updated, or click Retry",
+    modelAuthDeadPlaceholder: "Model authentication failed — update the API key first",
     /** Reconnect hint line; `secondsLeft` (waiting state only) switches to the live-countdown wording. */
     reconnect: (
       status: "timeout" | "malformed",

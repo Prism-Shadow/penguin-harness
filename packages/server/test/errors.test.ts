@@ -406,6 +406,23 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
     });
   });
 
+  it("request_end(auth) shares the llm_failed/unexpected bucket; message takes the abort reason", () => {
+    // Credentials rejection is its own stop reason but no new error taxonomy: same code
+    // and kind as failed, resolved by the abort that follows like any failed exit.
+    const got = feed([
+      requestBegin(),
+      requestEnd("auth", "401 invalid x-api-key (invalid_api_key)"),
+      abortEvent("llm request error: 401 invalid x-api-key (invalid_api_key)"),
+    ]);
+    expect(got).toHaveLength(1);
+    expect(got[0]).toMatchObject({
+      source: "llm",
+      kind: "unexpected",
+      code: "llm_failed",
+      message: "llm request error: 401 invalid x-api-key (invalid_api_key)",
+    });
+  });
+
   it("a retried failure keeps its real detail: request_end(timeout).message lands in the record", () => {
     // The retry path: the engine reconnects (request_begin) and eventually succeeds, so no
     // abort ever arrives for the staged failure — the request_end's own failure detail

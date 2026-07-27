@@ -139,7 +139,7 @@ export interface GenerativeModelParameters {
 
 /**
  * The terminal state of an LLM request, returned as the **return value** of the `streamGenerate`
- * async generator (not a yielded message). The status values share the same five-value protocol
+ * async generator (not a yielded message). The status values share the same six-value protocol
  * as OmniMessage `stop_reason`:
  *   - `completed`: finished normally (already produced `token_usage`);
  *   - `timeout`: LLM timed out or lost connection, needs reconnect — retried by `context_engine`
@@ -147,28 +147,24 @@ export interface GenerativeModelParameters {
  *   - `malformed`: AgentHub response failed JSON parsing, needs reconnect — also retried by
  *     `context_engine`;
  *   - `aborted`: user-initiated interruption — stop and hand back to the user;
- *   - `failed`: other non-retryable errors (auth/params, etc.) — stop and hand back to the user
- *     (`message` provides the display text).
+ *   - `failed`: other non-retryable errors (params, etc.) — stop and hand back to the user
+ *     (`message` provides the display text);
+ *   - `auth`: the provider rejected the credentials (see `isAuthenticationError`) — behaves
+ *     like `failed` in the engine (direct stop, never retried), but hosts key on the status
+ *     to disable input until the model's API key is updated (only the model reference is
+ *     fixed at Session creation; credentials come from the current Project config, so a key
+ *     update lets the Session continue).
  * Docs: /docs/interfaces § "LLMOutcome semantics".
  */
 export interface LLMOutcome {
   status: StopReason;
   /**
-   * Failure detail (`describeError` text): present on `failed`, and on `timeout` /
+   * Failure detail (`describeError` text): present on `failed` / `auth`, and on `timeout` /
    * `malformed` when a concrete transport/provider error was caught (a plain idle timeout
    * has none). Carried onto the `request_end` event so observability (the Cost center's
    * errors panel) can show the real reason behind a retried request.
    */
   message?: string;
-  /**
-   * Machine-readable failure class; currently only `"auth"`: set when the failure is a
-   * credentials/authentication error that no in-run retry can fix — the request would keep
-   * going out with the same dead credential. Only the model REFERENCE is fixed at Session
-   * creation; credentials are read from the current Project config when the Session loads,
-   * so updating that model's API key (Models page) lets this Session continue. Carried
-   * through to the abort event so hosts can disable input until the credential changes.
-   */
-  code?: "auth";
 }
 
 /**

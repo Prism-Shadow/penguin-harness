@@ -154,9 +154,9 @@ export interface ContextEngineDeps {
   maxTurns?: number;
   /**
    * Maximum automatic retries for LLM timeout/reconnect within a single run. Defaults
-   * to 8: with the default backoff (250ms base, 30s ceiling) that is ≈62s of total
-   * patience — the first attempts stay fast enough for transport blips while the tail
-   * gives transient provider rejections (quota refresh, gateway buckets) a real window.
+   * to 5: with the default backoff (250ms base, 30s ceiling) that is 250+500+1000+2000+
+   * 4000 ≈ 7.75s of total patience — the first attempts stay fast enough for transport
+   * blips while the tail still gives transient provider rejections a window.
    */
   maxReconnects?: number;
   /**
@@ -254,10 +254,9 @@ class MergeQueue {
 /**
  * Delay before reconnect attempt N (1-based): exponential growth from `base` with a hard
  * ceiling `max` — `min(base × 2^(N−1), max)`. With the defaults (250ms base, 30s ceiling,
- * 8 reconnects) the ladder is 250, 500, 1000, 2000, 4000, 8000, 16000, 30000 ≈ 62s of
- * total patience: one shared schedule serves every retryable class, so it is sized for the
- * slowest one (transient provider quota errors) while the first steps stay as fast as a
- * transport blip needs.
+ * 5 reconnects) the ladder is 250, 500, 1000, 2000, 4000 ≈ 7.75s of total patience: one
+ * shared schedule serves every retryable class, growing toward the slower ones (transient
+ * provider quota errors) while the first steps stay as fast as a transport blip needs.
  */
 export function reconnectDelayMs(base: number, max: number, attempt: number): number {
   return Math.min(base * 2 ** (attempt - 1), max);
@@ -307,7 +306,7 @@ export class ContextEngine {
 
   constructor(private readonly deps: ContextEngineDeps) {
     this.maxTurns = deps.maxTurns ?? 100;
-    this.maxReconnects = deps.maxReconnects ?? 8;
+    this.maxReconnects = deps.maxReconnects ?? 5;
     this.reconnectBackoffMs = deps.reconnectBackoffMs ?? 250;
     this.reconnectBackoffMaxMs = deps.reconnectBackoffMaxMs ?? 30_000;
     this.compactionMaxReconnects = deps.compactionMaxReconnects ?? 3;
@@ -467,15 +466,14 @@ export class ContextEngine {
           yield* this.emitAbort("aborted by user");
           return;
         }
-        // Non-retryable error (auth/parameter etc.): stop and hand control back to the user;
-        // the failure reason is written to the abort event / Trace, along with the outcome's
-        // machine-readable code (currently only "auth": hosts disable the Session on it).
-        if (turn.outcome.status === "failed") {
+        // Non-retryable error: stop and hand control back to the user; the failure reason
+        // is written to the abort event / Trace. `auth` (credentials rejected) behaves
+        // exactly like `failed` here — direct stop, never the retry loop below (the
+        // classifier already refuses to mark auth retryable; this branch is the second
+        // belt) — hosts read the status from this turn's request_end to gate input.
+        if (turn.outcome.status === "failed" || turn.outcome.status === "auth") {
           this.pendingCarryOver = this.buildCarryOver(attemptInput, turn);
-          yield* this.emitAbort(
-            `llm request error: ${turn.outcome.message ?? "unknown"}`,
-            turn.outcome.code,
-          );
+          yield* this.emitAbort(`llm request error: ${turn.outcome.message ?? "unknown"}`);
           return;
         }
         // Completed normally.
@@ -491,14 +489,7 @@ export class ContextEngine {
         if (reconnects >= this.maxReconnects) {
           this.pendingCarryOver = attemptInput;
           const reason = turn.outcome.status === "malformed" ? "malformed response" : "reconnect";
-          // Defense-in-depth: forward the outcome's machine-readable code when one is
-          // present. With auth classified before the retryable check it never enters this
-          // loop today — but if a credential error ever slips through, the exhaustion
-          // abort must still reach hosts as "auth", not as a plain failure.
-          yield* this.emitAbort(
-            `${reason} failed after ${this.maxReconnects} retries`,
-            turn.outcome.code,
-          );
+          yield* this.emitAbort(`${reason} failed after ${this.maxReconnects} retries`);
           return;
         }
         reconnects += 1;
@@ -797,7 +788,7 @@ export class ContextEngine {
           // was never committed to history by AgentHub, so there's nothing to pair. This turn
           // must then end with a non-completed outcome (only interruption closure produces such
           // a tool_call): timeout/malformed is cleaned up by reconnect resending the flatten
-          // carry-over, failed/aborted exits directly.
+          // carry-over, failed/auth/aborted exits directly.
           if (isCompleteModelMessage(msg) && msg.payload.type === "tool_call") {
             const tc = msg as OmniMessage<ToolCallPayload>;
             if (tc.payload.stop_reason !== "completed") continue;
@@ -1062,9 +1053,17 @@ export class ContextEngine {
         await this.startNewContext();
         return { status: "completed", summary };
       }
-      if (attempt.status === "aborted" || attempt.status === "failed") {
-        yield* this.emitCompactionEnd(reason, "summarize", attempt.status);
-        return { status: attempt.status };
+      if (attempt.status === "aborted") {
+        yield* this.emitCompactionEnd(reason, "summarize", "aborted");
+        return { status: "aborted" };
+      }
+      if (attempt.status === "failed" || attempt.status === "auth") {
+        // `auth` folds into `failed` here: the compaction event pair keeps its
+        // completed/failed/aborted set, the original context is kept, and the host learns
+        // about the credential problem from the request's own terminal status (a turn-loop
+        // request will surface it; the compaction request_end is Trace-only).
+        yield* this.emitCompactionEnd(reason, "summarize", "failed");
+        return { status: "failed" };
       }
       // timeout / malformed: retried via reconnect. The compaction request was never committed
       // by AgentHub (case B), so the original input is resent unchanged. Compaction uses its
@@ -1182,9 +1181,9 @@ export class ContextEngine {
     await this.write(msg);
   }
 
-  /** Interruption: emits an abort event (optionally carrying the machine-readable failure code, e.g. "auth"). Cleanup/resending is managed centrally by `run` via carry-over; the LLM history is never touched again. */
-  private async *emitAbort(reason: string, code?: string): AsyncGenerator<OmniMessage> {
-    const msg = abortEvent(reason, code);
+  /** Interruption: emits an abort event. Cleanup/resending is managed centrally by `run` via carry-over; the LLM history is never touched again. */
+  private async *emitAbort(reason: string): AsyncGenerator<OmniMessage> {
+    const msg = abortEvent(reason);
     yield msg;
     await this.write(msg);
   }
@@ -1192,7 +1191,7 @@ export class ContextEngine {
   /**
    * Builds the interruption resend content (carry-over, interruption cleanup)
    * based on the LLM's terminal state. Used only for the **exit** cleanup of
-   * aborted / failed (reconnect retry doesn't go through here — retry input is assembled by
+   * aborted / failed / auth (reconnect retry doesn't go through here — retry input is assembled by
    * withRetriedTurns, appending `[turn_retried]` with the failed attempt's output, distinct
    * from the user-interruption `[turn_aborted]`):
    * - Model output completed (case A, outcome=completed): AgentHub already committed an

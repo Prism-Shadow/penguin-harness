@@ -39,14 +39,14 @@ export interface SessionStreamState {
   /** Queued follow-up count from the stream's task_state events (auto-sent once the session is idle). */
   queuedFollowUps: number;
   /**
-   * Timestamp (ms) of the last main-session auth failure (abort event with code "auth"),
+   * Timestamp (ms) of the last main-session auth failure (request_end with status "auth"),
    * or null. Derived from the model, so it survives history replay and resets when
    * switching sessions; cleared by a later completed request, a `credentials_updated`
    * server event, or dismissModelAuthDead. The composer gates on it TOGETHER with the
    * models response's `updatedAt` (see isModelAuthDead): an abort older than the last
    * credential update no longer disables the composer.
    */
-  lastAuthAbortMs: number | null;
+  lastAuthFailureMs: number | null;
   /**
    * Clears the auth-dead state (the user clicked Retry / dismissed the notice — e.g. the
    * credential changed outside the UI in a way the timestamps miss); the state re-arms if
@@ -202,8 +202,8 @@ export function useSessionStream(
 
   const dismissModelAuthDead = useCallback(() => {
     const m = controllerRef.current?.model;
-    if (m && m.lastAuthAbortMs !== null) {
-      m.lastAuthAbortMs = null;
+    if (m && m.lastAuthFailureMs !== null) {
+      m.lastAuthFailureMs = null;
       setVersion((v) => v + 1);
     }
   }, []);
@@ -217,7 +217,7 @@ export function useSessionStream(
     loading,
     taskState,
     queuedFollowUps,
-    lastAuthAbortMs: (controllerRef.current?.model ?? placeholderRef.current).lastAuthAbortMs,
+    lastAuthFailureMs: (controllerRef.current?.model ?? placeholderRef.current).lastAuthFailureMs,
     dismissModelAuthDead,
     pendingApprovals: controllerRef.current?.pendingApprovals ?? EMPTY_PENDING,
     markLocalDecision,
