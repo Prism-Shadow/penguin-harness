@@ -4,7 +4,7 @@ description: Design and calibrate a multi-Case capability Benchmark and establis
 short_description: Design and calibrate an Agent capability Benchmark.
 short_description_zh: 设计并校准 Agent 能力评测 Benchmark。
 version: 7
-updated: 2026-07-27T08:14:28Z
+updated: 2026-07-27T08:54:43Z
 ---
 
 # Benchmark Design
@@ -23,7 +23,7 @@ Follow this order:
 
 1. Validate the Test Agent, target capability, evaluation Model, and evaluation access.
 2. Define the observable behavior, plan the Case set and point allocation, then draft the Cases incrementally.
-3. As soon as a Pilot Case is complete and passes its leak check, delegate one evaluation and continue drafting the remaining Cases without waiting.
+3. Complete and leak-check one Pilot Case, dispatch its evaluation in the background, then draft the next Case without waiting for the result.
 4. If the Pilot does not expose the target difficulty, refine one capability-relevant dimension and rerun the affected Cases. Use at most three Pilot iterations.
 5. Freeze the complete Benchmark after a final leak check.
 6. Delegate every frozen Case for the configured number of Runs. Save the result as the Formal Baseline only if all Runs complete on the same Agent version and the aggregate score satisfies the baseline gate.
@@ -93,9 +93,11 @@ The Benchmark Designer owns the Pilot and Formal evaluation sets. This includes 
    model_id: <model_id>
    ```
 
-Track each evaluation by phase, Pilot iteration, Case, Run, and attempt. Do not launch a duplicate while the same request is pending or after it returns a valid result.
+Track each evaluation by phase, Pilot iteration, Case, Run, and attempt. Before dispatch, list every required cell as `queued`. Mark it `in_flight` when dispatched and `completed` only after a valid result. Never dispatch an `in_flight` or valid `completed` cell again.
 
-For Pilot, dispatch a Case as soon as it is complete and leak-checked, then continue designing other Cases while that evaluation runs. Do not modify a Case while its evaluation is pending. For any evaluation set, launch all ready independent requests before waiting. If concurrency is limited, keep the available slots full by launching the next request as soon as one finishes.
+For the initial Pilot, write and leak-check one Case, call `run_subagent` with a short initial yield such as `yield_time_ms: 1000` so its Evaluator continues in the background, then write the next Case. Do not finish drafting all Cases before dispatching the first evaluation, and do not modify a Case while its evaluation is pending.
+
+For any ready evaluation set, dispatch cells from the full `queued` list rather than grouping them by Case. Do not wait for all Runs of one Case or for a whole batch to finish. Use short initial yields so launched workers return subagent ids promptly. Dispatch every queued cell before polling when the tool permits it. If the tool enforces a hard concurrency limit, poll only until one slot opens, immediately dispatch the next queued cell, and repeat until the queue is empty. Do not report a queued cell as running.
 
 A wrong or missing Test Agent artifact is a valid scored result. Do not retry it.
 
@@ -131,7 +133,7 @@ Stop when the user's gate is satisfied, after three Pilot iterations, or when no
 
 1. Freeze the complete Benchmark and run the final leak check.
 2. Start a fresh ledger and record the current Agent State version.
-3. Dispatch the complete Case × Run matrix with one separate `agent-evaluation` worker per cell; never reuse a Pilot run. Start every cell at once when capacity allows; otherwise keep all available slots full until every cell has been dispatched.
+3. Put the complete Case × Run matrix into one `queued` list and dispatch it through the evaluation scheduling rules above; never reuse a Pilot run.
 4. Accept the matrix only if every cell succeeds and the Agent State version remains unchanged.
 
 Once the first Formal cell is dispatched, do not design or refine any Case or otherwise change the Benchmark. If a design defect appears, abandon the whole matrix. Do the same when the Formal score misses the gate and the Traces show a credible shortcut. Return to refinement only when the three-iteration budget has room. After any change, freeze again and rerun the entire Formal matrix.

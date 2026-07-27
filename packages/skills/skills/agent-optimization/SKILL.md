@@ -4,7 +4,7 @@ description: Improve an Agent State through versioned scores and score-linked Tr
 short_description: Improve an Agent from measured Benchmark results.
 short_description_zh: 根据 Benchmark 结果改进 Agent。
 version: 7
-updated: 2026-07-27T08:14:28Z
+updated: 2026-07-27T08:54:43Z
 ---
 
 # Agent Optimization
@@ -43,7 +43,9 @@ If the Candidate is rejected or cannot be compared, restore the changed files an
 
 The Optimizer owns the matrix, ledger, concurrency, and returned failures. Each Evaluator handles one `(case_id, run)` cell. It runs that cell once, scores it privately, and returns one protocol result. It may retry only a launch that failed before the Test Agent started.
 
-Track every cell and attempt. Never dispatch a pending or valid cell. After the Candidate is complete, dispatch the full Case × Run matrix in parallel. Launch all cells before waiting when capacity allows; otherwise keep every available slot full by launching the next cell as soon as one finishes. Do not modify the Candidate while any cell is pending.
+Track every cell and attempt. After the Candidate is complete, list the full Case × Run matrix as `queued`. Mark a cell `in_flight` when dispatched and `completed` only after a valid result. Never dispatch an `in_flight` or valid `completed` cell again. Do not group the queue by Case or wait for all Runs of one Case or a whole batch to finish.
+
+Call `run_subagent` with a short initial yield such as `yield_time_ms: 1000` so each Evaluator continues in the background and returns its subagent id promptly. Dispatch every queued cell before polling when the tool permits it. If the tool enforces a hard concurrency limit, poll only until one slot opens, immediately dispatch the next queued cell, and repeat until the queue is empty. Do not report a queued cell as running or modify the Candidate while any cell is in flight.
 
 Send each Evaluator:
 
