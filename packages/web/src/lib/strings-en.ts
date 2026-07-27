@@ -642,10 +642,19 @@ When done, open index.html in a browser and self-test once.`,
     subagent: "Subagent",
     subagentRunning: "Running",
     aborted: (reason?: string) => `[Aborted]${reason ? `: ${reason}` : ""}`,
+    /** Auth-dead notice (request_end status "auth"): action-only copy — updating the key on the Models page auto-unlocks this Session. */
+    modelAuthDead:
+      "Model API authentication failed: update this model's API key on the Models page, or start a new Session.",
+    modelAuthDeadOpenModels: "Open Models page",
+    modelAuthDeadRetry: "Retry",
+    modelAuthDeadCta: "New Session",
+    modelAuthDeadPlaceholder: "Model authentication failed — update the API key first",
+    /** Reconnect hint line; `secondsLeft` (waiting state only) switches to the live-countdown wording. */
     reconnect: (
       status: "timeout" | "malformed",
       state: "waiting" | "retried" | "gaveUp",
       attempt: number,
+      secondsLeft?: number,
     ) => {
       const cause =
         status === "timeout" ? "Connection timed out" : "Response incomplete or unparseable";
@@ -654,9 +663,15 @@ When done, open index.html in a browser and self-test once.`,
           ? "no further retries"
           : state === "retried"
             ? `retry #${attempt} sent`
-            : `starting retry #${attempt}…`;
+            : secondsLeft !== undefined
+              ? `retry #${attempt} in ${secondsLeft}s…`
+              : `starting retry #${attempt}…`;
       return `[Retry] ${cause}; ${action}`;
     },
+    /** "Retry now" on the reconnect countdown (skips the remaining backoff wait). */
+    reconnectRetryNow: "Retry now",
+    /** "Give up" on the reconnect countdown (the ordinary session abort). */
+    reconnectGiveUp: "Give up",
     imageAlt: "Image uploaded by user",
     toolImageAlt: "Image from tool output",
     imagesAsPathHint:

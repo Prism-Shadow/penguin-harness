@@ -1,6 +1,6 @@
 ---
 title: The OmniMessage Protocol
-description: One envelope, three message types, a five-value stop_reason — the unified protocol behind the SDK, the Trace and SSE, field by field.
+description: One envelope, three message types, a six-value stop_reason — the unified protocol behind the SDK, the Trace and SSE, field by field.
 ---
 
 OmniMessage is PenguinHarness's unified message protocol: the SDK yields it, the Trace stores it line by line, and the Server pushes it verbatim over SSE. What streams, what is stored and what the model sees are one structure — there is no second format between front end, back end and storage.
@@ -190,6 +190,10 @@ interface RequestBeginPayload {
 interface RequestEndPayload {
   type: "request_end";
   status: StopReason;         // "completed" is the mechanical commit criterion for replay
+  message?: string;           // failure detail (LLMOutcome.message), non-completed only:
+                              // the real reason behind a retried/failed Request (e.g. a
+                              // provider quota code) — read by the Cost center's errors
+                              // panel; additive, old Traces replay unchanged
 }
 
 interface ApprovalDecisionPayload {
@@ -242,19 +246,20 @@ interface SubagentPayload {
 
 ## stop_reason
 
-A five-value enum used across messages and interface results (`LLMOutcome.status` uses the same set — see [Core Interfaces](/interfaces)):
+A six-value enum used across messages and interface results (`LLMOutcome.status` uses the same set — see [Core Interfaces](/interfaces)):
 
 ```ts
-type StopReason = "completed" | "failed" | "aborted" | "timeout" | "malformed";
+type StopReason = "completed" | "failed" | "aborted" | "timeout" | "malformed" | "auth";
 ```
 
 | Value | Meaning | Engine reaction |
 | --- | --- | --- |
 | `completed` | finished normally | continue |
 | `aborted` | user interrupt | stop, hand back to the user |
-| `timeout` | LLM timeout / lost connection | LLM side only: auto-reconnect within the run |
+| `timeout` | LLM timeout / transport disconnect / transient provider quota error | LLM side only: auto-reconnect within the run |
 | `malformed` | parse failure / truncated stream | LLM side only: auto-reconnect within the run |
 | `failed` | other non-retryable error | stop, hand back to the user |
+| `auth` | the provider rejected the credentials | stop like `failed`; hosts gate input until the model's API key is updated (credentials come from the current Project config) |
 
 Errors never cross an interface boundary as exceptions — they *are* messages. See [The Agent Loop](/agent-loop).
 

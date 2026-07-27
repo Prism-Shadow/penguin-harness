@@ -166,6 +166,16 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
         void rebuild();
         return;
       }
+      case "credentials_updated": {
+        // The Project's model credentials changed (Models page save): the server has
+        // already invalidated cached runtimes, so any auth-dead state is stale — clear it
+        // and let the user simply continue (it re-arms if the new key fails too). Buffered
+        // during history load like other model-affecting events, so it replays AFTER the
+        // history that set the flag.
+        model.lastAuthFailureMs = null;
+        deps.onModelChange();
+        return;
+      }
       case "hello":
         return;
     }

@@ -78,6 +78,8 @@ export interface RuntimeSession {
   compactability(): CompactAvailability;
   /** Queues a mid-run steering message (core `Session.steer`); false when no Task is running. */
   steer(text: string): boolean;
+  /** Skips the in-progress reconnect backoff, firing the next retry immediately (core `Session.skipReconnectWait`); false when no wait is in progress. */
+  skipReconnectWait(): boolean;
   toolPermission(name: string): "r" | "rw" | undefined;
   /**
    * Out-of-band one-shot request for title generation (core `Session.generateTitle`,
@@ -396,6 +398,22 @@ export class SessionManager {
     this.agentGenerations.set(key, this.generationOf(projectId, agentId) + 1);
   }
 
+  /**
+   * After a Project's models/credentials change: invalidate every cached runtime in this
+   * Project, so the next Task re-resumes with the new api_key / base_url. Same
+   * effective-value semantics as invalidateAgentRuntimes — no hot swap into a Task already
+   * in flight. Iterating the active table is complete here, not a shortcut: the generation
+   * map only matters for runtimes that are already cached, and an Agent with no cached
+   * entry builds fresh through the loader anyway.
+   */
+  invalidateProjectRuntimes(projectId: string): void {
+    const agentIds = new Set<string>();
+    for (const e of this.entries.values()) {
+      if (e.projectId === projectId) agentIds.add(e.agentId);
+    }
+    for (const agentId of agentIds) this.invalidateAgentRuntimes(projectId, agentId);
+  }
+
   // —— Task / compaction drive ——
 
   /**
@@ -556,6 +574,23 @@ export class SessionManager {
       );
     }
     entry.lastActivityMs = Date.now();
+  }
+
+  /**
+   * "Retry now" on the reconnect countdown: skip the in-progress backoff wait and fire
+   * the next retry immediately (the attempt counter is unchanged — the skipped wait does
+   * not consume an extra attempt). Returns false as a benign no-op when the session has
+   * no active runtime or no reconnect wait is in progress — timing races (the wait
+   * elapsed right before the click) must not surface as errors. Mirrors the steer seam:
+   * manager → RuntimeSession → core Session → engine.
+   */
+  retryNow(sessionId: string): boolean {
+    const entry = this.entries.get(sessionId);
+    // Both running Tasks and compactions can be parked in a reconnect backoff.
+    if (!entry || entry.status === "idle") return false;
+    const skipped = entry.session.skipReconnectWait();
+    if (skipped) entry.lastActivityMs = Date.now();
+    return skipped;
   }
 
   /**

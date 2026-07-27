@@ -201,6 +201,18 @@ export class Session {
   }
 
   /**
+   * Skips the in-progress reconnect backoff and fires the next retry immediately (the
+   * user's "retry now" on the reconnect countdown): the attempt counter is unchanged —
+   * the skipped wait does not consume an extra attempt. Returns false (a benign no-op)
+   * when no reconnect wait is in progress; idempotent under races with the timer/abort.
+   * Mirrors `steer` as a mid-run nudge (no message of its own — the effect surfaces as
+   * the next `request_begin` arriving early).
+   */
+  skipReconnectWait(): boolean {
+    return this.engine.skipReconnectWait();
+  }
+
+  /**
    * User-initiated request to compact context (e.g. a CLI command): reuses the automatic
    * compaction flow but skips the threshold check (reason=manual). Only callable at Task
    * boundaries (between runs); streams out paired `compaction` events. The summarize digest

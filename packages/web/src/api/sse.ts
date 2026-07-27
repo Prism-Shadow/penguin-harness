@@ -3,7 +3,8 @@
  *
  * - OmniMessage uses the default event (no `event:` line); data is the message envelope as
  *   raw JSON;
- * - Server events use `event: server_event` (approval_request / task_state / resync_required / hello);
+ * - Server events use `event: server_event` (approval_request / task_state / resync_required /
+ *   credentials_updated / hello);
  * - EventSource can't set custom request headers, so auth relies on same-origin cookies; on
  *   disconnect, the browser auto-reconnects and attaches a `Last-Event-ID` header (the server
  *   replays from its ring buffer; if the event was already evicted, it pushes resync_required

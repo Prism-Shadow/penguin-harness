@@ -9,21 +9,23 @@
  * (its state wraps up accordingly, see close).
  *
  * LLM (source = `llm`): reads the status of `request_end` —
- * - `failed` → unexpected (not retryable: auth failure, invalid params, etc., needs a human);
+ * - `failed` / `auth` → unexpected (not retryable: credentials rejected, invalid params,
+ *   etc., needs a human; both share the llm_failed code — no separate taxonomy);
  * - `timeout` / `malformed` → expected (the engine already reconnects and retries, part
  *   of normal operation);
  * - `aborted` / `completed` are not recorded (the former is a user-initiated interrupt,
  *   not an error).
  *
- * The message uses the real reason: `request_end` only carries status, and **the only
- * place core carries the actual failure-reason text is the `abort` event's reason**
- * (e.g. `llm request error: 401 …` / `malformed response failed after N retries`). So a
- * `request_end` failure is first held pending, not persisted immediately, and is
- * resolved at the next request boundary:
+ * The message uses the real reason: `request_end` carries the failure detail on
+ * non-completed statuses (`message`, from LLMOutcome), and the `abort` event's reason is
+ * core's failure-reason prose (e.g. `llm request error: 401 …` / `malformed response
+ * failed after N retries`). A `request_end` failure is first held pending (status + its
+ * own detail), not persisted immediately, and is resolved at the next request boundary:
  * - Immediately followed by `abort` → use its reason as the message (the real reason);
- * - Immediately followed by `request_begin` (the engine is retrying) → no reason text
- *   left to wait for, use the status text;
- * - Still unresolved when the run ends → close persists it as a fallback.
+ * - Immediately followed by `request_begin` (the engine is retrying — no abort will ever
+ *   arrive) → use the staged request_end's own `message` (the real detail, e.g. a quota
+ *   code), falling back to the generic status text when it carried none;
+ * - Still unresolved when the run ends → close persists it the same way.
  * Exception: when reason is a user-interrupt message (`aborted …`), it's not trusted —
  * "the user clicked stop during backoff" isn't the reason for this timeout, so the
  * status text is used instead (that timeout is a genuine failure and is still recorded).
@@ -71,11 +73,14 @@ export const TOOL_NAMES_MAX = 1000;
 export const ORIGIN_CTX_MAX = 200;
 
 /** Recorded LLM failure states (`aborted` / `completed` are not errors and aren't included here). */
-type LlmFailure = "failed" | "timeout" | "malformed";
+type LlmFailure = "failed" | "timeout" | "malformed" | "auth";
 
 /** LLM failure state → error code, classification, and fallback message (used when the abort reason isn't available). */
 const LLM_FAILURES: Record<LlmFailure, { code: string; kind: ErrorKind; text: string }> = {
   failed: { code: "llm_failed", kind: "unexpected", text: "LLM request failed (not retryable)." },
+  // Credentials rejection shares the failed bucket (no new taxonomy): same code/kind, the
+  // real reason arrives via the abort reason or the event's own message as usual.
+  auth: { code: "llm_failed", kind: "unexpected", text: "LLM request failed (not retryable)." },
   timeout: {
     code: "llm_timeout",
     kind: "expected",
@@ -92,7 +97,7 @@ const LLM_FAILURES: Record<LlmFailure, { code: string; kind: ErrorKind; text: st
 type ToolFailure = "failed" | "timeout";
 
 function isLlmFailure(s: unknown): s is LlmFailure {
-  return s === "failed" || s === "timeout" || s === "malformed";
+  return s === "failed" || s === "timeout" || s === "malformed" || s === "auth";
 }
 
 function isToolFailure(s: unknown): s is ToolFailure {
@@ -123,8 +128,8 @@ function toolFailureText(output: string): string {
 }
 
 export class StreamErrorWatcher {
-  /** LLM failures awaiting a real reason: origin → failure state (see file header; each session has at most one in-flight Request). */
-  private readonly pending = new Map<string, LlmFailure>();
+  /** LLM failures awaiting a real reason: origin → failure state + the request_end's own detail (see file header; each session has at most one in-flight Request). */
+  private readonly pending = new Map<string, { status: LlmFailure; message?: string }>();
   /** Names of in-flight tool calls: `origin \0 tool_call_id` → tool name (dequeued once output arrives). */
   private readonly toolNames = new Map<string, string>();
   /** Subagent identity: origin → that subagent's `{agentId, sessionId}` (see the file header's attribution section). */
@@ -196,11 +201,23 @@ export class StreamErrorWatcher {
   // —— LLM ——
 
   private observeLlm(msg: OmniMessage): void {
-    const p = msg.payload as { type?: string; status?: StopReason; reason?: string | null };
+    const p = msg.payload as {
+      type?: string;
+      status?: StopReason;
+      reason?: string | null;
+      message?: string;
+    };
     const key = originKey(msg);
     if (p.type === "request_end") {
       this.flush(key); // Defensive: if a previous failure is still pending (normally resolved by request_begin), persist it first
-      if (isLlmFailure(p.status)) this.pending.set(key, p.status);
+      if (isLlmFailure(p.status)) {
+        this.pending.set(key, {
+          status: p.status,
+          // The event's own failure detail (LLMOutcome.message): the message of record when
+          // no abort follows (the retry path).
+          ...(typeof p.message === "string" && p.message.trim() ? { message: p.message } : {}),
+        });
+      }
       return;
     }
     // A new attempt begins (the engine is retrying): no reason text left to wait for the previous failure, persist using the status text.
@@ -221,13 +238,15 @@ export class StreamErrorWatcher {
    * up from it (see file header).
    */
   private flush(key: string, reason?: string | null): void {
-    const status = this.pending.get(key);
-    if (status === undefined) return;
+    const entry = this.pending.get(key);
+    if (entry === undefined) return;
     this.pending.delete(key);
-    const spec = LLM_FAILURES[status];
+    const spec = LLM_FAILURES[entry.status];
     const trimmed = reason?.trim();
-    // A user-interrupt message isn't a failure reason (see file header); fall back to the status text.
-    const message = trimmed && !isUserAbortReason(trimmed) ? trimmed : spec.text;
+    // Message priority: the abort reason (core's failure prose) → the staged request_end's
+    // own detail (the retry path: no abort ever arrives) → the generic status text. A
+    // user-interrupt message isn't a failure reason (see file header).
+    const message = trimmed && !isUserAbortReason(trimmed) ? trimmed : (entry.message ?? spec.text);
     this.errors.record({
       source: "llm",
       err: message,

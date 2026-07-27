@@ -29,7 +29,7 @@ import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { formatDateTime, formatMoney, humanizeDuration, humanizeTokens } from "../../lib/format";
 import { latestConversation } from "../../lib/session-grouping";
-import { approvalKey } from "../../lib/omni/stream-model";
+import { approvalKey, isModelAuthDead } from "../../lib/omni/stream-model";
 import { useTheme } from "../../state/theme";
 import { useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
@@ -595,6 +595,11 @@ export function ChatPage() {
     navigate(`/chat/${DRAFT_SESSION_ID}`);
   }, [navigate]);
 
+  // Auth-dead notice primary CTA: the Models page is where the credential is actually fixed.
+  const openModels = useCallback(() => {
+    navigate("/models");
+  }, [navigate]);
+
   // Real-time cost for this turn: converts the Task's bucketed usage using the session Model's
   // (paired reference) current pricing; null if no pricing is configured.
   const modelPricing = models?.models.find((m) => sameModelRef(m, activeModelRef))?.pricing;
@@ -615,6 +620,15 @@ export function ChatPage() {
           b.output * modelPricing.output) /
         1e6
       );
+    },
+    // Reconnect countdown controls (live waiting state only): retry-now skips the
+    // remaining backoff server-side (benign no-op on timing races), give-up is the
+    // ordinary session abort — the engine's abort-during-backoff path ends the turn.
+    onRetryNow: () => {
+      if (selected) void api.postRetryNow(selected.sessionId).catch(() => undefined);
+    },
+    onGiveUp: () => {
+      void onStop();
     },
     onOpenFile: (path) => {
       // The file card has already normalized the text path to a Workspace-relative path
@@ -643,6 +657,17 @@ export function ChatPage() {
   const emptyChat =
     selected !== null && !stream.loading && !stream.error && stream.model.items.length === 0;
 
+  // Auth-dead gate (recoverable): an auth failure is on record AND the Project's credentials
+  // have not been updated since — only the model reference is fixed at creation, credentials
+  // come from the current Project config, so a key update (Models page) unlocks the session
+  // (live via the credentials_updated event; across reloads via this time comparison against
+  // the models response's updatedAt).
+  const credsUpdatedMs = models?.updatedAt !== undefined ? Date.parse(models.updatedAt) : NaN;
+  const modelAuthDead = isModelAuthDead(
+    stream.lastAuthFailureMs,
+    Number.isFinite(credsUpdatedMs) ? credsUpdatedMs : null,
+  );
+
   // Input area in session state: Agent / Workspace / Model are already locked by the Session
   // (the model selector isn't rendered; models feeds the locked model's read-only display and
   // the /model switch picker) — approval mode and the per-turn thinking level stay editable;
@@ -650,6 +675,10 @@ export function ChatPage() {
   const input = selected && (
     <ChatInput
       status={stream.taskState}
+      modelAuthDead={modelAuthDead}
+      onOpenModels={openModels}
+      onRetryModelAuth={stream.dismissModelAuthDead}
+      onNewSession={newChat}
       onSend={onSend}
       onSteer={onSteer}
       // Count of steering messages already visible in the stream: the input area keeps its

@@ -38,6 +38,7 @@ import {
   finalizeHistory,
   findToolCard,
   isDuplicate,
+  isModelAuthDead,
   notifyTaskIdle,
   pushMessage,
   pushMessages,
@@ -245,6 +246,89 @@ describe("approvals and events", () => {
     expect((items(m)[0] as ToolCallItem).decision).toBe("allow");
   });
 
+  it("a main-session request_end(auth) records the failure timestamp; other aborts/events do not", () => {
+    const m = createStreamModel();
+    pushMessage(m, abortEvent("aborted by user"));
+    expect(m.lastAuthFailureMs).toBeNull();
+    const end = requestEnd("auth", "401 invalid x-api-key");
+    pushMessage(m, end);
+    // The recorded time is the event's envelope timestamp (so a reload can compare it
+    // against the Project's credentials-updated time).
+    expect(m.lastAuthFailureMs).toBe(Date.parse(end.timestamp));
+    // The abort that follows still renders its line (the notice is additional).
+    pushMessage(m, abortEvent("llm request error: 401 invalid x-api-key"));
+    expect(items(m)[1]).toMatchObject({
+      kind: "abort",
+      reason: "llm request error: 401 invalid x-api-key",
+    });
+    // Unrelated later messages don't clear it: only a COMPLETED request does (below) —
+    // request_begin alone proves nothing about the credential.
+    pushMessage(m, userText("hello?"));
+    pushMessage(m, requestBegin());
+    expect(m.lastAuthFailureMs).not.toBeNull();
+  });
+
+  it("a later completed request clears the auth-dead state; a new auth failure re-arms it", () => {
+    const m = createStreamModel();
+    pushMessage(m, requestEnd("auth", "401"));
+    expect(m.lastAuthFailureMs).not.toBeNull();
+    // The key was fixed and a request succeeded: the state must not outlive the success.
+    pushMessage(m, userText("again"));
+    pushMessage(m, requestBegin());
+    pushMessage(m, requestEnd("completed"));
+    expect(m.lastAuthFailureMs).toBeNull();
+    // A fresh auth failure re-arms (e.g. the replacement key is wrong too).
+    pushMessage(m, requestEnd("auth", "401"));
+    expect(m.lastAuthFailureMs).not.toBeNull();
+  });
+
+  it("history replay: order decides — auth failure then completed request stays alive; the reverse stays dead", () => {
+    // Replay of a Trace where the auth failure was followed by a successful request (the
+    // user fixed the key and continued): reload must NOT resurrect the dead composer.
+    const recovered = createStreamModel();
+    pushMessages(recovered, [
+      userText("go"),
+      requestBegin(),
+      requestEnd("auth", "401 invalid x-api-key"),
+      abortEvent("llm request error: 401 invalid x-api-key"),
+      userText("after fix"),
+      requestBegin(),
+      requestEnd("completed"),
+    ]);
+    finalizeHistory(recovered);
+    expect(recovered.lastAuthFailureMs).toBeNull();
+
+    // Replay where the auth failure is the LAST word: the dead state is rebuilt.
+    const dead = createStreamModel();
+    pushMessages(dead, [
+      userText("go"),
+      requestBegin(),
+      requestEnd("completed"),
+      userText("later"),
+      requestBegin(),
+      requestEnd("auth", "401 invalid x-api-key"),
+      abortEvent("llm request error: 401 invalid x-api-key"),
+    ]);
+    finalizeHistory(dead);
+    expect(dead.lastAuthFailureMs).not.toBeNull();
+  });
+
+  it("isModelAuthDead gates on the credentials-updated timestamp", () => {
+    expect(isModelAuthDead(null, null)).toBe(false); // no auth failure on record
+    expect(isModelAuthDead(1000, null)).toBe(true); // no update info -> nothing proves a fix
+    expect(isModelAuthDead(1000, 2000)).toBe(false); // key updated after the failure -> alive
+    expect(isModelAuthDead(3000, 2000)).toBe(true); // a fresh failure after the update re-arms
+  });
+
+  it("a subagent-origin auth failure does NOT kill the parent session's input", () => {
+    const m = createStreamModel();
+    pushMessage(m, withOrigin(requestEnd("auth", "401"), "child1"));
+    // The failure belongs to the child session: its nested model carries the state, the
+    // parent composer stays usable (the subagent simply surfaces as failed).
+    expect(m.lastAuthFailureMs).toBeNull();
+    expect(m.subagents.get("child1")!.lastAuthFailureMs).not.toBeNull();
+  });
+
   it("abort events produce an abort marker item", () => {
     const m = createStreamModel();
     pushMessage(m, abortEvent("user abort"));
@@ -310,7 +394,7 @@ describe("approvals and events", () => {
     const m = createStreamModel();
     pushMessage(m, requestBegin());
     pushMessage(m, requestEnd("timeout"));
-    pushMessage(m, abortEvent("reconnect failed after 2 retries"));
+    pushMessage(m, abortEvent("reconnect failed after 5 retries"));
     const retry = items(m)[0] as ReconnectItem;
     expect(retry).toMatchObject({
       kind: "reconnect",
@@ -324,6 +408,58 @@ describe("approvals and events", () => {
     expect(retry.retrying).toBe(false);
     pushMessage(m, requestEnd("malformed"));
     expect((items(m)[2] as ReconnectItem).attempt).toBe(1);
+  });
+
+  it("request_end.retry_in_ms lands on the waiting item with the CLIENT arrival anchor (the countdown's inputs)", () => {
+    const m = createStreamModel();
+    pushMessage(m, requestBegin());
+    // The engine announced a 4s backoff before retry #1; nowMs (the injected client clock)
+    // is the countdown anchor — NOT the envelope timestamp, so server clock skew cannot
+    // bend the ticker.
+    pushMessage(m, requestEnd("timeout", "403 quota (insufficient_user_quota)", 4000), 111_000);
+    const item = items(m)[0] as ReconnectItem;
+    expect(item).toMatchObject({
+      kind: "reconnect",
+      status: "timeout",
+      attempt: 1,
+      retrying: false,
+      plannedDelayMs: 4000,
+      arrivedAtMs: 111_000,
+    });
+    // An event without the field (old Traces / final failures) leaves the fields unset —
+    // the view keeps the plain waiting text.
+    pushMessage(m, requestBegin());
+    pushMessage(m, requestEnd("timeout"));
+    const plain = items(m)[1] as ReconnectItem;
+    expect(plain.plannedDelayMs).toBeUndefined();
+    expect(plain.arrivedAtMs).toBeUndefined();
+  });
+
+  it("history replay of a retried failure leaves no live countdown: the following request_begin/abort flips the state", () => {
+    // Replay delivers the whole Trace back-to-back: the waiting state (the only state the
+    // countdown and the retry-now/give-up controls render for) never persists.
+    const retried = createStreamModel();
+    pushMessages(retried, [
+      userText("go"),
+      requestBegin(),
+      requestEnd("timeout", "quota", 30_000),
+      requestBegin(), // the engine's retry — replayed immediately after
+      requestEnd("completed"),
+    ]);
+    finalizeHistory(retried);
+    const item = items(retried).find((i) => i.kind === "reconnect") as ReconnectItem;
+    expect(item.retrying).toBe(true); // not waiting -> no countdown, no controls
+
+    const aborted = createStreamModel();
+    pushMessages(aborted, [
+      userText("go"),
+      requestBegin(),
+      requestEnd("timeout", "quota", 30_000),
+      abortEvent("aborted during reconnect backoff"), // the user gave up mid-wait
+    ]);
+    finalizeHistory(aborted);
+    const gaveUp = items(aborted).find((i) => i.kind === "reconnect") as ReconnectItem;
+    expect(gaveUp.gaveUp).toBe(true); // not waiting -> no countdown, no controls
   });
 
   it("a new Task closes the previous Task's dangling retry notice (server died in the backoff window, no abort in the Trace)", () => {

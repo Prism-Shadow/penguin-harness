@@ -856,6 +856,10 @@ export function ChatInput({
   onTextChange,
   initialHandoffTargetId,
   onHandoffTargetChange,
+  modelAuthDead = false,
+  onOpenModels,
+  onRetryModelAuth,
+  onNewSession,
 }: {
   status: SessionStatus;
   /** Returns whether it succeeded: on failure the input draft is kept (not cleared). */
@@ -979,6 +983,26 @@ export function ChatInput({
   initialHandoffTargetId?: string;
   /** Callback when the @ handoff target changes (selected/removed; the clear after a successful send does not call back, same as onTextChange). */
   onHandoffTargetChange?: (agentId: string | null) => void;
+  /**
+   * Session state: the Session's model credentials failed authentication (abort with
+   * status "auth") and the Project's credentials have not been updated since (the parent
+   * computes the time gate — see isModelAuthDead). Recoverable: only the model reference
+   * is fixed at creation, credentials come from the current Project config — so the
+   * composer disables and grays itself with a notice pointing at the Models page (primary),
+   * a Retry affordance, and a New Session escape. Updating the key auto-unlocks (live via
+   * the credentials_updated event, and across reloads via the time gate).
+   */
+  modelAuthDead?: boolean;
+  /** Navigates to the Models page (where the credential is actually fixed); renders the notice's primary button when supplied. */
+  onOpenModels?: () => void;
+  /**
+   * Clears the auth-dead state and re-enables the composer for another attempt (the state
+   * re-arms on the next auth failure). The escape hatch for credential changes the
+   * timestamps miss (e.g. edited outside the UI).
+   */
+  onRetryModelAuth?: () => void;
+  /** Navigates to a fresh draft (`/chat/new`); renders the notice's "New Session" button when supplied. */
+  onNewSession?: () => void;
 }) {
   const { locale } = useLocale();
   const [text, setText] = useState(initialText ?? "");
@@ -1021,13 +1045,19 @@ export function ChatInput({
     !running &&
     !compacting &&
     !busy &&
+    !modelAuthDead &&
     (text.trim().length > 0 || images.length > 0 || target !== null || selectedSkills.length > 0);
   // Mid-run steering: while running, Enter/send queues plain text for the running agent
   // (delivered between turns as a [user_steering] user message). Text only — images / skills /
   // @ target stay in the draft for a later normal send (an @ target also blocks steering: a
   // leading mention means a handoff, not a message to this agent).
   const canSteer =
-    running && !busy && onSteer !== undefined && target === null && text.trim().length > 0;
+    running &&
+    !busy &&
+    !modelAuthDead &&
+    onSteer !== undefined &&
+    target === null &&
+    text.trim().length > 0;
   // Mid-run send mode (owner directive): the user chooses between "steer" (delivered
   // mid-run as a [user_steering] input) and "follow-up" (held server-side and auto-sent as
   // an ordinary next task once this run finishes). Set from the More-settings popover on
@@ -1045,6 +1075,7 @@ export function ChatInput({
   const canFollowUp =
     running &&
     !busy &&
+    !modelAuthDead &&
     followUpMode &&
     (text.trim().length > 0 || images.length > 0 || target !== null || selectedSkills.length > 0);
   // The single action button's mode: while running, an **empty** composer means Stop
@@ -1631,13 +1662,62 @@ export function ChatInput({
         </p>
       )}
 
+      {/* Auth-dead session (model credentials failed): slim notice above the composer, same
+          width — the abort line in the stream keeps the raw reason, this adds the "what now"
+          guidance. Recoverable: primary CTA opens the Models page (fixing the key there
+          auto-unlocks the session), Retry clears the state for another attempt (re-arms on
+          the next auth failure), New Session stays as the escape. The composer below is
+          disabled and hazed. */}
+      {modelAuthDead && (
+        <div className="anim-fade mb-1.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:border-gray-700 dark:bg-gray-800/60 dark:text-gray-300">
+          <span className="min-w-0 flex-1 basis-56">{S.chat.modelAuthDead}</span>
+          <span className="flex shrink-0 flex-wrap items-center gap-1.5">
+            {onOpenModels && (
+              <button
+                type="button"
+                onClick={onOpenModels}
+                className="shrink-0 rounded-md bg-gray-900 px-2.5 py-1 font-medium text-white transition-colors duration-150 hover:bg-gray-700 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-300"
+              >
+                {S.chat.modelAuthDeadOpenModels}
+              </button>
+            )}
+            {onRetryModelAuth && (
+              <button
+                type="button"
+                onClick={onRetryModelAuth}
+                className="shrink-0 rounded-md border border-gray-300 bg-white px-2.5 py-1 font-medium text-gray-700 transition-colors duration-150 hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-700"
+              >
+                {S.chat.modelAuthDeadRetry}
+              </button>
+            )}
+            {onNewSession && (
+              <button
+                type="button"
+                onClick={onNewSession}
+                className="shrink-0 rounded-md border border-gray-300 bg-white px-2.5 py-1 font-medium text-gray-700 transition-colors duration-150 hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-700"
+              >
+                {S.chat.modelAuthDeadCta}
+              </button>
+            )}
+          </span>
+        </div>
+      )}
+
       {/* Unified input card: the multi-line text body occupies the top area, with all controls
           collected onto a single bottom row that never shares a line with the text.
           @container: the bottom toolbar row collapses based on the **card's actual width**
           (help text/button text visibility uses @md/@lg container breakpoints) — because the
           card's width changes with the viewport and the Files panel squeezing it, viewport
           breakpoints wouldn't judge it accurately. */}
-      <div className="@container rounded-lg border border-gray-300 bg-white px-2.5 pb-2 pt-2 transition-[border-color,box-shadow] duration-200 focus-within:border-gray-500 focus-within:ring-2 focus-within:ring-gray-400/30 dark:border-gray-700 dark:bg-gray-900 dark:focus-within:border-gray-400">
+      <div
+        // Auth-dead haze deliberately keeps pointer events and text selection: the
+        // textarea's `disabled` already blocks editing, and the stuck draft must stay
+        // selectable/copyable — a long message that failed to send is exactly what the
+        // user wants to copy back out.
+        className={`@container rounded-lg border border-gray-300 bg-white px-2.5 pb-2 pt-2 transition-[border-color,box-shadow] duration-200 focus-within:border-gray-500 focus-within:ring-2 focus-within:ring-gray-400/30 dark:border-gray-700 dark:bg-gray-900 dark:focus-within:border-gray-400${
+          modelAuthDead ? " opacity-50 grayscale" : ""
+        }`}
+      >
         {/* Chip row above the text body: the @ handoff target (fixed at the front — send-time
             @ semantics stay leading-only) followed by the selected skills, mirroring the
             agent chip's look. Remove buttons recolor the x on hover (no background wash). */}
@@ -1724,18 +1804,21 @@ export function ChatInput({
           onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
           onKeyDown={onKeyDown}
           onPaste={onPaste}
+          disabled={modelAuthDead}
           placeholder={
-            running && followUpMode
-              ? narrow
-                ? S.chat.followUpPlaceholderShort
-                : S.chat.followUpPlaceholder
-              : running && onSteer
+            modelAuthDead
+              ? S.chat.modelAuthDeadPlaceholder
+              : running && followUpMode
                 ? narrow
-                  ? S.chat.steerPlaceholderShort
-                  : S.chat.steerPlaceholder
-                : narrow
-                  ? S.chat.inputPlaceholderShort
-                  : S.chat.inputPlaceholder
+                  ? S.chat.followUpPlaceholderShort
+                  : S.chat.followUpPlaceholder
+                : running && onSteer
+                  ? narrow
+                    ? S.chat.steerPlaceholderShort
+                    : S.chat.steerPlaceholder
+                  : narrow
+                    ? S.chat.inputPlaceholderShort
+                    : S.chat.inputPlaceholder
           }
           className="block max-h-44 min-h-[60px] w-full resize-none bg-transparent px-1 py-0.5 text-base leading-6 placeholder:text-gray-400 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60 dark:placeholder:text-gray-500"
         />

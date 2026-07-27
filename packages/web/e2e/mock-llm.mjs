@@ -18,6 +18,9 @@ const PORT = Number(process.env.MOCK_PORT || 8931);
 /** Count of non-replay requests seen in the "bad stream" conversation: the 1st is cut off (malformed), later ones are retries that get a full tool call. */
 let malformedTurns = 0;
 
+/** Count of requests seen in the "quota retry" conversation: the first 5 are rejected 403 (insufficient_user_quota), the 6th streams normally. */
+let quotaTurns = 0;
+
 function sse(res, event, data) {
   res.write(`event: ${event}\n`);
   res.write(`data: ${JSON.stringify(data)}\n\n`);
@@ -96,6 +99,78 @@ const server = http.createServer((req, res) => {
     // the retry request carries no [turn_retried] block and is byte-for-byte identical to the
     // first request; the mock can only tell them apart by request count (see the malformedTurns counter).
     const wantsMalformed = flat.includes("bad stream test");
+
+    // "Auth dead" test case: KEY-BASED — requests carrying the bad key (`sk-auth-bad`,
+    // the Anthropic protocol sends it as the x-api-key header) are rejected with a 401 +
+    // OpenAI-compatible body code; any other key succeeds with a plain text answer. This
+    // exercises the recoverable flow end to end: GenerativeModel classifies the 401 as
+    // failed + code "auth" (never retried) and the composer goes dead; once the spec
+    // updates the model's key via PUT /models, the very same conversation continues
+    // (live unlock via credentials_updated + runtime invalidation re-reading the config).
+    // Gated on !isTitle so a stray title request doesn't hit this branch.
+    if (flat.includes("auth dead test") && !isTitle) {
+      if (req.headers["x-api-key"] === "sk-auth-bad") {
+        res.writeHead(401, { "content-type": "application/json" });
+        res.end(
+          JSON.stringify({ error: { code: "invalid_api_key", message: "invalid x-api-key" } }),
+        );
+        return;
+      }
+      res.writeHead(200, {
+        "content-type": "text/event-stream",
+        "cache-control": "no-cache",
+        connection: "keep-alive",
+      });
+      messageStart(res, msgCount);
+      block(res, 0, { type: "text", text: "" }, [
+        { type: "text_delta", text: "Auth restored; hello again." },
+      ]);
+      messageStop(res, "end_turn", 8);
+      return;
+    }
+
+    // "Quota give-up" test case: EVERY request is rejected 403 with the quota code — the
+    // spec clicks the reconnect countdown's give-up button mid-wait, so the conversation
+    // must never recover on its own (the abort ends it instead).
+    if (flat.includes("quota giveup test") && !isTitle) {
+      res.writeHead(403, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          error: { code: "insufficient_user_quota", message: "no active subscription" },
+        }),
+      );
+      return;
+    }
+
+    // "Quota retry" test case: the first 5 requests of the conversation are rejected 403
+    // with the provider's quota-exhaustion code (as OpenAI-compatible gateways do).
+    // GenerativeModel classifies them retryable (timeout) and the engine reconnects with
+    // exponential backoff (250/500/1000/2000/4000ms) — the 4s wait before retry #5 is the
+    // window the spec uses to observe the live countdown and click "retry now"; the 6th
+    // attempt streams a normal final answer.
+    if (flat.includes("quota retry test") && !isTitle) {
+      quotaTurns += 1;
+      if (quotaTurns <= 5) {
+        res.writeHead(403, { "content-type": "application/json" });
+        res.end(
+          JSON.stringify({
+            error: { code: "insufficient_user_quota", message: "no active subscription" },
+          }),
+        );
+        return;
+      }
+      res.writeHead(200, {
+        "content-type": "text/event-stream",
+        "cache-control": "no-cache",
+        connection: "keep-alive",
+      });
+      messageStart(res, msgCount);
+      block(res, 0, { type: "text", text: "" }, [
+        { type: "text_delta", text: "Quota recovered; the answer is 42." },
+      ]);
+      messageStop(res, "end_turn", 10);
+      return;
+    }
 
     res.writeHead(200, {
       "content-type": "text/event-stream",
