@@ -811,7 +811,13 @@ describe("ContextEngine async/incremental tool calls (overlapping execution)", (
     // command has not finished yet) -- i.e., execution does not block the next approval.
     expect(approvedAt["t2"]!).toBeLessThan(firstCompleteAt["t1"] ?? Infinity);
     // The fast b.txt finishes first, the slow a.txt finishes later (outputs in completion order).
-    expect(firstCompleteAt["t2"]!).toBeLessThan(firstCompleteAt["t1"]!);
+    // POSIX only: on Windows a cold Git-Bash spawn costs 1-2s, which can swamp the 400ms sleep
+    // delta that makes t1 "the slow one" — CI has seen the two complete within 5ms — so the
+    // relative completion order is not controllable there. The overlap assertion above and the
+    // file contents below still run on Windows.
+    if (process.platform !== "win32") {
+      expect(firstCompleteAt["t2"]!).toBeLessThan(firstCompleteAt["t1"]!);
+    }
 
     expect(await readFile(join(workspace, "a.txt"), "utf8")).toBe("one");
     expect(await readFile(join(workspace, "b.txt"), "utf8")).toBe("two");
