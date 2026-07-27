@@ -595,8 +595,10 @@ export class SessionManager {
       }
     } catch (err) {
       // Core throws only on infrastructure failures (e.g. GOAL.yaml writes): close the
-      // run state as aborted, then let drive's defensive catch record the error.
-      this.finishAborted(entry, args.goalId, round, used);
+      // run state as aborted, then let drive's defensive catch record the error. Guarded on
+      // `finished`: a throw after the terminal event must not overwrite the row's real
+      // outcome (repo.finish is an unconditional UPDATE) or publish a contradicting event.
+      if (!finished) this.finishAborted(entry, args.goalId, round, used);
       throw err;
     }
   }

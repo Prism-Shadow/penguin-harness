@@ -55,6 +55,13 @@ export function registerRunCommand(program: Command, t: Messages): void {
           process.exitCode = 1;
           return;
         }
+        // The objective must be non-empty text (core throws on an empty one — turn the
+        // programming-level error into a friendly refusal before any Session exists).
+        if (String(opts.message).trim() === "") {
+          process.stderr.write(`${t.error(t.goalObjectiveEmpty())}\n`);
+          process.exitCode = 1;
+          return;
+        }
       }
       const mode = resolveApprovalMode(opts.approve, t);
 

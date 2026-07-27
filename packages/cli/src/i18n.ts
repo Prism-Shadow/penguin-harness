@@ -178,6 +178,8 @@ export interface Messages {
   goalUsage(): string;
   /** Invalid token-budget value (chat `/goal:<budget>` or run `--goal <budget>`). */
   goalBudgetInvalid(value: string): string;
+  /** run's --goal given an empty/whitespace -m (the objective must be non-empty text). */
+  goalObjectiveEmpty(): string;
   /** Prompt for an invalid --approve mode. */
   approveModeInvalid(value: string): string;
   /** Render label for an approval decision (frontend renders the approval_decision event; one label each for allow/deny). */
@@ -405,6 +407,7 @@ const en: Messages = {
   goalUsage: () => "Usage: /goal[:<budget>] <objective>  (e.g. /goal:500k fix all failing tests)",
   goalBudgetInvalid: (value) =>
     `Invalid token budget "${value}". Use a positive number with an optional k/m suffix (500k, 2m).`,
+  goalObjectiveEmpty: () => "Goal mode requires a non-empty objective: pass it via -m.",
   approveModeInvalid: (value) =>
     `Invalid approval mode "${value}". Use allow-all, deny-all, read-only, or always-ask.`,
   approvalDecision: (decision) => (decision === "allow" ? "✓ [approved]" : "× [denied]"),
@@ -589,6 +592,7 @@ const zh: Messages = {
   goalUsage: () => "用法：/goal[:<预算>] <目标>（例如 /goal:500k 修复所有失败的测试）",
   goalBudgetInvalid: (value) =>
     `无效的 token 预算 "${value}"：应为正数，可带 k/m 后缀（500k、2m）。`,
+  goalObjectiveEmpty: () => "目标模式需要非空的目标文本：请通过 -m 传入。",
   approveModeInvalid: (value) =>
     `无效的审批模式 "${value}"。请使用 allow-all、deny-all、read-only 或 always-ask。`,
   approvalDecision: (decision) => (decision === "allow" ? "✓ [已批准]" : "× [已拒绝]"),

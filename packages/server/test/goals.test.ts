@@ -271,6 +271,34 @@ describe("SessionManager.startGoal", () => {
     expect(goals.latestForSession(ROW.sessionId)).toBeNull();
   });
 
+  it("a throw after the terminal event does not overwrite the recorded outcome", async () => {
+    // repo.finish is an unconditional UPDATE: without the `finished` guard, the defensive
+    // catch would flip a completed row to aborted and publish a contradicting event.
+    const session = goalFakeSession(() => []);
+    session.run = async function* () {
+      yield roundInput(1, "obj");
+      yield goalFinished("complete", 1, 42);
+      throw new Error("post-terminal hiccup");
+    };
+    const manager = makeManager(session);
+    const events: ChannelEvent[] = [];
+    channels.get(ROW.sessionId).subscribe((e) => events.push(e));
+
+    await manager.startGoal(ROW.sessionId, { input: [userText("obj")], budget: -1 });
+    await waitFor(() => manager.statusOf(ROW.sessionId) === "idle");
+
+    expect(goals.latestForSession(ROW.sessionId)).toMatchObject({
+      status: "complete",
+      rounds: 1,
+      used: 42,
+    });
+    const finished = events
+      .filter((e) => e.event === "server_event")
+      .map((e) => JSON.parse(e.data) as { type: string; outcome?: string })
+      .filter((e) => e.type === "goal_finished");
+    expect(finished).toEqual([expect.objectContaining({ outcome: "complete" })]);
+  });
+
   it("closes the run state as aborted when the stream ends without a terminal event", async () => {
     // A cut-off run (infrastructure failure upstream) must not leave the row active.
     const session = goalFakeSession(() => [

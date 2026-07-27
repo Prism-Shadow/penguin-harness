@@ -54,9 +54,10 @@ export interface GoalLoopOptions {
   /** Token budget; omitted or `UNLIMITED_BUDGET` (-1) means no budget. */
   budget?: number;
   /**
-   * Hard cap on rounds (wrap-up included), a runaway backstop independent of the budget.
-   * Default 100 — far above any legitimate goal (each round is a full Task), so hosts don't
-   * expose it as a knob.
+   * Hard cap on regular rounds, a runaway backstop independent of the budget (the budget
+   * wrap-up may run one round past it, so the true bound is maxRounds + 1 — the wrap-up
+   * fires once and cannot loop). Default 100 — far above any legitimate goal (each round is
+   * a full Task), so hosts don't expose it as a knob.
    */
   maxRounds?: number;
   signal?: AbortSignal;
