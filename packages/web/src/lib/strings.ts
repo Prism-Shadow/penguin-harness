@@ -63,6 +63,12 @@ export const zh = {
     /** Superscript badge on the version lines when the update check found a newer release (owner-specified wording). */
     newVersionBadge: "有新版本可用",
     newVersion: (v: string) => `新版本 v${v} 可用`,
+    /** Manual check action in the sidebar user menu (owner request), with its busy label and toast outcomes. */
+    checkNow: "检查更新",
+    checking: "检查中…",
+    upToDate: "已是最新版本",
+    checkFailed: "检查更新失败，请稍后重试",
+    checkDisabled: "更新检查已关闭（PENGUIN_UPDATE_CHECK=off）",
     releaseNotes: "更新说明",
     updateNow: "立即更新",
     updating: "更新中…",

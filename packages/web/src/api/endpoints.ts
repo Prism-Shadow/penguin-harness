@@ -477,7 +477,9 @@ export const importAgent = (projectId: string, agentId: string, body: AgentImpor
 
 export const getVersion = () => apiFetch<VersionResponse>("/api/version");
 
-export const checkUpdate = () => apiFetch<UpdateCheckResponse>("/api/version/update-check");
+/** `force` (the manual "check for updates" action) bypasses the server's TTL cache. */
+export const checkUpdate = (force = false) =>
+  apiFetch<UpdateCheckResponse>(`/api/version/update-check${force ? "?force=1" : ""}`);
 
 /** Admin only: runs `penguin update` on the server host (long request — up to 10 minutes). */
 export const runUpdate = () =>

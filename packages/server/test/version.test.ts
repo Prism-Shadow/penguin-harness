@@ -100,6 +100,23 @@ describe("GET /api/version/update-check", () => {
     expect(body.updateAvailable).toBe(false);
     expect(body.releaseUrl).toBeNull();
   });
+
+  it("?force=1 (the manual check) reaches the service as a cache bypass", async () => {
+    const { impl, state } = makeFetch(() => releaseResponse("v99.0.0"));
+    t = await createTestApp({ updateCheck: new UpdateCheckService({ fetchImpl: impl, env: {} }) });
+    const admin = await loginAdmin(t.app);
+    const client = apiClient(t.app, admin.cookie);
+
+    // Warm the cache, then confirm a plain GET serves from it.
+    expect((await client.get("/api/version/update-check")).status).toBe(200);
+    expect((await client.get("/api/version/update-check")).status).toBe(200);
+    expect(state.calls).toBe(1);
+
+    const forced = await client.get("/api/version/update-check?force=1");
+    expect(forced.status).toBe(200);
+    expect(((await forced.json()) as UpdateCheckResponse).latestVersion).toBe("99.0.0");
+    expect(state.calls).toBe(2);
+  });
 });
 
 describe("UpdateCheckService", () => {
@@ -181,6 +198,37 @@ describe("UpdateCheckService", () => {
     expect(state.calls).toBe(3);
     expect(healed.error).toBeUndefined();
     expect(healed.latestVersion).toBe("99.0.0");
+  });
+
+  it("force bypasses a warm cache and recaches the fresh outcome", async () => {
+    let tag = "v99.0.0";
+    const { impl, state } = makeFetch(() => releaseResponse(tag));
+    const service = new UpdateCheckService({ fetchImpl: impl, env: {} });
+
+    // Warm the cache; a passive check is then served from it.
+    expect((await service.check()).latestVersion).toBe("99.0.0");
+    expect((await service.check()).latestVersion).toBe("99.0.0");
+    expect(state.calls).toBe(1);
+
+    // A forced check refetches despite the fresh cache…
+    tag = "v100.0.0";
+    expect((await service.check(true)).latestVersion).toBe("100.0.0");
+    expect(state.calls).toBe(2);
+
+    // …and stores the outcome: the next passive check reuses it without a call.
+    expect((await service.check()).latestVersion).toBe("100.0.0");
+    expect(state.calls).toBe(2);
+  });
+
+  it("force never dials out when PENGUIN_UPDATE_CHECK=off (the opt-out stays authoritative)", async () => {
+    const { impl, state } = makeFetch(() => releaseResponse("v99.0.0"));
+    const service = new UpdateCheckService({
+      fetchImpl: impl,
+      env: { PENGUIN_UPDATE_CHECK: "off" },
+    });
+    const result = await service.check(true);
+    expect(result.disabled).toBe(true);
+    expect(state.calls).toBe(0);
   });
 });
 

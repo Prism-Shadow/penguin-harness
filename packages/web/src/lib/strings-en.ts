@@ -62,6 +62,12 @@ export const en: Strings = {
     /** Superscript badge on the version lines when the update check found a newer release. */
     newVersionBadge: "New version available",
     newVersion: (v: string) => `New version v${v} available`,
+    /** Manual check action in the sidebar user menu, with its busy label and toast outcomes. */
+    checkNow: "Check for updates",
+    checking: "Checking…",
+    upToDate: "You're on the latest version",
+    checkFailed: "Update check failed — try again later",
+    checkDisabled: "Update checks are disabled (PENGUIN_UPDATE_CHECK=off)",
     releaseNotes: "Release notes",
     updateNow: "Update now",
     updating: "Updating…",

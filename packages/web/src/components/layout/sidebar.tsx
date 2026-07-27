@@ -49,7 +49,7 @@ import { Dropdown } from "../ui/dropdown";
 import { AgentAvatar } from "../ui/agent-avatar";
 import { Chevron } from "../ui/chevron";
 import { ChevronDown } from "../ui/icons";
-import { toastError } from "../ui/toast";
+import { toastError, toastInfo, toastSuccess } from "../ui/toast";
 import { Truncated } from "../ui/truncated";
 import { Badge } from "../ui/badge";
 import { Modal } from "../ui/modal";
@@ -63,7 +63,7 @@ import { clearDraft, sessionDraftKey } from "../../features/chat/draft-cache";
 import { CreateProjectDialog, ProjectSettingsDialog } from "./project-dialogs";
 import { ChangePasswordDialog } from "../account/change-password-dialog";
 import { UpdateDialog } from "../account/update-dialog";
-import { useVersionInfo } from "../../lib/use-version-info";
+import { forceUpdateCheck, useVersionInfo } from "../../lib/use-version-info";
 
 function Icon({ d, size = 16 }: { d: string; size?: number }) {
   return (
@@ -240,6 +240,31 @@ export function Sidebar({
   // and releases that predate the stamping (v0.1.2 and earlier) carry null and show the
   // version alone. Rendered as the localized "last updated" label + month/day.
   const versionDate = version?.buildDate ?? null;
+  /** Manual "check for updates" in flight (row disabled, busy label). */
+  const [updateChecking, setUpdateChecking] = useState(false);
+  /**
+   * Manual update check (owner request): forces a lookup past the server's TTL cache and
+   * pushes the result into the shared version-info store, so the reminder rows, badge,
+   * and dot appear immediately when a newer release is found — that visible change is
+   * the notification then. A toast fires only when nothing changes visibly (#54, one
+   * notification per action): up to date, checks disabled, or a failed lookup (the
+   * check is fail-soft — failure arrives as the `error` field, not an exception; the
+   * catch handles our own server being unreachable).
+   */
+  const runUpdateCheck = async () => {
+    if (updateChecking) return;
+    setUpdateChecking(true);
+    try {
+      const res = await forceUpdateCheck();
+      if (res.disabled === true) toastInfo(S.update.checkDisabled);
+      else if (res.error !== undefined) toastError(S.update.checkFailed);
+      else if (!res.updateAvailable) toastSuccess(S.update.upToDate);
+    } catch (e) {
+      toastError(apiErrorText(e));
+    } finally {
+      setUpdateChecking(false);
+    }
+  };
   const currentProjectId = currentProject?.projectId ?? null;
   const collapseStoreKey = currentProjectId === null ? null : collapsedGroupsKey(currentProjectId);
   const pinStoreKey = currentProjectId === null ? null : pinnedGroupsKey(currentProjectId);
@@ -1089,53 +1114,66 @@ export function Sidebar({
               {S.auth.logout}
             </button>
           </div>
-          {/* Muted version footer (lazily fetched on first open; absent until it resolves). */}
-          {version !== null && (
-            <div
-              className="mt-1 border-t border-gray-100 px-3.5 py-2 text-xs text-gray-400 dark:border-gray-800 dark:text-gray-500"
-              title={S.update.version}
+          {/* Manual update check + muted version footer, one section: the action row
+              forces a lookup past the server's TTL cache and sits with the version
+              identity it refreshes; the footer line is lazily fetched on first open
+              and absent until it resolves. */}
+          <div className="mt-1 border-t border-gray-100 pt-1 dark:border-gray-800">
+            <button
+              type="button"
+              disabled={updateChecking}
+              onClick={() => void runUpdateCheck()}
+              className={`${menuItemClass} disabled:cursor-default disabled:opacity-60`}
             >
-              {`PenguinHarness v${version.version}${
-                versionDate !== null
-                  ? ` · ${S.update.lastUpdated(formatMonthDay(versionDate, locale))}`
-                  : ""
-              }`}
-              {/* Superscript "new version" badge right after the date (or the version when
+              {updateChecking ? S.update.checking : S.update.checkNow}
+            </button>
+            {version !== null && (
+              <div
+                className="px-3.5 pb-2 pt-0.5 text-xs text-gray-400 dark:text-gray-500"
+                title={S.update.version}
+              >
+                {`PenguinHarness v${version.version}${
+                  versionDate !== null
+                    ? ` · ${S.update.lastUpdated(formatMonthDay(versionDate, locale))}`
+                    : ""
+                }`}
+                {/* Superscript "new version" badge right after the date (or the version when
                   no date): mirrors the dropdown affordance above — admins open the update
                   dialog, others the release page; without a URL it degrades to a plain
                   pill (nothing actionable to offer). */}
-              {update !== null &&
-                update.updateAvailable &&
-                update.latestVersion !== null &&
-                (user?.isAdmin ? (
-                  <button
-                    type="button"
-                    title={S.update.newVersion(update.latestVersion)}
-                    aria-label={S.update.newVersion(update.latestVersion)}
-                    onClick={() => {
-                      setUserOpen(false);
-                      setUpdateDialogOpen(true);
-                    }}
-                    className={versionBadgeClass}
-                  >
-                    {S.update.newVersionBadge}
-                  </button>
-                ) : update.releaseUrl !== null ? (
-                  <a
-                    href={update.releaseUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title={S.update.newVersion(update.latestVersion)}
-                    aria-label={S.update.newVersion(update.latestVersion)}
-                    className={versionBadgeClass}
-                  >
-                    {S.update.newVersionBadge}
-                  </a>
-                ) : (
-                  <span className={versionBadgeClass}>{S.update.newVersionBadge}</span>
-                ))}
-            </div>
-          )}
+                {update !== null &&
+                  update.updateAvailable &&
+                  update.latestVersion !== null &&
+                  (user?.isAdmin ? (
+                    <button
+                      type="button"
+                      title={S.update.newVersion(update.latestVersion)}
+                      aria-label={S.update.newVersion(update.latestVersion)}
+                      onClick={() => {
+                        setUserOpen(false);
+                        setUpdateDialogOpen(true);
+                      }}
+                      className={versionBadgeClass}
+                    >
+                      {S.update.newVersionBadge}
+                    </button>
+                  ) : update.releaseUrl !== null ? (
+                    <a
+                      href={update.releaseUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={S.update.newVersion(update.latestVersion)}
+                      aria-label={S.update.newVersion(update.latestVersion)}
+                      className={versionBadgeClass}
+                    >
+                      {S.update.newVersionBadge}
+                    </a>
+                  ) : (
+                    <span className={versionBadgeClass}>{S.update.newVersionBadge}</span>
+                  ))}
+              </div>
+            )}
+          </div>
         </Dropdown>
       </div>
 

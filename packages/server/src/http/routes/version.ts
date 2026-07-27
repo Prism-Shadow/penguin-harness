@@ -3,7 +3,8 @@
  * admin-only self-update.
  *
  *   GET  /api/version               -> {version, buildDate} from core's VERSION / BUILD_DATE
- *   GET  /api/version/update-check  -> UpdateCheckService (fail-soft, cached, opt-out env)
+ *   GET  /api/version/update-check  -> UpdateCheckService (fail-soft, cached, opt-out env;
+ *                                      ?force=1 bypasses the cache for the manual check)
  *   POST /api/version/update        -> admin only: re-runs the CLI as `penguin update --yes`
  *
  * How the self-update works: `penguin server|web` exports PENGUIN_CLI_ENTRY (its own entry
@@ -125,7 +126,9 @@ export function versionRoutes(deps: AppDeps): Hono<AppEnv> {
   });
 
   app.get("/update-check", async (c) => {
-    return c.json(await deps.updateCheck.check());
+    // ?force=1 (the web's manual "check for updates" action) bypasses the TTL cache;
+    // see UpdateCheckService.check for why a user-initiated press-through is acceptable.
+    return c.json(await deps.updateCheck.check(c.req.query("force") === "1"));
   });
 
   app.post("/update", async (c) => {
