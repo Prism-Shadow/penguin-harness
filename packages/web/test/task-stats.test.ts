@@ -7,11 +7,13 @@ import type { TokenUsagePayload } from "@prismshadow/penguin-core/omnimessage";
 import {
   addLlmDuration,
   beginCompaction,
+  bucketCostUsd,
   commitPendingCompaction,
   createTaskStatsTracker,
   endCompaction,
   endTask,
   formatTaskStats,
+  liveSessionElapsedMs,
   resetTaskCounters,
   trackMainUsage,
   trackSubagentUsage,
@@ -191,6 +193,67 @@ describe("TaskStatsTracker", () => {
     const s = endTask(t, 100);
     expect(s?.tokensDelta).toBe(500); // excludes the compaction's 300
     expect(s?.tokens).toBe(800);
+  });
+});
+
+describe("liveSessionElapsedMs", () => {
+  it("idle (no open Task): exactly the settled cumulative — the header renders the same value as before", () => {
+    const t = createTaskStatsTracker();
+    t.sessionElapsedMs = 2300;
+    expect(liveSessionElapsedMs(t, false, 1000, 99_999)).toBe(2300);
+    // Open but without a recorded start clock: nothing to add either.
+    expect(liveSessionElapsedMs(t, true, null, 99_999)).toBe(2300);
+  });
+
+  it("running: settled cumulative + wall clock since the Task started, never going backwards", () => {
+    const t = createTaskStatsTracker();
+    t.sessionElapsedMs = 2000;
+    expect(liveSessionElapsedMs(t, true, 5000, 8000)).toBe(5000); // 2000 + 3000
+    // A clock anomaly (now before the recorded start) adds nothing instead of subtracting.
+    expect(liveSessionElapsedMs(t, true, 5000, 4000)).toBe(2000);
+  });
+
+  it("no double count across the Task boundary: endTask folds the Task in as taskOpen flips off", () => {
+    const t = createTaskStatsTracker();
+    // Task 1 settled earlier.
+    endTask(t, 1000);
+    // Task 2 runs: started at 10_000, now 14_000 -> 1000 settled + 4000 live.
+    expect(liveSessionElapsedMs(t, true, 10_000, 14_000)).toBe(5000);
+    // Task 2 ends: the same model update folds its elapsed into the cumulative AND flips
+    // taskOpen off — the live view continues from the settled value without re-adding.
+    endTask(t, 4000);
+    expect(liveSessionElapsedMs(t, false, 10_000, 15_000)).toBe(5000);
+  });
+});
+
+describe("bucketCostUsd", () => {
+  it("converts the three buckets at per-million-token pricing", () => {
+    expect(
+      bucketCostUsd(
+        { cacheRead: 2_000_000, cacheWrite: 1_000_000, output: 500_000 },
+        { cacheRead: 0.5, cacheWrite: 2, output: 10 },
+      ),
+    ).toBe(8); // 2M×$0.5/M + 1M×$2/M + 0.5M×$10/M = 1 + 2 + 5
+  });
+
+  it("no pricing -> null (uncosted; callers keep the value as-is instead of fabricating $0)", () => {
+    const buckets = { cacheRead: 100, cacheWrite: 100, output: 100 };
+    expect(bucketCostUsd(buckets, undefined)).toBeNull();
+    expect(bucketCostUsd(buckets, null)).toBeNull();
+  });
+
+  it("the live Task buckets equal the settled stats row's buckets (the mid-task estimate lands on the final turn cost)", () => {
+    const t = createTaskStatsTracker();
+    trackMainUsage(t, req(300, 100, 200));
+    trackSubagentUsage(t, req(50, 0, 3));
+    const pricing = { cacheRead: 1, cacheWrite: 2, output: 3 };
+    const live = bucketCostUsd(
+      { cacheRead: t.taskCacheRead, cacheWrite: t.taskCacheWrite, output: t.taskOutput },
+      pricing,
+    );
+    const s = endTask(t, 100);
+    expect(live).not.toBeNull();
+    expect(live).toBe(bucketCostUsd(s!.tokensByBucket, pricing));
   });
 });
 
