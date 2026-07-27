@@ -28,7 +28,7 @@
  * Docs: /docs/tools § "File tools".
  */
 import path from "node:path";
-import { open, stat } from "node:fs/promises";
+import { open, realpath, stat } from "node:fs/promises";
 import { partialToolCallOutput } from "../../omnimessage/index.js";
 import type { OmniMessage } from "../../omnimessage/index.js";
 import type { ToolDefinitionConfig } from "../../interfaces.js";
@@ -64,6 +64,29 @@ const DEFAULT_OUTPUT_BUDGET = 64000;
  * makes it auto-approved under read-only approval (the shell tool stays rw-gated).
  */
 const SECRET_BASENAMES = new Set([".vault.toml", ".project_config.toml"]);
+
+/**
+ * The secret-store name a path hits, or null. Checks the LOWERCASED basename of both the
+ * lexical path and its realpath: a case-insensitive filesystem (macOS/Windows) opens
+ * ".VAULT.TOML" as .vault.toml, and a symlink's own name says nothing about what it
+ * dereferences to — either would slip past a plain case-sensitive basename check. On a
+ * case-sensitive filesystem the lowercase compare can refuse a differently-cased sibling
+ * that is NOT the secret store; for a guard, that false positive is the right trade.
+ */
+async function secretStoreHit(resolved: string): Promise<string | null> {
+  let target = resolved;
+  try {
+    target = await realpath(resolved);
+  } catch {
+    // Missing file / permission error: the lexical name is still checked below, and the
+    // read path reports the real error afterwards.
+  }
+  for (const name of [path.basename(resolved), path.basename(target)]) {
+    const lower = name.toLowerCase();
+    if (SECRET_BASENAMES.has(lower)) return lower;
+  }
+  return null;
+}
 
 /** Renders one `cat -n` style line: 6-column right-aligned line number, tab, content. */
 export function numberedLine(lineNo: number, content: string): string {
@@ -251,9 +274,13 @@ export function createReadFileTool(definition: ToolDefinitionConfig): BuiltinToo
       const resolved = path.resolve(ctx.workspaceDir, filePath);
       // Secret stores are refused by name: read_file is auto-approved under read-only
       // approval, so it needs its own guard (aligned with the system prompt's ban).
-      if (SECRET_BASENAMES.has(path.basename(resolved))) {
+      // secretStoreHit resolves symlinks and compares case-insensitively — the lexical
+      // basename alone is bypassable via ".VAULT.TOML" (case-insensitive filesystems) or
+      // a symlink pointing at the store.
+      const secretHit = await secretStoreHit(resolved);
+      if (secretHit !== null) {
         yield delta(
-          `Refusing to read "${filePath}": ${path.basename(resolved)} holds the user's secrets and must never enter the conversation.`,
+          `Refusing to read "${filePath}": ${secretHit} holds the user's secrets and must never enter the conversation.`,
         );
         return { stopReason: "failed" };
       }
