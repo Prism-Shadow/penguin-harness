@@ -542,12 +542,16 @@ function initialSteerMode(): SteerMode {
   return localStorage.getItem(STEER_MODE_KEY) === "followup" ? "followup" : "steer";
 }
 
+/** Sliders icon (24×24 line path) for the mid-run send-mode settings row. */
+const SLIDERS_ICON = "M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6";
+
 /**
  * The mid-run send mode row, rendered as the "+" menu's settings footer: Steer (default) /
  * Queue as a follow-up, the full explanation hover-only via each pill's title (the toolbar's
- * "full meaning on hover" convention). Clicking a pill keeps the menu open — it's a setting,
- * not an action — and the row is never disabled: the preference is settable before and
- * during a run.
+ * "full meaning on hover" convention). Laid out like the menu's items — leading icon, label,
+ * the control where an item's description sits — so the menu reads as one list. Clicking a
+ * pill keeps the menu open — it's a setting, not an action — and the row is never disabled:
+ * the preference is settable before and during a run.
  */
 function SteerModeRow({
   steerMode,
@@ -572,14 +576,15 @@ function SteerModeRow({
     </button>
   );
   return (
-    <div className="flex items-center justify-between gap-2 px-3 py-1.5">
-      <p className="text-xs font-medium text-gray-700 dark:text-gray-300">
+    <div className="flex w-full items-center gap-2 px-3 py-1.5 text-xs">
+      <GlyphIcon d={SLIDERS_ICON} size={14} className="shrink-0 text-gray-400 dark:text-gray-500" />
+      <span className="min-w-0 flex-1 truncate text-gray-600 dark:text-gray-400">
         {S.chat.steerModeLabel}
-      </p>
+      </span>
       <div
         role="group"
         aria-label={S.chat.steerModeLabel}
-        className="flex w-max items-center gap-0.5 rounded-md border border-gray-200 p-0.5 dark:border-gray-700"
+        className="flex w-max shrink-0 items-center gap-0.5 rounded-md border border-gray-200 p-0.5 dark:border-gray-700"
       >
         {modeButton("steer", S.chat.steerModeSteer, S.chat.steerModeSteerHint)}
         {modeButton("followup", S.chat.steerModeFollowUp, S.chat.steerModeFollowUpHint)}
