@@ -4,7 +4,7 @@ description: Improve an Agent State through versioned scores and score-linked Tr
 short_description: Improve an Agent from measured Benchmark results.
 short_description_zh: 根据 Benchmark 结果改进 Agent。
 version: 6
-updated: 2026-07-27T06:03:26Z
+updated: 2026-07-27T06:09:31Z
 ---
 
 # Agent Optimization
@@ -76,17 +76,7 @@ Make the smallest complete edit supported by evidence and preserve unrelated con
 
 Every change must apply beyond a single observed instance. A Candidate may encode a stable environment-level policy learned through repeated black-box evaluation when that policy applies across multiple comparable instances in the frozen Benchmark. Do not encode Case ids, exact instance answers, per-question lookup tables, private scoring conditions, or a rule supported by only one observation. Prefer conditional policies and validation procedures over memorizing isolated outputs. Do not turn one high-scoring Trace's apparent choice into an unconditional rule.
 
-Before changing Agent State, read the top-level `version` from `system_config.yaml`, defaulting to 1 when absent.
-
-The system owns Agent State snapshot archives and exposes them through Web export and import. Do not create, import, extract, or replace snapshot archives yourself. Require this snapshot to exist:
-
-```text
-<target>/snapshots/v<version>.tar.gz
-```
-
-If the current-version snapshot is missing, stop and ask the user to export the current Agent State from Agent settings before continuing.
-
-Use `current + 1` as the candidate version. Before editing, record the exact original content of every file owned by the round. Write candidate files through temporary files and validate them before replacing the originals.
+Before changing Agent State, read the top-level `version` from `system_config.yaml`, defaulting to 1 when absent. Use `current + 1` as the candidate version. Before editing, record the exact original content of every file owned by the round. Write candidate files through temporary files and validate them before replacing the originals.
 
 If a Candidate is rejected or cannot complete a valid comparison:
 
@@ -135,7 +125,7 @@ For each round:
 
 3. **Create a Candidate**
 
-   Follow the Candidate editing, versioning, and snapshot rules above.
+   Follow the Candidate editing, versioning, and rollback rules above.
 
 4. **Complete the evaluation**
 
