@@ -4,14 +4,14 @@ description: Design and calibrate a multi-Case capability Benchmark and establis
 short_description: Design and calibrate an Agent capability Benchmark.
 short_description_zh: 设计并校准 Agent 能力评测 Benchmark。
 version: 5
-updated: 2026-07-27T05:28:09Z
+updated: 2026-07-27T05:33:56Z
 ---
 
 # Benchmark Design
 
 Build a multi-Case Benchmark for one Test Agent, calibrate its difficulty, and record a complete Formal Baseline.
 
-This Skill changes the Benchmark, never the Test Agent. It does not execute or score the Test Agent: delegate every evaluation with `run_subagent` to an independent worker explicitly instructed to use `agent-evaluation` skill. Stop after the baseline; do not begin optimization.
+This Skill changes the Benchmark, never the Test Agent. It does not execute or score the Test Agent: delegate every evaluation with `run_subagent` to an independent worker explicitly instructed to use the `agent-evaluation` Skill. Stop after the baseline; do not begin optimization.
 
 ## Workflow
 
@@ -74,15 +74,15 @@ Before the first Pilot, compare each public Statement and supporting file with i
 
 ## Run evaluations
 
-The Benchmark Designer never executes or scores the Test Agent. For every Pilot or Formal evaluation:
+The Benchmark Designer owns the Pilot and Formal evaluation sets, including their Case and Run loops, concurrency, ledger, and retries. The Evaluator never owns a matrix. For each required `(case_id, run)` pair:
 
 1. Call `run_subagent` to start an independent worker.
-2. Tell the worker to use `agent-evaluation` for exactly one Case and one Run.
+2. Tell the worker to use `agent-evaluation` to run the specified Test Agent on that Case exactly once and score only that execution.
 3. Send the complete request below.
 4. Use only the returned protocol YAML as the evaluation result; ignore commentary.
 
    ```text
-   Use the `agent-evaluation` Skill and evaluate exactly this Case run.
+   Use the `agent-evaluation` Skill. Run the specified Test Agent on the specified Case exactly once, then score that single execution.
    protocol_version: 1
    case_id: <case_id>
    run: <1_based_run_index>
@@ -130,7 +130,7 @@ Stop refinement when the user's gate is satisfied, after three Pilot iterations,
 
 1. Freeze the complete Benchmark and run the final leak check.
 2. Start a fresh ledger and record the current Agent State version.
-3. Delegate every Case × Run cell; never reuse a Pilot run.
+3. For each required Case and Run index, launch one separate `agent-evaluation` worker; never reuse a Pilot run.
 4. Accept the matrix only if every cell succeeds and the Agent State version remains unchanged.
 
 Do not change the Benchmark after the first Formal cell is dispatched. If a design defect appears, or the complete Formal score misses the baseline gate and the Traces reveal a credible shortcut, abandon the whole matrix and return to refinement only if the three-iteration budget has room. After any permitted change, freeze again and rerun the entire Formal matrix.

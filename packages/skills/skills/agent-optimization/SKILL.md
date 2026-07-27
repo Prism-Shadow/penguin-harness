@@ -4,19 +4,19 @@ description: Improve an Agent State through versioned scores and score-linked Tr
 short_description: Improve an Agent from measured Benchmark results.
 short_description_zh: 根据 Benchmark 结果改进 Agent。
 version: 6
-updated: 2026-07-27T04:13:17Z
+updated: 2026-07-27T05:33:56Z
 ---
 
 # Agent Optimization
 
-Improve an existing Agent State through measured Benchmark results. Delegate every evaluation and score to the `agent-evaluation` Skill; do not run or score the Test Agent directly.
+Improve an existing Agent State through measured Benchmark results. The Optimizer owns each Reference and Candidate evaluation matrix. For every required Case and Run index, delegate one execution and score to a separate `agent-evaluation` worker; do not run or score the Test Agent directly.
 
 ## Workflow
 
 1. Validate the explicit target, frozen Benchmark, current complete Reference, evaluation Model, and rollback prerequisites.
 2. Inspect score-linked evidence and state one falsifiable capability hypothesis.
 3. Record candidate-owned originals, make one minimal Agent State change, and increment the version once.
-4. Evaluate the complete frozen Case × Run matrix through `agent-evaluation`.
+4. Launch one `agent-evaluation` worker for each required Case and Run index, then assemble the complete frozen matrix.
 5. Accept a strictly higher valid Candidate; otherwise restore and verify the prior State.
 6. Use each accepted Candidate as the next Reference, then report the complete score curve and stop reason.
 
@@ -105,12 +105,14 @@ Every Candidate Evaluation must use the same Benchmark, Cases, Runs, and exact `
 
 ## Evaluation dispatch
 
-Maintain a Case × Run ledger. Never dispatch a cell that is already pending or valid, and retry a cell only after an explicit infrastructure failure. Use bounded batches that fit the available subagent capacity. For independent cells in one batch, launch one `agent-evaluation` subagent per cell before waiting for any of them to finish, then poll those exact subagent ids until the batch is complete. Do not wait for one cell to finish before launching the next independent cell.
+The Optimizer, not the Evaluator, owns the matrix, ledger, concurrency, and retries. For each required `(case_id, run)` pair, launch one independent `agent-evaluation` worker. That worker runs the specified Test Agent on the specified Case exactly once, scores only that execution, returns one protocol result, and stops.
+
+Never dispatch a pair that is already pending or valid, and retry it only after an explicit infrastructure failure. Use bounded batches that fit the available subagent capacity. Launch all independent workers in one batch before waiting, then poll those exact subagent ids until the batch is complete.
 
 Send each Evaluator one unambiguous request with every required identity field:
 
 ```text
-Use the `agent-evaluation` Skill and evaluate exactly this Case run.
+Use the `agent-evaluation` Skill. Run the specified Test Agent on the specified Case exactly once, then score that single execution.
 protocol_version: 1
 case_id: <case_id>
 run: <1_based_run_index>
@@ -141,7 +143,7 @@ For each round:
 
 4. **Complete the evaluation**
 
-   Use `agent-evaluation` to complete every Case × Run in the frozen Benchmark. The result is comparable only when the Agent State and Benchmark remain unchanged and the matrix is complete and valid.
+   For each required Case and Run index in the frozen Benchmark, launch one separate `agent-evaluation` worker and assemble their results. The Candidate is comparable only when the Agent State and Benchmark remain unchanged and the matrix is complete and valid.
 
 5. **Accept or roll back**
 

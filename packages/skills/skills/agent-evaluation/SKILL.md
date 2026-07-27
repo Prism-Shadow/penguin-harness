@@ -1,19 +1,21 @@
 ---
 name: agent-evaluation
-description: Internal leaf worker for executing and privately scoring exactly one Benchmark Case run. Use only when benchmark-design or agent-optimization supplies the complete evaluation protocol; do not use for user-facing evaluation, Benchmark design, or Agent changes.
+description: Internal leaf worker that runs one specified Test Agent on one specified Benchmark Case exactly once, privately scores that execution, and returns one protocol result. Use only when benchmark-design or agent-optimization supplies the complete request; do not use for user-facing evaluation, Benchmark design, or Agent changes.
 short_description: Run and score one isolated Benchmark Case.
 short_description_zh: 隔离执行并评分一个 Benchmark Case。
 version: 5
-updated: 2026-07-27T04:13:17Z
+updated: 2026-07-27T05:33:56Z
 ---
 
 # Agent Evaluation
 
-Act as an internal leaf worker. For one valid request, run and score exactly one Benchmark Case once, then return minimal protocol metadata. Do not design or refine the Benchmark, modify the Test Agent State, or write `scoreboard.yaml`. Do not use `run_subagent` or `input_subagent`.
+Act as an internal leaf worker. One request identifies one Test Agent, one Benchmark, one Case, and one Run index. Execute that Case exactly once, score that single execution, and return one protocol result.
+
+The caller owns the evaluation matrix, concurrency, and retries. This worker does not inspect or manage other Cases or Runs, launch another evaluator, modify the Test Agent State, design or refine the Benchmark, or write `scoreboard.yaml`. Do not use `run_subagent` or `input_subagent`.
 
 ## Before you start
 
-This Skill is invoked by `benchmark-design` or Benchmark mode in `agent-optimization`. Require one unambiguous protocol request containing every identity field below. If the request is missing, duplicated, or conflicting, return `invalid_request` without creating a Workspace or launching the Test Agent. Do not ask an interactive clarification from this leaf worker.
+This Skill is invoked by `benchmark-design` or Benchmark mode in `agent-optimization`. Require one unambiguous request containing every identity field below. The `run` field identifies this single execution; it does not ask this worker to repeat the Case. If any field is missing, duplicated, or conflicting, return `invalid_request` without creating a Workspace or launching the Test Agent. Do not ask an interactive clarification.
 
 ## Privacy boundary
 
