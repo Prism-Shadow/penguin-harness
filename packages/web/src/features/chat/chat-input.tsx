@@ -48,7 +48,7 @@
  * Renders only the card body itself: outer positioning such as bottom-docking or vertical
  * centering is decided by the page.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, ClipboardEvent, KeyboardEvent, ReactNode } from "react";
 import type {
   AgentSummary,
@@ -724,6 +724,13 @@ function SkillSelect({
   );
 }
 
+/**
+ * Picture glyph (24×24 line path) for the "+" menu's image-upload entry: the framing rectangle
+ * and the mountain line as two subpaths of one `d`, since GlyphIcon renders a single `<path>`.
+ */
+const IMAGE_ICON =
+  "M6 5h12a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V8a3 3 0 0 1 3-3zM3 15l5-5 4 4 3-3 6 6";
+
 /** One entry of the composer's "+" extension menu. */
 interface PlusMenuItem {
   key: string;
@@ -1277,13 +1284,12 @@ export function ChatInput({
   /** The slash token currently under the caret (kept in a ref so command run() closures always remove the live token). */
   const slashMatchRef = useRef<ReturnType<typeof matchSlash>>(null);
   const commands = useMemo<SlashCommand[]>(() => {
-    /** Removes just the slash token after a command runs (the rest of the text stays; setText is async: wait for the DOM value to update before measuring height). */
+    /** Removes just the slash token after a command runs (the rest of the text stays; the height re-measures itself off the new value, see the autoGrow layout effect). */
     const clearInput = () => {
       const match = slashMatchRef.current;
       const next = match ? removeSlashToken(textRef.current, match) : "";
       setText(next);
       onTextChange?.(next);
-      requestAnimationFrame(autoGrow);
     };
     return [
       {
@@ -1413,7 +1419,6 @@ export function ChatInput({
         setText("");
         setImages([]);
         setSelectedSkills([]);
-        requestAnimationFrame(autoGrow);
       }
     } finally {
       setBusy(false);
@@ -1454,13 +1459,25 @@ export function ChatInput({
     el.style.height = `${Math.min(el.scrollHeight, 176)}px`;
   };
 
-  // Correct the height and cursor right on mount: a restored multi-line draft (initialText)
-  // would otherwise not expand until the first edit; move the cursor to the end of the draft
-  // (by default the browser places the cursor at the start when focusing a textarea that already
-  // has content), so typing continues the text naturally, and sync the caret state to match (the
-  // @ mention menu filters by cursor position).
+  /**
+   * The height follows the **rendered** value, measured in a layout effect — the single place
+   * that sizes the box, covering mount (a restored multi-line draft), typing, and the clear
+   * after a send alike.
+   *
+   * It must be a layout effect keyed on `text` rather than a call next to each `setText`: the
+   * textarea is controlled, so after `setText("")` the DOM still holds the old text until React
+   * commits. A `requestAnimationFrame` scheduled alongside the state update races that commit
+   * and, when it wins, measures the old multi-line content and re-pins the tall height — with
+   * nothing left to measure again, the composer stayed expanded after every send. A layout
+   * effect runs after the commit by construction, and before paint, so the box never flashes.
+   */
+  useLayoutEffect(autoGrow, [text]);
+
+  // Cursor placement on mount: move it to the end of a restored draft (by default the browser
+  // places the cursor at the start when focusing a textarea that already has content), so typing
+  // continues the text naturally, and sync the caret state to match (the @ mention menu filters
+  // by cursor position).
   useEffect(() => {
-    autoGrow();
     const el = textareaRef.current;
     if (el && el.value.length > 0) {
       const end = el.value.length;
@@ -1525,7 +1542,6 @@ export function ChatInput({
     onTextChange?.(value);
     setCaret(start);
     setMentionIndex(0);
-    autoGrow();
   };
 
   /**
@@ -1558,7 +1574,6 @@ export function ChatInput({
           setText("");
           setSelectedSkills([]);
           toggleGoal(false);
-          requestAnimationFrame(autoGrow);
         }
       } finally {
         setBusy(false);
@@ -1589,7 +1604,6 @@ export function ChatInput({
         setImages([]);
         setTarget(null);
         setSelectedSkills([]);
-        requestAnimationFrame(autoGrow);
       }
     } finally {
       setBusy(false);
@@ -1622,7 +1636,6 @@ export function ChatInput({
           steerBaseline.current = steeringDeliveredCount ?? 0;
           setSteerPending(true);
           setText("");
-          requestAnimationFrame(autoGrow);
         }
       } finally {
         setBusy(false);
@@ -1736,6 +1749,12 @@ export function ChatInput({
     if (e.target.files) addFiles(e.target.files);
     e.target.value = "";
   };
+  /**
+   * The image picker moved into the "+" menu, so the file input can no longer be a `<label>`
+   * wrapper: the menu unmounts its items on select. It lives outside the menu instead and the
+   * entry clicks it — still inside the click's user-activation window, so the dialog opens.
+   */
+  const imageInputRef = useRef<HTMLInputElement>(null);
 
   return (
     <div className="relative" ref={anchorRef}>
@@ -2120,7 +2139,6 @@ export function ChatInput({
               const m = matchMention(value, caretNow);
               return m && m.start === d ? d : null;
             });
-            autoGrow();
           }}
           // Cursor movement (arrow keys/click) syncs to caret: the @ menu filters by the prefix at the cursor.
           onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
@@ -2153,40 +2171,49 @@ export function ChatInput({
             always reachable. */}
         <div className="mt-1 flex items-center justify-between gap-2 text-xs">
           <div className="no-scrollbar flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">
-            <label
-              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 ${
-                goalOn
-                  ? "cursor-not-allowed opacity-40"
-                  : "cursor-pointer hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"
-              }`}
-              title={
-                goalOn ? S.chat.goalModeDesc : vision ? S.chat.imageAlt : S.chat.imagesAsPathHint
-              }
-            >
-              <input
-                type="file"
-                accept="image/*"
-                multiple
-                disabled={goalOn}
-                className="hidden"
-                onChange={onPickFiles}
-              />
-              <svg
-                width="17"
-                height="17"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.7"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden
-                className="block"
-              >
-                <rect x="3" y="5" width="18" height="14" rx="3" />
-                <path d="M3 15l5-5 4 4 3-3 6 6" />
-              </svg>
-            </label>
+            {/* The image picker's actual input: kept mounted here (outside the menu, which
+                unmounts its items on select) and driven by the menu entry below. */}
+            <input
+              ref={imageInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              disabled={goalOn}
+              className="hidden"
+              onChange={onPickFiles}
+            />
+            {/* "+" extension menu, leading the row: input add-ons (image upload, goal mode)
+                plus the input settings footer (mid-run send mode — usable while running, which
+                is exactly when it matters, so the button itself never disables). Image upload
+                lives in here rather than as its own toolbar button: one 8x8 slot instead of
+                two, which is the difference between the phone row scrolling and not. */}
+            <PlusMenu
+              items={[
+                {
+                  key: "image",
+                  icon: IMAGE_ICON,
+                  label: S.chat.uploadImage,
+                  // Without vision the images still send — as scratchpad file paths — so the
+                  // entry stays usable and the hint explains what will happen instead.
+                  desc: vision ? S.chat.uploadImageDesc : S.chat.imagesAsPathHint,
+                  active: images.length > 0,
+                  // Goal mode is text-only (the objective is re-injected each round).
+                  disabled: goalOn,
+                  onSelect: () => imageInputRef.current?.click(),
+                },
+                {
+                  key: "goal",
+                  icon: GOAL_ICON,
+                  label: S.chat.goalMode,
+                  desc: S.chat.goalModeDesc,
+                  active: goalOn,
+                  disabled: running || compacting || busy,
+                  onSelect: () => toggleGoal(!goalOn),
+                },
+              ]}
+              footer={<SteerModeRow steerMode={steerMode} onChangeSteerMode={setSteerMode} />}
+              direction={models && onChangeModel ? "down" : "up"}
+            />
             <ApprovalModeSelect
               value={approvalMode}
               onChange={onChangeApprovalMode}
@@ -2199,24 +2226,6 @@ export function ChatInput({
               selected={selectedSkills}
               onToggle={toggleSkill}
               disabled={running || compacting || busy}
-              direction={models && onChangeModel ? "down" : "up"}
-            />
-            {/* "+" extension menu (input add-ons; goal mode today, more entries later) plus
-                the input settings footer (mid-run send mode — usable while running, which is
-                exactly when it matters, so the button itself never disables). */}
-            <PlusMenu
-              items={[
-                {
-                  key: "goal",
-                  icon: GOAL_ICON,
-                  label: S.chat.goalMode,
-                  desc: S.chat.goalModeDesc,
-                  active: goalOn,
-                  disabled: running || compacting || busy,
-                  onSelect: () => toggleGoal(!goalOn),
-                },
-              ]}
-              footer={<SteerModeRow steerMode={steerMode} onChangeSteerMode={setSteerMode} />}
               direction={models && onChangeModel ? "down" : "up"}
             />
             {/* Help text: shown only when the card is wide enough (@lg); it never competes for
