@@ -739,7 +739,7 @@ When done, open index.html in a browser and self-test once.`,
     /** Composer "+" extension menu (currently only goal mode; more entries later) and the goal chip. */
     plusMenu: "More input options",
     goalMode: "Goal mode",
-    goalModeDesc: "Loop until the goal completes; optional token budget",
+    goalModeDesc: "Loop until the goal completes",
     goalBudgetLabel: "Token budget",
     goalBudgetUnlimited: "Budget unlimited",
     goalBudgetValue: (value: string): string => `Budget ${value}`,

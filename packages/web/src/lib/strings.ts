@@ -720,7 +720,7 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     /** Composer "+" extension menu (currently only goal mode; more entries later) and the goal chip. */
     plusMenu: "更多输入方式",
     goalMode: "目标模式",
-    goalModeDesc: "循环运行直至目标完成，可设 token 预算",
+    goalModeDesc: "循环运行直至目标完成",
     goalBudgetLabel: "Token 预算",
     goalBudgetUnlimited: "预算不限",
     goalBudgetValue: (value: string): string => `预算 ${value}`,
