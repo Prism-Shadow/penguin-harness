@@ -49,7 +49,7 @@
  * centering is decided by the page.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ChangeEvent, ClipboardEvent, KeyboardEvent } from "react";
+import type { ChangeEvent, ClipboardEvent, KeyboardEvent, ReactNode } from "react";
 import type {
   AgentSummary,
   ApprovalMode,
@@ -533,7 +533,7 @@ function ThinkingLevelSelect({
  * Mid-run send mode: steer (delivered mid-run as a [user_steering] input) vs follow-up
  * (queued server-side until the run ends). A remembered per-user UI preference, persisted
  * the same way as the sidebar grouping mode (validated localStorage read under a
- * `penguin.*` key); configurable from the More-settings popover in draft state and active
+ * `penguin.*` key); configurable from the "+" menu's settings row in draft state and active
  * sessions alike.
  */
 type SteerMode = "steer" | "followup";
@@ -542,33 +542,20 @@ function initialSteerMode(): SteerMode {
   return localStorage.getItem(STEER_MODE_KEY) === "followup" ? "followup" : "steer";
 }
 
-/** Sliders icon (24×24 line path) for the More-settings popover button. */
-const SLIDERS_ICON = "M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6";
-
 /**
- * "More settings" popover (bottom toolbar): a compact icon button opening a small panel of
- * setting rows — deliberately extensible, future toggles land here as additional rows. The
- * first (currently only) row is the mid-run send mode: Steer (default) / Queue as a
- * follow-up; the full explanation lives in each pill's hover title (not rendered by
- * default). Never disabled — the preference is settable before and during a run.
- *
- * The panel renders through the shared portal layer (Dropdown's `portal`): the toolbar
- * scrolls horizontally on phones, and a panel anchored inside a scrolling container would be
- * clipped away — the portal also clamps both edges into the viewport, which is what the old
- * hand-measured docking did.
+ * The mid-run send mode row, rendered as the "+" menu's settings footer: Steer (default) /
+ * Queue as a follow-up, the full explanation hover-only via each pill's title (the toolbar's
+ * "full meaning on hover" convention). Clicking a pill keeps the menu open — it's a setting,
+ * not an action — and the row is never disabled: the preference is settable before and
+ * during a run.
  */
-function MoreSettingsSelect({
+function SteerModeRow({
   steerMode,
   onChangeSteerMode,
-  direction = "up",
 }: {
   steerMode: SteerMode;
   onChangeSteerMode: (mode: SteerMode) => void;
-  direction?: "up" | "down";
 }) {
-  const [open, setOpen] = useState(false);
-  // Compact pill (small-control sizing, sized to its label): the explanation is hover-only
-  // via title, per the toolbar's "full meaning on hover" convention.
   const modeButton = (mode: SteerMode, label: string, hint: string) => (
     <button
       type="button"
@@ -585,38 +572,19 @@ function MoreSettingsSelect({
     </button>
   );
   return (
-    <Dropdown
-      open={open}
-      setOpen={setOpen}
-      menuClass="w-max max-w-44"
-      portal={{ direction, align: "left" }}
-      button={
-        <button
-          type="button"
-          aria-label={S.chat.moreSettings}
-          title={S.chat.moreSettings}
-          onClick={() => setOpen((v) => !v)}
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-        >
-          <GlyphIcon d={SLIDERS_ICON} size={15} />
-        </button>
-      }
-    >
-      {/* Setting row: label + compact control (descriptions hover-only). New settings append as further rows. */}
-      <div className="px-2.5 py-1.5">
-        <p className="mb-1 text-xs font-medium text-gray-700 dark:text-gray-300">
-          {S.chat.steerModeLabel}
-        </p>
-        <div
-          role="group"
-          aria-label={S.chat.steerModeLabel}
-          className="flex w-max items-center gap-0.5 rounded-md border border-gray-200 p-0.5 dark:border-gray-700"
-        >
-          {modeButton("steer", S.chat.steerModeSteer, S.chat.steerModeSteerHint)}
-          {modeButton("followup", S.chat.steerModeFollowUp, S.chat.steerModeFollowUpHint)}
-        </div>
+    <div className="flex items-center justify-between gap-2 px-3 py-1.5">
+      <p className="text-xs font-medium text-gray-700 dark:text-gray-300">
+        {S.chat.steerModeLabel}
+      </p>
+      <div
+        role="group"
+        aria-label={S.chat.steerModeLabel}
+        className="flex w-max items-center gap-0.5 rounded-md border border-gray-200 p-0.5 dark:border-gray-700"
+      >
+        {modeButton("steer", S.chat.steerModeSteer, S.chat.steerModeSteerHint)}
+        {modeButton("followup", S.chat.steerModeFollowUp, S.chat.steerModeFollowUpHint)}
       </div>
-    </Dropdown>
+    </div>
   );
 }
 
@@ -756,21 +724,26 @@ interface PlusMenuItem {
   desc: string;
   /** Whether the entry is currently engaged (rendered with a check mark; clicking toggles). */
   active: boolean;
+  /** Grayed out and inert (e.g. goal mode while a run is in progress); the menu still opens. */
+  disabled?: boolean;
   onSelect: () => void;
 }
 
 /**
  * The composer's "+" extension menu: a general-purpose entry point for input add-ons (goal
- * mode today; future modes, plugins, apps, files slot in as further items). Data-driven —
- * the caller passes the item list; the menu itself knows nothing about the entries.
+ * mode today; future modes, plugins, apps, files slot in as further items) plus input
+ * settings (`footer`, currently the mid-run send mode row). Data-driven — the caller passes
+ * the item list and footer; the menu itself knows nothing about the entries. The button is
+ * never disabled: settings must stay reachable during a run, so unavailable *items* gray out
+ * individually instead.
  */
 function PlusMenu({
   items,
-  disabled,
+  footer,
   direction = "up",
 }: {
   items: PlusMenuItem[];
-  disabled: boolean;
+  footer?: ReactNode;
   direction?: "up" | "down";
 }) {
   const [open, setOpen] = useState(false);
@@ -787,9 +760,8 @@ function PlusMenu({
           type="button"
           aria-label={S.chat.plusMenu}
           title={S.chat.plusMenu}
-          disabled={disabled}
           onClick={() => setOpen(!open)}
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
         >
           <GlyphIcon d="M12 5v14M5 12h14" size={15} className="shrink-0" />
         </button>
@@ -800,11 +772,12 @@ function PlusMenu({
           key={item.key}
           type="button"
           aria-pressed={item.active}
+          disabled={item.disabled}
           onClick={() => {
             setOpen(false);
             item.onSelect();
           }}
-          className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800 ${
+          className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors duration-150 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent dark:hover:bg-gray-800 dark:disabled:hover:bg-transparent ${
             item.active
               ? "font-medium text-gray-900 dark:text-gray-100"
               : "text-gray-600 dark:text-gray-400"
@@ -822,6 +795,9 @@ function PlusMenu({
           <span className="w-3 shrink-0 text-center">{item.active ? "✓" : ""}</span>
         </button>
       ))}
+      {footer && (
+        <div className="mt-1 border-t border-gray-100 pt-1 dark:border-gray-800">{footer}</div>
+      )}
     </Dropdown>
   );
 }
@@ -1210,10 +1186,10 @@ export function ChatInput({
     text.trim().length > 0;
   // Mid-run send mode (owner directive): the user chooses between "steer" (delivered
   // mid-run as a [user_steering] input) and "follow-up" (held server-side and auto-sent as
-  // an ordinary next task once this run finishes). Set from the More-settings popover on
-  // the toolbar — available in draft state and active sessions alike — and **remembered**
-  // across sessions/reloads (localStorage, see STEER_MODE_KEY); the running-state send
-  // simply follows the remembered mode.
+  // an ordinary next task once this run finishes). Set from the "+" menu's settings row —
+  // available in draft state and active sessions alike — and **remembered** across
+  // sessions/reloads (localStorage, see STEER_MODE_KEY); the running-state send simply
+  // follows the remembered mode.
   const [steerMode, setSteerModeState] = useState<SteerMode>(initialSteerMode);
   const setSteerMode = (mode: SteerMode): void => {
     setSteerModeState(mode);
@@ -2138,7 +2114,9 @@ export function ChatInput({
               disabled={running || compacting || busy}
               direction={models && onChangeModel ? "down" : "up"}
             />
-            {/* "+" extension menu (input add-ons; goal mode today, more entries later). */}
+            {/* "+" extension menu (input add-ons; goal mode today, more entries later) plus
+                the input settings footer (mid-run send mode — usable while running, which is
+                exactly when it matters, so the button itself never disables). */}
             <PlusMenu
               items={[
                 {
@@ -2147,17 +2125,11 @@ export function ChatInput({
                   label: S.chat.goalMode,
                   desc: S.chat.goalModeDesc,
                   active: goalOn,
+                  disabled: running || compacting || busy,
                   onSelect: () => toggleGoal(!goalOn),
                 },
               ]}
-              disabled={running || compacting || busy}
-              direction={models && onChangeModel ? "down" : "up"}
-            />
-            {/* More settings popover (extensible; currently the mid-run send mode): available in
-                draft state and while running alike, the choice persists across sessions. */}
-            <MoreSettingsSelect
-              steerMode={steerMode}
-              onChangeSteerMode={setSteerMode}
+              footer={<SteerModeRow steerMode={steerMode} onChangeSteerMode={setSteerMode} />}
               direction={models && onChangeModel ? "down" : "up"}
             />
             {/* Help text: shown only when the card is wide enough (@lg); it never competes for

@@ -614,8 +614,6 @@ When done, open index.html in a browser and self-test once.`,
     steerQueuedIndicator: "Steering queued — delivered with the next turn",
     /** Label of the [user_steering] chip (a mid-run user message delivered between turns). */
     userSteering: "User steering",
-    /** More-settings popover on the input toolbar (extensible setting rows; holds the mid-run send mode). */
-    moreSettings: "More settings",
     /** Mid-run send-mode setting: steer (delivered mid-run) vs follow-up (queued until the run ends). */
     steerModeLabel: "Mid-run send mode",
     steerModeSteer: "Steer",
