@@ -4,7 +4,7 @@ description: Improve an Agent State through versioned scores and score-linked Tr
 short_description: Improve an Agent from measured Benchmark results.
 short_description_zh: 根据 Benchmark 结果改进 Agent。
 version: 6
-updated: 2026-07-27T05:39:01Z
+updated: 2026-07-27T05:46:33Z
 ---
 
 # Agent Optimization
@@ -105,9 +105,11 @@ Every Candidate Evaluation must use the same Benchmark, Cases, Runs, and exact `
 
 ## Evaluation dispatch
 
-The Optimizer, not the Evaluator, owns the matrix, ledger, concurrency, and retries. For each required `(case_id, run)` pair, launch one independent `agent-evaluation` worker. That worker runs the specified Test Agent on the specified Case exactly once, scores only that execution, returns one protocol result, and stops.
+The Optimizer, not the Evaluator, owns the matrix, ledger, concurrency, and handling of returned failures. The Evaluator may only retry a transient launch before Test Agent execution begins. For each required `(case_id, run)` pair, launch one independent `agent-evaluation` worker. That worker runs the specified Test Agent on the specified Case exactly once, scores only that execution, returns one protocol result, and stops.
 
-Never dispatch a pair that is already pending or valid, and retry it only after a retryable evaluation failure identified by its `failure_code`. Use bounded batches that fit the available subagent capacity. Launch all independent workers in one batch before waiting, then poll those exact subagent ids until the batch is complete.
+Never dispatch a pair that is already pending or valid. Correct and resend an `invalid_request`, which never launches the Test Agent. Do not redispatch `cli_failed`, whose safe launch retry is already exhausted, or `provenance_mismatch`, which may follow a completed execution. Any failure that cannot be safely resent leaves the matrix incomplete and stops optimization. A Benchmark, scoring, or version failure also invalidates the comparison; the Optimizer must not repair the frozen Benchmark.
+
+Use bounded batches that fit the available subagent capacity. Launch all independent workers in one batch before waiting, then poll those exact subagent ids until the batch is complete.
 
 Send each Evaluator one unambiguous request with every required identity field:
 
@@ -123,7 +125,7 @@ provider: <provider>
 model_id: <model_id>
 ```
 
-Extract one unambiguous protocol YAML document with the fields defined by `agent-evaluation` and ignore any surrounding text. Never use Evaluator commentary, Rubric content, Gold answers, or per-item scoring to form an optimization hypothesis or Agent State edit. If no valid protocol can be extracted, treat the cell as an evaluation failure and retry it according to the ledger.
+Extract one unambiguous protocol YAML document with the fields defined by `agent-evaluation` and ignore any surrounding text. Never use Evaluator commentary, Rubric content, Gold answers, or per-item scoring to form an optimization hypothesis or Agent State edit. If no valid protocol can be extracted, treat the cell as an evaluation failure and do not redispatch it because execution status is unknown.
 
 ## Optimization loop
 

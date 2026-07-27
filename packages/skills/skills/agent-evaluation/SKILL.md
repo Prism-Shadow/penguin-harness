@@ -4,14 +4,14 @@ description: Internal leaf worker that runs one specified Test Agent on one spec
 short_description: Run and score one isolated Benchmark Case.
 short_description_zh: 隔离执行并评分一个 Benchmark Case。
 version: 5
-updated: 2026-07-27T05:39:01Z
+updated: 2026-07-27T05:46:33Z
 ---
 
 # Agent Evaluation
 
 Run one specified Test Agent on one specified Benchmark Case exactly once, privately score that execution, and return one protocol result.
 
-The caller owns all Case/Run loops, concurrency, and retries. This worker handles no other Case or Run, launches no evaluator or subagent, modifies no Agent or Benchmark, and never writes `scoreboard.yaml`.
+The caller owns all Case/Run loops, concurrency, and handling after this worker returns. This worker handles no other Case or Run, launches no evaluator or subagent, modifies no Agent or Benchmark, and never writes `scoreboard.yaml`.
 
 ## Contract
 
@@ -46,7 +46,7 @@ Create a unique collision-checked Workspace under `<test_agent_dir>/workspaces/`
 
 ## Run and verify
 
-Use an existing verified Penguin CLI or repository-local launcher. Do not install or probe a launcher. Record the existing Trace files, then run exactly once in the foreground with a fresh top-level Session:
+Use an existing verified Penguin CLI or repository-local launcher. Do not install or probe a launcher. Snapshot the isolated Workspace and record the existing Trace files, then start one foreground execution with a fresh top-level Session:
 
 ```bash
 PENGUIN_HOME="<parent_of_app_data_dir>" penguin run \
@@ -55,7 +55,9 @@ PENGUIN_HOME="<parent_of_app_data_dir>" penguin run \
   --agent-id "<test_agent_id>" --workspace "<unique_workspace>" --approve allow-all
 ```
 
-Use the exact requested Agent, provider, model, and Workspace. Do not fall back or relaunch. A missing launcher, nonzero exit, interruption, or misrouted launch is `cli_failed`, not score zero.
+Use the exact requested Agent, provider, model, and Workspace; never fall back to another value. If a transient connection or launch failure occurs, retry the exact command once only when you can prove that no Test Session was created and execution did not begin, including no new or changed Trace or Workspace file. Otherwise do not relaunch. Across at most two CLI attempts, allow at most one Test Agent execution.
+
+A missing launcher, an unsafe-to-retry failure, or failure of the one safe retry is `cli_failed`, not score zero. A misrouted launch is never safe to retry.
 
 Verify after the run that the State version and both directory snapshots are unchanged. Return `version_changed`, `invalid_statement`, or `invalid_rubric` on a mismatch.
 
