@@ -4,7 +4,7 @@ description: Design and calibrate a multi-Case capability Benchmark and establis
 short_description: Design and calibrate an Agent capability Benchmark.
 short_description_zh: 设计并校准 Agent 能力评测 Benchmark。
 version: 7
-updated: 2026-07-27T10:23:45Z
+updated: 2026-07-27T10:30:43Z
 ---
 
 # Benchmark Design
@@ -94,7 +94,7 @@ Accept only the worker's protocol YAML. Ignore transport metadata added by `run_
 
 Track each cell by phase, Pilot iteration, Case, Run, and attempt as `queued`, `in_flight`, or `completed`. Never dispatch an `in_flight` or valid `completed` cell again.
 
-Use one queue across all Cases with `yield_time_ms: 1000` and keep available worker slots full. During the initial Pilot, dispatch each Case as soon as it is written and leak-checked, then continue drafting the next Case. Do not modify an in-flight Case. Wait for remaining workers only after the queue is empty.
+Launch independent evaluations as soon as they are ready, up to available concurrency. When a worker finishes, immediately launch the next pending evaluation. During the initial Pilot, dispatch each Case as soon as it is written and leak-checked, then continue drafting the next Case. Do not modify an in-flight Case. After all evaluations are dispatched, wait for the remaining workers.
 
 A wrong or missing Test Agent artifact is a valid scored result and must not be retried.
 
