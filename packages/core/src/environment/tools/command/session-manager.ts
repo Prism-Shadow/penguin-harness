@@ -32,6 +32,37 @@ const HARDENED_ENV: NodeJS.ProcessEnv = {
   GIT_PAGER: "cat",
 };
 
+/**
+ * Harness-owned variables **removed** from the child environment (deleted, not blanked: a
+ * program that checks `PORT` for presence rather than value must see nothing at all).
+ *
+ * `PORT` / `HOST` describe the port the harness itself listens on. `penguin web` writes both
+ * into its own `process.env` as the channel to the server module (see the CLI's `startServer`),
+ * so without this every command the Agent runs inherits them — and `npm run dev`, Vite, Next
+ * and most Express templates all read `PORT`, so an Agent asked to start a dev server would
+ * bind the harness's own port instead of picking its own. Stripping is right even when the
+ * value came from the user's shell (`PORT=3000 penguin web`): it still means "the port
+ * PenguinHarness is on", which is precisely the port a spawned server must not take.
+ *
+ * `PENGUIN_CLI_ENTRY` / `PENGUIN_WEB_DIST` are internal plumbing between the CLI and the
+ * server; they mean nothing to a command and leak install paths.
+ *
+ * Deliberately **not** stripped: `PENGUIN_HOME` and the other user-facing `PENGUIN_*` settings.
+ * An Agent working on PenguinHarness itself (the self-evolution case) may legitimately need to
+ * run against the same data root, and that is a config decision rather than a leak.
+ */
+const STRIPPED_ENV_KEYS = ["PORT", "HOST", "PENGUIN_CLI_ENTRY", "PENGUIN_WEB_DIST"] as const;
+
+/**
+ * The host environment minus {@link STRIPPED_ENV_KEYS}. Exported for the unit test — the
+ * spawn path itself cannot be asserted without starting a real process.
+ */
+export function hostEnvForChild(source: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const env = { ...source };
+  for (const key of STRIPPED_ENV_KEYS) delete env[key];
+  return env;
+}
+
 export class CommandSessionManager {
   private readonly registry = new BackgroundRegistry<ManagedSession>({
     idPrefix: "proc",
@@ -55,8 +86,10 @@ export class CommandSessionManager {
       cwd: opts.cwd,
       // Spread order is priority: vault overrides host variables of the same name, but must
       // come before HARDENED_ENV — the hardening entries (GIT_EDITOR/PAGER etc. that prevent
-      // interactive hangs) must never be overridable by vault.
-      env: { ...process.env, ...this.vault, ...HARDENED_ENV },
+      // interactive hangs) must never be overridable by vault. The host side is stripped of
+      // the harness's own variables first (see STRIPPED_ENV_KEYS); the vault still wins, so a
+      // user who genuinely wants PORT in commands can set it there.
+      env: { ...hostEnvForChild(), ...this.vault, ...HARDENED_ENV },
     });
   }
 

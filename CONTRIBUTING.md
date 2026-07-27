@@ -15,8 +15,8 @@ pnpm install
 pnpm build       # build first: core's exports point at dist/
 
 pnpm dev         # backend + web app together (prefixed logs, deps built once)
-pnpm dev:server  # backend at 127.0.0.1:7364
-pnpm dev:web     # web app (Vite) at 127.0.0.1:7365, /api proxied
+pnpm dev:server  # backend at 127.0.0.1:7368 (not the installed server's 7364)
+pnpm dev:web     # web app (Vite) at 127.0.0.1:7365, /api proxied to 7368
 pnpm dev:docs    # docs site (Vite) at 127.0.0.1:7367
 pnpm dev:landing # landing page (Vite) at 127.0.0.1:7366
 
