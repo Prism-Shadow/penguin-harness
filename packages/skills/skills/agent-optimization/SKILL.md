@@ -4,7 +4,7 @@ description: Improve an Agent State through versioned scores and score-linked Tr
 short_description: Improve an Agent from measured Benchmark results.
 short_description_zh: 根据 Benchmark 结果改进 Agent。
 version: 6
-updated: 2026-07-27T05:46:33Z
+updated: 2026-07-27T05:58:14Z
 ---
 
 # Agent Optimization
@@ -20,7 +20,7 @@ Improve an existing Agent State through measured Benchmark results. The Optimize
 5. Accept a strictly higher valid Candidate; otherwise restore and verify the prior State.
 6. Use each accepted Candidate as the next Reference, then report the complete score curve and stop reason.
 
-## Before you start
+## Setup and access
 
 Require:
 
@@ -31,8 +31,6 @@ Require:
 - the `agent-evaluation` Skill installed on the current Agent.
 
 If `run_subagent` is absent, immediately return `missing_run_subagent`. Do not edit Agent State, launch the Test Agent through `penguin run`, score a Case, or use the generic "do the work yourself" fallback. If another requirement is missing, stop and explain what is needed rather than starting a change that cannot be compared completely.
-
-## Target and access boundaries
 
 Use the Environment's App Data Dir:
 
@@ -52,43 +50,6 @@ Never read, search, list, or open a path under a Case's `rubric/` directory. Use
 
 Never modify the Benchmark, Test Traces, Project configuration, or another Agent.
 
-## Agent State editing policy
-
-Make the smallest complete edit supported by evidence and preserve unrelated content.
-
-- Behavioral, role, workflow, and domain guidance normally belongs in `AGENTS.md`.
-- A reusable capability shared across tasks may belong in a target-owned Skill.
-- Runtime limits belong in the corresponding safe fields of `system_config.yaml`.
-- Do not edit `system_prompt` unless the user explicitly asks.
-- Do not modify a library-provided Skill to carry target-specific behavior.
-
-Every change must apply beyond a single observed instance. A Candidate may encode a stable environment-level policy learned through repeated black-box evaluation when that policy applies across multiple comparable instances in the frozen Benchmark. Do not encode Case ids, exact instance answers, per-question lookup tables, private scoring conditions, or a rule supported by only one observation. Prefer conditional policies and validation procedures over memorizing isolated outputs. Do not turn one high-scoring Trace's apparent choice into an unconditional rule.
-
-## Snapshot, version, and rollback
-
-Before changing Agent State, read the top-level `version` from `system_config.yaml`, defaulting to 1 when absent.
-
-The system owns Agent State snapshot archives and exposes them through Web export and import. Do not create, import, extract, or replace snapshot archives yourself. Require this snapshot to exist:
-
-```text
-<target>/snapshots/v<version>.tar.gz
-```
-
-If the current-version snapshot is missing, stop and ask the user to export the current Agent State from Agent settings before continuing.
-
-Use `current + 1` as the candidate version.
-
-Before editing, record the exact original content of every file owned by the round. Write candidate files through temporary files and validate them before replacing the originals.
-
-If a candidate is rejected or cannot complete a valid comparison:
-
-- restore the files changed by the round;
-- remove files created by the round;
-- restore the previous version;
-- verify the rollback.
-
-If another process changes the Agent State, stop without overwriting its work.
-
 ## Optimization contract
 
 Freeze the Case set, Statements, Rubrics, `runs`, and evaluation Model throughout optimization.
@@ -103,7 +64,42 @@ If the current Agent State has no complete Evaluation, evaluate it without chang
 
 Every Candidate Evaluation must use the same Benchmark, Cases, Runs, and exact `(provider, model_id)` pair as the Reference. Do not translate, alias, or fall back to another Model identifier.
 
-## Evaluation dispatch
+A Candidate is comparable only when its Agent State and the frozen Benchmark remain unchanged and its evaluation matrix is complete and valid. Accept it only when its aggregate score is strictly higher than the Reference; otherwise reject it and restore the prior State. Each accepted Candidate becomes the next Reference.
+
+## Create and restore a Candidate
+
+Make the smallest complete edit supported by evidence and preserve unrelated content.
+
+- Behavioral, role, workflow, and domain guidance normally belongs in `AGENTS.md`.
+- A reusable capability shared across tasks may belong in a target-owned Skill.
+- Runtime limits belong in the corresponding safe fields of `system_config.yaml`.
+- Do not edit `system_prompt` unless the user explicitly asks.
+- Do not modify a library-provided Skill to carry target-specific behavior.
+
+Every change must apply beyond a single observed instance. A Candidate may encode a stable environment-level policy learned through repeated black-box evaluation when that policy applies across multiple comparable instances in the frozen Benchmark. Do not encode Case ids, exact instance answers, per-question lookup tables, private scoring conditions, or a rule supported by only one observation. Prefer conditional policies and validation procedures over memorizing isolated outputs. Do not turn one high-scoring Trace's apparent choice into an unconditional rule.
+
+Before changing Agent State, read the top-level `version` from `system_config.yaml`, defaulting to 1 when absent.
+
+The system owns Agent State snapshot archives and exposes them through Web export and import. Do not create, import, extract, or replace snapshot archives yourself. Require this snapshot to exist:
+
+```text
+<target>/snapshots/v<version>.tar.gz
+```
+
+If the current-version snapshot is missing, stop and ask the user to export the current Agent State from Agent settings before continuing.
+
+Use `current + 1` as the candidate version. Before editing, record the exact original content of every file owned by the round. Write candidate files through temporary files and validate them before replacing the originals.
+
+If a Candidate is rejected or cannot complete a valid comparison:
+
+- restore the files changed by the round;
+- remove files created by the round;
+- restore the previous version;
+- verify the rollback.
+
+If another process changes the Agent State, stop without overwriting its work.
+
+## Delegate evaluation
 
 The Optimizer, not the Evaluator, owns the matrix, ledger, concurrency, and handling of returned failures. The Evaluator may only retry a transient launch before Test Agent execution begins. For each required `(case_id, run)` pair, launch one independent `agent-evaluation` worker. That worker runs the specified Test Agent on the specified Case exactly once, scores only that execution, returns one protocol result, and stops.
 
@@ -141,23 +137,23 @@ For each round:
 
 3. **Create a Candidate**
 
-   Confirm the current-version snapshot, record the original candidate-owned files, make the smallest general edit, and use `current + 1` as the candidate version.
+   Follow the Candidate editing, versioning, and snapshot rules above.
 
 4. **Complete the evaluation**
 
-   For each required Case and Run index in the frozen Benchmark, launch one separate `agent-evaluation` worker and assemble their results. The Candidate is comparable only when the Agent State and Benchmark remain unchanged and the matrix is complete and valid.
+   Delegate every required Case and Run in the frozen Benchmark and assemble the complete result matrix.
 
 5. **Accept or roll back**
 
-   If the Candidate score is strictly higher than the Reference, keep the Candidate State and append its Evaluation, including a public `summary_title` and `summary`, to the Scoreboard atomically. If the score is equal, lower, or cannot be compared validly, roll back the Candidate and do not write it to the Scoreboard.
-
-Each accepted Candidate becomes the next Reference.
+   Apply the comparison rule above. Retain an accepted Candidate; fully restore a rejected or invalid Candidate.
 
 Unless the user asks only for analysis, evaluate at least one credible Candidate when infrastructure permits.
 
 Stop when the user's target or round limit is reached, no credible new hypothesis remains, or infrastructure prevents a valid comparison. Do not search the score by making random Agent State changes.
 
-## Final report
+## Record and finish
+
+For each accepted Candidate, append its complete Evaluation, including a public `summary_title` and `summary`, to the Scoreboard atomically. Do not write a rejected, incomplete, or invalid Candidate Evaluation.
 
 Report the score curve from the baseline through every fully evaluated Candidate, including rejected Candidates. Show it as a compact table and a simple visual curve such as Mermaid `xychart-beta` or an equivalent text chart. Also report accepted Agent State versions and main changes, rejected and rolled-back Candidates, Test Session ids, stop reason, and known limitations.
 
