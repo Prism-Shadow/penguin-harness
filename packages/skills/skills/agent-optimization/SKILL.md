@@ -4,7 +4,7 @@ description: Improve an Agent State through versioned scores and score-linked Tr
 short_description: Improve an Agent from measured Benchmark results.
 short_description_zh: 根据 Benchmark 结果改进 Agent。
 version: 7
-updated: 2026-07-27T08:04:40Z
+updated: 2026-07-27T08:14:28Z
 ---
 
 # Agent Optimization
@@ -43,7 +43,7 @@ If the Candidate is rejected or cannot be compared, restore the changed files an
 
 The Optimizer owns the matrix, ledger, concurrency, and returned failures. Each Evaluator handles one `(case_id, run)` cell. It runs that cell once, scores it privately, and returns one protocol result. It may retry only a launch that failed before the Test Agent started.
 
-Track every cell and attempt. Never dispatch a pending or valid cell. Use bounded parallel batches; launch each batch before waiting, then poll those exact subagent ids.
+Track every cell and attempt. Never dispatch a pending or valid cell. After the Candidate is complete, dispatch the full Case × Run matrix in parallel. Launch all cells before waiting when capacity allows; otherwise keep every available slot full by launching the next cell as soon as one finishes. Do not modify the Candidate while any cell is pending.
 
 Send each Evaluator:
 
@@ -69,7 +69,7 @@ For each round:
 
 1. Analyze the Reference's aggregate and Case scores, repeated-run stability, public Statements, and Test Traces. Compare them with completed Candidates from this optimization, including rejected ones.
 2. State one credible hypothesis and create one Candidate under the rules above. Stop if no credible hypothesis remains.
-3. Delegate every Case and Run in the frozen Benchmark and assemble the complete matrix.
+3. Delegate the complete Case × Run matrix in parallel and assemble all returned cells.
 4. If the Candidate score is strictly higher, keep it. Append its complete Evaluation with public `summary_title` and `summary` to the Scoreboard atomically, then use it as the next Reference. Otherwise restore the prior State. Keep rejected Candidates only in the round ledger.
 5. Repeat until the user's target or round limit is reached, no credible hypothesis remains, or infrastructure prevents a valid comparison.
 

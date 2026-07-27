@@ -4,7 +4,7 @@ description: Design and calibrate a multi-Case capability Benchmark and establis
 short_description: Design and calibrate an Agent capability Benchmark.
 short_description_zh: 设计并校准 Agent 能力评测 Benchmark。
 version: 7
-updated: 2026-07-27T08:04:40Z
+updated: 2026-07-27T08:14:28Z
 ---
 
 # Benchmark Design
@@ -22,8 +22,8 @@ This Skill changes the Benchmark, never the Test Agent. It does not run or score
 Follow this order:
 
 1. Validate the Test Agent, target capability, evaluation Model, and evaluation access.
-2. Define the observable behavior that demonstrates the capability and draft the smallest useful Pilot.
-3. Delegate one evaluation per Pilot Case.
+2. Define the observable behavior, plan the Case set and point allocation, then draft the Cases incrementally.
+3. As soon as a Pilot Case is complete and passes its leak check, delegate one evaluation and continue drafting the remaining Cases without waiting.
 4. If the Pilot does not expose the target difficulty, refine one capability-relevant dimension and rerun the affected Cases. Use at most three Pilot iterations.
 5. Freeze the complete Benchmark after a final leak check.
 6. Delegate every frozen Case for the configured number of Runs. Save the result as the Formal Baseline only if all Runs complete on the same Agent version and the aggregate score satisfies the baseline gate.
@@ -70,7 +70,7 @@ Create `benchmark_config.toml` with `title`, `description`, and `runs = 3`. Use 
 
 Before writing Cases, describe how an Agent with the target capability should behave differently from one without it. Every Case must require that difference. Sharing the same topic is not enough. Rubric maxima across all Cases must total 100 points. Use observable scoring items and meaningful partial credit.
 
-Before the first Pilot, compare each public Statement and supporting file with its private Rubric. Remove any public content that reveals a hidden rule, expected outcome, Gold answer, or scoring condition. This is the leak check.
+Before evaluating a Pilot Case, compare its public Statement and supporting files with its private Rubric. Remove any public content that reveals a hidden rule, expected outcome, Gold answer, or scoring condition. This is the leak check.
 
 ## Run evaluations
 
@@ -93,7 +93,9 @@ The Benchmark Designer owns the Pilot and Formal evaluation sets. This includes 
    model_id: <model_id>
    ```
 
-Track each evaluation by phase, Pilot iteration, Case, Run, and attempt. Do not launch a duplicate while the same request is pending or after it returns a valid result. Independent requests may run in bounded parallel batches.
+Track each evaluation by phase, Pilot iteration, Case, Run, and attempt. Do not launch a duplicate while the same request is pending or after it returns a valid result.
+
+For Pilot, dispatch a Case as soon as it is complete and leak-checked, then continue designing other Cases while that evaluation runs. Do not modify a Case while its evaluation is pending. For any evaluation set, launch all ready independent requests before waiting. If concurrency is limited, keep the available slots full by launching the next request as soon as one finishes.
 
 A wrong or missing Test Agent artifact is a valid scored result. Do not retry it.
 
@@ -108,7 +110,7 @@ If a Benchmark or scoring repair is required during Formal, abandon the Formal m
 
 ## Refine the Benchmark
 
-Treat the first draft as a hypothesis, not the final Benchmark. For Pilot iteration 1, run one representative evaluation per Case. Use the recorded Agent State version and fixed evaluation Model. Keep Pilot results out of the Scoreboard.
+Treat the first draft as a hypothesis, not the final Benchmark. For Pilot iteration 1, run one representative evaluation per Case. A Pilot iteration is complete when every current Case revision has one valid result. Use the recorded Agent State version and fixed evaluation Model. Keep Pilot results out of the Scoreboard.
 
 A high Pilot score is not a reason to freeze. Review the Case scores and returned Test Traces. Decide whether the Agent genuinely has the capability or the Cases allow a shortcut. Refine only when the Benchmark fails to require the intended behavior.
 
@@ -129,10 +131,10 @@ Stop when the user's gate is satisfied, after three Pilot iterations, or when no
 
 1. Freeze the complete Benchmark and run the final leak check.
 2. Start a fresh ledger and record the current Agent State version.
-3. For each required Case and Run index, launch one separate `agent-evaluation` worker; never reuse a Pilot run.
+3. Dispatch the complete Case × Run matrix with one separate `agent-evaluation` worker per cell; never reuse a Pilot run. Start every cell at once when capacity allows; otherwise keep all available slots full until every cell has been dispatched.
 4. Accept the matrix only if every cell succeeds and the Agent State version remains unchanged.
 
-Do not change the Benchmark after the first Formal cell is dispatched. If a design defect appears, abandon the whole matrix. Do the same when the Formal score misses the gate and the Traces show a credible shortcut. Return to refinement only when the three-iteration budget has room. After any change, freeze again and rerun the entire Formal matrix.
+Once the first Formal cell is dispatched, do not design or refine any Case or otherwise change the Benchmark. If a design defect appears, abandon the whole matrix. Do the same when the Formal score misses the gate and the Traces show a credible shortcut. Return to refinement only when the three-iteration budget has room. After any change, freeze again and rerun the entire Formal matrix.
 
 If the complete Formal score misses the gate and no credible refinement remains within the budget, report `calibration_failed`. Stop without a Baseline. Record nothing from a partial, abandoned, invalid, or above-gate matrix.
 

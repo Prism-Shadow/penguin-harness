@@ -4,7 +4,7 @@ description: Internal leaf worker that runs one specified Test Agent on one spec
 short_description: Run and score one isolated Benchmark Case.
 short_description_zh: 隔离执行并评分一个 Benchmark Case。
 version: 6
-updated: 2026-07-27T08:04:40Z
+updated: 2026-07-27T08:14:28Z
 ---
 
 # Agent Evaluation
@@ -62,7 +62,7 @@ A missing launcher, an unsafe-to-retry failure, or failure of the one safe retry
 
 Verify after the run that the State version and both directory snapshots are unchanged. Return `version_changed`, `invalid_statement`, or `invalid_rubric` on a mismatch.
 
-Inspect only new or changed Trace files. Bind exactly one root Test Trace. Its `session_meta` must match the Workspace, Test Agent State path, provider, and model id. Exclude directly referenced child Session ids. Return `provenance_mismatch` if there is no unique valid match. Do not search unrelated Sessions to repair it.
+Inspect only new or changed Trace files. Parallel evaluations may create other new Traces; ignore any whose Workspace does not match this request. Bind exactly one root Test Trace whose `session_meta` also matches the Test Agent State path, provider, and model id. Exclude directly referenced child Session ids. Return `provenance_mismatch` if there is no unique valid match. Do not search unrelated Sessions to repair it.
 
 ## Score
 
