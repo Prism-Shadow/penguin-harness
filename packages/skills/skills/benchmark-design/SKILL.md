@@ -4,14 +4,14 @@ description: Design and calibrate a multi-Case capability Benchmark and establis
 short_description: Design and calibrate an Agent capability Benchmark.
 short_description_zh: 设计并校准 Agent 能力评测 Benchmark。
 version: 5
-updated: 2026-07-27T04:53:40Z
+updated: 2026-07-27T05:14:42Z
 ---
 
 # Benchmark Design
 
 Build a multi-Case Benchmark for one Test Agent, calibrate its difficulty, and record a complete Formal Baseline.
 
-This Skill changes the Benchmark, never the Test Agent. It does not execute or score the Test Agent: delegate every evaluation with `run_subagent` to an independent worker explicitly instructed to use `agent-evaluation`. Stop after the baseline; do not begin optimization.
+This Skill changes the Benchmark, never the Test Agent. It does not execute or score the Test Agent: delegate every evaluation with `run_subagent` to an independent worker explicitly instructed to use `agent-evaluation` skill. Stop after the baseline; do not begin optimization.
 
 ## Workflow
 
@@ -26,7 +26,7 @@ Follow this order:
 3. Delegate one evaluation per Pilot Case and diagnose why the Pilot is too easy, too hard, or measures the wrong behavior.
 4. Adjust one difficulty dimension and rerun the affected Cases. Use at most three Pilot iterations.
 5. Freeze the complete Benchmark after a final leak check.
-6. Delegate the fresh complete Formal matrix, record one valid baseline, and report limitations.
+6. After freezing, delegate every Case for the configured number of Runs. All runs complete on the same Agent version, aggregate and save their scores as the Formal Baseline.
 
 ## Setup
 
@@ -42,11 +42,11 @@ BENCHMARK_DIR = <test_agent_dir>/benchmarks/<benchmark_id>
 SCOREBOARD = <benchmark_dir>/scoreboard.yaml
 ```
 
-Access only this Test Agent and Benchmark. Do not read another Agent, Project secrets, hidden configuration, or any Evaluator State, Workspace, or Trace. You may inspect only Test Traces and public artifacts identified by a successful Evaluator protocol.
+You may access the specified Test Agent State, the complete specified Benchmark, and only those Test Traces and artifacts returned by successful evaluations of this Benchmark. Do not access another Agent, Project secrets, or the evaluation worker’s own State, Workspace, or Trace.
 
 Read the Test Agent State version from the top-level `version` in `agent_state/system_config.yaml`; use 1 only when it is absent.
 
-## Files and Case design
+## Build the Benchmark
 
 ```text
 <benchmark_id>/
@@ -59,42 +59,45 @@ Read the Test Agent State version from the top-level `version` in `agent_state/s
         └── README.md
 ```
 
-`statement/` contains the task, public evidence, and required artifact. `rubric/` contains private scoring conditions and Gold answers. Both README files are required; either directory may include supporting files.
+Each Case has two parts:
 
-Create `benchmark_config.toml` with `title`, `description`, and `runs = 3`; use another positive Run count only when the user requests it. Select the exact evaluation Model before the first Pilot and keep it fixed through Formal. Initialize `scoreboard.yaml` with `evaluations: []`.
+- `statement/` is public to the Test Agent. It defines the objective, available materials, and required artifact.
+- `rubric/` is private. It defines observable scoring items, points, and Gold answers.
 
-Before writing Cases, state the observable difference between an Agent that has the target capability and one that does not. Each Case must require that capability, not merely share its topic. A Statement provides the objective, available materials, and required artifact—but not reasoning, hidden mappings, Gold answers, or scoring conditions.
+Both directories require a `README.md` and may contain supporting files. Never put hidden reasoning, mappings, Gold answers, or scoring conditions in `statement/`.
 
-Rubric maxima across all Cases must total 100. Use atomic scoring items, explicit points, and meaningful partial credit.
+Create `benchmark_config.toml` with `title`, `description`, and `runs = 3`; use another positive Run count only when the user requests it. Select the evaluation `(provider, model_id)` before the first Pilot and keep it fixed through Formal. Initialize `scoreboard.yaml` with `evaluations: []`.
 
-A **leak check** compares every public Statement and supporting file with its private Rubric. Remove anything that reveals or paraphrases a hidden rule, mapping, expected outcome, Gold answer, or scoring condition. Run this check before the first Pilot, after each Pilot change, and immediately before freeze.
+Before writing Cases, describe how an Agent with the target capability should behave differently from one without it. Every Case must require that difference; sharing the same topic is not enough. Across all Cases, Rubric maxima must total 100 points. Use observable scoring items and meaningful partial credit.
 
-Pilot output may show what is too easy or hard; it must not decide what becomes correct:
+Before the first Pilot, after every Pilot change, and before freeze, compare each public Statement and supporting file with its private Rubric. Remove any public content that reveals a hidden rule, expected outcome, Gold answer, or scoring condition. This is the leak check.
 
-- never choose or revise a rule, mapping, expected outcome, or Gold merely to contradict an observed answer or known default;
-- choose latent environment rules through an Agent-independent procedure and keep them fixed within each evaluated iteration;
-- never lower a score only by tightening the Rubric around an observed answer;
-- if new behavior is scored, state it publicly and provide enough public evidence to make it answerable.
+Pilot output may reveal why a Case is too easy, too hard, or tests the wrong behavior. Use it to choose a difficulty change, not to choose the correct answer. Do not change a hidden rule or Gold merely to contradict the Agent, and do not lower the score only by tightening the private Rubric. Choose hidden rules independently of the Agent and keep them fixed during an iteration. If a new behavior will be scored, require it in the public Statement and provide enough public evidence to make it answerable.
 
-## Delegate every evaluation
+## Run evaluations
 
-For each Case × Run cell, call `run_subagent` and tell that worker to use `agent-evaluation` with:
+The Benchmark Designer never executes or scores the Test Agent. For every Pilot or Formal evaluation:
 
-```text
-Use the `agent-evaluation` Skill and evaluate exactly this Case run.
-protocol_version: 1
-case_id: <case_id>
-run: <1_based_run_index>
-expected_version: <test_agent_state_version>
-test_agent_id: <test_agent_id>
-benchmark_id: <benchmark_id>
-provider: <provider>
-model_id: <model_id>
-```
+1. Call `run_subagent` to start an independent worker.
+2. Tell the worker to use `agent-evaluation` for exactly one Case and one Run.
+3. Send the complete request below.
+4. Use only the returned protocol YAML as the evaluation result; ignore commentary.
 
-Keep a ledger keyed by phase, Pilot iteration when applicable, Case, Run, and attempt. Never dispatch a pending or valid cell twice. Launch independent cells in bounded parallel batches, then wait for those exact subagent ids.
+   ```text
+   Use the `agent-evaluation` Skill and evaluate exactly this Case run.
+   protocol_version: 1
+   case_id: <case_id>
+   run: <1_based_run_index>
+   expected_version: <test_agent_state_version>
+   test_agent_id: <test_agent_id>
+   benchmark_id: <benchmark_id>
+   provider: <provider>
+   model_id: <model_id>
+   ```
 
-Accept only the protocol YAML defined by `agent-evaluation`; ignore commentary. Retry once only for `failure_code: cli_failed`. Any other failure, a second `cli_failed`, or an invalid protocol is terminal for that matrix. A terminal or incomplete Formal matrix cannot produce a baseline.
+Track requests separately by phase, Pilot iteration, Case, Run, and attempt so results from different Benchmark revisions cannot be mixed. Do not launch a duplicate while a request is pending or after it has returned a valid result. Independent requests may run in bounded parallel batches.
+
+Retry once only for `failure_code: cli_failed`. Any other failure, a second `cli_failed`, or an invalid protocol ends the current matrix. A Formal Baseline can be recorded only when every required Case and Run has a valid result.
 
 ## Stage 1: Pilot calibration
 
