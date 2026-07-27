@@ -1,10 +1,13 @@
 /**
  * Chat page (refactored version):
- * a thin top toolbar (Session title / status / iconized stats / Files toggle / details popup) +
- * the message stream and input area (input box vertically centered when there are no messages).
+ * a thin top toolbar (Session title / status / iconized stats / Agents + Files toggles /
+ * details popup) + the message stream and input area (input box vertically centered when there
+ * are no messages).
  * Files is no longer a mutually exclusive tab — it's a persistent, closable, resizable docked
  * panel on the right (use-files-panel.ts), and each message's trailing file summary card jumps to
- * and locates the file in the tree via onOpenFile.
+ * and locates the file in the tree via onOpenFile. The subagents panel docks the same way
+ * (use-subagents-panel.ts): subagent chips in the stream open it focused via onOpenSubagent,
+ * and the two docked panels are mutually exclusive (coordinated here, not in the hooks).
  * Approval mode and Model/context usage live in the input area's toolbar; context is compacted
  * via the /compact slash command.
  * Draft state (/chat/new) is carried by DraftView: Agent / Workspace / approval mode / Model are
@@ -52,6 +55,7 @@ import { EmptyState } from "../../components/ui/empty-state";
 import { toastError } from "../../components/ui/toast";
 import { MessageStream } from "./message-stream";
 import type { StreamRenderContext } from "./message-stream";
+import { latestTaskHasSubagent, taskStartCount } from "./agent-topology";
 import { ChatInput } from "./chat-input";
 import { DraftView } from "./draft-view";
 import { GoalStatusBanner } from "./goal-banner";
@@ -60,6 +64,14 @@ import { sameModelRef } from "../models/model-grouping";
 import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
 import { FilesPanel } from "./files-panel";
 import { useFilesPanel } from "./use-files-panel";
+import type { FilesPanelState } from "./use-files-panel";
+import { SubagentsPanel } from "./subagents-panel";
+import {
+  advancePanelTaskScope,
+  createPanelTaskScope,
+  useSubagentsPanel,
+} from "./use-subagents-panel";
+import type { SubagentsPanelState } from "./use-subagents-panel";
 import { useSessionDraft } from "./use-session-draft";
 import { useSessionStream } from "./use-session-stream";
 
@@ -234,7 +246,29 @@ export function ChatPage() {
   const [turnThinkingLevel, setTurnThinkingLevel] = useState("");
 
   const routeSessionId = params.sessionId ?? null;
-  const filesPanel = useFilesPanel(routeSessionId);
+  const filesPanelRaw = useFilesPanel(routeSessionId);
+  const subagentsPanelRaw = useSubagentsPanel(routeSessionId);
+  // The two docked panels are MUTUALLY EXCLUSIVE — side by side they'd crush the chat column at
+  // the 1024px breakpoint (and two stacked Sheets on mobile would be worse). Exclusivity is
+  // enforced here, on the panel objects every consumer receives, rather than at each call site:
+  // ANY path that opens one panel (toolbar toggles, message file cards via onOpenFile, subagent
+  // chips via onOpenSubagent, or a future caller) closes the other as a side effect of
+  // setOpen(true). Closing never cascades. The hooks stay uncoordinated on purpose — they don't
+  // know about each other; only this page, which owns both, does.
+  const filesPanel: FilesPanelState = {
+    ...filesPanelRaw,
+    setOpen: (next: boolean) => {
+      if (next) subagentsPanelRaw.setOpen(false);
+      filesPanelRaw.setOpen(next);
+    },
+  };
+  const subagentsPanel: SubagentsPanelState = {
+    ...subagentsPanelRaw,
+    setOpen: (next: boolean) => {
+      if (next) filesPanelRaw.setOpen(false);
+      subagentsPanelRaw.setOpen(next);
+    },
+  };
   const draft = routeSessionId === DRAFT_SESSION_ID;
   const selected = draft ? null : (sessions.find((s) => s.sessionId === routeSessionId) ?? null);
   // Currently effective model (session state, the model reference comes from the Session DTO): model selection in draft state is handled internally by DraftView.
@@ -275,6 +309,41 @@ export function ChatPage() {
     if (selectedSessionId && selectedAgentId) setCurrentAgentId(selectedAgentId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSessionId, selectedAgentId, setCurrentAgentId]);
+
+  // TASK-SCOPED panel visibility (owner rule: an open panel belongs to the task it was opened
+  // for). The pure tracker (advancePanelTaskScope, unit-tested) decides at each observation:
+  //   - entering a session / a NEW Task starting (a user message — taskStartCount increase)
+  //     closes the panel by default, so an unrelated task never inherits it;
+  //   - the CURRENT task's first live spawn auto-opens it (re-armed per task; a manual close
+  //     afterwards is respected until the next boundary).
+  // The auto-open applies only when docked (a mobile Sheet sliding over the conversation
+  // uninvited would be worse than staying discoverable via the row), never over an open Files
+  // panel (an automatic open must not steal an explicit one — the row and the toolbar's amber
+  // dot still signal), and never re-triggers an already-open panel (that would yank a pinned
+  // historical graph back to the latest Task); the tracker consumes the attempt regardless.
+  const panelTaskScopeRef = useRef(createPanelTaskScope());
+  const taskCount = taskStartCount(stream.model.items);
+  const liveSpawn = stream.taskState !== "idle" && latestTaskHasSubagent(stream.model);
+  useEffect(() => {
+    const action = advancePanelTaskScope(panelTaskScopeRef.current, {
+      sessionId: selectedSessionId,
+      taskCount,
+      liveSpawn,
+    });
+    if (action === "close") {
+      subagentsPanelRaw.setOpen(false);
+    } else if (
+      action === "autoOpen" &&
+      subagentsPanelRaw.isDocked &&
+      !subagentsPanelRaw.open &&
+      !filesPanelRaw.open
+    ) {
+      subagentsPanelRaw.setOpen(true);
+    }
+    // The panel objects are rebuilt every render; the tracker only acts on real transitions of
+    // these three observed values.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSessionId, taskCount, liveSpawn]);
 
   // Skills installed on the session's Agent (candidates for the input area's skill dropdown):
   // fetched keyed on the session's Agent; on switch, cleared first (which also clears the input
@@ -731,13 +800,26 @@ export function ChatPage() {
     onOpenFile: (path) => {
       // The file card has already normalized the text path to a Workspace-relative path
       // (toWorkspaceRelative, including stripping absolute-path prefixes and converting Windows
-      // separators), so this just opens the panel and navigates to it directly.
+      // separators), so this just opens the panel and navigates to it directly (the wrapped
+      // setOpen already closes the subagents panel — see the exclusivity block above).
       filesPanel.setOpen(true);
       filesPanel.browsePath(path);
+    },
+    onOpenSubagent: (sessionId, origin) => {
+      // Chip click: open the panel focused on that child (the focus chain ends with the child's
+      // own id; the wrapped setOpen closes the Files panel). focusSubagent after setOpen: the
+      // open resets the Task scope to "latest", and the focus then pins it to this chip's Task.
+      subagentsPanel.setOpen(true);
+      subagentsPanel.focusSubagent(sessionId, [...origin, sessionId]);
     },
     workspace: selected?.workspace ?? null,
     statFiles,
   };
+
+  // Any pending approval sitting inside a subagent (approvalKey = "originChain toolCallId";
+  // main-session keys start with a space): surfaces an amber dot on the toolbar button so a
+  // nested approval stays discoverable while the panel is closed.
+  const anySubagentPending = [...stream.pendingApprovals.keys()].some((k) => !k.startsWith(" "));
 
   if (!projectId || !agentId) {
     return (
@@ -862,7 +944,41 @@ export function ChatPage() {
             <StatChip icon={STAT_ICONS.elapsed} value={hs.elapsedNode} label={S.chat.statElapsed} />
           </div>
 
-          {/* Files panel toggle: docks on the right of the chat instead of replacing it full-screen (use-files-panel.ts). */}
+          {/* Subagents panel toggle: latest-Task call graph + child conversations dock on the right (use-subagents-panel.ts); opening closes the Files panel (wrapped setOpen). */}
+          <button
+            type="button"
+            aria-expanded={subagentsPanel.open}
+            onClick={() => subagentsPanel.setOpen(!subagentsPanel.open)}
+            title={S.chat.openAgents}
+            className={`flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors duration-150 ${
+              subagentsPanel.open
+                ? "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200"
+                : "text-gray-500 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+            }`}
+          >
+            {/* Nodes/network glyph (spawn tree). */}
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.7"
+              aria-hidden
+            >
+              <circle cx="5" cy="12" r="2.5" />
+              <circle cx="19" cy="5.5" r="2.5" />
+              <circle cx="19" cy="18.5" r="2.5" />
+              <path d="M7.4 11 16.7 6.6M7.4 13l9.3 4.4" />
+            </svg>
+            {S.chat.openAgents}
+            {/* A pending approval inside a subagent: amber dot (the chip in the stream carries the accessible announcement). */}
+            {anySubagentPending && (
+              <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+            )}
+          </button>
+
+          {/* Files panel toggle: docks on the right of the chat instead of replacing it full-screen (use-files-panel.ts); opening closes the subagents panel (wrapped setOpen). */}
           <button
             type="button"
             aria-expanded={filesPanel.open}
@@ -1038,6 +1154,16 @@ export function ChatPage() {
           )}
         </div>
 
+        {selected && (
+          <SubagentsPanel
+            session={selected}
+            panel={subagentsPanel}
+            model={stream.model}
+            version={stream.version}
+            taskRunning={stream.taskState !== "idle"}
+            ctx={ctx}
+          />
+        )}
         {selected && <FilesPanel session={selected} panel={filesPanel} />}
       </div>
 

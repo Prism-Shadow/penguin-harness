@@ -605,7 +605,19 @@ export class Agent {
             const childApprove = approve
               ? (tc: OmniMessage<ToolCallPayload>) => approve(withOrigin(tc, hop))
               : undefined;
-            for await (const msg of childSession.run([userText(prompt)], {
+            // The engine writes a run's input to the CHILD's own Trace but never replays
+            // it to its consumer (a session's normal caller typed that input itself) —
+            // here the consumer is the PARENT, whose frontend has never seen the child's
+            // prompt. Forward the input message itself (origin-tagged, ahead of the run's
+            // output) so the live nested view shows the child's user side exactly like a
+            // reloaded one (history expansion splices the child Trace, which carries this
+            // same message). The parent engine drops origin messages from the parent
+            // Trace, so replay never duplicates it. Later rounds (input_subagent
+            // follow-up prompts) come through this same generator and are forwarded the
+            // same way.
+            const input = userText(prompt);
+            yield withOrigin(input, hop);
+            for await (const msg of childSession.run([input], {
               ...(signal ? { signal } : {}),
               ...(childApprove ? { approve: childApprove } : {}),
             })) {

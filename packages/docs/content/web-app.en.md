@@ -41,7 +41,7 @@ There are four approval modes: `allow-all`, `deny-all`, `read-only` (only read-o
 
 - Model text renders token by token; thinking blocks are collapsible;
 - Tool cards expand to show arguments and output, with a live timer while running;
-- Subagents appear as nested cards; context compaction shows a banner;
+- Subagents leave a full-width row in the stream, styled like the other collapsed step rows (agent avatar, name, short session id, running spinner, and an amber dot while one of their tool calls awaits approval); clicking it opens the agents side panel — a call graph of that row's Task on top (each node shows its elapsed time; click a node to switch) and the selected child's live conversation below — the child's own user prompts included — where nested tool cards and approvals work exactly as in the main chat. Panel visibility is task-scoped: sending a message that starts a new task closes it by default (entering a session starts closed too), and it comes back when you open it yourself or — on desktop — when the current task spawns a subagent (one auto-open per task; a manual close holds until the next task; never over an open files panel). Opening the panel from the toolbar, or switching sessions, shows the latest Task's graph; a row on an older turn brings back that turn's graph. The agents panel and the Workspace files panel never show together — opening one closes the other. Context compaction shows a banner;
 - After each Task, a stats line shows tokens, TPS, elapsed time, and cost.
 
 ### Input and Shortcuts

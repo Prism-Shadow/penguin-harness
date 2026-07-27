@@ -3,8 +3,13 @@
  * Branches on request body:
  *  - title request (prompt contains "concise title") -> short text
  *  - files-card probe ("files card test") -> text with two backtick paths (one real, one missing)
- *  - subagent's own turn (its prompt is the only user text) -> final text
+ *  - subagent's own turns (its prompt is the only user text) -> tool_use(exec_command) first,
+ *    then the report text once the tool_result is back — the tool call gives the child a real
+ *    approval point (under always-ask it parks on a NESTED approval, which the subagents-panel
+ *    e2e approves from the panel; under allow-all it auto-runs)
  *  - parent asked to delegate ("run a subagent") -> tool_use(run_subagent)
+ *  - a repeat delegation later in the same conversation ("run another subagent", keyed on the
+ *    LAST message so history can't shadow it) -> tool_use(run_subagent) again
  *  - "slow stream test" -> tool_use(exec_command) with a command that prints one line
  *    every 200ms for ~8s (reload-midstream.spec reloads while its output streams)
  *  - "slow text test" -> a long text streamed one delta every 200ms for ~8s
@@ -246,7 +251,44 @@ const server = http.createServer((req, res) => {
       return;
     }
 
+    // A REPEAT delegation later in the same conversation (the task-scoped panel e2e needs a
+    // second spawning Task): keyed on the LAST message only — the whole-history flags above
+    // ("run a subagent" + hasToolResult) can never take this branch once a first delegation
+    // sits in the history. The child flow it spawns is identical (same SUBAGENT_PROMPT). The
+    // ~800ms delay keeps the e2e's two observations in order: the task boundary first CLOSES
+    // the panel, and only then does this spawn auto-open it again.
+    const lastFlat = JSON.stringify(messages[messages.length - 1] ?? {});
+    if (lastFlat.includes("run another subagent")) {
+      setTimeout(() => {
+        block(
+          res,
+          0,
+          { type: "tool_use", id: "toolu_mock_sub2", name: "run_subagent", input: {} },
+          [
+            { type: "input_json_delta", partial_json: '{"prompt": ' },
+            { type: "input_json_delta", partial_json: `${JSON.stringify(SUBAGENT_PROMPT)}}` },
+          ],
+        );
+        messageStop(res, "tool_use", 15);
+      }, 800);
+      return;
+    }
+
     if (isSubagentTurn) {
+      // Child turn 1: one tool call before reporting (see the header comment — the child needs
+      // its own approval point for the nested-approval e2e). The command sleeps ~1s so the
+      // whole parent Task reliably OUTLIVES the draft-flow navigation — the auto-open e2e
+      // needs the client to attach while the spawn is still live (a real model is far slower;
+      // without the sleep the mock finishes the entire tree before the page even connects).
+      // Turn 2: the report text, the exact string the title branch keys on.
+      if (!hasToolResult) {
+        block(res, 0, { type: "tool_use", id: "toolu_sub_exec", name: "exec_command", input: {} }, [
+          { type: "input_json_delta", partial_json: '{"cmd"' },
+          { type: "input_json_delta", partial_json: ': "sleep 1; echo counting"}' },
+        ]);
+        messageStop(res, "tool_use", 10);
+        return;
+      }
       block(res, 0, { type: "text", text: "" }, [
         { type: "text_delta", text: "Subagent report: 3 TODOs" },
       ]);

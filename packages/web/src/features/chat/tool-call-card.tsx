@@ -1,11 +1,10 @@
 /**
  * Tool call card: collapses to a single line by
  * default — status icon + tool name + duration (a live-ticking timer while running) + status
- * badge; clicking expands full arguments and output; a nested subagent renders below them
- * regardless of collapsed state.
- * The pending-approval row is always visible regardless of collapsed state; when a pending
- * approval appears anywhere in a nested subagent chain, the card auto-expands once (respecting
- * the user's choice if they've manually collapsed it since).
+ * badge; clicking expands full arguments and output; a bound subagent renders as a full-width
+ * shortcut row below them regardless of collapsed state (the child conversation itself lives
+ * in the subagents side panel; the row carries its own pending-approval dot, so the card no
+ * longer needs to auto-expand for nested approvals).
  *
  * Duration accounting = **argument-generation segment + execution segment** (excludes time
  * spent waiting on human approval): the model streaming out arguments token by token is often
@@ -13,7 +12,7 @@
  * understate this step's cost. While waiting on approval, the already-settled generation
  * segment is shown, with a separate "Waiting for approval" badge attached.
  */
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { S } from "../../lib/strings";
 import { humanizeDuration } from "../../lib/format";
 import { approvalKey } from "../../lib/omni/stream-model";
@@ -25,7 +24,8 @@ import { StatusIcon } from "../../components/ui/status-icon";
 import type { RunState } from "../../components/ui/status-icon";
 import { ApprovalButtons } from "./approval-buttons";
 import { LiveDuration } from "./live-duration";
-import { SubagentCard } from "./subagent-card";
+import { agentIdFromRunSubagentArgs } from "./agent-topology";
+import { SubagentChip } from "./subagent-chip";
 import type { StreamRenderContext } from "./message-stream";
 
 /** Tools that accept the optional model-written `description` argument. */
@@ -171,21 +171,6 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
   const userToggled = useRef(false);
   // Matched by the current origin chain + toolCallId: prevents parent/child session tool_call_id collisions from lighting each other up.
   const pending = ctx.pendingApprovals.get(approvalKey(ctx.origin, item.toolCallId));
-
-  // Whether there's a pending approval anywhere in the nested subagent chain (keys are `origin-chain toolCallId`, matched by prefix at any depth).
-  const nestedPrefix = item.subagentSessionId
-    ? [...ctx.origin, item.subagentSessionId].join("/")
-    : null;
-  const hasNestedPending =
-    nestedPrefix !== null &&
-    [...ctx.pendingApprovals.keys()].some(
-      (k) => k.startsWith(`${nestedPrefix} `) || k.startsWith(`${nestedPrefix}/`),
-    );
-
-  // A nested pending approval needs the user's action: auto-expand once (respected if the user manually collapses it afterward).
-  useEffect(() => {
-    if (hasNestedPending && !userToggled.current) setOpen(true);
-  }, [hasNestedPending]);
 
   const preview = previewArguments(item.name, item.argumentsText);
   const subtitle = headerSubtitle(item.name, item.argumentsText);
@@ -357,13 +342,14 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
         </div>
       )}
 
-      {/* Subagent card: always visible (not hidden after completion, only collapsed by default), unaffected by the tool card's collapsed state. Rendered below the expanded arguments/output so the nested conversation reads after the tool call's own content, not between the header and its details; pt-2 keeps a gap from the tinted args/output blocks above. */}
+      {/* Subagent row: always visible (unaffected by the tool card's collapsed state) below the expanded arguments/output — a full-width shortcut bar into the subagents panel; the nested conversation no longer renders inline. */}
       {item.subagent && (
         <div className="px-3 pb-2 pt-2">
-          <SubagentCard
+          <SubagentChip
             sessionId={item.subagentSessionId ?? ""}
             model={item.subagent}
             running={!item.outputComplete}
+            agentId={agentIdFromRunSubagentArgs(item.argumentsText)}
             ctx={ctx}
           />
         </div>

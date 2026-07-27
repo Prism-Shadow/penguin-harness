@@ -697,6 +697,7 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     statsLabel: "统计信息",
     removeImage: "移除图片",
     openWorkspace: "打开工作区",
+    openAgents: "智能体面板",
     /** File summary card at the end of a message (Codex-style): title, inline preview action, and collapsed row. */
     filesInMessage: (n: number) => `${n} 个文件`,
     openPreview: "点击预览",
@@ -776,6 +777,16 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
       budget_limited: "预算耗尽",
       aborted: "已中断",
     } as Record<string, string>,
+  },
+
+  /** Subagents side panel: call-graph of the latest Task + the selected child conversation. */
+  subagentPanel: {
+    title: "智能体面板",
+    topologyLabel: "调用关系",
+    mainSessionNote: "主会话请在对话区查看",
+    empty: "本次任务尚未派生子智能体",
+    nodeRunning: "运行中",
+    nodeDone: "已完成",
   },
 
   files: {
