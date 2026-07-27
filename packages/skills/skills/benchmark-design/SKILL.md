@@ -3,8 +3,8 @@ name: benchmark-design
 description: Design and calibrate a multi-Case capability Benchmark with repeated independent evaluations and a traceable baseline.
 short_description: Design and calibrate an Agent capability Benchmark.
 short_description_zh: 设计并校准 Agent 能力评测 Benchmark。
-version: 6
-updated: 2026-07-27T00:00:00Z
+version: 7
+updated: 2026-07-27T04:03:04Z
 ---
 
 # Benchmark Design
@@ -111,6 +111,8 @@ A Statement describes:
 Do not directly provide reasoning, mappings, or rules that the Agent is expected to derive.
 
 During Pilot calibration, Statements, supporting materials, Rubrics, Gold answers, Case sets, and point allocations may change. Every such change invalidates the previous Pilot result and requires a new Pilot evaluation and a new semantic isolation review before that evaluation.
+
+Use observed Pilot behavior to identify capability gaps and choose the difficulty dimension to adjust. Do not define or revise an expected outcome, private rule, mapping, or Gold solely to contradict an observed answer or known default policy. When a task uses latent environment rules, choose them through an Agent-independent procedure and hold them fixed for each evaluated iteration.
 
 Do not lower the score by tightening only the Rubric around an observed Test Agent answer. When a new scoring expectation is necessary, make the required behavior clear in the Statement, ensure the public evidence makes it answerable, update the Rubric consistently, and rerun the Pilot.
 

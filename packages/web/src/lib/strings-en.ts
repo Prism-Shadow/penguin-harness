@@ -657,11 +657,14 @@ state the capability failure the adjustment should expose. Update the Statements
 private mappings, Gold answers, and Rubrics consistently. After every Pilot artifact change,
 complete a semantic-isolation review before the next evaluation.
 
-Pilot results are provisional and must not be written to the Scoreboard. The Builder may choose
-private mappings that discriminate against the Test Agent's public default policy, but it must not
+Pilot results are provisional and must not be written to the Scoreboard. Use observed Pilot
+behavior only to identify capability gaps and choose the difficulty dimension to adjust. Do not
+define or revise an expected outcome, private rule, mapping, or Gold solely to contradict an
+observed answer or known default policy. When the task uses latent environment rules, choose them
+through an Agent-independent procedure and hold them fixed for each evaluated iteration. Do not
 lower the score only by tightening a Rubric around an observed answer. If a new scoring expectation
-requires a definitive choice, the public Statement must require that behavior and the materials must
-provide enough evidence to make it answerable.
+requires a definitive choice, the public Statement must require that behavior and the materials
+must provide enough evidence to make it answerable.
 
 Stop Pilot calibration early when the result is below 70. If the third iteration result is not below
 70, or no credible capability-relevant adjustment remains, report the limitation. Once the
@@ -718,9 +721,10 @@ Do not change multiple strategy families in one Candidate. In each round:
 4. accept only a strictly higher score, otherwise roll back;
 5. use each accepted Candidate as the next Reference.
 
-This experiment permits writing a context-to-action mapping learned from black-box scores into the
-Agent State when it is reusable across similar instances. Do not write Case IDs, exact instance
-answers, or per-question answer tables.
+This experiment permits writing a stable environment-level policy learned from repeated black-box
+scores and score-linked Traces into the Agent State when it applies across comparable instances.
+Do not write Case IDs, exact instance answers, per-question lookup tables, private scoring
+conditions, or a rule supported by only one observation.
 
 Continue until the total score reaches at least 85, and retain the highest-scoring valid version.
 

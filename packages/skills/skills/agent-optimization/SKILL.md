@@ -3,8 +3,8 @@ name: agent-optimization
 description: Improve an Agent State from versioned Benchmark scores and score-linked Traces.
 short_description: Improve an Agent from measured Benchmark results.
 short_description_zh: 根据 Benchmark 结果改进 Agent。
-version: 6
-updated: 2026-07-27T00:00:00Z
+version: 7
+updated: 2026-07-27T04:03:04Z
 ---
 
 # Agent Optimization
@@ -53,7 +53,7 @@ Make the smallest complete edit supported by evidence and preserve unrelated con
 - Do not edit `system_prompt` unless the user explicitly asks.
 - Do not modify a library-provided Skill to carry target-specific behavior.
 
-Every change must generalize beyond the observed run. Do not encode Case ids, expected answers, Benchmark-specific constants, private scoring conditions, or rules that apply to only one Case. Prefer improving general analysis, validation, and execution methods over memorizing Benchmark answers. Do not turn one high-scoring Trace's apparent choice into an unconditional domain rule; prefer a conditional analysis procedure that determines which semantics the available evidence supports.
+Every change must apply beyond a single observed instance. A Candidate may encode a stable environment-level policy learned through repeated black-box evaluation when that policy applies across multiple comparable instances in the frozen Benchmark. Do not encode Case ids, exact instance answers, per-question lookup tables, private scoring conditions, or a rule supported by only one observation. Prefer conditional policies and validation procedures over memorizing isolated outputs. Do not turn one high-scoring Trace's apparent choice into an unconditional rule.
 
 ## Snapshot, version, and rollback
 
