@@ -206,13 +206,28 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
       : failed
         ? "failed"
         : "done";
+  // Decision wording ("Approved · manual" / "已拒绝 · 手动" …): carried ONLY by the left status
+  // icon's title/aria-label — per review the row shows no visible decision text at any
+  // breakpoint; the icon is the single source of truth for how the call was decided.
+  const decisionText = item.decision
+    ? `${item.decision === "allow" ? S.chat.decisionAllow : S.chat.decisionDeny} · ${
+        item.decisionSource === "manual" ? S.chat.decisionManual : S.chat.decisionAuto
+      }`
+    : null;
+  // A user denial reports stop_reason "aborted" on the output it feeds back; that abort IS the
+  // decision, not an independent outcome — the icon reads "Denied", and no separate "aborted"
+  // badge repeats it. A user-abort of a RUNNING tool carries no deny decision and keeps its own
+  // "aborted" marker (the stop-reason branch below).
+  const deniedByUser = item.decision === "deny" && item.outputStopReason === "aborted";
   const stateLabel = pending
     ? S.chat.approvalWaiting
     : state === "running"
       ? S.chat.workRunning
       : state === "done"
-        ? S.chat.workDone
-        : (item.outputStopReason ?? item.callStopReason);
+        ? (decisionText ?? S.chat.workDone)
+        : deniedByUser
+          ? (decisionText ?? undefined)
+          : (item.outputStopReason ?? item.callStopReason);
 
   return (
     <div>
@@ -256,23 +271,20 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
             )
           ) : null}
         </span>
+        {/* Below sm only the amber hourglass StatusIcon (labeled) marks the wait: the text would
+            crowd the one-line row out of a phone's width. */}
         {pending && (
-          <span className="shrink-0 font-mono text-xs text-amber-600 dark:text-amber-400">
+          <span className="hidden shrink-0 font-mono text-xs text-amber-600 sm:inline dark:text-amber-400">
             {S.chat.approvalWaiting}
           </span>
         )}
         {item.callStopReason && item.callStopReason !== "completed" && (
           <Badge tone={stopReasonTone(item.callStopReason)}>{item.callStopReason}</Badge>
         )}
-        {item.outputStopReason && item.outputStopReason !== "completed" && (
+        {/* Writing "aborted" next to the Denied pill would state the same outcome twice — see
+            deniedByUser above. */}
+        {item.outputStopReason && item.outputStopReason !== "completed" && !deniedByUser && (
           <Badge tone={stopReasonTone(item.outputStopReason)}>{item.outputStopReason}</Badge>
-        )}
-        {item.decision && (
-          <Badge tone={item.decision === "allow" ? "green" : "red"}>
-            {item.decision === "allow" ? S.chat.decisionAllow : S.chat.decisionDeny}
-            {" · "}
-            {item.decisionSource === "manual" ? S.chat.decisionManual : S.chat.decisionAuto}
-          </Badge>
         )}
         <span className="min-w-0 flex-1" />
         {/* Expand indicator on the right */}
@@ -282,11 +294,16 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
       {/* Pending approval: always visible regardless of collapsed state — shows the tool name and arguments so the user knows what they're approving. */}
       {pending && (
         <div className="border-t border-gray-100 bg-amber-50 px-3 py-2 dark:border-gray-800 dark:bg-amber-950/30">
-          <div className="mb-2 flex flex-wrap items-center gap-2">
+          {/* The user must be able to read the FULL command before deciding: below sm the
+              preview wraps in whole (expanded-args style: pre-wrap + break-all, no inner
+              scroll, the block may grow) — the one-line treatment resumes once decided, since
+              this pending block unmounts and only the truncating header subtitle remains. At
+              ≥sm the row stays one line (the desktop column is wide enough in practice). */}
+          <div className="mb-2 flex items-start gap-2 sm:items-center">
             <span className="shrink-0 rounded-md bg-white px-1.5 py-0.5 font-mono text-xs font-semibold text-gray-700 dark:bg-gray-900 dark:text-gray-300">
               {item.name || S.chat.unknownTool}
             </span>
-            <span className="min-w-0 flex-1 truncate font-mono text-xs text-gray-600 dark:text-gray-400">
+            <span className="min-w-0 flex-1 whitespace-pre-wrap break-all font-mono text-xs text-gray-600 sm:truncate dark:text-gray-400">
               {preview}
             </span>
           </div>

@@ -4,11 +4,15 @@
  * in real time from the current Model's pricing, hidden if no pricing is configured); all five
  * share the same basis (this turn's usage), each expressed uniformly as icon + value (no text
  * labels); the reply timestamp and a copy button sit at the end (copies this turn's assistant
- * text, falling back to the stats themselves when there's no text).
- * The whole line is invisible but takes up space by default, surfacing only on hovering the
- * reply or the line itself — matching the same convention, font size, and color as the user
+ * text, falling back to the stats themselves when there's no text). Below sm the row is slimmed
+ * to fit the width: the TPS chip is dropped and cost/elapsed lose excess decimals (compact
+ * formatter variants); desktop shows all five, formatted as always.
+ * At ≥sm the whole line is invisible but takes up space by default, surfacing only on hovering
+ * the reply or the line itself — matching the same convention, font size, and color as the user
  * message footer: the AI's footer sits bottom-left, the user's sits bottom-right, symmetric on
- * both sides.
+ * both sides. Below sm the line is always visible: phones have no hover (Tailwind v4 even gates
+ * hover: variants behind `@media (hover: hover)`), so a hover-revealed footer would simply
+ * never appear there.
  * Arrow direction reads as "where the tokens go": **up arrow = input** (sent up to the model),
  * **down arrow = output** (returned by the model).
  * This line only answers "how much did this turn cost", **it doesn't break down the cache
@@ -36,12 +40,36 @@ import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { useTheme } from "../../state/theme";
 import { useLocale } from "../../state/locale";
 
-/** Icon + value; hover explains what this item is (the icon alone doesn't convey the exact meaning). */
-function StatChip({ icon, value, label }: { icon: string; value: string; label: string }) {
+/**
+ * Icon + value; hover explains what this item is (the icon alone doesn't convey the exact
+ * meaning). `display` swaps the default `flex` for a responsive variant (the TPS chip is
+ * `hidden sm:flex`); `compactValue`, when it differs, replaces the value below sm — fewer
+ * decimals so the one-line stats row fits a phone without needing its scroll fallback.
+ */
+function StatChip({
+  icon,
+  value,
+  compactValue,
+  label,
+  display = "flex",
+}: {
+  icon: string;
+  value: string;
+  compactValue?: string;
+  label: string;
+  display?: string;
+}) {
   return (
-    <span title={label} aria-label={label} className="flex items-center gap-1">
+    <span title={label} aria-label={label} className={`${display} items-center gap-1`}>
       <GlyphIcon d={icon} />
-      {value}
+      {compactValue !== undefined && compactValue !== value ? (
+        <>
+          <span className="sm:hidden">{compactValue}</span>
+          <span className="hidden sm:inline">{value}</span>
+        </>
+      ) : (
+        value
+      )}
     </span>
   );
 }
@@ -87,53 +115,67 @@ export function TaskStatsLine({
     });
   };
 
-  // The whole line is invisible but **takes up space** by default (opacity-0, not hidden) —
-  // matching the user message footer's convention: only appears on hover, and because the space
-  // is always reserved, appearing never pushes content below it down. Font size/color also match
-  // that footer; the AI's footer sits bottom-left, the user's sits bottom-right, symmetric.
+  // ≥sm: invisible but **space-reserved** by default (sm:opacity-0, not hidden) — the user
+  // footer's hover-reveal convention; because the space is always reserved, appearing never
+  // pushes content below it down. Below sm the line is ALWAYS visible: hover doesn't exist on
+  // touch screens (and Tailwind v4 scopes hover: variants to `@media (hover: hover)`), so the
+  // hover gating made the stats unreachable on phones.
+  // One line always (no flex-wrap): with the fixed h-5, wrapped chips used to paint over the
+  // content below on phones. Below sm the row is slimmed to FIT rather than scroll: the TPS
+  // chip (the least decision-relevant number here) is dropped, the cost/elapsed values lose
+  // excess decimals, and the chip gap tightens one step — the en timestamp + priced row was
+  // otherwise ~7px over a 390 viewport. The sideways scroll (hidden scrollbar) stays only as
+  // the fallback for extreme values; at ≥sm everything fits and the scroll container is inert.
+  // The copy button sits outside the scrollable span, so it stays pinned at the row's end
+  // instead of scrolling out of reach.
   return (
-    <div className="-mt-2 flex h-5 flex-wrap items-center justify-start gap-x-3 text-[11px] text-gray-400 opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100 dark:text-gray-500">
-      {/* Timestamp leads: it's this reply's identity (when it was said), the stat numbers are an
-          annotation. When this turn has no token_usage (reply was aborted), only the timestamp
-          and copy remain — nothing is fabricated for what wasn't measured. */}
-      {atMs !== undefined && <span>{formatMessageTime(atMs, locale)}</span>}
-      {stats && b && (
-        <>
-          <StatChip
-            icon={STAT_ICONS.input}
-            value={humanizeTokens(input)}
-            label={S.chat.statInput}
-          />
-          <StatChip
-            icon={STAT_ICONS.output}
-            value={humanizeTokens(b.output)}
-            label={S.chat.statOutput}
-          />
-          <StatChip
-            icon={STAT_ICONS.tps}
-            value={formatTps(stats.outputTps)}
-            label={S.chat.statTps}
-          />
-          {cost != null && (
+    <div className="-mt-2 flex h-5 items-center justify-start gap-x-2 overflow-hidden whitespace-nowrap text-[11px] text-gray-400 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100 sm:gap-x-3 sm:opacity-0 dark:text-gray-500">
+      <span className="no-scrollbar flex min-w-0 items-center gap-x-2 overflow-x-auto sm:gap-x-3">
+        {/* Timestamp leads: it's this reply's identity (when it was said), the stat numbers are an
+            annotation. When this turn has no token_usage (reply was aborted), only the timestamp
+            and copy remain — nothing is fabricated for what wasn't measured. */}
+        {atMs !== undefined && <span>{formatMessageTime(atMs, locale)}</span>}
+        {stats && b && (
+          <>
             <StatChip
-              icon={STAT_ICONS.cost}
-              value={formatMoney(cost, currency)}
-              label={`${S.common.cost}（${currency}）`}
+              icon={STAT_ICONS.input}
+              value={humanizeTokens(input)}
+              label={S.chat.statInput}
             />
-          )}
-          <StatChip
-            icon={STAT_ICONS.elapsed}
-            value={humanizeDuration(stats.elapsedDeltaMs)}
-            label={S.chat.statElapsed}
-          />
-        </>
-      )}
+            <StatChip
+              icon={STAT_ICONS.output}
+              value={humanizeTokens(b.output)}
+              label={S.chat.statOutput}
+            />
+            <StatChip
+              icon={STAT_ICONS.tps}
+              value={formatTps(stats.outputTps)}
+              label={S.chat.statTps}
+              display="hidden sm:flex"
+            />
+            {cost != null && (
+              <StatChip
+                icon={STAT_ICONS.cost}
+                value={formatMoney(cost, currency)}
+                compactValue={formatMoney(cost, currency, { compact: true })}
+                label={`${S.common.cost}（${currency}）`}
+              />
+            )}
+            <StatChip
+              icon={STAT_ICONS.elapsed}
+              value={humanizeDuration(stats.elapsedDeltaMs)}
+              compactValue={humanizeDuration(stats.elapsedDeltaMs, { compact: true })}
+              label={S.chat.statElapsed}
+            />
+          </>
+        )}
+      </span>
       <button
         type="button"
         title={copied ? S.common.copied : S.chat.copyReply}
         aria-label={S.chat.copyReply}
         onClick={copy}
-        className="flex h-5 w-5 items-center justify-center rounded transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+        className="flex h-5 w-5 shrink-0 items-center justify-center rounded transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"
       >
         <GlyphIcon d={copied ? STAT_ICONS.check : STAT_ICONS.copy} />
       </button>

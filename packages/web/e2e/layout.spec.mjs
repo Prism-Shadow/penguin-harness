@@ -480,6 +480,138 @@ test("layout: mobile chat dropdowns stay inside the viewport", async ({ page }) 
     running.clientWidth,
   );
   await expect(page.locator('button[aria-label="Stop"]')).toBeVisible();
+
+  // Running + pending approval at 390x844: every running-state row must stay one line below
+  // sm — the page must not scroll sideways, the work-group header must not wrap to a second
+  // line, and the Allow/Deny action buttons read as text at every breakpoint (per review:
+  // buttons the user presses must be words, iconic shorthand is for passive indicators only).
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForTimeout(200);
+  const d390 = await docWidths(page);
+  expect(d390.scrollWidth, "running @390 no horizontal overflow").toBeLessThanOrEqual(
+    d390.clientWidth,
+  );
+  // Single line = ~33px (py-2 + one text line); a wrapped header would measure ~48px+.
+  const workHeader = page.locator("button[aria-expanded]").filter({ hasText: "Running" }).first();
+  expect(
+    await workHeader.evaluate((el) => el.clientHeight),
+    "work-group header stays single-line @390",
+  ).toBeLessThanOrEqual(40);
+  await expect(page.getByRole("button", { name: /^Allow$/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Deny$/ })).toBeVisible();
+  // The words themselves are rendered — not a glyph with an aria-label.
+  await expect(page.getByRole("button", { name: /^Allow$/ })).toHaveText("Allow", {
+    useInnerText: true,
+  });
+  await expect(page.getByRole("button", { name: /^Deny$/ })).toHaveText("Deny", {
+    useInnerText: true,
+  });
+  expect(await textOverlapCount(page), "running @390 no overlapping text").toBe(0);
+
+  // While PENDING the one-line rule yields on purpose: the user must read the whole command
+  // before deciding, so below sm the preview wraps in full (pre-wrap, no truncation, the block
+  // may grow) instead of clipping.
+  const pendingPreview = page.getByText("$ ls -la").first();
+  await expect(pendingPreview, "full command shown while pending @390").toBeVisible();
+  const pv = await pendingPreview.evaluate((el) => ({
+    whiteSpace: getComputedStyle(el).whiteSpace,
+    clipped: el.scrollWidth > el.clientWidth + 1,
+  }));
+  expect(pv.whiteSpace, "pending preview wraps below sm").toBe("pre-wrap");
+  expect(pv.clipped, "pending preview not clipped @390").toBe(false);
+
+  // Approve and let the turn finish: the per-reply stats footer must keep to its one fixed
+  // line at 390 (it used to wrap its chips onto a clipped second row that painted over the
+  // content below). On phones the row is slimmed to FIT: TPS is dropped and cost/elapsed use
+  // compact decimals, the hidden-scrollbar sideways scroll remaining only as a fallback; the
+  // copy button sits outside the scroll area so it can't scroll out of reach.
+  await page.getByRole("button", { name: /^Allow$/ }).click();
+  await expect(page.getByText("Command finished; the result looks as expected.")).toBeVisible();
+  const footer = page.getByRole("button", { name: "Copy reply" }).first().locator("xpath=..");
+  // Below sm the footer is ALWAYS visible at rest (no hover on touch screens — hover-gated
+  // opacity meant phones could never see the stats at all); ≥sm keeps the hover reveal, which
+  // chat.spec asserts at desktop width.
+  await page.mouse.move(0, 0);
+  await expect(footer, "stats footer visible at rest @390").toHaveCSS("opacity", "1");
+  // The USER message's footer (time + copy, bubble bottom-right) gets the same treatment:
+  // always visible below sm, since touch has no hover to reveal it with.
+  const userCopy = page.getByRole("button", { name: "Copy message" }).first();
+  await expect(userCopy, "user copy button visible at rest @390").toBeVisible();
+  await expect(userCopy.locator("xpath=.."), "user footer visible at rest @390").toHaveCSS(
+    "opacity",
+    "1",
+  );
+  // Chips at 390: input/output/elapsed shown (no pricing configured -> no cost chip); TPS is
+  // deliberately dropped below sm to keep the row inside the width.
+  for (const chip of ["Input tokens", "Output tokens", "Elapsed"]) {
+    await expect(footer.locator(`[title="${chip}"]`), `${chip} chip present @390`).toBeVisible();
+  }
+  await expect(footer.locator('[title="Output TPS"]'), "TPS chip in DOM").toHaveCount(1);
+  await expect(footer.locator('[title="Output TPS"]'), "TPS chip hidden @390").toBeHidden();
+  // With TPS dropped and compact decimals the common case FITS at 390 — no sideways scroll
+  // needed (the scroll container remains only as a fallback for extreme values).
+  const statsSpan = footer.locator("span").first();
+  const fit = await statsSpan.evaluate((el) => ({ sw: el.scrollWidth, cw: el.clientWidth }));
+  expect(fit.sw, "stats row fits @390 without scrolling").toBeLessThanOrEqual(fit.cw + 1);
+  const footerH = await footer.evaluate((el) => ({
+    client: el.clientHeight,
+    scroll: el.scrollHeight,
+  }));
+  expect(footerH.scroll, "stats footer stays single-line @390").toBeLessThanOrEqual(
+    footerH.client + 1,
+  );
+  const copyBox = await page.getByRole("button", { name: "Copy reply" }).first().boundingBox();
+  expect(copyBox.x, "copy button not pushed off-screen left @390").toBeGreaterThanOrEqual(0);
+  expect(copyBox.x + copyBox.width, "copy button pinned on-screen @390").toBeLessThanOrEqual(390);
+  // Inner scroll containers are fine; the page itself must not gain a sideways scroll.
+  const dDone = await docWidths(page);
+  expect(dDone.scrollWidth, "finished @390 no horizontal overflow").toBeLessThanOrEqual(
+    dDone.clientWidth,
+  );
+
+  // The decision lives ONLY in the tool card's left status icon: "Approved · manual" on the
+  // icon's title/aria-label, zero visible decision text on the row (the right-side indicator
+  // was removed per review), and the header stays one line.
+  await page.locator("button[aria-expanded]").filter({ hasText: "Done" }).last().click();
+  const decided = page.locator('[aria-label="Approved · manual"]').first();
+  await expect(decided, "status icon carries the decision @390").toBeVisible();
+  const toolHeader = page.locator("button[aria-expanded]", { has: decided }).first();
+  await expect(
+    toolHeader.getByText(/Approved|Denied/).filter({ visible: true }),
+    "no visible decision text on the card",
+  ).toHaveCount(0);
+  expect(
+    await toolHeader.evaluate((el) => el.clientHeight),
+    "tool-card header stays single-line @390",
+  ).toBeLessThanOrEqual(40);
+  expect(await textOverlapCount(page), "finished @390 no overlapping text").toBe(0);
+
+  // A DENIED call must state its outcome once, not twice: the deny path itself reports
+  // stop_reason "aborted", so the left status icon alone carries "Denied · manual"
+  // (title/aria-label) and the redundant "aborted" badge is dropped. Fresh session: the mock
+  // answers with plain text once any tool_result exists in the history.
+  const sess2 = await (
+    await page.request.post(`${BASE}/api/projects/${projectId}/agents/default_agent/sessions`, {
+      data: { provider: "custom", modelId: "claude-4-8", approvalMode: "always-ask" },
+    })
+  ).json();
+  await page.goto(`${BASE}/chat/${sess2.session.sessionId}`);
+  await page.getByPlaceholder(/Type a message/).fill("Help me check the directory");
+  await page.locator('button[aria-label="Send"]').click();
+  await page.getByRole("button", { name: /^Deny$/ }).click();
+  await expect(page.getByText("Command finished; the result looks as expected.")).toBeVisible();
+  await page.locator("button[aria-expanded]").filter({ hasText: "Done" }).last().click();
+  const denied = page.locator('[aria-label="Denied · manual"]').first();
+  await expect(denied, "status icon carries the denial @390").toBeVisible();
+  const deniedHeader = page.locator("button[aria-expanded]", { has: denied }).first();
+  await expect(
+    deniedHeader.getByText("aborted"),
+    "no duplicate aborted badge on a denied call",
+  ).toHaveCount(0);
+  expect(
+    await deniedHeader.evaluate((el) => el.clientHeight),
+    "denied card header stays single-line @390",
+  ).toBeLessThanOrEqual(40);
 });
 
 test("layout: login — blank start, non-crossing traces, lang/theme controls", async ({ page }) => {

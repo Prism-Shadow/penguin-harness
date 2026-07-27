@@ -41,11 +41,14 @@ const USER_STEERING_ICON =
   "M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0";
 
 /**
- * Message footer: timestamp + copy. **Invisible but takes up space by default** (`opacity-0`
- * rather than `hidden`) — it surfaces on hovering the message list, and because the space is
- * always reserved, surfacing it never pushes content below it down (using `hidden` would cause
- * every item to jitter). Keyboard users can also reveal it via `focus-within` (otherwise the copy
- * button would be focusable but never visible).
+ * Message footer: timestamp + copy. At ≥sm it is **invisible but takes up space by default**
+ * (`sm:opacity-0` rather than `hidden`) — it surfaces on hovering the message list, and because
+ * the space is always reserved, surfacing it never pushes content below it down (using `hidden`
+ * would cause every item to jitter). Keyboard users can also reveal it via `focus-within`
+ * (otherwise the copy button would be focusable but never visible). Below sm the footer is
+ * always visible — hover doesn't exist on touch screens (and Tailwind v4 scopes hover: variants
+ * to `@media (hover: hover)`), so a hover-revealed footer would simply never appear on phones;
+ * same treatment as the AI reply's stats footer.
  *
  * When `text` is omitted, only the timestamp is shown, no copy button — there's no clear meaning
  * to copying an image message.
@@ -69,7 +72,7 @@ function MessageMeta({
   };
   return (
     <div
-      className={`flex h-5 items-center gap-2 opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100 ${
+      className={`flex h-5 items-center gap-2 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100 sm:opacity-0 ${
         align === "right" ? "justify-end" : "justify-start"
       }`}
     >

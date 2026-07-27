@@ -829,11 +829,15 @@ export function ChatPage() {
             <h1 className="flex min-w-0 text-[15px] font-semibold">
               <Truncated text={selected.title ?? S.chat.defaultSessionTitle} />
             </h1>
-            {/* Running indicator (placed to the right of the title); the compacting state is shown separately by the compaction banner within the message stream, not repeated here. */}
+            {/* Running indicator (placed to the right of the title); the compacting state is shown separately by the compaction banner within the message stream, not repeated here.
+                Below sm only the pulsing dot remains (title carries the wording) — the text would eat the title's room on phones. */}
             {stream.taskState === "running" && (
-              <span className="flex shrink-0 items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+              <span
+                title={S.chat.statusRunning}
+                className="flex shrink-0 items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400"
+              >
                 <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
-                {S.chat.statusRunning}
+                <span className="hidden sm:inline">{S.chat.statusRunning}</span>
               </span>
             )}
           </div>
@@ -864,6 +868,7 @@ export function ChatPage() {
             aria-expanded={filesPanel.open}
             onClick={() => filesPanel.setOpen(!filesPanel.open)}
             title={S.chat.openWorkspace}
+            aria-label={S.chat.openWorkspace}
             className={`flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors duration-150 ${
               filesPanel.open
                 ? "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200"
@@ -881,7 +886,9 @@ export function ChatPage() {
             >
               <path d={STAT_ICONS.folder} />
             </svg>
-            {S.chat.openWorkspace}
+            {/* Below sm the button is icon-only (title/aria keep the name): the label plus the
+                running indicator squeezed the session title to nothing on phones. */}
+            <span className="hidden sm:inline">{S.chat.openWorkspace}</span>
           </button>
 
           {/* Details popup: Model / Workspace / created time / stats */}

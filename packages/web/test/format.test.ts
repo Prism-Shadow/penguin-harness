@@ -49,6 +49,14 @@ describe("humanizeDuration", () => {
     expect(humanizeDuration(63000)).toBe("1m3s");
     expect(humanizeDuration(130000)).toBe("2m10s");
   });
+
+  it("compact (narrow screens) drops the tenths from 10s up, keeps them below", () => {
+    expect(humanizeDuration(12700, { compact: true })).toBe("13s");
+    expect(humanizeDuration(59400, { compact: true })).toBe("59s");
+    expect(humanizeDuration(1700, { compact: true })).toBe("1.7s");
+    expect(humanizeDuration(820, { compact: true })).toBe("820ms");
+    expect(humanizeDuration(63000, { compact: true })).toBe("1m3s");
+  });
 });
 
 describe("signedDelta", () => {
@@ -76,6 +84,16 @@ describe("formatMoney", () => {
     expect(formatMoney(0, "CNY")).toBe("¥0");
     expect(formatMoney(1, "CNY")).toBe("¥7.00");
     expect(formatMoney(0.01, "CNY")).toBe("¥0.0700");
+  });
+
+  it("compact (narrow screens): sub-unit costs keep 2 significant digits, never rounding a nonzero cost to zero", () => {
+    expect(formatMoney(0.1234, "USD", { compact: true })).toBe("$0.12");
+    expect(formatMoney(0.0012, "USD", { compact: true })).toBe("$0.0012");
+    expect(formatMoney(0.00047, "USD", { compact: true })).toBe("$0.00047");
+    expect(formatMoney(1.5, "USD", { compact: true })).toBe("$1.50");
+    expect(formatMoney(150, "USD", { compact: true })).toBe("$150");
+    expect(formatMoney(0, "USD", { compact: true })).toBe("$0");
+    expect(formatMoney(0.01, "CNY", { compact: true })).toBe("¥0.07");
   });
 });
 
