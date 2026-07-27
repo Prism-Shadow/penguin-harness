@@ -1,10 +1,10 @@
 /**
  * Trace file export/import integration tests:
  * export serves the raw JSONL verbatim as an attachment (any member); import validates the
- * uploaded content (parseable JSONL, leading session_meta, filename-safe session_id), stores
- * it at the session's next free index — never overwriting — and the file is then browsable
- * through the existing tree/detail endpoints. Import is owner-only, mirroring the Agent
- * snapshot import.
+ * uploaded content (parseable JSONL, leading session_meta, filename-safe session_id) and
+ * always stores it as index 1 of a new Session — a session id the Agent already has is
+ * rejected with 409 trace_session_exists — and the file is then browsable through the
+ * existing tree/detail endpoints. Import is owner-only, mirroring the Agent snapshot import.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { OmniMessage, SessionMetaPayload } from "@prismshadow/penguin-core";
@@ -36,17 +36,32 @@ function metaPayload(sessionId: string): SessionMetaPayload {
 const rec = (timestamp: string, type: OmniMessage["type"], payload: unknown): OmniMessage =>
   ({ timestamp, type, payload }) as OmniMessage;
 
+/** First record's timestamp: 02:00 UTC, so on runners west of UTC the local date differs from the UTC date. */
+const FIRST_TS = "2026-07-06T02:00:00.000Z";
+
 function sampleTrace(sessionId: string): OmniMessage[] {
   return [
-    rec("2026-07-06T09:00:00.000Z", "session_meta", metaPayload(sessionId)),
-    rec("2026-07-06T09:00:01.000Z", "model_msg", {
+    rec(FIRST_TS, "session_meta", metaPayload(sessionId)),
+    rec("2026-07-06T02:00:01.000Z", "model_msg", {
       type: "text",
       role: "user",
       text: "imported input",
     }),
-    rec("2026-07-06T09:00:02.000Z", "event_msg", { type: "request_begin" }),
-    rec("2026-07-06T09:00:03.000Z", "event_msg", { type: "request_end", status: "completed" }),
+    rec("2026-07-06T02:00:02.000Z", "event_msg", { type: "request_begin" }),
+    rec("2026-07-06T02:00:03.000Z", "event_msg", { type: "request_end", status: "completed" }),
   ];
+}
+
+/**
+ * Local yyyy-mm-dd of a timestamp — the import derives its date dir with local-date
+ * formatting (core Trace Writer convention), not UTC. Computing the expectation the same
+ * way keeps these tests timezone-independent, and on a non-UTC runner they fail if the
+ * import regresses to UTC (FIRST_TS is chosen so the two dates differ west of UTC).
+ */
+function localDateOf(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 const toContent = (messages: OmniMessage[]): string =>
@@ -118,37 +133,58 @@ describe("trace-import-export", () => {
     expect((await outsider.get(`${base()}/${SID}/1/download`)).status).toBe(404);
   });
 
-  it("import: stores the file and it becomes browsable through the existing endpoints", async () => {
-    const res = await owner.post(`${base()}/import`, {
-      dataBase64: b64(toContent(sampleTrace(SID))),
-    });
+  it("import: stores the file as index 1 and it becomes browsable through the existing endpoints", async () => {
+    const content = toContent(sampleTrace(SID)).trimEnd(); // uploaded without a trailing newline
+    const res = await owner.post(`${base()}/import`, { dataBase64: b64(content) });
     expect(res.status).toBe(200);
     const body = (await res.json()) as TraceImportResponse;
-    expect(body).toEqual({ sessionId: SID, index: 1, date: "2026-07-06" });
-    // Appears in the drill-down tree under the date derived from the first record's timestamp.
+    expect(body).toEqual({ sessionId: SID, index: 1, date: localDateOf(FIRST_TS) });
+    // Appears in the drill-down tree under the local date derived from the first record's timestamp.
     const tree = (await (await owner.get(base())).json()) as AgentTracesResponse;
     expect(tree.dates).toHaveLength(1);
-    expect(tree.dates[0]!.date).toBe("2026-07-06");
+    expect(tree.dates[0]!.date).toBe(localDateOf(FIRST_TS));
     expect(tree.dates[0]!.sessions[0]!.sessionId).toBe(SID);
     expect(tree.dates[0]!.sessions[0]!.files.map((f) => f.index)).toEqual([1]);
     // Events are readable via the existing detail endpoint.
     const events = (await (await owner.get(`${base()}/${SID}/1`)).json()) as TraceEventsResponse;
     expect(events.total).toBe(4);
     expect((events.events[1]!.payload as { text: string }).text).toBe("imported input");
+    // Round-trip: the stored content is normalized to exactly one trailing newline.
+    expect(await (await owner.get(`${base()}/${SID}/1/download`)).text()).toBe(content + "\n");
   });
 
-  it("import: allocates the next free index and never overwrites existing files", async () => {
+  it("import: duplicate session id → 409 trace_session_exists, nothing written", async () => {
     const original = sampleTrace(SID);
-    // Existing files across two date dirs: the max index counts across all of them.
+    // An existing file in any date dir counts — even a different date than the upload's.
     await writeTraceFile(t.root, projectId, "default_agent", "2026-07-05", SID, 1, original);
-    await writeTraceFile(t.root, projectId, "default_agent", "2026-07-06", SID, 2, original);
-    const content = toContent(sampleTrace(SID)).trimEnd(); // uploaded without a trailing newline
-    const res = await owner.post(`${base()}/import`, { dataBase64: b64(content) });
-    expect(res.status).toBe(200);
-    expect(((await res.json()) as TraceImportResponse).index).toBe(3);
-    // Stored content is normalized to exactly one trailing newline; existing files are intact.
-    expect(await (await owner.get(`${base()}/${SID}/3/download`)).text()).toBe(content + "\n");
+    const res = await owner.post(`${base()}/import`, {
+      dataBase64: b64(toContent(sampleTrace(SID))),
+    });
+    expect(res.status).toBe(409);
+    expect(await errorCode(res)).toBe("trace_session_exists");
+    // Nothing was written: the tree still shows only the pre-existing file, intact.
+    const tree = (await (await owner.get(base())).json()) as AgentTracesResponse;
+    expect(tree.dates).toHaveLength(1);
+    expect(tree.dates[0]!.date).toBe("2026-07-05");
+    expect(tree.dates[0]!.sessions[0]!.files.map((f) => f.index)).toEqual([1]);
     expect(await (await owner.get(`${base()}/${SID}/1/download`)).text()).toBe(toContent(original));
+  });
+
+  it("import: concurrent imports of the same new session id — exactly one wins", async () => {
+    // Whichever request loses is rejected either by the pre-check (locateAll) or by the
+    // exclusive `wx` write (EEXIST → the same 409), so the observable outcome is
+    // deterministic even though the internal interleaving isn't: one 200, one 409, and
+    // exactly one stored file.
+    const content = toContent(sampleTrace(SID));
+    const [a, b] = await Promise.all([
+      owner.post(`${base()}/import`, { dataBase64: b64(content) }),
+      owner.post(`${base()}/import`, { dataBase64: b64(content) }),
+    ]);
+    expect([a.status, b.status].sort((x, y) => x - y)).toEqual([200, 409]);
+    expect(await errorCode(a.status === 409 ? a : b)).toBe("trace_session_exists");
+    const tree = (await (await owner.get(base())).json()) as AgentTracesResponse;
+    expect(tree.dates).toHaveLength(1);
+    expect(tree.dates[0]!.sessions[0]!.files.map((f) => f.index)).toEqual([1]);
   });
 
   it("import: malformed middle line → 400 invalid_trace", async () => {

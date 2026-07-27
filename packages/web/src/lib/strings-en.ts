@@ -834,6 +834,8 @@ When done, open index.html in a browser and self-test once.`,
     exportFile: "Export",
     importTrace: "Import Trace",
     importing: "Importing…",
+    /** Client-side pre-check before reading the picked file (same cap as the server's import route). */
+    fileTooLarge: "The file exceeds the 14MB limit.",
   },
 
   benchmark: {
@@ -888,6 +890,8 @@ When done, open index.html in a browser and self-test once.`,
       version_conflict: "The snapshot's version is not newer than the current one.",
       invalid_title: "The title is invalid.",
       invalid_trace: "This file is not a valid Trace file.",
+      trace_session_exists:
+        "This agent already has a Session with that id; a duplicate Trace cannot be imported.",
     },
   },
 };

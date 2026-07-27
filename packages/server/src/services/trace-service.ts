@@ -34,6 +34,7 @@ import type {
   UsageTrendPointInTrace,
 } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
+import { formatLocalDate } from "../internal/dates.js";
 
 const TRACE_FILE_RE = /^(.+)_(\d{3})\.jsonl$/;
 
@@ -734,9 +735,13 @@ export class TraceService {
    * Imports an uploaded Trace file (raw JSONL content). Validates the content itself —
    * parseable JSONL whose first record is a `session_meta` carrying a filename-safe
    * `session_id` (400 invalid_trace otherwise) — then writes it under the Agent's traces
-   * directory: date dir from the first record's timestamp (falling back to today, UTC),
-   * index = the session's highest existing index + 1, so an import **never overwrites**
-   * an existing file.
+   * directory as a **new Session**: a session id the Agent already has is rejected with
+   * 409 `trace_session_exists` (splicing a further index into an existing Session would
+   * corrupt its concatenated transcript, silently become its resume point, and could
+   * collide with a live Writer's rotation), so the imported file is always index 1. The
+   * date dir comes from the first record's timestamp (falling back to now), formatted as
+   * a **local** date — the same convention as core's Trace Writer — so an export →
+   * import round-trip lands in the same date dir on non-UTC servers.
    */
   async importTraceFile(
     projectId: string,
@@ -760,15 +765,32 @@ export class TraceService {
     if (typeof sessionId !== "string" || !IMPORT_SESSION_ID_RE.test(sessionId)) {
       throw invalid("session_meta carries a missing or invalid session_id.");
     }
+    const duplicate = () =>
+      new HttpError(
+        409,
+        "trace_session_exists",
+        `This Agent already has a Session with id ${sessionId}; a duplicate Trace cannot be imported.`,
+      );
+    if ((await this.locateAll(projectId, agentId, sessionId)).length > 0) throw duplicate();
     const ts = Date.parse(first.timestamp);
-    const date = (Number.isNaN(ts) ? new Date() : new Date(ts)).toISOString().slice(0, 10);
-    const existing = await this.locateAll(projectId, agentId, sessionId);
-    const index = (existing[existing.length - 1]?.index ?? 0) + 1;
+    const date = formatLocalDate(Number.isNaN(ts) ? new Date() : new Date(ts));
+    const index = 1;
     const dir = path.join(tracesDir(this.root, projectId, agentId), date);
     await fs.mkdir(dir, { recursive: true });
     const file = path.join(dir, `${sessionId}_${String(index).padStart(3, "0")}.jsonl`);
-    // Normalize to exactly one trailing newline (the JSONL convention the writer follows).
-    await fs.writeFile(file, content.replace(/\n+$/, "") + "\n", "utf8");
+    try {
+      // Normalize to exactly one trailing newline (the JSONL convention the writer
+      // follows). `wx` closes the check-then-write race: two concurrent imports of the
+      // same new session id both pass the locateAll check, but only one can create the
+      // file — the loser's EEXIST maps to the same 409 as the pre-check.
+      await fs.writeFile(file, content.replace(/\n+$/, "") + "\n", {
+        encoding: "utf8",
+        flag: "wx",
+      });
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "EEXIST") throw duplicate();
+      throw err;
+    }
     return { sessionId, index, date };
   }
 }

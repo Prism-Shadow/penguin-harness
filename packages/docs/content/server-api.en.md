@@ -135,7 +135,7 @@ On Session creation, `modelId` and `provider` are both-or-neither: send the comp
 | GET | /agents/:agentId/traces/:sessionId/:index/download | Download the raw Trace file (JSONL attachment) |
 | POST | /agents/:agentId/traces/import | Import a Trace file: `{dataBase64}` → `{sessionId, index, date}` |
 
-Trace download is available to any member; import is owner-only (like the Agent snapshot import, capped at 14MB). An imported file must be valid Trace JSONL whose first record is a `session_meta` with a filename-safe `session_id`; it lands in the date directory of its first record's timestamp at the session's next free index — existing files are never overwritten.
+Trace download is available to any member; import is owner-only (like the Agent snapshot import, capped at 14MB). An imported file must be valid Trace JSONL whose first record is a `session_meta` with a filename-safe `session_id`; a session id the Agent already has is rejected (409 `trace_session_exists`), so an imported file always becomes index 001 of a new Session, landing in the local date directory of its first record's timestamp.
 
 ### Session-Level Endpoints
 

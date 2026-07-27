@@ -8,7 +8,8 @@
  *     CLI-created Sessions) can be opened and read; access is enforced by requireProjectAccess.
  *   - POST /api/projects/:p/agents/:a/traces/import — uploads a Trace JSONL file (owner
  *     only, mirroring the Agent snapshot import); the file names itself via its
- *     session_meta and is stored at the session's next free index (never overwriting).
+ *     session_meta and always becomes index 001 of a new Session — a session id the
+ *     Agent already has is rejected with 409 trace_session_exists.
  */
 import { Hono } from "hono";
 import type { AppEnv } from "../../auth/middleware.js";

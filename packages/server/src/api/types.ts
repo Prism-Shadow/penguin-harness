@@ -889,9 +889,9 @@ export interface TraceImportRequest {
 export interface TraceImportResponse {
   /** Session id taken from the imported file's `session_meta`. */
   sessionId: string;
-  /** Allocated file index: the session's highest existing index + 1 (an import never overwrites an existing file). */
+  /** Allocated file index: always 1 — an import creates a new Session (a duplicate session id is rejected with 409 `trace_session_exists`). */
   index: number;
-  /** Date directory the file landed in (yyyy-mm-dd, from the first record's timestamp). */
+  /** Date directory the file landed in (local yyyy-mm-dd from the first record's timestamp, matching the Trace Writer's convention). */
   date: string;
 }
 

@@ -25,6 +25,14 @@ import { SkeletonList } from "../../components/ui/skeleton";
 import { TraceFileView } from "./trace-file-view";
 import type { TraceHighlight } from "./timeline-chart";
 
+/**
+ * Import file size cap, mirroring the server's route-side limit (agent-traces.ts).
+ * Checked on the raw picked file before it is read: base64-encoding an oversized
+ * pick and uploading it just to receive the server's 400 would materialize and
+ * send many times the cap for nothing.
+ */
+const MAX_TRACE_BYTES = 14 * 1024 * 1024;
+
 interface TraceFileRef {
   index: number;
   date: string;
@@ -116,8 +124,8 @@ function AgentNode({
   }, [groups, focusSessionId, agentId, onSelect]);
 
   // Post-import selection: once the refreshed list is in, select the imported
-  // Session — its files are newest-first and the import always lands at the
-  // session's highest index, so the default file pick is the imported file.
+  // Session — an import always creates a new Session whose only file is the
+  // imported one, so the default file pick is the imported file.
   useEffect(() => {
     const sid = importedSession.current;
     if (sid === null || !groups) return;
@@ -148,6 +156,10 @@ function AgentNode({
     e.target.value = "";
     if (!file) return;
     setImportError(null);
+    if (file.size > MAX_TRACE_BYTES) {
+      setImportError(S.traces.fileTooLarge);
+      return;
+    }
     const reader = new FileReader();
     reader.onload = () => {
       const url = reader.result as string;
