@@ -182,7 +182,9 @@ export class Session {
    */
   async *run(newMessages: OmniMessage[], opts?: SessionRunOptions): AsyncGenerator<OmniMessage> {
     if (opts?.goal) {
-      yield* this.runGoal(newMessages, opts.goal, opts);
+      // Rounds run with the caller's per-call options minus `goal` (each round is a plain Task).
+      const { goal, ...roundOpts } = opts;
+      yield* this.runGoal(newMessages, goal, roundOpts);
       return;
     }
     yield* this.runTask(newMessages, opts);
@@ -254,10 +256,8 @@ export class Session {
     }
     const text = texts.join("\n").trim();
     if (!text) throw new Error("Goal mode requires a non-empty objective.");
-    // Rounds run with the caller's per-call options minus `goal` (each round is a plain Task).
-    const { goal: _goal, ...roundOpts } = opts as SessionRunOptions;
     const loop = runGoalLoop(
-      { run: (msgs) => this.runTask(msgs, roundOpts) },
+      { run: (msgs) => this.runTask(msgs, opts) },
       {
         text,
         goalFilePath: this.goalFile,

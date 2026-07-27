@@ -11,19 +11,19 @@ import {
   emptyTokenCounts,
   goalFilePath,
   goalFinishedOf,
-  goalRoundMessage,
-  goalWrapUpMessage,
   isGoalRoundInput,
   parseGoalMessage,
-  readGoalStatus,
-  serializeGoalFile,
   stripConversationMarkers,
   tokenUsage,
   userText,
   withOrigin,
-  writeGoalFile,
 } from "../src/index.js";
-import type { GoalFile, GoalOutcome, OmniMessage, TokenCounts } from "../src/index.js";
+import type { GoalOutcome, OmniMessage, TokenCounts } from "../src/index.js";
+// The file protocol, prompt composition and the loop are internal to `session.run` (not part
+// of the SDK barrel); tests reach them through their modules directly.
+import { readGoalStatus, serializeGoalFile, writeGoalFile } from "../src/goal/goal-file.js";
+import type { GoalFile } from "../src/goal/goal-file.js";
+import { goalRoundMessage, goalWrapUpMessage } from "../src/goal/goal-prompts.js";
 import { runGoalLoop } from "../src/goal/goal-loop.js";
 import type { GoalRoundRunner } from "../src/goal/goal-loop.js";
 

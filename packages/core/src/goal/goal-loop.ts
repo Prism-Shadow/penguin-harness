@@ -29,7 +29,7 @@
  * the stream — including origin-marked ones from subagent sessions, which are part of the
  * goal's cost — contributes `request.total - request.cache_read`.
  */
-import { goalFinished, userText } from "../omnimessage/index.js";
+import { goalFinished, isEventMessage, isModelMessage, userText } from "../omnimessage/index.js";
 import type { GoalOutcomeStatus, OmniMessage } from "../omnimessage/index.js";
 import { stripLeadingMarkerBlocks } from "../omnimessage/markers/index.js";
 import { readGoalStatus, writeGoalFile, UNLIMITED_BUDGET } from "./goal-file.js";
@@ -67,11 +67,7 @@ export const GOAL_MAX_ROUNDS = 100;
 
 /** Whether this message is the **main** session's abort event (subagent aborts don't end the goal). */
 function isMainAbort(msg: OmniMessage): boolean {
-  return (
-    msg.type === "event_msg" &&
-    (msg.payload as { type?: string }).type === "abort" &&
-    (msg.origin?.length ?? 0) === 0
-  );
+  return isEventMessage(msg) && msg.payload.type === "abort" && (msg.origin?.length ?? 0) === 0;
 }
 
 /**
@@ -82,7 +78,7 @@ function isMainAbort(msg: OmniMessage): boolean {
  */
 function mainAssistantStopReason(msg: OmniMessage): string | null {
   if (msg.origin && msg.origin.length > 0) return null;
-  if (msg.type !== "model_msg" || (msg.payload as { type?: string }).type !== "text") return null;
+  if (!isModelMessage(msg) || msg.payload.type !== "text") return null;
   const p = msg.payload as { role?: string; stop_reason?: string };
   return p.role === "assistant" ? (p.stop_reason ?? "completed") : null;
 }
