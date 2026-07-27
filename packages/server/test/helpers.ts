@@ -66,7 +66,11 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
     cleanup: async () => {
       deps.channels.dispose();
       deps.db.close();
-      await fs.rm(root, { recursive: true, force: true });
+      // maxRetries: Windows can report ENOTEMPTY/EBUSY while handles from the test's own
+      // just-closed files (SQLite, trace writers) are still being released — Node's rm
+      // retries these codes with a delay. A plain rm was the top cause of ci-windows
+      // cascades (cleanup throws → hook timeout → "database is not open" in later files).
+      await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     },
   };
 }
