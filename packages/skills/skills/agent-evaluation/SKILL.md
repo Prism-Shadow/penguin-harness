@@ -4,7 +4,7 @@ description: Internal leaf worker that runs one specified Test Agent on one spec
 short_description: Run and score one isolated Benchmark Case.
 short_description_zh: 隔离执行并评分一个 Benchmark Case。
 version: 6
-updated: 2026-07-27T08:14:28Z
+updated: 2026-07-27T09:12:00Z
 ---
 
 # Agent Evaluation
@@ -58,17 +58,17 @@ PENGUIN_HOME="$(dirname "$PROJECT_DIR")" penguin run \
 
 Use the exact requested Agent, provider, model, and Workspace. Never fall back to another value. You may retry the launch once, but only when you can prove that the Test Agent did not start. There must be no new or changed Test Trace or Workspace file. If you are unsure, do not retry. At most two launch attempts may produce at most one Test Agent execution.
 
-A missing launcher, an unsafe-to-retry failure, or failure of the one safe retry is `cli_failed`, not score zero. A misrouted launch is never safe to retry.
+If the launch still fails after any safe retry, return `evaluation_failed`. Never retry when the Test Agent may already have started.
 
-Verify after the run that the State version and both directory snapshots are unchanged. Return `version_changed`, `invalid_statement`, or `invalid_rubric` on a mismatch.
+Verify after the run that the State version and both directory snapshots are unchanged. Return `version_changed` when the State version differs and `benchmark_invalid` when the Statement or Rubric differs.
 
-Inspect only new or changed Trace files. Parallel evaluations may create other new Traces; ignore any whose Workspace does not match this request. Bind exactly one root Test Trace whose `session_meta` also matches the Test Agent State path, provider, and model id. Exclude directly referenced child Session ids. Return `provenance_mismatch` if there is no unique valid match. Do not search unrelated Sessions to repair it.
+Inspect only new or changed Trace files. Parallel evaluations may create other new Traces; ignore any whose Workspace does not match this request. Bind exactly one root Test Trace whose `session_meta` also matches the Test Agent State path, provider, and model id. Exclude directly referenced child Session ids. Return `evaluation_failed` if there is no unique valid match.
 
 ## Score
 
 Inspect only the isolated Workspace, the bound Test Trace, and the private Rubric. Apply every scoring item and allowed equivalent. Keep Rubric contents, Gold answers, per-item scoring, and scoring rationale private.
 
-Test Agent output errors are scored behavior and return `status: ok`. Return `invalid_rubric` when the Rubric cannot be applied unambiguously and `invalid_score` when the result is non-finite or outside `0..case_max`.
+Test Agent output errors are scored behavior and return `status: ok`. Return `benchmark_invalid` when the Rubric cannot be applied unambiguously and `evaluation_failed` when the result is non-finite or outside `0..case_max`.
 
 Set `duration_ms` from the root Test Session. Compute cost from reliable final cumulative usage in that Session and directly referenced child Traces found in the same bounded pass. If the required data is unavailable, return `cost: null`. Missing cost data must not invalidate a score.
 
@@ -105,4 +105,11 @@ model_id: <model_id_or_null>
 failure_code: <stable_failure_code>
 ```
 
-Stable failure codes are `invalid_request`, `invalid_statement`, `invalid_rubric`, `cli_failed`, `provenance_mismatch`, `version_changed`, and `invalid_score`. Never include score, cost, duration, Session id, private data, or optimization advice on failure.
+Use four failure codes:
+
+- `invalid_request`: the request is incomplete or inconsistent.
+- `benchmark_invalid`: the Statement, Rubric, or scoring contract is invalid.
+- `version_changed`: the Test Agent version does not match the request or changed during evaluation.
+- `evaluation_failed`: launch failed after a safe retry, or Trace binding or scoring failed.
+
+Never include score, cost, duration, Session id, private data, or optimization advice on failure.

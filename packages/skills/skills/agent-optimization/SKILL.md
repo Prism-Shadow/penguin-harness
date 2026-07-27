@@ -4,7 +4,7 @@ description: Improve an Agent State through versioned scores and score-linked Tr
 short_description: Improve an Agent from measured Benchmark results.
 short_description_zh: 根据 Benchmark 结果改进 Agent。
 version: 7
-updated: 2026-07-27T08:54:43Z
+updated: 2026-07-27T09:12:00Z
 ---
 
 # Agent Optimization
@@ -63,7 +63,7 @@ model_id: <model_id>
 
 Accept one unambiguous protocol YAML document and ignore surrounding text. Never use Evaluator commentary, Rubric content, Gold answers, or per-item scoring as optimization evidence.
 
-If the Evaluator returns `invalid_request`, correct the request and send it again. The Test Agent has not run yet. Do not redispatch `cli_failed`; the Evaluator already used its safe launch retry. Do not redispatch `provenance_mismatch`; the Test Agent may already have run. An invalid protocol or any other evaluation failure leaves the matrix incomplete and stops optimization. Never convert a failure to score zero or repair the frozen Benchmark.
+For `invalid_request`, correct the request and resend it. For `version_changed`, discard the matrix and stop. `benchmark_invalid`, `evaluation_failed`, or an invalid protocol leaves the matrix incomplete and stops optimization. Never redispatch the cell, convert a failure to score zero, or repair the frozen Benchmark.
 
 ## Iterate and report
 

@@ -4,7 +4,7 @@ description: Design and calibrate a multi-Case capability Benchmark and establis
 short_description: Design and calibrate an Agent capability Benchmark.
 short_description_zh: 设计并校准 Agent 能力评测 Benchmark。
 version: 7
-updated: 2026-07-27T08:54:43Z
+updated: 2026-07-27T09:12:00Z
 ---
 
 # Benchmark Design
@@ -104,9 +104,9 @@ A wrong or missing Test Agent artifact is a valid scored result. Do not retry it
 When an evaluation returns `status: failed`:
 
 - For `invalid_request`, correct the request and resend it.
-- For `invalid_statement` or `invalid_rubric`, repair the affected Case, discard its invalidated Pilot results, and evaluate it again.
+- For `benchmark_invalid`, repair the affected Case, discard its invalidated Pilot results, and evaluate it again.
 - For `version_changed`, discard the current matrix and restart after the Agent version is stable.
-- For any other failure, stop the current matrix. Do not redispatch the cell or convert the failure into score zero.
+- For `evaluation_failed` or an invalid protocol, stop the current matrix. Do not redispatch the cell or convert the failure into score zero.
 
 If a Benchmark or scoring repair is required during Formal, abandon the Formal matrix, return to Pilot, freeze again, and rerun Formal from the beginning. A Formal Baseline requires a valid result for every Case and Run.
 
