@@ -4,7 +4,7 @@ description: Improve an Agent State through versioned scores and score-linked Tr
 short_description: Improve an Agent from measured Benchmark results.
 short_description_zh: 根据 Benchmark 结果改进 Agent。
 version: 7
-updated: 2026-07-27T09:57:04Z
+updated: 2026-07-27T11:08:12Z
 ---
 
 # Agent Optimization
@@ -13,11 +13,11 @@ Improve one Test Agent using public Statements, scores, and Test Traces as black
 
 ## Contract
 
-Require an explicit Test Agent and a Benchmark with a complete valid Formal Baseline. The top-level Session must provide `run_subagent`, and the current Agent must have the `agent-evaluation` Skill. If `run_subagent` is absent, return `missing_run_subagent`. If anything else is missing, stop and explain what is needed. Do not create a Baseline or fall back to direct evaluation.
+Require an explicit Test Agent and a frozen Benchmark with a complete valid Formal Baseline. The top-level Session must provide `run_subagent`, and the current Agent must have the `agent-evaluation` Skill. If `run_subagent` is absent, return `missing_run_subagent`; if another prerequisite is missing, stop and explain what is needed. Do not create a Baseline or evaluate the Test Agent directly.
 
-Resolve only the requested Test Agent and Benchmark under the `Project Dir` from the Environment. Freeze the Cases, Statements, supporting files, Rubrics, Gold answers, `runs`, and evaluation `(provider, model_id)` throughout optimization.
+A **Reference** is the Agent State currently kept as best, together with its complete Evaluation on the frozen Benchmark. Initially, use the Agent State version recorded by the Formal Baseline and require it to match the current Agent State.
 
-The Reference must match the current Agent State version and contain a complete Case × Run matrix. Run every Candidate on the same frozen Benchmark with the same evaluation Model. Do not change the Candidate or Benchmark during evaluation. If the matrix is incomplete or invalid, reject the Candidate. Keep it only when its aggregate score is strictly higher than the Reference.
+Evaluate every Candidate on the same frozen Case × Run matrix and evaluation Model. Accept it only when the matrix is complete and valid and its aggregate score is strictly higher than the Reference. An accepted Candidate and its Evaluation become the next Reference; otherwise restore the previous Reference.
 
 ## Evidence and boundaries
 
