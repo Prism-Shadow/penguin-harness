@@ -819,6 +819,209 @@ describe("context compaction", () => {
     expect(closureRepairs).toEqual([]);
   });
 
+  it("mid-task: a committed rejection absorbs the turn's tool outputs — retries never resend them, and an empty-handed abandonment ends the run", async () => {
+    // Issue #85, strict-provider scenario: the first committed attempt puts the turn's tool
+    // outputs (folded into the compaction input) into the old LLM object's history. From then
+    // on the retries must carry only the repairs and the Prompt — resending the outputs would
+    // be rejected as stale tool_results — and after the compaction is abandoned the
+    // continuation must not resend them either. Here the final rejection is empty (no repairs
+    // left to deliver) and no steering is queued, so the run ends at the failure: the context
+    // is intact and the next prompt continues from the committed state.
+    const llm1 = new ScriptedLLM(
+      [
+        // Turn 1: a tool call, over the threshold -> mid-task compaction.
+        {
+          messages: [toolCall({ name: "t", arguments: "{}", toolCallId: "ct" }), usage(150, 150)],
+        },
+        // Attempt 1: committed but rejected (tool call) -> absorbs [output(ct), prompt].
+        {
+          messages: [
+            assistantText("[summary]nope[/summary]"),
+            toolCall({ name: "t", arguments: "{}", toolCallId: "c1" }),
+          ],
+        },
+        // Attempts 2-5: committed but empty -> rejected; the base has shrunk to the Prompt.
+        { messages: [thinkingMessage("blank 2")] },
+        { messages: [thinkingMessage("blank 3")] },
+        { messages: [thinkingMessage("blank 4")] },
+        { messages: [thinkingMessage("blank 5")] },
+        // Next run after the abandonment: served by the same instance, plain prompt.
+        { messages: [assistantText("continuing"), usage(60, 900)] },
+      ],
+      "llm1",
+    );
+    let created = 0;
+    const trace = new Writer({ tracesDir: traces, sessionId: "sess_absorb" });
+    const engine = new ContextEngine({
+      llm: llm1,
+      environment: fakeEnvironment,
+      trace,
+      sessionMeta: metaMessage,
+      compaction: settings(),
+      createLLM: () => {
+        created += 1;
+        return new ScriptedLLM([], "llm2");
+      },
+      reconnectBackoffMs: 1,
+    });
+    const oldPath = trace.currentPath();
+
+    const out1 = await collect(engine.run([userText("task one")], { approve: allowAll }));
+
+    expect(compactionEvents(out1)[1]).toMatchObject({ type: "compaction_end", status: "failed" });
+    // The run ends at the empty-handed abandonment without an abort: the compaction failure
+    // is the whole story.
+    expect(payloadTypes(out1)).not.toContain("abort");
+    expect(llm1.calls).toHaveLength(6);
+    // Attempt 1 folds the turn's tool output in; attempt 2 carries the repair + Prompt but
+    // NOT the absorbed output; attempts 3-5 are Prompt-only.
+    expect(payloadTypes(llm1.calls[1]!)).toEqual(["tool_call_output", "text"]);
+    expect((llm1.calls[1]![0]!.payload as { tool_call_id?: string }).tool_call_id).toBe("ct");
+    expect(payloadTypes(llm1.calls[2]!)).toEqual(["tool_call_output", "text"]);
+    expect((llm1.calls[2]![0]!.payload as { tool_call_id?: string }).tool_call_id).toBe("c1");
+    expect(textOf(llm1.calls[2]![1]!)).toBe("COMPACT NOW");
+    for (let attempt = 3; attempt <= 5; attempt += 1) {
+      expect(llm1.calls[attempt]!.map(textOf)).toEqual(["COMPACT NOW"]);
+    }
+    // Original context kept: no LLM swap, no Trace rotation.
+    expect(created).toBe(0);
+    expect(trace.currentPath()).toBe(oldPath);
+
+    // The next run continues from the committed state: the absorbed outputs are not resent
+    // and nothing was stashed (the final rejection was empty).
+    await collect(engine.run([userText("task two")], { approve: allowAll }));
+    expect(llm1.calls[6]!.map(textOf)).toEqual(["task two"]);
+  });
+
+  it("mid-task: abandonment with a trailing tool-calling rejection continues the task with the repair alone", async () => {
+    // Any committed attempt absorbs — here the FIRST (empty) rejection commits the turn
+    // outputs, and the FINAL rejection leaves unanswered tool calls. The continuation after
+    // the failure delivers exactly the stashed repairs (never the absorbed outputs), keeping
+    // the live object's history well-formed while the task keeps running.
+    const llm1 = new ScriptedLLM(
+      [
+        {
+          messages: [toolCall({ name: "t", arguments: "{}", toolCallId: "ct" }), usage(150, 150)],
+        },
+        // Attempts 1-4: empty rejections (attempt 1 commits and absorbs the outputs).
+        { messages: [thinkingMessage("blank 1")] },
+        { messages: [thinkingMessage("blank 2")] },
+        { messages: [thinkingMessage("blank 3")] },
+        { messages: [thinkingMessage("blank 4")] },
+        // Attempt 5: rejected with a tool call -> its repair is stashed at the abandonment.
+        { messages: [toolCall({ name: "t", arguments: "{}", toolCallId: "c5" })] },
+        // Continuation: the repair alone; the model wraps the task up (under the threshold).
+        { messages: [assistantText("recovered"), usage(60, 900)] },
+      ],
+      "llm1",
+    );
+    const engine = new ContextEngine({
+      llm: llm1,
+      environment: fakeEnvironment,
+      compaction: settings(),
+      createLLM: () => new ScriptedLLM([], "llm2"),
+      reconnectBackoffMs: 1,
+    });
+
+    const out = await collect(engine.run([userText("go")], { approve: allowAll }));
+    expect(compactionEvents(out)[1]).toMatchObject({ type: "compaction_end", status: "failed" });
+    expect(llm1.calls).toHaveLength(7);
+    // Attempt 1 folds the outputs; attempts 2-5 are Prompt-only (absorbed by the first commit).
+    expect(payloadTypes(llm1.calls[1]!)).toEqual(["tool_call_output", "text"]);
+    for (let attempt = 2; attempt <= 5; attempt += 1) {
+      expect(llm1.calls[attempt]!.map(textOf)).toEqual(["COMPACT NOW"]);
+    }
+    // The continuation input is the repair answering c5 — nothing else: no absorbed outputs,
+    // no prompt.
+    expect(payloadTypes(llm1.calls[6]!)).toEqual(["tool_call_output"]);
+    const cont = llm1.calls[6]![0]!.payload as { tool_call_id: string; output: string };
+    expect(cont.tool_call_id).toBe("c5");
+    expect(cont.output).toBe(
+      "[tool error] the compaction request expects a summary, not tool calls",
+    );
+    // The task finished on the continuation; the stash is spent for later runs.
+    expect(out.map((m) => (m.payload as { text?: string }).text)).toContain("recovered");
+    await collect(engine.run([userText("again")], { approve: allowAll }));
+    expect(llm1.calls[7]!.map(textOf)).toEqual(["again"]);
+  });
+
+  it("mid-task: an all-transport abandonment absorbs nothing — the outputs are resent as before", async () => {
+    // Counter-case: timeout/malformed attempts never commit, so the turn's tool outputs were
+    // never absorbed and the post-failure continuation must resend them exactly as before
+    // (their tool_use pairing is still unanswered on the live object).
+    const llm1 = new ScriptedLLM(
+      [
+        {
+          messages: [toolCall({ name: "t", arguments: "{}", toolCallId: "ct" }), usage(150, 150)],
+        },
+        { messages: [], outcome: { status: "timeout" } },
+        { messages: [], outcome: { status: "timeout" } },
+        // Continuation: the resent tool output; the model wraps up under the threshold.
+        { messages: [assistantText("done on old context"), usage(60, 400)] },
+      ],
+      "llm1",
+    );
+    const engine = new ContextEngine({
+      llm: llm1,
+      environment: fakeEnvironment,
+      compaction: settings(),
+      createLLM: () => new ScriptedLLM([], "llm2"),
+      compactionMaxReconnects: 1,
+      reconnectBackoffMs: 1,
+    });
+
+    const out = await collect(engine.run([userText("go")], { approve: allowAll }));
+    expect(compactionEvents(out)[1]).toMatchObject({ type: "compaction_end", status: "failed" });
+    expect(llm1.calls).toHaveLength(4);
+    expect(payloadTypes(llm1.calls[3]!)).toEqual(["tool_call_output"]);
+    expect((llm1.calls[3]![0]!.payload as { tool_call_id?: string }).tool_call_id).toBe("ct");
+  });
+
+  it("mid-task: an abort after a committed rejection merges the stash — repairs ride, absorbed outputs do not", async () => {
+    // The abort-in-window case (issue #85): the stash must merge, not be overwritten. After a
+    // committed rejection the turn outputs are absorbed, so the case-A carry-over is skipped
+    // entirely and only the unanswered repair rides the next run.
+    const llm1 = new ScriptedLLM(
+      [
+        {
+          messages: [toolCall({ name: "t", arguments: "{}", toolCallId: "ct" }), usage(150, 150)],
+        },
+        // Attempt 1: committed rejection with a tool call -> absorbs outputs, repair pending.
+        { messages: [toolCall({ name: "t", arguments: "{}", toolCallId: "c1" })] },
+        // Attempt 2 (carrying the repair): the user aborts mid-request -> uncommitted, the
+        // repair is still unanswered and gets stashed.
+        { messages: [], outcome: { status: "aborted" } },
+        // Next run: the stash leads, then the new prompt.
+        { messages: [assistantText("back"), usage(60, 500)] },
+      ],
+      "llm1",
+    );
+    const engine = new ContextEngine({
+      llm: llm1,
+      environment: fakeEnvironment,
+      compaction: settings(),
+      createLLM: () => new ScriptedLLM([], "llm2"),
+      reconnectBackoffMs: 1,
+    });
+
+    const out = await collect(engine.run([userText("go")], { approve: allowAll }));
+    const events = compactionEvents(out);
+    expect(events[1]).toMatchObject({ type: "compaction_end", status: "aborted" });
+    expect(payloadTypes(out)).toContain("abort");
+    expect(llm1.calls).toHaveLength(3);
+    // Attempt 2 carried the repair + Prompt (not the absorbed outputs).
+    expect(payloadTypes(llm1.calls[2]!)).toEqual(["tool_call_output", "text"]);
+    expect((llm1.calls[2]![0]!.payload as { tool_call_id?: string }).tool_call_id).toBe("c1");
+
+    // The next run leads with the still-unanswered repair; the absorbed turn outputs are
+    // NOT re-held as carry-over (no duplicate ct output).
+    await collect(engine.run([userText("next")], { approve: allowAll }));
+    const nextRun = llm1.calls[3]!;
+    expect(payloadTypes(nextRun)).toEqual(["tool_call_output", "text"]);
+    expect((nextRun[0]!.payload as { tool_call_id?: string }).tool_call_id).toBe("c1");
+    expect(textOf(nextRun[1]!)).toBe("next");
+  });
+
   it("the compaction request carries exactly the same tools as ordinary requests (prompt-cache pin)", async () => {
     // Owner constraint (#84): compaction runs exactly when the context is at its largest, and
     // the provider's prompt cache only holds if the request prefix — the tool list included —
@@ -1046,6 +1249,104 @@ describe("context compaction", () => {
       "[context_summary]\nmanual s\n[/context_summary]",
       "next",
     ]);
+  });
+
+  it("manual compaction that commits nothing restores the prior carry-over verbatim", async () => {
+    // The carry seam's binary (PR #87 review): every attempt was a transport failure, so
+    // nothing reached AgentHub — the folded carry-over comes back exactly as it was (the very
+    // same message objects, not routed through any absorption logic), and with zero committed
+    // attempts there are no repairs to interleave with.
+    const llm1 = new ScriptedLLM(
+      [
+        { messages: [assistantText("hi"), usage(10, 10)] },
+        // Manual compaction attempts: transport failures only — nothing committed.
+        { messages: [], outcome: { status: "timeout" } },
+        { messages: [], outcome: { status: "timeout" } },
+        // Run 3: the restored carry-over leads the input, exactly as before the compact().
+        { messages: [assistantText("resumed"), usage(20, 40)] },
+      ],
+      "llm1",
+    );
+    const engine = new ContextEngine({
+      llm: llm1,
+      environment: fakeEnvironment,
+      compaction: settings(),
+      createLLM: () => new ScriptedLLM([], "llm2"),
+      compactionMaxReconnects: 1,
+      reconnectBackoffMs: 1,
+    });
+    await collect(engine.run([userText("start")], { approve: allowAll }));
+    // An aborted-before-issue run leaves its input as carry-over.
+    const aborted = new AbortController();
+    aborted.abort();
+    const pendingMsg = userText("pending question");
+    await collect(engine.run([pendingMsg], { signal: aborted.signal, approve: allowAll }));
+    expect(llm1.calls).toHaveLength(1); // the aborted run never reached the LLM
+
+    const out = await collect(engine.compact());
+    expect(compactionEvents(out)[1]).toMatchObject({ type: "compaction_end", status: "failed" });
+    // The compaction folded the carry-over into its (uncommitted) attempts...
+    expect(llm1.calls).toHaveLength(3);
+    expect(llm1.calls[1]!.map(textOf)).toEqual(["pending question", "COMPACT NOW"]);
+    expect(llm1.calls[2]!.map(textOf)).toEqual(["pending question", "COMPACT NOW"]);
+
+    // ...and restored it verbatim: the next run resends the very same message object first.
+    await collect(engine.run([userText("run3")], { approve: allowAll }));
+    expect(llm1.calls[3]![0]).toBe(pendingMsg);
+    expect(llm1.calls[3]!.map(textOf)).toEqual(["pending question", "run3"]);
+  });
+
+  it("manual compaction with a committed attempt consumes the carry-over; only repairs remain pending", async () => {
+    // The other side of the binary: the first committed attempt put the folded carry-over
+    // into AgentHub history, so it is disposed of at the seam — never restored — and the next
+    // input reflects the committed state plus the repair stash left by the final rejection.
+    const llm1 = new ScriptedLLM(
+      [
+        { messages: [assistantText("hi"), usage(10, 10)] },
+        // Attempt 1: committed but empty -> absorbs the folded carry-over into history.
+        { messages: [thinkingMessage("blank 1")] },
+        // Attempts 2-4: still empty; the base has shrunk to the Prompt.
+        { messages: [thinkingMessage("blank 2")] },
+        { messages: [thinkingMessage("blank 3")] },
+        { messages: [thinkingMessage("blank 4")] },
+        // Attempt 5: rejected with a tool call -> its repair is stashed at the abandonment.
+        { messages: [toolCall({ name: "t", arguments: "{}", toolCallId: "c9" })] },
+        // Run 3: the repair leads; the consumed carry-over is NOT resent.
+        { messages: [assistantText("resumed"), usage(20, 40)] },
+      ],
+      "llm1",
+    );
+    const engine = new ContextEngine({
+      llm: llm1,
+      environment: fakeEnvironment,
+      compaction: settings(),
+      createLLM: () => new ScriptedLLM([], "llm2"),
+      reconnectBackoffMs: 1,
+    });
+    await collect(engine.run([userText("start")], { approve: allowAll }));
+    const aborted = new AbortController();
+    aborted.abort();
+    await collect(
+      engine.run([userText("pending question")], { signal: aborted.signal, approve: allowAll }),
+    );
+
+    const out = await collect(engine.compact());
+    expect(compactionEvents(out)[1]).toMatchObject({ type: "compaction_end", status: "failed" });
+    expect(llm1.calls).toHaveLength(6);
+    // Attempt 1 folded the carry-over in (and committed it); later attempts resend the Prompt
+    // alone — the absorbed carry-over never again.
+    expect(llm1.calls[1]!.map(textOf)).toEqual(["pending question", "COMPACT NOW"]);
+    for (let attempt = 2; attempt <= 5; attempt += 1) {
+      expect(llm1.calls[attempt]!.map(textOf)).toEqual(["COMPACT NOW"]);
+    }
+
+    // The carry-over is consumed at the seam — the next run leads with the stashed repair
+    // alone, continuing from committed history.
+    await collect(engine.run([userText("run3")], { approve: allowAll }));
+    const run3 = llm1.calls[6]!;
+    expect(payloadTypes(run3)).toEqual(["tool_call_output", "text"]);
+    expect((run3[0]!.payload as { tool_call_id?: string }).tool_call_id).toBe("c9");
+    expect(textOf(run3[1]!)).toBe("run3");
   });
 
   it("no compaction capability (createLLM missing) means thresholds never fire and compact() is a no-op", async () => {
