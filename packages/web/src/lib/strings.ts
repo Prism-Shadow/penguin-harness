@@ -553,11 +553,7 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
 
 ## 编排
 
-当前 Session 只负责编排。Phase 1、Phase 2、Phase 3 必须分别通过
-\`exec_command\` 启动三个独立的 \`penguin run\`，不得使用当前 Session 的
-\`run_subagent\` 启动阶段。每个阶段都使用 \`default_agent\`、项目默认 Model、独立
-Prompt 文件和独立 Workspace。阶段命令不得传 \`--provider\` 或 \`--model-id\`；
-\`deepseek-v4-flash\` 只作为 Test Agent 的评测 Model。
+当前 Session 只负责编排。Phase 1、Phase 2、Phase 3 必须分别通过 \`exec_command\` 启动三个独立的 \`penguin run\`，不得使用当前 Session 的 \`run_subagent\` 启动阶段。每个阶段都使用 \`default_agent\`、项目默认 Model、独立 Prompt 文件和独立 Workspace。阶段命令不得传 \`--provider\` 或 \`--model-id\`；\`deepseek-v4-flash\` 只作为 Test Agent 的评测 Model。
 
 \`\`\`bash
 mkdir -p <phase_workspace>
@@ -571,20 +567,15 @@ penguin run \\
   --message "$(cat <phase_prompt_file>)"
 \`\`\`
 
-各阶段 Prompt 只传递本 Prompt 已给出的实验目标、参数、任务场景和验收条件。不要复制、
-改写或补充对应 Skill 的工作流，也不要替阶段预设隐藏规则、评分方法、难度调整方式或
-优化策略；每个阶段应自行读取并遵循指定 Skill。
+各阶段 Prompt 只传递本 Prompt 已给出的实验目标、参数、任务场景和验收条件。不要复制、改写或补充对应 Skill 的工作流，也不要替阶段预设隐藏规则、评分方法、难度调整方式或优化策略；每个阶段应自行读取并遵循指定 Skill。
 
-每个命令退出并验证产物后，才能启动下一阶段。Phase 2 和 Phase 3 必须在各自的顶层
-Session 内按 Skill 要求用 \`run_subagent\` 委托 \`agent-evaluation\` 执行评测。
+每个命令退出并验证产物后，才能启动下一阶段。Phase 2 和 Phase 3 必须在各自的顶层 Session 内按 Skill 要求用 \`run_subagent\` 委托 \`agent-evaluation\` 执行评测。
 
 ## Phase 1：Agent Creation
 
-使用 \`agent-creation\` 创建通用有限选择 Agent \`finite_choice_agent\`。它需要在公开
-信息不足但必须作答时采用简单、稳定的决策方式；具体策略由本阶段自行设计并说明。
+使用 \`agent-creation\` 创建通用有限选择 Agent \`finite_choice_agent\`。它需要在公开信息不足但必须作答时采用简单、稳定的决策方式；具体策略由本阶段自行设计并说明。
 
-不安装任何 Skill。设置 \`thinking_level: medium\`，初始 version 为 1。保持 Agent
-通用，不得针对后续 Benchmark 预置题目知识、私有规则、Gold 或优化提示。
+不安装任何 Skill。设置 \`thinking_level: medium\`，初始 version 为 1。保持 Agent 通用，不得针对后续 Benchmark 预置题目知识、私有规则、Gold 或优化提示。
 
 ## Phase 2：Benchmark Design
 
@@ -597,46 +588,27 @@ Session 内按 Skill 要求用 \`run_subagent\` 委托 \`agent-evaluation\` 执�
 - Runs：3
 - Baseline 硬门槛：低于 70
 
-本实验评估：Agent 能否从公开的历史结果、规则说明和当前上下文中发现可复用的决策
-规律，并将其应用到新的有限选择任务。Benchmark 包含三个贴近实际工作的 Case：
+本实验评估：Agent 能否从公开的历史结果、规则说明和当前上下文中发现可复用的决策规律，并将其应用到新的有限选择任务。Benchmark 包含三个贴近实际工作的 Case：
 
-1. 足球投注决策：提供已结算的历史比赛、赛前赔率、近期状态、主客场、伤停、天气和
-   最终赛果，再提供若干待判断比赛。Agent 必须选择 \`Home\`、\`Draw\`、\`Away\` 或
-   \`No Bet\`。
-2. 售后工单处置：提供售后政策、订单记录、用户诉求和时间信息。Agent 必须选择
-   \`Refund\`、\`Replace\`、\`Reject\` 或 \`Escalate\`。
-3. 模拟投资决策：提供公开的投资策略、历史市场样本和当前市场指标。Agent 必须对候选
-   资产排序或选择规定的投资动作。
+1. 足球投注决策：提供已结算的历史比赛、赛前赔率、近期状态、主客场、伤停、天气和最终赛果，再提供若干待判断比赛。Agent 必须选择 \`Home\`、\`Draw\`、\`Away\` 或 \`No Bet\`。
+2. 售后工单处置：提供售后政策、订单记录、用户诉求和时间信息。Agent 必须选择 \`Refund\`、\`Replace\`、\`Reject\` 或 \`Escalate\`。
+3. 模拟投资决策：提供公开的投资策略、历史市场样本和当前市场指标。Agent 必须对候选资产排序或选择规定的投资动作。
 
-三个 Case 应共同考察从多个公开证据中提取稳定规律、处理规则优先级和例外，并在新实例
-上作出一致决策的能力。每个 Statement 必须提供完成任务所需的全部信息。Rubric 可以
-包含 Gold 和评分方法，但不得使用无法从公开材料推导或学习的任意隐藏映射。
+三个 Case 应共同考察从多个公开证据中提取稳定规律、处理规则优先级和例外，并在新实例上作出一致决策的能力。每个 Statement 必须提供完成任务所需的全部信息。Rubric 可以包含 Gold 和评分方法，但不得使用无法从公开材料推导或学习的任意隐藏映射。
 
-如果使用潜在规律，Statement 必须提供足够的公开历史样本，使该规律原则上可以被发现。
-难度应来自多步分析、噪声信息、跨材料关联、例外条件和验证过程，而不是缺失关键信息。
-Pilot 分数过高时，可以增加样本数量、干扰特征、规则组合或例外情况；不得仅通过隐藏
-更多信息或改成任意规则来降低分数。
+如果使用潜在规律，Statement 必须提供足够的公开历史样本，使该规律原则上可以被发现。难度应来自多步分析、噪声信息、跨材料关联、例外条件和验证过程，而不是缺失关键信息。Pilot 分数过高时，可以增加样本数量、干扰特征、规则组合或例外情况；不得仅通过隐藏更多信息或改成任意规则来降低分数。
 
-按照 \`benchmark-design\` 完成设计、Pilot 调整、冻结和 Formal Baseline。只有有效且
-完整的 Formal Baseline 低于 70 时才能启动 Phase 3；否则报告限制并停止。当前编排
-Session 只能检查公开 Benchmark 产物和最终分数，不得读取或转述 Rubric、Gold 等私有
-信息。
+按照 \`benchmark-design\` 完成设计、Pilot 调整、冻结和 Formal Baseline。只有有效且完整的 Formal Baseline 低于 70 时才能启动 Phase 3；否则报告限制并停止。当前编排 Session 只能检查公开 Benchmark 产物和最终分数，不得读取或转述 Rubric、Gold 等私有信息。
 
 ## Phase 3：Agent Optimization
 
-使用 \`agent-optimization\`，Benchmark 为 \`contextual-choice-adaptation\`，Reference
-为已记录的 Baseline，目标分数至少 85。
+使用 \`agent-optimization\`，Benchmark 为 \`contextual-choice-adaptation\`，Reference 为已记录的 Baseline，目标分数至少 85。
 
-根据公开 Statement、评测分数和 Test Trace 改进 Test Agent 的通用能力。按照
-\`agent-optimization\` 完成 Candidate 评测、接受或回滚，直到达到目标或无法继续有效
-改进。不得读取 Rubric、Gold 或其他私有 Benchmark 信息。
+根据公开 Statement、评测分数和 Test Trace 改进 Test Agent 的通用能力。按照 \`agent-optimization\` 完成 Candidate 评测、接受或回滚，直到达到目标或无法继续有效改进。不得读取 Rubric、Gold 或其他私有 Benchmark 信息。
 
 ## 最终检查与汇报
 
-检查 Phase 3 根 Session 是否实际访问 \`/rubric/\` 下的路径，并确认每个 Evaluator
-只返回协议 YAML。文本提及路径不算访问；实际访问，或 Rubric、Gold、逐项评分等私有
-信息进入根 Session，都会使相关结果无效。汇报 Agent 与 Benchmark 路径、Pilot 摘要、
-Baseline/Candidate 分数曲线、关键假设、接受和回滚的版本、最终保留版本及已知限制。
+检查 Phase 3 根 Session 是否实际访问 \`/rubric/\` 下的路径，并确认每个 Evaluator 只返回协议 YAML。文本提及路径不算访问；实际访问，或 Rubric、Gold、逐项评分等私有信息进入根 Session，都会使相关结果无效。汇报 Agent 与 Benchmark 路径、Pilot 摘要、Baseline/Candidate 分数曲线、关键假设、接受和回滚的版本、最终保留版本及已知限制。
 
 不要修改任何 Skill，不要创建永久的 Builder、Evaluator 或 Optimizer Agent。`,
       },
