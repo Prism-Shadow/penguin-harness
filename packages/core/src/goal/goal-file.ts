@@ -2,13 +2,15 @@
  * GOAL.yaml — the goal-mode control file, at `<agentDir>/scratchpad/<sessionId>/GOAL.yaml`
  * (path helper: `goalFilePath` in state/paths.ts; sibling of the model's PLAN.md convention).
  *
- * Field ownership (the file is a two-way mailbox with a hard boundary):
- * - `objective`: written once by the goal runner at creation; never changed afterwards.
- * - `status`: the model's only writable field, and only to `complete` / `blocked`; the runner
- *   writes the initial `active` and the system-side terminal `budget_limited`.
- * - `tokens`: refreshed by the runner after every round, **for the model's awareness only** —
- *   budget enforcement always reads the runner's internal counters, never this file, so a
- *   clobbered or stale tokens block can't affect the loop.
+ * The system writes this file ONCE, when the goal starts, and never rewrites it:
+ * - `objective`: recorded at creation for the model's (and a human's) reference; the
+ *   canonical value lives in the loop's memory and is re-stated in every round's [goal]
+ *   block, so a tampered file changes nothing.
+ * - `status`: the model's only writable field, and only to `complete` / `blocked` — its
+ *   mailbox back to the loop, read after every round. System-side endings (budget_limited /
+ *   aborted) are reported on the stream (`goal_finished`) and in server state, never written
+ *   here: the file always keeps the model's own last write, which is exactly the resume
+ *   point an interrupted goal wants.
  *
  * Reading is deliberately tolerant: the model rewrites the file with shell tools, so a parse
  * failure, a missing file, or an out-of-protocol status all normalize to `blocked` — the loop
@@ -18,48 +20,31 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
-/** `tokens.budget` value meaning "no budget" (also used for an absent budget option). */
+/** Budget option value meaning "no budget" (also used for an absent budget option). */
 export const UNLIMITED_BUDGET = -1;
 
-/**
- * Goal statuses as stored in GOAL.yaml. `active`/`complete`/`blocked` follow the protocol above;
- * `budget_limited` is only ever written by the runner as a terminal state.
- */
+/** Goal statuses: `active` (initial), `complete` / `blocked` (model-written), `budget_limited` (a stream/state outcome). */
 export type GoalStatus = "active" | "complete" | "blocked" | "budget_limited";
 
-/** In-memory view of GOAL.yaml (the `remaining` field is derived at write time, never stored here). */
+/** In-memory view of GOAL.yaml (two fields; see the header for ownership). */
 export interface GoalFile {
   objective: string;
   status: GoalStatus;
-  tokens: {
-    /** Token budget; `UNLIMITED_BUDGET` (-1) means no budget. */
-    budget: number;
-    used: number;
-  };
 }
 
 /**
- * Serializes GOAL.yaml from in-memory values. `tokens.remaining` is always emitted (last in
- * the tokens block); on an unlimited goal it mirrors the budget's `-1` rather than showing a
- * bogus negative remainder. The goal prompt embeds this same serialization verbatim in every
- * round's `[goal]` block — the model always sees exactly the bytes on disk, and nothing
- * model-writable is ever read back.
+ * Serializes GOAL.yaml from in-memory values. Every round's `[goal]` block embeds this same
+ * serialization — composed from the values the file was created with, never read back from
+ * the (model-writable) file.
  */
 export function serializeGoalFile(goal: GoalFile): string {
-  const tokens: Record<string, number> = {
-    budget: goal.tokens.budget,
-    used: goal.tokens.used,
-    remaining:
-      goal.tokens.budget > 0
-        ? Math.max(0, goal.tokens.budget - goal.tokens.used)
-        : UNLIMITED_BUDGET,
-  };
-  return stringifyYaml({ objective: goal.objective, status: goal.status, tokens });
+  return stringifyYaml({ objective: goal.objective, status: goal.status });
 }
 
 /**
  * Serializes and writes GOAL.yaml (creating the scratchpad session directory if needed — the
  * model normally creates it on demand, but goal mode writes the file before the first round).
+ * Called exactly once per goal, at creation.
  */
 export async function writeGoalFile(filePath: string, goal: GoalFile): Promise<void> {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
@@ -69,7 +54,7 @@ export async function writeGoalFile(filePath: string, goal: GoalFile): Promise<v
 /**
  * Reads the status the model left in GOAL.yaml, normalized to what the loop may act on:
  * `active` / `complete` / `blocked`. Everything else — unreadable file, invalid YAML, a
- * missing or unknown status (including `budget_limited`, which the model must not write) —
+ * missing or unknown status (including `budget_limited`, which nothing writes to disk) —
  * collapses to `blocked`: a broken control channel stops the loop rather than looping forever.
  */
 export async function readGoalStatus(filePath: string): Promise<"active" | "complete" | "blocked"> {

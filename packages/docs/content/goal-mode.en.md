@@ -25,25 +25,20 @@ The loop's state channel is a file at `<agent_dir>/scratchpad/<session_id>/GOAL.
 ```yaml
 objective: make all tests pass
 status: active
-tokens:
-  budget: 500000
-  used: 120345
-  remaining: 379655
 ```
 
-Ownership is strict, and the file is deliberately **not** trusted for enforcement:
+The system writes this file **exactly once**, at creation; afterwards it only reads `status`:
 
 | Field | Writer | Notes |
 | --- | --- | --- |
-| `objective` | system, once | never changed afterwards |
-| `status` | model | only to `complete` or `blocked`; the system writes the initial `active` and the terminal `budget_limited` |
-| `tokens` | system, every round | display only — budget enforcement always uses the runner's internal counters, so a clobbered file cannot unlock spending |
+| `objective` | system, at creation | the canonical value lives in the loop's memory and is re-stated in every round's block, so a tampered file changes nothing |
+| `status` | model | only to `complete` or `blocked` — the model's mailbox back to the loop, read after every round |
 
-Reads are tolerant: a missing file, unparseable YAML, or an out-of-protocol status all normalize to `blocked` — a broken control channel stops the loop instead of spinning it forever.
+Budget numbers ride each round's `[goal]` block, not the file; system-side endings (`budget_limited`, `aborted`) exist only as the `goal_finished` outcome and in server state — the file always keeps the model's own last write, which is exactly the resume point an interrupted goal wants. Reads are tolerant: a missing file, unparseable YAML, or an out-of-protocol status all normalize to `blocked` — a broken control channel stops the loop instead of spinning it forever.
 
 ## The loop
 
-Each round's user message is a `[goal]` protocol block followed by a plain body — round 1 carries your original message verbatim (skill-invocation blocks and all); later rounds re-inject the objective. The Web App collapses the block into a "Goal · round N" notice under a regular user bubble; the Trace shows it verbatim. The block embeds the current `GOAL.yaml` byte-for-byte (the model sees exactly the file it is asked to edit) along with the working rules — evidence-based verification before claiming completion, no shrinking the objective to an easier subset, and key progress recorded in `PLAN.md` so it survives context compaction. After the Task ends, the system reads `status`:
+Each round's user message is a `[goal]` protocol block followed by a plain body — round 1 carries your original message verbatim (skill-invocation blocks and all); later rounds re-inject the objective. The Web App collapses the block into a "Goal · round N" notice under a regular user bubble; the Trace shows it verbatim. The block embeds the `GOAL.yaml` content (the model sees exactly the file it is asked to edit, composed from the same values it was created with), carries the current budget numbers on its own line, and states the working rules — evidence-based verification before claiming completion, no shrinking the objective to an easier subset, and key progress recorded in `PLAN.md` so it survives context compaction. After the Task ends, the system reads `status`:
 
 - `complete` → the goal is done; the loop stops.
 - `blocked` → the loop stops; what the model needs from you is in its final reply. The injected rules require the **same blocking condition to persist for three consecutive rounds** before the model may claim `blocked`, so a transient obstacle doesn't end the goal.
@@ -55,8 +50,8 @@ A round that ends in an abort (user stop, LLM failure) ends the whole goal witho
 
 Accounting is incremental — **uncached input + output** (`request.total − cache_read`), summed over every request of every round, *including subagent sessions* spawned by `run_subagent`. `used` starts at 0; cache hits are free.
 
-The budget is checked between rounds. When it is exhausted the goal is not cut off mid-thought: one final wrap-up round is injected — summarize progress, list remaining work, leave a clear next step, and no claiming `complete` just because the money ran out — after which the system writes `budget_limited` and stops. Because the check runs between rounds only, a round already in flight is never cut short: actual spend can overshoot the budget by up to one round, plus the wrap-up round. With no budget set, the loop runs until `complete` or `blocked` — bounded by the model's honesty about the two terminal states, plus a hard backstop of 100 rounds so a model that simply never writes the goal file cannot loop forever.
+The budget is checked between rounds. When it is exhausted the goal is not cut off mid-thought: one final wrap-up round is injected — summarize progress, list remaining work, leave a clear next step, and no claiming `complete` just because the money ran out — after which the system ends the goal as `budget_limited` (the `goal_finished` outcome; nothing is written to the file). Because the check runs between rounds only, a round already in flight is never cut short: actual spend can overshoot the budget by up to one round, plus the wrap-up round. With no budget set, the loop runs until `complete` or `blocked` — bounded by the model's honesty about the two terminal states, plus a hard backstop of 100 rounds so a model that simply never writes the goal file cannot loop forever.
 
 ## Server state and events
 
-The Web server records each goal run in a `goal_state` row (objective, status, budget, used, rounds) — the chat page's goal banner restores from the latest row on load, and live progress arrives as `goal_started` / `goal_round` / `goal_finished` events on the session's SSE channel. The row's terminal `aborted` status exists server-side only; the on-disk file keeps `active` for resuming. Deleting the Session removes its goal rows along with the scratchpad (and `GOAL.yaml` with it).
+The Web server records each goal run in a `goal_state` row (objective, status, budget, used, rounds) — the chat page's goal banner restores from the latest row on load, and live progress arrives as `goal_started` / `goal_round` / `goal_finished` events on the session's SSE channel. System-side terminal statuses (`aborted`, `budget_limited`) exist in this row and on the stream only; the on-disk file keeps the model's last write for resuming. Deleting the Session removes its goal rows along with the scratchpad (and `GOAL.yaml` with it).

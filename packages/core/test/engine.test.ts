@@ -462,9 +462,11 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
     // its [goal] protocol ("the system sends the next round automatically", the file rules)
     // is stale the moment the goal ends and must not re-enter the model as live instructions.
     const goalInput = goalRoundMessage({
-      goal: { objective: "fix the tests", status: "active", tokens: { budget: -1, used: 0 } },
+      objective: "fix the tests",
       goalFilePath: "/tmp/GOAL.yaml",
       round: 1,
+      tokensUsed: 0,
+      budget: -1,
       body: "fix the tests",
     });
     const received: OmniMessage[][] = [];
@@ -512,9 +514,11 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
     // Aborted before the Request went out: the input is held AS-IS (not flattened) — without
     // the downgrade, the full [goal] block would be re-sent verbatim as current input.
     const goalInput = goalRoundMessage({
-      goal: { objective: "fix the tests", status: "active", tokens: { budget: -1, used: 0 } },
+      objective: "fix the tests",
       goalFilePath: "/tmp/GOAL.yaml",
       round: 2,
+      tokensUsed: 0,
+      budget: -1,
       body: "fix the tests",
     });
     const received: OmniMessage[][] = [];

@@ -12,8 +12,8 @@
  * Termination is decided from these sources only:
  * - the goal file's status (`complete` / `blocked`, written by the model; parse failures
  *   normalize to `blocked` — see goal-file.ts),
- * - the loop's own token accounting against the budget (the file's tokens block is
- *   display-only and never read back),
+ * - the loop's own token accounting against the budget (internal counters; the budget
+ *   line in each round's block is composed from them, never read from anywhere),
  * - a round the engine cut off rather than finished — a main-session abort (LLM failure,
  *   user interrupt) or a final assistant notice with `stop_reason: "failed"` (the engine's
  *   max_turns cutoff emits exactly that, and no abort event): the model never got to write
@@ -21,9 +21,10 @@
  * - a hard round cap (`maxRounds`, default 100) as a runaway backstop independent of the
  *   budget — without it an unbudgeted goal whose model simply never writes the file would
  *   loop without bound.
- * All of these stop the loop without re-firing: on an aborted outcome the goal stays
- * `active` on disk and the file is left untouched (the workspace and goal file are the
- * resume point).
+ * All of these stop the loop without re-firing. The loop writes GOAL.yaml exactly once,
+ * at creation; afterwards it only READS `status` — every ending leaves the model's own
+ * last write on disk (system endings exist only as the `goal_finished` outcome), which is
+ * exactly the resume point an interrupted goal wants.
  *
  * Token accounting is incremental, "uncached input + output": every `token_usage` event on
  * the stream — including origin-marked ones from subagent sessions, which are part of the
@@ -33,7 +34,6 @@ import { goalFinished, isEventMessage, isModelMessage, userText } from "../omnim
 import type { GoalOutcomeStatus, OmniMessage } from "../omnimessage/index.js";
 import { stripLeadingMarkerBlocks } from "../omnimessage/markers/index.js";
 import { readGoalStatus, writeGoalFile, UNLIMITED_BUDGET } from "./goal-file.js";
-import type { GoalFile, GoalStatus } from "./goal-file.js";
 import { goalRoundMessage, goalWrapUpMessage } from "./goal-prompts.js";
 import { goalTokenDelta } from "./goal-stream.js";
 
@@ -100,13 +100,6 @@ export async function* runGoalLoop(
   let aborted = false;
   let roundFailed = false;
 
-  /** The current in-memory GOAL.yaml values: written to disk and embedded in the round block from the same object. */
-  const goalNow = (status: GoalStatus): GoalFile => ({
-    objective,
-    status,
-    tokens: { budget, used },
-  });
-
   /** Runs one round: yields the injected input, then the Task's stream, accounting as it goes. */
   async function* round(kind: "regular" | "wrap-up"): AsyncGenerator<OmniMessage> {
     rounds++;
@@ -114,9 +107,11 @@ export async function* runGoalLoop(
     const compose = kind === "regular" ? goalRoundMessage : goalWrapUpMessage;
     const input = userText(
       compose({
-        goal: goalNow("active"),
+        objective,
         goalFilePath: opts.goalFilePath,
         round: rounds,
+        tokensUsed: used,
+        budget,
         // Round 1 carries the caller's input verbatim; later rounds re-inject the objective.
         body: rounds === 1 ? opts.text : objective,
       }),
@@ -135,7 +130,8 @@ export async function* runGoalLoop(
 
   const finish = (outcome: GoalOutcomeStatus) => goalFinished(outcome, rounds, used);
 
-  await writeGoalFile(opts.goalFilePath, goalNow("active"));
+  // The one and only system write: afterwards the file belongs to the model.
+  await writeGoalFile(opts.goalFilePath, { objective, status: "active" });
 
   for (;;) {
     // An abort landing BETWEEN rounds produces no abort event on any stream — without this
@@ -151,8 +147,8 @@ export async function* runGoalLoop(
       return;
     }
     yield* round("regular");
-    // Abort wins over whatever is in the file: the goal stays active on disk (the workspace
-    // and goal file are the resume point) and nothing is rewritten mid-interrupt.
+    // Abort wins over whatever is in the file: the workspace and goal file are the resume
+    // point, exactly as the model last left them.
     if (aborted) {
       yield finish("aborted");
       return;
@@ -160,7 +156,6 @@ export async function* runGoalLoop(
 
     const status = await readGoalStatus(opts.goalFilePath);
     if (status !== "active") {
-      await writeGoalFile(opts.goalFilePath, goalNow(status));
       yield finish(status);
       return;
     }
@@ -179,9 +174,7 @@ export async function* runGoalLoop(
         yield finish("aborted");
         return;
       }
-      // Refresh the file so the wrap-up block embeds exactly the bytes on disk.
-      await writeGoalFile(opts.goalFilePath, goalNow("active"));
-      // One wrap-up round, then the system-side terminal state — unless the model could
+      // One wrap-up round, then the system-side terminal outcome — unless the model could
       // truthfully complete during wrap-up (its template forbids a courtesy `complete`).
       yield* round("wrap-up");
       if (aborted) {
@@ -189,13 +182,8 @@ export async function* runGoalLoop(
         return;
       }
       const wrapStatus = await readGoalStatus(opts.goalFilePath);
-      const finalStatus = wrapStatus === "complete" ? "complete" : "budget_limited";
-      await writeGoalFile(opts.goalFilePath, goalNow(finalStatus));
-      yield finish(finalStatus);
+      yield finish(wrapStatus === "complete" ? "complete" : "budget_limited");
       return;
     }
-
-    // Next round: refresh the display-only tokens block so the model sees current numbers.
-    await writeGoalFile(opts.goalFilePath, goalNow("active"));
   }
 }

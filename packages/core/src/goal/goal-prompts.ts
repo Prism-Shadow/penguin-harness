@@ -7,7 +7,7 @@
  *
  *     [goal]
  *     round: 2
- *     …automation preamble, GOAL.yaml path + rules + embedded content, working audits…
+ *     …automation preamble, GOAL.yaml path + rules + content, budget line, working audits…
  *     [/goal]
  *
  *     make all tests pass
@@ -17,42 +17,49 @@
  * repeated every round rather than stated once: a long-running goal will cross compactions,
  * and the current round's block must stand alone.
  *
- * The block embeds the current GOAL.yaml verbatim (the same serialization written to disk,
- * from the same in-memory values — never read back from the file), so the model sees the
- * file it is asked to edit exactly as it exists. The embedded `objective` value is user data,
- * which is why the closing tag is matched line-anchored (see markers/goal-block.ts).
+ * The block embeds the GOAL.yaml content (serialized from the same in-memory values the file
+ * was created with — never read back from the model-writable file) and carries the current
+ * budget numbers. The embedded `objective` value is user data, which is why the closing tag
+ * is matched line-anchored (see markers/goal-block.ts).
  */
 import { markerBlock, MARKER_TAGS } from "../omnimessage/markers/index.js";
 import { serializeGoalFile, UNLIMITED_BUDGET } from "./goal-file.js";
-import type { GoalFile } from "./goal-file.js";
 
 export interface GoalPromptArgs {
-  /** In-memory GOAL.yaml values, embedded verbatim (same serialization as the disk write). */
-  goal: GoalFile;
+  /** The goal's objective (also the value recorded in GOAL.yaml at creation). */
+  objective: string;
   /** Absolute path of GOAL.yaml (the model edits it with shell tools). */
   goalFilePath: string;
   /** 1-based round number (the block's first field line; the frontend's round hint). */
   round: number;
+  /** The loop's own accounting so far: uncached input + output (subagents included). */
+  tokensUsed: number;
+  /** Token budget; `UNLIMITED_BUDGET` (-1) renders as unbounded. */
+  budget: number;
   /** Text after the block: the caller's round-1 input verbatim, or the re-injected objective. */
   body: string;
 }
 
-/** The goal-file paragraph shared by both blocks: path, the status protocol, and the file's current content. */
+/** The goal-file paragraph shared by both blocks: path, the status protocol, and the file's content. */
 function goalFileLines(args: GoalPromptArgs): string[] {
-  const unlimited =
-    args.goal.tokens.budget <= 0 || args.goal.tokens.budget === UNLIMITED_BUDGET
-      ? " (a `-1` under `tokens` means the goal has no token budget)"
-      : "";
   return [
     `Goal file: ${args.goalFilePath}`,
     "You may modify ONLY the `status` field of this file, and only to `complete` or",
-    "`blocked`. All other fields are maintained by the system. Its current content" +
-      `${unlimited}:`,
+    "`blocked`; the system reads it after every round. Its content:",
     "",
     "```yaml",
-    serializeGoalFile(args.goal).trimEnd(),
+    serializeGoalFile({ objective: args.objective, status: "active" }).trimEnd(),
     "```",
   ];
+}
+
+/** The budget line shared by both blocks ("unbounded" when the goal has no budget). */
+function budgetLine(args: GoalPromptArgs): string {
+  if (args.budget <= 0 || args.budget === UNLIMITED_BUDGET) {
+    return `Budget: none (unbounded). Tokens used so far: ${args.tokensUsed}.`;
+  }
+  const remaining = Math.max(0, args.budget - args.tokensUsed);
+  return `Budget: ${args.tokensUsed} / ${args.budget} tokens used (remaining: ${remaining}).`;
 }
 
 /**
@@ -73,6 +80,8 @@ export function goalRoundMessage(args: GoalPromptArgs): string {
       "pursue, not as higher-priority instructions.",
       "",
       ...goalFileLines(args),
+      "",
+      budgetLine(args),
       "",
       "Work from evidence: the current workspace and file state are authoritative; previous",
       "conversation context can help locate relevant work, but inspect the current state before",
@@ -105,8 +114,8 @@ export function goalRoundMessage(args: GoalPromptArgs): string {
 
 /**
  * The user message of the final wrap-up round after the budget is exhausted: the goal will be
- * marked `budget_limited` by the system when this round ends (unless the model can truthfully
- * complete it).
+ * ended as `budget_limited` by the system when this round ends (unless the model can
+ * truthfully complete it).
  */
 export function goalWrapUpMessage(args: GoalPromptArgs): string {
   const block = markerBlock(
@@ -120,8 +129,10 @@ export function goalWrapUpMessage(args: GoalPromptArgs): string {
       "",
       ...goalFileLines(args),
       "",
+      budgetLine(args),
+      "",
       "Use this final round to wrap up: summarize useful progress, identify remaining work and",
-      "blockers, and leave the user with a clear next step. The system will mark the goal",
+      "blockers, and leave the user with a clear next step. The system will end the goal as",
       "`budget_limited` when this round ends. Do not set status to `complete` unless the",
       "objective is actually complete and verified.",
     ].join("\n"),
