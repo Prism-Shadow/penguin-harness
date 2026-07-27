@@ -213,6 +213,14 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
       : state === "done"
         ? S.chat.workDone
         : (item.outputStopReason ?? item.callStopReason);
+  // Full decision wording ("Approved · manual" / "已批准 · 自动"): below sm only the decision
+  // half is drawn — title/aria keep the whole thing — so the pill never wraps the one-line
+  // header onto a second row on phones.
+  const decisionText = item.decision
+    ? `${item.decision === "allow" ? S.chat.decisionAllow : S.chat.decisionDeny} · ${
+        item.decisionSource === "manual" ? S.chat.decisionManual : S.chat.decisionAuto
+      }`
+    : null;
 
   return (
     <div>
@@ -269,12 +277,23 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
         {item.outputStopReason && item.outputStopReason !== "completed" && (
           <Badge tone={stopReasonTone(item.outputStopReason)}>{item.outputStopReason}</Badge>
         )}
-        {item.decision && (
-          <Badge tone={item.decision === "allow" ? "green" : "red"}>
-            {item.decision === "allow" ? S.chat.decisionAllow : S.chat.decisionDeny}
-            {" · "}
-            {item.decisionSource === "manual" ? S.chat.decisionManual : S.chat.decisionAuto}
-          </Badge>
+        {item.decision && decisionText && (
+          /* shrink-0 + nowrap: the pill keeps its content width (the subtitle is the row's only
+             shrinking column), so the decision text can never fold into a taller pill. role="img"
+             + aria-label expose the full wording as one non-live node at every breakpoint. */
+          <span
+            role="img"
+            title={decisionText}
+            aria-label={decisionText}
+            className="flex shrink-0 whitespace-nowrap"
+          >
+            <Badge tone={item.decision === "allow" ? "green" : "red"}>
+              <span className="sm:hidden">
+                {item.decision === "allow" ? S.chat.decisionAllow : S.chat.decisionDeny}
+              </span>
+              <span className="hidden sm:inline">{decisionText}</span>
+            </Badge>
+          </span>
         )}
         <span className="min-w-0 flex-1" />
         {/* Expand indicator on the right */}

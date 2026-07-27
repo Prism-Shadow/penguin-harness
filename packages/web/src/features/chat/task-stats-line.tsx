@@ -36,20 +36,10 @@ import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { useTheme } from "../../state/theme";
 import { useLocale } from "../../state/locale";
 
-/** Icon + value; hover explains what this item is (the icon alone doesn't convey the exact meaning). `display` swaps the default `flex` for a responsive variant (e.g. `hidden sm:flex` on the chips dropped below sm). */
-function StatChip({
-  icon,
-  value,
-  label,
-  display = "flex",
-}: {
-  icon: string;
-  value: string;
-  label: string;
-  display?: string;
-}) {
+/** Icon + value; hover explains what this item is (the icon alone doesn't convey the exact meaning). */
+function StatChip({ icon, value, label }: { icon: string; value: string; label: string }) {
   return (
-    <span title={label} aria-label={label} className={`${display} items-center gap-1`}>
+    <span title={label} aria-label={label} className="flex items-center gap-1">
       <GlyphIcon d={icon} />
       {value}
     </span>
@@ -102,49 +92,49 @@ export function TaskStatsLine({
   // is always reserved, appearing never pushes content below it down. Font size/color also match
   // that footer; the AI's footer sits bottom-left, the user's sits bottom-right, symmetric.
   // One line always (no flex-wrap): with the fixed h-5, wrapped chips used to paint over the
-  // content below on phones. Below sm the lower-priority chips (input/output/TPS) are dropped,
-  // keeping timestamp + cost + elapsed + copy; anything still too wide clips (overflow-hidden)
-  // instead of wrapping.
+  // content below on phones. Every chip stays present at every width — on narrow screens the
+  // stats span scrolls sideways (hidden scrollbar) instead of dropping or wrapping anything; at
+  // ≥sm everything fits and the scroll container is inert. The copy button sits outside the
+  // scrollable span, so it stays pinned at the row's end instead of scrolling out of reach.
   return (
     <div className="-mt-2 flex h-5 items-center justify-start gap-x-3 overflow-hidden whitespace-nowrap text-[11px] text-gray-400 opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100 dark:text-gray-500">
-      {/* Timestamp leads: it's this reply's identity (when it was said), the stat numbers are an
-          annotation. When this turn has no token_usage (reply was aborted), only the timestamp
-          and copy remain — nothing is fabricated for what wasn't measured. */}
-      {atMs !== undefined && <span>{formatMessageTime(atMs, locale)}</span>}
-      {stats && b && (
-        <>
-          <StatChip
-            icon={STAT_ICONS.input}
-            value={humanizeTokens(input)}
-            label={S.chat.statInput}
-            display="hidden sm:flex"
-          />
-          <StatChip
-            icon={STAT_ICONS.output}
-            value={humanizeTokens(b.output)}
-            label={S.chat.statOutput}
-            display="hidden sm:flex"
-          />
-          <StatChip
-            icon={STAT_ICONS.tps}
-            value={formatTps(stats.outputTps)}
-            label={S.chat.statTps}
-            display="hidden sm:flex"
-          />
-          {cost != null && (
+      <span className="no-scrollbar flex min-w-0 items-center gap-x-3 overflow-x-auto">
+        {/* Timestamp leads: it's this reply's identity (when it was said), the stat numbers are an
+            annotation. When this turn has no token_usage (reply was aborted), only the timestamp
+            and copy remain — nothing is fabricated for what wasn't measured. */}
+        {atMs !== undefined && <span>{formatMessageTime(atMs, locale)}</span>}
+        {stats && b && (
+          <>
             <StatChip
-              icon={STAT_ICONS.cost}
-              value={formatMoney(cost, currency)}
-              label={`${S.common.cost}（${currency}）`}
+              icon={STAT_ICONS.input}
+              value={humanizeTokens(input)}
+              label={S.chat.statInput}
             />
-          )}
-          <StatChip
-            icon={STAT_ICONS.elapsed}
-            value={humanizeDuration(stats.elapsedDeltaMs)}
-            label={S.chat.statElapsed}
-          />
-        </>
-      )}
+            <StatChip
+              icon={STAT_ICONS.output}
+              value={humanizeTokens(b.output)}
+              label={S.chat.statOutput}
+            />
+            <StatChip
+              icon={STAT_ICONS.tps}
+              value={formatTps(stats.outputTps)}
+              label={S.chat.statTps}
+            />
+            {cost != null && (
+              <StatChip
+                icon={STAT_ICONS.cost}
+                value={formatMoney(cost, currency)}
+                label={`${S.common.cost}（${currency}）`}
+              />
+            )}
+            <StatChip
+              icon={STAT_ICONS.elapsed}
+              value={humanizeDuration(stats.elapsedDeltaMs)}
+              label={S.chat.statElapsed}
+            />
+          </>
+        )}
+      </span>
       <button
         type="button"
         title={copied ? S.common.copied : S.chat.copyReply}

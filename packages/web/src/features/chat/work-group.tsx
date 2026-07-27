@@ -136,12 +136,14 @@ export function WorkGroup({
         {pending && !shown && (
           <>
             {/* Below sm the pill collapses to a bare amber dot (title/aria carry the meaning):
-                the text pill would push the header past one line on phones. */}
+                the text pill would push the header past one line on phones. role="img", not a
+                live region — same non-live semantics as the text pill, so re-renders don't
+                chatter at screen readers. */}
             <span className="hidden shrink-0 rounded bg-amber-100 px-1 text-[10px] font-medium text-amber-700 sm:inline dark:bg-amber-950/50 dark:text-amber-300">
               {S.chat.approvalWaiting}
             </span>
             <span
-              role="status"
+              role="img"
               title={S.chat.approvalWaiting}
               aria-label={S.chat.approvalWaiting}
               className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500 sm:hidden"

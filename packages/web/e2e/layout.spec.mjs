@@ -418,10 +418,16 @@ test("layout: mobile chat dropdowns stay inside the viewport", async ({ page }) 
 
   // Approve and let the turn finish: the per-reply stats footer must keep to its one fixed
   // line at 390 (it used to wrap its chips onto a clipped second row that painted over the
-  // content below).
+  // content below) while still carrying EVERY chip — on phones the stats span scrolls
+  // sideways under a hidden scrollbar instead of dropping input/output/TPS, and the copy
+  // button sits outside the scroll area so it can't scroll out of reach.
   await page.getByRole("button", { name: /^Allow$/ }).click();
   await expect(page.getByText("Command finished; the result looks as expected.")).toBeVisible();
   const footer = page.getByRole("button", { name: "Copy reply" }).first().locator("xpath=..");
+  // All chips stay in the DOM at 390 (no pricing configured -> no cost chip to expect).
+  for (const chip of ["Input tokens", "Output tokens", "Output TPS", "Elapsed"]) {
+    await expect(footer.locator(`[title="${chip}"]`), `${chip} chip present @390`).toBeVisible();
+  }
   const footerH = await footer.evaluate((el) => ({
     client: el.clientHeight,
     scroll: el.scrollHeight,
@@ -429,6 +435,26 @@ test("layout: mobile chat dropdowns stay inside the viewport", async ({ page }) 
   expect(footerH.scroll, "stats footer stays single-line @390").toBeLessThanOrEqual(
     footerH.client + 1,
   );
+  const copyBox = await page.getByRole("button", { name: "Copy reply" }).first().boundingBox();
+  expect(copyBox.x, "copy button not pushed off-screen left @390").toBeGreaterThanOrEqual(0);
+  expect(copyBox.x + copyBox.width, "copy button pinned on-screen @390").toBeLessThanOrEqual(390);
+  // Inner scroll containers are fine; the page itself must not gain a sideways scroll.
+  const dDone = await docWidths(page);
+  expect(dDone.scrollWidth, "finished @390 no horizontal overflow").toBeLessThanOrEqual(
+    dDone.clientWidth,
+  );
+
+  // The decision pill on the tool card ("Approved · manual"; decision half only below sm,
+  // title/aria carry the full wording) must not wrap the card header onto a second line.
+  await page.locator("button[aria-expanded]").filter({ hasText: "Done" }).last().click();
+  const decided = page.locator('[aria-label="Approved · manual"]').first();
+  await expect(decided, "decision pill present @390").toBeVisible();
+  const toolHeader = page.locator("button[aria-expanded]", { has: decided }).first();
+  expect(
+    await toolHeader.evaluate((el) => el.clientHeight),
+    "tool-card header stays single-line @390",
+  ).toBeLessThanOrEqual(40);
+  expect(await textOverlapCount(page), "finished @390 no overlapping text").toBe(0);
 });
 
 test("layout: login — blank start, non-crossing traces, lang/theme controls", async ({ page }) => {
