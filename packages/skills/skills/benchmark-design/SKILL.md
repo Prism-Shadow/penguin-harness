@@ -3,8 +3,8 @@ name: benchmark-design
 description: Design and calibrate a multi-Case capability Benchmark with repeated independent evaluations and a traceable baseline.
 short_description: Design and calibrate an Agent capability Benchmark.
 short_description_zh: 设计并校准 Agent 能力评测 Benchmark。
-version: 2
-updated: 2026-07-25T05:34:19Z
+version: 5
+updated: 2026-07-27T00:00:00Z
 ---
 
 # Benchmark Design
@@ -126,26 +126,35 @@ A Statement describes:
 
 Do not directly provide reasoning, mappings, or rules that the Agent is expected to derive.
 
-Fix every Rubric before the first evaluation. After evaluation begins, do not change Gold answers,
-scoring rules, or established point allocations in response to Test Agent answers.
+During Pilot calibration, Statements, supporting materials, Rubrics, Gold answers, Case sets, and
+point allocations may change. Every such change invalidates the previous Pilot result and requires a
+new Pilot evaluation and a new semantic isolation review before that evaluation.
+
+Do not lower the score by tightening only the Rubric around an observed Test Agent answer. When a
+new scoring expectation is necessary, make the required behavior clear in the Statement, ensure the
+public evidence makes it answerable, update the Rubric consistently, and rerun the Pilot.
 
 Use atomic, observable scoring items with explicit points and meaningful partial credit for
 reasonable partially correct results. Never execute Test Agent-produced code while scoring.
 
-Before the first evaluation, perform a semantic isolation review of every public Statement and
-supporting file against its private Rubric. Public material may describe the task, available
-evidence, required artifact, and any rules intentionally given to the Test Agent; it must not state
-or paraphrase a rule, mapping, expected outcome, Gold answer, or scoring condition that the Test
-Agent is meant to recover. Remove runtime-generated answers or other accidental leaks before
-freezing the Benchmark.
+Before the first evaluation, and after every Pilot change before its rerun, perform a semantic
+isolation review of every public Statement and supporting file against its private Rubric. Public
+material may describe the task, available evidence, required artifact, and any rules intentionally
+given to the Test Agent; it must not state or paraphrase a rule, mapping, expected outcome, Gold
+answer, or scoring condition that the Test Agent is meant to recover. Remove runtime-generated
+answers or other accidental leaks before freezing the Benchmark. Repeat this review across the
+complete final Case set immediately before freeze and Formal dispatch.
 
 ## Evaluation dispatch
 
-Maintain a Case × Run ledger. Never dispatch a cell that is already pending or valid, and retry a
-cell only after an explicit infrastructure failure. Use bounded batches that fit the available
-subagent capacity. For independent cells in one batch, launch one `agent-evaluation` subagent per
-cell before waiting for any of them to finish, then poll those exact subagent ids until the batch is
-complete. Do not wait for one cell to finish before launching the next independent cell.
+Maintain a Case × Run ledger keyed by phase, Pilot iteration when applicable, Case, and Run. Never
+dispatch a cell that is already pending or valid. Key attempts; retry only one time, only for the
+clearly transient `cli_failed` infrastructure-failure code. Treat every other failure code, or a
+second failure, as terminal for the current Pilot or Formal matrix. A terminal or incomplete matrix
+must not write a baseline. Use bounded batches that fit the available subagent capacity. For
+independent cells in one batch, launch one `agent-evaluation` subagent per cell before waiting for
+any of them to finish, then poll those exact subagent ids until the batch is complete. Do not wait
+for one cell to finish before launching the next independent cell.
 
 Send each Evaluator one unambiguous request with every required identity field:
 
@@ -163,43 +172,67 @@ model_id: <model_id>
 
 Extract one unambiguous protocol YAML document with the fields defined by `agent-evaluation` and
 ignore any surrounding text. Do not copy Evaluator commentary into the Scoreboard or final report.
-If no valid protocol can be extracted, treat the cell as an infrastructure failure and retry it
-according to the ledger.
+If no valid protocol can be extracted, treat the cell as terminal; do not retry it.
 
-## Calibration
+## Pilot calibration
 
-1. Complete and freeze the Cases, Statements, Rubrics, points, `runs`, and evaluation Model.
-2. Record the current Test Agent State version and use `agent-evaluation` to complete every
-   configured Case × Run.
+Use Pilot evaluations to adjust difficulty before running the Formal Baseline.
+
+1. Draft the smallest useful Pilot Case set that exercises the target capability.
+2. Record the current Test Agent State version and evaluate one representative run per Pilot Case
+   with `agent-evaluation`. This initial draft-and-evaluate pass is Pilot iteration 1. Keep the
+   selected exact `(provider, model_id)` pair fixed.
+3. Pilot results are provisional and must not be written to the Scoreboard.
+4. Review the Case scores and only the representative Test Traces needed to explain them. Before
+   editing the Benchmark, state:
+   - why the current Pilot is too easy, too hard, or otherwise insufficient;
+   - the one difficulty dimension to adjust;
+   - the capability failure the adjustment is expected to expose.
+5. In one iteration, adjust only one difficulty dimension. Prefer structural changes such as evidence
+   volume, implicit conflicts, distractors, cross-file dependencies, or multi-step decisions.
+6. Each one-dimension adjustment followed by its representative rerun is the next Pilot iteration;
+   never perform multiple adjustment/rerun cycles inside one iteration. After any Statement,
+   material, Rubric, Gold, Case-set, or point change, discard the previous Pilot result, perform the
+   required semantic isolation review, and rerun the affected Pilot Cases.
+7. Run no more than three Pilot iterations. Stop earlier when the Pilot satisfies the user's stated
+   gate condition. If the third iteration does not satisfy the user's stated gate condition, or no
+   credible capability-relevant adjustment remains, report the limitation instead of manufacturing
+   ambiguity or arbitrary scoring strictness.
+
+## Formal baseline
+
+1. Once Pilot calibration is complete, discard or retire all Pilot ledger entries and results,
+   finalize and freeze the Cases, Statements, supporting materials, Rubrics, Gold answers, points,
+   `runs`, and evaluation Model, and complete the final semantic isolation review.
+2. Start a fresh Formal ledger, record the current Test Agent State version, and use
+   `agent-evaluation` to dispatch a fresh complete Case × Run matrix; never reuse Pilot outputs in
+   the Scoreboard.
 3. A matrix may form a baseline only when every Case and Run is valid and complete and the Test
    Agent State version remains unchanged.
-4. Use Case scores, repeated-run stability, and representative Test Traces to decide whether the
-   Benchmark needs adjustment. Do not read every Trace indiscriminately.
-5. A material change to a Statement, Rubric, Case set, or `runs` invalidates the old result and
-   requires a new complete evaluation.
-6. Determine whether the user's calibration target is a preference or an explicit hard gate. For a
-   preference, respect the adjustment budget and do not revise indefinitely merely to hit an exact
-   score. For a hard gate, do not report the Benchmark as calibrated until the gate is met. Continue
-   credible structural adjustments, or report the unmet gate and blocker when no such adjustment
-   remains.
+4. After the first Formal Baseline cell is dispatched, do not change the frozen Benchmark. If a
+   design defect is discovered, abandon that Formal Baseline and return to Pilot calibration only
+   within the remaining three-iteration budget; otherwise report the limitation and do not write an
+   invalid or partial baseline. A score that does not satisfy the target is not by itself a design
+   defect. Rerun the complete Formal Baseline after an allowed adjustment.
 
-Use the selected exact `(provider, model_id)` pair throughout one calibration.
+Use the selected exact `(provider, model_id)` pair throughout Pilot calibration and the Formal
+Baseline.
 
 ## Write the baseline
 
 After a complete valid matrix, validate the updated Scoreboard through a temporary file and replace
 `scoreboard.yaml` atomically.
 
-If the complete matrix misses the user's preferred score range, still record the measured baseline
-and report the calibration limitation. If it misses an explicit hard gate, the complete measurement
-may be recorded, but report the gate as unmet and do not claim successful calibration. Leave
+If the complete matrix does not satisfy the user's stated gate condition, still record the measured
+baseline and report the calibration limitation. Leave
 `evaluations: []` only when no complete valid matrix exists.
 
 A public Scoreboard summary may describe scores, stability, and capability performance, but must
 not reveal Rubrics, Gold answers, or private scoring rules.
 
-When the Benchmark definition changes materially, the Builder must clear results that are no
-longer comparable and establish a new baseline. Evaluator never writes the Scoreboard.
+After a completed Formal Baseline, a material Benchmark change starts a new Pilot calibration. Clear
+results that are no longer comparable before establishing the next Formal Baseline. Evaluator never
+writes the Scoreboard.
 
 ## Final report
 

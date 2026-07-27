@@ -182,6 +182,45 @@ describe("librarySkill", () => {
     expect(librarySkill("no-such-skill")).toBeUndefined();
   });
 
+  it("benchmark-design calibrates with Pilot runs before the Formal Baseline", () => {
+    const content = librarySkill("benchmark-design")?.content;
+    expect(content).toBeDefined();
+
+    const pilotIndex = content!.indexOf("## Pilot calibration");
+    const baselineIndex = content!.indexOf("## Formal baseline");
+    const normalizedContent = content!.replace(/\s+/g, " ");
+
+    expect(pilotIndex).toBeGreaterThan(-1);
+    expect(baselineIndex).toBeGreaterThan(pilotIndex);
+    expect(normalizedContent).toContain(
+      "Pilot results are provisional and must not be written to the Scoreboard",
+    );
+    expect(normalizedContent).toContain("adjust only one difficulty dimension");
+    expect(normalizedContent).toContain("Run no more than three Pilot iterations");
+    expect(normalizedContent).toContain("Do not lower the score by tightening only the Rubric");
+    expect(normalizedContent).toContain(
+      "requires a new Pilot evaluation and a new semantic isolation review",
+    );
+    expect(normalizedContent).toContain("immediately before freeze and Formal dispatch");
+    expect(normalizedContent).toContain(
+      "ledger keyed by phase, Pilot iteration when applicable, Case, and Run",
+    );
+    expect(normalizedContent).toContain(
+      "retry only one time, only for the clearly transient `cli_failed`",
+    );
+    expect(normalizedContent).toContain(
+      "A terminal or incomplete matrix must not write a baseline",
+    );
+    expect(normalizedContent).toContain("Start a fresh Formal ledger");
+    expect(normalizedContent).toContain("never reuse Pilot outputs in the Scoreboard");
+    expect(normalizedContent).toContain(
+      "After the first Formal Baseline cell is dispatched, do not change the frozen Benchmark",
+    );
+    expect(normalizedContent).toContain(
+      "abandon that Formal Baseline and return to Pilot calibration",
+    );
+  });
+
   it("rejects illegal-character names (path traversal guard) and never hits the filesystem", () => {
     for (const name of ["../penguin-sdk", "..", "penguin-sdk/SKILL.md", "a/../b", ".", ""]) {
       expect(librarySkill(name), name).toBeUndefined();

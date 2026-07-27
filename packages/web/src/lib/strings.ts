@@ -627,12 +627,25 @@ Phase 1 完成后，通过新的独立 CLI Session 使用 \`benchmark-design\` S
 但公开 Statement 不提供足以推导私有映射的信息。题号、候选名称和排列位置
 不得形成明显答案规律。
 
-Builder 在首次评测前确定并冻结私有映射、Gold 和 Rubric。可以根据 Test
-Agent 已公开的默认策略设置有区分度的映射；评测开始后不得修改私有映射、
-Gold、Rubric 或分值。
+先完成 Pilot 校准，再执行 Formal Baseline。初始草案加每个 Case 的一次代表性评测
+记为第 1 轮。此后每轮均恰好包含一次单维度调整及对受影响 Case 的重新评测，且构成
+下一轮。Pilot 总计最多执行 3 轮；同一轮内不得进行多次“调整—重新评测”循环。调整前
+应说明当前 Pilot 为什么过于简单、过难或不足以测量目标能力，并说明预计暴露的能力
+缺口。一致地更新 Statement、材料、私有映射、Gold 和 Rubric。每次变更 Pilot 产物后，
+都必须在下一次评测前完成语义隔离复核。
 
-完成正式 Baseline 和 Scoreboard。Baseline 未低于 70 时继续进行可信的
-结构调整，满足硬门槛后结束 Phase 2。
+Pilot 结果是临时结果，不得写入 Scoreboard。Builder 可以根据 Test Agent
+已公开的默认策略设置有区分度的私有映射，但不得仅针对已经观察到的答案
+收紧 Rubric 来降低分数。如果新增评分要求需要 Agent 给出唯一结论，公开
+Statement 必须明确要求该行为，材料也必须提供足以作答的证据。
+
+结果低于 70 时提前停止 Pilot 校准。如果第 3 轮结果仍未低于 70，或已没有可信且
+与目标能力相关的调整，应明确报告限制。满足硬门槛后，应在冻结完整 Benchmark 前
+立即完成语义隔离复核。执行全新且完整的 3×1 Formal 台账和矩阵；不得在 Scoreboard
+中复用 Pilot 的运行。只能记录一次完整有效的 Formal Baseline，绝不得写入不完整或
+放弃的 Formal 矩阵。若发现 Formal 设计缺陷，应在剩余 Pilot 预算内返回 Pilot、重新
+冻结，并执行全新且完整的 Formal 矩阵。若已无剩余 Pilot 轮次，应报告限制并停止，
+不得记录该放弃的矩阵。分数未低于 70 本身不属于设计缺陷。
 
 主 Session 只验证 Benchmark、Scoreboard 和完整 Baseline 已落盘，不读取、
 搜索或转述 Rubric、Gold 和私有映射。
@@ -641,6 +654,9 @@ Gold、Rubric 或分值。
 
 Phase 2 完成后，通过新的独立 CLI Session 使用 \`agent-optimization\` Skill
 优化 \`finite_choice_agent\`。
+
+仅当已记录的完整 Formal Baseline 低于 70 时才可开始 Phase 3；否则应记录并报告
+校准限制，并在 Phase 3 前停止。
 
 - Benchmark：\`contextual-choice-adaptation\`
 - Reference：Scoreboard 中现有的完整 Baseline

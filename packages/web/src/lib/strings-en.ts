@@ -648,13 +648,30 @@ Each Case must repeat contexts often enough for a learned mapping to apply to si
 instances. Public Statements must not provide enough information to derive the private mapping.
 Question numbers, candidate names, and item positions must not form an obvious answer pattern.
 
-Before the first evaluation, the Builder must define and freeze the private mappings, Gold
-answers, and Rubrics. It may choose mappings that discriminate against the Test Agent's public
-default policy. After evaluation begins, it must not change mappings, Gold answers, Rubrics, or
-point allocations.
+Use Pilot calibration before the Formal Baseline. Pilot iteration 1 is the initial draft plus one
+representative run per Case. Each later iteration is exactly one one-dimension adjustment followed
+by rerunning the affected Cases; it is the next iteration. Run no more than three Pilot iterations
+in total, and never perform multiple adjustment-and-rerun cycles within one iteration. Before an
+adjustment, explain why the current Pilot is too easy, too hard, or otherwise insufficient and
+state the capability failure the adjustment should expose. Update the Statements, materials,
+private mappings, Gold answers, and Rubrics consistently. After every Pilot artifact change,
+complete a semantic-isolation review before the next evaluation.
 
-Complete the formal Baseline and write the Scoreboard. If the Baseline is not below 70, continue
-credible structural adjustment until the hard gate is met.
+Pilot results are provisional and must not be written to the Scoreboard. The Builder may choose
+private mappings that discriminate against the Test Agent's public default policy, but it must not
+lower the score only by tightening a Rubric around an observed answer. If a new scoring expectation
+requires a definitive choice, the public Statement must require that behavior and the materials must
+provide enough evidence to make it answerable.
+
+Stop Pilot calibration early when the result is below 70. If the third iteration result is not below
+70, or no credible capability-relevant adjustment remains, report the limitation. Once the
+hard gate is met, complete a semantic-isolation review immediately before freezing the complete
+Benchmark. Run a fresh complete 3×1 Formal ledger and matrix; never reuse Pilot runs in the
+Scoreboard. Only one complete valid Formal Baseline may be recorded. Never write a partial or
+abandoned Formal matrix. If a Formal design defect is found, return to Pilot within the remaining
+Pilot budget, re-freeze, and run a fresh complete Formal matrix. If no Pilot iterations remain,
+report the limitation and stop without recording the abandoned matrix. A score that is not below
+70 is not by itself a design defect.
 
 The main Session may verify only that the Benchmark, Scoreboard, and complete Baseline exist. It
 must not read, search, or repeat Rubrics, Gold answers, or private mappings.
@@ -663,6 +680,9 @@ must not read, search, or repeat Rubrics, Gold answers, or private mappings.
 
 After Phase 2 completes, start a new independent CLI Session and use the
 \`agent-optimization\` Skill to improve \`finite_choice_agent\`.
+
+Start Phase 3 only when the recorded complete Formal Baseline is below 70. Otherwise,
+record and report the calibration limitation, then stop before Phase 3.
 
 - Benchmark: \`contextual-choice-adaptation\`
 - Reference: the complete Baseline already recorded in the Scoreboard
