@@ -2,9 +2,15 @@
  * Renders the README / blog benchmark chart from the same data the landing page uses
  * (src/lib/benchmark-data.ts), so the static SVGs cannot drift from the site when the
  * numbers are refreshed. Emits:
- *   assets/readme/benchmark-light.svg
- *   assets/readme/benchmark-dark.svg
- *   packages/landing/public/blog-assets/benchmark-light.svg
+ *   assets/readme/benchmark-light.svg          (committed here, used by the README)
+ *   assets/readme/benchmark-dark.svg           (committed here, used by the README)
+ *   packages/landing/.blog-assets/benchmark-light.svg
+ *
+ * That last one is a two-step flow: blog images are not committed to this repo, so the file
+ * lands in the gitignored staging dir packages/landing/.blog-assets/ and is then uploaded to
+ * the `blog-assets/` directory of the sibling `Prism-Shadow/penguin-harness-community` repo,
+ * which is what the posts load from (the renderer resolves /blog-assets/<name> there — see
+ * packages/landing/src/lib/links.ts).
  *
  * Two panels per suite (accuracy, cost), horizontal bars scaled linearly from zero — the
  * cost spread is ~70x, so the PenguinHarness bar is by far the shortest. That is the
@@ -15,7 +21,7 @@
  *
  * Run: node packages/landing/scripts/render-benchmark-svg.mjs
  */
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -171,9 +177,11 @@ const bench = loadBench();
 const targets = [
   ["light", path.join(REPO, "assets/readme/benchmark-light.svg")],
   ["dark", path.join(REPO, "assets/readme/benchmark-dark.svg")],
-  ["light", path.join(LANDING, "public/blog-assets/benchmark-light.svg")],
+  ["light", path.join(LANDING, ".blog-assets/benchmark-light.svg")],
 ];
 for (const [theme, file] of targets) {
+  // The blog staging dir is gitignored, so it does not exist in a fresh clone.
+  mkdirSync(path.dirname(file), { recursive: true });
   writeFileSync(file, render(theme, bench));
   console.log(`wrote ${path.relative(REPO, file)}`);
 }
