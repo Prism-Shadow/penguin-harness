@@ -593,9 +593,19 @@ Session 内按 Skill 要求用 \`run_subagent\` 委托 \`agent-evaluation\` 执�
 - Runs：3
 - Baseline 硬门槛：低于 70
 
-目标能力：Agent 能否从同类任务的评测反馈中发现稳定的上下文—动作规律，并迁移到新
-实例。Benchmark 应覆盖足球预测、彩票机器和模拟投资三类有限选择任务；具体的 Case、
-环境规则、难度维度和 Rubric 由本阶段独立设计，不要在公开 Statement 中泄露答案。
+本实验评估：在没有外部事实可以直接查询的有限选择任务中，Agent 能否经过多轮评测与
+优化，从分数和 Test Trace 中发现稳定但未知的上下文—动作规律，并将其应用到未见过的
+新实例。Benchmark 包含三个 Case：
+
+1. 足球预测：提供若干虚构比赛及其上下文标记，Agent 必须为每场比赛选择
+   \`Home\`、\`Draw\` 或 \`Away\`。
+2. 彩票机器：提供反复出现的环境符号和四台候选机器，Agent 必须为每个实例选择一台
+   机器。
+3. 模拟投资：提供市场状态标记和四个虚拟资产，Agent 必须按预期表现对资产排序。
+
+每个 Case 应包含共享底层规律但表面信息不同的多个实例，用于区分死记答案和真正学会
+规则。具体的隐藏规则、数据构造、干扰因素、难度和 Rubric 由本阶段按照
+\`benchmark-design\` 独立设计；公开 Statement 不得泄露答案或评分条件。
 
 按照 \`benchmark-design\` 完成设计、Pilot 调整、冻结和 Formal Baseline。只有有效且
 完整的 Formal Baseline 低于 70 时才能启动 Phase 3；否则报告限制并停止。当前编排
