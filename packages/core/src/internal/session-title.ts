@@ -9,15 +9,12 @@
  * responsible for the prompt format, driving the one-off request, and sanitizing the result —
  * when to generate a title and where to store it is decided by the host (Web server / CLI).
  * The narrow public surface — `SessionTitleResult` (part of `Session.generateTitle`'s
- * signature) and the sanitation helpers the host's title fallback builds on — is re-exported
- * by the barrel; the prompt/request internals are not.
+ * signature) and `sanitizeTitle` — is re-exported by the barrel; the prompt/request
+ * internals are not. Marker stripping (`stripConversationMarkers`) lives with the markers
+ * module, keeping every tag's producer, parser and stripper in one place.
  */
 import { userText } from "../omnimessage/index.js";
-import {
-  TITLE_NOISE_TAGS,
-  parseGoalMessage,
-  stripMarkerBlocks,
-} from "../omnimessage/markers/index.js";
+import { stripConversationMarkers } from "../omnimessage/markers/index.js";
 import type {
   OmniMessage,
   TextPayload,
@@ -30,23 +27,6 @@ import type { LLMInterface } from "../interfaces.js";
 const EXCERPT_MAX_CHARS = 2000;
 /** Cap on title length (fallback truncation for when the model occasionally ignores the constraint). */
 const TITLE_MAX_CHARS = 30;
-
-/**
- * Strips machine-inserted marker blocks from conversation text so titles are built from the
- * human-meaningful body only — both the material sent to the model and the fallback derived
- * from the raw first message. The tag list (TITLE_NOISE_TAGS) and the both-forms stripping
- * live in the markers module; engine-synthesized blocks are deliberately not stripped (they
- * are never title material).
- */
-export function stripConversationMarkers(text: string): string {
-  // The [goal] block is taken off first with its own line-anchored parser: it embeds user
-  // data, and an objective containing a literal `[/goal]` would make the generic strip below
-  // stop early and leak protocol tail text into the title (the anchoring argument lives in
-  // markers/goal-block.ts). The loop below then only ever sees host-composed block content.
-  let out = parseGoalMessage(text)?.rest ?? text;
-  for (const tag of TITLE_NOISE_TAGS) out = stripMarkerBlocks(out, tag);
-  return out.trim();
-}
 
 export interface SessionTitleResult {
   /** The sanitized title; null when material is insufficient, the request fails, or the output is empty. */

@@ -28,3 +28,4 @@ export * from "./engine-blocks.js";
 export * from "./origin-blocks.js";
 export * from "./steering.js";
 export * from "./goal-block.js";
+export * from "./strip.js";
