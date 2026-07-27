@@ -5,10 +5,12 @@
  * share the same basis (this turn's usage), each expressed uniformly as icon + value (no text
  * labels); the reply timestamp and a copy button sit at the end (copies this turn's assistant
  * text, falling back to the stats themselves when there's no text).
- * The whole line is invisible but takes up space by default, surfacing only on hovering the
- * reply or the line itself — matching the same convention, font size, and color as the user
+ * At ≥sm the whole line is invisible but takes up space by default, surfacing only on hovering
+ * the reply or the line itself — matching the same convention, font size, and color as the user
  * message footer: the AI's footer sits bottom-left, the user's sits bottom-right, symmetric on
- * both sides.
+ * both sides. Below sm the line is always visible: phones have no hover (Tailwind v4 even gates
+ * hover: variants behind `@media (hover: hover)`), so a hover-revealed footer would simply
+ * never appear there.
  * Arrow direction reads as "where the tokens go": **up arrow = input** (sent up to the model),
  * **down arrow = output** (returned by the model).
  * This line only answers "how much did this turn cost", **it doesn't break down the cache
@@ -87,17 +89,18 @@ export function TaskStatsLine({
     });
   };
 
-  // The whole line is invisible but **takes up space** by default (opacity-0, not hidden) —
-  // matching the user message footer's convention: only appears on hover, and because the space
-  // is always reserved, appearing never pushes content below it down. Font size/color also match
-  // that footer; the AI's footer sits bottom-left, the user's sits bottom-right, symmetric.
+  // ≥sm: invisible but **space-reserved** by default (sm:opacity-0, not hidden) — the user
+  // footer's hover-reveal convention; because the space is always reserved, appearing never
+  // pushes content below it down. Below sm the line is ALWAYS visible: hover doesn't exist on
+  // touch screens (and Tailwind v4 scopes hover: variants to `@media (hover: hover)`), so the
+  // hover gating made the stats unreachable on phones.
   // One line always (no flex-wrap): with the fixed h-5, wrapped chips used to paint over the
   // content below on phones. Every chip stays present at every width — on narrow screens the
   // stats span scrolls sideways (hidden scrollbar) instead of dropping or wrapping anything; at
   // ≥sm everything fits and the scroll container is inert. The copy button sits outside the
   // scrollable span, so it stays pinned at the row's end instead of scrolling out of reach.
   return (
-    <div className="-mt-2 flex h-5 items-center justify-start gap-x-3 overflow-hidden whitespace-nowrap text-[11px] text-gray-400 opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100 dark:text-gray-500">
+    <div className="-mt-2 flex h-5 items-center justify-start gap-x-3 overflow-hidden whitespace-nowrap text-[11px] text-gray-400 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100 sm:opacity-0 dark:text-gray-500">
       <span className="no-scrollbar flex min-w-0 items-center gap-x-3 overflow-x-auto">
         {/* Timestamp leads: it's this reply's identity (when it was said), the stat numbers are an
             annotation. When this turn has no token_usage (reply was aborted), only the timestamp

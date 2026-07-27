@@ -206,16 +206,24 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
       : failed
         ? "failed"
         : "done";
+  // A user denial reports stop_reason "aborted" on the output it feeds back; that abort IS the
+  // decision, not an independent outcome, so the decision indicator is the card's single marker
+  // for it — both the "aborted" badge and the status icon's "aborted" label are dropped (the
+  // icon stays as a decorative red glyph). A user-abort of a RUNNING tool carries no deny
+  // decision and keeps its own "aborted" marker.
+  const deniedByUser = item.decision === "deny" && item.outputStopReason === "aborted";
   const stateLabel = pending
     ? S.chat.approvalWaiting
     : state === "running"
       ? S.chat.workRunning
       : state === "done"
         ? S.chat.workDone
-        : (item.outputStopReason ?? item.callStopReason);
-  // Full decision wording ("Approved · manual" / "已批准 · 自动"): below sm only the decision
-  // half is drawn — title/aria keep the whole thing — so the pill never wraps the one-line
-  // header onto a second row on phones.
+        : deniedByUser
+          ? undefined
+          : (item.outputStopReason ?? item.callStopReason);
+  // Full decision wording ("Approved · manual" / "已批准 · 自动"): below sm the indicator is a
+  // bare colored glyph (✓ approved / ✕ denied, same visual language as the Allow/Deny buttons)
+  // — title/aria keep the whole wording — so it can never wrap the one-line header on phones.
   const decisionText = item.decision
     ? `${item.decision === "allow" ? S.chat.decisionAllow : S.chat.decisionDeny} · ${
         item.decisionSource === "manual" ? S.chat.decisionManual : S.chat.decisionAuto
@@ -274,25 +282,35 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
         {item.callStopReason && item.callStopReason !== "completed" && (
           <Badge tone={stopReasonTone(item.callStopReason)}>{item.callStopReason}</Badge>
         )}
-        {item.outputStopReason && item.outputStopReason !== "completed" && (
+        {/* Writing "aborted" next to the Denied pill would state the same outcome twice — see
+            deniedByUser above. */}
+        {item.outputStopReason && item.outputStopReason !== "completed" && !deniedByUser && (
           <Badge tone={stopReasonTone(item.outputStopReason)}>{item.outputStopReason}</Badge>
         )}
         {item.decision && decisionText && (
-          /* shrink-0 + nowrap: the pill keeps its content width (the subtitle is the row's only
-             shrinking column), so the decision text can never fold into a taller pill. role="img"
-             + aria-label expose the full wording as one non-live node at every breakpoint. */
+          /* shrink-0 + nowrap: the indicator keeps its content width (the subtitle is the row's
+             only shrinking column), so it can never fold into a taller row. role="img" +
+             aria-label expose the full wording as one non-live node at every breakpoint. */
           <span
             role="img"
             title={decisionText}
             aria-label={decisionText}
-            className="flex shrink-0 whitespace-nowrap"
+            className="flex shrink-0 items-center whitespace-nowrap"
           >
-            <Badge tone={item.decision === "allow" ? "green" : "red"}>
-              <span className="sm:hidden">
-                {item.decision === "allow" ? S.chat.decisionAllow : S.chat.decisionDeny}
-              </span>
-              <span className="hidden sm:inline">{decisionText}</span>
-            </Badge>
+            {/* Below sm: bare colored glyph — the same ✓/✕ visual language as the Allow/Deny
+                buttons that produced the decision. */}
+            <span
+              className={`text-xs font-semibold sm:hidden ${
+                item.decision === "allow"
+                  ? "text-emerald-600 dark:text-emerald-400"
+                  : "text-red-600 dark:text-red-400"
+              }`}
+            >
+              {item.decision === "allow" ? "✓" : "✕"}
+            </span>
+            <span className="hidden sm:flex">
+              <Badge tone={item.decision === "allow" ? "green" : "red"}>{decisionText}</Badge>
+            </span>
           </span>
         )}
         <span className="min-w-0 flex-1" />
@@ -303,13 +321,16 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
       {/* Pending approval: always visible regardless of collapsed state — shows the tool name and arguments so the user knows what they're approving. */}
       {pending && (
         <div className="border-t border-gray-100 bg-amber-50 px-3 py-2 dark:border-gray-800 dark:bg-amber-950/30">
-          {/* One line always: the preview truncates (min-w-0) rather than wrapping under the
-              name pill — wrapping grew the card on phones. */}
-          <div className="mb-2 flex items-center gap-2">
+          {/* The user must be able to read the FULL command before deciding: below sm the
+              preview wraps in whole (expanded-args style: pre-wrap + break-all, no inner
+              scroll, the block may grow) — the one-line treatment resumes once decided, since
+              this pending block unmounts and only the truncating header subtitle remains. At
+              ≥sm the row stays one line (the desktop column is wide enough in practice). */}
+          <div className="mb-2 flex items-start gap-2 sm:items-center">
             <span className="shrink-0 rounded-md bg-white px-1.5 py-0.5 font-mono text-xs font-semibold text-gray-700 dark:bg-gray-900 dark:text-gray-300">
               {item.name || S.chat.unknownTool}
             </span>
-            <span className="min-w-0 flex-1 truncate font-mono text-xs text-gray-600 dark:text-gray-400">
+            <span className="min-w-0 flex-1 whitespace-pre-wrap break-all font-mono text-xs text-gray-600 sm:truncate dark:text-gray-400">
               {preview}
             </span>
           </div>

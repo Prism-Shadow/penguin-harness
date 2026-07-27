@@ -81,10 +81,24 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   await toolCard.click();
   await expect(toolCard).toHaveAttribute("aria-expanded", "true");
 
+  // Desktop keeps the one-line pending preview (truncate); only phones wrap the command in
+  // full while pending (asserted at 390 in layout.spec).
+  expect(
+    await page
+      .getByText("$ ls -la")
+      .first()
+      .evaluate((el) => getComputedStyle(el).whiteSpace),
+    "pending preview stays one line at desktop",
+  ).toBe("nowrap");
+
   await page.getByRole("button", { name: "允许" }).click();
 
   // Final assistant answer (turn 2 from mock).
   await expect(page.getByText("Command finished; the result looks as expected.")).toBeVisible();
+
+  // At ≥sm the approval decision keeps its full text pill (phones collapse it to a ✓ glyph,
+  // asserted in layout.spec).
+  await expect(page.getByText("已批准 · 手动")).toBeVisible();
 
   // Chat links always open in a new tab and never navigate the SPA away — including bare URLs
   // that remark-gfm autolinks (the mock reply carries one inside a CJK sentence).

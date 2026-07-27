@@ -416,6 +416,18 @@ test("layout: mobile chat dropdowns stay inside the viewport", async ({ page }) 
   await expect(page.getByRole("button", { name: /^Deny$/ })).toBeVisible();
   expect(await textOverlapCount(page), "running @390 no overlapping text").toBe(0);
 
+  // While PENDING the one-line rule yields on purpose: the user must read the whole command
+  // before deciding, so below sm the preview wraps in full (pre-wrap, no truncation, the block
+  // may grow) instead of clipping.
+  const pendingPreview = page.getByText("$ ls -la").first();
+  await expect(pendingPreview, "full command shown while pending @390").toBeVisible();
+  const pv = await pendingPreview.evaluate((el) => ({
+    whiteSpace: getComputedStyle(el).whiteSpace,
+    clipped: el.scrollWidth > el.clientWidth + 1,
+  }));
+  expect(pv.whiteSpace, "pending preview wraps below sm").toBe("pre-wrap");
+  expect(pv.clipped, "pending preview not clipped @390").toBe(false);
+
   // Approve and let the turn finish: the per-reply stats footer must keep to its one fixed
   // line at 390 (it used to wrap its chips onto a clipped second row that painted over the
   // content below) while still carrying EVERY chip — on phones the stats span scrolls
@@ -424,6 +436,11 @@ test("layout: mobile chat dropdowns stay inside the viewport", async ({ page }) 
   await page.getByRole("button", { name: /^Allow$/ }).click();
   await expect(page.getByText("Command finished; the result looks as expected.")).toBeVisible();
   const footer = page.getByRole("button", { name: "Copy reply" }).first().locator("xpath=..");
+  // Below sm the footer is ALWAYS visible at rest (no hover on touch screens — hover-gated
+  // opacity meant phones could never see the stats at all); ≥sm keeps the hover reveal, which
+  // chat.spec asserts at desktop width.
+  await page.mouse.move(0, 0);
+  await expect(footer, "stats footer visible at rest @390").toHaveCSS("opacity", "1");
   // All chips stay in the DOM at 390 (no pricing configured -> no cost chip to expect).
   for (const chip of ["Input tokens", "Output tokens", "Output TPS", "Elapsed"]) {
     await expect(footer.locator(`[title="${chip}"]`), `${chip} chip present @390`).toBeVisible();
@@ -444,17 +461,47 @@ test("layout: mobile chat dropdowns stay inside the viewport", async ({ page }) 
     dDone.clientWidth,
   );
 
-  // The decision pill on the tool card ("Approved · manual"; decision half only below sm,
-  // title/aria carry the full wording) must not wrap the card header onto a second line.
+  // The decision indicator on the tool card: below sm a bare ✓ glyph (same visual language as
+  // the Allow button), full "Approved · manual" wording on title/aria; it must not wrap the
+  // card header onto a second line.
   await page.locator("button[aria-expanded]").filter({ hasText: "Done" }).last().click();
   const decided = page.locator('[aria-label="Approved · manual"]').first();
-  await expect(decided, "decision pill present @390").toBeVisible();
+  await expect(decided, "decision indicator present @390").toBeVisible();
+  await expect(decided.getByText("✓"), "approved ✓ glyph @390").toBeVisible();
   const toolHeader = page.locator("button[aria-expanded]", { has: decided }).first();
   expect(
     await toolHeader.evaluate((el) => el.clientHeight),
     "tool-card header stays single-line @390",
   ).toBeLessThanOrEqual(40);
   expect(await textOverlapCount(page), "finished @390 no overlapping text").toBe(0);
+
+  // A DENIED call must state its outcome once, not twice: the deny path itself reports
+  // stop_reason "aborted", so the card keeps only the decision indicator (✕ glyph below sm,
+  // "Denied · manual" on title/aria) and drops the redundant "aborted" badge. Fresh session:
+  // the mock answers with plain text once any tool_result exists in the history.
+  const sess2 = await (
+    await page.request.post(`${BASE}/api/projects/${projectId}/agents/default_agent/sessions`, {
+      data: { provider: "custom", modelId: "claude-4-8", approvalMode: "always-ask" },
+    })
+  ).json();
+  await page.goto(`${BASE}/chat/${sess2.session.sessionId}`);
+  await page.getByPlaceholder(/Type a message/).fill("Help me check the directory");
+  await page.locator('button[aria-label="Send"]').click();
+  await page.getByRole("button", { name: /^Deny$/ }).click();
+  await expect(page.getByText("Command finished; the result looks as expected.")).toBeVisible();
+  await page.locator("button[aria-expanded]").filter({ hasText: "Done" }).last().click();
+  const denied = page.locator('[aria-label="Denied · manual"]').first();
+  await expect(denied, "denied indicator present @390").toBeVisible();
+  await expect(denied.getByText("✕"), "denied ✕ glyph @390").toBeVisible();
+  const deniedHeader = page.locator("button[aria-expanded]", { has: denied }).first();
+  await expect(
+    deniedHeader.getByText("aborted"),
+    "no duplicate aborted badge on a denied call",
+  ).toHaveCount(0);
+  expect(
+    await deniedHeader.evaluate((el) => el.clientHeight),
+    "denied card header stays single-line @390",
+  ).toBeLessThanOrEqual(40);
 });
 
 test("layout: login — blank start, non-crossing traces, lang/theme controls", async ({ page }) => {
