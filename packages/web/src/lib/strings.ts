@@ -621,9 +621,9 @@ Session 只能检查公开 Benchmark 产物和最终分数，不得读取或转�
 使用 \`agent-optimization\`，Benchmark 为 \`contextual-choice-adaptation\`，Reference
 为已记录的 Baseline，目标分数至少 85。
 
-根据公开 Statement、评测分数和 Test Trace 自行诊断能力缺口，提出假设并设计最小的
-通用改进。按照 \`agent-optimization\` 完成 Candidate 评测、接受或回滚，直到达到目标
-或无法继续有效改进。不得读取 Rubric、Gold 或其他私有 Benchmark 信息。
+根据公开 Statement、评测分数和 Test Trace 改进 Test Agent 的通用能力。按照
+\`agent-optimization\` 完成 Candidate 评测、接受或回滚，直到达到目标或无法继续有效
+改进。不得读取 Rubric、Gold 或其他私有 Benchmark 信息。
 
 ## 最终检查与汇报
 

@@ -4,7 +4,7 @@ description: Improve an Agent State through versioned scores and score-linked Tr
 short_description: Improve an Agent from measured Benchmark results.
 short_description_zh: 根据 Benchmark 结果改进 Agent。
 version: 7
-updated: 2026-07-27T09:22:44Z
+updated: 2026-07-27T09:41:22Z
 ---
 
 # Agent Optimization
@@ -29,13 +29,13 @@ Modify only the Test Agent State. Do not change the Benchmark definition, Test T
 
 ## Candidate
 
-State one falsifiable hypothesis from the available evidence. Name the observed failure, the missing general capability, and the expected effect of one minimal Agent State change. Keep one behavioral strategy family per round.
+Create one Candidate at a time with one bounded, general Agent State change. Use its scores and Test Traces to choose the next Candidate.
 
 Put behavioral or workflow guidance in `AGENTS.md`. Put a reusable target-owned capability in a focused Skill. Put runtime limits in safe `system_config.yaml` fields. Do not edit `system_prompt` unless the user asks. Do not modify a library-provided Skill for target-specific behavior.
 
 The change must generalize beyond observed instances. Do not encode Case ids, exact answers, per-question lookup tables, private scoring conditions, or a rule supported by one observation. Prefer conditional policies and validation procedures over memorized outputs.
 
-Before editing, read the top-level State `version`; use 1 when it is absent. Set the Candidate version to `current + 1`. Record the exact original content of every affected file. Validate temporary files before replacing the originals.
+Track the Reference version separately from Candidate attempt versions. The first Candidate uses `Reference version + 1`; each later Candidate uses the highest attempted Candidate version + 1, even if the previous Candidate was rejected. Rolling back restores the Reference version but never reuses a Candidate version. Record the exact original content of every affected file. Validate temporary files before replacing the originals.
 
 If the Candidate is rejected or cannot be compared, restore the changed files and previous version. Remove files created by the round, then verify the rollback. If another process changes the Agent State, stop without overwriting its work.
 
@@ -69,12 +69,11 @@ For `invalid_request`, correct the request and resend it. For `version_changed`,
 
 For each round:
 
-1. Analyze the Reference's aggregate and Case scores, repeated-run stability, public Statements, and Test Traces. Compare them with completed Candidates from this optimization, including rejected ones.
-2. State one credible hypothesis and create one Candidate under the rules above. Stop if no credible hypothesis remains.
-3. Delegate the complete Case × Run matrix in parallel and assemble all returned cells.
-4. If the Candidate score is strictly higher, keep it. Append its complete Evaluation with public `summary_title` and `summary` to the Scoreboard atomically, then use it as the next Reference. Otherwise restore the prior State. Keep rejected Candidates only in the round ledger.
-5. Repeat until the user's target or round limit is reached, no credible hypothesis remains, or infrastructure prevents a valid comparison.
+1. Use the available scores, public Statements, Test Traces, and prior attempts to create one bounded, general Candidate from the Reference.
+2. Delegate the complete Case × Run matrix in parallel and assemble all returned cells.
+3. If the Candidate score is strictly higher, keep it. Append its complete Evaluation with public `summary_title` and `summary` to the Scoreboard atomically, then use it as the next Reference. Otherwise restore the prior State. Keep rejected Candidates only in the round ledger.
+4. Repeat until the user's target or round limit is reached, no useful Candidate remains, or infrastructure prevents a valid comparison.
 
-Unless the user asks only for analysis, evaluate at least one credible Candidate when infrastructure permits. Do not search the score through random Agent State changes.
+Unless the user asks only for analysis, evaluate at least one Candidate when infrastructure permits.
 
 Report the score curve from the Baseline through every fully evaluated Candidate, accepted or rejected. Include accepted versions and changes, rejected and rolled-back Candidates, Test Session ids, the stop reason, and known limitations. Never attribute a score to an Agent State that was not evaluated.
