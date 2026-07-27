@@ -56,7 +56,6 @@ export const en: Strings = {
 
   /** Version footer, update reminder, and admin self-update in the sidebar user menu. */
   update: {
-    version: "Version",
     /** Version-line date label; `date` is formatMonthDay output, e.g. "Last updated Jul 26". */
     lastUpdated: (date: string) => `Last updated ${date}`,
     /** Superscript badge on the version lines when the update check found a newer release. */

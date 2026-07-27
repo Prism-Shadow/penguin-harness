@@ -232,13 +232,13 @@ export function Sidebar({
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
-  // Version footer + update reminder: nothing is fetched until the dropdown first opens.
+  // Version row + update reminder: nothing is fetched until the dropdown first opens.
   const { version, update } = useVersionInfo(userOpen);
   const updateAvailable = update?.updateAvailable === true;
-  // Footer date: the running version's release date, stamped into core's BUILD_DATE at
-  // build time by the release workflow — displayed as-is, no network involved. Dev builds
-  // and releases that predate the stamping (v0.1.2 and earlier) carry null and show the
-  // version alone. Rendered as the localized "last updated" label + month/day.
+  // The running version's release date, stamped into core's BUILD_DATE at build time by
+  // the release workflow — displayed as-is, no network involved. Dev builds and releases
+  // that predate the stamping (v0.1.2 and earlier) carry null. Shown as the localized
+  // "last updated" tooltip on the check-for-updates row (the row itself stays uncluttered).
   const versionDate = version?.buildDate ?? null;
   /** Manual "check for updates" in flight (row disabled, busy label). */
   const [updateChecking, setUpdateChecking] = useState(false);
@@ -1090,6 +1090,40 @@ export function Sidebar({
             >
               {S.account.changePassword}
             </button>
+            {/* Manual update check, directly below Change password (owner layout). The
+                running version sits muted on the right of the same row — no product-name
+                prefix — and the superscript new-version badge rides along there as a
+                passive indicator: a nested button/link inside this button row would be
+                invalid HTML, and whenever the badge shows, the clickable affordances
+                (release link / Update now) are already present in the reminder rows
+                above. The "last updated" date lives in the row tooltip, keeping the row
+                itself uncluttered. While checking, the label swaps to the busy text and
+                the right-side version stays put. Nothing is fetched until the menu first
+                opens; the version span appears once /api/version resolves. */}
+            <button
+              type="button"
+              disabled={updateChecking}
+              onClick={() => void runUpdateCheck()}
+              {...(versionDate !== null
+                ? { title: S.update.lastUpdated(formatMonthDay(versionDate, locale)) }
+                : {})}
+              className={`${menuItemClass} flex items-center justify-between gap-2 disabled:cursor-default disabled:opacity-60`}
+            >
+              <span>{updateChecking ? S.update.checking : S.update.checkNow}</span>
+              {version !== null && (
+                <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
+                  {`v${version.version}`}
+                  {update !== null && update.updateAvailable && update.latestVersion !== null && (
+                    <span
+                      className={versionBadgeClass}
+                      title={S.update.newVersion(update.latestVersion)}
+                    >
+                      {S.update.newVersionBadge}
+                    </span>
+                  )}
+                </span>
+              )}
+            </button>
             {/* User management is visible only to admins (the page route also has its own guard as a fallback). */}
             {user?.isAdmin && (
               <button
@@ -1113,66 +1147,6 @@ export function Sidebar({
             >
               {S.auth.logout}
             </button>
-          </div>
-          {/* Manual update check + muted version footer, one section: the action row
-              forces a lookup past the server's TTL cache and sits with the version
-              identity it refreshes; the footer line is lazily fetched on first open
-              and absent until it resolves. */}
-          <div className="mt-1 border-t border-gray-100 pt-1 dark:border-gray-800">
-            <button
-              type="button"
-              disabled={updateChecking}
-              onClick={() => void runUpdateCheck()}
-              className={`${menuItemClass} disabled:cursor-default disabled:opacity-60`}
-            >
-              {updateChecking ? S.update.checking : S.update.checkNow}
-            </button>
-            {version !== null && (
-              <div
-                className="px-3.5 pb-2 pt-0.5 text-xs text-gray-400 dark:text-gray-500"
-                title={S.update.version}
-              >
-                {`PenguinHarness v${version.version}${
-                  versionDate !== null
-                    ? ` · ${S.update.lastUpdated(formatMonthDay(versionDate, locale))}`
-                    : ""
-                }`}
-                {/* Superscript "new version" badge right after the date (or the version when
-                  no date): mirrors the dropdown affordance above — admins open the update
-                  dialog, others the release page; without a URL it degrades to a plain
-                  pill (nothing actionable to offer). */}
-                {update !== null &&
-                  update.updateAvailable &&
-                  update.latestVersion !== null &&
-                  (user?.isAdmin ? (
-                    <button
-                      type="button"
-                      title={S.update.newVersion(update.latestVersion)}
-                      aria-label={S.update.newVersion(update.latestVersion)}
-                      onClick={() => {
-                        setUserOpen(false);
-                        setUpdateDialogOpen(true);
-                      }}
-                      className={versionBadgeClass}
-                    >
-                      {S.update.newVersionBadge}
-                    </button>
-                  ) : update.releaseUrl !== null ? (
-                    <a
-                      href={update.releaseUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      title={S.update.newVersion(update.latestVersion)}
-                      aria-label={S.update.newVersion(update.latestVersion)}
-                      className={versionBadgeClass}
-                    >
-                      {S.update.newVersionBadge}
-                    </a>
-                  ) : (
-                    <span className={versionBadgeClass}>{S.update.newVersionBadge}</span>
-                  ))}
-              </div>
-            )}
           </div>
         </Dropdown>
       </div>
