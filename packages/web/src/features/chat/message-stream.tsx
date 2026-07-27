@@ -43,6 +43,8 @@ export interface StreamRenderContext {
   onGiveUp?: () => void;
   /** Opens the Files panel and navigates to this file (triggered by clicking the file-summary card at the end of a message; takes a Workspace-relative path); the card doesn't render if this isn't wired up. */
   onOpenFile?: (path: string) => void;
+  /** Opens the subagents panel focused on this child session (subagent chip click); `origin` is the ctx.origin at the chip's render level — the child's ancestor chain, excluding its own id. */
+  onOpenSubagent?: (sessionId: string, origin: string[]) => void;
   /** Absolute Workspace path of the current Session (used by the file-summary card to normalize body paths). */
   workspace?: string | null;
   /** Batch file-existence check (with session-level caching); the card doesn't render if this isn't wired up. */

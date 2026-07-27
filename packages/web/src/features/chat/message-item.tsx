@@ -17,7 +17,7 @@ import { ZoomableImage } from "../../components/ui/image-zoom";
 import { MessageFilesCard } from "./message-files-card";
 import { ThinkingBlock } from "./thinking-block";
 import { ToolCallCard } from "./tool-call-card";
-import { SubagentCard } from "./subagent-card";
+import { SubagentChip } from "./subagent-chip";
 import { CompactionBanner } from "./compaction-banner";
 import { GoalRoundBanner } from "./goal-banner";
 import { HandoffBanner, ModelSwitchBanner } from "./handoff-banner";
@@ -315,9 +315,11 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
     case "tool_call":
       return <ToolCallCard item={item} ctx={ctx} />;
     case "subagent":
+      // Standalone child session (no run_subagent card to bind to): same full-width shortcut
+      // bar as the bound site — the conversation itself lives in the subagents panel.
       return (
         <div className="anim-msg my-2">
-          <SubagentCard sessionId={item.sessionId} model={item.model} running={false} ctx={ctx} />
+          <SubagentChip sessionId={item.sessionId} model={item.model} running={false} ctx={ctx} />
         </div>
       );
     case "abort":

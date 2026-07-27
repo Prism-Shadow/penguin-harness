@@ -715,6 +715,7 @@ When done, open index.html in a browser and self-test once.`,
     statsLabel: "Stats",
     removeImage: "Remove image",
     openWorkspace: "Open workspace",
+    openAgents: "Agents panel",
     filesInMessage: (n: number) => `${n} ${n === 1 ? "file" : "files"}`,
     openPreview: "Click to preview",
     showMoreFiles: (n: number) => `Show ${n} more ${n === 1 ? "file" : "files"}`,
@@ -797,6 +798,16 @@ When done, open index.html in a browser and self-test once.`,
       budget_limited: "budget exhausted",
       aborted: "interrupted",
     } as Record<string, string>,
+  },
+
+  /** Subagents side panel: call-graph of the latest Task + the selected child conversation. */
+  subagentPanel: {
+    title: "Agents panel",
+    topologyLabel: "Call graph",
+    mainSessionNote: "The main conversation stays in the chat area",
+    empty: "No subagents in the current task yet",
+    nodeRunning: "running",
+    nodeDone: "done",
   },
 
   files: {

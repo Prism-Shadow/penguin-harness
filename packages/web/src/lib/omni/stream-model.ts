@@ -12,12 +12,13 @@
  *     **replaces** the fragment's content (guaranteeing consistency;
  *     with no open fragment — mid-stream join — it's appended directly); an
  *     orphan delta (no start seen) is ignored, converging once the complete message arrives.
- *   - origin routing: messages carrying an origin go into a SubagentCard;
- *     when a sub-session's session_meta arrives, it binds to "the most
- *     recent allowed (decision=allow) and not-yet-complete run_subagent tool
- *     card that hasn't been bound to an origin yet", creating a standalone
- *     SubagentCard if none is found; inside the card, the same reducer
- *     recurses (with the first origin hop stripped). Sub-session
+ *   - origin routing: messages carrying an origin go into a nested child
+ *     model (surfaced in the UI as a subagent chip + the subagents panel);
+ *     on a sub-session's first message it binds to "the most recent allowed
+ *     (decision=allow) and not-yet-complete run_subagent tool card that
+ *     hasn't been bound to an origin yet", falling back to a standalone
+ *     SubagentItem if none is found; inside the nested model, the same
+ *     reducer recurses (with the first origin hop stripped). Sub-session
  *     token_usage counts toward this level's stats (same convention as the CLI).
  *   - Events: approval_decision annotates the corresponding tool card
  *     (labeled "manual" if clicked on this end, "automatic" otherwise);
@@ -59,6 +60,7 @@ import type {
   EventPayload,
   OmniMessage,
   PartialModelPayload,
+  SessionMetaPayload,
   StopReason,
   TokenUsagePayload,
 } from "@prismshadow/penguin-core/omnimessage";
@@ -269,10 +271,45 @@ export type ChatItem =
 // Model state
 // ---------------------------------------------------------------------------
 
+/**
+ * Identity of a nested child session, captured from its own session_meta (a child session's
+ * DTO isn't loaded by the chat page, so this is the panel's only live source for "which agent
+ * runs this child"). Main-session models never fill it — their identity comes from the Session DTO.
+ */
+export interface NestedSessionMeta {
+  /** Agent id parsed from the `agent_state` path (its parent directory name); null when unparseable. */
+  agentId: string | null;
+  provider: string;
+  modelId: string;
+  /** Session origin as recorded by core (subagent / schedule); absent = user-created. */
+  source?: "subagent" | "schedule";
+}
+
 export interface StreamModel {
   items: ChatItem[];
   /** A nested sub-session model (produces no stats row; its stats count toward the parent). */
   nested: boolean;
+  /** Child-session identity from its session_meta (nested models only; null until it arrives). */
+  meta: NestedSessionMeta | null;
+  /**
+   * Elapsed-time stamps for the subagents panel's topology nodes (nested models only — the main
+   * session's timing is covered by task stats). Stamped in routeNested: the `firstSeen` pair when
+   * the nested model is created, the `lastActivity` pair on every message routed into its subtree
+   * (cheap assignments). Two clocks are kept because neither works alone:
+   *   - Local wall clock (`firstSeenLocalMs` / `lastActivityLocalMs`): when this client saw the
+   *     child appear / last act. Faithful only while watching live — a history replay sets all of
+   *     them within one synchronous load, so every replayed span collapses to ~0 at load time.
+   *   - Message timestamps (`firstTsMs` / `lastActivityTsMs`): the same two moments in SERVER
+   *     time, recorded identically during live streaming and history replay — a reload reproduces
+   *     the same span. May drift from the local clock (same caveat as LiveDuration's sinceMs).
+   * Topology extraction therefore derives a done node's duration from the timestamp pair (correct
+   * in both live and reloaded views) and ticks a running node from firstTsMs, falling back to the
+   * local pair only when timestamps were unparseable (see agent-topology.ts).
+   */
+  firstSeenLocalMs?: number;
+  lastActivityLocalMs?: number;
+  firstTsMs?: number;
+  lastActivityTsMs?: number;
   stats: TaskStatsTracker;
   /** The currently open text/thinking fragment (opened by start, closed by stop). */
   openText: AssistantTextItem | null;
@@ -364,6 +401,7 @@ function newModel(nested: boolean, localDecisions: Set<string>): StreamModel {
   return {
     items: [],
     nested,
+    meta: null,
     stats: createTaskStatsTracker(),
     openText: null,
     openThinking: null,
@@ -456,9 +494,54 @@ export function pushMessage(
     advanceLastTs(model, msg.timestamp);
     return;
   }
-  // session_meta (main session): not rendered as an item and carries nothing the view model
-  // needs — session_meta holds per-session invariants (identity/config), all surfaced through
-  // the Session DTO instead.
+  // session_meta: never rendered as an item. For the main session it carries nothing the view
+  // model needs (identity/config are all surfaced through the Session DTO). For a NESTED child
+  // session no DTO is loaded here, so capture the identity the subagents panel needs (which
+  // agent runs this child, on which model) — a rewritten session_meta (file rotation) simply
+  // overwrites with the same values.
+  if (msg.type === "session_meta" && model.nested) {
+    const p = msg.payload as SessionMetaPayload;
+    const meta: NestedSessionMeta = {
+      agentId: agentIdFromStatePath(p.agent_state),
+      provider: p.provider,
+      modelId: p.model_id,
+    };
+    if (p.source !== undefined) meta.source = p.source;
+    model.meta = meta;
+  }
+}
+
+/**
+ * Agent id from a session_meta `agent_state` path: the path is
+ * `<root>/<projectId>/agents/<agentId>/agent_state`, so the agent id is the parent directory
+ * name. Returns null when the path has no parent segment (defensive — core always writes the full path).
+ */
+export function agentIdFromStatePath(agentStatePath: string): string | null {
+  const segments = agentStatePath.split(/[\\/]/).filter((s) => s.length > 0);
+  return segments.length >= 2 ? segments[segments.length - 2]! : null;
+}
+
+/**
+ * Whether any pending approval sits at or below the given origin chain (prefix match on
+ * approvalKey): `chain` is the ancestor chain ending with the subtree root's own session id.
+ * Drives the subagent chip's amber dot and the toolbar badge — a nested approval must stay
+ * discoverable even though the child conversation lives in the side panel.
+ */
+export function hasPendingWithinOrigin(
+  pendingKeys: Iterable<string>,
+  chain: readonly string[],
+): boolean {
+  const prefix = chain.join("/");
+  for (const key of pendingKeys) {
+    // The approvalKey delimiters are load-bearing here: a key is `origin.join("/") + " " +
+    // toolCallId`, so requiring the chain to be followed by a space (an approval on the subtree
+    // root itself) or a slash (one strictly below it) is what keeps a sibling whose id merely
+    // extends this chain ("c1" vs "c1x") from matching, and keeps a main-session key (leading
+    // space) from matching any chain. Refactoring approvalKey to another separator would
+    // silently break this predicate — change the two together.
+    if (key.startsWith(`${prefix} `) || key.startsWith(`${prefix}/`)) return true;
+  }
+  return false;
 }
 
 /** ISO timestamp → milliseconds (returns undefined if invalid). */
@@ -500,6 +583,8 @@ export function registerLocalDecision(model: StreamModel, toolCallId: string): v
  * origin for the main session). A parent/child session's tool_call_id can
  * collide, so the origin chain must be included to distinguish them and
  * avoid lighting up the approval button on the wrong tool card.
+ * The "/" and " " separators are relied on by hasPendingWithinOrigin's prefix
+ * matching — keep the two in sync if this format ever changes.
  */
 export function approvalKey(origin: readonly string[] | undefined, toolCallId: string): string {
   return `${origin?.join("/") ?? ""} ${toolCallId}`;
@@ -1242,8 +1327,20 @@ function routeNested(model: StreamModel, msg: OmniMessage, nowMs: number): void 
   let sub = model.subagents.get(head);
   if (!sub) {
     sub = newModel(true, model.localDecisions);
+    sub.firstSeenLocalMs = nowMs;
     model.subagents.set(head, sub);
     bindSubagent(model, head, sub);
+  }
+  // Elapsed-time stamps (see the StreamModel field docs): every message routed into this child's
+  // subtree — its own or a deeper descendant's — counts as its activity; the recursive pushMessage
+  // below stamps the deeper hops the same way.
+  sub.lastActivityLocalMs = nowMs;
+  const activityTs = tsOf(msg.timestamp);
+  if (activityTs !== undefined) {
+    if (sub.firstTsMs === undefined) sub.firstTsMs = activityTs;
+    if (sub.lastActivityTsMs === undefined || activityTs > sub.lastActivityTsMs) {
+      sub.lastActivityTsMs = activityTs;
+    }
   }
   // Strip the first origin hop and recursively feed into the nested model.
   const rest = msg.origin!.slice(1);
@@ -1256,7 +1353,7 @@ function routeNested(model: StreamModel, msg: OmniMessage, nowMs: number): void 
 /**
  * Binding rule: bind to the most recent allowed
  * (decision=allow) and not-yet-complete (output not yet complete)
- * run_subagent tool card that hasn't been bound to an origin yet; append a standalone SubagentCard if none is found.
+ * run_subagent tool card that hasn't been bound to an origin yet; append a standalone SubagentItem if none is found.
  */
 function bindSubagent(model: StreamModel, sessionId: string, sub: StreamModel): void {
   for (let i = model.items.length - 1; i >= 0; i--) {
