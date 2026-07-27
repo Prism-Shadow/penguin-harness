@@ -3,8 +3,8 @@ name: benchmark-design
 description: Design and calibrate a multi-Case capability Benchmark and establish a traceable Formal Baseline. Use when an explicit Test Agent and target capability need a new or revised Benchmark; stop after the baseline and do not optimize the Agent.
 short_description: Design and calibrate an Agent capability Benchmark.
 short_description_zh: 设计并校准 Agent 能力评测 Benchmark。
-version: 5
-updated: 2026-07-27T06:38:27Z
+version: 6
+updated: 2026-07-27T07:38:00Z
 ---
 
 # Benchmark Design
@@ -93,22 +93,18 @@ The Benchmark Designer owns the Pilot and Formal evaluation sets. This includes 
    model_id: <model_id>
    ```
 
-Track every request by phase, Pilot iteration, Case, Run, and attempt. This prevents results from different Benchmark revisions from being mixed. Do not launch a duplicate while a request is pending or after it returns a valid result. Independent requests may run in bounded parallel batches.
+Track each evaluation by phase, Pilot iteration, Case, Run, and attempt. Do not launch a duplicate while the same request is pending or after it returns a valid result. Independent requests may run in bounded parallel batches.
 
-Distinguish evaluation failure from ordinary Test Agent failure. A wrong or missing Test artifact is a valid scored result and must not be retried.
+A wrong or missing Test Agent artifact is a valid scored result. Do not retry it.
 
-Handle an evaluation failure by its cause:
+When an evaluation returns `status: failed`:
 
-- For `cli_failed`, do not redispatch the cell; the Evaluator has already exhausted its one safe pre-execution launch retry.
-- For `provenance_mismatch`, do not redispatch the cell because the Test Agent may already have executed.
-- For `invalid_request`, correct the request and resend it; this does not consume a Pilot iteration.
-- For `invalid_statement` or `invalid_rubric`, repair the affected Benchmark files, invalidate that Case's results, and return to Pilot before evaluating it again.
-- For `invalid_score`, repair the Rubric or scoring contract only when the cause is clear; otherwise stop.
-- For `version_changed`, discard the whole matrix, stabilize the Agent State version, and restart.
+- For `invalid_request`, correct the request and resend it.
+- For `invalid_statement` or `invalid_rubric`, repair the affected Case, discard its invalidated Pilot results, and evaluate it again.
+- For `version_changed`, discard the current matrix and restart after the Agent version is stable.
+- For any other failure, stop the current matrix. Do not redispatch the cell or convert the failure into score zero.
 
-Any failure that cannot be safely resent leaves the matrix incomplete and stops the current Pilot or Formal phase.
-
-During Formal, any Benchmark or scoring repair abandons the current matrix and requires a new freeze. Never convert an evaluation failure into score zero. A Formal Baseline requires a valid result for every Case and Run.
+If a Benchmark or scoring repair is required during Formal, abandon the Formal matrix, return to Pilot, freeze again, and rerun Formal from the beginning. A Formal Baseline requires a valid result for every Case and Run.
 
 ## Refine the Benchmark
 
