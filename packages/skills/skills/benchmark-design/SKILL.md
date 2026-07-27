@@ -4,7 +4,7 @@ description: Design and calibrate a multi-Case capability Benchmark and establis
 short_description: Design and calibrate an Agent capability Benchmark.
 short_description_zh: 设计并校准 Agent 能力评测 Benchmark。
 version: 5
-updated: 2026-07-27T05:14:42Z
+updated: 2026-07-27T05:20:34Z
 ---
 
 # Benchmark Design
@@ -23,10 +23,10 @@ Follow this order:
 
 1. Validate the Test Agent, target capability, evaluation Model, and evaluation access.
 2. Define the observable behavior that demonstrates the capability and draft the smallest useful Pilot.
-3. Delegate one evaluation per Pilot Case and diagnose why the Pilot is too easy, too hard, or measures the wrong behavior.
-4. Adjust one difficulty dimension and rerun the affected Cases. Use at most three Pilot iterations.
+3. Delegate one evaluation per Pilot Case.
+4. If the Pilot does not expose the target difficulty, refine one capability-relevant dimension and rerun the affected Cases. Use at most three Pilot iterations.
 5. Freeze the complete Benchmark after a final leak check.
-6. After freezing, delegate every Case for the configured number of Runs. All runs complete on the same Agent version, aggregate and save their scores as the Formal Baseline.
+6. Delegate every frozen Case for the configured number of Runs. If all Runs complete on the same Agent version, aggregate and save their scores as the Formal Baseline.
 
 ## Setup
 
@@ -70,9 +70,7 @@ Create `benchmark_config.toml` with `title`, `description`, and `runs = 3`; use 
 
 Before writing Cases, describe how an Agent with the target capability should behave differently from one without it. Every Case must require that difference; sharing the same topic is not enough. Across all Cases, Rubric maxima must total 100 points. Use observable scoring items and meaningful partial credit.
 
-Before the first Pilot, after every Pilot change, and before freeze, compare each public Statement and supporting file with its private Rubric. Remove any public content that reveals a hidden rule, expected outcome, Gold answer, or scoring condition. This is the leak check.
-
-Pilot output may reveal why a Case is too easy, too hard, or tests the wrong behavior. Use it to choose a difficulty change, not to choose the correct answer. Do not change a hidden rule or Gold merely to contradict the Agent, and do not lower the score only by tightening the private Rubric. Choose hidden rules independently of the Agent and keep them fixed during an iteration. If a new behavior will be scored, require it in the public Statement and provide enough public evidence to make it answerable.
+Before the first Pilot, compare each public Statement and supporting file with its private Rubric. Remove any public content that reveals a hidden rule, expected outcome, Gold answer, or scoring condition. This is the leak check.
 
 ## Run evaluations
 
@@ -99,17 +97,24 @@ Track requests separately by phase, Pilot iteration, Case, Run, and attempt so r
 
 Retry once only for `failure_code: cli_failed`. Any other failure, a second `cli_failed`, or an invalid protocol ends the current matrix. A Formal Baseline can be recorded only when every required Case and Run has a valid result.
 
-## Stage 1: Pilot calibration
+## Refine the Benchmark
 
-1. Draft the smallest useful Pilot and delegate one representative evaluation per Case. This is iteration 1.
-2. Record the Agent State version and fixed evaluation Model. Keep Pilot results out of the Scoreboard.
-3. Before editing, record one diagnosis: why the Pilot is inadequate, the one difficulty dimension to change, and the capability failure that change should expose.
-4. Change only that dimension. Typical dimensions include evidence volume, conflicts, distractors, cross-file dependencies, or decision depth. Update any affected Statement, material, Rubric, Gold answer, and points consistently.
-5. Discard results invalidated by the change, run the leak check, and delegate new representative evaluations for the affected Cases. This begins the next iteration.
+Treat the first draft as a hypothesis, not the final Benchmark. Run one representative evaluation per Case as Pilot iteration 1 on the recorded Agent State version and fixed evaluation Model. Keep Pilot results out of the Scoreboard.
 
-Stop when the user's gate is satisfied, after three iterations, or when no credible capability-relevant adjustment remains. If the gate is still missed, report the limitation instead of manufacturing ambiguity or arbitrary scoring strictness.
+A high Pilot score is not a reason to freeze. Use its Case scores and returned Test Traces to decide whether the Agent genuinely has the capability or the Cases allow a shortcut. Refine only when the evidence shows that the Benchmark does not require the intended behavior.
 
-## Stage 2: Freeze and Formal Baseline
+For each refinement iteration:
+
+1. Identify one shortcut, missing dependency, or weak requirement that made the Pilot too easy.
+2. State one refinement hypothesis: the difficulty dimension to change and the capability failure it should expose.
+3. Change only that dimension. Options include stronger evidence integration, meaningful conflicts or distractors, cross-file dependencies, deeper decisions, or new comparable instances.
+4. Update all affected public and private Benchmark files consistently, discard invalidated results, run the leak check, and rerun the affected Cases. This is the next Pilot iteration.
+
+Use Pilot output to identify a missing capability demand, not to choose the correct answer. Do not change Gold merely to contradict the Agent, tighten only the private Rubric, add arbitrary ambiguity, or create a Case-specific trap. Choose hidden rules independently and keep them fixed during each iteration. Any newly scored behavior must be required and answerable in the public Statement.
+
+Stop refinement when the user's gate is satisfied, after three Pilot iterations, or when no credible capability-relevant refinement remains. If the score is still high, report that the Benchmark remains too easy to measure meaningful improvement; do not manufacture difficulty.
+
+## Freeze and run the Formal Baseline
 
 1. Freeze the complete Benchmark and run the final leak check.
 2. Start a fresh ledger and record the current Agent State version.
