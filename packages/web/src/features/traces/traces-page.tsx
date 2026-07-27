@@ -18,6 +18,7 @@ import { agentDisplayName, useProject } from "../../state/project";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { Chevron } from "../../components/ui/chevron";
 import { DownloadIcon, UploadIcon } from "../../components/ui/icons";
+import { toastError } from "../../components/ui/toast";
 import { Truncated } from "../../components/ui/truncated";
 import { useSessions } from "../../state/sessions";
 import { EmptyState } from "../../components/ui/empty-state";
@@ -99,7 +100,6 @@ function AgentNode({
   const [groups, setGroups] = useState<SessionGroup[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
-  const [importError, setImportError] = useState<string | null>(null);
   /** Session to auto-select once the refreshed list arrives (the import response's sessionId). */
   const importedSession = useRef<string | null>(null);
 
@@ -144,7 +144,9 @@ function AgentNode({
       setGroups(null);
       setOpen(true);
     } catch (e: unknown) {
-      setImportError(apiErrorText(e));
+      // Transient action failure → toast (the app's one notification rule; a
+      // rejected import isn't a state of the tree, unlike the load error below).
+      toastError(apiErrorText(e));
     } finally {
       setImporting(false);
     }
@@ -155,9 +157,8 @@ function AgentNode({
     // Reset before reading so re-picking the same file fires change again.
     e.target.value = "";
     if (!file) return;
-    setImportError(null);
     if (file.size > MAX_TRACE_BYTES) {
-      setImportError(S.traces.fileTooLarge);
+      toastError(S.traces.fileTooLarge);
       return;
     }
     const reader = new FileReader();
@@ -165,7 +166,7 @@ function AgentNode({
       const url = reader.result as string;
       void runImport(url.slice(url.indexOf(",") + 1)); // strip the data:...;base64, prefix
     };
-    reader.onerror = () => setImportError(S.common.unknownError);
+    reader.onerror = () => toastError(S.common.unknownError);
     reader.readAsDataURL(file);
   };
 
@@ -209,10 +210,9 @@ function AgentNode({
           </label>
         )}
       </div>
-      {/* Import errors show even while collapsed — the import button itself is always visible. */}
-      {importError && <p className="px-2.5 pb-1 text-xs text-red-500">{importError}</p>}
       {open && (
         <div className="anim-fade">
+          {/* Load failure of the tree itself stays inline (the one-notification-rule keeps load states with their content, not in a disappearing toast). */}
           {error && <p className="px-2.5 py-1 text-xs text-red-500">{error}</p>}
           {!groups && !error && (
             <p className="px-2.5 py-1 text-xs text-gray-400">{S.common.loading}</p>
