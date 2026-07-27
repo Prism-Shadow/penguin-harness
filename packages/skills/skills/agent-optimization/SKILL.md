@@ -4,7 +4,7 @@ description: Improve an Agent State through versioned scores and score-linked Tr
 short_description: Improve an Agent from measured Benchmark results.
 short_description_zh: 根据 Benchmark 结果改进 Agent。
 version: 6
-updated: 2026-07-27T05:58:14Z
+updated: 2026-07-27T06:03:26Z
 ---
 
 # Agent Optimization
@@ -26,11 +26,11 @@ Require:
 
 - an explicit Test Agent;
 - an explicit Benchmark;
-- a complete usable baseline in the Scoreboard;
+- a complete valid Formal Baseline in the Scoreboard;
 - a top-level Session with `run_subagent`;
 - the `agent-evaluation` Skill installed on the current Agent.
 
-If `run_subagent` is absent, immediately return `missing_run_subagent`. Do not edit Agent State, launch the Test Agent through `penguin run`, score a Case, or use the generic "do the work yourself" fallback. If another requirement is missing, stop and explain what is needed rather than starting a change that cannot be compared completely.
+If `run_subagent` is absent, immediately return `missing_run_subagent`. Do not edit Agent State, launch the Test Agent through `penguin run`, score a Case, or use the generic "do the work yourself" fallback. If the Formal Baseline or another requirement is missing, stop and explain what is needed; the Optimizer does not create a Baseline.
 
 Use the Environment's App Data Dir:
 
@@ -48,7 +48,7 @@ You may read the target Agent State, public Case Statements, the Scoreboard, and
 
 Never read, search, list, or open a path under a Case's `rubric/` directory. Use exact public Statement and Scoreboard paths rather than enumerating private Benchmark contents. If private Rubric content, Gold answers, or private scoring conditions enter the Optimizer context, the optimization Session is contaminated: do not use that information, do not retain or score a Candidate derived from it, restore any active Candidate, and report the result as invalid.
 
-Never modify the Benchmark, Test Traces, Project configuration, or another Agent.
+Never modify the Benchmark config, Cases, Statements, supporting files, Rubrics, Gold answers, `runs`, Test Traces, Project configuration, or another Agent. The only permitted write inside the Benchmark is appending a complete accepted Candidate Evaluation to `scoreboard.yaml`.
 
 ## Optimization contract
 
@@ -59,8 +59,6 @@ A Reference Evaluation must:
 - match the current Agent State version;
 - contain one non-empty `(provider, model_id)` pair;
 - contain the complete Case × Run matrix.
-
-If the current Agent State has no complete Evaluation, evaluate it without changing State and use that result as the Reference.
 
 Every Candidate Evaluation must use the same Benchmark, Cases, Runs, and exact `(provider, model_id)` pair as the Reference. Do not translate, alias, or fall back to another Model identifier.
 
