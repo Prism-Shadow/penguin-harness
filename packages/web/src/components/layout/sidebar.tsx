@@ -117,6 +117,14 @@ const PIN_ICON =
 const menuItemClass =
   "block w-full px-3.5 py-2 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800";
 
+/**
+ * Superscript "new version" pill on the version line (accent-colored, raised via
+ * align-super). Kept literally identical to the draft page's copy in
+ * features/chat/draft-view.tsx — the two surfaces must not drift apart.
+ */
+const versionBadgeClass =
+  "ml-1.5 inline-block rounded-full bg-[var(--accent-bg)] px-1.5 align-super text-[10px] font-medium leading-4 text-[var(--accent-fg)] transition-opacity duration-150 hover:opacity-80";
+
 /** Grouping mode of the Session list (persisted; Workspace is the default). */
 type GroupMode = "workspace" | "agent";
 const GROUP_MODE_KEY = "penguin.sidebarGroupMode";
@@ -227,14 +235,11 @@ export function Sidebar({
   // Version footer + update reminder: nothing is fetched until the dropdown first opens.
   const { version, update } = useVersionInfo(userOpen);
   const updateAvailable = update?.updateAvailable === true;
-  // Footer date: the stamped build date, else the running release's publish date from the
-  // update check (installs released before date stamping, see
-  // UpdateCheckResponse.currentPublishedAt); rendered as the localized "last updated"
-  // label + month/day (formatMonthDay reads the date part itself). Both requests start
-  // together on first open; the version line renders as soon as /api/version resolves and
-  // the date simply appears once the update check lands — the footer never waits for it.
-  const versionDate =
-    version === null ? null : (version.buildDate ?? update?.currentPublishedAt ?? null);
+  // Footer date: the running version's release date, stamped into core's BUILD_DATE at
+  // build time by the release workflow — displayed as-is, no network involved. Dev builds
+  // and releases that predate the stamping (v0.1.2 and earlier) carry null and show the
+  // version alone. Rendered as the localized "last updated" label + month/day.
+  const versionDate = version?.buildDate ?? null;
   const currentProjectId = currentProject?.projectId ?? null;
   const collapseStoreKey = currentProjectId === null ? null : collapsedGroupsKey(currentProjectId);
   const pinStoreKey = currentProjectId === null ? null : pinnedGroupsKey(currentProjectId);
@@ -1095,6 +1100,40 @@ export function Sidebar({
                   ? ` · ${S.update.lastUpdated(formatMonthDay(versionDate, locale))}`
                   : ""
               }`}
+              {/* Superscript "new version" badge right after the date (or the version when
+                  no date): mirrors the dropdown affordance above — admins open the update
+                  dialog, others the release page; without a URL it degrades to a plain
+                  pill (nothing actionable to offer). */}
+              {update !== null &&
+                update.updateAvailable &&
+                update.latestVersion !== null &&
+                (user?.isAdmin ? (
+                  <button
+                    type="button"
+                    title={S.update.newVersion(update.latestVersion)}
+                    aria-label={S.update.newVersion(update.latestVersion)}
+                    onClick={() => {
+                      setUserOpen(false);
+                      setUpdateDialogOpen(true);
+                    }}
+                    className={versionBadgeClass}
+                  >
+                    {S.update.newVersionBadge}
+                  </button>
+                ) : update.releaseUrl !== null ? (
+                  <a
+                    href={update.releaseUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title={S.update.newVersion(update.latestVersion)}
+                    aria-label={S.update.newVersion(update.latestVersion)}
+                    className={versionBadgeClass}
+                  >
+                    {S.update.newVersionBadge}
+                  </a>
+                ) : (
+                  <span className={versionBadgeClass}>{S.update.newVersionBadge}</span>
+                ))}
             </div>
           )}
         </Dropdown>

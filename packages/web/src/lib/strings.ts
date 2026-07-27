@@ -60,6 +60,8 @@ export const zh = {
     version: "版本",
     /** Version-line date label (owner-specified wording); `date` is formatMonthDay output, e.g. 「最近更新日期 7 月 26 日」. */
     lastUpdated: (date: string) => `最近更新日期 ${date}`,
+    /** Superscript badge on the version lines when the update check found a newer release (owner-specified wording). */
+    newVersionBadge: "有新版本可用",
     newVersion: (v: string) => `新版本 v${v} 可用`,
     releaseNotes: "更新说明",
     updateNow: "立即更新",

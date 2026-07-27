@@ -1186,7 +1186,12 @@ export interface SkillInstallRequest {
 /** GET /api/version: the running server's release identity (from core's VERSION / BUILD_DATE). */
 export interface VersionResponse {
   version: string;
-  /** Release build date (UTC yyyy-mm-dd); null for a dev/source build. */
+  /**
+   * The **running** version's release date (UTC yyyy-mm-dd), stamped into core's
+   * BUILD_DATE at build time by the release workflow — the web's "last updated" date
+   * needs no network. Null for a dev/source build and for releases that predate the
+   * stamping (v0.1.2 and earlier): the UI then shows the version alone.
+   */
   buildDate: string | null;
 }
 
@@ -1197,6 +1202,7 @@ export interface VersionResponse {
  */
 export interface UpdateCheckResponse {
   currentVersion: string;
+  /** Same as VersionResponse.buildDate: the running version's release date, stamped at build time. */
   buildDate: string | null;
   /** Newest published release (normalized, no leading `v`); null when the lookup failed or checks are disabled. */
   latestVersion: string | null;
@@ -1205,15 +1211,6 @@ export interface UpdateCheckResponse {
   releaseUrl: string | null;
   /** Publish timestamp of the newest release (ISO 8601). */
   publishedAt: string | null;
-  /**
-   * Publish timestamp of the **running** version's own release (ISO 8601), resolved from
-   * the releases-by-tag API only when `buildDate` is null — installs released before
-   * BUILD_DATE stamping existed (v0.1.2 and earlier) would otherwise show no date at all.
-   * Null when the build date already answers the question, the lookup failed or found no
-   * such release (dev versions), or checks are disabled. The web renders the version's
-   * date as `buildDate ?? currentPublishedAt` (date part only).
-   */
-  currentPublishedAt: string | null;
   /** When this result was produced (ISO 8601) — a cached result keeps its original timestamp. */
   checkedAt: string;
   /** Present (true) when update checks are turned off via PENGUIN_UPDATE_CHECK=off; no network call was made. */

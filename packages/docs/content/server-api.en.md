@@ -70,11 +70,11 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | /api/version | Running release identity: `{version, buildDate}` (`buildDate` is null in a dev/source build) |
-| GET | /api/version/update-check | Compares the newest GitHub release with the running version: `{currentVersion, latestVersion, updateAvailable, releaseUrl, publishedAt, currentPublishedAt, checkedAt, disabled?, error?}` |
+| GET | /api/version | Running release identity: `{version, buildDate}` (`buildDate` is the running version's release date, stamped at build time — no network; null in a dev/source build or a release that predates the stamping) |
+| GET | /api/version/update-check | Compares the newest GitHub release with the running version: `{currentVersion, latestVersion, updateAvailable, releaseUrl, publishedAt, checkedAt, disabled?, error?}` |
 | POST | /api/version/update | **Admin only.** Runs the CLI self-update (`penguin update --yes`) on the server host: `{status, output, needsRestart}` |
 
-`update-check` is the server's only outbound internet call and is strictly fail-soft: a failed lookup still returns 200 with `error` set (`network` / `rate_limited` / `bad_response`) and `latestVersion: null`, results are cached in memory (success 1 h, failure 10 min), and setting `PENGUIN_UPDATE_CHECK=off` disables the lookup entirely (`disabled: true`, no network call). On installs stamped with no build date (v0.1.2 and earlier), the same lookup also resolves the running release's own publish date into `currentPublishedAt` (null when unknown) — the web UI's version date falls back to it when `buildDate` is null. The update `status` is `updated` (restart the service to run the new version), `failed`, or `unsupported` — the latter both when the server was not started via `penguin server|web` (`reason: "not_launched_via_cli"`) and when the CLI refuses (source checkout, unrecognized install layout, Windows); `output` carries the tail of the CLI's own output.
+`update-check` is the server's only outbound internet call and is strictly fail-soft: a failed lookup still returns 200 with `error` set (`network` / `rate_limited` / `bad_response`) and `latestVersion: null`, results are cached in memory (success 1 h, failure 10 min), and setting `PENGUIN_UPDATE_CHECK=off` disables the lookup entirely (`disabled: true`, no network call). The update `status` is `updated` (restart the service to run the new version), `failed`, or `unsupported` — the latter both when the server was not started via `penguin server|web` (`reason: "not_launched_via_cli"`) and when the CLI refuses (source checkout, unrecognized install layout, Windows); `output` carries the tail of the CLI's own output.
 
 ### Projects and Members
 
