@@ -118,6 +118,10 @@ function SessionElapsed({
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!taskOpen) return;
+    // Load-bearing, not redundant: `now` still holds whatever the state last saw (mount time,
+    // or the final tick of a previous Task), and the first interval callback is a full second
+    // away. The first live render after a Task starts must not compute from that stale clock,
+    // so re-anchor immediately on entering the running state.
     setNow(Date.now());
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
@@ -145,7 +149,8 @@ interface HeaderStats {
  *     live buckets: the estimate may be slightly off mid-task, and the idle getUsage refetch
  *     reconciles to the server-recorded value (kept deliberately simple). Without pricing the
  *     live addition is skipped (bucketCostUsd returns null, mirroring taskCost's uncosted
- *     signal) and the value stays exactly as when idle;
+ *     signal) and the value stays exactly as when idle. costText stays null until there is an
+ *     actual figure — no recorded cost plus a still-zero estimate renders nothing, not $0.00;
  *   - Elapsed: ticking cumulative while running, settled cumulative when idle (SessionElapsed).
  */
 function headerStats(
@@ -166,7 +171,15 @@ function headerStats(
         pricing,
       )
     : null;
-  const costUsd = liveCost != null ? (sessionCost ?? 0) + liveCost : sessionCost;
+  // Only take the live path once it has something to say — a positive estimate, or a recorded
+  // session cost to keep showing from the Task's first instant. On a brand-new session,
+  // sessionCost is still null and liveCost is 0 until the first token_usage lands; blindly
+  // summing would flash a formatted $0.00 the moment the Task starts — exactly the "cost is
+  // zero or something's broken" reading the chip's render conditional exists to avoid.
+  const costUsd =
+    liveCost != null && (liveCost > 0 || sessionCost != null)
+      ? (sessionCost ?? 0) + liveCost
+      : sessionCost;
   return {
     tokensText: humanizeTokens(stats.sessionTotal + stats.subagentTotal),
     costText: costUsd != null ? formatMoney(costUsd, currency) : null,
