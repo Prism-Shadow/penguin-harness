@@ -626,7 +626,7 @@ reversal, obvious rotation, question-number cycles, or position/name patterns. I
 repeated contexts for a learned rule to transfer to comparable new instances, while keeping public
 Statements insufficient to reveal the private mapping.
 
-Follow the Skill's Pilot → freeze → Formal workflow. Run at most three Pilot iterations, changing
+Follow the Skill's Pilot → freeze → Formal workflow. Run at most five Pilot iterations, changing
 one capability-relevant difficulty dimension per iteration, and calibrate toward a score below 70.
 Pilot results are provisional and must not be written to the Scoreboard. Do not change private
 rules or Gold answers merely to contradict observed outputs, and do not lower scores by tightening

@@ -4,7 +4,7 @@ description: Design and calibrate a multi-Case capability Benchmark and establis
 short_description: Design and calibrate an Agent capability Benchmark.
 short_description_zh: 设计并校准 Agent 能力评测 Benchmark。
 version: 7
-updated: 2026-07-27T10:30:43Z
+updated: 2026-07-27T11:01:41Z
 ---
 
 # Benchmark Design
@@ -24,8 +24,8 @@ Follow this order:
 1. Validate the Test Agent, target capability, evaluation Model, and evaluation access.
 2. Define the observable behavior, plan the Case set and point allocation, then draft the Cases incrementally.
 3. Complete and leak-check one Pilot Case, dispatch its evaluation in the background, then draft the next Case without waiting for the result.
-4. If the Pilot does not expose the target difficulty, refine one capability-relevant dimension and rerun the affected Cases. Use at most three Pilot iterations.
-5. Freeze the complete Benchmark after a final leak check.
+4. If the Pilot does not expose the target difficulty, refine one capability-relevant dimension and rerun the affected Cases. Use at most five Pilot iterations.
+5. Freeze the complete Benchmark after a final leak check only when Pilot evidence indicates it is ready for Formal. If the score remains clearly above the gate and no credible refinement remains, report `calibration_failed` without running Formal.
 6. Delegate every frozen Case for the configured number of Runs. Save the result as the Formal Baseline only if all Runs complete on the same Agent version and the aggregate score satisfies the baseline gate.
 
 ## Setup
@@ -122,11 +122,13 @@ For each refinement iteration:
 3. Change only that dimension. Options include stronger evidence integration, meaningful conflicts or distractors, cross-file dependencies, deeper decisions, or new comparable instances.
 4. Update every affected public and private Benchmark file. Discard invalidated results, run the leak check, and rerun the affected Cases. This starts the next Pilot iteration.
 
+Adding more rows, fields, distractors, or Cases does not by itself increase difficulty. A refinement counts only when it changes the reasoning the Agent must perform. If the same procedure still solves the Case, the change adds workload, not capability demand.
+
 Reuse a Pilot result only when nothing that affects it changed. This includes the Statement, supporting files, Rubric, Gold answers, points, Agent State version, and evaluation Model. Otherwise, run that Case again.
 
 Use Pilot output to find a missing capability demand, not to choose the correct answer. Do not change Gold merely to contradict the Agent. Do not tighten only the private Rubric, add arbitrary ambiguity, or create a Case-specific trap. Choose hidden rules independently and keep them fixed during each iteration. State every required output or action publicly. Keep a latent rule or mapping private only when public evidence or examples make it recoverable.
 
-Stop when the user's gate is satisfied, after three Pilot iterations, or when no credible refinement remains. If the score is still high, report that the Benchmark remains too easy to measure meaningful improvement. Do not manufacture difficulty.
+Stop refining when Pilot evidence indicates the gate can plausibly be satisfied, after five Pilot iterations, or when no credible refinement remains. If the score remains clearly above the gate, report `calibration_failed` without freezing or running Formal. Do not manufacture difficulty.
 
 ## Freeze and run the Formal Baseline
 
@@ -135,7 +137,7 @@ Stop when the user's gate is satisfied, after three Pilot iterations, or when no
 3. Put the complete Case × Run matrix into one `queued` list and dispatch it through the evaluation scheduling rules above; never reuse a Pilot run.
 4. Accept the matrix only if every cell succeeds and the Agent State version remains unchanged.
 
-Once the first Formal cell is dispatched, do not design or refine any Case or otherwise change the Benchmark. If a design defect appears, abandon the whole matrix. Do the same when the Formal score misses the gate and the Traces show a credible shortcut. Return to refinement only when the three-iteration budget has room. After any change, freeze again and rerun the entire Formal matrix.
+Once the first Formal cell is dispatched, do not design or refine any Case or otherwise change the Benchmark. If a design defect appears, abandon the whole matrix. Do the same when the Formal score misses the gate and the Traces show a credible shortcut. Return to refinement only when the five-iteration budget has room. After any change, freeze again and rerun the entire Formal matrix.
 
 If the complete Formal score misses the gate and no credible refinement remains within the budget, report `calibration_failed`. Stop without a Baseline. Record nothing from a partial, abandoned, invalid, or above-gate matrix.
 
