@@ -560,13 +560,16 @@ function SteerModeRow({
   steerMode: SteerMode;
   onChangeSteerMode: (mode: SteerMode) => void;
 }) {
+  // Compact pills, no bordered wrapper: the control must not out-height an item's 16px text
+  // line by more than the row paddings absorb — h-5 pills inside py-1 land the row at the
+  // same 28px an item's text + py-1.5 does, so the menu keeps one line rhythm.
   const modeButton = (mode: SteerMode, label: string, hint: string) => (
     <button
       type="button"
       title={hint}
       aria-pressed={steerMode === mode}
       onClick={() => onChangeSteerMode(mode)}
-      className={`h-6 rounded px-2 text-xs transition-colors duration-150 ${
+      className={`h-5 rounded px-1.5 text-xs transition-colors duration-150 ${
         steerMode === mode
           ? "bg-gray-200 font-medium text-gray-800 dark:bg-gray-700 dark:text-gray-100"
           : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
@@ -576,7 +579,7 @@ function SteerModeRow({
     </button>
   );
   return (
-    <div className="flex w-full items-center gap-2 px-3 py-1.5 text-xs">
+    <div className="flex w-full items-center gap-2 px-3 py-1 text-xs">
       <GlyphIcon d={SLIDERS_ICON} size={14} className="shrink-0 text-gray-400 dark:text-gray-500" />
       <span className="min-w-0 flex-1 truncate text-gray-600 dark:text-gray-400">
         {S.chat.steerModeLabel}
@@ -584,7 +587,7 @@ function SteerModeRow({
       <div
         role="group"
         aria-label={S.chat.steerModeLabel}
-        className="flex w-max shrink-0 items-center gap-0.5 rounded-md border border-gray-200 p-0.5 dark:border-gray-700"
+        className="flex shrink-0 items-center gap-0.5"
       >
         {modeButton("steer", S.chat.steerModeSteer, S.chat.steerModeSteerHint)}
         {modeButton("followup", S.chat.steerModeFollowUp, S.chat.steerModeFollowUpHint)}
