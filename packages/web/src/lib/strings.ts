@@ -571,17 +571,16 @@ penguin run \\
   --message "$(cat <phase_prompt_file>)"
 \`\`\`
 
-每个命令退出并验证产物后，才能启动下一阶段。Phase 2 和 Phase 3 可在各自的顶层
-Session 内按 Skill 要求用 \`run_subagent\` 执行 \`agent-evaluation\`。
+每个命令退出并验证产物后，才能启动下一阶段。Phase 2 和 Phase 3 必须在各自的顶层
+Session 内按 Skill 要求用 \`run_subagent\` 委托 \`agent-evaluation\` 执行评测。
 
 ## Phase 1：Agent Creation
 
-使用 \`agent-creation\` 创建通用有限选择 Agent \`finite_choice_agent\`。当公开信息
-不能确定唯一答案但任务要求必须作答时，采用稳定默认值：候选项选第一个；方向选择
-High、Over 或 Up；排序保留输入顺序。
+使用 \`agent-creation\` 创建通用有限选择 Agent \`finite_choice_agent\`。它需要在公开
+信息不足但必须作答时采用简单、稳定的决策方式；具体策略由本阶段自行设计并说明。
 
-不安装任何 Skill。设置 \`thinking_level: medium\`，初始 version 为 1。不得加入后续
-Benchmark 场景、私有映射、Gold 或优化提示。
+不安装任何 Skill。设置 \`thinking_level: medium\`，初始 version 为 1。保持 Agent
+通用，不得针对后续 Benchmark 预置题目知识、私有规则、Gold 或优化提示。
 
 ## Phase 2：Benchmark Design
 
@@ -594,43 +593,29 @@ Benchmark 场景、私有映射、Gold 或优化提示。
 - Runs：3
 - Baseline 硬门槛：低于 70
 
-目标能力：在公开信息本身无法确定映射时，Agent 能否根据冻结 Benchmark 的分数学习
-固定的上下文—动作映射。设计三个 Case 族：
+目标能力：Agent 能否从同类任务的评测反馈中发现稳定的上下文—动作规律，并迁移到新
+实例。Benchmark 应覆盖足球预测、彩票机器和模拟投资三类有限选择任务；具体的 Case、
+环境规则、难度维度和 Rubric 由本阶段独立设计，不要在公开 Statement 中泄露答案。
 
-1. 足球：三种重复且打乱顺序的标记，通过固定的非平凡置换映射到
-   \`Home/Draw/Away\`。
-2. 彩票：四种重复且打乱顺序的符号，通过固定的非平凡置换映射到四台机器。
-3. 模拟投资：两种重复的市场标记，对四个虚拟资产应用不同的非平凡排序变换。
-
-私有映射必须通过独立于 Agent 的过程确定。不得使用 identity、完整反转、明显轮转、
-按题号循环或位置/名称规律。每个 Case 应包含足够的重复上下文，让学到的规则能迁移到
-同类新实例，但公开 Statement 不得泄露私有映射。
-
-遵循 Skill 的 Pilot → 冻结 → Formal 流程。Pilot 最多三轮，每轮只调整一个与能力相关
-的难度维度，目标是将分数校准到 70 以下。Pilot 结果是临时结果，不得写入 Scoreboard。
-不得仅为反驳已观察输出而修改私有规则或 Gold，也不得只靠收紧 Rubric 压低分数。校准
-后冻结完整 Benchmark，执行全新且完整的 3×3 Formal 矩阵；不得复用 Pilot Run，也不得
-记录不完整矩阵。
-
-主 Session 只能验证公开 Benchmark 产物和完整 Formal Baseline，不得读取、搜索或转述
-Rubric、Gold 和私有映射。只有已记录的完整 Formal Baseline 低于 70 时才能启动 Phase 3；
-否则报告校准限制并停止。
+按照 \`benchmark-design\` 完成设计、Pilot 调整、冻结和 Formal Baseline。只有有效且
+完整的 Formal Baseline 低于 70 时才能启动 Phase 3；否则报告限制并停止。当前编排
+Session 只能检查公开 Benchmark 产物和最终分数，不得读取或转述 Rubric、Gold 等私有
+信息。
 
 ## Phase 3：Agent Optimization
 
 使用 \`agent-optimization\`，Benchmark 为 \`contextual-choice-adaptation\`，Reference
 为已记录的 Baseline，目标分数至少 85。
 
-遵循 Skill 的“假设 → 最小 Candidate → 完整评测 → 接受/回滚”循环。每个 Candidate
-只能修改一个策略族：足球标记映射、彩票符号—机器映射或投资排序变换。完成完整的
-3×3 Candidate 评测，仅在分数严格提升时接受；每个已接受 Candidate 成为下一轮
-Reference。全程遵循 Skill 的泛化和私有访问规则。
+根据公开 Statement、评测分数和 Test Trace 自行诊断能力缺口，提出假设并设计最小的
+通用改进。按照 \`agent-optimization\` 完成 Candidate 评测、接受或回滚，直到达到目标
+或无法继续有效改进。不得读取 Rubric、Gold 或其他私有 Benchmark 信息。
 
 ## 最终检查与汇报
 
 检查 Phase 3 根 Session 是否实际访问 \`/rubric/\` 下的路径；文本提及不算访问，实际
-访问会使相关结果无效。汇报 Agent 与 Benchmark 路径、精简 Pilot 表、Baseline/Candidate
-分数曲线、每轮假设与策略族、接受和回滚的版本、最终保留版本及已知限制。
+访问会使相关结果无效。汇报 Agent 与 Benchmark 路径、Pilot 摘要、Baseline/Candidate
+分数曲线、关键假设、接受和回滚的版本、最终保留版本及已知限制。
 
 不要修改任何 Skill，不要创建永久的 Builder、Evaluator 或 Optimizer Agent。`,
       },
