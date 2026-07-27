@@ -1218,8 +1218,8 @@ export class ContextEngine {
    * next run's first request (or the next manual compaction, which folds carry-over in) sends
    * them ahead of everything else, completing the tool_use/tool_result pairing on the live
    * LLM object that the provider would otherwise reject every subsequent request over. The
-   * repairs were already written to Trace at synthesis time, and carry-over is never rewritten
-   * at send time, so no duplicate Trace entries arise.
+   * repairs were already written to Trace at synthesis time, and carry-over is never re-written
+   * to Trace at send time, so no duplicate Trace entries arise.
    */
   private stashRepairs(repairs: OmniMessage[]): void {
     if (repairs.length === 0) return;
