@@ -398,8 +398,8 @@ test("layout: mobile chat dropdowns stay inside the viewport", async ({ page }) 
 
   // Running + pending approval at 390x844: every running-state row must stay one line below
   // sm — the page must not scroll sideways, the work-group header must not wrap to a second
-  // line, and the icon-only Allow/Deny buttons must keep their accessible names (aria-label),
-  // since specs and screen readers resolve them by role+name.
+  // line, and the Allow/Deny action buttons read as text at every breakpoint (per review:
+  // buttons the user presses must be words, iconic shorthand is for passive indicators only).
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(200);
   const d390 = await docWidths(page);
@@ -414,6 +414,13 @@ test("layout: mobile chat dropdowns stay inside the viewport", async ({ page }) 
   ).toBeLessThanOrEqual(40);
   await expect(page.getByRole("button", { name: /^Allow$/ })).toBeVisible();
   await expect(page.getByRole("button", { name: /^Deny$/ })).toBeVisible();
+  // The words themselves are rendered — not a glyph with an aria-label.
+  await expect(page.getByRole("button", { name: /^Allow$/ })).toHaveText("Allow", {
+    useInnerText: true,
+  });
+  await expect(page.getByRole("button", { name: /^Deny$/ })).toHaveText("Deny", {
+    useInnerText: true,
+  });
   expect(await textOverlapCount(page), "running @390 no overlapping text").toBe(0);
 
   // While PENDING the one-line rule yields on purpose: the user must read the whole command
@@ -477,14 +484,17 @@ test("layout: mobile chat dropdowns stay inside the viewport", async ({ page }) 
     dDone.clientWidth,
   );
 
-  // The decision indicator on the tool card: below sm a bare ✓ glyph (same visual language as
-  // the Allow button), full "Approved · manual" wording on title/aria; it must not wrap the
-  // card header onto a second line.
+  // The decision lives ONLY in the tool card's left status icon: "Approved · manual" on the
+  // icon's title/aria-label, zero visible decision text on the row (the right-side indicator
+  // was removed per review), and the header stays one line.
   await page.locator("button[aria-expanded]").filter({ hasText: "Done" }).last().click();
   const decided = page.locator('[aria-label="Approved · manual"]').first();
-  await expect(decided, "decision indicator present @390").toBeVisible();
-  await expect(decided.getByText("✓"), "approved ✓ glyph @390").toBeVisible();
+  await expect(decided, "status icon carries the decision @390").toBeVisible();
   const toolHeader = page.locator("button[aria-expanded]", { has: decided }).first();
+  await expect(
+    toolHeader.getByText(/Approved|Denied/).filter({ visible: true }),
+    "no visible decision text on the card",
+  ).toHaveCount(0);
   expect(
     await toolHeader.evaluate((el) => el.clientHeight),
     "tool-card header stays single-line @390",
@@ -492,9 +502,9 @@ test("layout: mobile chat dropdowns stay inside the viewport", async ({ page }) 
   expect(await textOverlapCount(page), "finished @390 no overlapping text").toBe(0);
 
   // A DENIED call must state its outcome once, not twice: the deny path itself reports
-  // stop_reason "aborted", so the card keeps only the decision indicator (✕ glyph below sm,
-  // "Denied · manual" on title/aria) and drops the redundant "aborted" badge. Fresh session:
-  // the mock answers with plain text once any tool_result exists in the history.
+  // stop_reason "aborted", so the left status icon alone carries "Denied · manual"
+  // (title/aria-label) and the redundant "aborted" badge is dropped. Fresh session: the mock
+  // answers with plain text once any tool_result exists in the history.
   const sess2 = await (
     await page.request.post(`${BASE}/api/projects/${projectId}/agents/default_agent/sessions`, {
       data: { provider: "custom", modelId: "claude-4-8", approvalMode: "always-ask" },
@@ -507,8 +517,7 @@ test("layout: mobile chat dropdowns stay inside the viewport", async ({ page }) 
   await expect(page.getByText("Command finished; the result looks as expected.")).toBeVisible();
   await page.locator("button[aria-expanded]").filter({ hasText: "Done" }).last().click();
   const denied = page.locator('[aria-label="Denied · manual"]').first();
-  await expect(denied, "denied indicator present @390").toBeVisible();
-  await expect(denied.getByText("✕"), "denied ✕ glyph @390").toBeVisible();
+  await expect(denied, "status icon carries the denial @390").toBeVisible();
   const deniedHeader = page.locator("button[aria-expanded]", { has: denied }).first();
   await expect(
     deniedHeader.getByText("aborted"),

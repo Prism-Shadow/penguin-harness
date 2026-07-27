@@ -23,35 +23,17 @@ export function ApprovalButtons({
     }
   };
 
-  // Below sm the buttons drop their text and keep only a colored glyph (✓ accent / ✕ red) so
-  // the approval row stays one line on phones; aria-label pins the accessible name either way
-  // (tests and screen readers keep resolving the buttons by "允许"/"Allow" and "拒绝"/"Deny").
+  // Text at every breakpoint (per review): action buttons the user presses must read as words —
+  // "允许/Allow" and "拒绝/Deny" — never as bare glyphs; iconic shorthand is reserved for
+  // passive indicators. The buttons live on their own row under the (wrapping) argument
+  // preview, so the words cost no width the pending card doesn't already have.
   return (
     <div className="flex items-center gap-2">
-      <Button
-        size="sm"
-        variant="primary"
-        disabled={busy}
-        aria-label={S.chat.approve}
-        title={S.chat.approve}
-        onClick={() => void decide("allow")}
-      >
-        <span aria-hidden className="sm:hidden">
-          ✓
-        </span>
-        <span className="hidden sm:inline">{S.chat.approve}</span>
+      <Button size="sm" variant="primary" disabled={busy} onClick={() => void decide("allow")}>
+        {S.chat.approve}
       </Button>
-      <Button
-        size="sm"
-        disabled={busy}
-        aria-label={S.chat.deny}
-        title={S.chat.deny}
-        onClick={() => void decide("deny")}
-      >
-        <span aria-hidden className="text-red-600 sm:hidden dark:text-red-400">
-          ✕
-        </span>
-        <span className="hidden sm:inline">{S.chat.deny}</span>
+      <Button size="sm" disabled={busy} onClick={() => void decide("deny")}>
+        {S.chat.deny}
       </Button>
     </div>
   );

@@ -96,9 +96,10 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   // Final assistant answer (turn 2 from mock).
   await expect(page.getByText("Command finished; the result looks as expected.")).toBeVisible();
 
-  // At ≥sm the approval decision keeps its full text pill (phones collapse it to a ✓ glyph,
-  // asserted in layout.spec).
-  await expect(page.getByText("已批准 · 手动")).toBeVisible();
+  // The decision is carried ONLY by the tool card's left status icon (title/aria-label) — no
+  // visible decision text at any breakpoint (the right-side pill was removed per review).
+  await expect(page.locator('[aria-label="已批准 · 手动"]')).toBeVisible();
+  await expect(page.getByText(/已批准/).filter({ visible: true })).toHaveCount(0);
 
   // Chat links always open in a new tab and never navigate the SPA away — including bare URLs
   // that remark-gfm autolinks (the mock reply carries one inside a CJK sentence).

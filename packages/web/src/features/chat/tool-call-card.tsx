@@ -206,29 +206,28 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
       : failed
         ? "failed"
         : "done";
+  // Decision wording ("Approved · manual" / "已拒绝 · 手动" …): carried ONLY by the left status
+  // icon's title/aria-label — per review the row shows no visible decision text at any
+  // breakpoint; the icon is the single source of truth for how the call was decided.
+  const decisionText = item.decision
+    ? `${item.decision === "allow" ? S.chat.decisionAllow : S.chat.decisionDeny} · ${
+        item.decisionSource === "manual" ? S.chat.decisionManual : S.chat.decisionAuto
+      }`
+    : null;
   // A user denial reports stop_reason "aborted" on the output it feeds back; that abort IS the
-  // decision, not an independent outcome, so the decision indicator is the card's single marker
-  // for it — both the "aborted" badge and the status icon's "aborted" label are dropped (the
-  // icon stays as a decorative red glyph). A user-abort of a RUNNING tool carries no deny
-  // decision and keeps its own "aborted" marker.
+  // decision, not an independent outcome — the icon reads "Denied", and no separate "aborted"
+  // badge repeats it. A user-abort of a RUNNING tool carries no deny decision and keeps its own
+  // "aborted" marker (the stop-reason branch below).
   const deniedByUser = item.decision === "deny" && item.outputStopReason === "aborted";
   const stateLabel = pending
     ? S.chat.approvalWaiting
     : state === "running"
       ? S.chat.workRunning
       : state === "done"
-        ? S.chat.workDone
+        ? (decisionText ?? S.chat.workDone)
         : deniedByUser
-          ? undefined
+          ? (decisionText ?? undefined)
           : (item.outputStopReason ?? item.callStopReason);
-  // Full decision wording ("Approved · manual" / "已批准 · 自动"): below sm the indicator is a
-  // bare colored glyph (✓ approved / ✕ denied, same visual language as the Allow/Deny buttons)
-  // — title/aria keep the whole wording — so it can never wrap the one-line header on phones.
-  const decisionText = item.decision
-    ? `${item.decision === "allow" ? S.chat.decisionAllow : S.chat.decisionDeny} · ${
-        item.decisionSource === "manual" ? S.chat.decisionManual : S.chat.decisionAuto
-      }`
-    : null;
 
   return (
     <div>
@@ -286,32 +285,6 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
             deniedByUser above. */}
         {item.outputStopReason && item.outputStopReason !== "completed" && !deniedByUser && (
           <Badge tone={stopReasonTone(item.outputStopReason)}>{item.outputStopReason}</Badge>
-        )}
-        {item.decision && decisionText && (
-          /* shrink-0 + nowrap: the indicator keeps its content width (the subtitle is the row's
-             only shrinking column), so it can never fold into a taller row. role="img" +
-             aria-label expose the full wording as one non-live node at every breakpoint. */
-          <span
-            role="img"
-            title={decisionText}
-            aria-label={decisionText}
-            className="flex shrink-0 items-center whitespace-nowrap"
-          >
-            {/* Below sm: bare colored glyph — the same ✓/✕ visual language as the Allow/Deny
-                buttons that produced the decision. */}
-            <span
-              className={`text-xs font-semibold sm:hidden ${
-                item.decision === "allow"
-                  ? "text-emerald-600 dark:text-emerald-400"
-                  : "text-red-600 dark:text-red-400"
-              }`}
-            >
-              {item.decision === "allow" ? "✓" : "✕"}
-            </span>
-            <span className="hidden sm:flex">
-              <Badge tone={item.decision === "allow" ? "green" : "red"}>{decisionText}</Badge>
-            </span>
-          </span>
         )}
         <span className="min-w-0 flex-1" />
         {/* Expand indicator on the right */}
