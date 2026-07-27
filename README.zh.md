@@ -166,6 +166,14 @@ pnpm dev                     # 服务端 + Web 一起启动（带前缀日志，
 
 完整工作区指南见 [CONTRIBUTING.md](CONTRIBUTING.md)：开发命令、质量门禁、仓库结构与 changelog 规则。
 
+## 贡献者
+
+感谢每一位为 PenguinHarness 作出贡献的开发者！
+
+<p align="center">
+  <a href="https://github.com/Prism-Shadow/penguin-harness/graphs/contributors"><img src="https://contrib.rocks/image?repo=Prism-Shadow/penguin-harness" alt="PenguinHarness 贡献者" /></a>
+</p>
+
 ## 引用
 
 如果 PenguinHarness 对你的研究有帮助，请引用：
