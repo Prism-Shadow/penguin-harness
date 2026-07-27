@@ -3,10 +3,19 @@
  *
  * Like the other square-bracket markers ([use_skills], [scheduled_task], …), the block holds
  * machine-composed protocol text and the user's own content follows it as a plain message
- * body — round 1 carries the caller's original input verbatim (skill invocations and all),
- * later rounds re-inject the objective. The full protocol (file path, status rules, audits)
- * is repeated every round rather than stated once: a long-running goal will cross
- * compactions, and the current round's block must stand alone.
+ * body. The assembled round message looks like:
+ *
+ *     [goal]
+ *     round: 2
+ *     …automation preamble, GOAL.yaml path + rules + embedded content, working audits…
+ *     [/goal]
+ *
+ *     make all tests pass
+ *
+ * Round 1's body is the caller's original input verbatim (skill invocations and all); later
+ * rounds re-inject the objective. The full protocol (file path, status rules, audits) is
+ * repeated every round rather than stated once: a long-running goal will cross compactions,
+ * and the current round's block must stand alone.
  *
  * The block embeds the current GOAL.yaml verbatim (the same serialization written to disk,
  * from the same in-memory values — never read back from the file), so the model sees the

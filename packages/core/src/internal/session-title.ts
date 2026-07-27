@@ -39,9 +39,10 @@ const TITLE_MAX_CHARS = 30;
  * are never title material).
  */
 export function stripConversationMarkers(text: string): string {
-  // The [goal] block embeds user data (the GOAL.yaml objective), so the generic non-anchored
-  // stripping could be terminated early by a crafted objective; the line-anchored goal parse
-  // takes it off first, and the loop below only ever sees host-composed block content.
+  // The [goal] block is taken off first with its own line-anchored parser: it embeds user
+  // data, and an objective containing a literal `[/goal]` would make the generic strip below
+  // stop early and leak protocol tail text into the title (the anchoring argument lives in
+  // markers/goal-block.ts). The loop below then only ever sees host-composed block content.
   let out = parseGoalMessage(text)?.rest ?? text;
   for (const tag of TITLE_NOISE_TAGS) out = stripMarkerBlocks(out, tag);
   return out.trim();

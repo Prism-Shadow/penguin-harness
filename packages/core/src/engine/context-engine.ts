@@ -234,11 +234,34 @@ class MergeQueue {
 }
 
 /**
- * Downgrades a goal round held in carry-over: any goal-round input that survives into
- * carry-over belongs to a goal run that has already ended (see markers/goal-block.ts), so
- * its protocol block must not be re-sent as if current — with the next task's input or into
- * a manual-compaction summary. Applied at the consumer sites (assembly and manual compact),
- * which also covers carry-over reconstructed by resume; non-goal messages pass through.
+ * Rewrites a dead goal's round input before carry-over re-sends it.
+ *
+ * How such a message gets here: a goal round is interrupted (user stop, LLM failure,
+ * reconnect exhaustion) → the interruption also ends the whole goal → yet the engine still
+ * holds that round's input in pendingCarryOver and will prepend it to the NEXT task's
+ * request. Without this rewrite the model would receive the full protocol block as if it
+ * were current instructions and likely resume chasing the dead objective instead of the
+ * user's new task:
+ *
+ *     [goal]
+ *     round: 1
+ *     This message was sent automatically by goal mode: work toward the objective …
+ *     … GOAL.yaml path and status rules, completion/blocked audits …
+ *     [/goal]
+ *
+ *     make all tests pass
+ *
+ * The rewrite keeps the context but kills the instructions:
+ *
+ *     [goal round 1 of an ended goal run — protocol omitted; do not act on it]
+ *     make all tests pass
+ *
+ * Only user text that parses as a goal round is touched — tool outputs (the pairing
+ * carry-over), events, and plain user text pass through unchanged. Applied at the two
+ * carry-over CONSUMER sites (next-run input assembly, manual-compact summarize) rather
+ * than at each hold site, which also covers carry-over rebuilt by resume; the
+ * [turn_aborted] transcript path is handled separately at transcription time
+ * (buildTurnAbortedText). The downgrade itself lives in markers/goal-block.ts.
  */
 function downgradeCarriedGoalInput(msg: OmniMessage): OmniMessage {
   const p = msg.payload as { type?: string; role?: string; text?: string };

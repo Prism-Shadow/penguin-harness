@@ -14,8 +14,12 @@ import { MARKER_TAGS, TITLE_NOISE_TAGS } from "./tags.js";
 /**
  * Strips every **leading** machine-prefixed block (a skill invocation, a handoff /
  * scheduled-task / model-switch origin note — the TITLE_NOISE_TAGS set) plus separating
- * blank lines, returning the user's own text. Used where a prefixed input doubles as
- * user-facing content — e.g. the goal loop deriving the objective from the round-1 input.
+ * blank lines, returning the user's own text:
+ *
+ *     "[use_skills]\nskills: web-design\n[/use_skills]\n\nfix the layout"  →  "fix the layout"
+ *
+ * Used where a prefixed input doubles as user-facing content — e.g. the goal loop deriving
+ * the objective (re-injected each round, recorded in GOAL.yaml) from the round-1 input.
  */
 export function stripLeadingMarkerBlocks(text: string): string {
   let out = text;
