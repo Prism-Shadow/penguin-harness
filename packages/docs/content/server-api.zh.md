@@ -144,7 +144,7 @@ Schedule 写操作仅限 Owner。新建 Session 模式的任务，`modelId` 与 
 | GET | / | Session 信息（单会话 GET 额外携带 `tracePath`：最新 Trace 文件的绝对路径；列表行不含） |
 | PATCH | / | 更新：`{approvalMode?, archived?, title?}` |
 | DELETE | / | 删除 Session（连同 Trace 与暂存文件） |
-| GET | /messages | 完整 OmniMessage 历史 |
+| GET | /messages | 完整 OmniMessage 历史；Task 运行期间响应额外携带 `live`（进行中的流式尾部，见下） |
 | GET | /stream | SSE 事件流（见下节） |
 | POST | /tasks | 发起 Task：`{input: TaskInputPart[], thinkingLevel?, queueIfBusy?}` → 202。带 `queueIfBusy` 时，运行中的 Session 会把输入暂存为跟进消息（`queued: true`），空闲后按序自动作为普通 Task 发出；`task_state` 事件携带排队数 |
 | POST | /steer | 运行中插话：`{text}` 为运行中的 Task 排队一条消息（作为独立的 `[user_steering]` 用户消息随下一轮送达）→ 202；无 Task 运行返回 409 `not_running` |
@@ -163,6 +163,27 @@ Schedule 写操作仅限 Owner。新建 Session 模式的任务，`modelId` 与 
 | GET | /scratchpad/:fileName | 读取会话暂存文件（如输入图片） |
 
 通用约定：无权访问的 Session 一律返回 404，不泄露其存在性；每个 Session 同时只允许一个 Task 或压缩在运行，冲突时返回 409（`task_in_progress` / `compacting`）。
+
+#### GET /messages 的 `live` 字段
+
+Trace 只存完整消息（流式 `partial_*` 永远不落盘），所以仅靠历史无法呈现一条正在流式输出的消息。因此当 Session 处于运行/压缩状态时，messages 响应额外携带进行中的流式尾部：
+
+```ts
+interface MessagesResponse {
+  messages: OmniMessage[];
+  live?: {
+    // Session 通道最近分配的 SSE 事件 id（`<epoch>-<seq>`）：
+    // 截至该 id（含）发布的所有事件都已累积进 `fragments`。
+    cursor: string;
+    // 每个未闭合流式片段对应一条合成的 `partial_* start` OmniMessage，其 payload 携带
+    // 迄今累积的全部内容（文本/思考前缀、工具调用名 + 已累积参数、工具输出前缀 + 图片），
+    // 并保留原始 `origin` 链（子智能体片段同样覆盖）。
+    fragments: OmniMessage[];
+  };
+}
+```
+
+`cursor` 与 `fragments` 在 Trace 读取开始前原子采集。使用先连接模式（见下）的客户端在应用完历史后处理它们：当 cursor 的 epoch 与本连接已缓冲事件的 epoch 一致时，丢弃 seq ≤ cursor 的已缓冲 **partial** 事件（其内容已累积在 `fragments` 里），把 `fragments` 按正常归约路径喂入，再重放剩余缓冲。已缓冲的**完整**消息从不按 cursor 丢弃 —— 仍由常规重叠去重裁决。空闲时不携带 `live`。
 
 Workspace 文件可能由 Agent 生成，`GET /files/content` 一律按不可信内容处理：所有响应都带 `X-Content-Type-Options: nosniff`，其余响应头取决于两个开关（`download=1` 优先于 `preview=1`）：
 
@@ -254,7 +275,7 @@ export type ServerEvent =
 ### 投递保证
 
 - 事件 id 按通道单调递增，形如 `<epoch>-<seq>`；
-- 每通道维护有界重放缓冲（最近 1000 条事件或 2MB）；
+- 每通道维护有界重放缓冲（最近 10,000 条事件或 8MB）；
 - 携带 `Last-Event-ID` 重连时，命中缓冲则补发缺口；未命中则先发 `resync_required`，客户端重新拉取 `/messages` 后继续消费；
 - 每 20 秒写一条心跳注释行；
 - 事件次序：带 `Last-Event-ID` 重连时，**补发的缺口(或 `resync_required`)最先送达**，随后才是初始事件——权威的 `task_state` 快照与未决的 approval_request，再进入实时流；全新连接(无 `Last-Event-ID`)不重放缓冲，首个事件即为 `task_state` 快照。
@@ -265,8 +286,9 @@ export type ServerEvent =
 
 1. 先连接 `/stream` 并缓冲收到的事件；
 2. 再 GET `/messages` 拉取完整历史；
-3. 回放缓冲区并对重叠消息去重；
-4. 转入实时消费。
+3. 若响应携带 `live`（有 Task 在运行），丢弃 cursor 已覆盖的缓冲 partial 事件，并把 `live.fragments` 播种到历史之上 —— 进行中的消息连同已流式输出的前缀一起回到画面；
+4. 回放缓冲区并对重叠消息去重；
+5. 转入实时消费。
 
 ## 类型导入
 

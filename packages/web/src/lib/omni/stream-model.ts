@@ -739,6 +739,9 @@ function handlePartial(model: StreamModel, p: PartialModelPayload, tsMs?: number
       if (p.event_type === "start") {
         card.outputStreaming = true;
         if (p.output) card.output += p.output;
+        // A live-tail synthetic start (mid-stream join seed) may already carry the image
+        // set; same whole-set semantics as the delta branch below.
+        if (p.images && p.images.length > 0) card.images = p.images;
         return;
       }
       if (!card.outputStreaming) return; // orphan delta/stop

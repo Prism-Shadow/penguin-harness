@@ -15,6 +15,7 @@ import type { OmniMessage, ThinkingLevelName } from "@prismshadow/penguin-core";
 import type {
   ApprovalMode,
   FilesStatResponse,
+  MessagesLiveTail,
   MessagesResponse,
   ServerEvent,
   SessionCategory,
@@ -337,12 +338,29 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
 
   app.get("/:sessionId/messages", async (c) => {
     const row = resolveSession(c);
+    // Live tail (running/compacting sessions only): capture the channel cursor and the
+    // open-fragment snapshot together, synchronously — no await between the two, and both
+    // BEFORE the trace read starts. That ordering is what makes the client contract safe
+    // (see MessagesLiveTail in api/types.ts): every published event with id <= cursor is
+    // already reflected in `fragments`, and partial_* messages never reach the Trace, so
+    // the client may drop its buffered partials at/or before the cursor and seed from
+    // `fragments` without loss or duplication. Complete messages are never dropped by the
+    // cursor — the client's overlap dedup against `messages` decides for them — so a
+    // complete message whose trace append is still in flight when the read starts is not
+    // lost either.
+    let live: MessagesLiveTail | undefined;
+    if (deps.manager.statusOf(row.sessionId) !== "idle") {
+      live = {
+        cursor: deps.channels.get(row.sessionId).lastEventId,
+        fragments: deps.manager.liveFragments(row.sessionId),
+      };
+    }
     const messages = await deps.traceService.readMessages(
       row.projectId,
       row.agentId,
       row.sessionId,
     );
-    return c.json({ messages } satisfies MessagesResponse);
+    return c.json({ messages, ...(live !== undefined ? { live } : {}) } satisfies MessagesResponse);
   });
 
   app.get("/:sessionId/stream", (c) => {
