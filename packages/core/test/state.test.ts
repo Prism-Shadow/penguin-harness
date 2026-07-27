@@ -65,7 +65,10 @@ afterEach(async () => {
   } else {
     process.env.PENGUIN_HOME = prevHome;
   }
-  await fs.rm(tmpRoot, { recursive: true, force: true });
+  // Retries: when a test times out, vitest runs this cleanup while the test's un-cancelled
+  // init may still be writing files, so an immediate recursive rm can hit ENOTEMPTY on
+  // Windows (fs.rm retries ENOTEMPTY/EBUSY/EPERM); a no-op when removal succeeds first try.
+  await fs.rm(tmpRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 });
 
 async function exists(p: string): Promise<boolean> {
@@ -84,87 +87,96 @@ describe("paths / resolveRoot", () => {
 });
 
 describe("loadOrInitAgentState", () => {
-  it("initializes an empty agent directory with the full state layout", async () => {
-    const state = await loadOrInitAgentState();
-    expect(state.root).toBe(tmpRoot);
-    expect(state.projectId).toBe(DEFAULT_PROJECT_ID);
-    expect(state.agentId).toBe(DEFAULT_AGENT_ID);
+  // Timeout: initialization writes the full layout — 15 library skills plus the example
+  // benchmark, dozens of small files — and this first init test also pays the cold-I/O cost
+  // (first-touch reads of the skills package, Defender scans) on Windows runners, where a
+  // slow-disk moment has pushed it past the 5s default. Purely a failure deadline: passing
+  // runs stay as fast as before on every platform.
+  it(
+    "initializes an empty agent directory with the full state layout",
+    { timeout: 20_000 },
+    async () => {
+      const state = await loadOrInitAgentState();
+      expect(state.root).toBe(tmpRoot);
+      expect(state.projectId).toBe(DEFAULT_PROJECT_ID);
+      expect(state.agentId).toBe(DEFAULT_AGENT_ID);
 
-    const root = tmpRoot;
-    expect(await exists(systemConfigPath(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID))).toBe(true);
-    expect(await exists(agentsMdPath(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID))).toBe(true);
-    expect(await exists(toolsDir(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID))).toBe(true);
-    expect(await exists(memoryDir(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID))).toBe(true);
-    expect(await exists(skillsDir(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID))).toBe(true);
-    // The scratchpad/ directory alongside agent_state (model temp files get a subdirectory per Session id).
-    expect(await exists(scratchpadDir(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID))).toBe(true);
+      const root = tmpRoot;
+      expect(await exists(systemConfigPath(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID))).toBe(true);
+      expect(await exists(agentsMdPath(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID))).toBe(true);
+      expect(await exists(toolsDir(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID))).toBe(true);
+      expect(await exists(memoryDir(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID))).toBe(true);
+      expect(await exists(skillsDir(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID))).toBe(true);
+      // The scratchpad/ directory alongside agent_state (model temp files get a subdirectory per Session id).
+      expect(await exists(scratchpadDir(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID))).toBe(true);
 
-    expect(state.stateDir).toBe(agentStateDir(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID));
+      expect(state.stateDir).toBe(agentStateDir(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID));
 
-    // The default system Prompt states the Agent's identity, without repeating tool details
-    // already in the tool schema (Suggested workflows only points to the run_subagent
-    // delegation entry point).
-    expect(state.systemConfig.system_prompt).toContain("PenguinHarness");
-    expect(state.systemConfig.system_prompt).not.toContain("exec_command");
-    // Suggested workflows absorbs Subagent delegation and task conventions (self-reported
-    // identity as a soft convention, parallelism, file exchange).
-    expect(state.systemConfig.system_prompt).toContain("# Suggested workflows");
-    expect(state.systemConfig.system_prompt).toContain("run_subagent");
-    expect(state.systemConfig.system_prompt).toContain("Caller agent");
-    // The default AGENTS.md is empty: it carries no preset guidance.
-    expect(state.agentsMd).toBe("");
-    expect(state.systemConfig.system_prompt).toContain(AGENTS_MD_PLACEHOLDER);
-    expect(state.systemConfig.system_prompt).toContain(SESSION_ID_PLACEHOLDER);
-    expect(state.systemConfig.system_prompt).toContain(CWD_PLACEHOLDER);
-    expect(state.systemConfig.system_prompt).toContain(PLATFORM_PLACEHOLDER);
-    expect(state.systemConfig.system_prompt).toContain(OS_VERSION_PLACEHOLDER);
-    expect(state.systemConfig.system_prompt).toContain(DATE_PLACEHOLDER);
-    // AGENTS.md and the Environment injection sit at the end of the template, with AGENTS.md
-    // before Environment; the [developer_instructions] wrapper text is written directly into
-    // the template (the Prompt is transparent about the config).
-    expect(state.systemConfig.system_prompt).toContain("[developer_instructions]");
-    expect(state.systemConfig.system_prompt).toContain("[/developer_instructions]");
-    // The default template explains the semantics of system-synthesized markers to the model,
-    // and recommends preferring tool use.
-    expect(state.systemConfig.system_prompt).toContain("[turn_aborted]");
-    expect(state.systemConfig.system_prompt).toContain("[turn_retried]");
-    expect(state.systemConfig.system_prompt).toContain("[context_summary]");
-    expect(state.systemConfig.system_prompt).toContain("[user_steering]");
-    expect(state.systemConfig.system_prompt).toContain("# Tool use");
-    // Privacy hardening: explicitly forbids reading .project_config.toml (the sole config file,
-    // which holds API keys) and each Agent's .vault.toml, and states that config can only be
-    // changed via the CLI (penguin config ...).
-    expect(state.systemConfig.system_prompt).toContain("Never read");
-    expect(state.systemConfig.system_prompt).toContain(".project_config.toml");
-    expect(state.systemConfig.system_prompt).toContain("agent_state/.vault.toml");
-    expect(state.systemConfig.system_prompt).toContain("CLI-only");
-    expect(state.systemConfig.system_prompt).toContain("penguin config");
-    expect(state.systemConfig.system_prompt).not.toContain(".credentials.toml");
-    expect(state.systemConfig.system_prompt.indexOf(AGENTS_MD_PLACEHOLDER)).toBeLessThan(
-      state.systemConfig.system_prompt.indexOf("# Environment"),
-    );
-    // The # Vault and # Skills body sections plus their placeholders: the default template
-    // places them after [/developer_instructions] and before # Environment, in the order
-    // Vault -> Skills (the statement text is part of the template body, kept even with no
-    // keys/skills).
-    const tpl = state.systemConfig.system_prompt;
-    expect(tpl).toContain("# Vault");
-    expect(tpl).toContain(VAULT_KEYS_PLACEHOLDER);
-    expect(tpl).toContain("# Skills");
-    expect(tpl).toContain(SKILL_METADATA_PLACEHOLDER);
-    expect(tpl).toContain("[use_skills]");
-    expect(tpl.indexOf("[/developer_instructions]")).toBeLessThan(tpl.indexOf("# Vault"));
-    expect(tpl.indexOf("# Vault")).toBeLessThan(tpl.indexOf(VAULT_KEYS_PLACEHOLDER));
-    expect(tpl.indexOf(VAULT_KEYS_PLACEHOLDER)).toBeLessThan(tpl.indexOf("# Skills"));
-    expect(tpl.indexOf("# Skills")).toBeLessThan(tpl.indexOf(SKILL_METADATA_PLACEHOLDER));
-    expect(tpl.indexOf(SKILL_METADATA_PLACEHOLDER)).toBeLessThan(tpl.indexOf("# Environment"));
-    expect(state.systemConfig.model?.max_tokens).toBe(32000);
-    expect(state.systemConfig.model?.thinking_level).toBe("medium");
-    expect(state.systemConfig.model?.timeoutMs).toBe(120000);
-    expect(state.systemConfig.tools?.mcpServers).toEqual([]);
-    expect(Object.hasOwn(state.systemConfig, "description")).toBe(false);
-    expect(Object.hasOwn(state.systemConfig, "subagents")).toBe(false);
-  });
+      // The default system Prompt states the Agent's identity, without repeating tool details
+      // already in the tool schema (Suggested workflows only points to the run_subagent
+      // delegation entry point).
+      expect(state.systemConfig.system_prompt).toContain("PenguinHarness");
+      expect(state.systemConfig.system_prompt).not.toContain("exec_command");
+      // Suggested workflows absorbs Subagent delegation and task conventions (self-reported
+      // identity as a soft convention, parallelism, file exchange).
+      expect(state.systemConfig.system_prompt).toContain("# Suggested workflows");
+      expect(state.systemConfig.system_prompt).toContain("run_subagent");
+      expect(state.systemConfig.system_prompt).toContain("Caller agent");
+      // The default AGENTS.md is empty: it carries no preset guidance.
+      expect(state.agentsMd).toBe("");
+      expect(state.systemConfig.system_prompt).toContain(AGENTS_MD_PLACEHOLDER);
+      expect(state.systemConfig.system_prompt).toContain(SESSION_ID_PLACEHOLDER);
+      expect(state.systemConfig.system_prompt).toContain(CWD_PLACEHOLDER);
+      expect(state.systemConfig.system_prompt).toContain(PLATFORM_PLACEHOLDER);
+      expect(state.systemConfig.system_prompt).toContain(OS_VERSION_PLACEHOLDER);
+      expect(state.systemConfig.system_prompt).toContain(DATE_PLACEHOLDER);
+      // AGENTS.md and the Environment injection sit at the end of the template, with AGENTS.md
+      // before Environment; the [developer_instructions] wrapper text is written directly into
+      // the template (the Prompt is transparent about the config).
+      expect(state.systemConfig.system_prompt).toContain("[developer_instructions]");
+      expect(state.systemConfig.system_prompt).toContain("[/developer_instructions]");
+      // The default template explains the semantics of system-synthesized markers to the model,
+      // and recommends preferring tool use.
+      expect(state.systemConfig.system_prompt).toContain("[turn_aborted]");
+      expect(state.systemConfig.system_prompt).toContain("[turn_retried]");
+      expect(state.systemConfig.system_prompt).toContain("[context_summary]");
+      expect(state.systemConfig.system_prompt).toContain("[user_steering]");
+      expect(state.systemConfig.system_prompt).toContain("# Tool use");
+      // Privacy hardening: explicitly forbids reading .project_config.toml (the sole config file,
+      // which holds API keys) and each Agent's .vault.toml, and states that config can only be
+      // changed via the CLI (penguin config ...).
+      expect(state.systemConfig.system_prompt).toContain("Never read");
+      expect(state.systemConfig.system_prompt).toContain(".project_config.toml");
+      expect(state.systemConfig.system_prompt).toContain("agent_state/.vault.toml");
+      expect(state.systemConfig.system_prompt).toContain("CLI-only");
+      expect(state.systemConfig.system_prompt).toContain("penguin config");
+      expect(state.systemConfig.system_prompt).not.toContain(".credentials.toml");
+      expect(state.systemConfig.system_prompt.indexOf(AGENTS_MD_PLACEHOLDER)).toBeLessThan(
+        state.systemConfig.system_prompt.indexOf("# Environment"),
+      );
+      // The # Vault and # Skills body sections plus their placeholders: the default template
+      // places them after [/developer_instructions] and before # Environment, in the order
+      // Vault -> Skills (the statement text is part of the template body, kept even with no
+      // keys/skills).
+      const tpl = state.systemConfig.system_prompt;
+      expect(tpl).toContain("# Vault");
+      expect(tpl).toContain(VAULT_KEYS_PLACEHOLDER);
+      expect(tpl).toContain("# Skills");
+      expect(tpl).toContain(SKILL_METADATA_PLACEHOLDER);
+      expect(tpl).toContain("[use_skills]");
+      expect(tpl.indexOf("[/developer_instructions]")).toBeLessThan(tpl.indexOf("# Vault"));
+      expect(tpl.indexOf("# Vault")).toBeLessThan(tpl.indexOf(VAULT_KEYS_PLACEHOLDER));
+      expect(tpl.indexOf(VAULT_KEYS_PLACEHOLDER)).toBeLessThan(tpl.indexOf("# Skills"));
+      expect(tpl.indexOf("# Skills")).toBeLessThan(tpl.indexOf(SKILL_METADATA_PLACEHOLDER));
+      expect(tpl.indexOf(SKILL_METADATA_PLACEHOLDER)).toBeLessThan(tpl.indexOf("# Environment"));
+      expect(state.systemConfig.model?.max_tokens).toBe(32000);
+      expect(state.systemConfig.model?.thinking_level).toBe("medium");
+      expect(state.systemConfig.model?.timeoutMs).toBe(120000);
+      expect(state.systemConfig.tools?.mcpServers).toEqual([]);
+      expect(Object.hasOwn(state.systemConfig, "description")).toBe(false);
+      expect(Object.hasOwn(state.systemConfig, "subagents")).toBe(false);
+    },
+  );
 
   it("loads an existing agent directory and returns the same system prompt", async () => {
     const first = await loadOrInitAgentState();
