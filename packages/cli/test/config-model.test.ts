@@ -97,7 +97,10 @@ describe("penguin config model add/list (--root plus provider / model_id stored 
 
     const file = projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID);
     expect(path.basename(file)).toBe(".project_config.toml");
-    expect((await fs.stat(file)).mode & 0o777).toBe(0o600);
+    // POSIX-only: Windows has no owner-only mode bits (chmod maps to the read-only attribute).
+    if (process.platform !== "win32") {
+      expect((await fs.stat(file)).mode & 0o777).toBe(0o600);
+    }
     const parsed = parseToml(await fs.readFile(file, "utf8")) as {
       models: Array<Record<string, unknown>>;
     };

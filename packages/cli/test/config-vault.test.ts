@@ -64,7 +64,10 @@ describe("penguin config vault", () => {
 
     const file = agentVaultPath(tmpRoot, DEFAULT_PROJECT_ID, "default_agent");
     expect(path.basename(file)).toBe(".vault.toml");
-    expect((await fs.stat(file)).mode & 0o777).toBe(0o600);
+    // POSIX-only: Windows has no owner-only mode bits (chmod maps to the read-only attribute).
+    if (process.platform !== "win32") {
+      expect((await fs.stat(file)).mode & 0o777).toBe(0o600);
+    }
     expect(await fs.readFile(file, "utf8")).toContain("vault-secret-9876");
 
     const list = await runVault(["list"]);

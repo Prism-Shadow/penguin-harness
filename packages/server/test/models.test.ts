@@ -82,7 +82,10 @@ describe("models preset & catalog enrichment", () => {
     expect(cfgRaw).toContain('provider = "custom"');
     expect(cfgRaw).toContain('model_id = "m-inline"');
     expect(cfgRaw).not.toContain("custom/m-inline");
-    expect((await stat(cfgFile)).mode & 0o777).toBe(0o600);
+    // POSIX-only: Windows has no owner-only mode bits (chmod maps to the read-only attribute).
+    if (process.platform !== "win32") {
+      expect((await stat(cfgFile)).mode & 0o777).toBe(0o600);
+    }
     // No more separate .credentials.toml / project_config.toml files.
     await expect(readFile(path.join(projectDir, ".credentials.toml"), "utf8")).rejects.toThrow();
     await expect(readFile(path.join(projectDir, "project_config.toml"), "utf8")).rejects.toThrow();

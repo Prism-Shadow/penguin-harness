@@ -132,8 +132,10 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
   });
 
   afterEach(async () => {
-    await rm(workspace, { recursive: true, force: true });
-    await rm(traces, { recursive: true, force: true });
+    // Retries (here and in the other cleanups below): on Windows a just-killed process tree
+    // releases its cwd locks asynchronously, so an immediate rm can hit EBUSY.
+    await rm(workspace, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    await rm(traces, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   });
 
   it("approves a tool call, writes the file, returns the final answer, traces it", async () => {
@@ -733,7 +735,7 @@ describe("ContextEngine async/incremental tool calls (overlapping execution)", (
     workspace = await mkdtemp(join(tmpdir(), "penguin-ws2-"));
   });
   afterEach(async () => {
-    await rm(workspace, { recursive: true, force: true });
+    await rm(workspace, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   });
 
   it("emits both tool calls in one round; second is approved while the first executes; outputs come back in completion order", async () => {
@@ -809,7 +811,13 @@ describe("ContextEngine async/incremental tool calls (overlapping execution)", (
     // command has not finished yet) -- i.e., execution does not block the next approval.
     expect(approvedAt["t2"]!).toBeLessThan(firstCompleteAt["t1"] ?? Infinity);
     // The fast b.txt finishes first, the slow a.txt finishes later (outputs in completion order).
-    expect(firstCompleteAt["t2"]!).toBeLessThan(firstCompleteAt["t1"]!);
+    // POSIX only: on Windows a cold Git-Bash spawn costs 1-2s, which can swamp the 400ms sleep
+    // delta that makes t1 "the slow one" — CI has seen the two complete within 5ms — so the
+    // relative completion order is not controllable there. The overlap assertion above and the
+    // file contents below still run on Windows.
+    if (process.platform !== "win32") {
+      expect(firstCompleteAt["t2"]!).toBeLessThan(firstCompleteAt["t1"]!);
+    }
 
     expect(await readFile(join(workspace, "a.txt"), "utf8")).toBe("one");
     expect(await readFile(join(workspace, "b.txt"), "utf8")).toBe("two");
@@ -895,7 +903,7 @@ describe("ContextEngine tool execution resilience", () => {
     workspace = await mkdtemp(join(tmpdir(), "penguin-ws4-"));
   });
   afterEach(async () => {
-    await rm(workspace, { recursive: true, force: true });
+    await rm(workspace, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   });
 
   it("feeds a failed tool output back and keeps tool_use/result paired (Environment converges errors, never throws)", async () => {
@@ -1105,7 +1113,7 @@ describe("ContextEngine abort during execution", () => {
     workspace = await mkdtemp(join(tmpdir(), "penguin-ws3-"));
   });
   afterEach(async () => {
-    await rm(workspace, { recursive: true, force: true });
+    await rm(workspace, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   });
 
   it("aborting a long-running tool ends the turn, emits abort, and carries tool results over (model output completed)", async () => {
@@ -1255,7 +1263,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     workspace = await mkdtemp(join(tmpdir(), "penguin-ws4-"));
   });
   afterEach(async () => {
-    await rm(workspace, { recursive: true, force: true });
+    await rm(workspace, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   });
 
   it("auto-retries on LLM timeout: original input + [turn_retried] carrying partial products", async () => {
@@ -1792,8 +1800,8 @@ describe("ContextEngine mid-run steering ([user_steering])", () => {
   });
 
   afterEach(async () => {
-    await rm(workspace, { recursive: true, force: true });
-    await rm(traces, { recursive: true, force: true });
+    await rm(workspace, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    await rm(traces, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   });
 
   /** Fake environment: streams a delta then closes with a fixed complete output (no real shell). */

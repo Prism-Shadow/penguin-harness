@@ -36,7 +36,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
-    "test:e2e": "PENGUIN_E2E=1 vitest run test/llm.e2e.test.ts",
+    "test:e2e": "node ../../scripts/run-with-env.mjs PENGUIN_E2E=1 -- vitest run test/llm.e2e.test.ts",
     "build": "tsup"
   },
   "dependencies": {

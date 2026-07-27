@@ -36,6 +36,7 @@ import {
   PLATFORM_PLACEHOLDER,
   PROJECT_DIR_PLACEHOLDER,
   SESSION_ID_PLACEHOLDER,
+  SHELL_PLACEHOLDER,
   type SystemConfig,
 } from "./default-config.js";
 import { builtinProjectAgentPresets, type AgentPreset } from "./builtin-agents.js";
@@ -92,6 +93,8 @@ export interface SessionEnvironmentValues {
   modelId: string;
   platform: string;
   osVersion: string;
+  /** The shell command sessions run in (system Prompt placeholder {{SHELL}}; e.g. "bash", "pwsh") — tells the model which command syntax exec_command speaks. */
+  shell: string;
   date: string;
 }
 
@@ -384,13 +387,51 @@ export function skillMetadataSection(skills: SkillMetadata[]): string {
 }
 
 /**
+ * Windows compatibility fallback for pre-`{{SHELL}}` system prompt templates.
+ *
+ * `system_config.yaml` is baked at Agent creation and never auto-upgraded, so an Agent created
+ * before the `{{SHELL}}` placeholder existed never tells its model which shell `exec_command`
+ * speaks — and on Windows (where the shell may be PowerShell, not bash) the model then keeps
+ * emitting bash syntax into the wrong shell. When the platform is win32 and the template carries
+ * no `{{SHELL}}` placeholder, inject a `- Shell: <shell>` line into the assembled prompt at
+ * render time: right after the Environment section heading when one exists, else appended as a
+ * minimal final line. In-memory only — the stored template is never rewritten. On POSIX the
+ * assembled prompt stays byte-identical (bash was always implied there), and a prompt that
+ * already carries the exact line is left untouched (idempotent).
+ *
+ * Retirement condition: remove this fallback once pre-`{{SHELL}}` Agent configs (created before
+ * the placeholder shipped in PR #79) are no longer expected in the wild.
+ */
+function withShellLineFallback(
+  assembled: string,
+  template: string,
+  sessionEnvironment?: SessionEnvironmentValues,
+): string {
+  if (sessionEnvironment?.platform !== "win32") return assembled;
+  if (!sessionEnvironment.shell) return assembled;
+  if (template.includes(SHELL_PLACEHOLDER)) return assembled; // The template already renders the line itself.
+  // Any existing `- Shell:` line means the model is already told a shell — including a custom
+  // template hardcoding a different value on purpose; never add a second, contradicting line.
+  if (/^- Shell: /m.test(assembled)) return assembled;
+  const line = `- Shell: ${sessionEnvironment.shell}`;
+  // The default templates head the section with `# Environment`; accept any heading level.
+  const heading = /^#+ Environment[ \t]*$/m.exec(assembled);
+  if (heading) {
+    const insertAt = heading.index + heading[0].length;
+    return `${assembled.slice(0, insertAt)}\n${line}${assembled.slice(insertAt)}`;
+  }
+  return `${assembled}\n${line}`;
+}
+
+/**
  * Renders the complete runtime system Prompt: substitutes `AGENTS.md`, vault key names, Skill
  * metadata, and the concrete Session runtime environment placeholders into the system Prompt
  * template. The assembly layer only does placeholder substitution and adds no extra text —
  * wrapper text such as `[developer_instructions]` and the # Vault / # Skills statements are
  * written directly into the system Prompt template itself (the Prompt is fully
  * transparent and editable via `system_config.yaml`). Other files in Agent State / Workspace are
- * never auto-injected.
+ * never auto-injected. Sole exception: on win32 a template without `{{SHELL}}` gets a `- Shell:`
+ * line injected at render time (see `withShellLineFallback`).
  *
  * `{{VAULT_KEYS}}` is replaced with the vault key-name list (an empty string if empty/not
  * provided): this lets the model know which APIs requiring a key it can call; values are never
@@ -406,7 +447,8 @@ export function assembleSystemPrompt(
   vaultKeys?: string[],
   skillMetadata?: SkillMetadata[],
 ): string {
-  return state.systemConfig.system_prompt
+  const template = state.systemConfig.system_prompt;
+  const assembled = template
     .split(AGENTS_MD_PLACEHOLDER)
     .join(state.agentsMd.trim())
     .split(VAULT_KEYS_PLACEHOLDER)
@@ -429,9 +471,12 @@ export function assembleSystemPrompt(
     .join(sessionEnvironment?.platform ?? "")
     .split(OS_VERSION_PLACEHOLDER)
     .join(sessionEnvironment?.osVersion ?? "")
+    .split(SHELL_PLACEHOLDER)
+    .join(sessionEnvironment?.shell ?? "")
     .split(DATE_PLACEHOLDER)
     .join(sessionEnvironment?.date ?? "")
     .trim();
+  return withShellLineFallback(assembled, template, sessionEnvironment);
 }
 
 /**

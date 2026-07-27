@@ -63,7 +63,9 @@ export const zh = {
     keywords: ["轻量", "高效", "开源"],
     ctaPrimary: "快速开始",
     ctaGithub: "GitHub",
-    installHint: "一行命令安装（Linux / macOS，x64 / arm64，内嵌 Node 运行时，解压即用）",
+    installHint: "一行命令安装（Linux / macOS / Windows，内嵌 Node 运行时，解压即用）",
+    installLabelPosix: "Linux / macOS",
+    installLabelWindows: "Windows",
     stats: [
       { value: "1000+", label: "支持模型数量" },
       { value: "1×CPU", label: "最低运行配置" },
@@ -156,8 +158,9 @@ export const zh = {
     subtitle:
       "一行命令安装，打开桌面级界面即可让 Agent 开始工作；数据全部保存在本地 ~/.penguin/data 目录。",
     step1: "安装",
-    step1Desc:
-      "Linux / macOS（x64 / arm64），产物内嵌 Node 运行时，解压即用；升级与重装不触碰数据。",
+    step1Desc: "Linux / macOS / Windows，产物内嵌 Node 运行时，解压即用；升级与重装不触碰数据。",
+    installLabelPosix: "Linux / macOS",
+    installLabelWindows: "Windows（PowerShell）",
     tabWeb: "Web 界面",
     tabCli: "命令行",
     webStep2: "启动 Web 界面",
