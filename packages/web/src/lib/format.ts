@@ -22,11 +22,16 @@ export function humanizeTokens(n: number): string {
   return `${trimZero(n / 1_000_000)}M`;
 }
 
-/** Convert milliseconds to a human-readable duration: `820ms`, `2.3s`, `1m3s`. */
-export function humanizeDuration(ms: number): string {
+/**
+ * Convert milliseconds to a human-readable duration: `820ms`, `2.3s`, `1m3s`.
+ * `compact` (narrow screens): seconds from 10s up drop the tenths (`12s`, not `12.7s` — at that
+ * scale the decimal no longer carries information worth the width); below 10s the tenth is
+ * significant and stays (`1.7s`), ms and minute forms are already whole-numbered.
+ */
+export function humanizeDuration(ms: number, opts?: { compact?: boolean }): string {
   if (ms < 1000) return `${Math.round(ms)}ms`;
   const s = ms / 1000;
-  if (s < 60) return `${trimZero(s)}s`;
+  if (s < 60) return opts?.compact && s >= 10 ? `${Math.round(s)}s` : `${trimZero(s)}s`;
   const m = Math.floor(s / 60);
   return `${m}m${Math.round(s % 60)}s`;
 }
@@ -98,16 +103,22 @@ export function formatPercent(ratio: number | null | undefined): string {
  * Cost display (converted to the selected currency; prices are stored in
  * USD): null/undefined → `—`; 1 USD ≈ 7 CNY; decimal places scale with
  * magnitude (≥100 rounds to an integer, ≥1 uses two places, otherwise four).
+ * `compact` (narrow screens): sub-unit amounts keep 2 significant digits
+ * instead of 4 fixed decimals (`$0.1234` → `$0.12`, `$0.0012` stays
+ * `$0.0012`) — significant digits, not fixed decimals, so a nonzero cost is
+ * never rounded down to zero; amounts ≥ 1 are already short and unchanged.
  */
 export function formatMoney(
   usd: number | null | undefined,
   currency: "USD" | "CNY" = "USD",
+  opts?: { compact?: boolean },
 ): string {
   if (usd == null) return "—";
   const symbol = currency === "CNY" ? "¥" : "$";
   const v = currency === "CNY" ? usd * 7 : usd;
   if (v === 0) return `${symbol}0`;
   const abs = Math.abs(v);
+  if (opts?.compact && abs < 1) return `${symbol}${Number(v.toPrecision(2))}`;
   const digits = abs >= 100 ? 0 : abs >= 1 ? 2 : 4;
   return `${symbol}${v.toFixed(digits)}`;
 }

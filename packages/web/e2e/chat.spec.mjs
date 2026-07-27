@@ -139,7 +139,9 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   // prove nothing about this line.
   const copyBtn = page.getByRole("button", { name: "复制回复" }).first();
   const statsLine = copyBtn.locator("xpath=..");
-  await expect(statsLine.locator("text=/\\$0\\.\\d+/")).toBeVisible(); // cost chip (pricing set)
+  // Cost chip (pricing set). visible-filtered: the chip renders a desktop value plus a
+  // display:none compact twin for phones, and both match the money pattern.
+  await expect(statsLine.locator("text=/\\$0\\.\\d+/").filter({ visible: true })).toBeVisible();
 
   // Hidden by default but SPACE-RESERVED (opacity-0, not hidden). Park the cursor first: after
   // clicking 允许 ("Allow") the pointer sits where that button was and the re-render can drop a

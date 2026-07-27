@@ -430,9 +430,9 @@ test("layout: mobile chat dropdowns stay inside the viewport", async ({ page }) 
 
   // Approve and let the turn finish: the per-reply stats footer must keep to its one fixed
   // line at 390 (it used to wrap its chips onto a clipped second row that painted over the
-  // content below) while still carrying EVERY chip — on phones the stats span scrolls
-  // sideways under a hidden scrollbar instead of dropping input/output/TPS, and the copy
-  // button sits outside the scroll area so it can't scroll out of reach.
+  // content below). On phones the row is slimmed to FIT: TPS is dropped and cost/elapsed use
+  // compact decimals, the hidden-scrollbar sideways scroll remaining only as a fallback; the
+  // copy button sits outside the scroll area so it can't scroll out of reach.
   await page.getByRole("button", { name: /^Allow$/ }).click();
   await expect(page.getByText("Command finished; the result looks as expected.")).toBeVisible();
   const footer = page.getByRole("button", { name: "Copy reply" }).first().locator("xpath=..");
@@ -441,10 +441,26 @@ test("layout: mobile chat dropdowns stay inside the viewport", async ({ page }) 
   // chat.spec asserts at desktop width.
   await page.mouse.move(0, 0);
   await expect(footer, "stats footer visible at rest @390").toHaveCSS("opacity", "1");
-  // All chips stay in the DOM at 390 (no pricing configured -> no cost chip to expect).
-  for (const chip of ["Input tokens", "Output tokens", "Output TPS", "Elapsed"]) {
+  // The USER message's footer (time + copy, bubble bottom-right) gets the same treatment:
+  // always visible below sm, since touch has no hover to reveal it with.
+  const userCopy = page.getByRole("button", { name: "Copy message" }).first();
+  await expect(userCopy, "user copy button visible at rest @390").toBeVisible();
+  await expect(userCopy.locator("xpath=.."), "user footer visible at rest @390").toHaveCSS(
+    "opacity",
+    "1",
+  );
+  // Chips at 390: input/output/elapsed shown (no pricing configured -> no cost chip); TPS is
+  // deliberately dropped below sm to keep the row inside the width.
+  for (const chip of ["Input tokens", "Output tokens", "Elapsed"]) {
     await expect(footer.locator(`[title="${chip}"]`), `${chip} chip present @390`).toBeVisible();
   }
+  await expect(footer.locator('[title="Output TPS"]'), "TPS chip in DOM").toHaveCount(1);
+  await expect(footer.locator('[title="Output TPS"]'), "TPS chip hidden @390").toBeHidden();
+  // With TPS dropped and compact decimals the common case FITS at 390 — no sideways scroll
+  // needed (the scroll container remains only as a fallback for extreme values).
+  const statsSpan = footer.locator("span").first();
+  const fit = await statsSpan.evaluate((el) => ({ sw: el.scrollWidth, cw: el.clientWidth }));
+  expect(fit.sw, "stats row fits @390 without scrolling").toBeLessThanOrEqual(fit.cw + 1);
   const footerH = await footer.evaluate((el) => ({
     client: el.clientHeight,
     scroll: el.scrollHeight,
