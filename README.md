@@ -166,6 +166,14 @@ pnpm dev                     # backend + web app together (prefixed logs, deps b
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workspace guide: dev commands, quality gates, repo layout, and the changelog rule.
 
+## Contributors
+
+Thanks to everyone who has contributed to PenguinHarness!
+
+<p align="center">
+  <a href="https://github.com/Prism-Shadow/penguin-harness/graphs/contributors"><img src="https://contrib.rocks/image?repo=Prism-Shadow/penguin-harness" alt="PenguinHarness contributors" /></a>
+</p>
+
 ## Citation
 
 If you use PenguinHarness in your research, please cite:
