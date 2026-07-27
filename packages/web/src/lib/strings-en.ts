@@ -581,9 +581,9 @@ Prepare a separate Prompt file and Workspace for each phase, then launch it in t
 \`\`\`bash
 mkdir -p <phase_workspace>
 
-PROJECT_DIR="<Project Dir from the current Session Environment>"
-PROJECT_ID="$(basename "$PROJECT_DIR")"
-export PENGUIN_HOME="$(dirname "$PROJECT_DIR")"
+APP_DATA_DIR="<App Data Dir from the current Session Environment>"
+PROJECT_ID="$(basename "$APP_DATA_DIR")"
+export PENGUIN_HOME="$(dirname "$APP_DATA_DIR")"
 
 penguin run \\
   --project-id "$PROJECT_ID" \\
@@ -623,7 +623,7 @@ After Phase 1 completes, start a new independent CLI Session and use the
 - Benchmark ID: \`contextual-choice-adaptation\`
 - Test Provider: \`deepseek\`
 - Test Model: \`deepseek-v4-flash\`
-- Runs: 1
+- Runs: 3
 - Baseline hard gate: below 70
 
 Target capability: progressively learn context-to-action mappings that public information cannot
@@ -666,7 +666,7 @@ provide enough evidence to make it answerable.
 Stop Pilot calibration early when the result is below 70. If the third iteration result is not below
 70, or no credible capability-relevant adjustment remains, report the limitation. Once the
 hard gate is met, complete a semantic-isolation review immediately before freezing the complete
-Benchmark. Run a fresh complete 3×1 Formal ledger and matrix; never reuse Pilot runs in the
+Benchmark. Run a fresh complete 3×3 Formal ledger and matrix; never reuse Pilot runs in the
 Scoreboard. Only one complete valid Formal Baseline may be recorded. Never write a partial or
 abandoned Formal matrix. If a Formal design defect is found, return to Pilot within the remaining
 Pilot budget, re-freeze, and run a fresh complete Formal matrix. If no Pilot iterations remain,
@@ -714,7 +714,7 @@ Do not change multiple strategy families in one Candidate. In each round:
 
 1. form one testable hypothesis from the current Reference score and Test Trace;
 2. make one minimal Agent State change;
-3. complete the full 3×1 Candidate evaluation;
+3. complete the full 3×3 Candidate evaluation;
 4. accept only a strictly higher score, otherwise roll back;
 5. use each accepted Candidate as the next Reference.
 
@@ -733,6 +733,8 @@ text is not an access. If an actual access occurred, do not count the contaminat
 Report:
 
 - Agent and Benchmark paths;
+- the Pilot calibration table: iteration, aggregate score, diagnosed capability gap, the single
+  difficulty adjustment, and the freeze or stop reason;
 - the Baseline and every Candidate score;
 - the single strategy hypothesis tested in each round;
 - major Agent State changes;

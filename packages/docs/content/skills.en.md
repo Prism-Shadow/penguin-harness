@@ -72,7 +72,7 @@ The built-in Skills, by group (the group manifest is `SKILL_GROUPS` in `packages
 | Agent Tuning | `agent-creation` | Turn a user requirement into a concrete agent: write the target agent's AGENTS.md and install the skills it needs |
 | | `benchmark-design` | Design and calibrate a multi-Case capability Benchmark with repeated independent evaluations and a traceable baseline |
 | | `agent-evaluation` | Run and score exactly one Benchmark Case run, with CLI execution, Trace provenance checks and private Rubric isolation |
-| | `agent-optimization` | Improve an Agent State from direct feedback or versioned multi-Case Benchmark scores and score-linked Traces |
+| | `agent-optimization` | Improve an Agent State from versioned multi-Case Benchmark scores and score-linked Traces |
 
 ## Writing and optimizing Skills
 

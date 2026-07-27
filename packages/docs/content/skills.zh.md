@@ -72,7 +72,7 @@ Skill 库以 npm 包 `@prismshadow/penguin-skills` 发布，tarball 直接携带
 | Agent 调优 | `agent-creation` | 把用户需求变成具体的 Agent：撰写目标 Agent 的 AGENTS.md 并安装所需 Skill |
 | | `benchmark-design` | 设计并校准多 Case 的能力评测 Benchmark，含重复独立评测与可追溯基线 |
 | | `agent-evaluation` | 隔离执行并评分单个 Benchmark Case:CLI 执行、Trace 溯源检查、Rubric 私有隔离 |
-| | `agent-optimization` | 依据直接反馈或带版本的多 Case Benchmark 分数与关联 Trace 改进 Agent State |
+| | `agent-optimization` | 依据带版本的多 Case Benchmark 分数与关联 Trace 改进 Agent State |
 
 ## 编写与优化
 

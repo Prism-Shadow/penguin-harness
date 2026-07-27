@@ -3,8 +3,8 @@ name: agent-evaluation
 description: Run and score exactly one Benchmark Case run with CLI execution, Trace provenance checks, and private Rubric isolation.
 short_description: Run and score one isolated Benchmark Case.
 short_description_zh: 隔离执行并评分一个 Benchmark Case。
-version: 2
-updated: 2026-07-25T04:53:05Z
+version: 5
+updated: 2026-07-27T00:00:00Z
 ---
 
 # Agent Evaluation
@@ -34,12 +34,12 @@ model_id: <upstream_model_id>
 
 ## Validate and prepare
 
-Resolve the Project, Test Agent, Benchmark, and Case only from the explicit request and Environment Project Dir. Reject traversal, symlink escape, or any path outside the requested Test Agent. Never read a Project configuration file, credential, or vault.
+Resolve the Project, Test Agent, Benchmark, and Case only from the explicit request and Environment App Data Dir. Reject traversal, symlink escape, or any path outside the requested Test Agent. Never read a Project configuration file, credential, or vault.
 
 Derive paths from the Environment and request:
 
 ```text
-TEST_AGENT_DIR = <project_dir>/agents/<test_agent_id>
+TEST_AGENT_DIR = <app_data_dir>/agents/<test_agent_id>
 BENCHMARK_DIR = <test_agent_dir>/benchmarks/<benchmark_id>
 ```
 
@@ -67,7 +67,7 @@ Before launch, record the existing files and sizes under the requested Test Agen
 Run the Test Agent exactly once in the foreground with a fresh top-level Session:
 
 ```bash
-PROJECT_DIR="<project_dir>"
+PROJECT_DIR="<app_data_dir>"   # the App Data Dir value from your Environment section is the project root
 PROJECT_ID="$(basename "$PROJECT_DIR")"
 PENGUIN_HOME="$(dirname "$PROJECT_DIR")"
 WORKSPACE="$PROJECT_DIR/agents/<test_agent_id>/workspaces/<unique_workspace_id>"

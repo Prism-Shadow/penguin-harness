@@ -563,9 +563,9 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
 \`\`\`bash
 mkdir -p <phase_workspace>
 
-PROJECT_DIR="<当前 Session 的 Environment Project Dir>"
-PROJECT_ID="$(basename "$PROJECT_DIR")"
-export PENGUIN_HOME="$(dirname "$PROJECT_DIR")"
+APP_DATA_DIR="<当前 Session 的 Environment App Data Dir>"
+PROJECT_ID="$(basename "$APP_DATA_DIR")"
+export PENGUIN_HOME="$(dirname "$APP_DATA_DIR")"
 
 penguin run \\
   --project-id "$PROJECT_ID" \\
@@ -603,7 +603,7 @@ Phase 1 完成后，通过新的独立 CLI Session 使用 \`benchmark-design\` S
 - Benchmark ID：\`contextual-choice-adaptation\`
 - Test Provider：\`deepseek\`
 - Test Model：\`deepseek-v4-flash\`
-- Runs：1
+- Runs：3
 - Baseline 硬门槛：低于 70
 
 目标能力：通过固定 Benchmark 的 Case 分数，逐步学习公开信息无法唯一确定
@@ -641,7 +641,7 @@ Statement 必须明确要求该行为，材料也必须提供足以作答的证�
 
 结果低于 70 时提前停止 Pilot 校准。如果第 3 轮结果仍未低于 70，或已没有可信且
 与目标能力相关的调整，应明确报告限制。满足硬门槛后，应在冻结完整 Benchmark 前
-立即完成语义隔离复核。执行全新且完整的 3×1 Formal 台账和矩阵；不得在 Scoreboard
+立即完成语义隔离复核。执行全新且完整的 3×3 Formal 台账和矩阵；不得在 Scoreboard
 中复用 Pilot 的运行。只能记录一次完整有效的 Formal Baseline，绝不得写入不完整或
 放弃的 Formal 矩阵。若发现 Formal 设计缺陷，应在剩余 Pilot 预算内返回 Pilot、重新
 冻结，并执行全新且完整的 Formal 矩阵。若已无剩余 Pilot 轮次，应报告限制并停止，
@@ -688,7 +688,7 @@ Gold 或 Builder 的私有映射。使用明确的公开 Statement 和 Scoreboar
 
 1. 根据当前 Reference 的分数和 Test Trace 提出一个可检验假设；
 2. 对 Agent State 做一次最小修改；
-3. 完成完整的 3×1 Candidate 评测；
+3. 完成完整的 3×3 Candidate 评测；
 4. 分数严格提升则接受，否则回滚；
 5. 将接受的 Candidate 作为下一轮 Reference。
 
@@ -706,6 +706,7 @@ Agent State。不得写入 Case ID、具体实例答案或逐题答案表。
 最终汇报：
 
 - Agent 和 Benchmark 路径；
+- Pilot 校准表：轮次、总分、诊断出的能力缺口、单一难度调整以及冻结或停止原因；
 - Baseline 与所有 Candidate 分数；
 - 每轮验证的单一策略假设；
 - Agent State 的主要改动；

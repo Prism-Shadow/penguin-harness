@@ -3,8 +3,8 @@ name: agent-optimization
 description: Improve an Agent State from versioned Benchmark scores and score-linked Traces.
 short_description: Improve an Agent from measured Benchmark results.
 short_description_zh: 根据 Benchmark 结果改进 Agent。
-version: 2
-updated: 2026-07-25T05:05:26Z
+version: 6
+updated: 2026-07-27T00:00:00Z
 ---
 
 # Agent Optimization
@@ -25,10 +25,10 @@ If `run_subagent` is absent, immediately return `missing_run_subagent`. Do not e
 
 ## Target and access boundaries
 
-Use the Environment's Project Dir:
+Use the Environment's App Data Dir:
 
 ```text
-TARGET = <project_dir>/agents/<test_agent_id>
+TARGET = <app_data_dir>/agents/<test_agent_id>
 STATE = <target>/agent_state
 TRACES = <target>/traces
 BENCHMARK = <target>/benchmarks/<benchmark_id>
@@ -59,13 +59,13 @@ Every change must generalize beyond the observed run. Do not encode Case ids, ex
 
 Before changing Agent State, read the top-level `version` from `system_config.yaml`, defaulting to 1 when absent.
 
-Ensure this snapshot exists:
+The system owns Agent State snapshot archives and exposes them through Web export and import. Do not create, import, extract, or replace snapshot archives yourself. Require this snapshot to exist:
 
 ```text
 <target>/snapshots/v<version>.tar.gz
 ```
 
-When the current-version snapshot is absent, create it from `agent_state/` without `.vault.toml`. Never overwrite an existing snapshot for the same version.
+If the current-version snapshot is missing, stop and ask the user to export the current Agent State from Agent settings before continuing.
 
 Use `current + 1` as the candidate version.
 

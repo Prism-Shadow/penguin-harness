@@ -3,7 +3,7 @@ name: benchmark-design
 description: Design and calibrate a multi-Case capability Benchmark with repeated independent evaluations and a traceable baseline.
 short_description: Design and calibrate an Agent capability Benchmark.
 short_description_zh: 设计并校准 Agent 能力评测 Benchmark。
-version: 5
+version: 6
 updated: 2026-07-27T00:00:00Z
 ---
 
@@ -21,10 +21,10 @@ Evaluation also requires a top-level Session with `run_subagent`, and the curren
 
 ## Paths and access boundaries
 
-Use the Environment's Project Dir and the explicit Test Agent id:
+Use the Environment's App Data Dir and the explicit Test Agent id:
 
 ```text
-TEST_AGENT_DIR = <project_dir>/agents/<test_agent_id>
+TEST_AGENT_DIR = <app_data_dir>/agents/<test_agent_id>
 BENCHMARK_DIR = <test_agent_dir>/benchmarks/<benchmark_id>
 SCOREBOARD = <benchmark_dir>/scoreboard.yaml
 ```
@@ -174,7 +174,7 @@ After a completed Formal Baseline, a material Benchmark change starts a new Pilo
 
 ## Final report
 
-Report the Benchmark path, configuration, Test Agent State version, aggregate and Case scores, Test Session ids, main adjustments, and known limitations.
+Report the Benchmark path, configuration, Test Agent State version, aggregate and Case scores, Test Session ids, and known limitations. Include a compact Pilot calibration table with one row per iteration: iteration number, aggregate score, diagnosed capability gap, the single difficulty adjustment, and the freeze or stop reason.
 
 The report must not describe Rubrics, Gold answers, hidden rules, per-item scores, specific Test Agent errors, or any diagnostic that could reveal private scoring conditions.
 
