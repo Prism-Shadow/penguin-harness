@@ -32,7 +32,7 @@ export interface GoalPromptArgs {
 function goalFileLines(args: GoalPromptArgs): string[] {
   const unlimited =
     args.goal.tokens.budget <= 0 || args.goal.tokens.budget === UNLIMITED_BUDGET
-      ? " (a `tokens.budget` of -1 means the goal has no token budget)"
+      ? " (a `-1` under `tokens` means the goal has no token budget)"
       : "";
   return [
     `Goal file: ${args.goalFilePath}`,

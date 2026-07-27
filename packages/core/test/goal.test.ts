@@ -104,16 +104,22 @@ describe("goal-file", () => {
     expect(parsed.tokens).toEqual({ budget: 1000, used: 250, remaining: 750 });
   });
 
-  it("omits remaining for an unlimited budget", async () => {
+  it("mirrors the budget's -1 in remaining on an unlimited goal, keeping remaining last", async () => {
     await writeGoalFile(file, {
       objective: "obj",
       status: "active",
       tokens: { budget: UNLIMITED_BUDGET, used: 42 },
     });
-    const parsed = parseYaml(await fs.readFile(file, "utf8")) as {
-      tokens: Record<string, number>;
-    };
-    expect(parsed.tokens).toEqual({ budget: UNLIMITED_BUDGET, used: 42 });
+    const raw = await fs.readFile(file, "utf8");
+    const parsed = parseYaml(raw) as { tokens: Record<string, number> };
+    expect(parsed.tokens).toEqual({
+      budget: UNLIMITED_BUDGET,
+      used: 42,
+      remaining: UNLIMITED_BUDGET,
+    });
+    // remaining always closes the tokens block (fixed field order in the file and the
+    // embedded copy alike).
+    expect(raw.trimEnd().endsWith(`remaining: ${UNLIMITED_BUDGET}`)).toBe(true);
   });
 
   it("normalizes a missing file, invalid YAML, and unknown statuses to blocked", async () => {
@@ -148,15 +154,16 @@ describe("goal-prompts", () => {
     expect(text).not.toContain("no token budget");
   });
 
-  it("explains the -1 budget on an unlimited goal", () => {
+  it("explains the -1 values on an unlimited goal", () => {
     const text = goalRoundMessage({
       goal: goalOf("obj"),
       goalFilePath: "/tmp/GOAL.yaml",
       round: 1,
       body: "obj",
     });
-    expect(text).toContain("`tokens.budget` of -1");
+    expect(text).toContain("`-1` under `tokens`");
     expect(text).toContain("budget: -1");
+    expect(text).toContain("remaining: -1");
   });
 
   it("the wrap-up block announces the exhausted budget", () => {

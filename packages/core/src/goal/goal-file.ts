@@ -39,19 +39,21 @@ export interface GoalFile {
 }
 
 /**
- * Serializes GOAL.yaml from in-memory values. `tokens.remaining` is emitted only for a real
- * budget, so the model never sees a bogus negative remainder on an unlimited goal. The goal
- * prompt embeds this same serialization verbatim in every round's `[goal]` block — the model
- * always sees exactly the bytes on disk, and nothing model-writable is ever read back.
+ * Serializes GOAL.yaml from in-memory values. `tokens.remaining` is always emitted (last in
+ * the tokens block); on an unlimited goal it mirrors the budget's `-1` rather than showing a
+ * bogus negative remainder. The goal prompt embeds this same serialization verbatim in every
+ * round's `[goal]` block — the model always sees exactly the bytes on disk, and nothing
+ * model-writable is ever read back.
  */
 export function serializeGoalFile(goal: GoalFile): string {
   const tokens: Record<string, number> = {
     budget: goal.tokens.budget,
     used: goal.tokens.used,
+    remaining:
+      goal.tokens.budget > 0
+        ? Math.max(0, goal.tokens.budget - goal.tokens.used)
+        : UNLIMITED_BUDGET,
   };
-  if (goal.tokens.budget > 0) {
-    tokens.remaining = Math.max(0, goal.tokens.budget - goal.tokens.used);
-  }
   return stringifyYaml({ objective: goal.objective, status: goal.status, tokens });
 }
 
