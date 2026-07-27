@@ -117,8 +117,8 @@ A low Pilot score is also not enough to freeze. Confirm that every scored outcom
 
 For each refinement iteration:
 
-1. Identify one shortcut, missing dependency, or weak requirement that made the Pilot too easy.
-2. State one refinement hypothesis: the difficulty dimension to change and the capability failure it should expose.
+1. Identify one capability-relevant reasoning step that the current Case fails to require.
+2. State the general Agent behavior that should perform this step correctly.
 3. Change only that dimension. Options include stronger evidence integration, meaningful conflicts or distractors, cross-file dependencies, deeper decisions, or new comparable instances.
 4. Update every affected public and private Benchmark file. Discard invalidated results, run the leak check, and rerun the affected Cases. This starts the next Pilot iteration.
 
@@ -126,7 +126,7 @@ Adding more rows, fields, distractors, or Cases does not by itself increase diff
 
 Reuse a Pilot result only when nothing that affects it changed. This includes the Statement, supporting files, Rubric, Gold answers, points, Agent State version, and evaluation Model. Otherwise, run that Case again.
 
-Use Pilot output to find a missing capability demand, not to choose the correct answer. Do not change Gold merely to contradict the Agent. Do not tighten only the private Rubric, add arbitrary ambiguity, or create a Case-specific trap. Choose hidden rules independently and keep them fixed during each iteration. State every required output or action publicly. Keep a latent rule or mapping private only when public evidence or examples make it recoverable.
+Use Pilot output to make a missing capability demand necessary, not to make an observed answer wrong. Do not change Gold merely to contradict the Agent. Do not tighten only the private Rubric, add arbitrary ambiguity, or create a Case-specific trap. Choose hidden rules independently and keep them fixed during each iteration. State every required output or action publicly. Keep a latent rule or mapping private only when public evidence or examples make it recoverable.
 
 Stop refining when Pilot evidence indicates the gate can plausibly be satisfied, after five Pilot iterations, or when no credible refinement remains. If the score remains clearly above the gate, report `calibration_failed` without freezing or running Formal. Do not manufacture difficulty.
 
