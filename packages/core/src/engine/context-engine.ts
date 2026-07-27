@@ -105,6 +105,20 @@ export interface CompactionSettings {
 interface CompactionResult {
   status: StopReason;
   summary?: OmniMessage;
+  /**
+   * Whether at least one summarize attempt was **committed** by AgentHub (only a `completed`
+   * attempt commits — timeout/malformed end an incomplete stream and failed/auth/aborted throw
+   * or cut off before a clean end). The carry rule at every caller is a two-case binary on
+   * this flag (issue #85): committed → the input the caller folded in (mid-Task tool outputs,
+   * or the carry-over a manual `compact()` folds in) now lives in the old LLM object's history
+   * and must never be resent — strict providers reject the duplicates as stale tool_results;
+   * not committed → the folded input is untouched and is resent exactly as before. When
+   * nothing was folded in (idle/boundary compaction), the committed branch is vacuous —
+   * dropping zero outputs, clearing an empty carry — so no separate "was anything absorbed"
+   * signal is needed. Zero committed attempts also implies zero synthesized repairs (repairs
+   * only answer a committed rejection's tool calls).
+   */
+  committed: boolean;
 }
 
 /**
@@ -556,6 +570,9 @@ export class ContextEngine {
       // applies mid-Task — when runTurn returns, all of this turn's
       // tool results are ready and paired with their tool_call.
       const midTask = turn.toolOutputs.length > 0;
+      // Outputs this turn still owes the model: dropped when a committed compaction attempt
+      // consumes them into history (the two-case carry rule below, issue #85).
+      let turnOutputs = turn.toolOutputs;
       const compactionReason = this.compactionTrigger();
       if (compactionReason) {
         const mode = this.deps.compaction!.mode;
@@ -574,11 +591,20 @@ export class ContextEngine {
             signal,
           );
           if (result.status === "aborted") {
-            // User interrupted compaction: keep the original context; if mid-Task, hold the
-            // tool outputs as carry-over per case A. Abort is the one path that discards the
-            // steering queue (run's finally — control goes back to the user).
+            // User interrupted compaction: keep the original context. The carry rule is the
+            // same two-case binary as everywhere (issue #85): a committed attempt consumed
+            // this turn's outputs into history — only the repair stash summarizeContext left
+            // in pendingCarryOver still needs resending; otherwise the outputs are untouched
+            // and are appended behind the stash as case-A carry-over. Abort is the one path
+            // that discards the steering queue (run's finally — control goes back to the
+            // user).
             if (midTask) {
-              this.pendingCarryOver = this.buildCarryOver(attemptInput, turn);
+              if (!result.committed) {
+                this.pendingCarryOver = [
+                  ...this.pendingCarryOver,
+                  ...this.buildCarryOver(attemptInput, turn),
+                ];
+              }
               yield* this.emitAbort("aborted during compaction");
             }
             return;
@@ -605,7 +631,13 @@ export class ContextEngine {
             continue;
           }
           // failed: keep the original context and Trace index; the current Task continues and
-          // retries on the next trigger (no fallback to discard).
+          // retries on the next trigger (no fallback to discard). The carry rule (issue #85):
+          if (result.committed) {
+            // A committed attempt consumed this turn's outputs into history — drop them from
+            // the continuation; only the repair stash remains pending.
+            turnOutputs = [];
+          }
+          // else: nothing committed — the outputs are untouched and resent below as always.
         }
       }
 
@@ -615,9 +647,18 @@ export class ContextEngine {
       // ending the Task — subject to the max-turns guard at the top of the loop).
       const steering = yield* this.deliverSteering();
       // No tool_call this turn and no steering left -> the Task ends (the final reply has
-      // already been streamed out).
+      // already been streamed out). A compaction stash, if any, rides the next run.
       if (!midTask && steering.length === 0) return;
-      nextInput = [...turn.toolOutputs, ...steering];
+      // Anything a failed compaction stashed mid-run (synthesized repair outputs from
+      // rejected attempts) rides the very next request, ahead of the turn outputs so
+      // tool_results stay contiguous and first.
+      const stashed = this.pendingCarryOver;
+      this.pendingCarryOver = [];
+      nextInput = [...stashed, ...turnOutputs, ...steering];
+      // Mid-task, but a committed compaction consumed the outputs and nothing else remains
+      // to send: the run ends here — the failure was surfaced via compaction_end(failed),
+      // the context is intact, and the next prompt continues from the committed state.
+      if (nextInput.length === 0) return;
     }
   }
 
@@ -670,15 +711,27 @@ export class ContextEngine {
       yield* this.discardContext("manual");
       return;
     }
-    const result = yield* this.summarizeContext(
-      "manual",
-      this.pendingCarryOver.map(downgradeCarriedGoalInput),
-      opts?.signal,
-    );
+    // The carry seam is a clean binary on whether the compaction committed anything to
+    // AgentHub (PR #87 review):
+    //   - nothing committed (every attempt timeout/malformed/failed/auth/aborted): the fold
+    //     never reached the model context — restore the prior carry-over **verbatim**. Zero
+    //     committed attempts also means zero synthesized repairs, so there is no stash to
+    //     interleave with (pinned by tests);
+    //   - something committed: the carry-over is **consumed** — it lives in the committed
+    //     history now and must never be resent; only the repair stash (unanswered tool_call
+    //     pairing left by a final rejection, already in pendingCarryOver) remains pending.
+    // Dead-goal rounds are downgraded on the drained snapshot (goal mode's consumer-site
+    // rule): a no-commit restore keeps the downgraded copies — the downgrade is idempotent
+    // and every consumer applies it anyway, while non-goal messages keep their identity.
+    const folded = this.pendingCarryOver.map(downgradeCarriedGoalInput);
+    this.pendingCarryOver = [];
+    const result = yield* this.summarizeContext("manual", folded, opts?.signal);
     if (result.status === "completed") {
-      this.pendingCarryOver = [];
       this.pendingSummary = result.summary!;
+    } else if (!result.committed) {
+      this.pendingCarryOver = folded;
     }
+    // committed but not completed: the carry-over is deliberately not restored.
   }
 
   /**
@@ -1078,7 +1131,10 @@ export class ContextEngine {
    * then the compaction fails. timeout/malformed reconnect via the existing retry mechanism
    * under the compaction-specific cap (`compactionMaxReconnects`, tighter than the turn loop's
    * ladder), collapsing to failed once retries are exhausted; on failure/abort, the original
-   * context and Trace index are kept — it does not fall back to discard.
+   * context and Trace index are kept — it does not fall back to discard. The first **committed**
+   * attempt absorbs `pendingToolOutputs` into the old context's history (issue #85): later
+   * resends carry only the repairs and the Prompt, and the result's `committed` flag tells
+   * the caller the folded input must not be resent even though the compaction did not complete.
    * Docs: /docs/agent-loop § "Compaction".
    */
   private async *summarizeContext(
@@ -1095,10 +1151,18 @@ export class ContextEngine {
     // executed and aren't recorded again, while carry-over's not-yet-written synthetic content
     // (flatten text, backfilled placeholders) and the compaction Prompt are written now.
     const prompt = userText(settings.prompt);
-    const baseInput = [...pendingToolOutputs, prompt];
-    let input = baseInput;
+    // The resend base: shrinks to the Prompt alone once an attempt commits — the folded turn
+    // input then lives in the old LLM object's history, and resending it would make strict
+    // providers reject the request over duplicate/stale tool_results (issue #85).
+    let base = [...pendingToolOutputs, prompt];
+    let input = base;
     await this.write(prompt);
 
+    // Whether any attempt was committed by AgentHub (only `completed` commits: timeout and
+    // malformed end an incomplete stream, and failed/auth/aborted throw or cut off before a
+    // clean end — none of those reach the stateful commit). Returned as `committed`: the
+    // callers' two-case carry rule branches on it.
+    let committed = false;
     // Synthesized outputs answering the latest rejected attempt's tool calls, not yet carried
     // by a committed request: prepended to the retry input, and stashed as carry-over should
     // the compaction be abandoned first (see stashRepairs).
@@ -1114,13 +1178,16 @@ export class ContextEngine {
       if (signal?.aborted) {
         this.stashRepairs(pendingRepairs);
         yield* this.emitCompactionEnd(reason, "summarize", "aborted");
-        return { status: "aborted" };
+        return { status: "aborted", committed };
       }
       const attempt = await this.runCompactionRequest(input, signal, reconnects);
       if (attempt.status === "completed") {
         // The attempt was committed by AgentHub, so whatever its input carried — including
         // repairs synthesized for a previous rejection — is now in history and must not be
-        // resent.
+        // resent. The first commit absorbs the folded turn input: the base shrinks to the
+        // Prompt alone.
+        committed = true;
+        base = [prompt];
         pendingRepairs = [];
         // A completed response counts as a compaction success only when it is a **usable
         // summary**: the extracted text is non-empty and the response called no tool. The
@@ -1143,7 +1210,7 @@ export class ContextEngine {
           const summary = userText(buildContextSummaryText(summaryText));
           yield* this.emitCompactionEnd(reason, "summarize", "completed");
           await this.startNewContext();
-          return { status: "completed", summary };
+          return { status: "completed", summary, committed };
         }
         // Rejected. Tool calls were never dispatched, yet the assistant turn holding them IS
         // committed on the live LLM object — leaving them unanswered would get every
@@ -1163,13 +1230,14 @@ export class ContextEngine {
           }),
         );
         for (const repair of pendingRepairs) await this.write(repair);
-        // Rebuild from baseInput rather than appending: everything the rejected attempt's
-        // input carried is committed, so only the fresh repairs and the Prompt go out again.
-        input = pendingRepairs.length > 0 ? [...pendingRepairs, ...baseInput] : baseInput;
+        // Rebuild from the (shrunken) base rather than appending: everything the rejected
+        // attempt's input carried is committed, so only the fresh repairs and the Prompt go
+        // out again.
+        input = pendingRepairs.length > 0 ? [...pendingRepairs, ...base] : base;
         if (rejections >= MAX_SUMMARY_REJECTIONS) {
           this.stashRepairs(pendingRepairs);
           yield* this.emitCompactionEnd(reason, "summarize", "failed");
-          return { status: "failed" };
+          return { status: "failed", committed };
         }
         // A rejection is model behavior, not a transport failure: the request pipeline is
         // healthy, so the repaired input is resent immediately — no backoff and no
@@ -1181,7 +1249,7 @@ export class ContextEngine {
       if (attempt.status === "aborted") {
         this.stashRepairs(pendingRepairs);
         yield* this.emitCompactionEnd(reason, "summarize", "aborted");
-        return { status: "aborted" };
+        return { status: "aborted", committed };
       }
       if (attempt.status === "failed" || attempt.status === "auth") {
         // `auth` folds into `failed` here: the compaction event pair keeps its
@@ -1190,7 +1258,7 @@ export class ContextEngine {
         // request will surface it; the compaction request_end is Trace-only).
         this.stashRepairs(pendingRepairs);
         yield* this.emitCompactionEnd(reason, "summarize", "failed");
-        return { status: "failed" };
+        return { status: "failed", committed };
       }
       // timeout / malformed: retried via reconnect — transport-level, never committed by
       // AgentHub (case B), so the input (any pending repairs included) is resent unchanged.
@@ -1200,14 +1268,14 @@ export class ContextEngine {
       if (reconnects >= this.compactionMaxReconnects) {
         this.stashRepairs(pendingRepairs);
         yield* this.emitCompactionEnd(reason, "summarize", "failed");
-        return { status: "failed" };
+        return { status: "failed", committed };
       }
       reconnects += 1;
       const ok = await this.backoff(reconnects, signal);
       if (!ok) {
         this.stashRepairs(pendingRepairs);
         yield* this.emitCompactionEnd(reason, "summarize", "aborted");
-        return { status: "aborted" };
+        return { status: "aborted", committed };
       }
     }
   }

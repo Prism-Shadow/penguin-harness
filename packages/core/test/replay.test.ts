@@ -566,4 +566,98 @@ describe("resumeTrace regressions (PR #39 review)", () => {
     expect(result.sessionTurns).toBe(1);
     expect(result.carryOver).toEqual([]);
   });
+
+  it("absorbed mid-task compaction (committed rejections) replays with nothing left to resend", () => {
+    // Resume symmetry for issue #85: a mid-task compaction whose first attempt committed has
+    // absorbed the turn's tool output into history; the repair answering the rejected
+    // attempt's tool call rode the second committed attempt. After a process exit at the
+    // abandonment, replay must reconstruct exactly the live engine's state: everything in
+    // history, nothing in carry-over — the next request continues from the committed state
+    // without resending any tool_result.
+    const result = resumeTrace([
+      meta(),
+      userText("go"),
+      requestBegin(),
+      toolCall({ name: "exec_command", arguments: "{}", toolCallId: "ct" }),
+      requestEnd("completed"),
+      tokenUsage(usage(150), usage(150)),
+      toolCallOutput({ output: "tool ran", toolCallId: "ct" }),
+      compactionBegin({ reason: "context", mode: "summarize", context: 150, turns: 1 }),
+      userText("COMPACT NOW"),
+      requestBegin(),
+      assistantText("[summary]nope[/summary]"),
+      toolCall({ name: "t", arguments: "{}", toolCallId: "c1" }),
+      requestEnd("completed"),
+      tokenUsage(usage(160), usage(310)),
+      toolCallOutput({
+        output: "[tool error] the compaction request expects a summary, not tool calls",
+        toolCallId: "c1",
+        stopReason: "failed",
+      }),
+      requestBegin(),
+      thinkingMessage("still nothing"),
+      requestEnd("completed"),
+      tokenUsage(usage(170), usage(480)),
+      compactionEnd({ reason: "context", mode: "summarize", status: "failed" }),
+    ]);
+    expect(result.contextClosed).toBe(false);
+    expect(result.pendingSummary).toBeUndefined();
+    // Both committed compaction rounds enter history: the turn output was absorbed by the
+    // first, the repair by the second.
+    expect(result.history.map((m) => (m.payload as { type?: string }).type)).toEqual([
+      "text",
+      "tool_call",
+      "tool_call_output",
+      "text",
+      "text",
+      "tool_call",
+      "tool_call_output",
+      "thinking",
+    ]);
+    // Nothing left to resend — matching the live engine, which also holds no carry-over here.
+    expect(result.carryOver).toEqual([]);
+    expect(result.sessionTurns).toBe(1);
+  });
+
+  it("absorbed mid-task compaction abandoned with an unanswered repair replays it as carry-over", () => {
+    // The abort-in-window shape: the rejected attempt committed (absorbing the turn output),
+    // its repair was written, and the process exited before any request carried the repair.
+    // Replay's eligibility filter keeps exactly the repair (paired with the committed,
+    // unanswered c1) as carry-over — the same stash the live engine holds — and does not
+    // reclaim the absorbed turn output.
+    const result = resumeTrace([
+      meta(),
+      userText("go"),
+      requestBegin(),
+      toolCall({ name: "exec_command", arguments: "{}", toolCallId: "ct" }),
+      requestEnd("completed"),
+      tokenUsage(usage(150), usage(150)),
+      toolCallOutput({ output: "tool ran", toolCallId: "ct" }),
+      compactionBegin({ reason: "context", mode: "summarize", context: 150, turns: 1 }),
+      userText("COMPACT NOW"),
+      requestBegin(),
+      toolCall({ name: "t", arguments: "{}", toolCallId: "c1" }),
+      requestEnd("completed"),
+      tokenUsage(usage(160), usage(310)),
+      toolCallOutput({
+        output: "[tool error] the compaction request expects a summary, not tool calls",
+        toolCallId: "c1",
+        stopReason: "failed",
+      }),
+      compactionEnd({ reason: "context", mode: "summarize", status: "aborted" }),
+    ]);
+    expect(result.contextClosed).toBe(false);
+    // The absorbed turn output sits in history (attempt 1's committed input), not carry-over.
+    expect(result.history.map((m) => (m.payload as { type?: string }).type)).toEqual([
+      "text",
+      "tool_call",
+      "tool_call_output",
+      "text",
+      "tool_call",
+    ]);
+    expect(
+      result.carryOver.map((m) => (m.payload as { tool_call_id?: string }).tool_call_id),
+    ).toEqual(["c1"]);
+    expect((result.carryOver[0]!.payload as { output?: string }).output).toContain("[tool error]");
+  });
 });
