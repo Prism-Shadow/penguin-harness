@@ -1,32 +1,37 @@
 /**
  * Version routes and update-check service tests: response shapes, the fail-soft
  * contract of /api/version/update-check (always 200, error field instead of 5xx),
- * cache TTLs with an injected clock, the PENGUIN_UPDATE_CHECK=off opt-out, and the
- * admin gate of POST /api/version/update. Nothing here touches the network or spawns
- * a process: fetch is stubbed, and the update run is exercised only through its pure
- * classifier and the "not launched via the CLI" early exit.
+ * the running release's own publish-date resolution (`currentPublishedAt`, only for
+ * builds with no stamped date), cache TTLs with an injected clock, the
+ * PENGUIN_UPDATE_CHECK=off opt-out, and the admin gate of POST /api/version/update.
+ * Nothing here touches the network or spawns a process: fetch is stubbed, and the
+ * update run is exercised only through its pure classifier and the "not launched via
+ * the CLI" early exit.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { VERSION } from "@prismshadow/penguin-core";
 import type { UpdateCheckResponse, UpdateRunResponse, VersionResponse } from "../src/api/types.js";
 import {
   FAILURE_TTL_MS,
+  LATEST_RELEASE_API,
   SUCCESS_TTL_MS,
   UpdateCheckService,
+  releaseTagApi,
 } from "../src/services/update-check-service.js";
 import { classifyUpdateRun } from "../src/http/routes/version.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
-/** Counting fetch stub; the handler decides the outcome per call. */
-function makeFetch(handler: () => Response | Promise<Response>): {
+/** Counting fetch stub; the handler decides the outcome per call (and may branch on the URL). */
+function makeFetch(handler: (url: string) => Response | Promise<Response>): {
   impl: typeof fetch;
-  state: { calls: number };
+  state: { calls: number; urls: string[] };
 } {
-  const state = { calls: 0 };
-  const impl: typeof fetch = async () => {
+  const state = { calls: 0, urls: [] as string[] };
+  const impl: typeof fetch = async (input) => {
     state.calls += 1;
-    return handler();
+    state.urls.push(String(input));
+    return handler(String(input));
   };
   return { impl, state };
 }
@@ -68,8 +73,17 @@ describe("GET /api/version/update-check", () => {
     await t.cleanup();
   });
 
-  it("reports a newer release with its URL and publish date", async () => {
-    const { impl } = makeFetch(() => releaseResponse("v99.0.0"));
+  it("reports a newer release with its URL and publish date (and the running release's own date)", async () => {
+    // The test build has no stamped BUILD_DATE, so the service also resolves the
+    // running version's release date from the tag endpoint.
+    const { impl } = makeFetch((url) =>
+      url === LATEST_RELEASE_API
+        ? releaseResponse("v99.0.0")
+        : new Response(
+            JSON.stringify({ tag_name: `v${VERSION}`, published_at: "2026-05-05T12:00:00Z" }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+    );
     t = await createTestApp({ updateCheck: new UpdateCheckService({ fetchImpl: impl, env: {} }) });
     const admin = await loginAdmin(t.app);
     const res = await apiClient(t.app, admin.cookie).get("/api/version/update-check");
@@ -82,6 +96,7 @@ describe("GET /api/version/update-check", () => {
       "https://github.com/Prism-Shadow/penguin-harness/releases/tag/v99.0.0",
     );
     expect(body.publishedAt).toBe("2026-07-01T00:00:00Z");
+    expect(body.currentPublishedAt).toBe("2026-05-05T12:00:00Z");
     expect(body.error).toBeUndefined();
     expect(body.disabled).toBeUndefined();
   });
@@ -99,6 +114,7 @@ describe("GET /api/version/update-check", () => {
     expect(body.latestVersion).toBeNull();
     expect(body.updateAvailable).toBe(false);
     expect(body.releaseUrl).toBeNull();
+    expect(body.currentPublishedAt).toBeNull();
   });
 });
 
@@ -138,7 +154,48 @@ describe("UpdateCheckService", () => {
     expect(result.disabled).toBe(true);
     expect(result.updateAvailable).toBe(false);
     expect(result.latestVersion).toBeNull();
+    expect(result.currentPublishedAt).toBeNull();
     expect(state.calls).toBe(0);
+  });
+
+  it("resolves the running version's release date from the tag endpoint when no build date is stamped", async () => {
+    const { impl, state } = makeFetch((url) =>
+      url === LATEST_RELEASE_API
+        ? releaseResponse("v99.0.0")
+        : new Response(
+            JSON.stringify({ tag_name: `v${VERSION}`, published_at: "2026-05-05T12:00:00Z" }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+    );
+    const service = new UpdateCheckService({ fetchImpl: impl, env: {}, buildDate: null });
+    const result = await service.check();
+    expect(state.urls).toContain(releaseTagApi(VERSION));
+    expect(result.currentPublishedAt).toBe("2026-05-05T12:00:00Z");
+    expect(result.latestVersion).toBe("99.0.0");
+  });
+
+  it("skips the current-release lookup entirely when a build date is stamped", async () => {
+    const { impl, state } = makeFetch(() => releaseResponse("v99.0.0"));
+    const service = new UpdateCheckService({ fetchImpl: impl, env: {}, buildDate: "2026-06-01" });
+    const result = await service.check();
+    expect(state.urls).toEqual([LATEST_RELEASE_API]);
+    expect(result.buildDate).toBe("2026-06-01");
+    expect(result.currentPublishedAt).toBeNull();
+    expect(result.latestVersion).toBe("99.0.0");
+  });
+
+  it("fail-soft: a failed current-release lookup leaves the field null without erroring the check", async () => {
+    // A dev version has no release tag: the tag endpoint 404s while the latest lookup works.
+    const { impl } = makeFetch((url) =>
+      url === LATEST_RELEASE_API
+        ? releaseResponse("v99.0.0")
+        : new Response("not found", { status: 404 }),
+    );
+    const service = new UpdateCheckService({ fetchImpl: impl, env: {}, buildDate: null });
+    const result = await service.check();
+    expect(result.error).toBeUndefined();
+    expect(result.latestVersion).toBe("99.0.0");
+    expect(result.currentPublishedAt).toBeNull();
   });
 
   it("caches a success for an hour and a failure for ten minutes", async () => {
@@ -152,6 +209,9 @@ describe("UpdateCheckService", () => {
       fetchImpl: impl,
       env: {},
       now: () => new Date(nowMs),
+      // Stamped build date: the current-release lookup is skipped, so every cache miss
+      // is exactly one request and the call counts below stay unambiguous.
+      buildDate: "2026-06-01",
     });
 
     const first = await service.check();

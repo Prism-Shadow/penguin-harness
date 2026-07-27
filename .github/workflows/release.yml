@@ -96,6 +96,7 @@ jobs:
           grep -q 'export const VERSION = "' packages/core/src/index.ts
           sed -i "s/export const VERSION = \"[^\"]*\"/export const VERSION = \"$V\"/" packages/core/src/index.ts
           D="$(date -u +%Y-%m-%d)"
+          # BRE: the unescaped | in these patterns is literal (grep/sed default to POSIX BRE, where | is not alternation).
           grep -q 'export const BUILD_DATE: string | null = ' packages/core/src/index.ts
           sed -i "s/export const BUILD_DATE: string | null = [^;]*/export const BUILD_DATE: string | null = \"$D\"/" packages/core/src/index.ts
 
@@ -248,6 +249,7 @@ jobs:
           grep -q 'export const VERSION = "' packages/core/src/index.ts
           sed -i "s/export const VERSION = \"[^\"]*\"/export const VERSION = \"$V\"/" packages/core/src/index.ts
           D="$(date -u +%Y-%m-%d)"
+          # BRE: the unescaped | in these patterns is literal (grep/sed default to POSIX BRE, where | is not alternation).
           grep -q 'export const BUILD_DATE: string | null = ' packages/core/src/index.ts
           sed -i "s/export const BUILD_DATE: string | null = [^;]*/export const BUILD_DATE: string | null = \"$D\"/" packages/core/src/index.ts
           (cd packages/skills && npm version --no-git-tag-version --allow-same-version "$V")

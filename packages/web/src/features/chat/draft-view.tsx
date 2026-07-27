@@ -49,6 +49,7 @@ import { Chevron } from "../../components/ui/chevron";
 import { Dropdown } from "../../components/ui/dropdown";
 import { PenguinLogo } from "../../components/ui/penguin-logo";
 import { toastError } from "../../components/ui/toast";
+import { useVersionInfo } from "../../lib/use-version-info";
 import { ChatInput } from "./chat-input";
 import { buildSkillsMessage } from "./skill-use";
 import { clearDraft, draftKey, loadDraft, saveDraft } from "./draft-cache";
@@ -510,6 +511,7 @@ export function DraftView({
             {S.appName}
           </h1>
           <p className="mt-2 text-base text-gray-400 dark:text-gray-500">{S.chat.draftSubtitle}</p>
+          <VersionLine />
         </div>
 
         <ChatInput
@@ -662,6 +664,41 @@ export function DraftView({
       {/* Lower symmetric space — empty, so it matches the upper one exactly */}
       <div className="flex-1" />
     </div>
+  );
+}
+
+/**
+ * Quiet version line under the brand subtitle: `PenguinHarness vX.Y.Z · <date>` (the
+ * stamped build date, else the running release's publish date from the update check),
+ * plus a release-notes link when a newer release is known. Fetching starts on mount —
+ * useVersionInfo caches at module level, so after the first resolution anywhere in the
+ * app this renders instantly and never refetches. Nothing renders until the version
+ * resolves (no placeholder flicker under the brand).
+ */
+function VersionLine() {
+  const { version, update } = useVersionInfo(true);
+  if (version === null) return null;
+  const date = version.buildDate ?? update?.currentPublishedAt?.slice(0, 10) ?? null;
+  return (
+    <p className="mt-1.5 text-xs text-gray-400 dark:text-gray-500">
+      {`PenguinHarness v${version.version}${date !== null ? ` · ${date}` : ""}`}
+      {update !== null &&
+        update.updateAvailable &&
+        update.latestVersion !== null &&
+        (update.releaseUrl !== null ? (
+          <a
+            href={update.releaseUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={S.update.releaseNotes}
+            className="ml-2 underline decoration-gray-300 underline-offset-2 transition-colors duration-150 hover:text-gray-600 dark:decoration-gray-600 dark:hover:text-gray-300"
+          >
+            {S.update.newVersion(update.latestVersion)}
+          </a>
+        ) : (
+          <span className="ml-2">{S.update.newVersion(update.latestVersion)}</span>
+        ))}
+    </p>
   );
 }
 

@@ -1205,6 +1205,15 @@ export interface UpdateCheckResponse {
   releaseUrl: string | null;
   /** Publish timestamp of the newest release (ISO 8601). */
   publishedAt: string | null;
+  /**
+   * Publish timestamp of the **running** version's own release (ISO 8601), resolved from
+   * the releases-by-tag API only when `buildDate` is null — installs released before
+   * BUILD_DATE stamping existed (v0.1.2 and earlier) would otherwise show no date at all.
+   * Null when the build date already answers the question, the lookup failed or found no
+   * such release (dev versions), or checks are disabled. The web renders the version's
+   * date as `buildDate ?? currentPublishedAt` (date part only).
+   */
+  currentPublishedAt: string | null;
   /** When this result was produced (ISO 8601) — a cached result keeps its original timestamp. */
   checkedAt: string;
   /** Present (true) when update checks are turned off via PENGUIN_UPDATE_CHECK=off; no network call was made. */
