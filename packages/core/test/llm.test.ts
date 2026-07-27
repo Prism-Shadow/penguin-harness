@@ -23,8 +23,10 @@ import {
   GenerativeModel,
   ToolCallIdAllocator,
   buildUniConfig,
+  isAuthenticationError,
   isIncompleteStreamError,
   isMalformedJsonParseError,
+  isQuotaExhaustedError,
   isRetryableError,
   mapThinkingLevel,
   mergeOmniToUniMessage,
@@ -1097,6 +1099,57 @@ describe("isRetryableError", () => {
     expect(isRetryableError(new Error("request timeout"))).toBe(true);
   });
 
+  it("treats undici transport failures as retryable, probing the cause chain", () => {
+    // Node fetch wraps a dropped connection as TypeError("terminated") with the real code on
+    // `cause` — exactly the field observed: "terminated: other side closed (UND_ERR_SOCKET)".
+    expect(
+      isRetryableError(
+        new TypeError("terminated", {
+          cause: Object.assign(new Error("other side closed"), { code: "UND_ERR_SOCKET" }),
+        }),
+      ),
+    ).toBe(true);
+    expect(isRetryableError({ code: "UND_ERR_SOCKET" })).toBe(true);
+    expect(isRetryableError({ code: "UND_ERR_CONNECT_TIMEOUT" })).toBe(true);
+    expect(isRetryableError({ code: "UND_ERR_HEADERS_TIMEOUT" })).toBe(true);
+    expect(isRetryableError({ code: "UND_ERR_BODY_TIMEOUT" })).toBe(true);
+    // A cause-less "terminated" / "fetch failed" still counts via the message keywords.
+    expect(isRetryableError(new TypeError("terminated"))).toBe(true);
+    expect(isRetryableError(new TypeError("fetch failed"))).toBe(true);
+    // Classic Node codes wrapped one level down are found too.
+    expect(
+      isRetryableError(
+        new Error("request failed", {
+          cause: Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" }),
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it("treats provider quota/subscription exhaustion as retryable (tight allowlist)", () => {
+    // The field case: a gateway 403 with an OpenAI-compatible body code.
+    expect(isRetryableError({ status: 403, code: "insufficient_user_quota" })).toBe(true);
+    expect(isRetryableError({ status: 403, error: { code: "insufficient_user_quota" } })).toBe(
+      true,
+    );
+    // Anthropic SDK shape: `error` holds the whole response body.
+    expect(
+      isRetryableError({ status: 403, error: { error: { code: "insufficient_quota" } } }),
+    ).toBe(true);
+    expect(isRetryableError({ status: 402, code: "insufficient_quota" })).toBe(true);
+    // Status-less quota code (some gateways surface only the provider code).
+    expect(isRetryableError({ code: "insufficient_user_quota" })).toBe(true);
+    // 403 with a quota/subscription message but no machine-readable code.
+    expect(isRetryableError({ status: 403, message: "no active subscription" })).toBe(true);
+    expect(isRetryableError({ status: 403, message: "订阅额度不足" })).toBe(true);
+    // A plain 403/400/404 without quota signals stays non-retryable.
+    expect(isRetryableError({ status: 403, message: "permission denied" })).toBe(false);
+    expect(isRetryableError({ status: 400, code: "insufficient_user_quota" })).toBe(false);
+    expect(isRetryableError({ status: 404 })).toBe(false);
+    // 401 keeps its auth classification even with a quota-looking message.
+    expect(isRetryableError({ status: 401, message: "quota" })).toBe(false);
+  });
+
   it("does not retry abort or unknown local errors", () => {
     const abort = new Error("aborted");
     abort.name = "AbortError";
@@ -1104,6 +1157,76 @@ describe("isRetryableError", () => {
     expect(isRetryableError(new Error("unexpected token in JSON"))).toBe(false);
     expect(isRetryableError(null)).toBe(false);
     expect(isRetryableError(undefined)).toBe(false);
+  });
+});
+
+describe("isQuotaExhaustedError", () => {
+  it("matches only 402/403 (or status-less) errors carrying a known quota code", () => {
+    expect(isQuotaExhaustedError({ status: 403, code: "insufficient_user_quota" })).toBe(true);
+    expect(isQuotaExhaustedError({ status: 402, error: { code: "insufficient_quota" } })).toBe(
+      true,
+    );
+    expect(isQuotaExhaustedError({ code: "insufficient_quota" })).toBe(true);
+    // The code may sit on the cause chain (wrapped by a higher layer).
+    expect(
+      isQuotaExhaustedError(
+        new Error("request failed", {
+          cause: { status: 403, code: "insufficient_user_quota" },
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      isQuotaExhaustedError(
+        Object.assign(new Error("request failed"), {
+          status: 403,
+          cause: { code: "insufficient_user_quota" },
+        }),
+      ),
+    ).toBe(true);
+    // Any other status keeps its own classification.
+    expect(isQuotaExhaustedError({ status: 429, code: "insufficient_quota" })).toBe(false);
+    expect(isQuotaExhaustedError({ status: 401, code: "insufficient_quota" })).toBe(false);
+  });
+
+  it("matches a 403 whose message names quota/subscription, but not a plain 403", () => {
+    expect(isQuotaExhaustedError({ status: 403, message: "monthly quota exceeded" })).toBe(true);
+    expect(isQuotaExhaustedError({ status: 403, message: "订阅额度不足" })).toBe(true);
+    expect(isQuotaExhaustedError({ status: 403, message: "forbidden" })).toBe(false);
+    // The message shortcut is 403-only: a status-less error needs the explicit code.
+    expect(isQuotaExhaustedError({ message: "quota exceeded" })).toBe(false);
+    expect(isQuotaExhaustedError(null)).toBe(false);
+  });
+});
+
+describe("isAuthenticationError", () => {
+  it("classifies HTTP 401 as auth, own or wrapped", () => {
+    expect(isAuthenticationError({ status: 401 })).toBe(true);
+    expect(isAuthenticationError({ statusCode: 401 })).toBe(true);
+    expect(isAuthenticationError(new Error("request failed", { cause: { status: 401 } }))).toBe(
+      true,
+    );
+  });
+
+  it("classifies known auth codes/types and the SDK AuthenticationError class", () => {
+    expect(isAuthenticationError({ code: "invalid_api_key" })).toBe(true);
+    expect(isAuthenticationError({ status: 403, error: { type: "authentication_error" } })).toBe(
+      true,
+    );
+    // Anthropic SDK shape: `error` holds the whole response body.
+    expect(isAuthenticationError({ error: { error: { code: "unauthorized" } } })).toBe(true);
+    class AuthenticationError extends Error {}
+    expect(isAuthenticationError(new AuthenticationError("bad key"))).toBe(true);
+    expect(
+      isAuthenticationError(new Error("request failed", { cause: { code: "invalid_api_key" } })),
+    ).toBe(true);
+  });
+
+  it("does not classify a bare 403 or unrelated failures as auth", () => {
+    expect(isAuthenticationError({ status: 403 })).toBe(false);
+    expect(isAuthenticationError({ status: 400, message: "invalid param" })).toBe(false);
+    expect(isAuthenticationError({ status: 403, code: "insufficient_user_quota" })).toBe(false);
+    expect(isAuthenticationError(new Error("socket hang up"))).toBe(false);
+    expect(isAuthenticationError(null)).toBe(false);
   });
 });
 
@@ -1433,13 +1556,58 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
     expect(outcome2.status).toBe("malformed");
   });
 
-  it("classifies a non-retryable error as failed with message, no token_usage", async () => {
+  it("classifies a non-retryable error as failed with message, no token_usage; auth carries code", async () => {
     const model = new SeamModel(() => authError());
     const { messages, outcome } = await drain(
       model.streamGenerate({ newMessages: [userText("go")] }),
     );
     expect(outcome.status).toBe("failed");
     expect(outcome.message).toContain("invalid api key");
+    // 401 = credentials failure: marked so hosts can permanently disable the Session.
+    expect(outcome.code).toBe("auth");
+    expect(messages.map(typeOf)).not.toContain("token_usage");
+
+    // A genuinely non-retryable parameter error stays a plain failure (no code).
+    async function* paramError(): AsyncGenerator<UniEvent> {
+      throw Object.assign(new Error("unknown parameter: max_output_tokens"), { status: 400 });
+    }
+    const model2 = new SeamModel(() => paramError());
+    const { outcome: outcome2 } = await drain(
+      model2.streamGenerate({ newMessages: [userText("go")] }),
+    );
+    expect(outcome2.status).toBe("failed");
+    expect(outcome2.code).toBeUndefined();
+  });
+
+  it("classifies provider quota exhaustion (403 + code) as timeout — the reconnect path", async () => {
+    async function* quotaError(): AsyncGenerator<UniEvent> {
+      throw Object.assign(new Error("订阅额度不足 no active subscription"), {
+        status: 403,
+        code: "insufficient_user_quota",
+      });
+    }
+    const model = new SeamModel(() => quotaError());
+    const { messages, outcome } = await drain(
+      model.streamGenerate({ newMessages: [userText("go")] }),
+    );
+    expect(outcome.status).toBe("timeout");
+    expect(messages.map(typeOf)).not.toContain("token_usage");
+  });
+
+  it("classifies an undici transport drop (TypeError terminated, cause UND_ERR_SOCKET) as timeout", async () => {
+    async function* socketDrop(): AsyncGenerator<UniEvent> {
+      yield ev({ content_items: [{ type: "text", text: "hi" }] });
+      throw new TypeError("terminated", {
+        cause: Object.assign(new Error("other side closed"), { code: "UND_ERR_SOCKET" }),
+      });
+    }
+    const model = new SeamModel(() => socketDrop());
+    const { messages, outcome } = await drain(
+      model.streamGenerate({ newMessages: [userText("go")] }),
+    );
+    expect(outcome.status).toBe("timeout");
+    const complete = messages.find((m) => typeOf(m) === "text");
+    expect((complete!.payload as TextPayload).stop_reason).toBe("timeout");
     expect(messages.map(typeOf)).not.toContain("token_usage");
   });
 

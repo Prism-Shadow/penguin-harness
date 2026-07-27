@@ -245,6 +245,44 @@ describe("approvals and events", () => {
     expect((items(m)[0] as ToolCallItem).decision).toBe("allow");
   });
 
+  it("an abort carrying code=auth marks the model auth-dead (sticky); plain aborts do not", () => {
+    const m = createStreamModel();
+    pushMessage(m, abortEvent("aborted by user"));
+    expect(m.modelAuthDead).toBe(false);
+    pushMessage(m, abortEvent("llm request error: 401 invalid x-api-key", "auth"));
+    expect(m.modelAuthDead).toBe(true);
+    // The abort line itself still renders (the notice is additional, not a replacement).
+    expect(items(m)[1]).toMatchObject({
+      kind: "abort",
+      reason: "llm request error: 401 invalid x-api-key",
+    });
+    // Sticky: the Session can never run again, later messages don't clear it.
+    pushMessage(m, userText("hello?"));
+    pushMessage(m, requestBegin());
+    expect(m.modelAuthDead).toBe(true);
+  });
+
+  it("history replay sets modelAuthDead (the auth abort is in the Trace)", () => {
+    const m = createStreamModel();
+    pushMessages(m, [
+      userText("go"),
+      requestBegin(),
+      requestEnd("failed"),
+      abortEvent("llm request error: 401 invalid x-api-key", "auth"),
+    ]);
+    finalizeHistory(m);
+    expect(m.modelAuthDead).toBe(true);
+  });
+
+  it("a subagent-origin auth abort does NOT kill the parent session's input", () => {
+    const m = createStreamModel();
+    pushMessage(m, withOrigin(abortEvent("llm request error: 401", "auth"), "child1"));
+    // The failure belongs to the child session: its nested model carries the flag, the
+    // parent composer stays usable (the subagent simply surfaces as failed).
+    expect(m.modelAuthDead).toBe(false);
+    expect(m.subagents.get("child1")!.modelAuthDead).toBe(true);
+  });
+
   it("abort events produce an abort marker item", () => {
     const m = createStreamModel();
     pushMessage(m, abortEvent("user abort"));
@@ -310,7 +348,7 @@ describe("approvals and events", () => {
     const m = createStreamModel();
     pushMessage(m, requestBegin());
     pushMessage(m, requestEnd("timeout"));
-    pushMessage(m, abortEvent("reconnect failed after 2 retries"));
+    pushMessage(m, abortEvent("reconnect failed after 5 retries"));
     const retry = items(m)[0] as ReconnectItem;
     expect(retry).toMatchObject({
       kind: "reconnect",

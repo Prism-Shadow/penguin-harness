@@ -18,6 +18,9 @@ const PORT = Number(process.env.MOCK_PORT || 8931);
 /** Count of non-replay requests seen in the "bad stream" conversation: the 1st is cut off (malformed), later ones are retries that get a full tool call. */
 let malformedTurns = 0;
 
+/** Count of requests seen in the "quota retry" conversation: the first 2 are rejected 403 (insufficient_user_quota), the 3rd streams normally. */
+let quotaTurns = 0;
+
 function sse(res, event, data) {
   res.write(`event: ${event}\n`);
   res.write(`data: ${JSON.stringify(data)}\n\n`);
@@ -96,6 +99,44 @@ const server = http.createServer((req, res) => {
     // the retry request carries no [turn_retried] block and is byte-for-byte identical to the
     // first request; the mock can only tell them apart by request count (see the malformedTurns counter).
     const wantsMalformed = flat.includes("bad stream test");
+
+    // "Auth dead" test case: the key is rejected on every request — a 401 with an
+    // OpenAI-compatible body code. GenerativeModel classifies it failed + code "auth"
+    // (never retried); the abort event carries the code and the web composer disables
+    // itself. Gated on !isTitle so a stray title request doesn't hit this branch.
+    if (flat.includes("auth dead test") && !isTitle) {
+      res.writeHead(401, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: { code: "invalid_api_key", message: "invalid x-api-key" } }));
+      return;
+    }
+
+    // "Quota retry" test case: the first 2 requests of the conversation are rejected 403
+    // with the provider's quota-exhaustion code (as OpenAI-compatible gateways do).
+    // GenerativeModel classifies them retryable (timeout) and the engine reconnects,
+    // resending the same input; the 3rd attempt streams a normal final answer.
+    if (flat.includes("quota retry test") && !isTitle) {
+      quotaTurns += 1;
+      if (quotaTurns <= 2) {
+        res.writeHead(403, { "content-type": "application/json" });
+        res.end(
+          JSON.stringify({
+            error: { code: "insufficient_user_quota", message: "no active subscription" },
+          }),
+        );
+        return;
+      }
+      res.writeHead(200, {
+        "content-type": "text/event-stream",
+        "cache-control": "no-cache",
+        connection: "keep-alive",
+      });
+      messageStart(res, msgCount);
+      block(res, 0, { type: "text", text: "" }, [
+        { type: "text_delta", text: "Quota recovered; the answer is 42." },
+      ]);
+      messageStop(res, "end_turn", 10);
+      return;
+    }
 
     res.writeHead(200, {
       "content-type": "text/event-stream",

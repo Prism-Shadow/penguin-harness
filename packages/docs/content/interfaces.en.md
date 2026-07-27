@@ -52,13 +52,16 @@ The generator yields `partial_*` fragments and complete messages, emits Token us
 interface LLMOutcome {
   status: StopReason;   // completed | timeout | malformed | aborted | failed
   message?: string;     // display text when failed
+  code?: "auth";        // machine-readable failure class: a credentials error no retry
+                        // or future Task on this Session can fix (model + credentials
+                        // are fixed at Session creation); carried onto the abort event
 }
 ```
 
 | status | Meaning | Engine reaction |
 | --- | --- | --- |
 | `completed` | finished normally (token_usage already emitted) | proceed |
-| `timeout` | timeout / lost connection | auto-reconnect within the run |
+| `timeout` | timeout / transport disconnect / transient provider quota error | auto-reconnect within the run |
 | `malformed` | response parse failure | auto-reconnect within the run |
 | `aborted` | user interrupt | stop, hand back to the user |
 | `failed` | non-retryable (auth/params, …) | stop, hand back to the user |

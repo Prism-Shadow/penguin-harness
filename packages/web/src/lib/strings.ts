@@ -626,6 +626,11 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     subagent: "子会话",
     subagentRunning: "运行中",
     aborted: (reason?: string) => `[已中断]${reason ? `：${reason}` : ""}`,
+    /** Dead-session notice (abort with code "auth"): the Session's model+credentials are fixed at creation, so it can never continue. */
+    modelAuthDead:
+      "模型 API 认证失败，本会话无法继续——会话的模型与凭据在创建时已锁定。请新建会话。",
+    modelAuthDeadCta: "新建会话",
+    modelAuthDeadPlaceholder: "会话已不可用，请新建会话",
     reconnect: (
       status: "timeout" | "malformed",
       state: "waiting" | "retried" | "gaveUp",

@@ -26,7 +26,7 @@ session.run(newMessages, { approve, signal })
 │    │                                 output streams back      │
 │    └─ LLMOutcome:                                             │
 │         timeout / malformed ──► reconnect within the turn     │
-│                    (≤2, with [turn_retried]; tools not rerun) │
+│                    (≤5, with [turn_retried]; tools not rerun) │
 │  token_usage + request_end (at LLM-stream end; not waiting   │
 │                              for tools)                       │
 │                                                               │
@@ -91,7 +91,7 @@ While a Task is running, the host can queue a user message with `session.steer(t
 
 ## Automatic reconnect
 
-Only LLM-side `timeout` (network timeouts, rate limits, 5xx) and `malformed` (truncated streams, JSON parse failures) trigger an in-run reconnect: the engine re-sends the original input plus a `[turn_retried]` block carrying the previous partial output, so tools are never re-executed. Default limit is 2 reconnects with linear backoff (base 250ms); beyond that the turn settles as `failed`. Tool errors are never retried — they are fed back to the model as `tool_call_output` and the model decides what to do next.
+Only LLM-side `timeout` (network timeouts, transport disconnects such as a dropped socket, rate limits, 5xx, and transient provider quota/subscription errors like `insufficient_user_quota`) and `malformed` (truncated streams, JSON parse failures) trigger an in-run reconnect: the engine re-sends the original input plus a `[turn_retried]` block carrying the previous partial output, so tools are never re-executed. Default limit is 5 reconnects with linear backoff (base 250ms); beyond that the turn settles as `failed`. Authentication errors never retry: the Session's model + credentials are fixed at creation, so the run aborts with code `"auth"` and the Web App permanently disables that Session's composer. Tool errors are never retried — they are fed back to the model as `tool_call_output` and the model decides what to do next.
 
 ## Compaction
 

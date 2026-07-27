@@ -52,13 +52,16 @@ interface GenerativeModelParameters {
 interface LLMOutcome {
   status: StopReason;   // completed | timeout | malformed | aborted | failed
   message?: string;     // failed 时的展示文案
+  code?: "auth";        // 机器可读的失败类别:凭据错误,重试或本 Session 的任何
+                        // 后续 Task 都无法修复(模型与凭据在 Session 创建时锁定);
+                        // 会透传到 abort 事件
 }
 ```
 
 | status | 含义 | 引擎的反应 |
 | --- | --- | --- |
 | `completed` | 正常完成(已产出 token_usage) | 继续下一步 |
-| `timeout` | 超时/断连 | 同一 run 内自动重连 |
+| `timeout` | 超时/传输层断连/瞬时的供应商额度错误 | 同一 run 内自动重连 |
 | `malformed` | 响应解析失败 | 同一 run 内自动重连 |
 | `aborted` | 用户中断 | 停止交还用户 |
 | `failed` | 鉴权/参数等不可重试错误 | 停止交还用户 |

@@ -154,6 +154,13 @@ export interface GenerativeModelParameters {
 export interface LLMOutcome {
   status: StopReason;
   message?: string;
+  /**
+   * Machine-readable failure class; currently only `"auth"`: set when the failure is a
+   * credentials/authentication error that neither a retry nor any future Task on this Session
+   * can fix (the Session's model + credentials are fixed at creation). Carried through to the
+   * abort event so hosts can permanently disable the Session's input.
+   */
+  code?: "auth";
 }
 
 /**

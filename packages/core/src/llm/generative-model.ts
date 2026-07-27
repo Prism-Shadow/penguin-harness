@@ -13,10 +13,11 @@
  *   3. Interruption/error handling: `finishInterrupted` first closes any open
  *      streaming segments and backfills the complete message, then the output ends — never
  *      leaking a malformed structure. This interface **never retries internally** — retryable
- *      errors (network/timeout/429/5xx, see `isRetryableError`) end with `timeout`; AgentHub
- *      JSON parse errors end with `malformed`; both are handed to `context_engine` to reconnect
- *      within the same run. User interruption ends with `aborted`; non-retryable errors
- *      (auth/parameters) end with `failed`.
+ *      errors (network/transport drops, timeouts, 429/5xx, provider quota exhaustion, see
+ *      `isRetryableError`) end with `timeout`; AgentHub JSON parse errors end with `malformed`;
+ *      both are handed to `context_engine` to reconnect within the same run. User interruption
+ *      ends with `aborted`; non-retryable errors (auth/parameters) end with `failed` —
+ *      credentials failures additionally carry `code: "auth"` (see `isAuthenticationError`).
  *
  * `context_engine` only consumes OmniMessage; all Uni* protocol details are encapsulated here.
  * Docs: /docs/interfaces § "The built-in implementation: GenerativeModel".
@@ -795,10 +796,128 @@ export function isIncompleteStreamError(error: unknown): boolean {
 }
 
 /**
+ * Retryable network/transport error codes: the classic Node socket codes plus undici's
+ * transport failures (`UND_ERR_*`). Node's `fetch` surfaces a dropped connection as
+ * `TypeError: terminated` whose `cause` carries the real code (e.g. "other side closed"
+ * with `code: "UND_ERR_SOCKET"`) — a transport disconnect, not a provider verdict, so it
+ * reconnects like any network drop.
+ */
+const RETRYABLE_NETWORK_CODES: ReadonlySet<string> = new Set([
+  "ECONNRESET",
+  "ECONNREFUSED",
+  "ETIMEDOUT",
+  "EPIPE",
+  "EAI_AGAIN",
+  "ENOTFOUND",
+  "ECONNABORTED",
+  // undici (Node fetch) transport failures
+  "UND_ERR_SOCKET",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_HEADERS_TIMEOUT",
+  "UND_ERR_BODY_TIMEOUT",
+]);
+
+/** Provider "quota / subscription exhausted" error codes (OpenAI-compatible bodies). */
+const QUOTA_CODES: ReadonlySet<string> = new Set(["insufficient_user_quota", "insufficient_quota"]);
+
+/** Credentials/authentication error codes and types (OpenAI-compatible bodies / SDK errors). */
+const AUTH_CODES: ReadonlySet<string> = new Set([
+  "invalid_api_key",
+  "authentication_error",
+  "unauthorized",
+]);
+
+/**
+ * Walks the error's `cause` chain (cycle-safe, same approach as `describeError`) applying
+ * `probe` to each level; true as soon as one level matches. Higher layers routinely wrap the
+ * real failure (Node fetch puts the transport error on `cause`), so single-level checks miss it.
+ */
+function anyInCauseChain(error: unknown, probe: (level: object) => boolean): boolean {
+  const seen = new Set<unknown>();
+  let cur: unknown = error;
+  while (cur != null && typeof cur === "object" && !seen.has(cur)) {
+    seen.add(cur);
+    if (probe(cur)) return true;
+    cur = (cur as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
+/**
+ * Provider error-code signals at one level of an error: `code` on the error itself (the
+ * OpenAI SDK exposes the parsed body's code directly), plus the parsed body under `error` —
+ * both the OpenAI shape (`err.error.code`) and the Anthropic SDK shape, whose `error`
+ * property holds the whole response body (`err.error.error.code`). With `includeType`, the
+ * matching `type` fields are collected too (auth signals ride on `type` in some bodies).
+ */
+function providerSignals(level: object, includeType: boolean): string[] {
+  const err = level as {
+    code?: unknown;
+    type?: unknown;
+    error?: { code?: unknown; type?: unknown; error?: { code?: unknown; type?: unknown } };
+  };
+  const body = typeof err.error === "object" && err.error !== null ? err.error : undefined;
+  const inner = typeof body?.error === "object" && body.error !== null ? body.error : undefined;
+  const signals = [err.code, body?.code, inner?.code];
+  if (includeType) signals.push(err.type, body?.type, inner?.type);
+  return signals.filter((v): v is string => typeof v === "string");
+}
+
+/**
+ * Determines whether an error is the provider's "quota / subscription exhausted" rejection
+ * (e.g. a gateway 403 whose body carries `insufficient_user_quota`). Topping up or the
+ * billing cycle rolling over fixes it without touching the Session, so it is transient and
+ * goes through the engine's reconnect flow like a network problem. Deliberately tight:
+ * only a payment/permission status (402/403 — or no status at all) combined with a known
+ * quota code (own, `cause` chain, or parsed provider body), or a 403 whose message names
+ * quota/subscription; a plain 403 (permission denied) stays non-retryable.
+ */
+export function isQuotaExhaustedError(error: unknown): boolean {
+  if (error == null || typeof error !== "object") return false;
+  const err = error as { status?: number; statusCode?: number; message?: unknown };
+  const status = err.status ?? err.statusCode;
+  // Any other status keeps its own classification (401 auth, 429 rate limit, …).
+  if (typeof status === "number" && status !== 402 && status !== 403) return false;
+  if (
+    anyInCauseChain(error, (level) => providerSignals(level, false).some((c) => QUOTA_CODES.has(c)))
+  ) {
+    return true;
+  }
+  // 额度 covers Chinese-language gateway messages such as 订阅额度不足 ("subscription quota
+  // exhausted") that carry no machine-readable code.
+  return (
+    status === 403 &&
+    typeof err.message === "string" &&
+    /quota|subscription|额度/i.test(err.message)
+  );
+}
+
+/**
+ * Determines whether an error is a credentials/authentication failure — the one class a
+ * Session can never recover from: its model + credentials are fixed at Session creation, so
+ * neither an in-run retry nor any future Task on this Session can succeed. Signals: HTTP 401
+ * (any), a known auth code/type (on the error, its `cause` chain, or the parsed provider
+ * body), or the SDK error class name `AuthenticationError` (OpenAI / Anthropic SDKs). A bare
+ * 403 carries no such signal and stays a plain failure (usually permission/policy, not
+ * credentials).
+ */
+export function isAuthenticationError(error: unknown): boolean {
+  return anyInCauseChain(error, (level) => {
+    const err = level as { status?: unknown; statusCode?: unknown; name?: unknown };
+    if (err.status === 401 || err.statusCode === 401) return true;
+    if (providerSignals(level, true).some((c) => AUTH_CODES.has(c))) return true;
+    const name = typeof err.name === "string" ? err.name : "";
+    return name === "AuthenticationError" || level.constructor?.name === "AuthenticationError";
+  });
+}
+
+/**
  * Determines whether an error is retryable.
  *
- * Retryable: network errors, timeouts, connection reset, HTTP 429 / 5xx.
- * Not retryable: HTTP 4xx auth/parameter errors (401/403/400/404, etc.).
+ * Retryable: network/transport errors (including undici's `UND_ERR_*` on the `cause` chain),
+ * timeouts, connection reset, HTTP 429 / 5xx, and provider quota/subscription exhaustion
+ * (see `isQuotaExhaustedError`).
+ * Not retryable: other HTTP 4xx auth/parameter errors (401/403/400/404, etc.).
  * JSON parse errors are classified separately as `malformed` by `isMalformedJsonParseError`.
  *
  * Since AgentHub doesn't guarantee the shape of error objects, this uses a lenient check: first
@@ -811,7 +930,6 @@ export function isRetryableError(error: unknown): boolean {
   const err = error as {
     status?: number;
     statusCode?: number;
-    code?: string;
     name?: string;
     message?: string;
   };
@@ -821,26 +939,31 @@ export function isRetryableError(error: unknown): boolean {
   if (typeof status === "number") {
     if (status === 429 || status === 408) return true; // Rate limited / request timeout (transient)
     if (status >= 500 && status <= 599) return true; // Server error
+    // Provider quota/subscription exhaustion (402/403 + explicit signals): transient —
+    // checked before the blanket 4xx rule below would discard it.
+    if (isQuotaExhaustedError(error)) return true;
     if (status >= 400 && status <= 499) return false; // Other 4xx auth/parameter errors, not retryable
   }
 
-  // 2. Network-layer error codes.
-  const retryableCodes = new Set([
-    "ECONNRESET",
-    "ECONNREFUSED",
-    "ETIMEDOUT",
-    "EPIPE",
-    "EAI_AGAIN",
-    "ENOTFOUND",
-    "ECONNABORTED",
-  ]);
-  if (err.code && retryableCodes.has(err.code)) return true;
+  // 2. Network/transport error codes, probing the `cause` chain (Node fetch wraps the real
+  //    transport failure as `TypeError: terminated` with the code on `cause`, see describeError).
+  if (
+    anyInCauseChain(error, (level) => {
+      const code = (level as { code?: unknown }).code;
+      return typeof code === "string" && RETRYABLE_NETWORK_CODES.has(code);
+    })
+  ) {
+    return true;
+  }
 
-  // 3. Error name / message keywords (timeout, network, rate limit).
+  // 2b. Status-less quota signals (some gateways surface only the provider code).
+  if (isQuotaExhaustedError(error)) return true;
+
+  // 3. Error name / message keywords (timeout, network, rate limit, undici disconnects).
   if (err.name === "AbortError") return false; // User interruption, not retryable
   const text = `${err.name ?? ""} ${err.message ?? ""}`.toLowerCase();
   if (
-    /timeout|timed out|network|socket hang up|econnreset|connection reset|too many requests|rate limit|temporarily unavailable|503|502|504/.test(
+    /timeout|timed out|network|socket hang up|econnreset|connection reset|terminated|other side closed|fetch failed|too many requests|rate limit|temporarily unavailable|503|502|504/.test(
       text,
     )
   ) {
@@ -1045,6 +1168,9 @@ export class GenerativeModel implements LLMInterface {
         outcome = {
           status: "failed",
           message: describeError(error),
+          // Credentials failure: marked so hosts can tell "this Session can never work again"
+          // (model+credentials are fixed at Session creation) apart from a one-off failure.
+          ...(isAuthenticationError(error) ? { code: "auth" as const } : {}),
         };
       }
     } finally {

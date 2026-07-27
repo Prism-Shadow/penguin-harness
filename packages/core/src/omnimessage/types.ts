@@ -253,6 +253,12 @@ export interface ApprovalDecisionPayload {
 export interface AbortPayload {
   type: "abort";
   reason?: string | null;
+  /**
+   * Machine-readable failure class; currently only `"auth"`: the run ended on a
+   * credentials/authentication error that no retry or future Task on this Session can fix
+   * (its model + credentials are fixed at creation) — hosts use it to disable the Session.
+   */
+  code?: string;
 }
 
 export interface TokenUsagePayload {

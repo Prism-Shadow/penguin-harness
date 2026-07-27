@@ -1480,12 +1480,14 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     const inputs: OmniMessage[][] = [];
     const llm: LLMInterface = {
       // The LLM must never throw an exception at the engine: a non-retryable error resolves
-      // by returning a failed outcome after closing the structure.
+      // by returning a failed outcome after closing the structure. A genuinely non-retryable
+      // failure nowadays is a parameter error (quota 403s retry as timeout, 401s carry
+      // code "auth" — both covered by their own tests below).
       // eslint-disable-next-line require-yield
       async *streamGenerate(params) {
         calls += 1;
         inputs.push(params.newMessages);
-        return { status: "failed", message: "invalid api key" };
+        return { status: "failed", message: "400 unknown parameter: max_output_tokens" };
       },
     };
     const environment = new Environment({
@@ -1501,7 +1503,9 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     expect(abort).toBeDefined();
     const reason = (abort!.payload as { reason?: string }).reason ?? "";
     expect(reason).toContain("llm request error");
-    expect(reason).toContain("invalid api key");
+    expect(reason).toContain("unknown parameter");
+    // A plain failure carries no machine-readable code (only auth does).
+    expect((abort!.payload as { code?: string }).code).toBeUndefined();
 
     // The failed turn's input is flattened and stashed; the next run resends it merged with
     // the new input.
@@ -1509,6 +1513,88 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     const text = inputs[1]!.map((m) => (m.payload as { text?: string }).text ?? "").join("\n");
     expect(text).toContain("go");
     expect(text).toContain("next");
+  });
+
+  it("an auth failure aborts immediately (no retry) with the abort event carrying code=auth", async () => {
+    let calls = 0;
+    const llm: LLMInterface = {
+      // GenerativeModel classifies a 401/invalid_api_key as failed + code "auth" (see
+      // llm.test.ts); the engine must pass the code through to the abort event unchanged.
+      // eslint-disable-next-line require-yield
+      async *streamGenerate() {
+        calls += 1;
+        return { status: "failed", message: "401 invalid x-api-key", code: "auth" };
+      },
+    };
+    const environment = new Environment({
+      workspaceDir: workspace,
+      toolConfig: execCommandToolConfig(),
+    });
+    const engine = new ContextEngine({ llm, environment, reconnectBackoffMs: 1 });
+
+    const all = await collectRun(engine, [userText("go")], allowAll);
+    expect(calls).toBe(1); // Auth is a failed outcome: never enters the reconnect loop.
+    const abort = all.find((m) => (m.payload as { type?: string }).type === "abort");
+    expect(abort).toBeDefined();
+    expect((abort!.payload as { reason?: string }).reason).toContain("llm request error");
+    expect((abort!.payload as { code?: string }).code).toBe("auth");
+  });
+
+  it("a quota-403 (classified timeout) retries within the default cap and succeeds", async () => {
+    let calls = 0;
+    const llm: LLMInterface = {
+      async *streamGenerate() {
+        calls += 1;
+        // Two quota rejections (GenerativeModel classifies them as timeout), then success —
+        // attempt 3 is within the default cap of 5.
+        if (calls <= 2) return { status: "timeout" };
+        yield assistantText("recovered");
+        yield tokenUsage(emptyTokenCounts(), {
+          cache_read: 0,
+          cache_write: 0,
+          output: 1,
+          total: 1,
+        });
+        return { status: "completed" };
+      },
+    };
+    const environment = new Environment({
+      workspaceDir: workspace,
+      toolConfig: execCommandToolConfig(),
+    });
+    const engine = new ContextEngine({ llm, environment, reconnectBackoffMs: 1 });
+
+    const all = await collectRun(engine, [userText("go")], allowAll);
+    expect(calls).toBe(3);
+    expect(
+      all.some(
+        (m) =>
+          isCompleteModelMessage(m) && m.payload.type === "text" && m.payload.text === "recovered",
+      ),
+    ).toBe(true);
+    expect(all.map((m) => (m.payload as { type?: string }).type)).not.toContain("abort");
+  });
+
+  it("default reconnect cap is 5: the exhaustion abort message says so", async () => {
+    let calls = 0;
+    const llm: LLMInterface = {
+      // eslint-disable-next-line require-yield
+      async *streamGenerate() {
+        calls += 1;
+        return { status: "timeout" }; // Always needs a reconnect.
+      },
+    };
+    const environment = new Environment({
+      workspaceDir: workspace,
+      toolConfig: execCommandToolConfig(),
+    });
+    // No maxReconnects override: exercises the default cap.
+    const engine = new ContextEngine({ llm, environment, reconnectBackoffMs: 1 });
+
+    const all = await collectRun(engine, [userText("go")], allowAll);
+    expect(calls).toBe(6); // Initial attempt + 5 retries.
+    const abort = all.find((m) => (m.payload as { type?: string }).type === "abort");
+    expect((abort!.payload as { reason?: string }).reason).toBe("reconnect failed after 5 retries");
   });
 
   it("LLM timeout after a tool already executed: retry carries the call/result via [turn_retried] (tool runs once)", async () => {

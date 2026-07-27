@@ -50,7 +50,8 @@ There are four approval modes: `allow-all`, `deny-all`, `read-only` (only read-o
 - Typing `/` opens the slash menu: trigger context compaction (`/compact`) or toggle installed Skills — chosen Skills are sent along with the message in a `[use_skills]` block;
 - While a Task is running the input stays live and the toolbar keeps a single action button: an empty composer shows **Stop**, and typing turns it into **Send**, whose behavior follows the **mid-run send mode** from the toolbar's More-settings popover (a compact extensible settings panel, also available in draft state; the choice is remembered): **Steer** (default) delivers the text mid-run as a `[user_steering]` user message with the next turn, **Queue** holds the whole message server-side as a follow-up and auto-sends it as an ordinary new message when the run finishes (an "N queued" hint shows near the input until then; the queue survives page reloads);
 - Typing `@` mentions another Agent to hand the conversation over to it;
-- When human approval is required, tool calls show inline allow/deny buttons in the message stream; the approval mode can be changed mid-Session.
+- When human approval is required, tool calls show inline allow/deny buttons in the message stream; the approval mode can be changed mid-Session;
+- When the model API rejects the Session's credentials (an authentication failure), the composer grays out and disables permanently — the Session's model and credentials are fixed at creation, so a notice explains this and offers a "New Session" button to start over on a fresh draft.
 
 ### Files Panel
 

@@ -38,6 +38,13 @@ export interface SessionStreamState {
   taskState: SessionStatus;
   /** Queued follow-up count from the stream's task_state events (auto-sent once the session is idle). */
   queuedFollowUps: number;
+  /**
+   * The Session's model credentials failed authentication (abort event with code "auth" on
+   * the main session): the Session can never run again — the input area disables itself and
+   * points the user at a new Session. Derived from the model, so it survives history replay
+   * and resets when switching sessions.
+   */
+  modelAuthDead: boolean;
   /** approvalKey(origin, toolCallId) → pending approval. */
   pendingApprovals: ReadonlyMap<string, PendingApproval>;
   /** Recorded when this client clicks an approval decision (marks it as "manual"). */
@@ -194,6 +201,7 @@ export function useSessionStream(
     loading,
     taskState,
     queuedFollowUps,
+    modelAuthDead: (controllerRef.current?.model ?? placeholderRef.current).modelAuthDead,
     pendingApprovals: controllerRef.current?.pendingApprovals ?? EMPTY_PENDING,
     markLocalDecision,
     resolveApproval,

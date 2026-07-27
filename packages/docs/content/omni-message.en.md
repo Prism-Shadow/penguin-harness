@@ -232,6 +232,9 @@ interface CompactionEndPayload {
 interface AbortPayload {
   type: "abort";
   reason?: string | null;
+  code?: string;              // machine-readable failure class; currently only "auth":
+                              // a credentials failure no retry or future Task on this
+                              // Session can fix — hosts disable the Session on it
 }
 
 interface SubagentPayload {
@@ -252,7 +255,7 @@ type StopReason = "completed" | "failed" | "aborted" | "timeout" | "malformed";
 | --- | --- | --- |
 | `completed` | finished normally | continue |
 | `aborted` | user interrupt | stop, hand back to the user |
-| `timeout` | LLM timeout / lost connection | LLM side only: auto-reconnect within the run |
+| `timeout` | LLM timeout / transport disconnect / transient provider quota error | LLM side only: auto-reconnect within the run |
 | `malformed` | parse failure / truncated stream | LLM side only: auto-reconnect within the run |
 | `failed` | other non-retryable error | stop, hand back to the user |
 

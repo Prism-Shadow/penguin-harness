@@ -650,6 +650,11 @@ export function ChatPage() {
   const input = selected && (
     <ChatInput
       status={stream.taskState}
+      // Auth-dead session (model credentials failed): the composer disables itself and offers
+      // a jump to a fresh draft — the Session's model+key are fixed at creation, so no retry
+      // in this Session can ever succeed.
+      modelAuthDead={stream.modelAuthDead}
+      onNewSession={newChat}
       onSend={onSend}
       onSteer={onSteer}
       // Count of steering messages already visible in the stream: the input area keeps its

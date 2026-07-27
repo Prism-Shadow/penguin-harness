@@ -642,6 +642,11 @@ When done, open index.html in a browser and self-test once.`,
     subagent: "Subagent",
     subagentRunning: "Running",
     aborted: (reason?: string) => `[Aborted]${reason ? `: ${reason}` : ""}`,
+    /** Dead-session notice (abort with code "auth"): the Session's model+credentials are fixed at creation, so it can never continue. */
+    modelAuthDead:
+      "Model API authentication failed; this Session cannot continue — its model and credentials were fixed at creation. Start a new Session.",
+    modelAuthDeadCta: "New Session",
+    modelAuthDeadPlaceholder: "This Session is no longer usable — start a new Session",
     reconnect: (
       status: "timeout" | "malformed",
       state: "waiting" | "retried" | "gaveUp",

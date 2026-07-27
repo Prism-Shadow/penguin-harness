@@ -152,7 +152,7 @@ export interface ContextEngineDeps {
   initialState?: EngineInitialState;
   /** Maximum LLM turns for a single Task. Defaults to 100; -1 removes the cap. */
   maxTurns?: number;
-  /** Maximum automatic retries for LLM timeout/reconnect within a single run. Defaults to 2. */
+  /** Maximum automatic retries for LLM timeout/reconnect within a single run. Defaults to 5. */
   maxReconnects?: number;
   /** Linear backoff base (ms) before each reconnect retry; actual backoff = base × retry number. Defaults to 250. */
   reconnectBackoffMs?: number;
@@ -274,7 +274,7 @@ export class ContextEngine {
 
   constructor(private readonly deps: ContextEngineDeps) {
     this.maxTurns = deps.maxTurns ?? 100;
-    this.maxReconnects = deps.maxReconnects ?? 2;
+    this.maxReconnects = deps.maxReconnects ?? 5;
     this.reconnectBackoffMs = deps.reconnectBackoffMs ?? 250;
     this.llm = deps.llm;
     // Session resumption: apply the initial state derived from replay.
@@ -431,10 +431,14 @@ export class ContextEngine {
           return;
         }
         // Non-retryable error (auth/parameter etc.): stop and hand control back to the user;
-        // the failure reason is written to the abort event / Trace.
+        // the failure reason is written to the abort event / Trace, along with the outcome's
+        // machine-readable code (currently only "auth": hosts disable the Session on it).
         if (turn.outcome.status === "failed") {
           this.pendingCarryOver = this.buildCarryOver(attemptInput, turn);
-          yield* this.emitAbort(`llm request error: ${turn.outcome.message ?? "unknown"}`);
+          yield* this.emitAbort(
+            `llm request error: ${turn.outcome.message ?? "unknown"}`,
+            turn.outcome.code,
+          );
           return;
         }
         // Completed normally.
@@ -1051,9 +1055,9 @@ export class ContextEngine {
     await this.write(msg);
   }
 
-  /** Interruption: emits an abort event. Cleanup/resending is managed centrally by `run` via carry-over; the LLM history is never touched again. */
-  private async *emitAbort(reason: string): AsyncGenerator<OmniMessage> {
-    const msg = abortEvent(reason);
+  /** Interruption: emits an abort event (optionally carrying the machine-readable failure code, e.g. "auth"). Cleanup/resending is managed centrally by `run` via carry-over; the LLM history is never touched again. */
+  private async *emitAbort(reason: string, code?: string): AsyncGenerator<OmniMessage> {
+    const msg = abortEvent(reason, code);
     yield msg;
     await this.write(msg);
   }

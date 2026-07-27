@@ -231,6 +231,8 @@ interface CompactionEndPayload {
 interface AbortPayload {
   type: "abort";
   reason?: string | null;
+  code?: string;              // 机器可读的失败类别;目前仅 "auth":凭据错误,重试或本
+                              // Session 的任何后续 Task 都无法修复——宿主据此禁用该 Session
 }
 
 interface SubagentPayload {
@@ -251,7 +253,7 @@ type StopReason = "completed" | "failed" | "aborted" | "timeout" | "malformed";
 | --- | --- | --- |
 | `completed` | 正常完成 | 继续 |
 | `aborted` | 用户中断 | 停止并交还用户 |
-| `timeout` | LLM 超时/断连 | 仅 LLM 侧：同一 run 内自动重连 |
+| `timeout` | LLM 超时/传输层断连/瞬时的供应商额度错误 | 仅 LLM 侧：同一 run 内自动重连 |
 | `malformed` | 响应解析失败/流截断 | 仅 LLM 侧：同一 run 内自动重连 |
 | `failed` | 其他不可重试错误 | 停止并交还用户 |
 

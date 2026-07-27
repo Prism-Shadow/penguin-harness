@@ -300,6 +300,15 @@ export interface StreamModel {
   openApprovalWaitMs: number;
   /** Consecutive reconnect-failure count (incremented when request_end is timeout/malformed, reset to zero on any other terminal status). */
   reconnectRun: number;
+  /**
+   * The Session's model credentials failed authentication (an abort event carrying
+   * code "auth" arrived on THIS model — subagent auth aborts land on the nested model and
+   * never mark the parent): the Session can never run again (model + credentials are fixed
+   * at Session creation), so the composer disables itself and points at a new Session.
+   * Sticky: survives history replay (abort events are in the Trace) and only resets when a
+   * different session's model is built.
+   */
+  modelAuthDead: boolean;
   /** Task segmentation state. */
   taskOpen: boolean;
   taskStartLocalMs: number;
@@ -350,6 +359,7 @@ function newModel(nested: boolean, localDecisions: Set<string>): StreamModel {
     openRequestBeginMs: null,
     openApprovalWaitMs: 0,
     reconnectRun: 0,
+    modelAuthDead: false,
     taskOpen: false,
     taskStartLocalMs: 0,
     taskFirstTsMs: 0,
@@ -1044,6 +1054,10 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number): void {
       const waiting = findLastWaitingReconnect(model);
       if (waiting) waiting.gaveUp = true;
       model.reconnectRun = 0;
+      // Credentials failure: this model's session can never run again (see modelAuthDead).
+      // Origin routing already sends subagent aborts to the nested model, so reaching here
+      // with code "auth" always means the failure belongs to THIS session.
+      if (p.code === "auth") model.modelAuthDead = true;
       const item: AbortItem = { kind: "abort", id: nextId(model) };
       if (p.reason != null) item.reason = p.reason;
       model.items.push(item);
