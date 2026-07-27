@@ -37,6 +37,7 @@ function midStreamFakeSession(sessionId: string): RuntimeSession {
     generateTitle: async () => ({ title: null, usage: null }),
     compactability: () => "ok" as const,
     steer: () => false,
+    skipReconnectWait: () => false,
     async *run(_input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
       yield partialThinking("start");
       yield partialThinking("delta", "let me think");
