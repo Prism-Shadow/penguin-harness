@@ -8,6 +8,7 @@ import {
   formatBytes,
   formatDateTime,
   formatMoney,
+  formatMonthDay,
   formatPercent,
   formatRelativeDate,
   formatRelativeDays,
@@ -224,5 +225,27 @@ describe("formatRelativeDate (semantic update time on Skill cards)", () => {
   it("parse failure returns the input unchanged", () => {
     expect(formatRelativeDate("not-a-date", "zh")).toBe("not-a-date");
     expect(formatRelativeDate("", "en")).toBe("");
+  });
+});
+
+describe("formatMonthDay (version-line 'last updated' date)", () => {
+  it("formats a date-only string per locale, matching the owner-specified wording", () => {
+    expect(formatMonthDay("2026-07-26", "en")).toBe("Jul 26");
+    expect(formatMonthDay("2026-07-26", "zh")).toBe("7 月 26 日");
+    expect(formatMonthDay("2026-01-05", "en")).toBe("Jan 5");
+    expect(formatMonthDay("2026-12-31", "zh")).toBe("12 月 31 日");
+  });
+
+  it("reads only the date part of a full ISO timestamp — no timezone round-trip that could shift a day", () => {
+    expect(formatMonthDay("2026-07-01T00:00:00Z", "en")).toBe("Jul 1");
+    expect(formatMonthDay("2026-05-05T12:00:00Z", "zh")).toBe("5 月 5 日");
+  });
+
+  it("returns unparsable or out-of-range input unchanged", () => {
+    expect(formatMonthDay("not-a-date", "en")).toBe("not-a-date");
+    expect(formatMonthDay("2026-7-26", "zh")).toBe("2026-7-26"); // not the zero-padded wire format
+    expect(formatMonthDay("2026-07-26x", "en")).toBe("2026-07-26x");
+    expect(formatMonthDay("2026-13-01", "en")).toBe("2026-13-01");
+    expect(formatMonthDay("2026-00-10", "zh")).toBe("2026-00-10");
   });
 });

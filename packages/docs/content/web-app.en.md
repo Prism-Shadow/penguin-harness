@@ -100,6 +100,10 @@ Read-only scoreboards per Benchmark: switch the metric (score / cost / duration)
 
 Admin only: list and create users, reset passwords, and delete users (the built-in admin cannot be deleted).
 
+## Version and Updates
+
+The sidebar user menu carries a manual "Check for updates" action directly below "Change password"; the running version sits muted on the right of that row, and its release date — stamped into the build by the release workflow, displayed without any network access — appears as the row's localized "Last updated Jul 26"-style tooltip (dev builds and releases that predate the stamping, v0.1.2 and earlier, have no date). The new-chat page shows the same identity as a version line under the brand. The app checks GitHub for a newer release once the menu has first been opened, and immediately — bypassing the cached result — when the manual action is clicked; the latter reports "You're on the latest version" when nothing newer exists. When a newer release is found, a dot appears on the user button, the version displays gain a small superscript "New version available" badge (the draft-page badge links to the release), and the menu gains a release-notes link, plus an "Update now" action for admins that runs `penguin update` on the server (the data directory is untouched). The service must be restarted afterwards for the update to take effect. Set `PENGUIN_UPDATE_CHECK=off` to disable the update check entirely — see the [Configuration Reference](/configuration).
+
 ## Projects and Members
 
 The sidebar provides a Project switcher and supports creating new Projects. Members have two roles, owner and member: owners manage membership and exclusively edit models, Vault, and Schedules, as well as perform deletions.

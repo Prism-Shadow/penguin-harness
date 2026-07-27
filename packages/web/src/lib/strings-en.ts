@@ -54,6 +54,30 @@ export const en: Strings = {
     } as Record<string, string>,
   },
 
+  /** Version footer, update reminder, and admin self-update in the sidebar user menu. */
+  update: {
+    /** Version-line date label; `date` is formatMonthDay output, e.g. "Last updated Jul 26". */
+    lastUpdated: (date: string) => `Last updated ${date}`,
+    /** Superscript badge on the version lines when the update check found a newer release. */
+    newVersionBadge: "New version available",
+    newVersion: (v: string) => `New version v${v} available`,
+    /** Manual check action in the sidebar user menu, with its busy label and toast outcomes. */
+    checkNow: "Check for updates",
+    checking: "Checking…",
+    upToDate: "You're on the latest version",
+    checkFailed: "Update check failed — try again later",
+    checkDisabled: "Update checks are disabled (PENGUIN_UPDATE_CHECK=off)",
+    releaseNotes: "Release notes",
+    updateNow: "Update now",
+    updating: "Updating…",
+    updated: "Update complete — restart the service to apply",
+    restartHint: "Restart by re-running penguin web (or penguin server) in a terminal",
+    failed: "Update failed",
+    unsupported: "This install cannot be updated from the web UI",
+    confirmBody:
+      "Downloads the latest release and installs it into the install directory on the server (the data directory is not touched). Restart the service afterwards for the update to take effect.",
+  },
+
   common: {
     save: "Save",
     cancel: "Cancel",

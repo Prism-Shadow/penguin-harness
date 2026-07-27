@@ -55,6 +55,30 @@ export const zh = {
     } as Record<string, string>,
   },
 
+  /** Version footer, update reminder, and admin self-update in the sidebar user menu. */
+  update: {
+    /** Version-line date label (owner-specified wording); `date` is formatMonthDay output, e.g. 「最近更新日期 7 月 26 日」. */
+    lastUpdated: (date: string) => `最近更新日期 ${date}`,
+    /** Superscript badge on the version lines when the update check found a newer release (owner-specified wording). */
+    newVersionBadge: "有新版本可用",
+    newVersion: (v: string) => `新版本 v${v} 可用`,
+    /** Manual check action in the sidebar user menu (owner request), with its busy label and toast outcomes. */
+    checkNow: "检查更新",
+    checking: "检查中…",
+    upToDate: "已是最新版本",
+    checkFailed: "检查更新失败，请稍后重试",
+    checkDisabled: "更新检查已关闭（PENGUIN_UPDATE_CHECK=off）",
+    releaseNotes: "更新说明",
+    updateNow: "立即更新",
+    updating: "更新中…",
+    updated: "更新完成，重启服务后生效",
+    restartHint: "在终端重新运行 penguin web（或 penguin server）即可完成重启",
+    failed: "更新失败",
+    unsupported: "当前安装方式不支持在线更新",
+    confirmBody:
+      "将下载最新版本并安装到服务器上的安装目录（数据目录不受影响）。安装完成后需要重启服务才会生效。",
+  },
+
   common: {
     save: "保存",
     cancel: "取消",

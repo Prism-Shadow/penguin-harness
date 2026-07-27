@@ -1250,3 +1250,58 @@ export interface AgentSkillsResponse {
 export interface SkillInstallRequest {
   names: string[];
 }
+
+// ---------------------------------------------------------------------------
+// Version and self-update
+// ---------------------------------------------------------------------------
+
+/** GET /api/version: the running server's release identity (from core's VERSION / BUILD_DATE). */
+export interface VersionResponse {
+  version: string;
+  /**
+   * The **running** version's release date (UTC yyyy-mm-dd), stamped into core's
+   * BUILD_DATE at build time by the release workflow — the web's "last updated" date
+   * needs no network. Null for a dev/source build and for releases that predate the
+   * stamping (v0.1.2 and earlier): the UI then shows the version alone.
+   */
+  buildDate: string | null;
+}
+
+/**
+ * GET /api/version/update-check: newest published release vs the running version.
+ * Always HTTP 200 (fail-soft): a lookup failure sets `error` and leaves `latestVersion`
+ * null rather than failing the request; results are cached server-side.
+ */
+export interface UpdateCheckResponse {
+  currentVersion: string;
+  /** Same as VersionResponse.buildDate: the running version's release date, stamped at build time. */
+  buildDate: string | null;
+  /** Newest published release (normalized, no leading `v`); null when the lookup failed or checks are disabled. */
+  latestVersion: string | null;
+  updateAvailable: boolean;
+  /** Release page of the newest release (for the "release notes" link). */
+  releaseUrl: string | null;
+  /** Publish timestamp of the newest release (ISO 8601). */
+  publishedAt: string | null;
+  /** When this result was produced (ISO 8601) — a cached result keeps its original timestamp. */
+  checkedAt: string;
+  /** Present (true) when update checks are turned off via PENGUIN_UPDATE_CHECK=off; no network call was made. */
+  disabled?: true;
+  /** Why the lookup failed: unreachable network / GitHub rate limit / unusable response. */
+  error?: "network" | "rate_limited" | "bad_response";
+}
+
+/**
+ * POST /api/version/update (admin only): runs the CLI self-update (`penguin update --yes`)
+ * on the server host. `unsupported` covers both a server not launched via the CLI and the
+ * CLI's own refusals (source checkout, unrecognized install layout, Windows).
+ */
+export interface UpdateRunResponse {
+  status: "updated" | "failed" | "unsupported";
+  /** Set when the server cannot run the CLI at all (started without `penguin server|web`). */
+  reason?: "not_launched_via_cli";
+  /** Tail of the update command's combined stdout+stderr (capped; empty when nothing ran). */
+  output: string;
+  /** True when the install changed (or was already current): restart the service to run the new version. */
+  needsRestart: boolean;
+}

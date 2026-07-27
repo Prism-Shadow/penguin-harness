@@ -60,10 +60,13 @@ import type {
   TraceImportRequest,
   TraceImportResponse,
   UiPrefs,
+  UpdateCheckResponse,
+  UpdateRunResponse,
   UsageGroupBy,
   UsageResponse,
   VaultResponse,
   VaultUpdateRequest,
+  VersionResponse,
   WorkspaceFilesResponse,
 } from "@prismshadow/penguin-server/api";
 import { apiFetch } from "./client";
@@ -496,3 +499,15 @@ export const importAgent = (projectId: string, agentId: string, body: AgentImpor
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/import`,
     { method: "POST", body },
   );
+
+// Version & self-update ----------------------------------------------------------------
+
+export const getVersion = () => apiFetch<VersionResponse>("/api/version");
+
+/** `force` (the manual "check for updates" action) bypasses the server's TTL cache. */
+export const checkUpdate = (force = false) =>
+  apiFetch<UpdateCheckResponse>(`/api/version/update-check${force ? "?force=1" : ""}`);
+
+/** Admin only: runs `penguin update` on the server host (long request — up to 10 minutes). */
+export const runUpdate = () =>
+  apiFetch<UpdateRunResponse>("/api/version/update", { method: "POST", body: {} });
