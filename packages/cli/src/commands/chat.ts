@@ -4,8 +4,8 @@
  *   penguin chat [--model-id <id> --provider <group>] [--project-id <id>] [--agent-id <id>]
  *                [--workspace <path>] [--approve <allow-all|deny-all|read-only|always-ask>]
  *
- * Each line of input starts one conversation turn; `/goal[:<budget>] [--skills <a,b>]
- * <objective>` runs goal mode (looping until the goal reaches a terminal state);
+ * Each line of input starts one conversation turn; `/goal[:<budget>] <objective>` runs
+ * goal mode (looping until the goal reaches a terminal state);
  * `/compact` proactively compacts the context (reason=manual); `/exit` or `/quit` exits.
  * Uses the current directory when no Workspace is specified. A model reference is always an
  * explicit `(provider, model_id)` pair, so `--model-id` and `--provider` must be given
@@ -27,11 +27,10 @@
  */
 import { createInterface, type Interface } from "node:readline";
 import type { Command } from "commander";
-import { createAgent, goalFilePath, userText, VERSION } from "@prismshadow/penguin-core";
+import { createAgent, userText, VERSION } from "@prismshadow/penguin-core";
 import type { ApprovalDecision, OmniMessage, ToolCallPayload } from "@prismshadow/penguin-core";
 import { StreamRenderer, dim, renderHistory, sessionMetaTools } from "../render.js";
 import { runTask } from "../task-loop.js";
-import { runGoalLoop, unknownSkills } from "../goal-loop.js";
 import { parseGoalCommand } from "../goal-command.js";
 import { parseApprovalAnswer, resolveApprovalMode } from "../approval.js";
 import { LineComposer, PasteFilter } from "../input.js";
@@ -384,37 +383,18 @@ export function registerChatCommand(program: Command, t: Messages): void {
               const parsed = parseGoalCommand(text);
               if (!parsed.ok) {
                 const message =
-                  parsed.reason === "budget"
-                    ? t.goalBudgetInvalid(parsed.value)
-                    : parsed.reason === "skills"
-                      ? t.goalSkillsInvalid(parsed.value)
-                      : t.goalUsage();
+                  parsed.reason === "budget" ? t.goalBudgetInvalid(parsed.value) : t.goalUsage();
                 out.write(`${t.error(message)}\n`);
               } else {
-                // Skill names render as trusted prompt text in every round: beyond the parser's
-                // shape rule, only installed skills pass (a typo would otherwise send the model
-                // hunting for a nonexistent SKILL.md each round).
-                const unknown = await unknownSkills(parsed.skills, agent.state);
-                if (unknown !== null) {
-                  out.write(`${t.error(t.goalSkillsUnknown(unknown.names, unknown.installed))}\n`);
-                } else {
-                  resumable = true;
-                  await runGoalLoop(
-                    session,
-                    {
-                      objective: parsed.objective,
-                      goalFilePath: goalFilePath(
-                        agent.state.root,
-                        agent.state.projectId,
-                        agent.state.agentId,
-                        session.sessionId,
-                      ),
-                      budget: parsed.budget,
-                      skills: parsed.skills,
-                    },
-                    { mode, signal: taskAbort.signal, renderer, interactivePrompt, t, out },
-                  );
-                }
+                resumable = true;
+                await runTask(session, [userText(parsed.objective)], {
+                  mode,
+                  signal: taskAbort.signal,
+                  renderer,
+                  interactivePrompt,
+                  t,
+                  goal: { budget: parsed.budget, out },
+                });
               }
             } else {
               resumable = true;

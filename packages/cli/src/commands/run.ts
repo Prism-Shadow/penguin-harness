@@ -4,7 +4,7 @@
  *   penguin run -m <msg> [--model-id <id> --provider <group>] [--workspace <path>]
  *               [--project-id <id>] [--agent-id <id>]
  *               [--approve <allow-all|deny-all|read-only|always-ask>]
- *               [--goal [budget]] [--skills <a,b>]
+ *               [--goal [budget]]
  *
  * Uses the current directory when Workspace is unspecified; uses the Project's default model
  * when model is unspecified. A model reference is always an explicit `(provider, model_id)`
@@ -13,22 +13,14 @@
  * selects the permission mode.
  * `--goal` switches to goal mode: `-m` becomes the objective and the run loops until the
  * goal reaches a terminal state (optional value = token budget, e.g. `--goal 500k`); only a
- * completed goal exits 0. `--skills` (goal mode only) lists installed skills to apply to
- * every round.
+ * completed goal exits 0.
  * Docs: /docs/cli § "penguin run".
  */
 import type { Command } from "commander";
-import {
-  UNLIMITED_BUDGET,
-  createAgent,
-  goalFilePath,
-  userText,
-  VERSION,
-} from "@prismshadow/penguin-core";
+import { UNLIMITED_BUDGET, createAgent, userText, VERSION } from "@prismshadow/penguin-core";
 import { StreamRenderer, sessionMetaTools } from "../render.js";
 import { runTask } from "../task-loop.js";
-import { runGoalLoop, unknownSkills } from "../goal-loop.js";
-import { parseSkillNames, parseTokenBudget } from "../goal-command.js";
+import { parseTokenBudget } from "../goal-command.js";
 import { denyActivePrompt, resolveApprovalMode } from "../approval.js";
 import type { Messages } from "../i18n.js";
 
@@ -44,7 +36,6 @@ export function registerRunCommand(program: Command, t: Messages): void {
     .option("--workspace <path>", t.common.workspace)
     .option("--approve <mode>", t.common.approve)
     .option("--goal [budget]", t.run.goal)
-    .option("--skills <names>", t.run.skills)
     .action(async (opts) => {
       // The model reference is a pair: commander can only require each option on its own,
       // so the "both or neither" rule is enforced here. Giving neither is the normal case
@@ -65,38 +56,12 @@ export function registerRunCommand(program: Command, t: Messages): void {
           return;
         }
       }
-      // --skills belongs to goal mode (the names ride every round's goal block); shape is
-      // validated here, installed-ness after the agent is loaded (needs the state dir).
-      let goalSkills: string[] = [];
-      if (opts.skills !== undefined) {
-        if (goalBudget === null) {
-          process.stderr.write(`${t.error(t.skillsRequireGoal())}\n`);
-          process.exitCode = 1;
-          return;
-        }
-        const names = parseSkillNames(String(opts.skills));
-        if (names === null) {
-          process.stderr.write(`${t.error(t.goalSkillsInvalid(String(opts.skills)))}\n`);
-          process.exitCode = 1;
-          return;
-        }
-        goalSkills = names;
-      }
       const mode = resolveApprovalMode(opts.approve, t);
 
       const agent = await createAgent({
         ...(opts.agentId ? { agentId: opts.agentId } : {}),
         ...(opts.projectId ? { projectId: opts.projectId } : {}),
       });
-
-      // Unknown skills refuse to start the goal (checked before the Session exists, so a
-      // typo doesn't leave an empty Session behind).
-      const unknown = await unknownSkills(goalSkills, agent.state);
-      if (unknown !== null) {
-        process.stderr.write(`${t.error(t.goalSkillsUnknown(unknown.names, unknown.installed))}\n`);
-        process.exitCode = 1;
-        return;
-      }
 
       const session = await agent.createSession({
         workspaceDir: opts.workspace ?? process.cwd(),
@@ -123,25 +88,18 @@ export function registerRunCommand(program: Command, t: Messages): void {
       renderer.useToolSchemas(sessionMetaTools(session));
       try {
         if (goalBudget !== null) {
-          // Goal mode: -m is the objective; the loop runs to a terminal state. Exit code
-          // follows the outcome — only a completed goal exits 0 (blocked / budget_limited /
-          // aborted are all "the goal did not finish", for scripts/CI to check).
-          const outcome = await runGoalLoop(
-            session,
-            {
-              objective: opts.message,
-              goalFilePath: goalFilePath(
-                agent.state.root,
-                agent.state.projectId,
-                agent.state.agentId,
-                session.sessionId,
-              ),
-              budget: goalBudget,
-              skills: goalSkills,
-            },
-            { mode, signal: controller.signal, renderer, t, out },
-          );
-          if (outcome.outcome !== "complete") process.exitCode = 1;
+          // Goal mode: -m is the objective; the one run loops to a terminal state. Exit
+          // code follows the outcome — only a completed goal exits 0 (blocked /
+          // budget_limited / aborted are all "the goal did not finish", for scripts/CI to
+          // check).
+          const result = await runTask(session, [userText(opts.message)], {
+            mode,
+            signal: controller.signal,
+            renderer,
+            t,
+            goal: { budget: goalBudget, out },
+          });
+          if (result.goal?.outcome !== "complete") process.exitCode = 1;
         } else {
           const result = await runTask(session, [userText(opts.message)], {
             mode,

@@ -1,11 +1,11 @@
 /**
  * Goal-mode banners.
  *
- * - `GoalRoundBanner`: the per-round `<goal_task>` injected input rendered as a REGULAR
- *   user message bubble (the system re-sends the user's request each round, so each round
- *   reads like any other message the user sent) with a "Goal · round N" notice tucked
- *   beneath it; the Trace page shows the raw block. A block whose objective can't be
- *   parsed falls back to the one-line notice alone.
+ * - `GoalRoundBanner`: the per-round `[goal]`-prefixed input rendered as a REGULAR user
+ *   message bubble (the system re-sends the user's request each round, so each round reads
+ *   like any other message the user sent) with a "Goal · round N" notice tucked beneath
+ *   it; the Trace page shows the raw block. A round with an empty body falls back to the
+ *   one-line notice alone.
  * - `GoalStatusBanner`: the live goal card above the composer — objective excerpt, round
  *   count, token usage against the budget, and the terminal state once the run ends. The
  *   stop control is the regular abort (one signal spans the whole goal loop server-side).

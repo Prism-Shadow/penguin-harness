@@ -40,7 +40,7 @@ export type {
   TraceSink,
 } from "./engine/context-engine.js";
 export { Session } from "./session.js";
-export type { SessionConfig } from "./session.js";
+export type { GoalRunOptions, SessionConfig, SessionRunOptions } from "./session.js";
 // Session-title generation lives in internal/ (an assembly detail of Session.generateTitle);
 // only its narrow public surface is re-exported: the result type (part of
 // Session.generateTitle's signature) and the sanitation helpers the Web server's title

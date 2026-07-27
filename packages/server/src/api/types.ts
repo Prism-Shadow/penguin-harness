@@ -586,13 +586,12 @@ export interface TaskCreateRequest {
    */
   queueIfBusy?: boolean;
   /**
-   * Present = goal mode: the input's text becomes the objective and the server loops the
-   * Session until the goal reaches a terminal state. `budget` is the token budget
-   * (uncached input + output); omitted or -1 = unlimited. `skills` is up to 16 installed
-   * skill names (`[A-Za-z0-9._-]`, validated — they render as trusted prompt text) applied
-   * to every round's work.
+   * Present = goal mode: the input's text becomes the objective (leading `[use_skills]`
+   * blocks and the like are stripped from the recorded objective; the round-1 message keeps
+   * them) and the server loops the Session until the goal reaches a terminal state.
+   * `budget` is the token budget (uncached input + output); omitted or -1 = unlimited.
    */
-  goal?: { budget?: number; skills?: string[] };
+  goal?: { budget?: number };
 }
 
 /** Goal-mode run state (from goal_state; the chat page's banner restores from the latest row). */

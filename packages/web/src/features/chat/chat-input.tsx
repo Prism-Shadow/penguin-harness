@@ -940,13 +940,9 @@ export function ChatInput({
   /**
    * Returns whether it succeeded: on failure the input draft is kept (not cleared).
    * `goal` is non-null when goal mode is engaged: the text is the objective and the server
-   * loops the Session until the goal reaches a terminal state (budget -1 = unlimited;
-   * `skills` = the selected skills, applied to every round's work).
+   * loops the Session until the goal reaches a terminal state (budget -1 = unlimited).
    */
-  onSend: (
-    input: TaskInputPart[],
-    goal: { budget: number; skills?: string[] } | null,
-  ) => Promise<boolean>;
+  onSend: (input: TaskInputPart[], goal: { budget: number } | null) => Promise<boolean>;
   /**
    * Mid-run steering (session state only): while a Task is running, Enter/send queues the
    * trimmed text for the running agent — it is delivered between turns as a standalone
@@ -1102,8 +1098,9 @@ export function ChatInput({
   const running = status === "running";
   const compacting = status === "compacting";
   // Goal mode (engaged via the "+" menu or /goal): the text body becomes the objective. It is
-  // exclusive with the @ handoff target (engaging either clears the other) and with skills /
-  // images (the objective is re-injected every round as plain text).
+  // exclusive with the @ handoff target (engaging either clears the other) and with images
+  // (the objective is re-injected every round as plain text); selected skills ride the
+  // round-1 message as a [use_skills] block, exactly like a normal send.
   const [goalOn, setGoalOn] = useState(false);
   const [goalBudgetText, setGoalBudgetText] = useState("");
   const [goalBudgetOpen, setGoalBudgetOpen] = useState(false);
@@ -1179,7 +1176,7 @@ export function ChatInput({
   /**
    * Engage/exit goal mode; engaging clears the @ target and images (genuinely exclusive:
    * a handoff opens another session, and the server rejects non-text goal input). Selected
-   * skills stay — they ride the goal as `goal.skills` and apply to every round's work.
+   * skills stay — they ride the round-1 message as a [use_skills] block, like a normal send.
    */
   const toggleGoal = useCallback(
     (on: boolean) => {
@@ -1532,22 +1529,19 @@ export function ChatInput({
   // `post` accepts onSend's goal parameter so onSend can be its default; the follow-up queue
   // (fewer params) is assignable too. Non-goal calls always pass null.
   const sendNormal = async (
-    post: (
-      input: TaskInputPart[],
-      goal: { budget: number; skills?: string[] } | null,
-    ) => Promise<boolean> = onSend,
+    post: (input: TaskInputPart[], goal: { budget: number } | null) => Promise<boolean> = onSend,
   ) => {
     const t = text.trim();
-    // Goal mode: the trimmed text is the objective, sent verbatim (no images, no @ handoff —
-    // cleared/blocked while the chip is on; a leading @ stays plain text). Selected skills
-    // ride as goal.skills — the server renders them into every round's goal block — NOT as a
-    // <use_skills> text prefix, which would be XML-escaped into inert data with the objective.
+    // Goal mode: the trimmed text is the objective (no images, no @ handoff — cleared/blocked
+    // while the chip is on; a leading @ stays plain text). Selected skills prefix the round-1
+    // message as a [use_skills] block, exactly like a normal send — the server strips leading
+    // marker blocks when recording the objective, and rounds after the first re-inject the
+    // objective alone.
     if (goalOn) {
       setBusy(true);
       try {
-        const ok = await onSend([{ type: "text", text: t }], {
+        const ok = await onSend([{ type: "text", text: buildSkillsMessage(selectedSkills, t) }], {
           budget: goalBudget!,
-          ...(selectedSkills.length > 0 ? { skills: selectedSkills } : {}),
         });
         if (ok) {
           setText("");

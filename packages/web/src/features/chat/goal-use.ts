@@ -1,44 +1,25 @@
 /**
  * Goal-mode logic for the chat UI (pure, unit-tested).
  *
- * The `<goal_task>` block is the goal runner's per-round injected input (core
- * goal-prompts.ts); the message stream collapses it into a one-line "goal round" banner —
- * the message body IS the block (nothing follows it), unlike `<use_skills>`, which prefixes
- * user text. The Trace page still shows the raw block.
+ * The `[goal]` block is the goal loop's per-round protocol prefix (core goal-prompts.ts);
+ * the message stream collapses it into a round notice and renders the body after it — the
+ * user's original round-1 input (skill blocks and all), or the re-injected objective — like
+ * any other user message. The Trace page still shows the raw block. Parsing is core's
+ * `parseGoalMessage` (line-anchored close; see markers/goal-block.ts), re-exported so chat
+ * components keep a single import site.
  *
  * Budget input parsing mirrors the CLI's `/goal:<budget>` grammar: a positive number with an
  * optional k/m suffix; an empty input means no budget (UNLIMITED_BUDGET).
  */
+export { parseGoalMessage } from "@prismshadow/penguin-core/omnimessage";
+export type { GoalRoundMessage } from "@prismshadow/penguin-core/omnimessage";
 
-/** Mirrors core's UNLIMITED_BUDGET (the web bundle doesn't import the core package). */
+/** Mirrors core's UNLIMITED_BUDGET (kept local: the constant is not part of the omnimessage bundle). */
 export const UNLIMITED_BUDGET = -1;
 
 /** Bullseye/arrow icon (24×24 line path): goal-mode UI (chip, plus-menu item, banner). */
 export const GOAL_ICON =
   "M21 12A9 9 0 1 1 12 3M17 12A5 5 0 1 1 12 7M12 12L15 9V5L18 2V6H22L19 9H15";
-
-/** Reverse of core's escapeXmlText. `&amp;` must go LAST, or an escaped literal `&amp;lt;` would double-unescape into `<`. */
-function unescapeXmlText(input: string): string {
-  return input.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
-}
-
-/**
- * Recognizes a goal round's injected input: a message that **starts with** a `<goal_task>`
- * block whose first line carries `round: N`. Returns the round number plus the block's
- * objective (unescaped — every round renders it as a regular user bubble, so the user's
- * submitted text stays visible in the conversation even after the goal ends and the live
- * banner is gone), or null when the message isn't a goal block (rendered as normal user
- * text then).
- */
-export function parseGoalTaskMessage(text: string): { round: number; objective: string } | null {
-  const m = /^<goal_task>\nround: (\d+)\n[\s\S]*?<\/goal_task>/.exec(text);
-  if (!m) return null;
-  const round = Number(m[1]);
-  if (!Number.isInteger(round) || round <= 0) return null;
-  // The escaped objective cannot contain a literal `</objective>`, so non-greedy is exact.
-  const obj = /<objective>\n([\s\S]*?)\n<\/objective>/.exec(m[0]);
-  return { round, objective: obj ? unescapeXmlText(obj[1]!) : "" };
-}
 
 /** What the goal banner shows (fed from goal_* server events, or the goal_state row on load). */
 export interface GoalBannerState {

@@ -9,7 +9,25 @@
  * explanation lines are ignored by the parsers.
  */
 import { dualFormPatterns, markerBlock, matchDualForm } from "./block.js";
-import { MARKER_TAGS } from "./tags.js";
+import { MARKER_TAGS, TITLE_NOISE_TAGS } from "./tags.js";
+
+/**
+ * Strips every **leading** machine-prefixed block (a skill invocation, a handoff /
+ * scheduled-task / model-switch origin note — the TITLE_NOISE_TAGS set) plus separating
+ * blank lines, returning the user's own text. Used where a prefixed input doubles as
+ * user-facing content — e.g. the goal loop deriving the objective from the round-1 input.
+ */
+export function stripLeadingMarkerBlocks(text: string): string {
+  let out = text;
+  for (;;) {
+    const before = out;
+    for (const tag of TITLE_NOISE_TAGS) {
+      const m = matchDualForm(dualFormPatterns(tag, "[\\s\\S]*?"), out);
+      if (m && m.index === 0) out = out.slice(m[0].length).replace(/^\n+/, "");
+    }
+    if (out === before) return out;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // [use_skills] — skill invocation prefixed to the user's message

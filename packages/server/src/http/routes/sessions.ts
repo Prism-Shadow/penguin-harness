@@ -10,12 +10,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { Hono } from "hono";
 import type { Context } from "hono";
-import {
-  imageUrlMessage,
-  listInstalledSkills,
-  scratchpadDir,
-  userText,
-} from "@prismshadow/penguin-core";
+import { imageUrlMessage, scratchpadDir, userText } from "@prismshadow/penguin-core";
 import type { OmniMessage, ThinkingLevelName } from "@prismshadow/penguin-core";
 import type {
   ApprovalMode,
@@ -108,14 +103,11 @@ function parseTaskInput(body: Record<string, unknown>): OmniMessage[] {
 
 /**
  * Validate the optional `goal` field of a task request: absent = a regular task (null);
- * present = goal mode with a token budget (a positive integer, or -1/omitted = unlimited)
- * and optional skill names. Names are strictly shape-validated ([A-Za-z0-9._-], ≤64 chars,
- * ≤16 of them) because they render as TRUSTED prompt text inside every round's goal block —
- * unlike the objective, which is escaped and downgraded to data.
+ * present = goal mode with a token budget (a positive integer, or -1/omitted = unlimited).
+ * The input text is the objective — skills ride the text itself as a `[use_skills]` block,
+ * exactly like a regular task's message.
  */
-function parseGoalField(
-  body: Record<string, unknown>,
-): { budget: number; skills: string[] } | null {
+function parseGoalField(body: Record<string, unknown>): { budget: number } | null {
   const goal = body.goal;
   if (goal === undefined) return null;
   if (goal === null || typeof goal !== "object" || Array.isArray(goal)) {
@@ -128,18 +120,7 @@ function parseGoalField(
   ) {
     throw badRequest("goal.budget must be a positive integer, or -1 for unlimited.");
   }
-  const skills = (goal as Record<string, unknown>).skills;
-  if (
-    skills !== undefined &&
-    (!Array.isArray(skills) ||
-      skills.length > 16 ||
-      skills.some((s) => typeof s !== "string" || !/^[A-Za-z0-9._-]{1,64}$/.test(s)))
-  ) {
-    throw badRequest(
-      "goal.skills must be at most 16 skill names of [A-Za-z0-9._-], 1-64 chars each.",
-    );
-  }
-  return { budget: (budget as number | undefined) ?? -1, skills: (skills as string[]) ?? [] };
+  return { budget: (budget as number | undefined) ?? -1 };
 }
 
 /** Agent-level entry: /api/projects/:p/agents/:a/sessions. */
@@ -419,36 +400,20 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     // follow-up keeps its level for its auto-start.
     const thinkingLevel = optionalEnum(body, "thinkingLevel", THINKING_LEVELS);
     if (goal) {
-      // Goal mode: the input must be plain text (it becomes the objective, re-injected
-      // every round — images have no place in the goal block).
+      // Goal mode: the input must be plain non-empty text (its marker-stripped text becomes
+      // the objective, re-injected every round — images have no place in the protocol).
       const input = parseTaskInput(body);
-      const objective = input
+      const text = input
         .filter((m) => (m.payload as { type?: string }).type === "text")
         .map((m) => (m.payload as { text: string }).text)
         .join("\n")
         .trim();
-      if (!objective || input.some((m) => (m.payload as { type?: string }).type !== "text")) {
+      if (!text || input.some((m) => (m.payload as { type?: string }).type !== "text")) {
         throw badRequest("goal mode requires text-only input (the objective).");
       }
-      // Beyond the shape rule, only skills actually installed for this agent pass (the
-      // CLI's unknownSkills check, mirrored): the names render as trusted prompt text in
-      // every round, so free-form strings must not reach them — and a typo'd name would
-      // send the model hunting for a nonexistent SKILL.md each round.
-      if (goal.skills.length > 0) {
-        const installed = new Set(
-          (await listInstalledSkills(deps.config.root, row.projectId, row.agentId)).map(
-            (s) => s.name,
-          ),
-        );
-        const unknown = goal.skills.filter((n) => !installed.has(n));
-        if (unknown.length > 0) {
-          throw badRequest(`goal.skills not installed for this agent: ${unknown.join(", ")}.`);
-        }
-      }
       const { sessionId } = await deps.manager.startGoal(row.sessionId, {
-        objective,
+        input,
         budget: goal.budget,
-        skills: goal.skills,
         ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
       });
       return c.json({ sessionId } satisfies TaskCreateResponse, 202);

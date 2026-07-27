@@ -30,17 +30,16 @@ import path from "node:path";
 import {
   createAgent,
   findLatestTraceFile,
-  goalFilePath,
+  goalFinishedOf,
   goalTokenDelta,
   isGoalRoundInput,
   isSessionMeta,
-  runGoal,
+  stripLeadingMarkerBlocks,
   tracesDir,
 } from "@prismshadow/penguin-core";
 import type {
   ApproveFn,
   CompactAvailability,
-  GoalSession,
   OmniMessage,
   SessionMetaPayload,
   SessionTitleResult,
@@ -77,7 +76,13 @@ export interface RuntimeSession {
   readonly sessionId: string;
   run(
     newMessages: OmniMessage[],
-    opts: { approve: ApproveFn; signal: AbortSignal; thinkingLevel?: ThinkingLevelName },
+    opts: {
+      approve: ApproveFn;
+      signal: AbortSignal;
+      thinkingLevel?: ThinkingLevelName;
+      /** Present = goal mode: core loops rounds inside this one run (see core SessionRunOptions). */
+      goal?: { budget?: number };
+    },
   ): AsyncGenerator<OmniMessage>;
   compact(opts: { signal: AbortSignal }): AsyncGenerator<OmniMessage>;
   /** Whether compaction is possible and why; when not ok, compact() yields no messages (see core ContextEngine.compactability). */
@@ -195,8 +200,6 @@ export interface SessionManagerDeps {
   /** Error persistence (optional: without it, only logs — same as before this was wired up). */
   errors?: ErrorSink;
   log?: (line: string) => void;
-  /** Data root directory; goal mode needs it to place GOAL.yaml (startGoal 409s without it). */
-  root?: string;
   /** Goal run-state persistence (optional like `titles`: without it, goals run but leave no restorable record). */
   goals?: GoalsRepo;
 }
@@ -447,19 +450,21 @@ export class SessionManager {
   }
 
   /**
-   * Start a goal run: like startTask, but the driven generator is core's `runGoal` — the
-   * Session stays `running` for the whole goal (every round), so the existing abort endpoint
-   * interrupts the entire loop and schedules queue behind it as usual. Round inputs are
-   * yielded by the runner and published like any streamed message; progress additionally
-   * goes out as goal_* server events and into goal_state (when a repo is wired).
+   * Start a goal run: like startTask, but the run is core goal mode — one
+   * `session.run(input, { goal })` call loops rounds until a terminal state, and the
+   * Session stays `running` for the whole goal (every round), so the existing abort
+   * endpoint interrupts the entire loop and schedules queue behind it as usual. Round
+   * inputs are yielded by core and published like any streamed message; progress
+   * additionally goes out as goal_* server events and into goal_state (when a repo is
+   * wired).
    */
   async startGoal(
     sessionId: string,
     args: {
-      objective: string;
+      /** Round-1 input (text-only, route-validated); its marker-stripped text is the objective. */
+      input: OmniMessage[];
       budget: number;
-      skills?: string[];
-      /** Optional per-goal thinking level: rides every round's `session.run` (route-validated). */
+      /** Optional per-goal thinking level: rides every round's Task (route-validated). */
       thinkingLevel?: ThinkingLevelName;
     },
   ): Promise<{ sessionId: string }> {
@@ -467,12 +472,16 @@ export class SessionManager {
       this.assertOpen();
       this.assertAgentNotDeleting(sessionId);
       this.assertSessionNotDeleting(sessionId);
-      const root = this.deps.root;
-      if (root === undefined) {
-        throw new HttpError(409, "goal_unavailable", "Goal mode is not configured on this server.");
-      }
       const entry = await this.ensureEntry(sessionId);
       this.assertIdle(entry);
+      // The objective is the user's own text (leading skill-invocation blocks stripped) —
+      // the same derivation core records in GOAL.yaml; used for the run-state row, the
+      // goal_started event, and as title material.
+      const text = args.input
+        .filter(isPlainText("user"))
+        .map((m) => m.payload.text)
+        .join("\n");
+      const objective = stripLeadingMarkerBlocks(text).trim() || text.trim();
       const ac = new AbortController();
       entry.status = "running";
       entry.abort = ac;
@@ -493,75 +502,73 @@ export class SessionManager {
         sessionId: entry.sessionId,
         projectId: entry.projectId,
         agentId: entry.agentId,
-        objective: args.objective,
+        objective,
         budget: args.budget,
       });
       this.publishEvent(entry, {
         type: "goal_started",
         sessionId: entry.sessionId,
-        objective: args.objective,
+        objective,
         budget: args.budget,
       });
       const gen = this.goalStream(entry, {
-        objective: args.objective,
+        input: args.input,
         budget: args.budget,
-        ...(args.skills !== undefined && args.skills.length > 0 ? { skills: args.skills } : {}),
         ...(args.thinkingLevel !== undefined ? { thinkingLevel: args.thinkingLevel } : {}),
-        filePath: goalFilePath(root, entry.projectId, entry.agentId, entry.sessionId),
         approve,
         signal: ac.signal,
         ...(goalId !== undefined ? { goalId } : {}),
       });
       // The objective doubles as the title material (same role as a task's input text).
-      entry.running = this.drive(entry, gen, { userExcerpt: args.objective });
+      entry.running = this.drive(entry, gen, { userExcerpt: objective });
       return { sessionId: entry.sessionId };
     });
   }
 
   /**
-   * Wraps core `runGoal` into a plain message generator for `drive`, tapping the stream for
-   * goal progress: round boundaries (the injected `<goal_task>` inputs) become goal_round
-   * events + goal_state refreshes, and the runner's outcome becomes goal_finished. Token
-   * numbers mirror the runner's own accounting (same `goalTokenDelta`), so the UI shows
-   * exactly what the budget check uses.
+   * Taps core's goal-mode stream for `drive`: round boundaries (the injected `[goal]`
+   * inputs) become goal_round events + goal_state refreshes, and the terminal
+   * `goal_finished` event message becomes the goal_finished server event + the run-state
+   * row's final status. Token numbers mirror core's own accounting (same
+   * `goalTokenDelta`), so the UI shows exactly what the budget check uses.
    */
   private async *goalStream(
     entry: RuntimeEntry,
     args: {
-      objective: string;
+      input: OmniMessage[];
       budget: number;
-      skills?: string[];
       thinkingLevel?: ThinkingLevelName;
-      filePath: string;
       approve: ApproveFn;
       signal: AbortSignal;
       goalId?: number;
     },
   ): AsyncGenerator<OmniMessage> {
-    // Approval/interrupt wiring is applied here once: every round of the goal runs with
-    // this manager's callback, signal, and (optional) thinking level (the runner's own
-    // opts stay empty).
-    const goalSession: GoalSession = {
-      run: (msgs) =>
-        entry.session.run(msgs, {
-          approve: args.approve,
-          signal: args.signal,
-          ...(args.thinkingLevel !== undefined ? { thinkingLevel: args.thinkingLevel } : {}),
-        }),
-    };
-    const gen = runGoal(goalSession, {
-      objective: args.objective,
-      goalFilePath: args.filePath,
-      budget: args.budget,
-      ...(args.skills !== undefined ? { skills: args.skills } : {}),
+    const gen = entry.session.run(args.input, {
+      approve: args.approve,
+      signal: args.signal,
+      ...(args.thinkingLevel !== undefined ? { thinkingLevel: args.thinkingLevel } : {}),
+      goal: { budget: args.budget },
     });
     let round = 0;
     let used = 0;
+    let finished = false;
     try {
-      for (;;) {
-        const next = await gen.next();
-        if (next.done) {
-          const outcome = next.value;
+      for await (const msg of gen) {
+        used += goalTokenDelta(msg);
+        if (isGoalRoundInput(msg)) {
+          round++;
+          if (args.goalId !== undefined) this.deps.goals?.progress(args.goalId, round, used);
+          this.publishEvent(entry, {
+            type: "goal_round",
+            sessionId: entry.sessionId,
+            round,
+            used,
+            budget: args.budget,
+          });
+        }
+        const outcome = goalFinishedOf(msg);
+        if (outcome) {
+          finished = true;
           if (args.goalId !== undefined) {
             this.deps.goals?.finish(
               args.goalId,
@@ -577,37 +584,38 @@ export class SessionManager {
             rounds: outcome.rounds,
             used: outcome.tokensUsed,
           });
-          return;
-        }
-        const msg = next.value;
-        used += goalTokenDelta(msg);
-        if (isGoalRoundInput(msg)) {
-          round++;
-          if (args.goalId !== undefined) this.deps.goals?.progress(args.goalId, round, used);
-          this.publishEvent(entry, {
-            type: "goal_round",
-            sessionId: entry.sessionId,
-            round,
-            used,
-            budget: args.budget,
-          });
         }
         yield msg;
       }
+      if (!finished) {
+        // Defensive: core always ends a goal stream with goal_finished; a stream that
+        // didn't is a cut-off run — close the row so the UI never shows a forever-active
+        // goal.
+        this.finishAborted(entry, args.goalId, round, used);
+      }
     } catch (err) {
-      // The runner throws only on infrastructure failures (e.g. GOAL.yaml writes): close
-      // the run state as aborted so the UI never shows a forever-active goal, then let
-      // drive's defensive catch record the error.
-      if (args.goalId !== undefined) this.deps.goals?.finish(args.goalId, "aborted", round, used);
-      this.publishEvent(entry, {
-        type: "goal_finished",
-        sessionId: entry.sessionId,
-        outcome: "aborted",
-        rounds: round,
-        used,
-      });
+      // Core throws only on infrastructure failures (e.g. GOAL.yaml writes): close the
+      // run state as aborted, then let drive's defensive catch record the error.
+      this.finishAborted(entry, args.goalId, round, used);
       throw err;
     }
+  }
+
+  /** Closes a goal's run state as aborted (stream cut off / infrastructure failure). */
+  private finishAborted(
+    entry: RuntimeEntry,
+    goalId: number | undefined,
+    round: number,
+    used: number,
+  ): void {
+    if (goalId !== undefined) this.deps.goals?.finish(goalId, "aborted", round, used);
+    this.publishEvent(entry, {
+      type: "goal_finished",
+      sessionId: entry.sessionId,
+      outcome: "aborted",
+      rounds: round,
+      used,
+    });
   }
 
   /** Shared task launch (fresh tasks and auto-started follow-ups): flips to running, publishes the input, and drives the run with the per-turn thinking level (if any). Caller holds the session lock and has verified idle. */

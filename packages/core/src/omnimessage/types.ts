@@ -314,6 +314,24 @@ export interface CompactionEndPayload {
   status: StopReason;
 }
 
+/** How a goal ended: the goal file's terminal status, or `aborted` when a round was cut off. */
+export type GoalOutcomeStatus = "complete" | "blocked" | "budget_limited" | "aborted";
+
+/**
+ * Goal terminal event: the last message of a goal-mode `session.run` (produced by the
+ * Session's goal loop, written to the Trace best-effort). Hosts read the outcome from the
+ * stream — the CLI's summary line, the Web server's goal_finished SSE event and run-state
+ * persistence all map from this one message.
+ */
+export interface GoalFinishedPayload {
+  type: "goal_finished";
+  outcome: GoalOutcomeStatus;
+  /** Rounds actually run (the wrap-up round counts). */
+  rounds: number;
+  /** The loop's own accounting: uncached input + output across every round (subagents included). */
+  tokens_used: number;
+}
+
 /**
  * Subagent pointer event: when the parent Session spawns a
  * **direct** child session, `context_engine` writes this to the parent Trace (not streamed),
@@ -359,6 +377,7 @@ export type EventPayload =
   | TokenUsagePayload
   | CompactionBeginPayload
   | CompactionEndPayload
+  | GoalFinishedPayload
   | SubagentPayload;
 
 export type OmniPayload = SessionMetaPayload | ModelPayload | EventPayload;

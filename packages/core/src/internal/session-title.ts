@@ -13,7 +13,11 @@
  * by the barrel; the prompt/request internals are not.
  */
 import { userText } from "../omnimessage/index.js";
-import { TITLE_NOISE_TAGS, stripMarkerBlocks } from "../omnimessage/markers/index.js";
+import {
+  TITLE_NOISE_TAGS,
+  parseGoalMessage,
+  stripMarkerBlocks,
+} from "../omnimessage/markers/index.js";
 import type {
   OmniMessage,
   TextPayload,
@@ -35,7 +39,10 @@ const TITLE_MAX_CHARS = 30;
  * are never title material).
  */
 export function stripConversationMarkers(text: string): string {
-  let out = text;
+  // The [goal] block embeds user data (the GOAL.yaml objective), so the generic non-anchored
+  // stripping could be terminated early by a crafted objective; the line-anchored goal parse
+  // takes it off first, and the loop below only ever sees host-composed block content.
+  let out = parseGoalMessage(text)?.rest ?? text;
   for (const tag of TITLE_NOISE_TAGS) out = stripMarkerBlocks(out, tag);
   return out.trim();
 }

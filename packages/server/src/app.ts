@@ -182,7 +182,6 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     errors,
     titles,
     log,
-    root: config.root,
     goals: goalsRepo,
   });
   managerRef = manager;

@@ -39,13 +39,12 @@ export interface GoalFile {
 }
 
 /**
- * Serializes and writes GOAL.yaml (creating the scratchpad session directory if needed — the
- * model normally creates it on demand, but goal mode writes the file before the first round).
- * `tokens.remaining` is emitted only for a real budget, so the model never sees a bogus
- * negative remainder on an unlimited goal.
+ * Serializes GOAL.yaml from in-memory values. `tokens.remaining` is emitted only for a real
+ * budget, so the model never sees a bogus negative remainder on an unlimited goal. The goal
+ * prompt embeds this same serialization verbatim in every round's `[goal]` block — the model
+ * always sees exactly the bytes on disk, and nothing model-writable is ever read back.
  */
-export async function writeGoalFile(filePath: string, goal: GoalFile): Promise<void> {
-  await fs.mkdir(path.dirname(filePath), { recursive: true });
+export function serializeGoalFile(goal: GoalFile): string {
   const tokens: Record<string, number> = {
     budget: goal.tokens.budget,
     used: goal.tokens.used,
@@ -53,11 +52,16 @@ export async function writeGoalFile(filePath: string, goal: GoalFile): Promise<v
   if (goal.tokens.budget > 0) {
     tokens.remaining = Math.max(0, goal.tokens.budget - goal.tokens.used);
   }
-  await fs.writeFile(
-    filePath,
-    stringifyYaml({ objective: goal.objective, status: goal.status, tokens }),
-    "utf8",
-  );
+  return stringifyYaml({ objective: goal.objective, status: goal.status, tokens });
+}
+
+/**
+ * Serializes and writes GOAL.yaml (creating the scratchpad session directory if needed — the
+ * model normally creates it on demand, but goal mode writes the file before the first round).
+ */
+export async function writeGoalFile(filePath: string, goal: GoalFile): Promise<void> {
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(filePath, serializeGoalFile(goal), "utf8");
 }
 
 /**

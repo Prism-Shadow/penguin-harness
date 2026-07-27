@@ -11,10 +11,12 @@ Start a goal from any of the three surfaces:
 
 | Surface | How |
 | --- | --- |
-| Web App | The composer's `+` menu → **Goal mode** (or type `/goal`); the chip takes an optional token budget (`500k`, `2m`, empty = unlimited). Skills selected in the composer ride along and apply to every round |
-| CLI chat | `/goal[:<budget>] [--skills <a,b>] <objective>`, e.g. `/goal:500k make all tests pass` |
-| CLI one-shot | `penguin run --goal [budget] [--skills <a,b>] -m "<objective>"`; exit code 0 only when the goal completes |
-| Server API | `POST /api/sessions/:id/tasks` with `{ input, goal: { budget, skills } }` (budget `-1` or omitted = unlimited; `skills` = optional skill names, shape-validated and checked against the installed set) |
+| Web App | The composer's `+` menu → **Goal mode** (or type `/goal`); the chip takes an optional token budget (`500k`, `2m`, empty = unlimited). Skills selected in the composer prefix the first round's message as a `[use_skills]` block, exactly like a normal send |
+| CLI chat | `/goal[:<budget>] <objective>`, e.g. `/goal:500k make all tests pass` |
+| CLI one-shot | `penguin run --goal [budget] -m "<objective>"`; exit code 0 only when the goal completes |
+| Server API | `POST /api/sessions/:id/tasks` with `{ input, goal: { budget } }` (budget `-1` or omitted = unlimited) |
+
+In the SDK, goal mode is an option of the one `run` call — `session.run(input, { goal: { budget } })` — not a separate API: the input's text becomes the objective, rounds loop inside the call, and the stream's final message is a `goal_finished` event carrying the outcome.
 
 ## The control file: GOAL.yaml
 
@@ -41,7 +43,7 @@ Reads are tolerant: a missing file, unparseable YAML, or an out-of-protocol stat
 
 ## The loop
 
-Each round injects a `<goal_task>` user message (collapsed to a one-line "Goal · round N" notice in the Web App; verbatim in the Trace) carrying the objective, the goal's skills (if any), current budget numbers, and the working rules — evidence-based verification before claiming completion, no shrinking the objective to an easier subset, and key progress recorded in `PLAN.md` so it survives context compaction. After the Task ends, the system reads `status`:
+Each round's user message is a `[goal]` protocol block followed by a plain body — round 1 carries your original message verbatim (skill-invocation blocks and all); later rounds re-inject the objective. The Web App collapses the block into a "Goal · round N" notice under a regular user bubble; the Trace shows it verbatim. The block embeds the current `GOAL.yaml` byte-for-byte (the model sees exactly the file it is asked to edit) along with the working rules — evidence-based verification before claiming completion, no shrinking the objective to an easier subset, and key progress recorded in `PLAN.md` so it survives context compaction. After the Task ends, the system reads `status`:
 
 - `complete` → the goal is done; the loop stops.
 - `blocked` → the loop stops; what the model needs from you is in its final reply. The injected rules require the **same blocking condition to persist for three consecutive rounds** before the model may claim `blocked`, so a transient obstacle doesn't end the goal.

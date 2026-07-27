@@ -1,18 +1,17 @@
 /**
- * Goal-mode server tests: GoalsRepo state rows, and SessionManager.startGoal driving core's
- * runGoal with a fake Session (no real LLM requests) — round events, terminal state
- * persistence, and status transitions.
+ * Goal-mode server tests: GoalsRepo state rows, and SessionManager.startGoal driving core
+ * goal mode through one `session.run(input, { goal })` call with a fake Session (no real LLM
+ * requests) — round events, terminal state persistence, and status transitions.
  */
-import fs from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { DatabaseSync } from "node:sqlite";
 import {
   assistantText,
+  buildSkillsMessage,
   emptyTokenCounts,
-  goalFilePath,
+  goalFinished,
   tokenUsage,
+  userText,
 } from "@prismshadow/penguin-core";
 import type { OmniMessage, TokenCounts } from "@prismshadow/penguin-core";
 import { openDatabase } from "../src/db/database.js";
@@ -40,6 +39,11 @@ const ROW: SessionRow = {
 
 function usage(total: number): TokenCounts {
   return { cache_read: 0, cache_write: 0, output: 0, total };
+}
+
+/** A goal round's injected input, as core's loop would compose it (block + body). */
+function roundInput(round: number, body: string): OmniMessage {
+  return userText(`[goal]\nround: ${round}\nprotocol lines\n[/goal]\n\n${body}`);
 }
 
 describe("GoalsRepo", () => {
@@ -125,59 +129,52 @@ describe("GoalsRepo", () => {
 
 describe("SessionManager.startGoal", () => {
   let db: DatabaseSync;
-  let root: string;
   let sessions: SessionsRepo;
   let goals: GoalsRepo;
   let channels: ChannelHub;
 
-  beforeEach(async () => {
+  beforeEach(() => {
     db = openDatabase(":memory:");
-    root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-goal-mgr-"));
     sessions = new SessionsRepo(db);
     sessions.insert(ROW);
     goals = new GoalsRepo(db);
     channels = new ChannelHub();
   });
-  afterEach(async () => {
+  afterEach(() => {
     channels.dispose();
     db.close();
-    await fs.rm(root, { recursive: true, force: true });
   });
 
-  /** Fake session: consumes goal rounds, marking the on-disk GOAL.yaml complete on round N. */
+  type RunOpts = { thinkingLevel?: string; goal?: { budget?: number } };
+
+  /**
+   * Fake session: `run` asserts it was called in goal mode and emits the whole goal stream
+   * the way core's loop would — per-round `[goal]` inputs and work, then the terminal
+   * goal_finished event (the loop itself is core's and is tested in core).
+   */
   function goalFakeSession(
-    completeOnRound: number,
-  ): RuntimeSession & { prompts: string[]; runOpts: { thinkingLevel?: string }[] } {
-    const file = goalFilePath(root, ROW.projectId, ROW.agentId, ROW.sessionId);
-    let round = 0;
-    const prompts: string[] = [];
-    const runOpts: { thinkingLevel?: string }[] = [];
+    stream: (input: OmniMessage[]) => OmniMessage[],
+  ): RuntimeSession & { runOpts: RunOpts[] } {
+    const runOpts: RunOpts[] = [];
     return {
       sessionId: ROW.sessionId,
-      prompts,
       runOpts,
       toolPermission: () => "rw",
       generateTitle: async () => ({ title: null, usage: null }),
       compactability: () => "ok" as const,
       steer: () => false,
       async *run(input: OmniMessage[], opts) {
-        round++;
         runOpts.push({
           ...(opts.thinkingLevel !== undefined ? { thinkingLevel: opts.thinkingLevel } : {}),
+          ...(opts.goal !== undefined ? { goal: opts.goal } : {}),
         });
-        prompts.push((input[0]!.payload as { text: string }).text);
-        yield assistantText(`round ${round} work`);
-        yield tokenUsage(usage(100 * round), usage(100 * round));
-        if (round >= completeOnRound) {
-          const raw = await fs.readFile(file, "utf8");
-          await fs.writeFile(file, raw.replace(/^status: .*$/m, "status: complete"), "utf8");
-        }
+        yield* stream(input);
       },
       async *compact() {},
     };
   }
 
-  function makeManager(session: RuntimeSession): SessionManager {
+  function makeManager(session: RuntimeSession, withRepo = true): SessionManager {
     return new SessionManager({
       sessions,
       channels,
@@ -185,41 +182,48 @@ describe("SessionManager.startGoal", () => {
       loader: { load: async () => session },
       recorder: { record: async () => {} },
       log: () => {},
-      root,
-      goals,
+      ...(withRepo ? { goals } : {}),
     });
   }
 
-  it("drives rounds to completion, publishing goal events and persisting the outcome", async () => {
-    const session = goalFakeSession(2);
+  it("drives one goal-mode run, publishing goal events and persisting the outcome", async () => {
+    const text = buildSkillsMessage(["web-design"], "make it work");
+    const session = goalFakeSession((input) => [
+      roundInput(1, (input[0]!.payload as { text: string }).text),
+      assistantText("round 1 work"),
+      tokenUsage(usage(100), usage(100)),
+      roundInput(2, "make it work"),
+      assistantText("round 2 work"),
+      tokenUsage(usage(200), usage(200)),
+      goalFinished("complete", 2, 300),
+    ]);
     const manager = makeManager(session);
     const events: ChannelEvent[] = [];
     channels.get(ROW.sessionId).subscribe((e) => events.push(e));
 
     await manager.startGoal(ROW.sessionId, {
-      objective: "make it work",
+      input: [userText(text)],
       budget: -1,
-      skills: ["web-design"],
       thinkingLevel: "high",
     });
     await waitFor(() => manager.statusOf(ROW.sessionId) === "idle");
 
-    // The model saw a <goal_task> block each round, with the objective embedded, the
-    // goal's skills repeated as a per-round paragraph, and the per-goal thinking level
-    // riding every round's run options.
-    expect(session.prompts).toHaveLength(2);
-    expect(session.prompts[0]).toContain("<goal_task>");
-    expect(session.prompts[0]).toContain("make it work");
-    expect(session.prompts[1]).toContain("round: 2");
-    for (const prompt of session.prompts) expect(prompt).toContain("Skills to use: web-design");
-    expect(session.runOpts).toEqual([{ thinkingLevel: "high" }, { thinkingLevel: "high" }]);
+    // One run call carries the whole goal: the input verbatim, the per-goal thinking
+    // level, and the goal option (core loops the rounds internally).
+    expect(session.runOpts).toEqual([{ thinkingLevel: "high", goal: { budget: -1 } }]);
 
     const server = events
       .filter((e) => e.event === "server_event")
       .map((e) => JSON.parse(e.data) as { type: string; [k: string]: unknown });
-    expect(server.filter((e) => e.type === "goal_round")).toHaveLength(2);
+    // The recorded objective is the user's own text: the [use_skills] prefix is stripped.
+    expect(server.find((e) => e.type === "goal_started")).toMatchObject({
+      objective: "make it work",
+      budget: -1,
+    });
+    const rounds = server.filter((e) => e.type === "goal_round");
+    expect(rounds).toHaveLength(2);
+    expect(rounds[1]).toMatchObject({ round: 2, used: 100 });
     const finished = server.find((e) => e.type === "goal_finished");
-    // used = (100) + (200): the fake yields one uncached request per round.
     expect(finished).toMatchObject({ outcome: "complete", rounds: 2, used: 300 });
 
     const row = goals.latestForSession(ROW.sessionId);
@@ -238,31 +242,62 @@ describe("SessionManager.startGoal", () => {
         (m) =>
           m.type === "model_msg" &&
           (m.payload as { role?: string }).role === "user" &&
-          ((m.payload as { text?: string }).text ?? "").startsWith("<goal_task>"),
+          ((m.payload as { text?: string }).text ?? "").startsWith("[goal]"),
       );
     expect(published).toHaveLength(2);
+    // Round 1 carries the caller's input verbatim — the [use_skills] block included.
+    expect((published[0]!.payload as { text: string }).text).toContain("[use_skills]");
   });
 
-  it("409s while a goal is running (mutual exclusion) and without a configured root", async () => {
-    const session = goalFakeSession(1);
-    const manager = makeManager(session);
-    await manager.startGoal(ROW.sessionId, { objective: "obj", budget: -1 });
-    await expect(manager.startTask(ROW.sessionId, [assistantText("x")])).rejects.toMatchObject({
+  it("409s while a goal is running (mutual exclusion); runs without a goals repo", async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const session = goalFakeSession(() => [roundInput(1, "obj"), goalFinished("complete", 1, 0)]);
+    const orig = session.run.bind(session);
+    session.run = async function* (input, opts) {
+      yield* orig(input, opts);
+      await gate;
+    };
+    const manager = makeManager(session, false);
+    await manager.startGoal(ROW.sessionId, { input: [userText("obj")], budget: -1 });
+    await expect(manager.startTask(ROW.sessionId, [userText("x")])).rejects.toMatchObject({
       status: 409,
     });
+    release();
+    await waitFor(() => manager.statusOf(ROW.sessionId) === "idle");
+    // No goals repo wired: the goal still ran and finished without touching one.
+    expect(goals.latestForSession(ROW.sessionId)).toBeNull();
+  });
+
+  it("closes the run state as aborted when the stream ends without a terminal event", async () => {
+    // A cut-off run (infrastructure failure upstream) must not leave the row active.
+    const session = goalFakeSession(() => [
+      roundInput(1, "obj"),
+      assistantText("partial work"),
+      tokenUsage(usage(50), usage(50)),
+    ]);
+    const manager = makeManager(session);
+    const events: ChannelEvent[] = [];
+    channels.get(ROW.sessionId).subscribe((e) => events.push(e));
+
+    await manager.startGoal(ROW.sessionId, { input: [userText("obj")], budget: 1000 });
     await waitFor(() => manager.statusOf(ROW.sessionId) === "idle");
 
-    const bare = new SessionManager({
-      sessions,
-      channels,
-      sources: new SessionSources(),
-      loader: { load: async () => session },
-      recorder: { record: async () => {} },
-      log: () => {},
+    expect(goals.latestForSession(ROW.sessionId)).toMatchObject({
+      status: "aborted",
+      rounds: 1,
+      used: 50,
     });
-    await expect(
-      bare.startGoal(ROW.sessionId, { objective: "o", budget: -1 }),
-    ).rejects.toMatchObject({ status: 409, code: "goal_unavailable" });
+    const server = events
+      .filter((e) => e.event === "server_event")
+      .map((e) => JSON.parse(e.data) as { type: string; [k: string]: unknown });
+    expect(server.find((e) => e.type === "goal_finished")).toMatchObject({
+      outcome: "aborted",
+      rounds: 1,
+      used: 50,
+    });
   });
 
   it("sanity: emptyTokenCounts helper stays exported for fakes", () => {

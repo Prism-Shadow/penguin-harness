@@ -1,7 +1,8 @@
-/** Goal mode: the GOAL.yaml control-file protocol, injected prompt blocks, and the loop driver. */
-export { UNLIMITED_BUDGET, readGoalStatus, writeGoalFile } from "./goal-file.js";
+/** Goal mode: the GOAL.yaml control-file protocol, prompt composition, and stream helpers (the loop itself lives behind `session.run`). */
+export { UNLIMITED_BUDGET, readGoalStatus, serializeGoalFile, writeGoalFile } from "./goal-file.js";
 export type { GoalFile, GoalStatus } from "./goal-file.js";
-export { budgetLimitMessage, goalTaskMessage } from "./goal-prompts.js";
+export { goalRoundMessage, goalWrapUpMessage } from "./goal-prompts.js";
 export type { GoalPromptArgs } from "./goal-prompts.js";
-export { goalTokenDelta, isGoalRoundInput, runGoal } from "./goal-runner.js";
-export type { GoalOutcome, GoalOutcomeStatus, GoalSession, RunGoalOptions } from "./goal-runner.js";
+export { goalFinishedOf, goalTokenDelta, isGoalRoundInput } from "./goal-stream.js";
+export type { GoalOutcome } from "./goal-stream.js";
+export { GOAL_MAX_ROUNDS } from "./goal-loop.js";
