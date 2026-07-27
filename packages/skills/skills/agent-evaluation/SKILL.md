@@ -4,7 +4,7 @@ description: Internal leaf worker that runs one specified Test Agent on one spec
 short_description: Run and score one isolated Benchmark Case.
 short_description_zh: 隔离执行并评分一个 Benchmark Case。
 version: 5
-updated: 2026-07-27T05:46:33Z
+updated: 2026-07-27T06:38:27Z
 ---
 
 # Agent Evaluation
@@ -30,15 +30,15 @@ model_id: <model_id>
 
 The `run` value identifies this execution; it does not tell this worker to repeat the Case. If any field is missing, duplicated, or conflicting, return `invalid_request` without creating a Workspace or launching the Test Agent. Do not ask for clarification.
 
-One request has one of two outcomes. A **scored result** means the Test Agent ran and the Rubric was applied; a missing, malformed, or wrong answer still receives zero or partial credit. An **evaluation failure** means the request, launch, provenance check, version check, Benchmark files, or scoring process failed; return a failure code and no score.
+One request has one of two outcomes. Return a **scored result** when the Test Agent ran and the Rubric was applied. A missing, malformed, or wrong answer still receives zero or partial credit. Return an **evaluation failure** when the request, launch, provenance check, version check, Benchmark files, or scoring process failed. Include a failure code and no score.
 
 ## Prepare an isolated run
 
-Under the Environment App Data Dir, resolve `TEST_AGENT_DIR` as `agents/<test_agent_id>` and `BENCHMARK_DIR` as `<test_agent_dir>/benchmarks/<benchmark_id>`. The Evaluator may inspect only the requested Test Agent's canonical State and version; the requested Benchmark config, Case Statement, and private Rubric; and the isolated Test Workspace and Test Trace bound to this execution.
+Under the Environment App Data Dir, resolve `TEST_AGENT_DIR` as `agents/<test_agent_id>` and `BENCHMARK_DIR` as `<test_agent_dir>/benchmarks/<benchmark_id>`. Inspect only the requested Test Agent State and version, the requested Benchmark config and Case, the isolated Test Workspace, and the Test Trace for this execution.
 
 Do not inspect another Agent, Project secrets, hidden configuration, or unrelated Workspaces or Traces. Reject traversal, symlink escape, or any resolved path outside the requested Test Agent.
 
-Require `agent_state/system_config.yaml`, `benchmark_config.toml`, and both `<case_id>/statement/README.md` and `<case_id>/rubric/README.md`. Validate that `runs` is a positive integer, `run` is within `1..runs`, `provider` and `model_id` are non-empty, and the top-level State `version`—default 1—equals `expected_version`.
+Require `agent_state/system_config.yaml`, `benchmark_config.toml`, `<case_id>/statement/README.md`, and `<case_id>/rubric/README.md`. Check that `runs` is a positive integer and that `run` is within `1..runs`. Require non-empty `provider` and `model_id`. The top-level State `version`, defaulting to 1, must equal `expected_version`.
 
 Before launch, snapshot every file under the Case's `statement/` and `rubric/` directories. Require a Rubric with unambiguous scoring items and a finite Case maximum.
 
@@ -55,13 +55,13 @@ PENGUIN_HOME="<parent_of_app_data_dir>" penguin run \
   --agent-id "<test_agent_id>" --workspace "<unique_workspace>" --approve allow-all
 ```
 
-Use the exact requested Agent, provider, model, and Workspace; never fall back to another value. If a transient connection or launch failure occurs, retry the exact command once only when you can prove that no Test Session was created and execution did not begin, including no new or changed Trace or Workspace file. Otherwise do not relaunch. Across at most two CLI attempts, allow at most one Test Agent execution.
+Use the exact requested Agent, provider, model, and Workspace. Never fall back to another value. You may retry the launch once, but only when you can prove that the Test Agent did not start. There must be no new or changed Test Trace or Workspace file. If you are unsure, do not retry. At most two launch attempts may produce at most one Test Agent execution.
 
 A missing launcher, an unsafe-to-retry failure, or failure of the one safe retry is `cli_failed`, not score zero. A misrouted launch is never safe to retry.
 
 Verify after the run that the State version and both directory snapshots are unchanged. Return `version_changed`, `invalid_statement`, or `invalid_rubric` on a mismatch.
 
-Inspect only new or changed Trace files. Bind exactly one root Test Trace whose `session_meta` matches the Workspace, Test Agent State path, provider, and model id. Exclude directly referenced child Session ids. No match, multiple matches, malformed metadata, or an identity mismatch is `provenance_mismatch`; do not search unrelated Sessions to repair it.
+Inspect only new or changed Trace files. Bind exactly one root Test Trace. Its `session_meta` must match the Workspace, Test Agent State path, provider, and model id. Exclude directly referenced child Session ids. Return `provenance_mismatch` if there is no unique valid match. Do not search unrelated Sessions to repair it.
 
 ## Score
 
@@ -69,7 +69,7 @@ Inspect only the isolated Workspace, the bound Test Trace, and the private Rubri
 
 Test Agent output errors are scored behavior and return `status: ok`. Return `invalid_rubric` when the Rubric cannot be applied unambiguously and `invalid_score` when the result is non-finite or outside `0..case_max`.
 
-Set `duration_ms` from the root Test Session. Compute cost from reliable final cumulative usage in that Session and any directly referenced child Traces found in the same bounded pass; otherwise return `cost: null`. Missing cost data must not invalidate a score.
+Set `duration_ms` from the root Test Session. Compute cost from reliable final cumulative usage in that Session and directly referenced child Traces found in the same bounded pass. If the required data is unavailable, return `cost: null`. Missing cost data must not invalidate a score.
 
 ## Return
 
