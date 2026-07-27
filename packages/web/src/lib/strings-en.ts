@@ -57,6 +57,8 @@ export const en: Strings = {
   /** Version footer, update reminder, and admin self-update in the sidebar user menu. */
   update: {
     version: "Version",
+    /** Version-line date label; `date` is formatMonthDay output, e.g. "Last updated Jul 26". */
+    lastUpdated: (date: string) => `Last updated ${date}`,
     newVersion: (v: string) => `New version v${v} available`,
     releaseNotes: "Release notes",
     updateNow: "Update now",

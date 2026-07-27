@@ -136,6 +136,42 @@ export function formatDateTime(iso: string): string {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
 
+/** English month abbreviations for formatMonthDay (Intl-free — see the rationale there). */
+const EN_MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+] as const;
+
+/**
+ * `yyyy-mm-dd` (or a full ISO timestamp — only the date part is read) → localized
+ * month + day, no year: en `Jul 26`, zh `7 月 26 日` (the version footer's "last
+ * updated" date, product-specified wording — the zh form keeps the CJK/numeral
+ * spacing the owner asked for, which `Intl` would drop). The fields are read
+ * straight from the string rather than via `new Date()` + local-zone formatting:
+ * the input is a UTC calendar date (core's stamped BUILD_DATE, a release's
+ * publish timestamp), and round-tripping it through the viewer's timezone would
+ * render the previous day west of UTC. Unparsable or out-of-range input returns
+ * unchanged (same convention as formatDateTime).
+ */
+export function formatMonthDay(iso: string, locale: "zh" | "en"): string {
+  const m = /^\d{4}-(\d{2})-(\d{2})(?:$|T)/.exec(iso);
+  if (!m) return iso;
+  const month = Number(m[1]);
+  const day = Number(m[2]);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return iso;
+  return locale === "en" ? `${EN_MONTHS[month - 1]} ${day}` : `${month} 月 ${day} 日`;
+}
+
 /**
  * Millisecond timestamp → human-readable message time: en `Jul 2, 2:58 PM` /
  * zh `7月2日 14:58`; returns an empty string for an invalid value.

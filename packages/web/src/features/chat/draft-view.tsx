@@ -40,8 +40,10 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
+import { formatMonthDay } from "../../lib/format";
 import { apiErrorText } from "../../lib/api-error";
 import { useAuth } from "../../state/auth";
+import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
@@ -668,20 +670,24 @@ export function DraftView({
 }
 
 /**
- * Quiet version line under the brand subtitle: `PenguinHarness vX.Y.Z · <date>` (the
- * stamped build date, else the running release's publish date from the update check),
- * plus a release-notes link when a newer release is known. Fetching starts on mount —
- * useVersionInfo caches at module level, so after the first resolution anywhere in the
- * app this renders instantly and never refetches. Nothing renders until the version
- * resolves (no placeholder flicker under the brand).
+ * Quiet version line under the brand subtitle: `PenguinHarness vX.Y.Z · 最近更新日期
+ * 7 月 26 日` / `… · Last updated Jul 26` (the stamped build date, else the running
+ * release's publish date from the update check, through the same localized label the
+ * sidebar footer uses), plus a release-notes link when a newer release is known.
+ * Fetching starts on mount — useVersionInfo caches at module level, so after the first
+ * resolution anywhere in the app this renders instantly and never refetches. Nothing
+ * renders until the version resolves (no placeholder flicker under the brand).
  */
 function VersionLine() {
+  const { locale } = useLocale();
   const { version, update } = useVersionInfo(true);
   if (version === null) return null;
-  const date = version.buildDate ?? update?.currentPublishedAt?.slice(0, 10) ?? null;
+  const date = version.buildDate ?? update?.currentPublishedAt ?? null;
   return (
     <p className="mt-1.5 text-xs text-gray-400 dark:text-gray-500">
-      {`PenguinHarness v${version.version}${date !== null ? ` · ${date}` : ""}`}
+      {`PenguinHarness v${version.version}${
+        date !== null ? ` · ${S.update.lastUpdated(formatMonthDay(date, locale))}` : ""
+      }`}
       {update !== null &&
         update.updateAvailable &&
         update.latestVersion !== null &&

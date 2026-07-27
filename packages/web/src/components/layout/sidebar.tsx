@@ -25,6 +25,7 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
+import { formatMonthDay } from "../../lib/format";
 import { apiErrorText } from "../../lib/api-error";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
@@ -192,7 +193,7 @@ export function Sidebar({
   const { user, logout } = useAuth();
   const { mode, setMode, fontScale, setFontScale, accent, setAccent, currency, setCurrency } =
     useTheme();
-  const { lang, setLang } = useLocale();
+  const { lang, locale, setLang } = useLocale();
   const {
     projects,
     currentProject,
@@ -227,14 +228,13 @@ export function Sidebar({
   const { version, update } = useVersionInfo(userOpen);
   const updateAvailable = update?.updateAvailable === true;
   // Footer date: the stamped build date, else the running release's publish date from the
-  // update check (date part only — installs released before date stamping, see
-  // UpdateCheckResponse.currentPublishedAt). Both requests start together on first open;
-  // the version line renders as soon as /api/version resolves and the date simply appears
-  // once the update check lands — the footer never waits for it.
+  // update check (installs released before date stamping, see
+  // UpdateCheckResponse.currentPublishedAt); rendered as the localized "last updated"
+  // label + month/day (formatMonthDay reads the date part itself). Both requests start
+  // together on first open; the version line renders as soon as /api/version resolves and
+  // the date simply appears once the update check lands — the footer never waits for it.
   const versionDate =
-    version === null
-      ? null
-      : (version.buildDate ?? update?.currentPublishedAt?.slice(0, 10) ?? null);
+    version === null ? null : (version.buildDate ?? update?.currentPublishedAt ?? null);
   const currentProjectId = currentProject?.projectId ?? null;
   const collapseStoreKey = currentProjectId === null ? null : collapsedGroupsKey(currentProjectId);
   const pinStoreKey = currentProjectId === null ? null : pinnedGroupsKey(currentProjectId);
@@ -1090,7 +1090,11 @@ export function Sidebar({
               className="mt-1 border-t border-gray-100 px-3.5 py-2 text-xs text-gray-400 dark:border-gray-800 dark:text-gray-500"
               title={S.update.version}
             >
-              {`PenguinHarness v${version.version}${versionDate !== null ? ` · ${versionDate}` : ""}`}
+              {`PenguinHarness v${version.version}${
+                versionDate !== null
+                  ? ` · ${S.update.lastUpdated(formatMonthDay(versionDate, locale))}`
+                  : ""
+              }`}
             </div>
           )}
         </Dropdown>
