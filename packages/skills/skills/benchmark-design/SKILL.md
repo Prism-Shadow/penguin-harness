@@ -4,7 +4,7 @@ description: Design and calibrate a multi-Case capability Benchmark and establis
 short_description: Design and calibrate an Agent capability Benchmark.
 short_description_zh: 设计并校准 Agent 能力评测 Benchmark。
 version: 7
-updated: 2026-07-27T09:57:04Z
+updated: 2026-07-27T10:19:22Z
 ---
 
 # Benchmark Design
@@ -74,24 +74,23 @@ Before evaluating a Pilot Case, compare its public Statement and supporting file
 
 ## Run evaluations
 
-The Benchmark Designer owns the Pilot and Formal evaluation sets. This includes their Case and Run loops, concurrency, ledger, and returned failures. The Evaluator handles one cell and may retry only a launch that failed before the Test Agent started. For each required `(case_id, run)` pair:
+The Benchmark Designer owns the Pilot and Formal evaluation sets. This includes their Case and Run loops, concurrency, ledger, and returned failures. The Evaluator handles one cell and may retry only a launch that failed before the Test Agent started.
 
-1. Call `run_subagent` to start an independent worker.
-2. Tell the worker to use `agent-evaluation` to run the specified Test Agent on that Case exactly once and score only that execution.
-3. Send the complete request below.
-4. Across the worker's streamed and final responses, accept only one protocol YAML document. Transport status metadata added by `run_subagent` is not commentary; any worker-authored narration makes the protocol invalid.
+For each required `(case_id, run)` pair, call `run_subagent` once with the complete prompt below. This delegates exactly one execution to an independent worker, which must use `agent-evaluation` to run and score that cell.
 
-   ```text
-   Use the `agent-evaluation` Skill. Run the specified Test Agent on the specified Case exactly once, then score that single execution.
-   protocol_version: 1
-   case_id: <case_id>
-   run: <1_based_run_index>
-   expected_version: <test_agent_state_version>
-   test_agent_id: <test_agent_id>
-   benchmark_id: <benchmark_id>
-   provider: <provider>
-   model_id: <model_id>
-   ```
+```text
+Use the `agent-evaluation` Skill. Run the specified Test Agent on the specified Case exactly once, then score that single execution.
+protocol_version: 1
+case_id: <case_id>
+run: <1_based_run_index>
+expected_version: <test_agent_state_version>
+test_agent_id: <test_agent_id>
+benchmark_id: <benchmark_id>
+provider: <provider>
+model_id: <model_id>
+```
+
+Across the worker's streamed and final responses, accept only one protocol YAML document. Transport status metadata added by `run_subagent` is not commentary; any worker-authored narration makes the protocol invalid.
 
 Track each evaluation by phase, Pilot iteration, Case, Run, and attempt. Before dispatch, list every required cell as `queued`. Mark it `in_flight` when dispatched and `completed` only after a valid result. Never dispatch an `in_flight` or valid `completed` cell again.
 
