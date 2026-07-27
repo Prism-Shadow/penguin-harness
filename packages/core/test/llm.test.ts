@@ -1113,9 +1113,15 @@ describe("isRetryableError", () => {
     expect(isRetryableError({ code: "UND_ERR_CONNECT_TIMEOUT" })).toBe(true);
     expect(isRetryableError({ code: "UND_ERR_HEADERS_TIMEOUT" })).toBe(true);
     expect(isRetryableError({ code: "UND_ERR_BODY_TIMEOUT" })).toBe(true);
-    // A cause-less "terminated" / "fetch failed" still counts via the message keywords.
-    expect(isRetryableError(new TypeError("terminated"))).toBe(true);
+    // A cause-less "fetch failed" still counts via the message keywords; "terminated" only
+    // counts alongside transport vocabulary — the real socket case always carries the
+    // UND_ERR_* code on its cause, and bare "terminated" appears in unrelated provider
+    // copy too (see the content-filter counter-case below).
     expect(isRetryableError(new TypeError("fetch failed"))).toBe(true);
+    expect(isRetryableError(new TypeError("terminated: other side closed"))).toBe(true);
+    expect(isRetryableError(new TypeError("terminated"))).toBe(false);
+    // Provider verdict copy that merely contains the word must NOT retry.
+    expect(isRetryableError(new Error("Request terminated by content filter"))).toBe(false);
     // Classic Node codes wrapped one level down are found too.
     expect(
       isRetryableError(
@@ -1148,6 +1154,28 @@ describe("isRetryableError", () => {
     expect(isRetryableError({ status: 404 })).toBe(false);
     // 401 keeps its auth classification even with a quota-looking message.
     expect(isRetryableError({ status: 401, message: "quota" })).toBe(false);
+  });
+
+  it("auth wins over the quota heuristic: a definitive credential signal is never retried", () => {
+    // The adversarial case: a 403 whose BODY carries a definitive auth code but whose
+    // MESSAGE mentions a subscription (SDKs routinely put the body's message on
+    // err.message). The quota keyword fallback must not swallow it — auth is checked
+    // first, so it classifies failed (dead credential) instead of burning every reconnect.
+    const err = Object.assign(new Error("subscription key invalid"), {
+      status: 403,
+      error: { code: "invalid_api_key" },
+    });
+    expect(isAuthenticationError(err)).toBe(true);
+    expect(isQuotaExhaustedError(err)).toBe(false); // belt: an auth signal is never quota
+    expect(isRetryableError(err)).toBe(false); // never retried, never reclassified
+    // Same with the auth signal on the cause chain.
+    expect(
+      isRetryableError(
+        new Error("request failed: quota subscription issue", {
+          cause: { status: 403, error: { type: "authentication_error" } },
+        }),
+      ),
+    ).toBe(false);
   });
 
   it("does not retry abort or unknown local errors", () => {
@@ -1579,6 +1607,26 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
     expect(outcome2.code).toBeUndefined();
   });
 
+  it("an auth error dressed in quota language still funnels to failed + code auth", async () => {
+    // The adversarial case from the review: 403 + body code invalid_api_key + a message
+    // mentioning the subscription. Must NOT classify as retryable quota (timeout): the
+    // ordering fix keeps the dead credential out of the reconnect loop entirely.
+    async function* dressedAuthError(): AsyncGenerator<UniEvent> {
+      throw Object.assign(new Error("subscription key invalid"), {
+        status: 403,
+        error: { code: "invalid_api_key" },
+      });
+    }
+    const model = new SeamModel(() => dressedAuthError());
+    const { messages, outcome } = await drain(
+      model.streamGenerate({ newMessages: [userText("go")] }),
+    );
+    expect(outcome.status).toBe("failed");
+    expect(outcome.code).toBe("auth");
+    expect(outcome.message).toContain("subscription key invalid");
+    expect(messages.map(typeOf)).not.toContain("token_usage");
+  });
+
   it("classifies provider quota exhaustion (403 + code) as timeout — the reconnect path", async () => {
     async function* quotaError(): AsyncGenerator<UniEvent> {
       throw Object.assign(new Error("订阅额度不足 no active subscription"), {
@@ -1591,6 +1639,9 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
       model.streamGenerate({ newMessages: [userText("go")] }),
     );
     expect(outcome.status).toBe("timeout");
+    // The real reason rides on the outcome (request_end -> the Cost center's errors panel
+    // shows it): a retried quota rejection must not surface as a bare "timeout".
+    expect(outcome.message).toContain("insufficient_user_quota");
     expect(messages.map(typeOf)).not.toContain("token_usage");
   });
 

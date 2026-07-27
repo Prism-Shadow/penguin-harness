@@ -100,13 +100,32 @@ const server = http.createServer((req, res) => {
     // first request; the mock can only tell them apart by request count (see the malformedTurns counter).
     const wantsMalformed = flat.includes("bad stream test");
 
-    // "Auth dead" test case: the key is rejected on every request — a 401 with an
-    // OpenAI-compatible body code. GenerativeModel classifies it failed + code "auth"
-    // (never retried); the abort event carries the code and the web composer disables
-    // itself. Gated on !isTitle so a stray title request doesn't hit this branch.
+    // "Auth dead" test case: KEY-BASED — requests carrying the bad key (`sk-auth-bad`,
+    // the Anthropic protocol sends it as the x-api-key header) are rejected with a 401 +
+    // OpenAI-compatible body code; any other key succeeds with a plain text answer. This
+    // exercises the recoverable flow end to end: GenerativeModel classifies the 401 as
+    // failed + code "auth" (never retried) and the composer goes dead; once the spec
+    // updates the model's key via PUT /models, the very same conversation continues
+    // (live unlock via credentials_updated + runtime invalidation re-reading the config).
+    // Gated on !isTitle so a stray title request doesn't hit this branch.
     if (flat.includes("auth dead test") && !isTitle) {
-      res.writeHead(401, { "content-type": "application/json" });
-      res.end(JSON.stringify({ error: { code: "invalid_api_key", message: "invalid x-api-key" } }));
+      if (req.headers["x-api-key"] === "sk-auth-bad") {
+        res.writeHead(401, { "content-type": "application/json" });
+        res.end(
+          JSON.stringify({ error: { code: "invalid_api_key", message: "invalid x-api-key" } }),
+        );
+        return;
+      }
+      res.writeHead(200, {
+        "content-type": "text/event-stream",
+        "cache-control": "no-cache",
+        connection: "keep-alive",
+      });
+      messageStart(res, msgCount);
+      block(res, 0, { type: "text", text: "" }, [
+        { type: "text_delta", text: "Auth restored; hello again." },
+      ]);
+      messageStop(res, "end_turn", 8);
       return;
     }
 

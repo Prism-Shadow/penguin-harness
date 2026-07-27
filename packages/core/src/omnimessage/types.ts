@@ -255,8 +255,10 @@ export interface AbortPayload {
   reason?: string | null;
   /**
    * Machine-readable failure class; currently only `"auth"`: the run ended on a
-   * credentials/authentication error that no retry or future Task on this Session can fix
-   * (its model + credentials are fixed at creation) — hosts use it to disable the Session.
+   * credentials/authentication error that no in-run retry can fix. Only the model
+   * REFERENCE is fixed at Session creation — credentials are read from the current
+   * Project config when the Session loads — so hosts should point the user at updating
+   * that model's API key (Models page), after which this Session can continue.
    */
   code?: string;
 }
@@ -285,6 +287,14 @@ export interface RequestEndPayload {
   type: "request_end";
   /** Terminal state of this Request (reuses the five StopReason values, sharing its source with this turn's complete message's stop_reason / LLMOutcome). */
   status: StopReason;
+  /**
+   * Failure detail from `LLMOutcome.message`, present only on non-completed statuses: the
+   * real reason behind a retried/failed Request (e.g. `403 … (insufficient_user_quota)`),
+   * for observability — the server's error records / Cost center read it here because a
+   * retried request never produces an abort event. Additive: old Traces without it replay
+   * unchanged.
+   */
+  message?: string;
 }
 
 /** Compaction trigger reason: context threshold / turn-count threshold / user-initiated request. */

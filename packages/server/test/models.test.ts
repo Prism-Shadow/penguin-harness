@@ -13,7 +13,7 @@ import type { AddressInfo } from "node:net";
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { MODEL_CATALOG } from "@prismshadow/penguin-core";
+import { MODEL_CATALOG, userText } from "@prismshadow/penguin-core";
 import type {
   ModelsResponse,
   ModelTestResponse,
@@ -21,7 +21,9 @@ import type {
   SessionCreateResponse,
 } from "../src/api/types.js";
 import { ProjectConfigService } from "../src/services/project-config-service.js";
-import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.js";
+import type { RuntimeSession } from "../src/runtime/session-manager.js";
+import type { ChannelEvent } from "../src/runtime/channel.js";
+import { apiClient, createTestApp, loginAdmin, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
 /** Catalog paired refs (config primary key = (provider, model_id)). */
@@ -581,5 +583,135 @@ describe("模型引用改键与连通性测试", () => {
     } finally {
       if (prev !== undefined) process.env.OPENAI_API_KEY = prev;
     }
+  });
+});
+
+describe("models update reaches loaded sessions (invalidation + live unlock)", () => {
+  let t: TestApp;
+  let api: ReturnType<typeof apiClient>;
+  let projectId: string;
+  /** Loader call count: how many times the manager (re)built a runtime from the index. */
+  let loads: number;
+
+  /** Minimal fake runtime Session (no LLM calls; mirrors vault.test.ts). */
+  const fakeRuntimeSession = (sessionId: string): RuntimeSession => ({
+    sessionId,
+    toolPermission: () => "rw",
+    generateTitle: async () => ({ title: null, usage: null }),
+    compactability: () => "ok" as const,
+    steer: () => false,
+    async *run() {},
+    async *compact() {},
+  });
+
+  const insertSession = (sessionId: string, project: string): void => {
+    t.deps.sessionsRepo.insert({
+      sessionId,
+      projectId: project,
+      agentId: "default_agent",
+      modelId: "m1",
+      provider: "custom",
+      workspace: t.root,
+      approvalMode: "allow-all",
+      title: null,
+      createdAt: new Date().toISOString(),
+    });
+  };
+
+  const putModels = (apiKey: string) =>
+    api.put(`/api/projects/${projectId}/models`, {
+      defaultModel: { provider: "custom", modelId: "m-inv" },
+      models: [{ provider: "custom", modelId: "m-inv", apiKey }],
+    });
+
+  beforeEach(async () => {
+    loads = 0;
+    t = await createTestApp({
+      loader: {
+        load: async (row) => {
+          loads++;
+          return fakeRuntimeSession(row.sessionId);
+        },
+      },
+    });
+    const { cookie } = await provisionUser(t.app, "inv_owner");
+    api = apiClient(t.app, cookie);
+    const created = (await (
+      await api.post("/api/projects", { projectId: "inv_owner-models", name: "invalidation" })
+    ).json()) as ProjectCreateResponse;
+    projectId = created.project.projectId;
+  });
+  afterEach(async () => {
+    await t.cleanup();
+  });
+
+  it("PUT invalidates the Project's cached Session runtimes: the next Task re-resumes with the new key", async () => {
+    insertSession("models-sess-1", projectId);
+    const idle = () => t.deps.manager.statusOf("models-sess-1") === "idle";
+
+    // First Task builds the runtime (load #1); the second reuses the active-table entry.
+    await t.deps.manager.startTask("models-sess-1", [userText("a")]);
+    await waitFor(idle);
+    await t.deps.manager.startTask("models-sess-1", [userText("b")]);
+    await waitFor(idle);
+    expect(loads).toBe(1);
+
+    // Key update via the API: the cached runtime is stale, so the next Task re-resumes
+    // (the loader re-reads the Project config — the new api_key reaches the next Task).
+    expect((await putModels("sk-fresh-key-000111")).status).toBe(200);
+    await t.deps.manager.startTask("models-sess-1", [userText("c")]);
+    await waitFor(idle);
+    expect(loads).toBe(2);
+
+    // Reads don't invalidate: the rebuilt runtime is reused.
+    expect((await api.get(`/api/projects/${projectId}/models`)).status).toBe(200);
+    await t.deps.manager.startTask("models-sess-1", [userText("d")]);
+    await waitFor(idle);
+    expect(loads).toBe(2);
+  });
+
+  it("PUT publishes credentials_updated to the Project's existing session channels only", async () => {
+    insertSession("models-sess-live", projectId);
+    insertSession("models-sess-cold", projectId);
+    // A session of ANOTHER project must not receive the event.
+    const other = (await (
+      await api.post("/api/projects", { projectId: "inv_owner-other", name: "other" })
+    ).json()) as ProjectCreateResponse;
+    insertSession("other-sess", other.project.projectId);
+
+    // Only the "live" session has an open channel (a subscribed tab); "cold" has none.
+    const events: ChannelEvent[] = [];
+    t.deps.channels.get("models-sess-live").subscribe((e) => events.push(e));
+    const otherEvents: ChannelEvent[] = [];
+    t.deps.channels.get("other-sess").subscribe((e) => otherEvents.push(e));
+
+    expect((await putModels("sk-live-key-000222")).status).toBe(200);
+
+    const types = events
+      .filter((e) => e.event === "server_event")
+      .map((e) => (JSON.parse(e.data) as { type: string }).type);
+    expect(types).toContain("credentials_updated");
+    // Cross-project channels stay silent, and no channel is created for unsubscribed sessions.
+    expect(
+      otherEvents
+        .filter((e) => e.event === "server_event")
+        .map((e) => (JSON.parse(e.data) as { type: string }).type),
+    ).not.toContain("credentials_updated");
+    expect(t.deps.channels.peek("models-sess-cold")).toBeUndefined();
+  });
+
+  it("GET/PUT responses expose updatedAt (config file mtime) for the web's auth-dead gate", async () => {
+    const before = Date.now() - 60_000;
+    const put = await putModels("sk-ts-key-000333");
+    expect(put.status).toBe(200);
+    const putBody = (await put.json()) as ModelsResponse;
+    expect(typeof putBody.updatedAt).toBe("string");
+    expect(Date.parse(putBody.updatedAt!)).toBeGreaterThan(before);
+
+    const get = await api.get(`/api/projects/${projectId}/models`);
+    const getBody = (await get.json()) as ModelsResponse;
+    expect(typeof getBody.updatedAt).toBe("string");
+    // Reads don't bump it: still the PUT's write time (same file mtime).
+    expect(Date.parse(getBody.updatedAt!)).toBeGreaterThanOrEqual(Date.parse(putBody.updatedAt!));
   });
 });

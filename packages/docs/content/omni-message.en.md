@@ -190,6 +190,10 @@ interface RequestBeginPayload {
 interface RequestEndPayload {
   type: "request_end";
   status: StopReason;         // "completed" is the mechanical commit criterion for replay
+  message?: string;           // failure detail (LLMOutcome.message), non-completed only:
+                              // the real reason behind a retried/failed Request (e.g. a
+                              // provider quota code) — read by the Cost center's errors
+                              // panel; additive, old Traces replay unchanged
 }
 
 interface ApprovalDecisionPayload {
@@ -233,8 +237,11 @@ interface AbortPayload {
   type: "abort";
   reason?: string | null;
   code?: string;              // machine-readable failure class; currently only "auth":
-                              // a credentials failure no retry or future Task on this
-                              // Session can fix — hosts disable the Session on it
+                              // a credentials failure no in-run retry can fix. Only the
+                              // model reference is fixed at Session creation — credentials
+                              // come from the current Project config — so hosts disable
+                              // input until the model's credential is updated, after
+                              // which the Session can continue
 }
 
 interface SubagentPayload {

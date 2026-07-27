@@ -51,10 +51,14 @@ The generator yields `partial_*` fragments and complete messages, emits Token us
 ```ts
 interface LLMOutcome {
   status: StopReason;   // completed | timeout | malformed | aborted | failed
-  message?: string;     // display text when failed
-  code?: "auth";        // machine-readable failure class: a credentials error no retry
-                        // or future Task on this Session can fix (model + credentials
-                        // are fixed at Session creation); carried onto the abort event
+  message?: string;     // failure detail: on failed, and on timeout/malformed when a
+                        // concrete error was caught — carried onto request_end so the
+                        // errors panel shows the real reason behind a retried request
+  code?: "auth";        // machine-readable failure class: a credentials error no in-run
+                        // retry can fix. Only the model reference is fixed at Session
+                        // creation — credentials come from the current Project config —
+                        // so updating that model's API key lets the Session continue;
+                        // carried onto the abort event
 }
 ```
 

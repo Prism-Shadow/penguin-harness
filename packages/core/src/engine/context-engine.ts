@@ -152,10 +152,29 @@ export interface ContextEngineDeps {
   initialState?: EngineInitialState;
   /** Maximum LLM turns for a single Task. Defaults to 100; -1 removes the cap. */
   maxTurns?: number;
-  /** Maximum automatic retries for LLM timeout/reconnect within a single run. Defaults to 5. */
+  /**
+   * Maximum automatic retries for LLM timeout/reconnect within a single run. Defaults
+   * to 8: with the default backoff (250ms base, 30s ceiling) that is ≈62s of total
+   * patience — the first attempts stay fast enough for transport blips while the tail
+   * gives transient provider rejections (quota refresh, gateway buckets) a real window.
+   */
   maxReconnects?: number;
-  /** Linear backoff base (ms) before each reconnect retry; actual backoff = base × retry number. Defaults to 250. */
+  /**
+   * Exponential backoff base (ms): the wait before reconnect retry N is
+   * `base × 2^(N−1)`, capped at `reconnectBackoffMaxMs` (see reconnectDelayMs).
+   * Defaults to 250.
+   */
   reconnectBackoffMs?: number;
+  /** Ceiling (ms) for a single reconnect backoff wait. Defaults to 30000. */
+  reconnectBackoffMaxMs?: number;
+  /**
+   * Maximum retries for a failing compaction request (instead of the shared
+   * `maxReconnects`). Compaction failure already has graceful semantics — the original
+   * context is kept and compaction retries on the next trigger — so it fails fast
+   * (~1.75s of backoff) rather than stalling the session through the full reconnect
+   * ladder. Defaults to 3.
+   */
+  compactionMaxReconnects?: number;
   /**
    * Creates a new LLM object after compaction (a fresh model context); the argument is the
    * current Session cumulative token counts, for the new object to carry forward
@@ -232,10 +251,24 @@ class MergeQueue {
   }
 }
 
+/**
+ * Delay before reconnect attempt N (1-based): exponential growth from `base` with a hard
+ * ceiling `max` — `min(base × 2^(N−1), max)`. With the defaults (250ms base, 30s ceiling,
+ * 8 reconnects) the ladder is 250, 500, 1000, 2000, 4000, 8000, 16000, 30000 ≈ 62s of
+ * total patience: one shared schedule serves every retryable class, so it is sized for the
+ * slowest one (transient provider quota errors) while the first steps stay as fast as a
+ * transport blip needs.
+ */
+export function reconnectDelayMs(base: number, max: number, attempt: number): number {
+  return Math.min(base * 2 ** (attempt - 1), max);
+}
+
 export class ContextEngine {
   private readonly maxTurns: number;
   private readonly maxReconnects: number;
   private readonly reconnectBackoffMs: number;
+  private readonly reconnectBackoffMaxMs: number;
+  private readonly compactionMaxReconnects: number;
   /** Interruption cleanup: content to resend generated when the previous run was aborted, held on the engine across runs. */
   private pendingCarryOver: OmniMessage[] = [];
   /** Current LLM object; swapped for a new one created by `createLLM` after a successful compaction (a fresh model context). */
@@ -274,8 +307,10 @@ export class ContextEngine {
 
   constructor(private readonly deps: ContextEngineDeps) {
     this.maxTurns = deps.maxTurns ?? 100;
-    this.maxReconnects = deps.maxReconnects ?? 5;
+    this.maxReconnects = deps.maxReconnects ?? 8;
     this.reconnectBackoffMs = deps.reconnectBackoffMs ?? 250;
+    this.reconnectBackoffMaxMs = deps.reconnectBackoffMaxMs ?? 30_000;
+    this.compactionMaxReconnects = deps.compactionMaxReconnects ?? 3;
     this.llm = deps.llm;
     // Session resumption: apply the initial state derived from replay.
     const init = deps.initialState;
@@ -454,7 +489,14 @@ export class ContextEngine {
         if (reconnects >= this.maxReconnects) {
           this.pendingCarryOver = attemptInput;
           const reason = turn.outcome.status === "malformed" ? "malformed response" : "reconnect";
-          yield* this.emitAbort(`${reason} failed after ${this.maxReconnects} retries`);
+          // Defense-in-depth: forward the outcome's machine-readable code when one is
+          // present. With auth classified before the retryable check it never enters this
+          // loop today — but if a credential error ever slips through, the exhaustion
+          // abort must still reach hosts as "auth", not as a plain failure.
+          yield* this.emitAbort(
+            `${reason} failed after ${this.maxReconnects} retries`,
+            turn.outcome.code,
+          );
           return;
         }
         reconnects += 1;
@@ -591,12 +633,14 @@ export class ContextEngine {
   }
 
   /**
-   * Linear backoff before a reconnect retry (base × retry number, numbering starts at 1);
-   * returns false if the user interrupts during the backoff, so the caller can proceed to
-   * interruption cleanup.
+   * Exponential backoff before a reconnect retry (`reconnectDelayMs` of the configured
+   * base/ceiling; attempt numbering starts at 1); returns false if the user interrupts
+   * during the backoff — the abort listener also fires mid-wait, so even a 30s ceiling
+   * wait hands control back immediately — letting the caller proceed to interruption
+   * cleanup.
    */
   private backoff(attempt: number, signal?: AbortSignal): Promise<boolean> {
-    const ms = this.reconnectBackoffMs * attempt;
+    const ms = reconnectDelayMs(this.reconnectBackoffMs, this.reconnectBackoffMaxMs, attempt);
     return new Promise<boolean>((resolve) => {
       if (signal?.aborted) {
         resolve(false);
@@ -663,7 +707,10 @@ export class ContextEngine {
           const res = await gen.next();
           if (res.done) {
             outcome = res.value;
-            const stopEvt = requestEnd(outcome.status);
+            // Non-completed outcomes carry the failure detail onto the event: a retried
+            // request never produces an abort, so this is the only place observability
+            // (the errors panel) can learn the real reason (e.g. a quota code).
+            const stopEvt = requestEnd(outcome.status, outcome.message);
             queue.push(stopEvt);
             await this.write(stopEvt);
             break;
@@ -913,9 +960,10 @@ export class ContextEngine {
    * compaction request's streamed output is not pushed to the Human output stream (it emits
    * paired compaction events, plus the compaction request's `token_usage` — positioned between
    * the two events, so the frontend can count compaction cost into its stats), but it is written
-   * to the old Trace. timeout/malformed reconnect via the existing retry mechanism, collapsing
-   * to failed once retries are exhausted; on failure/abort, the original context and Trace index
-   * are kept — it does not fall back to discard.
+   * to the old Trace. timeout/malformed reconnect via the existing retry mechanism under the
+   * compaction-specific cap (`compactionMaxReconnects`, tighter than the turn loop's ladder),
+   * collapsing to failed once retries are exhausted; on failure/abort, the original context and
+   * Trace index are kept — it does not fall back to discard.
    * Docs: /docs/agent-loop § "Compaction".
    */
   private async *summarizeContext(
@@ -960,8 +1008,11 @@ export class ContextEngine {
         return { status: attempt.status };
       }
       // timeout / malformed: retried via reconnect. The compaction request was never committed
-      // by AgentHub (case B), so the original input is resent unchanged.
-      if (reconnects >= this.maxReconnects) {
+      // by AgentHub (case B), so the original input is resent unchanged. Compaction uses its
+      // own, tighter cap (not the shared maxReconnects): a failed compaction keeps the
+      // original context and retries on the next trigger, so failing fast beats holding the
+      // session through the full exponential ladder.
+      if (reconnects >= this.compactionMaxReconnects) {
         yield* this.emitCompactionEnd(reason, "summarize", "failed");
         return { status: "failed" };
       }
@@ -999,7 +1050,9 @@ export class ContextEngine {
     for (;;) {
       const res = await gen.next();
       if (res.done) {
-        await this.write(requestEnd(res.value.status));
+        // Same failure-detail pass-through as the turn loop's request_end (this event is
+        // written to the old Trace only, so the detail lands in the Trace record).
+        await this.write(requestEnd(res.value.status, res.value.message));
         return { status: res.value.status, text, usage };
       }
       const msg = res.value;

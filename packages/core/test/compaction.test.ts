@@ -399,7 +399,7 @@ describe("context compaction", () => {
       environment: fakeEnvironment,
       compaction: settings(),
       createLLM: () => llm1,
-      maxReconnects: 1,
+      compactionMaxReconnects: 1,
       reconnectBackoffMs: 1,
     });
 
@@ -409,6 +409,39 @@ describe("context compaction", () => {
     // The retry resends the original input (tool results + prompt; here there are no tool results, just the prompt).
     expect(llm1.calls).toHaveLength(3);
     expect(payloadTypes(llm1.calls[2]!)).toEqual(["text"]);
+  });
+
+  it("the compaction loop uses its own cap, not the shared maxReconnects ladder", async () => {
+    // Compaction failure has graceful semantics (the original context is kept, compaction
+    // retries on the next trigger), so it fails fast: with compactionMaxReconnects=2, the
+    // compaction request runs 1+2 attempts and gives up — even though maxReconnects is far
+    // larger and would have kept the session stalled through the full exponential ladder.
+    const llm1 = new ScriptedLLM(
+      [
+        { messages: [assistantText("answer"), usage(150, 150)] },
+        { messages: [], outcome: { status: "timeout" } },
+        { messages: [], outcome: { status: "timeout" } },
+        { messages: [], outcome: { status: "timeout" } },
+        // Never reached: the compaction cap stops at 3 compaction attempts in total.
+        { messages: [assistantText("[summary]late[/summary]")] },
+      ],
+      "llm1",
+    );
+    const engine = new ContextEngine({
+      llm: llm1,
+      environment: fakeEnvironment,
+      compaction: settings(),
+      createLLM: () => llm1,
+      maxReconnects: 8,
+      compactionMaxReconnects: 2,
+      reconnectBackoffMs: 1,
+    });
+
+    const out = await collect(engine.run([userText("go")], { approve: allowAll }));
+    const events = compactionEvents(out);
+    expect(events[1]).toMatchObject({ type: "compaction_end", status: "failed" });
+    // 1 turn request + 3 compaction attempts (initial + compactionMaxReconnects retries).
+    expect(llm1.calls).toHaveLength(4);
   });
 
   it("session turns reaching (==) the threshold compact at task end — no waiting for the next task", async () => {

@@ -406,6 +406,49 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
     });
   });
 
+  it("a retried failure keeps its real detail: request_end(timeout).message lands in the record", () => {
+    // The retry path: the engine reconnects (request_begin) and eventually succeeds, so no
+    // abort ever arrives for the staged failure — the request_end's own failure detail
+    // (LLMOutcome.message, e.g. a quota code) is the message of record, not the generic
+    // "timed out" status text. This is what the Cost center shows for a retried quota 403.
+    const got = feed([
+      requestBegin(),
+      requestEnd("timeout", "403 no active subscription (insufficient_user_quota)"),
+      requestBegin(),
+      requestEnd("completed"),
+    ]);
+    expect(got).toHaveLength(1);
+    expect(got[0]).toMatchObject({
+      source: "llm",
+      kind: "expected",
+      code: "llm_timeout",
+      message: "403 no active subscription (insufficient_user_quota)",
+    });
+  });
+
+  it("an abort reason still outranks the staged request_end detail (failed exit path)", () => {
+    const got = feed([
+      requestBegin(),
+      requestEnd("failed", "401 invalid x-api-key (invalid_api_key)"),
+      abortEvent("llm request error: 401 invalid x-api-key (invalid_api_key)"),
+    ]);
+    expect(got).toHaveLength(1);
+    // The abort's prose (with core's "llm request error" framing) wins over the raw detail.
+    expect(got[0]!.message).toBe("llm request error: 401 invalid x-api-key (invalid_api_key)");
+  });
+
+  it("interrupt during backoff with a staged detail: the detail wins over the status text", () => {
+    // The interrupt message is distrusted (not the failure's reason), but the staged
+    // request_end detail IS the failure's reason — prefer it over the generic status text.
+    const got = feed([
+      requestBegin(),
+      requestEnd("timeout", "403 quota exceeded (insufficient_user_quota)"),
+      abortEvent("aborted during reconnect backoff"),
+    ]);
+    expect(got).toHaveLength(1);
+    expect(got[0]!.message).toBe("403 quota exceeded (insufficient_user_quota)");
+  });
+
   it("aborted (user clicked Stop) is not an error: not recorded; neither is completed", () => {
     expect(
       feed([

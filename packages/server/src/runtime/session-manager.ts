@@ -396,6 +396,22 @@ export class SessionManager {
     this.agentGenerations.set(key, this.generationOf(projectId, agentId) + 1);
   }
 
+  /**
+   * After a Project's models/credentials change: invalidate every cached runtime in this
+   * Project, so the next Task re-resumes with the new api_key / base_url. Same
+   * effective-value semantics as invalidateAgentRuntimes — no hot swap into a Task already
+   * in flight. Iterating the active table is complete here, not a shortcut: the generation
+   * map only matters for runtimes that are already cached, and an Agent with no cached
+   * entry builds fresh through the loader anyway.
+   */
+  invalidateProjectRuntimes(projectId: string): void {
+    const agentIds = new Set<string>();
+    for (const e of this.entries.values()) {
+      if (e.projectId === projectId) agentIds.add(e.agentId);
+    }
+    for (const agentId of agentIds) this.invalidateAgentRuntimes(projectId, agentId);
+  }
+
   // —— Task / compaction drive ——
 
   /**

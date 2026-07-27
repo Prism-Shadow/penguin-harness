@@ -89,6 +89,8 @@ Member writes are owner-only.
 
 Every endpoint that names a model takes the complete `(provider, modelId)` pair. Nothing is inferred: a request carrying only one half is a 400, never a lookup. Where the reference itself is optional (Session creation, Schedules), omitting both halves selects the Project's default model.
 
+`PUT /models` also invalidates the Project's cached Session runtimes (same effective-value semantics as a vault update): no hot swap into a run already in flight, but the next Task on any Session of the Project re-resumes and reads the new `api_key` / `base_url`. It additionally publishes a `credentials_updated` event to the Project's open Session channels (see Streaming below), and the models response carries `updatedAt` (the config file's mtime) — the Web App compares it against the last auth failure to decide whether an auth-dead composer should stay disabled.
+
 ### Agents
 
 The paths below omit the `/api/projects/:projectId` prefix.
@@ -230,6 +232,7 @@ export type ServerEvent =
   | { type: "task_state"; state: "idle" | "running" | "compacting" }
   | { type: "session_title"; sessionId: string; title: string }
   | { type: "resync_required" }
+  | { type: "credentials_updated" }
   | { type: "hello" }
   | { type: "session_created"; projectId: string; agentId: string; sessionId: string; source: SessionSource }
   | { type: "schedule_fired"; projectId: string; agentId: string; name: string; sessionId: string }
@@ -242,6 +245,7 @@ export type ServerEvent =
 | task_state | The Session's run state flips (idle / running / compacting) |
 | session_title | The model-generated title after the first turn has been persisted |
 | resync_required | The Last-Event-ID was evicted from the buffer; the client must refetch history |
+| credentials_updated | The Project's model credentials changed (`PUT /models`): cached runtimes were invalidated, so the client clears any auth-dead composer state |
 | hello | Handshake on the user channel |
 | session_created | A new Session was registered (e.g. a subagent session) |
 | schedule_fired | A scheduled task fired and was delivered |

@@ -699,6 +699,41 @@ describe("session-manager", () => {
     expect(loads).toBe(2);
   });
 
+  it("invalidateProjectRuntimes: every cached entry in the Project is rebuilt; other Projects unaffected", async () => {
+    // Two Agents with cached runtimes in p1, one in p2 — a models/credential update to p1
+    // must reach BOTH of p1's Agents (collected from the active table) and leave p2 alone.
+    const rowA2: SessionRow = { ...ROW, sessionId: "session-2", agentId: "a2" };
+    const rowP2: SessionRow = { ...ROW, sessionId: "session-3", projectId: "p2" };
+    sessions.insert(rowA2);
+    sessions.insert(rowP2);
+    let loads = 0;
+    const loader: SessionLoader = {
+      load: async (row) => {
+        loads++;
+        return approvalFakeSession(row.sessionId);
+      },
+    };
+    const manager = makeManager(loader);
+    for (const sid of ["session-1", "session-2", "session-3"]) {
+      sessions.updateApprovalMode(sid, "allow-all");
+    }
+    manager.adopt(ROW, approvalFakeSession("session-1"));
+    manager.adopt(rowA2, approvalFakeSession("session-2"));
+    manager.adopt(rowP2, approvalFakeSession("session-3"));
+
+    manager.invalidateProjectRuntimes("p1");
+    // Both p1 entries are stale and rebuild through the loader on their next Task.
+    await manager.startTask("session-1", [userText("a")]);
+    await waitFor(() => manager.statusOf("session-1") === "idle");
+    await manager.startTask("session-2", [userText("b")]);
+    await waitFor(() => manager.statusOf("session-2") === "idle");
+    expect(loads).toBe(2);
+    // The p2 entry keeps its cached runtime.
+    await manager.startTask("session-3", [userText("c")]);
+    await waitFor(() => manager.statusOf("session-3") === "idle");
+    expect(loads).toBe(2);
+  });
+
   it("sweepIdle: entries that are running / have pending approvals are not evicted", async () => {
     const manager = makeManager(loaderOf(approvalFakeSession("session-1")));
     await manager.startTask("session-1", [userText("go")]);

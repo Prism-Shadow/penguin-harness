@@ -51,10 +51,12 @@ interface GenerativeModelParameters {
 ```ts
 interface LLMOutcome {
   status: StopReason;   // completed | timeout | malformed | aborted | failed
-  message?: string;     // failed 时的展示文案
-  code?: "auth";        // 机器可读的失败类别:凭据错误,重试或本 Session 的任何
-                        // 后续 Task 都无法修复(模型与凭据在 Session 创建时锁定);
-                        // 会透传到 abort 事件
+  message?: string;     // 失败详情:failed 时携带;timeout/malformed 捕获到具体错误时
+                        // 也携带——透传到 request_end,错误面板据此展示被重试请求
+                        // 背后的真实原因
+  code?: "auth";        // 机器可读的失败类别:凭据错误,引擎内重试无法修复。Session
+                        // 锁定的只是模型引用,凭据取自当前 Project 配置——更新该模型
+                        // 的 API key 后本 Session 即可继续;会透传到 abort 事件
 }
 ```
 

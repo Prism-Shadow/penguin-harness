@@ -29,7 +29,7 @@ import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { formatDateTime, formatMoney, humanizeDuration, humanizeTokens } from "../../lib/format";
 import { latestConversation } from "../../lib/session-grouping";
-import { approvalKey } from "../../lib/omni/stream-model";
+import { approvalKey, isModelAuthDead } from "../../lib/omni/stream-model";
 import { useTheme } from "../../state/theme";
 import { useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
@@ -595,6 +595,11 @@ export function ChatPage() {
     navigate(`/chat/${DRAFT_SESSION_ID}`);
   }, [navigate]);
 
+  // Auth-dead notice primary CTA: the Models page is where the credential is actually fixed.
+  const openModels = useCallback(() => {
+    navigate("/models");
+  }, [navigate]);
+
   // Real-time cost for this turn: converts the Task's bucketed usage using the session Model's
   // (paired reference) current pricing; null if no pricing is configured.
   const modelPricing = models?.models.find((m) => sameModelRef(m, activeModelRef))?.pricing;
@@ -643,6 +648,17 @@ export function ChatPage() {
   const emptyChat =
     selected !== null && !stream.loading && !stream.error && stream.model.items.length === 0;
 
+  // Auth-dead gate (recoverable): an auth abort is on record AND the Project's credentials
+  // have not been updated since — only the model reference is fixed at creation, credentials
+  // come from the current Project config, so a key update (Models page) unlocks the session
+  // (live via the credentials_updated event; across reloads via this time comparison against
+  // the models response's updatedAt).
+  const credsUpdatedMs = models?.updatedAt !== undefined ? Date.parse(models.updatedAt) : NaN;
+  const modelAuthDead = isModelAuthDead(
+    stream.lastAuthAbortMs,
+    Number.isFinite(credsUpdatedMs) ? credsUpdatedMs : null,
+  );
+
   // Input area in session state: Agent / Workspace / Model are already locked by the Session
   // (the model selector isn't rendered; models feeds the locked model's read-only display and
   // the /model switch picker) — approval mode and the per-turn thinking level stay editable;
@@ -650,10 +666,9 @@ export function ChatPage() {
   const input = selected && (
     <ChatInput
       status={stream.taskState}
-      // Auth-dead session (model credentials failed): the composer disables itself and offers
-      // a jump to a fresh draft — the Session's model+key are fixed at creation, so no retry
-      // in this Session can ever succeed.
-      modelAuthDead={stream.modelAuthDead}
+      modelAuthDead={modelAuthDead}
+      onOpenModels={openModels}
+      onRetryModelAuth={stream.dismissModelAuthDead}
       onNewSession={newChat}
       onSend={onSend}
       onSteer={onSteer}

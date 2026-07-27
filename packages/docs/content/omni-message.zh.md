@@ -189,6 +189,9 @@ interface RequestBeginPayload {
 interface RequestEndPayload {
   type: "request_end";
   status: StopReason;         // completed 是回放判定「该轮已提交」的机械标准
+  message?: string;           // 失败详情(LLMOutcome.message),仅非 completed 携带:
+                              // 被重试/失败的 Request 背后的真实原因(如供应商额度码),
+                              // 供成本中心错误面板读取;增量字段,旧 Trace 回放不受影响
 }
 
 interface ApprovalDecisionPayload {
@@ -231,8 +234,10 @@ interface CompactionEndPayload {
 interface AbortPayload {
   type: "abort";
   reason?: string | null;
-  code?: string;              // 机器可读的失败类别;目前仅 "auth":凭据错误,重试或本
-                              // Session 的任何后续 Task 都无法修复——宿主据此禁用该 Session
+  code?: string;              // 机器可读的失败类别;目前仅 "auth":凭据错误,引擎内重试
+                              // 无法修复。Session 锁定的只是模型引用,凭据取自当前
+                              // Project 配置——宿主据此禁用输入,该模型凭据更新后
+                              // 本 Session 即可继续
 }
 
 interface SubagentPayload {

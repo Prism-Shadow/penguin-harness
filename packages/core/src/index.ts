@@ -29,7 +29,7 @@ export * from "./environment/index.js";
 export * from "./trace/index.js";
 
 // Runtime entry points
-export { ContextEngine } from "./engine/context-engine.js";
+export { ContextEngine, reconnectDelayMs } from "./engine/context-engine.js";
 export type {
   CompactAvailability,
   CompactionSettings,

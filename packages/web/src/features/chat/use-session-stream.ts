@@ -39,12 +39,20 @@ export interface SessionStreamState {
   /** Queued follow-up count from the stream's task_state events (auto-sent once the session is idle). */
   queuedFollowUps: number;
   /**
-   * The Session's model credentials failed authentication (abort event with code "auth" on
-   * the main session): the Session can never run again — the input area disables itself and
-   * points the user at a new Session. Derived from the model, so it survives history replay
-   * and resets when switching sessions.
+   * Timestamp (ms) of the last main-session auth failure (abort event with code "auth"),
+   * or null. Derived from the model, so it survives history replay and resets when
+   * switching sessions; cleared by a later completed request, a `credentials_updated`
+   * server event, or dismissModelAuthDead. The composer gates on it TOGETHER with the
+   * models response's `updatedAt` (see isModelAuthDead): an abort older than the last
+   * credential update no longer disables the composer.
    */
-  modelAuthDead: boolean;
+  lastAuthAbortMs: number | null;
+  /**
+   * Clears the auth-dead state (the user clicked Retry / dismissed the notice — e.g. the
+   * credential changed outside the UI in a way the timestamps miss); the state re-arms if
+   * the next request aborts on auth again.
+   */
+  dismissModelAuthDead: () => void;
   /** approvalKey(origin, toolCallId) → pending approval. */
   pendingApprovals: ReadonlyMap<string, PendingApproval>;
   /** Recorded when this client clicks an approval decision (marks it as "manual"). */
@@ -192,6 +200,14 @@ export function useSessionStream(
     void controllerRef.current?.retry();
   }, []);
 
+  const dismissModelAuthDead = useCallback(() => {
+    const m = controllerRef.current?.model;
+    if (m && m.lastAuthAbortMs !== null) {
+      m.lastAuthAbortMs = null;
+      setVersion((v) => v + 1);
+    }
+  }, []);
+
   // pendingTick participates in the render dependencies, ensuring pending-table changes trigger a re-render.
   void pendingTick;
 
@@ -201,7 +217,8 @@ export function useSessionStream(
     loading,
     taskState,
     queuedFollowUps,
-    modelAuthDead: (controllerRef.current?.model ?? placeholderRef.current).modelAuthDead,
+    lastAuthAbortMs: (controllerRef.current?.model ?? placeholderRef.current).lastAuthAbortMs,
+    dismissModelAuthDead,
     pendingApprovals: controllerRef.current?.pendingApprovals ?? EMPTY_PENDING,
     markLocalDecision,
     resolveApproval,

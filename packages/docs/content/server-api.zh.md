@@ -89,6 +89,8 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 
 所有涉及模型的接口都要求完整的 `(provider, modelId)` 二元组，不做任何推断：只带一半的请求一律 400，绝不会退化为一次查找。模型引用本身可省略的场景（创建 Session、定时任务）省略的是整对，两半都不给即选用 Project 默认模型。
 
+`PUT /models` 同时会使该 Project 已缓存的 Session 运行时失效（与 vault 更新同一套生效语义）：进行中的运行不做热替换，但该 Project 下任何 Session 的下一个 Task 都会重新装载并读到新的 `api_key` / `base_url`。它还会向该 Project 已打开的 Session 通道发布 `credentials_updated` 事件（见下文「流式推送」），且模型响应携带 `updatedAt`（配置文件 mtime）——Web App 用它与最近一次鉴权失败的时间比较，决定鉴权失败的输入框是否继续禁用。
+
 ### Agent
 
 以下路径均省略前缀 `/api/projects/:projectId`。
@@ -229,6 +231,7 @@ export type ServerEvent =
   | { type: "task_state"; state: "idle" | "running" | "compacting" }
   | { type: "session_title"; sessionId: string; title: string }
   | { type: "resync_required" }
+  | { type: "credentials_updated" }
   | { type: "hello" }
   | { type: "session_created"; projectId: string; agentId: string; sessionId: string; source: SessionSource }
   | { type: "schedule_fired"; projectId: string; agentId: string; name: string; sessionId: string }
@@ -241,6 +244,7 @@ export type ServerEvent =
 | task_state | Session 运行状态翻转（idle / running / compacting） |
 | session_title | 首轮后模型生成的标题已持久化 |
 | resync_required | Last-Event-ID 已被缓冲区淘汰，客户端须重新拉取历史 |
+| credentials_updated | Project 模型凭据已变更（`PUT /models`）：缓存运行时已失效，客户端应清除鉴权失败的输入框禁用态 |
 | hello | 用户通道连接握手 |
 | session_created | 新 Session 注册（如子 Agent 会话） |
 | schedule_fired | 定时任务已触发并发送 |

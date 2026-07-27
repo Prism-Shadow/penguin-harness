@@ -269,9 +269,9 @@ export function requestBegin(): OmniMessage<RequestBeginPayload> {
   return event({ type: "request_begin" });
 }
 
-/** request end event: carries the terminal state (`completed` means this turn was already committed to AgentHub). */
-export function requestEnd(status: StopReason): OmniMessage<RequestEndPayload> {
-  return event({ type: "request_end", status });
+/** request end event: carries the terminal state (`completed` means this turn was already committed to AgentHub), plus the failure detail on non-completed statuses (from LLMOutcome.message). */
+export function requestEnd(status: StopReason, message?: string): OmniMessage<RequestEndPayload> {
+  return event({ type: "request_end", status, ...(message !== undefined ? { message } : {}) });
 }
 
 /** compaction begin event: carries the trigger reason, mode, current context usage, and cumulative Session turn count. */

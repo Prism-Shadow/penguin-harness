@@ -30,7 +30,7 @@ import type { GenerativeModelParameters, LLMInterface, LLMOutcome } from "../src
 import type { OmniMessage, TextPayload, ToolCallPayload } from "../src/omnimessage/index.js";
 import { Environment } from "../src/environment/index.js";
 import { Writer, readTrace } from "../src/trace/index.js";
-import { ContextEngine } from "../src/engine/context-engine.js";
+import { ContextEngine, reconnectDelayMs } from "../src/engine/context-engine.js";
 import type { ApproveFn, EnvironmentInterface, ToolPermission } from "../src/interfaces.js";
 
 /** Deterministic fake LLM: the first turn yields a tool_call, the second yields the final reply. */
@@ -1546,7 +1546,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
       async *streamGenerate() {
         calls += 1;
         // Two quota rejections (GenerativeModel classifies them as timeout), then success —
-        // attempt 3 is within the default cap of 5.
+        // attempt 3 is within the default cap of 8.
         if (calls <= 2) return { status: "timeout" };
         yield assistantText("recovered");
         yield tokenUsage(emptyTokenCounts(), {
@@ -1575,7 +1575,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     expect(all.map((m) => (m.payload as { type?: string }).type)).not.toContain("abort");
   });
 
-  it("default reconnect cap is 5: the exhaustion abort message says so", async () => {
+  it("default reconnect cap is 8: the exhaustion abort message says so", async () => {
     let calls = 0;
     const llm: LLMInterface = {
       // eslint-disable-next-line require-yield
@@ -1588,13 +1588,86 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
       workspaceDir: workspace,
       toolConfig: execCommandToolConfig(),
     });
-    // No maxReconnects override: exercises the default cap.
+    // No maxReconnects override: exercises the default cap (tiny base keeps the
+    // exponential waits at 1+2+4+…+128 ≈ 255ms total).
     const engine = new ContextEngine({ llm, environment, reconnectBackoffMs: 1 });
 
     const all = await collectRun(engine, [userText("go")], allowAll);
-    expect(calls).toBe(6); // Initial attempt + 5 retries.
+    expect(calls).toBe(9); // Initial attempt + 8 retries.
     const abort = all.find((m) => (m.payload as { type?: string }).type === "abort");
-    expect((abort!.payload as { reason?: string }).reason).toBe("reconnect failed after 5 retries");
+    expect((abort!.payload as { reason?: string }).reason).toBe("reconnect failed after 8 retries");
+    // Retries exhausted without an auth signal: no machine-readable code on the abort.
+    expect((abort!.payload as { code?: string }).code).toBeUndefined();
+  });
+
+  it("exhausted retries forward the outcome's machine-readable code onto the abort (defense-in-depth)", async () => {
+    // GenerativeModel cannot produce a timeout outcome carrying code "auth" today (auth
+    // classifies failed before the retryable check) — but if a credential error ever slips
+    // into the retry loop, the exhaustion abort must still tell hosts it was auth.
+    const llm: LLMInterface = {
+      // eslint-disable-next-line require-yield
+      async *streamGenerate() {
+        return { status: "timeout", code: "auth" } as LLMOutcome;
+      },
+    };
+    const environment = new Environment({
+      workspaceDir: workspace,
+      toolConfig: execCommandToolConfig(),
+    });
+    const engine = new ContextEngine({ llm, environment, maxReconnects: 1, reconnectBackoffMs: 0 });
+
+    const all = await collectRun(engine, [userText("go")], allowAll);
+    const abort = all.find((m) => (m.payload as { type?: string }).type === "abort");
+    expect((abort!.payload as { reason?: string }).reason).toBe("reconnect failed after 1 retries");
+    expect((abort!.payload as { code?: string }).code).toBe("auth");
+  });
+
+  it("reconnectDelayMs: exponential-with-ceiling ladder (defaults: 250ms base, 30s cap)", () => {
+    const ladder = [1, 2, 3, 4, 5, 6, 7, 8].map((n) => reconnectDelayMs(250, 30_000, n));
+    expect(ladder).toEqual([250, 500, 1000, 2000, 4000, 8000, 16000, 30000]);
+    // ≈62s of total patience across the default 8 reconnects.
+    expect(ladder.reduce((a, b) => a + b, 0)).toBe(61_750);
+    // Past the ceiling the delay stays pinned (no overflow, no further growth).
+    expect(reconnectDelayMs(250, 30_000, 12)).toBe(30_000);
+    // The cap also applies when the base itself exceeds it.
+    expect(reconnectDelayMs(50_000, 30_000, 1)).toBe(30_000);
+  });
+
+  it("request_end carries the outcome's failure detail on non-completed statuses only", async () => {
+    let calls = 0;
+    const llm: LLMInterface = {
+      async *streamGenerate() {
+        calls += 1;
+        if (calls === 1) {
+          // A retryable provider rejection: the detail must reach observability via the
+          // event — a retried request never produces an abort to carry it.
+          return { status: "timeout", message: "403 quota exceeded (insufficient_user_quota)" };
+        }
+        yield assistantText("ok");
+        yield tokenUsage(emptyTokenCounts(), {
+          cache_read: 0,
+          cache_write: 0,
+          output: 1,
+          total: 1,
+        });
+        return { status: "completed" };
+      },
+    };
+    const environment = new Environment({
+      workspaceDir: workspace,
+      toolConfig: execCommandToolConfig(),
+    });
+    const engine = new ContextEngine({ llm, environment, maxReconnects: 1, reconnectBackoffMs: 0 });
+
+    const all = await collectRun(engine, [userText("go")], allowAll);
+    const ends = all.filter((m) => (m.payload as { type?: string }).type === "request_end") as {
+      payload: { status?: string; message?: string };
+    }[];
+    expect(ends).toHaveLength(2);
+    expect(ends[0]!.payload.status).toBe("timeout");
+    expect(ends[0]!.payload.message).toBe("403 quota exceeded (insufficient_user_quota)");
+    expect(ends[1]!.payload.status).toBe("completed");
+    expect(ends[1]!.payload.message).toBeUndefined();
   });
 
   it("LLM timeout after a tool already executed: retry carries the call/result via [turn_retried] (tool runs once)", async () => {

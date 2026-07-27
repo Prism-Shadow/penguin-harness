@@ -857,6 +857,8 @@ export function ChatInput({
   initialHandoffTargetId,
   onHandoffTargetChange,
   modelAuthDead = false,
+  onOpenModels,
+  onRetryModelAuth,
   onNewSession,
 }: {
   status: SessionStatus;
@@ -983,11 +985,22 @@ export function ChatInput({
   onHandoffTargetChange?: (agentId: string | null) => void;
   /**
    * Session state: the Session's model credentials failed authentication (abort with
-   * code "auth") — the Session can never run again (model + credentials are fixed at
-   * creation). The composer disables and grays itself and shows a notice pointing at a new
-   * Session (see onNewSession).
+   * code "auth") and the Project's credentials have not been updated since (the parent
+   * computes the time gate — see isModelAuthDead). Recoverable: only the model reference
+   * is fixed at creation, credentials come from the current Project config — so the
+   * composer disables and grays itself with a notice pointing at the Models page (primary),
+   * a Retry affordance, and a New Session escape. Updating the key auto-unlocks (live via
+   * the credentials_updated event, and across reloads via the time gate).
    */
   modelAuthDead?: boolean;
+  /** Navigates to the Models page (where the credential is actually fixed); renders the notice's primary button when supplied. */
+  onOpenModels?: () => void;
+  /**
+   * Clears the auth-dead state and re-enables the composer for another attempt (the state
+   * re-arms on the next auth abort). The escape hatch for credential changes the
+   * timestamps miss (e.g. edited outside the UI).
+   */
+  onRetryModelAuth?: () => void;
   /** Navigates to a fresh draft (`/chat/new`); renders the notice's "New Session" button when supplied. */
   onNewSession?: () => void;
 }) {
@@ -1649,21 +1662,44 @@ export function ChatInput({
         </p>
       )}
 
-      {/* Dead session (model credentials failed authentication): slim notice above the
-          composer, same width — the abort line in the stream keeps the raw reason, this adds
-          the "what now" guidance. The composer below is disabled and hazed. */}
+      {/* Auth-dead session (model credentials failed): slim notice above the composer, same
+          width — the abort line in the stream keeps the raw reason, this adds the "what now"
+          guidance. Recoverable: primary CTA opens the Models page (fixing the key there
+          auto-unlocks the session), Retry clears the state for another attempt (re-arms on
+          the next auth abort), New Session stays as the escape. The composer below is
+          disabled and hazed. */}
       {modelAuthDead && (
         <div className="anim-fade mb-1.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:border-gray-700 dark:bg-gray-800/60 dark:text-gray-300">
           <span className="min-w-0 flex-1 basis-56">{S.chat.modelAuthDead}</span>
-          {onNewSession && (
-            <button
-              type="button"
-              onClick={onNewSession}
-              className="shrink-0 rounded-md border border-gray-300 bg-white px-2.5 py-1 font-medium text-gray-700 transition-colors duration-150 hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-700"
-            >
-              {S.chat.modelAuthDeadCta}
-            </button>
-          )}
+          <span className="flex shrink-0 flex-wrap items-center gap-1.5">
+            {onOpenModels && (
+              <button
+                type="button"
+                onClick={onOpenModels}
+                className="shrink-0 rounded-md bg-gray-900 px-2.5 py-1 font-medium text-white transition-colors duration-150 hover:bg-gray-700 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-300"
+              >
+                {S.chat.modelAuthDeadOpenModels}
+              </button>
+            )}
+            {onRetryModelAuth && (
+              <button
+                type="button"
+                onClick={onRetryModelAuth}
+                className="shrink-0 rounded-md border border-gray-300 bg-white px-2.5 py-1 font-medium text-gray-700 transition-colors duration-150 hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-700"
+              >
+                {S.chat.modelAuthDeadRetry}
+              </button>
+            )}
+            {onNewSession && (
+              <button
+                type="button"
+                onClick={onNewSession}
+                className="shrink-0 rounded-md border border-gray-300 bg-white px-2.5 py-1 font-medium text-gray-700 transition-colors duration-150 hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-700"
+              >
+                {S.chat.modelAuthDeadCta}
+              </button>
+            )}
+          </span>
         </div>
       )}
 
@@ -1674,8 +1710,12 @@ export function ChatInput({
           card's width changes with the viewport and the Files panel squeezing it, viewport
           breakpoints wouldn't judge it accurately. */}
       <div
+        // Auth-dead haze deliberately keeps pointer events and text selection: the
+        // textarea's `disabled` already blocks editing, and the stuck draft must stay
+        // selectable/copyable — a long message that failed to send is exactly what the
+        // user wants to copy back out.
         className={`@container rounded-lg border border-gray-300 bg-white px-2.5 pb-2 pt-2 transition-[border-color,box-shadow] duration-200 focus-within:border-gray-500 focus-within:ring-2 focus-within:ring-gray-400/30 dark:border-gray-700 dark:bg-gray-900 dark:focus-within:border-gray-400${
-          modelAuthDead ? " pointer-events-none select-none opacity-50 grayscale" : ""
+          modelAuthDead ? " opacity-50 grayscale" : ""
         }`}
       >
         {/* Chip row above the text body: the @ handoff target (fixed at the front — send-time

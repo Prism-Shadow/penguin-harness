@@ -301,14 +301,19 @@ export interface StreamModel {
   /** Consecutive reconnect-failure count (incremented when request_end is timeout/malformed, reset to zero on any other terminal status). */
   reconnectRun: number;
   /**
-   * The Session's model credentials failed authentication (an abort event carrying
-   * code "auth" arrived on THIS model — subagent auth aborts land on the nested model and
-   * never mark the parent): the Session can never run again (model + credentials are fixed
-   * at Session creation), so the composer disables itself and points at a new Session.
-   * Sticky: survives history replay (abort events are in the Trace) and only resets when a
-   * different session's model is built.
+   * Timestamp (ms) of the most recent auth failure: an abort event carrying code "auth"
+   * arrived on THIS model (subagent auth aborts land on the nested model and never mark
+   * the parent). Only the model REFERENCE is fixed at Session creation — credentials are
+   * read from the current Project config on load — so this is recoverable: the composer
+   * disables itself and points at the Models page. Cleared by a later completed
+   * main-session request_end (live and history replay take the same path, so a Trace with
+   * an auth abort followed by a completed request does not resurrect the state on reload),
+   * by a `credentials_updated` server event, or by an explicit user retry/dismiss; a
+   * timestamp (not a boolean) so the composer gate can compare it against the Project's
+   * credentials-updated time after a reload (see isModelAuthDead). Re-arms on the next
+   * auth abort.
    */
-  modelAuthDead: boolean;
+  lastAuthAbortMs: number | null;
   /** Task segmentation state. */
   taskOpen: boolean;
   taskStartLocalMs: number;
@@ -359,7 +364,7 @@ function newModel(nested: boolean, localDecisions: Set<string>): StreamModel {
     openRequestBeginMs: null,
     openApprovalWaitMs: 0,
     reconnectRun: 0,
-    modelAuthDead: false,
+    lastAuthAbortMs: null,
     taskOpen: false,
     taskStartLocalMs: 0,
     taskFirstTsMs: 0,
@@ -372,6 +377,23 @@ function newModel(nested: boolean, localDecisions: Set<string>): StreamModel {
 /** Create the main-session model; localDecisions can inject a shared set (persisting across models when a resync rebuild swaps in a new one). */
 export function createStreamModel(localDecisions: Set<string> = new Set()): StreamModel {
   return newModel(false, localDecisions);
+}
+
+/**
+ * Composer auth-dead gate: an auth abort is on record AND the Project's credentials have
+ * not been updated since. `credentialsUpdatedMs` is the models response's `updatedAt`
+ * (null = unknown / not loaded — nothing proves the credential changed, so the notice
+ * stays). The time comparison is what keeps a reload honest: after a key fix the Trace
+ * still ends with the auth abort, but that abort predates the credential update, so the
+ * composer stays alive; a wrong replacement key re-arms naturally because its own auth
+ * abort is newer than the update.
+ */
+export function isModelAuthDead(
+  lastAuthAbortMs: number | null,
+  credentialsUpdatedMs: number | null,
+): boolean {
+  if (lastAuthAbortMs === null) return false;
+  return credentialsUpdatedMs === null || lastAuthAbortMs > credentialsUpdatedMs;
 }
 
 function nextId(model: StreamModel): number {
@@ -1054,10 +1076,12 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number): void {
       const waiting = findLastWaitingReconnect(model);
       if (waiting) waiting.gaveUp = true;
       model.reconnectRun = 0;
-      // Credentials failure: this model's session can never run again (see modelAuthDead).
-      // Origin routing already sends subagent aborts to the nested model, so reaching here
-      // with code "auth" always means the failure belongs to THIS session.
-      if (p.code === "auth") model.modelAuthDead = true;
+      // Credentials failure: record WHEN it happened (the event's envelope time), so the
+      // composer gate can compare it against the Project's credentials-updated time (see
+      // lastAuthAbortMs / isModelAuthDead). Origin routing already sends subagent aborts
+      // to the nested model, so reaching here with code "auth" always means the failure
+      // belongs to THIS session.
+      if (p.code === "auth") model.lastAuthAbortMs = tsMs ?? Date.now();
       const item: AbortItem = { kind: "abort", id: nextId(model) };
       if (p.reason != null) item.reason = p.reason;
       model.items.push(item);
@@ -1117,6 +1141,11 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number): void {
       // within a compaction range (only visible during history rebuild)
       // are neither rendered nor counted — the compaction process only exposes the compaction event pair to the Human.
       if (model.stats.compactionActive) return;
+      // A completed request proves the credentials work (again): the auth-dead state must
+      // not outlive a successful request. Live and history replay share this path, so a
+      // Trace with an auth abort followed by a completed request does not resurrect the
+      // dead composer on reload.
+      if (p.status === "completed") model.lastAuthAbortMs = null;
       // Pairs with request_begin to compute this Request's wall-clock
       // duration, deducts the human approval wait, and adds the result to
       // this Task's LLM time (for output TPS) — this duration includes tool

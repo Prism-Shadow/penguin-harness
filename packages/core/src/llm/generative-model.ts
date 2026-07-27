@@ -874,6 +874,11 @@ function providerSignals(level: object, includeType: boolean): string[] {
  */
 export function isQuotaExhaustedError(error: unknown): boolean {
   if (error == null || typeof error !== "object") return false;
+  // Belt to the auth-first ordering in isRetryableError: an error carrying a definitive
+  // auth signal is never quota, no matter what its message says — a 403 whose body codes
+  // `invalid_api_key` but whose message mentions a subscription must not classify as
+  // retryable-quota and burn through the reconnect ladder against a dead credential.
+  if (isAuthenticationError(error)) return false;
   const err = error as { status?: number; statusCode?: number; message?: unknown };
   const status = err.status ?? err.statusCode;
   // Any other status keeps its own classification (401 auth, 429 rate limit, …).
@@ -893,13 +898,15 @@ export function isQuotaExhaustedError(error: unknown): boolean {
 }
 
 /**
- * Determines whether an error is a credentials/authentication failure — the one class a
- * Session can never recover from: its model + credentials are fixed at Session creation, so
- * neither an in-run retry nor any future Task on this Session can succeed. Signals: HTTP 401
- * (any), a known auth code/type (on the error, its `cause` chain, or the parsed provider
- * body), or the SDK error class name `AuthenticationError` (OpenAI / Anthropic SDKs). A bare
- * 403 carries no such signal and stays a plain failure (usually permission/policy, not
- * credentials).
+ * Determines whether an error is a credentials/authentication failure — the one class an
+ * in-run retry can never fix: the request keeps going out with the same dead credential.
+ * Only the model REFERENCE is fixed at Session creation; the credential is read from the
+ * current Project config whenever the Session loads, so the fix is updating that model's
+ * API key (Models page) — after which the Session can continue — not retrying. Signals:
+ * HTTP 401 (any), a known auth code/type (on the error, its `cause` chain, or the parsed
+ * provider body), or the SDK error class name `AuthenticationError` (OpenAI / Anthropic
+ * SDKs). A bare 403 carries no such signal and stays a plain failure (usually
+ * permission/policy, not credentials).
  */
 export function isAuthenticationError(error: unknown): boolean {
   return anyInCauseChain(error, (level) => {
@@ -917,7 +924,9 @@ export function isAuthenticationError(error: unknown): boolean {
  * Retryable: network/transport errors (including undici's `UND_ERR_*` on the `cause` chain),
  * timeouts, connection reset, HTTP 429 / 5xx, and provider quota/subscription exhaustion
  * (see `isQuotaExhaustedError`).
- * Not retryable: other HTTP 4xx auth/parameter errors (401/403/400/404, etc.).
+ * Not retryable: authentication errors (checked FIRST — a definitive credential signal is
+ * never reclassified by the heuristics below, see `isAuthenticationError`) and other HTTP
+ * 4xx auth/parameter errors (401/403/400/404, etc.).
  * JSON parse errors are classified separately as `malformed` by `isMalformedJsonParseError`.
  *
  * Since AgentHub doesn't guarantee the shape of error objects, this uses a lenient check: first
@@ -926,6 +935,12 @@ export function isAuthenticationError(error: unknown): boolean {
  */
 export function isRetryableError(error: unknown): boolean {
   if (error == null) return false;
+
+  // 0. Authentication is definitive and terminal: retrying a dead credential can never
+  //    succeed, and no heuristic below (quota keywords, message vocabulary) may reclassify
+  //    it — this ordering is the only thing keeping a dead credential out of the retry
+  //    ladder now that quota errors are deliberately retryable.
+  if (isAuthenticationError(error)) return false;
 
   const err = error as {
     status?: number;
@@ -963,10 +978,17 @@ export function isRetryableError(error: unknown): boolean {
   if (err.name === "AbortError") return false; // User interruption, not retryable
   const text = `${err.name ?? ""} ${err.message ?? ""}`.toLowerCase();
   if (
-    /timeout|timed out|network|socket hang up|econnreset|connection reset|terminated|other side closed|fetch failed|too many requests|rate limit|temporarily unavailable|503|502|504/.test(
+    /timeout|timed out|network|socket hang up|econnreset|connection reset|other side closed|fetch failed|too many requests|rate limit|temporarily unavailable|503|502|504/.test(
       text,
     )
   ) {
+    return true;
+  }
+  // `terminated` alone is ambiguous — providers use the word in verdict copy too ("Request
+  // terminated by content filter"), which must NOT retry — so it only counts alongside
+  // transport vocabulary. The real socket case is already caught by the cause-chain
+  // `UND_ERR_*` codes in step 2; this is a last-resort fallback for cause-less wrappers.
+  if (/terminated/.test(text) && /socket|connection|closed/.test(text)) {
     return true;
   }
 
@@ -1046,8 +1068,9 @@ export class GenerativeModel implements LLMInterface {
    * and the terminal state is then returned as `LLMOutcome`:
    *   - **Normal completion**: `finish()` closes out and produces `token_usage` (usage is only
    *     produced in this case) → `completed`;
-   *   - **Idle timeout / network drop** (retryable errors like network/429/5xx):
-   *     `finishInterrupted("timeout")` closes out, produces no usage → `timeout`, reconnected by
+   *   - **Idle timeout / network drop** (retryable errors like network/429/5xx/quota):
+   *     `finishInterrupted("timeout")` closes out, produces no usage → `timeout` (carrying
+   *     the error detail as `message` when a concrete error was caught), reconnected by
    *     `context_engine` within the same run;
    *   - **AgentHub JSON parse error**: `finishInterrupted("malformed")` closes out, produces no
    *     usage → `malformed`, likewise reconnected by `context_engine` within the same run;
@@ -1161,15 +1184,21 @@ export class GenerativeModel implements LLMInterface {
           message: describeError(error),
         };
       } else if (isRetryableError(error)) {
-        outcome = { status: "timeout" }; // Network drop/network error -> needs reconnection
+        // Network drop / transient provider rejection -> needs reconnection. The detail
+        // (e.g. "403 … (insufficient_user_quota)") rides on the outcome so observability
+        // (request_end -> the Cost center's errors panel) shows the real reason behind a
+        // retried request, not just "timeout".
+        outcome = { status: "timeout", message: describeError(error) };
       } else if ((error as { name?: string })?.name === "AbortError") {
         outcome = { status: "aborted" }; // Fallback: an unexpected abort (neither timeout nor user)
       } else {
         outcome = {
           status: "failed",
           message: describeError(error),
-          // Credentials failure: marked so hosts can tell "this Session can never work again"
-          // (model+credentials are fixed at Session creation) apart from a one-off failure.
+          // Credentials failure: marked so hosts can tell "update this model's API key,
+          // then this Session can continue" (only the model reference is fixed at Session
+          // creation; the credential is read from the current Project config on load)
+          // apart from a one-off failure.
           ...(isAuthenticationError(error) ? { code: "auth" as const } : {}),
         };
       }

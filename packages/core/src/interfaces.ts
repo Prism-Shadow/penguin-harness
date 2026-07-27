@@ -153,12 +153,20 @@ export interface GenerativeModelParameters {
  */
 export interface LLMOutcome {
   status: StopReason;
+  /**
+   * Failure detail (`describeError` text): present on `failed`, and on `timeout` /
+   * `malformed` when a concrete transport/provider error was caught (a plain idle timeout
+   * has none). Carried onto the `request_end` event so observability (the Cost center's
+   * errors panel) can show the real reason behind a retried request.
+   */
   message?: string;
   /**
    * Machine-readable failure class; currently only `"auth"`: set when the failure is a
-   * credentials/authentication error that neither a retry nor any future Task on this Session
-   * can fix (the Session's model + credentials are fixed at creation). Carried through to the
-   * abort event so hosts can permanently disable the Session's input.
+   * credentials/authentication error that no in-run retry can fix — the request would keep
+   * going out with the same dead credential. Only the model REFERENCE is fixed at Session
+   * creation; credentials are read from the current Project config when the Session loads,
+   * so updating that model's API key (Models page) lets this Session continue. Carried
+   * through to the abort event so hosts can disable input until the credential changes.
    */
   code?: "auth";
 }

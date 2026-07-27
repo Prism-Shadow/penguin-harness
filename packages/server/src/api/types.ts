@@ -234,6 +234,13 @@ export interface ModelsResponse {
   defaultModel?: ModelRefDto;
   /** Vision model used as a proxy reader for read_image (describes images when the session model has vision=false). */
   visionModel?: ModelRefDto;
+  /**
+   * When the Project's model/credential config last changed (ISO; the config file's mtime,
+   * so it survives restarts). The web's auth-dead gate compares it against the last auth
+   * abort: an abort OLDER than the last credential update no longer disables the composer
+   * (the key was fixed since). Absent when the Project has no config file yet.
+   */
+  updatedAt?: string;
   models: ModelInfo[];
 }
 
@@ -626,6 +633,14 @@ export type ServerEvent =
   | { type: "session_title"; sessionId: string; title: string }
   /** Last-Event-ID has been evicted from the buffer: the frontend should re-fetch the history endpoint before continuing to consume this connection. */
   | { type: "resync_required" }
+  /**
+   * The Project's model credentials changed (PUT /models): cached runtimes have been
+   * invalidated server-side, so an auth-dead Session can continue — the frontend clears
+   * its auth-dead composer state immediately. Published to every existing Session channel
+   * of the Project; tabs without a live channel learn the same fact from the models
+   * response's `updatedAt` on their next load.
+   */
+  | { type: "credentials_updated" }
   /** Placeholder handshake on the user channel (reserved for automated task notifications). */
   | { type: "hello" }
   /** New session registered (pushed over the parent session's channel for subagent sessions): frontend refreshes the list in place. */
