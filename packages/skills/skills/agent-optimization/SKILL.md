@@ -9,8 +9,7 @@ updated: 2026-07-25T05:05:26Z
 
 # Agent Optimization
 
-Improve an existing Agent State through measured Benchmark results. Delegate every evaluation and
-score to the `agent-evaluation` Skill; do not run or score the Test Agent directly.
+Improve an existing Agent State through measured Benchmark results. Delegate every evaluation and score to the `agent-evaluation` Skill; do not run or score the Test Agent directly.
 
 ## Before you start
 
@@ -22,10 +21,7 @@ Require:
 - a top-level Session with `run_subagent`;
 - the `agent-evaluation` Skill installed on the current Agent.
 
-If `run_subagent` is absent, immediately return `missing_run_subagent`. Do not edit Agent State,
-launch the Test Agent through `penguin run`, score a Case, or use the generic "do the work
-yourself" fallback. If another requirement is missing, stop and explain what is needed rather than
-starting a change that cannot be compared completely.
+If `run_subagent` is absent, immediately return `missing_run_subagent`. Do not edit Agent State, launch the Test Agent through `penguin run`, score a Case, or use the generic "do the work yourself" fallback. If another requirement is missing, stop and explain what is needed rather than starting a change that cannot be compared completely.
 
 ## Target and access boundaries
 
@@ -39,17 +35,11 @@ BENCHMARK = <target>/benchmarks/<benchmark_id>
 SCOREBOARD = <benchmark>/scoreboard.yaml
 ```
 
-Do not read Project secrets, credentials, a vault, a private Rubric, Evaluator State, Evaluator
-Workspace, Evaluator Trace, or another Agent.
+Do not read Project secrets, credentials, a vault, a private Rubric, Evaluator State, Evaluator Workspace, Evaluator Trace, or another Agent.
 
-You may read the target Agent State, public Case Statements, the Scoreboard, and Test Traces and
-artifacts explicitly referenced by the Scoreboard.
+You may read the target Agent State, public Case Statements, the Scoreboard, and Test Traces and artifacts explicitly referenced by the Scoreboard.
 
-Never read, search, list, or open a path under a Case's `rubric/` directory. Use exact public
-Statement and Scoreboard paths rather than enumerating private Benchmark contents. If private
-Rubric content, Gold answers, or private scoring conditions enter the Optimizer context, the
-optimization Session is contaminated: do not use that information, do not retain or score a
-Candidate derived from it, restore any active Candidate, and report the result as invalid.
+Never read, search, list, or open a path under a Case's `rubric/` directory. Use exact public Statement and Scoreboard paths rather than enumerating private Benchmark contents. If private Rubric content, Gold answers, or private scoring conditions enter the Optimizer context, the optimization Session is contaminated: do not use that information, do not retain or score a Candidate derived from it, restore any active Candidate, and report the result as invalid.
 
 Never modify the Benchmark, Test Traces, Project configuration, or another Agent.
 
@@ -63,17 +53,11 @@ Make the smallest complete edit supported by evidence and preserve unrelated con
 - Do not edit `system_prompt` unless the user explicitly asks.
 - Do not modify a library-provided Skill to carry target-specific behavior.
 
-Every change must generalize beyond the observed run. Do not encode Case ids, expected answers,
-Benchmark-specific constants, private scoring conditions, or rules that apply to only one Case.
-Prefer improving general analysis, validation, and execution methods over memorizing Benchmark
-answers. Do not turn one high-scoring Trace's apparent choice into an unconditional domain rule;
-prefer a conditional analysis procedure that determines which semantics the available evidence
-supports.
+Every change must generalize beyond the observed run. Do not encode Case ids, expected answers, Benchmark-specific constants, private scoring conditions, or rules that apply to only one Case. Prefer improving general analysis, validation, and execution methods over memorizing Benchmark answers. Do not turn one high-scoring Trace's apparent choice into an unconditional domain rule; prefer a conditional analysis procedure that determines which semantics the available evidence supports.
 
 ## Snapshot, version, and rollback
 
-Before changing Agent State, read the top-level `version` from `system_config.yaml`, defaulting to
-1 when absent.
+Before changing Agent State, read the top-level `version` from `system_config.yaml`, defaulting to 1 when absent.
 
 Ensure this snapshot exists:
 
@@ -81,13 +65,11 @@ Ensure this snapshot exists:
 <target>/snapshots/v<version>.tar.gz
 ```
 
-When the current-version snapshot is absent, create it from `agent_state/` without `.vault.toml`.
-Never overwrite an existing snapshot for the same version.
+When the current-version snapshot is absent, create it from `agent_state/` without `.vault.toml`. Never overwrite an existing snapshot for the same version.
 
 Use `current + 1` as the candidate version.
 
-Before editing, record the exact original content of every file owned by the round. Write candidate
-files through temporary files and validate them before replacing the originals.
+Before editing, record the exact original content of every file owned by the round. Write candidate files through temporary files and validate them before replacing the originals.
 
 If a candidate is rejected or cannot complete a valid comparison:
 
@@ -108,20 +90,13 @@ A Reference Evaluation must:
 - contain one non-empty `(provider, model_id)` pair;
 - contain the complete Case × Run matrix.
 
-If the current Agent State has no complete Evaluation, evaluate it without changing State and use
-that result as the Reference.
+If the current Agent State has no complete Evaluation, evaluate it without changing State and use that result as the Reference.
 
-Every Candidate Evaluation must use the same Benchmark, Cases, Runs, and exact
-`(provider, model_id)` pair as the Reference. Do not translate, alias, or fall back to another
-Model identifier.
+Every Candidate Evaluation must use the same Benchmark, Cases, Runs, and exact `(provider, model_id)` pair as the Reference. Do not translate, alias, or fall back to another Model identifier.
 
 ## Evaluation dispatch
 
-Maintain a Case × Run ledger. Never dispatch a cell that is already pending or valid, and retry a
-cell only after an explicit infrastructure failure. Use bounded batches that fit the available
-subagent capacity. For independent cells in one batch, launch one `agent-evaluation` subagent per
-cell before waiting for any of them to finish, then poll those exact subagent ids until the batch is
-complete. Do not wait for one cell to finish before launching the next independent cell.
+Maintain a Case × Run ledger. Never dispatch a cell that is already pending or valid, and retry a cell only after an explicit infrastructure failure. Use bounded batches that fit the available subagent capacity. For independent cells in one batch, launch one `agent-evaluation` subagent per cell before waiting for any of them to finish, then poll those exact subagent ids until the batch is complete. Do not wait for one cell to finish before launching the next independent cell.
 
 Send each Evaluator one unambiguous request with every required identity field:
 
@@ -137,10 +112,7 @@ provider: <provider>
 model_id: <model_id>
 ```
 
-Extract one unambiguous protocol YAML document with the fields defined by `agent-evaluation` and
-ignore any surrounding text. Never use Evaluator commentary, Rubric content, Gold answers, or
-per-item scoring to form an optimization hypothesis or Agent State edit. If no valid protocol can
-be extracted, treat the cell as an infrastructure failure and retry it according to the ledger.
+Extract one unambiguous protocol YAML document with the fields defined by `agent-evaluation` and ignore any surrounding text. Never use Evaluator commentary, Rubric content, Gold answers, or per-item scoring to form an optimization hypothesis or Agent State edit. If no valid protocol can be extracted, treat the cell as an infrastructure failure and retry it according to the ledger.
 
 ## Optimization loop
 
@@ -148,51 +120,32 @@ For each round:
 
 1. **Analyze the Reference**
 
-   Review the aggregate score, Case scores, and repeated-run stability. Start with representative
-   failures, unusual variance, and their Test Traces; expand Trace inspection only when the current
-   evidence is insufficient.
+   Review the aggregate score, Case scores, and repeated-run stability. Start with representative failures, unusual variance, and their Test Traces; expand Trace inspection only when the current evidence is insufficient.
 
 2. **State a hypothesis**
 
-   State one falsifiable behavioral hypothesis that identifies the observed failure, the missing
-   general capability, and the behavioral change expected from a minimal Agent State edit. Stop if
-   no credible hypothesis remains. One round must isolate one behavioral strategy family; split
-   independent strategy changes into separate Candidates rather than bundling them into one edit.
+   State one falsifiable behavioral hypothesis that identifies the observed failure, the missing general capability, and the behavioral change expected from a minimal Agent State edit. Stop if no credible hypothesis remains. One round must isolate one behavioral strategy family; split independent strategy changes into separate Candidates rather than bundling them into one edit.
 
 3. **Create a Candidate**
 
-   Confirm the current-version snapshot, record the original candidate-owned files, make the
-   smallest general edit, and use `current + 1` as the candidate version.
+   Confirm the current-version snapshot, record the original candidate-owned files, make the smallest general edit, and use `current + 1` as the candidate version.
 
 4. **Complete the evaluation**
 
-   Use `agent-evaluation` to complete every Case × Run in the frozen Benchmark. The result is
-   comparable only when the Agent State and Benchmark remain unchanged and the matrix is complete
-   and valid.
+   Use `agent-evaluation` to complete every Case × Run in the frozen Benchmark. The result is comparable only when the Agent State and Benchmark remain unchanged and the matrix is complete and valid.
 
 5. **Accept or roll back**
 
-   If the Candidate score is strictly higher than the Reference, keep the Candidate State and
-   append its Evaluation, including a public `summary_title` and `summary`, to the Scoreboard
-   atomically. If the score is equal, lower, or cannot be compared validly, roll back the Candidate
-   and do not write it to the Scoreboard.
+   If the Candidate score is strictly higher than the Reference, keep the Candidate State and append its Evaluation, including a public `summary_title` and `summary`, to the Scoreboard atomically. If the score is equal, lower, or cannot be compared validly, roll back the Candidate and do not write it to the Scoreboard.
 
 Each accepted Candidate becomes the next Reference.
 
-Unless the user asks only for analysis, evaluate at least one credible Candidate when
-infrastructure permits.
+Unless the user asks only for analysis, evaluate at least one credible Candidate when infrastructure permits.
 
-Stop when the user's target or round limit is reached, no credible new hypothesis remains, or
-infrastructure prevents a valid comparison. Do not search the score by making random Agent State
-changes.
+Stop when the user's target or round limit is reached, no credible new hypothesis remains, or infrastructure prevents a valid comparison. Do not search the score by making random Agent State changes.
 
 ## Final report
 
-Report the score curve from the baseline through every fully evaluated Candidate, including
-rejected Candidates. Show it as a compact table and a simple visual curve such as Mermaid
-`xychart-beta` or an equivalent text chart. Also report accepted Agent State versions and main
-changes, rejected and rolled-back Candidates, Test Session ids, stop reason, and known
-limitations.
+Report the score curve from the baseline through every fully evaluated Candidate, including rejected Candidates. Show it as a compact table and a simple visual curve such as Mermaid `xychart-beta` or an equivalent text chart. Also report accepted Agent State versions and main changes, rejected and rolled-back Candidates, Test Session ids, stop reason, and known limitations.
 
-Distinguish evaluated Agent State from unscored changes. Never attribute a Scoreboard score to an
-Agent State that was not evaluated.
+Distinguish evaluated Agent State from unscored changes. Never attribute a Scoreboard score to an Agent State that was not evaluated.

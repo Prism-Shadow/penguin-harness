@@ -17,10 +17,7 @@ This Skill is invoked by `benchmark-design` or Benchmark mode in `agent-optimiza
 
 ## Privacy boundary
 
-Use private reasoning and tool calls only. Never expose Statement or artifact contents, Rubric
-items, Gold answers, per-item scoring, scoring rationale, secret configuration, Workspace paths, or
-Trace paths in any response. The final protocol may contain only the public identity and result
-fields defined below.
+Use private reasoning and tool calls only. Never expose Statement or artifact contents, Rubric items, Gold answers, per-item scoring, scoring rationale, secret configuration, Workspace paths, or Trace paths in any response. The final protocol may contain only the public identity and result fields defined below.
 
 A valid request contains exactly one value for each field:
 
@@ -55,14 +52,9 @@ Require:
 <benchmark_dir>/<case_id>/rubric/README.md
 ```
 
-Require `benchmark_config.toml` to contain a positive integer `runs`. The requested `run` must be
-within `1..runs`, and the requested `provider` and `model_id` must both be non-empty. The canonical
-State version is the top-level `version` in `system_config.yaml`, defaulting to 1, and must equal
-`expected_version`. Any mismatch is `invalid_request`.
+Require `benchmark_config.toml` to contain a positive integer `runs`. The requested `run` must be within `1..runs`, and the requested `provider` and `model_id` must both be non-empty. The canonical State version is the top-level `version` in `system_config.yaml`, defaulting to 1, and must equal `expected_version`. Any mismatch is `invalid_request`.
 
-Before launch, snapshot all files under the Case's complete `statement/` and `rubric/` directories,
-and verify they remain unchanged before scoring. The Rubric must define clear scoring items and a
-finite Case maximum; the returned score must be within `0..case_max`.
+Before launch, snapshot all files under the Case's complete `statement/` and `rubric/` directories, and verify they remain unchanged before scoring. The Rubric must define clear scoring items and a finite Case maximum; the returned score must be within `0..case_max`.
 
 Create a collision-checked Workspace at `<test_agent_dir>/workspaces/tmp-<8hex>`. Copy only the contents of `statement/` into it. Never copy, link, or disclose `rubric/`, and never reuse another Case or run's Workspace.
 
@@ -85,45 +77,28 @@ penguin run --message "Read README.md in the current Workspace and complete the 
   --agent-id "<test_agent_id>" --workspace "$WORKSPACE" --approve allow-all
 ```
 
-Use the exact Project, Test Agent, Model pair, and Workspace. Do not fall back to another value.
-Poll the same process until it exits. A nonzero, interrupted, or misrouted launch is `cli_failed`,
-not score zero. Do not relaunch within the same run.
+Use the exact Project, Test Agent, Model pair, and Workspace. Do not fall back to another value. Poll the same process until it exits. A nonzero, interrupted, or misrouted launch is `cli_failed`, not score zero. Do not relaunch within the same run.
 
-Read the canonical State version before and after the Test run; any change is `version_changed`.
-Compare both directory snapshots before scoring. Any Statement change is `invalid_statement`; any
-Rubric change is `invalid_rubric`.
+Read the canonical State version before and after the Test run; any change is `version_changed`. Compare both directory snapshots before scoring. Any Statement change is `invalid_statement`; any Rubric change is `invalid_rubric`.
 
-After launch, inspect only new Trace files or files that grew. Never inspect another Agent's traces
-or unrelated older Sessions. Bind one unique root Test Trace mechanically from `session_meta`:
+After launch, inspect only new Trace files or files that grew. Never inspect another Agent's traces or unrelated older Sessions. Bind one unique root Test Trace mechanically from `session_meta`:
 
 - `payload.workspace` equals the unique Workspace;
 - `payload.agent_state` equals the exact Test Agent State path;
 - `payload.provider` equals the requested provider;
 - `payload.model_id` equals the requested model id.
 
-When matching Test subagents exist, exclude directly referenced child ids and require one unique
-matching root Test Session. Missing, multiple, malformed, or identity-mismatched roots are
-`provenance_mismatch`. Do not perform open-ended Session archaeology to repair a failed binding.
+When matching Test subagents exist, exclude directly referenced child ids and require one unique matching root Test Session. Missing, multiple, malformed, or identity-mismatched roots are `provenance_mismatch`. Do not perform open-ended Session archaeology to repair a failed binding.
 
 ## Score and account
 
-Inspect only the unique Test Workspace, its bound Test Trace, and the retained private Rubric.
-Apply every scoring item and normalize only allowed equivalents. A missing, malformed, wrong-type,
-or incorrect Test artifact is ordinary scored Test Agent behavior: apply the Rubric's zero or
-partial credit and return `status: ok`. A Rubric that cannot be applied unambiguously is
-`invalid_rubric`; a non-finite or out-of-range result is `invalid_score`. Detailed reasoning remains
-in Evaluator Trace.
+Inspect only the unique Test Workspace, its bound Test Trace, and the retained private Rubric. Apply every scoring item and normalize only allowed equivalents. A missing, malformed, wrong-type, or incorrect Test artifact is ordinary scored Test Agent behavior: apply the Rubric's zero or partial credit and return `status: ok`. A Rubric that cannot be applied unambiguously is `invalid_rubric`; a non-finite or out-of-range result is `invalid_score`. Detailed reasoning remains in Evaluator Trace.
 
-Compute `duration_ms` from the bound root Test Session. Compute cost from its final cumulative token
-usage and any directly referenced child traces already found in the same bounded pass. If usage,
-pricing, or a referenced child is unavailable, return `cost: null`. Cost accounting must not delay
-or invalidate an otherwise valid score, and must not trigger repeated pricing calculations,
-recursive trace searches, or inspection of sibling Sessions.
+Compute `duration_ms` from the bound root Test Session. Compute cost from its final cumulative token usage and any directly referenced child traces already found in the same bounded pass. If usage, pricing, or a referenced child is unavailable, return `cost: null`. Cost accounting must not delay or invalidate an otherwise valid score, and must not trigger repeated pricing calculations, recursive trace searches, or inspection of sibling Sessions.
 
 ## Return protocol
 
-Do not narrate progress. Emit exactly one plain YAML document beginning with `protocol_version:`
-and stop. Do not use a code fence or add explanations.
+Do not narrate progress. Emit exactly one plain YAML document beginning with `protocol_version:` and stop. Do not use a code fence or add explanations.
 
 On success:
 
@@ -141,8 +116,7 @@ duration_ms: <non_negative_integer>
 session_id: <test_session_id>
 ```
 
-On failure, use `null` for any identity field that was missing or conflicting in an
-`invalid_request`:
+On failure, use `null` for any identity field that was missing or conflicting in an `invalid_request`:
 
 ```text
 protocol_version: 1
