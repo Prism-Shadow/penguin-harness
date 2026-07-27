@@ -144,13 +144,22 @@ export async function* runGoalLoop(
     // An abort landing BETWEEN rounds produces no abort event on any stream — without this
     // check the loop would fire a phantom round whose [goal] input the already-aborted
     // engine holds as carry-over, leaking the block into the user's next message.
-    if (opts.signal?.aborted) { yield finish("aborted"); return; }
+    if (opts.signal?.aborted) {
+      yield finish("aborted");
+      return;
+    }
     // Runaway backstop, independent of the budget (which may be unlimited).
-    if (rounds >= maxRounds) { yield finish("aborted"); return; }
+    if (rounds >= maxRounds) {
+      yield finish("aborted");
+      return;
+    }
     yield* round("regular");
     // Abort wins over whatever is in the file: the goal stays active on disk (the workspace
     // and goal file are the resume point) and nothing is rewritten mid-interrupt.
-    if (aborted) { yield finish("aborted"); return; }
+    if (aborted) {
+      yield finish("aborted");
+      return;
+    }
 
     const status = await readGoalStatus(opts.goalFilePath);
     if (status !== "active") {
@@ -162,17 +171,26 @@ export async function* runGoalLoop(
     // max_turns path) is terminal, not a reason to re-fire: the model never reached the
     // file, and the next round would hit the same cutoff. A written terminal status above
     // still wins (a post-completion cutoff doesn't undo the completion).
-    if (roundFailed) { yield finish("aborted"); return; }
+    if (roundFailed) {
+      yield finish("aborted");
+      return;
+    }
 
     if (budget > 0 && used >= budget) {
       // Same phantom-round guard as at the loop top, for the wrap-up round.
-      if (opts.signal?.aborted) { yield finish("aborted"); return; }
+      if (opts.signal?.aborted) {
+        yield finish("aborted");
+        return;
+      }
       // Refresh the file so the wrap-up block embeds exactly the bytes on disk.
       await writeGoalFile(opts.goalFilePath, goalNow("active"));
       // One wrap-up round, then the system-side terminal state — unless the model could
       // truthfully complete during wrap-up (its template forbids a courtesy `complete`).
       yield* round("wrap-up");
-      if (aborted) { yield finish("aborted"); return; }
+      if (aborted) {
+        yield finish("aborted");
+        return;
+      }
       const wrapStatus = await readGoalStatus(opts.goalFilePath);
       const finalStatus = wrapStatus === "complete" ? "complete" : "budget_limited";
       await writeGoalFile(opts.goalFilePath, goalNow(finalStatus));
