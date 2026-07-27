@@ -778,6 +778,8 @@ When done, open index.html in a browser and self-test once.`,
       `Using skill${names.length === 1 ? "" : "s"}: ${names.join(", ")}`,
     /** Composer "+" extension menu (currently only goal mode; more entries later) and the goal chip. */
     plusMenu: "More input options",
+    uploadImage: "Upload image",
+    uploadImageDesc: "Attach images to this message",
     goalMode: "Goal mode",
     goalModeDesc: "Loop until the goal completes",
     goalBudgetLabel: "Token budget",

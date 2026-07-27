@@ -189,6 +189,7 @@ describe("model-catalog", () => {
       ["accounts/fireworks/models/deepseek-v4-flash", false],
       ["accounts/fireworks/models/deepseek-v4-pro", false],
       ["accounts/fireworks/models/glm-5p2", false],
+      ["accounts/fireworks/models/kimi-k3", true],
       ["accounts/fireworks/models/kimi-k2p7-code", true],
       ["accounts/fireworks/models/minimax-m3", true],
     ]);

@@ -758,6 +758,8 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     skillsBanner: (names: string[]): string => `使用技能：${names.join("、")}`,
     /** Composer "+" extension menu (currently only goal mode; more entries later) and the goal chip. */
     plusMenu: "更多输入方式",
+    uploadImage: "上传图片",
+    uploadImageDesc: "为本条消息附加图片",
     goalMode: "目标模式",
     goalModeDesc: "循环运行直至目标完成",
     goalBudgetLabel: "Token 预算",

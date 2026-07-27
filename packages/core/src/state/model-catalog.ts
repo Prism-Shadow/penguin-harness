@@ -564,6 +564,16 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: FIREWORKS_BASE_URL,
   },
   {
+    modelId: "accounts/fireworks/models/kimi-k3",
+    displayName: "Kimi K3",
+    provider: "fireworks",
+    contextWindow: 1000000,
+    pricing: usd(0.3, 3, 15),
+    supportsVision: true,
+    clientType: "openai",
+    baseUrl: FIREWORKS_BASE_URL,
+  },
+  {
     modelId: "accounts/fireworks/models/kimi-k2p7-code",
     displayName: "Kimi K2.7 Code",
     provider: "fireworks",
