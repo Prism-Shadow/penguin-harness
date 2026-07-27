@@ -3,8 +3,8 @@ name: benchmark-design
 description: Design and calibrate a multi-Case capability Benchmark and establish a traceable Formal Baseline. Use when an explicit Test Agent and target capability need a new or revised Benchmark; stop after the baseline and do not optimize the Agent.
 short_description: Design and calibrate an Agent capability Benchmark.
 short_description_zh: 设计并校准 Agent 能力评测 Benchmark。
-version: 6
-updated: 2026-07-27T07:38:00Z
+version: 7
+updated: 2026-07-27T08:04:40Z
 ---
 
 # Benchmark Design
@@ -34,10 +34,10 @@ Require a Test Agent id, the capability to measure, one exact evaluation `(provi
 
 The current Session must provide `run_subagent`, and the current Agent must have `agent-evaluation` installed. If either is unavailable, stop. Return `missing_run_subagent` when the tool is missing. Never fall back to `penguin run` or score a Case yourself.
 
-Use the Environment's App Data Dir:
+Use the `Project Dir` from the Environment:
 
 ```text
-TEST_AGENT_DIR = <app_data_dir>/agents/<test_agent_id>
+TEST_AGENT_DIR = <project_dir>/agents/<test_agent_id>
 BENCHMARK_DIR = <test_agent_dir>/benchmarks/<benchmark_id>
 SCOREBOARD = <benchmark_dir>/scoreboard.yaml
 ```

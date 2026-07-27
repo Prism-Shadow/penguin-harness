@@ -3,8 +3,8 @@ name: agent-optimization
 description: Improve an Agent State through versioned scores and score-linked Traces from a frozen Benchmark. Use when an explicit Test Agent has a complete current baseline; do not use for direct feedback, Benchmark construction, or direct scoring.
 short_description: Improve an Agent from measured Benchmark results.
 short_description_zh: 根据 Benchmark 结果改进 Agent。
-version: 6
-updated: 2026-07-27T06:38:27Z
+version: 7
+updated: 2026-07-27T08:04:40Z
 ---
 
 # Agent Optimization
@@ -15,7 +15,7 @@ Improve one Test Agent using public Statements, scores, and Test Traces as black
 
 Require an explicit Test Agent and a Benchmark with a complete valid Formal Baseline. The top-level Session must provide `run_subagent`, and the current Agent must have the `agent-evaluation` Skill. If `run_subagent` is absent, return `missing_run_subagent`. If anything else is missing, stop and explain what is needed. Do not create a Baseline or fall back to direct evaluation.
 
-Resolve only the requested Test Agent and Benchmark under the Environment App Data Dir. Freeze the Cases, Statements, supporting files, Rubrics, Gold answers, `runs`, and evaluation `(provider, model_id)` throughout optimization.
+Resolve only the requested Test Agent and Benchmark under the `Project Dir` from the Environment. Freeze the Cases, Statements, supporting files, Rubrics, Gold answers, `runs`, and evaluation `(provider, model_id)` throughout optimization.
 
 The Reference must match the current Agent State version and contain a complete Case × Run matrix. Run every Candidate on the same frozen Benchmark with the same evaluation Model. Do not change the Candidate or Benchmark during evaluation. If the matrix is incomplete or invalid, reject the Candidate. Keep it only when its aggregate score is strictly higher than the Reference.
 

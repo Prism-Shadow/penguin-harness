@@ -3,8 +3,8 @@ name: agent-evaluation
 description: Internal leaf worker that runs one specified Test Agent on one specified Benchmark Case exactly once, privately scores that execution, and returns one protocol result. Use only when benchmark-design or agent-optimization supplies the complete request; do not use for user-facing evaluation, Benchmark design, or Agent changes.
 short_description: Run and score one isolated Benchmark Case.
 short_description_zh: 隔离执行并评分一个 Benchmark Case。
-version: 5
-updated: 2026-07-27T06:38:27Z
+version: 6
+updated: 2026-07-27T08:04:40Z
 ---
 
 # Agent Evaluation
@@ -34,7 +34,7 @@ One request has one of two outcomes. Return a **scored result** when the Test Ag
 
 ## Prepare an isolated run
 
-Under the Environment App Data Dir, resolve `TEST_AGENT_DIR` as `agents/<test_agent_id>` and `BENCHMARK_DIR` as `<test_agent_dir>/benchmarks/<benchmark_id>`. Inspect only the requested Test Agent State and version, the requested Benchmark config and Case, the isolated Test Workspace, and the Test Trace for this execution.
+Use the `Project Dir` from the Environment. Resolve `TEST_AGENT_DIR` as `<project_dir>/agents/<test_agent_id>` and `BENCHMARK_DIR` as `<test_agent_dir>/benchmarks/<benchmark_id>`. Inspect only the requested Test Agent State and version, the requested Benchmark config and Case, the isolated Test Workspace, and the Test Trace for this execution.
 
 Do not inspect another Agent, Project secrets, hidden configuration, or unrelated Workspaces or Traces. Reject traversal, symlink escape, or any resolved path outside the requested Test Agent.
 
@@ -49,9 +49,10 @@ Create a unique collision-checked Workspace under `<test_agent_dir>/workspaces/`
 Use an existing verified Penguin CLI or repository-local launcher. Do not install or probe a launcher. Snapshot the isolated Workspace and record the existing Trace files, then start one foreground execution with a fresh top-level Session:
 
 ```bash
-PENGUIN_HOME="<parent_of_app_data_dir>" penguin run \
+PROJECT_DIR="<project_dir>"
+PENGUIN_HOME="$(dirname "$PROJECT_DIR")" penguin run \
   --message "Read README.md in the current Workspace and complete the task exactly as specified there." \
-  --provider "<provider>" --model-id "<model_id>" --project-id "<app_data_dir_basename>" \
+  --provider "<provider>" --model-id "<model_id>" --project-id "$(basename "$PROJECT_DIR")" \
   --agent-id "<test_agent_id>" --workspace "<unique_workspace>" --approve allow-all
 ```
 
