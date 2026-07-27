@@ -116,6 +116,8 @@ Both tools' arguments (explicit keys):
 }
 ```
 
+On POSIX, Ctrl-C sends `SIGINT` to the session's process group, interrupting the foreground command. On Windows there is no console signal delivery to a piped child process, so Ctrl-C degrades to a hard kill of the whole command session tree (`taskkill /t /f`) — the foreground command and every child it started terminate, instead of the foreground command being interrupted.
+
 ### File tools
 
 `read_file` / `edit_file` / `write_file` run with the user's full permissions, same as the shell tool; relative paths resolve against the Workspace and absolute paths are allowed. They are non-streaming (a single final output) and never throw — failures come back as explanatory text with `stop_reason: failed`.

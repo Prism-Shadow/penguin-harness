@@ -52,11 +52,14 @@ import type {
   SessionTracesResponse,
   SkillInstallRequest,
   SkillLibraryResponse,
+  RetryNowResponse,
   SteerRequest,
   TaskCreateRequest,
   TaskCreateResponse,
   TraceAnalysisResponse,
   TraceEventsResponse,
+  TraceImportRequest,
+  TraceImportResponse,
   UiPrefs,
   UsageGroupBy,
   UsageResponse,
@@ -269,6 +272,13 @@ export const postAbort = (sessionId: string) =>
     body: {},
   });
 
+/** "Retry now" on the reconnect countdown: skips the remaining backoff wait server-side (skipped:false is the benign "no wait in progress" case — e.g. the timer elapsed in a race — never an error). */
+export const postRetryNow = (sessionId: string) =>
+  apiFetch<RetryNowResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/retry-now`, {
+    method: "POST",
+    body: {},
+  });
+
 /** Mid-run steering: queues a message for the running Task (delivered between turns as a standalone `[user_steering]` user message); 409 not_running when no Task is in progress. */
 export const postSteer = (sessionId: string, body: SteerRequest) =>
   apiFetch<void>(`/api/sessions/${encodeURIComponent(sessionId)}/steer`, {
@@ -326,6 +336,23 @@ export const getAgentTraceAnalysis = (
   apiFetch<TraceAnalysisResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
       `/traces/${encodeURIComponent(sessionId)}/${index}/analysis`,
+  );
+
+/** Trace file download URL: the server sets Content-Disposition attachment, usable directly in <a download>. */
+export const agentTraceDownloadUrl = (
+  projectId: string,
+  agentId: string,
+  sessionId: string,
+  index: number,
+): string =>
+  `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
+  `/traces/${encodeURIComponent(sessionId)}/${index}/download`;
+
+/** Imports a Trace JSONL file (owner only); the response says where the file landed (sessionId / index / date). */
+export const importAgentTrace = (projectId: string, agentId: string, body: TraceImportRequest) =>
+  apiFetch<TraceImportResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/traces/import`,
+    { method: "POST", body },
   );
 
 // Usage statistics ----------------------------------------------------------------------

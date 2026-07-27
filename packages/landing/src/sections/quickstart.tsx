@@ -7,7 +7,12 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { S } from "../lib/strings";
-import { DEEPSEEK_KEYS_URL, INSTALL_CMD, OPENROUTER_KEYS_URL } from "../lib/links";
+import {
+  DEEPSEEK_KEYS_URL,
+  INSTALL_CMD,
+  INSTALL_CMD_WINDOWS,
+  OPENROUTER_KEYS_URL,
+} from "../lib/links";
 import { Section } from "../components/section";
 import { CodeCard } from "../components/code-card";
 import {
@@ -125,7 +130,12 @@ export function Quickstart() {
             title={S.quickstart.step1}
             desc={S.quickstart.step1Desc}
           >
-            <CodeCard code={INSTALL_CMD} label="install" />
+            <CodeCard code={INSTALL_CMD} label={S.quickstart.installLabelPosix} />
+            <CodeCard
+              code={INSTALL_CMD_WINDOWS}
+              label={S.quickstart.installLabelWindows}
+              className="mt-2"
+            />
           </Step>
 
           {mode === "web" ? (

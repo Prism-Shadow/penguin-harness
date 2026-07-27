@@ -9,6 +9,7 @@ import path from "node:path";
 import { randomBytes, randomUUID } from "node:crypto";
 
 import { formatLocalDate } from "./dates.js";
+import { sessionShell } from "../environment/tools/command/shell.js";
 import type { SessionEnvironmentValues } from "../state/agent-state.js";
 import { workspacesDir } from "../state/index.js";
 import { userText } from "../omnimessage/index.js";
@@ -47,6 +48,9 @@ export function sessionEnvironment(
     modelId: ids.modelId,
     platform: process.platform,
     osVersion: getOsVersion(),
+    // The shell exec_command actually runs (bash on POSIX; resolved on Windows): the model
+    // must know whether to write bash or PowerShell syntax.
+    shell: sessionShell().name,
     date: formatLocalDate(date),
   };
 }

@@ -50,18 +50,21 @@ interface GenerativeModelParameters {
 
 ```ts
 interface LLMOutcome {
-  status: StopReason;   // completed | timeout | malformed | aborted | failed
-  message?: string;     // failed 时的展示文案
+  status: StopReason;   // completed | timeout | malformed | aborted | failed | auth
+  message?: string;     // 失败详情:failed/auth 时携带;timeout/malformed 捕获到具体
+                        // 错误时也携带——透传到 request_end,错误面板据此展示被重试
+                        // 请求背后的真实原因
 }
 ```
 
 | status | 含义 | 引擎的反应 |
 | --- | --- | --- |
 | `completed` | 正常完成(已产出 token_usage) | 继续下一步 |
-| `timeout` | 超时/断连 | 同一 run 内自动重连 |
+| `timeout` | 超时/传输层断连/瞬时的供应商额度错误 | 同一 run 内自动重连 |
 | `malformed` | 响应解析失败 | 同一 run 内自动重连 |
 | `aborted` | 用户中断 | 停止交还用户 |
-| `failed` | 鉴权/参数等不可重试错误 | 停止交还用户 |
+| `failed` | 参数等不可重试错误 | 停止交还用户 |
+| `auth` | 凭据被拒绝 | 与 `failed` 同样停止；宿主据此禁用输入，直到该模型的 API key 被更新 |
 
 实现约束：从不抛异常；不做内部重试(重连是引擎的职责，见 [Agent 运行循环](/agent-loop))。
 

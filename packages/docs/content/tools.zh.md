@@ -115,6 +115,8 @@ exec_command(cmd)
 }
 ```
 
+POSIX 上 Ctrl-C 向会话进程组发送 `SIGINT`，中断前台命令。Windows 无法向管道子进程投递控制台信号，Ctrl-C 因此退化为整棵命令会话进程树的强杀（`taskkill /t /f`）——前台命令及其启动的所有子进程一并终止，而不是仅中断前台命令。
+
 ### 文件工具
 
 `read_file` / `edit_file` / `write_file` 与 Shell 工具一样以用户完整权限运行：相对路径按 Workspace 解析，也接受绝对路径。三者均为非流式（一次性输出最终结果），从不抛异常——失败以解释性文本收尾，`stop_reason` 为 `failed`。

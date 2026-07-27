@@ -234,6 +234,13 @@ export interface ModelsResponse {
   defaultModel?: ModelRefDto;
   /** Vision model used as a proxy reader for read_image (describes images when the session model has vision=false). */
   visionModel?: ModelRefDto;
+  /**
+   * When the Project's model/credential config last changed (ISO; the config file's mtime,
+   * so it survives restarts). The web's auth-dead gate compares it against the last auth
+   * abort: an abort OLDER than the last credential update no longer disables the composer
+   * (the key was fixed since). Absent when the Project has no config file yet.
+   */
+  updatedAt?: string;
   models: ModelInfo[];
 }
 
@@ -554,9 +561,42 @@ export interface SessionPatchRequest {
   title?: string;
 }
 
+/**
+ * Live in-progress tail of a running Session, carried by `MessagesResponse.live`.
+ *
+ * Contract (see runtime/live-tail.ts and the GET /messages route): the server captures
+ * `cursor` and `fragments` atomically — in one synchronous tick, before starting the
+ * trace read — while the Session is running/compacting.
+ *   - `cursor`: the Session channel's most recently assigned SSE event id
+ *     (`<epoch>-<seq>`); every event published up to and including this id is already
+ *     reflected in `fragments`.
+ *   - `fragments`: one synthetic `partial_* start` OmniMessage per open streaming
+ *     fragment, whose payload carries the full accumulated content so far (text/thinking
+ *     prefix, tool-call name + accumulated arguments, tool-output prefix + images), with
+ *     the original `origin` chain preserved.
+ *
+ * Client usage (the bundled Web App's connect-first flow): after applying `messages`,
+ * when the cursor's epoch matches the epoch of the SSE events seen on the current
+ * connection, drop every buffered **partial** event with seq <= cursor (its content is
+ * already inside `fragments`), feed `fragments` through the normal reducer path, then
+ * replay the rest of the buffer. Buffered **complete** messages are never dropped by the
+ * cursor — the regular overlap dedup decides for them — so nothing is lost even when a
+ * complete message's trace append is still in flight at read time.
+ */
+export interface MessagesLiveTail {
+  cursor: string;
+  fragments: OmniMessage[];
+}
+
 /** Message history: the full messages and events from concatenating all of this Session's Trace files in order (excludes partial_*). */
 export interface MessagesResponse {
   messages: OmniMessage[];
+  /**
+   * Present only while the Session is running/compacting: the in-progress stream tail
+   * (open streaming fragments + the channel cursor they cover), so a client joining
+   * mid-stream can render the currently streaming message. Omitted when idle.
+   */
+  live?: MessagesLiveTail;
 }
 
 // ---------------------------------------------------------------------------
@@ -632,6 +672,16 @@ export interface ApprovalDecisionRequest {
   decision: "allow" | "deny";
 }
 
+/**
+ * POST /api/sessions/:sessionId/retry-now — skip the in-progress reconnect backoff and
+ * fire the next retry immediately (the "retry now" button on the reconnect countdown).
+ * `skipped: false` is the benign "no reconnect wait in progress" case (idle session, or
+ * the wait elapsed in a timing race), not an error.
+ */
+export interface RetryNowResponse {
+  skipped: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // SSE server events (OmniMessage uses the default event, only server_event here)
 // ---------------------------------------------------------------------------
@@ -649,6 +699,14 @@ export type ServerEvent =
   | { type: "session_title"; sessionId: string; title: string }
   /** Last-Event-ID has been evicted from the buffer: the frontend should re-fetch the history endpoint before continuing to consume this connection. */
   | { type: "resync_required" }
+  /**
+   * The Project's model credentials changed (PUT /models): cached runtimes have been
+   * invalidated server-side, so an auth-dead Session can continue — the frontend clears
+   * its auth-dead composer state immediately. Published to every existing Session channel
+   * of the Project; tabs without a live channel learn the same fact from the models
+   * response's `updatedAt` on their next load.
+   */
+  | { type: "credentials_updated" }
   /** Placeholder handshake on the user channel (reserved for automated task notifications). */
   | { type: "hello" }
   /** New session registered (pushed over the parent session's channel for subagent sessions): frontend refreshes the list in place. */
@@ -918,6 +976,20 @@ export interface AgentTraceDateGroup {
 /** Agent → date → Session → Trace file drill-down browsing structure (reverse chronological). */
 export interface AgentTracesResponse {
   dates: AgentTraceDateGroup[];
+}
+
+export interface TraceImportRequest {
+  /** Base64 of the Trace file content (JSON Lines; the first record must be `session_meta`). */
+  dataBase64: string;
+}
+
+export interface TraceImportResponse {
+  /** Session id taken from the imported file's `session_meta`. */
+  sessionId: string;
+  /** Allocated file index: always 1 — an import creates a new Session (a duplicate session id is rejected with 409 `trace_session_exists`). */
+  index: number;
+  /** Date directory the file landed in (local yyyy-mm-dd from the first record's timestamp, matching the Trace Writer's convention). */
+  date: string;
 }
 
 // ---------------------------------------------------------------------------

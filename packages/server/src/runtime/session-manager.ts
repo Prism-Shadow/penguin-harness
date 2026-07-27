@@ -54,6 +54,7 @@ import { ApprovalRegistry, makeApprove } from "./approvals.js";
 import type { PendingApproval } from "./approvals.js";
 import type { ChannelHub } from "./channel.js";
 import type { ErrorSink } from "./error-recorder.js";
+import { LiveTailTracker } from "./live-tail.js";
 import { asSessionSource } from "./session-sources.js";
 import type { SessionSources } from "./session-sources.js";
 import { StreamErrorWatcher } from "./stream-error-watcher.js";
@@ -89,6 +90,8 @@ export interface RuntimeSession {
   compactability(): CompactAvailability;
   /** Queues a mid-run steering message (core `Session.steer`); false when no Task is running. */
   steer(text: string): boolean;
+  /** Skips the in-progress reconnect backoff, firing the next retry immediately (core `Session.skipReconnectWait`); false when no wait is in progress. */
+  skipReconnectWait(): boolean;
   toolPermission(name: string): "r" | "rw" | undefined;
   /**
    * Out-of-band one-shot request for title generation (core `Session.generateTitle`,
@@ -340,6 +343,8 @@ export class SessionManager {
   private readonly deletingSessions = new Set<string>();
   /** Per-Agent config generation (key = agentKey), bumped by invalidateAgentRuntimes on vault updates. */
   private readonly agentGenerations = new Map<string, number>();
+  /** Open streaming fragments of running sessions (fed by drive, served to GET /messages; see live-tail.ts). */
+  private readonly liveTail = new LiveTailTracker();
   private readonly sweepTimer: NodeJS.Timeout;
 
   constructor(private readonly deps: SessionManagerDeps) {
@@ -365,6 +370,16 @@ export class SessionManager {
   /** Number of queued follow-up tasks (`queueIfBusy`) awaiting auto-start. */
   pendingFollowUpCount(sessionId: string): number {
     return this.entries.get(sessionId)?.followUps.length ?? 0;
+  }
+
+  /**
+   * Live tail of a running session: one synthetic `partial_* start` OmniMessage per open
+   * streaming fragment, carrying the full accumulated content so far (see live-tail.ts).
+   * Empty when idle or when nothing is streaming. GET /messages attaches this (with a
+   * channel cursor) so a client joining mid-stream can render the in-progress message.
+   */
+  liveFragments(sessionId: string): OmniMessage[] {
+    return this.liveTail.fragments(sessionId);
   }
 
   /** Number of Sessions for this Agent that are currently running / compacting. */
@@ -407,6 +422,22 @@ export class SessionManager {
   invalidateAgentRuntimes(projectId: string, agentId: string): void {
     const key = agentKey(projectId, agentId);
     this.agentGenerations.set(key, this.generationOf(projectId, agentId) + 1);
+  }
+
+  /**
+   * After a Project's models/credentials change: invalidate every cached runtime in this
+   * Project, so the next Task re-resumes with the new api_key / base_url. Same
+   * effective-value semantics as invalidateAgentRuntimes — no hot swap into a Task already
+   * in flight. Iterating the active table is complete here, not a shortcut: the generation
+   * map only matters for runtimes that are already cached, and an Agent with no cached
+   * entry builds fresh through the loader anyway.
+   */
+  invalidateProjectRuntimes(projectId: string): void {
+    const agentIds = new Set<string>();
+    for (const e of this.entries.values()) {
+      if (e.projectId === projectId) agentIds.add(e.agentId);
+    }
+    for (const agentId of agentIds) this.invalidateAgentRuntimes(projectId, agentId);
   }
 
   // —— Task / compaction drive ——
@@ -740,6 +771,23 @@ export class SessionManager {
       );
     }
     entry.lastActivityMs = Date.now();
+  }
+
+  /**
+   * "Retry now" on the reconnect countdown: skip the in-progress backoff wait and fire
+   * the next retry immediately (the attempt counter is unchanged — the skipped wait does
+   * not consume an extra attempt). Returns false as a benign no-op when the session has
+   * no active runtime or no reconnect wait is in progress — timing races (the wait
+   * elapsed right before the click) must not surface as errors. Mirrors the steer seam:
+   * manager → RuntimeSession → core Session → engine.
+   */
+  retryNow(sessionId: string): boolean {
+    const entry = this.entries.get(sessionId);
+    // Both running Tasks and compactions can be parked in a reconnect backoff.
+    if (!entry || entry.status === "idle") return false;
+    const skipped = entry.session.skipReconnectWait();
+    if (skipped) entry.lastActivityMs = Date.now();
+    return skipped;
   }
 
   /**
@@ -1093,6 +1141,10 @@ export class SessionManager {
             }
           }
         }
+        // Live-tail bookkeeping in the same synchronous tick as the publish below: the
+        // messages endpoint captures "channel cursor + open fragments" between two
+        // publishes, so the pair is always a consistent snapshot (see live-tail.ts).
+        this.liveTail.observe(entry.sessionId, msg);
         // Re-fetch the channel before every publish (matches publishEvent): the channel
         // may have been recycled and recreated during a long wait on approval, and
         // holding a stale reference would send output to an orphaned, detached channel.
@@ -1115,6 +1167,9 @@ export class SessionManager {
     } finally {
       // Wrap-up: persist any still-pending LLM failure and clear the tool-name cache (the watcher's state doesn't carry across runs).
       watcher?.close();
+      // The run is over: no fragment will ever continue, so drop the live tail before the
+      // idle flip (GET /messages stops attaching `live` the moment status reads idle).
+      this.liveTail.clear(entry.sessionId);
       entry.approvals.denyAll();
       entry.status = "idle";
       entry.abort = null;

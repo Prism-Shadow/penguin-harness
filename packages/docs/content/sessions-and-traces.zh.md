@@ -89,4 +89,4 @@ Web 的 `/model` 命令按 @ handoff 的方式换模型：用普通的会话创�
 
 ## 可观测性
 
-每一次审批决策（`approval_decision`）、中断（`abort`）、压缩（`compaction_begin` / `compaction_end`）与 `token_usage` 都作为事件落入 Trace。Web 的 Trace 视图与用量、成本统计均由这同一份数据派生，不存在第二事实来源；见 [Web App 指南](/web-app)。审批机制本身见[工具与审批](/tools)。
+每一次审批决策（`approval_decision`）、中断（`abort`）、压缩（`compaction_begin` / `compaction_end`）与 `token_usage` 都作为事件落入 Trace。Web 的 Trace 视图与用量、成本统计均由这同一份数据派生，不存在第二事实来源；见 [Web App 指南](/web-app)。审批机制本身见[工具与审批](/tools)。Trace 文件还可以在部署之间迁移：在 Web 轨迹观测页可将任意文件导出（按原样下载为 JSONL），也可导入到某个 Agent 下——若该 Agent 已存在同名 Session 则导入被拒绝，因此导入文件总是成为一个新 Session 的 001 号文件。

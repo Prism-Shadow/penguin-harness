@@ -38,6 +38,7 @@ import {
   finalizeHistory,
   findToolCard,
   isDuplicate,
+  isModelAuthDead,
   notifyTaskIdle,
   pushMessage,
   pushMessages,
@@ -223,6 +224,110 @@ describe("partial aggregation and full-message convergence", () => {
   });
 });
 
+describe("live-tail synthetic starts (mid-stream join seeding)", () => {
+  it("a text start carrying the accumulated prefix opens a streaming item on top of history; deltas continue and the full message replaces", () => {
+    const m = createStreamModel();
+    pushMessage(m, userText("question"));
+    pushMessage(m, partialText("start", "Already streamed prefix"));
+    const item = items(m)[1] as AssistantTextItem;
+    expect(item.kind).toBe("assistant_text");
+    expect(item.text).toBe("Already streamed prefix");
+    expect(item.streaming).toBe(true);
+    pushMessage(m, partialText("delta", " + live tail"));
+    expect(item.text).toBe("Already streamed prefix + live tail");
+    pushMessage(m, partialText("stop"));
+    pushMessage(m, assistantText("Already streamed prefix + live tail."));
+    expect(items(m).filter((i) => i.kind === "assistant_text")).toHaveLength(1);
+    expect(item.text).toBe("Already streamed prefix + live tail.");
+  });
+
+  it("a thinking start carrying the accumulated prefix seeds a streaming thinking item with its start time", () => {
+    const m = createStreamModel();
+    pushMessage(m, at(partialThinking("start", "half a thought"), "2026-07-05T00:00:01.000Z"));
+    const item = items(m)[0] as ThinkingItem;
+    expect(item.thinking).toBe("half a thought");
+    expect(item.streaming).toBe(true);
+    expect(item.startedAtMs).toBe(Date.parse("2026-07-05T00:00:01.000Z"));
+  });
+
+  it("an output start seeds the prefix (and images) onto a call-complete card; a start on an outputComplete card is ignored", () => {
+    const dataUrl = "data:image/png;base64,AAAA";
+    const m = createStreamModel();
+    pushMessage(m, toolCall({ name: "exec_command", arguments: '{"cmd":"x"}', toolCallId: "t1" }));
+    const card = items(m)[0] as ToolCallItem;
+    // Synthetic start carries the accumulated prefix + the whole image set.
+    pushMessage(
+      m,
+      partialToolCallOutput({
+        eventType: "start",
+        output: "line 1\nline 2\n",
+        toolCallId: "t1",
+        images: [dataUrl],
+      }),
+    );
+    expect(card.output).toBe("line 1\nline 2\n");
+    expect(card.outputStreaming).toBe(true);
+    expect(card.images).toEqual([dataUrl]);
+    pushMessage(
+      m,
+      partialToolCallOutput({ eventType: "delta", output: "line 3\n", toolCallId: "t1" }),
+    );
+    expect(card.output).toBe("line 1\nline 2\nline 3\n");
+    // Once the output is complete, a stray synthetic start must not reopen or append.
+    pushMessage(m, toolCallOutput({ output: "final", toolCallId: "t1" }));
+    pushMessage(
+      m,
+      partialToolCallOutput({ eventType: "start", output: "stale", toolCallId: "t1" }),
+    );
+    expect(card.output).toBe("final");
+    expect(card.outputStreaming).toBe(false);
+  });
+
+  it("an arguments start for an id whose call is already complete is ignored (no duplicate card, no reset)", () => {
+    const m = createStreamModel();
+    pushMessage(m, toolCall({ name: "exec_command", arguments: '{"cmd":"x"}', toolCallId: "t1" }));
+    pushMessage(
+      m,
+      partialToolCall({
+        eventType: "start",
+        name: "exec_command",
+        arguments: '{"cmd":"x"}',
+        toolCallId: "t1",
+      }),
+    );
+    expect(items(m)).toHaveLength(1);
+    expect((items(m)[0] as ToolCallItem).argumentsText).toBe('{"cmd":"x"}');
+  });
+
+  it("an arguments start carrying accumulated arguments seeds a card that the full message then completes", () => {
+    const m = createStreamModel();
+    pushMessage(
+      m,
+      partialToolCall({
+        eventType: "start",
+        name: "exec_command",
+        arguments: '{"cmd":"seq 1',
+        toolCallId: "t1",
+      }),
+    );
+    const card = items(m)[0] as ToolCallItem;
+    expect(card.argumentsText).toBe('{"cmd":"seq 1');
+    expect(card.callStreaming).toBe(true);
+    pushMessage(
+      m,
+      partialToolCall({ eventType: "delta", name: "", arguments: ' 40"}', toolCallId: "t1" }),
+    );
+    pushMessage(m, partialToolCall({ eventType: "stop", name: "", toolCallId: "t1" }));
+    pushMessage(
+      m,
+      toolCall({ name: "exec_command", arguments: '{"cmd":"seq 1 40"}', toolCallId: "t1" }),
+    );
+    expect(items(m)).toHaveLength(1);
+    expect(card.argumentsText).toBe('{"cmd":"seq 1 40"}');
+    expect(card.callComplete).toBe(true);
+  });
+});
+
 describe("approvals and events", () => {
   it("approval_decision annotates the matching tool card; locally registered ones are manual, the rest remote", () => {
     const m = createStreamModel();
@@ -243,6 +348,89 @@ describe("approvals and events", () => {
     pushMessage(m, approvalDecision("allow", "t9"));
     pushMessage(m, toolCall({ name: "x", arguments: "{}", toolCallId: "t9" }));
     expect((items(m)[0] as ToolCallItem).decision).toBe("allow");
+  });
+
+  it("a main-session request_end(auth) records the failure timestamp; other aborts/events do not", () => {
+    const m = createStreamModel();
+    pushMessage(m, abortEvent("aborted by user"));
+    expect(m.lastAuthFailureMs).toBeNull();
+    const end = requestEnd("auth", "401 invalid x-api-key");
+    pushMessage(m, end);
+    // The recorded time is the event's envelope timestamp (so a reload can compare it
+    // against the Project's credentials-updated time).
+    expect(m.lastAuthFailureMs).toBe(Date.parse(end.timestamp));
+    // The abort that follows still renders its line (the notice is additional).
+    pushMessage(m, abortEvent("llm request error: 401 invalid x-api-key"));
+    expect(items(m)[1]).toMatchObject({
+      kind: "abort",
+      reason: "llm request error: 401 invalid x-api-key",
+    });
+    // Unrelated later messages don't clear it: only a COMPLETED request does (below) —
+    // request_begin alone proves nothing about the credential.
+    pushMessage(m, userText("hello?"));
+    pushMessage(m, requestBegin());
+    expect(m.lastAuthFailureMs).not.toBeNull();
+  });
+
+  it("a later completed request clears the auth-dead state; a new auth failure re-arms it", () => {
+    const m = createStreamModel();
+    pushMessage(m, requestEnd("auth", "401"));
+    expect(m.lastAuthFailureMs).not.toBeNull();
+    // The key was fixed and a request succeeded: the state must not outlive the success.
+    pushMessage(m, userText("again"));
+    pushMessage(m, requestBegin());
+    pushMessage(m, requestEnd("completed"));
+    expect(m.lastAuthFailureMs).toBeNull();
+    // A fresh auth failure re-arms (e.g. the replacement key is wrong too).
+    pushMessage(m, requestEnd("auth", "401"));
+    expect(m.lastAuthFailureMs).not.toBeNull();
+  });
+
+  it("history replay: order decides — auth failure then completed request stays alive; the reverse stays dead", () => {
+    // Replay of a Trace where the auth failure was followed by a successful request (the
+    // user fixed the key and continued): reload must NOT resurrect the dead composer.
+    const recovered = createStreamModel();
+    pushMessages(recovered, [
+      userText("go"),
+      requestBegin(),
+      requestEnd("auth", "401 invalid x-api-key"),
+      abortEvent("llm request error: 401 invalid x-api-key"),
+      userText("after fix"),
+      requestBegin(),
+      requestEnd("completed"),
+    ]);
+    finalizeHistory(recovered);
+    expect(recovered.lastAuthFailureMs).toBeNull();
+
+    // Replay where the auth failure is the LAST word: the dead state is rebuilt.
+    const dead = createStreamModel();
+    pushMessages(dead, [
+      userText("go"),
+      requestBegin(),
+      requestEnd("completed"),
+      userText("later"),
+      requestBegin(),
+      requestEnd("auth", "401 invalid x-api-key"),
+      abortEvent("llm request error: 401 invalid x-api-key"),
+    ]);
+    finalizeHistory(dead);
+    expect(dead.lastAuthFailureMs).not.toBeNull();
+  });
+
+  it("isModelAuthDead gates on the credentials-updated timestamp", () => {
+    expect(isModelAuthDead(null, null)).toBe(false); // no auth failure on record
+    expect(isModelAuthDead(1000, null)).toBe(true); // no update info -> nothing proves a fix
+    expect(isModelAuthDead(1000, 2000)).toBe(false); // key updated after the failure -> alive
+    expect(isModelAuthDead(3000, 2000)).toBe(true); // a fresh failure after the update re-arms
+  });
+
+  it("a subagent-origin auth failure does NOT kill the parent session's input", () => {
+    const m = createStreamModel();
+    pushMessage(m, withOrigin(requestEnd("auth", "401"), "child1"));
+    // The failure belongs to the child session: its nested model carries the state, the
+    // parent composer stays usable (the subagent simply surfaces as failed).
+    expect(m.lastAuthFailureMs).toBeNull();
+    expect(m.subagents.get("child1")!.lastAuthFailureMs).not.toBeNull();
   });
 
   it("abort events produce an abort marker item", () => {
@@ -310,7 +498,7 @@ describe("approvals and events", () => {
     const m = createStreamModel();
     pushMessage(m, requestBegin());
     pushMessage(m, requestEnd("timeout"));
-    pushMessage(m, abortEvent("reconnect failed after 2 retries"));
+    pushMessage(m, abortEvent("reconnect failed after 5 retries"));
     const retry = items(m)[0] as ReconnectItem;
     expect(retry).toMatchObject({
       kind: "reconnect",
@@ -324,6 +512,58 @@ describe("approvals and events", () => {
     expect(retry.retrying).toBe(false);
     pushMessage(m, requestEnd("malformed"));
     expect((items(m)[2] as ReconnectItem).attempt).toBe(1);
+  });
+
+  it("request_end.retry_in_ms lands on the waiting item with the CLIENT arrival anchor (the countdown's inputs)", () => {
+    const m = createStreamModel();
+    pushMessage(m, requestBegin());
+    // The engine announced a 4s backoff before retry #1; nowMs (the injected client clock)
+    // is the countdown anchor — NOT the envelope timestamp, so server clock skew cannot
+    // bend the ticker.
+    pushMessage(m, requestEnd("timeout", "403 quota (insufficient_user_quota)", 4000), 111_000);
+    const item = items(m)[0] as ReconnectItem;
+    expect(item).toMatchObject({
+      kind: "reconnect",
+      status: "timeout",
+      attempt: 1,
+      retrying: false,
+      plannedDelayMs: 4000,
+      arrivedAtMs: 111_000,
+    });
+    // An event without the field (old Traces / final failures) leaves the fields unset —
+    // the view keeps the plain waiting text.
+    pushMessage(m, requestBegin());
+    pushMessage(m, requestEnd("timeout"));
+    const plain = items(m)[1] as ReconnectItem;
+    expect(plain.plannedDelayMs).toBeUndefined();
+    expect(plain.arrivedAtMs).toBeUndefined();
+  });
+
+  it("history replay of a retried failure leaves no live countdown: the following request_begin/abort flips the state", () => {
+    // Replay delivers the whole Trace back-to-back: the waiting state (the only state the
+    // countdown and the retry-now/give-up controls render for) never persists.
+    const retried = createStreamModel();
+    pushMessages(retried, [
+      userText("go"),
+      requestBegin(),
+      requestEnd("timeout", "quota", 30_000),
+      requestBegin(), // the engine's retry — replayed immediately after
+      requestEnd("completed"),
+    ]);
+    finalizeHistory(retried);
+    const item = items(retried).find((i) => i.kind === "reconnect") as ReconnectItem;
+    expect(item.retrying).toBe(true); // not waiting -> no countdown, no controls
+
+    const aborted = createStreamModel();
+    pushMessages(aborted, [
+      userText("go"),
+      requestBegin(),
+      requestEnd("timeout", "quota", 30_000),
+      abortEvent("aborted during reconnect backoff"), // the user gave up mid-wait
+    ]);
+    finalizeHistory(aborted);
+    const gaveUp = items(aborted).find((i) => i.kind === "reconnect") as ReconnectItem;
+    expect(gaveUp.gaveUp).toBe(true); // not waiting -> no countdown, no controls
   });
 
   it("a new Task closes the previous Task's dangling retry notice (server died in the backoff window, no abort in the Trace)", () => {

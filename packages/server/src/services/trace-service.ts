@@ -13,6 +13,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import {
   agentsDir,
+  isSessionMeta,
+  parseTraceLines,
   parseUserSteeringText,
   readTraceTolerant,
   tracesDir,
@@ -25,14 +27,23 @@ import type {
   TraceAnalysisResponse,
   TraceEventsResponse,
   TraceFileInfo,
+  TraceImportResponse,
   TraceModelSegment,
   TraceTaskStats,
   TraceToolSpan,
   UsageTrendPointInTrace,
 } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
+import { formatLocalDate } from "../internal/dates.js";
 
 const TRACE_FILE_RE = /^(.+)_(\d{3})\.jsonl$/;
+
+/**
+ * session_id an imported Trace file may declare: same alphabet as resource ids plus a length
+ * cap. The value becomes part of the target **filename**, so this is a path-traversal defense,
+ * checked right next to the path construction — never trust the caller to have validated it.
+ */
+const IMPORT_SESSION_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
 
 /** Recursion depth cap for sub-session expansion (run_subagent depth is already constrained by the SDK; this is just a defensive backstop against cycles). */
 const MAX_SUBAGENT_DEPTH = 4;
@@ -687,6 +698,16 @@ export class TraceService {
     sessionId: string,
     index: number,
   ): Promise<OmniMessage[]> {
+    const file = await this.locateByIndex(projectId, agentId, sessionId, index);
+    return readTraceTolerant(file.path);
+  }
+
+  private async locateByIndex(
+    projectId: string,
+    agentId: string,
+    sessionId: string,
+    index: number,
+  ): Promise<LocatedFile> {
     const files = await this.locateAll(projectId, agentId, sessionId);
     const file = files.find((f) => f.index === index);
     if (!file) {
@@ -696,6 +717,80 @@ export class TraceService {
         `This Session has no Trace file with index ${index}.`,
       );
     }
-    return readTraceTolerant(file.path);
+    return file;
+  }
+
+  /** Raw bytes of the Trace file at the given index (export/download: the file is served verbatim). */
+  async readFileRaw(
+    projectId: string,
+    agentId: string,
+    sessionId: string,
+    index: number,
+  ): Promise<Buffer> {
+    const file = await this.locateByIndex(projectId, agentId, sessionId, index);
+    return fs.readFile(file.path);
+  }
+
+  /**
+   * Imports an uploaded Trace file (raw JSONL content). Validates the content itself —
+   * parseable JSONL whose first record is a `session_meta` carrying a filename-safe
+   * `session_id` (400 invalid_trace otherwise) — then writes it under the Agent's traces
+   * directory as a **new Session**: a session id the Agent already has is rejected with
+   * 409 `trace_session_exists` (splicing a further index into an existing Session would
+   * corrupt its concatenated transcript, silently become its resume point, and could
+   * collide with a live Writer's rotation), so the imported file is always index 1. The
+   * date dir comes from the first record's timestamp (falling back to now), formatted as
+   * a **local** date — the same convention as core's Trace Writer — so an export →
+   * import round-trip lands in the same date dir on non-UTC servers.
+   */
+  async importTraceFile(
+    projectId: string,
+    agentId: string,
+    content: string,
+  ): Promise<TraceImportResponse> {
+    const invalid = (message: string) => new HttpError(400, "invalid_trace", message);
+    let records: OmniMessage[];
+    try {
+      records = parseTraceLines(content);
+    } catch {
+      throw invalid("The file is not valid Trace JSONL.");
+    }
+    if (records.length === 0) throw invalid("The file contains no Trace records.");
+    const first = records[0]!;
+    if (!isSessionMeta(first))
+      throw invalid("The first record of a Trace file must be session_meta.");
+    // The payload type declares session_id: string, but the value came from user-supplied JSON —
+    // re-check the runtime shape before it becomes part of a filename.
+    const sessionId: unknown = (first.payload as { session_id?: unknown }).session_id;
+    if (typeof sessionId !== "string" || !IMPORT_SESSION_ID_RE.test(sessionId)) {
+      throw invalid("session_meta carries a missing or invalid session_id.");
+    }
+    const duplicate = () =>
+      new HttpError(
+        409,
+        "trace_session_exists",
+        `This Agent already has a Session with id ${sessionId}; a duplicate Trace cannot be imported.`,
+      );
+    if ((await this.locateAll(projectId, agentId, sessionId)).length > 0) throw duplicate();
+    const ts = Date.parse(first.timestamp);
+    const date = formatLocalDate(Number.isNaN(ts) ? new Date() : new Date(ts));
+    const index = 1;
+    const dir = path.join(tracesDir(this.root, projectId, agentId), date);
+    await fs.mkdir(dir, { recursive: true });
+    const file = path.join(dir, `${sessionId}_${String(index).padStart(3, "0")}.jsonl`);
+    try {
+      // Normalize to exactly one trailing newline (the JSONL convention the writer
+      // follows). `wx` closes the check-then-write race: two concurrent imports of the
+      // same new session id both pass the locateAll check, but only one can create the
+      // file — the loser's EEXIST maps to the same 409 as the pre-check.
+      await fs.writeFile(file, content.replace(/\n+$/, "") + "\n", {
+        encoding: "utf8",
+        flag: "wx",
+      });
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "EEXIST") throw duplicate();
+      throw err;
+    }
+    return { sessionId, index, date };
   }
 }

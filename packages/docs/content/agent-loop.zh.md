@@ -24,7 +24,7 @@ session.run(newMessages, { approve, signal })
 │    │          ▼                                               │
 │    │     Environment.executeTool ──► 并发执行,输出流式回传    │
 │    └─ LLMOutcome:                                             │
-│         timeout / malformed ──► 同轮自动重连(≤2 次,          │
+│         timeout / malformed ──► 同轮自动重连(≤5 次,          │
 │                                 附 [turn_retried],工具不重跑) │
 │  token_usage + request_end(LLM 流结束即产出,不等工具)         │
 │                                                               │
@@ -88,7 +88,7 @@ Task 运行期间，宿主可通过 `session.steer(text)` 排队一条用户消�
 
 ## 自动重连
 
-只有 LLM 侧的 `timeout`(网络超时、限流、5xx)与 `malformed`(流截断、JSON 解析失败)会触发引擎内自动重连：同一次 `run` 内重发原始输入，并附加 `[turn_retried]` 块携带上一次的部分输出，避免工具重复执行。默认最多重连 2 次，线性退避(基数 250ms)；超限后该轮以 `failed` 收场。工具错误从不重试——它们作为 `tool_call_output` 反馈给模型，由模型决定下一步。
+只有 LLM 侧的 `timeout`(网络超时、传输层断连如 socket 被对端关闭、限流、5xx，以及 `insufficient_user_quota` 这类瞬时的供应商额度/订阅错误)与 `malformed`(流截断、JSON 解析失败)会触发引擎内自动重连：同一次 `run` 内重发原始输入，并附加 `[turn_retried]` 块携带上一次的部分输出，避免工具重复执行。默认最多重连 5 次，指数退避并设上限(基数 250ms、上限 30s：250ms、500ms、1s、2s、4s，总耐心约 7.75s——所有可重试类别共用一张时间表，向较慢的类别递增，头几步仍与传输层抖动所需的一样快)；超限后该轮以 `failed` 收场。每次失败的 `request_end` 会以 `retry_in_ms` 宣告计划中的等待(与实际休眠同一公式)，Web App 据此实时倒计时，并提供「立即重试」(经 `Session.skipReconnectWait` 跳过剩余等待——重试计数不变)与「放弃」(普通中断；引擎的退避中中断路径结束本轮)两个内联按钮。压缩请求使用独立的更小上限(重试 3 次)：压缩失败本就有优雅语义——保留原上下文、等下一次触发再试——快速失败好过让会话干等。鉴权错误在任何重试启发式之前判定、从不重试：请求以专属终态 `auth` 收场(Session 锁定的只是模型引用，凭据在会话装载时取自当前 Project 配置)，Web App 据此禁用该 Session 的输入框，直到该模型的凭据被更新(更新后自动解锁)或用户点击「重试」。工具错误从不重试——它们作为 `tool_call_output` 反馈给模型，由模型决定下一步。
 
 ## 上下文压缩(Compaction)
 
@@ -112,6 +112,8 @@ interface CompactionSettings {
 | `manual` | 用户执行 `/compact` 或调用 `session.compact()` |
 
 两种模式：`summarize`(默认)向旧上下文追加压缩 Prompt，提取 `[summary]` 后包装为 `[context_summary]` 用户文本，在**全新的模型上下文**中继续；`discard` 直接丢弃旧上下文。系统标记统一写作 `[tag]…[/tag]`；读取旧 Trace 与旧压缩 Prompt 时仍识别早期的尖括号形式（`<summary>`、`<context_summary>` 等）。压缩时 [Trace 文件随之轮转](/sessions-and-traces)(`_002`、`_003`……)，一个 Trace 文件恒等于一个完整模型上下文。`session.compact()` 前可用 `compactability()` 探询可行性(`ok | unsupported | empty | just_compacted`)。
+
+压缩请求**保持会话工具集不变**——请求前缀（含工具列表）与普通轮次逐字节一致，确保上下文最大的时刻提供商的提示词缓存依然有效。只有得到有效摘要，压缩才算成功：若响应中出现工具调用、或提取出的摘要为空，则判为无效并重试——工具调用会先以合成的失败输出逐一应答（保持 `tool_use`/`tool_result` 配对完整），修复后的请求**立即重发**（无效摘要是模型行为而非传输故障，不做退避），最多允许 5 次无效尝试，之后压缩以 `failed` 结束，保留原上下文与 Trace 文件，等待下次触发。传输层 `timeout`/`malformed` 仍走上文「自动重连」一节所述的压缩专用重连上限与退避阶梯。
 
 ## 并发模型
 

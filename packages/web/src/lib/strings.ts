@@ -624,10 +624,18 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     subagent: "子会话",
     subagentRunning: "运行中",
     aborted: (reason?: string) => `[已中断]${reason ? `：${reason}` : ""}`,
+    /** Auth-dead notice (request_end status "auth"): action-only copy — updating the key on the Models page auto-unlocks this Session. */
+    modelAuthDead: "模型 API 认证失败：请在模型配置页更新该模型的 API key，或新建会话。",
+    modelAuthDeadOpenModels: "打开模型配置",
+    modelAuthDeadRetry: "重试",
+    modelAuthDeadCta: "新建会话",
+    modelAuthDeadPlaceholder: "模型认证失败，请先更新 API key",
+    /** Reconnect hint line; `secondsLeft` (waiting state only) switches to the live-countdown wording. */
     reconnect: (
       status: "timeout" | "malformed",
       state: "waiting" | "retried" | "gaveUp",
       attempt: number,
+      secondsLeft?: number,
     ) => {
       const cause = status === "timeout" ? "连接超时或网络中断" : "响应不完整或无法解析";
       const action =
@@ -635,9 +643,15 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
           ? "已停止重试"
           : state === "retried"
             ? `已发起第 ${attempt} 次重试`
-            : `正在发起第 ${attempt} 次重试…`;
+            : secondsLeft !== undefined
+              ? `第 ${attempt} 次重试，${secondsLeft} 秒后发起…`
+              : `正在发起第 ${attempt} 次重试…`;
       return `[重试] ${cause}，${action}`;
     },
+    /** "Retry now" on the reconnect countdown (skips the remaining backoff wait). */
+    reconnectRetryNow: "立即重试",
+    /** "Give up" on the reconnect countdown (the ordinary session abort). */
+    reconnectGiveUp: "放弃",
     imageAlt: "用户上传的图片",
     toolImageAlt: "工具输出的图片",
     imagesAsPathHint:
@@ -830,6 +844,11 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     inProgress: "进行中",
     systemPrompt: "系统提示词",
     toolDefs: (n: number) => `工具定义（${n}）`,
+    exportFile: "导出",
+    importTrace: "导入 Trace",
+    importing: "导入中…",
+    /** Client-side pre-check before reading the picked file (same cap as the server's import route). */
+    fileTooLarge: "文件超过 14MB 上限。",
   },
 
   benchmark: {
@@ -887,6 +906,8 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
       task_in_progress: "该 Session 已有任务在运行。",
       version_conflict: "快照版本不高于当前版本。",
       invalid_title: "标题无效。",
+      invalid_trace: "该文件不是有效的 Trace 文件。",
+      trace_session_exists: "该 Agent 已存在同名 Session，无法导入重复的 Trace。",
     },
   },
 };

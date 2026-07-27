@@ -4,9 +4,9 @@
 # already-released tag skips the build/upload entirely and only re-runs npm publishing.
 # Two parallel jobs (the release job is gated on the existence check):
 # - release: build the monorepo -> pnpm deploy a production CLI dir -> assemble penguin/ (bin + lib + web)
-#   -> four platform packages each bundling the official Node runtime + a universal package -> SHA256 files -> upload to the Release.
-#   Artifacts: penguin-{linux,darwin}-{x64,arm64}.tar.gz, penguin-universal.tar.gz,
-#   their .sha256 files, SHA256SUMS, and install.sh; one version per tag, multiple versions coexist.
+#   -> five platform packages each bundling the official Node runtime + a universal package -> SHA256 files -> upload to the Release.
+#   Artifacts: penguin-{linux,darwin}-{x64,arm64}.tar.gz, penguin-win32-x64.zip, penguin-universal.tar.gz,
+#   their .sha256 files, SHA256SUMS, install.sh, and install.ps1; one version per tag, multiple versions coexist.
 # - publish-npm: publish the whole chain (@prismshadow/penguin-skills -> @prismshadow/penguin-core
 #   -> @prismshadow/penguin-server -> @prismshadow/penguin-cli) to npm at the tag version.
 #   skills/core serve the penguin-sdk Skill's `npm install`; server ships the built web assets inside
@@ -150,12 +150,53 @@ jobs:
           rm -rf out/penguin/node
           tar -czf dist-artifacts/penguin-universal.tar.gz -C out penguin
 
-      # SHA256SUMS summary + a same-named .sha256 per artifact (install.sh verifies against the latter).
+      # Windows package: same lib/ + web/ layout, but a .zip (the native format), the official
+      # win-x64 Node runtime — whose zip has node.exe at the ARCHIVE ROOT, not bin/ — and
+      # cmd/ps1 launchers replacing the sh one (resolve their own dir, default PENGUIN_WEB_DIST
+      # to the sibling web\, prefer the bundled node\node.exe, fall back to system node).
+      # install.ps1 verifies and unpacks this zip; in PowerShell the .ps1 shim wins over .cmd,
+      # in cmd.exe only the .cmd is found — both forward all args and the exit code.
+      - name: Package win-x64 zip
+        run: |
+          name="node-$NODE_RUNTIME_VERSION-win-x64"
+          curl -fsSL "https://nodejs.org/dist/$NODE_RUNTIME_VERSION/$name.zip" -o "/tmp/$name.zip"
+          rm -rf /tmp/node-runtime out/penguin/node
+          mkdir -p /tmp/node-runtime
+          unzip -q "/tmp/$name.zip" -d /tmp/node-runtime
+          mv "/tmp/node-runtime/$name" out/penguin/node
+          rm -f out/penguin/bin/penguin
+          cat > out/penguin/bin/penguin.cmd <<'EOF'
+          @echo off
+          setlocal
+          set "DIR=%~dp0.."
+          if not defined PENGUIN_WEB_DIST set "PENGUIN_WEB_DIST=%DIR%\web"
+          if exist "%DIR%\node\node.exe" (
+            "%DIR%\node\node.exe" "%DIR%\lib\dist\index.js" %*
+          ) else (
+            node "%DIR%\lib\dist\index.js" %*
+          )
+          exit /b %ERRORLEVEL%
+          EOF
+          # cmd.exe is only fully reliable with CRLF batch files.
+          sed -i 's/$/\r/' out/penguin/bin/penguin.cmd
+          cat > out/penguin/bin/penguin.ps1 <<'EOF'
+          $dir = Split-Path -Parent $PSScriptRoot
+          if (-not $env:PENGUIN_WEB_DIST) { $env:PENGUIN_WEB_DIST = Join-Path $dir "web" }
+          $node = Join-Path $dir "node\node.exe"
+          if (-not (Test-Path $node)) { $node = "node" }
+          & $node (Join-Path $dir "lib\dist\index.js") @args
+          exit $LASTEXITCODE
+          EOF
+          # PowerShell accepts LF, but ship CRLF like the .cmd (and the repo's *.ps1 eol=crlf attribute).
+          sed -i 's/$/\r/' out/penguin/bin/penguin.ps1
+          (cd out && zip -qr ../dist-artifacts/penguin-win32-x64.zip penguin)
+
+      # SHA256SUMS summary + a same-named .sha256 per artifact (install.sh / install.ps1 verify against the latter).
       - name: Generate SHA256 checksums
         run: |
           cd dist-artifacts
-          sha256sum *.tar.gz > SHA256SUMS
-          for f in *.tar.gz; do
+          sha256sum *.tar.gz *.zip > SHA256SUMS
+          for f in *.tar.gz *.zip; do
             sha256sum "$f" > "$f.sha256"
           done
 
@@ -192,9 +233,11 @@ jobs:
           generate_release_notes: ${{ steps.notes.outputs.generate }}
           files: |
             dist-artifacts/*.tar.gz
+            dist-artifacts/*.zip
             dist-artifacts/*.sha256
             dist-artifacts/SHA256SUMS
             install.sh
+            install.ps1
 
   publish-npm:
     name: Publish npm packages

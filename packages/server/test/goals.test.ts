@@ -163,6 +163,7 @@ describe("SessionManager.startGoal", () => {
       generateTitle: async () => ({ title: null, usage: null }),
       compactability: () => "ok" as const,
       steer: () => false,
+      skipReconnectWait: () => false,
       async *run(input: OmniMessage[], opts) {
         runOpts.push({
           ...(opts.thinkingLevel !== undefined ? { thinkingLevel: opts.thinkingLevel } : {}),

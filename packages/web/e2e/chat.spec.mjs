@@ -59,6 +59,14 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   await expect(page.getByText("exec_command").first()).toBeVisible();
   // Thinking + tool calls are wrapped in a work group; header shows running/done status.
   await expect(page.getByText("运行中").first()).toBeVisible();
+
+  // Live header statistics: the elapsed chip ticks once per second while the task runs (the
+  // pending approval below keeps it running), so its text must advance with no further server
+  // event. Scoped to the header stats container (div.hidden …): the per-reply footer reuses
+  // the same 用时 ("elapsed") label once the turn's stats line lands.
+  const headerElapsed = page.locator('div.hidden span[title="用时"]');
+  const elapsedBefore = await headerElapsed.textContent();
+  await expect(headerElapsed).not.toHaveText(elapsedBefore);
   // The user takes control of the running work group (toggle = userToggled), keeps it open, and
   // opens the exec_command card to watch the arguments. Both must survive the end of the turn.
   //

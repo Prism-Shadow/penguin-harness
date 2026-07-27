@@ -5,6 +5,10 @@
  *  - files-card probe ("files card test") -> text with two backtick paths (one real, one missing)
  *  - subagent's own turn (its prompt is the only user text) -> final text
  *  - parent asked to delegate ("run a subagent") -> tool_use(run_subagent)
+ *  - "slow stream test" -> tool_use(exec_command) with a command that prints one line
+ *    every 200ms for ~8s (reload-midstream.spec reloads while its output streams)
+ *  - "slow text test" -> a long text streamed one delta every 200ms for ~8s
+ *    (reload-midstream.spec reloads while the TEXT streams)
  *  - last message has tool_result -> final text (turn 2)
  *  - otherwise (first user turn) -> thinking + text + tool_use(exec_command)
  */
@@ -17,6 +21,9 @@ const PORT = Number(process.env.MOCK_PORT || 8931);
 
 /** Count of non-replay requests seen in the "bad stream" conversation: the 1st is cut off (malformed), later ones are retries that get a full tool call. */
 let malformedTurns = 0;
+
+/** Count of requests seen in the "quota retry" conversation: the first 5 are rejected 403 (insufficient_user_quota), the 6th streams normally. */
+let quotaTurns = 0;
 
 function sse(res, event, data) {
   res.write(`event: ${event}\n`);
@@ -97,6 +104,78 @@ const server = http.createServer((req, res) => {
     // first request; the mock can only tell them apart by request count (see the malformedTurns counter).
     const wantsMalformed = flat.includes("bad stream test");
 
+    // "Auth dead" test case: KEY-BASED — requests carrying the bad key (`sk-auth-bad`,
+    // the Anthropic protocol sends it as the x-api-key header) are rejected with a 401 +
+    // OpenAI-compatible body code; any other key succeeds with a plain text answer. This
+    // exercises the recoverable flow end to end: GenerativeModel classifies the 401 as
+    // failed + code "auth" (never retried) and the composer goes dead; once the spec
+    // updates the model's key via PUT /models, the very same conversation continues
+    // (live unlock via credentials_updated + runtime invalidation re-reading the config).
+    // Gated on !isTitle so a stray title request doesn't hit this branch.
+    if (flat.includes("auth dead test") && !isTitle) {
+      if (req.headers["x-api-key"] === "sk-auth-bad") {
+        res.writeHead(401, { "content-type": "application/json" });
+        res.end(
+          JSON.stringify({ error: { code: "invalid_api_key", message: "invalid x-api-key" } }),
+        );
+        return;
+      }
+      res.writeHead(200, {
+        "content-type": "text/event-stream",
+        "cache-control": "no-cache",
+        connection: "keep-alive",
+      });
+      messageStart(res, msgCount);
+      block(res, 0, { type: "text", text: "" }, [
+        { type: "text_delta", text: "Auth restored; hello again." },
+      ]);
+      messageStop(res, "end_turn", 8);
+      return;
+    }
+
+    // "Quota give-up" test case: EVERY request is rejected 403 with the quota code — the
+    // spec clicks the reconnect countdown's give-up button mid-wait, so the conversation
+    // must never recover on its own (the abort ends it instead).
+    if (flat.includes("quota giveup test") && !isTitle) {
+      res.writeHead(403, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          error: { code: "insufficient_user_quota", message: "no active subscription" },
+        }),
+      );
+      return;
+    }
+
+    // "Quota retry" test case: the first 5 requests of the conversation are rejected 403
+    // with the provider's quota-exhaustion code (as OpenAI-compatible gateways do).
+    // GenerativeModel classifies them retryable (timeout) and the engine reconnects with
+    // exponential backoff (250/500/1000/2000/4000ms) — the 4s wait before retry #5 is the
+    // window the spec uses to observe the live countdown and click "retry now"; the 6th
+    // attempt streams a normal final answer.
+    if (flat.includes("quota retry test") && !isTitle) {
+      quotaTurns += 1;
+      if (quotaTurns <= 5) {
+        res.writeHead(403, { "content-type": "application/json" });
+        res.end(
+          JSON.stringify({
+            error: { code: "insufficient_user_quota", message: "no active subscription" },
+          }),
+        );
+        return;
+      }
+      res.writeHead(200, {
+        "content-type": "text/event-stream",
+        "cache-control": "no-cache",
+        connection: "keep-alive",
+      });
+      messageStart(res, msgCount);
+      block(res, 0, { type: "text", text: "" }, [
+        { type: "text_delta", text: "Quota recovered; the answer is 42." },
+      ]);
+      messageStop(res, "end_turn", 10);
+      return;
+    }
+
     res.writeHead(200, {
       "content-type": "text/event-stream",
       "cache-control": "no-cache",
@@ -172,6 +251,46 @@ const server = http.createServer((req, res) => {
         { type: "text_delta", text: "Subagent report: 3 TODOs" },
       ]);
       messageStop(res, "end_turn", 12);
+      return;
+    }
+
+    // Slow tool-output test case (reload-midstream.spec): a real exec_command whose output
+    // streams one line every 200ms for ~8s — long enough to reload the page mid-stream and
+    // watch the output keep growing afterwards.
+    if (flat.includes("slow stream test") && !hasToolResult) {
+      block(res, 0, { type: "tool_use", id: "toolu_slow_1", name: "exec_command", input: {} }, [
+        { type: "input_json_delta", partial_json: '{"cmd": "for i in $(seq 1 40); do' },
+        { type: "input_json_delta", partial_json: ' echo line $i; sleep 0.2; done"}' },
+      ]);
+      messageStop(res, "tool_use", 14);
+      return;
+    }
+
+    // Slow TEXT test case (reload-midstream.spec): a single text block streamed one delta
+    // every 200ms (~8s total) so the page can be reloaded while the assistant text is
+    // still streaming. Single turn: ends with end_turn, no tool call.
+    if (flat.includes("slow text test")) {
+      sse(res, "content_block_start", {
+        type: "content_block_start",
+        index: 0,
+        content_block: { type: "text", text: "" },
+      });
+      let n = 0;
+      const tick = () => {
+        n += 1;
+        sse(res, "content_block_delta", {
+          type: "content_block_delta",
+          index: 0,
+          delta: { type: "text_delta", text: `chunk-${n} ` },
+        });
+        if (n < 40) {
+          setTimeout(tick, 200);
+        } else {
+          sse(res, "content_block_stop", { type: "content_block_stop", index: 0 });
+          messageStop(res, "end_turn", 80);
+        }
+      };
+      tick();
       return;
     }
 

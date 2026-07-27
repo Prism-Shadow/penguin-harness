@@ -3,7 +3,8 @@
  *
  * - OmniMessage uses the default event (no `event:` line); data is the message envelope as
  *   raw JSON;
- * - Server events use `event: server_event` (approval_request / task_state / resync_required / hello);
+ * - Server events use `event: server_event` (approval_request / task_state / resync_required /
+ *   credentials_updated / hello);
  * - EventSource can't set custom request headers, so auth relies on same-origin cookies; on
  *   disconnect, the browser auto-reconnects and attaches a `Last-Event-ID` header (the server
  *   replays from its ring buffer; if the event was already evicted, it pushes resync_required
@@ -14,10 +15,15 @@ import type { OmniMessage } from "@prismshadow/penguin-core/omnimessage";
 import type { ServerEvent } from "@prismshadow/penguin-server/api";
 
 export interface StreamHandlers {
-  /** A single OmniMessage (full/streaming/event, envelope as-is). */
-  onOmniMessage: (msg: OmniMessage) => void;
-  /** A single server event. */
-  onServerEvent: (event: ServerEvent) => void;
+  /**
+   * A single OmniMessage (full/streaming/event, envelope as-is). `eventId` is the SSE
+   * event id assigned by the server channel (`<epoch>-<seq>`; null if the event carried
+   * none) — stream-controller uses it to align buffered events with the live-tail cursor
+   * that GET /messages returns.
+   */
+  onOmniMessage: (msg: OmniMessage, eventId: string | null) => void;
+  /** A single server event (`eventId`: same as onOmniMessage). */
+  onServerEvent: (event: ServerEvent, eventId: string | null) => void;
   /** Connection established (including a successful auto-reconnect). */
   onOpen?: () => void;
   /**
@@ -36,14 +42,15 @@ function subscribe(url: string, handlers: StreamHandlers): StreamConnection {
   const source = new EventSource(url);
   source.onmessage = (e: MessageEvent<string>) => {
     try {
-      handlers.onOmniMessage(JSON.parse(e.data) as OmniMessage);
+      // Every server event carries an `id:` line; lastEventId is "" only if none did.
+      handlers.onOmniMessage(JSON.parse(e.data) as OmniMessage, e.lastEventId || null);
     } catch {
       // Ignore lines that fail to parse (the protocol guarantees single-line JSON data, so this shouldn't normally happen).
     }
   };
   source.addEventListener("server_event", (e: MessageEvent<string>) => {
     try {
-      handlers.onServerEvent(JSON.parse(e.data) as ServerEvent);
+      handlers.onServerEvent(JSON.parse(e.data) as ServerEvent, e.lastEventId || null);
     } catch {
       // Same as above.
     }

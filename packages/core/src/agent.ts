@@ -71,26 +71,6 @@ import type { ModelEntry } from "./state/index.js";
  */
 const MAX_SUBAGENT_DEPTH = 1;
 
-/** The five valid thinking level names (legacy session_meta additionally recorded the literal "default" for "no level"). */
-const THINKING_LEVEL_NAMES: readonly ThinkingLevelName[] = [
-  "none",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-];
-
-/**
- * Narrows a legacy session_meta `thinking_level` back to a ThinkingLevelName; the literal
- * "default" (no level recorded), a missing field (current Traces no longer record one), and
- * anything unknown are not levels and yield undefined.
- */
-function asThinkingLevelName(value: unknown): ThinkingLevelName | undefined {
-  return typeof value === "string" && (THINKING_LEVEL_NAMES as readonly string[]).includes(value)
-    ? (value as ThinkingLevelName)
-    : undefined;
-}
-
 export interface CreateAgentOptions {
   agentId?: string;
   projectId?: string;
@@ -403,15 +383,12 @@ export class Agent {
     // original history); the vault uses current values (it's injected into the
     // subprocess environment, not the history, so a resumed Session should get the
     // latest keys too).
-    // Back-compat: session_meta no longer records a thinking level (it became a per-turn
-    // run parameter), but OLD Traces still carry `thinking_level` in their meta JSON — when
-    // present, keep honoring it as this Session's default level (a resumed legacy subagent
-    // session keeps its inherited level instead of re-reading this Agent's config). The
-    // field is read loosely (it's gone from SessionMetaPayload); the legacy literal
-    // "default" — and any current Trace without the field — falls back to the Agent config.
-    const thinkingLevel =
-      asThinkingLevelName((meta as unknown as Record<string, unknown>).thinking_level) ??
-      this.state.systemConfig.model?.thinking_level;
+    // The default thinking level comes from this Agent's current config only: session_meta
+    // no longer records one (it became a per-turn run parameter), and a `thinking_level`
+    // still present in a legacy Trace's meta JSON is deliberately ignored — a resumed
+    // legacy subagent session falls back to this Agent's configured level instead of
+    // keeping the level it inherited at spawn time.
+    const thinkingLevel = this.state.systemConfig.model?.thinking_level;
 
     const rt = await this.buildRuntime({
       workspaceDir,
@@ -451,8 +428,7 @@ export class Agent {
     });
 
     return new Session({
-      // Invariants only (the legacy thinking_level, when honored above, feeds the LLM default
-      // but is not re-recorded — new meta writes never contain it).
+      // Invariants only — meta writes never contain a thinking level.
       meta: {
         session_id: sessionId,
         provider: modelEntry.provider,

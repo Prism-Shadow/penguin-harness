@@ -42,6 +42,32 @@ export interface TokenBucketCounts {
   output: number;
 }
 
+/** Three pricing buckets in USD per million tokens (mirrors the server's ModelPricingDto shape). */
+export interface BucketPricing {
+  cacheRead: number;
+  cacheWrite: number;
+  output: number;
+}
+
+/**
+ * Converts a three-bucket Token count to USD at per-million-token pricing; null when no pricing
+ * is configured (uncosted — callers omit the figure rather than fabricating a $0). Shared by the
+ * per-reply stats row's turn cost and the header's live session cost, so the two conversions can
+ * never drift apart.
+ */
+export function bucketCostUsd(
+  buckets: TokenBucketCounts,
+  pricing: BucketPricing | null | undefined,
+): number | null {
+  if (!pricing) return null;
+  return (
+    (buckets.cacheRead * pricing.cacheRead +
+      buckets.cacheWrite * pricing.cacheWrite +
+      buckets.output * pricing.output) /
+    1e6
+  );
+}
+
 /** Stats tracker: Session-level cumulative counts that persist across Tasks + this-Task delta counts. */
 export interface TaskStatsTracker {
   /** Current context occupancy = total from the most recent main-session request (not updated by compaction requests). */
@@ -285,6 +311,25 @@ export function endTask(t: TaskStatsTracker, elapsedMs: number): TaskStats | nul
   t.hasUsage = false;
   t.compactionActive = false;
   return stats;
+}
+
+/**
+ * Session elapsed time for live display (the header chip): the settled cross-Task cumulative
+ * plus the currently running Task's wall clock so far. While no Task is open this is exactly
+ * `sessionElapsedMs`, so the idle rendering equals the settled value; the running addition
+ * counts from the model's task-start local clock (`taskStartLocalMs`), clamped so a clock
+ * anomaly never makes the sum go backwards. At task end {@link endTask} folds the Task's
+ * elapsed into `sessionElapsedMs` in the same model update that flips `taskOpen` off, so the
+ * live addition never double-counts across the boundary.
+ */
+export function liveSessionElapsedMs(
+  t: TaskStatsTracker,
+  taskOpen: boolean,
+  taskStartLocalMs: number | null,
+  nowMs: number,
+): number {
+  const running = taskOpen && taskStartLocalMs != null ? Math.max(0, nowMs - taskStartLocalMs) : 0;
+  return t.sessionElapsedMs + running;
 }
 
 /** Localized labels for {@link formatTaskStats} (supplied by the view layer's active dictionary). */

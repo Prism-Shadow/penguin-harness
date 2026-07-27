@@ -16,12 +16,14 @@ import type {
   ApprovalMode,
   FilesStatResponse,
   GoalResponse,
+  MessagesLiveTail,
   MessagesResponse,
   ServerEvent,
   SessionCategory,
   SessionCreateResponse,
   SessionResponse,
   SessionsResponse,
+  RetryNowResponse,
   TaskCreateResponse,
 } from "../../api/types.js";
 import { PREVIEW_TOKEN_TTL_MS, resolvePreviewTarget } from "../../services/preview-token.js";
@@ -360,12 +362,29 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
 
   app.get("/:sessionId/messages", async (c) => {
     const row = resolveSession(c);
+    // Live tail (running/compacting sessions only): capture the channel cursor and the
+    // open-fragment snapshot together, synchronously — no await between the two, and both
+    // BEFORE the trace read starts. That ordering is what makes the client contract safe
+    // (see MessagesLiveTail in api/types.ts): every published event with id <= cursor is
+    // already reflected in `fragments`, and partial_* messages never reach the Trace, so
+    // the client may drop its buffered partials at/or before the cursor and seed from
+    // `fragments` without loss or duplication. Complete messages are never dropped by the
+    // cursor — the client's overlap dedup against `messages` decides for them — so a
+    // complete message whose trace append is still in flight when the read starts is not
+    // lost either.
+    let live: MessagesLiveTail | undefined;
+    if (deps.manager.statusOf(row.sessionId) !== "idle") {
+      live = {
+        cursor: deps.channels.get(row.sessionId).lastEventId,
+        fragments: deps.manager.liveFragments(row.sessionId),
+      };
+    }
     const messages = await deps.traceService.readMessages(
       row.projectId,
       row.agentId,
       row.sessionId,
     );
-    return c.json({ messages } satisfies MessagesResponse);
+    return c.json({ messages, ...(live !== undefined ? { live } : {}) } satisfies MessagesResponse);
   });
 
   app.get("/:sessionId/stream", (c) => {
@@ -481,6 +500,16 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     const aborted = deps.manager.abortTask(row.sessionId);
     // No Task in progress → 204 no-op; interrupt was triggered → 202 (wrap-up is completed by the SDK's "interrupt cleanup").
     return c.body(null, aborted ? 202 : 204);
+  });
+
+  // "Retry now" on the reconnect countdown: skip the remaining backoff wait and fire the
+  // next retry immediately (attempt counter unchanged). Benign either way — 200 with
+  // skipped:false when no reconnect wait is in progress, so a timing race (the wait
+  // elapsed just before the click) never surfaces as an error.
+  app.post("/:sessionId/retry-now", (c) => {
+    const row = resolveSession(c);
+    const skipped = deps.manager.retryNow(row.sessionId);
+    return c.json({ skipped } satisfies RetryNowResponse);
   });
 
   app.post("/:sessionId/compact", async (c) => {

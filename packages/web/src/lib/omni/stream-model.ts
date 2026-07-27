@@ -205,6 +205,20 @@ export interface ReconnectItem {
   retrying: boolean;
   /** Retries exhausted (set true when an abort event arrives; the subsequent interruption marker item gives the reason). */
   gaveUp?: boolean;
+  /**
+   * The engine's planned wait before the next attempt (request_end.retry_in_ms; absent
+   * when the event carried none — old Traces, or a final failure). Waits can reach the
+   * 30s backoff ceiling, so the view renders a live countdown for the waiting state when
+   * this is ≥2s (see ReconnectLine).
+   */
+  plannedDelayMs?: number;
+  /**
+   * CLIENT-clock arrival time of the request_end (the countdown anchor — client-local, so
+   * server clock skew cannot bend the ticker). On history replay the following
+   * request_begin/abort arrives immediately and flips retrying/gaveUp, so a replayed item
+   * never stays in the waiting state to tick.
+   */
+  arrivedAtMs?: number;
 }
 
 export interface CompactionItem {
@@ -300,6 +314,20 @@ export interface StreamModel {
   openApprovalWaitMs: number;
   /** Consecutive reconnect-failure count (incremented when request_end is timeout/malformed, reset to zero on any other terminal status). */
   reconnectRun: number;
+  /**
+   * Timestamp (ms) of the most recent auth failure: a main-session `request_end` with
+   * status "auth" arrived on THIS model (a subagent's request events route to the nested
+   * model and never mark the parent). Only the model REFERENCE is fixed at Session
+   * creation — credentials are read from the current Project config on load — so this is
+   * recoverable: the composer disables itself and points at the Models page. Cleared by a
+   * later completed main-session request_end (live and history replay take the same path,
+   * so a Trace with an auth failure followed by a completed request does not resurrect the
+   * state on reload), by a `credentials_updated` server event, or by an explicit user
+   * retry/dismiss; a timestamp (not a boolean) so the composer gate can compare it against
+   * the Project's credentials-updated time after a reload (see isModelAuthDead). Re-arms
+   * on the next auth failure.
+   */
+  lastAuthFailureMs: number | null;
   /** Task segmentation state. */
   taskOpen: boolean;
   taskStartLocalMs: number;
@@ -350,6 +378,7 @@ function newModel(nested: boolean, localDecisions: Set<string>): StreamModel {
     openRequestBeginMs: null,
     openApprovalWaitMs: 0,
     reconnectRun: 0,
+    lastAuthFailureMs: null,
     taskOpen: false,
     taskStartLocalMs: 0,
     taskFirstTsMs: 0,
@@ -362,6 +391,23 @@ function newModel(nested: boolean, localDecisions: Set<string>): StreamModel {
 /** Create the main-session model; localDecisions can inject a shared set (persisting across models when a resync rebuild swaps in a new one). */
 export function createStreamModel(localDecisions: Set<string> = new Set()): StreamModel {
   return newModel(false, localDecisions);
+}
+
+/**
+ * Composer auth-dead gate: an auth failure is on record AND the Project's credentials have
+ * not been updated since. `credentialsUpdatedMs` is the models response's `updatedAt`
+ * (null = unknown / not loaded — nothing proves the credential changed, so the notice
+ * stays). The time comparison is what keeps a reload honest: after a key fix the Trace
+ * still ends with the auth-failed request, but that failure predates the credential update, so the
+ * composer stays alive; a wrong replacement key re-arms naturally because its own auth
+ * abort is newer than the update.
+ */
+export function isModelAuthDead(
+  lastAuthFailureMs: number | null,
+  credentialsUpdatedMs: number | null,
+): boolean {
+  if (lastAuthFailureMs === null) return false;
+  return credentialsUpdatedMs === null || lastAuthFailureMs > credentialsUpdatedMs;
 }
 
 function nextId(model: StreamModel): number {
@@ -406,7 +452,7 @@ export function pushMessage(
   }
   if (isEventMessage(msg)) {
     touchTask(model, msg.timestamp);
-    handleEvent(model, msg.payload as EventPayload, tsOf(msg.timestamp));
+    handleEvent(model, msg.payload as EventPayload, tsOf(msg.timestamp), nowMs);
     advanceLastTs(model, msg.timestamp);
     return;
   }
@@ -693,6 +739,9 @@ function handlePartial(model: StreamModel, p: PartialModelPayload, tsMs?: number
       if (p.event_type === "start") {
         card.outputStreaming = true;
         if (p.output) card.output += p.output;
+        // A live-tail synthetic start (mid-stream join seed) may already carry the image
+        // set; same whole-set semantics as the delta branch below.
+        if (p.images && p.images.length > 0) card.images = p.images;
         return;
       }
       if (!card.outputStreaming) return; // orphan delta/stop
@@ -1018,7 +1067,7 @@ function createToolCard(
 // Events
 // ---------------------------------------------------------------------------
 
-function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number): void {
+function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?: number): void {
   switch (p.type) {
     case "approval_decision": {
       const card = model.toolCards.get(p.tool_call_id);
@@ -1103,6 +1152,18 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number): void {
       // within a compaction range (only visible during history rebuild)
       // are neither rendered nor counted — the compaction process only exposes the compaction event pair to the Human.
       if (model.stats.compactionActive) return;
+      // Credentials lifecycle rides on the request's own terminal status:
+      // - "auth" records WHEN the failure happened (the event's envelope time), so the
+      //   composer gate can compare it against the Project's credentials-updated time
+      //   (see lastAuthFailureMs / isModelAuthDead). Origin routing already sends a
+      //   subagent's request events to the nested model, so reaching here with "auth"
+      //   always means the failure belongs to THIS session.
+      // - a completed request proves the credentials work (again): the auth-dead state
+      //   must not outlive a success. Live and history replay share this path, so a Trace
+      //   with an auth failure followed by a completed request does not resurrect the dead
+      //   composer on reload.
+      if (p.status === "auth") model.lastAuthFailureMs = tsMs ?? Date.now();
+      if (p.status === "completed") model.lastAuthFailureMs = null;
       // Pairs with request_begin to compute this Request's wall-clock
       // duration, deducts the human approval wait, and adds the result to
       // this Task's LLM time (for output TPS) — this duration includes tool
@@ -1126,13 +1187,20 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number): void {
       commitPendingCompaction(model.stats);
       if (p.status === "timeout" || p.status === "malformed") {
         model.reconnectRun += 1;
-        model.items.push({
+        const item: ReconnectItem = {
           kind: "reconnect",
           id: nextId(model),
           status: p.status,
           attempt: model.reconnectRun,
           retrying: false,
-        });
+        };
+        // The engine announced its planned backoff: keep it with the CLIENT arrival time
+        // as the countdown anchor (skew-free — see ReconnectItem.arrivedAtMs).
+        if (typeof p.retry_in_ms === "number" && p.retry_in_ms > 0) {
+          item.plannedDelayMs = p.retry_in_ms;
+          item.arrivedAtMs = nowMs ?? Date.now();
+        }
+        model.items.push(item);
       } else {
         model.reconnectRun = 0;
       }
