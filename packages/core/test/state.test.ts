@@ -674,6 +674,114 @@ describe("assembleSystemPrompt", () => {
     expect(prompt.indexOf("Provider:")).toBeLessThan(prompt.indexOf("Model ID:"));
     expect(prompt.indexOf("Model ID:")).toBeLessThan(prompt.indexOf("Session ID:"));
   });
+
+  // The win32 Shell-line fallback for pre-{{SHELL}} templates (system_config.yaml is baked at
+  // Agent creation and never auto-upgraded). Removable together with `withShellLineFallback`
+  // once pre-{{SHELL}} Agent configs are no longer expected in the wild.
+  describe("Shell line fallback for templates without {{SHELL}}", () => {
+    const stateWithPrompt = (system_prompt: string) => ({
+      root: tmpRoot,
+      projectId: DEFAULT_PROJECT_ID,
+      agentId: DEFAULT_AGENT_ID,
+      stateDir: agentStateDir(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID),
+      systemConfig: { system_prompt },
+      agentsMd: "",
+    });
+    const envFor = (platform: string) => ({
+      sessionId: "session-1",
+      cwd: "C:\\ws",
+      agentId: "agent-x",
+      projectDir: "C:\\proj",
+      provider: "deepseek",
+      modelId: "deepseek-v4-pro",
+      platform,
+      osVersion: "Windows 11 Pro 10.0.26100",
+      shell: "pwsh",
+      date: "2026-07-27",
+    });
+    // A pre-{{SHELL}} default-template Environment section (Platform/OS Version/Date, no Shell).
+    const preShellTemplate = [
+      "intro",
+      "# Environment",
+      `- Platform: ${PLATFORM_PLACEHOLDER}`,
+      `- OS Version: ${OS_VERSION_PLACEHOLDER}`,
+      `- Date: ${DATE_PLACEHOLDER}`,
+      "",
+      "# Tail section",
+      "tail",
+    ].join("\n");
+
+    it("injects the line exactly once into the Environment section on win32", () => {
+      const prompt = assembleSystemPrompt(stateWithPrompt(preShellTemplate), envFor("win32"));
+      expect(prompt).toBe(
+        [
+          "intro",
+          "# Environment",
+          "- Shell: pwsh",
+          "- Platform: win32",
+          "- OS Version: Windows 11 Pro 10.0.26100",
+          "- Date: 2026-07-27",
+          "",
+          "# Tail section",
+          "tail",
+        ].join("\n"),
+      );
+      expect(prompt.split("- Shell: pwsh").length - 1).toBe(1);
+    });
+
+    it("keeps POSIX output byte-identical (no injected line)", () => {
+      for (const platform of ["linux", "darwin"]) {
+        const prompt = assembleSystemPrompt(stateWithPrompt(preShellTemplate), {
+          ...envFor(platform),
+          shell: "bash",
+          osVersion: "Linux 6.1.0",
+        });
+        expect(prompt).toBe(
+          [
+            "intro",
+            "# Environment",
+            `- Platform: ${platform}`,
+            "- OS Version: Linux 6.1.0",
+            "- Date: 2026-07-27",
+            "",
+            "# Tail section",
+            "tail",
+          ].join("\n"),
+        );
+        expect(prompt).not.toContain("Shell:");
+      }
+    });
+
+    it("does not duplicate the line when the template has {{SHELL}}", () => {
+      const template = [
+        "# Environment",
+        `- Platform: ${PLATFORM_PLACEHOLDER}`,
+        `- Shell: ${SHELL_PLACEHOLDER}`,
+      ].join("\n");
+      const prompt = assembleSystemPrompt(stateWithPrompt(template), envFor("win32"));
+      expect(prompt).toBe(["# Environment", "- Platform: win32", "- Shell: pwsh"].join("\n"));
+      expect(prompt.split("- Shell:").length - 1).toBe(1);
+    });
+
+    it("does not duplicate a hardcoded line and appends a minimal line without an Environment section", () => {
+      // A custom template that hardcodes the exact line: left untouched (idempotent).
+      const hardcoded = assembleSystemPrompt(
+        stateWithPrompt("base prompt\n- Shell: pwsh"),
+        envFor("win32"),
+      );
+      expect(hardcoded).toBe("base prompt\n- Shell: pwsh");
+      // A hardcoded line with a different value is a deliberate template choice:
+      // never add a second, contradicting Shell line.
+      const pinned = assembleSystemPrompt(
+        stateWithPrompt("base prompt\n- Shell: bash"),
+        envFor("win32"),
+      );
+      expect(pinned).toBe("base prompt\n- Shell: bash");
+      // No Environment section at all: the line is appended at the end.
+      const appended = assembleSystemPrompt(stateWithPrompt("base prompt"), envFor("win32"));
+      expect(appended).toBe("base prompt\n- Shell: pwsh");
+    });
+  });
 });
 
 describe("resetSystemConfigToDefaults", () => {

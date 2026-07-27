@@ -97,7 +97,8 @@ jobs:
           foreach ($f in @("install.ps1", "packages/landing/public/install.ps1")) {
             $tokens = $null
             $errors = $null
-            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $f), [ref]$tokens, [ref]$errors) | Out-Null
+            # .Path: hand ParseFile a plain string, not a PathInfo object.
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $f).Path, [ref]$tokens, [ref]$errors) | Out-Null
             if ($errors.Count -gt 0) {
               $failed = $true
               Write-Host "${f}: $($errors.Count) parse error(s)"

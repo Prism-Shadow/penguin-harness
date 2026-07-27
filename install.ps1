@@ -174,16 +174,36 @@ if (-not (Test-Path $Ps1Shim)) {
 }
 if (-not (Test-Path $CmdShim)) { Fail "install incomplete: $CmdShim missing." }
 
-# --- User PATH: append <install>\bin once; new terminals pick it up ---
+# --- User PATH: append <install>\bin once; new terminals pick it up.
+#     Go through the registry, not [Environment]::*EnvironmentVariable: GetEnvironmentVariable
+#     expands REG_EXPAND_SZ and SetEnvironmentVariable writes back REG_SZ, which would
+#     irreversibly hard-code a user's %USERPROFILE%-style Path entries. Read the raw
+#     (unexpanded) value, append to it, and write it back with its original value kind.
+#     The registry only exists on Windows; skip the block elsewhere (functional test runs
+#     of this script on pwsh/Linux — where the old API was a silent no-op anyway). ---
 $BinDir = Join-Path $InstallDir "bin"
-$UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
-if ($null -eq $UserPath) { $UserPath = "" }
-$OnPath = ($UserPath -split ";" | Where-Object { $_ } | ForEach-Object { $_.TrimEnd("\") }) -contains $BinDir.TrimEnd("\")
-if (-not $OnPath) {
-  $NewPath = if ($UserPath -and -not $UserPath.EndsWith(";")) { "$UserPath;$BinDir" } else { "$UserPath$BinDir" }
-  [Environment]::SetEnvironmentVariable("Path", $NewPath, "User")
-  Write-Host ""
-  Write-Host "note: added $BinDir to your user Path. Restart your terminal so 'penguin' is found."
+if ($env:OS -eq "Windows_NT") {
+  $EnvKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey("Environment", $true)
+  if ($null -eq $EnvKey) { $EnvKey = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey("Environment") }
+  try {
+    # Missing Path value: create it as REG_EXPAND_SZ (the kind Windows itself uses for Path).
+    $Kind = [Microsoft.Win32.RegistryValueKind]::ExpandString
+    try { $Kind = $EnvKey.GetValueKind("Path") } catch {}
+    $RawPath = [string]$EnvKey.GetValue("Path", "", [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+    # Membership is checked per entry after expansion, so both literal and %VAR%-style
+    # spellings of the bin dir count as already present; the append itself stays raw.
+    $OnPath = @($RawPath -split ";" | Where-Object { $_ } | ForEach-Object {
+      [Environment]::ExpandEnvironmentVariables($_).TrimEnd("\")
+    }) -contains $BinDir.TrimEnd("\")
+    if (-not $OnPath) {
+      $NewPath = if ($RawPath -and -not $RawPath.EndsWith(";")) { "$RawPath;$BinDir" } else { "$RawPath$BinDir" }
+      $EnvKey.SetValue("Path", $NewPath, $Kind)
+      Write-Host ""
+      Write-Host "note: appended $BinDir to your user Path. Restart your terminal so 'penguin' is found."
+    }
+  } finally {
+    $EnvKey.Close()
+  }
 }
 # Make `penguin` work in this session too.
 if (($env:Path -split ";") -notcontains $BinDir) { $env:Path = "$env:Path;$BinDir" }

@@ -60,6 +60,7 @@ penguin -v
 | 升级 | 重新运行安装器；只替换 `bin`/`lib`/`web`/`node`，绝不触碰 `data` |
 
 - **Agent shell**：Windows 上 `exec_command` 优先使用 Git-Bash（PATH 上的 `bash`，如 [Git for Windows](https://gitforwindows.org/)），与面向 POSIX shell 编写的技能生态兼容性最好；没有 bash 时回退到 PowerShell（先 `pwsh` 后 `powershell`）。环境变量 `PENGUIN_SHELL` 可强制指定；会话的系统提示词会告知模型当前 shell。
+- **Ctrl-C 语义**：Windows 上向运行中的命令会话发送 Ctrl-C（`input_command` 传 `"\u0003"`）会终止整棵命令会话进程树，而不是中断前台命令——Windows 无法向管道子进程投递控制台 Ctrl-C，中断因此退化为整树强杀。
 - **就地更新**：`penguin update` 暂不支持 Windows——升级请重新运行上面的安装器。
 - **配置文件权限**：POSIX 上配置/凭据文件以 `0600`（仅属主可读写）写入；Windows 没有对应的权限位，文件遵循你用户目录的默认 NTFS ACL。
 - 如果 PowerShell 提示 "running scripts is disabled" 而无法运行 `penguin`，是执行策略拦住了 `penguin.ps1`：可以显式调用 `penguin.cmd`，或用 `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` 允许本地脚本。

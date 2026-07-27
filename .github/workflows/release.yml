@@ -187,6 +187,8 @@ jobs:
           & $node (Join-Path $dir "lib\dist\index.js") @args
           exit $LASTEXITCODE
           EOF
+          # PowerShell accepts LF, but ship CRLF like the .cmd (and the repo's *.ps1 eol=crlf attribute).
+          sed -i 's/$/\r/' out/penguin/bin/penguin.ps1
           (cd out && zip -qr ../dist-artifacts/penguin-win32-x64.zip penguin)
 
       # SHA256SUMS summary + a same-named .sha256 per artifact (install.sh / install.ps1 verify against the latter).

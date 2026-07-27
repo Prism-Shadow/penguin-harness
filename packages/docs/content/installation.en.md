@@ -60,6 +60,7 @@ Script flags go after `sh -s --`, e.g. `curl -fsSL https://penguin.ooo/install.s
 | Upgrade | Re-run the installer; it swaps `bin`/`lib`/`web`/`node` and never touches `data` |
 
 - **Agent shell**: on Windows, the agent's `exec_command` prefers Git-Bash (`bash` on PATH, e.g. from [Git for Windows](https://gitforwindows.org/)) for the best compatibility with skills written for a POSIX shell, and falls back to PowerShell (`pwsh`, then `powershell`) when bash is absent. The `PENGUIN_SHELL` env var overrides the pick; the session's system prompt tells the model which shell is active.
+- **Ctrl-C semantics**: on Windows, sending Ctrl-C to a running command session (`input_command` with `"\u0003"`) terminates the whole command session tree instead of interrupting the foreground command — Windows cannot deliver a console Ctrl-C to a piped child process, so the interrupt degrades to a hard tree kill.
 - **In-place update**: `penguin update` is not yet supported on Windows — upgrade by re-running the installer above.
 - **Config file permissions**: on POSIX, config/credential files are written with `0600` (owner-only) permissions; Windows has no such mode bits, so files fall under your profile's default NTFS ACLs.
 - If PowerShell refuses to run `penguin` with "running scripts is disabled", your execution policy blocks the `penguin.ps1` shim: either call `penguin.cmd` explicitly, or allow local scripts with `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.
