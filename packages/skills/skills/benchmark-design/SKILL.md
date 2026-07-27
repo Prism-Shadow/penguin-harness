@@ -4,7 +4,7 @@ description: Design and calibrate a multi-Case capability Benchmark and establis
 short_description: Design and calibrate an Agent capability Benchmark.
 short_description_zh: 设计并校准 Agent 能力评测 Benchmark。
 version: 7
-updated: 2026-07-27T09:12:00Z
+updated: 2026-07-27T09:22:44Z
 ---
 
 # Benchmark Design
@@ -95,9 +95,9 @@ The Benchmark Designer owns the Pilot and Formal evaluation sets. This includes 
 
 Track each evaluation by phase, Pilot iteration, Case, Run, and attempt. Before dispatch, list every required cell as `queued`. Mark it `in_flight` when dispatched and `completed` only after a valid result. Never dispatch an `in_flight` or valid `completed` cell again.
 
-For the initial Pilot, write and leak-check one Case, call `run_subagent` with a short initial yield such as `yield_time_ms: 1000` so its Evaluator continues in the background, then write the next Case. Do not finish drafting all Cases before dispatching the first evaluation, and do not modify a Case while its evaluation is pending.
+For the initial Pilot, write and leak-check one Case, dispatch it with `yield_time_ms: 1000`, then write the next Case without waiting. Do not modify a Case while its evaluation is in flight.
 
-For any ready evaluation set, dispatch cells from the full `queued` list rather than grouping them by Case. Do not wait for all Runs of one Case or for a whole batch to finish. Use short initial yields so launched workers return subagent ids promptly. Dispatch every queued cell before polling when the tool permits it. If the tool enforces a hard concurrency limit, poll only until one slot opens, immediately dispatch the next queued cell, and repeat until the queue is empty. Do not report a queued cell as running.
+Dispatch every evaluation set from one queue across all Cases, using `yield_time_ms: 1000`. At the concurrency limit, poll with short yields and dispatch the next queued cell as soon as any worker finishes. Wait for the remaining workers only after the queue is empty.
 
 A wrong or missing Test Agent artifact is a valid scored result. Do not retry it.
 
