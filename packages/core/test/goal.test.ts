@@ -8,6 +8,7 @@ import {
   abortEvent,
   assistantText,
   buildSkillsMessage,
+  downgradeGoalInput,
   emptyTokenCounts,
   goalFilePath,
   goalFinishedOf,
@@ -223,6 +224,21 @@ describe("[goal] marker parsing", () => {
       body: buildSkillsMessage(["web-design"], "Fix the flaky test"),
     });
     expect(stripConversationMarkers(text)).toBe("Fix the flaky test");
+  });
+
+  it("downgradeGoalInput strips the protocol, keeps the body, passes non-goal text through", () => {
+    const text = goalRoundMessage({
+      goal: goalOf("fix the tests"),
+      goalFilePath: "/tmp/GOAL.yaml",
+      round: 4,
+      body: "fix the tests",
+    });
+    const downgraded = downgradeGoalInput(text);
+    expect(downgraded).toContain("goal round 4 of an ended goal run");
+    expect(downgraded).toContain("fix the tests");
+    expect(downgraded).not.toContain("[goal]");
+    expect(downgraded).not.toContain("Completion audit");
+    expect(downgradeGoalInput("plain text")).toBe("plain text");
   });
 
   it("isGoalRoundInput accepts main-session round inputs only", () => {

@@ -48,6 +48,7 @@ import {
 import {
   buildContextSummaryText,
   buildTurnAbortedBlock,
+  downgradeGoalInput,
   extractSummary,
   buildTurnRetriedBlock,
   transcribeText,
@@ -232,6 +233,21 @@ class MergeQueue {
   }
 }
 
+/**
+ * Downgrades a goal round held in carry-over: any goal-round input that survives into
+ * carry-over belongs to a goal run that has already ended (see markers/goal-block.ts), so
+ * its protocol block must not be re-sent as if current — with the next task's input or into
+ * a manual-compaction summary. Applied at the consumer sites (assembly and manual compact),
+ * which also covers carry-over reconstructed by resume; non-goal messages pass through.
+ */
+function downgradeCarriedGoalInput(msg: OmniMessage): OmniMessage {
+  const p = msg.payload as { type?: string; role?: string; text?: string };
+  if (msg.type !== "model_msg" || p.type !== "text" || p.role !== "user" || !p.text) return msg;
+  const downgraded = downgradeGoalInput(p.text);
+  if (downgraded === p.text) return msg;
+  return { ...msg, payload: { ...msg.payload, text: downgraded } as OmniMessage["payload"] };
+}
+
 export class ContextEngine {
   private readonly maxTurns: number;
   private readonly maxReconnects: number;
@@ -358,7 +374,7 @@ export class ContextEngine {
     // input, to form this Request's input.
     const summary = this.pendingSummary;
     this.pendingSummary = null;
-    const carryOver = this.pendingCarryOver;
+    const carryOver = this.pendingCarryOver.map(downgradeCarriedGoalInput);
     this.pendingCarryOver = [];
     const prefix = summary ? [summary, ...carryOver] : carryOver;
     const input = prefix.length ? [...prefix, ...newMessages] : newMessages;
@@ -579,7 +595,11 @@ export class ContextEngine {
       yield* this.discardContext("manual");
       return;
     }
-    const result = yield* this.summarizeContext("manual", this.pendingCarryOver, opts?.signal);
+    const result = yield* this.summarizeContext(
+      "manual",
+      this.pendingCarryOver.map(downgradeCarriedGoalInput),
+      opts?.signal,
+    );
     if (result.status === "completed") {
       this.pendingCarryOver = [];
       this.pendingSummary = result.summary!;
@@ -1156,7 +1176,7 @@ export class ContextEngine {
       if (inner !== null) {
         if (inner) lines.push(inner);
       } else {
-        lines.push(transcribeUserInput(t));
+        lines.push(transcribeUserInput(downgradeGoalInput(t)));
       }
     }
     lines.push(...transcribeTurnLines(assistantSegments, toolCalls, toolOutputs));

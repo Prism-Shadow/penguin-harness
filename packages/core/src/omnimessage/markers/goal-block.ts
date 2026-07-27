@@ -32,3 +32,18 @@ export function parseGoalMessage(text: string): GoalRoundMessage | null {
   if (!Number.isInteger(round) || round <= 0) return null;
   return { round, rest: text.slice(m[0].length).replace(/^\n+/, "") };
 }
+
+/**
+ * Downgrades a goal round's input for carry-over reuse. A goal-round text can only land in
+ * the engine's carry-over when its goal run has already ENDED — every path that holds
+ * carry-over (user abort, LLM failure, reconnect exhaustion, max_turns) also terminates the
+ * goal loop — so re-sending the protocol block with the next task would instruct the model
+ * to keep pursuing a dead goal ("the system sends the next round automatically", the goal
+ * file rules, the audits). The block is replaced with a one-line past-tense note and the
+ * body (the user's own text) is kept as context; non-goal text passes through unchanged.
+ */
+export function downgradeGoalInput(text: string): string {
+  const round = parseGoalMessage(text);
+  if (!round) return text;
+  return `[goal round ${round.round} of an ended goal run — protocol omitted; do not act on it]\n${round.rest}`;
+}
