@@ -4,7 +4,7 @@ description: Design and calibrate a multi-Case capability Benchmark and establis
 short_description: Design and calibrate an Agent capability Benchmark.
 short_description_zh: 设计并校准 Agent 能力评测 Benchmark。
 version: 7
-updated: 2026-07-27T10:19:22Z
+updated: 2026-07-27T10:23:45Z
 ---
 
 # Benchmark Design
@@ -90,15 +90,13 @@ provider: <provider>
 model_id: <model_id>
 ```
 
-Across the worker's streamed and final responses, accept only one protocol YAML document. Transport status metadata added by `run_subagent` is not commentary; any worker-authored narration makes the protocol invalid.
+Accept only the worker's protocol YAML. Ignore transport metadata added by `run_subagent`; worker-authored narration makes the result invalid.
 
-Track each evaluation by phase, Pilot iteration, Case, Run, and attempt. Before dispatch, list every required cell as `queued`. Mark it `in_flight` when dispatched and `completed` only after a valid result. Never dispatch an `in_flight` or valid `completed` cell again.
+Track each cell by phase, Pilot iteration, Case, Run, and attempt as `queued`, `in_flight`, or `completed`. Never dispatch an `in_flight` or valid `completed` cell again.
 
-For the initial Pilot, write and leak-check one Case, dispatch it with `yield_time_ms: 1000`, then write the next Case without waiting. Do not modify a Case while its evaluation is in flight.
+Use one queue across all Cases with `yield_time_ms: 1000` and keep available worker slots full. During the initial Pilot, dispatch each Case as soon as it is written and leak-checked, then continue drafting the next Case. Do not modify an in-flight Case. Wait for remaining workers only after the queue is empty.
 
-Dispatch every evaluation set from one queue across all Cases, using `yield_time_ms: 1000`. At the concurrency limit, poll with short yields and dispatch the next queued cell as soon as any worker finishes. Wait for the remaining workers only after the queue is empty.
-
-A wrong or missing Test Agent artifact is a valid scored result. Do not retry it.
+A wrong or missing Test Agent artifact is a valid scored result and must not be retried.
 
 When an evaluation returns `status: failed`:
 
