@@ -561,15 +561,19 @@ Prompt 文件和独立 Workspace。阶段命令不得传 \`--provider\` 或 \`--
 
 \`\`\`bash
 mkdir -p <phase_workspace>
-APP_DATA_DIR="<当前 Session 的 Environment App Data Dir>"
-PROJECT_ID="$(basename "$APP_DATA_DIR")"
-export PENGUIN_HOME="$(dirname "$APP_DATA_DIR")"
+PROJECT_DIR="<当前 Session 的 Environment Project Dir>"
+PROJECT_ID="$(basename "$PROJECT_DIR")"
+export PENGUIN_HOME="$(dirname "$PROJECT_DIR")"
 penguin run \\
   --project-id "$PROJECT_ID" \\
   --agent-id default_agent \\
   --workspace <phase_workspace> \\
   --message "$(cat <phase_prompt_file>)"
 \`\`\`
+
+各阶段 Prompt 只传递本 Prompt 已给出的实验目标、参数、任务场景和验收条件。不要复制、
+改写或补充对应 Skill 的工作流，也不要替阶段预设隐藏规则、评分方法、难度调整方式或
+优化策略；每个阶段应自行读取并遵循指定 Skill。
 
 每个命令退出并验证产物后，才能启动下一阶段。Phase 2 和 Phase 3 必须在各自的顶层
 Session 内按 Skill 要求用 \`run_subagent\` 委托 \`agent-evaluation\` 执行评测。
