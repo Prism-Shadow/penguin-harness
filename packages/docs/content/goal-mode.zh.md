@@ -48,7 +48,7 @@ status: active
 
 ## Token 预算
 
-计数是增量制——**非缓存 input + output**（`request.total − cache_read`），对每一轮的每个请求累加，*包括 `run_subagent` 派生的子 Session*。`used` 从 0 开始；缓存命中不计费。
+计数是增量制——**非缓存 input + output**（`request.total − cache_read`），对每一轮的每个请求累加，*包括 `run_subagent` 派生的子 Session*。`used` 从 0 开始。这个累加值是**花费的估算而非账单**：缓存读取并非免费，只是单价远低于非缓存 input，忽略它既不失真，也免去了依赖各模型价目表。
 
 预算在轮与轮之间检查。耗尽时不会把模型拦腰斩断：系统注入最后一个收尾轮——总结进展、列出剩余工作、给出明确的下一步，并且不许因为钱花完了就标 `complete`——之后系统以 `budget_limited` 终局（`goal_finished` 事件；不写文件）。正因为只在轮间检查，进行中的一轮不会被截断：实际花费最多可超出预算一轮，外加收尾轮。未设预算时循环一直跑到 `complete` 或 `blocked`——边界是模型对两个终态的诚实，外加 100 轮的硬性兜底上限，防止一个从不写目标文件的模型无限循环。
 

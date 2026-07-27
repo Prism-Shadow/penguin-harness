@@ -19,8 +19,12 @@ export interface GoalOutcome {
 /**
  * A message's contribution to goal token accounting: uncached input + output of one request
  * (`request.total - request.cache_read`), from any session — origin-marked subagent usage is
- * part of the goal's cost. Exported so hosts mirroring the loop's numbers (e.g. the Web
- * server's per-round progress) count exactly the same way.
+ * part of the goal's cost.
+ *
+ * The sum is a spend ESTIMATE, not a bill: cache reads cost money too, just a small fraction
+ * of the uncached-input price, so leaving them out keeps the number an honest approximation
+ * without needing per-model price tables. Exported so hosts mirroring the loop's numbers
+ * (e.g. the Web server's per-round progress) count exactly the same way.
  */
 export function goalTokenDelta(msg: OmniMessage): number {
   if (!isEventMessage(msg) || msg.payload.type !== "token_usage") return 0;
