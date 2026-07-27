@@ -568,23 +568,19 @@ When done, open index.html in a browser and self-test once.`,
         desc: "Improve choices from evaluation scores across football, lottery, and investing tasks",
         prompt: `Coordinate one complete Agent creation, Benchmark construction, and Agent optimization experiment.
 
-This Session only orchestrates the workflow. Phase 1, Phase 2, and Phase 3 must each be launched as
-an independent \`penguin run\` through \`exec_command\`. Do not use this Session's
-\`run_subagent\` to launch the three phases.
+## Orchestration
 
-All three phase Sessions use \`default_agent\` and the Project's default Model. Do not pass
-\`--provider\` or \`--model-id\` to the phase CLI commands. Use \`deepseek-v4-flash\` only to
-evaluate the Test Agent.
-
-Prepare a separate Prompt file and Workspace for each phase, then launch it in this form:
+This Session only coordinates. Launch Phase 1, Phase 2, and Phase 3 as three independent
+\`penguin run\` commands through \`exec_command\`; do not launch those phases with this Session's
+\`run_subagent\`. Each phase must use \`default_agent\`, the Project's default Model, its own Prompt
+file, and its own Workspace. Do not pass \`--provider\` or \`--model-id\` to a phase command;
+\`deepseek-v4-flash\` is only the evaluation Model for the Test Agent.
 
 \`\`\`bash
 mkdir -p <phase_workspace>
-
 APP_DATA_DIR="<App Data Dir from the current Session Environment>"
 PROJECT_ID="$(basename "$APP_DATA_DIR")"
 export PENGUIN_HOME="$(dirname "$APP_DATA_DIR")"
-
 penguin run \\
   --project-id "$PROJECT_ID" \\
   --agent-id default_agent \\
@@ -592,32 +588,22 @@ penguin run \\
   --message "$(cat <phase_prompt_file>)"
 \`\`\`
 
-Wait for the current CLI command to exit completely and verify its artifacts before starting the
-next phase.
-
-Inside their independent top-level Sessions, Phase 2 and Phase 3 may and should use
-\`run_subagent\` to run \`agent-evaluation\` cells in parallel as required by their Skills. The
-restriction above applies only to launching the three phases themselves.
+Wait for each command to exit and verify its artifacts before starting the next phase. Within their
+own top-level Sessions, Phase 2 and Phase 3 should use \`run_subagent\` for
+\`agent-evaluation\` as their Skills require.
 
 ## Phase 1: Agent Creation
 
-In an independent CLI Session, use the \`agent-creation\` Skill to create
-\`finite_choice_agent\`.
+Use \`agent-creation\` to create \`finite_choice_agent\`, a general finite-choice Agent. When public
+information cannot identify a unique answer but the task requires one, it commits with these stable
+defaults: first candidate; High, Over, or Up for directional choices; input order for rankings.
 
-It is a general finite-choice Agent. When public information cannot determine a unique answer but
-the task requires a definitive response, it must commit using stable defaults:
-
-- prefer the first candidate;
-- prefer High, Over, or Up for directional choices;
-- preserve the input order for ranking tasks.
-
-Install no Skills. Use \`thinking_level: medium\` and initial version 1. Do not include any later
-Benchmark scenario, private mapping, Gold answer, or optimization hint.
+Install no Skills. Set \`thinking_level: medium\` and initial version 1. Do not include later
+Benchmark scenarios, private mappings, Gold answers, or optimization hints.
 
 ## Phase 2: Benchmark Design
 
-After Phase 1 completes, start a new independent CLI Session and use the
-\`benchmark-design\` Skill.
+Use \`benchmark-design\` with:
 
 - Test Agent: \`finite_choice_agent\`
 - Benchmark ID: \`contextual-choice-adaptation\`
@@ -626,127 +612,49 @@ After Phase 1 completes, start a new independent CLI Session and use the
 - Runs: 3
 - Baseline hard gate: below 70
 
-Target capability: progressively learn context-to-action mappings that public information cannot
-uniquely determine, using Case scores from a fixed Benchmark.
+Measure whether the Agent can learn fixed context-to-action mappings from scores on a frozen
+Benchmark when public information alone cannot identify those mappings. Design three Case families:
 
-Design three distinct finite-decision structures:
+1. Football: three recurring shuffled markers map by a fixed nontrivial permutation to
+   \`Home/Draw/Away\`.
+2. Lottery: four recurring shuffled symbols map by a fixed nontrivial permutation to four machines.
+3. Simulated investment: two recurring market markers apply different nontrivial ordering
+   transformations to four virtual assets.
 
-1. Football predictions: use three recurring match markers in shuffled order; choose
-   \`Home/Draw/Away\` for each match. The private mapping is a fixed permutation from the three
-   markers to the three actions. Do not use odd/even alternation or a sequence based on question
-   numbers.
+Choose private mappings through an Agent-independent procedure. Do not use identity, complete
+reversal, obvious rotation, question-number cycles, or position/name patterns. Include enough
+repeated contexts for a learned rule to transfer to comparable new instances, while keeping public
+Statements insufficient to reveal the private mapping.
 
-2. Lottery machines: use four recurring symbols in shuffled order; choose one of four machines
-   for each round. The private mapping is a fixed four-class permutation. Do not use the identity,
-   the standard listed cycle, or a simple rotation.
+Follow the Skill's Pilot → freeze → Formal workflow. Run at most three Pilot iterations, changing
+one capability-relevant difficulty dimension per iteration, and calibrate toward a score below 70.
+Pilot results are provisional and must not be written to the Scoreboard. Do not change private
+rules or Gold answers merely to contradict observed outputs, and do not lower scores by tightening
+only the Rubric. After calibration, freeze the complete Benchmark and run a fresh complete 3×3
+Formal matrix; never reuse Pilot runs or record a partial matrix.
 
-3. Simulated investment: rank four virtual assets under two recurring market markers. The two
-   markets use different private ordering transformations, such as rotation, adjacent swaps, or
-   interleaving. Do not use the original order or a complete reversal.
-
-Each Case must repeat contexts often enough for a learned mapping to apply to similar new
-instances. Public Statements must not provide enough information to derive the private mapping.
-Question numbers, candidate names, and item positions must not form an obvious answer pattern.
-
-Use Pilot calibration before the Formal Baseline. Pilot iteration 1 is the initial draft plus one
-representative run per Case. Each later iteration is exactly one one-dimension adjustment followed
-by rerunning the affected Cases; it is the next iteration. Run no more than three Pilot iterations
-in total, and never perform multiple adjustment-and-rerun cycles within one iteration. Before an
-adjustment, explain why the current Pilot is too easy, too hard, or otherwise insufficient and
-state the capability failure the adjustment should expose. Update the Statements, materials,
-private mappings, Gold answers, and Rubrics consistently. After every Pilot artifact change,
-complete a semantic-isolation review before the next evaluation.
-
-Pilot results are provisional and must not be written to the Scoreboard. Use observed Pilot
-behavior only to identify capability gaps and choose the difficulty dimension to adjust. Do not
-define or revise an expected outcome, private rule, mapping, or Gold solely to contradict an
-observed answer or known default policy. When the task uses latent environment rules, choose them
-through an Agent-independent procedure and hold them fixed for each evaluated iteration. Do not
-lower the score only by tightening a Rubric around an observed answer. If a new scoring expectation
-requires a definitive choice, the public Statement must require that behavior and the materials
-must provide enough evidence to make it answerable.
-
-Stop Pilot calibration early when the result is below 70. If the third iteration result is not below
-70, or no credible capability-relevant adjustment remains, report the limitation. Once the
-hard gate is met, complete a semantic-isolation review immediately before freezing the complete
-Benchmark. Run a fresh complete 3×3 Formal ledger and matrix; never reuse Pilot runs in the
-Scoreboard. Only one complete valid Formal Baseline may be recorded. Never write a partial or
-abandoned Formal matrix. If a Formal design defect is found, return to Pilot within the remaining
-Pilot budget, re-freeze, and run a fresh complete Formal matrix. If no Pilot iterations remain,
-report the limitation and stop without recording the abandoned matrix. A score that is not below
-70 is not by itself a design defect.
-
-The main Session may verify only that the Benchmark, Scoreboard, and complete Baseline exist. It
-must not read, search, or repeat Rubrics, Gold answers, or private mappings.
+The coordinating Session may verify public Benchmark artifacts and the complete Formal Baseline,
+but must not read, search, or repeat Rubrics, Gold answers, or private mappings. Start Phase 3 only
+if the recorded complete Formal Baseline is below 70; otherwise report the calibration limitation
+and stop.
 
 ## Phase 3: Agent Optimization
 
-After Phase 2 completes, start a new independent CLI Session and use the
-\`agent-optimization\` Skill to improve \`finite_choice_agent\`.
+Use \`agent-optimization\` with Benchmark \`contextual-choice-adaptation\`, the recorded Baseline as
+the Reference, and a target score of at least 85.
 
-Start Phase 3 only when the recorded complete Formal Baseline is below 70. Otherwise,
-record and report the calibration limitation, then stop before Phase 3.
-
-- Benchmark: \`contextual-choice-adaptation\`
-- Reference: the complete Baseline already recorded in the Scoreboard
-- Target score: at least 85
-
-The Optimization Session may read only:
-
-- the Test Agent State;
-- public Case Statements;
-- the Scoreboard;
-- Case scores;
-- Test Traces and public artifacts referenced by the Scoreboard.
-
-Do not read, search, list, or open any path containing \`/rubric/\`. Do not read Gold answers or
-the Builder's private mappings. Use exact public Statement and Scoreboard paths rather than
-enumerating the entire Benchmark directory.
-
-If the Optimization Session encounters Rubric content, Gold answers, or private scoring
-conditions, the Session is contaminated. Do not retain any Candidate or score derived from that
-information; restore the active Candidate and report the result as invalid.
-
-Test only one strategy family per round:
-
-- football match-marker mappings;
-- lottery symbol-to-machine mappings;
-- investment market ordering transformations.
-
-Do not change multiple strategy families in one Candidate. In each round:
-
-1. form one testable hypothesis from the current Reference score and Test Trace;
-2. make one minimal Agent State change;
-3. complete the full 3×3 Candidate evaluation;
-4. accept only a strictly higher score, otherwise roll back;
-5. use each accepted Candidate as the next Reference.
-
-This experiment permits writing a stable environment-level policy learned from repeated black-box
-scores and score-linked Traces into the Agent State when it applies across comparable instances.
-Do not write Case IDs, exact instance answers, per-question lookup tables, private scoring
-conditions, or a rule supported by only one observation.
-
-Continue until the total score reaches at least 85, and retain the highest-scoring valid version.
+Follow the Skill's hypothesis → minimal Candidate → complete evaluation → accept/rollback loop.
+Each Candidate may change only one of these strategy families: football marker mappings, lottery
+symbol-to-machine mappings, or investment ordering transformations. Complete the full 3×3
+Candidate evaluation and accept only a strictly higher score; each accepted Candidate becomes the
+next Reference. Apply the Skill's generalization and private-access rules throughout.
 
 ## Final checks and report
 
-After all three CLI Sessions finish, the main Session must check whether the Phase 3 root Session
-actually opened, searched, or listed files under \`/rubric/\`. A mention in the Prompt or ordinary
-text is not an access. If an actual access occurred, do not count the contaminated score as valid.
-
-Report:
-
-- Agent and Benchmark paths;
-- the Pilot calibration table: iteration, aggregate score, diagnosed capability gap, the single
-  difficulty adjustment, and the freeze or stop reason;
-- the Baseline and every Candidate score;
-- the single strategy hypothesis tested in each round;
-- major Agent State changes;
-- accepted and rolled-back versions;
-- the final retained version;
-- scores by Case;
-- a complete score table and a simple line chart;
-- completion status and known limitations for all three phases.
+Check whether the Phase 3 root Session actually accessed a path under \`/rubric/\`; a text mention
+is not access, but actual access invalidates the affected result. Report Agent and Benchmark paths,
+the compact Pilot table, the Baseline/Candidate score curve, the hypothesis and strategy family per
+round, accepted and rolled-back versions, the final retained version, and known limitations.
 
 Do not modify any Skill or create permanent Builder, Evaluator, or Optimizer Agents.`,
       },

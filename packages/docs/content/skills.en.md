@@ -69,10 +69,10 @@ The built-in Skills, by group (the group manifest is `SKILL_GROUPS` in `packages
 | | `vllm` | Deploy and serve LLMs with vLLM behind an OpenAI-compatible endpoint, with tool calling enabled for agent workloads |
 | | `ollama` | Deploy and serve local models with Ollama: pull and run them, then expose the OpenAI-compatible endpoint to apps and agents |
 | | `llamafactory` | Fine-tune LLMs with LlamaFactory: register datasets, train via YAML configs, merge LoRA adapters and serve the result |
-| Agent Tuning | `agent-creation` | Turn a user requirement into a concrete agent: write the target agent's AGENTS.md and install the skills it needs |
-| | `benchmark-design` | Design and calibrate a multi-Case capability Benchmark with repeated independent evaluations and a traceable baseline |
-| | `agent-evaluation` | Run and score exactly one Benchmark Case run, with CLI execution, Trace provenance checks and private Rubric isolation |
-| | `agent-optimization` | Improve an Agent State from versioned multi-Case Benchmark scores and score-linked Traces |
+| Agent Tuning | `agent-creation` | Create or configure an Agent State from a user requirement; use it for Agent setup, not Benchmark design, evaluation, or optimization |
+| | `benchmark-design` | Design and calibrate a multi-Case capability Benchmark for an explicit Test Agent, establish a traceable Formal Baseline, then stop |
+| | `agent-evaluation` | Internal leaf worker that executes and privately scores exactly one Case run from a complete evaluation protocol |
+| | `agent-optimization` | Improve an explicit Test Agent from a complete current baseline on a frozen Benchmark; not for direct feedback, construction, or scoring |
 
 ## Writing and optimizing Skills
 

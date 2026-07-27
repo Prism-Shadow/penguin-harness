@@ -1,15 +1,24 @@
 ---
 name: agent-optimization
-description: Improve an Agent State from versioned Benchmark scores and score-linked Traces.
+description: Improve an Agent State through versioned scores and score-linked Traces from a frozen Benchmark. Use when an explicit Test Agent has a complete current baseline; do not use for direct feedback, Benchmark construction, or direct scoring.
 short_description: Improve an Agent from measured Benchmark results.
 short_description_zh: 根据 Benchmark 结果改进 Agent。
-version: 7
-updated: 2026-07-27T04:03:04Z
+version: 6
+updated: 2026-07-27T04:13:17Z
 ---
 
 # Agent Optimization
 
 Improve an existing Agent State through measured Benchmark results. Delegate every evaluation and score to the `agent-evaluation` Skill; do not run or score the Test Agent directly.
+
+## Workflow
+
+1. Validate the explicit target, frozen Benchmark, current complete Reference, evaluation Model, and rollback prerequisites.
+2. Inspect score-linked evidence and state one falsifiable capability hypothesis.
+3. Record candidate-owned originals, make one minimal Agent State change, and increment the version once.
+4. Evaluate the complete frozen Case × Run matrix through `agent-evaluation`.
+5. Accept a strictly higher valid Candidate; otherwise restore and verify the prior State.
+6. Use each accepted Candidate as the next Reference, then report the complete score curve and stop reason.
 
 ## Before you start
 

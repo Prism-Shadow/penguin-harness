@@ -1,10 +1,10 @@
 ---
 name: agent-evaluation
-description: Run and score exactly one Benchmark Case run with CLI execution, Trace provenance checks, and private Rubric isolation.
+description: Internal leaf worker for executing and privately scoring exactly one Benchmark Case run. Use only when benchmark-design or agent-optimization supplies the complete evaluation protocol; do not use for user-facing evaluation, Benchmark design, or Agent changes.
 short_description: Run and score one isolated Benchmark Case.
 short_description_zh: 隔离执行并评分一个 Benchmark Case。
 version: 5
-updated: 2026-07-27T00:00:00Z
+updated: 2026-07-27T04:13:17Z
 ---
 
 # Agent Evaluation

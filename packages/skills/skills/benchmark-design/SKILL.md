@@ -1,10 +1,10 @@
 ---
 name: benchmark-design
-description: Design and calibrate a multi-Case capability Benchmark with repeated independent evaluations and a traceable baseline.
+description: Design and calibrate a multi-Case capability Benchmark and establish a traceable Formal Baseline. Use when an explicit Test Agent and target capability need a new or revised Benchmark; stop after the baseline and do not optimize the Agent.
 short_description: Design and calibrate an Agent capability Benchmark.
 short_description_zh: 设计并校准 Agent 能力评测 Benchmark。
-version: 7
-updated: 2026-07-27T04:03:04Z
+version: 5
+updated: 2026-07-27T04:13:17Z
 ---
 
 # Benchmark Design
@@ -12,6 +12,15 @@ updated: 2026-07-27T04:03:04Z
 Create and calibrate a multi-Case Benchmark for a specified Test Agent to measure a target capability and establish a traceable baseline.
 
 This Skill owns the Statements, Rubrics, Case set, Benchmark configuration, and baseline. Do not modify the Test Agent State, run or score the Test Agent directly, or begin Agent optimization. Delegate every individual evaluation and score to the `agent-evaluation` Skill.
+
+## Workflow
+
+1. Validate the Test Agent, target capability, evaluation Model, and required evaluation access.
+2. Define the observable capability signal and draft the smallest useful Pilot.
+3. Run Pilot evaluations through `agent-evaluation`, diagnose one capability gap, and adjust one difficulty dimension per iteration.
+4. Freeze the complete Benchmark after calibration and semantic-isolation review.
+5. Run a fresh complete Formal Case × Run matrix without reusing Pilot outputs.
+6. Atomically record one valid baseline and report the calibration evidence and limitations.
 
 ## Before you start
 

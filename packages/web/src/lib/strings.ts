@@ -551,22 +551,19 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
         desc: "在足球预测、彩票机器和模拟投资任务中，根据评测分数持续改进选择策略",
         prompt: `请协调完成一次 Agent 创建、Benchmark 构建和 Agent 优化实验。
 
-当前 Session 只负责编排流程。Phase 1、Phase 2、Phase 3 必须分别通过
-\`exec_command\` 执行独立的 \`penguin run\`，不得使用当前 Session 的
-\`run_subagent\` 启动这三个阶段。
+## 编排
 
-三个阶段均使用 \`default_agent\` 和项目默认模型，不要给阶段 CLI 传入
-\`--provider\` 或 \`--model-id\`。\`deepseek-v4-flash\` 只用于评测 Test Agent。
-
-先为每个阶段准备独立 Prompt 文件和 Workspace，再按以下形式调用：
+当前 Session 只负责编排。Phase 1、Phase 2、Phase 3 必须分别通过
+\`exec_command\` 启动三个独立的 \`penguin run\`，不得使用当前 Session 的
+\`run_subagent\` 启动阶段。每个阶段都使用 \`default_agent\`、项目默认 Model、独立
+Prompt 文件和独立 Workspace。阶段命令不得传 \`--provider\` 或 \`--model-id\`；
+\`deepseek-v4-flash\` 只作为 Test Agent 的评测 Model。
 
 \`\`\`bash
 mkdir -p <phase_workspace>
-
 APP_DATA_DIR="<当前 Session 的 Environment App Data Dir>"
 PROJECT_ID="$(basename "$APP_DATA_DIR")"
 export PENGUIN_HOME="$(dirname "$APP_DATA_DIR")"
-
 penguin run \\
   --project-id "$PROJECT_ID" \\
   --agent-id default_agent \\
@@ -574,30 +571,21 @@ penguin run \\
   --message "$(cat <phase_prompt_file>)"
 \`\`\`
 
-等待当前 CLI 完整退出并验证产物后，才能启动下一阶段。
-
-Phase 2 和 Phase 3 可以并应按照各自 Skill，在其独立顶层 Session 内使用
-\`run_subagent\` 并行执行 \`agent-evaluation\`。上述限制只针对三个阶段本身
-的启动方式。
+每个命令退出并验证产物后，才能启动下一阶段。Phase 2 和 Phase 3 可在各自的顶层
+Session 内按 Skill 要求用 \`run_subagent\` 执行 \`agent-evaluation\`。
 
 ## Phase 1：Agent Creation
 
-通过独立 CLI Session 使用 \`agent-creation\` Skill 创建
-\`finite_choice_agent\`。
+使用 \`agent-creation\` 创建通用有限选择 Agent \`finite_choice_agent\`。当公开信息
+不能确定唯一答案但任务要求必须作答时，采用稳定默认值：候选项选第一个；方向选择
+High、Over 或 Up；排序保留输入顺序。
 
-它是通用的有限选择 Agent。当公开信息不足以确定唯一答案、但任务要求必须
-作答时，应明确下注并采用稳定的默认策略：
-
-- 候选项优先选择第一个；
-- 方向优先选择 High、Over 或 Up；
-- 排序优先保留输入顺序。
-
-不安装任何 Skill。使用 \`thinking_level: medium\`，初始 version 为 1。
-不要加入后续 Benchmark 的场景、私有映射、Gold 或优化提示。
+不安装任何 Skill。设置 \`thinking_level: medium\`，初始 version 为 1。不得加入后续
+Benchmark 场景、私有映射、Gold 或优化提示。
 
 ## Phase 2：Benchmark Design
 
-Phase 1 完成后，通过新的独立 CLI Session 使用 \`benchmark-design\` Skill。
+使用 \`benchmark-design\`，参数如下：
 
 - Test Agent：\`finite_choice_agent\`
 - Benchmark ID：\`contextual-choice-adaptation\`
@@ -606,118 +594,43 @@ Phase 1 完成后，通过新的独立 CLI Session 使用 \`benchmark-design\` S
 - Runs：3
 - Baseline 硬门槛：低于 70
 
-目标能力：通过固定 Benchmark 的 Case 分数，逐步学习公开信息无法唯一确定
-的上下文—动作映射。
+目标能力：在公开信息本身无法确定映射时，Agent 能否根据冻结 Benchmark 的分数学习
+固定的上下文—动作映射。设计三个 Case 族：
 
-设计三个不同的有限决策结构：
+1. 足球：三种重复且打乱顺序的标记，通过固定的非平凡置换映射到
+   \`Home/Draw/Away\`。
+2. 彩票：四种重复且打乱顺序的符号，通过固定的非平凡置换映射到四台机器。
+3. 模拟投资：两种重复的市场标记，对四个虚拟资产应用不同的非平凡排序变换。
 
-1. 足球预测：使用三种重复出现且顺序打乱的场次标记；每场从
-   \`Home/Draw/Away\` 中选择。私有映射是三种标记到三个动作的固定置换，
-   不得采用奇偶交替或按题号循环。
+私有映射必须通过独立于 Agent 的过程确定。不得使用 identity、完整反转、明显轮转、
+按题号循环或位置/名称规律。每个 Case 应包含足够的重复上下文，让学到的规则能迁移到
+同类新实例，但公开 Statement 不得泄露私有映射。
 
-2. 彩票机器：使用四种重复出现且顺序打乱的符号；每轮从四台机器中选择。
-   私有映射是一个固定的四分类置换，不得采用 identity、标准顺序循环或
-   简单轮转。
+遵循 Skill 的 Pilot → 冻结 → Formal 流程。Pilot 最多三轮，每轮只调整一个与能力相关
+的难度维度，目标是将分数校准到 70 以下。Pilot 结果是临时结果，不得写入 Scoreboard。
+不得仅为反驳已观察输出而修改私有规则或 Gold，也不得只靠收紧 Rubric 压低分数。校准
+后冻结完整 Benchmark，执行全新且完整的 3×3 Formal 矩阵；不得复用 Pilot Run，也不得
+记录不完整矩阵。
 
-3. 模拟投资：对四个虚拟资产排序，并设置两种重复出现的市场标记。
-   两种市场采用不同的私有排序变换，例如循环移动、相邻交换或交错排列；
-   不得使用原顺序或完整反转。
-
-每个 Case 应包含足够的重复上下文，使学到的映射能够应用于同类新实例；
-但公开 Statement 不提供足以推导私有映射的信息。题号、候选名称和排列位置
-不得形成明显答案规律。
-
-先完成 Pilot 校准，再执行 Formal Baseline。初始草案加每个 Case 的一次代表性评测
-记为第 1 轮。此后每轮均恰好包含一次单维度调整及对受影响 Case 的重新评测，且构成
-下一轮。Pilot 总计最多执行 3 轮；同一轮内不得进行多次“调整—重新评测”循环。调整前
-应说明当前 Pilot 为什么过于简单、过难或不足以测量目标能力，并说明预计暴露的能力
-缺口。一致地更新 Statement、材料、私有映射、Gold 和 Rubric。每次变更 Pilot 产物后，
-都必须在下一次评测前完成语义隔离复核。
-
-Pilot 结果是临时结果，不得写入 Scoreboard。仅可用观察到的 Pilot 行为识别
-能力缺口，并选择需要调整的难度维度。不得仅为了与已观察答案或已知默认策略
-相反而定义或修改预期结果、私有规则、映射或 Gold。任务包含潜在环境规则时，
-应通过独立于 Agent 的过程确定规则，并在对应迭代的评测期间保持固定。不得仅针对
-已经观察到的答案收紧 Rubric 来降低分数。如果新增评分要求需要 Agent 给出唯一
-结论，公开 Statement 必须明确要求该行为，材料也必须提供足以作答的证据。
-
-结果低于 70 时提前停止 Pilot 校准。如果第 3 轮结果仍未低于 70，或已没有可信且
-与目标能力相关的调整，应明确报告限制。满足硬门槛后，应在冻结完整 Benchmark 前
-立即完成语义隔离复核。执行全新且完整的 3×3 Formal 台账和矩阵；不得在 Scoreboard
-中复用 Pilot 的运行。只能记录一次完整有效的 Formal Baseline，绝不得写入不完整或
-放弃的 Formal 矩阵。若发现 Formal 设计缺陷，应在剩余 Pilot 预算内返回 Pilot、重新
-冻结，并执行全新且完整的 Formal 矩阵。若已无剩余 Pilot 轮次，应报告限制并停止，
-不得记录该放弃的矩阵。分数未低于 70 本身不属于设计缺陷。
-
-主 Session 只验证 Benchmark、Scoreboard 和完整 Baseline 已落盘，不读取、
-搜索或转述 Rubric、Gold 和私有映射。
+主 Session 只能验证公开 Benchmark 产物和完整 Formal Baseline，不得读取、搜索或转述
+Rubric、Gold 和私有映射。只有已记录的完整 Formal Baseline 低于 70 时才能启动 Phase 3；
+否则报告校准限制并停止。
 
 ## Phase 3：Agent Optimization
 
-Phase 2 完成后，通过新的独立 CLI Session 使用 \`agent-optimization\` Skill
-优化 \`finite_choice_agent\`。
+使用 \`agent-optimization\`，Benchmark 为 \`contextual-choice-adaptation\`，Reference
+为已记录的 Baseline，目标分数至少 85。
 
-仅当已记录的完整 Formal Baseline 低于 70 时才可开始 Phase 3；否则应记录并报告
-校准限制，并在 Phase 3 前停止。
-
-- Benchmark：\`contextual-choice-adaptation\`
-- Reference：Scoreboard 中现有的完整 Baseline
-- 目标分数：至少 85
-
-Optimization Session 只能读取：
-
-- Test Agent State；
-- 公开 Case Statement；
-- Scoreboard；
-- 各 Case 分数；
-- Scoreboard 关联的 Test Trace 和公开产物。
-
-不得读取、搜索、列举或打开任何路径中包含 \`/rubric/\` 的文件，也不得读取
-Gold 或 Builder 的私有映射。使用明确的公开 Statement 和 Scoreboard 路径，
-不要遍历整个 Benchmark 目录。
-
-若 Optimization Session 接触到 Rubric、Gold 或私有评分条件，本次 Session
-受到污染：不得保留由此产生的 Candidate 或分数，应恢复正在修改的 Candidate
-并报告该结果无效。
-
-每轮只验证一个策略族：
-
-- 足球场次标记映射；
-- 彩票符号到机器的映射；
-- 投资市场的排序变换。
-
-不得在同一个 Candidate 中同时修改多个策略族。每轮应：
-
-1. 根据当前 Reference 的分数和 Test Trace 提出一个可检验假设；
-2. 对 Agent State 做一次最小修改；
-3. 完成完整的 3×3 Candidate 评测；
-4. 分数严格提升则接受，否则回滚；
-5. 将接受的 Candidate 作为下一轮 Reference。
-
-本实验允许把通过多次黑盒分数与关联 Trace 学到、能够跨同类实例复用的稳定
-环境级策略写入 Agent State。不得写入 Case ID、具体实例答案、逐题答案表、
-私有评分条件或仅由一次观察支持的规则。
-
-持续优化至总分至少 85，并保留得分最高的有效版本。
+遵循 Skill 的“假设 → 最小 Candidate → 完整评测 → 接受/回滚”循环。每个 Candidate
+只能修改一个策略族：足球标记映射、彩票符号—机器映射或投资排序变换。完成完整的
+3×3 Candidate 评测，仅在分数严格提升时接受；每个已接受 Candidate 成为下一轮
+Reference。全程遵循 Skill 的泛化和私有访问规则。
 
 ## 最终检查与汇报
 
-三个 CLI Session 完成后，主 Session 检查 Phase 3 根 Session 是否实际打开、
-搜索或列举了 \`/rubric/\` 下的文件。Prompt 或普通文本中提到该路径不算访问；
-若发生实际访问，不得把受污染分数计入有效结果。
-
-最终汇报：
-
-- Agent 和 Benchmark 路径；
-- Pilot 校准表：轮次、总分、诊断出的能力缺口、单一难度调整以及冻结或停止原因；
-- Baseline 与所有 Candidate 分数；
-- 每轮验证的单一策略假设；
-- Agent State 的主要改动；
-- 接受和回滚的版本；
-- 最终保留版本；
-- 各 Case 分数；
-- 完整分数表和简单折线图；
-- 三个阶段是否完整完成及已知限制。
+检查 Phase 3 根 Session 是否实际访问 \`/rubric/\` 下的路径；文本提及不算访问，实际
+访问会使相关结果无效。汇报 Agent 与 Benchmark 路径、精简 Pilot 表、Baseline/Candidate
+分数曲线、每轮假设与策略族、接受和回滚的版本、最终保留版本及已知限制。
 
 不要修改任何 Skill，不要创建永久的 Builder、Evaluator 或 Optimizer Agent。`,
       },

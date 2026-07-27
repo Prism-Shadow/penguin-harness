@@ -1,10 +1,10 @@
 ---
 name: agent-creation
-description: Turn a user requirement into a concrete agent — write the target agent's AGENTS.md and install the skills it needs.
+description: Create or configure an Agent State from a user requirement by writing AGENTS.md, setting identity metadata, and installing only needed Skills. Use when the user asks to create a new Agent or configure an existing one; do not use for Benchmark design, evaluation, or optimization.
 short_description: Turn a requirement into a working agent.
 short_description_zh: 把需求变成可用的 Agent。
 version: 6
-updated: 2026-07-27T00:00:00Z
+updated: 2026-07-27T04:13:17Z
 ---
 
 # Agent Creation
@@ -81,6 +81,17 @@ cp "$APP_DATA_DIR/agents/default_agent/agent_state/system_config.yaml" "$TARGET/
 ```
 
 Then set the top-level `name`, `description`, and `version: 1` in `system_config.yaml`, write `AGENTS.md`, and install only the Skills required by the user's requirement.
+
+## Validate and report
+
+Before finishing:
+
+- parse `agent_state/system_config.yaml` and confirm `name`, `description`, and a positive integer `version`;
+- confirm `agent_state/AGENTS.md` exists and is non-empty;
+- confirm every installed Skill has a parseable `SKILL.md`, and its `name` matches its directory;
+- confirm no Agent outside `TARGET` was changed.
+
+Report the target path, whether an existing Agent was configured or a new Agent was created, assumptions, installed Skills, and validation results.
 
 ## The embedded agent of an SDK app
 

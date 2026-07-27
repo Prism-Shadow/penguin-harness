@@ -69,10 +69,10 @@ Skill 库以 npm 包 `@prismshadow/penguin-skills` 发布，tarball 直接携带
 | | `vllm` | 用 vLLM 部署与服务 LLM，提供 OpenAI 兼容端点，并为 Agent 负载启用工具调用 |
 | | `ollama` | 用 Ollama 部署与运行本地模型，把 OpenAI 兼容端点接入应用与 Agent |
 | | `llamafactory` | 用 LlamaFactory 微调 LLM：注册数据集、以 YAML 配置训练、合并 LoRA 适配器并部署产物 |
-| Agent 调优 | `agent-creation` | 把用户需求变成具体的 Agent：撰写目标 Agent 的 AGENTS.md 并安装所需 Skill |
-| | `benchmark-design` | 设计并校准多 Case 的能力评测 Benchmark，含重复独立评测与可追溯基线 |
-| | `agent-evaluation` | 隔离执行并评分单个 Benchmark Case:CLI 执行、Trace 溯源检查、Rubric 私有隔离 |
-| | `agent-optimization` | 依据带版本的多 Case Benchmark 分数与关联 Trace 改进 Agent State |
+| Agent 调优 | `agent-creation` | 根据需求创建或配置 Agent State；用于 Agent 设置，不用于 Benchmark 设计、评测或优化 |
+| | `benchmark-design` | 为明确的 Test Agent 设计并校准多 Case Benchmark，建立可追溯的 Formal Baseline 后停止 |
+| | `agent-evaluation` | 内部叶子执行器：根据完整评测协议隔离执行并私密评分一个 Case Run |
+| | `agent-optimization` | 基于冻结 Benchmark 的完整当前基线改进明确的 Test Agent；不处理直接反馈、Benchmark 构建或直接评分 |
 
 ## 编写与优化
 
