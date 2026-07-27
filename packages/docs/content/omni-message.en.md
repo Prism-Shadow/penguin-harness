@@ -50,7 +50,7 @@ interface ToolDefinition {
 }
 ```
 
-session_meta holds **per-session invariants only** — the model, system prompt and Workspace are immutable for the Session's lifetime; on resume, the engine takes this Trace line as the runtime config. See [Sessions & Traces](/sessions-and-traces). The thinking level is a per-turn parameter (sent with each Task) and is not recorded here; legacy Traces may still carry a `thinking_level` field in their meta, which resume keeps honoring for back-compat.
+session_meta holds **per-session invariants only** — the model, system prompt and Workspace are immutable for the Session's lifetime; on resume, the engine takes this Trace line as the runtime config. See [Sessions & Traces](/sessions-and-traces). The thinking level is a per-turn parameter (sent with each Task) and is not recorded here; a `thinking_level` field still present in a legacy Trace's meta is ignored on resume — the resumed Session reads the Agent's current config instead.
 
 ## model_msg: complete payloads
 

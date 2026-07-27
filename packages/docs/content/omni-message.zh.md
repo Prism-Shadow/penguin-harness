@@ -50,7 +50,7 @@ interface ToolDefinition {
 }
 ```
 
-session_meta 只承载**会话级不变量**——模型、系统提示词、Workspace 在 Session 生命周期内不可变；恢复 Session 时引擎直接以 Trace 中的这条消息为运行时配置，见 [Session 与 Trace](/sessions-and-traces)。思考等级是逐轮参数（随每次 Task 下发），不记录在此；旧版 Trace 的 meta 里可能仍带 `thinking_level` 字段，恢复时按兼容逻辑继续生效。
+session_meta 只承载**会话级不变量**——模型、系统提示词、Workspace 在 Session 生命周期内不可变；恢复 Session 时引擎直接以 Trace 中的这条消息为运行时配置，见 [Session 与 Trace](/sessions-and-traces)。思考等级是逐轮参数（随每次 Task 下发），不记录在此；旧版 Trace 的 meta 里可能仍带 `thinking_level` 字段，恢复时会被忽略——恢复后的 Session 直接读取 Agent 当前配置。
 
 ## model_msg：完整消息
 

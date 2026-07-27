@@ -83,8 +83,8 @@ export interface ToolDefinition {
 /**
  * Session metadata. Holds **per-session invariants only** — values fixed for the Session's
  * lifetime (model reference, assembled system prompt, tool schemas, paths, origin). Per-turn
- * parameters (e.g. the thinking level, passed with each run) never belong here; legacy Traces
- * may still carry a `thinking_level` field, which resume reads loosely for back-compat.
+ * parameters (e.g. the thinking level, passed with each run) never belong here; a
+ * `thinking_level` field still present in a legacy Trace's meta is ignored on resume.
  */
 export interface SessionMetaPayload {
   session_id: string;
