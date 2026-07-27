@@ -57,6 +57,8 @@ import type {
   TaskCreateResponse,
   TraceAnalysisResponse,
   TraceEventsResponse,
+  TraceImportRequest,
+  TraceImportResponse,
   UiPrefs,
   UsageGroupBy,
   UsageResponse,
@@ -330,6 +332,23 @@ export const getAgentTraceAnalysis = (
   apiFetch<TraceAnalysisResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
       `/traces/${encodeURIComponent(sessionId)}/${index}/analysis`,
+  );
+
+/** Trace file download URL: the server sets Content-Disposition attachment, usable directly in <a download>. */
+export const agentTraceDownloadUrl = (
+  projectId: string,
+  agentId: string,
+  sessionId: string,
+  index: number,
+): string =>
+  `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
+  `/traces/${encodeURIComponent(sessionId)}/${index}/download`;
+
+/** Imports a Trace JSONL file (owner only); the response says where the file landed (sessionId / index / date). */
+export const importAgentTrace = (projectId: string, agentId: string, body: TraceImportRequest) =>
+  apiFetch<TraceImportResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/traces/import`,
+    { method: "POST", body },
   );
 
 // Usage statistics ----------------------------------------------------------------------

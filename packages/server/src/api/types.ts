@@ -939,6 +939,20 @@ export interface AgentTracesResponse {
   dates: AgentTraceDateGroup[];
 }
 
+export interface TraceImportRequest {
+  /** Base64 of the Trace file content (JSON Lines; the first record must be `session_meta`). */
+  dataBase64: string;
+}
+
+export interface TraceImportResponse {
+  /** Session id taken from the imported file's `session_meta`. */
+  sessionId: string;
+  /** Allocated file index: always 1 — an import creates a new Session (a duplicate session id is rejected with 409 `trace_session_exists`). */
+  index: number;
+  /** Date directory the file landed in (local yyyy-mm-dd from the first record's timestamp, matching the Trace Writer's convention). */
+  date: string;
+}
+
 // ---------------------------------------------------------------------------
 // Usage and cost statistics
 // ---------------------------------------------------------------------------
