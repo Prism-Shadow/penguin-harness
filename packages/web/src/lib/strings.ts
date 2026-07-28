@@ -596,7 +596,7 @@ penguin run \\
 
 三个 Case 应覆盖不同的决策难点，共同考察 Agent 能否从公开规则、历史案例和当前事实中恢复稳定的决策过程，判断证据是否充分，处理规则优先级和例外，并迁移到新实例。Freeze 前确认每个 Case 都能暴露稳定缺陷，或者覆盖其他 Case 未覆盖的必要能力；不能只依靠一个低分 Case 满足总分门槛。难度应来自必要的推理依赖，而不是数据量、隐藏关键信息或答案歧义。每个 Statement 必须提供完成任务所需的全部公开材料，但只呈现题目，不解释考点、解法或关键证据。
 
-Freeze 时，每个结果必须能由公开材料稳定推出；如果信息本身不足，Statement 必须公开定义预期的不确定性处理或允许答案集合。按照 \`benchmark-design\` 完成设计、Pilot 调整、冻结和 Formal Baseline。Scoreboard 使用 Web v2 字段：Evaluation 总分写在顶层 \`score\`；每个 Case 使用 \`case\`、\`max_score\` 和 \`runs\`。不要使用 \`aggregate\`、\`case_id\` 或 \`mean_score\`。只有有效且完整的 Formal Baseline 低于 70 时才能启动 Phase 3；否则报告限制并停止。当前编排 Session 只能检查公开 Benchmark 产物和最终分数，不得读取或转述 Rubric、Gold 等私有信息。
+只有有效且完整的 Formal Baseline 低于 70 时才能启动 Phase 3；否则报告限制并停止。当前编排 Session 只能检查公开 Benchmark 产物和最终分数，不得读取或转述 Rubric、Gold 等私有信息。
 
 ## Phase 3：Agent Optimization
 

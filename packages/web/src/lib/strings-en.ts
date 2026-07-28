@@ -638,11 +638,6 @@ Difficulty must come from necessary reasoning dependencies, not data volume, hid
 answer ambiguity. Each Statement must provide all necessary public materials while presenting only
 the task, without explaining the tested capability, solution, or decisive evidence.
 
-At freeze, every result must follow stably from public materials. When the evidence is inherently
-insufficient, the Statement must define the expected uncertainty action or accepted answer set.
-Follow \`benchmark-design\` through design, Pilot refinement, freeze, and Formal Baseline. Use the
-Web v2 Scoreboard fields: write the Evaluation total as top-level \`score\`; identify each Case with
-\`case\`, \`max_score\`, and \`runs\`. Do not use \`aggregate\`, \`case_id\`, or \`mean_score\`.
 Start Phase 3 only when a valid, complete Formal Baseline is below 70; otherwise report the
 limitation and stop. The coordinating Session may inspect only public Benchmark artifacts and final
 scores, and must not read or repeat Rubrics, Gold answers, or other private information.
