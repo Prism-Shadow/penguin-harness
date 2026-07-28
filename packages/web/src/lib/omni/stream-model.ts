@@ -905,6 +905,15 @@ function handleComplete(
         model.pendingText = null;
         return;
       }
+      // Fidelity-only message: core emits a complete text/thinking message with an empty body
+      // when the provider attached an opaque payload to an otherwise empty part — Gemini's
+      // thoughtSignature on a text part, GPT-5's encrypted-reasoning phase markers — both of
+      // which land right after a thinking segment. The message has to exist so the fidelity
+      // round-trips into history, but it has nothing to show, and no fragment was ever opened
+      // for it either (core only starts a segment once real content arrives). Rendering it
+      // produced a blank "assistant:" bubble; collectTaskAssistant already skipped these when
+      // gathering the reply text, so the two paths now agree.
+      if (!p.text.trim()) return;
       // No open fragment (history / mid-stream join): append directly.
       const doneMs = tsOf(timestamp);
       const item: AssistantTextItem = {
@@ -942,6 +951,9 @@ function handleComplete(
         model.pendingThinking = null;
         return;
       }
+      // Same fidelity-only case as the text branch above (GPT-5 encrypted reasoning): the
+      // message carries the payload, not a thought to show.
+      if (!p.thinking.trim()) return;
       const item: ThinkingItem = {
         kind: "thinking",
         id: nextId(model),

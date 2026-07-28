@@ -1474,3 +1474,46 @@ describe("multiple calls with a repeated tool_call_id (fallback for legacy Trace
     expect(cards[1]!.outputComplete).toBe(false); // new card waits for output as normal
   });
 });
+
+describe("fidelity-only messages render nothing (empty assistant bubble after thinking)", () => {
+  // Core emits a complete text/thinking message with an empty body when a provider attaches an
+  // opaque payload to an otherwise empty part (Gemini's thoughtSignature on a text part, GPT-5's
+  // encrypted-reasoning phase markers) — see flushText / flushThinking. It must exist so the
+  // fidelity round-trips into history; it must not become a visible item.
+  it("an empty assistant text after thinking adds no item", () => {
+    const m = createStreamModel();
+    pushMessage(m, userText("hi"));
+    pushMessage(m, thinkingMessage("pondering"));
+    pushMessage(m, assistantText(""));
+    expect(items(m).map((i) => i.kind)).toEqual(["user_text", "thinking"]);
+  });
+
+  it("a whitespace-only body counts as empty too", () => {
+    const m = createStreamModel();
+    pushMessage(m, assistantText("\n  \n"));
+    pushMessage(m, thinkingMessage("   "));
+    expect(items(m)).toEqual([]);
+  });
+
+  it("real content is unaffected, including a lone space inside real text", () => {
+    const m = createStreamModel();
+    pushMessage(m, thinkingMessage("thought"));
+    pushMessage(m, assistantText("answer"));
+    expect(items(m).map((i) => i.kind)).toEqual(["thinking", "assistant_text"]);
+    expect((items(m)[1] as AssistantTextItem).text).toBe("answer");
+  });
+
+  it("a streamed segment is still settled by its complete message, not dropped", () => {
+    // The guard must only skip the append path — a fragment that streamed real content is
+    // replaced by its complete message as before.
+    const m = createStreamModel();
+    pushMessage(m, partialText("start", "Hel"));
+    pushMessage(m, partialText("delta", "lo"));
+    pushMessage(m, partialText("stop"));
+    pushMessage(m, assistantText("Hello"));
+    const texts = items(m).filter((i) => i.kind === "assistant_text");
+    expect(texts).toHaveLength(1);
+    expect((texts[0] as AssistantTextItem).text).toBe("Hello");
+    expect((texts[0] as AssistantTextItem).streaming).toBe(false);
+  });
+});
