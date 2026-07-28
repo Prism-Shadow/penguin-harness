@@ -1133,6 +1133,26 @@ export class GenerativeModel implements LLMInterface {
       }, this.requestTimeoutMs);
     };
 
+    /**
+     * Settles as soon as the run must stop, whatever upstream is doing: the user aborted, or
+     * the idle timer fired (both go through `ac`). `it.next()` is raced against this because
+     * an upstream that does not honour its AbortSignal leaves that promise pending **forever**
+     * — and once `ac` is aborted the idle timer's own `ac.abort()` is a no-op, so nothing is
+     * left to unwedge the loop. Observed against Kimi: pressing Stop mid-request left the
+     * Session running with no way to send, compact or interrupt it again, short of a restart.
+     *
+     * The pre-loop `userSignal?.aborted` check below covers the *other* half of this (aborting
+     * while suspended at a `yield`); it cannot help here, since the loop never gets back to it.
+     */
+    const STOPPED = Symbol("stopped");
+    const stopped: Promise<typeof STOPPED> = new Promise((resolve) => {
+      if (ac.signal.aborted) {
+        resolve(STOPPED);
+        return;
+      }
+      ac.signal.addEventListener("abort", () => resolve(STOPPED), { once: true });
+    });
+
     // Terminal-state classification: timeout (timed out/network drop) / malformed (response
     // parse error) / aborted (user) / failed (other). null means it ended normally.
     let outcome: LLMOutcome | null = null;
@@ -1159,11 +1179,19 @@ export class GenerativeModel implements LLMInterface {
         // time), measuring upstream idleness — this avoids a slow consumer (e.g. a slow Trace
         // sink) falsely triggering the timeout.
         armTimer();
-        let res: IteratorResult<UniEvent>;
+        let res: IteratorResult<UniEvent> | typeof STOPPED;
         try {
-          res = await it.next();
+          res = await Promise.race([it.next(), stopped]);
         } finally {
           clearTimer();
+        }
+        if (res === STOPPED) {
+          // Upstream never settled after the abort. Abandon it rather than await it: ask it to
+          // close (best effort — a stream that ignored the signal may ignore this too, so the
+          // rejection is swallowed and the promise is not awaited) and classify by trigger.
+          void Promise.resolve(it.return?.(undefined)).catch(() => undefined);
+          outcome = userSignal?.aborted ? { status: "aborted" } : { status: "timeout" };
+          break;
         }
         if (res.done) break;
         if (userSignal?.aborted) {
