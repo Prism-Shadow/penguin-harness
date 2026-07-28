@@ -34,9 +34,9 @@
  *
  * Environment (source = `environment`): reads `tool_call_output`'s stop_reason ∈
  * {failed, timeout} → expected (the error is fed back to the model, and the Agent
- * adjusts on its own; `aborted` is denial/interruption, not recorded). `exec_command` is
- * excluded outright — a non-zero exit is how a shell command reports information, not a
- * fault; see NOT_RECORDED_TOOLS.
+ * adjusts on its own; `aborted` is denial/interruption, not recorded). The command tools
+ * (`exec_command` / `input_command`) are excluded outright — a non-zero exit is how a shell
+ * command reports information, not a fault; see NOT_RECORDED_TOOLS.
  * `tool_call_output` only has tool_call_id, no tool name, so `tool_call_id → tool name`
  * is cached (tool_call always arrives before its output), and the tool name is written
  * into code (`tool_failed:exec_command`) — so the stats dashboard's "most common error
@@ -107,19 +107,23 @@ function isToolFailure(s: unknown): s is ToolFailure {
 }
 
 /**
- * Tools whose failures are **never** recorded as errors.
+ * The command tools, whose failures are **never** recorded as errors.
  *
- * `exec_command` maps *any* non-zero exit to `failed` (`resultForExit` in core), but a
+ * Both end in core's `resultForExit`, which maps *any* non-zero exit to `failed` — but a
  * non-zero exit is how shell commands return information, not a fault: `grep` exits 1 when
  * nothing matches, `test -f` when the file is absent, `diff` when files differ. Recording
  * those made the cost center's error table mostly a log of ordinary Agent work, which both
  * buried real errors and consumed the row cap and the dedup window that protect them. The
  * Agent already sees the failure and adjusts — nothing here needs a human.
  *
- * `input_command` is deliberately NOT in this set: it drives an already-running session, so
- * a failure there is a genuine fault rather than a command's own exit status.
+ * They belong in the set together: `input_command` is how a backgrounded `exec_command` is
+ * polled for its eventual exit, so excluding only one would record the *same* command's
+ * non-zero exit when it finishes in the background and drop it when it finishes in the
+ * foreground. `input_command`'s remaining failure paths (a missing or unknown `process_id`,
+ * Ctrl-C mixed with other content) are the model misusing the tool, which it likewise sees
+ * in the output and corrects on its own.
  */
-const NOT_RECORDED_TOOLS: ReadonlySet<string> = new Set(["exec_command"]);
+const NOT_RECORDED_TOOLS: ReadonlySet<string> = new Set(["exec_command", "input_command"]);
 
 /** A user-interrupt abort message (core's `aborted by user` / `aborted during …`): not a failure reason. */
 function isUserAbortReason(reason: string): boolean {

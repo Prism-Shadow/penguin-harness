@@ -526,11 +526,13 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
 
   const call = (name: string, id: string) => toolCall({ name, arguments: "{}", toolCallId: id });
 
-  it("exec_command failures are never recorded: a non-zero exit is information, not a fault", () => {
-    // resultForExit maps ANY non-zero exit to `failed`, so grep finding nothing (exit 1),
-    // `test -f` on a missing file, or a diff that differs would all land in the cost center
-    // and bury the real errors. Other tools still record, including a timeout on exec_command's
-    // sibling input_command, which drives an already-running session.
+  it("command-tool failures are never recorded: a non-zero exit is information, not a fault", () => {
+    // Both command tools end in resultForExit, which maps ANY non-zero exit to `failed`, so
+    // grep finding nothing (exit 1), `test -f` on a missing file, or a diff that differs would
+    // all land in the cost center and bury the real errors. input_command is excluded alongside
+    // exec_command because it is how a backgrounded command is polled for its eventual exit —
+    // recording one but not the other would depend on where the command happened to finish.
+    // Every other tool still records.
     const got = feed([
       call("exec_command", "tc-1"),
       toolCallOutput({
@@ -542,12 +544,16 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
       toolCallOutput({ output: "[tool timeout]", toolCallId: "tc-2", stopReason: "timeout" }),
       call("input_command", "tc-3"),
       toolCallOutput({
-        output: "[tool error] no such session",
+        output: "[tool error] exit code 2",
         toolCallId: "tc-3",
         stopReason: "failed",
       }),
+      call("input_command", "tc-4"),
+      toolCallOutput({ output: "[tool timeout]", toolCallId: "tc-4", stopReason: "timeout" }),
+      call("write_file", "tc-5"),
+      toolCallOutput({ output: "EACCES", toolCallId: "tc-5", stopReason: "failed" }),
     ]);
-    expect(got.map((r) => r.code)).toEqual(["tool_failed:input_command"]);
+    expect(got.map((r) => r.code)).toEqual(["tool_failed:write_file"]);
   });
 
   it("tool failed / timeout → environment + expected, code carries the tool name", () => {
