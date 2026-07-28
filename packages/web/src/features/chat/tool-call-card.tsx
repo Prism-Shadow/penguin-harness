@@ -17,7 +17,6 @@ import { S } from "../../lib/strings";
 import { humanizeDuration } from "../../lib/format";
 import { approvalKey } from "../../lib/omni/stream-model";
 import type { ToolCallItem } from "../../lib/omni/stream-model";
-import { Badge, stopReasonTone } from "../../components/ui/badge";
 import { Chevron } from "../../components/ui/chevron";
 import { ZoomableImage } from "../../components/ui/image-zoom";
 import { StatusIcon } from "../../components/ui/status-icon";
@@ -201,8 +200,8 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
     : null;
   // A user denial reports stop_reason "aborted" on the output it feeds back; that abort IS the
   // decision, not an independent outcome — the icon reads "Denied", and no separate "aborted"
-  // badge repeats it. A user-abort of a RUNNING tool carries no deny decision and keeps its own
-  // "aborted" marker (the stop-reason branch below).
+  // repeats it. A user-abort of a RUNNING tool carries no deny decision, so the label falls
+  // through to its stop reason below.
   const deniedByUser = item.decision === "deny" && item.outputStopReason === "aborted";
   const stateLabel = pending
     ? S.chat.approvalWaiting
@@ -216,7 +215,15 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
 
   return (
     <div>
-      {/* Collapsed row: status icon + tool name + total duration (generation + execution, excluding approval wait). Expand chevron on the right. */}
+      {/* Collapsed row: status icon + tool name + total duration (generation + execution,
+          excluding approval wait). Expand chevron on the right.
+
+          Outcome is the icon's job alone — a red X for failed/aborted/timeout, a grey check
+          for done — with the exact stop reason in its title/aria-label. There used to be a
+          pill spelling it out to the right of the duration as well; it said the same thing
+          twice, and on a phone it competed for the width that the call's subtitle needs. The
+          Trace viewer still shows the raw stop reason per event, which is where the literal
+          value belongs. */}
       <button
         type="button"
         aria-expanded={open}
@@ -262,14 +269,6 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
           <span className="hidden shrink-0 font-mono text-xs text-amber-600 sm:inline dark:text-amber-400">
             {S.chat.approvalWaiting}
           </span>
-        )}
-        {item.callStopReason && item.callStopReason !== "completed" && (
-          <Badge tone={stopReasonTone(item.callStopReason)}>{item.callStopReason}</Badge>
-        )}
-        {/* Writing "aborted" next to the Denied pill would state the same outcome twice — see
-            deniedByUser above. */}
-        {item.outputStopReason && item.outputStopReason !== "completed" && !deniedByUser && (
-          <Badge tone={stopReasonTone(item.outputStopReason)}>{item.outputStopReason}</Badge>
         )}
         <span className="min-w-0 flex-1" />
         {/* Expand indicator on the right */}
