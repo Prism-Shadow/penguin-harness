@@ -110,14 +110,19 @@ test("skills: library groups and cards -> manage-install Modal -> quick-invoke p
 
   // Card icon: the DTO icon (icon.svg in the skill's directory) is sanitized and rendered
   // inline (an aria-hidden wrapper + svg); builtin skills each carry a custom icon, not the book
-  // fallback. The card root = the nearest rounded-md ancestor of the name element (the new card
-  // layout has the icon spanning two rows on the left, with the name and short description as
-  // separate text columns, so it can no longer be located by "the innermost div containing the name").
-  const creationCard = page
-    .getByText("agent-creation", { exact: true })
-    .locator("xpath=ancestor::div[contains(@class,'rounded-md')][1]");
+  // fallback. Use the card's stable semantic hook rather than coupling the test to visual classes.
+  const creationCard = page.locator('[data-skill-card="agent-creation"]');
   await expect(creationCard.locator("span[aria-hidden] > svg")).toHaveCount(1);
   await expect(creationCard.locator(`svg path[d^="${BOOK_PATH_PREFIX}"]`)).toHaveCount(0);
+
+  // The card body is a keyboard-accessible details trigger. It opens the full description in a
+  // Modal without nesting or replacing the independent quick-invoke/manage-install actions.
+  await creationCard.getByRole("button", { name: "查看技能详情 agent-creation" }).click();
+  const skillDetails = page.locator('[data-skill-detail="agent-creation"]');
+  await expect(skillDetails).toBeVisible();
+  await expect(skillDetails.locator("p").last()).not.toHaveText("");
+  await page.keyboard.press("Escape");
+  await expect(skillDetails).toHaveCount(0);
 
   // Clicking the group header collapses it: aria-expanded flips, and the group's content
   // becomes inert (a zero-height card can't be interacted with); clicking again expands it back.

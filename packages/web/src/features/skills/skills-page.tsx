@@ -1,18 +1,14 @@
 /**
  * Skill library page: the @prismshadow/penguin-skills
- * Skill library, shown sectioned by skill group. Groups are borderless — the
- * group header (group name + skill count, no icon) is collapsible, highlights
- * on hover, and animates height on expand/collapse; expanded by default. Cards
- * within a group form a grid, generously sized: two per row from the sm
- * breakpoint up, one per row on narrow screens. Each card = a rounded icon
- * tile centered against the two text rows (its color comes from
- * skillTileColor — a per-skill palette hashed from the name, which replaced
- * the theme-accent tile that painted every skill the same; DTO icon = the raw
- * icon.svg from the catalog, rendered inline once it passes sanitize,
- * otherwise falls back to a default book icon) + a name (monospace) and short
- * description on the right, one line each (single-line truncation, falling
- * back to the full description when missing) + a metadata line below both
- * (version · semantic update time · usage count "used by N Agents");
+ * Skill library, shown sectioned by skill group. Each group is a bordered,
+ * collapsible surface (group name + skill count, no icon) that highlights on
+ * hover and animates height on expand/collapse; expanded by default. Cards
+ * within a group form a responsive grid: two per row from the md breakpoint,
+ * one per row on narrow screens. Each card follows a compact service-card
+ * hierarchy: rounded color tile (skillTileColor, hashed from the name; DTO
+ * icon.svg rendered inline after sanitize, with a default book fallback),
+ * monospace name + two-line short description, then a separated footer with
+ * version · semantic update time · usage count and the card actions;
  * group and card copy follow the UI language (localizedText /
  * localizedShortText), and groups have no description. Icon buttons for
  * actions (copy goes into aria-label and title) —
@@ -259,9 +255,9 @@ export function SkillsPage() {
             </Button>
           </div>
         ) : groups === null ? (
-          <div className="mt-6 grid gap-2.5 sm:grid-cols-2">
+          <div className="mt-6 grid gap-3 md:grid-cols-2">
             {Array.from({ length: 4 }, (_, i) => (
-              <SkeletonCard key={i} className="p-4">
+              <SkeletonCard key={i} className="min-h-40 p-4">
                 <Skeleton className="h-4 w-32" />
                 <Skeleton className="mt-2 h-4 w-3/4" />
                 <Skeleton className="mt-3 h-6 w-36" />
@@ -269,13 +265,13 @@ export function SkillsPage() {
             ))}
           </div>
         ) : (
-          <div className="mt-6 space-y-3">
+          <div className="mt-6 space-y-4">
             {groups.map((group) => {
               const open = !collapsed.has(group.id);
               return (
                 <section
                   key={group.id}
-                  className="overflow-hidden rounded-md bg-white dark:bg-gray-900"
+                  className="overflow-hidden rounded-lg border border-gray-200 bg-gray-50/60 dark:border-gray-800 dark:bg-gray-900/50"
                 >
                   {/* Group header (styled like the model page's provider groups): group name +
                       skill count (no icon, no description); the whole row toggles
@@ -291,7 +287,7 @@ export function SkillsPage() {
                         return next;
                       })
                     }
-                    className="flex w-full items-center gap-2.5 bg-gray-50 px-3 py-2.5 text-left transition-colors duration-150 hover:bg-gray-100 dark:bg-gray-900/60 dark:hover:bg-gray-800/60"
+                    className={`flex w-full items-center gap-2.5 bg-white/80 px-4 py-3 text-left transition-colors duration-150 hover:bg-white dark:bg-gray-900/80 dark:hover:bg-gray-900 ${open ? "border-b border-gray-200 dark:border-gray-800" : ""}`}
                   >
                     {/* Group name can truncate (min-w-0): the count and collapse arrow must not shrink. */}
                     <span className="min-w-0 truncate text-sm font-semibold">
@@ -312,9 +308,9 @@ export function SkillsPage() {
                   >
                     {/* inert while collapsed: cards at zero height shouldn't still be Tab-focusable or clickable. */}
                     <div className="overflow-hidden" inert={!open}>
-                      {/* Generously sized cards: 2 columns ≥sm, 1 column on narrow screens. */}
+                      {/* Service-card grid: 2 columns ≥md, 1 column on narrow screens. */}
                       <div
-                        className={`grid gap-2.5 p-2.5 transition-opacity duration-200 sm:grid-cols-2 ${open ? "opacity-100" : "opacity-0"}`}
+                        className={`grid gap-3 p-3 transition-opacity duration-200 md:grid-cols-2 ${open ? "opacity-100" : "opacity-0"}`}
                       >
                         {group.skills.map((skill) => (
                           <SkillCard
@@ -339,7 +335,7 @@ export function SkillsPage() {
   );
 }
 
-/** A single skill card: metadata display (including a semantic metadata line) + update reminder + quick invoke + "manage installs" Modal. */
+/** A single skill card: clickable details + metadata + update reminder + quick invoke + "manage installs" Modal. */
 function SkillCard({
   skill,
   installed,
@@ -355,6 +351,7 @@ function SkillCard({
 }) {
   const { locale } = useLocale();
   const { agents } = useProject();
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [installOpen, setInstallOpen] = useState(false);
   // Agents pending an update confirmation (null = none): an update is an overwriting reinstall, so it needs a confirm + a per-agent version list before it runs.
   const [pendingUpdate, setPendingUpdate] = useState<string[] | null>(null);
@@ -384,8 +381,8 @@ function SkillCard({
     skill.version,
   );
 
-  // Short description takes priority, falling back to the full description
-  // when missing (per UI language); title carries the full description for hover reading.
+  // Short description takes priority, falling back to the full description when missing
+  // (per UI language); clicking the card body opens the complete description in a Modal.
   const description = localizedShortText(locale, skill);
   const fullDescription = skill.description;
   // Metadata line: version · semantic update time (omitted when there's no
@@ -398,70 +395,111 @@ function SkillCard({
     .filter((v): v is string => v !== null)
     .join(" · ");
   return (
-    <div className="flex h-full items-center gap-3 rounded-md p-4 transition-colors hover:bg-gray-100/70 dark:hover:bg-gray-800/60">
-      <div className="min-w-0 flex-1">
-        {/* Header: the skill icon centered across the two text rows (rounded tile in the skill's
-            own palette color — see skillTileColor; deliberately a bit smaller than the two rows),
-            with the name and short description on one line each to the right. */}
-        <div className="flex items-center gap-3">
-          <span
-            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${skillTileColor(skill.name)}`}
-          >
-            <SkillIcon icon={skill.icon} size={20} />
+    <div
+      data-skill-card={skill.name}
+      className="flex h-full min-h-40 flex-col rounded-lg border border-gray-200 bg-white p-4 shadow-sm transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-md dark:border-gray-800 dark:bg-gray-900 dark:hover:border-gray-700"
+    >
+      {/* The card body is the details trigger. Keeping it as a real button, with card actions as
+          siblings below, avoids nested interactive controls and gives keyboard users Enter/Space. */}
+      <button
+        type="button"
+        aria-label={`${S.skills.viewDetails} ${skill.name}`}
+        title={S.skills.viewDetails}
+        onClick={() => setDetailsOpen(true)}
+        className="flex flex-1 items-start gap-3 rounded-md text-left"
+      >
+        <span
+          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${skillTileColor(skill.name)}`}
+        >
+          <SkillIcon icon={skill.icon} size={21} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <span className="block truncate font-mono text-[13px] font-semibold" title={skill.name}>
+            {skill.name}
           </span>
-          <div className="min-w-0 flex-1">
-            <span className="block truncate font-mono text-[13px] font-semibold" title={skill.name}>
-              {skill.name}
-            </span>
-            {/* Short description truncates to one line (full description goes into title for hover reading). */}
-            <p
-              className="mt-0.5 truncate text-xs leading-5 text-gray-500 dark:text-gray-400"
-              title={fullDescription}
-            >
-              {description}
-            </p>
-          </div>
+          <p
+            className="mt-1 line-clamp-2 min-h-10 text-xs leading-5 text-gray-500 dark:text-gray-400"
+            title={fullDescription}
+          >
+            {description}
+          </p>
         </div>
-        {/* Metadata line under the header (e.g. `v1 · updated today · used by N Agents`). */}
-        <p className="mt-2.5 truncate text-[11px] text-gray-400 dark:text-gray-500" title={meta}>
+      </button>
+
+      {/* Footer keeps secondary metadata visually separate and pins the actions to a stable edge,
+          so every card aligns even when descriptions have different lengths. */}
+      <div className="mt-4 flex items-end justify-between gap-3 border-t border-gray-100 pt-3 dark:border-gray-800">
+        <p
+          className="min-w-0 truncate text-[11px] leading-4 text-gray-400 dark:text-gray-500"
+          title={meta}
+        >
           {meta}
         </p>
-      </div>
-      {/* Actions: equal-square light icon buttons in a single row, vertically centered at the
-          card's right edge (copy goes into aria-label and title). */}
-      <div className="flex shrink-0 items-center justify-center gap-1.5">
-        {/* Light (secondary): an update nudge, not the card's primary action. */}
-        {outdated.length > 0 && (
+        <div className="flex shrink-0 items-center justify-center gap-1.5">
+          {/* Light (secondary): an update nudge, not the card's primary action. */}
+          {outdated.length > 0 && (
+            <Button
+              size="sm"
+              variant="secondary"
+              className="h-8 w-8 shrink-0 justify-center p-0"
+              aria-label={`${S.skills.updateOutdated(outdated.length)} ${skill.name}`}
+              title={S.skills.updateOutdated(outdated.length)}
+              onClick={() => setPendingUpdate(outdated)}
+            >
+              <GlyphIcon d={UPDATE_ICON} size={13} />
+            </Button>
+          )}
           <Button
             size="sm"
-            variant="secondary"
             className="h-8 w-8 shrink-0 justify-center p-0"
-            aria-label={`${S.skills.updateOutdated(outdated.length)} ${skill.name}`}
-            title={S.skills.updateOutdated(outdated.length)}
-            onClick={() => setPendingUpdate(outdated)}
+            aria-label={`${S.skills.quickInvoke} ${skill.name}`}
+            title={S.skills.quickInvoke}
+            onClick={() => onQuickInvoke(skill.name)}
           >
-            <GlyphIcon d={UPDATE_ICON} size={13} />
+            <GlyphIcon d={SEND_ICON} size={15} />
           </Button>
-        )}
-        <Button
-          size="sm"
-          className="h-8 w-8 shrink-0 justify-center p-0"
-          aria-label={`${S.skills.quickInvoke} ${skill.name}`}
-          title={S.skills.quickInvoke}
-          onClick={() => onQuickInvoke(skill.name)}
-        >
-          <GlyphIcon d={SEND_ICON} size={15} />
-        </Button>
-        <Button
-          size="sm"
-          className="h-8 w-8 shrink-0 justify-center p-0"
-          aria-label={`${S.skills.manageInstall} ${skill.name}`}
-          title={S.skills.manageInstall}
-          onClick={() => setInstallOpen(true)}
-        >
-          <GlyphIcon d={INSTALL_ICON} size={15} />
-        </Button>
+          <Button
+            size="sm"
+            className="h-8 w-8 shrink-0 justify-center p-0"
+            aria-label={`${S.skills.manageInstall} ${skill.name}`}
+            title={S.skills.manageInstall}
+            onClick={() => setInstallOpen(true)}
+          >
+            <GlyphIcon d={INSTALL_ICON} size={15} />
+          </Button>
+        </div>
       </div>
+      {detailsOpen && (
+        <Modal
+          open
+          title={skill.name}
+          widthClass="sm:max-w-lg"
+          onClose={() => setDetailsOpen(false)}
+          footer={
+            <Button variant="secondary" onClick={() => setDetailsOpen(false)}>
+              {S.common.close}
+            </Button>
+          }
+        >
+          <div data-skill-detail={skill.name} className="space-y-4">
+            <div className="flex items-center gap-3">
+              <span
+                className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg ${skillTileColor(skill.name)}`}
+              >
+                <SkillIcon icon={skill.icon} size={22} />
+              </span>
+              <p className="min-w-0 truncate text-xs text-gray-400 dark:text-gray-500" title={meta}>
+                {meta}
+              </p>
+            </div>
+            <div className="rounded-md border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-950/50">
+              <p className="whitespace-pre-wrap text-sm leading-6 text-gray-700 dark:text-gray-300">
+                {fullDescription}
+              </p>
+            </div>
+          </div>
+        </Modal>
+      )}
       {installOpen && (
         <Modal
           open

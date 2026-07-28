@@ -498,6 +498,7 @@ export const en: Strings = {
   skills: {
     pageTitle: "Skill library",
     pageDesc: "Built-in skill library: browse, quick-start a chat, or install to agents.",
+    viewDetails: "View skill details",
     quickInvoke: "Quick start",
     quickInvokeText: (name: string): string => `use the ${name} skill`,
     manageInstall: "Manage installs",

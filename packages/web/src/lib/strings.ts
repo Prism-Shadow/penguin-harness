@@ -478,6 +478,7 @@ export const zh = {
   skills: {
     pageTitle: "技能库",
     pageDesc: "内置 Skill 库：浏览、快捷调用，或安装到 Agent。",
+    viewDetails: "查看技能详情",
     quickInvoke: "快捷调用",
     /** Pre-filled body for quick invoke (per UI language; English is `use the <name> skill`). */
     quickInvokeText: (name: string): string => `使用 ${name} 技能`,
