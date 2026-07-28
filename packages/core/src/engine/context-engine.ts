@@ -60,7 +60,6 @@ import {
   userSteeringText,
 } from "../omnimessage/markers/index.js";
 import type {
-  AbortPayload,
   ApprovalDecision,
   CompactionMode,
   CompactionReason,
@@ -325,6 +324,22 @@ function downgradeCarriedGoalInput(msg: OmniMessage): OmniMessage {
  * shared schedule serves every retryable class, growing toward the slower ones (transient
  * provider quota errors) while the first steps stay as fast as a transport blip needs.
  */
+/**
+ * LLM outcomes the turn loop reconnects on. `failed` is included on purpose: the classifier
+ * that produces it is an allowlist of known transport codes and message vocabulary, so a
+ * gateway phrasing a transient fault its own way lands here — retrying costs the ladder and
+ * then ends the same way, while aborting a transient failure destroys the turn. `auth` is
+ * absent: a rejected credential cannot be retried into working.
+ */
+const TURN_RETRY_STATUSES: readonly StopReason[] = ["failed", "timeout", "malformed"];
+
+/**
+ * What the compaction loop reconnects on — deliberately narrower. A failed compaction is
+ * already graceful (the original context is kept and the next trigger tries again), so
+ * failing fast beats stalling the session behind a ladder.
+ */
+const COMPACTION_RETRY_STATUSES: readonly StopReason[] = ["timeout", "malformed"];
+
 export function reconnectDelayMs(base: number, max: number, attempt: number): number {
   return Math.min(base * 2 ** (attempt - 1), max);
 }
@@ -533,12 +548,11 @@ export class ContextEngine {
           yield* this.emitAbort("aborted by user");
           return;
         }
-        // Non-retryable error: stop and hand control back to the user; the failure reason
-        // is written to the abort event / Trace. `auth` (credentials rejected) behaves
-        // exactly like `failed` here — direct stop, never the retry loop below (the
-        // classifier already refuses to mark auth retryable; this branch is the second
-        // belt) — hosts read the status from this turn's request_end to gate input.
-        if (turn.outcome.status === "failed" || turn.outcome.status === "auth") {
+        // `auth` is the only LLM outcome that stops the run: the credential was rejected, so
+        // no number of retries can change it, and hosts read the status from this turn's
+        // request_end to gate input. Everything else — `failed` included — goes to the
+        // reconnect loop below.
+        if (turn.outcome.status === "auth") {
           this.pendingCarryOver = this.buildCarryOver(attemptInput, turn);
           yield* this.emitAbort(`llm request error: ${turn.outcome.message ?? "unknown"}`);
           return;
@@ -546,23 +560,33 @@ export class ContextEngine {
         // Completed normally.
         if (turn.outcome.status === "completed") break;
 
-        // Only timeout / malformed remain: reconnect automatically within the same run. When
-        // retries are exhausted or the backoff is interrupted, the retry input is held as-is as
-        // carry-over (the original input is already written to Trace, so it isn't rewritten).
-        // The frontend surfaces the retry process and count via request_end(timeout|malformed)
-        // followed by the next request_begin.
+        // failed / timeout / malformed remain: reconnect automatically within the same run.
+        //
+        // `failed` retries too, even though the classifier judged it non-transient. That
+        // judgement is a hint, not a verdict: it is an allowlist of known network codes,
+        // statuses and message vocabulary, so every gateway that phrases a transient failure
+        // its own way falls through it — `Upstream HTTP/2 stream failed
+        // (upstream_http2_stream_error)` is plainly a transport fault and matched nothing.
+        // Retrying a genuinely permanent error costs the ladder and then ends the same way;
+        // aborting a transient one destroys the turn. So the *classification* stays honest
+        // (`failed` is still recorded as a real failure, not relabelled a timeout) while the
+        // *policy* retries it. Only `auth` is terminal, above.
+        //
+        // When retries are exhausted or the backoff is interrupted, the retry input is held
+        // as-is as carry-over (the original input is already written to Trace, so it isn't
+        // rewritten). The frontend surfaces the retry process and count via
+        // request_end(failed|timeout|malformed) followed by the next request_begin.
         failedTurns.push(turn);
         attemptInput = this.withRetriedTurns(nextInput, failedTurns);
         if (reconnects >= this.maxReconnects) {
           this.pendingCarryOver = attemptInput;
-          const reason = turn.outcome.status === "malformed" ? "malformed response" : "reconnect";
-          // Structural cause, not just prose: the turn died because the ladder ran out, which
-          // hosts must be able to tell apart from routine retry noise (every attempt on the way
-          // here was classified `timeout`, i.e. expected) without parsing this message.
-          yield* this.emitAbort(
-            `${reason} failed after ${this.maxReconnects} retries`,
-            "retry_exhausted",
-          );
+          const reason =
+            turn.outcome.status === "malformed"
+              ? "malformed response"
+              : turn.outcome.status === "failed"
+                ? `llm request error: ${turn.outcome.message ?? "unknown"}`
+                : "reconnect";
+          yield* this.emitAbort(`${reason} failed after ${this.maxReconnects} retries`);
           return;
         }
         reconnects += 1;
@@ -748,13 +772,18 @@ export class ContextEngine {
    * frontend can render a live countdown; shares `reconnectDelayMs` with `backoff`, so the
    * announced wait and the actual sleep cannot drift. The caps differ by loop: the turn
    * loop passes `maxReconnects`, the compaction loop `compactionMaxReconnects`.
+   *
+   * `retries` must match what the calling loop actually does, or the announced countdown is a
+   * lie: the turn loop retries `failed` as well (see its reconnect branch), while compaction
+   * keeps its fail-fast semantics and stops on `failed`.
    */
   private plannedRetryDelayMs(
     status: StopReason,
     reconnectsSoFar: number,
     cap: number,
+    retries: readonly StopReason[],
   ): number | undefined {
-    if (status !== "timeout" && status !== "malformed") return undefined;
+    if (!retries.includes(status)) return undefined;
     if (reconnectsSoFar >= cap) return undefined;
     return reconnectDelayMs(
       this.reconnectBackoffMs,
@@ -875,7 +904,12 @@ export class ContextEngine {
             const stopEvt = requestEnd(
               outcome.status,
               outcome.message,
-              this.plannedRetryDelayMs(outcome.status, reconnectsSoFar, this.maxReconnects),
+              this.plannedRetryDelayMs(
+                outcome.status,
+                reconnectsSoFar,
+                this.maxReconnects,
+                TURN_RETRY_STATUSES,
+              ),
             );
             queue.push(stopEvt);
             await this.write(stopEvt);
@@ -1355,6 +1389,7 @@ export class ContextEngine {
               res.value.status,
               reconnectsSoFar,
               this.compactionMaxReconnects,
+              COMPACTION_RETRY_STATUSES,
             ),
           ),
         );
@@ -1422,11 +1457,8 @@ export class ContextEngine {
   }
 
   /** Interruption: emits an abort event. Cleanup/resending is managed centrally by `run` via carry-over; the LLM history is never touched again. */
-  private async *emitAbort(
-    reason: string,
-    code?: AbortPayload["code"],
-  ): AsyncGenerator<OmniMessage> {
-    const msg = abortEvent(reason, code);
+  private async *emitAbort(reason: string): AsyncGenerator<OmniMessage> {
+    const msg = abortEvent(reason);
     yield msg;
     await this.write(msg);
   }

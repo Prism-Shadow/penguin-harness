@@ -15,6 +15,7 @@ export {
   isMalformedJsonParseError,
   isIncompleteStreamError,
   isRetryableError,
+  isQuotaExhaustedError,
   isAuthenticationError,
   mapThinkingLevel,
   toolDefinitionsToSchemas,

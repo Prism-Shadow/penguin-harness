@@ -129,7 +129,7 @@ Server 额外维护一个 SQLite 索引库(用户、授权、用量统计)，但
 ## 关键设计决策
 
 - **一个协议，三种职责**:OmniMessage 同时是 SDK 对外接口、Trace 落盘格式与引擎内部通货——「流出去的」「存下来的」「模型看到的」是同一种东西。
-- **错误收敛为消息**:LLM 与 Environment 从不向引擎抛异常；结果携带六值 `stop_reason`(`completed | failed | aborted | timeout | malformed | auth`)，仅 LLM 侧的 `timeout / malformed` 触发引擎内重连(至多 5 次、指数退避设上限——`timeout` 涵盖除鉴权外的所有 LLM 失败；`auth` 是唯一的终态类别，与 `failed` 同样直接停止)。
+- **错误收敛为消息**:LLM 与 Environment 从不向引擎抛异常；结果携带六值 `stop_reason`(`completed | failed | aborted | timeout | malformed | auth`)，除 `auth` 外的所有 LLM 侧状态都会触发引擎内重连（`failed / timeout / malformed`，至多 5 次、指数退避设上限）。`auth` 是唯一的终态类别：凭据被拒绝，重试不可能让它变对。重试 `failed` 是策略选择——该状态本身仍如实上报为 `failed`。
 - **薄模型层**:core 只定义 `LLMInterface`,Provider 适配全部下沉到 AgentHub(`@prismshadow/agenthub`)，因此支持任意 OpenAI 兼容端点，见[模型与 Provider](/models)。
 
 源码入口：`packages/core/src/engine/context-engine.ts`、`packages/core/src/interfaces.ts`。

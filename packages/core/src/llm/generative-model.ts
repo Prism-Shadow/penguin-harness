@@ -13,12 +13,12 @@
  *   3. Interruption/error handling: `finishInterrupted` first closes any open
  *      streaming segments and backfills the complete message, then the output ends — never
  *      leaking a malformed structure. This interface **never retries internally** — retryable
- *      errors (everything except a credentials failure, see `isRetryableError`) end with
- *      `timeout`; AgentHub JSON parse errors end with `malformed`;
+ *      errors (network/transport drops, timeouts, 429/5xx, provider quota exhaustion, see
+ *      `isRetryableError`) end with `timeout`; AgentHub JSON parse errors end with `malformed`;
  *      both are handed to `context_engine` to reconnect within the same run. User interruption
- *      ends with `aborted`; credentials failures are the one terminal class and end with
- *      their own status `auth` (see `isAuthenticationError`) — hosts key on it to disable
- *      the Session.
+ *      ends with `aborted`; non-retryable errors (parameters etc.) end with `failed`;
+ *      credentials failures end with their own terminal status `auth` (see
+ *      `isAuthenticationError`) — same engine behavior as `failed`, but hosts key on it.
  *
  * `context_engine` only consumes OmniMessage; all Uni* protocol details are encapsulated here.
  * Docs: /docs/interfaces § "The built-in implementation: GenerativeModel".
@@ -796,6 +796,31 @@ export function isIncompleteStreamError(error: unknown): boolean {
   return false;
 }
 
+/**
+ * Retryable network/transport error codes: the classic Node socket codes plus undici's
+ * transport failures (`UND_ERR_*`). Node's `fetch` surfaces a dropped connection as
+ * `TypeError: terminated` whose `cause` carries the real code (e.g. "other side closed"
+ * with `code: "UND_ERR_SOCKET"`) — a transport disconnect, not a provider verdict, so it
+ * reconnects like any network drop.
+ */
+const RETRYABLE_NETWORK_CODES: ReadonlySet<string> = new Set([
+  "ECONNRESET",
+  "ECONNREFUSED",
+  "ETIMEDOUT",
+  "EPIPE",
+  "EAI_AGAIN",
+  "ENOTFOUND",
+  "ECONNABORTED",
+  // undici (Node fetch) transport failures
+  "UND_ERR_SOCKET",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_HEADERS_TIMEOUT",
+  "UND_ERR_BODY_TIMEOUT",
+]);
+
+/** Provider "quota / subscription exhausted" error codes (OpenAI-compatible bodies). */
+const QUOTA_CODES: ReadonlySet<string> = new Set(["insufficient_user_quota", "insufficient_quota"]);
+
 /** Credentials/authentication error codes and types (OpenAI-compatible bodies / SDK errors). */
 const AUTH_CODES: ReadonlySet<string> = new Set([
   "invalid_api_key",
@@ -840,6 +865,40 @@ function providerSignals(level: object, includeType: boolean): string[] {
 }
 
 /**
+ * Determines whether an error is the provider's "quota / subscription exhausted" rejection
+ * (e.g. a gateway 403 whose body carries `insufficient_user_quota`). Topping up or the
+ * billing cycle rolling over fixes it without touching the Session, so it is transient and
+ * goes through the engine's reconnect flow like a network problem. Deliberately tight:
+ * only a payment/permission status (402/403 — or no status at all) combined with a known
+ * quota code (own, `cause` chain, or parsed provider body), or a 403 whose message names
+ * quota/subscription; a plain 403 (permission denied) stays non-retryable.
+ */
+export function isQuotaExhaustedError(error: unknown): boolean {
+  if (error == null || typeof error !== "object") return false;
+  // Belt to the auth-first ordering in isRetryableError: an error carrying a definitive
+  // auth signal is never quota, no matter what its message says — a 403 whose body codes
+  // `invalid_api_key` but whose message mentions a subscription must not classify as
+  // retryable-quota and burn through the reconnect ladder against a dead credential.
+  if (isAuthenticationError(error)) return false;
+  const err = error as { status?: number; statusCode?: number; message?: unknown };
+  const status = err.status ?? err.statusCode;
+  // Any other status keeps its own classification (401 auth, 429 rate limit, …).
+  if (typeof status === "number" && status !== 402 && status !== 403) return false;
+  if (
+    anyInCauseChain(error, (level) => providerSignals(level, false).some((c) => QUOTA_CODES.has(c)))
+  ) {
+    return true;
+  }
+  // 额度 covers Chinese-language gateway messages such as 订阅额度不足 ("subscription quota
+  // exhausted") that carry no machine-readable code.
+  return (
+    status === 403 &&
+    typeof err.message === "string" &&
+    /quota|subscription|额度/i.test(err.message)
+  );
+}
+
+/**
  * Determines whether an error is a credentials/authentication failure — the one class an
  * in-run retry can never fix: the request keeps going out with the same dead credential.
  * Only the model REFERENCE is fixed at Session creation; the credential is read from the
@@ -861,43 +920,80 @@ export function isAuthenticationError(error: unknown): boolean {
 }
 
 /**
- * Determines whether an error is retryable. **Everything is, except authentication.**
+ * Determines whether an error is retryable.
  *
- * This used to be an allowlist — known network codes, known status classes, known message
- * vocabulary — and every gateway that phrased a transient failure its own way slipped
- * through and killed the turn. `Upstream HTTP/2 stream failed (upstream_http2_stream_error)`
- * was the case that settled it: plainly a transport fault, matching no keyword, so the turn
- * aborted. An allowlist can only ever be as complete as the failures already seen, and the
- * cost of the two mistakes is wildly asymmetric:
- *
- * - Wrongly retrying a permanent error costs ~7.75s and five extra requests, and the user
- *   watches a live countdown with a "give up" control the whole time (see the engine's
- *   reconnect path) before it settles as `failed` with the same message it would have shown
- *   immediately.
- * - Wrongly aborting a transient error destroys the turn, and the user's only recourse is to
- *   re-send and hope.
- *
- * So the default inverts: retry unless the error is definitively terminal.
- *
- * The exceptions, and why they are the only two:
- * - **Authentication** — the credential is wrong; no number of retries changes that, and the
- *   host disables the Session on it (`code: "auth"`). This check must stay first: no
- *   heuristic may reclassify a dead credential into the retry ladder.
- * - **AbortError** — the user pressed stop. Not a failure at all, and retrying would fight
- *   the very action they took. (The catch site checks the user's signal before calling here;
- *   this covers an AbortError arriving without it.)
- *
- * Deterministic 4xx bodies (bad parameters, context length exceeded, content policy) are
- * knowingly included in "retry": they cost the ladder and then fail identically. Telling them
- * apart from a gateway's transient 4xx is exactly the guesswork this function stopped doing.
- *
+ * Retryable: network/transport errors (including undici's `UND_ERR_*` on the `cause` chain),
+ * timeouts, connection reset, HTTP 429 / 5xx, and provider quota/subscription exhaustion
+ * (see `isQuotaExhaustedError`).
+ * Not retryable: authentication errors (checked FIRST — a definitive credential signal is
+ * never reclassified by the heuristics below, see `isAuthenticationError`) and other HTTP
+ * 4xx auth/parameter errors (401/403/400/404, etc.).
  * JSON parse errors are classified separately as `malformed` by `isMalformedJsonParseError`.
+ *
+ * Since AgentHub doesn't guarantee the shape of error objects, this uses a lenient check: first
+ * the status code, then error codes / message keywords. When undeterminable, treat it as
+ * **non-retryable** to avoid pointless retries.
  */
 export function isRetryableError(error: unknown): boolean {
   if (error == null) return false;
+
+  // 0. Authentication is definitive and terminal: retrying a dead credential can never
+  //    succeed, and no heuristic below (quota keywords, message vocabulary) may reclassify
+  //    it — this ordering is the only thing keeping a dead credential out of the retry
+  //    ladder now that quota errors are deliberately retryable.
   if (isAuthenticationError(error)) return false;
-  if ((error as { name?: unknown }).name === "AbortError") return false;
-  return true;
+
+  const err = error as {
+    status?: number;
+    statusCode?: number;
+    name?: string;
+    message?: string;
+  };
+
+  // 1. HTTP status code takes priority.
+  const status = err.status ?? err.statusCode;
+  if (typeof status === "number") {
+    if (status === 429 || status === 408) return true; // Rate limited / request timeout (transient)
+    if (status >= 500 && status <= 599) return true; // Server error
+    // Provider quota/subscription exhaustion (402/403 + explicit signals): transient —
+    // checked before the blanket 4xx rule below would discard it.
+    if (isQuotaExhaustedError(error)) return true;
+    if (status >= 400 && status <= 499) return false; // Other 4xx auth/parameter errors, not retryable
+  }
+
+  // 2. Network/transport error codes, probing the `cause` chain (Node fetch wraps the real
+  //    transport failure as `TypeError: terminated` with the code on `cause`, see describeError).
+  if (
+    anyInCauseChain(error, (level) => {
+      const code = (level as { code?: unknown }).code;
+      return typeof code === "string" && RETRYABLE_NETWORK_CODES.has(code);
+    })
+  ) {
+    return true;
+  }
+
+  // 2b. Status-less quota signals (some gateways surface only the provider code).
+  if (isQuotaExhaustedError(error)) return true;
+
+  // 3. Error name / message keywords (timeout, network, rate limit, undici disconnects).
+  if (err.name === "AbortError") return false; // User interruption, not retryable
+  const text = `${err.name ?? ""} ${err.message ?? ""}`.toLowerCase();
+  if (
+    /timeout|timed out|network|socket hang up|econnreset|connection reset|other side closed|fetch failed|too many requests|rate limit|temporarily unavailable|503|502|504/.test(
+      text,
+    )
+  ) {
+    return true;
+  }
+  // `terminated` alone is ambiguous — providers use the word in verdict copy too ("Request
+  // terminated by content filter"), which must NOT retry — so it only counts alongside
+  // transport vocabulary. The real socket case is already caught by the cause-chain
+  // `UND_ERR_*` codes in step 2; this is a last-resort fallback for cause-less wrappers.
+  if (/terminated/.test(text) && /socket|connection|closed/.test(text)) {
+    return true;
+  }
+
+  return false;
 }
 
 // ---------------------------------------------------------------------------

@@ -60,7 +60,8 @@ interface LLMOutcome {
 | status | Meaning | Engine reaction |
 | --- | --- | --- |
 | `completed` | finished normally (token_usage already emitted) | proceed |
-| `timeout` | any LLM failure that is not an authentication error (timeouts, transport disconnects, provider errors) | auto-reconnect within the run |
+| `timeout` | timeout / transport disconnect / transient provider quota error | auto-reconnect within the run |
+| `failed` | a failure the classifier did not judge transient | auto-reconnect within the run too (only `auth` stops) |
 | `malformed` | response parse failure | auto-reconnect within the run |
 | `aborted` | user interrupt | stop, hand back to the user |
 | `failed` | non-retryable (params, …) | stop, hand back to the user |
