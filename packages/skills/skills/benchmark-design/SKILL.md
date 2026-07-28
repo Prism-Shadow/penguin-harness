@@ -3,8 +3,8 @@ name: benchmark-design
 description: Design and calibrate a multi-Case capability Benchmark and establish a traceable Formal Baseline. Use when an explicit Test Agent and target capability need a new or revised Benchmark; stop after the baseline and do not optimize the Agent.
 short_description: Design and calibrate an Agent capability Benchmark.
 short_description_zh: 设计并校准 Agent 能力评测 Benchmark。
-version: 8
-updated: 2026-07-28T07:56:18Z
+version: 9
+updated: 2026-07-28T09:11:06Z
 ---
 
 # Benchmark Design
@@ -121,12 +121,14 @@ Classify each change before editing:
 - A **Definition refinement** repairs ambiguity in the capability, public evidence, accepted answers, or scoring contract. It must not reveal the intended solution or add hints to the Statement, and it stays in the current Pilot iteration.
 - A **Difficulty refinement** adds a reasoning dependency after the definition is stable and passes the separating-instance test below. Its valid rerun completes the next Pilot iteration.
 
+Before editing, estimate how much of the Case score the proposed refinement can affect. If that range is too small to materially approach the gate, redesign more instances within the same difficulty dimension or replace a low-signal Case.
+
 For each refinement iteration:
 
 1. **Observed strategy.** Reconstruct the Test Agent's actual solution method from its score, artifact, and Trace.
 2. **Missing behavior.** Identify the general behavior that the observed strategy skipped or simplified. Repair missing evidence, arbitrary mappings, ambiguity, or scoring defects before increasing difficulty.
 3. **Separating instance.** Specify an evaluated instance where the observed strategy and missing behavior lead to different outputs. Confirm that public evidence uniquely supports the intended output.
-4. Change only the selected difficulty dimension, update the affected files, run the leak check, and rerun the affected Cases.
+4. Change only the selected difficulty dimension; one dimension may span multiple separating instances. Update the affected files, run the leak check, and rerun the affected Cases.
 
 A change is a Difficulty refinement only when the observed strategy produces a wrong or unsupported result on the separating instance while the missing behavior reaches the uniquely supported Gold. If no such instance can be constructed, choose another difficulty dimension.
 
