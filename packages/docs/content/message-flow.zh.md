@@ -101,7 +101,7 @@ Human ──run(newMessages)──► engine
 | 情形 | 流上可见的顺序 |
 | --- | --- |
 | 用户中断 | (已产出的消息)→ `abort` 事件——`run` 返回前的最后一条；补发内容只进模型上下文，不上流、不进 Trace |
-| 自动重连 | `request_end(timeout \| malformed)` → 新的 `request_begin`(至多 5 次,指数退避、上限 30s;`timeout` 同样涵盖传输层断连与瞬时的供应商额度错误);`[turn_retried]` 块仅模型可见 |
+| 自动重连 | `request_end(timeout \| malformed)` → 新的 `request_begin`(至多 5 次,指数退避、上限 30s;`timeout` 涵盖除鉴权外的所有 LLM 失败);`[turn_retried]` 块仅模型可见 |
 | 上下文压缩 | `compaction_begin` → 压缩请求在旧上下文中执行(其流式输出**不上行**，只写 Trace)→ 该请求的 `token_usage` → `compaction_end(status)` |
 | 达到 max_turns | 长度提示消息 → 结束；未提交的输入按补发保留 |
 | Prompt 本身 | 写入 Trace，但不回流(输入方已有) |

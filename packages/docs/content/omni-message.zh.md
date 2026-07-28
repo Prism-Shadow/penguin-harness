@@ -254,7 +254,7 @@ type StopReason = "completed" | "failed" | "aborted" | "timeout" | "malformed" |
 | --- | --- | --- |
 | `completed` | 正常完成 | 继续 |
 | `aborted` | 用户中断 | 停止并交还用户 |
-| `timeout` | LLM 超时/传输层断连/瞬时的供应商额度错误 | 仅 LLM 侧：同一 run 内自动重连 |
+| `timeout` | 除鉴权外的任何 LLM 失败（超时、传输层断连、供应商报错） | 仅 LLM 侧：同一 run 内自动重连 |
 | `malformed` | 响应解析失败/流截断 | 仅 LLM 侧：同一 run 内自动重连 |
 | `failed` | 其他不可重试错误 | 停止并交还用户 |
 | `auth` | 供应商拒绝了凭据 | 与 `failed` 同样停止；宿主据此禁用输入，直到该模型的 API key 被更新（凭据取自当前 Project 配置） |

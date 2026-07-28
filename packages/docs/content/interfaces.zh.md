@@ -60,7 +60,7 @@ interface LLMOutcome {
 | status | 含义 | 引擎的反应 |
 | --- | --- | --- |
 | `completed` | 正常完成(已产出 token_usage) | 继续下一步 |
-| `timeout` | 超时/传输层断连/瞬时的供应商额度错误 | 同一 run 内自动重连 |
+| `timeout` | 除鉴权外的任何 LLM 失败（超时、传输层断连、供应商报错） | 同一 run 内自动重连 |
 | `malformed` | 响应解析失败 | 同一 run 内自动重连 |
 | `aborted` | 用户中断 | 停止交还用户 |
 | `failed` | 参数等不可重试错误 | 停止交还用户 |

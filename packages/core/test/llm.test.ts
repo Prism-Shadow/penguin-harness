@@ -26,7 +26,6 @@ import {
   isAuthenticationError,
   isIncompleteStreamError,
   isMalformedJsonParseError,
-  isQuotaExhaustedError,
   isRetryableError,
   mapThinkingLevel,
   mergeOmniToUniMessage,
@@ -1077,31 +1076,14 @@ describe("config helpers", () => {
   });
 });
 
-describe("isRetryableError", () => {
-  it("treats 429, 408 and 5xx as retryable", () => {
+describe("isRetryableError (everything retries except authentication)", () => {
+  it("retries the classes that always did: 429/408/5xx, network codes, undici transport drops", () => {
     expect(isRetryableError({ status: 429 })).toBe(true);
-    expect(isRetryableError({ status: 408 })).toBe(true); // Request Timeout (transient)
+    expect(isRetryableError({ status: 408 })).toBe(true);
     expect(isRetryableError({ status: 500 })).toBe(true);
     expect(isRetryableError({ statusCode: 503 })).toBe(true);
-  });
-
-  it("treats 4xx auth/param errors as non-retryable", () => {
-    expect(isRetryableError({ status: 400 })).toBe(false);
-    expect(isRetryableError({ status: 401 })).toBe(false);
-    expect(isRetryableError({ status: 403 })).toBe(false);
-    expect(isRetryableError({ status: 404 })).toBe(false);
-  });
-
-  it("treats network error codes as retryable", () => {
     expect(isRetryableError({ code: "ECONNRESET" })).toBe(true);
-    expect(isRetryableError({ code: "ETIMEDOUT" })).toBe(true);
     expect(isRetryableError(new Error("socket hang up"))).toBe(true);
-    expect(isRetryableError(new Error("request timeout"))).toBe(true);
-  });
-
-  it("treats undici transport failures as retryable, probing the cause chain", () => {
-    // Node fetch wraps a dropped connection as TypeError("terminated") with the real code on
-    // `cause` — exactly the field observed: "terminated: other side closed (UND_ERR_SOCKET)".
     expect(
       isRetryableError(
         new TypeError("terminated", {
@@ -1109,120 +1091,56 @@ describe("isRetryableError", () => {
         }),
       ),
     ).toBe(true);
-    expect(isRetryableError({ code: "UND_ERR_SOCKET" })).toBe(true);
-    expect(isRetryableError({ code: "UND_ERR_CONNECT_TIMEOUT" })).toBe(true);
-    expect(isRetryableError({ code: "UND_ERR_HEADERS_TIMEOUT" })).toBe(true);
-    expect(isRetryableError({ code: "UND_ERR_BODY_TIMEOUT" })).toBe(true);
-    // A cause-less "fetch failed" still counts via the message keywords; "terminated" only
-    // counts alongside transport vocabulary — the real socket case always carries the
-    // UND_ERR_* code on its cause, and bare "terminated" appears in unrelated provider
-    // copy too (see the content-filter counter-case below).
-    expect(isRetryableError(new TypeError("fetch failed"))).toBe(true);
-    expect(isRetryableError(new TypeError("terminated: other side closed"))).toBe(true);
-    expect(isRetryableError(new TypeError("terminated"))).toBe(false);
-    // Provider verdict copy that merely contains the word must NOT retry.
-    expect(isRetryableError(new Error("Request terminated by content filter"))).toBe(false);
-    // Classic Node codes wrapped one level down are found too.
-    expect(
-      isRetryableError(
-        new Error("request failed", {
-          cause: Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" }),
-        }),
-      ),
-    ).toBe(true);
   });
 
-  it("treats provider quota/subscription exhaustion as retryable (tight allowlist)", () => {
-    // The field case: a gateway 403 with an OpenAI-compatible body code.
-    expect(isRetryableError({ status: 403, code: "insufficient_user_quota" })).toBe(true);
-    expect(isRetryableError({ status: 403, error: { code: "insufficient_user_quota" } })).toBe(
+  it("retries the phrasings the old allowlist missed — the reason the default inverted", () => {
+    // The field case: plainly a transport fault, matching no keyword, so the turn used to die.
+    expect(
+      isRetryableError(new Error("Upstream HTTP/2 stream failed (upstream_http2_stream_error)")),
+    ).toBe(true);
+    // A gateway that phrases its own transient failures however it likes.
+    expect(isRetryableError({ status: 520, message: "Web server returned an unknown error" })).toBe(
       true,
     );
-    // Anthropic SDK shape: `error` holds the whole response body.
-    expect(
-      isRetryableError({ status: 403, error: { error: { code: "insufficient_quota" } } }),
-    ).toBe(true);
-    expect(isRetryableError({ status: 402, code: "insufficient_quota" })).toBe(true);
-    // Status-less quota code (some gateways surface only the provider code).
-    expect(isRetryableError({ code: "insufficient_user_quota" })).toBe(true);
-    // 403 with a quota/subscription message but no machine-readable code.
-    expect(isRetryableError({ status: 403, message: "no active subscription" })).toBe(true);
-    expect(isRetryableError({ status: 403, message: "订阅额度不足" })).toBe(true);
-    // A plain 403/400/404 without quota signals stays non-retryable.
-    expect(isRetryableError({ status: 403, message: "permission denied" })).toBe(false);
-    expect(isRetryableError({ status: 400, code: "insufficient_user_quota" })).toBe(false);
-    expect(isRetryableError({ status: 404 })).toBe(false);
-    // 401 keeps its auth classification even with a quota-looking message.
-    expect(isRetryableError({ status: 401, message: "quota" })).toBe(false);
+    expect(isRetryableError(new Error("upstream connect error or disconnect/reset"))).toBe(true);
+    expect(isRetryableError({})).toBe(true); // shapeless throw: retry beats guessing
   });
 
-  it("auth wins over the quota heuristic: a definitive credential signal is never retried", () => {
-    // The adversarial case: a 403 whose BODY carries a definitive auth code but whose
-    // MESSAGE mentions a subscription (SDKs routinely put the body's message on
-    // err.message). The quota keyword fallback must not swallow it — auth is checked
-    // first, so it classifies failed (dead credential) instead of burning every reconnect.
-    const err = Object.assign(new Error("subscription key invalid"), {
-      status: 403,
-      error: { code: "invalid_api_key" },
-    });
-    expect(isAuthenticationError(err)).toBe(true);
-    expect(isQuotaExhaustedError(err)).toBe(false); // belt: an auth signal is never quota
-    expect(isRetryableError(err)).toBe(false); // never retried, never reclassified
-    // Same with the auth signal on the cause chain.
+  it("retries provider quota/subscription exhaustion (no longer a special case, just the default)", () => {
+    expect(isRetryableError({ status: 403, code: "insufficient_user_quota" })).toBe(true);
+    expect(isRetryableError({ status: 402, message: "订阅额度不足" })).toBe(true);
+  });
+
+  it("retries deterministic 4xx too — knowingly: they cost the ladder, then fail the same way", () => {
+    // Telling a permanent 400 from a gateway's transient one is exactly the guesswork that
+    // kept losing turns; the ladder is ~7.75s with a visible give-up control.
+    expect(isRetryableError({ status: 400, message: "context length exceeded" })).toBe(true);
+    expect(isRetryableError({ status: 404 })).toBe(true);
+    expect(isRetryableError(new Error("Request terminated by content filter"))).toBe(true);
+  });
+
+  it("never retries authentication — the one terminal class, checked before anything else", () => {
+    expect(isRetryableError({ status: 401 })).toBe(false);
+    expect(isRetryableError({ code: "invalid_api_key" })).toBe(false);
+    expect(isRetryableError({ error: { type: "authentication_error" } })).toBe(false);
     expect(
-      isRetryableError(
-        new Error("request failed: quota subscription issue", {
-          cause: { status: 403, error: { type: "authentication_error" } },
-        }),
-      ),
+      isRetryableError(Object.assign(new Error("bad key"), { name: "AuthenticationError" })),
+    ).toBe(false);
+    // Even wrapped in wording that would otherwise read as transient.
+    expect(isRetryableError({ status: 401, message: "connection reset" })).toBe(false);
+    // ...and even when the message names quota, which used to be its own retryable class.
+    expect(
+      isRetryableError({ status: 403, code: "invalid_api_key", message: "subscription" }),
     ).toBe(false);
   });
 
-  it("does not retry abort or unknown local errors", () => {
-    const abort = new Error("aborted");
-    abort.name = "AbortError";
-    expect(isRetryableError(abort)).toBe(false);
-    expect(isRetryableError(new Error("unexpected token in JSON"))).toBe(false);
+  it("never retries a user abort or a null throw", () => {
+    // The user pressed stop: retrying would fight the action they just took.
+    expect(isRetryableError(Object.assign(new Error("aborted"), { name: "AbortError" }))).toBe(
+      false,
+    );
     expect(isRetryableError(null)).toBe(false);
     expect(isRetryableError(undefined)).toBe(false);
-  });
-});
-
-describe("isQuotaExhaustedError", () => {
-  it("matches only 402/403 (or status-less) errors carrying a known quota code", () => {
-    expect(isQuotaExhaustedError({ status: 403, code: "insufficient_user_quota" })).toBe(true);
-    expect(isQuotaExhaustedError({ status: 402, error: { code: "insufficient_quota" } })).toBe(
-      true,
-    );
-    expect(isQuotaExhaustedError({ code: "insufficient_quota" })).toBe(true);
-    // The code may sit on the cause chain (wrapped by a higher layer).
-    expect(
-      isQuotaExhaustedError(
-        new Error("request failed", {
-          cause: { status: 403, code: "insufficient_user_quota" },
-        }),
-      ),
-    ).toBe(true);
-    expect(
-      isQuotaExhaustedError(
-        Object.assign(new Error("request failed"), {
-          status: 403,
-          cause: { code: "insufficient_user_quota" },
-        }),
-      ),
-    ).toBe(true);
-    // Any other status keeps its own classification.
-    expect(isQuotaExhaustedError({ status: 429, code: "insufficient_quota" })).toBe(false);
-    expect(isQuotaExhaustedError({ status: 401, code: "insufficient_quota" })).toBe(false);
-  });
-
-  it("matches a 403 whose message names quota/subscription, but not a plain 403", () => {
-    expect(isQuotaExhaustedError({ status: 403, message: "monthly quota exceeded" })).toBe(true);
-    expect(isQuotaExhaustedError({ status: 403, message: "订阅额度不足" })).toBe(true);
-    expect(isQuotaExhaustedError({ status: 403, message: "forbidden" })).toBe(false);
-    // The message shortcut is 403-only: a status-less error needs the explicit code.
-    expect(isQuotaExhaustedError({ message: "quota exceeded" })).toBe(false);
-    expect(isQuotaExhaustedError(null)).toBe(false);
   });
 });
 
@@ -1595,7 +1513,9 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
     expect(outcome.message).toContain("invalid api key");
     expect(messages.map(typeOf)).not.toContain("token_usage");
 
-    // A genuinely non-retryable parameter error stays a plain failure.
+    // Everything that is not a credentials failure goes to the reconnect ladder now — a
+    // parameter error included. It costs the ladder and then settles with the same message,
+    // which is the deliberate price of no longer guessing which 4xx a gateway means.
     async function* paramError(): AsyncGenerator<UniEvent> {
       throw Object.assign(new Error("unknown parameter: max_output_tokens"), { status: 400 });
     }
@@ -1603,7 +1523,7 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
     const { outcome: outcome2 } = await drain(
       model2.streamGenerate({ newMessages: [userText("go")] }),
     );
-    expect(outcome2.status).toBe("failed");
+    expect(outcome2.status).toBe("timeout");
   });
 
   it("an auth error dressed in quota language still funnels to status auth", async () => {

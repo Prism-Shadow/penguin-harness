@@ -256,7 +256,7 @@ type StopReason = "completed" | "failed" | "aborted" | "timeout" | "malformed" |
 | --- | --- | --- |
 | `completed` | finished normally | continue |
 | `aborted` | user interrupt | stop, hand back to the user |
-| `timeout` | LLM timeout / transport disconnect / transient provider quota error | LLM side only: auto-reconnect within the run |
+| `timeout` | any LLM failure that is not an authentication error (timeouts, transport disconnects, provider errors) | LLM side only: auto-reconnect within the run |
 | `malformed` | parse failure / truncated stream | LLM side only: auto-reconnect within the run |
 | `failed` | other non-retryable error | stop, hand back to the user |
 | `auth` | the provider rejected the credentials | stop like `failed`; hosts gate input until the model's API key is updated (credentials come from the current Project config) |
