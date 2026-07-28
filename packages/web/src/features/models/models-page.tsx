@@ -30,6 +30,7 @@
  * means keep the existing value); only the owner can edit.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { CSSProperties } from "react";
 import type {
   CredentialInfo,
   ModelRefDto,
@@ -59,6 +60,7 @@ import { Badge } from "../../components/ui/badge";
 import { Chevron } from "../../components/ui/chevron";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { ProviderLogo } from "../../components/ui/provider-logo";
+import { providerTheme } from "../../components/ui/provider-theme";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { EmptyState } from "../../components/ui/empty-state";
 import { formatDateTime, humanizeTokens } from "../../lib/format";
@@ -574,6 +576,13 @@ export function ModelsPage() {
           <div className="space-y-3">
             {groups.map((group) => {
               const open = !collapsed.has(group.provider.id);
+              const theme = providerTheme(group.provider.id);
+              const headerStyle = theme
+                ? ({
+                    "--provider-gradient-from": theme.gradientFrom,
+                    "--provider-gradient-to": theme.gradientTo,
+                  } as CSSProperties)
+                : undefined;
               return (
                 <section
                   key={group.provider.id}
@@ -584,7 +593,10 @@ export function ModelsPage() {
                       separate elements — can't be nested inside the collapse button (buttons
                       can't nest). The hover highlight applies to the whole header row (not
                       individual buttons) so the header reads as a single unit. */}
-                  <div className="flex items-center gap-2 bg-gray-50 pr-2 transition-colors duration-150 hover:bg-gray-100 dark:bg-gray-900/60 dark:hover:bg-gray-800/60">
+                  <div
+                    className="model-provider-group-header flex items-center gap-2 pr-2 transition-colors duration-150"
+                    style={headerStyle}
+                  >
                     <button
                       type="button"
                       aria-expanded={open}
@@ -593,7 +605,8 @@ export function ModelsPage() {
                     >
                       <ProviderLogo
                         provider={group.provider.id}
-                        className="h-5 w-5 shrink-0 text-gray-700 dark:text-gray-300"
+                        variant="tile"
+                        className="h-6 w-6 shrink-0"
                       />
                       {/* Vendor name can truncate (min-w-0): the actions on the right must not
                           shrink, otherwise on narrow screens it would get pushed out of the
@@ -1389,10 +1402,7 @@ function ModelDialog({
             the form body — it's a property of the model, not an input). */}
         {!isNew && (
           <div className="flex items-center gap-2.5 rounded-md bg-gray-50 px-3 py-2 dark:bg-gray-800/60">
-            <ProviderLogo
-              provider={form.provider}
-              className="h-6 w-6 shrink-0 text-gray-700 dark:text-gray-300"
-            />
+            <ProviderLogo provider={form.provider} variant="tile" className="h-7 w-7 shrink-0" />
             <div className="flex min-w-0 flex-1 flex-col">
               <span className="flex flex-wrap items-center gap-1.5 text-sm font-medium">
                 {form.displayName ?? form.modelId}

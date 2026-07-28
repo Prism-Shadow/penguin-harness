@@ -1,6 +1,7 @@
 /**
  * Provider logo icons (24x24 viewBox, colored via currentColor, legible in both
- * light and dark themes).
+ * light and dark themes). The optional tile variant adds a soft provider-themed
+ * background and theme-aware ink while keeping the default flat glyph unchanged.
  *
  * Anthropic / OpenAI / Google Gemini / DeepSeek / Moonshot AI / OpenRouter /
  * SiliconFlow / Qwen Token Plan / Qwen Pay-As-You-Go / Fireworks AI use each
@@ -20,6 +21,7 @@
 import type { CSSProperties, ReactNode } from "react";
 
 import { avatarInitial, avatarTile } from "../../lib/avatar";
+import { providerTheme } from "./provider-theme";
 
 interface Glyph {
   /** Solid marks (brand mark) use fill; line art uses stroke. */
@@ -114,7 +116,14 @@ const GLYPHS: Record<string, Glyph> = {
   },
 };
 
-export function ProviderLogo({ provider, className }: { provider: string; className?: string }) {
+interface ProviderLogoProps {
+  provider: string;
+  className?: string;
+  /** Flat glyph by default; tile adds a padded, provider-themed background. */
+  variant?: "plain" | "tile";
+}
+
+export function ProviderLogo({ provider, className, variant = "plain" }: ProviderLogoProps) {
   const glyph = GLYPHS[provider];
   // User-defined group (only the preset `custom` id keeps the generic cube): letter tile.
   // SVG text scales with the viewBox, staying crisp at every call-site size; the ink is
@@ -137,10 +146,46 @@ export function ProviderLogo({ provider, className }: { provider: string; classN
           dominantBaseline="central"
           fontSize="13"
           fontWeight="700"
-          className="[fill:var(--tile-fg)] dark:[fill:var(--tile-fg-dark)]"
+          className="fill-(--tile-fg) dark:fill-(--tile-fg-dark)"
         >
           {avatarInitial(provider)}
         </text>
+      </svg>
+    );
+  }
+  const theme = variant === "tile" ? providerTheme(provider) : undefined;
+  if (theme) {
+    return (
+      <svg
+        viewBox="0 0 24 24"
+        className={`${className ?? ""} text-(--provider-logo-fg) dark:text-(--provider-logo-fg-dark)`}
+        style={
+          {
+            "--provider-logo-bg": `color-mix(in srgb, ${theme.gradientFrom} 16%, transparent)`,
+            "--provider-logo-fg": theme.fg,
+            "--provider-logo-fg-dark": theme.fgDark,
+          } as CSSProperties
+        }
+        aria-hidden
+      >
+        <rect width="24" height="24" rx="5" fill="var(--provider-logo-bg)" />
+        <svg
+          x="4"
+          y="4"
+          width="16"
+          height="16"
+          viewBox={glyph.viewBox ?? "0 0 24 24"}
+          {...(glyph.stroke
+            ? {
+                fill: "none",
+                stroke: "currentColor",
+                strokeWidth: 1.8,
+                strokeLinejoin: "round" as const,
+              }
+            : { fill: "currentColor" })}
+        >
+          {glyph.path}
+        </svg>
       </svg>
     );
   }

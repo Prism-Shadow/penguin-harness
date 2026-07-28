@@ -1,8 +1,8 @@
 /**
  * Global styles: single-file Tailwind CSS 4 entry point.
- * Visual tone: GitHub-style simplicity — solid white background + 1px borders + a single brand blue accent,
- * no glassmorphism/gradients; the login page background is a circuit-trace animation (.login-trace, see
- * login-circuit.tsx). Dark theme is toggled via the html.dark class.
+ * Visual tone: GitHub-style simplicity — solid surfaces + 1px borders + a single brand blue accent;
+ * provider model-group headers use restrained brand-inspired gradients, while the login page background is
+ * a circuit-trace animation (.login-trace, see login-circuit.tsx). Dark theme is toggled via html.dark.
  *
  * Stacking-context convention (to avoid contexts masking each other): chrome (top bar/navigation) does not
  * create a stacking context; dropdown/user menus use z-40; modal and drawer overlays use z-50.
@@ -130,6 +130,61 @@
   .no-scrollbar::-webkit-scrollbar {
     display: none;
   }
+}
+
+/* Models provider header: a quiet two-color brand wash over the normal row surface. The gradient
+   remains intentionally translucent so the vendor name and right-side actions keep their normal
+   contrast; hover increases both the neutral surface and the wash slightly. Unknown providers use
+   the neutral fallback colors below. */
+.model-provider-group-header {
+  --provider-header-surface: #f9fafb;
+  --provider-header-hover-surface: #f3f4f6;
+  --provider-gradient-from-opacity: 14%;
+  --provider-gradient-to-opacity: 10%;
+  --provider-gradient-tail-opacity: 4%;
+  background-color: var(--provider-header-surface);
+  background-image: linear-gradient(
+    108deg,
+    color-mix(
+        in srgb,
+        var(--provider-gradient-from, #9ca3af) var(--provider-gradient-from-opacity),
+        transparent
+      )
+      0%,
+    color-mix(
+        in srgb,
+        var(--provider-gradient-to, #d1d5db) var(--provider-gradient-to-opacity),
+        transparent
+      )
+      48%,
+    color-mix(
+        in srgb,
+        var(--provider-gradient-from, #9ca3af) var(--provider-gradient-tail-opacity),
+        transparent
+      )
+      100%
+  );
+}
+
+.model-provider-group-header:hover {
+  --provider-gradient-from-opacity: 19%;
+  --provider-gradient-to-opacity: 14%;
+  --provider-gradient-tail-opacity: 6%;
+  background-color: var(--provider-header-hover-surface);
+}
+
+.dark .model-provider-group-header {
+  --provider-header-surface: rgb(13 13 13 / 0.6);
+  --provider-header-hover-surface: rgb(31 31 31 / 0.6);
+  --provider-gradient-from-opacity: 19%;
+  --provider-gradient-to-opacity: 13%;
+  --provider-gradient-tail-opacity: 5%;
+}
+
+.dark .model-provider-group-header:hover {
+  --provider-gradient-from-opacity: 24%;
+  --provider-gradient-to-opacity: 17%;
+  --provider-gradient-tail-opacity: 8%;
 }
 
 /* ---------- Animations (EmaPowerbank style: 160-280ms ease, slight entrance offset + subtle scale) ---------- */
