@@ -16,6 +16,7 @@ import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import type {
   BenchmarkCaseScore,
+  BenchmarkCaseSummary,
   BenchmarkEvaluation,
   BenchmarkSummary,
 } from "@prismshadow/penguin-server/api";
@@ -30,6 +31,7 @@ import { Chevron } from "../../components/ui/chevron";
 import { Segmented } from "../../components/ui/segmented";
 import { Truncated } from "../../components/ui/truncated";
 import { EmptyState } from "../../components/ui/empty-state";
+import { Modal } from "../../components/ui/modal";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
 import { seriesColor } from "../../lib/category-colors";
@@ -43,6 +45,7 @@ import {
   seriesValues,
 } from "./benchmark-metrics";
 import type { BenchmarkMetric, EvaluationSeries } from "./benchmark-metrics";
+import { BenchmarkStatementBrowser } from "./benchmark-statement-browser";
 
 interface Selection {
   agentId: string;
@@ -160,6 +163,11 @@ function formatMetric(metric: BenchmarkMetric, v: number): string {
       : humanizeDuration(v);
 }
 
+function formatScoreWithMax(score: number, maxScore?: number): string {
+  const value = formatScore(score);
+  return maxScore === undefined ? value : `${value} / ${formatScore(maxScore)}`;
+}
+
 /**
  * Metric-over-time line chart (cloned from the usage center's TrendChart: area + line + data
  * points, sharing the ChartFrame coordinate system). **Grouped into series** by the model each
@@ -185,7 +193,9 @@ function MetricTrendChart({
   const [ref, width] = useChartWidth();
 
   const values = metricValues(evaluations, metric);
-  const geom = makeGeom(evaluations.length, metricMax(values), width);
+  const knownScoreMax =
+    metric === "score" ? Math.max(0, ...evaluations.map((e) => e.maxScore ?? 0)) : 0;
+  const geom = makeGeom(evaluations.length, Math.max(metricMax(values), knownScoreMax), width);
   const dates = evaluations.map((e) => formatDateTime(e.time));
   const baseY = geom.y(0);
 
@@ -205,7 +215,11 @@ function MetricTrendChart({
               <>
                 <p className="text-gray-400">{formatDateTime(e.time)}</p>
                 <p className="font-mono">
-                  {v === null ? "—" : formatMetric(metric, v)}
+                  {v === null
+                    ? "—"
+                    : metric === "score"
+                      ? formatScoreWithMax(v, e.maxScore)
+                      : formatMetric(metric, v)}
                   {e.version !== undefined && (
                     <span className="ml-1.5 text-gray-400">v{e.version}</span>
                   )}
@@ -335,9 +349,13 @@ const CELL = "px-3 py-2";
 function EvaluationRow({
   agentId,
   evaluation,
+  caseTitles,
+  onOpenCase,
 }: {
   agentId: string;
   evaluation: BenchmarkEvaluation;
+  caseTitles: ReadonlyMap<string, string>;
+  onOpenCase: (caseId: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -362,7 +380,7 @@ function EvaluationRow({
           {evaluation.modelId ?? "—"}
         </td>
         <td className={`${CELL} font-mono text-xs font-semibold tabular-nums`}>
-          {formatScore(evaluation.score)}
+          {formatScoreWithMax(evaluation.score, evaluation.maxScore)}
         </td>
         <td className={`${CELL} font-mono text-xs tabular-nums text-gray-500 dark:text-gray-400`}>
           {formatMoney(evaluation.cost)}
@@ -406,7 +424,13 @@ function EvaluationRow({
               </thead>
               <tbody>
                 {evaluation.cases.map((c) => (
-                  <CaseRow key={c.case} agentId={agentId} caseScore={c} />
+                  <CaseRow
+                    key={c.case}
+                    agentId={agentId}
+                    caseScore={c}
+                    title={caseTitles.get(c.case)}
+                    onOpenCase={caseTitles.has(c.case) ? onOpenCase : undefined}
+                  />
                 ))}
               </tbody>
             </table>
@@ -437,7 +461,17 @@ function SessionLink({ agentId, sessionId }: { agentId: string; sessionId?: stri
  * of each run (#index + score / cost / duration / Session link); with the old format lacking
  * runs, it's not expandable and the case-level single Session link is used as before.
  */
-function CaseRow({ agentId, caseScore: c }: { agentId: string; caseScore: BenchmarkCaseScore }) {
+function CaseRow({
+  agentId,
+  caseScore: c,
+  title,
+  onOpenCase,
+}: {
+  agentId: string;
+  caseScore: BenchmarkCaseScore;
+  title?: string;
+  onOpenCase?: (caseId: string) => void;
+}) {
   const [open, setOpen] = useState(false);
   const runs = c.runs ?? [];
   const expandable = runs.length > 0;
@@ -447,13 +481,35 @@ function CaseRow({ agentId, caseScore: c }: { agentId: string; caseScore: Benchm
         onClick={expandable ? () => setOpen((v) => !v) : undefined}
         className={`text-xs ${expandable ? "cursor-pointer transition-colors duration-150 hover:bg-gray-100/70 dark:hover:bg-gray-800/40" : ""}`}
       >
-        <td className="px-2 py-1 font-mono">
-          <span className="flex items-center gap-1.5">
+        <td className="px-2 py-1">
+          <span className="flex items-start gap-1.5">
             {expandable && <Chevron open={open} size={12} className="text-gray-400" />}
-            {c.case}
+            <span className="min-w-0">
+              {onOpenCase ? (
+                <button
+                  type="button"
+                  className="block text-left font-medium text-gray-800 hover:underline dark:text-gray-200"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onOpenCase(c.case);
+                  }}
+                >
+                  {title ?? c.case}
+                </button>
+              ) : (
+                <span className="block font-medium text-gray-800 dark:text-gray-200">
+                  {title ?? c.case}
+                </span>
+              )}
+              {title && title !== c.case && (
+                <span className="block font-mono text-[11px] text-gray-400">{c.case}</span>
+              )}
+            </span>
           </span>
         </td>
-        <td className="px-2 py-1 font-mono tabular-nums">{formatScore(c.score)}</td>
+        <td className="px-2 py-1 font-mono tabular-nums">
+          {formatScoreWithMax(c.score, c.maxScore)}
+        </td>
         <td className="px-2 py-1 font-mono tabular-nums text-gray-500 dark:text-gray-400">
           {formatMoney(c.cost)}
         </td>
@@ -471,7 +527,9 @@ function CaseRow({ agentId, caseScore: c }: { agentId: string; caseScore: Benchm
             <td className="py-1 pl-7 pr-2 font-mono">
               {S.benchmark.colRun} #{i + 1}
             </td>
-            <td className="px-2 py-1 font-mono tabular-nums">{formatScore(run.score)}</td>
+            <td className="px-2 py-1 font-mono tabular-nums">
+              {formatScoreWithMax(run.score, c.maxScore)}
+            </td>
             <td className="px-2 py-1 font-mono tabular-nums">{formatMoney(run.cost)}</td>
             <td className="px-2 py-1 font-mono tabular-nums">
               {run.durationMs !== undefined ? humanizeDuration(run.durationMs) : "—"}
@@ -488,6 +546,67 @@ function CaseRow({ agentId, caseScore: c }: { agentId: string; caseScore: Benchm
   );
 }
 
+function caseMaxScores(evaluations: BenchmarkEvaluation[]): Map<string, number> {
+  const scores = new Map<string, number>();
+  for (const evaluation of evaluations) {
+    for (const caseScore of evaluation.cases) {
+      if (caseScore.maxScore !== undefined) scores.set(caseScore.case, caseScore.maxScore);
+    }
+  }
+  return scores;
+}
+
+function CasesSection({
+  cases,
+  error,
+  evaluations,
+  onOpenCase,
+}: {
+  cases: BenchmarkCaseSummary[] | null;
+  error: string | null;
+  evaluations: BenchmarkEvaluation[];
+  onOpenCase: (caseId: string) => void;
+}) {
+  const maxima = caseMaxScores(evaluations);
+  return (
+    <div>
+      <p className="mb-1 text-xs font-semibold text-gray-500">{S.benchmark.cases}</p>
+      <div className="overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+        {error && <p className="px-3 py-2 text-xs text-red-500">{error}</p>}
+        {!cases && !error && <p className="px-3 py-2 text-xs text-gray-400">{S.common.loading}</p>}
+        {cases?.map((item) => {
+          const maxScore = maxima.get(item.id);
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => onOpenCase(item.id)}
+              className="flex w-full items-center gap-3 border-b border-gray-100 px-3 py-2 text-left transition-colors last:border-b-0 hover:bg-gray-50 dark:border-gray-800/70 dark:hover:bg-gray-800/50"
+            >
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-medium text-gray-800 dark:text-gray-200">
+                  {item.title}
+                </span>
+                <span className="block truncate font-mono text-[11px] text-gray-400">
+                  {item.id}
+                </span>
+              </span>
+              {maxScore !== undefined && (
+                <span className="shrink-0 font-mono text-xs text-gray-500">
+                  {S.benchmark.maxScore(formatScore(maxScore))}
+                </span>
+              )}
+              <span className="shrink-0 text-xs text-brand-700 dark:text-brand-300">
+                {S.benchmark.viewCase}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function BenchmarkPage() {
   useDocumentTitle(S.benchmark.title);
   const { currentProject, agents, agentsLoading } = useProject();
@@ -496,17 +615,42 @@ export function BenchmarkPage() {
   const [searchParams] = useSearchParams();
   const focusAgentId = searchParams.get("agentId");
   const [selection, setSelection] = useState<Selection | null>(null);
+  const [caseStatements, setCaseStatements] = useState<BenchmarkCaseSummary[] | null>(null);
+  const [caseError, setCaseError] = useState<string | null>(null);
+  const [openCaseId, setOpenCaseId] = useState<string | null>(null);
 
   // Clear the selection when the Project changes.
   useEffect(() => {
     setSelection(null);
   }, [projectId]);
 
+  useEffect(() => {
+    setCaseStatements(null);
+    setCaseError(null);
+    setOpenCaseId(null);
+    if (!projectId || !selection) return;
+    let cancelled = false;
+    api
+      .listBenchmarkCases(projectId, selection.agentId, selection.benchmark.id)
+      .then((data) => {
+        if (!cancelled) setCaseStatements(data.cases);
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) setCaseError(apiErrorText(error));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, selection]);
+
   if (!projectId) return null;
 
   const bm = selection?.benchmark ?? null;
   // Chart uses ascending time order (the scoreboard is already ordered, this sort is defensive); the detail table shows newest first.
   const evaluations = bm ? [...bm.evaluations].sort((a, b) => a.time.localeCompare(b.time)) : [];
+  const caseTitles = new Map(caseStatements?.map((item) => [item.id, item.title]) ?? []);
+  const openCase = caseStatements?.find((item) => item.id === openCaseId) ?? null;
+  const openCaseMax = openCase === null ? undefined : caseMaxScores(evaluations).get(openCase.id);
 
   return (
     <div className="flex h-full flex-col md:flex-row">
@@ -551,6 +695,13 @@ export function BenchmarkPage() {
               )}
             </div>
 
+            <CasesSection
+              cases={caseStatements}
+              error={caseError}
+              evaluations={evaluations}
+              onOpenCase={setOpenCaseId}
+            />
+
             {evaluations.length === 0 ? (
               <EmptyState title={S.benchmark.noEvaluations} />
             ) : (
@@ -575,13 +726,35 @@ export function BenchmarkPage() {
                       </thead>
                       <tbody>
                         {[...evaluations].reverse().map((ev, i) => (
-                          <EvaluationRow key={i} agentId={selection.agentId} evaluation={ev} />
+                          <EvaluationRow
+                            key={i}
+                            agentId={selection.agentId}
+                            evaluation={ev}
+                            caseTitles={caseTitles}
+                            onOpenCase={setOpenCaseId}
+                          />
                         ))}
                       </tbody>
                     </table>
                   </div>
                 </div>
               </>
+            )}
+            {openCase && (
+              <Modal
+                open
+                title={openCase.title}
+                widthClass="sm:max-w-6xl"
+                onClose={() => setOpenCaseId(null)}
+              >
+                <BenchmarkStatementBrowser
+                  projectId={projectId}
+                  agentId={selection.agentId}
+                  benchmarkId={bm.id}
+                  caseSummary={openCase}
+                  maxScore={openCaseMax}
+                />
+              </Modal>
             )}
           </div>
         ) : (

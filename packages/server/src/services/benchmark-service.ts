@@ -20,11 +20,22 @@ import { parse as parseYaml } from "yaml";
 import { benchmarksDir } from "@prismshadow/penguin-core";
 import type {
   BenchmarkCaseScore,
+  BenchmarkCaseSummary,
+  BenchmarkCasesResponse,
   BenchmarkEvaluation,
   BenchmarkRunScore,
   BenchmarkSummary,
   BenchmarksResponse,
+  WorkspaceFilesResponse,
 } from "../api/types.js";
+import type {
+  WorkspaceFileContent,
+  WorkspaceFileReadOptions,
+  WorkspaceFilesService,
+} from "./workspace-files-service.js";
+import { HttpError } from "../http/errors.js";
+
+const STATEMENT_TITLE_READ_BYTES = 64 * 1024;
 
 function asRecord(v: unknown): Record<string, unknown> {
   return v !== null && typeof v === "object" && !Array.isArray(v)
@@ -38,6 +49,27 @@ function numberOr(v: unknown): number | undefined {
 
 function stringOr(v: unknown): string | undefined {
   return typeof v === "string" && v !== "" ? v : undefined;
+}
+
+function isWithin(parent: string, child: string): boolean {
+  const relative = path.relative(parent, child);
+  return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
+}
+
+function statementTitle(statement: string, fallback: string): string {
+  const heading = /^#\s+(.+)$/m.exec(statement)?.[1]?.trim();
+  return heading?.replace(/^Case\s+\d+\s*:\s*/i, "") || fallback;
+}
+
+async function readStatementTitle(readme: string, fallback: string): Promise<string> {
+  const handle = await fs.open(readme, "r");
+  try {
+    const buffer = Buffer.alloc(STATEMENT_TITLE_READ_BYTES);
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+    return statementTitle(buffer.subarray(0, bytesRead).toString("utf8"), fallback);
+  } finally {
+    await handle.close();
+  }
 }
 
 /** Shapes a single run entry: score is the minimum requirement, other fields tolerate being absent; a bad entry returns null and is dropped. */
@@ -79,6 +111,8 @@ function toCase(v: unknown): BenchmarkCaseScore | null {
     : [];
   const score = numberOr(cr.score) ?? averageOf(parsedRuns, (r) => r.score);
   if (score === undefined) return null;
+  const rawMaxScore = numberOr(cr.max_score);
+  const maxScore = rawMaxScore !== undefined && rawMaxScore > 0 ? rawMaxScore : undefined;
   const cost = numberOr(cr.cost) ?? averageOf(parsedRuns, (r) => r.cost);
   const durationMs = numberOr(cr.duration_ms) ?? averageOf(parsedRuns, (r) => r.durationMs);
   const sessionId = stringOr(cr.session_id);
@@ -97,6 +131,7 @@ function toCase(v: unknown): BenchmarkCaseScore | null {
   return {
     case: caseId,
     score,
+    ...(maxScore !== undefined ? { maxScore } : {}),
     ...(cost !== undefined ? { cost } : {}),
     ...(durationMs !== undefined ? { durationMs } : {}),
     ...(sessionId !== undefined ? { sessionId } : {}),
@@ -113,6 +148,11 @@ function toEvaluation(v: unknown): BenchmarkEvaluation | null {
   const cases: BenchmarkCaseScore[] = Array.isArray(r.cases)
     ? r.cases.map(toCase).filter((c): c is BenchmarkCaseScore => c !== null)
     : [];
+  const caseMaxScores = cases.map((item) => item.maxScore);
+  const maxScore =
+    cases.length > 0 && caseMaxScores.every((value): value is number => value !== undefined)
+      ? caseMaxScores.reduce((sum, value) => sum + value, 0)
+      : undefined;
   const summary = stringOr(r.summary);
   // Title and body are separate: summary_title is a one-line
   // conclusion, summary is the body text.
@@ -131,6 +171,7 @@ function toEvaluation(v: unknown): BenchmarkEvaluation | null {
     ...(modelId !== undefined ? { modelId } : {}),
     ...(provider !== undefined ? { provider } : {}),
     score,
+    ...(maxScore !== undefined ? { maxScore } : {}),
     ...(version !== undefined ? { version } : {}),
     ...(cost !== undefined ? { cost } : {}),
     ...(durationMs !== undefined ? { durationMs } : {}),
@@ -139,7 +180,10 @@ function toEvaluation(v: unknown): BenchmarkEvaluation | null {
 }
 
 export class BenchmarkService {
-  constructor(private readonly root: string) {}
+  constructor(
+    private readonly root: string,
+    private readonly workspaceFiles: WorkspaceFilesService,
+  ) {}
 
   async list(projectId: string, agentId: string): Promise<BenchmarksResponse> {
     const dir = benchmarksDir(this.root, projectId, agentId);
@@ -155,6 +199,98 @@ export class BenchmarkService {
       benchmarks.push(await this.readBenchmark(path.join(dir, item.name), item.name));
     }
     return { benchmarks };
+  }
+
+  async listCases(
+    projectId: string,
+    agentId: string,
+    benchmarkId: string,
+  ): Promise<BenchmarkCasesResponse> {
+    const baseDir = benchmarksDir(this.root, projectId, agentId);
+    const benchDir = path.join(baseDir, benchmarkId);
+    let entries: Array<{ name: string; isDirectory(): boolean }>;
+    let realBaseDir: string;
+    let realBenchDir: string;
+    try {
+      [entries, realBaseDir, realBenchDir] = await Promise.all([
+        fs.readdir(benchDir, { withFileTypes: true }),
+        fs.realpath(baseDir),
+        fs.realpath(benchDir),
+      ]);
+    } catch {
+      return { cases: [] };
+    }
+    if (!isWithin(realBaseDir, realBenchDir)) return { cases: [] };
+
+    const cases: BenchmarkCaseSummary[] = [];
+    for (const entry of entries
+      .filter((item) => item.isDirectory() && item.name.startsWith("CASE-"))
+      .sort((a, b) => a.name.localeCompare(b.name))) {
+      const fallback: BenchmarkCaseSummary = { id: entry.name, title: entry.name };
+      try {
+        const statementDir = await this.statementRoot(projectId, agentId, benchmarkId, entry.name);
+        const realReadme = await fs.realpath(path.join(statementDir, "README.md"));
+        if (!isWithin(statementDir, realReadme)) throw new Error("README escapes Statement");
+        cases.push({
+          id: entry.name,
+          title: await readStatementTitle(realReadme, entry.name),
+        });
+      } catch {
+        cases.push(fallback);
+      }
+    }
+    return { cases };
+  }
+
+  async listCaseFiles(
+    projectId: string,
+    agentId: string,
+    benchmarkId: string,
+    caseId: string,
+    rel: string,
+  ): Promise<WorkspaceFilesResponse> {
+    const statementDir = await this.statementRoot(projectId, agentId, benchmarkId, caseId);
+    return this.workspaceFiles.list(statementDir, rel);
+  }
+
+  async readCaseFile(
+    projectId: string,
+    agentId: string,
+    benchmarkId: string,
+    caseId: string,
+    rel: string,
+    options?: WorkspaceFileReadOptions,
+  ): Promise<WorkspaceFileContent> {
+    const statementDir = await this.statementRoot(projectId, agentId, benchmarkId, caseId);
+    return this.workspaceFiles.read(statementDir, rel, options);
+  }
+
+  private async statementRoot(
+    projectId: string,
+    agentId: string,
+    benchmarkId: string,
+    caseId: string,
+  ): Promise<string> {
+    const benchDir = path.join(benchmarksDir(this.root, projectId, agentId), benchmarkId);
+    const caseDir = path.join(benchDir, caseId);
+    const statementDir = path.join(caseDir, "statement");
+    try {
+      const [realBenchDir, realCaseDir, realStatementDir] = await Promise.all([
+        fs.realpath(benchDir),
+        fs.realpath(caseDir),
+        fs.realpath(statementDir),
+      ]);
+      if (
+        !isWithin(realBenchDir, realCaseDir) ||
+        path.dirname(realStatementDir) !== realCaseDir ||
+        path.basename(realStatementDir) !== "statement"
+      ) {
+        throw new Error("Statement path is not canonical");
+      }
+      return realStatementDir;
+    } catch {
+      throw new HttpError(404, "not_found", "Public Case Statement does not exist.");
+    }
   }
 
   private async readBenchmark(benchDir: string, id: string): Promise<BenchmarkSummary> {
@@ -195,11 +331,11 @@ export class BenchmarkService {
       // No scores yet.
     }
 
-    // Case count: number of case subfolders (the statement/rubric structure isn't validated here).
+    // Case count: number of semantic Case subfolders.
     let caseCount = 0;
     try {
       const entries = await fs.readdir(benchDir, { withFileTypes: true });
-      caseCount = entries.filter((e) => e.isDirectory()).length;
+      caseCount = entries.filter((e) => e.isDirectory() && e.name.startsWith("CASE-")).length;
     } catch {
       // Stays at 0.
     }

@@ -606,7 +606,7 @@ Freeze 时，每个结果必须能由公开材料稳定推出；如果信息本�
 
 ## Phase 3：Agent Optimization
 
-使用 \`agent-optimization\`，Benchmark 为 \`contextual-choice-adaptation\`，Reference 为已记录的 Baseline，目标分数至少 85。
+使用 \`agent-optimization\` 优化 Test Agent \`finite_choice_agent\`。Benchmark 为 \`contextual-choice-adaptation\`，Reference 为该 Benchmark 已记录的 Formal Baseline，目标分数至少 85。
 
 根据公开 Statement、评测分数和 Test Trace 改进 Test Agent 的通用能力。比较版本时使用每条 Evaluation 顶层的 \`score\`；分析各 Case 时，将每个 \`runs[].score\` 与该 Case 的 \`max_score\` 比较，不要假设每个 Case 都是 100 分。按照 \`agent-optimization\` 完成 Candidate 评测、接受或回滚，直到达到目标或无法继续有效改进。不得读取 Rubric、Gold 或其他私有 Benchmark 信息。
 
@@ -842,6 +842,11 @@ Freeze 时，每个结果必须能由公开材料稳定推出；如果信息本�
     caseCount: (n: number): string => `${n} 题`,
     /** Chart title, varies by selected metric (score / cost / duration over time). */
     trendTitle: (metric: string): string => `${metric}随时间变化`,
+    cases: "题目",
+    viewCase: "查看题目",
+    publicMaterials: "公开材料",
+    statementUnavailable: "题面暂时无法读取",
+    maxScore: (score: string): string => `满分 ${score}`,
     evaluations: "评估明细",
     noEvaluations: "暂无评估记录",
     /** Evaluation notes (scoreboard's summary: score source and notes on this round's changes). */

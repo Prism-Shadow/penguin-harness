@@ -1055,6 +1055,8 @@ export interface BenchmarkCaseScore {
   case: string;
   /** Per-case score = average of runs (equals that single run's score under the legacy single-run format). */
   score: number;
+  /** Maximum score for one Run of this Case. */
+  maxScore?: number;
   cost?: number;
   durationMs?: number;
   /** For legacy format compatibility: per-case single Session id (new format keeps it inside runs[]). */
@@ -1078,6 +1080,8 @@ export interface BenchmarkEvaluation {
   version?: number;
   /** Total score (sum of per-case scores; max score defined by the scoring rubric). */
   score: number;
+  /** Sum of all Case maxima when every Case records max_score. */
+  maxScore?: number;
   cost?: number;
   durationMs?: number;
   cases: BenchmarkCaseScore[];
@@ -1099,6 +1103,17 @@ export interface BenchmarkSummary {
 
 export interface BenchmarksResponse {
   benchmarks: BenchmarkSummary[];
+}
+
+/** Public Benchmark Case metadata. Rubric and Gold content are never included. */
+export interface BenchmarkCaseSummary {
+  id: string;
+  /** First Markdown heading with an optional leading "Case N:" removed; falls back to id. */
+  title: string;
+}
+
+export interface BenchmarkCasesResponse {
+  cases: BenchmarkCaseSummary[];
 }
 
 // ---------------------------------------------------------------------------

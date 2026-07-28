@@ -670,8 +670,9 @@ scores, and must not read or repeat Rubrics, Gold answers, or other private info
 
 ## Phase 3: Agent Optimization
 
-Use \`agent-optimization\` with Benchmark \`contextual-choice-adaptation\`, the recorded Baseline as
-the Reference, and a target score of at least 85.
+Use \`agent-optimization\` to optimize Test Agent \`finite_choice_agent\`. Use Benchmark
+\`contextual-choice-adaptation\`, its recorded Formal Baseline as the Reference, and a target score
+of at least 85.
 
 Improve the Test Agent's general capability using public Statements, evaluation scores, and Test
 Traces. Compare versions using each Evaluation's top-level \`score\`. For Case-level diagnosis,
@@ -920,6 +921,11 @@ Do not modify any Skill or create permanent Builder, Evaluator, or Optimizer Age
     emptyAgent: "No Benchmarks for this agent",
     caseCount: (n: number): string => `${n} case${n === 1 ? "" : "s"}`,
     trendTitle: (metric: string): string => `${metric} over time`,
+    cases: "Cases",
+    viewCase: "View task",
+    publicMaterials: "Public materials",
+    statementUnavailable: "The public Statement is unavailable",
+    maxScore: (score: string): string => `Max ${score}`,
     evaluations: "Evaluations",
     noEvaluations: "No evaluations yet",
     summaryLabel: "Summary",
