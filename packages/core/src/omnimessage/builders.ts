@@ -262,8 +262,11 @@ export function approvalDecision(
   return event({ type: "approval_decision", decision, tool_call_id: toolCallId });
 }
 
-export function abortEvent(reason: string | null = null): OmniMessage<AbortPayload> {
-  return event({ type: "abort", reason });
+export function abortEvent(
+  reason: string | null = null,
+  code?: AbortPayload["code"],
+): OmniMessage<AbortPayload> {
+  return event({ type: "abort", reason, ...(code !== undefined ? { code } : {}) });
 }
 
 /** request begin event: marks the start of one LLM Request. */

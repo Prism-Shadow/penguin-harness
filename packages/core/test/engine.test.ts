@@ -1630,6 +1630,10 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     const abort = all.find((m) => (m.payload as { type?: string }).type === "abort");
     expect(abort).toBeDefined();
     expect((abort!.payload as { reason?: string }).reason).toContain("reconnect failed");
+    // Structural cause, so hosts can tell a dead turn from routine retry noise without
+    // parsing the prose: every attempt on the way here was classified `timeout` (expected),
+    // but the turn still died — the Cost center files this one as needing a human.
+    expect((abort!.payload as { code?: string }).code).toBe("retry_exhausted");
 
     // carry-over = original input + [turn_retried] (accumulating partial products from both
     // failed attempts): the next run resends it merged with the new input, without producing
@@ -1642,6 +1646,31 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     expect(nextRunTexts[1]).toContain("partial...");
     expect(nextRunTexts[2]).toBe("next");
     expect(nextRunTexts.join("\n")).not.toContain("[turn_aborted]");
+  });
+
+  it("only an exhausted ladder carries code retry_exhausted — a user abort during backoff does not", async () => {
+    const controller = new AbortController();
+    const llm: LLMInterface = {
+      async *streamGenerate() {
+        yield assistantText("partial...", "timeout");
+        // Stop during the backoff that follows this failure.
+        queueMicrotask(() => controller.abort());
+        return { status: "timeout" };
+      },
+    };
+    const engine = new ContextEngine({
+      llm,
+      environment: new Environment({
+        workspaceDir: workspace,
+        toolConfig: execCommandToolConfig(),
+      }),
+      maxReconnects: 5,
+      reconnectBackoffMs: 50,
+    });
+    const all = await collectRun(engine, [userText("go")], allowAll, controller.signal);
+    const abort = all.find((m) => (m.payload as { type?: string }).type === "abort");
+    expect(abort).toBeDefined();
+    expect((abort!.payload as { code?: string }).code).toBeUndefined();
   });
 
   it("surfaces a non-retryable LLM failure (outcome=failed) as a graceful abort (run does not throw)", async () => {

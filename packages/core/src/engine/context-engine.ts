@@ -60,6 +60,7 @@ import {
   userSteeringText,
 } from "../omnimessage/markers/index.js";
 import type {
+  AbortPayload,
   ApprovalDecision,
   CompactionMode,
   CompactionReason,
@@ -555,7 +556,13 @@ export class ContextEngine {
         if (reconnects >= this.maxReconnects) {
           this.pendingCarryOver = attemptInput;
           const reason = turn.outcome.status === "malformed" ? "malformed response" : "reconnect";
-          yield* this.emitAbort(`${reason} failed after ${this.maxReconnects} retries`);
+          // Structural cause, not just prose: the turn died because the ladder ran out, which
+          // hosts must be able to tell apart from routine retry noise (every attempt on the way
+          // here was classified `timeout`, i.e. expected) without parsing this message.
+          yield* this.emitAbort(
+            `${reason} failed after ${this.maxReconnects} retries`,
+            "retry_exhausted",
+          );
           return;
         }
         reconnects += 1;
@@ -1415,8 +1422,11 @@ export class ContextEngine {
   }
 
   /** Interruption: emits an abort event. Cleanup/resending is managed centrally by `run` via carry-over; the LLM history is never touched again. */
-  private async *emitAbort(reason: string): AsyncGenerator<OmniMessage> {
-    const msg = abortEvent(reason);
+  private async *emitAbort(
+    reason: string,
+    code?: AbortPayload["code"],
+  ): AsyncGenerator<OmniMessage> {
+    const msg = abortEvent(reason, code);
     yield msg;
     await this.write(msg);
   }

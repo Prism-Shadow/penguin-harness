@@ -258,6 +258,13 @@ export interface ApprovalDecisionPayload {
 export interface AbortPayload {
   type: "abort";
   reason?: string | null;
+  /**
+   * Machine-readable cause, when the engine has one. Currently only `"retry_exhausted"`:
+   * the reconnect ladder ran out and the turn died, as opposed to the user stopping it or a
+   * one-off refusal. Hosts key on this rather than parsing `reason`'s prose — the Cost
+   * center uses it to file the record as needing a human instead of as routine retry noise.
+   */
+  code?: "retry_exhausted";
 }
 
 export interface TokenUsagePayload {

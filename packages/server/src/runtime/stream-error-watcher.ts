@@ -205,6 +205,8 @@ export class StreamErrorWatcher {
       type?: string;
       status?: StopReason;
       reason?: string | null;
+      /** AbortPayload.code — currently only "retry_exhausted". */
+      code?: string;
       message?: string;
     };
     const key = originKey(msg);
@@ -227,7 +229,7 @@ export class StreamErrorWatcher {
     }
     // Interrupted/failed exit: reason is core's only failure-reason text.
     if (p.type === "abort") {
-      this.flush(key, typeof p.reason === "string" ? p.reason : null);
+      this.flush(key, typeof p.reason === "string" ? p.reason : null, p.code === "retry_exhausted");
     }
   }
 
@@ -237,7 +239,7 @@ export class StreamErrorWatcher {
    * `key` is exactly "the session that produced this failure" — attribution is looked
    * up from it (see file header).
    */
-  private flush(key: string, reason?: string | null): void {
+  private flush(key: string, reason?: string | null, retryExhausted = false): void {
     const entry = this.pending.get(key);
     if (entry === undefined) return;
     this.pending.delete(key);
@@ -247,12 +249,20 @@ export class StreamErrorWatcher {
     // own detail (the retry path: no abort ever arrives) → the generic status text. A
     // user-interrupt message isn't a failure reason (see file header).
     const message = trimmed && !isUserAbortReason(trimmed) ? trimmed : (entry.message ?? spec.text);
+    // A turn the reconnect ladder failed to save is its own thing: every attempt on the way
+    // there was classified `timeout` (expected — the engine was handling it), but the turn
+    // still died, which is exactly the case a human needs to see. Now that nearly every LLM
+    // failure is retryable, without this the cost center would file a dead turn as routine
+    // retry noise, greyed out and uncounted. Its own code also keeps it in its own
+    // short-window dedup bucket, so a genuine failure is never dropped as a repeat of the
+    // ordinary timeouts that preceded it.
+    const exhausted = retryExhausted && entry.status === "timeout";
     this.errors.record({
       source: "llm",
       err: message,
       ctx: this.ctxFor(key),
-      code: spec.code,
-      kind: spec.kind,
+      code: exhausted ? "llm_retry_exhausted" : spec.code,
+      kind: exhausted ? "unexpected" : spec.kind,
     });
   }
 

@@ -234,6 +234,10 @@ interface CompactionEndPayload {
 interface AbortPayload {
   type: "abort";
   reason?: string | null;
+  // 机器可读的原因，引擎有的时候才带。目前只有 "retry_exhausted"：重连梯度用尽、本轮
+  // 真的死了——区别于用户主动中断。宿主据此判断，不必解析 `reason` 文案。
+  // 增量可选：旧 Trace 回放不受影响。
+  code?: "retry_exhausted";
 }
 
 interface SubagentPayload {

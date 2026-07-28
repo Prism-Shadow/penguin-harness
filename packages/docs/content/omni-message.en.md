@@ -236,6 +236,10 @@ interface CompactionEndPayload {
 interface AbortPayload {
   type: "abort";
   reason?: string | null;
+  // Machine-readable cause, when the engine has one. Currently only "retry_exhausted":
+  // the reconnect ladder ran out and the turn died — as opposed to the user stopping it.
+  // Hosts key on this rather than parsing `reason`. Additive: old Traces replay unchanged.
+  code?: "retry_exhausted";
 }
 
 interface SubagentPayload {

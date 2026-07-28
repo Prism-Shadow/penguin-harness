@@ -522,6 +522,59 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
     });
   });
 
+  it("a retried request keeps the upstream detail, filed as routine while the engine is coping", () => {
+    // Nearly every LLM failure is retryable now, so the reason must ride the request_end
+    // itself: no abort ever arrives on the retry path, and "llm_timeout" alone would say
+    // nothing about what actually broke.
+    const got = feed([
+      requestBegin(),
+      requestEnd("timeout", "Upstream HTTP/2 stream failed (upstream_http2_stream_error)"),
+      requestBegin(), // the engine retries
+    ]);
+    expect(got).toHaveLength(1);
+    expect(got[0]).toMatchObject({
+      source: "llm",
+      code: "llm_timeout",
+      kind: "expected", // the engine is handling it — not a human's problem yet
+    });
+    expect(got[0]!.message).toBe("Upstream HTTP/2 stream failed (upstream_http2_stream_error)");
+  });
+
+  it("a turn the ladder failed to save is its own code and needs a human, detail intact", () => {
+    // Same class of failure as above, but the retries ran out and the turn died. Keyed on the
+    // abort's structural code, not its prose.
+    const got = feed([
+      requestBegin(),
+      requestEnd("timeout", "Upstream HTTP/2 stream failed (upstream_http2_stream_error)"),
+      abortEvent(
+        "llm request error: Upstream HTTP/2 stream failed failed after 5 retries",
+        "retry_exhausted",
+      ),
+    ]);
+    expect(got).toHaveLength(1);
+    expect(got[0]).toMatchObject({
+      source: "llm",
+      code: "llm_retry_exhausted",
+      kind: "unexpected",
+    });
+    expect(got[0]!.message).toContain("Upstream HTTP/2 stream failed");
+  });
+
+  it("a user's own abort during backoff stays routine — they stopped it, it did not die", () => {
+    const got = feed([
+      requestBegin(),
+      requestEnd("timeout", "502 upstream"),
+      abortEvent("aborted during reconnect backoff"), // no code: not an exhausted ladder
+    ]);
+    expect(got).toHaveLength(1);
+    // The user-interrupt reason is not trusted as a failure reason, so the staged detail wins.
+    expect(got[0]).toMatchObject({
+      code: "llm_timeout",
+      kind: "expected",
+      message: "502 upstream",
+    });
+  });
+
   // —— Environment (tool execution) ——
 
   const call = (name: string, id: string) => toolCall({ name, arguments: "{}", toolCallId: id });
