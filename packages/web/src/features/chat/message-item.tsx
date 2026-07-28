@@ -4,21 +4,22 @@
  * streamed as Markdown, tool cards, subagent cards, compaction banners, abort markers, and Task
  * stats lines. Items have a light entrance animation.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { S } from "../../lib/strings";
 import { useLocale } from "../../state/locale";
 import { formatMessageTime } from "../../lib/format";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { splitImageAttachments } from "../../lib/attachments";
-import type { ChatItem } from "../../lib/omni/stream-model";
+import type { ChatItem, ReconnectItem } from "../../lib/omni/stream-model";
 import { Md } from "./md";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { ZoomableImage } from "../../components/ui/image-zoom";
 import { MessageFilesCard } from "./message-files-card";
 import { ThinkingBlock } from "./thinking-block";
 import { ToolCallCard } from "./tool-call-card";
-import { SubagentCard } from "./subagent-card";
+import { SubagentChip } from "./subagent-chip";
 import { CompactionBanner } from "./compaction-banner";
+import { GoalRoundBanner } from "./goal-banner";
 import { HandoffBanner, ModelSwitchBanner } from "./handoff-banner";
 import { ScheduledBanner } from "./scheduled-banner";
 import { SkillsBanner } from "./skills-banner";
@@ -27,6 +28,7 @@ import {
   parseModelSwitchMessage,
   parseScheduledMessage,
 } from "./agent-mentions";
+import { parseGoalMessage } from "./goal-use";
 import { parseSkillsMessage } from "./skill-use";
 import { TaskStatsLine } from "./task-stats-line";
 import type { StreamRenderContext } from "./message-stream";
@@ -39,11 +41,14 @@ const USER_STEERING_ICON =
   "M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0";
 
 /**
- * Message footer: timestamp + copy. **Invisible but takes up space by default** (`opacity-0`
- * rather than `hidden`) — it surfaces on hovering the message list, and because the space is
- * always reserved, surfacing it never pushes content below it down (using `hidden` would cause
- * every item to jitter). Keyboard users can also reveal it via `focus-within` (otherwise the copy
- * button would be focusable but never visible).
+ * Message footer: timestamp + copy. At ≥sm it is **invisible but takes up space by default**
+ * (`sm:opacity-0` rather than `hidden`) — it surfaces on hovering the message list, and because
+ * the space is always reserved, surfacing it never pushes content below it down (using `hidden`
+ * would cause every item to jitter). Keyboard users can also reveal it via `focus-within`
+ * (otherwise the copy button would be focusable but never visible). Below sm the footer is
+ * always visible — hover doesn't exist on touch screens (and Tailwind v4 scopes hover: variants
+ * to `@media (hover: hover)`), so a hover-revealed footer would simply never appear on phones;
+ * same treatment as the AI reply's stats footer.
  *
  * When `text` is omitted, only the timestamp is shown, no copy button — there's no clear meaning
  * to copying an image message.
@@ -67,7 +72,7 @@ function MessageMeta({
   };
   return (
     <div
-      className={`flex h-5 items-center gap-2 opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100 ${
+      className={`flex h-5 items-center gap-2 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100 sm:opacity-0 ${
         align === "right" ? "justify-end" : "justify-start"
       }`}
     >
@@ -89,6 +94,85 @@ function MessageMeta({
   );
 }
 
+/** Countdown floor: waits shorter than this keep the plain waiting text (sub-second flashes of numbers are noise). */
+const COUNTDOWN_MIN_MS = 2000;
+
+/**
+ * Reconnect hint line. The live waiting state renders a COUNTDOWN to the next attempt when
+ * the engine announced its planned wait (request_end.retry_in_ms ≥ 2s — with the
+ * exponential ladder a wait can reach 30s, and a static "waiting" line reads as a hang),
+ * plus two inline controls: "retry now" (skips the remaining backoff server-side; the line
+ * flips to "retrying" when the request_begin arrives — no optimistic state beyond
+ * disabling the buttons) and "give up" (the ordinary session abort; the engine's
+ * abort-during-backoff path ends the turn and re-enables the composer). Anchored on the
+ * CLIENT arrival time of the event (skew-free), ticking every 250ms with ceil'd whole
+ * seconds; at zero it falls back to the plain waiting text, so a stale item can never tick
+ * forever. History safety: replay delivers the following request_begin/abort immediately,
+ * flipping the state, so neither the countdown nor the buttons render for replayed items;
+ * the buttons are additionally main-session-only (a subagent's backoff belongs to the
+ * child session, which the retry-now route does not target).
+ */
+function ReconnectLine({ item, ctx }: { item: ReconnectItem; ctx: StreamRenderContext }) {
+  const state = item.gaveUp ? "gaveUp" : item.retrying ? "retried" : "waiting";
+  const target =
+    state === "waiting" &&
+    item.plannedDelayMs !== undefined &&
+    item.plannedDelayMs >= COUNTDOWN_MIN_MS &&
+    item.arrivedAtMs !== undefined
+      ? item.arrivedAtMs + item.plannedDelayMs
+      : null;
+  const [now, setNow] = useState(() => Date.now());
+  const [acted, setActed] = useState(false);
+  useEffect(() => {
+    if (target === null || Date.now() >= target) return;
+    const timer = setInterval(() => {
+      setNow(Date.now());
+      if (Date.now() >= target) clearInterval(timer); // stop ticking once the wait has elapsed
+    }, 250);
+    return () => clearInterval(timer);
+  }, [target]);
+  const remainingMs = target !== null ? target - now : 0;
+  const live = target !== null && remainingMs > 0;
+  const seconds = live ? Math.ceil(remainingMs / 1000) : undefined;
+  const showControls =
+    live && ctx.origin.length === 0 && (ctx.onRetryNow !== undefined || ctx.onGiveUp !== undefined);
+  return (
+    <p className="anim-msg my-1 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-xs text-amber-600 dark:text-amber-500">
+      <span>{S.chat.reconnect(item.status, state, item.attempt, seconds)}</span>
+      {showControls && (
+        <span className="flex shrink-0 items-center gap-1.5">
+          {ctx.onRetryNow && (
+            <button
+              type="button"
+              disabled={acted}
+              onClick={() => {
+                setActed(true);
+                ctx.onRetryNow!();
+              }}
+              className="rounded border border-amber-300 px-1.5 py-0.5 text-[11px] font-medium text-amber-700 transition-colors duration-150 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-amber-700 dark:text-amber-400 dark:hover:bg-amber-950/40"
+            >
+              {S.chat.reconnectRetryNow}
+            </button>
+          )}
+          {ctx.onGiveUp && (
+            <button
+              type="button"
+              disabled={acted}
+              onClick={() => {
+                setActed(true);
+                ctx.onGiveUp!();
+              }}
+              className="rounded border border-gray-300 px-1.5 py-0.5 text-[11px] text-gray-500 transition-colors duration-150 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:text-gray-400 dark:hover:bg-gray-800"
+            >
+              {S.chat.reconnectGiveUp}
+            </button>
+          )}
+        </span>
+      )}
+    </p>
+  );
+}
+
 export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderContext }) {
   switch (item.kind) {
     case "user_text": {
@@ -98,18 +182,33 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
       // Source block for a chat opened by the /model switch: collapsed into a single-line switch notice, clickable to jump back to the source conversation.
       const modelSwitch = parseModelSwitchMessage(item.text);
       if (modelSwitch) return <ModelSwitchBanner origin={modelSwitch} />;
+      // A goal round's [goal] protocol prefix: collapsed into a round notice; the body after
+      // it (round 1: the user's original input, skill blocks and all; later rounds: the
+      // objective) continues down the normal parsing chain (the Trace shows the raw block).
+      const goalRound = parseGoalMessage(item.text);
+      const afterGoal = goalRound ? goalRound.rest : item.text;
       // Source block for a scheduled-task trigger: collapsed into a single-line notice, with the task's prompt body rendered as usual (verbatim on the Trace page).
-      const scheduled = parseScheduledMessage(item.text);
+      const scheduled = parseScheduledMessage(afterGoal);
       // Source block for a skill invocation: parsing continues on scheduled's remaining body
-      // (handoff -> scheduled -> skills, blocks stripped in a chain); a match collapses into a
+      // (goal -> scheduled -> skills, blocks stripped in a chain); a match collapses into a
       // "using skill" banner, with the body rendered as usual.
-      const afterScheduled = scheduled ? scheduled.rest : item.text;
+      const afterScheduled = scheduled ? scheduled.rest : afterGoal;
       const skills = parseSkillsMessage(afterScheduled);
       // Attachment row restoration: for models that don't support images, input images are
       // written to disk as a path row; this pulls that out at render time and shows the actual
       // image. Mirrors the vision-model path (user_text + user_image as separate messages) in
       // shape: one bubble for the text, one bubble per image, styled the same as user_image.
       const { text, images } = splitImageAttachments(skills ? skills.rest : afterScheduled);
+      // Every goal round reads like a normal user message: the body in a user bubble with
+      // the round notice beneath (the system IS re-sending the user's request each round).
+      if (goalRound) {
+        return (
+          <>
+            {skills && <SkillsBanner names={skills.skills} />}
+            <GoalRoundBanner round={goalRound.round} objective={text} />
+          </>
+        );
+      }
       return (
         <>
           {scheduled && <ScheduledBanner origin={scheduled.origin} />}
@@ -216,9 +315,11 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
     case "tool_call":
       return <ToolCallCard item={item} ctx={ctx} />;
     case "subagent":
+      // Standalone child session (no run_subagent card to bind to): same full-width shortcut
+      // bar as the bound site — the conversation itself lives in the subagents panel.
       return (
         <div className="anim-msg my-2">
-          <SubagentCard sessionId={item.sessionId} model={item.model} running={false} ctx={ctx} />
+          <SubagentChip sessionId={item.sessionId} model={item.model} running={false} ctx={ctx} />
         </div>
       );
     case "abort":
@@ -228,15 +329,7 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
         </p>
       );
     case "reconnect":
-      return (
-        <p className="anim-msg my-1 font-mono text-xs text-amber-600 dark:text-amber-500">
-          {S.chat.reconnect(
-            item.status,
-            item.gaveUp ? "gaveUp" : item.retrying ? "retried" : "waiting",
-            item.attempt,
-          )}
-        </p>
-      );
+      return <ReconnectLine item={item} ctx={ctx} />;
     case "compaction":
       return <CompactionBanner item={item} />;
     case "task_stats":

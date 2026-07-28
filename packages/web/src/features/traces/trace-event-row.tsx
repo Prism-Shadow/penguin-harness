@@ -100,6 +100,8 @@ export function summarizeEvent(msg: OmniMessage): string {
       return `${String(p["mode"])} (${String(p["reason"])})${p["status"] ? ` · ${String(p["status"])}` : ""}`;
     case "abort":
       return p["reason"] != null ? String(p["reason"]) : "";
+    case "goal_finished":
+      return `${String(p["outcome"])} · rounds=${String(p["rounds"])} · tokens=${String(p["tokens_used"])}`;
     case "subagent":
       return String(p["session_id"] ?? "");
     default:

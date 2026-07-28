@@ -473,6 +473,47 @@ describe("run_subagent spawning follows the PARENT session (never the Project de
       parent.dispose();
     }
   });
+
+  it("forwards the run input as an origin-tagged user message, after session_meta and before any model output", async () => {
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-input-forward");
+    await fs.mkdir(ws, { recursive: true });
+    const parent = await agent.createSession({
+      workspaceDir: ws,
+      modelId: "claude-sonnet-4-6",
+      provider: "anthropic",
+    });
+    const runner = lastSpawnedRunner();
+    const handle = await runner.spawn({});
+    try {
+      // The child's user side has no other live source: a session's normal caller typed its
+      // own input, but this caller is the PARENT — the frontend renders the child conversation
+      // purely from these forwarded messages. (Regression: the panel showed no user messages
+      // live, while a reload — child-Trace expansion — did show them.)
+      const gen = handle.run({ prompt: "count the TODO items" });
+      const first = (await gen.next()).value as { type: string };
+      expect(first.type).toBe("session_meta");
+      // The input yield precedes childSession.run: pulling it never issues an LLM request.
+      const second = await gen.next();
+      expect(second.done).toBe(false);
+      const msg = second.value as {
+        type: string;
+        origin?: string[];
+        payload: { type: string; role?: string; text?: string };
+      };
+      expect(msg.origin).toEqual([handle.sessionId]);
+      expect(msg.type).toBe("model_msg");
+      expect(msg.payload).toMatchObject({
+        type: "text",
+        role: "user",
+        text: "count the TODO items",
+      });
+      await gen.return(undefined);
+    } finally {
+      handle.dispose();
+      parent.dispose();
+    }
+  });
 });
 
 describe("Agent.createSession max output tokens (per-model cap wins over the Agent config)", () => {

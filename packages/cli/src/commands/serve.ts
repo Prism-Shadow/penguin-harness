@@ -10,10 +10,12 @@
  * in parallel. Port/host priority: command-line option > existing environment variable
  * (including .env) > default 7364 / 127.0.0.1. `penguin web` additionally polls until the
  * service is ready, prints the URL, and opens a browser per-platform (`--no-open`
- * disables this).
+ * disables this). Before the import, PENGUIN_CLI_ENTRY is exported (when node can re-run
+ * this entry) so the server's admin self-update endpoint can invoke `penguin update`.
  * Docs: /docs/cli § "penguin server / penguin web".
  */
 import { spawn } from "node:child_process";
+import path from "node:path";
 import { DEFAULT_SERVER_PORT } from "@prismshadow/penguin-core";
 import type { Command } from "commander";
 import type { Messages } from "../i18n.js";
@@ -56,6 +58,18 @@ export function browserUrl(host: string, port: number): string {
 }
 
 /**
+ * The CLI entry script advertised to the server for the admin self-update endpoint
+ * (POST /api/version/update re-runs it as `node <entry> update --yes`), or null when it
+ * must not be advertised. Only entries plain `node` can execute qualify: a dev CLI run
+ * through tsx has a .ts entry that node would reject with a syntax error, and reporting
+ * "unsupported" beats a misleading failure. Exported for unit tests.
+ */
+export function cliEntryFor(argv1: string | undefined): string | null {
+  if (!argv1) return null;
+  return /\.(js|mjs|cjs)$/i.test(argv1) ? path.resolve(argv1) : null;
+}
+
+/**
  * Sets PORT / HOST then starts the service: the server entry point only reads
  * process.env, and its dotenv loading never overrides existing environment variables,
  * so the values written here are the ones that take effect (options take priority over
@@ -69,6 +83,15 @@ async function startServer(opts: {
   const host = opts.host ?? process.env.HOST ?? DEFAULT_HOST;
   process.env.PORT = String(port);
   process.env.HOST = host;
+  // Tell the server which CLI entry script launched it: the admin self-update endpoint
+  // (POST /api/version/update) re-runs `node <entry> update --yes`. Set before the import
+  // so it is visible however the server captures its environment; when the server was not
+  // started through the CLI (or the entry is not re-runnable by plain node, e.g. a tsx dev
+  // run) the variable stays unset and the endpoint reports "unsupported".
+  const cliEntry = cliEntryFor(process.argv[1]);
+  if (cliEntry !== null) {
+    process.env.PENGUIN_CLI_ENTRY = cliEntry;
+  }
   await import("@prismshadow/penguin-server");
   return { host, port };
 }

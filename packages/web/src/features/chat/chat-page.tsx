@@ -1,10 +1,13 @@
 /**
  * Chat page (refactored version):
- * a thin top toolbar (Session title / status / iconized stats / Files toggle / details popup) +
- * the message stream and input area (input box vertically centered when there are no messages).
+ * a thin top toolbar (Session title / status / iconized stats / Agents + Files toggles /
+ * details popup) + the message stream and input area (input box vertically centered when there
+ * are no messages).
  * Files is no longer a mutually exclusive tab — it's a persistent, closable, resizable docked
  * panel on the right (use-files-panel.ts), and each message's trailing file summary card jumps to
- * and locates the file in the tree via onOpenFile.
+ * and locates the file in the tree via onOpenFile. The subagents panel docks the same way
+ * (use-subagents-panel.ts): subagent chips in the stream open it focused via onOpenSubagent,
+ * and the two docked panels are mutually exclusive (coordinated here, not in the hooks).
  * Approval mode and Model/context usage live in the input area's toolbar; context is compacted
  * via the /compact slash command.
  * Draft state (/chat/new) is carried by DraftView: Agent / Workspace / approval mode / Model are
@@ -12,6 +15,7 @@
  * created. The Session list and the new-chat entry point live in the global sidebar.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { useNavigate, useParams } from "react-router";
 import type {
   AgentSummary,
@@ -27,9 +31,18 @@ import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
-import { formatDateTime, formatMoney, humanizeDuration, humanizeTokens } from "../../lib/format";
+import {
+  formatDateTime,
+  formatMoney,
+  humanizeDuration,
+  humanizeDurationLive,
+  humanizeTokens,
+} from "../../lib/format";
 import { latestConversation } from "../../lib/session-grouping";
-import { approvalKey } from "../../lib/omni/stream-model";
+import { approvalKey, isModelAuthDead } from "../../lib/omni/stream-model";
+import type { StreamModel } from "../../lib/omni/stream-model";
+import { bucketCostUsd, liveSessionElapsedMs } from "../../lib/omni/task-stats";
+import type { BucketPricing, TaskStatsTracker } from "../../lib/omni/task-stats";
 import { useTheme } from "../../state/theme";
 import { useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
@@ -42,13 +55,23 @@ import { EmptyState } from "../../components/ui/empty-state";
 import { toastError } from "../../components/ui/toast";
 import { MessageStream } from "./message-stream";
 import type { StreamRenderContext } from "./message-stream";
+import { latestTaskHasSubagent, taskStartCount } from "./agent-topology";
 import { ChatInput } from "./chat-input";
 import { DraftView } from "./draft-view";
+import { GoalStatusBanner } from "./goal-banner";
 import { handoffMessage, modelSwitchMessage } from "./agent-mentions";
 import { sameModelRef } from "../models/model-grouping";
 import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
 import { FilesPanel } from "./files-panel";
 import { useFilesPanel } from "./use-files-panel";
+import type { FilesPanelState } from "./use-files-panel";
+import { SubagentsPanel } from "./subagents-panel";
+import {
+  advancePanelTaskScope,
+  createPanelTaskScope,
+  useSubagentsPanel,
+} from "./use-subagents-panel";
+import type { SubagentsPanelState } from "./use-subagents-panel";
 import { useSessionDraft } from "./use-session-draft";
 import { useSessionStream } from "./use-session-stream";
 
@@ -65,7 +88,7 @@ const STAT_ICONS = {
 } as const;
 
 /** Iconized stat item: a symbol + a value, with the title giving the full meaning. */
-function StatChip({ icon, value, label }: { icon: string; value: string; label: string }) {
+function StatChip({ icon, value, label }: { icon: string; value: ReactNode; label: string }) {
   return (
     <span
       title={label}
@@ -87,6 +110,101 @@ function StatChip({ icon, value, label }: { icon: string; value: string; label: 
       {value}
     </span>
   );
+}
+
+/**
+ * Elapsed value for the header statistics: while a Task runs it ticks once per second over the
+ * live cumulative (settled cross-Task total + the running Task's wall clock so far, see
+ * liveSessionElapsedMs); when idle no timer runs and it renders exactly the settled total.
+ * Whole seconds while ticking, decimals only on the settled value — same convention as
+ * LiveDuration on running tool/thinking cards.
+ */
+function SessionElapsed({
+  stats,
+  taskOpen,
+  taskStartLocalMs,
+}: {
+  stats: TaskStatsTracker;
+  taskOpen: boolean;
+  taskStartLocalMs: number;
+}) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!taskOpen) return;
+    // Load-bearing, not redundant: `now` still holds whatever the state last saw (mount time,
+    // or the final tick of a previous Task), and the first interval callback is a full second
+    // away. The first live render after a Task starts must not compute from that stale clock,
+    // so re-anchor immediately on entering the running state.
+    setNow(Date.now());
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [taskOpen]);
+  if (!taskOpen) return <>{humanizeDuration(stats.sessionElapsedMs)}</>;
+  return <>{humanizeDurationLive(liveSessionElapsedMs(stats, taskOpen, taskStartLocalMs, now))}</>;
+}
+
+/** The header's three statistics — the chip row and the info dropdown render these verbatim. */
+interface HeaderStats {
+  tokensText: string;
+  /** Formatted session cost; null = nothing to show (no recorded figure and no live estimate). */
+  costText: string | null;
+  /** Server-reported "some usage had no pricing" flag from the last idle refetch (the chip's `*`). */
+  costUncosted: boolean;
+  elapsedNode: ReactNode;
+}
+
+/**
+ * Computes the header statistics, live while a Task runs:
+ *   - Tokens: session cumulative (main + subagents), already advancing per completed request;
+ *   - Cost: the last idle-refetched session cost, plus — while a Task is open and the session
+ *     Model has pricing — a live estimate converted from this Task's usage buckets. Subagents
+ *     may run on different models, but the estimate applies the main Model's pricing to all
+ *     live buckets: the estimate may be slightly off mid-task, and the idle getUsage refetch
+ *     reconciles to the server-recorded value (kept deliberately simple). Without pricing the
+ *     live addition is skipped (bucketCostUsd returns null, mirroring taskCost's uncosted
+ *     signal) and the value stays exactly as when idle. costText stays null until there is an
+ *     actual figure — no recorded cost plus a still-zero estimate renders nothing, not $0.00;
+ *   - Elapsed: ticking cumulative while running, settled cumulative when idle (SessionElapsed).
+ */
+function headerStats(
+  model: StreamModel,
+  sessionCost: number | null,
+  costUncosted: boolean,
+  pricing: BucketPricing | undefined,
+  currency: "USD" | "CNY",
+): HeaderStats {
+  const stats = model.stats;
+  const liveCost = model.taskOpen
+    ? bucketCostUsd(
+        {
+          cacheRead: stats.taskCacheRead,
+          cacheWrite: stats.taskCacheWrite,
+          output: stats.taskOutput,
+        },
+        pricing,
+      )
+    : null;
+  // Only take the live path once it has something to say — a positive estimate, or a recorded
+  // session cost to keep showing from the Task's first instant. On a brand-new session,
+  // sessionCost is still null and liveCost is 0 until the first token_usage lands; blindly
+  // summing would flash a formatted $0.00 the moment the Task starts — exactly the "cost is
+  // zero or something's broken" reading the chip's render conditional exists to avoid.
+  const costUsd =
+    liveCost != null && (liveCost > 0 || sessionCost != null)
+      ? (sessionCost ?? 0) + liveCost
+      : sessionCost;
+  return {
+    tokensText: humanizeTokens(stats.sessionTotal + stats.subagentTotal),
+    costText: costUsd != null ? formatMoney(costUsd, currency) : null,
+    costUncosted,
+    elapsedNode: (
+      <SessionElapsed
+        stats={stats}
+        taskOpen={model.taskOpen}
+        taskStartLocalMs={model.taskStartLocalMs}
+      />
+    ),
+  };
 }
 
 /**
@@ -128,7 +246,29 @@ export function ChatPage() {
   const [turnThinkingLevel, setTurnThinkingLevel] = useState("");
 
   const routeSessionId = params.sessionId ?? null;
-  const filesPanel = useFilesPanel(routeSessionId);
+  const filesPanelRaw = useFilesPanel(routeSessionId);
+  const subagentsPanelRaw = useSubagentsPanel(routeSessionId);
+  // The two docked panels are MUTUALLY EXCLUSIVE — side by side they'd crush the chat column at
+  // the 1024px breakpoint (and two stacked Sheets on mobile would be worse). Exclusivity is
+  // enforced here, on the panel objects every consumer receives, rather than at each call site:
+  // ANY path that opens one panel (toolbar toggles, message file cards via onOpenFile, subagent
+  // chips via onOpenSubagent, or a future caller) closes the other as a side effect of
+  // setOpen(true). Closing never cascades. The hooks stay uncoordinated on purpose — they don't
+  // know about each other; only this page, which owns both, does.
+  const filesPanel: FilesPanelState = {
+    ...filesPanelRaw,
+    setOpen: (next: boolean) => {
+      if (next) subagentsPanelRaw.setOpen(false);
+      filesPanelRaw.setOpen(next);
+    },
+  };
+  const subagentsPanel: SubagentsPanelState = {
+    ...subagentsPanelRaw,
+    setOpen: (next: boolean) => {
+      if (next) filesPanelRaw.setOpen(false);
+      subagentsPanelRaw.setOpen(next);
+    },
+  };
   const draft = routeSessionId === DRAFT_SESSION_ID;
   const selected = draft ? null : (sessions.find((s) => s.sessionId === routeSessionId) ?? null);
   // Currently effective model (session state, the model reference comes from the Session DTO): model selection in draft state is handled internally by DraftView.
@@ -169,6 +309,41 @@ export function ChatPage() {
     if (selectedSessionId && selectedAgentId) setCurrentAgentId(selectedAgentId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSessionId, selectedAgentId, setCurrentAgentId]);
+
+  // TASK-SCOPED panel visibility (owner rule: an open panel belongs to the task it was opened
+  // for). The pure tracker (advancePanelTaskScope, unit-tested) decides at each observation:
+  //   - entering a session / a NEW Task starting (a user message — taskStartCount increase)
+  //     closes the panel by default, so an unrelated task never inherits it;
+  //   - the CURRENT task's first live spawn auto-opens it (re-armed per task; a manual close
+  //     afterwards is respected until the next boundary).
+  // The auto-open applies only when docked (a mobile Sheet sliding over the conversation
+  // uninvited would be worse than staying discoverable via the row), never over an open Files
+  // panel (an automatic open must not steal an explicit one — the row and the toolbar's amber
+  // dot still signal), and never re-triggers an already-open panel (that would yank a pinned
+  // historical graph back to the latest Task); the tracker consumes the attempt regardless.
+  const panelTaskScopeRef = useRef(createPanelTaskScope());
+  const taskCount = taskStartCount(stream.model.items);
+  const liveSpawn = stream.taskState !== "idle" && latestTaskHasSubagent(stream.model);
+  useEffect(() => {
+    const action = advancePanelTaskScope(panelTaskScopeRef.current, {
+      sessionId: selectedSessionId,
+      taskCount,
+      liveSpawn,
+    });
+    if (action === "close") {
+      subagentsPanelRaw.setOpen(false);
+    } else if (
+      action === "autoOpen" &&
+      subagentsPanelRaw.isDocked &&
+      !subagentsPanelRaw.open &&
+      !filesPanelRaw.open
+    ) {
+      subagentsPanelRaw.setOpen(true);
+    }
+    // The panel objects are rebuilt every render; the tracker only acts on real transitions of
+    // these three observed values.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSessionId, taskCount, liveSpawn]);
 
   // Skills installed on the session's Agent (candidates for the input area's skill dropdown):
   // fetched keyed on the session's Agent; on switch, cleared first (which also clears the input
@@ -381,7 +556,7 @@ export function ChatPage() {
   );
 
   const onSend = useCallback(
-    async (input: TaskInputPart[]): Promise<boolean> => {
+    async (input: TaskInputPart[], goal: { budget: number } | null): Promise<boolean> => {
       if (!selected) return false;
       try {
         // An explicitly picked per-turn thinking level rides on each task; "" (untouched)
@@ -389,6 +564,7 @@ export function ChatPage() {
         // keep taking effect mid-session until the user pins a level.
         const res = await api.postTask(selected.sessionId, {
           input,
+          ...(goal ? { goal } : {}),
           ...(turnThinkingLevel
             ? { thinkingLevel: turnThinkingLevel as TaskCreateRequest["thinkingLevel"] }
             : {}),
@@ -595,6 +771,11 @@ export function ChatPage() {
     navigate(`/chat/${DRAFT_SESSION_ID}`);
   }, [navigate]);
 
+  // Auth-dead notice primary CTA: the Models page is where the credential is actually fixed.
+  const openModels = useCallback(() => {
+    navigate("/models");
+  }, [navigate]);
+
   // Real-time cost for this turn: converts the Task's bucketed usage using the session Model's
   // (paired reference) current pricing; null if no pricing is configured.
   const modelPricing = models?.models.find((m) => sameModelRef(m, activeModelRef))?.pricing;
@@ -606,26 +787,39 @@ export function ChatPage() {
     // happen mid-turn, and if only running were checked, the trailing group would flash
     // "finished running" during compaction before flipping back to "running".
     taskRunning: stream.taskState !== "idle",
-    taskCost: (stats) => {
-      if (!modelPricing) return null;
-      const b = stats.tokensByBucket;
-      return (
-        (b.cacheRead * modelPricing.cacheRead +
-          b.cacheWrite * modelPricing.cacheWrite +
-          b.output * modelPricing.output) /
-        1e6
-      );
+    taskCost: (stats) => bucketCostUsd(stats.tokensByBucket, modelPricing),
+    // Reconnect countdown controls (live waiting state only): retry-now skips the
+    // remaining backoff server-side (benign no-op on timing races), give-up is the
+    // ordinary session abort — the engine's abort-during-backoff path ends the turn.
+    onRetryNow: () => {
+      if (selected) void api.postRetryNow(selected.sessionId).catch(() => undefined);
+    },
+    onGiveUp: () => {
+      void onStop();
     },
     onOpenFile: (path) => {
       // The file card has already normalized the text path to a Workspace-relative path
       // (toWorkspaceRelative, including stripping absolute-path prefixes and converting Windows
-      // separators), so this just opens the panel and navigates to it directly.
+      // separators), so this just opens the panel and navigates to it directly (the wrapped
+      // setOpen already closes the subagents panel — see the exclusivity block above).
       filesPanel.setOpen(true);
       filesPanel.browsePath(path);
+    },
+    onOpenSubagent: (sessionId, origin) => {
+      // Chip click: open the panel focused on that child (the focus chain ends with the child's
+      // own id; the wrapped setOpen closes the Files panel). focusSubagent after setOpen: the
+      // open resets the Task scope to "latest", and the focus then pins it to this chip's Task.
+      subagentsPanel.setOpen(true);
+      subagentsPanel.focusSubagent(sessionId, [...origin, sessionId]);
     },
     workspace: selected?.workspace ?? null,
     statFiles,
   };
+
+  // Any pending approval sitting inside a subagent (approvalKey = "originChain toolCallId";
+  // main-session keys start with a space): surfaces an amber dot on the toolbar button so a
+  // nested approval stays discoverable while the panel is closed.
+  const anySubagentPending = [...stream.pendingApprovals.keys()].some((k) => !k.startsWith(" "));
 
   if (!projectId || !agentId) {
     return (
@@ -635,13 +829,26 @@ export function ChatPage() {
     );
   }
 
-  const totalTokens = stream.model.stats.sessionTotal + stream.model.stats.subagentTotal;
+  // Header statistics (chip row + info dropdown), live while a Task runs; recomputed every
+  // stream version bump, so the in-place-mutated model stats always read fresh.
+  const hs = headerStats(stream.model, sessionCost, costUncosted, modelPricing, currency);
   const modelInfo = models?.models.find((m) => sameModelRef(m, activeModelRef));
   const contextWindow = modelInfo?.contextWindow;
   // Assumed supported by default: only models explicitly marked vision=false show a blocking hint when adding images.
   const vision = modelInfo?.vision !== false;
   const emptyChat =
     selected !== null && !stream.loading && !stream.error && stream.model.items.length === 0;
+
+  // Auth-dead gate (recoverable): an auth failure is on record AND the Project's credentials
+  // have not been updated since — only the model reference is fixed at creation, credentials
+  // come from the current Project config, so a key update (Models page) unlocks the session
+  // (live via the credentials_updated event; across reloads via this time comparison against
+  // the models response's updatedAt).
+  const credsUpdatedMs = models?.updatedAt !== undefined ? Date.parse(models.updatedAt) : NaN;
+  const modelAuthDead = isModelAuthDead(
+    stream.lastAuthFailureMs,
+    Number.isFinite(credsUpdatedMs) ? credsUpdatedMs : null,
+  );
 
   // Input area in session state: Agent / Workspace / Model are already locked by the Session
   // (the model selector isn't rendered; models feeds the locked model's read-only display and
@@ -650,6 +857,10 @@ export function ChatPage() {
   const input = selected && (
     <ChatInput
       status={stream.taskState}
+      modelAuthDead={modelAuthDead}
+      onOpenModels={openModels}
+      onRetryModelAuth={stream.dismissModelAuthDead}
+      onNewSession={newChat}
       onSend={onSend}
       onSteer={onSteer}
       // Count of steering messages already visible in the stream: the input area keeps its
@@ -700,11 +911,15 @@ export function ChatPage() {
             <h1 className="flex min-w-0 text-[15px] font-semibold">
               <Truncated text={selected.title ?? S.chat.defaultSessionTitle} />
             </h1>
-            {/* Running indicator (placed to the right of the title); the compacting state is shown separately by the compaction banner within the message stream, not repeated here. */}
+            {/* Running indicator (placed to the right of the title); the compacting state is shown separately by the compaction banner within the message stream, not repeated here.
+                Below sm only the pulsing dot remains (title carries the wording) — the text would eat the title's room on phones. */}
             {stream.taskState === "running" && (
-              <span className="flex shrink-0 items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+              <span
+                title={S.chat.statusRunning}
+                className="flex shrink-0 items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400"
+              >
                 <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
-                {S.chat.statusRunning}
+                <span className="hidden sm:inline">{S.chat.statusRunning}</span>
               </span>
             )}
           </div>
@@ -713,32 +928,63 @@ export function ChatPage() {
           <div className="hidden items-center gap-3 sm:flex">
             <StatChip
               icon={STAT_ICONS.tokens}
-              value={humanizeTokens(totalTokens)}
+              value={hs.tokensText}
               label={`${S.chat.statTokens}（Token）`}
             />
             {/* When there's no cost (the Model has no pricing configured), don't render this stat
                 at all, rather than showing a "—" — that would take up space while saying
                 nothing, only making people think the cost is zero or something's broken. */}
-            {sessionCost != null && (
+            {hs.costText != null && (
               <StatChip
                 icon={STAT_ICONS.cost}
-                value={`${formatMoney(sessionCost, currency)}${costUncosted ? " *" : ""}`}
-                label={`${S.common.cost}（${currency}）${costUncosted ? ` · ${S.usage.uncostedNote}` : ""}`}
+                value={`${hs.costText}${hs.costUncosted ? " *" : ""}`}
+                label={`${S.common.cost}（${currency}）${hs.costUncosted ? ` · ${S.usage.uncostedNote}` : ""}`}
               />
             )}
-            <StatChip
-              icon={STAT_ICONS.elapsed}
-              value={humanizeDuration(stream.model.stats.sessionElapsedMs)}
-              label={S.chat.statElapsed}
-            />
+            <StatChip icon={STAT_ICONS.elapsed} value={hs.elapsedNode} label={S.chat.statElapsed} />
           </div>
 
-          {/* Files panel toggle: docks on the right of the chat instead of replacing it full-screen (use-files-panel.ts). */}
+          {/* Subagents panel toggle: latest-Task call graph + child conversations dock on the right (use-subagents-panel.ts); opening closes the Files panel (wrapped setOpen). */}
+          <button
+            type="button"
+            aria-expanded={subagentsPanel.open}
+            onClick={() => subagentsPanel.setOpen(!subagentsPanel.open)}
+            title={S.chat.openAgents}
+            className={`flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors duration-150 ${
+              subagentsPanel.open
+                ? "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200"
+                : "text-gray-500 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+            }`}
+          >
+            {/* Nodes/network glyph (spawn tree). */}
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.7"
+              aria-hidden
+            >
+              <circle cx="5" cy="12" r="2.5" />
+              <circle cx="19" cy="5.5" r="2.5" />
+              <circle cx="19" cy="18.5" r="2.5" />
+              <path d="M7.4 11 16.7 6.6M7.4 13l9.3 4.4" />
+            </svg>
+            {S.chat.openAgents}
+            {/* A pending approval inside a subagent: amber dot (the chip in the stream carries the accessible announcement). */}
+            {anySubagentPending && (
+              <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+            )}
+          </button>
+
+          {/* Files panel toggle: docks on the right of the chat instead of replacing it full-screen (use-files-panel.ts); opening closes the subagents panel (wrapped setOpen). */}
           <button
             type="button"
             aria-expanded={filesPanel.open}
             onClick={() => filesPanel.setOpen(!filesPanel.open)}
             title={S.chat.openWorkspace}
+            aria-label={S.chat.openWorkspace}
             className={`flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors duration-150 ${
               filesPanel.open
                 ? "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200"
@@ -756,7 +1002,9 @@ export function ChatPage() {
             >
               <path d={STAT_ICONS.folder} />
             </svg>
-            {S.chat.openWorkspace}
+            {/* Below sm the button is icon-only (title/aria keep the name): the label plus the
+                running indicator squeezed the session title to nothing on phones. */}
+            <span className="hidden sm:inline">{S.chat.openWorkspace}</span>
           </button>
 
           {/* Details popup: Model / Workspace / created time / stats */}
@@ -819,10 +1067,9 @@ export function ChatPage() {
                 </p>
                 {/* Same as above: if there's no cost, the whole item is omitted, not left as "Cost —". */}
                 <p className="font-mono text-xs">
-                  {S.chat.statTokens} {humanizeTokens(totalTokens)}
-                  {sessionCost != null &&
-                    ` · ${S.common.cost} ${formatMoney(sessionCost, currency)}`}{" "}
-                  · {S.chat.statElapsed} {humanizeDuration(stream.model.stats.sessionElapsedMs)}
+                  {S.chat.statTokens} {hs.tokensText}
+                  {hs.costText != null && ` · ${S.common.cost} ${hs.costText}`} ·{" "}
+                  {S.chat.statElapsed} {hs.elapsedNode}
                 </p>
               </div>
             </div>
@@ -882,7 +1129,14 @@ export function ChatPage() {
                       )}
                     </div>
                     <div className="shrink-0 border-t border-gray-200 bg-white px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 md:pb-3 dark:border-gray-800 dark:bg-gray-950">
-                      <div className="mx-auto max-w-3xl">{input}</div>
+                      <div className="mx-auto max-w-3xl">
+                        {/* Goal banner docked above the composer: an in-flight goal's progress
+                            (restored on load while still active), or the terminal state reached
+                            during this page's lifetime. The stop button is the composer's
+                            regular stop (one abort ends the whole goal loop). */}
+                        {stream.goal && <GoalStatusBanner goal={stream.goal} />}
+                        {input}
+                      </div>
                     </div>
                   </>
                 )
@@ -900,6 +1154,16 @@ export function ChatPage() {
           )}
         </div>
 
+        {selected && (
+          <SubagentsPanel
+            session={selected}
+            panel={subagentsPanel}
+            model={stream.model}
+            version={stream.version}
+            taskRunning={stream.taskState !== "idle"}
+            ctx={ctx}
+          />
+        )}
         {selected && <FilesPanel session={selected} panel={filesPanel} />}
       </div>
 

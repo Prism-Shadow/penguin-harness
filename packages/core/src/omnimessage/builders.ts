@@ -14,6 +14,8 @@ import type {
   CompactionReason,
   EventMessage,
   Fidelity,
+  GoalFinishedPayload,
+  GoalOutcomeStatus,
   ImageUrlPayload,
   InlineDataPayload,
   InlineThinkingPayload,
@@ -269,9 +271,23 @@ export function requestBegin(): OmniMessage<RequestBeginPayload> {
   return event({ type: "request_begin" });
 }
 
-/** request end event: carries the terminal state (`completed` means this turn was already committed to AgentHub). */
-export function requestEnd(status: StopReason): OmniMessage<RequestEndPayload> {
-  return event({ type: "request_end", status });
+/**
+ * request end event: carries the terminal state (`completed` means this turn was already
+ * committed to AgentHub), plus — on non-completed statuses — the failure detail (from
+ * LLMOutcome.message) and, when the engine will retry in-run, the planned backoff wait
+ * (`retry_in_ms`, rendered by the Web App as a live countdown).
+ */
+export function requestEnd(
+  status: StopReason,
+  message?: string,
+  retryInMs?: number,
+): OmniMessage<RequestEndPayload> {
+  return event({
+    type: "request_end",
+    status,
+    ...(message !== undefined ? { message } : {}),
+    ...(retryInMs !== undefined ? { retry_in_ms: retryInMs } : {}),
+  });
 }
 
 /** compaction begin event: carries the trigger reason, mode, current context usage, and cumulative Session turn count. */
@@ -302,6 +318,15 @@ export function compactionEnd(args: {
     mode: args.mode,
     status: args.status,
   });
+}
+
+/** Goal terminal event: the last message of a goal-mode run (produced by the Session's goal loop). */
+export function goalFinished(
+  outcome: GoalOutcomeStatus,
+  rounds: number,
+  tokensUsed: number,
+): OmniMessage<GoalFinishedPayload> {
+  return event({ type: "goal_finished", outcome, rounds, tokens_used: tokensUsed });
 }
 
 /** subagent derivation pointer event: records only the direct child session's Session id (written to the parent Trace by context_engine). */

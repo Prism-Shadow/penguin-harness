@@ -234,6 +234,13 @@ export interface ModelsResponse {
   defaultModel?: ModelRefDto;
   /** Vision model used as a proxy reader for read_image (describes images when the session model has vision=false). */
   visionModel?: ModelRefDto;
+  /**
+   * When the Project's model/credential config last changed (ISO; the config file's mtime,
+   * so it survives restarts). The web's auth-dead gate compares it against the last auth
+   * abort: an abort OLDER than the last credential update no longer disables the composer
+   * (the key was fixed since). Absent when the Project has no config file yet.
+   */
+  updatedAt?: string;
   models: ModelInfo[];
 }
 
@@ -554,9 +561,42 @@ export interface SessionPatchRequest {
   title?: string;
 }
 
+/**
+ * Live in-progress tail of a running Session, carried by `MessagesResponse.live`.
+ *
+ * Contract (see runtime/live-tail.ts and the GET /messages route): the server captures
+ * `cursor` and `fragments` atomically — in one synchronous tick, before starting the
+ * trace read — while the Session is running/compacting.
+ *   - `cursor`: the Session channel's most recently assigned SSE event id
+ *     (`<epoch>-<seq>`); every event published up to and including this id is already
+ *     reflected in `fragments`.
+ *   - `fragments`: one synthetic `partial_* start` OmniMessage per open streaming
+ *     fragment, whose payload carries the full accumulated content so far (text/thinking
+ *     prefix, tool-call name + accumulated arguments, tool-output prefix + images), with
+ *     the original `origin` chain preserved.
+ *
+ * Client usage (the bundled Web App's connect-first flow): after applying `messages`,
+ * when the cursor's epoch matches the epoch of the SSE events seen on the current
+ * connection, drop every buffered **partial** event with seq <= cursor (its content is
+ * already inside `fragments`), feed `fragments` through the normal reducer path, then
+ * replay the rest of the buffer. Buffered **complete** messages are never dropped by the
+ * cursor — the regular overlap dedup decides for them — so nothing is lost even when a
+ * complete message's trace append is still in flight at read time.
+ */
+export interface MessagesLiveTail {
+  cursor: string;
+  fragments: OmniMessage[];
+}
+
 /** Message history: the full messages and events from concatenating all of this Session's Trace files in order (excludes partial_*). */
 export interface MessagesResponse {
   messages: OmniMessage[];
+  /**
+   * Present only while the Session is running/compacting: the in-progress stream tail
+   * (open streaming fragments + the channel cursor they cover), so a client joining
+   * mid-stream can render the currently streaming message. Omitted when idle.
+   */
+  live?: MessagesLiveTail;
 }
 
 // ---------------------------------------------------------------------------
@@ -585,6 +625,29 @@ export interface TaskCreateRequest {
    * (in queue order, one at a time). The response then carries `queued: true`.
    */
   queueIfBusy?: boolean;
+  /**
+   * Present = goal mode: the input's text becomes the objective (leading `[use_skills]`
+   * blocks and the like are stripped from the recorded objective; the round-1 message keeps
+   * them) and the server loops the Session until the goal reaches a terminal state.
+   * `budget` is the token budget (uncached input + output); omitted or -1 = unlimited.
+   */
+  goal?: { budget?: number };
+}
+
+/** Goal-mode run state (from goal_state; the chat page's banner restores from the latest row). */
+export interface GoalStateView {
+  objective: string;
+  status: "active" | "complete" | "blocked" | "budget_limited" | "aborted";
+  /** Token budget; -1 = unlimited. */
+  budget: number;
+  used: number;
+  rounds: number;
+  updatedAt: string;
+}
+
+export interface GoalResponse {
+  /** The Session's most recent goal run; null if it never ran one. */
+  goal: GoalStateView | null;
 }
 
 export interface TaskCreateResponse {
@@ -609,6 +672,16 @@ export interface ApprovalDecisionRequest {
   decision: "allow" | "deny";
 }
 
+/**
+ * POST /api/sessions/:sessionId/retry-now — skip the in-progress reconnect backoff and
+ * fire the next retry immediately (the "retry now" button on the reconnect countdown).
+ * `skipped: false` is the benign "no reconnect wait in progress" case (idle session, or
+ * the wait elapsed in a timing race), not an error.
+ */
+export interface RetryNowResponse {
+  skipped: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // SSE server events (OmniMessage uses the default event, only server_event here)
 // ---------------------------------------------------------------------------
@@ -626,6 +699,14 @@ export type ServerEvent =
   | { type: "session_title"; sessionId: string; title: string }
   /** Last-Event-ID has been evicted from the buffer: the frontend should re-fetch the history endpoint before continuing to consume this connection. */
   | { type: "resync_required" }
+  /**
+   * The Project's model credentials changed (PUT /models): cached runtimes have been
+   * invalidated server-side, so an auth-dead Session can continue — the frontend clears
+   * its auth-dead composer state immediately. Published to every existing Session channel
+   * of the Project; tabs without a live channel learn the same fact from the models
+   * response's `updatedAt` on their next load.
+   */
+  | { type: "credentials_updated" }
   /** Placeholder handshake on the user channel (reserved for automated task notifications). */
   | { type: "hello" }
   /** New session registered (pushed over the parent session's channel for subagent sessions): frontend refreshes the list in place. */
@@ -636,7 +717,23 @@ export type ServerEvent =
       sessionId: string;
       source: SessionSource;
     }
-  | ScheduleServerEvent;
+  | ScheduleServerEvent
+  | GoalServerEvent;
+
+/** Goal-mode progress on the session channel (the chat page drives its goal banner from these). */
+export type GoalServerEvent =
+  /** A goal run began (published before the first round). */
+  | { type: "goal_started"; sessionId: string; objective: string; budget: number }
+  /** A round is starting; `used` is the runner's accounting up to this point. */
+  | { type: "goal_round"; sessionId: string; round: number; used: number; budget: number }
+  /** The goal reached a terminal state. */
+  | {
+      type: "goal_finished";
+      sessionId: string;
+      outcome: "complete" | "blocked" | "budget_limited" | "aborted";
+      rounds: number;
+      used: number;
+    };
 
 /** Schedule notification (user-level event stream; firing and delivery are notified via /api/events). */
 export type ScheduleServerEvent =
@@ -879,6 +976,20 @@ export interface AgentTraceDateGroup {
 /** Agent → date → Session → Trace file drill-down browsing structure (reverse chronological). */
 export interface AgentTracesResponse {
   dates: AgentTraceDateGroup[];
+}
+
+export interface TraceImportRequest {
+  /** Base64 of the Trace file content (JSON Lines; the first record must be `session_meta`). */
+  dataBase64: string;
+}
+
+export interface TraceImportResponse {
+  /** Session id taken from the imported file's `session_meta`. */
+  sessionId: string;
+  /** Allocated file index: always 1 — an import creates a new Session (a duplicate session id is rejected with 409 `trace_session_exists`). */
+  index: number;
+  /** Date directory the file landed in (local yyyy-mm-dd from the first record's timestamp, matching the Trace Writer's convention). */
+  date: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -1177,4 +1288,59 @@ export interface AgentSkillsResponse {
 /** POST install request: all names must exist in the library; already-installed ones are overwritten with library content (i.e. updated). */
 export interface SkillInstallRequest {
   names: string[];
+}
+
+// ---------------------------------------------------------------------------
+// Version and self-update
+// ---------------------------------------------------------------------------
+
+/** GET /api/version: the running server's release identity (from core's VERSION / BUILD_DATE). */
+export interface VersionResponse {
+  version: string;
+  /**
+   * The **running** version's release date (UTC yyyy-mm-dd), stamped into core's
+   * BUILD_DATE at build time by the release workflow — the web's "last updated" date
+   * needs no network. Null for a dev/source build and for releases that predate the
+   * stamping (v0.1.2 and earlier): the UI then shows the version alone.
+   */
+  buildDate: string | null;
+}
+
+/**
+ * GET /api/version/update-check: newest published release vs the running version.
+ * Always HTTP 200 (fail-soft): a lookup failure sets `error` and leaves `latestVersion`
+ * null rather than failing the request; results are cached server-side.
+ */
+export interface UpdateCheckResponse {
+  currentVersion: string;
+  /** Same as VersionResponse.buildDate: the running version's release date, stamped at build time. */
+  buildDate: string | null;
+  /** Newest published release (normalized, no leading `v`); null when the lookup failed or checks are disabled. */
+  latestVersion: string | null;
+  updateAvailable: boolean;
+  /** Release page of the newest release (for the "release notes" link). */
+  releaseUrl: string | null;
+  /** Publish timestamp of the newest release (ISO 8601). */
+  publishedAt: string | null;
+  /** When this result was produced (ISO 8601) — a cached result keeps its original timestamp. */
+  checkedAt: string;
+  /** Present (true) when update checks are turned off via PENGUIN_UPDATE_CHECK=off; no network call was made. */
+  disabled?: true;
+  /** Why the lookup failed: unreachable network / GitHub rate limit / unusable response. */
+  error?: "network" | "rate_limited" | "bad_response";
+}
+
+/**
+ * POST /api/version/update (admin only): runs the CLI self-update (`penguin update --yes`)
+ * on the server host. `unsupported` covers both a server not launched via the CLI and the
+ * CLI's own refusals (source checkout, unrecognized install layout, Windows).
+ */
+export interface UpdateRunResponse {
+  status: "updated" | "failed" | "unsupported";
+  /** Set when the server cannot run the CLI at all (started without `penguin server|web`). */
+  reason?: "not_launched_via_cli";
+  /** Tail of the update command's combined stdout+stderr (capped; empty when nothing ran). */
+  output: string;
+  /** True when the install changed (or was already current): restart the service to run the new version. */
+  needsRestart: boolean;
 }

@@ -66,6 +66,16 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 | POST | /api/admin/users/:userId/password | Reset a password (invalidates all of that user's login sessions) |
 | DELETE | /api/admin/users/:userId | Delete a user |
 
+### Version and Self-Update
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | /api/version | Running release identity: `{version, buildDate}` (`buildDate` is the running version's release date, stamped at build time — no network; null in a dev/source build or a release that predates the stamping) |
+| GET | /api/version/update-check | Compares the newest GitHub release with the running version: `{currentVersion, latestVersion, updateAvailable, releaseUrl, publishedAt, checkedAt, disabled?, error?}`; `?force=1` (the manual "check for updates" action) bypasses the TTL cache, and the outcome is cached as usual |
+| POST | /api/version/update | **Admin only.** Runs the CLI self-update (`penguin update --yes`) on the server host: `{status, output, needsRestart}` |
+
+`update-check` is the server's only outbound internet call and is strictly fail-soft: a failed lookup still returns 200 with `error` set (`network` / `rate_limited` / `bad_response`) and `latestVersion: null`, results are cached in memory (success 1 h, failure 10 min), and setting `PENGUIN_UPDATE_CHECK=off` disables the lookup entirely (`disabled: true`, no network call). The update `status` is `updated` (restart the service to run the new version), `failed`, or `unsupported` — the latter both when the server was not started via `penguin server|web` (`reason: "not_launched_via_cli"`) and when the CLI refuses (source checkout, unrecognized install layout, Windows); `output` carries the tail of the CLI's own output.
+
 ### Projects and Members
 
 | Method | Path | Description |
@@ -88,6 +98,8 @@ Member writes are owner-only.
 | POST | /api/projects/:projectId/models/test | Connectivity test: `{provider, modelId, …}` → `{ok, latencyMs?, message?}` |
 
 Every endpoint that names a model takes the complete `(provider, modelId)` pair. Nothing is inferred: a request carrying only one half is a 400, never a lookup. Where the reference itself is optional (Session creation, Schedules), omitting both halves selects the Project's default model.
+
+`PUT /models` also invalidates the Project's cached Session runtimes (same effective-value semantics as a vault update): no hot swap into a run already in flight, but the next Task on any Session of the Project re-resumes and reads the new `api_key` / `base_url`. It additionally publishes a `credentials_updated` event to the Project's open Session channels (see Streaming below), and the models response carries `updatedAt` (the config file's mtime) — the Web App compares it against the last auth failure to decide whether an auth-dead composer should stay disabled.
 
 ### Agents
 
@@ -132,6 +144,10 @@ On Session creation, `modelId` and `provider` are both-or-neither: send the comp
 | GET | /agents/:agentId/traces | Date → Session drill-down structure of Trace files |
 | GET | /agents/:agentId/traces/:sessionId/:index | Read Trace events (`offset` / `limit` pagination) |
 | GET | /agents/:agentId/traces/:sessionId/:index/analysis | Trace performance analysis |
+| GET | /agents/:agentId/traces/:sessionId/:index/download | Download the raw Trace file (JSONL attachment) |
+| POST | /agents/:agentId/traces/import | Import a Trace file: `{dataBase64}` → `{sessionId, index, date}` |
+
+Trace download is available to any member; import is owner-only (like the Agent snapshot import, capped at 14MB). An imported file must be valid Trace JSONL whose first record is a `session_meta` with a filename-safe `session_id`; a session id the Agent already has is rejected (409 `trace_session_exists`), so an imported file always becomes index 001 of a new Session, landing in the local date directory of its first record's timestamp.
 
 ### Session-Level Endpoints
 
@@ -142,12 +158,13 @@ The paths below omit the `/api/sessions/:sessionId` prefix. For the storage mode
 | GET | / | Session info (the single-session GET additionally carries `tracePath`, the absolute path of the latest Trace file; list rows omit it) |
 | PATCH | / | Update: `{approvalMode?, archived?, title?}` |
 | DELETE | / | Delete the Session (along with its Traces and scratch files) |
-| GET | /messages | Full OmniMessage history |
+| GET | /messages | Full OmniMessage history; while a Task runs the response also carries `live` (the in-progress stream tail, see below) |
 | GET | /stream | SSE event stream (next section) |
 | POST | /tasks | Start a Task: `{input: TaskInputPart[], thinkingLevel?, queueIfBusy?}` → 202. With `queueIfBusy`, a busy session holds the input as a follow-up (`queued: true`) and auto-starts it as an ordinary next task once idle; `task_state` events report the queued count |
 | POST | /steer | Mid-run steering: `{text}` queues a message for the running Task (delivered between turns as a standalone `[user_steering]` user message) → 202; 409 `not_running` when no Task is in progress |
 | POST | /approvals/:toolCallId | Approval decision: `{decision}` is `allow` or `deny` → 204 |
 | POST | /abort | Interrupt the current Task: 202 when triggered, 204 when idle |
+| POST | /retry-now | "Retry now" on the reconnect countdown: skips the in-progress backoff wait, firing the next retry immediately (attempt counter unchanged) → 200 `{skipped}` — `skipped:false` is the benign "no wait in progress" case, never an error |
 | POST | /compact | Trigger context compaction: 202; 409 `nothing_to_compact` when there is nothing to compact |
 | GET | /files?path= | Browse the Workspace directory |
 | GET | /files/content?path=&download=&preview= | Read a Workspace file (`download=1` serves it as an attachment, `preview=1` renders it in a sandbox — see below) |
@@ -160,6 +177,28 @@ The paths below omit the `/api/sessions/:sessionId` prefix. For the storage mode
 | GET | /scratchpad/:fileName | Read a session scratch file (e.g. input images) |
 
 General conventions: Sessions the user cannot access always return 404 — their existence is never leaked; only one Task or compaction runs per Session at a time, and conflicts return 409 (`task_in_progress` / `compacting`).
+
+#### The `live` field on GET /messages
+
+The Trace stores only complete messages (streaming `partial_*` never reaches disk), so history alone cannot show a message that is still streaming. While the Session is running or compacting, the messages response therefore also carries the in-progress stream tail:
+
+```ts
+interface MessagesResponse {
+  messages: OmniMessage[];
+  live?: {
+    // The Session channel's most recently assigned SSE event id (`<epoch>-<seq>`):
+    // every event published up to and including this id is already reflected in `fragments`.
+    cursor: string;
+    // One synthetic `partial_* start` OmniMessage per open streaming fragment, whose
+    // payload carries the full accumulated content so far (text/thinking prefix,
+    // tool-call name + accumulated arguments, tool-output prefix + images), with the
+    // original `origin` chain preserved (subagent fragments included).
+    fragments: OmniMessage[];
+  };
+}
+```
+
+`cursor` and `fragments` are captured atomically before the trace read starts. A client using the connect-first pattern (below) applies them after history: when the cursor's epoch matches the epoch of the SSE events it has buffered, it drops every buffered **partial** event with seq ≤ cursor (their content is already accumulated inside `fragments`), feeds `fragments` through its normal reducer, then replays the rest of the buffer. Buffered **complete** messages are never dropped by the cursor — the regular overlap dedup decides for them. `live` is omitted while idle.
 
 Workspace files may be Agent-generated, so `GET /files/content` treats them as untrusted: every response carries `X-Content-Type-Options: nosniff`, and the rest of the headers depend on the two flags (`download=1` wins over `preview=1`):
 
@@ -230,6 +269,7 @@ export type ServerEvent =
   | { type: "task_state"; state: "idle" | "running" | "compacting" }
   | { type: "session_title"; sessionId: string; title: string }
   | { type: "resync_required" }
+  | { type: "credentials_updated" }
   | { type: "hello" }
   | { type: "session_created"; projectId: string; agentId: string; sessionId: string; source: SessionSource }
   | { type: "schedule_fired"; projectId: string; agentId: string; name: string; sessionId: string }
@@ -242,6 +282,7 @@ export type ServerEvent =
 | task_state | The Session's run state flips (idle / running / compacting) |
 | session_title | The model-generated title after the first turn has been persisted |
 | resync_required | The Last-Event-ID was evicted from the buffer; the client must refetch history |
+| credentials_updated | The Project's model credentials changed (`PUT /models`): cached runtimes were invalidated, so the client clears any auth-dead composer state |
 | hello | Handshake on the user channel |
 | session_created | A new Session was registered (e.g. a subagent session) |
 | schedule_fired | A scheduled task fired and was delivered |
@@ -250,7 +291,7 @@ export type ServerEvent =
 ### Delivery Guarantees
 
 - Event ids are monotonic per channel, shaped `<epoch>-<seq>`;
-- Each channel keeps a bounded replay buffer (most recent 1000 events or 2MB);
+- Each channel keeps a bounded replay buffer (most recent 10,000 events or 8MB);
 - Reconnecting with `Last-Event-ID` replays the gap on a buffer hit; on a miss the server first sends `resync_required`, and the client refetches `/messages` before continuing;
 - A heartbeat comment line is written every 20 seconds;
 - Event order: on a reconnect carrying `Last-Event-ID`, **the replayed gap (or `resync_required`) arrives first**, then the initial events — the authoritative `task_state` snapshot and still-pending approval_requests — then the live stream. A fresh connection (no `Last-Event-ID`) skips replay, so its first event is the `task_state` snapshot.
@@ -261,8 +302,9 @@ The order the bundled Web App uses:
 
 1. Connect `/stream` first and buffer incoming events;
 2. GET `/messages` for the full history;
-3. Replay the buffer, deduplicating the overlap;
-4. Go live.
+3. If the response carries `live` (a Task is running), drop the buffered partials the cursor already covers and seed the `live.fragments` on top of history — the in-progress message reappears with its streamed prefix intact;
+4. Replay the buffer, deduplicating the overlap;
+5. Go live.
 
 ## Type Imports
 

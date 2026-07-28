@@ -9,17 +9,19 @@ import { describe, expect, it } from "vitest";
 import {
   approvalDecision,
   assistantText,
+  partialText,
+  partialToolCallOutput,
   tokenUsage,
   toolCall,
   userText,
   withOrigin,
 } from "@prismshadow/penguin-core/omnimessage";
 import type { OmniMessage, TokenCounts } from "@prismshadow/penguin-core/omnimessage";
-import type { ServerEvent, SessionStatus } from "@prismshadow/penguin-server/api";
+import type { MessagesLiveTail, ServerEvent, SessionStatus } from "@prismshadow/penguin-server/api";
 import { createStreamController } from "../src/lib/omni/stream-controller";
 import type { StreamController } from "../src/lib/omni/stream-controller";
 import { approvalKey, findToolCard } from "../src/lib/omni/stream-model";
-import type { ToolCallItem } from "../src/lib/omni/stream-model";
+import type { AssistantTextItem, ToolCallItem } from "../src/lib/omni/stream-model";
 
 /** Override a message timestamp (constructor defaults to the current time). */
 function at<M extends OmniMessage>(msg: M, ts: string): M {
@@ -39,13 +41,13 @@ interface Harness {
   errors: Array<string | null>;
   loadings: boolean[];
   loadCalls: () => number;
-  resolveLoad: (messages: OmniMessage[]) => void;
+  resolveLoad: (messages: OmniMessage[], live?: MessagesLiveTail) => void;
   rejectLoad: (err: Error) => void;
 }
 
 function createHarness(): Harness {
   const pendingLoads: Array<{
-    resolve: (m: OmniMessage[]) => void;
+    resolve: (m: { messages: OmniMessage[]; live?: MessagesLiveTail }) => void;
     reject: (e: unknown) => void;
   }> = [];
   const states: SessionStatus[] = [];
@@ -54,7 +56,7 @@ function createHarness(): Harness {
   let calls = 0;
   const controller = createStreamController({
     loadMessages: () =>
-      new Promise<OmniMessage[]>((resolve, reject) => {
+      new Promise<{ messages: OmniMessage[]; live?: MessagesLiveTail }>((resolve, reject) => {
         calls += 1;
         pendingLoads.push({ resolve, reject });
       }),
@@ -71,7 +73,8 @@ function createHarness(): Harness {
     errors,
     loadings,
     loadCalls: () => calls,
-    resolveLoad: (messages) => pendingLoads.shift()!.resolve(messages),
+    resolveLoad: (messages, live) =>
+      pendingLoads.shift()!.resolve({ messages, ...(live !== undefined ? { live } : {}) }),
     rejectLoad: (err) => pendingLoads.shift()!.reject(err),
   };
 }
@@ -252,6 +255,115 @@ describe("resync rebuild", () => {
       "assistant_text",
     ]);
     expect(h.controller.model.items.filter((i) => i.kind === "user_text")).toHaveLength(1);
+  });
+});
+
+describe("live-tail seeding (reload mid-stream)", () => {
+  it("drops buffered partials at/before the cursor and seeds fragments; later partials continue on top", async () => {
+    const h = createHarness();
+    const p = h.controller.load();
+    h.controller.handleServer({ type: "task_state", state: "running" }, "e1-3");
+    // Already covered by the fragment snapshot (seq <= cursor): must be dropped, or the
+    // seeded prefix would double.
+    h.controller.handleOmni(partialText("start", "Hel"), "e1-4");
+    h.controller.handleOmni(partialText("delta", "lo"), "e1-5");
+    // After the cursor: continues the seeded fragment.
+    h.controller.handleOmni(partialText("delta", " world"), "e1-6");
+    h.resolveLoad([at(userText("question"), "2026-07-05T00:00:00.000Z")], {
+      cursor: "e1-5",
+      fragments: [at(partialText("start", "Hello"), "2026-07-05T00:00:01.000Z")],
+    });
+    await p;
+    const texts = h.controller.model.items.filter((i) => i.kind === "assistant_text");
+    expect(texts).toHaveLength(1);
+    expect((texts[0] as AssistantTextItem).text).toBe("Hello world");
+    expect((texts[0] as AssistantTextItem).streaming).toBe(true);
+  });
+
+  it("tool-output fragment seeds onto the history-built card and keeps streaming", async () => {
+    const h = createHarness();
+    const p = h.controller.load();
+    h.controller.handleServer({ type: "task_state", state: "running" }, "e1-7");
+    h.controller.handleOmni(
+      partialToolCallOutput({ eventType: "delta", output: "line 2\n", toolCallId: "t1" }),
+      "e1-9",
+    );
+    h.resolveLoad(
+      [
+        at(userText("run it"), "2026-07-05T00:00:00.000Z"),
+        at(
+          toolCall({ name: "exec_command", arguments: '{"cmd":"x"}', toolCallId: "t1" }),
+          "2026-07-05T00:00:01.000Z",
+        ),
+      ],
+      {
+        cursor: "e1-8",
+        fragments: [
+          at(
+            partialToolCallOutput({ eventType: "start", output: "line 1\n", toolCallId: "t1" }),
+            "2026-07-05T00:00:02.000Z",
+          ),
+        ],
+      },
+    );
+    await p;
+    const cards = h.controller.model.items.filter((i) => i.kind === "tool_call");
+    expect(cards).toHaveLength(1);
+    const card = cards[0] as ToolCallItem;
+    expect(card.output).toBe("line 1\nline 2\n");
+    expect(card.outputStreaming).toBe(true);
+    expect(card.outputComplete).toBe(false);
+  });
+
+  it("epoch mismatch: neither drops nor seeds (buffered partials replay as-is)", async () => {
+    const h = createHarness();
+    const p = h.controller.load();
+    h.controller.handleOmni(partialText("start", "He"), "old-4");
+    h.controller.handleOmni(partialText("delta", "llo"), "old-5");
+    h.resolveLoad([], {
+      cursor: "new-9",
+      fragments: [partialText("start", "Hello")],
+    });
+    await p;
+    // The buffered start+delta applied normally; the fragment was NOT seeded (a seed on
+    // top of the applied start would produce a second item).
+    const texts = h.controller.model.items.filter((i) => i.kind === "assistant_text");
+    expect(texts).toHaveLength(1);
+    expect((texts[0] as AssistantTextItem).text).toBe("Hello");
+  });
+
+  it("complete messages at/before the cursor are never cursor-dropped: overlap dedup decides", async () => {
+    const h = createHarness();
+    const p = h.controller.load();
+    const inHistory = at(assistantText("done"), "2026-07-05T00:00:01.000Z");
+    // Trace append still in flight at read time: the buffered copy is the only copy.
+    const diskLagged = at(assistantText("lagged"), "2026-07-05T00:00:02.000Z");
+    h.controller.handleOmni(inHistory, "e1-4");
+    h.controller.handleOmni(diskLagged, "e1-5");
+    h.resolveLoad([at(userText("q"), "2026-07-05T00:00:00.000Z"), inHistory], {
+      cursor: "e1-6",
+      fragments: [],
+    });
+    await p;
+    const texts = h.controller.model.items.filter((i) => i.kind === "assistant_text");
+    expect(texts.map((i) => (i as AssistantTextItem).text)).toEqual(["done", "lagged"]);
+  });
+
+  it("subagent fragments preserve origin and land on the nested model", async () => {
+    const h = createHarness();
+    const p = h.controller.load();
+    h.controller.handleServer({ type: "task_state", state: "running" }, "e1-2");
+    h.resolveLoad([], {
+      cursor: "e1-2",
+      fragments: [withOrigin(partialText("start", "sub progress"), "c1")],
+    });
+    await p;
+    const sub = h.controller.model.subagents.get("c1");
+    expect(sub).toBeDefined();
+    const texts = sub!.items.filter((i) => i.kind === "assistant_text");
+    expect(texts).toHaveLength(1);
+    expect((texts[0] as AssistantTextItem).text).toBe("sub progress");
+    expect((texts[0] as AssistantTextItem).streaming).toBe(true);
   });
 });
 

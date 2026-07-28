@@ -25,6 +25,7 @@ function parkingFakeSession(sessionId: string, runs: string[][]): RuntimeSession
     generateTitle: async () => ({ title: null, usage: null }),
     compactability: () => "ok" as const,
     steer: () => false,
+    skipReconnectWait: () => false,
     async *run(input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
       runs.push(input.map((m) => (m.payload as { text?: string }).text ?? ""));
       const tc = toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc-fu" });

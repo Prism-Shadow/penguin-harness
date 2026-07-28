@@ -10,10 +10,24 @@ import type {
   ModelsUpdateRequest,
   ModelTestRequest,
   ModelUpdateEntry,
+  ServerEvent,
 } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { badRequest, readJson, requireString, requireValidId } from "../validate.js";
 import type { AppDeps } from "../../app.js";
+
+/**
+ * Live unlock for auth-dead composers: after a models/credential update, publish
+ * `credentials_updated` to every EXISTING channel of this Project's Sessions (`peek` —
+ * never creates channels: a tab that isn't subscribed learns the same fact from the models
+ * response's `updatedAt` when it next loads).
+ */
+function publishCredentialsUpdated(deps: AppDeps, projectId: string): void {
+  const event: ServerEvent = { type: "credentials_updated" };
+  for (const row of deps.sessionsRepo.listByProject(projectId)) {
+    deps.channels.peek(row.sessionId)?.publish(event, "server_event");
+  }
+}
 
 /** Validate a paired reference object ({ provider, modelId }); shape mismatch throws 400. */
 function parseRef(value: unknown, label: string): ModelRefDto {
@@ -143,7 +157,15 @@ export function modelsRoutes(deps: AppDeps): Hono<AppEnv> {
     const projectId = requireValidId(c, "projectId");
     deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
     const req = parseModelsUpdate(await readJson(c));
-    return c.json(await deps.projectConfigService.updateModels(projectId, req));
+    const res = await deps.projectConfigService.updateModels(projectId, req);
+    // Effective-value semantics (mirrors the vault route): no hot swap into a Task already
+    // in flight, but every cached runtime in this Project is invalidated — the next Task on
+    // any of its Sessions re-resumes and reads the new api_key / base_url. Without this, a
+    // key edit would not reach a loaded Session until the 30-minute idle sweep or a restart.
+    deps.manager.invalidateProjectRuntimes(projectId);
+    // Live unlock: open tabs clear their auth-dead composer immediately (no reload needed).
+    publishCredentialsUpdated(deps, projectId);
+    return c.json(res);
   });
 
   // Connectivity test (owner): the model reference `(provider, modelId)` is sent as a pair

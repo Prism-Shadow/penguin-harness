@@ -10,9 +10,15 @@
  * dist -> provision one demo user per UI language (password rotated once so the
  * initial-password banner never shows) -> open /models, scroll the OpenRouter group
  * to the top of the viewport (Claude Opus 5 sits on its first card row, the free
- * rows a few rows below) -> screenshot, light theme, zh + en, into
- * public/blog-assets/ as free-models-page-<lang>-light.webp (re-encoded to WebP
- * inside Chromium, same as capture-shots.mjs).
+ * rows a few rows below) -> screenshot, light theme, zh + en, as
+ * free-models-page-<lang>-light.webp (re-encoded to WebP inside Chromium, same as
+ * capture-shots.mjs).
+ *
+ * Output is a two-step flow, because blog images are not committed to this repo:
+ *   1. this script writes into the gitignored staging dir packages/landing/.blog-assets/;
+ *   2. upload the files it produced to the `blog-assets/` directory of the sibling
+ *      `Prism-Shadow/penguin-harness-community` repo, which is what the posts load from
+ *      (the renderer resolves /blog-assets/<name> there — see src/lib/links.ts).
  *
  * Prereqs: `pnpm --filter @prismshadow/penguin-{skills,core,server,web} build` and
  * Playwright's chromium. Run: `node scripts/capture-blog-shots.mjs` (or
@@ -27,7 +33,8 @@ import { chromium } from "@playwright/test";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, "../../..");
-const OUT_DIR = path.resolve(HERE, "../public/blog-assets");
+// Gitignored staging dir: these images are hosted in the community repo, not committed here.
+const OUT_DIR = path.resolve(HERE, "../.blog-assets");
 const SRV_PORT = 8944; // Distinct from capture-shots.mjs (8940/8941) so both can run.
 // On loopback binds the App is canonically served on `localhost`; the 127.0.0.1
 // counterpart is the Workspace-preview host, where /api deliberately answers 401

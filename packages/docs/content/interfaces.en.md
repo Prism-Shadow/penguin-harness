@@ -50,18 +50,21 @@ The generator yields `partial_*` fragments and complete messages, emits Token us
 
 ```ts
 interface LLMOutcome {
-  status: StopReason;   // completed | timeout | malformed | aborted | failed
-  message?: string;     // display text when failed
+  status: StopReason;   // completed | timeout | malformed | aborted | failed | auth
+  message?: string;     // failure detail: on failed/auth, and on timeout/malformed when a
+                        // concrete error was caught — carried onto request_end so the
+                        // errors panel shows the real reason behind a retried request
 }
 ```
 
 | status | Meaning | Engine reaction |
 | --- | --- | --- |
 | `completed` | finished normally (token_usage already emitted) | proceed |
-| `timeout` | timeout / lost connection | auto-reconnect within the run |
+| `timeout` | timeout / transport disconnect / transient provider quota error | auto-reconnect within the run |
 | `malformed` | response parse failure | auto-reconnect within the run |
 | `aborted` | user interrupt | stop, hand back to the user |
-| `failed` | non-retryable (auth/params, …) | stop, hand back to the user |
+| `failed` | non-retryable (params, …) | stop, hand back to the user |
+| `auth` | credentials rejected | stop like `failed`; hosts gate input until the model's API key is updated |
 
 Implementation constraints: never throw; no internal retries — reconnecting is the engine's job (see [The Agent Loop](/agent-loop)).
 

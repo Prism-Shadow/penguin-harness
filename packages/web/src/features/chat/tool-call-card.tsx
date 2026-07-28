@@ -1,11 +1,10 @@
 /**
  * Tool call card: collapses to a single line by
  * default — status icon + tool name + duration (a live-ticking timer while running) + status
- * badge; clicking expands full arguments and output; a nested subagent renders below them
- * regardless of collapsed state.
- * The pending-approval row is always visible regardless of collapsed state; when a pending
- * approval appears anywhere in a nested subagent chain, the card auto-expands once (respecting
- * the user's choice if they've manually collapsed it since).
+ * badge; clicking expands full arguments and output; a bound subagent renders as a full-width
+ * shortcut row below them regardless of collapsed state (the child conversation itself lives
+ * in the subagents side panel; the row carries its own pending-approval dot, so the card no
+ * longer needs to auto-expand for nested approvals).
  *
  * Duration accounting = **argument-generation segment + execution segment** (excludes time
  * spent waiting on human approval): the model streaming out arguments token by token is often
@@ -13,7 +12,7 @@
  * understate this step's cost. While waiting on approval, the already-settled generation
  * segment is shown, with a separate "Waiting for approval" badge attached.
  */
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { S } from "../../lib/strings";
 import { humanizeDuration } from "../../lib/format";
 import { approvalKey } from "../../lib/omni/stream-model";
@@ -25,7 +24,8 @@ import { StatusIcon } from "../../components/ui/status-icon";
 import type { RunState } from "../../components/ui/status-icon";
 import { ApprovalButtons } from "./approval-buttons";
 import { LiveDuration } from "./live-duration";
-import { SubagentCard } from "./subagent-card";
+import { agentIdFromRunSubagentArgs } from "./agent-topology";
+import { SubagentChip } from "./subagent-chip";
 import type { StreamRenderContext } from "./message-stream";
 
 /** Tools that accept the optional model-written `description` argument. */
@@ -172,21 +172,6 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
   // Matched by the current origin chain + toolCallId: prevents parent/child session tool_call_id collisions from lighting each other up.
   const pending = ctx.pendingApprovals.get(approvalKey(ctx.origin, item.toolCallId));
 
-  // Whether there's a pending approval anywhere in the nested subagent chain (keys are `origin-chain toolCallId`, matched by prefix at any depth).
-  const nestedPrefix = item.subagentSessionId
-    ? [...ctx.origin, item.subagentSessionId].join("/")
-    : null;
-  const hasNestedPending =
-    nestedPrefix !== null &&
-    [...ctx.pendingApprovals.keys()].some(
-      (k) => k.startsWith(`${nestedPrefix} `) || k.startsWith(`${nestedPrefix}/`),
-    );
-
-  // A nested pending approval needs the user's action: auto-expand once (respected if the user manually collapses it afterward).
-  useEffect(() => {
-    if (hasNestedPending && !userToggled.current) setOpen(true);
-  }, [hasNestedPending]);
-
   const preview = previewArguments(item.name, item.argumentsText);
   const subtitle = headerSubtitle(item.name, item.argumentsText);
   // Executing = the call has finished streaming, output hasn't arrived yet, and it's not waiting on approval (approval wait time doesn't count toward execution).
@@ -206,13 +191,28 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
       : failed
         ? "failed"
         : "done";
+  // Decision wording ("Approved · manual" / "已拒绝 · 手动" …): carried ONLY by the left status
+  // icon's title/aria-label — per review the row shows no visible decision text at any
+  // breakpoint; the icon is the single source of truth for how the call was decided.
+  const decisionText = item.decision
+    ? `${item.decision === "allow" ? S.chat.decisionAllow : S.chat.decisionDeny} · ${
+        item.decisionSource === "manual" ? S.chat.decisionManual : S.chat.decisionAuto
+      }`
+    : null;
+  // A user denial reports stop_reason "aborted" on the output it feeds back; that abort IS the
+  // decision, not an independent outcome — the icon reads "Denied", and no separate "aborted"
+  // badge repeats it. A user-abort of a RUNNING tool carries no deny decision and keeps its own
+  // "aborted" marker (the stop-reason branch below).
+  const deniedByUser = item.decision === "deny" && item.outputStopReason === "aborted";
   const stateLabel = pending
     ? S.chat.approvalWaiting
     : state === "running"
       ? S.chat.workRunning
       : state === "done"
-        ? S.chat.workDone
-        : (item.outputStopReason ?? item.callStopReason);
+        ? (decisionText ?? S.chat.workDone)
+        : deniedByUser
+          ? (decisionText ?? undefined)
+          : (item.outputStopReason ?? item.callStopReason);
 
   return (
     <div>
@@ -256,23 +256,20 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
             )
           ) : null}
         </span>
+        {/* Below sm only the amber hourglass StatusIcon (labeled) marks the wait: the text would
+            crowd the one-line row out of a phone's width. */}
         {pending && (
-          <span className="shrink-0 font-mono text-xs text-amber-600 dark:text-amber-400">
+          <span className="hidden shrink-0 font-mono text-xs text-amber-600 sm:inline dark:text-amber-400">
             {S.chat.approvalWaiting}
           </span>
         )}
         {item.callStopReason && item.callStopReason !== "completed" && (
           <Badge tone={stopReasonTone(item.callStopReason)}>{item.callStopReason}</Badge>
         )}
-        {item.outputStopReason && item.outputStopReason !== "completed" && (
+        {/* Writing "aborted" next to the Denied pill would state the same outcome twice — see
+            deniedByUser above. */}
+        {item.outputStopReason && item.outputStopReason !== "completed" && !deniedByUser && (
           <Badge tone={stopReasonTone(item.outputStopReason)}>{item.outputStopReason}</Badge>
-        )}
-        {item.decision && (
-          <Badge tone={item.decision === "allow" ? "green" : "red"}>
-            {item.decision === "allow" ? S.chat.decisionAllow : S.chat.decisionDeny}
-            {" · "}
-            {item.decisionSource === "manual" ? S.chat.decisionManual : S.chat.decisionAuto}
-          </Badge>
         )}
         <span className="min-w-0 flex-1" />
         {/* Expand indicator on the right */}
@@ -282,11 +279,16 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
       {/* Pending approval: always visible regardless of collapsed state — shows the tool name and arguments so the user knows what they're approving. */}
       {pending && (
         <div className="border-t border-gray-100 bg-amber-50 px-3 py-2 dark:border-gray-800 dark:bg-amber-950/30">
-          <div className="mb-2 flex flex-wrap items-center gap-2">
+          {/* The user must be able to read the FULL command before deciding: below sm the
+              preview wraps in whole (expanded-args style: pre-wrap + break-all, no inner
+              scroll, the block may grow) — the one-line treatment resumes once decided, since
+              this pending block unmounts and only the truncating header subtitle remains. At
+              ≥sm the row stays one line (the desktop column is wide enough in practice). */}
+          <div className="mb-2 flex items-start gap-2 sm:items-center">
             <span className="shrink-0 rounded-md bg-white px-1.5 py-0.5 font-mono text-xs font-semibold text-gray-700 dark:bg-gray-900 dark:text-gray-300">
               {item.name || S.chat.unknownTool}
             </span>
-            <span className="min-w-0 flex-1 truncate font-mono text-xs text-gray-600 dark:text-gray-400">
+            <span className="min-w-0 flex-1 whitespace-pre-wrap break-all font-mono text-xs text-gray-600 sm:truncate dark:text-gray-400">
               {preview}
             </span>
           </div>
@@ -340,13 +342,14 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
         </div>
       )}
 
-      {/* Subagent card: always visible (not hidden after completion, only collapsed by default), unaffected by the tool card's collapsed state. Rendered below the expanded arguments/output so the nested conversation reads after the tool call's own content, not between the header and its details; pt-2 keeps a gap from the tinted args/output blocks above. */}
+      {/* Subagent row: always visible (unaffected by the tool card's collapsed state) below the expanded arguments/output — a full-width shortcut bar into the subagents panel; the nested conversation no longer renders inline. */}
       {item.subagent && (
         <div className="px-3 pb-2 pt-2">
-          <SubagentCard
+          <SubagentChip
             sessionId={item.subagentSessionId ?? ""}
             model={item.subagent}
             running={!item.outputComplete}
+            agentId={agentIdFromRunSubagentArgs(item.argumentsText)}
             ctx={ctx}
           />
         </div>

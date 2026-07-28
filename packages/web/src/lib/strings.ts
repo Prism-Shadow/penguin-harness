@@ -55,6 +55,30 @@ export const zh = {
     } as Record<string, string>,
   },
 
+  /** Version footer, update reminder, and admin self-update in the sidebar user menu. */
+  update: {
+    /** Version-line date label (owner-specified wording); `date` is formatMonthDay output, e.g. 「最近更新日期 7 月 26 日」. */
+    lastUpdated: (date: string) => `最近更新日期 ${date}`,
+    /** Superscript badge on the version lines when the update check found a newer release (owner-specified wording). */
+    newVersionBadge: "有新版本可用",
+    newVersion: (v: string) => `新版本 v${v} 可用`,
+    /** Manual check action in the sidebar user menu (owner request), with its busy label and toast outcomes. */
+    checkNow: "检查更新",
+    checking: "检查中…",
+    upToDate: "已是最新版本",
+    checkFailed: "检查更新失败，请稍后重试",
+    checkDisabled: "更新检查已关闭（PENGUIN_UPDATE_CHECK=off）",
+    releaseNotes: "更新说明",
+    updateNow: "立即更新",
+    updating: "更新中…",
+    updated: "更新完成，重启服务后生效",
+    restartHint: "在终端重新运行 penguin web（或 penguin server）即可完成重启",
+    failed: "更新失败",
+    unsupported: "当前安装方式不支持在线更新",
+    confirmBody:
+      "将下载最新版本并安装到服务器上的安装目录（数据目录不受影响）。安装完成后需要重启服务才会生效。",
+  },
+
   common: {
     save: "保存",
     cancel: "取消",
@@ -600,8 +624,6 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     steerQueuedIndicator: "插话已排队，将随下一轮送达",
     /** Label of the [user_steering] chip (a mid-run user message delivered between turns). */
     userSteering: "用户插话",
-    /** More-settings popover on the input toolbar (extensible setting rows; holds the mid-run send mode). */
-    moreSettings: "更多设置",
     /** Mid-run send-mode setting: steer (delivered mid-run) vs follow-up (queued until the run ends). */
     steerModeLabel: "运行中发送方式",
     steerModeSteer: "插话",
@@ -626,10 +648,18 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     subagent: "子会话",
     subagentRunning: "运行中",
     aborted: (reason?: string) => `[已中断]${reason ? `：${reason}` : ""}`,
+    /** Auth-dead notice (request_end status "auth"): action-only copy — updating the key on the Models page auto-unlocks this Session. */
+    modelAuthDead: "模型 API 认证失败：请在模型配置页更新该模型的 API key，或新建会话。",
+    modelAuthDeadOpenModels: "打开模型配置",
+    modelAuthDeadRetry: "重试",
+    modelAuthDeadCta: "新建会话",
+    modelAuthDeadPlaceholder: "模型认证失败，请先更新 API key",
+    /** Reconnect hint line; `secondsLeft` (waiting state only) switches to the live-countdown wording. */
     reconnect: (
       status: "timeout" | "malformed",
       state: "waiting" | "retried" | "gaveUp",
       attempt: number,
+      secondsLeft?: number,
     ) => {
       const cause = status === "timeout" ? "连接超时或网络中断" : "响应不完整或无法解析";
       const action =
@@ -637,9 +667,15 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
           ? "已停止重试"
           : state === "retried"
             ? `已发起第 ${attempt} 次重试`
-            : `正在发起第 ${attempt} 次重试…`;
+            : secondsLeft !== undefined
+              ? `第 ${attempt} 次重试，${secondsLeft} 秒后发起…`
+              : `正在发起第 ${attempt} 次重试…`;
       return `[重试] ${cause}，${action}`;
     },
+    /** "Retry now" on the reconnect countdown (skips the remaining backoff wait). */
+    reconnectRetryNow: "立即重试",
+    /** "Give up" on the reconnect countdown (the ordinary session abort). */
+    reconnectGiveUp: "放弃",
     imageAlt: "用户上传的图片",
     toolImageAlt: "工具输出的图片",
     imagesAsPathHint:
@@ -661,6 +697,7 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     statsLabel: "统计信息",
     removeImage: "移除图片",
     openWorkspace: "打开工作区",
+    openAgents: "智能体面板",
     /** File summary card at the end of a message (Codex-style): title, inline preview action, and collapsed row. */
     filesInMessage: (n: number) => `${n} 个文件`,
     openPreview: "点击预览",
@@ -719,6 +756,39 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
       archived: (n: number) => `已归档（${n}）`,
     },
     skillsBanner: (names: string[]): string => `使用技能：${names.join("、")}`,
+    /** Composer "+" extension menu (currently only goal mode; more entries later) and the goal chip. */
+    plusMenu: "更多输入方式",
+    uploadImage: "上传图片",
+    uploadImageDesc: "为本条消息附加图片",
+    goalMode: "目标模式",
+    goalModeDesc: "循环运行直至目标完成",
+    goalBudgetLabel: "Token 预算",
+    goalBudgetUnlimited: "预算不限",
+    goalBudgetValue: (value: string): string => `预算 ${value}`,
+    goalBudgetPlaceholder: "例如 500k",
+    goalBudgetHint: "支持 k/m 后缀；留空表示预算不限",
+    goalBudgetInvalid: "无效预算：应为正数，可带 k/m 后缀（500k、2m）",
+    goalBudgetSave: "保存预算",
+    goalRemove: "退出目标模式",
+    goalRoundBanner: (round: number): string => `目标 · 第 ${round} 轮`,
+    goalProgress: (rounds: number, tokens: string): string => `第 ${rounds} 轮 · tokens ${tokens}`,
+    goalStatus: {
+      active: "进行中",
+      complete: "已完成",
+      blocked: "受阻",
+      budget_limited: "预算耗尽",
+      aborted: "已中断",
+    } as Record<string, string>,
+  },
+
+  /** Subagents side panel: call-graph of the latest Task + the selected child conversation. */
+  subagentPanel: {
+    title: "智能体面板",
+    topologyLabel: "调用关系",
+    mainSessionNote: "主会话请在对话区查看",
+    empty: "本次任务尚未派生子智能体",
+    nodeRunning: "运行中",
+    nodeDone: "已完成",
   },
 
   files: {
@@ -811,6 +881,11 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     inProgress: "进行中",
     systemPrompt: "系统提示词",
     toolDefs: (n: number) => `工具定义（${n}）`,
+    exportFile: "导出",
+    importTrace: "导入 Trace",
+    importing: "导入中…",
+    /** Client-side pre-check before reading the picked file (same cap as the server's import route). */
+    fileTooLarge: "文件超过 14MB 上限。",
   },
 
   benchmark: {
@@ -868,6 +943,8 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
       task_in_progress: "该 Session 已有任务在运行。",
       version_conflict: "快照版本不高于当前版本。",
       invalid_title: "标题无效。",
+      invalid_trace: "该文件不是有效的 Trace 文件。",
+      trace_session_exists: "该 Agent 已存在同名 Session，无法导入重复的 Trace。",
     },
   },
 };

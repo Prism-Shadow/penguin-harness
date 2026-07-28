@@ -1,0 +1,15 @@
+# Normalize text files to LF in the repo AND in the working tree (eol=lf beats core.autocrlf),
+# so a Windows checkout matches what Prettier's endOfLine=lf expects and shell scripts stay
+# runnable under Git-Bash.
+* text=auto eol=lf
+
+# Shell scripts must be LF (a CRLF shebang line breaks the interpreter).
+*.sh text eol=lf
+
+# PowerShell is the one Windows-native text format we ship; keep it CRLF for notepad/PS 5.1
+# friendliness (PowerShell itself accepts both).
+*.ps1 text eol=crlf
+
+# Binary assets: never subject to text normalization or diffs.
+*.png binary
+*.webp binary

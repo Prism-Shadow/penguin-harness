@@ -22,58 +22,64 @@ import {
 } from "../src/commands/update.js";
 import { getMessages } from "../src/i18n.js";
 
-describe("detectInstall (how this CLI was installed, from its own real path)", () => {
-  it("tarball: <installDir>/lib/dist/index.js, the layout install.sh unpacks", () => {
-    expect(detectInstall("/home/me/.penguin/lib/dist/index.js")).toEqual({
-      kind: "tarball",
-      installDir: "/home/me/.penguin",
+// POSIX-only: the fixtures are POSIX install layouts and detectInstall normalizes through
+// path.* (backslashes on Windows) — where in-place `penguin update` is refused anyway
+// (the documented Windows upgrade path is re-running install.ps1).
+describe.skipIf(process.platform === "win32")(
+  "detectInstall (how this CLI was installed, from its own real path)",
+  () => {
+    it("tarball: <installDir>/lib/dist/index.js, the layout install.sh unpacks", () => {
+      expect(detectInstall("/home/me/.penguin/lib/dist/index.js")).toEqual({
+        kind: "tarball",
+        installDir: "/home/me/.penguin",
+      });
     });
-  });
 
-  it("tarball: a non-default PENGUIN_INSTALL_DIR is read off the path, not the environment", () => {
-    expect(detectInstall("/opt/tools/penguin/lib/dist/index.js")).toEqual({
-      kind: "tarball",
-      installDir: "/opt/tools/penguin",
+    it("tarball: a non-default PENGUIN_INSTALL_DIR is read off the path, not the environment", () => {
+      expect(detectInstall("/opt/tools/penguin/lib/dist/index.js")).toEqual({
+        kind: "tarball",
+        installDir: "/opt/tools/penguin",
+      });
     });
-  });
 
-  it("npm global: npm's own prefix layout", () => {
-    expect(
-      detectInstall("/usr/local/lib/node_modules/@prismshadow/penguin-cli/dist/index.js"),
-    ).toEqual({ kind: "npm", globalRoot: "/usr/local/lib/node_modules" });
-  });
-
-  it("npm global: pnpm's global store, through the .pnpm virtual dir", () => {
-    const p =
-      "/home/me/.local/share/pnpm/global/5/node_modules/.pnpm/@prismshadow+penguin-cli@0.1.1/node_modules/@prismshadow/penguin-cli/dist/index.js";
-    const info = detectInstall(p);
-    expect(info.kind).toBe("npm");
-    expect(info.globalRoot).toContain(".pnpm");
-  });
-
-  it("source checkout: the built dist inside the monorepo", () => {
-    expect(detectInstall("/home/me/code/penguin-harness/packages/cli/dist/index.js")).toEqual({
-      kind: "source",
+    it("npm global: npm's own prefix layout", () => {
+      expect(
+        detectInstall("/usr/local/lib/node_modules/@prismshadow/penguin-cli/dist/index.js"),
+      ).toEqual({ kind: "npm", globalRoot: "/usr/local/lib/node_modules" });
     });
-  });
 
-  it("source checkout: tsx running src directly", () => {
-    expect(detectInstall("/home/me/code/penguin-harness/packages/cli/src/index.ts")).toEqual({
-      kind: "source",
+    it("npm global: pnpm's global store, through the .pnpm virtual dir", () => {
+      const p =
+        "/home/me/.local/share/pnpm/global/5/node_modules/.pnpm/@prismshadow+penguin-cli@0.1.1/node_modules/@prismshadow/penguin-cli/dist/index.js";
+      const info = detectInstall(p);
+      expect(info.kind).toBe("npm");
+      expect(info.globalRoot).toContain(".pnpm");
     });
-  });
 
-  it("a checkout wins over the tarball shape, so a repo under a lib/ dir is never mistaken for an install", () => {
-    expect(detectInstall("/srv/lib/penguin-harness/packages/cli/dist/index.js")).toEqual({
-      kind: "source",
+    it("source checkout: the built dist inside the monorepo", () => {
+      expect(detectInstall("/home/me/code/penguin-harness/packages/cli/dist/index.js")).toEqual({
+        kind: "source",
+      });
     });
-  });
 
-  it("anything else is unknown rather than guessed", () => {
-    expect(detectInstall("/random/place/index.js").kind).toBe("unknown");
-    expect(detectInstall("/home/me/.penguin/bin/penguin").kind).toBe("unknown");
-  });
-});
+    it("source checkout: tsx running src directly", () => {
+      expect(detectInstall("/home/me/code/penguin-harness/packages/cli/src/index.ts")).toEqual({
+        kind: "source",
+      });
+    });
+
+    it("a checkout wins over the tarball shape, so a repo under a lib/ dir is never mistaken for an install", () => {
+      expect(detectInstall("/srv/lib/penguin-harness/packages/cli/dist/index.js")).toEqual({
+        kind: "source",
+      });
+    });
+
+    it("anything else is unknown rather than guessed", () => {
+      expect(detectInstall("/random/place/index.js").kind).toBe("unknown");
+      expect(detectInstall("/home/me/.penguin/bin/penguin").kind).toBe("unknown");
+    });
+  },
+);
 
 describe("detectPackageManager (which manager owns a global node_modules root)", () => {
   it("pnpm: the global store or the .pnpm virtual dir", () => {

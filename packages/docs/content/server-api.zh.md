@@ -66,6 +66,16 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 | POST | /api/admin/users/:userId/password | 重置密码（该用户全部登录会话失效） |
 | DELETE | /api/admin/users/:userId | 删除用户 |
 
+### 版本与在线更新
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | /api/version | 当前运行版本：`{version, buildDate}`（`buildDate` 是当前运行版本的发布日期，构建时打入、无需联网；开发/源码构建以及打入机制之前的发布版为 null） |
+| GET | /api/version/update-check | 对比 GitHub 最新 Release 与当前版本：`{currentVersion, latestVersion, updateAvailable, releaseUrl, publishedAt, checkedAt, disabled?, error?}`；`?force=1`（手动「检查更新」）绕过 TTL 缓存，结果照常写入缓存 |
+| POST | /api/version/update | **仅管理员。**在服务器上执行 CLI 在线更新（`penguin update --yes`）：`{status, output, needsRestart}` |
+
+`update-check` 是服务端唯一的对外网络请求，并且严格失败兜底：查询失败仍返回 200，只是设置 `error`（`network` / `rate_limited` / `bad_response`）且 `latestVersion` 为 null；结果在内存中缓存（成功 1 小时、失败 10 分钟）；设置 `PENGUIN_UPDATE_CHECK=off` 可完全关闭该查询（返回 `disabled: true`，不发起任何网络请求）。更新的 `status` 为 `updated`（需重启服务才能运行新版本）、`failed` 或 `unsupported` —— 后者包括服务不是通过 `penguin server|web` 启动（`reason: "not_launched_via_cli"`），以及 CLI 自身拒绝执行（源码运行、无法识别的安装方式、Windows）；`output` 携带 CLI 输出的末尾片段。
+
 ### Project 与成员
 
 | 方法 | 路径 | 说明 |
@@ -88,6 +98,8 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 | POST | /api/projects/:projectId/models/test | 连通性测试：`{provider, modelId, …}` → `{ok, latencyMs?, message?}` |
 
 所有涉及模型的接口都要求完整的 `(provider, modelId)` 二元组，不做任何推断：只带一半的请求一律 400，绝不会退化为一次查找。模型引用本身可省略的场景（创建 Session、定时任务）省略的是整对，两半都不给即选用 Project 默认模型。
+
+`PUT /models` 同时会使该 Project 已缓存的 Session 运行时失效（与 vault 更新同一套生效语义）：进行中的运行不做热替换，但该 Project 下任何 Session 的下一个 Task 都会重新装载并读到新的 `api_key` / `base_url`。它还会向该 Project 已打开的 Session 通道发布 `credentials_updated` 事件（见下文「流式推送」），且模型响应携带 `updatedAt`（配置文件 mtime）——Web App 用它与最近一次鉴权失败的时间比较，决定鉴权失败的输入框是否继续禁用。
 
 ### Agent
 
@@ -132,6 +144,10 @@ Schedule 写操作仅限 Owner。新建 Session 模式的任务，`modelId` 与 
 | GET | /agents/:agentId/traces | Trace 文件的日期 → Session 下钻结构 |
 | GET | /agents/:agentId/traces/:sessionId/:index | 读取 Trace 事件（`offset` / `limit` 分页） |
 | GET | /agents/:agentId/traces/:sessionId/:index/analysis | Trace 性能分析结果 |
+| GET | /agents/:agentId/traces/:sessionId/:index/download | 下载 Trace 原始文件（JSONL 附件） |
+| POST | /agents/:agentId/traces/import | 导入 Trace 文件：`{dataBase64}` → `{sessionId, index, date}` |
+
+Trace 下载对任意成员开放；导入仅限 owner（同 Agent 快照导入，上限 14MB）。导入文件必须是合法的 Trace JSONL，且首条记录为携带文件名安全 `session_id` 的 `session_meta`；若该 Agent 已存在同名 Session，导入将被拒绝（409 `trace_session_exists`），因此导入文件总是成为一个新 Session 的 001 号文件，并按首条记录时间戳的本地日期落入对应日期目录。
 
 ### Session 级接口
 
@@ -142,12 +158,13 @@ Schedule 写操作仅限 Owner。新建 Session 模式的任务，`modelId` 与 
 | GET | / | Session 信息（单会话 GET 额外携带 `tracePath`：最新 Trace 文件的绝对路径；列表行不含） |
 | PATCH | / | 更新：`{approvalMode?, archived?, title?}` |
 | DELETE | / | 删除 Session（连同 Trace 与暂存文件） |
-| GET | /messages | 完整 OmniMessage 历史 |
+| GET | /messages | 完整 OmniMessage 历史；Task 运行期间响应额外携带 `live`（进行中的流式尾部，见下） |
 | GET | /stream | SSE 事件流（见下节） |
 | POST | /tasks | 发起 Task：`{input: TaskInputPart[], thinkingLevel?, queueIfBusy?}` → 202。带 `queueIfBusy` 时，运行中的 Session 会把输入暂存为跟进消息（`queued: true`），空闲后按序自动作为普通 Task 发出；`task_state` 事件携带排队数 |
 | POST | /steer | 运行中插话：`{text}` 为运行中的 Task 排队一条消息（作为独立的 `[user_steering]` 用户消息随下一轮送达）→ 202；无 Task 运行返回 409 `not_running` |
 | POST | /approvals/:toolCallId | 审批决定：`{decision}` 取 `allow` 或 `deny` → 204 |
 | POST | /abort | 中断当前 Task：已触发返回 202，无任务返回 204 |
+| POST | /retry-now | 重连倒计时上的「立即重试」：跳过进行中的退避等待、立刻发起下一次重试（重试计数不变）→ 200 `{skipped}`——`skipped:false` 表示当前没有等待可跳过（良性空操作，非错误） |
 | POST | /compact | 触发上下文压缩：202；无可压缩内容返回 409 `nothing_to_compact` |
 | GET | /files?path= | 浏览 Workspace 目录 |
 | GET | /files/content?path=&download=&preview= | 读取 Workspace 文件（`download=1` 时作为附件下载，`preview=1` 以沙箱方式预览 —— 见下） |
@@ -160,6 +177,27 @@ Schedule 写操作仅限 Owner。新建 Session 模式的任务，`modelId` 与 
 | GET | /scratchpad/:fileName | 读取会话暂存文件（如输入图片） |
 
 通用约定：无权访问的 Session 一律返回 404，不泄露其存在性；每个 Session 同时只允许一个 Task 或压缩在运行，冲突时返回 409（`task_in_progress` / `compacting`）。
+
+#### GET /messages 的 `live` 字段
+
+Trace 只存完整消息（流式 `partial_*` 永远不落盘），所以仅靠历史无法呈现一条正在流式输出的消息。因此当 Session 处于运行/压缩状态时，messages 响应额外携带进行中的流式尾部：
+
+```ts
+interface MessagesResponse {
+  messages: OmniMessage[];
+  live?: {
+    // Session 通道最近分配的 SSE 事件 id（`<epoch>-<seq>`）：
+    // 截至该 id（含）发布的所有事件都已累积进 `fragments`。
+    cursor: string;
+    // 每个未闭合流式片段对应一条合成的 `partial_* start` OmniMessage，其 payload 携带
+    // 迄今累积的全部内容（文本/思考前缀、工具调用名 + 已累积参数、工具输出前缀 + 图片），
+    // 并保留原始 `origin` 链（子智能体片段同样覆盖）。
+    fragments: OmniMessage[];
+  };
+}
+```
+
+`cursor` 与 `fragments` 在 Trace 读取开始前原子采集。使用先连接模式（见下）的客户端在应用完历史后处理它们：当 cursor 的 epoch 与本连接已缓冲事件的 epoch 一致时，丢弃 seq ≤ cursor 的已缓冲 **partial** 事件（其内容已累积在 `fragments` 里），把 `fragments` 按正常归约路径喂入，再重放剩余缓冲。已缓冲的**完整**消息从不按 cursor 丢弃 —— 仍由常规重叠去重裁决。空闲时不携带 `live`。
 
 Workspace 文件可能由 Agent 生成，`GET /files/content` 一律按不可信内容处理：所有响应都带 `X-Content-Type-Options: nosniff`，其余响应头取决于两个开关（`download=1` 优先于 `preview=1`）：
 
@@ -229,6 +267,7 @@ export type ServerEvent =
   | { type: "task_state"; state: "idle" | "running" | "compacting" }
   | { type: "session_title"; sessionId: string; title: string }
   | { type: "resync_required" }
+  | { type: "credentials_updated" }
   | { type: "hello" }
   | { type: "session_created"; projectId: string; agentId: string; sessionId: string; source: SessionSource }
   | { type: "schedule_fired"; projectId: string; agentId: string; name: string; sessionId: string }
@@ -241,6 +280,7 @@ export type ServerEvent =
 | task_state | Session 运行状态翻转（idle / running / compacting） |
 | session_title | 首轮后模型生成的标题已持久化 |
 | resync_required | Last-Event-ID 已被缓冲区淘汰，客户端须重新拉取历史 |
+| credentials_updated | Project 模型凭据已变更（`PUT /models`）：缓存运行时已失效，客户端应清除鉴权失败的输入框禁用态 |
 | hello | 用户通道连接握手 |
 | session_created | 新 Session 注册（如子 Agent 会话） |
 | schedule_fired | 定时任务已触发并发送 |
@@ -249,7 +289,7 @@ export type ServerEvent =
 ### 投递保证
 
 - 事件 id 按通道单调递增，形如 `<epoch>-<seq>`；
-- 每通道维护有界重放缓冲（最近 1000 条事件或 2MB）；
+- 每通道维护有界重放缓冲（最近 10,000 条事件或 8MB）；
 - 携带 `Last-Event-ID` 重连时，命中缓冲则补发缺口；未命中则先发 `resync_required`，客户端重新拉取 `/messages` 后继续消费；
 - 每 20 秒写一条心跳注释行；
 - 事件次序：带 `Last-Event-ID` 重连时，**补发的缺口(或 `resync_required`)最先送达**，随后才是初始事件——权威的 `task_state` 快照与未决的 approval_request，再进入实时流；全新连接(无 `Last-Event-ID`)不重放缓冲，首个事件即为 `task_state` 快照。
@@ -260,8 +300,9 @@ export type ServerEvent =
 
 1. 先连接 `/stream` 并缓冲收到的事件；
 2. 再 GET `/messages` 拉取完整历史；
-3. 回放缓冲区并对重叠消息去重；
-4. 转入实时消费。
+3. 若响应携带 `live`（有 Task 在运行），丢弃 cursor 已覆盖的缓冲 partial 事件，并把 `live.fragments` 播种到历史之上 —— 进行中的消息连同已流式输出的前缀一起回到画面；
+4. 回放缓冲区并对重叠消息去重；
+5. 转入实时消费。
 
 ## 类型导入
 

@@ -22,6 +22,7 @@ function fakeRuntimeSession(sessionId: string): RuntimeSession {
     generateTitle: async () => ({ title: null, usage: null }),
     compactability: () => "ok" as const,
     steer: () => false,
+    skipReconnectWait: () => false,
     async *run() {},
     async *compact() {},
   };

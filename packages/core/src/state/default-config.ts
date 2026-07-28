@@ -33,6 +33,8 @@ export const PROVIDER_PLACEHOLDER = "{{PROVIDER}}";
 export const MODEL_ID_PLACEHOLDER = "{{MODEL_ID}}";
 export const PLATFORM_PLACEHOLDER = "{{PLATFORM}}";
 export const OS_VERSION_PLACEHOLDER = "{{OS_VERSION}}";
+/** The shell exec_command runs (`bash` on POSIX; on Windows whatever shell.ts resolved), so the model knows which command syntax to write. */
+export const SHELL_PLACEHOLDER = "{{SHELL}}";
 export const DATE_PLACEHOLDER = "{{DATE}}";
 
 /**
@@ -110,7 +112,7 @@ Communicate with the user precisely and concisely, yet with warmth. Do not repea
 # System markers
 Some messages contain system-synthesized blocks written as \`[tag]...[/tag]\`, not user text to answer directly:
 - \`[turn_aborted]\`: the previous round was interrupted. Inside are the original request, your partial thinking/text, and the tool calls already issued with their results. Continue from where it left off; do not re-run tools whose results are already included.
-- \`[turn_retried]\`: the previous attempt of this round failed on a transport error (timeout or malformed response) — the user did NOT interrupt — and this request is the automatic retry. Inside are your partial thinking/text and the tool calls already executed with their results. Continue from them; do not re-run tools whose results are already included.
+- \`[turn_retried]\`: the previous attempt of this round failed on a transient error (timeout, disconnect, malformed response, or a temporary provider error) — the user did NOT interrupt — and this request is the automatic retry. Inside are your partial thinking/text and the tool calls already executed with their results. Continue from them; do not re-run tools whose results are already included.
 - \`[context_summary]\`: earlier conversation was compacted. This summary replaced the raw transcript and is its only record; treat it as established context and continue the task from it.
 - \`[user_steering]\`: a user message sent while you were still working, delivered between turns alongside tool results. It is not a new task: incorporate it immediately and adjust course within the current task.
 
@@ -147,6 +149,7 @@ Skills are reusable instruction packages stored under <app_data_dir>/agents/<age
 # Environment
 - Platform: {{PLATFORM}}
 - OS Version: {{OS_VERSION}}
+- Shell: {{SHELL}}
 - Date: {{DATE}}
 - App Data Dir: {{PROJECT_DIR}}
 - Agent ID: {{AGENT_ID}}

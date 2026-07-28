@@ -6,7 +6,17 @@
  * read-image.test.ts); Environment-side framing is covered by environment.test.ts.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -384,6 +394,32 @@ describe("read_file — argument coercion, CRLF, secret guard", () => {
     expect(cfg.result?.stopReason).toBe("failed");
     expect(cfg.text).toContain("Refusing to read");
   });
+
+  it("refuses case-variant names and symlinks that dereference to a secret store", async () => {
+    await writeFile(path.join(tmp, ".vault.toml"), "SECRET=1\n");
+    // Case variant: a case-insensitive filesystem (macOS/Windows) opens ".VAULT.TOML" as
+    // the store itself; on a case-sensitive one refusing the name is a harmless false positive.
+    const upper = await run(tool(), { file_path: ".VAULT.TOML" }, tmp);
+    expect(upper.result?.stopReason).toBe("failed");
+    expect(upper.text).toContain("Refusing to read");
+    // Symlink: the link's own basename says nothing about what it dereferences to.
+    await symlink(path.join(tmp, ".vault.toml"), path.join(tmp, "notes.txt"));
+    const linked = await run(tool(), { file_path: "notes.txt" }, tmp);
+    expect(linked.result?.stopReason).toBe("failed");
+    expect(linked.text).toContain("Refusing to read");
+    expect(linked.text).not.toContain("SECRET=1");
+    // A symlink NAMED like a store but pointing elsewhere is refused on the lexical name —
+    // an acceptable false positive for a guard.
+    await writeFile(path.join(tmp, "plain.txt"), "hello\n");
+    await symlink(path.join(tmp, "plain.txt"), path.join(tmp, ".project_config.toml"));
+    const named = await run(tool(), { file_path: ".project_config.toml" }, tmp);
+    expect(named.result?.stopReason).toBe("failed");
+    // An ordinary symlink to an ordinary file still reads.
+    await symlink(path.join(tmp, "plain.txt"), path.join(tmp, "alias.txt"));
+    const ok = await run(tool(), { file_path: "alias.txt" }, tmp);
+    expect(ok.result?.stopReason).toBeUndefined();
+    expect(ok.text).toContain("hello");
+  });
 });
 
 describe("read_file — bounded scan and output budget", () => {
@@ -478,15 +514,19 @@ describe("edit_file — review follow-ups", () => {
 describe("write_file — review follow-ups", () => {
   const tool = () => createWriteFileTool(def(WRITE_FILE_NAME, "rw"));
 
-  it("preserves the permission bits of an overwritten file (atomic rename)", async () => {
-    const file = path.join(tmp, "mode.txt");
-    await writeFile(file, "old");
-    await chmod(file, 0o600);
-    const { result } = await run(tool(), { file_path: "mode.txt", content: "new" }, tmp);
-    expect(result?.stopReason).toBeUndefined();
-    expect((await stat(file)).mode & 0o777).toBe(0o600);
-    expect(await readFile(file, "utf8")).toBe("new");
-  });
+  // POSIX-only: Windows has no owner-only mode bits to preserve (chmod maps to the read-only attribute).
+  it.skipIf(process.platform === "win32")(
+    "preserves the permission bits of an overwritten file (atomic rename)",
+    async () => {
+      const file = path.join(tmp, "mode.txt");
+      await writeFile(file, "old");
+      await chmod(file, 0o600);
+      const { result } = await run(tool(), { file_path: "mode.txt", content: "new" }, tmp);
+      expect(result?.stopReason).toBeUndefined();
+      expect((await stat(file)).mode & 0o777).toBe(0o600);
+      expect(await readFile(file, "utf8")).toBe("new");
+    },
+  );
 
   it("writes atomically: no temp files are left behind", async () => {
     await run(tool(), { file_path: "fresh.txt", content: "x" }, tmp);

@@ -175,11 +175,12 @@ describe("agent.resumeSession", () => {
     ).toEqual(["text", "text", "abort"]);
   });
 
-  it("honors a legacy trace's recorded thinking_level; new meta never re-records it", async () => {
-    // session_meta no longer carries a thinking level (it became a per-turn run parameter),
-    // but OLD traces still have it in their meta JSON: resume must keep honoring it as the
-    // session's default level (a legacy subagent session keeps its inherited level instead of
-    // re-reading this Agent's config). The seeded Agent config here pins "medium".
+  it("ignores a legacy trace's recorded thinking_level; the Agent config always wins", async () => {
+    // session_meta no longer carries a thinking level (it became a per-turn run parameter);
+    // a `thinking_level` still present in an OLD trace's meta JSON is deliberately ignored —
+    // resume always reads this Agent's current config, so a resumed legacy subagent session
+    // falls back to the config level instead of keeping the level it inherited at spawn
+    // time. The seeded Agent config here pins "medium".
     const agent = await createAgent({});
     expect(agent.state.systemConfig.model?.thinking_level).toBe("medium");
     const levelOf = (session: unknown): unknown =>
@@ -190,14 +191,14 @@ describe("agent.resumeSession", () => {
     // A legacy trace: inject the retired field loosely into the on-disk meta JSON.
     (recorded.payload as unknown as Record<string, unknown>).thinking_level = "xhigh";
     await writeTraceFile(tmpRoot, SID, [recorded, userText("hello")]);
-    const inherited = await agent.resumeSession({ sessionId: SID });
-    expect(levelOf(inherited)).toBe("xhigh");
-    // The rebuilt meta holds invariants only: the legacy field is honored but never re-recorded.
+    const ignored = await agent.resumeSession({ sessionId: SID });
+    expect(levelOf(ignored)).toBe("medium");
+    // The rebuilt meta holds invariants only: the legacy field is never re-recorded either.
     expect(
-      "thinking_level" in (inherited.metaMessage.payload as unknown as Record<string, unknown>),
+      "thinking_level" in (ignored.metaMessage.payload as unknown as Record<string, unknown>),
     ).toBe(false);
 
-    // A current trace (no field) — and the legacy literal "default" — fall back to the Agent config.
+    // A current trace (no field) — and the legacy literal "default" — read the Agent config too.
     const SID2 = "session-2026-07-06-11-00-00-abcdef02";
     await writeTraceFile(tmpRoot, SID2, [metaFor(SID2, workspace), userText("hi")]);
     const fallback = await agent.resumeSession({ sessionId: SID2 });

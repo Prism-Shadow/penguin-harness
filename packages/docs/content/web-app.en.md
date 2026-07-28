@@ -41,7 +41,7 @@ There are four approval modes: `allow-all`, `deny-all`, `read-only` (only read-o
 
 - Model text renders token by token; thinking blocks are collapsible;
 - Tool cards expand to show arguments and output, with a live timer while running;
-- Subagents appear as nested cards; context compaction shows a banner;
+- Subagents leave a full-width row in the stream, styled like the other collapsed step rows (agent avatar, name, short session id, running spinner, and an amber dot while one of their tool calls awaits approval); clicking it opens the agents side panel — a call graph of that row's Task on top (each node shows its elapsed time; click a node to switch) and the selected child's live conversation below — the child's own user prompts included — where nested tool cards and approvals work exactly as in the main chat. Panel visibility is task-scoped: sending a message that starts a new task closes it by default (entering a session starts closed too), and it comes back when you open it yourself or — on desktop — when the current task spawns a subagent (one auto-open per task; a manual close holds until the next task; never over an open files panel). Opening the panel from the toolbar, or switching sessions, shows the latest Task's graph; a row on an older turn brings back that turn's graph. The agents panel and the Workspace files panel never show together — opening one closes the other. Context compaction shows a banner;
 - After each Task, a stats line shows tokens, TPS, elapsed time, and cost.
 
 ### Input and Shortcuts
@@ -50,7 +50,9 @@ There are four approval modes: `allow-all`, `deny-all`, `read-only` (only read-o
 - Typing `/` opens the slash menu: trigger context compaction (`/compact`) or toggle installed Skills — chosen Skills are sent along with the message in a `[use_skills]` block;
 - While a Task is running the input stays live and the toolbar keeps a single action button: an empty composer shows **Stop**, and typing turns it into **Send**, whose behavior follows the **mid-run send mode** from the toolbar's More-settings popover (a compact extensible settings panel, also available in draft state; the choice is remembered): **Steer** (default) delivers the text mid-run as a `[user_steering]` user message with the next turn, **Queue** holds the whole message server-side as a follow-up and auto-sends it as an ordinary new message when the run finishes (an "N queued" hint shows near the input until then; the queue survives page reloads);
 - Typing `@` mentions another Agent to hand the conversation over to it;
-- When human approval is required, tool calls show inline allow/deny buttons in the message stream; the approval mode can be changed mid-Session.
+- When human approval is required, tool calls show inline allow/deny buttons in the message stream; the approval mode can be changed mid-Session;
+- While the engine waits out a reconnect backoff (≥2s), the retry line shows a live countdown to the next attempt with inline **Retry now** (skips the remaining wait) and **Give up** (the ordinary abort) controls;
+- When the model API rejects the Session's credentials (an authentication failure), the composer grays out and disables — recoverably: the Session pins only the model reference, and credentials come from the current Project config. The notice's primary button opens the Models page; saving a new API key there unlocks the composer by itself (open tabs unlock live via a `credentials_updated` event, and after a reload the composer stays unlocked because the credential update is newer than the recorded auth failure). A "Retry" button clears the state manually for another attempt (it re-arms if the key is still bad), a completed request always clears it, and "New Session" remains as the escape to a fresh draft. The disabled composer keeps its draft selectable, so a long message that failed to send can still be copied out.
 
 ### Files Panel
 
@@ -97,6 +99,10 @@ Read-only scoreboards per Benchmark: switch the metric (score / cost / duration)
 ## User Administration (/admin/users)
 
 Admin only: list and create users, reset passwords, and delete users (the built-in admin cannot be deleted).
+
+## Version and Updates
+
+The sidebar user menu carries a manual "Check for updates" action directly below "Change password"; the running version sits muted on the right of that row, and its release date — stamped into the build by the release workflow, displayed without any network access — appears as the row's localized "Last updated Jul 26"-style tooltip (dev builds and releases that predate the stamping, v0.1.2 and earlier, have no date). The new-chat page shows the same identity as a version line under the brand. The app checks GitHub for a newer release once the menu has first been opened, and immediately — bypassing the cached result — when the manual action is clicked; the latter reports "You're on the latest version" when nothing newer exists. When a newer release is found, a dot appears on the user button, the version displays gain a small superscript "New version available" badge (the draft-page badge links to the release), and the menu gains a release-notes link, plus an "Update now" action for admins that runs `penguin update` on the server (the data directory is untouched). The service must be restarted afterwards for the update to take effect. Set `PENGUIN_UPDATE_CHECK=off` to disable the update check entirely — see the [Configuration Reference](/configuration).
 
 ## Projects and Members
 

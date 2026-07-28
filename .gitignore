@@ -30,6 +30,10 @@ cache/
 packages/web/test-results/
 packages/web/playwright-report/
 
+# blog images staged locally by the landing capture/render scripts, then uploaded to
+# the community repo's blog-assets/ — never committed here (see lib/links.ts)
+packages/landing/.blog-assets/
+
 # local design-doc symlink and agent instructions
 /design
 /AGENTS.md

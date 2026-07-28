@@ -325,6 +325,13 @@ export function registerConfigCommand(program: Command, t: Messages): void {
         process.exitCode = 1;
         return;
       }
+      // Windows has no POSIX shell startup file to write and no /bin shell to restart into;
+      // refuse with a clear pointer instead of an ENOENT from spawning /bin/zsh.
+      if (process.platform === "win32") {
+        process.stderr.write(`${getMessages(lang).langWindowsUnsupported(lang)}\n`);
+        process.exitCode = 1;
+        return;
+      }
       const { rcPath } = await applyLanguageToRc(lang, {
         shell: process.env.SHELL,
         home: homedir(),

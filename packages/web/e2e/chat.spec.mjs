@@ -59,6 +59,14 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   await expect(page.getByText("exec_command").first()).toBeVisible();
   // Thinking + tool calls are wrapped in a work group; header shows running/done status.
   await expect(page.getByText("运行中").first()).toBeVisible();
+
+  // Live header statistics: the elapsed chip ticks once per second while the task runs (the
+  // pending approval below keeps it running), so its text must advance with no further server
+  // event. Scoped to the header stats container (div.hidden …): the per-reply footer reuses
+  // the same 用时 ("elapsed") label once the turn's stats line lands.
+  const headerElapsed = page.locator('div.hidden span[title="用时"]');
+  const elapsedBefore = await headerElapsed.textContent();
+  await expect(headerElapsed).not.toHaveText(elapsedBefore);
   // The user takes control of the running work group (toggle = userToggled), keeps it open, and
   // opens the exec_command card to watch the arguments. Both must survive the end of the turn.
   //
@@ -81,10 +89,25 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   await toolCard.click();
   await expect(toolCard).toHaveAttribute("aria-expanded", "true");
 
+  // Desktop keeps the one-line pending preview (truncate); only phones wrap the command in
+  // full while pending (asserted at 390 in layout.spec).
+  expect(
+    await page
+      .getByText("$ ls -la")
+      .first()
+      .evaluate((el) => getComputedStyle(el).whiteSpace),
+    "pending preview stays one line at desktop",
+  ).toBe("nowrap");
+
   await page.getByRole("button", { name: "允许" }).click();
 
   // Final assistant answer (turn 2 from mock).
   await expect(page.getByText("Command finished; the result looks as expected.")).toBeVisible();
+
+  // The decision is carried ONLY by the tool card's left status icon (title/aria-label) — no
+  // visible decision text at any breakpoint (the right-side pill was removed per review).
+  await expect(page.locator('[aria-label="已批准 · 手动"]')).toBeVisible();
+  await expect(page.getByText(/已批准/).filter({ visible: true })).toHaveCount(0);
 
   // Chat links always open in a new tab and never navigate the SPA away — including bare URLs
   // that remark-gfm autolinks (the mock reply carries one inside a CJK sentence).
@@ -125,7 +148,9 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   // prove nothing about this line.
   const copyBtn = page.getByRole("button", { name: "复制回复" }).first();
   const statsLine = copyBtn.locator("xpath=..");
-  await expect(statsLine.locator("text=/\\$0\\.\\d+/")).toBeVisible(); // cost chip (pricing set)
+  // Cost chip (pricing set). visible-filtered: the chip renders a desktop value plus a
+  // display:none compact twin for phones, and both match the money pattern.
+  await expect(statsLine.locator("text=/\\$0\\.\\d+/").filter({ visible: true })).toBeVisible();
 
   // Hidden by default but SPACE-RESERVED (opacity-0, not hidden). Park the cursor first: after
   // clicking 允许 ("Allow") the pointer sits where that button was and the re-render can drop a

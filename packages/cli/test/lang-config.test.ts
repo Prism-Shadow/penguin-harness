@@ -5,26 +5,29 @@ import { afterEach, describe, expect, it } from "vitest";
 import { applyLanguageToRc, resolveShellRc, upsertBlock } from "../src/lang-config.js";
 
 describe("resolveShellRc", () => {
+  // rcPath is built with path.join, so the expectations join too (backslashes on Windows —
+  // where the `config lang` command refuses before ever calling this, but the pure function
+  // stays coherent).
   it("maps zsh / bash / fish to their startup files and syntax", () => {
     const zsh = resolveShellRc("/bin/zsh", "/home/u");
     expect(zsh.kind).toBe("zsh");
-    expect(zsh.rcPath).toBe("/home/u/.zshrc");
+    expect(zsh.rcPath).toBe(join("/home/u", ".zshrc"));
     expect(zsh.body("zh")).toBe("export PENGUIN_LANG=zh");
 
     const bash = resolveShellRc("/usr/bin/bash", "/home/u");
     expect(bash.kind).toBe("bash");
-    expect(bash.rcPath).toBe("/home/u/.bashrc");
+    expect(bash.rcPath).toBe(join("/home/u", ".bashrc"));
 
     const fish = resolveShellRc("/usr/local/bin/fish", "/home/u");
     expect(fish.kind).toBe("fish");
-    expect(fish.rcPath).toBe("/home/u/.config/fish/config.fish");
+    expect(fish.rcPath).toBe(join("/home/u", ".config", "fish", "config.fish"));
     expect(fish.body("en")).toBe("set -gx PENGUIN_LANG en");
   });
 
   it("falls back to ~/.profile for an unknown shell", () => {
     const rc = resolveShellRc(undefined, "/home/u");
     expect(rc.kind).toBe("unknown");
-    expect(rc.rcPath).toBe("/home/u/.profile");
+    expect(rc.rcPath).toBe(join("/home/u", ".profile"));
   });
 });
 

@@ -27,9 +27,10 @@ export * from "./state/index.js";
 export * from "./llm/index.js";
 export * from "./environment/index.js";
 export * from "./trace/index.js";
+export * from "./goal/index.js";
 
 // Runtime entry points
-export { ContextEngine } from "./engine/context-engine.js";
+export { ContextEngine, reconnectDelayMs } from "./engine/context-engine.js";
 export type {
   CompactAvailability,
   CompactionSettings,
@@ -39,16 +40,20 @@ export type {
   TraceSink,
 } from "./engine/context-engine.js";
 export { Session } from "./session.js";
-export type { SessionConfig } from "./session.js";
+export type { GoalRunOptions, SessionConfig, SessionRunOptions } from "./session.js";
 // Session-title generation lives in internal/ (an assembly detail of Session.generateTitle);
 // only its narrow public surface is re-exported: the result type (part of
-// Session.generateTitle's signature) and the sanitation helpers the Web server's title
-// fallback builds on (stripConversationMarkers / sanitizeTitle). The prompt/request
-// internals (buildTitlePrompt / generateTitleWithLLM) are deliberately not public.
-export { sanitizeTitle, stripConversationMarkers } from "./internal/session-title.js";
+// Session.generateTitle's signature) and sanitizeTitle. The prompt/request internals
+// (buildTitlePrompt / generateTitleWithLLM) are deliberately not public; marker stripping
+// (stripConversationMarkers) is exported from the markers module via the omnimessage barrel.
+export { sanitizeTitle } from "./internal/session-title.js";
 export type { SessionTitleResult } from "./internal/session-title.js";
 export { Agent, createAgent } from "./agent.js";
 export type { CreateAgentOptions, CreateSessionOptions, ResumeSessionOptions } from "./agent.js";
 
 /** SDK version number. */
-export const VERSION = "0.1.2";
+export const VERSION = "0.1.4";
+/** Release build date (UTC yyyy-mm-dd), stamped by the release workflow next to VERSION; null in a dev/source build. */
+export const BUILD_DATE: string | null = null;
+// Version-string helpers (shared by the CLI's `penguin update` and the server's update check).
+export { compareVersions, normalizeVersion } from "./internal/version.js";

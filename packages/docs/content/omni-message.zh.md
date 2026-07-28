@@ -1,6 +1,6 @@
 ---
 title: OmniMessage 协议
-description: 一个信封、三类消息、五值 stop_reason——贯穿 SDK、Trace 与 SSE 的统一消息协议，逐字段定义。
+description: 一个信封、三类消息、六值 stop_reason——贯穿 SDK、Trace 与 SSE 的统一消息协议，逐字段定义。
 ---
 
 OmniMessage 是 PenguinHarness 的统一消息协议：SDK 对外产出它，Trace 逐行存储它，Server 经 SSE 原样推送它。「流出去的」「存下来的」「模型看到的」是同一种结构，前后端与存储之间不存在第二套格式。
@@ -50,7 +50,7 @@ interface ToolDefinition {
 }
 ```
 
-session_meta 只承载**会话级不变量**——模型、系统提示词、Workspace 在 Session 生命周期内不可变；恢复 Session 时引擎直接以 Trace 中的这条消息为运行时配置，见 [Session 与 Trace](/sessions-and-traces)。思考等级是逐轮参数（随每次 Task 下发），不记录在此；旧版 Trace 的 meta 里可能仍带 `thinking_level` 字段，恢复时按兼容逻辑继续生效。
+session_meta 只承载**会话级不变量**——模型、系统提示词、Workspace 在 Session 生命周期内不可变；恢复 Session 时引擎直接以 Trace 中的这条消息为运行时配置，见 [Session 与 Trace](/sessions-and-traces)。思考等级是逐轮参数（随每次 Task 下发），不记录在此；旧版 Trace 的 meta 里可能仍带 `thinking_level` 字段，恢复时会被忽略——恢复后的 Session 直接读取 Agent 当前配置。
 
 ## model_msg：完整消息
 
@@ -189,6 +189,9 @@ interface RequestBeginPayload {
 interface RequestEndPayload {
   type: "request_end";
   status: StopReason;         // completed 是回放判定「该轮已提交」的机械标准
+  message?: string;           // 失败详情(LLMOutcome.message),仅非 completed 携带:
+                              // 被重试/失败的 Request 背后的真实原因(如供应商额度码),
+                              // 供成本中心错误面板读取;增量字段,旧 Trace 回放不受影响
 }
 
 interface ApprovalDecisionPayload {
@@ -241,19 +244,20 @@ interface SubagentPayload {
 
 ## stop_reason
 
-五值枚举，贯穿消息与接口返回(`LLMOutcome.status` 使用同一集合，见[接口契约](/interfaces)):
+六值枚举，贯穿消息与接口返回(`LLMOutcome.status` 使用同一集合，见[接口契约](/interfaces)):
 
 ```ts
-type StopReason = "completed" | "failed" | "aborted" | "timeout" | "malformed";
+type StopReason = "completed" | "failed" | "aborted" | "timeout" | "malformed" | "auth";
 ```
 
 | 值 | 语义 | 引擎的反应 |
 | --- | --- | --- |
 | `completed` | 正常完成 | 继续 |
 | `aborted` | 用户中断 | 停止并交还用户 |
-| `timeout` | LLM 超时/断连 | 仅 LLM 侧：同一 run 内自动重连 |
+| `timeout` | LLM 超时/传输层断连/瞬时的供应商额度错误 | 仅 LLM 侧：同一 run 内自动重连 |
 | `malformed` | 响应解析失败/流截断 | 仅 LLM 侧：同一 run 内自动重连 |
 | `failed` | 其他不可重试错误 | 停止并交还用户 |
+| `auth` | 供应商拒绝了凭据 | 与 `failed` 同样停止；宿主据此禁用输入，直到该模型的 API key 被更新（凭据取自当前 Project 配置） |
 
 错误从不以异常形式穿过接口边界——它们就是消息，见 [Agent 运行循环](/agent-loop)。
 

@@ -63,7 +63,12 @@ export interface Messages {
     vaultKey: string;
     vaultValue: string;
   };
-  run: { desc: string; message: string };
+  run: {
+    desc: string;
+    message: string;
+    /** run's --goal: goal mode, with an optional token budget value (`--goal 500k`). */
+    goal: string;
+  };
   chat: { desc: string; resume: string };
   serve: {
     serverDesc: string;
@@ -161,6 +166,20 @@ export interface Messages {
   compactionStop(mode: string, status: string, tokens?: { total: string; delta: string }): string;
   /** Prompt shown when `/compact` has nothing to compact (session just started / two consecutive compactions). */
   compactNothing(): string;
+  /** Dim line announcing one goal round (printed before the round runs). */
+  goalRound(round: number): string;
+  /** Dim summary line after a goal ends: how it ended, rounds run, tokens consumed. */
+  goalFinished(
+    outcome: "complete" | "blocked" | "budget_limited" | "aborted",
+    rounds: number,
+    tokens: string,
+  ): string;
+  /** `/goal` usage error (missing objective / malformed command). */
+  goalUsage(): string;
+  /** Invalid token-budget value (chat `/goal:<budget>` or run `--goal <budget>`). */
+  goalBudgetInvalid(value: string): string;
+  /** run's --goal given an empty/whitespace -m (the objective must be non-empty text). */
+  goalObjectiveEmpty(): string;
   /** Prompt for an invalid --approve mode. */
   approveModeInvalid(value: string): string;
   /** Render label for an approval decision (frontend renders the approval_decision event; one label each for allow/deny). */
@@ -176,6 +195,8 @@ export interface Messages {
   /** Example resume command shown when the REPL exits (dim print; only when this session has a resumable record). */
   resumeHint(command: string): string;
   langInvalid(value: string): string;
+  /** `config lang` persists via POSIX shell startup files; on Windows it refuses with a pointer to a user env var instead. */
+  langWindowsUnsupported(lang: string): string;
   langSet(lang: string, rcPath: string): string;
   langRestartConfirm(): string;
   langRestart(): string;
@@ -276,7 +297,11 @@ const en: Messages = {
     vaultKey: "Variable name (letters, digits and underscores; must not start with a digit)",
     vaultValue: "Variable value, written to the Agent's agent_state/.vault.toml",
   },
-  run: { desc: "Run a single Task", message: "Prompt for this Task" },
+  run: {
+    desc: "Run a single Task",
+    message: "Prompt for this Task",
+    goal: "Goal mode: loop until the goal completes; optional token budget (e.g. 500k, 2m)",
+  },
   chat: {
     desc: "Open the interactive REPL",
     resume:
@@ -347,7 +372,7 @@ const en: Messages = {
 
   header: headerEn,
   chatHints: () =>
-    "Type a message to start a conversation; end a line with \\; typing while a task runs steers the agent; /compact to compact the context; /exit to quit; and Ctrl-C interrupts the current conversation.",
+    "Type a message to start a conversation; end a line with \\; typing while a task runs steers the agent; /goal runs a goal to completion; /compact to compact the context; /exit to quit; and Ctrl-C interrupts the current conversation.",
   confirmExit: () => "Exit penguin? [y/N] ",
   taskInterrupted: () => "[current conversation interrupted]",
   steerQueued: (text) => `» steering queued (delivered with the next turn): ${text}`,
@@ -371,6 +396,20 @@ const en: Messages = {
       : `[compaction] ${status}; keeping the current context`) +
     (tokens ? ` · tokens ${tokens.total} (${tokens.delta})` : ""),
   compactNothing: () => "[compaction] nothing to compact yet",
+  goalRound: (round) => `[goal] round ${round}`,
+  goalFinished: (outcome, rounds, tokens) => {
+    const label = {
+      complete: "completed",
+      blocked: "blocked (see the final reply for what it needs)",
+      budget_limited: "stopped: token budget exhausted",
+      aborted: "interrupted",
+    }[outcome];
+    return `[goal] ${label} · ${rounds} round${rounds === 1 ? "" : "s"} · tokens ${tokens}`;
+  },
+  goalUsage: () => "Usage: /goal[:<budget>] <objective>  (e.g. /goal:500k fix all failing tests)",
+  goalBudgetInvalid: (value) =>
+    `Invalid token budget "${value}". Use a positive number with an optional k/m suffix (500k, 2m).`,
+  goalObjectiveEmpty: () => "Goal mode requires a non-empty objective: pass it via -m.",
   approveModeInvalid: (value) =>
     `Invalid approval mode "${value}". Use allow-all, deny-all, read-only, or always-ask.`,
   approvalDecision: (decision) => (decision === "allow" ? "✓ [approved]" : "× [denied]"),
@@ -383,6 +422,9 @@ const en: Messages = {
     `[resumed] ${sessionId} · ${messageCount} message${messageCount === 1 ? "" : "s"} in the current context`,
   resumeHint: (command) => `To continue this conversation: ${command}`,
   langInvalid: (value) => `Invalid language "${value}". Use en or zh.`,
+  langWindowsUnsupported: (lang) =>
+    `penguin config lang persists via POSIX shell startup files, which Windows does not have.\n` +
+    `Set the user environment variable instead: setx PENGUIN_LANG ${lang} (new terminals pick it up).`,
   langSet: (lang, rcPath) => `Language set to ${lang}; wrote PENGUIN_LANG to ${rcPath}.`,
   langRestartConfirm: () => "Open a new shell now to apply? [y/N] ",
   langRestart: () => "Opening a new shell with the new language (type exit to return)…",
@@ -447,7 +489,11 @@ const zh: Messages = {
     vaultKey: "变量名（字母、数字与下划线，不能以数字开头）",
     vaultValue: "变量值，写入该 Agent 的 agent_state/.vault.toml",
   },
-  run: { desc: "单次运行一个 Task", message: "本次 Task 的 Prompt" },
+  run: {
+    desc: "单次运行一个 Task",
+    message: "本次 Task 的 Prompt",
+    goal: "目标模式：循环运行直至目标完成；可选 token 预算（如 500k、2m）",
+  },
   chat: {
     desc: "打开交互式 REPL",
     resume:
@@ -514,7 +560,7 @@ const zh: Messages = {
 
   header: headerZh,
   chatHints: () =>
-    "输入消息发起对话；行尾 \\ 续行；运行中输入可插话引导；/compact 压缩上下文；/exit 退出；Ctrl-C 中断对话。",
+    "输入消息发起对话；行尾 \\ 续行；运行中输入可插话引导；/goal 以目标模式运行至完成；/compact 压缩上下文；/exit 退出；Ctrl-C 中断对话。",
   confirmExit: () => "确认退出 penguin？[y/N] ",
   taskInterrupted: () => "[已中断当前对话]",
   steerQueued: (text) => `» 插话已排队（随下一轮送达）：${text}`,
@@ -538,6 +584,20 @@ const zh: Messages = {
       : `[压缩] ${status === "aborted" ? "已中断" : "失败"}，保留当前上下文`) +
     (tokens ? ` · tokens ${tokens.total} (${tokens.delta})` : ""),
   compactNothing: () => "[压缩] 当前上下文为空，无需压缩",
+  goalRound: (round) => `[目标] 第 ${round} 轮`,
+  goalFinished: (outcome, rounds, tokens) => {
+    const label = {
+      complete: "已完成",
+      blocked: "受阻（所缺条件见最后一条回复）",
+      budget_limited: "已停止：token 预算耗尽",
+      aborted: "已中断",
+    }[outcome];
+    return `[目标] ${label} · 共 ${rounds} 轮 · tokens ${tokens}`;
+  },
+  goalUsage: () => "用法：/goal[:<预算>] <目标>（例如 /goal:500k 修复所有失败的测试）",
+  goalBudgetInvalid: (value) =>
+    `无效的 token 预算 "${value}"：应为正数，可带 k/m 后缀（500k、2m）。`,
+  goalObjectiveEmpty: () => "目标模式需要非空的目标文本：请通过 -m 传入。",
   approveModeInvalid: (value) =>
     `无效的审批模式 "${value}"。请使用 allow-all、deny-all、read-only 或 always-ask。`,
   approvalDecision: (decision) => (decision === "allow" ? "✓ [已批准]" : "× [已拒绝]"),
@@ -550,6 +610,9 @@ const zh: Messages = {
     `[已恢复] ${sessionId} · 当前上下文共 ${messageCount} 条消息`,
   resumeHint: (command) => `继续本次对话：${command}`,
   langInvalid: (value) => `无效的语言 "${value}"。请使用 en 或 zh。`,
+  langWindowsUnsupported: (lang) =>
+    `penguin config lang 通过 POSIX shell 启动文件持久化语言，Windows 上没有对应机制。\n` +
+    `请改为设置用户环境变量：setx PENGUIN_LANG ${lang}（新终端生效）。`,
   langSet: (lang, rcPath) => `语言已设为 ${lang}；已将 PENGUIN_LANG 写入 ${rcPath}。`,
   langRestartConfirm: () => "现在打开新 shell 使其生效？[y/N] ",
   langRestart: () => "正在打开使用新语言的新 shell（输入 exit 可返回）……",

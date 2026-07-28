@@ -40,8 +40,10 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
+import { formatMonthDay } from "../../lib/format";
 import { apiErrorText } from "../../lib/api-error";
 import { useAuth } from "../../state/auth";
+import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
@@ -49,6 +51,7 @@ import { Chevron } from "../../components/ui/chevron";
 import { Dropdown } from "../../components/ui/dropdown";
 import { PenguinLogo } from "../../components/ui/penguin-logo";
 import { toastError } from "../../components/ui/toast";
+import { useVersionInfo } from "../../lib/use-version-info";
 import { ChatInput } from "./chat-input";
 import { buildSkillsMessage } from "./skill-use";
 import { clearDraft, draftKey, loadDraft, saveDraft } from "./draft-cache";
@@ -383,7 +386,11 @@ export function DraftView({
   // that did not consume the composer text (the example task), so a typed-but-unsent draft
   // survives the navigation instead of being silently discarded.
   const onSend = useCallback(
-    async (input: TaskInputPart[], keepDraft = false): Promise<boolean> => {
+    async (
+      input: TaskInputPart[],
+      keepDraft = false,
+      goal: { budget: number } | null = null,
+    ): Promise<boolean> => {
       if (!agentId || sendingRef.current) return false;
       sendingRef.current = true;
       setSending(true);
@@ -398,7 +405,7 @@ export function DraftView({
         if (workspace.trim()) body.workspace = workspace.trim();
         const created = await api.createSession(projectId, agentId, body);
         createdId = created.session.sessionId;
-        const res = await api.postTask(createdId, { input });
+        const res = await api.postTask(createdId, { input, ...(goal ? { goal } : {}) });
         add(created.session);
         if (!keepDraft) discardDraft();
         navigate(`/chat/${res.sessionId}`, { replace: true });
@@ -510,11 +517,12 @@ export function DraftView({
             {S.appName}
           </h1>
           <p className="mt-2 text-base text-gray-400 dark:text-gray-500">{S.chat.draftSubtitle}</p>
+          <VersionLine />
         </div>
 
         <ChatInput
           status="idle"
-          onSend={onSend}
+          onSend={(input, goal) => onSend(input, false, goal)}
           onStop={async () => undefined}
           onCompact={async () => undefined}
           modelRef={modelRef}
@@ -662,6 +670,59 @@ export function DraftView({
       {/* Lower symmetric space — empty, so it matches the upper one exactly */}
       <div className="flex-1" />
     </div>
+  );
+}
+
+/**
+ * Superscript "new version" pill on the version line (accent-colored, raised via
+ * align-super). Kept literally identical to the sidebar footer's copy in
+ * components/layout/sidebar.tsx — the two surfaces must not drift apart.
+ */
+const versionBadgeClass =
+  "ml-1.5 inline-block rounded-full bg-[var(--accent-bg)] px-1.5 align-super text-[10px] font-medium leading-4 text-[var(--accent-fg)] transition-opacity duration-150 hover:opacity-80";
+
+/**
+ * Quiet version line under the brand subtitle: `vX.Y.Z · 最近更新日期 7 月 26 日` /
+ * `… · Last updated Jul 26`. The product name is not repeated here — the brand wordmark
+ * sits directly above, and the sidebar's version footer is bare `vX.Y.Z` too. The date is
+ * the running version's release
+ * date, stamped into core's BUILD_DATE at build time — displayed as-is, no network;
+ * dev builds and releases that predate the stamping (v0.1.2 and earlier) carry null
+ * and show the version alone. When the update check knows a newer release, a small
+ * superscript badge follows, linking to the release page (this surface's existing
+ * affordance; the sidebar's badge additionally offers admins the update dialog).
+ * Fetching starts on mount — useVersionInfo caches at module level, so after the first
+ * resolution anywhere in the app this renders instantly and never refetches. Nothing
+ * renders until the version resolves (no placeholder flicker under the brand).
+ */
+function VersionLine() {
+  const { locale } = useLocale();
+  const { version, update } = useVersionInfo(true);
+  if (version === null) return null;
+  const date = version.buildDate;
+  return (
+    <p className="mt-1.5 text-xs text-gray-400 dark:text-gray-500">
+      {`v${version.version}${
+        date !== null ? ` · ${S.update.lastUpdated(formatMonthDay(date, locale))}` : ""
+      }`}
+      {update !== null &&
+        update.updateAvailable &&
+        update.latestVersion !== null &&
+        (update.releaseUrl !== null ? (
+          <a
+            href={update.releaseUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={S.update.newVersion(update.latestVersion)}
+            aria-label={S.update.newVersion(update.latestVersion)}
+            className={versionBadgeClass}
+          >
+            {S.update.newVersionBadge}
+          </a>
+        ) : (
+          <span className={versionBadgeClass}>{S.update.newVersionBadge}</span>
+        ))}
+    </p>
   );
 }
 

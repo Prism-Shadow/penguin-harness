@@ -126,6 +126,7 @@ describe("App Data Dir / Agent ID placeholders", () => {
       modelId: "deepseek-v4-pro",
       platform: "linux",
       osVersion: "test",
+      shell: "bash",
       date: "2026-07-08",
     });
     expect(prompt).toContain("Agent ID: env_agent");

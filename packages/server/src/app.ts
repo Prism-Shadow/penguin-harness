@@ -19,6 +19,7 @@ import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
 import { ErrorsRepo } from "./db/repos/errors.js";
 import { MembersRepo } from "./db/repos/members.js";
 import { ProjectsRepo } from "./db/repos/projects.js";
+import { GoalsRepo } from "./db/repos/goals.js";
 import { SchedulesRepo } from "./db/repos/schedules.js";
 import { SessionsRepo } from "./db/repos/sessions.js";
 import { UiPrefsRepo } from "./db/repos/ui-prefs.js";
@@ -47,6 +48,7 @@ import { agentConfigRoutes } from "./http/routes/agent-config.js";
 import { agentTracesRoutes } from "./http/routes/agent-traces.js";
 import { usageRoutes } from "./http/routes/usage.js";
 import { agentSessionsRoutes, sessionsRoutes } from "./http/routes/sessions.js";
+import { versionRoutes } from "./http/routes/version.js";
 import { ChannelHub } from "./runtime/channel.js";
 import { ErrorRecorder } from "./runtime/error-recorder.js";
 import { createCoreSessionLoader, SessionManager } from "./runtime/session-manager.js";
@@ -65,6 +67,7 @@ import { ProjectConfigService } from "./services/project-config-service.js";
 import { ProjectService } from "./services/project-service.js";
 import { SessionService } from "./services/session-service.js";
 import { TraceService } from "./services/trace-service.js";
+import { UpdateCheckService } from "./services/update-check-service.js";
 import { UsageService } from "./services/usage-service.js";
 import { WorkspaceFilesService } from "./services/workspace-files-service.js";
 import {
@@ -93,12 +96,16 @@ export interface AppDeps {
   sessionService: SessionService;
   traceService: TraceService;
   usageService: UsageService;
+  /** GitHub latest-release lookup for the web UI's update reminder (cached, fail-soft). */
+  updateCheck: UpdateCheckService;
   workspaceFiles: WorkspaceFilesService;
   /** Signs/verifies short-lived Workspace preview tokens (separate preview origin). */
   previewTokens: PreviewTokenSigner;
   benchmarks: BenchmarkService;
   snapshots: SnapshotService;
   schedulesRepo: SchedulesRepo;
+  goalsRepo: GoalsRepo;
+  errorsRepo: ErrorsRepo;
   scheduler: Scheduler;
   channels: ChannelHub;
   manager: SessionManager;
@@ -115,6 +122,8 @@ export interface BuildDepsOverrides {
   loader?: SessionLoader;
   /** Test double: Session title generator (avoids real LLM requests). */
   titles?: TitleNotifier;
+  /** Test double: update-check service with a stubbed fetch/clock (avoids real network calls). */
+  updateCheck?: UpdateCheckService;
   log?: (line: string) => void;
   now?: () => Date;
 }
@@ -134,6 +143,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
   const errorsRepo = new ErrorsRepo(db);
   const prefsRepo = new UiPrefsRepo(db);
   const schedulesRepo = new SchedulesRepo(db);
+  const goalsRepo = new GoalsRepo(db);
 
   const projectConfigService = new ProjectConfigService(config.root);
   const agentConfigService = new AgentConfigService(config.root);
@@ -151,6 +161,8 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     (projectId, provider, modelId) => projectConfigService.getPricing(projectId, provider, modelId),
     overrides.now ?? (() => new Date()),
   );
+  const updateCheck =
+    overrides.updateCheck ?? new UpdateCheckService(overrides.now ? { now: overrides.now } : {});
 
   // Channel idle reclamation skips active Sessions (running/compacting can go a long time
   // without a publish, e.g. while waiting for approval).
@@ -178,6 +190,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     errors,
     titles,
     log,
+    goals: goalsRepo,
   });
   managerRef = manager;
 
@@ -191,6 +204,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     usage: usageRepo,
     errors: errorsRepo,
     schedules: schedulesRepo,
+    goals: goalsRepo,
     projectConfig: projectConfigService,
     manager,
   });
@@ -247,11 +261,14 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     sessionService,
     traceService,
     usageService,
+    updateCheck,
     workspaceFiles,
     previewTokens,
     benchmarks,
     snapshots,
     schedulesRepo,
+    goalsRepo,
+    errorsRepo,
     scheduler,
     channels,
     manager,
@@ -331,6 +348,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   const auth = authMiddleware(deps.authService);
   app.use("/api/*", auth);
   app.route("/api/me", meRoutes(deps));
+  app.route("/api/version", versionRoutes(deps));
   app.route("/api/admin/users", adminUsersRoutes(deps));
   app.route("/api/events", eventsRoutes(deps));
   // Skill library listing: readable once logged in, not nested under a Project prefix.
