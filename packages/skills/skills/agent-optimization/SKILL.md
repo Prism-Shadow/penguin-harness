@@ -3,21 +3,25 @@ name: agent-optimization
 description: Improve an Agent State through versioned scores and score-linked Traces from a frozen Benchmark. Use when an explicit Test Agent has a complete current baseline; do not use for direct feedback, Benchmark construction, or direct scoring.
 short_description: Improve an Agent from measured Benchmark results.
 short_description_zh: 根据 Benchmark 结果改进 Agent。
-version: 7
-updated: 2026-07-28T07:56:18Z
+version: 8
+updated: 2026-07-28T11:55:37Z
 ---
 
 # Agent Optimization
 
 Improve one Test Agent through an evidence → hypothesis → Candidate → evaluation → accept or rollback loop. Use public Statements, scores, and Test Traces as black-box feedback. Delegate every evaluation to an `agent-evaluation` subagent; never run or score the Test Agent directly.
 
+## Before you start
+
+If the request does not identify the Test Agent, frozen Benchmark, desired target score, and round limit, ask for the missing inputs. When they are already supplied, proceed without asking the user to restate them.
+
 ## Goal and contract
 
-Require an explicit Test Agent and a frozen Benchmark with a complete valid Formal Baseline. The top-level Session must provide `run_subagent`, and the current Agent must have the `agent-evaluation` Skill. If prerequisite is missing, stop and explain what is needed. Do not evaluate the Test Agent directly.
+Require an explicit Test Agent, a frozen Benchmark with a complete valid Formal Baseline, a desired target score, and a positive round limit. The top-level Session must provide `run_subagent`, and the current Agent must have the `agent-evaluation` Skill. If a prerequisite is missing, stop and explain what is needed. Do not create the missing Agent, Benchmark, or Baseline, and do not evaluate the Test Agent directly.
 
 A **Reference** is the Agent State currently kept as best, together with its complete Evaluation on the frozen Benchmark.
 
-Each round starts from the Reference and tests a bounded, general **Candidate**. Evaluate every Candidate on the same frozen Case × Run matrix and evaluation Model. Accept it only when the change is admissible, the matrix is complete and valid, and its Evaluation's top-level `score` is strictly higher than the Reference Evaluation's `score`. An accepted Candidate and its Evaluation become the next Reference; otherwise restore the previous Reference.
+Each round starts from the Reference and tests a bounded, general **Candidate**. Evaluate every Candidate on the same frozen Case × Run matrix and evaluation Model. Accept it only when the change is admissible, the matrix is complete and valid, and its Evaluation's top-level `score` is strictly higher than the Reference Evaluation's `score`. An accepted Candidate and its Evaluation become the next Reference; otherwise restore the previous Reference. Stop early when the Reference reaches the desired target; otherwise run no more than the requested number of complete valid Candidate rounds.
 
 ## Access and changes
 
@@ -38,7 +42,9 @@ For each round:
 5. **Check admissibility.** Confirm that the change is general, uses no private evaluation information, and modifies only permitted Test Agent State.
 6. **Evaluate the Candidate.** Delegate the complete frozen Case × Run matrix in parallel under the evaluation rules below and assemble all returned cells. Do not modify the Candidate while any cell is in flight.
 7. **Decide.** Accept the Candidate only when every cell is valid and its Evaluation's top-level `score` is strictly higher than the Reference Evaluation's `score`. Otherwise restore the Reference. A failure that prevents a valid comparison follows the stop rules below; it is not a zero score.
-8. **Continue or stop.** An accepted Candidate becomes the next Reference. Use valid results from rejected Candidates only as evidence for a later hypothesis. Repeat until the user's target or round limit is reached, no useful Candidate remains, or infrastructure prevents a valid comparison.
+8. **Continue or stop.** An accepted Candidate becomes the next Reference. Use valid results from rejected Candidates only as evidence for a later hypothesis. Stop when the Reference reaches the desired target. Otherwise continue until the round limit is reached, no useful Candidate remains, or infrastructure prevents a valid comparison. At the round limit, retain the highest-scoring accepted Reference.
+
+A round counts only after one Candidate has a complete valid Evaluation. Corrected requests, validity repairs, and evaluation retries do not consume the round limit. A complete valid Evaluation of a rejected Candidate does count.
 
 ## Build and roll back a Candidate
 

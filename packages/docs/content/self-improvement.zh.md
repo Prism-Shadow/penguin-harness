@@ -3,27 +3,32 @@ title: 自我进化
 description: 由 Skill 编排的 Benchmark 评测与优化闭环：评分、改进、Snapshot 与回滚。
 ---
 
-PenguinHarness 中的自我进化不依赖专用引擎代码，而是由 Skill 编排普通的 Agent 机制完成：评测是普通的 Session，优化是普通的文件编辑，编排靠内置的 `run_subagent` 工具。这样做的直接收益是——整个过程与日常运行共用同一套可观测性与恢复机制。
+PenguinHarness 中的自我进化不依赖专用引擎代码，而是由 Skill 编排普通的 Agent 机制完成：评测是普通的 Session，优化是普通的文件编辑。创建评测与优化分别运行在两个独立的顶层 Session 中，只有单次评测通过内置的 `run_subagent` 工具委托。这样做的直接收益是——整个过程与日常运行共用同一套可观测性与恢复机制。
 
-## 三个角色
+## 角色与调用关系
 
 | 角色 | 职责 |
 | --- | --- |
+| Builder | 顶层 Agent，依次直接执行 `agent-creation` 和 `benchmark-design` |
 | Target Agent | 被改进的 Agent，只在自己的 Workspace 里执行评测任务 |
-| Evaluator | 执行并评分一次 Benchmark Case 运行 |
-| Optimizer | 驱动整个优化循环 |
+| Evaluator | `run_subagent` 创建的叶子 Worker，执行并评分一次 Benchmark Case 运行 |
+| Optimizer | 新顶层 Agent，直接执行 `agent-optimization` |
 
-角色由 Skill 定义而非硬编码：Evaluator 遵循 `agent-evaluation` Skill，Optimizer 遵循 `agent-optimization` Skill。这正是[配置参考](/configuration)所述设计原则的应用——Agent 的行为是磁盘上的可编辑文件，所以 Agent 可以被 Agent 改进。
+Builder 和 Optimizer 亲自遵循各自的 Skill，不把工作流再委托给子 Agent。只有 Evaluator 由它们通过 `run_subagent` 创建；Evaluator 遵循 `agent-evaluation`，并通过 Penguin CLI 启动指定的 Target Agent。CLI 不用于创建额外的 Builder、Optimizer 或 Evaluator。
 
-## 优化循环
+## 两个独立步骤
 
-1. `benchmark-design` 构建多 Case 的能力 Benchmark：重复独立运行，先校准出可追溯的基线；
-2. Optimizer 通过 `run_subagent` 工具并行编排 Evaluator，覆盖 Case × 运行次数矩阵；
-3. 得分与其关联的 Trace 共同指出失分位置；
-4. Optimizer 编辑 Target Agent 的可编辑状态——`AGENTS.md`、Skills、配置——产出版本 N+1；
-5. 每轮开始前先打 Snapshot；总分严格提升才保留候选版本，否则回滚。
+第一个顶层 Session 创建 Agent 和能力评测。Builder 先使用 `agent-creation`，再使用 `benchmark-design` 构建多 Case Benchmark。Pilot 分数是期望目标：达到后可以提前 Freeze；未达到时最多完成五个有效 Pilot iteration，并选择其中分数最低的有效版本 Freeze。Freeze 后必须运行全新完整的 Formal matrix；只要 Formal 有效就记录 Baseline，分数没有达到期望也不会使 Benchmark 作废。
 
-Agent 优化要求 scoreboard 中已有完整的基线序列——没有校准过的基线，就没有可比较的提升。
+用户确认第一步完成后，在新对话中启动第二个顶层 Session。Optimizer 先检查 Benchmark 和第一条完整 Formal Baseline，再使用 `agent-optimization`：
+
+1. 通过 `run_subagent` 并行编排 Evaluator，覆盖 Case × 运行次数矩阵；
+2. 根据得分和关联 Trace 提出一个有界 Candidate；
+3. 编辑 Target Agent 的可编辑状态——`AGENTS.md`、Skills、配置——产出版本 N+1；
+4. 总分严格提升才保留 Candidate，否则回滚；
+5. 达到期望分数时提前结束，否则最多完成五个有效 Candidate round，并保留最高分 Reference。
+
+无效评测和修复重跑不计入五轮限制。Agent 优化要求 Scoreboard 中已有完整 Formal Baseline——没有基线，就没有可比较的提升。
 
 ## Benchmark 存储
 

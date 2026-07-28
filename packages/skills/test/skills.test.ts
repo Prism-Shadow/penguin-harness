@@ -182,43 +182,49 @@ describe("librarySkill", () => {
     expect(librarySkill("no-such-skill")).toBeUndefined();
   });
 
-  it("benchmark-design calibrates with Pilot runs before the Formal Baseline", () => {
+  it("benchmark-design selects a valid Pilot revision before the Formal Baseline", () => {
     const content = librarySkill("benchmark-design")?.content;
     expect(content).toBeDefined();
 
-    const pilotIndex = content!.indexOf("## Pilot calibration");
-    const baselineIndex = content!.indexOf("## Formal baseline");
+    const pilotIndex = content!.indexOf("## Refine the Benchmark");
+    const baselineIndex = content!.indexOf("## Freeze and run the Formal Baseline");
     const normalizedContent = content!.replace(/\s+/g, " ");
 
     expect(pilotIndex).toBeGreaterThan(-1);
     expect(baselineIndex).toBeGreaterThan(pilotIndex);
+    expect(normalizedContent).toContain("Keep Pilot results out of the Scoreboard");
+    expect(normalizedContent).toContain("at most five valid Pilot iterations");
+    expect(normalizedContent).toContain("lowest-scoring valid Pilot revision");
     expect(normalizedContent).toContain(
-      "Pilot results are provisional and must not be written to the Scoreboard",
-    );
-    expect(normalizedContent).toContain("adjust only one difficulty dimension");
-    expect(normalizedContent).toContain("Run no more than three Pilot iterations");
-    expect(normalizedContent).toContain("Do not lower the score by tightening only the Rubric");
-    expect(normalizedContent).toContain(
-      "requires a new Pilot evaluation and a new semantic isolation review",
-    );
-    expect(normalizedContent).toContain("immediately before freeze and Formal dispatch");
-    expect(normalizedContent).toContain(
-      "ledger keyed by phase, Pilot iteration when applicable, Case, and Run",
+      "Do not run another difficulty refinement merely to create more score margin",
     );
     expect(normalizedContent).toContain(
-      "retry only one time, only for the clearly transient `cli_failed`",
+      "missing the desired score alone is not a failure",
     );
+    expect(normalizedContent).toContain("never reuse a Pilot result");
     expect(normalizedContent).toContain(
-      "A terminal or incomplete matrix must not write a baseline",
+      "Record the Formal Baseline even when its score does not meet the desired baseline score",
     );
-    expect(normalizedContent).toContain("Start a fresh Formal ledger");
-    expect(normalizedContent).toContain("never reuse Pilot outputs in the Scoreboard");
-    expect(normalizedContent).toContain(
-      "After the first Formal Baseline cell is dispatched, do not change the frozen Benchmark",
+  });
+
+  it("evaluation is the only subagent leaf and optimization has a bounded valid-round loop", () => {
+    const evaluation = librarySkill("agent-evaluation")!.content.replace(/\s+/g, " ");
+    const optimization = librarySkill("agent-optimization")!.content.replace(/\s+/g, " ");
+
+    expect(evaluation).toContain("request from a `run_subagent` caller");
+    expect(evaluation).toContain("Use the Penguin CLI only to launch the specified Test Agent");
+    expect(evaluation).toContain('PROJECT_ID="$(basename "$PROJECT_DIR")"');
+    expect(evaluation).toContain('PENGUIN_HOME="$(dirname "$PROJECT_DIR")"');
+    expect(evaluation).toContain("export PENGUIN_HOME");
+    expect(evaluation).toContain('--project-id "$PROJECT_ID"');
+    expect(evaluation).not.toContain(
+      'PENGUIN_HOME="$(dirname "$PROJECT_DIR")" penguin run',
     );
-    expect(normalizedContent).toContain(
-      "abandon that Formal Baseline and return to Pilot calibration",
+    expect(optimization).toContain("Delegate every evaluation to an `agent-evaluation` subagent");
+    expect(optimization).toContain(
+      "A round counts only after one Candidate has a complete valid Evaluation",
     );
+    expect(optimization).toContain("At the round limit, retain the highest-scoring accepted Reference");
   });
 
   it("rejects illegal-character names (path traversal guard) and never hits the filesystem", () => {

@@ -563,108 +563,57 @@ When done, open index.html in a browser and self-test once.`,
           "give it a beautiful web chat UI following the web-design skill, with a few example questions in the empty state. " +
           "When done, run the app, verify one streamed answer yourself, and tell me how to access it.",
       },
-      selfImprovement: {
-        label: "Example: an Agent that improves on realistic decision tasks",
-        desc: "Improve decision-making from evaluations across football, after-sales, and simulated investment tasks",
-        prompt: `Coordinate one complete Agent creation, Benchmark construction, and Agent optimization experiment.
+      agentBenchmarkBuild: {
+        label: "Example: create a decision Agent and capability evaluation",
+        desc: "Create a general decision Agent and test it on football, after-sales, and investment tasks",
+        prompt: `Create a decision Agent, then build a capability Benchmark and Formal Baseline for it.
 
-## Orchestration
+In this top-level Session, directly use \`agent-creation\` followed by \`benchmark-design\`; do not delegate Agent Creation or Benchmark Design to a subagent. When evaluation is needed, follow the Skills and use \`run_subagent\` to delegate to an Evaluator using \`agent-evaluation\`.
 
-This Session only coordinates. Launch Phase 1, Phase 2, and Phase 3 as three independent
-\`penguin run\` commands through \`exec_command\`; do not launch those phases with this Session's
-\`run_subagent\`. Each phase must use \`default_agent\`, the Project's default Model, its own Prompt
-file, and its own Workspace. Do not pass \`--provider\` or \`--model-id\` to a phase command;
-\`deepseek-v4-flash\` is only the evaluation Model for the Test Agent.
+## Create the Agent
 
-\`\`\`bash
-mkdir -p <phase_workspace>
-PROJECT_DIR="<Project Dir from the current Session Environment>"
-PROJECT_ID="$(basename "$PROJECT_DIR")"
-export PENGUIN_HOME="$(dirname "$PROJECT_DIR")"
-penguin run \\
-  --project-id "$PROJECT_ID" \\
-  --agent-id default_agent \\
-  --workspace <phase_workspace> \\
-  --message "$(cat <phase_prompt_file>)"
-\`\`\`
+Create \`finite_choice_agent\`, a general finite-choice Agent. When it must answer despite insufficient public information, it should use a simple, stable decision method; design and explain that method.
 
-Each phase Prompt may pass only the experiment goals, parameters, task scenarios, and acceptance
-conditions given in this Prompt. Do not copy, rewrite, or supplement the corresponding Skill's
-workflow, and do not preset hidden rules, scoring methods, difficulty adjustments, or optimization
-strategies. Each phase must read and follow its specified Skill.
+Install no Skills. Set \`thinking_level: medium\` and initial version 1. Keep the Agent general; do not preset knowledge from later Benchmark scenarios, private rules, Gold answers, or optimization hints.
 
-Wait for each command to exit and verify its artifacts before starting the next phase. Within their
-own top-level Sessions, Phase 2 and Phase 3 should use \`run_subagent\` for
-\`agent-evaluation\` as their Skills require.
+## Build the Benchmark
 
-## Phase 1: Agent Creation
-
-Use \`agent-creation\` to create \`finite_choice_agent\`, a general finite-choice Agent. When it must
-answer despite insufficient public information, it should use a simple, stable decision method. This
-phase should design and explain the specific method.
-
-Install no Skills. Set \`thinking_level: medium\` and initial version 1. Keep the Agent general; do
-not preset knowledge from later Benchmark scenarios, private rules, Gold answers, or optimization
-hints.
-
-## Phase 2: Benchmark Design
-
-Use \`benchmark-design\` with:
-
-- Test Agent: \`finite_choice_agent\`
 - Benchmark ID: \`contextual-choice-adaptation\`
 - Test Provider: \`deepseek\`
 - Test Model: \`deepseek-v4-flash\`
 - Runs: 1
-- Baseline hard gate: below 75
+- Desired Pilot score: below 75
+- Valid Pilot iteration limit: 5
 
-Measure whether the Agent can propose and test candidate decision rules from public evidence,
-reject explanations that conflict with historical outcomes, judge whether the evidence is
-sufficient, and apply the stable process to new finite-choice tasks. Design three realistic Cases:
+Measure whether the Agent can propose and test candidate decision rules from public evidence, reject explanations that conflict with historical outcomes, judge whether evidence is sufficient, and transfer a stable decision process to new finite-choice tasks. Build three Cases:
 
-1. Football betting: provide settled matches, pre-match odds, recent form, home or away status,
-   injuries, weather, and outcomes. The Agent selects \`Home\`, \`Draw\`, \`Away\`, or \`No Bet\`.
-2. After-sales handling: provide policies, order records, customer requests, and timing. The Agent
-   selects \`Refund\`, \`Replace\`, \`Reject\`, or \`Escalate\`.
-3. Simulated investment: provide a public strategy, historical market samples, and current
-   indicators. The Agent ranks assets or selects the required investment action.
+1. Football betting: provide settled matches, pre-match odds, recent form, home or away status, injuries, weather, and outcomes, followed by matches to decide. The Agent selects \`Home\`, \`Draw\`, \`Away\`, or \`No Bet\`.
+2. After-sales handling: provide policies, order records, customer requests, and timing. The Agent selects \`Refund\`, \`Replace\`, \`Reject\`, or \`Escalate\`.
+3. Simulated investment: provide a public strategy, historical market samples, and current indicators. The Agent ranks candidate assets or selects the required investment action.
 
-The three Cases should cover different decision challenges while jointly requiring the Agent to
-recover a stable process from public rules, historical examples, and current facts; judge evidence
-sufficiency; handle priorities and exceptions; and transfer the process to new instances. Before
-freeze, confirm that each Case exposes a stable limitation or covers a necessary capability not
-measured by the other Cases; do not rely on one low-scoring Case to satisfy the aggregate gate.
-Difficulty must come from necessary reasoning dependencies, not data volume, hidden evidence, or
-answer ambiguity. Each Statement must provide all necessary public materials while presenting only
-the task, without explaining the tested capability, solution, or decisive evidence.
+The three Cases must cover different decision challenges while jointly measuring whether the Agent can recover a stable process from public rules, historical examples, and current facts; judge evidence sufficiency; handle priorities and exceptions; and transfer the process to new instances. Before Freeze, confirm that each Case exposes a stable limitation or covers a necessary capability not measured by the other Cases; do not rely on one low-scoring Case to pull down the total. Difficulty must come from necessary reasoning dependencies, not data volume, hidden evidence, or answer ambiguity. Each Statement must provide all public materials needed to complete the task while presenting only the task, without explaining the tested capability, solution, or decisive evidence.
 
-Start Phase 3 only when a valid, complete Formal Baseline is below 75; otherwise report the
-limitation and stop. The coordinating Session may inspect only public Benchmark artifacts and final
-scores, and must not read or repeat Rubrics, Gold answers, or other private information.
+Freeze early when a complete valid Pilot meets the desired score. Otherwise complete no more than five valid Pilot iterations and freeze the lowest-scoring valid Benchmark revision. Invalid evaluations and correction reruns do not count toward the limit. After Freeze, run a fresh complete Formal matrix without reusing Pilot runs. Record every valid Formal Baseline even when its score is not below 75.
 
-## Phase 3: Agent Optimization
+Report the Agent and Benchmark paths, Pilot scores and selection, Formal Baseline, Test Session ids, and known limitations, then stop. Do not begin Agent optimization.`,
+      },
+      agentOptimization: {
+        label: "Example: optimize a decision Agent from its evaluation",
+        desc: "Improve an Agent from existing evaluation results and verify that the new version is better",
+        prompt: `Optimize a decision Agent against its frozen capability Benchmark.
 
-Use \`agent-optimization\` to optimize Test Agent \`finite_choice_agent\`. Use Benchmark
-\`contextual-choice-adaptation\`, its recorded Formal Baseline as the Reference, and a target score
-of at least 85.
+In this top-level Session, directly use \`agent-optimization\`; do not delegate Optimization to a subagent. When evaluation is needed, follow the Skill and use \`run_subagent\` to delegate to an Evaluator using \`agent-evaluation\`.
 
-Improve the Test Agent's general capability using public Statements, evaluation scores, and Test
-Traces. Compare versions using each Evaluation's top-level \`score\`. For Case-level diagnosis,
-compare each \`runs[].score\` with that Case's \`max_score\`; never assume every Case is worth 100
-points. Follow \`agent-optimization\` to evaluate each Candidate and accept or roll it back until
-the target is reached or no useful improvement remains. Do not inspect Rubrics, Gold answers, or
-other private Benchmark information.
+- Test Agent: \`finite_choice_agent\`
+- Benchmark ID: \`contextual-choice-adaptation\`
+- Desired target score: at least 85
+- Valid Candidate round limit: 5
 
-## Final checks and report
+Before starting, confirm that the Benchmark exists and that its Scoreboard contains a first complete valid Formal Baseline. If either prerequisite is missing, stop; do not create or modify the Benchmark.
 
-Check whether the Phase 3 root Session actually accessed a path under \`/rubric/\`, and confirm that
-each Evaluator returned protocol YAML only. A text mention of the path is not access; actual access,
-or Rubrics, Gold answers, per-item scores, or other private information entering the root Session,
-invalidates the affected result. Report Agent and Benchmark paths, a Pilot summary, the
-Baseline/Candidate score curve, key assumptions, accepted and rolled-back versions, the final
-retained version, and known limitations.
+Improve the Test Agent's general capability using public Statements, evaluation scores, and Test Traces. Stop early when the Reference reaches 85; otherwise complete no more than five valid Candidate rounds. Invalid evaluations and correction reruns do not count toward the limit; a completely and validly evaluated rejected Candidate does count. Accept a Candidate only when its total score is strictly higher than the current Reference. At the round limit, retain the highest-scoring accepted Reference.
 
-Do not modify any Skill or create permanent Builder, Evaluator, or Optimizer Agents.`,
+The Optimizer must not read Rubrics, Gold answers, or other private scoring information. Report the Baseline/Candidate score curve, key hypotheses, accepted and rolled-back versions, final retained version, Test Session ids, and known limitations.`,
       },
     },
     sessionList: "Sessions",

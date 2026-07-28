@@ -546,69 +546,57 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
           "按 web-design 技能提供美观的 Web 聊天界面，空态展示几个示例问题。" +
           "完成后运行应用、自测一个问题验证流式回答，并告诉我访问方式。",
       },
-      selfImprovement: {
-        label: "示例：让 Agent 在真实决策任务中自我进化",
-        desc: "在足球投注、售后处置和模拟投资任务中，根据评测结果持续改进决策能力",
-        prompt: `请协调完成一次 Agent 创建、Benchmark 构建和 Agent 优化实验。
+      agentBenchmarkBuild: {
+        label: "示例：创建决策 Agent 和能力评测",
+        desc: "创建一个通用决策 Agent，并用足球、售后和投资任务检验它",
+        prompt: `请创建一个决策 Agent，并为它构建能力 Benchmark 和 Formal Baseline。
 
-## 编排
+在当前顶层 Session 中依次直接使用 \`agent-creation\` 和 \`benchmark-design\`；不要把 Agent Creation 或 Benchmark Design 委托给子 Agent。需要评测时，按照 Skill 要求通过 \`run_subagent\` 委托使用 \`agent-evaluation\` 的 Evaluator。
 
-当前 Session 只负责编排。Phase 1、Phase 2、Phase 3 必须分别通过 \`exec_command\` 启动三个独立的 \`penguin run\`，不得使用当前 Session 的 \`run_subagent\` 启动阶段。每个阶段都使用 \`default_agent\`、项目默认 Model、独立 Prompt 文件和独立 Workspace。阶段命令不得传 \`--provider\` 或 \`--model-id\`；\`deepseek-v4-flash\` 只作为 Test Agent 的评测 Model。
+## 创建 Agent
 
-\`\`\`bash
-mkdir -p <phase_workspace>
-PROJECT_DIR="<当前 Session 的 Environment Project Dir>"
-PROJECT_ID="$(basename "$PROJECT_DIR")"
-export PENGUIN_HOME="$(dirname "$PROJECT_DIR")"
-penguin run \\
-  --project-id "$PROJECT_ID" \\
-  --agent-id default_agent \\
-  --workspace <phase_workspace> \\
-  --message "$(cat <phase_prompt_file>)"
-\`\`\`
-
-各阶段 Prompt 只传递本 Prompt 已给出的实验目标、参数、任务场景和验收条件。不要复制、改写或补充对应 Skill 的工作流，也不要替阶段预设隐藏规则、评分方法、难度调整方式或优化策略；每个阶段应自行读取并遵循指定 Skill。
-
-每个命令退出并验证产物后，才能启动下一阶段。Phase 2 和 Phase 3 必须在各自的顶层 Session 内按 Skill 要求用 \`run_subagent\` 委托 \`agent-evaluation\` 执行评测。
-
-## Phase 1：Agent Creation
-
-使用 \`agent-creation\` 创建通用有限选择 Agent \`finite_choice_agent\`。它需要在公开信息不足但必须作答时采用简单、稳定的决策方式；具体策略由本阶段自行设计并说明。
+创建通用有限选择 Agent \`finite_choice_agent\`。它需要在公开信息不足但必须作答时采用简单、稳定的决策方式；具体策略由你设计并说明。
 
 不安装任何 Skill。设置 \`thinking_level: medium\`，初始 version 为 1。保持 Agent 通用，不得针对后续 Benchmark 预置题目知识、私有规则、Gold 或优化提示。
 
-## Phase 2：Benchmark Design
+## 构建 Benchmark
 
-使用 \`benchmark-design\`，参数如下：
-
-- Test Agent：\`finite_choice_agent\`
 - Benchmark ID：\`contextual-choice-adaptation\`
 - Test Provider：\`deepseek\`
 - Test Model：\`deepseek-v4-flash\`
 - Runs：1
-- Baseline 硬门槛：低于 75
+- 期望 Pilot 分数：低于 75
+- 有效 Pilot iteration 上限：5
 
-本实验评估：Agent 能否从公开证据提出并验证候选决策规律，排除与历史结果冲突的解释，判断证据是否充分，再将稳定的决策过程应用到新的有限选择任务。Benchmark 包含三个贴近实际工作的 Case：
+评估 Agent 能否从公开证据提出并验证候选决策规律，排除与历史结果冲突的解释，判断证据是否充分，并把稳定的决策过程迁移到新的有限选择任务。构建三个 Case：
 
 1. 足球投注决策：提供已结算的历史比赛、赛前赔率、近期状态、主客场、伤停、天气和最终赛果，再提供若干待判断比赛。Agent 必须选择 \`Home\`、\`Draw\`、\`Away\` 或 \`No Bet\`。
 2. 售后工单处置：提供售后政策、订单记录、用户诉求和时间信息。Agent 必须选择 \`Refund\`、\`Replace\`、\`Reject\` 或 \`Escalate\`。
 3. 模拟投资决策：提供公开的投资策略、历史市场样本和当前市场指标。Agent 必须对候选资产排序或选择规定的投资动作。
 
-三个 Case 应覆盖不同的决策难点，共同考察 Agent 能否从公开规则、历史案例和当前事实中恢复稳定的决策过程，判断证据是否充分，处理规则优先级和例外，并迁移到新实例。Freeze 前确认每个 Case 都能暴露稳定缺陷，或者覆盖其他 Case 未覆盖的必要能力；不能只依靠一个低分 Case 满足总分门槛。难度应来自必要的推理依赖，而不是数据量、隐藏关键信息或答案歧义。每个 Statement 必须提供完成任务所需的全部公开材料，但只呈现题目，不解释考点、解法或关键证据。
+三个 Case 应覆盖不同的决策难点，共同考察 Agent 能否从公开规则、历史案例和当前事实中恢复稳定的决策过程，判断证据是否充分，处理规则优先级和例外，并迁移到新实例。Freeze 前确认每个 Case 都能暴露稳定缺陷，或者覆盖其他 Case 未覆盖的必要能力；不能只依靠一个低分 Case 拉低总分。难度应来自必要的推理依赖，而不是数据量、隐藏关键信息或答案歧义。每个 Statement 必须提供完成任务所需的全部公开材料，但只呈现题目，不解释考点、解法或关键证据。
 
-只有有效且完整的 Formal Baseline 低于 75 时才能启动 Phase 3；否则报告限制并停止。当前编排 Session 只能检查公开 Benchmark 产物和最终分数，不得读取或转述 Rubric、Gold 等私有信息。
+完整有效的 Pilot 达到期望分数时可以提前 Freeze。否则最多完成 5 个有效 Pilot iteration，选择其中分数最低的有效 Benchmark revision Freeze；无效评测和修复重跑不计入轮数。Freeze 后运行全新完整的 Formal matrix，不复用 Pilot 运行。只要 Formal 有效就记录 Baseline，即使分数没有低于 75。
 
-## Phase 3：Agent Optimization
+完成后报告 Agent 与 Benchmark 路径、Pilot 分数与选择结果、Formal Baseline、Test Session ids 和已知限制，然后停止；不要开始优化 Agent。`,
+      },
+      agentOptimization: {
+        label: "示例：根据评测优化决策 Agent",
+        desc: "根据已有评测结果改进 Agent，并验证新版本是否真正提升",
+        prompt: `请根据已冻结的能力 Benchmark 优化决策 Agent。
 
-使用 \`agent-optimization\` 优化 Test Agent \`finite_choice_agent\`。Benchmark 为 \`contextual-choice-adaptation\`，Reference 为该 Benchmark 已记录的 Formal Baseline，目标分数至少 85。
+在当前顶层 Session 中直接使用 \`agent-optimization\`；不要把 Optimization 委托给子 Agent。需要评测时，按照 Skill 要求通过 \`run_subagent\` 委托使用 \`agent-evaluation\` 的 Evaluator。
 
-根据公开 Statement、评测分数和 Test Trace 改进 Test Agent 的通用能力。比较版本时使用每条 Evaluation 顶层的 \`score\`；分析各 Case 时，将每个 \`runs[].score\` 与该 Case 的 \`max_score\` 比较，不要假设每个 Case 都是 100 分。按照 \`agent-optimization\` 完成 Candidate 评测、接受或回滚，直到达到目标或无法继续有效改进。不得读取 Rubric、Gold 或其他私有 Benchmark 信息。
+- Test Agent：\`finite_choice_agent\`
+- Benchmark ID：\`contextual-choice-adaptation\`
+- 期望目标分数：至少 85
+- 有效 Candidate round 上限：5
 
-## 最终检查与汇报
+开始前检查 Benchmark 是否存在，以及 Scoreboard 是否包含第一条完整有效的 Formal Baseline。缺少任一条件就停止，不要自行创建或修改 Benchmark。
 
-检查 Phase 3 根 Session 是否实际访问 \`/rubric/\` 下的路径，并确认每个 Evaluator 只返回协议 YAML。文本提及路径不算访问；实际访问，或 Rubric、Gold、逐项评分等私有信息进入根 Session，都会使相关结果无效。汇报 Agent 与 Benchmark 路径、Pilot 摘要、Baseline/Candidate 分数曲线、关键假设、接受和回滚的版本、最终保留版本及已知限制。
+根据公开 Statement、评测分数和 Test Trace 改进 Test Agent 的通用能力。Reference 达到 85 时可以提前结束；否则最多完成 5 个有效 Candidate round。无效评测和修复重跑不计入轮数，完整有效但未被接受的 Candidate 计入轮数。只接受总分严格高于当前 Reference 的 Candidate；达到轮数上限后保留得分最高的已接受 Reference。
 
-不要修改任何 Skill，不要创建永久的 Builder、Evaluator 或 Optimizer Agent。`,
+Optimizer 不得读取 Rubric、Gold 或其他私有评分信息。完成后报告 Baseline/Candidate 分数曲线、关键假设、接受和回滚的版本、最终保留版本、Test Session ids 和已知限制。`,
       },
     },
     sessionList: "Session",

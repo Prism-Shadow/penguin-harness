@@ -3,27 +3,32 @@ title: Self-Improvement
 description: The Skill-orchestrated Benchmark and optimization loop: score, improve, snapshot, roll back.
 ---
 
-Self-improvement in PenguinHarness is not carried by special-purpose engine code — it is carried by Skills orchestrating the ordinary Agent machinery: evaluations are ordinary Sessions, optimization is ordinary file editing, and orchestration uses the built-in `run_subagent` tool. The direct payoff is that the whole process shares the same observability and recovery machinery as everyday runs.
+Self-improvement in PenguinHarness is not carried by special-purpose engine code — it is carried by Skills orchestrating the ordinary Agent machinery: evaluations are ordinary Sessions and optimization is ordinary file editing. Evaluation construction and optimization run in two independent top-level Sessions; only individual evaluations are delegated through the built-in `run_subagent` tool. The direct payoff is that the whole process shares the same observability and recovery machinery as everyday runs.
 
-## Three roles
+## Roles and call relationships
 
 | Role | Responsibility |
 | --- | --- |
+| Builder | Top-level Agent that directly follows `agent-creation` and then `benchmark-design` |
 | Target Agent | The Agent being improved; runs evaluation tasks only inside its own Workspace |
-| Evaluator | Runs and scores one Benchmark Case run |
-| Optimizer | Drives the whole optimization loop |
+| Evaluator | Leaf worker created through `run_subagent`; runs and scores one Benchmark Case run |
+| Optimizer | New top-level Agent that directly follows `agent-optimization` |
 
-The roles are defined by Skills, not hardcoded: the Evaluator follows the `agent-evaluation` Skill, the Optimizer follows the `agent-optimization` Skill. This applies the design principle stated in the [Configuration Reference](/configuration) — an Agent's behavior is editable files on disk, which is what makes Agents improvable by Agents.
+The Builder and Optimizer follow their Skills themselves instead of delegating those workflows to subagents. Only Evaluators are created through `run_subagent`; each follows `agent-evaluation` and uses the Penguin CLI to launch the specified Target Agent. The CLI does not create another Builder, Optimizer, or Evaluator.
 
-## The loop
+## Two independent steps
 
-1. `benchmark-design` builds a multi-Case capability Benchmark: repeated independent runs, with a traceable baseline calibrated first;
-2. The Optimizer orchestrates Evaluators in parallel via the `run_subagent` tool, covering the Case × runs matrix;
-3. Scores plus their linked Traces show where points were lost;
-4. The Optimizer edits the Target Agent's editable state — `AGENTS.md`, Skills, config — to produce version N+1;
-5. A Snapshot is taken before each round; the candidate version is kept only if the total score strictly improves, otherwise rolled back.
+The first top-level Session creates the Agent and its capability evaluation. The Builder first uses `agent-creation`, then uses `benchmark-design` to build a multi-Case Benchmark. The Pilot score is a desired target: meeting it permits an early Freeze; otherwise the Builder completes no more than five valid Pilot iterations and freezes the lowest-scoring valid revision. Freeze is followed by a fresh complete Formal matrix. Every valid Formal Baseline is recorded even when its score misses the desired target.
 
-Agent optimization requires a complete baseline series in the scoreboard — without a calibrated baseline there is no improvement to compare against.
+After the user confirms that step is complete, they start the second top-level Session in a new conversation. The Optimizer checks the Benchmark and its first complete Formal Baseline before following `agent-optimization`:
+
+1. orchestrate Evaluators in parallel through `run_subagent`, covering the Case × runs matrix;
+2. use scores and linked Traces to propose one bounded Candidate;
+3. edit the Target Agent's editable state — `AGENTS.md`, Skills, config — to produce version N+1;
+4. keep the Candidate only when its total score strictly improves; otherwise roll it back;
+5. stop early when the desired score is reached, or complete no more than five valid Candidate rounds and retain the highest-scoring Reference.
+
+Invalid evaluations and correction reruns do not count toward the five-round limit. Agent optimization requires a complete Formal Baseline in the Scoreboard — without one there is no improvement to compare against.
 
 ## Benchmark storage
 

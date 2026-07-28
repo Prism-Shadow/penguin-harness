@@ -3,17 +3,21 @@ name: agent-evaluation
 description: Internal leaf worker that runs one specified Test Agent on one specified Benchmark Case exactly once, privately scores that execution, and returns one protocol result. Use only when benchmark-design or agent-optimization supplies the complete request; do not use for user-facing evaluation, Benchmark design, or Agent changes.
 short_description: Run and score one isolated Benchmark Case.
 short_description_zh: 隔离执行并评分一个 Benchmark Case。
-version: 7
-updated: 2026-07-28T02:50:40Z
+version: 9
+updated: 2026-07-28T13:10:00Z
 ---
 
 # Agent Evaluation
 
-Handle one evaluation request: run the specified Test Agent on one Benchmark Case once, score that execution privately, and return one protocol result.
+Handle one evaluation request from a `run_subagent` caller: run the specified Test Agent on one Benchmark Case once, score that execution privately, and return one protocol result.
 
-The caller owns all Case and Run loops, concurrency, and follow-up handling. This worker handles no other Case or Run, launches no evaluator or subagent, modifies no Agent or Benchmark, and never writes `scoreboard.yaml`.
+The top-level Benchmark Designer or Optimizer owns all Case and Run loops, concurrency, and follow-up handling. This worker handles no other Case or Run, launches no evaluator or subagent, modifies no Agent or Benchmark, and never writes `scoreboard.yaml`. Use the Penguin CLI only to launch the specified Test Agent; do not use it to create another phase, designer, optimizer, or evaluator.
 
 Operate silently. Call tools without progress messages. Across all streamed and final responses, the only worker-authored text must be the final plain protocol YAML. Emit no narration, headings, Markdown fences, summaries, private scoring details, or other text.
+
+## Before you start
+
+Use this Skill only for a complete request from a `run_subagent` caller. If the request is incomplete or inconsistent, return `invalid_request` through the protocol instead of asking the user a question.
 
 ## Contract
 
@@ -55,9 +59,12 @@ Use an existing verified Penguin CLI or repository-local launcher. Do not instal
 
 ```bash
 PROJECT_DIR="<project_dir>"
-PENGUIN_HOME="$(dirname "$PROJECT_DIR")" penguin run \
+PROJECT_ID="$(basename "$PROJECT_DIR")"
+PENGUIN_HOME="$(dirname "$PROJECT_DIR")"
+export PENGUIN_HOME
+penguin run \
   --message "Read README.md in the current Workspace and complete the task exactly as specified there." \
-  --provider "<provider>" --model-id "<model_id>" --project-id "$(basename "$PROJECT_DIR")" \
+  --provider "<provider>" --model-id "<model_id>" --project-id "$PROJECT_ID" \
   --agent-id "<test_agent_id>" --workspace "<unique_workspace>" --approve allow-all
 ```
 
