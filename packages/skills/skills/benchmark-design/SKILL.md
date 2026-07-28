@@ -4,7 +4,7 @@ description: Design and calibrate a multi-Case capability Benchmark and establis
 short_description: Design and calibrate an Agent capability Benchmark.
 short_description_zh: 设计并校准 Agent 能力评测 Benchmark。
 version: 7
-updated: 2026-07-27T11:01:41Z
+updated: 2026-07-28T04:02:13Z
 ---
 
 # Benchmark Design
@@ -16,23 +16,24 @@ This Skill changes the Benchmark, never the Test Agent. It does not run or score
 ## Workflow
 
 - A **Pilot** is a provisional evaluation used to improve the Benchmark. Its results never enter the Scoreboard.
-- **Freeze** means the Cases, Statements, supporting files, Rubrics, Gold answers, points, `runs`, and evaluation Model stop changing.
-- A **Formal Baseline** is a fresh evaluation of every frozen Case, repeated for every configured Run, on one unchanged Agent State version, whose aggregate score satisfies the baseline gate.
+- **Freeze** means the Benchmark revision and evaluation settings stop changing.
+- A **Formal Baseline** is the accepted result of a fresh, complete Case × Run evaluation of the frozen Benchmark on one unchanged Agent State version.
 
 Follow this order:
 
 1. Validate the Test Agent, target capability, evaluation Model, and evaluation access.
-2. Define the observable behavior, plan the Case set and point allocation, then draft the Cases incrementally.
-3. Complete and leak-check one Pilot Case, dispatch its evaluation in the background, then draft the next Case without waiting for the result.
-4. If the Pilot does not expose the target difficulty, refine one capability-relevant dimension and rerun the affected Cases. Use at most five Pilot iterations.
-5. Freeze the complete Benchmark after a final leak check only when Pilot evidence indicates it is ready for Formal. If the score remains clearly above the gate and no credible refinement remains, report `calibration_failed` without running Formal.
-6. Delegate every frozen Case for the configured number of Runs. Save the result as the Formal Baseline only if all Runs complete on the same Agent version and the aggregate score satisfies the baseline gate.
+2. Write a Capability Contract that defines the observable process to measure, common weaker behavior, and the general Agent State improvement the Benchmark should train.
+3. Plan the Cases and point allocation. Design one Case at a time as an exploratory probe: privately state the intended behavior, a plausible shortcut for a strong Test Agent, and how the Case distinguishes them. Then write, leak-check, and dispatch one Pilot Run before moving to the next Case.
+4. Complete one valid evaluation for every planned Case. Together these results form Pilot iteration 1; finish this complete set before refining any Case.
+5. For Pilot iterations 2–5, use scores and Traces to reconstruct how the Test Agent solved each Case, deepen one capability-relevant difficulty dimension, and rerun the affected Cases.
+6. Freeze when the Cases are valid and the Pilot indicates that the gate can plausibly be satisfied. Otherwise continue refining or report `calibration_failed`.
+7. Run a fresh, complete Case × Run matrix. Save it as the Formal Baseline only if every cell is valid, the Agent State version remains unchanged, and the Evaluation's top-level `score` satisfies the gate.
 
-## Setup
+## Setup and access
 
-Require a Test Agent id, the capability to measure, one exact evaluation `(provider, model_id)` pair, and a baseline score gate. Ask for any missing value. Derive a short semantic Benchmark id if needed.
+Require a Test Agent id, target capability, evaluation `(provider, model_id)`, and baseline score gate. Ask for any missing input and derive a short semantic Benchmark id if needed.
 
-The current Session must provide `run_subagent`, and the current Agent must have `agent-evaluation` installed. If either is unavailable, stop. Return `missing_run_subagent` when the tool is missing. Never fall back to `penguin run` or score a Case yourself.
+The current Session must provide `run_subagent`, and the current Agent must have `agent-evaluation` installed. If either is missing, stop and explain what is needed.
 
 Use the `Project Dir` from the Environment:
 
@@ -42,9 +43,9 @@ BENCHMARK_DIR = <test_agent_dir>/benchmarks/<benchmark_id>
 SCOREBOARD = <benchmark_dir>/scoreboard.yaml
 ```
 
-You may access the specified Test Agent State and the complete specified Benchmark. You may also inspect Test Traces and artifacts returned by successful evaluations of this Benchmark. Do not access another Agent, Project secrets, or the evaluation worker’s own State, Workspace, or Trace.
+Access only the specified Test Agent and Benchmark: the Agent State, complete Benchmark, and Test Traces or artifacts from valid evaluations. Do not access other Agents, Project secrets, or Evaluator State, Workspace, or Trace.
 
-Read the Test Agent State version from the top-level `version` in `agent_state/system_config.yaml`; use 1 only when it is absent.
+Read the Agent State version from the top-level `version` in `agent_state/system_config.yaml`; use 1 only when it is absent.
 
 ## Build the Benchmark
 
@@ -59,24 +60,37 @@ Read the Test Agent State version from the top-level `version` in `agent_state/s
         └── README.md
 ```
 
-Each Case has two parts:
+Each Case contains:
 
-- `statement/` is public to the Test Agent. It defines the objective, available materials, and required artifact.
-- `rubric/` is private. It defines observable scoring items, points, and Gold answers.
+- `statement/`, which is public to the Test Agent and defines the objective, available materials, and required artifact.
+- `rubric/`, which is private and defines observable scoring items, points, and Gold answers.
 
-Both directories require a `README.md` and may contain supporting files. Never put hidden reasoning, mappings, Gold answers, or scoring conditions in `statement/`.
+Both directories require a `README.md` and may contain supporting files. Do not put Gold answers for evaluated instances, hidden mappings, or private scoring conditions in `statement/`.
 
-Create `benchmark_config.toml` with `title`, `description`, and `runs = 3`. Use another positive Run count only when the user requests it. Select the evaluation `(provider, model_id)` before the first Pilot, then keep it fixed through Formal. Initialize `scoreboard.yaml` with `evaluations: []`.
+Create `benchmark_config.toml` with `title`, `description`, and `runs = 3`. Use another positive Run count only when requested. Select the evaluation `(provider, model_id)` before the first Pilot and keep it fixed through Formal. Initialize `scoreboard.yaml` with `evaluations: []`.
 
-Before writing Cases, describe how an Agent with the target capability should behave differently from one without it. Every Case must require that difference. Sharing the same topic is not enough. Rubric maxima across all Cases must total 100 points. Use observable scoring items and meaningful partial credit.
+Before planning Cases, state the Capability Contract:
 
-Before evaluating a Pilot Case, compare its public Statement and supporting files with its private Rubric. Keep every public rule, piece of evidence, and example needed to answer the Case. Remove Gold answers for evaluated instances and private scoring conditions; do not remove necessary evidence merely because it helps infer the answer. This is the leak check.
+- the public evidence available to the Test Agent;
+- the observable decisions, intermediate artifacts, and checks the capability requires;
+- the weaker behaviors or shortcuts the Benchmark should distinguish; and
+- the reusable Agent State behavior that could improve the measured capability.
 
-## Run evaluations
+Before writing each Case, privately record the required behavior, a plausible shortcut for a strong Test Agent, the chosen difficulty dimension, and the evidence and evaluated instances that separate the shortcut from the intended behavior. Design the Case so the intended capability is necessary and the shortcut is likely to fail. Do not optimize the Statement to help the Test Agent succeed or copy this design rationale into it.
 
-The Benchmark Designer owns the Pilot and Formal evaluation sets. This includes their Case and Run loops, concurrency, ledger, and returned failures. The Evaluator handles one cell and may retry only a launch that failed before the Test Agent started.
+The Statement presents the task, not the Benchmark's teaching or design intent. It describes the objective, available materials, option meanings, output format, and necessary constraints. It must not prescribe the reasoning sequence, identify decisive evidence or examples, name the capability or shortcut, or tell the Test Agent which rules, priorities, or checks to derive. Publicly answerable does not mean guided. When an auditable artifact is needed, request concise supporting evidence without prescribing how to obtain it.
 
-For each required `(case_id, run)` pair, call `run_subagent` once with the complete prompt below. This delegates exactly one execution to an independent worker, which must use `agent-evaluation` to run and score that cell.
+The first Case revision is an exploratory probe. Use its Pilot to learn how the Test Agent interprets the task, forms candidate rules, and uses shortcuts; refine the Case before treating it as calibrated.
+
+Generate examples and evaluated instances from the same stable process. Include at least one evaluated instance where the shortcut and intended behavior produce different outcomes.
+
+Rubric maxima across all Cases must total 100 points, with observable scoring items and meaningful partial credit. When final choices do not distinguish the intended behavior from a shortcut, score a concise auditable artifact, but define only its required content or format—not the method used to produce it.
+
+Before evaluating a Pilot Case, compare all public files with its private Rubric. Ensure the public materials contain enough evidence to derive every scored answer without identifying which evidence is decisive or how to combine it. Exclude Gold answers for evaluated instances, private scoring conditions, and hints that reveal the intended solution. This is the leak check.
+
+## Delegate evaluation
+
+For each Case × Run cell, call `run_subagent` with the request below. Dispatch independent cells in parallel up to available concurrency.
 
 ```text
 Use the `agent-evaluation` Skill. Run the specified Test Agent on the specified Case exactly once, then score that single execution.
@@ -90,63 +104,77 @@ provider: <provider>
 model_id: <model_id>
 ```
 
-Accept only the worker's protocol YAML. Ignore transport metadata added by `run_subagent`; worker-authored narration makes the result invalid.
+Inspect the complete streamed and final worker response. Accept a cell only when its worker-authored text is exactly one plain protocol YAML document. Narration, headings, code fences, summaries, or scoring details make the protocol invalid; do not extract YAML from them. Transport metadata added by `run_subagent` is not worker-authored text. A wrong or missing Test Agent artifact is a valid scored result and must not be retried.
 
-Track each cell by phase, Pilot iteration, Case, Run, and attempt as `queued`, `in_flight`, or `completed`. Never dispatch an `in_flight` or valid `completed` cell again.
-
-Launch independent evaluations as soon as they are ready, up to available concurrency. When a worker finishes, immediately launch the next pending evaluation. During the initial Pilot, dispatch each Case as soon as it is written and leak-checked, then continue drafting the next Case. Do not modify an in-flight Case. After all evaluations are dispatched, wait for the remaining workers.
-
-A wrong or missing Test Agent artifact is a valid scored result and must not be retried.
-
-When an evaluation returns `status: failed`:
-
-- For `invalid_request`, correct the request and resend it.
-- For `benchmark_invalid`, repair the affected Case, discard its invalidated Pilot results, and evaluate it again.
-- For `version_changed`, discard the current matrix and restart after the Agent version is stable.
-- For `evaluation_failed` or an invalid protocol, stop the current matrix. Do not redispatch the cell or convert the failure into score zero.
-
-If a Benchmark or scoring repair is required during Formal, abandon the Formal matrix, return to Pilot, freeze again, and rerun Formal from the beginning. A Formal Baseline requires a valid result for every Case and Run.
+Correct and resend an `invalid_request`. For `benchmark_invalid`, repair and rerun the affected Case during Pilot; during Formal, abandon the matrix and return to Pilot. For `version_changed`, discard the matrix and restart after the Agent version is stable. Stop on `evaluation_failed` or an invalid protocol. Never treat an evaluation failure as score zero.
 
 ## Refine the Benchmark
 
-Treat the first draft as a hypothesis, not the final Benchmark. For Pilot iteration 1, run one representative evaluation per Case. A Pilot iteration is complete when every current Case revision has one valid result. Use the recorded Agent State version and fixed evaluation Model. Keep Pilot results out of the Scoreboard.
+Treat the first draft as a hypothesis. The first valid result from every planned Case together forms Pilot iteration 1. A later iteration starts after a difficulty refinement and completes when every affected Case has a valid new result. Request corrections, validity repairs, and evaluation reruns stay in the current iteration. Use the recorded Agent State version and fixed evaluation Model. Keep Pilot results out of the Scoreboard.
 
-A high Pilot score is not a reason to freeze. Review the Case scores and returned Test Traces. Decide whether the Agent genuinely has the capability or the Cases allow a shortcut. Refine only when the Benchmark fails to require the intended behavior.
+Use the Pilot to find the current Test Agent's capability boundary.
 
-A low Pilot score is also not enough to freeze. Confirm that every scored outcome is supported by public materials and that the observed misses reflect a capability a general Agent State change could improve. If the low score comes from missing evidence, an arbitrary private mapping, or unresolved ambiguity, repair the Case.
+Classify each change before editing:
+
+- A **Definition refinement** repairs ambiguity in the capability, public evidence, accepted answers, or scoring contract. It must not reveal the intended solution or add hints to the Statement, and it stays in the current Pilot iteration.
+- A **Difficulty refinement** adds a reasoning dependency after the definition is stable and passes the separating-instance test below. Its valid rerun completes the next Pilot iteration.
 
 For each refinement iteration:
 
-1. Identify one capability-relevant reasoning step that the current Case fails to require.
-2. State the general Agent behavior that should perform this step correctly.
-3. Change only that dimension. Options include stronger evidence integration, meaningful conflicts or distractors, cross-file dependencies, deeper decisions, or new comparable instances.
-4. Update every affected public and private Benchmark file. Discard invalidated results, run the leak check, and rerun the affected Cases. This starts the next Pilot iteration.
+1. **Observed strategy.** Reconstruct the Test Agent's actual solution method from its score, artifact, and Trace.
+2. **Missing behavior.** Identify the general behavior that the observed strategy skipped or simplified. Repair missing evidence, arbitrary mappings, ambiguity, or scoring defects before increasing difficulty.
+3. **Separating instance.** Specify an evaluated instance where the observed strategy and missing behavior lead to different outputs. Confirm that public evidence uniquely supports the intended output.
+4. Change only the selected difficulty dimension, update the affected files, run the leak check, and rerun the affected Cases.
 
-Adding more rows, fields, distractors, or Cases does not by itself increase difficulty. A refinement counts only when it changes the reasoning the Agent must perform. If the same procedure still solves the Case, the change adds workload, not capability demand.
+A change is a Difficulty refinement only when the observed strategy produces a wrong or unsupported result on the separating instance while the missing behavior reaches the uniquely supported Gold. If no such instance can be constructed, choose another difficulty dimension.
 
-Reuse a Pilot result only when nothing that affects it changed. This includes the Statement, supporting files, Rubric, Gold answers, points, Agent State version, and evaluation Model. Otherwise, run that Case again.
+Reuse a Pilot result only when the Case revision, scoring, Agent State version, and evaluation Model are unchanged.
 
-Use Pilot output to make a missing capability demand necessary, not to make an observed answer wrong. Do not change Gold merely to contradict the Agent. Do not tighten only the private Rubric, add arbitrary ambiguity, or create a Case-specific trap. Choose hidden rules independently and keep them fixed during each iteration. State every required output or action publicly. Keep a latent rule or mapping private only when public evidence or examples make it recoverable.
+Before treating a score loss as a capability gap, identify the public evidence that rules out the Test Agent's answer. When multiple interpretations remain supported, perform a Definition refinement and rerun the Case. A final Case may contain insufficient or conflicting evidence when the public task defines the expected uncertainty action or accepted answer set.
 
-Stop refining when Pilot evidence indicates the gate can plausibly be satisfied, after five Pilot iterations, or when no credible refinement remains. If the score remains clearly above the gate, report `calibration_failed` without freezing or running Formal. Do not manufacture difficulty.
+For a high score, create valid new instances that pass the separating-instance test. More rows, fields, distractors, files, near-duplicate examples, or explicit exceptions do not increase difficulty when the observed strategy still solves the Case.
+
+Base refinements on the observed general strategy. Generate Gold through an Agent-independent process and keep every answer recoverable from public materials.
+
+While the score is clearly above the gate, continue through the remaining Pilot budget. Before stopping early, propose a deeper version of every Case and record why each proposal is invalid. Report `calibration_failed` after five Pilot iterations, or when every deeper proposal would leave the target capability or make the answer unsupported.
 
 ## Freeze and run the Formal Baseline
 
-1. Freeze the complete Benchmark and run the final leak check.
-2. Start a fresh ledger and record the current Agent State version.
-3. Put the complete Case × Run matrix into one `queued` list and dispatch it through the evaluation scheduling rules above; never reuse a Pilot run.
-4. Accept the matrix only if every cell succeeds and the Agent State version remains unchanged.
+After the final leak check, freeze the Benchmark and record the current Agent State version. Run a fresh, complete Case × Run matrix and never reuse a Pilot result. Once the first Formal cell is dispatched, do not change the Benchmark.
 
-Once the first Formal cell is dispatched, do not design or refine any Case or otherwise change the Benchmark. If a design defect appears, abandon the whole matrix. Do the same when the Formal score misses the gate and the Traces show a credible shortcut. Return to refinement only when the five-iteration budget has room. After any change, freeze again and rerun the entire Formal matrix.
+Run Formal only when the latest Pilot indicates that the gate can plausibly be satisfied.
 
-If the complete Formal score misses the gate and no credible refinement remains within the budget, report `calibration_failed`. Stop without a Baseline. Record nothing from a partial, abandoned, invalid, or above-gate matrix.
+Accept the matrix only if every cell is valid, the Agent State version remains unchanged, the Evaluation's top-level `score` satisfies the gate, and no known design defect remains. Every scored answer must be supported by public evidence, every accepted alternative must be explicit, and every score loss must reflect the Capability Contract. If Formal reveals a design defect or credible shortcut, abandon the matrix and return to refinement while the five-iteration budget remains. After any change, freeze again and rerun the complete matrix.
+
+If no acceptable matrix can be produced within the Pilot budget, report `calibration_failed`. Never record a partial, abandoned, invalid, or above-gate matrix.
 
 ## Record and finish
 
-Write only a complete Formal result that satisfies the baseline gate to `scoreboard.yaml`. Record `time`, Agent State `version`, `provider`, `model_id`, public `summary_title` and `summary`, aggregate `score`, `cost`, `duration_ms`, and nested Case and Run results. Each Case stores its mean metrics. Each Run stores `score`, `cost`, `duration_ms`, and Test `session_id`. If any contributing cost is unknown, use `null` for the containing Case and Evaluation cost.
+After validation, append only the accepted Formal Baseline to `scoreboard.yaml` using exactly this structure:
 
-Validate the Scoreboard through a temporary file, then replace it atomically. A later material Benchmark change starts a new Pilot and invalidates results that are no longer comparable. Evaluators never write the Scoreboard.
+```yaml
+evaluations:
+  - time: <ISO-8601 timestamp>
+    version: <Agent State version>
+    provider: <provider>
+    model_id: <model_id>
+    summary_title: <public title>
+    summary: <public summary>
+    score: <sum of the Cases' average Run scores>
+    cost: <sum of the Cases' average Run costs; null if any Run cost is unknown>
+    duration_ms: <sum of the Cases' average Run durations>
+    cases:
+      - case: <case_id>
+        max_score: <maximum score for one Run of this Case>
+        runs:
+          - score: <Run score>
+            cost: <Run cost or null>
+            duration_ms: <Run duration>
+            session_id: <Test Session id>
+```
 
-Report the Benchmark path, configuration, Agent State version, aggregate and Case scores, Test Session ids, and limitations. Include one compact row per Pilot iteration: score, diagnosed capability gap, single difficulty adjustment, and freeze or stop reason.
+The Case `max_score` values must total 100. Do not add an `aggregate` object or use `case_id`, `mean_score`, `mean_cost`, or `mean_duration_ms` in the Scoreboard.
 
-Do not reveal Rubrics, Gold answers, hidden rules, per-item scores, or diagnostics that expose private scoring conditions. Stop after reporting the baseline; do not modify the Test Agent or begin optimization.
+Report the Benchmark path, configuration, Agent State version, total and Case Run scores, Test Session ids, and known limitations. Include one compact row per Pilot iteration with its score, diagnosed capability gap, difficulty adjustment, and freeze or stop decision.
+
+Do not reveal Rubrics, Gold answers, latent rules, per-item scores, or private scoring information. Stop after reporting the Baseline; do not modify the Test Agent or begin optimization.

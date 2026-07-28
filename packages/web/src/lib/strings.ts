@@ -585,26 +585,30 @@ penguin run \\
 - Benchmark ID：\`contextual-choice-adaptation\`
 - Test Provider：\`deepseek\`
 - Test Model：\`deepseek-v4-flash\`
-- Runs：3
+- Runs：1
 - Baseline 硬门槛：低于 70
 
-本实验评估：Agent 能否从公开的历史结果、规则说明和当前上下文中发现可复用的决策规律，并将其应用到新的有限选择任务。Benchmark 包含三个贴近实际工作的 Case：
+本实验评估：Agent 能否从公开证据提出并验证候选决策规律，排除与历史结果冲突的解释，判断证据是否充分，再将稳定的决策过程应用到新的有限选择任务。Benchmark 包含三个贴近实际工作的 Case：
 
 1. 足球投注决策：提供已结算的历史比赛、赛前赔率、近期状态、主客场、伤停、天气和最终赛果，再提供若干待判断比赛。Agent 必须选择 \`Home\`、\`Draw\`、\`Away\` 或 \`No Bet\`。
 2. 售后工单处置：提供售后政策、订单记录、用户诉求和时间信息。Agent 必须选择 \`Refund\`、\`Replace\`、\`Reject\` 或 \`Escalate\`。
 3. 模拟投资决策：提供公开的投资策略、历史市场样本和当前市场指标。Agent 必须对候选资产排序或选择规定的投资动作。
 
-三个 Case 应共同考察 Agent 能否从公开规则、历史案例和当前事实中恢复稳定的决策过程，判断证据是否充分，处理规则优先级和例外，并迁移到新实例。难度应来自跨材料完成这个过程，而不是让多套事后规律都能解释同一批样本。每个 Statement 必须提供完成任务所需的全部信息。Rubric 可以包含 Gold 和评分方法，但不得使用无法从公开材料推导或学习的任意隐藏映射。
+三个 Case 应共同考察 Agent 能否从公开规则、历史案例和当前事实中恢复稳定的决策过程，判断证据是否充分，处理规则优先级和例外，并迁移到新实例。难度应来自跨材料完成这个过程，而不是让多套事后规律都能解释同一批样本。设计目标是让目标能力成为答对的必要条件，并使当前 Target Agent 的简化策略容易失败，而不是帮助它完成任务。Statement 只呈现题目本身，不解释考点或解法。它必须提供完成任务所需的全部信息，但不得指出哪些证据最关键、应比较哪些样本，或要求 Agent 按预设步骤提取规则、建立优先级和执行检查。公开可解不等于提供做题提示。Rubric 可以包含 Gold 和评分方法，但不得使用无法从公开材料推导或学习的任意隐藏映射。
 
-如果使用潜在规律，Statement 必须提供足够的公开历史样本，使该规律原则上可以被发现。难度应来自多步分析、噪声信息、跨材料关联、例外条件和验证过程，而不是缺失关键信息。Pilot 分数过高时，先根据 Test Trace 找出当前 Case 没有要求的通用推理步骤，再调整 Case 使该步骤成为必要条件；不得只增加样本、字段、干扰信息或反例来让观察到的答案变错。
+Benchmark 初稿是探索性 Probe。通过 Pilot 观察 Target Agent 如何解释材料、提出候选规律和采用简化策略。Definition refinement 只修复公开证据、答案范围或评分合同中的歧义，使单一 Gold 得到唯一支持；否则应明确允许答案集合。它不得公开目标推理过程。定义稳定后，再通过 Difficulty refinement 增加新的推理依赖。
 
-按照 \`benchmark-design\` 完成设计、Pilot 调整、冻结和 Formal Baseline。只有有效且完整的 Formal Baseline 低于 70 时才能启动 Phase 3；否则报告限制并停止。当前编排 Session 只能检查公开 Benchmark 产物和最终分数，不得读取或转述 Rubric、Gold 等私有信息。
+例如，Pilot Trace 显示 Agent 只按照最相似的历史样本作答。下一版应构造一个公开证据充分、但该策略会稳定给出错误答案的实例，使目标能力必须发现另一项可复用约束才能解决。不要在 Statement 中指出应比较哪个样本或哪项约束。
+
+每次 Difficulty refinement 前，先写清 observed strategy、missing behavior 和 separating instance。只有 observed strategy 会在该实例上失败，而 missing behavior 能根据公开证据得到唯一 Gold 时，才算真正增加难度。增加样本、字段、文件、近似案例或显式例外本身不算提高难度。如果使用潜在规律，Statement 必须提供足够的公开历史样本，使该规律原则上可以被发现。
+
+Freeze 时，每个结果必须能由公开材料稳定推出；如果信息本身不足，Statement 必须公开定义预期的不确定性处理或允许答案集合。按照 \`benchmark-design\` 完成设计、Pilot 调整、冻结和 Formal Baseline。Scoreboard 使用 Web v2 字段：Evaluation 总分写在顶层 \`score\`；每个 Case 使用 \`case\`、\`max_score\` 和 \`runs\`。不要使用 \`aggregate\`、\`case_id\` 或 \`mean_score\`。只有有效且完整的 Formal Baseline 低于 70 时才能启动 Phase 3；否则报告限制并停止。当前编排 Session 只能检查公开 Benchmark 产物和最终分数，不得读取或转述 Rubric、Gold 等私有信息。
 
 ## Phase 3：Agent Optimization
 
 使用 \`agent-optimization\`，Benchmark 为 \`contextual-choice-adaptation\`，Reference 为已记录的 Baseline，目标分数至少 85。
 
-根据公开 Statement、评测分数和 Test Trace 改进 Test Agent 的通用能力。按照 \`agent-optimization\` 完成 Candidate 评测、接受或回滚，直到达到目标或无法继续有效改进。不得读取 Rubric、Gold 或其他私有 Benchmark 信息。
+根据公开 Statement、评测分数和 Test Trace 改进 Test Agent 的通用能力。比较版本时使用每条 Evaluation 顶层的 \`score\`；分析各 Case 时，将每个 \`runs[].score\` 与该 Case 的 \`max_score\` 比较，不要假设每个 Case 都是 100 分。按照 \`agent-optimization\` 完成 Candidate 评测、接受或回滚，直到达到目标或无法继续有效改进。不得读取 Rubric、Gold 或其他私有 Benchmark 信息。
 
 ## 最终检查与汇报
 
