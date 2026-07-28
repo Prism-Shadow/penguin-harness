@@ -594,13 +594,7 @@ penguin run \\
 2. 售后工单处置：提供售后政策、订单记录、用户诉求和时间信息。Agent 必须选择 \`Refund\`、\`Replace\`、\`Reject\` 或 \`Escalate\`。
 3. 模拟投资决策：提供公开的投资策略、历史市场样本和当前市场指标。Agent 必须对候选资产排序或选择规定的投资动作。
 
-三个 Case 应共同考察 Agent 能否从公开规则、历史案例和当前事实中恢复稳定的决策过程，判断证据是否充分，处理规则优先级和例外，并迁移到新实例。难度应来自跨材料完成这个过程，而不是让多套事后规律都能解释同一批样本。设计目标是让目标能力成为答对的必要条件，并使当前 Target Agent 的简化策略容易失败，而不是帮助它完成任务。Statement 只呈现题目本身，不解释考点或解法。它必须提供完成任务所需的全部信息，但不得指出哪些证据最关键、应比较哪些样本，或要求 Agent 按预设步骤提取规则、建立优先级和执行检查。公开可解不等于提供做题提示。Rubric 可以包含 Gold 和评分方法，但不得使用无法从公开材料推导或学习的任意隐藏映射。
-
-Benchmark 初稿是探索性 Probe。通过 Pilot 观察 Target Agent 如何解释材料、提出候选规律和采用简化策略。Definition refinement 只修复公开证据、答案范围或评分合同中的歧义，使单一 Gold 得到唯一支持；否则应明确允许答案集合。它不得公开目标推理过程。定义稳定后，再通过 Difficulty refinement 增加新的推理依赖。
-
-例如，Pilot Trace 显示 Agent 只按照最相似的历史样本作答。下一版应构造一个公开证据充分、但该策略会稳定给出错误答案的实例，使目标能力必须发现另一项可复用约束才能解决。不要在 Statement 中指出应比较哪个样本或哪项约束。
-
-每次 Difficulty refinement 前，先写清 observed strategy、missing behavior 和 separating instance。只有 observed strategy 会在该实例上失败，而 missing behavior 能根据公开证据得到唯一 Gold 时，才算真正增加难度。增加样本、字段、文件、近似案例或显式例外本身不算提高难度。如果使用潜在规律，Statement 必须提供足够的公开历史样本，使该规律原则上可以被发现。
+三个 Case 应覆盖不同的决策难点，共同考察 Agent 能否从公开规则、历史案例和当前事实中恢复稳定的决策过程，判断证据是否充分，处理规则优先级和例外，并迁移到新实例。Freeze 前确认每个 Case 都能暴露稳定缺陷，或者覆盖其他 Case 未覆盖的必要能力；不能只依靠一个低分 Case 满足总分门槛。难度应来自必要的推理依赖，而不是数据量、隐藏关键信息或答案歧义。每个 Statement 必须提供完成任务所需的全部公开材料，但只呈现题目，不解释考点、解法或关键证据。
 
 Freeze 时，每个结果必须能由公开材料稳定推出；如果信息本身不足，Statement 必须公开定义预期的不确定性处理或允许答案集合。按照 \`benchmark-design\` 完成设计、Pilot 调整、冻结和 Formal Baseline。Scoreboard 使用 Web v2 字段：Evaluation 总分写在顶层 \`score\`；每个 Case 使用 \`case\`、\`max_score\` 和 \`runs\`。不要使用 \`aggregate\`、\`case_id\` 或 \`mean_score\`。只有有效且完整的 Formal Baseline 低于 70 时才能启动 Phase 3；否则报告限制并停止。当前编排 Session 只能检查公开 Benchmark 产物和最终分数，不得读取或转述 Rubric、Gold 等私有信息。
 

@@ -3,8 +3,8 @@ name: benchmark-design
 description: Design and calibrate a multi-Case capability Benchmark and establish a traceable Formal Baseline. Use when an explicit Test Agent and target capability need a new or revised Benchmark; stop after the baseline and do not optimize the Agent.
 short_description: Design and calibrate an Agent capability Benchmark.
 short_description_zh: 设计并校准 Agent 能力评测 Benchmark。
-version: 7
-updated: 2026-07-28T04:02:13Z
+version: 8
+updated: 2026-07-28T07:56:18Z
 ---
 
 # Benchmark Design
@@ -84,7 +84,9 @@ The first Case revision is an exploratory probe. Use its Pilot to learn how the 
 
 Generate examples and evaluated instances from the same stable process. Include at least one evaluated instance where the shortcut and intended behavior produce different outcomes.
 
-Rubric maxima across all Cases must total 100 points, with observable scoring items and meaningful partial credit. When final choices do not distinguish the intended behavior from a shortcut, score a concise auditable artifact, but define only its required content or format—not the method used to produce it.
+After fixing the Gold, test whether a simpler proxy based on public features, identifiers, or examples can reproduce every evaluated answer without the target behavior. If it can, add or replace an instance where that proxy and the intended behavior produce different outputs.
+
+Rubric maxima across all Cases must total 100 points, with observable scoring items and meaningful partial credit. Allocate points from capability coverage before the first Pilot. Do not change Case weights solely to satisfy the gate; when a redesign changes coverage, re-plan the allocation before evaluating the revised Case set. When final choices do not distinguish the intended behavior from a shortcut, score a concise auditable artifact, but define only its required content or format—not the method used to produce it.
 
 Before evaluating a Pilot Case, compare all public files with its private Rubric. Ensure the public materials contain enough evidence to derive every scored answer without identifying which evidence is decisive or how to combine it. Exclude Gold answers for evaluated instances, private scoring conditions, and hints that reveal the intended solution. This is the leak check.
 

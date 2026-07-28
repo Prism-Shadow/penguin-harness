@@ -629,35 +629,14 @@ sufficient, and apply the stable process to new finite-choice tasks. Design thre
 3. Simulated investment: provide a public strategy, historical market samples, and current
    indicators. The Agent ranks assets or selects the required investment action.
 
-Together, the Cases should require the Agent to recover a stable decision process from public
-rules, historical examples, and current facts; judge whether evidence is sufficient; handle rule
-priority and exceptions; and transfer the process to new instances. Difficulty should come from
-performing this process across materials, not from several post-hoc rules fitting the same samples.
-Design the Cases so the target capability is necessary and the current Target Agent's shortcut is
-likely to fail; do not optimize them to help the Agent complete the task. A Statement presents only
-the task, not its tested capability or solution. It must contain all information needed to answer
-but must not identify decisive evidence, name examples to compare, or direct the Agent through
-preset steps for extracting rules, building priorities, or performing checks. Publicly answerable
-does not mean guided. Rubrics may contain Gold answers and scoring methods, but must not rely on
-arbitrary hidden mappings that cannot be derived or learned from the public materials.
-
-The first Benchmark draft is an exploratory probe. Use Pilots to observe how the Target Agent
-interprets the materials, forms candidate rules, and uses shortcuts. Definition refinement only
-repairs ambiguity in public evidence, accepted answers, or scoring so that a single Gold is uniquely
-supported; otherwise it must define the accepted answer set. It must not reveal the intended
-reasoning. Once the definition is stable, Difficulty refinement may add a new reasoning dependency.
-
-For example, a Pilot Trace may show that the Agent copies the most similar historical example. The
-next revision should include a publicly answerable instance where that strategy reliably produces
-the wrong answer and the target capability must discover another reusable constraint. Do not tell
-the Agent which example or constraint to inspect.
-
-Before each Difficulty refinement, state the observed strategy, missing behavior, and separating
-instance. The change increases difficulty only when the observed strategy fails on that instance
-and the missing behavior reaches a uniquely supported Gold from public evidence. More samples,
-fields, files, near-duplicate examples, or explicit exceptions do not increase difficulty by
-themselves. If a Case uses a latent pattern, provide enough public historical examples for it to be
-discoverable in principle.
+The three Cases should cover different decision challenges while jointly requiring the Agent to
+recover a stable process from public rules, historical examples, and current facts; judge evidence
+sufficiency; handle priorities and exceptions; and transfer the process to new instances. Before
+freeze, confirm that each Case exposes a stable limitation or covers a necessary capability not
+measured by the other Cases; do not rely on one low-scoring Case to satisfy the aggregate gate.
+Difficulty must come from necessary reasoning dependencies, not data volume, hidden evidence, or
+answer ambiguity. Each Statement must provide all necessary public materials while presenting only
+the task, without explaining the tested capability, solution, or decisive evidence.
 
 At freeze, every result must follow stably from public materials. When the evidence is inherently
 insufficient, the Statement must define the expected uncertainty action or accepted answer set.

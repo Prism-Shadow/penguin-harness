@@ -3,8 +3,8 @@ name: agent-optimization
 description: Improve an Agent State through versioned scores and score-linked Traces from a frozen Benchmark. Use when an explicit Test Agent has a complete current baseline; do not use for direct feedback, Benchmark construction, or direct scoring.
 short_description: Improve an Agent from measured Benchmark results.
 short_description_zh: 根据 Benchmark 结果改进 Agent。
-version: 6
-updated: 2026-07-28T02:50:40Z
+version: 7
+updated: 2026-07-28T07:56:18Z
 ---
 
 # Agent Optimization
@@ -33,7 +33,7 @@ For each round:
 
 1. **Establish the Reference.** Confirm that its complete Evaluation uses the frozen Case × Run matrix and evaluation Model and that its version matches the current Agent State.
 2. **Diagnose capability gaps.** Compare each Case's `runs[].score` with its `max_score`; use the Evaluation's top-level `score` only for whole-version comparison. Use public Statements, score-linked Test Traces, and prior accepted or rejected attempts to identify observable behaviors that general Agent State changes could improve. Use repeated Runs to distinguish stable behavior from variation.
-3. **State a falsifiable hypothesis.** Choose the related gaps to address, connect them to a bounded Candidate, and state the expected improvement. Do not create a Candidate when no useful hypothesis remains.
+3. **State a falsifiable hypothesis.** Choose the related gaps to address, connect them to a bounded Candidate, and state which observable decisions or artifacts should change and why. A change that only adds analysis steps without predicting a behavioral change is not a useful hypothesis. Do not create a Candidate when no useful hypothesis remains.
 4. **Create one Candidate from the Reference.** Apply the change and its Candidate version under the construction and rollback rules below. Do not carry rejected Candidate files into the next attempt.
 5. **Check admissibility.** Confirm that the change is general, uses no private evaluation information, and modifies only permitted Test Agent State.
 6. **Evaluate the Candidate.** Delegate the complete frozen Case × Run matrix in parallel under the evaluation rules below and assemble all returned cells. Do not modify the Candidate while any cell is in flight.
