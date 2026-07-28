@@ -49,6 +49,7 @@ import { useSessions } from "../../state/sessions";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { Chevron } from "../../components/ui/chevron";
 import { Dropdown } from "../../components/ui/dropdown";
+import { noAutofill } from "../../components/ui/input";
 import { PenguinLogo } from "../../components/ui/penguin-logo";
 import { toastError } from "../../components/ui/toast";
 import { useVersionInfo } from "../../lib/use-version-info";
@@ -967,6 +968,7 @@ function WorkspaceSelect({
               value={pathDraft}
               placeholder="…"
               aria-label={S.chat.workspace}
+              {...noAutofill}
               onChange={(e) => setPathDraft(e.target.value)}
               onBlur={() => void commitPathEdit()}
               onKeyDown={(e) => {
