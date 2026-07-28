@@ -294,7 +294,11 @@ export function UsagePage() {
         {/* Errors (a single full-width panel: stats + a recent-errors table) */}
         {data && (
           <ChartCard title={S.usage.errors}>
-            <ErrorsPanel errors={data.errors} />
+            <ErrorsPanel
+              errors={data.errors}
+              projectId={projectId}
+              filters={{ from, to, ...(agentFilter ? { agentId: agentFilter } : {}) }}
+            />
           </ChartCard>
         )}
 

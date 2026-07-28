@@ -34,7 +34,9 @@
  *
  * Environment (source = `environment`): reads `tool_call_output`'s stop_reason ∈
  * {failed, timeout} → expected (the error is fed back to the model, and the Agent
- * adjusts on its own; `aborted` is denial/interruption, not recorded).
+ * adjusts on its own; `aborted` is denial/interruption, not recorded). `exec_command` is
+ * excluded outright — a non-zero exit is how a shell command reports information, not a
+ * fault; see NOT_RECORDED_TOOLS.
  * `tool_call_output` only has tool_call_id, no tool name, so `tool_call_id → tool name`
  * is cached (tool_call always arrives before its output), and the tool name is written
  * into code (`tool_failed:exec_command`) — so the stats dashboard's "most common error
@@ -103,6 +105,21 @@ function isLlmFailure(s: unknown): s is LlmFailure {
 function isToolFailure(s: unknown): s is ToolFailure {
   return s === "failed" || s === "timeout";
 }
+
+/**
+ * Tools whose failures are **never** recorded as errors.
+ *
+ * `exec_command` maps *any* non-zero exit to `failed` (`resultForExit` in core), but a
+ * non-zero exit is how shell commands return information, not a fault: `grep` exits 1 when
+ * nothing matches, `test -f` when the file is absent, `diff` when files differ. Recording
+ * those made the cost center's error table mostly a log of ordinary Agent work, which both
+ * buried real errors and consumed the row cap and the dedup window that protect them. The
+ * Agent already sees the failure and adjusts — nothing here needs a human.
+ *
+ * `input_command` is deliberately NOT in this set: it drives an already-running session, so
+ * a failure there is a genuine fault rather than a command's own exit status.
+ */
+const NOT_RECORDED_TOOLS: ReadonlySet<string> = new Set(["exec_command"]);
 
 /** A user-interrupt abort message (core's `aborted by user` / `aborted during …`): not a failure reason. */
 function isUserAbortReason(reason: string): boolean {
@@ -285,6 +302,7 @@ export class StreamErrorWatcher {
     const name = this.toolNames.get(key);
     this.toolNames.delete(key); // This call has settled: dequeue it, the cache only keeps in-flight calls
     if (!isToolFailure(p.stop_reason)) return; // completed / aborted (denial, user interrupt) are not errors
+    if (NOT_RECORDED_TOOLS.has(name ?? "")) return; // a non-zero exit is information, not a fault (see the set)
     this.errors.record({
       source: "environment",
       err: toolFailureText(p.output ?? ""),

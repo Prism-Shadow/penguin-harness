@@ -9,9 +9,11 @@
  * exceptions) is a prominent rose; expected (HttpError, business 4xx) recedes into gray.
  * The outer frame is provided by the caller's ChartCard (full width, below the four business charts).
  */
-import { useState } from "react";
-import type { UsageErrors } from "@prismshadow/penguin-server/api";
+import { useEffect, useState } from "react";
+import type { UsageErrorItem, UsageErrors } from "@prismshadow/penguin-server/api";
+import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
+import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
 import { Badge } from "../../components/ui/badge";
 import { Empty } from "./usage-charts";
@@ -27,6 +29,21 @@ function kindLabel(key: ErrorKindKey): string {
 function kindOf(kind: string): ErrorKindKey {
   return kind === "unexpected" ? "unexpected" : "expected";
 }
+
+/**
+ * Source labels are abbreviated so the bracket stays narrow beside a long code:
+ * `[env] tool_failed:exec_command`, `[http] password`. Only `environment` needs shortening
+ * -- every other source is already short enough to read at a glance.
+ */
+const SOURCE_ABBREV: Readonly<Record<string, string>> = { environment: "env" };
+
+/** `[env] tool_failed:read_file` -- the bracketed source followed by the raw error code. */
+function sourceCode(source: string, code: string): string {
+  return `[${SOURCE_ABBREV[source] ?? source}] ${code}`;
+}
+
+/** Rows per page of the detail table -- matches the first page the dashboard response carries. */
+const PAGE_SIZE = 20;
 
 /** A single small stat: name + value, one row side by side (not turned into a chart). */
 function Stat({
@@ -67,10 +84,56 @@ function Th({ children, className = "" }: { children: React.ReactNode; className
  * and clicking again collapses it. The full text is also in the hover title. Cells align to the
  * top so an expanded multi-line message keeps the row tidy; the table scrolls past max height.
  */
-export function ErrorsPanel({ errors }: { errors: UsageErrors }) {
+export function ErrorsPanel({
+  errors,
+  projectId,
+  filters,
+}: {
+  errors: UsageErrors;
+  projectId: string;
+  /** The dashboard's own date/agent filter — a page must never widen what the summary counted. */
+  filters: { from?: string; to?: string; agentId?: string };
+}) {
   const { total, unexpected, topCode, recent } = errors;
-  // Message rows expanded to their full text (index into `recent`); one line each by default.
+  // Paging: page 0 is the `recent` the dashboard response already carried, so it costs no
+  // request; later pages are fetched on demand. Resets whenever a new dashboard response
+  // arrives (a filter changed), since the offsets it was paging through no longer apply.
+  const [page, setPage] = useState(0);
+  const [items, setItems] = useState<UsageErrorItem[]>(recent);
+  const [pageError, setPageError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    setPage(0);
+    setItems(recent);
+    setPageError(null);
+  }, [recent]);
+
+  useEffect(() => {
+    if (page === 0) return;
+    let cancelled = false;
+    setLoading(true);
+    setPageError(null);
+    api
+      .getUsageErrors(projectId, { offset: page * PAGE_SIZE, limit: PAGE_SIZE, ...filters })
+      .then((res) => {
+        if (!cancelled) setItems(res.items);
+      })
+      .catch((e: unknown) => {
+        // Keep the rows already on screen rather than blanking the table under an error.
+        if (!cancelled) setPageError(apiErrorText(e));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [page, projectId, filters.from, filters.to, filters.agentId]);
+
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  // Message rows expanded to their full text (index into the current page); one line each by default.
   const [expanded, setExpanded] = useState<ReadonlySet<number>>(new Set());
+  useEffect(() => setExpanded(new Set()), [items]);
   const toggle = (i: number) =>
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -94,13 +157,13 @@ export function ErrorsPanel({ errors }: { errors: UsageErrors }) {
         {topCode && (
           <Stat
             label={S.usage.errorsTopCode}
-            value={`${topCode.source} · ${topCode.code} ×${topCode.count}`}
+            value={`${sourceCode(topCode.source, topCode.code)} ×${topCode.count}`}
           />
         )}
       </div>
 
       {/* Recent-errors table */}
-      {recent.length === 0 ? (
+      {items.length === 0 && page === 0 ? (
         <Empty text={S.usage.errorsEmpty} />
       ) : (
         <div className="mt-2.5 max-h-72 overflow-y-auto border-t border-gray-200 dark:border-gray-800">
@@ -117,7 +180,7 @@ export function ErrorsPanel({ errors }: { errors: UsageErrors }) {
               </tr>
             </thead>
             <tbody>
-              {recent.map((e, i) => {
+              {items.map((e, i) => {
                 const key = kindOf(e.kind);
                 return (
                   <tr
@@ -128,9 +191,7 @@ export function ErrorsPanel({ errors }: { errors: UsageErrors }) {
                       {formatDateTime(e.ts)}
                     </td>
                     <td className="py-1.5 pr-2 align-top font-mono text-gray-500 dark:text-gray-400">
-                      <span className="block break-words">
-                        {e.source} · {e.code}
-                      </span>
+                      <span className="block break-words">{sourceCode(e.source, e.code)}</span>
                     </td>
                     <td className="py-1.5 pr-2 align-top">
                       <Badge tone={key === "unexpected" ? "red" : "gray"}>{kindLabel(key)}</Badge>
@@ -155,6 +216,47 @@ export function ErrorsPanel({ errors }: { errors: UsageErrors }) {
           </table>
         </div>
       )}
+
+      {/* Pager: only once there is more than one page. Kept outside the scroll box so it
+          stays reachable without scrolling to the bottom of the rows. */}
+      {items.length > 0 && pageCount > 1 && (
+        <div className="mt-2 flex items-center justify-end gap-2 text-xs text-gray-500 dark:text-gray-400">
+          {pageError !== null && <span className="mr-auto text-rose-500">{pageError}</span>}
+          <span className="tabular-nums">{S.usage.errorsPageOf(page + 1, pageCount, total)}</span>
+          <PagerButton
+            label={S.usage.errorsNewer}
+            disabled={page === 0 || loading}
+            onClick={() => setPage((p) => Math.max(0, p - 1))}
+          />
+          <PagerButton
+            label={S.usage.errorsOlder}
+            disabled={page + 1 >= pageCount || loading}
+            onClick={() => setPage((p) => p + 1)}
+          />
+        </div>
+      )}
     </div>
+  );
+}
+
+/** Pager step button: same recessive treatment as the rest of the panel's chrome. */
+function PagerButton({
+  label,
+  disabled,
+  onClick,
+}: {
+  label: string;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className="rounded-md border border-gray-200 px-2 py-0.5 transition-colors duration-150 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent dark:border-gray-800 dark:hover:bg-gray-800/60 dark:disabled:hover:bg-transparent"
+    >
+      {label}
+    </button>
   );
 }

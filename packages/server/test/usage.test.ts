@@ -277,3 +277,72 @@ describe("usage-service (cost computed on the fly)", () => {
     expect(byAgent.success.map((s) => s.modelId)).toEqual(["m1"]);
   });
 });
+
+describe("usage-service.queryErrors (error table paging)", () => {
+  let db: DatabaseSync;
+  let errors: ErrorsRepo;
+  let service: UsageService;
+
+  beforeEach(() => {
+    db = openDatabase(":memory:");
+    errors = new ErrorsRepo(db);
+    service = new UsageService(new UsageRepo(db), errors, async () => undefined);
+    // 25 rows, oldest first — so "newest first" ordering is observable across a page boundary.
+    for (let i = 0; i < 25; i += 1) {
+      errors.insert({
+        ts: `2026-07-27T00:00:${String(i).padStart(2, "0")}.000Z`,
+        date: "2026-07-27",
+        projectId: "p1",
+        agentId: "a1",
+        sessionId: "s1",
+        source: "http",
+        kind: "expected",
+        code: `code_${i}`,
+        status: 400,
+        message: `m${i}`,
+      });
+    }
+  });
+  afterEach(() => db.close());
+
+  it("pages newest-first and reports the filtered total, so the caller knows where the end is", () => {
+    const first = service.queryErrors("p1", { offset: 0, limit: 20 });
+    expect(first.total).toBe(25);
+    expect(first.items).toHaveLength(20);
+    expect(first.items[0]!.code).toBe("code_24"); // newest
+    const second = service.queryErrors("p1", { offset: 20, limit: 20 });
+    expect(second.total).toBe(25);
+    // The tail is the five oldest, still descending, with no overlap against page one.
+    expect(second.items.map((e) => e.code)).toEqual([
+      "code_4",
+      "code_3",
+      "code_2",
+      "code_1",
+      "code_0",
+    ]);
+  });
+
+  it("past the end is empty rather than an error, and total stays the full count", () => {
+    const page = service.queryErrors("p1", { offset: 100, limit: 20 });
+    expect(page.items).toEqual([]);
+    expect(page.total).toBe(25);
+  });
+
+  it("applies the dashboard's filter, so a page never widens what the summary counted", () => {
+    errors.insert({
+      ts: "2026-07-20T00:00:00.000Z",
+      date: "2026-07-20",
+      projectId: "p1",
+      agentId: "other",
+      sessionId: "s2",
+      source: "http",
+      kind: "expected",
+      code: "older_agent",
+      status: 400,
+      message: "m",
+    });
+    const scoped = service.queryErrors("p1", { offset: 0, limit: 50, agentId: "a1" });
+    expect(scoped.total).toBe(25);
+    expect(scoped.items.some((e) => e.code === "older_agent")).toBe(false);
+  });
+});
