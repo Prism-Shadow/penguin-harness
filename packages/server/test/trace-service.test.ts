@@ -615,6 +615,34 @@ describe("trace-service", () => {
     expect(a.modelSegments.map((s) => s.taskIndex)).toEqual([0, 0, 0, 1]);
   });
 
+  it("Task grouping: images sent with a steering message don't start a Task either (a Prompt's do)", async () => {
+    const T = (sec: string) => `2026-07-05T10:04:${sec}Z`;
+    await writeTraceFile(root, P, A, "2026-07-05", S, 13, [
+      sessionMeta(metaPayload()),
+      // Task 0: a normal turn that calls a tool.
+      at(T("00.000"), userText("q1")),
+      at(T("01.000"), requestBegin()),
+      at(T("02.000"), toolCall({ name: "read_file", arguments: "{}", toolCallId: "t1" })),
+      at(T("02.500"), requestEnd("completed")),
+      at(T("03.000"), toolCallOutput({ output: "o", toolCallId: "t1" })),
+      // Steering with two images: core delivers them right behind the text, and the whole
+      // batch stays inside Task 0 — an image is a turn starter everywhere except here.
+      at(T("03.200"), userText("[user_steering]\nlike this mock\n[/user_steering]")),
+      at(T("03.300"), imageUrlMessage("data:image/png;base64,AAAA")),
+      at(T("03.400"), imageUrlMessage("data:image/png;base64,BBBB")),
+      at(T("03.500"), requestBegin()),
+      at(T("04.000"), assistantText("answer 1")),
+      at(T("04.500"), requestEnd("completed")),
+      // An images-only Prompt after all that is a genuine new turn.
+      at(T("20.000"), imageUrlMessage("data:image/png;base64,CCCC")),
+      at(T("21.000"), requestBegin()),
+      at(T("22.000"), assistantText("answer 2")),
+      at(T("22.500"), requestEnd("completed")),
+    ]);
+    const a = await service.analyze(P, A, S, 13);
+    expect(a.requests.map((r) => r.taskIndex)).toEqual([0, 0, 1]);
+  });
+
   // Compaction is its own turn: the previous turn called a tool and would
   // otherwise "continue", but compaction_begin breaks that continuation, so the
   // compaction request lands on a new taskIndex. A successful compaction splits

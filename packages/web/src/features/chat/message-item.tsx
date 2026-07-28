@@ -246,32 +246,53 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
         </>
       );
     }
-    case "user_steering":
+    case "user_steering": {
       // Mid-run steering ([user_steering]-wrapped user text delivered between turns): a
       // compact right-aligned user-styled chip inside the running Task's flow — visually
       // lighter than a full prompt bubble, since it doesn't start a new Task (the Trace page
       // still shows the raw marker text as-is).
+      // Images sent with the message live inside the same chip: `item.images` on a vision
+      // model (delivered as image messages right behind the text), or restored from the
+      // [attached image: …] path lines without one — the same two shapes a user_text bubble
+      // handles, so both render identically here.
+      const { text: steerText, images: steerImages } = splitImageAttachments(item.text);
+      const shown = [...steerImages, ...(item.images ?? [])];
       return (
         <div className="anim-msg group my-2 flex flex-col items-end">
-          <div className="flex max-w-[88%] items-start gap-1.5 rounded-md border border-gray-200 bg-gray-100 px-3 py-1.5 md:max-w-[75%] dark:border-gray-700 dark:bg-gray-800">
-            <GlyphIcon
-              d={USER_STEERING_ICON}
-              className="mt-1 shrink-0 text-gray-400 dark:text-gray-500"
-            />
-            <p className="wrap-anywhere whitespace-pre-wrap text-sm leading-relaxed text-gray-800 dark:text-gray-100">
-              <span className="mr-1.5 text-xs font-semibold text-gray-500 dark:text-gray-400">
-                {S.chat.userSteering}
-              </span>
-              {item.text}
-            </p>
+          <div className="flex max-w-[88%] flex-col gap-1.5 rounded-md border border-gray-200 bg-gray-100 px-3 py-1.5 md:max-w-[75%] dark:border-gray-700 dark:bg-gray-800">
+            <div className="flex items-start gap-1.5">
+              <GlyphIcon
+                d={USER_STEERING_ICON}
+                className="mt-1 shrink-0 text-gray-400 dark:text-gray-500"
+              />
+              <p className="wrap-anywhere whitespace-pre-wrap text-sm leading-relaxed text-gray-800 dark:text-gray-100">
+                <span className="mr-1.5 text-xs font-semibold text-gray-500 dark:text-gray-400">
+                  {S.chat.userSteering}
+                </span>
+                {steerText}
+              </p>
+            </div>
+            {shown.length > 0 && (
+              <div className="flex flex-wrap justify-end gap-1.5">
+                {shown.map((src, i) => (
+                  <ZoomableImage
+                    key={i}
+                    src={src}
+                    alt={S.chat.imageAlt}
+                    className="max-h-28 max-w-full rounded-md"
+                  />
+                ))}
+              </div>
+            )}
           </div>
           <MessageMeta
             {...(item.atMs !== undefined ? { atMs: item.atMs } : {})}
-            text={item.text}
+            text={steerText}
             align="right"
           />
         </div>
       );
+    }
     case "user_image":
       return (
         <div className="anim-msg group my-4 flex flex-col items-end">

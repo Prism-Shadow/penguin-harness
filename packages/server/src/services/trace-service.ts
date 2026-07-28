@@ -281,6 +281,8 @@ export class TraceService {
     // request that resumes after compaction starts yet another Task.
     let taskIndex = -1;
     let continuation = false; // The previous round's Request called a tool -> the next request_begin continues the same Task
+    /** Inside the image run that follows a `[user_steering]` text (see the turn-start rule below). */
+    let steeringImages = false;
     let sawToolCallThisRequest = false;
     // Compaction interval (compaction_begin..compaction_end): the compaction
     // request's request_begin/request_end and token_usage all fall inside it (see
@@ -360,10 +362,19 @@ export class TraceService {
         typeof p.text === "string" &&
         parseUserSteeringText(p.text) !== null;
       if (isSteeringText) continuation = true;
+      // Images sent with a steering message ride immediately behind its text, exactly as a
+      // Prompt's images ride behind theirs — and they inherit its exclusion: still the same
+      // Task, so `steeringImages` keeps the window open across the whole run of them and
+      // anything else closes it (an images-only Prompt after a steering message is a genuine
+      // new turn).
+      const isImage = !hasOrigin && msg.type === "model_msg" && p.type === "image_url";
+      if (!isSteeringText && !(isImage && steeringImages)) steeringImages = false;
+      if (isSteeringText) steeringImages = true;
       const startsUserTurn =
         !hasOrigin &&
         !compactionActive &&
         !isSteeringText &&
+        !steeringImages &&
         msg.type === "model_msg" &&
         ((p.type === "text" && p.role === "user") || p.type === "image_url");
       const startsCompactionTurn =

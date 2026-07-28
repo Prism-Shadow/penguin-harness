@@ -7,7 +7,7 @@
  * turn, until some turn produces no tool_call (Task done) or is interrupted. Approval/execution
  * are within-turn interactions, and execution can overlap.
  */
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -32,7 +32,13 @@ import { Environment } from "../src/environment/index.js";
 import { Writer, readTrace } from "../src/trace/index.js";
 import { ContextEngine, reconnectDelayMs } from "../src/engine/context-engine.js";
 import { goalRoundMessage } from "../src/goal/goal-prompts.js";
+import { parseUserSteeringText } from "../src/omnimessage/markers/index.js";
+import { IMAGE_DROPPED_NOTE, imagesToScratchpadPaths } from "../src/internal/session-support.js";
 import type { ApproveFn, EnvironmentInterface, ToolPermission } from "../src/interfaces.js";
+
+/** A real 1x1 PNG data URL: the non-vision fold actually decodes and writes it to disk. */
+const PNG_DATA_URL =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 
 /** Deterministic fake LLM: the first turn yields a tool_call, the second yields the final reply. */
 class FakeLLM implements LLMInterface {
@@ -2299,6 +2305,126 @@ describe("ContextEngine mid-run steering ([user_steering])", () => {
     // Streamed and traced like any user input.
     expect(steeringTexts(all)).toEqual([wrapped]);
     expect(steeringTexts(await readTrace(trace.currentPath()))).toEqual([wrapped]);
+  });
+
+  /** Image URLs of the image messages in a list, in order. */
+  const steeredImages = (msgs: OmniMessage[]): string[] =>
+    msgs
+      .map((m) => m.payload as { type?: string; image_url?: string })
+      .filter((p) => p.type === "image_url")
+      .map((p) => p.image_url!);
+
+  it("carries a steering message's images right behind its text (vision model), streamed and traced with it", async () => {
+    // An image with no caption is a complete steering message on its own; each entry's images
+    // follow that entry's text, so two steers stay distinguishable in the delivered order.
+    let engineRef: ContextEngine | null = null;
+    const inputs: OmniMessage[][] = [];
+    const llm: LLMInterface = {
+      async *streamGenerate(params): AsyncGenerator<OmniMessage, LLMOutcome> {
+        inputs.push(params.newMessages);
+        if (inputs.length === 1) {
+          expect(engineRef!.steer("", ["data:image/png;base64,AAAA"])).toBe(true);
+          expect(engineRef!.steer("this one too", ["data:image/png;base64,BBBB"])).toBe(true);
+          yield assistantText("final answer");
+          return { status: "completed" };
+        }
+        yield assistantText("looked at both");
+        return { status: "completed" };
+      },
+    };
+    const trace = new Writer({ tracesDir: traces, sessionId: "sess_steer_img" });
+    const engine = new ContextEngine({ llm, environment: steeringEnvironment(), trace });
+    engineRef = engine;
+
+    const all = await collectRun(engine, [userText("go")], allowAll);
+
+    expect(inputs).toHaveLength(2);
+    expect(
+      inputs[1]!.map((m) => {
+        const p = m.payload as { type: string; text?: string; image_url?: string };
+        return p.type === "image_url" ? `img:${p.image_url}` : p.text;
+      }),
+    ).toEqual([
+      "[user_steering]\n\n[/user_steering]",
+      "img:data:image/png;base64,AAAA",
+      "[user_steering]\nthis one too\n[/user_steering]",
+      "img:data:image/png;base64,BBBB",
+    ]);
+    // Streamed and traced like the text they belong to (a plain run never yields its Prompt,
+    // so these are the steering images and nothing else).
+    const expectedImages = ["data:image/png;base64,AAAA", "data:image/png;base64,BBBB"];
+    expect(steeredImages(all)).toEqual(expectedImages);
+    expect(steeredImages(await readTrace(trace.currentPath()))).toEqual(expectedImages);
+  });
+
+  it("without vision, a steering message's images fold into [attached image: …] lines INSIDE the block", async () => {
+    // The block must stay the whole text: lines appended after the closing tag would cost the
+    // message its steering identity (parseUserSteeringText) and read as a new Task everywhere.
+    const scratch = await mkdtemp(join(tmpdir(), "penguin-steer-img-"));
+    try {
+      let engineRef: ContextEngine | null = null;
+      const inputs: OmniMessage[][] = [];
+      const llm: LLMInterface = {
+        async *streamGenerate(params): AsyncGenerator<OmniMessage, LLMOutcome> {
+          inputs.push(params.newMessages);
+          if (inputs.length === 1) {
+            expect(engineRef!.steer("look at this", [PNG_DATA_URL])).toBe(true);
+            yield assistantText("final answer");
+            return { status: "completed" };
+          }
+          yield assistantText("read the file");
+          return { status: "completed" };
+        },
+      };
+      const engine = new ContextEngine({
+        llm,
+        environment: steeringEnvironment(),
+        foldInputImages: (messages) => imagesToScratchpadPaths(messages, scratch),
+      });
+      engineRef = engine;
+      await collectRun(engine, [userText("go")], allowAll);
+
+      expect(inputs[1]!.map((m) => (m.payload as { type: string }).type)).toEqual(["text"]);
+      const text = (inputs[1]![0]!.payload as { text: string }).text;
+      const inner = parseUserSteeringText(text);
+      expect(inner).not.toBeNull();
+      expect(inner).toMatch(/^look at this\n\n\[attached image: .+\]$/);
+      // The file really landed in the scratchpad.
+      expect(await readdir(scratch)).toHaveLength(1);
+    } finally {
+      await rm(scratch, { recursive: true, force: true });
+    }
+  });
+
+  it("a steering fold that fails drops the images with a note instead of killing the running Task", async () => {
+    let engineRef: ContextEngine | null = null;
+    const inputs: OmniMessage[][] = [];
+    const llm: LLMInterface = {
+      async *streamGenerate(params): AsyncGenerator<OmniMessage, LLMOutcome> {
+        inputs.push(params.newMessages);
+        if (inputs.length === 1) {
+          expect(engineRef!.steer("look at this", ["data:image/png;base64,AAAA"])).toBe(true);
+          yield assistantText("final answer");
+          return { status: "completed" };
+        }
+        yield assistantText("carried on");
+        return { status: "completed" };
+      },
+    };
+    const engine = new ContextEngine({
+      llm,
+      environment: steeringEnvironment(),
+      foldInputImages: () => Promise.reject(new Error("read-only scratchpad")),
+    });
+    engineRef = engine;
+    const all = await collectRun(engine, [userText("go")], allowAll);
+
+    // The run completed (turn 2 happened) and the text still arrived, image dropped with the note.
+    expect(inputs).toHaveLength(2);
+    expect(parseUserSteeringText((inputs[1]![0]!.payload as { text: string }).text)).toBe(
+      `look at this\n\n${IMAGE_DROPPED_NOTE}`,
+    );
+    expect(steeredImages(all)).toEqual([]);
   });
 
   it("steering queued during a mid-run compaction is delivered right after it (never swallowed)", async () => {

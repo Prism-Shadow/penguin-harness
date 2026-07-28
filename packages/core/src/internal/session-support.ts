@@ -103,6 +103,13 @@ export async function createTempWorkspace(
   );
 }
 
+/**
+ * Stands in for an image that could not be turned into a path line — an unparseable data URL
+ * here, or (in the engine's steering fold) a scratchpad write that failed. Shown to the model
+ * and the user instead of silently dropping the attachment.
+ */
+export const IMAGE_DROPPED_NOTE = "[an attached image could not be saved and was dropped]";
+
 /** Maps a data URL's mime type to a file extension on disk; unknown mimes use bin (the image-reading tool sniffs the magic bytes and doesn't rely on the extension). */
 const MIME_TO_EXT: Record<string, string> = {
   "image/png": "png",
@@ -140,7 +147,7 @@ export async function imagesToScratchpadPaths(
     }
     const match = /^data:([^;,]+);base64,(.+)$/s.exec(url);
     if (!match) {
-      lines.push("[an attached image could not be saved and was dropped]");
+      lines.push(IMAGE_DROPPED_NOTE);
       continue;
     }
     await fs.mkdir(dir, { recursive: true });

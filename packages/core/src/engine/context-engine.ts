@@ -36,6 +36,7 @@ import {
   compactionBegin,
   compactionEnd,
   emptyTokenCounts,
+  imageUrlMessage,
   isCompleteModelMessage,
   isSessionMeta,
   partialText,
@@ -79,6 +80,7 @@ import type {
   LLMOutcome,
   ThinkingLevelName,
 } from "../interfaces.js";
+import { IMAGE_DROPPED_NOTE } from "../internal/session-support.js";
 
 /** Trace sink: `write` a complete/event/meta message; `rotate` starts a new file (compaction splits files). */
 export interface TraceSink {
@@ -201,6 +203,23 @@ export interface ContextEngineDeps {
   compaction?: CompactionSettings;
   /** This Session's session_meta message; written at the start of the new Trace file after compaction splits it. */
   sessionMeta?: OmniMessage;
+  /**
+   * Input adapter for a session whose model has no vision (Session passes
+   * `imagesToScratchpadPaths` bound to its scratchpad): folds image messages into
+   * `[attached image: <path>]` lines appended to the input's user text. Absent = the model
+   * takes images directly. `run`'s Prompt is folded by the caller before it reaches the
+   * engine; this hook exists for the one input the engine assembles itself — steering
+   * (see deliverSteering, which folds BEFORE wrapping so the lines land inside the
+   * `[user_steering]` block).
+   */
+  foldInputImages?: (messages: OmniMessage[]) => Promise<OmniMessage[]>;
+}
+
+/** One queued steering message: the user's text plus any images sent with it. */
+interface SteeringEntry {
+  text: string;
+  /** Image URLs (`data:` or http(s)), delivered as user image messages right behind the text. */
+  images: string[];
 }
 
 /** Whether compaction is possible; when not `ok`, `compact()` is a no-op and yields no messages (see ContextEngine.compactability). */
@@ -366,7 +385,7 @@ export class ContextEngine {
    * later Task would be more surprising than losing it; hosts get `steer() === false`
    * after that point and fall back to a normal task).
    */
-  private steeringQueue: string[] = [];
+  private steeringQueue: SteeringEntry[] = [];
   /** Whether a `run` is currently in flight (gates `steer`; compaction does not count). */
   private taskRunning = false;
 
@@ -412,33 +431,68 @@ export class ContextEngine {
    * Queues a steering message for the running Task: it is delivered with the next request
    * input as a standalone `[user_steering]` user message — alongside that turn's tool
    * outputs, or alone as the continuation input when the turn produced no tool calls.
-   * Returns false when no Task is running (the host should then submit the text as a
-   * normal task instead).
+   * `images` (data:/http(s) URLs) ride along as user image messages right behind that text,
+   * exactly as a Prompt carries its images; on a model without vision they are folded into
+   * path lines at delivery (see deliverSteering). Returns false when no Task is running (the
+   * host should then submit the message as a normal task instead).
    */
-  steer(text: string): boolean {
+  steer(text: string, images: string[] = []): boolean {
     if (!this.taskRunning) return false;
-    this.steeringQueue.push(text);
+    this.steeringQueue.push({ text, images });
     return true;
   }
 
   /**
    * Drains the steering queue into standalone `[user_steering]` user messages (one per
-   * queued text, in arrival order), yielding each to the output stream and writing it to
-   * Trace — steering is real user input: unlike a normal Prompt (which the render layer
-   * already holds locally) this text never reached the consumer, and replay attributes it
-   * positionally to the next turn's input like any other user message. Returns the messages
-   * for the caller to append to the next request input; an empty queue is a no-op.
+   * queued entry, in arrival order, each followed by its images), yielding every message to
+   * the output stream and writing it to Trace — steering is real user input: unlike a normal
+   * Prompt (which the render layer already holds locally) this text never reached the
+   * consumer, and replay attributes it positionally to the next turn's input like any other
+   * user message. Returns the messages for the caller to append to the next request input;
+   * an empty queue is a no-op.
    */
   private async *deliverSteering(): AsyncGenerator<OmniMessage, OmniMessage[]> {
     if (this.steeringQueue.length === 0) return [];
     const drained = this.steeringQueue;
     this.steeringQueue = [];
-    const messages = drained.map((text) => userText(userSteeringText(text)));
+    const messages: OmniMessage[] = [];
+    for (const entry of drained) messages.push(...(await this.steeringMessages(entry)));
     for (const msg of messages) {
       yield msg;
       await this.write(msg);
     }
     return messages;
+  }
+
+  /**
+   * One queued steering entry -> the messages carrying it: the `[user_steering]`-wrapped text,
+   * followed by one user image message per attached image (the same shape a Prompt uses, so
+   * every consumer down the line — LLM client, Trace, replay — already knows it).
+   *
+   * Without vision (`deps.foldInputImages`) the images are folded into `[attached image: …]`
+   * lines **before** the wrapping, so they land INSIDE the block: `parseUserSteeringText`
+   * only recognizes a text that is exactly one block, and lines appended after the closing
+   * tag would cost the message its steering identity — every render layer would read it as a
+   * new Task. A fold that fails (unwritable scratchpad) must not take the running Task down
+   * with it: the images are dropped with a note and the text is delivered regardless.
+   */
+  private async steeringMessages(entry: SteeringEntry): Promise<OmniMessage[]> {
+    if (entry.images.length === 0) return [userText(userSteeringText(entry.text))];
+    const images = entry.images.map((url) => imageUrlMessage(url));
+    if (!this.deps.foldInputImages) {
+      return [userText(userSteeringText(entry.text)), ...images];
+    }
+    let text: string;
+    try {
+      // The fold appends every path line to the last user text message and drops the image
+      // messages, so exactly one text message comes back for this single-text input.
+      const folded = await this.deps.foldInputImages([userText(entry.text), ...images]);
+      const p = folded[0]?.payload as { type?: string; text?: string } | undefined;
+      text = p?.type === "text" && typeof p.text === "string" ? p.text : entry.text;
+    } catch {
+      text = `${entry.text}\n\n${IMAGE_DROPPED_NOTE}`;
+    }
+    return [userText(userSteeringText(text))];
   }
 
   /** The actual Task loop behind `run` (split out so run's finally can close the steering window on every exit path). */

@@ -940,13 +940,13 @@ export function ChatInput({
   onSend: (input: TaskInputPart[], goal: { budget: number } | null) => Promise<boolean>;
   /**
    * Mid-run steering (session state only): while a Task is running, Enter/send queues the
-   * trimmed text for the running agent — it is delivered between turns as a standalone
-   * `[user_steering]` user message. `"queued"` clears the text and shows the queued hint;
-   * `"not_running"` (409 race with completion) makes the input fall back to its full normal
-   * send path; `"failed"` keeps the draft. When absent (draft state), the input stays
-   * send-disabled while running, as before.
+   * trimmed text **and any attached images** for the running agent — delivered between turns
+   * as a standalone `[user_steering]` user message followed by its images. `"queued"` clears
+   * the text and images and shows the queued hint; `"not_running"` (409 race with completion)
+   * makes the input fall back to its full normal send path; `"failed"` keeps the draft. When
+   * absent (draft state), the input stays send-disabled while running, as before.
    */
-  onSteer?: (text: string) => Promise<"queued" | "not_running" | "failed">;
+  onSteer?: (text: string, images: string[]) => Promise<"queued" | "not_running" | "failed">;
   /**
    * Count of steering messages already visible in the message stream: the queued hint stays
    * up until this increases past its value at queue time (i.e. the message was delivered).
@@ -1212,10 +1212,12 @@ export function ChatInput({
     [onHandoffTargetChange],
   );
 
-  // Mid-run steering: while running, Enter/send queues plain text for the running agent
-  // (delivered between turns as a [user_steering] user message). Text only — images / skills /
-  // @ target stay in the draft for a later normal send (an @ target also blocks steering: a
-  // leading mention means a handoff, not a message to this agent).
+  // Mid-run steering: while running, Enter/send queues the text **and the attached images**
+  // for the running agent (delivered between turns as a [user_steering] user message followed
+  // by its images) — so an image with no caption is a complete steering message on its own.
+  // Selected skills still stay in the draft for a later normal send: a [use_skills] block is
+  // task-level setup, not something to hand a turn that is already under way. An @ target
+  // also blocks steering: a leading mention means a handoff, not a message to this agent.
   // `!goalOn`: with the goal chip engaged the text is an OBJECTIVE — steering it into a run
   // that happens to be active (e.g. a schedule fired) would silently repurpose it.
   const canSteer =
@@ -1225,7 +1227,7 @@ export function ChatInput({
     !modelAuthDead &&
     onSteer !== undefined &&
     target === null &&
-    text.trim().length > 0;
+    (text.trim().length > 0 || images.length > 0);
   // Mid-run send mode (owner directive): the user chooses between "steer" (delivered
   // mid-run as a [user_steering] input) and "follow-up" (held server-side and auto-sent as
   // an ordinary next task once this run finishes). Set from the "+" menu's settings row —
@@ -1242,12 +1244,12 @@ export function ChatInput({
   // is eligible, same content rule as canSend.
   const canFollowUp =
     running && !busy && !goalOn && !modelAuthDead && followUpMode && draftHasContent;
-  // Steer mode holding a draft the text-only steer channel can't carry (an image with no
-  // text, skills only, or an @ target): the draft is still perfectly sendable — THIS send
-  // falls back to the follow-up queue (held server-side, auto-sent as the next ordinary
-  // message once the run finishes; an @ handoff opens its new chat directly). Without the
-  // fallback the button face flips to send (any content does that) but could never enable,
-  // stranding the user on a dead button that also displaced Stop.
+  // Steer mode holding a draft the steer channel can't carry — since steering carries text
+  // and images, what is left is a skills-only draft or an @ target: the draft is still
+  // perfectly sendable, so THIS send falls back to the follow-up queue (held server-side,
+  // auto-sent as the next ordinary message once the run finishes; an @ handoff opens its new
+  // chat directly). Without the fallback the button face flips to send (any content does
+  // that) but could never enable, stranding the user on a dead button that also displaced Stop.
   // `!goalOn` / `!modelAuthDead`: same gates as canSteer / canFollowUp — a goal draft is an
   // objective, not a queueable message (sendNormal would fire it as a goal run), and a dead
   // model key has nothing to send with. Both keep the send button disabled, as on main.
@@ -1639,27 +1641,31 @@ export function ChatInput({
         await sendNormal(onQueueFollowUp!);
         return;
       }
-      // Steering branch: queue the trimmed text for the running agent; only the text is
-      // sent and cleared — attached images / selected skills stay for a normal send.
+      // Steering branch: queue the trimmed text and the attached images for the running
+      // agent; both are sent and cleared together — only selected skills stay behind for a
+      // normal send (see canSteer).
       if (!canSteer) return;
       const steerText = text.trim();
+      const steerImages = images;
       setBusy(true);
       let res: "queued" | "not_running" | "failed" = "failed";
       try {
-        res = await onSteer!(steerText);
+        res = await onSteer!(steerText, steerImages);
         if (res === "queued") {
           // Show the "queued" hint until the steering message shows up in the stream
           // (steeringDeliveredCount increases) — see the effect below.
           steerBaseline.current = steeringDeliveredCount ?? 0;
           setSteerPending(true);
           setText("");
+          setImages([]);
         }
       } finally {
         setBusy(false);
         textareaRef.current?.focus();
       }
-      // Completion race (server: no Task running anymore): deliver the whole draft — images,
-      // skills and all — through the full normal send path instead of a text-only task.
+      // Completion race (server: no Task running anymore): deliver the whole draft — skills
+      // and all — through the full normal send path. The draft is untouched in this branch
+      // (nothing was cleared), so the images go out with it.
       if (res === "not_running") await sendNormal();
       return;
     }

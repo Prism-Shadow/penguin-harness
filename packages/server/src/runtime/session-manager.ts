@@ -88,8 +88,8 @@ export interface RuntimeSession {
   compact(opts: { signal: AbortSignal }): AsyncGenerator<OmniMessage>;
   /** Whether compaction is possible and why; when not ok, compact() yields no messages (see core ContextEngine.compactability). */
   compactability(): CompactAvailability;
-  /** Queues a mid-run steering message (core `Session.steer`); false when no Task is running. */
-  steer(text: string): boolean;
+  /** Queues a mid-run steering message with its images (core `Session.steer`); false when no Task is running. */
+  steer(text: string, images?: string[]): boolean;
   /** Skips the in-progress reconnect backoff, firing the next retry immediately (core `Session.skipReconnectWait`); false when no wait is in progress. */
   skipReconnectWait(): boolean;
   toolPermission(name: string): "r" | "rw" | undefined;
@@ -755,15 +755,16 @@ export class SessionManager {
   }
 
   /**
-   * Mid-run steering: forward the text to the running Session (core delivers it between
-   * turns as a standalone `[user_steering]` user message — no SSE event of its own; the
-   * message arrives through the stream the drive loop already publishes). 409 when the
-   * Session isn't running a Task (idle / compacting / not loaded) or the run finished in the
-   * race window — the caller falls back to submitting a normal task.
+   * Mid-run steering: forward the message to the running Session (core delivers it between
+   * turns as a standalone `[user_steering]` user message followed by its images — no SSE
+   * event of its own; the messages arrive through the stream the drive loop already
+   * publishes). 409 when the Session isn't running a Task (idle / compacting / not loaded)
+   * or the run finished in the race window — the caller falls back to submitting a normal
+   * task, which carries the same text and images.
    */
-  steer(sessionId: string, text: string): void {
+  steer(sessionId: string, text: string, images: string[] = []): void {
     const entry = this.entries.get(sessionId);
-    if (!entry || entry.status !== "running" || !entry.session.steer(text)) {
+    if (!entry || entry.status !== "running" || !entry.session.steer(text, images)) {
       throw new HttpError(
         409,
         "not_running",

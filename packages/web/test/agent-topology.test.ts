@@ -331,6 +331,12 @@ describe("identity helpers", () => {
     // Mid-run steering renders as a user_steering item — inside the running Task, not a new one.
     pushMessage(m, userText("[user_steering]\nnudge\n[/user_steering]"));
     expect(taskStartCount(m.items)).toBe(1);
+    // An image sent WITH that steering message follows it directly and joins its chip, so it
+    // starts nothing either; the assistant reply then closes the chip's collection window.
+    pushMessage(m, imageUrlMessage("data:image/png;base64,steered"));
+    expect(taskStartCount(m.items)).toBe(1);
+    pushMessage(m, assistantText("r2"));
+    // A standalone Prompt image (no steering message in front of it) still starts a Task.
     pushMessage(m, imageUrlMessage("data:image/png;base64,xx"));
     expect(taskStartCount(m.items)).toBe(2);
     pushMessage(m, userText("t3"));

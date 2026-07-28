@@ -104,6 +104,25 @@ function parseTaskInput(body: Record<string, unknown>): OmniMessage[] {
 }
 
 /**
+ * Validate the optional `images` field of a steer request: a list of `data:` / http(s) URLs
+ * (same rule as a task input's `imageUrl`), absent or empty = a text-only steering message.
+ */
+function parseSteerImages(body: Record<string, unknown>): string[] {
+  const images = body.images;
+  if (images === undefined) return [];
+  if (!Array.isArray(images)) throw badRequest("images must be an array.");
+  return images.map((url, i) => {
+    if (
+      typeof url !== "string" ||
+      !(url.startsWith("data:") || url.startsWith("http://") || url.startsWith("https://"))
+    ) {
+      throw badRequest(`images[${i}] only supports data: or http(s) URLs.`);
+    }
+    return url;
+  });
+}
+
+/**
  * Validate the optional `goal` field of a task request: absent = a regular task (null);
  * present = goal mode with a token budget (a positive integer, or -1/omitted = unlimited).
  * The input text is the objective — skills ride the text itself as a `[use_skills]` block,
@@ -450,15 +469,21 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
   });
 
   // Mid-run steering: queue a user message for the running Task; core delivers it between
-  // turns as a standalone `[user_steering]` user message (the model sees it without the loop
-  // being interrupted). 409 not_running when no Task is in progress — the frontend then falls
-  // back to a normal task POST.
+  // turns as a standalone `[user_steering]` user message, with any images following it as
+  // user image messages (the model sees the whole thing without the loop being interrupted).
+  // 409 not_running when no Task is in progress — the frontend then falls back to a normal
+  // task POST.
   app.post("/:sessionId/steer", async (c) => {
     const row = resolveSession(c);
     const body = await readJson(c);
     const text = typeof body.text === "string" ? body.text.trim() : "";
-    if (!text) throw badRequest("text must be a non-empty string.");
-    deps.manager.steer(row.sessionId, text);
+    const images = parseSteerImages(body);
+    // Either half can carry the message on its own: an image with no caption is a complete
+    // steering message, and so is plain text.
+    if (!text && images.length === 0) {
+      throw badRequest("text or images must carry the steering message.");
+    }
+    deps.manager.steer(row.sessionId, text, images);
     return c.body(null, 202);
   });
 
