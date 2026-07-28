@@ -616,7 +616,7 @@ Use \`benchmark-design\` with:
 - Test Provider: \`deepseek\`
 - Test Model: \`deepseek-v4-flash\`
 - Runs: 1
-- Baseline hard gate: below 70
+- Baseline hard gate: below 75
 
 Measure whether the Agent can propose and test candidate decision rules from public evidence,
 reject explanations that conflict with historical outcomes, judge whether the evidence is
@@ -638,7 +638,7 @@ Difficulty must come from necessary reasoning dependencies, not data volume, hid
 answer ambiguity. Each Statement must provide all necessary public materials while presenting only
 the task, without explaining the tested capability, solution, or decisive evidence.
 
-Start Phase 3 only when a valid, complete Formal Baseline is below 70; otherwise report the
+Start Phase 3 only when a valid, complete Formal Baseline is below 75; otherwise report the
 limitation and stop. The coordinating Session may inspect only public Benchmark artifacts and final
 scores, and must not read or repeat Rubrics, Gold answers, or other private information.
 

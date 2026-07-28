@@ -586,7 +586,7 @@ penguin run \\
 - Test Provider：\`deepseek\`
 - Test Model：\`deepseek-v4-flash\`
 - Runs：1
-- Baseline 硬门槛：低于 70
+- Baseline 硬门槛：低于 75
 
 本实验评估：Agent 能否从公开证据提出并验证候选决策规律，排除与历史结果冲突的解释，判断证据是否充分，再将稳定的决策过程应用到新的有限选择任务。Benchmark 包含三个贴近实际工作的 Case：
 
@@ -596,7 +596,7 @@ penguin run \\
 
 三个 Case 应覆盖不同的决策难点，共同考察 Agent 能否从公开规则、历史案例和当前事实中恢复稳定的决策过程，判断证据是否充分，处理规则优先级和例外，并迁移到新实例。Freeze 前确认每个 Case 都能暴露稳定缺陷，或者覆盖其他 Case 未覆盖的必要能力；不能只依靠一个低分 Case 满足总分门槛。难度应来自必要的推理依赖，而不是数据量、隐藏关键信息或答案歧义。每个 Statement 必须提供完成任务所需的全部公开材料，但只呈现题目，不解释考点、解法或关键证据。
 
-只有有效且完整的 Formal Baseline 低于 70 时才能启动 Phase 3；否则报告限制并停止。当前编排 Session 只能检查公开 Benchmark 产物和最终分数，不得读取或转述 Rubric、Gold 等私有信息。
+只有有效且完整的 Formal Baseline 低于 75 时才能启动 Phase 3；否则报告限制并停止。当前编排 Session 只能检查公开 Benchmark 产物和最终分数，不得读取或转述 Rubric、Gold 等私有信息。
 
 ## Phase 3：Agent Optimization
 
