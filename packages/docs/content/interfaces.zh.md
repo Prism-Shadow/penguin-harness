@@ -54,6 +54,9 @@ interface LLMOutcome {
   message?: string;     // 失败详情:failed/auth 时携带;timeout/malformed 捕获到具体
                         // 错误时也携带——透传到 request_end,错误面板据此展示被重试
                         // 请求背后的真实原因
+  retryable?: boolean;  // false = 无论 status 为何，本次结束态都不重连。引擎内部字段
+                        // (不上流)；目前唯一用法是请求尚未发出就失败(输入无法组装),
+                        // 这类失败重试多少次都是同样的结果
 }
 ```
 
@@ -61,11 +64,12 @@ interface LLMOutcome {
 | --- | --- | --- |
 | `completed` | 正常完成(已产出 token_usage) | 继续下一步 |
 | `timeout` | 超时/传输层断连/瞬时的供应商额度错误 | 同一 run 内自动重连 |
-| `failed` | 分类器未判定为瞬时的失败 | 同样在同一 run 内自动重连（只有 `auth` 停止） |
 | `malformed` | 响应解析失败 | 同一 run 内自动重连 |
+| `failed` | 分类器未判定为瞬时的错误(参数等) | 同样在同一 run 内自动重连——状态本身仍如实上报为 `failed` |
 | `aborted` | 用户中断 | 停止交还用户 |
-| `failed` | 参数等不可重试错误 | 停止交还用户 |
-| `auth` | 凭据被拒绝 | 与 `failed` 同样停止；宿主据此禁用输入，直到该模型的 API key 被更新 |
+| `auth` | 凭据被拒绝 | 停止交还用户——唯一从不重试的 LLM 终态；宿主据此禁用输入，直到该模型的 API key 被更新 |
+
+`retryable: false` 覆盖上表：该结束态与 `auth` 一样直接停止本次运行，只是不涉及凭据处理。
 
 实现约束：从不抛异常；不做内部重试(重连是引擎的职责，见 [Agent 运行循环](/agent-loop))。
 

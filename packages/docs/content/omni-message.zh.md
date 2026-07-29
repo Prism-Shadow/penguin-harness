@@ -256,8 +256,8 @@ type StopReason = "completed" | "failed" | "aborted" | "timeout" | "malformed" |
 | `aborted` | 用户中断 | 停止并交还用户 |
 | `timeout` | LLM 超时/传输层断连/瞬时的供应商额度错误 | 仅 LLM 侧：同一 run 内自动重连 |
 | `malformed` | 响应解析失败/流截断 | 仅 LLM 侧：同一 run 内自动重连 |
-| `failed` | 其他不可重试错误 | 停止并交还用户 |
-| `auth` | 供应商拒绝了凭据 | 与 `failed` 同样停止；宿主据此禁用输入，直到该模型的 API key 被更新（凭据取自当前 Project 配置） |
+| `failed` | 分类器未判定为瞬时的错误（LLM 侧）；工具执行出错（Environment 侧） | LLM 侧：同样在同一 run 内自动重连——该状态本身仍如实上报为 `failed`。Environment 侧：错误回灌给模型，从不重试 |
+| `auth` | 供应商拒绝了凭据 | 停止并交还用户——唯一从不重试的 LLM 终态；宿主据此禁用输入，直到该模型的 API key 被更新（凭据取自当前 Project 配置） |
 
 错误从不以异常形式穿过接口边界——它们就是消息，见 [Agent 运行循环](/agent-loop)。
 

@@ -54,6 +54,10 @@ interface LLMOutcome {
   message?: string;     // failure detail: on failed/auth, and on timeout/malformed when a
                         // concrete error was caught — carried onto request_end so the
                         // errors panel shows the real reason behind a retried request
+  retryable?: boolean;  // false = do not reconnect on this outcome, whatever its status.
+                        // Engine-internal (never on the wire); the only current use is a
+                        // failure raised before any request was issued (input that would
+                        // not assemble), where every retry would fail identically
 }
 ```
 
@@ -61,11 +65,12 @@ interface LLMOutcome {
 | --- | --- | --- |
 | `completed` | finished normally (token_usage already emitted) | proceed |
 | `timeout` | timeout / transport disconnect / transient provider quota error | auto-reconnect within the run |
-| `failed` | a failure the classifier did not judge transient | auto-reconnect within the run too (only `auth` stops) |
 | `malformed` | response parse failure | auto-reconnect within the run |
+| `failed` | an error the classifier did not judge transient (params, …) | auto-reconnect within the run as well — the status is still reported as `failed` |
 | `aborted` | user interrupt | stop, hand back to the user |
-| `failed` | non-retryable (params, …) | stop, hand back to the user |
-| `auth` | credentials rejected | stop like `failed`; hosts gate input until the model's API key is updated |
+| `auth` | credentials rejected | stop, hand back to the user — the one LLM status that never retries; hosts gate input until the model's API key is updated |
+
+`retryable: false` overrides the table: the outcome stops the run exactly like `auth`, minus the credential handling.
 
 Implementation constraints: never throw; no internal retries — reconnecting is the engine's job (see [The Agent Loop](/agent-loop)).
 
