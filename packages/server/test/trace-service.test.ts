@@ -662,10 +662,7 @@ describe("trace-service", () => {
     expect(a.modelSegments.map((s) => s.taskIndex)).toEqual([0, 0, 0, 1]);
   });
 
-  // The Web enforces the same grouping over the live stream (`openSteering` in
-  // web/src/lib/omni/stream-model.ts, covered by stream-model.test.ts and agent-topology's
-  // taskStartCount case). Both answer "what is one Task"; a change here needs the same change
-  // there, or the Trace timeline and the chat stream will disagree.
+  // The Web's live-stream twin of this case lives in stream-model.test.ts.
   it("Task grouping: images sent with a steering message don't start a Task either (a Prompt's do)", async () => {
     const T = (sec: string) => `2026-07-05T10:04:${sec}Z`;
     await writeTraceFile(root, P, A, "2026-07-05", S, 13, [

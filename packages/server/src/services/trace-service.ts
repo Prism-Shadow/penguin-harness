@@ -368,9 +368,8 @@ export class TraceService {
       // anything else on the main session closes it (an images-only Prompt after a steering
       // message is a genuine new turn). A subagent's messages pass through without closing it:
       // they belong to another session's stream and say nothing about this one's grouping.
-      // The rule is stated once in core's markers/steering.ts, and the Web implements the same
-      // one over the live stream — see `openSteering` in web/src/lib/omni/stream-model.ts. The
-      // two must agree on what a Task is; change one and the other needs the same change.
+      // The Web answers the same "what is one Task" question over the live stream — see
+      // `openSteering` in web/src/lib/omni/stream-model.ts; the two need to stay in step.
       const isImage = !hasOrigin && msg.type === "model_msg" && p.type === "image_url";
       if (!hasOrigin && !isSteeringText && !(isImage && steeringImages)) steeringImages = false;
       if (isSteeringText) steeringImages = true;

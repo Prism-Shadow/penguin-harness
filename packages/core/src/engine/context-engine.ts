@@ -205,8 +205,7 @@ export interface ContextEngineDeps {
    * Input adapter for a session whose model has no vision: folds image messages into text
    * lines appended to the input's user text. Absent = the model takes images directly. `run`'s
    * Prompt is folded by the caller before it reaches the engine; this hook exists for the one
-   * input the engine assembles itself — steering (see deliverSteering, which folds BEFORE
-   * wrapping so the lines land inside the `[user_steering]` block).
+   * input the engine assembles itself — steering (see `steeringMessages`).
    *
    * Expected to settle rather than reject: it runs mid-Task, and Session's binding already
    * degrades a failure into text saying the images were dropped.
@@ -495,18 +494,16 @@ export class ContextEngine {
   private async steeringMessages(entry: SteeringEntry): Promise<OmniMessage[]> {
     if (entry.images.length === 0) return [userText(userSteeringText(entry.text))];
     const images = entry.images.map((url) => imageUrlMessage(url));
-    if (!this.deps.foldInputImages) {
-      return [userText(userSteeringText(entry.text)), ...images];
-    }
-    // The fold folds every image into the last user text message, so exactly one text message
-    // comes back for this single-text input. If an adapter ever returns something else, send
-    // the images along as messages rather than quietly losing what the user attached — the
-    // model may refuse them, but that is a visible failure instead of a silent one.
+    // No fold (vision model), or a fold that returned something unreadable: send the images
+    // along as messages rather than quietly losing what the user attached — the model may
+    // refuse them, but that is a visible failure instead of a silent one.
+    const unfolded = [userText(userSteeringText(entry.text)), ...images];
+    if (!this.deps.foldInputImages) return unfolded;
+    // The fold puts every image into the last user text message, so exactly one text message
+    // comes back for this single-text input.
     const folded = await this.deps.foldInputImages([userText(entry.text), ...images]);
     const p = folded[0]?.payload as { type?: string; text?: string } | undefined;
-    if (p?.type !== "text" || typeof p.text !== "string") {
-      return [userText(userSteeringText(entry.text)), ...images];
-    }
+    if (p?.type !== "text" || typeof p.text !== "string") return unfolded;
     return [userText(userSteeringText(p.text))];
   }
 

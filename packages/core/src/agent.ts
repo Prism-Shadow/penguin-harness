@@ -291,9 +291,7 @@ export class Agent {
       createLLM: rt.createLLM,
       createBareLLM: rt.createBareLLM,
       compaction: rt.compaction,
-      // Where an input image lands when it becomes a path line instead of riding the request
-      // as an image (read back via describe_image / read_image). Always wired; Session decides
-      // per input whether to use it, from `modelVision`.
+      // Where an input image lands when it becomes a path line (see SessionConfig.imagesDir).
       imagesDir: path.join(
         scratchpadDir(this.state.root, this.state.projectId, this.state.agentId),
         sessionId,
@@ -450,9 +448,7 @@ export class Agent {
       createLLM: rt.createLLM,
       createBareLLM: rt.createBareLLM,
       compaction: rt.compaction,
-      // Where an input image lands when it becomes a path line instead of riding the request
-      // as an image (read back via describe_image / read_image). Always wired; Session decides
-      // per input whether to use it, from `modelVision`.
+      // Where an input image lands when it becomes a path line (see SessionConfig.imagesDir).
       imagesDir: path.join(
         scratchpadDir(this.state.root, this.state.projectId, this.state.agentId),
         sessionId,

@@ -1243,15 +1243,13 @@ export function ChatInput({
   // is eligible, same content rule as canSend.
   const canFollowUp =
     running && !busy && !goalOn && !modelAuthDead && followUpMode && draftHasContent;
-  // Steer mode holding a draft the steer channel can't carry — since steering carries text
-  // and images, what is left is a skills-only draft or an @ target: the draft is still
-  // perfectly sendable, so THIS send falls back to the follow-up queue (held server-side,
-  // auto-sent as the next ordinary message once the run finishes; an @ handoff opens its new
-  // chat directly). Without the fallback the button face flips to send (any content does
-  // that) but could never enable, stranding the user on a dead button that also displaced Stop.
-  // `!goalOn` / `!modelAuthDead`: same gates as canSteer / canFollowUp — a goal draft is an
-  // objective, not a queueable message (sendNormal would fire it as a goal run), and a dead
-  // model key has nothing to send with. Both keep the send button disabled, as on main.
+  // Steer mode holding a draft the steer channel can't carry — since steering carries text and
+  // images, what is left is a skills-only draft or an @ target. The draft is still perfectly
+  // sendable, so THIS send falls back to the follow-up queue instead. Without the fallback the
+  // button face flips to send (any content does that) but could never enable, stranding the
+  // user on a dead button that also displaced Stop. `!goalOn` / `!modelAuthDead`: same gates as
+  // canSteer / canFollowUp — a goal draft is an objective, not a queueable message, and a dead
+  // model key has nothing to send with.
   const steerFallbackToQueue =
     running &&
     !busy &&
@@ -1579,8 +1577,7 @@ export function ChatInput({
     if (goalOn) {
       setBusy(true);
       try {
-        // Attached images go with the objective; core folds them into `[attached image: <path>]`
-        // lines inside it so they are still there in later rounds.
+        // Attached images go with the objective (see the goalOn declaration above).
         const goalInput: TaskInputPart[] = [
           { type: "text", text: buildSkillsMessage(selectedSkills, t) },
         ];

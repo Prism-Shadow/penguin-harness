@@ -497,9 +497,8 @@ export function pushMessage(
   // nothing interleaved (core delivers the batch in one go) — so anything else on this session
   // closes the collection window opened by the chip (see openSteering). Subagent messages
   // returned above never reach here, so they leave the window alone.
-  // The rule is stated once in core's markers/steering.ts, and the server implements the same
-  // one over the Trace — see `steeringImages` in server/src/services/trace-service.ts. The two
-  // must agree on what a Task is; change one and the other needs the same change.
+  // The server answers the same "what is one Task" question over the Trace — see
+  // `steeringImages` in server/src/services/trace-service.ts; the two need to stay in step.
   if (!isCompleteUserImage(msg)) model.openSteering = null;
   if (msg.type === "model_msg") {
     // Internal messages within a compaction range (between begin and end)

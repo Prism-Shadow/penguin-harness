@@ -136,11 +136,10 @@ export class Session {
   private readonly goalFile?: string;
   private metaWritten = false;
   /**
-   * The image fold, bound to this Session's scratchpad. Session is the layer that knows both
+   * The image fold, bound to this Session's scratchpad — Session is the layer that knows both
    * the directory and the model's capability, so it binds the conversion once and each input
-   * path decides whether to call it: `runTask` and the engine's steering delivery fold only
-   * without vision, `runGoal` always. (The body reads `imagesDir` at call time, so field
-   * ordering in the constructor doesn't matter.)
+   * path calls it under its own rule (see `modelVision`). The body reads `imagesDir` at call
+   * time, so field ordering in the constructor doesn't matter.
    */
   private readonly foldImages = (messages: OmniMessage[]): Promise<OmniMessage[]> =>
     imagesToScratchpadPaths(messages, this.imagesDir);
@@ -209,8 +208,7 @@ export class Session {
    * objective (attached images fold into `[attached image: …]` lines within it, whatever the
    * model's vision — see `runGoal`), and the Session loops Tasks — each round's input is the
    * `[goal]` protocol block followed by the text (round 1 verbatim, later rounds the objective)
-   * — until the
-   * goal file says stop, the budget runs out, or a round is cut off. Round inputs are
+   * — until the goal file says stop, the budget runs out, or a round is cut off. Round inputs are
    * yielded onto the stream before each round (a plain run never yields its own input), and
    * the final message is exactly one `goal_finished` event carrying the outcome.
    * Docs: /docs/goal-mode.
@@ -230,8 +228,7 @@ export class Session {
     newMessages: OmniMessage[],
     opts?: RunOptions,
   ): AsyncGenerator<OmniMessage> {
-    // Model doesn't support images: input images are saved to disk first (session scratchpad),
-    // then the path is appended to the text before it reaches the engine/Trace.
+    // Folded before Trace and title material, so the path lines are what gets recorded.
     if (!this.modelVision) newMessages = await this.foldImages(newMessages);
     await this.ensureMetaWritten();
     // Self-captures title material (the title is derived from the first-turn
@@ -272,14 +269,12 @@ export class Session {
    *
    * Images fold here whether or not the model has vision, because the objective is re-injected
    * as the text of every round's `[goal]` block — an image message has nowhere to sit in that.
-   * Re-sending the picture each round would keep charging the goal's own budget for it, and
-   * sending it in round 1 only would leave later rounds referring to something compaction has
-   * likely dropped. A path line costs one line per round and the model pays for the picture
-   * when it actually looks. The lines go at the end of the text, where goal-loop's
-   * `stripLeadingMarkerBlocks` leaves them alone.
+   * Sending it in round 1 alone would leave later rounds pointing at something compaction has
+   * since dropped, while the objective still reads correct; a path line survives every round
+   * and every compaction, and the model pays for the picture only when it looks. The lines go
+   * at the end of the text, where goal-loop's `stripLeadingMarkerBlocks` leaves them alone.
    *
-   * Text is checked before folding: an uncaptioned image is a complete steering message, but
-   * on its own it doesn't say what the goal is.
+   * Text is required and checked before the fold: a picture alone doesn't state a goal.
    */
   private async *runGoal(
     newMessages: OmniMessage[],

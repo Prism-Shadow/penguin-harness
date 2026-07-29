@@ -118,6 +118,9 @@ const MIME_TO_EXT: Record<string, string> = {
   "image/webp": "webp",
 };
 
+/** An input image message — what both conversions below pull out of the input. */
+const isImage = (m: OmniMessage): boolean => (m.payload as { type?: string }).type === "image_url";
+
 /**
  * Input conversion for when the session model doesn't support images: image messages
  * in the `run` input are written to disk as files (base64 data URLs are saved to the
@@ -133,8 +136,6 @@ export async function imagesToScratchpadPaths(
   input: OmniMessage[],
   dir: string,
 ): Promise<OmniMessage[]> {
-  const isImage = (m: OmniMessage): boolean =>
-    (m.payload as { type?: string }).type === "image_url";
   if (!input.some(isImage)) return input;
 
   const lines: string[] = [];
@@ -182,8 +183,6 @@ export async function imagesToScratchpadPaths(
  * the error through, since nothing is running yet and the sender is there to hear about it.
  */
 export function dropInputImages(input: OmniMessage[]): OmniMessage[] {
-  const isImage = (m: OmniMessage): boolean =>
-    (m.payload as { type?: string }).type === "image_url";
   const dropped = input.filter(isImage);
   if (dropped.length === 0) return input;
   return appendToLastUserText(

@@ -1241,10 +1241,7 @@ describe("compaction-internal messages (#17: history rebuild aligned with the li
     expect(items(m).filter((i) => i.kind === "user_text")).toHaveLength(1);
   });
 
-  // The server enforces the same grouping over the Trace (`steeringImages` in
-  // server/src/services/trace-service.ts, covered by its own "Task grouping" case). Both answer
-  // "what is one Task"; a change here needs the same change there, or the chat stream and the
-  // Trace timeline will disagree.
+  // The server's Trace twin of this case lives in trace-service.test.ts.
   it("images sent with a steering message join its chip; a later standalone image still starts a Task", () => {
     // Core delivers a steering message's images as user image messages right behind its text.
     // They belong to that chip — no bubble of their own and, crucially, no new Task — while an

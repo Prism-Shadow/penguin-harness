@@ -432,7 +432,9 @@ describe("Session.runGoal input", () => {
     };
   }
 
-  function makeSession(modelVision: boolean, completeOn = 1): Session {
+  // `modelVision: true` throughout: the fold runs regardless, and a vision model is the case
+  // that would break if runGoal ever grew the `if (!this.modelVision)` the other paths have.
+  function makeSession(completeOn = 1): Session {
     const meta: SessionMetaPayload = {
       session_id: "session-1",
       provider: "custom",
@@ -448,7 +450,7 @@ describe("Session.runGoal input", () => {
       llm: fakeLLM(completeOn),
       environment: fakeEnvironment,
       imagesDir: path.join(dir, "scratchpad", "session-1"),
-      modelVision,
+      modelVision: true,
       goalFilePath: file,
     });
   }
@@ -463,7 +465,7 @@ describe("Session.runGoal input", () => {
   }
 
   it("folds an attached image into the objective and re-injects it every round — vision model included", async () => {
-    const session = makeSession(true, 2);
+    const session = makeSession(2);
     const rounds = await roundInputs(session, [
       userText("Match this mockup"),
       imageUrlMessage(PNG_DATA_URL),
@@ -482,18 +484,8 @@ describe("Session.runGoal input", () => {
     expect(rounds.every((t) => !t.includes("data:image"))).toBe(true);
   });
 
-  it("folds on a model without vision too — same lines, same single code path", async () => {
-    const session = makeSession(false, 1);
-    const rounds = await roundInputs(session, [
-      userText("Match this mockup"),
-      imageUrlMessage(PNG_DATA_URL),
-    ]);
-    expect(rounds).toHaveLength(1);
-    expect(rounds[0]).toContain("[attached image: ");
-  });
-
   it("rejects an objective with no text: an image alone states no goal", async () => {
-    const session = makeSession(true, 1);
+    const session = makeSession();
     await expect(roundInputs(session, [imageUrlMessage(PNG_DATA_URL)])).rejects.toThrow(
       /non-empty text objective/,
     );
