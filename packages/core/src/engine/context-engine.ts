@@ -318,18 +318,12 @@ function downgradeCarriedGoalInput(msg: OmniMessage): OmniMessage {
 }
 
 /**
- * Delay before reconnect attempt N (1-based): exponential growth from `base` with a hard
- * ceiling `max` — `min(base × 2^(N−1), max)`. With the defaults (250ms base, 30s ceiling,
- * 5 reconnects) the ladder is 250, 500, 1000, 2000, 4000 ≈ 7.75s of total patience: one
- * shared schedule serves every retryable class, growing toward the slower ones (transient
- * provider quota errors) while the first steps stay as fast as a transport blip needs.
- */
-/**
  * LLM outcomes the turn loop reconnects on. `failed` is included on purpose: the classifier
  * that produces it is an allowlist of known transport codes and message vocabulary, so a
  * gateway phrasing a transient fault its own way lands here — retrying costs the ladder and
  * then ends the same way, while aborting a transient failure destroys the turn. `auth` is
- * absent: a rejected credential cannot be retried into working.
+ * absent: a rejected credential cannot be retried into working. An outcome that explicitly
+ * marks itself `retryable: false` overrides this list (see LLMOutcome.retryable).
  */
 const TURN_RETRY_STATUSES: readonly StopReason[] = ["failed", "timeout", "malformed"];
 
@@ -340,6 +334,13 @@ const TURN_RETRY_STATUSES: readonly StopReason[] = ["failed", "timeout", "malfor
  */
 const COMPACTION_RETRY_STATUSES: readonly StopReason[] = ["timeout", "malformed"];
 
+/**
+ * Delay before reconnect attempt N (1-based): exponential growth from `base` with a hard
+ * ceiling `max` — `min(base × 2^(N−1), max)`. With the defaults (250ms base, 30s ceiling,
+ * 5 reconnects) the ladder is 250, 500, 1000, 2000, 4000 ≈ 7.75s of total patience: one
+ * shared schedule serves every retryable class, growing toward the slower ones (transient
+ * provider quota errors) while the first steps stay as fast as a transport blip needs.
+ */
 export function reconnectDelayMs(base: number, max: number, attempt: number): number {
   return Math.min(base * 2 ** (attempt - 1), max);
 }
@@ -523,11 +524,18 @@ export class ContextEngine {
       }
       turnCount += 1;
 
-      // This turn's input. A timeout/malformed attempt is never committed to history by
-      // AgentHub (an abnormally interrupted stream doesn't land in history), so reconnect
-      // resends this turn's input unchanged, appending a `[turn_retried]` block carrying what
-      // the failed attempt already produced — the model continues from there instead of
-      // re-running tools; the tag is distinct from the user-interruption `[turn_aborted]`.
+      // This turn's input. The safety invariant behind resending it: **no retryable attempt
+      // is ever committed to AgentHub's history**. AgentHub appends a turn to `_history` only
+      // after its stream has been consumed to the end and validated, so every abnormal exit —
+      // `timeout`, `malformed` and `failed` alike, whether the stream was cut, the payload
+      // failed to parse, or the request was rejected outright — leaves history untouched.
+      // Nothing can therefore be duplicated or left as an unanswered tool_use by a reconnect;
+      // that is what makes it safe to resend this turn's input unchanged, appending a
+      // `[turn_retried]` block carrying what the failed attempt already produced — the model
+      // continues from there instead of re-running tools; the tag is distinct from the
+      // user-interruption `[turn_aborted]`. (The one attempt that IS committed — a fully
+      // delivered response whose finish_reason arrived — is forced to `completed` in
+      // GenerativeModel precisely so it never reaches this loop.)
       const failedTurns: TurnResult[] = [];
       let attemptInput = nextInput;
       let reconnects = 0;
@@ -548,11 +556,16 @@ export class ContextEngine {
           yield* this.emitAbort("aborted by user");
           return;
         }
-        // `auth` is the only LLM outcome that stops the run: the credential was rejected, so
-        // no number of retries can change it, and hosts read the status from this turn's
-        // request_end to gate input. Everything else — `failed` included — goes to the
-        // reconnect loop below.
-        if (turn.outcome.status === "auth") {
+        // Two ways an LLM outcome stops the run instead of taking the ladder below:
+        //   - `auth`: the credential was rejected, so no number of retries can change it, and
+        //     hosts read this status off the turn's request_end to gate input;
+        //   - `retryable: false`: the LLM layer knows this attempt failed on something the
+        //     retry cannot move — today, input that never assembled into a request at all
+        //     (see GenerativeModel's merge guard). Retrying byte-identical input that never
+        //     reached the provider only stalls the user behind the full ladder and buries the
+        //     real defect under six request pairs in the Trace.
+        // Everything else — `failed` included — goes to the reconnect loop below.
+        if (turn.outcome.status === "auth" || turn.outcome.retryable === false) {
           this.pendingCarryOver = this.buildCarryOver(attemptInput, turn);
           yield* this.emitAbort(`llm request error: ${turn.outcome.message ?? "unknown"}`);
           return;
@@ -580,13 +593,17 @@ export class ContextEngine {
         attemptInput = this.withRetriedTurns(nextInput, failedTurns);
         if (reconnects >= this.maxReconnects) {
           this.pendingCarryOver = attemptInput;
+          // This reason is user-visible (the Web App's error panel, the CLI's abort line) and
+          // is what observability persists as the error message, so it has to read as a
+          // sentence: what gave out, then how many attempts it took, then — for the one class
+          // that carries provider words worth showing — the detail, last.
           const reason =
             turn.outcome.status === "malformed"
-              ? "malformed response"
+              ? `malformed response failed after ${this.maxReconnects} retries`
               : turn.outcome.status === "failed"
-                ? `llm request error: ${turn.outcome.message ?? "unknown"}`
-                : "reconnect";
-          yield* this.emitAbort(`${reason} failed after ${this.maxReconnects} retries`);
+                ? `llm request failed after ${this.maxReconnects} retries: ${turn.outcome.message ?? "unknown"}`
+                : `reconnect failed after ${this.maxReconnects} retries`;
+          yield* this.emitAbort(reason);
           return;
         }
         reconnects += 1;
@@ -775,15 +792,18 @@ export class ContextEngine {
    *
    * `retries` must match what the calling loop actually does, or the announced countdown is a
    * lie: the turn loop retries `failed` as well (see its reconnect branch), while compaction
-   * keeps its fail-fast semantics and stops on `failed`.
+   * keeps its fail-fast semantics and stops on `failed`. `retryable: false` overrides the
+   * list for the same reason — both loops honour it, so neither can announce a wait it will
+   * not take.
    */
   private plannedRetryDelayMs(
-    status: StopReason,
+    outcome: LLMOutcome,
     reconnectsSoFar: number,
     cap: number,
     retries: readonly StopReason[],
   ): number | undefined {
-    if (!retries.includes(status)) return undefined;
+    if (outcome.retryable === false) return undefined;
+    if (!retries.includes(outcome.status)) return undefined;
     if (reconnectsSoFar >= cap) return undefined;
     return reconnectDelayMs(
       this.reconnectBackoffMs,
@@ -905,7 +925,7 @@ export class ContextEngine {
               outcome.status,
               outcome.message,
               this.plannedRetryDelayMs(
-                outcome.status,
+                outcome,
                 reconnectsSoFar,
                 this.maxReconnects,
                 TURN_RETRY_STATUSES,
@@ -937,8 +957,9 @@ export class ContextEngine {
           // added to this turn's ledger, and gets no paired output backfilled: such a tool_call
           // was never committed to history by AgentHub, so there's nothing to pair. This turn
           // must then end with a non-completed outcome (only interruption closure produces such
-          // a tool_call): timeout/malformed is cleaned up by reconnect resending the flatten
-          // carry-over, failed/auth/aborted exits directly.
+          // a tool_call): a retryable outcome (failed/timeout/malformed) is cleaned up by
+          // reconnect resending the flatten carry-over, while the run-ending ones
+          // (aborted/auth, or a `retryable: false` failure) exit directly.
           if (isCompleteModelMessage(msg) && msg.payload.type === "tool_call") {
             const tc = msg as OmniMessage<ToolCallPayload>;
             if (tc.payload.stop_reason !== "completed") continue;
@@ -1386,7 +1407,7 @@ export class ContextEngine {
             res.value.status,
             res.value.message,
             this.plannedRetryDelayMs(
-              res.value.status,
+              res.value,
               reconnectsSoFar,
               this.compactionMaxReconnects,
               COMPACTION_RETRY_STATUSES,
@@ -1465,8 +1486,10 @@ export class ContextEngine {
 
   /**
    * Builds the interruption resend content (carry-over, interruption cleanup)
-   * based on the LLM's terminal state. Used only for the **exit** cleanup of
-   * aborted / failed / auth (reconnect retry doesn't go through here — retry input is assembled by
+   * based on the LLM's terminal state. Used only for the **exit** cleanup of the statuses that
+   * end the run: `aborted`, `auth`, and a failure the LLM layer marked `retryable: false`
+   * (a retried `failed` does not reach here — it takes the ladder like any other retryable
+   * status, and reconnect retry doesn't go through here either: retry input is assembled by
    * withRetriedTurns, appending `[turn_retried]` with the failed attempt's output, distinct
    * from the user-interruption `[turn_aborted]`):
    * - Model output completed (case A, outcome=completed): AgentHub already committed an

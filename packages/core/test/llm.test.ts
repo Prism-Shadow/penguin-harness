@@ -1461,11 +1461,15 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
     return { messages, outcome: res.value as LLMOutcome };
   }
 
-  it("returns failed (never throws) on a build failure such as empty input", async () => {
+  it("returns failed and NOT retryable on a build failure such as empty input", async () => {
     const model = new SeamModel((sig) => hang(sig));
     const { messages, outcome } = await drain(model.streamGenerate({ newMessages: [] }));
     expect(outcome.status).toBe("failed"); // A mergeOmniToUniMessage failure converges to failed, never throws
     expect(messages).toHaveLength(0);
+    // The engine retries every `failed` — except this one. The merge is a pure function of
+    // the input and no request was ever issued, so the ladder can only reproduce the same
+    // failure five more times while the user waits on an engine bug.
+    expect(outcome.retryable).toBe(false);
   });
 
   it("interrupt lands while the consumer is suspended at yield: finish immediately as aborted, never pull the already-aborted upstream again", async () => {

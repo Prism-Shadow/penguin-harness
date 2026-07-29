@@ -1676,9 +1676,12 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     expect(calls).toBe(3); // initial attempt + maxReconnects(2): `failed` takes the ladder now.
     const abort = all.find((m) => (m.payload as { type?: string }).type === "abort");
     expect(abort).toBeDefined();
+    // Asserted whole, not by fragments: this string is shown verbatim in the error panel and
+    // the CLI and is persisted as the error message, so its grammar is part of the contract.
     const reason = (abort!.payload as { reason?: string }).reason ?? "";
-    expect(reason).toContain("llm request error");
-    expect(reason).toContain("unknown parameter");
+    expect(reason).toBe(
+      "llm request failed after 2 retries: 400 unknown parameter: max_output_tokens",
+    );
 
     // The spent turn's input is stashed as carry-over; the next run (attempt index 3, after
     // this run's three) resends it merged with the new input.
@@ -1729,12 +1732,13 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     expect((ends[0]!.payload as { retry_in_ms?: number }).retry_in_ms).toBeGreaterThanOrEqual(0);
   });
 
-  it("an auth outcome stops immediately like failed: no retry, request_end carries status auth", async () => {
+  it("auth is the only LLM status that stops the run: no retry, request_end carries status auth", async () => {
     let calls = 0;
     const llm: LLMInterface = {
       // GenerativeModel classifies a 401/invalid_api_key as status "auth" (see
-      // llm.test.ts); the engine must stop directly — the auth/failed branch is the second
-      // belt keeping a dead credential out of the retry loop (the classifier is the first).
+      // llm.test.ts); the engine must stop directly — the auth branch is the second belt
+      // keeping a dead credential out of the retry loop (the classifier is the first).
+      // Every other failure, `failed` included, takes the ladder instead.
       // eslint-disable-next-line require-yield
       async *streamGenerate() {
         calls += 1;
@@ -1748,7 +1752,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     const engine = new ContextEngine({ llm, environment, reconnectBackoffMs: 1 });
 
     const all = await collectRun(engine, [userText("go")], allowAll);
-    expect(calls).toBe(1); // Auth behaves like failed: never enters the reconnect loop.
+    expect(calls).toBe(1); // A rejected credential cannot be retried into working.
     // The request's own terminal status is the host signal (streams to the web).
     const end = all.find((m) => (m.payload as { type?: string }).type === "request_end");
     expect((end!.payload as { status?: string }).status).toBe("auth");
@@ -1758,6 +1762,43 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     const abort = all.find((m) => (m.payload as { type?: string }).type === "abort");
     expect(abort).toBeDefined();
     expect((abort!.payload as { reason?: string }).reason).toContain("llm request error");
+  });
+
+  it("a failed outcome marked retryable:false stops at once and announces no countdown", async () => {
+    // The one class of `failed` a ladder cannot help: the request was never issued, because
+    // the input would not assemble (GenerativeModel's mergeOmniToUniMessage guard). Retrying
+    // re-runs a pure function over the same input, so five more attempts only stall the user
+    // and bury an engine-side defect under six request pairs in the Trace.
+    let calls = 0;
+    const llm: LLMInterface = {
+      // eslint-disable-next-line require-yield
+      async *streamGenerate() {
+        calls += 1;
+        return {
+          status: "failed" as const,
+          message: "newMessages must not be empty",
+          retryable: false,
+        };
+      },
+    };
+    const environment = new Environment({
+      workspaceDir: workspace,
+      toolConfig: execCommandToolConfig(),
+    });
+    const engine = new ContextEngine({ llm, environment, reconnectBackoffMs: 1 });
+
+    const all = await collectRun(engine, [userText("go")], allowAll);
+    expect(calls).toBe(1); // No ladder: one attempt, then the run ends.
+    const end = all.find((m) => (m.payload as { type?: string }).type === "request_end");
+    // The status stays honest — this is still a `failed` request on the wire, so the Cost
+    // center and the frontends see it as one; only the retry decision differs.
+    expect((end!.payload as { status?: string }).status).toBe("failed");
+    // No wait is announced, so no frontend renders a countdown that will never elapse.
+    expect((end!.payload as { retry_in_ms?: number }).retry_in_ms).toBeUndefined();
+    const abort = all.find((m) => (m.payload as { type?: string }).type === "abort");
+    expect((abort!.payload as { reason?: string }).reason).toBe(
+      "llm request error: newMessages must not be empty",
+    );
   });
 
   it("a quota-403 (classified timeout) retries within the default cap and succeeds", async () => {

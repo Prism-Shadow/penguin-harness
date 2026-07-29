@@ -12,13 +12,16 @@
  *          (observability/Token).
  *   3. Interruption/error handling: `finishInterrupted` first closes any open
  *      streaming segments and backfills the complete message, then the output ends — never
- *      leaking a malformed structure. This interface **never retries internally** — retryable
- *      errors (network/transport drops, timeouts, 429/5xx, provider quota exhaustion, see
+ *      leaking a malformed structure. This interface **never retries internally** — it only
+ *      classifies, and `context_engine` owns the retry policy: errors recognised as retryable
+ *      (network/transport drops, timeouts, 429/5xx, provider quota exhaustion, see
  *      `isRetryableError`) end with `timeout`; AgentHub JSON parse errors end with `malformed`;
- *      both are handed to `context_engine` to reconnect within the same run. User interruption
- *      ends with `aborted`; non-retryable errors (parameters etc.) end with `failed`;
- *      credentials failures end with their own terminal status `auth` (see
- *      `isAuthenticationError`) — same engine behavior as `failed`, but hosts key on it.
+ *      everything else the classifier does not recognise ends with `failed` — which the engine
+ *      reconnects on all the same, because this classifier is an allowlist and a gateway
+ *      wording a transient fault its own way falls through it. User interruption ends with
+ *      `aborted`; credentials failures end with their own terminal status `auth` (see
+ *      `isAuthenticationError`) — the one status the engine refuses to retry, and the one
+ *      hosts key on to gate input.
  *
  * `context_engine` only consumes OmniMessage; all Uni* protocol details are encapsulated here.
  * Docs: /docs/interfaces § "The built-in implementation: GenerativeModel".
@@ -1078,11 +1081,14 @@ export class GenerativeModel implements LLMInterface {
    *   - **User interruption**: `finishInterrupted("aborted")` closes out, produces no usage →
    *     `aborted`;
    *   - **Credentials failure**: `finishInterrupted("auth")` closes out, produces no usage →
-   *     `auth` (carrying `message`) — the engine stops exactly like `failed`, hosts key on
-   *     the status to gate input until the model's API key is updated;
-   *   - **Other non-retryable errors** (parameters etc.): `finishInterrupted("failed")`
-   *     closes out, produces no usage → `failed` (carrying `message`), handed to
-   *     `context_engine` to stop and return control to the user.
+   *     `auth` (carrying `message`) — the one status the engine stops the run on, and the one
+   *     hosts key on to gate input until the model's API key is updated;
+   *   - **Every other error** (parameters etc.): `finishInterrupted("failed")` closes out,
+   *     produces no usage → `failed` (carrying `message`), which `context_engine` reconnects
+   *     on as well — the classification stays honest, the retry decision is the engine's;
+   *   - **Input that never assembled into a request** (see the merge guard below): `failed`
+   *     with `retryable: false`, so the engine stops instead of replaying the same pure
+   *     function five more times.
    *
    * Timeout detection: the idle timer resets on every event received; once idle exceeds
    * `requestTimeoutMs`, the underlying stream is aborted and handled as needing reconnection
@@ -1099,6 +1105,12 @@ export class GenerativeModel implements LLMInterface {
     // Input merging is placed inside a guarded block: build failures such as empty input /
     // mixed roles / argument JSON also collapse to a failed outcome, never throwing to
     // context_engine.
+    //
+    // `retryable: false` on this one path: mergeOmniToUniMessage is a pure function of the
+    // input and no request has been issued yet, so a retry re-runs the same code over the same
+    // messages and can only fail the same way. Every other `failed` is worth a ladder because
+    // the provider might answer differently next time; this one cannot, and letting it retry
+    // would spend 7.75s and six request pairs hiding what is always an engine-side defect.
     let uniMessage: UniMessage;
     try {
       uniMessage = mergeOmniToUniMessage(params.newMessages);
@@ -1106,6 +1118,7 @@ export class GenerativeModel implements LLMInterface {
       return {
         status: "failed",
         message: describeError(err),
+        retryable: false,
       };
     }
 

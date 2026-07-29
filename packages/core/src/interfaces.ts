@@ -147,13 +147,16 @@ export interface GenerativeModelParameters {
  *   - `malformed`: AgentHub response failed JSON parsing, needs reconnect — also retried by
  *     `context_engine`;
  *   - `aborted`: user-initiated interruption — stop and hand back to the user;
- *   - `failed`: other non-retryable errors (params, etc.) — stop and hand back to the user
- *     (`message` provides the display text);
- *   - `auth`: the provider rejected the credentials (see `isAuthenticationError`) — behaves
- *     like `failed` in the engine (direct stop, never retried), but hosts key on the status
- *     to disable input until the model's API key is updated (only the model reference is
- *     fixed at Session creation; credentials come from the current Project config, so a key
- *     update lets the Session continue).
+ *   - `failed`: an error the retry classifier did not judge transient (params, etc.) — still
+ *     retried by `context_engine` within the same run (`message` provides the display text).
+ *     The classification stays honest — this is reported as `failed`, not relabelled a
+ *     timeout — while the *policy* retries it, because that classifier is an allowlist and a
+ *     gateway phrasing a transient fault its own way lands here;
+ *   - `auth`: the provider rejected the credentials (see `isAuthenticationError`) — the one
+ *     status that stops the run outright, since no retry can turn a rejected credential into
+ *     a working one; hosts also key on it to disable input until the model's API key is
+ *     updated (only the model reference is fixed at Session creation; credentials come from
+ *     the current Project config, so a key update lets the Session continue).
  * Docs: /docs/interfaces § "LLMOutcome semantics".
  */
 export interface LLMOutcome {
@@ -165,6 +168,21 @@ export interface LLMOutcome {
    * errors panel) can show the real reason behind a retried request.
    */
   message?: string;
+  /**
+   * Opt-out of the engine's reconnect ladder. The engine retries every status except `auth`,
+   * on the reasoning that the transient/permanent split is a heuristic and a wasted ladder is
+   * cheaper than a destroyed turn. Setting this to `false` says the LLM layer *knows*
+   * otherwise for this one outcome. The only current case is a failure raised **before any
+   * request was issued** (input that would not assemble into a request): every retry re-runs
+   * the same pure function over the same input, so it cannot do anything but fail again —
+   * turning an engine bug into a silent multi-second stall and six request pairs of noise in
+   * the Trace.
+   *
+   * Engine-internal, never on the wire: `request_end` still carries only the status and the
+   * message, so the Trace format and every host are unaffected. Absent (or `true`) means
+   * "decide from the status" — the default behaviour.
+   */
+  retryable?: boolean;
 }
 
 /**
