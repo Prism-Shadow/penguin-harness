@@ -194,15 +194,15 @@ export class ErrorsRepo {
   }
 
   /** The most recent `limit` entries (reverse chronological order). */
-  recent(projectId: string, f: ErrorFilter = {}, limit = 20): ErrorItem[] {
+  recent(projectId: string, f: ErrorFilter = {}, limit = 20, offset = 0): ErrorItem[] {
     const { where, params } = this.conds(projectId, f);
     const rows = this.db
       .prepare(
         `SELECT ts, source, code, kind, message
          FROM error_records WHERE ${where}
-         ORDER BY id DESC LIMIT :limit`,
+         ORDER BY id DESC LIMIT :limit OFFSET :offset`,
       )
-      .all({ ...params, limit });
+      .all({ ...params, limit, offset });
     return rows.map((r) => ({
       ts: r.ts as string,
       source: r.source as string,

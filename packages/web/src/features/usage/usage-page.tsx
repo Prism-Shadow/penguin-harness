@@ -12,7 +12,7 @@
  * (stats + a recent-errors table).
  * Currency follows the user's settings; a row with unconfigured pricing shows its cost as "—".
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import type { ModelRefDto, UsageBucket, UsageResponse } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
@@ -168,6 +168,15 @@ export function UsagePage() {
     void load();
   }, [load]);
 
+  // The error panel pages against this filter and depends on the object's identity, so it is
+  // built once per filter value rather than fresh on every render — a new object each render
+  // would refetch the current page on any unrelated state change (hovering a chart bucket).
+  // The model filter is deliberately absent: it never applied to errors.
+  const errorFilters = useMemo(
+    () => ({ from, to, ...(agentFilter ? { agentId: agentFilter } : {}) }),
+    [from, to, agentFilter],
+  );
+
   if (!projectId) return null;
 
   // Model filter candidates and the currently selected item's index (the option value uses the index, avoiding concatenating an id as the key).
@@ -294,7 +303,7 @@ export function UsagePage() {
         {/* Errors (a single full-width panel: stats + a recent-errors table) */}
         {data && (
           <ChartCard title={S.usage.errors}>
-            <ErrorsPanel errors={data.errors} />
+            <ErrorsPanel errors={data.errors} projectId={projectId} filters={errorFilters} />
           </ChartCard>
         )}
 

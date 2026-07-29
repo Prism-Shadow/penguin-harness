@@ -7,7 +7,9 @@
  *   once inside a session;
  * - the models page at 390x844 must not overflow horizontally, and text must not overlap
  *   (the group header's provider name used to get pushed out of the button box and overlap
- *   the group-level actions);
+ *   the group-level actions), and its model dialog opts every field out of browser autofill
+ *   (the API-key box used to receive the account's saved password, the box above it the
+ *   username);
  * - every chat-page dropdown menu, opened at phone widths (375/390), must keep its panel
  *   inside the viewport and must not shove the page sideways (the model menu used to run
  *   ~34px off-screen left, the skills menu ~92px off-screen right — with its autofocused
@@ -211,6 +213,36 @@ test("layout: en draft + context gauge + mobile models", async ({ page }) => {
   d = await docWidths(page);
   expect(d.scrollWidth, "models @390 no horizontal overflow").toBeLessThanOrEqual(d.clientWidth);
   expect(await textOverlapCount(page), "models @390 no overlapping text").toBe(0);
+
+  // --- Model dialog: no field may invite the browser's saved login. The dialog's fields are
+  // unowned (no <form>), so the browser groups them with the rest of the page and picks a
+  // "username" box on its own — it used to fill the account credentials into the API key and
+  // the field above it. A password box additionally has to say "new-password": Chrome and
+  // Safari ignore autocomplete="off" there. ---
+  await page.getByText("claude-4-8").first().click();
+  const dialogFields = await page.evaluate(() =>
+    [...document.querySelectorAll("input")]
+      .filter((i) => i.type !== "checkbox" && i.type !== "file")
+      .map((i) => ({
+        type: i.type,
+        autocomplete: i.getAttribute("autocomplete"),
+        ignored: i.hasAttribute("data-1p-ignore") && i.getAttribute("data-lpignore") === "true",
+      })),
+  );
+  expect(dialogFields.length, "model dialog fields found").toBeGreaterThan(3);
+  expect(
+    dialogFields.filter((f) => f.type === "password"),
+    "the API-key box opts out as new-password",
+  ).toEqual([{ type: "password", autocomplete: "new-password", ignored: true }]);
+  expect(
+    dialogFields.filter((f) => f.autocomplete !== "off" && f.type !== "password"),
+    "no other field declares an autofill role",
+  ).toEqual([]);
+  expect(
+    dialogFields.filter((f) => !f.ignored),
+    "every field carries the password-manager opt-out",
+  ).toEqual([]);
+  await page.keyboard.press("Escape");
 
   // --- Sidebar "New chat" button: no background fill (its resting state outside the draft page should have a transparent background) ---
   await page.setViewportSize({ width: 1280, height: 720 });

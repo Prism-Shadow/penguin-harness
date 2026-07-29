@@ -63,6 +63,7 @@ import type {
   UiPrefs,
   UpdateCheckResponse,
   UpdateRunResponse,
+  UsageErrorsPage,
   UsageGroupBy,
   UsageResponse,
   VaultResponse,
@@ -359,6 +360,26 @@ export const importAgentTrace = (projectId: string, agentId: string, body: Trace
   );
 
 // Usage statistics ----------------------------------------------------------------------
+
+/**
+ * One page of the cost center's error table (newest first). The dashboard response already
+ * carries the first page; this is for paging back to earlier ones without refetching the
+ * whole aggregate. Takes the dashboard's date/agent filter only — the model filter never
+ * applied to errors.
+ */
+export const getUsageErrors = (
+  projectId: string,
+  params: { offset: number; limit: number; from?: string; to?: string; agentId?: string },
+) =>
+  apiFetch<UsageErrorsPage>(`/api/projects/${encodeURIComponent(projectId)}/usage/errors`, {
+    query: {
+      offset: String(params.offset),
+      limit: String(params.limit),
+      from: params.from,
+      to: params.to,
+      agentId: params.agentId,
+    },
+  });
 
 export const getUsage = (
   projectId: string,
