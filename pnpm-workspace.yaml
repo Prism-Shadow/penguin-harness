@@ -1,5 +1,8 @@
 packages:
   - "packages/*"
+injectWorkspacePackages: true
+syncInjectedDepsAfterScripts:
+  - build
 allowBuilds:
   "@google/genai": true
   esbuild: true

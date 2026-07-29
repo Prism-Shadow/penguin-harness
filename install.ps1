@@ -5,6 +5,7 @@
 # Options:
 #   $env:PENGUIN_VERSION = "vX.Y.Z"     pin a version (same as -Version vX.Y.Z); default is the latest Release
 #   $env:PENGUIN_INSTALL_DIR = "<dir>"  install dir; default $env:USERPROFILE\.penguin
+#   $env:PENGUIN_ARCHIVE = "<file>"     install a local Release zip without network access (same as -ArchivePath)
 #
 # There is no -Universal on Windows: where the zip is unsuitable, install Node.js >= 24 and run
 # `npm install -g @prismshadow/penguin-cli` instead.
@@ -15,7 +16,8 @@
 # Docs: https://penguin.ooo/docs/installation
 param(
   [string]$Version = "",
-  [string]$InstallDir = ""
+  [string]$InstallDir = "",
+  [string]$ArchivePath = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -35,6 +37,19 @@ function Fail([string]$Message) {
 if (-not $Version) { $Version = if ($env:PENGUIN_VERSION) { $env:PENGUIN_VERSION } else { "" } }
 if (-not $InstallDir) {
   $InstallDir = if ($env:PENGUIN_INSTALL_DIR) { $env:PENGUIN_INSTALL_DIR } else { Join-Path $env:USERPROFILE ".penguin" }
+}
+if (-not $ArchivePath) {
+  $ArchivePath = if ($env:PENGUIN_ARCHIVE) { $env:PENGUIN_ARCHIVE } else { "" }
+}
+# An extracted offline bundle keeps this script, the Windows zip and its checksum together.
+# `$PSScriptRoot` is empty for the documented `irm ... | iex` path, so online installs do not
+# accidentally pick up an unrelated archive from the caller's current directory.
+if (-not $ArchivePath -and $PSScriptRoot) {
+  $SiblingArchive = Join-Path $PSScriptRoot $Asset
+  if (Test-Path -LiteralPath $SiblingArchive -PathType Leaf) { $ArchivePath = $SiblingArchive }
+}
+if ($ArchivePath -and $Version) {
+  Fail "-ArchivePath/PENGUIN_ARCHIVE cannot be combined with -Version/PENGUIN_VERSION"
 }
 
 # --- Platform preconditions: 64-bit Windows; the only Windows package is x64 (ARM64 runs it emulated) ---
@@ -67,27 +82,53 @@ $Staging = $null
 $OldDir = $null
 
 try {
-  Write-Host "Downloading $BaseUrl/$Asset ..."
-  $ZipPath = Join-Path $Tmp $Asset
-  try {
-    Invoke-WebRequest -Uri "$BaseUrl/$Asset" -OutFile $ZipPath -UseBasicParsing
-  } catch {
-    Fail "download failed. Check the version tag and your network, then retry. ($($_.Exception.Message))"
+  $UsingLocalArchive = [bool]$ArchivePath
+  if ($UsingLocalArchive) {
+    try {
+      $ZipPath = (Resolve-Path -LiteralPath $ArchivePath -ErrorAction Stop).Path
+    } catch {
+      Fail "local archive not found: $ArchivePath"
+    }
+    $ArchiveName = [IO.Path]::GetFileName($ZipPath)
+    Write-Host "Using local archive $ZipPath ..."
+  } else {
+    Write-Host "Downloading $BaseUrl/$Asset ..."
+    $ZipPath = Join-Path $Tmp $Asset
+    try {
+      Invoke-WebRequest -Uri "$BaseUrl/$Asset" -OutFile $ZipPath -UseBasicParsing
+    } catch {
+      Fail "download failed. Check the version tag and your network, then retry. ($($_.Exception.Message))"
+    }
+    $ArchiveName = $Asset
   }
 
-  # --- SHA256 verify: only when the .sha256 asset exists (skip on 404) ---
-  $ShaPath = Join-Path $Tmp "$Asset.sha256"
+  # --- SHA256 verify: mandatory offline; online keeps the existing warn-and-skip fallback. ---
   $HaveSha = $true
-  try {
-    Invoke-WebRequest -Uri "$BaseUrl/$Asset.sha256" -OutFile $ShaPath -UseBasicParsing
-  } catch {
-    $HaveSha = $false
-    Write-Host "warning: checksum file not available; skipping verification."
+  if ($UsingLocalArchive) {
+    $ShaPath = "$ZipPath.sha256"
+    if (-not (Test-Path -LiteralPath $ShaPath -PathType Leaf) -and
+        $ArchiveName -ine $Asset) {
+      $CanonicalShaPath = Join-Path ([IO.Path]::GetDirectoryName($ZipPath)) "$Asset.sha256"
+      if (Test-Path -LiteralPath $CanonicalShaPath -PathType Leaf) {
+        $ShaPath = $CanonicalShaPath
+      }
+    }
+    if (-not (Test-Path -LiteralPath $ShaPath -PathType Leaf)) {
+      Fail "offline checksum file not found: $ShaPath"
+    }
+  } else {
+    $ShaPath = Join-Path $Tmp "$Asset.sha256"
+    try {
+      Invoke-WebRequest -Uri "$BaseUrl/$Asset.sha256" -OutFile $ShaPath -UseBasicParsing
+    } catch {
+      $HaveSha = $false
+      Write-Host "warning: checksum file not available; skipping verification."
+    }
   }
   if ($HaveSha) {
     # The .sha256 file is `<hex>  <filename>` (sha256sum format); the first token is the hash.
-    $Expected = ((Get-Content $ShaPath -Raw).Trim() -split "\s+")[0]
-    $Actual = (Get-FileHash -Algorithm SHA256 $ZipPath).Hash
+    $Expected = ((Get-Content -LiteralPath $ShaPath -Raw).Trim() -split "\s+")[0]
+    $Actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $ZipPath).Hash
     if ($Expected -and ($Actual -ieq $Expected)) {
       Write-Host "Checksum OK."
     } else {
@@ -107,10 +148,27 @@ try {
   New-Item -ItemType Directory -Path $Staging | Out-Null
 
   Write-Host "Extracting ..."
-  Expand-Archive -Path $ZipPath -DestinationPath $Staging -Force
+  Expand-Archive -LiteralPath $ZipPath -DestinationPath $Staging -Force
   $NewRoot = Join-Path $Staging "penguin"
   if (-not (Test-Path $NewRoot)) { Fail "unexpected archive layout: top-level penguin\ missing." }
   if (-not (Test-Path (Join-Path $NewRoot "bin"))) { Fail "unexpected archive layout: penguin\bin missing." }
+  $ManifestPath = Join-Path $NewRoot "package-manifest.json"
+  if (Test-Path -LiteralPath $ManifestPath -PathType Leaf) {
+    try {
+      $PackageManifest = Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json
+    } catch {
+      Fail "package manifest is malformed: $($_.Exception.Message)"
+    }
+    $TargetProperty = $PackageManifest.PSObject.Properties["target"]
+    if ($null -eq $TargetProperty -or -not $TargetProperty.Value) {
+      Fail "package manifest is malformed: target missing."
+    }
+    if ([string]$TargetProperty.Value -ine "win32-x64") {
+      Fail "package target mismatch: expected win32-x64, found $($TargetProperty.Value)."
+    }
+  } elseif ($UsingLocalArchive -and $ArchiveName -ine $Asset) {
+    Fail "a renamed local archive must contain package-manifest.json; use the original filename for legacy packages."
+  }
 
   $Dirs = @("bin", "lib", "web", "node", "git")
   $Moved = @()

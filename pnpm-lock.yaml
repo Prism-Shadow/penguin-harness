@@ -3,6 +3,7 @@ lockfileVersion: '9.0'
 settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
+  injectWorkspacePackages: true
 
 overrides:
   '@anthropic-ai/sdk': ^0.91.1
@@ -14,10 +15,10 @@ importers:
     devDependencies:
       '@prismshadow/penguin-cli':
         specifier: workspace:*
-        version: link:packages/cli
+        version: file:packages/cli
       '@prismshadow/penguin-core':
         specifier: workspace:*
-        version: link:packages/core
+        version: file:packages/core(ws@8.21.0)
       '@types/node':
         specifier: ^24.0.0
         version: 24.13.3
@@ -47,7 +48,7 @@ importers:
         version: link:../core
       '@prismshadow/penguin-server':
         specifier: workspace:*
-        version: link:../server
+        version: file:packages/server(ws@8.21.0)
       '@prismshadow/penguin-skills':
         specifier: workspace:*
         version: link:../skills
@@ -216,7 +217,7 @@ importers:
         version: 2.0.12(hono@4.12.28)
       '@prismshadow/penguin-core':
         specifier: workspace:*
-        version: link:../core
+        version: file:packages/core(ws@8.21.0)
       '@prismshadow/penguin-skills':
         specifier: workspace:*
         version: link:../skills
@@ -271,7 +272,7 @@ importers:
     dependencies:
       '@prismshadow/penguin-core':
         specifier: workspace:*
-        version: link:../core
+        version: file:packages/core(ws@8.21.0)
       react:
         specifier: ^19.1.0
         version: 19.2.7
@@ -755,6 +756,21 @@ packages:
 
   '@prismshadow/agenthub@0.4.1':
     resolution: {integrity: sha512-YKidCwa4ZO0+BP5E+vg/p8HQAPrTvTDaFmoj5omUHi7OxXCXPMDxwodj4VPz/ntWMDsgjsePhzkZIfVmSbECkw==}
+
+  '@prismshadow/penguin-cli@file:packages/cli':
+    resolution: {directory: packages/cli, type: directory}
+    engines: {node: '>=24'}
+    hasBin: true
+
+  '@prismshadow/penguin-core@file:packages/core':
+    resolution: {directory: packages/core, type: directory}
+
+  '@prismshadow/penguin-server@file:packages/server':
+    resolution: {directory: packages/server, type: directory}
+    engines: {node: '>=24'}
+
+  '@prismshadow/penguin-skills@file:packages/skills':
+    resolution: {directory: packages/skills, type: directory}
 
   '@protobufjs/aspromise@1.1.2':
     resolution: {integrity: sha512-j+gKExEuLmKwvz3OgROXtrJ2UG2x8Ch2YZUxahh+s1F2HZ+wAceUNLkvy6zKCPVRkU++ZWQrdxsUeQXmcg4uoQ==}
@@ -3256,6 +3272,58 @@ snapshots:
       - utf-8-validate
       - ws
       - zod
+
+  '@prismshadow/penguin-cli@file:packages/cli':
+    dependencies:
+      '@prismshadow/agenthub': 0.4.1(ws@8.21.0)
+      '@prismshadow/penguin-core': file:packages/core(ws@8.21.0)
+      '@prismshadow/penguin-server': file:packages/server(ws@8.21.0)
+      '@prismshadow/penguin-skills': file:packages/skills
+      commander: 13.1.0
+      dotenv: 17.4.2
+      smol-toml: 1.6.1
+      yaml: 2.9.0
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
+      - zod
+
+  '@prismshadow/penguin-core@file:packages/core(ws@8.21.0)':
+    dependencies:
+      '@prismshadow/agenthub': 0.4.1(ws@8.21.0)
+      '@prismshadow/penguin-skills': file:packages/skills
+      smol-toml: 1.6.1
+      yaml: 2.9.0
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
+      - zod
+
+  '@prismshadow/penguin-server@file:packages/server(ws@8.21.0)':
+    dependencies:
+      '@hono/node-server': 2.0.12(hono@4.12.28)
+      '@prismshadow/penguin-core': file:packages/core(ws@8.21.0)
+      '@prismshadow/penguin-skills': file:packages/skills
+      dotenv: 17.4.2
+      hono: 4.12.28
+      smol-toml: 1.6.1
+      tar: 7.5.22
+      yaml: 2.9.0
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
+      - zod
+
+  '@prismshadow/penguin-skills@file:packages/skills': {}
 
   '@protobufjs/aspromise@1.1.2': {}
 
