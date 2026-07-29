@@ -33,33 +33,46 @@ const HARDENED_ENV: NodeJS.ProcessEnv = {
 };
 
 /**
- * Harness-owned variables **removed** from the child environment (deleted, not blanked: a
+ * Harness-owned variables **removed** from the child environment (removed, not blanked: a
  * program that checks `PORT` for presence rather than value must see nothing at all).
  *
- * `PORT` / `HOST` describe the port the harness itself listens on. `penguin web` writes both
- * into its own `process.env` as the channel to the server module (see the CLI's `startServer`),
- * so without this every command the Agent runs inherits them — and `npm run dev`, Vite, Next
- * and most Express templates all read `PORT`, so an Agent asked to start a dev server would
- * bind the harness's own port instead of picking its own. Stripping is right even when the
- * value came from the user's shell (`PORT=3000 penguin web`): it still means "the port
- * PenguinHarness is on", which is precisely the port a spawned server must not take.
+ * `PORT` / `HOST` are stripped because they are never about the command being run. On the
+ * serving paths they are the harness's own listener: `penguin web` / `penguin server` write both
+ * into their own `process.env` as the channel to the server module (see the CLI's `startServer`).
+ * On the CLI-only paths (`penguin run`, `penguin chat`, the REPL) nothing listens at all, but the
+ * CLI still loads `dotenv/config`, so a `PORT` there is the one the *user's own project* picked
+ * for *its* server. `npm run dev`, Vite, Next and most Express templates read `PORT`, so either
+ * way an inherited value makes a server the Agent starts bind a port it was never asked to take —
+ * the harness's own in the first case, one already spoken for in the second. A command that needs
+ * a particular port should be told so in its own invocation (or through the vault), never by
+ * ambient inheritance.
  *
- * `PENGUIN_CLI_ENTRY` / `PENGUIN_WEB_DIST` are internal plumbing between the CLI and the
- * server; they mean nothing to a command and leak install paths.
+ * `PENGUIN_CLI_ENTRY` is internal plumbing: the CLI uses it to tell the server which script to
+ * re-run for self-update. It means nothing to any other program and leaks the install path.
  *
- * Deliberately **not** stripped: `PENGUIN_HOME` and the other user-facing `PENGUIN_*` settings.
- * An Agent working on PenguinHarness itself (the self-evolution case) may legitimately need to
- * run against the same data root, and that is a config decision rather than a leak.
+ * `PENGUIN_WEB_DIST` is *not* internal — it is a documented deployment override (see the
+ * configuration reference and the server README) — and is stripped anyway because it names this
+ * installation's front-end build. In the self-development case an Agent that starts a
+ * PenguinHarness server would otherwise serve the deployment's assets instead of the ones it just
+ * built in the workspace, silently and with no error to read.
+ *
+ * Deliberately **not** stripped: `PENGUIN_HOME`, `PENGUIN_WEB_DB` and the rest of the user-facing
+ * `PENGUIN_*` settings. Those select the *data* an Agent-started harness works against, and the
+ * self-development case may legitimately want the same data root — sharing state is a config
+ * decision, whereas serving a deployment's code from a workspace checkout never is.
  */
-const STRIPPED_ENV_KEYS = ["PORT", "HOST", "PENGUIN_CLI_ENTRY", "PENGUIN_WEB_DIST"] as const;
+const STRIPPED_ENV_KEYS = new Set(["PORT", "HOST", "PENGUIN_CLI_ENTRY", "PENGUIN_WEB_DIST"]);
 
-/**
- * The host environment minus {@link STRIPPED_ENV_KEYS}. Exported for the unit test — the
- * spawn path itself cannot be asserted without starting a real process.
- */
-export function hostEnvForChild(source: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
-  const env = { ...source };
-  for (const key of STRIPPED_ENV_KEYS) delete env[key];
+/** The host environment minus {@link STRIPPED_ENV_KEYS}. */
+function hostEnvForChild(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  // Matched case-insensitively rather than deleting the upper-case spellings: Windows resolves
+  // environment names without regard to case but stores whatever casing was written, so a
+  // `set Port=3000` before `penguin web` would survive a `delete env.PORT` and still reach the
+  // child as PORT. On POSIX the two are distinct names and only the exact one exists.
+  for (const [key, value] of Object.entries(process.env)) {
+    if (!STRIPPED_ENV_KEYS.has(key.toUpperCase())) env[key] = value;
+  }
   return env;
 }
 

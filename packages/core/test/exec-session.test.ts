@@ -326,6 +326,22 @@ describe("harness environment variables never reach a spawned command", () => {
     }
   });
 
+  it("a differently-cased spelling is stripped too, for Windows' sake", async () => {
+    // Windows looks environment names up without regard to case but stores the casing that was
+    // written, so `set Port=3000` before `penguin web` reaches a child as PORT — invisible to a
+    // strip that only removes the upper-case name. POSIX keeps `Port` and `PORT` apart, which is
+    // what lets this run here at all: without the case-insensitive match it passes through.
+    process.env.Port = "3000";
+    try {
+      const res = await runTool(env, "exec_command", {
+        cmd: `node -e "console.log('Port=[' + (process.env.Port ?? '') + ']')"`,
+      });
+      expect(res.output).toContain("Port=[]");
+    } finally {
+      delete process.env.Port;
+    }
+  });
+
   it("the rest of the host environment still passes through", async () => {
     process.env.PENGUIN_TEST_PASSTHROUGH = "kept";
     try {
