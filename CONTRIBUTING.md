@@ -19,6 +19,7 @@ pnpm dev:server  # backend at 127.0.0.1:7368 (not the installed server's 7364)
 pnpm dev:web     # web app (Vite) at 127.0.0.1:7365, /api proxied to 7368
 pnpm dev:docs    # docs site (Vite) at 127.0.0.1:7367
 pnpm dev:landing # landing page (Vite) at 127.0.0.1:7366
+pnpm penguin ... # CLI from source; `penguin web` serves at 127.0.0.1:7369
 
 BASE_PATH=/ pnpm build:site   # assemble landing + docs exactly like the Pages deploy
 ```
