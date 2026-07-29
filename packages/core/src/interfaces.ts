@@ -168,21 +168,6 @@ export interface LLMOutcome {
    * errors panel) can show the real reason behind a retried request.
    */
   message?: string;
-  /**
-   * Opt-out of the engine's reconnect ladder. The engine retries every status except `auth`,
-   * on the reasoning that the transient/permanent split is a heuristic and a wasted ladder is
-   * cheaper than a destroyed turn. Setting this to `false` says the LLM layer *knows*
-   * otherwise for this one outcome. The only current case is a failure raised **before any
-   * request was issued** (input that would not assemble into a request): every retry re-runs
-   * the same pure function over the same input, so it cannot do anything but fail again —
-   * turning an engine bug into a silent multi-second stall and six request pairs of noise in
-   * the Trace.
-   *
-   * Engine-internal, never on the wire: `request_end` still carries only the status and the
-   * message, so the Trace format and every host are unaffected. Absent (or `true`) means
-   * "decide from the status" — the default behaviour.
-   */
-  retryable?: boolean;
 }
 
 /**

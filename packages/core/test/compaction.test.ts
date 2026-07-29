@@ -12,8 +12,9 @@
  *   stay byte-identical, #84), and a completed response only counts as success with a valid
  *   summary — non-empty extracted text and no tool calls (issue #83). A rejected response has its
  *   tool calls answered by synthesized failed outputs (pairing repair) and is retried under a
- *   dedicated cap of 5 rejections; then the compaction fails. Transport timeout/malformed
- *   attempts keep the shared reconnect cap.
+ *   dedicated cap of 5 rejections; then the compaction fails. Retryable attempts
+ *   (failed/timeout/malformed) take the compaction-specific reconnect cap — the same set the
+ *   turn loop retries, on a shorter budget; only `auth` stops at once.
  * - discard: deferred until task end if mid-task; sends no compaction request, just swaps in a new LLM instance directly.
  * - Process visibility: the compaction request's streamed output is never surfaced to the human,
  *   only the paired compaction events are emitted; the dialogue is written to the old trace, and
@@ -306,8 +307,8 @@ describe("context compaction", () => {
         {
           messages: [toolCall({ name: "t", arguments: "{}", toolCallId: "c1" }), usage(150, 150)],
         },
-        // Compaction request fails (not retryable).
-        { messages: [], outcome: { status: "failed", message: "auth error" } },
+        // Compaction request fails on the one status no ladder can fix (a rejected credential).
+        { messages: [], outcome: { status: "auth", message: "auth error" } },
         // Original context is kept: the task continues, tool outputs feed back into the old instance as usual (context usage keeps growing).
         { messages: [assistantText("finished on old context"), usage(190, 340)] },
         // Second trigger (context still over the limit) -> retries compaction at the boundary, this time succeeding.
@@ -417,6 +418,40 @@ describe("context compaction", () => {
     expect(events[1]).toMatchObject({ type: "compaction_end", status: "failed" });
     // The retry resends the original input (tool results + prompt; here there are no tool results, just the prompt).
     expect(llm1.calls).toHaveLength(3);
+    expect(payloadTypes(llm1.calls[2]!)).toEqual(["text"]);
+  });
+
+  it("a failed compaction request takes the ladder and can recover on a later attempt", async () => {
+    // The compaction loop retries the same statuses the turn loop does: `failed` is where a
+    // transient fault lands whenever the classifier doesn't recognize the gateway's wording,
+    // and giving up here keeps the full context, so the next request re-triggers compaction
+    // against the same wall with less headroom.
+    const llm1 = new ScriptedLLM(
+      [
+        { messages: [assistantText("answer"), usage(150, 150)] },
+        { messages: [], outcome: { status: "failed", message: "502 upstream" } },
+        { messages: [assistantText("[summary]recovered[/summary]")] },
+      ],
+      "llm1",
+    );
+    const llm2 = new ScriptedLLM([], "llm2");
+    const engine = new ContextEngine({
+      llm: llm1,
+      environment: fakeEnvironment,
+      compaction: settings(),
+      createLLM: () => llm2,
+      compactionMaxReconnects: 2,
+      reconnectBackoffMs: 1,
+    });
+
+    const out = await collect(engine.run([userText("go")], { approve: allowAll }));
+    expect(compactionEvents(out)[1]).toMatchObject({
+      type: "compaction_end",
+      status: "completed",
+    });
+    // 1 turn request + 2 compaction attempts (the failed one, then the retry that succeeds).
+    expect(llm1.calls).toHaveLength(3);
+    // The retry resends the same input (tool results + prompt; only the prompt here).
     expect(payloadTypes(llm1.calls[2]!)).toEqual(["text"]);
   });
 

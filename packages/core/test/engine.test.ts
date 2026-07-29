@@ -1764,43 +1764,6 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     expect((abort!.payload as { reason?: string }).reason).toContain("llm request error");
   });
 
-  it("a failed outcome marked retryable:false stops at once and announces no countdown", async () => {
-    // The one class of `failed` a ladder cannot help: the request was never issued, because
-    // the input would not assemble (GenerativeModel's mergeOmniToUniMessage guard). Retrying
-    // re-runs a pure function over the same input, so five more attempts only stall the user
-    // and bury an engine-side defect under six request pairs in the Trace.
-    let calls = 0;
-    const llm: LLMInterface = {
-      // eslint-disable-next-line require-yield
-      async *streamGenerate() {
-        calls += 1;
-        return {
-          status: "failed" as const,
-          message: "newMessages must not be empty",
-          retryable: false,
-        };
-      },
-    };
-    const environment = new Environment({
-      workspaceDir: workspace,
-      toolConfig: execCommandToolConfig(),
-    });
-    const engine = new ContextEngine({ llm, environment, reconnectBackoffMs: 1 });
-
-    const all = await collectRun(engine, [userText("go")], allowAll);
-    expect(calls).toBe(1); // No ladder: one attempt, then the run ends.
-    const end = all.find((m) => (m.payload as { type?: string }).type === "request_end");
-    // The status stays honest — this is still a `failed` request on the wire, so the Cost
-    // center and the frontends see it as one; only the retry decision differs.
-    expect((end!.payload as { status?: string }).status).toBe("failed");
-    // No wait is announced, so no frontend renders a countdown that will never elapse.
-    expect((end!.payload as { retry_in_ms?: number }).retry_in_ms).toBeUndefined();
-    const abort = all.find((m) => (m.payload as { type?: string }).type === "abort");
-    expect((abort!.payload as { reason?: string }).reason).toBe(
-      "llm request error: newMessages must not be empty",
-    );
-  });
-
   it("a quota-403 (classified timeout) retries within the default cap and succeeds", async () => {
     let calls = 0;
     const llm: LLMInterface = {
