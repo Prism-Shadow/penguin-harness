@@ -2,6 +2,8 @@
 
 Changes since v0.1.2. The version number is assigned at release, when this folder is renamed.
 
+- [2026-07-29] Tooling: Agent-spawned commands no longer inherit PenguinHarness-owned server variables such as `PORT` / `HOST`, while the development backend moves off the installed server's default port and the Web dev proxy follows that backend. ([details](2026-07-29-harness-env-and-dev-ports.md))
+
 - [2026-07-27] Core and Web App: transport drops (`UND_ERR_SOCKET`-class) and provider quota errors (`insufficient_user_quota`) now reconnect on an exponential ladder (up to 8 attempts ≈62s) with a live countdown plus Retry-now/Give-up controls, real failure details reach the Cost center, and authentication failures lock the composer recoverably — updating the key on the Models page invalidates cached runtimes and unlocks open Sessions instantly. ([details](2026-07-27-llm-request-errors.md))
 
 - [2026-07-26] Web App: subagent conversations move into a docked agents panel with a live call graph of the latest Task (compact chips remain in the stream), an in-progress reply now survives refresh/reconnect via a server-kept live tail, the header statistics (Tokens/cost/elapsed) tick live while a Task runs, running-state rows stay one line on mobile with icon-only colored approval buttons, Trace files can be exported and imported from the Traces page, and the sidebar user menu shows the running version with an update reminder and an admin-run self-update. ([details](2026-07-26-web-app.md))
