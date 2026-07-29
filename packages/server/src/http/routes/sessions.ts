@@ -11,16 +11,19 @@ import path from "node:path";
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { imageUrlMessage, scratchpadDir, userText } from "@prismshadow/penguin-core";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { OmniMessage, ThinkingLevelName } from "@prismshadow/penguin-core";
 import type {
   ApprovalMode,
   FilesStatResponse,
+  GoalResponse,
+  MessagesLiveTail,
   MessagesResponse,
   ServerEvent,
   SessionCategory,
   SessionCreateResponse,
   SessionResponse,
   SessionsResponse,
+  RetryNowResponse,
   TaskCreateResponse,
 } from "../../api/types.js";
 import { PREVIEW_TOKEN_TTL_MS, resolvePreviewTarget } from "../../services/preview-token.js";
@@ -57,6 +60,9 @@ const APPROVAL_MODES: readonly ApprovalMode[] = [
   "read-only",
   "always-ask",
 ];
+
+/** The five valid per-turn thinking level names (TaskCreateRequest.thinkingLevel). */
+const THINKING_LEVELS: readonly ThinkingLevelName[] = ["none", "low", "medium", "high", "xhigh"];
 
 /** Accepted `category` query values of the list endpoint (SessionCategory, spelled out for validation). */
 const SESSION_CATEGORIES: readonly SessionCategory[] = [
@@ -95,6 +101,28 @@ function parseTaskInput(body: Record<string, unknown>): OmniMessage[] {
     }
     throw badRequest(`input[${i}].type must be one of text / image_url.`);
   });
+}
+
+/**
+ * Validate the optional `goal` field of a task request: absent = a regular task (null);
+ * present = goal mode with a token budget (a positive integer, or -1/omitted = unlimited).
+ * The input text is the objective — skills ride the text itself as a `[use_skills]` block,
+ * exactly like a regular task's message.
+ */
+function parseGoalField(body: Record<string, unknown>): { budget: number } | null {
+  const goal = body.goal;
+  if (goal === undefined) return null;
+  if (goal === null || typeof goal !== "object" || Array.isArray(goal)) {
+    throw badRequest("goal must be an object.");
+  }
+  const budget = (goal as Record<string, unknown>).budget;
+  if (
+    budget !== undefined &&
+    (typeof budget !== "number" || !Number.isInteger(budget) || (budget <= 0 && budget !== -1))
+  ) {
+    throw badRequest("goal.budget must be a positive integer, or -1 for unlimited.");
+  }
+  return { budget: (budget as number | undefined) ?? -1 };
 }
 
 /** Agent-level entry: /api/projects/:p/agents/:a/sessions. */
@@ -201,8 +229,13 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
   app.get("/:sessionId", async (c) => {
     const row = resolveSession(c);
     const hasTrace = await deps.sessionService.hasTrace(row);
+    const info = await deps.sessionService.toInfo(row, hasTrace);
+    // Single-session GET only: the latest Trace file's absolute path (a directory walk per
+    // call — too costly for list rows). The web's /model switch hands it to the new session's
+    // [model_switch_from] block so the model can read the source history itself.
+    const tracePath = hasTrace ? await deps.sessionService.latestTracePath(row) : undefined;
     return c.json({
-      session: await deps.sessionService.toInfo(row, hasTrace),
+      session: { ...info, ...(tracePath !== undefined ? { tracePath } : {}) },
     } satisfies SessionResponse);
   });
 
@@ -280,6 +313,7 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
         { recursive: true, force: true },
       );
       deps.sessionsRepo.deleteById(row.sessionId);
+      deps.goalsRepo.deleteBySession(row.sessionId);
       // Drop the derived-origin entry along with the Session (bulk Agent/Project deletion
       // may leave stale entries; session ids are never reused, so they are never matched).
       deps.sessionSources.delete(row.sessionId);
@@ -328,12 +362,29 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
 
   app.get("/:sessionId/messages", async (c) => {
     const row = resolveSession(c);
+    // Live tail (running/compacting sessions only): capture the channel cursor and the
+    // open-fragment snapshot together, synchronously — no await between the two, and both
+    // BEFORE the trace read starts. That ordering is what makes the client contract safe
+    // (see MessagesLiveTail in api/types.ts): every published event with id <= cursor is
+    // already reflected in `fragments`, and partial_* messages never reach the Trace, so
+    // the client may drop its buffered partials at/or before the cursor and seed from
+    // `fragments` without loss or duplication. Complete messages are never dropped by the
+    // cursor — the client's overlap dedup against `messages` decides for them — so a
+    // complete message whose trace append is still in flight when the read starts is not
+    // lost either.
+    let live: MessagesLiveTail | undefined;
+    if (deps.manager.statusOf(row.sessionId) !== "idle") {
+      live = {
+        cursor: deps.channels.get(row.sessionId).lastEventId,
+        fragments: deps.manager.liveFragments(row.sessionId),
+      };
+    }
     const messages = await deps.traceService.readMessages(
       row.projectId,
       row.agentId,
       row.sessionId,
     );
-    return c.json({ messages } satisfies MessagesResponse);
+    return c.json({ messages, ...(live !== undefined ? { live } : {}) } satisfies MessagesResponse);
   });
 
   app.get("/:sessionId/stream", (c) => {
@@ -345,7 +396,11 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     // caused by a stale running/idle in the list; followed by replaying all still-pending
     // approval requests.
     const initialEvents: ServerEvent[] = [
-      { type: "task_state", state: deps.manager.statusOf(row.sessionId) },
+      {
+        type: "task_state",
+        state: deps.manager.statusOf(row.sessionId),
+        queued: deps.manager.pendingFollowUpCount(row.sessionId),
+      },
       ...deps.manager.pendingApprovals(row.sessionId).map((p) => ({
         type: "approval_request" as const,
         toolCall: p.toolCall,
@@ -357,10 +412,72 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
 
   app.post("/:sessionId/tasks", async (c) => {
     const row = resolveSession(c);
-    const input = parseTaskInput(await readJson(c));
+    const body = await readJson(c);
+    const goal = parseGoalField(body);
+    // Per-turn thinking level (optional): validated against the five names; omitted follows
+    // the session's default. In goal mode it rides every round of the goal; a queued
+    // follow-up keeps its level for its auto-start.
+    const thinkingLevel = optionalEnum(body, "thinkingLevel", THINKING_LEVELS);
+    if (goal) {
+      // Goal mode: the input must be plain non-empty text (its marker-stripped text becomes
+      // the objective, re-injected every round — images have no place in the protocol).
+      const input = parseTaskInput(body);
+      const text = input
+        .filter((m) => (m.payload as { type?: string }).type === "text")
+        .map((m) => (m.payload as { text: string }).text)
+        .join("\n")
+        .trim();
+      if (!text || input.some((m) => (m.payload as { type?: string }).type !== "text")) {
+        throw badRequest("goal mode requires text-only input (the objective).");
+      }
+      const { sessionId } = await deps.manager.startGoal(row.sessionId, {
+        input,
+        budget: goal.budget,
+        ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
+      });
+      return c.json({ sessionId } satisfies TaskCreateResponse, 202);
+    }
+    const input = parseTaskInput(body);
+    // Follow-up queue: with queueIfBusy, a busy session enqueues the input instead of 409
+    // (auto-starts as an ordinary next task once idle; the response says which happened).
+    const queueIfBusy = body.queueIfBusy === true;
     // 202: the Task executes on the server, decoupled from the SSE connection; sessionId is the current actual id (the new id after self-heal).
-    const { sessionId } = await deps.manager.startTask(row.sessionId, input);
-    return c.json({ sessionId } satisfies TaskCreateResponse, 202);
+    const { sessionId, queued } = await deps.manager.startTask(row.sessionId, input, {
+      ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
+      queueIfBusy,
+    });
+    return c.json({ sessionId, queued } satisfies TaskCreateResponse, 202);
+  });
+
+  // Mid-run steering: queue a user message for the running Task; core delivers it between
+  // turns as a standalone `[user_steering]` user message (the model sees it without the loop
+  // being interrupted). 409 not_running when no Task is in progress — the frontend then falls
+  // back to a normal task POST.
+  app.post("/:sessionId/steer", async (c) => {
+    const row = resolveSession(c);
+    const body = await readJson(c);
+    const text = typeof body.text === "string" ? body.text.trim() : "";
+    if (!text) throw badRequest("text must be a non-empty string.");
+    deps.manager.steer(row.sessionId, text);
+    return c.body(null, 202);
+  });
+
+  // The Session's most recent goal run (for restoring the chat page's goal banner on load).
+  app.get("/:sessionId/goal", (c) => {
+    const row = resolveSession(c);
+    const g = deps.goalsRepo.latestForSession(row.sessionId);
+    return c.json({
+      goal: g
+        ? {
+            objective: g.objective,
+            status: g.status,
+            budget: g.budget,
+            used: g.used,
+            rounds: g.rounds,
+            updatedAt: g.updatedAt,
+          }
+        : null,
+    } satisfies GoalResponse);
   });
 
   app.post("/:sessionId/approvals/:toolCallId", async (c) => {
@@ -383,6 +500,16 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     const aborted = deps.manager.abortTask(row.sessionId);
     // No Task in progress → 204 no-op; interrupt was triggered → 202 (wrap-up is completed by the SDK's "interrupt cleanup").
     return c.body(null, aborted ? 202 : 204);
+  });
+
+  // "Retry now" on the reconnect countdown: skip the remaining backoff wait and fire the
+  // next retry immediately (attempt counter unchanged). Benign either way — 200 with
+  // skipped:false when no reconnect wait is in progress, so a timing race (the wait
+  // elapsed just before the click) never surfaces as an error.
+  app.post("/:sessionId/retry-now", (c) => {
+    const row = resolveSession(c);
+    const skipped = deps.manager.retryNow(row.sessionId);
+    return c.json({ skipped } satisfies RetryNowResponse);
   });
 
   app.post("/:sessionId/compact", async (c) => {

@@ -54,6 +54,30 @@ export const en: Strings = {
     } as Record<string, string>,
   },
 
+  /** Version footer, update reminder, and admin self-update in the sidebar user menu. */
+  update: {
+    /** Version-line date label; `date` is formatMonthDay output, e.g. "Last updated Jul 26". */
+    lastUpdated: (date: string) => `Last updated ${date}`,
+    /** Superscript badge on the version lines when the update check found a newer release. */
+    newVersionBadge: "New version available",
+    newVersion: (v: string) => `New version v${v} available`,
+    /** Manual check action in the sidebar user menu, with its busy label and toast outcomes. */
+    checkNow: "Check for updates",
+    checking: "Checking…",
+    upToDate: "You're on the latest version",
+    checkFailed: "Update check failed — try again later",
+    checkDisabled: "Update checks are disabled (PENGUIN_UPDATE_CHECK=off)",
+    releaseNotes: "Release notes",
+    updateNow: "Update now",
+    updating: "Updating…",
+    updated: "Update complete — restart the service to apply",
+    restartHint: "Restart by re-running penguin web (or penguin server) in a terminal",
+    failed: "Update failed",
+    unsupported: "This install cannot be updated from the web UI",
+    confirmBody:
+      "Downloads the latest release and installs it into the install directory on the server (the data directory is not touched). Restart the service afterwards for the update to take effect.",
+  },
+
   common: {
     save: "Save",
     cancel: "Cancel",
@@ -190,12 +214,18 @@ export const en: Strings = {
     placeholders: [
       ["{{AGENTS_MD}}", "Injects the AGENTS.md content"],
       ["{{VAULT_KEYS}}", "Injects the vault key-name section (empty when no keys)"],
+      ["{{SKILL_METADATA}}", "Injects the installed skills' metadata lines (empty when none)"],
       ["{{PLATFORM}}", "Runtime platform"],
       ["{{OS_VERSION}}", "Operating system version"],
       ["{{DATE}}", "Current date"],
-      ["{{CWD}}", "Absolute Workspace path"],
+      [
+        "{{PROJECT_DIR}}",
+        "PenguinHarness app data root — all agents' data and project-level data; not the task working directory",
+      ],
       ["{{AGENT_ID}}", "Current agent id"],
-      ["{{PROJECT_DIR}}", "Absolute Project directory (Agent State/scratchpad derive from it)"],
+      ["{{CWD}}", "Absolute Workspace path"],
+      ["{{PROVIDER}}", "Model provider group"],
+      ["{{MODEL_ID}}", "Upstream model id"],
       ["{{SESSION_ID}}", "Current Session id"],
     ] as ReadonlyArray<readonly [string, string]>,
     maxTurns: "max_turns (max turns per Task, -1 = unlimited)",
@@ -248,6 +278,9 @@ export const en: Strings = {
       "Can modify things. Needs manual confirmation when the approval mode is read-only.",
     toolTimeout: "timeoutMs",
     toolMaxOutput: "maxOutputLength",
+    toolCallDescription: "call_description",
+    callDescriptionHint:
+      "call_description: when on (the default), the tool's schema keeps the optional description argument — a model-written sentence about each call, shown to the user while it runs; when off, the argument is filtered out of the schema at assembly. Only tools whose parameters declare a description property can be toggled.",
     mcpServers: "MCP Servers (read-only)",
     defaultValue: "(default)",
     deleteAgent: "Delete agent",
@@ -265,6 +298,13 @@ export const en: Strings = {
     importConflictTitle: "Version conflict",
     importConflictBody:
       "The snapshot's version is not newer than the current one; importing will overwrite the existing Agent State. Continue?",
+    resetConfigTitle: "Restore default configuration",
+    resetConfigDesc:
+      "Restores system_config.yaml to the current built-in defaults (same semantics as a skill update): the custom system prompt, tool list, model/compaction settings and MCP servers are overwritten; only name, description and the State version are kept.",
+    resetConfigAction: "Restore default configuration",
+    resetConfigConfirmBody:
+      "This overwrites the agent's existing configuration with the current defaults: the custom system prompt, tool list, model/compaction settings and MCP servers are all replaced, keeping only name and description. Like a skill update this cannot be undone. Continue?",
+    resetConfigDone: "Configuration restored to the current defaults",
   },
 
   models: {
@@ -329,6 +369,7 @@ export const en: Strings = {
     vision: "Vision support",
     visionOffProxyHint: "Images are read via the vision proxy model",
     visionBadge: "Vision",
+    freeBadge: "Free",
     visionModelBadge: "Proxy vision",
     setVisionModel: "Set as proxy vision model",
     visionModelHint: "Describes images via describe_image for models without vision",
@@ -625,6 +666,27 @@ Scenarios:
     jumpToLatest: "Jump to latest",
     inputPlaceholder: "Type a message. Enter to send, Shift+Enter for newline, paste images",
     inputPlaceholderShort: "Type a message…",
+    /** Placeholder while a Task is running (mid-run steering): the message is delivered between turns with the next request. */
+    steerPlaceholder: "Message the running agent — delivered with the next turn",
+    steerPlaceholderShort: "Message the running agent…",
+    steerSend: "Send to the running agent",
+    /** Queued hint shown after a successful steer, until the steering message appears in the stream. */
+    steerQueuedIndicator: "Steering queued — delivered with the next turn",
+    /** Label of the [user_steering] chip (a mid-run user message delivered between turns). */
+    userSteering: "User steering",
+    /** Mid-run send-mode setting: steer (delivered mid-run) vs follow-up (queued until the run ends). */
+    steerModeLabel: "Mid-run send mode",
+    steerModeSteer: "Steer",
+    steerModeSteerHint: "Steer now: delivered to the running agent with the next turn",
+    steerModeFollowUp: "Queue",
+    steerModeFollowUpHint:
+      "Queue a follow-up: sent automatically as a new message when this run finishes",
+    followUpPlaceholder: "Queue as the next message — sent automatically when this run finishes",
+    followUpPlaceholderShort: "Queue as the next message…",
+    followUpSend: "Queue as the next message",
+    /** Server-side queued follow-up count (auto-sent once the current run finishes). */
+    followUpQueuedChip: (n: number) =>
+      `${n} follow-up ${n === 1 ? "message" : "messages"} queued — sent when this run finishes`,
     send: "Send",
     stop: "Stop",
     compact: "Compact context",
@@ -638,21 +700,44 @@ Scenarios:
     subagent: "Subagent",
     subagentRunning: "Running",
     aborted: (reason?: string) => `[Aborted]${reason ? `: ${reason}` : ""}`,
+    /** Auth-dead notice (request_end status "auth"): action-only copy — updating the key on the Models page auto-unlocks this Session. */
+    modelAuthDead:
+      "Model API authentication failed: update this model's API key on the Models page, or start a new Session.",
+    modelAuthDeadOpenModels: "Open Models page",
+    modelAuthDeadRetry: "Retry",
+    modelAuthDeadCta: "New Session",
+    modelAuthDeadPlaceholder: "Model authentication failed — update the API key first",
+    /**
+     * Reconnect hint line; `secondsLeft` (waiting state only) switches to the live-countdown
+     * wording. `failed` is in the union because the engine retries it like the other two —
+     * its cause names the provider rather than the transport, since that is where it came from.
+     */
     reconnect: (
-      status: "timeout" | "malformed",
+      status: "failed" | "timeout" | "malformed",
       state: "waiting" | "retried" | "gaveUp",
       attempt: number,
+      secondsLeft?: number,
     ) => {
       const cause =
-        status === "timeout" ? "Connection timed out" : "Response incomplete or unparseable";
+        status === "timeout"
+          ? "Connection timed out"
+          : status === "malformed"
+            ? "Response incomplete or unparseable"
+            : "The model provider returned an error";
       const action =
         state === "gaveUp"
           ? "no further retries"
           : state === "retried"
             ? `retry #${attempt} sent`
-            : `starting retry #${attempt}…`;
+            : secondsLeft !== undefined
+              ? `retry #${attempt} in ${secondsLeft}s…`
+              : `starting retry #${attempt}…`;
       return `[Retry] ${cause}; ${action}`;
     },
+    /** "Retry now" on the reconnect countdown (skips the remaining backoff wait). */
+    reconnectRetryNow: "Retry now",
+    /** "Give up" on the reconnect countdown (the ordinary session abort). */
+    reconnectGiveUp: "Give up",
     imageAlt: "Image uploaded by user",
     toolImageAlt: "Image from tool output",
     imagesAsPathHint:
@@ -674,6 +759,7 @@ Scenarios:
     statsLabel: "Stats",
     removeImage: "Remove image",
     openWorkspace: "Open workspace",
+    openAgents: "Agents panel",
     filesInMessage: (n: number) => `${n} ${n === 1 ? "file" : "files"}`,
     openPreview: "Click to preview",
     showMoreFiles: (n: number) => `Show ${n} more ${n === 1 ? "file" : "files"}`,
@@ -693,6 +779,13 @@ Scenarios:
     handoffFrom: (agent: string) => `Handed off from ${agent}'s conversation`,
     handoffBack: (title?: string) =>
       title ? `Back to the original conversation: ${title}` : "Back to the original conversation",
+    switchModel: "Switch model — continue this conversation in a new session",
+    switchModelTitle: "Switch model",
+    modelSwitchFrom: (prevModel?: string) =>
+      prevModel
+        ? `Switched model (was ${prevModel}) — continued from the earlier conversation`
+        : "Switched model — continued from the earlier conversation",
+    modelSwitchAutoMessage: "Continue this conversation on the new model",
     scheduledFrom: (name: string) => `Triggered by scheduled task "${name}"`,
     emptyGreeting: "Start a new conversation",
     compactionRunning: (mode: string) => `Compaction in progress (${mode})…`,
@@ -727,6 +820,40 @@ Scenarios:
     },
     skillsBanner: (names: string[]): string =>
       `Using skill${names.length === 1 ? "" : "s"}: ${names.join(", ")}`,
+    /** Composer "+" extension menu (currently only goal mode; more entries later) and the goal chip. */
+    plusMenu: "More input options",
+    uploadImage: "Upload image",
+    uploadImageDesc: "Attach images to this message",
+    goalMode: "Goal mode",
+    goalModeDesc: "Loop until the goal completes",
+    goalBudgetLabel: "Token budget",
+    goalBudgetUnlimited: "Budget unlimited",
+    goalBudgetValue: (value: string): string => `Budget ${value}`,
+    goalBudgetPlaceholder: "e.g. 500k",
+    goalBudgetHint: "Use a k/m suffix; leave blank for no budget limit",
+    goalBudgetInvalid:
+      "Invalid budget: use a positive number with an optional k/m suffix (500k, 2m)",
+    goalBudgetSave: "Save budget",
+    goalRemove: "Exit goal mode",
+    goalRoundBanner: (round: number): string => `Goal · round ${round}`,
+    goalProgress: (rounds: number, tokens: string): string => `round ${rounds} · tokens ${tokens}`,
+    goalStatus: {
+      active: "running",
+      complete: "complete",
+      blocked: "blocked",
+      budget_limited: "budget exhausted",
+      aborted: "interrupted",
+    } as Record<string, string>,
+  },
+
+  /** Subagents side panel: call-graph of the latest Task + the selected child conversation. */
+  subagentPanel: {
+    title: "Agents panel",
+    topologyLabel: "Call graph",
+    mainSessionNote: "The main conversation stays in the chat area",
+    empty: "No subagents in the current task yet",
+    nodeRunning: "running",
+    nodeDone: "done",
   },
 
   files: {
@@ -785,6 +912,11 @@ Scenarios:
     errorsColKind: "Type",
     errorsColMessage: "Message",
     errorsEmpty: "No errors",
+    /** Detail-table pager: newer/older step back through pages of the same filtered set. */
+    errorsNewer: "Newer",
+    errorsOlder: "Older",
+    errorsPageOf: (page: number, pages: number, total: number) =>
+      `Page ${page} / ${pages} · ${total} total`,
   },
 
   traces: {
@@ -820,6 +952,11 @@ Scenarios:
     inProgress: "in progress",
     systemPrompt: "System prompt",
     toolDefs: (n: number) => `Tool definitions (${n})`,
+    exportFile: "Export",
+    importTrace: "Import Trace",
+    importing: "Importing…",
+    /** Client-side pre-check before reading the picked file (same cap as the server's import route). */
+    fileTooLarge: "The file exceeds the 14MB limit.",
   },
 
   benchmark: {
@@ -877,6 +1014,9 @@ Scenarios:
       task_in_progress: "This Session already has a task running.",
       version_conflict: "The snapshot's version is not newer than the current one.",
       invalid_title: "The title is invalid.",
+      invalid_trace: "This file is not a valid Trace file.",
+      trace_session_exists:
+        "This agent already has a Session with that id; a duplicate Trace cannot be imported.",
     },
   },
 };

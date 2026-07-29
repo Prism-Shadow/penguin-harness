@@ -23,7 +23,7 @@ export type OmniMessageType = "session_meta" | "model_msg" | "event_msg";
 export type Role = "user" | "assistant";
 
 /**
- * The reason a model response or message generation ended. Only five protocol values are
+ * The reason a model response or message generation ended. Only six protocol values are
  * allowed:
  *   - `completed`: finished normally, including completed text, thinking, tool requests, or
  *     tool output;
@@ -31,10 +31,15 @@ export type Role = "user" | "assistant";
  *   - `aborted`: user-initiated interruption or cancellation;
  *   - `timeout`: LLM request timed out;
  *   - `malformed`: the LLM response was malformed (e.g. AgentHub JSON parsing exception).
- *     Only LLM timeout / malformed trigger a context_engine reconnect.
+ *     Only LLM timeout / malformed trigger a context_engine reconnect;
+ *   - `auth`: the LLM rejected the credentials (see `isAuthenticationError`) — a
+ *     `failed`-shaped stop that no in-run retry can fix; hosts disable input until the
+ *     model's API key is updated (only the model reference is fixed at Session creation —
+ *     credentials come from the current Project config), after which the Session
+ *     continues.
  * Docs: /docs/omni-message § "stop_reason".
  */
-export type StopReason = "completed" | "failed" | "aborted" | "timeout" | "malformed";
+export type StopReason = "completed" | "failed" | "aborted" | "timeout" | "malformed" | "auth";
 
 /** The event phase of a streaming fragment. `stop` marks the end of a fragment and usually carries no incremental content. */
 export type StreamEventType = "start" | "delta" | "stop";
@@ -75,6 +80,12 @@ export interface ToolDefinition {
   parameters?: Record<string, unknown>;
 }
 
+/**
+ * Session metadata. Holds **per-session invariants only** — values fixed for the Session's
+ * lifetime (model reference, assembled system prompt, tool schemas, paths, origin). Per-turn
+ * parameters (e.g. the thinking level, passed with each run) never belong here; a
+ * `thinking_level` field still present in a legacy Trace's meta is ignored on resume.
+ */
 export interface SessionMetaPayload {
   session_id: string;
   /** The session model's provider group (paired with `model_id` to form a model reference). */
@@ -86,8 +97,6 @@ export interface SessionMetaPayload {
   system_prompt: string;
   /** The list of tool definitions this Session exposes to the model (full schema, matching what's sent to the LLM). */
   tools: ToolDefinition[];
-  /** The Session's effective thinking level (an explicit createSession option — e.g. subagent inheritance — else system_config.model.thinking_level; "default" when unconfigured). */
-  thinking_level: string;
   /** Absolute path to the Agent State. */
   agent_state: string;
   /** Absolute path to the Workspace. */
@@ -273,8 +282,25 @@ export interface RequestBeginPayload {
 
 export interface RequestEndPayload {
   type: "request_end";
-  /** Terminal state of this Request (reuses the five StopReason values, sharing its source with this turn's complete message's stop_reason / LLMOutcome). */
+  /** Terminal state of this Request (reuses the six StopReason values, sharing its source with this turn's complete message's stop_reason / LLMOutcome; `auth` is the credentials-failure signal hosts key on). */
   status: StopReason;
+  /**
+   * Failure detail from `LLMOutcome.message`, present only on non-completed statuses: the
+   * real reason behind a retried/failed Request (e.g. `403 … (insufficient_user_quota)`),
+   * for observability — the server's error records / Cost center read it here because a
+   * retried request never produces an abort event. Additive: old Traces without it replay
+   * unchanged.
+   */
+  message?: string;
+  /**
+   * Planned in-run retry wait (ms) — present ONLY when the engine will retry this failure
+   * within the same run (status `timeout`/`malformed` with attempts remaining under the
+   * applicable cap). Computed by the same formula as the actual backoff sleep
+   * (`reconnectDelayMs`), so the announced wait and the real one cannot drift; the Web App
+   * renders it as a live countdown to the next attempt. Absent on final failures (an abort
+   * follows instead) and on completed requests. Additive: old Traces replay unchanged.
+   */
+  retry_in_ms?: number;
 }
 
 /** Compaction trigger reason: context threshold / turn-count threshold / user-initiated request. */
@@ -287,7 +313,7 @@ export type CompactionMode = "summarize" | "discard";
  * Compaction boundary event: the compaction process exposes
  * only this event pair to Human, produced **in pairs** by `context_engine`. Both `reason` and
  * `mode` are carried on both events, for stateless frontend rendering; `status` reuses the
- * five-value `StopReason` protocol (compaction converges to a terminal state, taking
+ * six-value `StopReason` protocol (compaction converges to a terminal state, taking
  * `completed` / `failed` / `aborted` in practice — `timeout` / `malformed` are handled internally
  * by the compaction request's existing retry mechanism, collapsing to `failed` once retries are
  * exhausted).
@@ -308,6 +334,24 @@ export interface CompactionEndPayload {
   mode: CompactionMode;
   /** Compaction result; non-`completed` means compaction was abandoned and the original context was kept. */
   status: StopReason;
+}
+
+/** How a goal ended: the goal file's terminal status, or `aborted` when a round was cut off. */
+export type GoalOutcomeStatus = "complete" | "blocked" | "budget_limited" | "aborted";
+
+/**
+ * Goal terminal event: the last message of a goal-mode `session.run` (produced by the
+ * Session's goal loop, written to the Trace best-effort). Hosts read the outcome from the
+ * stream — the CLI's summary line, the Web server's goal_finished SSE event and run-state
+ * persistence all map from this one message.
+ */
+export interface GoalFinishedPayload {
+  type: "goal_finished";
+  outcome: GoalOutcomeStatus;
+  /** Rounds actually run (the wrap-up round counts). */
+  rounds: number;
+  /** The loop's own accounting: uncached input + output across every round (subagents included). */
+  tokens_used: number;
 }
 
 /**
@@ -355,6 +399,7 @@ export type EventPayload =
   | TokenUsagePayload
   | CompactionBeginPayload
   | CompactionEndPayload
+  | GoalFinishedPayload
   | SubagentPayload;
 
 export type OmniPayload = SessionMetaPayload | ModelPayload | EventPayload;

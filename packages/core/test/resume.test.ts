@@ -24,7 +24,7 @@ import {
   userText,
 } from "../src/omnimessage/index.js";
 import type { OmniMessage, TokenCounts } from "../src/omnimessage/index.js";
-import { GenerativeModel, groupHistoryToUniMessages, mapThinkingLevel } from "../src/llm/index.js";
+import { GenerativeModel, groupHistoryToUniMessages } from "../src/llm/index.js";
 import { readTrace } from "../src/trace/index.js";
 import { tracesDir } from "../src/state/paths.js";
 import { stubProviderKeys } from "./provider-keys.js";
@@ -90,7 +90,6 @@ function metaFor(
     model_context_window: 1000000,
     system_prompt: "ORIGINAL SYSTEM PROMPT",
     tools: [],
-    thinking_level: "default",
     agent_state: "/agent/state",
     workspace: workspaceDir,
     ...(source !== undefined ? { source } : {}),
@@ -176,35 +175,41 @@ describe("agent.resumeSession", () => {
     ).toEqual(["text", "text", "abort"]);
   });
 
-  it("restores the recorded thinking level; the literal 'default' falls back to the Agent config", async () => {
-    // A resumed subagent session must keep the level it inherited from its parent (recorded
-    // in session_meta, like model/Workspace/system prompt) — never silently re-read this
-    // Agent's own config. The seeded Agent config here pins "medium".
+  it("ignores a legacy trace's recorded thinking_level; the Agent config always wins", async () => {
+    // session_meta no longer carries a thinking level (it became a per-turn run parameter);
+    // a `thinking_level` still present in an OLD trace's meta JSON is deliberately ignored —
+    // resume always reads this Agent's current config, so a resumed legacy subagent session
+    // falls back to the config level instead of keeping the level it inherited at spawn
+    // time. The seeded Agent config here pins "medium".
     const agent = await createAgent({});
     expect(agent.state.systemConfig.model?.thinking_level).toBe("medium");
     const levelOf = (session: unknown): unknown =>
-      (
-        (session as { engine: { deps: { llm: { uniConfig?: { thinking_level?: unknown } } } } })
-          .engine.deps.llm.uniConfig ?? {}
-      ).thinking_level;
+      (session as { engine: { deps: { llm: { defaultThinkingLevel?: unknown } } } }).engine.deps.llm
+        .defaultThinkingLevel;
 
     const recorded = metaFor(SID, workspace);
-    (recorded.payload as { thinking_level: string }).thinking_level = "xhigh";
+    // A legacy trace: inject the retired field loosely into the on-disk meta JSON.
+    (recorded.payload as unknown as Record<string, unknown>).thinking_level = "xhigh";
     await writeTraceFile(tmpRoot, SID, [recorded, userText("hello")]);
-    const inherited = await agent.resumeSession({ sessionId: SID });
-    expect((inherited.metaMessage.payload as { thinking_level: string }).thinking_level).toBe(
-      "xhigh",
-    );
-    expect(levelOf(inherited)).toBe(mapThinkingLevel("xhigh"));
+    const ignored = await agent.resumeSession({ sessionId: SID });
+    expect(levelOf(ignored)).toBe("medium");
+    // The rebuilt meta holds invariants only: the legacy field is never re-recorded either.
+    expect(
+      "thinking_level" in (ignored.metaMessage.payload as unknown as Record<string, unknown>),
+    ).toBe(false);
 
-    // "default" records "no level": resume falls back to the Agent's current config, as before.
+    // A current trace (no field) — and the legacy literal "default" — read the Agent config too.
     const SID2 = "session-2026-07-06-11-00-00-abcdef02";
     await writeTraceFile(tmpRoot, SID2, [metaFor(SID2, workspace), userText("hi")]);
     const fallback = await agent.resumeSession({ sessionId: SID2 });
-    expect((fallback.metaMessage.payload as { thinking_level: string }).thinking_level).toBe(
-      "medium",
-    );
-    expect(levelOf(fallback)).toBe(mapThinkingLevel("medium"));
+    expect(levelOf(fallback)).toBe("medium");
+
+    const SID3 = "session-2026-07-06-12-00-00-abcdef03";
+    const legacyDefault = metaFor(SID3, workspace);
+    (legacyDefault.payload as unknown as Record<string, unknown>).thinking_level = "default";
+    await writeTraceFile(tmpRoot, SID3, [legacyDefault, userText("hi")]);
+    const viaDefault = await agent.resumeSession({ sessionId: SID3 });
+    expect(levelOf(viaDefault)).toBe("medium");
   });
 
   it("does not write pairing placeholders to the trace file (resume is side-effect free)", async () => {
@@ -243,7 +248,7 @@ describe("agent.resumeSession", () => {
       SID,
       [
         metaFor(SID, workspace),
-        userText("<context_summary>gist</context_summary>"),
+        userText("[context_summary]gist[/context_summary]"),
         requestBegin(),
         assistantText("resumed context"),
         requestEnd("completed"),
@@ -256,7 +261,7 @@ describe("agent.resumeSession", () => {
     const texts = (session.resumedHistory ?? []).map(
       (m) => (m.payload as { text?: string }).text ?? "",
     );
-    expect(texts).toEqual(["<context_summary>gist</context_summary>", "resumed context"]);
+    expect(texts).toEqual(["[context_summary]gist[/context_summary]", "resumed context"]);
   });
 
   it("errors when the session does not exist", async () => {

@@ -55,6 +55,30 @@ export const zh = {
     } as Record<string, string>,
   },
 
+  /** Version footer, update reminder, and admin self-update in the sidebar user menu. */
+  update: {
+    /** Version-line date label (owner-specified wording); `date` is formatMonthDay output, e.g. 「最近更新日期 7 月 26 日」. */
+    lastUpdated: (date: string) => `最近更新日期 ${date}`,
+    /** Superscript badge on the version lines when the update check found a newer release (owner-specified wording). */
+    newVersionBadge: "有新版本可用",
+    newVersion: (v: string) => `新版本 v${v} 可用`,
+    /** Manual check action in the sidebar user menu (owner request), with its busy label and toast outcomes. */
+    checkNow: "检查更新",
+    checking: "检查中…",
+    upToDate: "已是最新版本",
+    checkFailed: "检查更新失败，请稍后重试",
+    checkDisabled: "更新检查已关闭（PENGUIN_UPDATE_CHECK=off）",
+    releaseNotes: "更新说明",
+    updateNow: "立即更新",
+    updating: "更新中…",
+    updated: "更新完成，重启服务后生效",
+    restartHint: "在终端重新运行 penguin web（或 penguin server）即可完成重启",
+    failed: "更新失败",
+    unsupported: "当前安装方式不支持在线更新",
+    confirmBody:
+      "将下载最新版本并安装到服务器上的安装目录（数据目录不受影响）。安装完成后需要重启服务才会生效。",
+  },
+
   common: {
     save: "保存",
     cancel: "取消",
@@ -181,12 +205,18 @@ export const zh = {
     placeholders: [
       ["{{AGENTS_MD}}", "注入 AGENTS.md 内容"],
       ["{{VAULT_KEYS}}", "注入密钥保险柜的键名小节（无键时为空）"],
+      ["{{SKILL_METADATA}}", "注入已安装 Skill 的元数据行（无 Skill 时为空）"],
       ["{{PLATFORM}}", "运行平台"],
       ["{{OS_VERSION}}", "操作系统版本"],
       ["{{DATE}}", "当前日期"],
-      ["{{CWD}}", "Workspace 绝对路径"],
+      [
+        "{{PROJECT_DIR}}",
+        "PenguinHarness 应用数据根目录（存放全部 Agent 数据与 Project 级数据；不是本次任务的工作目录）",
+      ],
       ["{{AGENT_ID}}", "当前 Agent id"],
-      ["{{PROJECT_DIR}}", "Project 目录绝对路径（Agent State/scratchpad 由此拼出）"],
+      ["{{CWD}}", "Workspace 绝对路径"],
+      ["{{PROVIDER}}", "模型 provider 分组"],
+      ["{{MODEL_ID}}", "上游模型 id"],
       ["{{SESSION_ID}}", "当前 Session id"],
     ] as ReadonlyArray<readonly [string, string]>,
     maxTurns: "max_turns（单 Task 最大轮次，-1 不限制）",
@@ -226,6 +256,9 @@ export const zh = {
     permissionReadWriteDescription: "可修改。审批模式为 read-only 时需人工确认。",
     toolTimeout: "timeoutMs",
     toolMaxOutput: "maxOutputLength",
+    toolCallDescription: "call_description",
+    callDescriptionHint:
+      "call_description：开启（缺省）时该工具的 schema 保留可选的 description 参数——模型为每次调用写一句说明，运行期间展示给用户；关闭则装配时从 schema 滤除该参数。仅参数中定义了 description 属性的工具可切换。",
     mcpServers: "MCP Server（只读）",
     defaultValue: "（缺省）",
     /** Reset link next to the runtime dropdowns: rewinds the local pick back to "not overridden" (the menus offer no inherit row). */
@@ -242,6 +275,13 @@ export const zh = {
     importDone: (v: number): string => `导入完成，Agent State 版本 v${v}`,
     importConflictTitle: "版本冲突",
     importConflictBody: "快照包版本不高于当前版本，导入将覆盖现有 Agent State。确认继续？",
+    resetConfigTitle: "还原为默认配置",
+    resetConfigDesc:
+      "把 system_config.yaml 还原为当前内置默认值（与 Skill 更新同语义）：自定义的系统提示词、工具列表、模型/压缩参数与 MCP Server 将被覆盖，仅保留名称、描述与版本号。",
+    resetConfigAction: "还原为默认配置",
+    resetConfigConfirmBody:
+      "此操作会用当前默认值覆盖该 Agent 的现有配置：自定义系统提示词、工具列表、模型/压缩参数与 MCP Server 全部被替换，仅保留名称与描述。与 Skill 更新一样不可撤销，确认继续？",
+    resetConfigDone: "配置已还原为当前默认值",
   },
 
   models: {
@@ -308,6 +348,8 @@ export const zh = {
     /** Shown only while the vision switch is OFF: images are then read via the configured vision proxy model (describe_image). */
     visionOffProxyHint: "使用视觉代理模型读图",
     visionBadge: "视觉",
+    /** Light-yellow badge on zero-cost models (all three price buckets 0, e.g. the :free variants and openrouter/free). */
+    freeBadge: "免费",
     visionModelBadge: "视觉代理",
     setVisionModel: "设为视觉代理模型",
     visionModelHint: "供不支持图片的模型经 describe_image 代读图片",
@@ -608,6 +650,25 @@ Benchmark：
     jumpToLatest: "回到最新消息",
     inputPlaceholder: "输入消息，Enter 发送，Shift+Enter 换行，可粘贴图片",
     inputPlaceholderShort: "输入消息…",
+    /** Placeholder while a Task is running (mid-run steering): the message is delivered between turns with the next request. */
+    steerPlaceholder: "给运行中的 Agent 留言，随下一轮对话送达",
+    steerPlaceholderShort: "给运行中的 Agent 留言…",
+    steerSend: "发送给运行中的 Agent",
+    /** Queued hint shown after a successful steer, until the steering message appears in the stream. */
+    steerQueuedIndicator: "插话已排队，将随下一轮送达",
+    /** Label of the [user_steering] chip (a mid-run user message delivered between turns). */
+    userSteering: "用户插话",
+    /** Mid-run send-mode setting: steer (delivered mid-run) vs follow-up (queued until the run ends). */
+    steerModeLabel: "运行中发送方式",
+    steerModeSteer: "插话",
+    steerModeSteerHint: "立即插话：随下一轮对话送达运行中的 Agent",
+    steerModeFollowUp: "排队",
+    steerModeFollowUpHint: "排队跟进：本轮结束后自动作为新消息发送",
+    followUpPlaceholder: "排队为下一条消息，本轮结束后自动发送",
+    followUpPlaceholderShort: "排队为下一条消息…",
+    followUpSend: "排队为下一条消息",
+    /** Server-side queued follow-up count (auto-sent once the current run finishes). */
+    followUpQueuedChip: (n: number) => `${n} 条跟进消息已排队，本轮结束后自动发送`,
     send: "发送",
     stop: "停止",
     compact: "压缩上下文",
@@ -621,20 +682,43 @@ Benchmark：
     subagent: "子会话",
     subagentRunning: "运行中",
     aborted: (reason?: string) => `[已中断]${reason ? `：${reason}` : ""}`,
+    /** Auth-dead notice (request_end status "auth"): action-only copy — updating the key on the Models page auto-unlocks this Session. */
+    modelAuthDead: "模型 API 认证失败：请在模型配置页更新该模型的 API key，或新建会话。",
+    modelAuthDeadOpenModels: "打开模型配置",
+    modelAuthDeadRetry: "重试",
+    modelAuthDeadCta: "新建会话",
+    modelAuthDeadPlaceholder: "模型认证失败，请先更新 API key",
+    /**
+     * Reconnect hint line; `secondsLeft` (waiting state only) switches to the live-countdown
+     * wording. `failed` is in the union because the engine retries it like the other two —
+     * its cause names the provider rather than the transport, since that is where it came from.
+     */
     reconnect: (
-      status: "timeout" | "malformed",
+      status: "failed" | "timeout" | "malformed",
       state: "waiting" | "retried" | "gaveUp",
       attempt: number,
+      secondsLeft?: number,
     ) => {
-      const cause = status === "timeout" ? "连接超时或网络中断" : "响应不完整或无法解析";
+      const cause =
+        status === "timeout"
+          ? "连接超时或网络中断"
+          : status === "malformed"
+            ? "响应不完整或无法解析"
+            : "模型服务返回错误";
       const action =
         state === "gaveUp"
           ? "已停止重试"
           : state === "retried"
             ? `已发起第 ${attempt} 次重试`
-            : `正在发起第 ${attempt} 次重试…`;
+            : secondsLeft !== undefined
+              ? `第 ${attempt} 次重试，${secondsLeft} 秒后发起…`
+              : `正在发起第 ${attempt} 次重试…`;
       return `[重试] ${cause}，${action}`;
     },
+    /** "Retry now" on the reconnect countdown (skips the remaining backoff wait). */
+    reconnectRetryNow: "立即重试",
+    /** "Give up" on the reconnect countdown (the ordinary session abort). */
+    reconnectGiveUp: "放弃",
     imageAlt: "用户上传的图片",
     toolImageAlt: "工具输出的图片",
     imagesAsPathHint:
@@ -656,6 +740,7 @@ Benchmark：
     statsLabel: "统计信息",
     removeImage: "移除图片",
     openWorkspace: "打开工作区",
+    openAgents: "智能体面板",
     /** File summary card at the end of a message (Codex-style): title, inline preview action, and collapsed row. */
     filesInMessage: (n: number) => `${n} 个文件`,
     openPreview: "点击预览",
@@ -672,10 +757,17 @@ Benchmark：
     skillsSearchPlaceholder: "搜索技能",
     skillsNoMatch: "没有匹配的技能",
     skillsEmptyHint: "暂无已装技能，去技能库添加",
-    /** Auto-generated invocation text when skills are selected and the body is empty (wrapped in <use_skills> before sending). */
+    /** Auto-generated invocation text when skills are selected and the body is empty (wrapped in [use_skills] before sending). */
     skillsAutoMessage: (names: string[]): string => `使用 ${names.join("、")} 技能`,
     handoffFrom: (agent: string) => `由 ${agent} 的对话交接而来`,
     handoffBack: (title?: string) => (title ? `回到原对话：${title}` : "回到原对话"),
+    /** /model 切换：命令描述、拾取器标题、切换来源横幅与空正文自动消息。 */
+    switchModel: "切换模型开启新会话延续本对话",
+    switchModelTitle: "切换模型",
+    modelSwitchFrom: (prevModel?: string) =>
+      prevModel ? `已切换模型（原为 ${prevModel}），延续原会话` : "已切换模型，延续原会话",
+    /** /model 切换且正文为空时自动发送的首条消息正文（与 skillsAutoMessage 同一约定）。 */
+    modelSwitchAutoMessage: "换用新模型继续这段对话",
     scheduledFrom: (name: string) => `由定时任务「${name}」触发`,
     emptyGreeting: "开始一段新对话",
     compactionRunning: (mode: string) => `压缩进行中（${mode}）…`,
@@ -707,6 +799,39 @@ Benchmark：
       archived: (n: number) => `已归档（${n}）`,
     },
     skillsBanner: (names: string[]): string => `使用技能：${names.join("、")}`,
+    /** Composer "+" extension menu (currently only goal mode; more entries later) and the goal chip. */
+    plusMenu: "更多输入方式",
+    uploadImage: "上传图片",
+    uploadImageDesc: "为本条消息附加图片",
+    goalMode: "目标模式",
+    goalModeDesc: "循环运行直至目标完成",
+    goalBudgetLabel: "Token 预算",
+    goalBudgetUnlimited: "预算不限",
+    goalBudgetValue: (value: string): string => `预算 ${value}`,
+    goalBudgetPlaceholder: "例如 500k",
+    goalBudgetHint: "支持 k/m 后缀；留空表示预算不限",
+    goalBudgetInvalid: "无效预算：应为正数，可带 k/m 后缀（500k、2m）",
+    goalBudgetSave: "保存预算",
+    goalRemove: "退出目标模式",
+    goalRoundBanner: (round: number): string => `目标 · 第 ${round} 轮`,
+    goalProgress: (rounds: number, tokens: string): string => `第 ${rounds} 轮 · tokens ${tokens}`,
+    goalStatus: {
+      active: "进行中",
+      complete: "已完成",
+      blocked: "受阻",
+      budget_limited: "预算耗尽",
+      aborted: "已中断",
+    } as Record<string, string>,
+  },
+
+  /** Subagents side panel: call-graph of the latest Task + the selected child conversation. */
+  subagentPanel: {
+    title: "智能体面板",
+    topologyLabel: "调用关系",
+    mainSessionNote: "主会话请在对话区查看",
+    empty: "本次任务尚未派生子智能体",
+    nodeRunning: "运行中",
+    nodeDone: "已完成",
   },
 
   files: {
@@ -764,6 +889,11 @@ Benchmark：
     errorsColKind: "类型",
     errorsColMessage: "消息",
     errorsEmpty: "暂无异常",
+    /** Detail-table pager: newer/older step back through pages of the same filtered set. */
+    errorsNewer: "较新",
+    errorsOlder: "更早",
+    errorsPageOf: (page: number, pages: number, total: number) =>
+      `第 ${page} / ${pages} 页 · 共 ${total} 条`,
   },
 
   traces: {
@@ -799,6 +929,11 @@ Benchmark：
     inProgress: "进行中",
     systemPrompt: "系统提示词",
     toolDefs: (n: number) => `工具定义（${n}）`,
+    exportFile: "导出",
+    importTrace: "导入 Trace",
+    importing: "导入中…",
+    /** Client-side pre-check before reading the picked file (same cap as the server's import route). */
+    fileTooLarge: "文件超过 14MB 上限。",
   },
 
   benchmark: {
@@ -860,6 +995,8 @@ Benchmark：
       task_in_progress: "该 Session 已有任务在运行。",
       version_conflict: "快照版本不高于当前版本。",
       invalid_title: "标题无效。",
+      invalid_trace: "该文件不是有效的 Trace 文件。",
+      trace_session_exists: "该 Agent 已存在同名 Session，无法导入重复的 Trace。",
     },
   },
 };

@@ -12,11 +12,16 @@
  *          (observability/Token).
  *   3. Interruption/error handling: `finishInterrupted` first closes any open
  *      streaming segments and backfills the complete message, then the output ends — never
- *      leaking a malformed structure. This interface **never retries internally** — retryable
- *      errors (network/timeout/429/5xx, see `isRetryableError`) end with `timeout`; AgentHub
- *      JSON parse errors end with `malformed`; both are handed to `context_engine` to reconnect
- *      within the same run. User interruption ends with `aborted`; non-retryable errors
- *      (auth/parameters) end with `failed`.
+ *      leaking a malformed structure. This interface **never retries internally** — it only
+ *      classifies, and `context_engine` owns the retry policy: errors recognised as retryable
+ *      (network/transport drops, timeouts, 429/5xx, provider quota exhaustion, see
+ *      `isRetryableError`) end with `timeout`; AgentHub JSON parse errors end with `malformed`;
+ *      everything else the classifier does not recognise ends with `failed` — which the engine
+ *      reconnects on all the same, because this classifier is an allowlist and a gateway
+ *      wording a transient fault its own way falls through it. User interruption ends with
+ *      `aborted`; credentials failures end with their own terminal status `auth` (see
+ *      `isAuthenticationError`) — the one status the engine refuses to retry, and the one
+ *      hosts key on to gate input.
  *
  * `context_engine` only consumes OmniMessage; all Uni* protocol details are encapsulated here.
  * Docs: /docs/interfaces § "The built-in implementation: GenerativeModel".
@@ -651,7 +656,7 @@ export class EventTranslator {
   }
 
   /**
-   * Converts an AgentHub finish_reason into an OmniMessage stop_reason (the five-value protocol).
+   * Converts an AgentHub finish_reason into an OmniMessage stop_reason (the six-value protocol).
    * "stop", "tool_call", and null are treated as completed; length or unknown reasons map to failed.
    */
   private omniStopReason(): StopReason {
@@ -795,10 +800,137 @@ export function isIncompleteStreamError(error: unknown): boolean {
 }
 
 /**
+ * Retryable network/transport error codes: the classic Node socket codes plus undici's
+ * transport failures (`UND_ERR_*`). Node's `fetch` surfaces a dropped connection as
+ * `TypeError: terminated` whose `cause` carries the real code (e.g. "other side closed"
+ * with `code: "UND_ERR_SOCKET"`) — a transport disconnect, not a provider verdict, so it
+ * reconnects like any network drop.
+ */
+const RETRYABLE_NETWORK_CODES: ReadonlySet<string> = new Set([
+  "ECONNRESET",
+  "ECONNREFUSED",
+  "ETIMEDOUT",
+  "EPIPE",
+  "EAI_AGAIN",
+  "ENOTFOUND",
+  "ECONNABORTED",
+  // undici (Node fetch) transport failures
+  "UND_ERR_SOCKET",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_HEADERS_TIMEOUT",
+  "UND_ERR_BODY_TIMEOUT",
+]);
+
+/** Provider "quota / subscription exhausted" error codes (OpenAI-compatible bodies). */
+const QUOTA_CODES: ReadonlySet<string> = new Set(["insufficient_user_quota", "insufficient_quota"]);
+
+/** Credentials/authentication error codes and types (OpenAI-compatible bodies / SDK errors). */
+const AUTH_CODES: ReadonlySet<string> = new Set([
+  "invalid_api_key",
+  "authentication_error",
+  "unauthorized",
+]);
+
+/**
+ * Walks the error's `cause` chain (cycle-safe, same approach as `describeError`) applying
+ * `probe` to each level; true as soon as one level matches. Higher layers routinely wrap the
+ * real failure (Node fetch puts the transport error on `cause`), so single-level checks miss it.
+ */
+function anyInCauseChain(error: unknown, probe: (level: object) => boolean): boolean {
+  const seen = new Set<unknown>();
+  let cur: unknown = error;
+  while (cur != null && typeof cur === "object" && !seen.has(cur)) {
+    seen.add(cur);
+    if (probe(cur)) return true;
+    cur = (cur as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
+/**
+ * Provider error-code signals at one level of an error: `code` on the error itself (the
+ * OpenAI SDK exposes the parsed body's code directly), plus the parsed body under `error` —
+ * both the OpenAI shape (`err.error.code`) and the Anthropic SDK shape, whose `error`
+ * property holds the whole response body (`err.error.error.code`). With `includeType`, the
+ * matching `type` fields are collected too (auth signals ride on `type` in some bodies).
+ */
+function providerSignals(level: object, includeType: boolean): string[] {
+  const err = level as {
+    code?: unknown;
+    type?: unknown;
+    error?: { code?: unknown; type?: unknown; error?: { code?: unknown; type?: unknown } };
+  };
+  const body = typeof err.error === "object" && err.error !== null ? err.error : undefined;
+  const inner = typeof body?.error === "object" && body.error !== null ? body.error : undefined;
+  const signals = [err.code, body?.code, inner?.code];
+  if (includeType) signals.push(err.type, body?.type, inner?.type);
+  return signals.filter((v): v is string => typeof v === "string");
+}
+
+/**
+ * Determines whether an error is the provider's "quota / subscription exhausted" rejection
+ * (e.g. a gateway 403 whose body carries `insufficient_user_quota`). Topping up or the
+ * billing cycle rolling over fixes it without touching the Session, so it is transient and
+ * goes through the engine's reconnect flow like a network problem. Deliberately tight:
+ * only a payment/permission status (402/403 — or no status at all) combined with a known
+ * quota code (own, `cause` chain, or parsed provider body), or a 403 whose message names
+ * quota/subscription; a plain 403 (permission denied) stays non-retryable.
+ */
+export function isQuotaExhaustedError(error: unknown): boolean {
+  if (error == null || typeof error !== "object") return false;
+  // Belt to the auth-first ordering in isRetryableError: an error carrying a definitive
+  // auth signal is never quota, no matter what its message says — a 403 whose body codes
+  // `invalid_api_key` but whose message mentions a subscription must not classify as
+  // retryable-quota and burn through the reconnect ladder against a dead credential.
+  if (isAuthenticationError(error)) return false;
+  const err = error as { status?: number; statusCode?: number; message?: unknown };
+  const status = err.status ?? err.statusCode;
+  // Any other status keeps its own classification (401 auth, 429 rate limit, …).
+  if (typeof status === "number" && status !== 402 && status !== 403) return false;
+  if (
+    anyInCauseChain(error, (level) => providerSignals(level, false).some((c) => QUOTA_CODES.has(c)))
+  ) {
+    return true;
+  }
+  // 额度 covers Chinese-language gateway messages such as 订阅额度不足 ("subscription quota
+  // exhausted") that carry no machine-readable code.
+  return (
+    status === 403 &&
+    typeof err.message === "string" &&
+    /quota|subscription|额度/i.test(err.message)
+  );
+}
+
+/**
+ * Determines whether an error is a credentials/authentication failure — the one class an
+ * in-run retry can never fix: the request keeps going out with the same dead credential.
+ * Only the model REFERENCE is fixed at Session creation; the credential is read from the
+ * current Project config whenever the Session loads, so the fix is updating that model's
+ * API key (Models page) — after which the Session can continue — not retrying. Signals:
+ * HTTP 401 (any), a known auth code/type (on the error, its `cause` chain, or the parsed
+ * provider body), or the SDK error class name `AuthenticationError` (OpenAI / Anthropic
+ * SDKs). A bare 403 carries no such signal and stays a plain failure (usually
+ * permission/policy, not credentials).
+ */
+export function isAuthenticationError(error: unknown): boolean {
+  return anyInCauseChain(error, (level) => {
+    const err = level as { status?: unknown; statusCode?: unknown; name?: unknown };
+    if (err.status === 401 || err.statusCode === 401) return true;
+    if (providerSignals(level, true).some((c) => AUTH_CODES.has(c))) return true;
+    const name = typeof err.name === "string" ? err.name : "";
+    return name === "AuthenticationError" || level.constructor?.name === "AuthenticationError";
+  });
+}
+
+/**
  * Determines whether an error is retryable.
  *
- * Retryable: network errors, timeouts, connection reset, HTTP 429 / 5xx.
- * Not retryable: HTTP 4xx auth/parameter errors (401/403/400/404, etc.).
+ * Retryable: network/transport errors (including undici's `UND_ERR_*` on the `cause` chain),
+ * timeouts, connection reset, HTTP 429 / 5xx, and provider quota/subscription exhaustion
+ * (see `isQuotaExhaustedError`).
+ * Not retryable: authentication errors (checked FIRST — a definitive credential signal is
+ * never reclassified by the heuristics below, see `isAuthenticationError`) and other HTTP
+ * 4xx auth/parameter errors (401/403/400/404, etc.).
  * JSON parse errors are classified separately as `malformed` by `isMalformedJsonParseError`.
  *
  * Since AgentHub doesn't guarantee the shape of error objects, this uses a lenient check: first
@@ -808,10 +940,15 @@ export function isIncompleteStreamError(error: unknown): boolean {
 export function isRetryableError(error: unknown): boolean {
   if (error == null) return false;
 
+  // 0. Authentication is definitive and terminal: retrying a dead credential can never
+  //    succeed, and no heuristic below (quota keywords, message vocabulary) may reclassify
+  //    it — this ordering is the only thing keeping a dead credential out of the retry
+  //    ladder now that quota errors are deliberately retryable.
+  if (isAuthenticationError(error)) return false;
+
   const err = error as {
     status?: number;
     statusCode?: number;
-    code?: string;
     name?: string;
     message?: string;
   };
@@ -821,29 +958,41 @@ export function isRetryableError(error: unknown): boolean {
   if (typeof status === "number") {
     if (status === 429 || status === 408) return true; // Rate limited / request timeout (transient)
     if (status >= 500 && status <= 599) return true; // Server error
+    // Provider quota/subscription exhaustion (402/403 + explicit signals): transient —
+    // checked before the blanket 4xx rule below would discard it.
+    if (isQuotaExhaustedError(error)) return true;
     if (status >= 400 && status <= 499) return false; // Other 4xx auth/parameter errors, not retryable
   }
 
-  // 2. Network-layer error codes.
-  const retryableCodes = new Set([
-    "ECONNRESET",
-    "ECONNREFUSED",
-    "ETIMEDOUT",
-    "EPIPE",
-    "EAI_AGAIN",
-    "ENOTFOUND",
-    "ECONNABORTED",
-  ]);
-  if (err.code && retryableCodes.has(err.code)) return true;
+  // 2. Network/transport error codes, probing the `cause` chain (Node fetch wraps the real
+  //    transport failure as `TypeError: terminated` with the code on `cause`, see describeError).
+  if (
+    anyInCauseChain(error, (level) => {
+      const code = (level as { code?: unknown }).code;
+      return typeof code === "string" && RETRYABLE_NETWORK_CODES.has(code);
+    })
+  ) {
+    return true;
+  }
 
-  // 3. Error name / message keywords (timeout, network, rate limit).
+  // 2b. Status-less quota signals (some gateways surface only the provider code).
+  if (isQuotaExhaustedError(error)) return true;
+
+  // 3. Error name / message keywords (timeout, network, rate limit, undici disconnects).
   if (err.name === "AbortError") return false; // User interruption, not retryable
   const text = `${err.name ?? ""} ${err.message ?? ""}`.toLowerCase();
   if (
-    /timeout|timed out|network|socket hang up|econnreset|connection reset|too many requests|rate limit|temporarily unavailable|503|502|504/.test(
+    /timeout|timed out|network|socket hang up|econnreset|connection reset|other side closed|fetch failed|too many requests|rate limit|temporarily unavailable|503|502|504/.test(
       text,
     )
   ) {
+    return true;
+  }
+  // `terminated` alone is ambiguous — providers use the word in verdict copy too ("Request
+  // terminated by content filter"), which must NOT retry — so it only counts alongside
+  // transport vocabulary. The real socket case is already caught by the cause-chain
+  // `UND_ERR_*` codes in step 2; this is a last-resort fallback for cause-less wrappers.
+  if (/terminated/.test(text) && /socket|connection|closed/.test(text)) {
     return true;
   }
 
@@ -863,6 +1012,13 @@ export function isRetryableError(error: unknown): boolean {
 export class GenerativeModel implements LLMInterface {
   private readonly client: AutoLLMClient;
   private readonly uniConfig: UniConfig;
+  /**
+   * Construction-time default thinking level. Kept **out of the frozen uniConfig**: the
+   * effective level is resolved per request (`params.thinkingLevel ?? default`), so a turn can
+   * override it without rebuilding the model object — the thinking level is a per-turn
+   * parameter, not a Session invariant.
+   */
+  private readonly defaultThinkingLevel: ThinkingLevelName | undefined;
   /** Streaming idle timeout (milliseconds); <= 0 disables it. A timeout is treated as needing reconnection. */
   private readonly requestTimeoutMs: number;
   /**
@@ -889,8 +1045,21 @@ export class GenerativeModel implements LLMInterface {
     });
 
     this.uniConfig = buildUniConfig(config);
+    this.defaultThinkingLevel = config.thinkingLevel;
     this.requestTimeoutMs = config.requestTimeoutMs ?? 120000;
     this.toolCallIds = config.toolCallIds ?? new ToolCallIdAllocator();
+  }
+
+  /**
+   * The UniConfig for one request: the shared frozen config plus this request's effective
+   * thinking level (per-request override, else the construction-time default; neither → the
+   * key stays off the wire, preserving the provider default).
+   */
+  private requestConfig(override: ThinkingLevelName | undefined): UniConfig {
+    const thinking = mapThinkingLevel(override ?? this.defaultThinkingLevel);
+    return thinking === undefined
+      ? this.uniConfig
+      : { ...this.uniConfig, thinking_level: thinking };
   }
 
   /**
@@ -903,16 +1072,21 @@ export class GenerativeModel implements LLMInterface {
    * and the terminal state is then returned as `LLMOutcome`:
    *   - **Normal completion**: `finish()` closes out and produces `token_usage` (usage is only
    *     produced in this case) → `completed`;
-   *   - **Idle timeout / network drop** (retryable errors like network/429/5xx):
-   *     `finishInterrupted("timeout")` closes out, produces no usage → `timeout`, reconnected by
+   *   - **Idle timeout / network drop** (retryable errors like network/429/5xx/quota):
+   *     `finishInterrupted("timeout")` closes out, produces no usage → `timeout` (carrying
+   *     the error detail as `message` when a concrete error was caught), reconnected by
    *     `context_engine` within the same run;
    *   - **AgentHub JSON parse error**: `finishInterrupted("malformed")` closes out, produces no
    *     usage → `malformed`, likewise reconnected by `context_engine` within the same run;
    *   - **User interruption**: `finishInterrupted("aborted")` closes out, produces no usage →
    *     `aborted`;
-   *   - **Other non-retryable errors** (auth/parameters etc.): `finishInterrupted("failed")`
-   *     closes out, produces no usage → `failed` (carrying `message`), handed to
-   *     `context_engine` to stop and return control to the user.
+   *   - **Credentials failure**: `finishInterrupted("auth")` closes out, produces no usage →
+   *     `auth` (carrying `message`) — the one status the engine stops the run on, and the one
+   *     hosts key on to gate input until the model's API key is updated;
+   *   - **Every other error** (parameters etc., and input that never assembled into a
+   *     request): `finishInterrupted("failed")` closes out, produces no usage → `failed`
+   *     (carrying `message`), which `context_engine` reconnects on as well — the
+   *     classification stays honest, the retry decision is the engine's.
    *
    * Timeout detection: the idle timer resets on every event received; once idle exceeds
    * `requestTimeoutMs`, the underlying stream is aborted and handled as needing reconnection
@@ -933,10 +1107,7 @@ export class GenerativeModel implements LLMInterface {
     try {
       uniMessage = mergeOmniToUniMessage(params.newMessages);
     } catch (err) {
-      return {
-        status: "failed",
-        message: describeError(err),
-      };
+      return { status: "failed", message: describeError(err) };
     }
 
     const translator = new EventTranslator(this.toolCallIds);
@@ -963,11 +1134,33 @@ export class GenerativeModel implements LLMInterface {
       }, this.requestTimeoutMs);
     };
 
+    /**
+     * Settles as soon as the run must stop, whatever upstream is doing: the user aborted, or
+     * the idle timer fired (both go through `ac`). `it.next()` is raced against this because
+     * an upstream that does not honour its AbortSignal leaves that promise pending **forever**
+     * — and once `ac` is aborted the idle timer's own `ac.abort()` is a no-op, so nothing is
+     * left to unwedge the loop. Observed against Kimi: pressing Stop mid-request left the
+     * Session running with no way to send, compact or interrupt it again, short of a restart.
+     *
+     * The pre-loop `userSignal?.aborted` check below covers the *other* half of this (aborting
+     * while suspended at a `yield`); it cannot help here, since the loop never gets back to it.
+     */
+    const STOPPED = Symbol("stopped");
+    const stopped: Promise<typeof STOPPED> = new Promise((resolve) => {
+      if (ac.signal.aborted) {
+        resolve(STOPPED);
+        return;
+      }
+      ac.signal.addEventListener("abort", () => resolve(STOPPED), { once: true });
+    });
+
     // Terminal-state classification: timeout (timed out/network drop) / malformed (response
     // parse error) / aborted (user) / failed (other). null means it ended normally.
     let outcome: LLMOutcome | null = null;
     try {
-      const it = this.openStream(uniMessage, ac.signal)[Symbol.asyncIterator]();
+      const it = this.openStream(uniMessage, ac.signal, this.requestConfig(params.thinkingLevel))[
+        Symbol.asyncIterator
+      ]();
       for (;;) {
         // The interruption check must happen **before pulling from upstream**: the user may
         // interrupt while this generator is suspended at the `yield` below (the typical case —
@@ -987,11 +1180,19 @@ export class GenerativeModel implements LLMInterface {
         // time), measuring upstream idleness — this avoids a slow consumer (e.g. a slow Trace
         // sink) falsely triggering the timeout.
         armTimer();
-        let res: IteratorResult<UniEvent>;
+        let res: IteratorResult<UniEvent> | typeof STOPPED;
         try {
-          res = await it.next();
+          res = await Promise.race([it.next(), stopped]);
         } finally {
           clearTimer();
+        }
+        if (res === STOPPED) {
+          // Upstream never settled after the abort. Abandon it rather than await it: ask it to
+          // close (best effort — a stream that ignored the signal may ignore this too, so the
+          // rejection is swallowed and the promise is not awaited) and classify by trigger.
+          void Promise.resolve(it.return?.(undefined)).catch(() => undefined);
+          outcome = userSignal?.aborted ? { status: "aborted" } : { status: "timeout" };
+          break;
         }
         if (res.done) break;
         if (userSignal?.aborted) {
@@ -1015,15 +1216,23 @@ export class GenerativeModel implements LLMInterface {
           status: "malformed",
           message: describeError(error),
         };
+      } else if (isAuthenticationError(error)) {
+        // Credentials failure: its own terminal status so hosts can tell "update this
+        // model's API key, then this Session can continue" (only the model reference is
+        // fixed at Session creation; the credential is read from the current Project
+        // config on load) apart from a one-off failure. Checked before the retryable
+        // branch as a belt — isRetryableError itself already refuses auth signals.
+        outcome = { status: "auth", message: describeError(error) };
       } else if (isRetryableError(error)) {
-        outcome = { status: "timeout" }; // Network drop/network error -> needs reconnection
+        // Network drop / transient provider rejection -> needs reconnection. The detail
+        // (e.g. "403 … (insufficient_user_quota)") rides on the outcome so observability
+        // (request_end -> the Cost center's errors panel) shows the real reason behind a
+        // retried request, not just "timeout".
+        outcome = { status: "timeout", message: describeError(error) };
       } else if ((error as { name?: string })?.name === "AbortError") {
         outcome = { status: "aborted" }; // Fallback: an unexpected abort (neither timeout nor user)
       } else {
-        outcome = {
-          status: "failed",
-          message: describeError(error),
-        };
+        outcome = { status: "failed", message: describeError(error) };
       }
     } finally {
       clearTimer();
@@ -1087,12 +1296,17 @@ export class GenerativeModel implements LLMInterface {
    * Opens the underlying AgentHub stream (a testing seam): defaults to
    * `streamingResponseStateful`; unit tests can subclass and override this method, feeding in a
    * controlled UniEvent stream to verify the outcome classification for timeout/network
-   * drop/interruption/error (without a real API).
+   * drop/interruption/error (without a real API). `config` is this request's resolved
+   * UniConfig (the shared frozen config plus the per-request thinking level).
    */
-  protected openStream(uniMessage: UniMessage, signal: AbortSignal): AsyncIterable<UniEvent> {
+  protected openStream(
+    uniMessage: UniMessage,
+    signal: AbortSignal,
+    config: UniConfig = this.uniConfig,
+  ): AsyncIterable<UniEvent> {
     return this.client.streamingResponseStateful({
       message: uniMessage,
-      config: this.uniConfig,
+      config,
       signal,
     });
   }
@@ -1133,6 +1347,10 @@ export function toolDefinitionsToSchemas(tools: ToolDefinition[]): ToolSchema[] 
  * protocol equivalent. `tool_choice` is likewise never set — AgentHub only puts it on the wire
  * when UniConfig defines it, and leaving it off preserves the protocol default ("auto" when
  * tools are present).
+ *
+ * `thinkingLevel` is deliberately **not** baked in here: the effective level is resolved per
+ * request (`GenerativeModelParameters.thinkingLevel ?? the construction default`, see
+ * `GenerativeModel.requestConfig`), so a turn can override it on a live session.
  */
 export function buildUniConfig(config: GenerativeModelConfig): UniConfig {
   const uniConfig: UniConfig = {};
@@ -1147,10 +1365,6 @@ export function buildUniConfig(config: GenerativeModelConfig): UniConfig {
   // negative max_tokens with a 400 (issue #55's sibling).
   if (config.maxTokens !== undefined && config.maxTokens > 0) {
     uniConfig.max_tokens = config.maxTokens;
-  }
-  const thinking = mapThinkingLevel(config.thinkingLevel);
-  if (thinking !== undefined) {
-    uniConfig.thinking_level = thinking;
   }
   return uniConfig;
 }

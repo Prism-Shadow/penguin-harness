@@ -5,7 +5,7 @@ description: 极简内置工具集的设计与执行契约、Environment 统一�
 
 ## 设计取向
 
-PenguinHarness 刻意维持一个极小的内置工具集：Shell 是通用接口，文件的读取、写入、编辑全部经由 `exec_command` 完成，不设专门的文件工具。工具越少，注入的 schema 越少，Token 开销越小，模型误调用的概率也越低。
+PenguinHarness 刻意维持一个极小的内置工具集：文件的精确读取与编辑交给专门的文件工具（`read_file` / `edit_file` / `write_file`）——带行号的输出与精确字符串替换比拼 `sed` 命令更可靠；Shell（`exec_command`）仍是通用兜底接口，负责运行程序、搜索、装依赖等其余一切。保留下来的每个工具都对得起它占用的 schema Token。
 
 ## 执行契约
 
@@ -58,19 +58,29 @@ interface ToolResult {
 | `forModel` | `"vision"` / `"text-only"`：按 Session 模型类别装配；缺省对所有模型可用 |
 | `timeoutMs` | 单次调用超时(ms)，默认 120000;`<=0` 关闭 |
 | `maxOutputLength` | 输出长度上限(字符);`<=0` 关闭 |
+| `call_description` | 条目级开关：控制 `parameters` 中声明的 `description` 调用参数（开启时为必填）；缺省保留，`false` 时装配阶段将其连同 `required` 项从 schema 滤除 |
 
 ## 内置工具
 
-共 6 个内置工具(装配入口 `packages/core/src/environment/tools/registry.ts`):
+共 9 个内置工具(装配入口 `packages/core/src/environment/tools/registry.ts`):
 
 | 工具 | 权限 | 超时(ms) | 用途 |
 | --- | --- | --- | --- |
 | `exec_command` | rw | 120000 | 在 Workspace 内以 `bash -lc` 运行命令，流式返回 stdout/stderr |
 | `input_command` | rw | 130000 | 按 `process_id` 驱动运行中的命令：写 stdin、发 Ctrl-C、轮询输出 |
+| `read_file` | r | 30000 | 按 `cat -n` 风格带行号读取文本文件，以 offset/limit 分页 |
+| `edit_file` | rw | 30000 | 对既有文件做精确字符串替换，回显校验片段 |
+| `write_file` | rw | 30000 | 新建或整体覆写文件，按需创建父目录 |
 | `run_subagent` | rw | 600000 | 把自包含子任务委派给同 Workspace 的子 Agent |
 | `input_subagent` | rw | 600000 | 轮询后台 Subagent，或在其空闲时追加后续 Prompt |
 | `read_image` | r | 60000 | 读取图片并作为图像内容返回(vision 模型) |
 | `describe_image` | r | 90000 | 由 `vision_model` 代读图片并返回文字回答(text-only 模型) |
+
+注意：既有 Agent 已落盘的 `tools.builtin` 列表按原样冻结（设置页只能编辑行、不能增行）：本工具集之前创建的 Agent 不会自动获得文件工具——需手工编辑该 Agent 的 `system_config.yaml`，把新条目补进去（可从 `packages/core/src/state/default-config.ts` 的默认定义复制）。
+
+### 调用描述
+
+命令 / Subagent 类工具（`exec_command`、`input_command`、`run_subagent`、`input_subagent`）带 `description` 参数：由模型写一句"本次调用在做什么"，CLI 与 Web 在调用运行期间展示给用户。该参数作为普通的 `description` 属性直接写在各条目的 `parameters` 中（工具 schema 完全存于可编辑配置），并且是**必填**的——提供该参数的工具每次调用都会带上它，前端据 schema 即可确定这次调用的展示形态，无需在参数流式过程中猜测；同时要求模型最先输出它。整个参数由条目级 `call_description` 字段控制——缺省保留，写 `call_description: false` 时装配阶段将该属性连同其 `required` 项一起从 schema 中滤除（仅内存内，不改写 YAML）。文件工具不带此参数——其 `file_path` 参数本身已说明用途。
 
 ### 命令会话
 
@@ -93,6 +103,7 @@ exec_command(cmd)
   cmd: string;             // 必填:要执行的 shell 命令
   workdir?: string;        // 工作目录;缺省为 Workspace 根,相对路径按其解析
   yield_time_ms?: number;  // 前台等待时长;默认 60000,最小 250,上限受工具超时约束
+  description: string;     // 开关开启时必填:一句话说明,最先输出,调用运行期间展示给用户
 }
 
 // input_command
@@ -100,6 +111,41 @@ exec_command(cmd)
   process_id: string;      // 必填:exec_command 返回的命令会话 id
   chars?: string;          // 写入 stdin 的字符;单独发送 "\u0003" 传递 Ctrl-C;缺省仅轮询
   yield_time_ms?: number;  // 等待时长;有写入默认 250,空轮询默认 5000
+  description: string;     // 开关开启时必填
+}
+```
+
+POSIX 上 Ctrl-C 向会话进程组发送 `SIGINT`，中断前台命令。Windows 无法向管道子进程投递控制台信号，Ctrl-C 因此退化为整棵命令会话进程树的强杀（`taskkill /t /f`）——前台命令及其启动的所有子进程一并终止，而不是仅中断前台命令。
+
+### 文件工具
+
+`read_file` / `edit_file` / `write_file` 与 Shell 工具一样以用户完整权限运行：相对路径按 Workspace 解析，也接受绝对路径。三者均为非流式（一次性输出最终结果），从不抛异常——失败以解释性文本收尾，`stop_reason` 为 `failed`。
+
+```ts
+// read_file — cat -n 风格输出(行号、制表符、内容);超长单行会被截断,
+// 含 NUL 字节的二进制内容被拒绝并提示改用 Shell / 图像工具。
+{
+  file_path: string;       // 必填:绝对路径,或相对 Workspace 的路径
+  offset?: number;         // 起始行号(1 起);默认 1
+  limit?: number;          // 最多返回的行数;默认 2000——未读完时尾部注记提示续读
+}
+
+// edit_file — 文件必须已存在;old_string 必须恰好出现一次(或设 replace_all);
+// 成功时回显 "Replaced N occurrence(s)" 及改动区域的 git 风格 unified diff
+// (每个替换点一个 hunk,相邻替换点合并;replace_all 大量命中时截断为少量 hunk
+// 并附 "…and N more replacements" 注记)。
+{
+  file_path: string;       // 必填
+  old_string: string;      // 必填:要替换的原文,须与文件内容(含空白/缩进)完全一致
+  new_string: string;      // 必填:替换文本,须与 old_string 不同
+  replace_all?: boolean;   // 替换全部出现处;默认 false
+}
+
+// write_file — 按需创建父目录;报告 "Created" 或 "Overwrote" 及行数/字节数。
+// 覆写时还会附上与旧内容的小型 unified diff;改动过大时改为一行 +X/−Y 摘要。
+{
+  file_path: string;       // 必填
+  content: string;         // 必填:完整文件内容;空字符串创建空文件
 }
 ```
 
@@ -114,6 +160,7 @@ exec_command(cmd)
   agent_id?: string;       // 子 Agent;缺省复用当前 Agent
   model_id?: string;       // 子 Session 模型;缺省继承父 Session 的模型
   yield_time_ms?: number;  // 前台等待时长;默认 300000
+  description: string;     // 开关开启时必填
 }
 
 // input_subagent
@@ -121,6 +168,7 @@ exec_command(cmd)
   subagent_id: string;     // 必填:run_subagent 返回的后台 Subagent id
   prompt?: string;         // 追加任务,仅在子 Session 空闲时接受;缺省仅轮询
   yield_time_ms?: number;  // 等待时长;有追加默认 300000,空轮询默认 10000
+  description: string;     // 开关开启时必填
 }
 ```
 
@@ -180,6 +228,9 @@ tools:
     - name: exec_command
       description: Run a shell command in the workspace.
       permission: rw
+      # 可选的条目级开关:false 时从 schema 滤除 parameters.properties 里声明的
+      # description 调用参数(缺省保留)。
+      call_description: false
       timeoutMs: 120000
       maxOutputLength: 16000
       # parameters: 必须携带完整 JSON Schema(默认定义见

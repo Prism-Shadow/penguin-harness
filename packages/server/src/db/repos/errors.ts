@@ -194,15 +194,15 @@ export class ErrorsRepo {
   }
 
   /** The most recent `limit` entries (reverse chronological order). */
-  recent(projectId: string, f: ErrorFilter = {}, limit = 20): ErrorItem[] {
+  recent(projectId: string, f: ErrorFilter = {}, limit = 20, offset = 0): ErrorItem[] {
     const { where, params } = this.conds(projectId, f);
     const rows = this.db
       .prepare(
         `SELECT ts, source, code, kind, message
          FROM error_records WHERE ${where}
-         ORDER BY id DESC LIMIT :limit`,
+         ORDER BY id DESC LIMIT :limit OFFSET :offset`,
       )
-      .all({ ...params, limit });
+      .all({ ...params, limit, offset });
     return rows.map((r) => ({
       ts: r.ts as string,
       source: r.source as string,
@@ -210,6 +210,13 @@ export class ErrorsRepo {
       kind: r.kind as string,
       message: r.message as string,
     }));
+  }
+
+  /** Cascading cleanup on Agent deletion (unattributed errors carry no agent_id and are unaffected). */
+  deleteByAgent(projectId: string, agentId: string): void {
+    this.db
+      .prepare("DELETE FROM error_records WHERE project_id = ? AND agent_id = ?")
+      .run(projectId, agentId);
   }
 
   /** Cascading cleanup on Project deletion (unattributed errors belong to no Project and are unaffected). */

@@ -21,6 +21,7 @@ import {
   loadOrInitAgentState,
   loadProjectConfig,
   projectDir,
+  goalFilePath,
   resolveModelRef,
   scratchpadDir,
   systemConfigPath,
@@ -69,26 +70,6 @@ import type { ModelEntry } from "./state/index.js";
  * raise this constant to allow deeper nesting.
  */
 const MAX_SUBAGENT_DEPTH = 1;
-
-/** The five valid thinking level names (session_meta additionally records the literal "default" for "no level"). */
-const THINKING_LEVEL_NAMES: readonly ThinkingLevelName[] = [
-  "none",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-];
-
-/**
- * Narrows a recorded session_meta `thinking_level` back to a ThinkingLevelName; the literal
- * "default" (no level recorded), a missing field (legacy Trace), and anything unknown are
- * not levels and yield undefined.
- */
-function asThinkingLevelName(value: unknown): ThinkingLevelName | undefined {
-  return typeof value === "string" && (THINKING_LEVEL_NAMES as readonly string[]).includes(value)
-    ? (value as ThinkingLevelName)
-    : undefined;
-}
 
 export interface CreateAgentOptions {
   agentId?: string;
@@ -291,6 +272,8 @@ export class Agent {
     });
 
     return new Session({
+      // session_meta holds per-session invariants only: the thinking level is a per-turn
+      // run parameter (RunOptions.thinkingLevel) and is deliberately not recorded here.
       meta: {
         session_id: sessionId,
         provider: modelEntry.provider,
@@ -298,7 +281,6 @@ export class Agent {
         model_context_window: modelEntry.context_window ?? "unknown",
         system_prompt: systemPrompt,
         tools: rt.tools,
-        thinking_level: thinkingLevel ?? "default",
         agent_state: this.state.stateDir,
         workspace: workspaceDir,
         ...(opts.source !== undefined ? { source: opts.source } : {}),
@@ -318,6 +300,14 @@ export class Agent {
             ),
           }
         : {}),
+      // Goal mode's control file lives in the session scratchpad; the path is fixed per
+      // Session, so it is wired here rather than passed per-run.
+      goalFilePath: goalFilePath(
+        this.state.root,
+        this.state.projectId,
+        this.state.agentId,
+        sessionId,
+      ),
       // Max turns comes from the Agent's system_config (runtime parameters belong to the Agent config).
       ...(this.state.systemConfig.max_turns !== undefined
         ? { maxTurns: this.state.systemConfig.max_turns }
@@ -393,12 +383,12 @@ export class Agent {
     // original history); the vault uses current values (it's injected into the
     // subprocess environment, not the history, so a resumed Session should get the
     // latest keys too).
-    // The recorded thinking level is restored with the rest of session_meta (like model,
-    // Workspace, and system prompt): a resumed subagent session keeps its inherited level
-    // instead of re-reading this Agent's config. The literal "default" (no level recorded)
-    // — and a legacy Trace without the field — falls back to the Agent's current config.
-    const thinkingLevel =
-      asThinkingLevelName(meta.thinking_level) ?? this.state.systemConfig.model?.thinking_level;
+    // The default thinking level comes from this Agent's current config only: session_meta
+    // no longer records one (it became a per-turn run parameter), and a `thinking_level`
+    // still present in a legacy Trace's meta JSON is deliberately ignored — a resumed
+    // legacy subagent session falls back to this Agent's configured level instead of
+    // keeping the level it inherited at spawn time.
+    const thinkingLevel = this.state.systemConfig.model?.thinking_level;
 
     const rt = await this.buildRuntime({
       workspaceDir,
@@ -438,6 +428,7 @@ export class Agent {
     });
 
     return new Session({
+      // Invariants only — meta writes never contain a thinking level.
       meta: {
         session_id: sessionId,
         provider: modelEntry.provider,
@@ -445,7 +436,6 @@ export class Agent {
         model_context_window: modelEntry.context_window ?? "unknown",
         system_prompt: meta.system_prompt,
         tools: rt.tools,
-        thinking_level: thinkingLevel ?? "default",
         agent_state: this.state.stateDir,
         workspace: workspaceDir,
         // The origin carries over from the original session_meta (a resumed scheduled/subagent
@@ -470,6 +460,14 @@ export class Agent {
             ),
           }
         : {}),
+      // Goal mode's control file lives in the session scratchpad; the path is fixed per
+      // Session, so it is wired here rather than passed per-run.
+      goalFilePath: goalFilePath(
+        this.state.root,
+        this.state.projectId,
+        this.state.agentId,
+        sessionId,
+      ),
       ...(this.state.systemConfig.max_turns !== undefined
         ? { maxTurns: this.state.systemConfig.max_turns }
         : {}),
@@ -607,7 +605,19 @@ export class Agent {
             const childApprove = approve
               ? (tc: OmniMessage<ToolCallPayload>) => approve(withOrigin(tc, hop))
               : undefined;
-            for await (const msg of childSession.run([userText(prompt)], {
+            // The engine writes a run's input to the CHILD's own Trace but never replays
+            // it to its consumer (a session's normal caller typed that input itself) —
+            // here the consumer is the PARENT, whose frontend has never seen the child's
+            // prompt. Forward the input message itself (origin-tagged, ahead of the run's
+            // output) so the live nested view shows the child's user side exactly like a
+            // reloaded one (history expansion splices the child Trace, which carries this
+            // same message). The parent engine drops origin messages from the parent
+            // Trace, so replay never duplicates it. Later rounds (input_subagent
+            // follow-up prompts) come through this same generator and are forwarded the
+            // same way.
+            const input = userText(prompt);
+            yield withOrigin(input, hop);
+            for await (const msg of childSession.run([input], {
               ...(signal ? { signal } : {}),
               ...(childApprove ? { approve: childApprove } : {}),
             })) {

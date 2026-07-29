@@ -9,6 +9,7 @@ import path from "node:path";
 import { randomBytes, randomUUID } from "node:crypto";
 
 import { formatLocalDate } from "./dates.js";
+import { sessionShell } from "../environment/tools/command/shell.js";
 import type { SessionEnvironmentValues } from "../state/agent-state.js";
 import { workspacesDir } from "../state/index.js";
 import { userText } from "../omnimessage/index.js";
@@ -47,6 +48,9 @@ export function sessionEnvironment(
     modelId: ids.modelId,
     platform: process.platform,
     osVersion: getOsVersion(),
+    // The shell exec_command actually runs (bash on POSIX; resolved on Windows): the model
+    // must know whether to write bash or PowerShell syntax.
+    shell: sessionShell().name,
     date: formatLocalDate(date),
   };
 }
@@ -73,7 +77,7 @@ const MAX_TMP_ID_ATTEMPTS = 16;
  * directory name is the workspace_id, shaped like `tmp-<8hex>`; if it collides with
  * an existing directory, regenerate the id. No symlinks are created inside the Workspace:
  * the model composes absolute paths (to Agent State, scratchpad, etc.) directly from the
- * Environment placeholders (Project Dir / Agent ID) in the system prompt.
+ * Environment placeholders (App Data Dir / Agent ID) in the system prompt.
  */
 export async function createTempWorkspace(
   root: string,

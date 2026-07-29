@@ -55,7 +55,6 @@ function metaPayload(): SessionMetaPayload {
     model_context_window: 1000,
     system_prompt: "sp",
     tools: [],
-    thinking_level: "default",
     agent_state: "/tmp/a",
     workspace: "/tmp/w",
   };
@@ -341,7 +340,7 @@ describe("trace-service", () => {
     // (the frontend uses this to list it on this turn's card), but the duration
     // only looks at the LLM request — the start point is the first request_begin,
     // and the user text's timestamp doesn't participate (the compaction summary
-    // `<context_summary>` is created during compaction but only persisted on the
+    // `[context_summary]` is created during compaction but only persisted on the
     // next run; using it as the start point would stretch the first turn out for
     // no reason). Also, if the turn list were built only from turns with "a model
     // segment or a tool span", a turn that fails outright with no output at all
@@ -377,6 +376,52 @@ describe("trace-service", () => {
     expect(Date.parse(a.tasks[0]!.endTs) - Date.parse(a.tasks[0]!.startTs)).toBe(1_100);
     expect(Date.parse(a.tasks[1]!.endTs) - Date.parse(a.tasks[1]!.startTs)).toBe(3_000);
     expect(a.elapsedMs).toBe(4_100);
+  });
+
+  it("a failed request the engine retries stays inside the same turn (it is a reconnect, not a turn end)", async () => {
+    // The engine reconnects on `failed` as well as timeout/malformed, so the resent Request
+    // belongs to the same user turn. If segmentation still keyed on timeout/malformed only,
+    // one gateway blip would split a single turn's Tokens, duration and TPS across two Tasks
+    // and inflate the Task count — the same smearing the timeout rule exists to prevent.
+    await writeTraceFile(root, P, A, "2026-07-05", S, 1, [
+      at("2026-07-05T10:00:00.000Z", sessionMeta(metaPayload())),
+      at("2026-07-05T10:00:00.000Z", userText("question one")),
+      at("2026-07-05T10:00:01.000Z", requestBegin()),
+      at("2026-07-05T10:00:02.000Z", requestEnd("failed")), // a gateway error → the engine reconnects
+      at("2026-07-05T10:00:03.000Z", requestBegin()),
+      at("2026-07-05T10:00:05.000Z", requestEnd("completed")),
+      at("2026-07-05T10:00:05.100Z", tokenUsage(counts(1000), buckets(0, 900, 100))),
+    ]);
+    const a = await service.analyze(P, A, S, 1);
+    expect(a.requests.map((r) => r.taskIndex)).toEqual([0, 0]); // one turn, two Requests
+    expect(a.tasks.map((t) => t.taskIndex)).toEqual([0]);
+    expect(a.reconnectCount).toBe(1);
+    expect(a.tasks[0]!.tokens.output).toBe(100);
+  });
+
+  it("a failed compaction request is NOT a reconnect: compaction fails fast on it", async () => {
+    // Segmentation has to track the engine loop by loop: the turn loop retries `failed`, the
+    // compaction loop deliberately does not (it keeps the old context and tries again on the
+    // next trigger). Counting this as a reconnect would invent an attempt that never happened.
+    await writeTraceFile(root, P, A, "2026-07-05", S, 1, [
+      at("2026-07-05T10:00:00.000Z", sessionMeta(metaPayload())),
+      at("2026-07-05T10:00:00.000Z", userText("question one")),
+      at("2026-07-05T10:00:01.000Z", requestBegin()),
+      at("2026-07-05T10:00:02.000Z", requestEnd("completed")),
+      at("2026-07-05T10:00:02.100Z", tokenUsage(counts(1000), buckets(0, 900, 100))),
+      at(
+        "2026-07-05T10:00:03.000Z",
+        compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 1 }),
+      ),
+      at("2026-07-05T10:00:04.000Z", requestBegin()),
+      at("2026-07-05T10:00:05.000Z", requestEnd("failed")), // compaction gives up here
+      at(
+        "2026-07-05T10:00:06.000Z",
+        compactionEnd({ reason: "context", mode: "summarize", status: "failed" }),
+      ),
+    ]);
+    const a = await service.analyze(P, A, S, 1);
+    expect(a.reconnectCount).toBe(0);
   });
 
   it("after the previous turn ends in timeout (retries exhausted), a new user message starts a new turn", async () => {
@@ -585,6 +630,37 @@ describe("trace-service", () => {
     expect(a.requests.map((r) => r.taskIndex)).toEqual([0, 0, 1]);
   });
 
+  it("Task grouping: [user_steering] user texts never start a new Task (steering continuation stays in the same Task)", async () => {
+    const T = (sec: string) => `2026-07-05T10:03:${sec}Z`;
+    await writeTraceFile(root, P, A, "2026-07-05", S, 12, [
+      sessionMeta(metaPayload()),
+      // Task 0, round 1: calls a tool; a steering message rides alongside the tool output.
+      at(T("00.000"), userText("q1")),
+      at(T("01.000"), requestBegin()),
+      at(T("02.000"), toolCall({ name: "read_file", arguments: "{}", toolCallId: "t1" })),
+      at(T("02.500"), requestEnd("completed")),
+      at(T("03.000"), toolCallOutput({ output: "o", toolCallId: "t1" })),
+      at(T("03.200"), userText("[user_steering]\nalso check the tests\n[/user_steering]")),
+      at(T("03.500"), requestBegin()),
+      at(T("04.000"), assistantText("answer 1")),
+      at(T("04.500"), requestEnd("completed")),
+      // Loop-end steering: the answer round produced no tool call — a plain user text here
+      // would start a new Task, but the steering continuation stays in Task 0.
+      at(T("05.000"), userText("[user_steering]\none more thing\n[/user_steering]")),
+      at(T("05.500"), requestBegin()),
+      at(T("06.000"), assistantText("answer 2")),
+      at(T("06.500"), requestEnd("completed")),
+      // A real new user turn afterwards starts Task 1 as usual.
+      at(T("20.000"), userText("q2")),
+      at(T("21.000"), requestBegin()),
+      at(T("22.000"), assistantText("answer 3")),
+      at(T("22.500"), requestEnd("completed")),
+    ]);
+    const a = await service.analyze(P, A, S, 12);
+    expect(a.requests.map((r) => r.taskIndex)).toEqual([0, 0, 0, 1]);
+    expect(a.modelSegments.map((s) => s.taskIndex)).toEqual([0, 0, 0, 1]);
+  });
+
   // Compaction is its own turn: the previous turn called a tool and would
   // otherwise "continue", but compaction_begin breaks that continuation, so the
   // compaction request lands on a new taskIndex. A successful compaction splits
@@ -605,7 +681,7 @@ describe("trace-service", () => {
         compactionBegin({ reason: "context", mode: "summarize", context: 1, turns: 1 }),
       ),
       at(T("04.500"), requestBegin()),
-      at(T("05.000"), assistantText("<summary>…</summary>")),
+      at(T("05.000"), assistantText("[summary]…[/summary]")),
       at(T("05.500"), requestEnd("completed")),
       at(T("06.000"), compactionEnd({ reason: "context", mode: "summarize", status: "completed" })),
     ]);

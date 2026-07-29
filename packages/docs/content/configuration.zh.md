@@ -18,6 +18,9 @@ CLI 与服务端启动时会自动加载工作目录下的 `.env` 文件。
 | `PENGUIN_WEB_DIST` | 前端静态资源目录 | npm 安装的服务端包回退到内置 web-dist |
 | `PENGUIN_PREVIEW_ORIGIN` | 提供 Workspace HTML 预览的独立源，如 `https://preview.example.com` | 未设置，按请求推导回环对应名 |
 | `PENGUIN_LANG` | CLI 语言（`en` / `zh`），用 `penguin config lang` 设置 | `en` |
+| `PENGUIN_UPDATE_CHECK` | 设为 `off` 关闭 Web 应用的新版本检查（服务端唯一的对外网络请求） | 开启 |
+
+这些变量配置的是 PenguinHarness 自身，因此 `PORT`、`HOST`、`PENGUIN_WEB_DIST` 以及内部使用的 `PENGUIN_CLI_ENTRY` **不会出现在 Agent 所执行命令的环境变量中**——否则 `exec_command` 启动的开发服务器会读到 `PORT`，去占用留给 PenguinHarness 的端口，而不是自己另选一个。宿主环境中的其余变量原样透传，但还有一处例外：`GIT_EDITOR`、`GIT_TERMINAL_PROMPT`、`TERM`、`NO_COLOR`、`PAGER`、`GIT_PAGER` 一律被固定值覆盖，以免命令因等待编辑器、凭证输入或分页器而挂起。Agent 的 [vault](#vault) 覆盖在宿主环境之上——在 vault 里设置 `PORT` 仍然可以送达命令——但覆盖不了这六个变量。
 
 `PENGUIN_PREVIEW_ORIGIN` 必须与应用源在**主机名**上不同，只换端口不行：Cookie 不区分端口，换端口仍然共用会话 Cookie。本地使用不必配置——App 固定在规范主机 `localhost`，预览用 `127.0.0.1`，既不需要配置也不需要 DNS。经 LAN 地址或真实域名访问时才需要设置，否则那里的预览会回退到同源沙箱，`localStorage`、Cookie 与第三方 embed 都不可用。在真实域名上设置时，会话 Cookie 必须保持 host-only（不带 `Domain=`），否则同注册域下的兄弟子域会共享它。取值无法解析时启动即报错，不会静默回退。
 
@@ -95,13 +98,13 @@ output = 0.857143
 | `system_prompt` | 内置模板 | 必填；唯一进行占位符替换的模板 |
 | `max_turns` | `100` | 单个 Task 的最大 LLM 轮数（-1 不限制） |
 | `model.max_tokens` | `32000` | 单次输出 Token 上限（-1 不设上限，用服务商默认） |
-| `model.thinking_level` | `medium` | `none` / `low` / `medium` / `high` / `xhigh` |
+| `model.thinking_level` | `medium` | `none` / `low` / `medium` / `high` / `xhigh`；作为会话默认档位，可被逐轮 Task 参数覆盖 |
 | `model.timeoutMs` | `120000` | 单次 Request 超时（毫秒） |
 | `compaction.max_context_length` | `128000` | 触发压缩的上下文 Token 阈值 |
 | `compaction.max_session_turns` | `-1` | Session 累计轮数阈值（`-1` 不限制） |
 | `compaction.mode` | `summarize` | `summarize` / `discard` |
 | `compaction.prompt` | 内置模板 | summarize 压缩使用的 Prompt |
-| `tools.builtin` | 缺省时为完整默认工具集 | 工具条目：`name` / `description` / `parameters` / `permission`（`r` 或 `rw`）/ `forModel` / `timeoutMs` / `maxOutputLength`；一旦写出即整体替换默认列表 |
+| `tools.builtin` | 缺省时为完整默认工具集 | 工具条目：`name` / `description` / `parameters` / `permission`（`r` 或 `rw`）/ `forModel` / `timeoutMs` / `maxOutputLength` / `call_description`（条目级开关：控制 `description` 调用参数，开启时为必填，缺省保留）；一旦写出即整体替换默认列表 |
 | `tools.mcpServers` | `[]` | MCP Server 配置（`name` + `config`），预留给 MCP 适配层 |
 
 工具权限与审批语义见[工具与审批](/tools)。
@@ -134,6 +137,8 @@ compaction:
 # 参见「工具与审批」页。
 ```
 
+既有 Agent 始终按其磁盘上的配置原样运行——更新后的代码默认值不会自动合并。要采用当前默认值（例如更新后的内置系统提示词），可使用设置页的**还原为默认配置**操作：与 Skill 更新同语义，会用当前默认值覆盖现有配置——自定义系统提示词、工具列表、模型/压缩参数与 MCP Server——仅保留 `name`、`description` 与 `version`。
+
 ### 系统提示词占位符
 
 `system_prompt` 是唯一进行占位符替换的模板，可用占位符：
@@ -146,12 +151,14 @@ compaction:
 | `{{PLATFORM}}` | 运行平台 |
 | `{{OS_VERSION}}` | 操作系统版本 |
 | `{{DATE}}` | 当前日期 |
-| `{{PROJECT_DIR}}` | Project 目录 |
+| `{{PROJECT_DIR}}` | App Data Dir：PenguinHarness 应用数据根目录（即 Project 目录） |
 | `{{AGENT_ID}}` | Agent id |
 | `{{CWD}}` | Workspace 路径 |
 | `{{PROVIDER}}` | 模型 provider 分组 |
 | `{{MODEL_ID}}` | 上游模型 id |
 | `{{SESSION_ID}}` | Session id |
+
+`{{PROJECT_DIR}}` 在提示词中以 **App Data Dir** 名义暴露给模型：PenguinHarness 的应用数据根目录，存放全部 Agent 的数据文件（`agents/<agent_id>/…`）与 Project 级数据——特意不以 Project/任务目录的口径描述，避免模型将其误认为本次任务的工作目录（`CWD`）。
 
 `agent_state/AGENTS.md` 是开发者可编辑的指令文件，经 `{{AGENTS_MD}}` 注入系统提示词，缺省为空——它也是优化器最常改动的文件（见[自我进化](/self-improvement)）。
 

@@ -40,6 +40,7 @@ interface LLMInterface {
 interface GenerativeModelParameters {
   newMessages: OmniMessage[];    // 仅本轮新增消息(实现自行维护历史,多 role 不接受)
   signal?: AbortSignal;
+  thinkingLevel?: ThinkingLevelName;   // 本次请求的思考等级覆盖;缺省用构造默认值
 }
 ```
 
@@ -49,18 +50,21 @@ interface GenerativeModelParameters {
 
 ```ts
 interface LLMOutcome {
-  status: StopReason;   // completed | timeout | malformed | aborted | failed
-  message?: string;     // failed 时的展示文案
+  status: StopReason;   // completed | timeout | malformed | aborted | failed | auth
+  message?: string;     // 失败详情:failed/auth 时携带;timeout/malformed 捕获到具体
+                        // 错误时也携带——透传到 request_end,错误面板据此展示被重试
+                        // 请求背后的真实原因
 }
 ```
 
 | status | 含义 | 引擎的反应 |
 | --- | --- | --- |
 | `completed` | 正常完成(已产出 token_usage) | 继续下一步 |
-| `timeout` | 超时/断连 | 同一 run 内自动重连 |
+| `timeout` | 超时/传输层断连/瞬时的供应商额度错误 | 同一 run 内自动重连 |
 | `malformed` | 响应解析失败 | 同一 run 内自动重连 |
+| `failed` | 分类器未判定为瞬时的错误(参数等) | 同样在同一 run 内自动重连——状态本身仍如实上报为 `failed` |
 | `aborted` | 用户中断 | 停止交还用户 |
-| `failed` | 鉴权/参数等不可重试错误 | 停止交还用户 |
+| `auth` | 凭据被拒绝 | 停止交还用户——唯一从不重试的 LLM 终态；宿主据此禁用输入，直到该模型的 API key 被更新 |
 
 实现约束：从不抛异常；不做内部重试(重连是引擎的职责，见 [Agent 运行循环](/agent-loop))。
 
@@ -78,7 +82,7 @@ interface GenerativeModelConfig {
   systemPrompt?: string;           // 占位符替换完成后的完整系统提示词
   contextWindow?: number;
   maxTokens?: number;
-  thinkingLevel?: ThinkingLevelName;   // "none" | "low" | "medium" | "high" | "xhigh"
+  thinkingLevel?: ThinkingLevelName;   // 构造期默认档位(逐请求参数可覆盖);"none" | "low" | "medium" | "high" | "xhigh"
   requestTimeoutMs?: number;       // 单次 Request 超时,默认 120000;<=0 关闭
   toolCallIds?: ToolCallIdAllocator;   // Session 级 tool_call_id 唯一性登记表(压缩重建时传同一实例)
 }
@@ -179,6 +183,7 @@ session.run(
 interface RunOptions {
   signal?: AbortSignal;    // 中断信号(如 Ctrl-C)
   approve?: ApproveFn;     // 逐工具审批;未注入时默认全部拒绝
+  thinkingLevel?: ThinkingLevelName;   // 本次 run 的思考等级(逐轮参数;压缩请求不受影响)
 }
 ```
 

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import path from "node:path";
 import { Command } from "commander";
 import { DEFAULT_SERVER_PORT } from "@prismshadow/penguin-core";
 import {
@@ -6,6 +7,7 @@ import {
   DEFAULT_PORT,
   browserCommand,
   browserUrl,
+  cliEntryFor,
   registerServeCommands,
   resolvePort,
 } from "../src/commands/serve.js";
@@ -72,5 +74,22 @@ describe("registerServeCommands (command registration)", () => {
     expect(names).toContain("web");
     const web = program.commands.find((c) => c.name() === "web")!;
     expect(web.opts().open).toBe(true);
+  });
+});
+
+describe("cliEntryFor (the entry advertised for the web self-update)", () => {
+  it("advertises only entries plain node can re-run (.js/.mjs/.cjs), resolved absolute", () => {
+    // Expectations go through path.resolve too: on win32 an absolute POSIX-style input
+    // gains a drive prefix and backslashes, and the contract is "resolved", not a literal.
+    expect(cliEntryFor("/opt/penguin/lib/dist/index.js")).toBe(
+      path.resolve("/opt/penguin/lib/dist/index.js"),
+    );
+    expect(cliEntryFor("/x/cli.MJS")).toBe(path.resolve("/x/cli.MJS"));
+    expect(cliEntryFor("/x/cli.cjs")).toBe(path.resolve("/x/cli.cjs"));
+  });
+  it("refuses a tsx dev entry and a missing argv[1] (the endpoint then reports unsupported)", () => {
+    expect(cliEntryFor("/repo/packages/cli/src/index.ts")).toBeNull();
+    expect(cliEntryFor(undefined)).toBeNull();
+    expect(cliEntryFor("")).toBeNull();
   });
 });

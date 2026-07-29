@@ -24,8 +24,8 @@ session.run(newMessages, { approve, signal })
 │    │          ▼                                               │
 │    │     Environment.executeTool ──► 并发执行,输出流式回传    │
 │    └─ LLMOutcome:                                             │
-│         timeout / malformed ──► 同轮自动重连(≤2 次,          │
-│                                 附 <turn_retried>,工具不重跑) │
+│    failed/timeout/malformed ──► 同轮自动重连(≤5 次,          │
+│                                 附 [turn_retried],工具不重跑) │
 │  token_usage + request_end(LLM 流结束即产出,不等工具)         │
 │                                                               │
 │  工具输出按原始调用顺序重排 ──► 作为下一轮输入                 │
@@ -56,6 +56,7 @@ for await (const output of session.run([userText("整理 data/ 下的 CSV 文件
 interface RunOptions {
   signal?: AbortSignal;    // 中断信号(如 Ctrl-C)
   approve?: ApproveFn;     // 逐工具审批;未注入时默认全部拒绝(保守策略)
+  thinkingLevel?: ThinkingLevelName;   // 本次 run 的思考等级(逐轮参数,覆盖到重连重试;压缩请求用默认值)
 }
 ```
 
@@ -77,13 +78,17 @@ Task 由若干连续的 Request(轮)组成，每轮：
 `signal` 触发中断后，引擎产出 `abort` 事件并立即返回，同时为下一次 `run` 构造补发内容：
 
 - **场景 A：模型输出已完成**(该轮 `tool_call` 已提交)——已完成的工具结果按结构化 `tool_call_output` 补发；未执行完的调用补上 `[interrupted: tool aborted by user]` 占位，保证 `tool_call` 与输出严格配对；
-- **场景 B：模型输出未完成**——整轮压平为一段 `<turn_aborted>` 用户文本，携带已产生的部分输出。
+- **场景 B：模型输出未完成**——整轮压平为一段 `[turn_aborted]` 用户文本，携带已产生的部分输出。
 
 补发内容只进入模型上下文，不写入 Trace——Trace 永远只记录真实发生的消息。
 
+## 运行中插话(Steering)
+
+Task 运行期间，宿主可通过 `session.steer(text)` 排队一条用户消息而不打断循环：引擎在下一次输入组装时把它作为**独立的用户文本消息**送出，内容包裹在 `[user_steering]…[/user_steering]` 中，与该轮工具输出一起进入下一次请求（该轮没有工具调用时则单独作为继续输入，Task 不会就此结束）。插话是真实的用户输入：像 Prompt 一样写入 Trace、推送到输出流，恢复重放时按普通轮次输入处理；工具输出本身从不被改写。队列在**每次**输入组装时排空——包括运行中压缩完成后的那次，压缩请求期间到达的插话不会被吞掉。没有 Task 运行时 `steer` 返回 `false`（宿主转为发起普通 Task）；仅在运行退出（含中断）时丢弃队列。
+
 ## 自动重连
 
-只有 LLM 侧的 `timeout`(网络超时、限流、5xx)与 `malformed`(流截断、JSON 解析失败)会触发引擎内自动重连：同一次 `run` 内重发原始输入，并附加 `<turn_retried>` 块携带上一次的部分输出，避免工具重复执行。默认最多重连 2 次，线性退避(基数 250ms)；超限后该轮以 `failed` 收场。工具错误从不重试——它们作为 `tool_call_output` 反馈给模型，由模型决定下一步。
+除 `auth` 外，LLM 侧的所有失败都会触发引擎内自动重连——`timeout`（网络超时、传输层断连、限流、5xx、瞬时的供应商额度错误）、`malformed`（流截断、JSON 解析失败），**以及 `failed`**。`failed` 也重试，尽管分类器判定它不是瞬时错误：那个判定本质是一张允许清单（已知错误码、状态码与消息措辞），所以用自己说法描述瞬时故障的网关（例如 `Upstream HTTP/2 stream failed`）会落到这一档，此前会直接终止本轮。重试一个真正的永久错误，代价是走完退避梯度后以同样的方式收场；而把瞬时错误直接中断，则毁掉这一轮。注意改的是**策略**而非**分类**：`failed` 请求在 `request_end` 与成本中心里仍然记为 `failed`，不会被改标成超时。重连时同一次 `run` 内重发原始输入，并附加 `[turn_retried]` 块携带上一次的部分输出，避免工具重复执行。默认最多重连 5 次，指数退避并设上限(基数 250ms、上限 30s：250ms、500ms、1s、2s、4s，总耐心约 7.75s——所有可重试类别共用一张时间表，向较慢的类别递增，头几步仍与传输层抖动所需的一样快)；超限后该轮以 `failed` 收场。每次失败的 `request_end` 会以 `retry_in_ms` 宣告计划中的等待(与实际休眠同一公式)，Web App 据此实时倒计时，并提供「立即重试」(经 `Session.skipReconnectWait` 跳过剩余等待——重试计数不变)与「放弃」(普通中断；引擎的退避中中断路径结束本轮)两个内联按钮，CLI 则打印自己的 `[重试]` 行。三种可重试终态的渲染完全一致——用户看不见的重试，等于一次没有任何解释、也无从退出的卡顿。压缩请求重试同样的终态，只是用独立的更小上限(重试 3 次)：压缩放弃后会保留原上下文、等下一次触发再试，所以那里用一段短梯度好过让会话干等完整的一段。鉴权错误在任何重试启发式之前判定、从不重试：请求以专属终态 `auth` 收场(Session 锁定的只是模型引用，凭据在会话装载时取自当前 Project 配置)，Web App 据此禁用该 Session 的输入框，直到该模型的凭据被更新(更新后自动解锁)或用户点击「重试」。工具错误从不重试——它们作为 `tool_call_output` 反馈给模型，由模型决定下一步。
 
 ## 上下文压缩(Compaction)
 
@@ -106,7 +111,9 @@ interface CompactionSettings {
 | `turns` | Session 轮数 ≥ `maxSessionTurns`(默认 -1，即不限) |
 | `manual` | 用户执行 `/compact` 或调用 `session.compact()` |
 
-两种模式：`summarize`(默认)向旧上下文追加压缩 Prompt，提取 `<summary>` 后包装为 `<context_summary>` 用户文本，在**全新的模型上下文**中继续；`discard` 直接丢弃旧上下文。压缩时 [Trace 文件随之轮转](/sessions-and-traces)(`_002`、`_003`……)，一个 Trace 文件恒等于一个完整模型上下文。`session.compact()` 前可用 `compactability()` 探询可行性(`ok | unsupported | empty | just_compacted`)。
+两种模式：`summarize`(默认)向旧上下文追加压缩 Prompt，提取 `[summary]` 后包装为 `[context_summary]` 用户文本，在**全新的模型上下文**中继续；`discard` 直接丢弃旧上下文。系统标记统一写作 `[tag]…[/tag]`；读取旧 Trace 与旧压缩 Prompt 时仍识别早期的尖括号形式（`<summary>`、`<context_summary>` 等）。压缩时 [Trace 文件随之轮转](/sessions-and-traces)(`_002`、`_003`……)，一个 Trace 文件恒等于一个完整模型上下文。`session.compact()` 前可用 `compactability()` 探询可行性(`ok | unsupported | empty | just_compacted`)。
+
+压缩请求**保持会话工具集不变**——请求前缀（含工具列表）与普通轮次逐字节一致，确保上下文最大的时刻提供商的提示词缓存依然有效。只有得到有效摘要，压缩才算成功：若响应中出现工具调用、或提取出的摘要为空，则判为无效并重试——工具调用会先以合成的失败输出逐一应答（保持 `tool_use`/`tool_result` 配对完整），修复后的请求**立即重发**（无效摘要是模型行为而非传输故障，不做退避），最多允许 5 次无效尝试，之后压缩以 `failed` 结束，保留原上下文与 Trace 文件，等待下次触发。可重试的结束态（`failed`/`timeout`/`malformed`，与轮次循环同一套）走上文「自动重连」一节所述的压缩专用重连上限与退避阶梯；只有 `auth` 会让压缩当场停止。首个**已提交**的尝试（无论被采纳还是被判无效）同时会把折叠进压缩请求的本轮输入（任务中途的工具结果、手动 `/compact` 折叠的补发内容）吸收进旧上下文：重试只重发修复输出与压缩 Prompt，压缩放弃后的续跑也不再重发已吸收的输入。
 
 ## 并发模型
 

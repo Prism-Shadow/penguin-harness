@@ -101,7 +101,7 @@ https://github.com/user-attachments/assets/aec49ae9-b743-467b-b247-37bedfeaa36e
 
 | 需求项   | 支持情况                                          |
 | -------- | ------------------------------------------------- |
-| 操作系统 | Linux、macOS                                      |
+| 操作系统 | Linux、macOS、Windows 10+                         |
 | 架构     | x64、arm64                                        |
 | 运行时   | 一行安装器自带（经 npm 安装需 Node >= 24）        |
 | 模型     | 至少一个模型的 API key                            |
@@ -116,6 +116,8 @@ https://github.com/user-attachments/assets/aec49ae9-b743-467b-b247-37bedfeaa36e
 curl -fsSL https://penguin.ooo/install.sh | sh
 penguin web        # 启动服务并打开 http://127.0.0.1:7364（首次登录：admin / penguin-2026）
 ```
+
+🪟 Windows（PowerShell）：`irm https://penguin.ooo/install.ps1 | iex`
 
 📦 或经 npm 安装：`npm install -g @prismshadow/penguin-cli`。在应用内模型页配置模型后即可对话。
 
@@ -149,7 +151,7 @@ for await (const output of session.run([userText("Create hello.txt containing hi
 
 - [ ] Benchmark 套件正式发布
 - [ ] 桌面端应用
-- [ ] Windows 系统支持
+- [x] Windows 系统支持
 - [ ] Agent 公司与模板
 - [ ] 公司级自进化能力
 - [ ] 集成 OpenShell（带权限管控的 shell）
@@ -163,6 +165,14 @@ pnpm dev                     # 服务端 + Web 一起启动（带前缀日志，
 ```
 
 完整工作区指南见 [CONTRIBUTING.md](CONTRIBUTING.md)：开发命令、质量门禁、仓库结构与 changelog 规则。
+
+## 贡献者
+
+感谢每一位为 PenguinHarness 作出贡献的开发者！
+
+<p align="center">
+  <a href="https://github.com/Prism-Shadow/penguin-harness/graphs/contributors"><img src="https://contrib.rocks/image?repo=Prism-Shadow/penguin-harness" alt="PenguinHarness 贡献者" /></a>
+</p>
 
 ## 引用
 

@@ -26,6 +26,18 @@ describe("channel", () => {
     expect(JSON.parse(seen[0]!.data)).toEqual({ a: 1 });
   });
 
+  it("lastEventId tracks the most recently assigned seq (unicast included; seq 0 when none)", () => {
+    const ch = new Channel();
+    expect(ch.lastEventId).toBe(`${ch.epoch}-0`);
+    ch.publish("a");
+    expect(ch.lastEventId).toBe(`${ch.epoch}-1`);
+    // Unicast (sendTo) consumes a seq too: lastEventId is a position marker, not a buffer key.
+    ch.sendTo(() => {}, "hello", "server_event");
+    expect(ch.lastEventId).toBe(`${ch.epoch}-2`);
+    ch.publish("b");
+    expect(ch.lastEventId).toBe(`${ch.epoch}-3`);
+  });
+
   it("no longer receives after unsubscribe", () => {
     const ch = new Channel();
     const seen: ChannelEvent[] = [];

@@ -38,12 +38,14 @@ One request represents one Test Agent execution. The `run` value identifies that
 
 Return a **scored result** when the Test Agent ran and the Rubric could be applied. Wrong, malformed, or missing Test Agent output is still a scored result. Return an **evaluation failure** when the request, Benchmark, launch, version check, Trace binding, or scoring process prevents a valid score.
 
+Resolve the Project, Test Agent, Benchmark, and Case only from the explicit request and Environment App Data Dir. Reject traversal, symlink escape, or any path outside the requested Test Agent. Never read a Project configuration file, credential, or vault.
+
 ## Prepare
 
-Use the `Project Dir` from the Environment:
+Use the `App Data Dir` from the Environment:
 
 ```text
-TEST_AGENT_DIR = <project_dir>/agents/<test_agent_id>
+TEST_AGENT_DIR = <app_data_dir>/agents/<test_agent_id>
 BENCHMARK_DIR = <test_agent_dir>/benchmarks/<benchmark_id>
 ```
 
@@ -62,7 +64,7 @@ Resolve `PROJECT_DIR`, then derive and verify `PROJECT_ID`, then derive and veri
 Start one foreground execution with a fresh top-level Session. With an explicit pair, use:
 
 ```bash
-PROJECT_DIR="<project_dir>"
+PROJECT_DIR="<app_data_dir>"   # the App Data Dir value from your Environment section is the project root
 PROJECT_ID="$(basename "$PROJECT_DIR")"
 PENGUIN_HOME="$(dirname "$PROJECT_DIR")"
 export PENGUIN_HOME

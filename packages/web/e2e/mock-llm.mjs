@@ -3,8 +3,17 @@
  * Branches on request body:
  *  - title request (prompt contains "concise title") -> short text
  *  - files-card probe ("files card test") -> text with two backtick paths (one real, one missing)
- *  - subagent's own turn (its prompt is the only user text) -> final text
+ *  - subagent's own turns (its prompt is the only user text) -> tool_use(exec_command) first,
+ *    then the report text once the tool_result is back — the tool call gives the child a real
+ *    approval point (under always-ask it parks on a NESTED approval, which the subagents-panel
+ *    e2e approves from the panel; under allow-all it auto-runs)
  *  - parent asked to delegate ("run a subagent") -> tool_use(run_subagent)
+ *  - a repeat delegation later in the same conversation ("run another subagent", keyed on the
+ *    LAST message so history can't shadow it) -> tool_use(run_subagent) again
+ *  - "slow stream test" -> tool_use(exec_command) with a command that prints one line
+ *    every 200ms for ~8s (reload-midstream.spec reloads while its output streams)
+ *  - "slow text test" -> a long text streamed one delta every 200ms for ~8s
+ *    (reload-midstream.spec reloads while the TEXT streams)
  *  - last message has tool_result -> final text (turn 2)
  *  - otherwise (first user turn) -> thinking + text + tool_use(exec_command)
  */
@@ -17,6 +26,9 @@ const PORT = Number(process.env.MOCK_PORT || 8931);
 
 /** Count of non-replay requests seen in the "bad stream" conversation: the 1st is cut off (malformed), later ones are retries that get a full tool call. */
 let malformedTurns = 0;
+
+/** Count of requests seen in the "quota retry" conversation: the first 5 are rejected 403 (insufficient_user_quota), the 6th streams normally. */
+let quotaTurns = 0;
 
 function sse(res, event, data) {
   res.write(`event: ${event}\n`);
@@ -93,9 +105,81 @@ const server = http.createServer((req, res) => {
     // the connection (no message_stop), so AgentHub reports "stream incomplete" -> GenerativeModel
     // resolves it as malformed. On reconnect the engine **resends the input verbatim** — in this
     // scenario the failed attempt only has a half tool_call (never committed to the ledger), so
-    // the retry request carries no <turn_retried> block and is byte-for-byte identical to the
+    // the retry request carries no [turn_retried] block and is byte-for-byte identical to the
     // first request; the mock can only tell them apart by request count (see the malformedTurns counter).
     const wantsMalformed = flat.includes("bad stream test");
+
+    // "Auth dead" test case: KEY-BASED — requests carrying the bad key (`sk-auth-bad`,
+    // the Anthropic protocol sends it as the x-api-key header) are rejected with a 401 +
+    // OpenAI-compatible body code; any other key succeeds with a plain text answer. This
+    // exercises the recoverable flow end to end: GenerativeModel classifies the 401 as
+    // failed + code "auth" (never retried) and the composer goes dead; once the spec
+    // updates the model's key via PUT /models, the very same conversation continues
+    // (live unlock via credentials_updated + runtime invalidation re-reading the config).
+    // Gated on !isTitle so a stray title request doesn't hit this branch.
+    if (flat.includes("auth dead test") && !isTitle) {
+      if (req.headers["x-api-key"] === "sk-auth-bad") {
+        res.writeHead(401, { "content-type": "application/json" });
+        res.end(
+          JSON.stringify({ error: { code: "invalid_api_key", message: "invalid x-api-key" } }),
+        );
+        return;
+      }
+      res.writeHead(200, {
+        "content-type": "text/event-stream",
+        "cache-control": "no-cache",
+        connection: "keep-alive",
+      });
+      messageStart(res, msgCount);
+      block(res, 0, { type: "text", text: "" }, [
+        { type: "text_delta", text: "Auth restored; hello again." },
+      ]);
+      messageStop(res, "end_turn", 8);
+      return;
+    }
+
+    // "Quota give-up" test case: EVERY request is rejected 403 with the quota code — the
+    // spec clicks the reconnect countdown's give-up button mid-wait, so the conversation
+    // must never recover on its own (the abort ends it instead).
+    if (flat.includes("quota giveup test") && !isTitle) {
+      res.writeHead(403, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          error: { code: "insufficient_user_quota", message: "no active subscription" },
+        }),
+      );
+      return;
+    }
+
+    // "Quota retry" test case: the first 5 requests of the conversation are rejected 403
+    // with the provider's quota-exhaustion code (as OpenAI-compatible gateways do).
+    // GenerativeModel classifies them retryable (timeout) and the engine reconnects with
+    // exponential backoff (250/500/1000/2000/4000ms) — the 4s wait before retry #5 is the
+    // window the spec uses to observe the live countdown and click "retry now"; the 6th
+    // attempt streams a normal final answer.
+    if (flat.includes("quota retry test") && !isTitle) {
+      quotaTurns += 1;
+      if (quotaTurns <= 5) {
+        res.writeHead(403, { "content-type": "application/json" });
+        res.end(
+          JSON.stringify({
+            error: { code: "insufficient_user_quota", message: "no active subscription" },
+          }),
+        );
+        return;
+      }
+      res.writeHead(200, {
+        "content-type": "text/event-stream",
+        "cache-control": "no-cache",
+        connection: "keep-alive",
+      });
+      messageStart(res, msgCount);
+      block(res, 0, { type: "text", text: "" }, [
+        { type: "text_delta", text: "Quota recovered; the answer is 42." },
+      ]);
+      messageStop(res, "end_turn", 10);
+      return;
+    }
 
     res.writeHead(200, {
       "content-type": "text/event-stream",
@@ -167,11 +251,88 @@ const server = http.createServer((req, res) => {
       return;
     }
 
+    // A REPEAT delegation later in the same conversation (the task-scoped panel e2e needs a
+    // second spawning Task): keyed on the LAST message only — the whole-history flags above
+    // ("run a subagent" + hasToolResult) can never take this branch once a first delegation
+    // sits in the history. The child flow it spawns is identical (same SUBAGENT_PROMPT). The
+    // ~800ms delay keeps the e2e's two observations in order: the task boundary first CLOSES
+    // the panel, and only then does this spawn auto-open it again.
+    const lastFlat = JSON.stringify(messages[messages.length - 1] ?? {});
+    if (lastFlat.includes("run another subagent")) {
+      setTimeout(() => {
+        block(
+          res,
+          0,
+          { type: "tool_use", id: "toolu_mock_sub2", name: "run_subagent", input: {} },
+          [
+            { type: "input_json_delta", partial_json: '{"prompt": ' },
+            { type: "input_json_delta", partial_json: `${JSON.stringify(SUBAGENT_PROMPT)}}` },
+          ],
+        );
+        messageStop(res, "tool_use", 15);
+      }, 800);
+      return;
+    }
+
     if (isSubagentTurn) {
+      // Child turn 1: one tool call before reporting (see the header comment — the child needs
+      // its own approval point for the nested-approval e2e). The command sleeps ~1s so the
+      // whole parent Task reliably OUTLIVES the draft-flow navigation — the auto-open e2e
+      // needs the client to attach while the spawn is still live (a real model is far slower;
+      // without the sleep the mock finishes the entire tree before the page even connects).
+      // Turn 2: the report text, the exact string the title branch keys on.
+      if (!hasToolResult) {
+        block(res, 0, { type: "tool_use", id: "toolu_sub_exec", name: "exec_command", input: {} }, [
+          { type: "input_json_delta", partial_json: '{"cmd"' },
+          { type: "input_json_delta", partial_json: ': "sleep 1; echo counting"}' },
+        ]);
+        messageStop(res, "tool_use", 10);
+        return;
+      }
       block(res, 0, { type: "text", text: "" }, [
         { type: "text_delta", text: "Subagent report: 3 TODOs" },
       ]);
       messageStop(res, "end_turn", 12);
+      return;
+    }
+
+    // Slow tool-output test case (reload-midstream.spec): a real exec_command whose output
+    // streams one line every 200ms for ~8s — long enough to reload the page mid-stream and
+    // watch the output keep growing afterwards.
+    if (flat.includes("slow stream test") && !hasToolResult) {
+      block(res, 0, { type: "tool_use", id: "toolu_slow_1", name: "exec_command", input: {} }, [
+        { type: "input_json_delta", partial_json: '{"cmd": "for i in $(seq 1 40); do' },
+        { type: "input_json_delta", partial_json: ' echo line $i; sleep 0.2; done"}' },
+      ]);
+      messageStop(res, "tool_use", 14);
+      return;
+    }
+
+    // Slow TEXT test case (reload-midstream.spec): a single text block streamed one delta
+    // every 200ms (~8s total) so the page can be reloaded while the assistant text is
+    // still streaming. Single turn: ends with end_turn, no tool call.
+    if (flat.includes("slow text test")) {
+      sse(res, "content_block_start", {
+        type: "content_block_start",
+        index: 0,
+        content_block: { type: "text", text: "" },
+      });
+      let n = 0;
+      const tick = () => {
+        n += 1;
+        sse(res, "content_block_delta", {
+          type: "content_block_delta",
+          index: 0,
+          delta: { type: "text_delta", text: `chunk-${n} ` },
+        });
+        if (n < 40) {
+          setTimeout(tick, 200);
+        } else {
+          sse(res, "content_block_stop", { type: "content_block_stop", index: 0 });
+          messageStop(res, "end_turn", 80);
+        }
+      };
+      tick();
       return;
     }
 

@@ -19,18 +19,44 @@ export const DOCS_URL = `${import.meta.env.BASE_URL}docs/`;
 export const INSTALL_CMD = "curl -fsSL https://penguin.ooo/install.sh | sh";
 
 /**
- * Demo videos live in the sibling `penguin-harness-community` repo rather than in this
- * one: they are ~9 MB each, and this repo's whole history is ~17 MB, so committing them
- * here would triple what every contributor clones for assets only the marketing site
- * shows. Served by raw.githubusercontent with `accept-ranges: bytes` (seeking works),
- * `access-control-allow-origin: *` and a 5-minute cache. The `application/octet-stream`
- * content type does not block playback — `nosniff` is only enforced for scripts and
- * styles, and `<video>` sniffs the container itself (verified in Chromium).
- * Pair every embed with a poster and `preload="none"`: nothing is fetched until play.
+ * One-line installer for Windows (PowerShell 5.1+, x64, bundled Node runtime).
+ * penguin.ooo/install.ps1 is public/install.ps1 — the same thin-forwarder design.
+ */
+export const INSTALL_CMD_WINDOWS = "irm https://penguin.ooo/install.ps1 | iex";
+
+/**
+ * Heavy marketing media lives in the sibling `penguin-harness-community` repo rather than
+ * in this one, so that assets only the landing site ever renders stay out of the clone of
+ * everyone who builds the product. Served by raw.githubusercontent with
+ * `access-control-allow-origin: *` and a 5-minute cache; a GitHub outage degrades the site
+ * to missing media, which is the accepted trade for not carrying the bytes here.
  */
 const COMMUNITY_RAW =
   "https://github.com/Prism-Shadow/penguin-harness-community/raw/refs/heads/main";
+
+/**
+ * Demo videos: ~9 MB each, against a whole repo history of ~17 MB — committing them here
+ * would triple what every contributor clones. raw.githubusercontent sends
+ * `accept-ranges: bytes`, so seeking works. The `application/octet-stream` content type
+ * does not block playback — `nosniff` is only enforced for scripts and styles, and
+ * `<video>` sniffs the container itself (verified in Chromium).
+ * Pair every embed with a poster and `preload="none"`: nothing is fetched until play.
+ */
 export const demoVideoUrl = (name: string): string => `${COMMUNITY_RAW}/videos/${name}.mp4`;
+
+/**
+ * Blog images: a few hundred KB per post, forever, since a published post's screenshots
+ * are never deleted — the one asset class whose growth is unbounded in the number of posts
+ * written. Hosting them in the community repo keeps that growth out of this history.
+ *
+ * The post Markdown deliberately does *not* spell these URLs out. Bodies keep writing the
+ * portable `/blog-assets/<name>` path (both `![alt](…)` and the raw `<img src="…">` tags
+ * some posts use), and the renderer resolves it here at render time — see the `img`
+ * adapter in src/pages/blog-post.tsx. One source of truth for where the images are hosted,
+ * Markdown that stays readable and diffable, and moving the host again is a one-line
+ * change instead of a sweep over every post.
+ */
+export const blogAssetUrl = (name: string): string => `${COMMUNITY_RAW}/blog-assets/${name}`;
 
 /** API key consoles (same URLs the in-app Models page links to). */
 export const DEEPSEEK_KEYS_URL = "https://platform.deepseek.com/api_keys";

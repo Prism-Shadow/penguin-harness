@@ -1,7 +1,7 @@
 /**
  * Agent settings page: six tabs —
  * Overview (name/description/State path/active count/State version + snapshot
- * export-import), Prompt (AGENTS.md and system_prompt editors + placeholder
+ * export-import + restore default configuration), Prompt (AGENTS.md and system_prompt editors + placeholder
  * reference), Runtime (max_turns, model.*, compaction.*), Tools (editable built-in
  * tools table, MCP Server read-only JSON), Vault (vault-tab.tsx), Schedule
  * (schedules-tab.tsx).
@@ -29,6 +29,7 @@ import { Button } from "../../components/ui/button";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 import { Input, Textarea } from "../../components/ui/input";
 import { OptionMenu, type OptionMenuChoice } from "../../components/ui/option-menu";
+import { Switch } from "../../components/ui/switch";
 import { ConfirmModal, useSaveConfirm } from "../../components/ui/confirm-modal";
 import { Skeleton } from "../../components/ui/skeleton";
 import { VaultTab } from "./vault-tab";
@@ -116,6 +117,13 @@ export function AgentSettingsPage() {
     [load, reloadAgents],
   );
 
+  /** Config reset succeeded: the whole system_config.yaml was replaced, so reload every tab's data (and the list's tool counts). */
+  const onConfigReset = useCallback(() => {
+    toastSuccess(S.agent.resetConfigDone);
+    load();
+    void reloadAgents();
+  }, [load, reloadAgents]);
+
   const save = useCallback(
     async (update: AgentConfigUpdateRequest) => {
       if (!projectId || !agentId) return;
@@ -177,7 +185,13 @@ export function AgentSettingsPage() {
         <Tabs items={TABS} active={tab} onChange={setTab} />
         <div className="py-4">
           {tab === "overview" && (
-            <OverviewTab data={data} agentId={agentId} onSave={save} onImported={onImported} />
+            <OverviewTab
+              data={data}
+              agentId={agentId}
+              onSave={save}
+              onImported={onImported}
+              onConfigReset={onConfigReset}
+            />
           )}
           {tab === "prompt" && <PromptTab data={data} onSave={save} />}
           {tab === "runtime" && <RuntimeTab data={data} onSave={save} />}
@@ -204,11 +218,13 @@ function OverviewTab({
   agentId,
   onSave,
   onImported,
+  onConfigReset,
 }: {
   data: AgentConfigResponse;
   agentId: string;
   onSave: SaveFn;
   onImported: (version: number) => void;
+  onConfigReset: () => void;
 }) {
   const { currentProject } = useProject();
   const projectId = currentProject?.projectId ?? null;
@@ -219,7 +235,23 @@ function OverviewTab({
   const [importError, setImportError] = useState<string | null>(null);
   // base64 of the snapshot package pending confirmation for a version conflict (409 version_conflict); non-null shows the confirm modal.
   const [conflict, setConflict] = useState<string | null>(null);
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetting, setResetting] = useState(false);
   const { requestSave, element: saveConfirm } = useSaveConfirm();
+
+  const runReset = async () => {
+    if (!projectId) return;
+    setResetting(true);
+    try {
+      await api.resetAgentConfig(projectId, agentId);
+      setResetOpen(false);
+      onConfigReset();
+    } catch (e) {
+      toastError(apiErrorText(e));
+    } finally {
+      setResetting(false);
+    }
+  };
 
   const submit = () => {
     const config: NonNullable<AgentConfigUpdateRequest["config"]> = {};
@@ -336,6 +368,15 @@ function OverviewTab({
         )}
       </div>
 
+      {/* Restore default configuration: overwrite system_config.yaml with the current defaults (name/description/version kept) — the config-side analogue of a skill update. */}
+      <div>
+        <p className="mb-1 text-xs font-medium text-gray-500">{S.agent.resetConfigTitle}</p>
+        <p className="mb-2 text-xs text-gray-500 dark:text-gray-400">{S.agent.resetConfigDesc}</p>
+        <Button size="sm" disabled={resetting} onClick={() => setResetOpen(true)}>
+          {S.agent.resetConfigAction}
+        </Button>
+      </div>
+
       <Button size="sm" variant="primary" onClick={submit}>
         {S.common.save}
       </Button>
@@ -352,6 +393,18 @@ function OverviewTab({
         }}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">{S.agent.importConflictBody}</p>
+      </ConfirmModal>
+
+      {/* Reset confirmation: overwriting customizations with the defaults is destructive, so it keeps the danger tone. */}
+      <ConfirmModal
+        open={resetOpen}
+        title={S.agent.resetConfigTitle}
+        busy={resetting}
+        onClose={() => setResetOpen(false)}
+        onConfirm={() => void runReset()}
+        confirmLabel={S.agent.resetConfigAction}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">{S.agent.resetConfigConfirmBody}</p>
       </ConfirmModal>
     </div>
   );
@@ -703,6 +756,12 @@ function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn 
           errs[`${i}-maxOutputLength`] = S.agent.toolFieldInvalid(row.base.name, "maxOutputLength");
         } else tool.maxOutputLength = n;
       }
+      // call_description: missing = true, so flipping a stored-missing row back to on
+      // rewinds to "not written" instead of writing the default explicitly.
+      const origRow = data.config.toolsBuiltin[i];
+      if (tool.call_description === true && origRow?.call_description === undefined) {
+        delete tool.call_description;
+      }
       tools.push(tool);
     }
     if (Object.keys(errs).length > 0) {
@@ -720,7 +779,8 @@ function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn 
         return (
           t.permission !== o.permission ||
           t.timeoutMs !== o.timeoutMs ||
-          t.maxOutputLength !== o.maxOutputLength
+          t.maxOutputLength !== o.maxOutputLength ||
+          t.call_description !== o.call_description
         );
       });
     if (!dirty) {
@@ -730,16 +790,24 @@ function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn 
     requestSave(() => void onSave({ config: { toolsBuiltin: tools } }));
   };
 
+  /** Whether a tool's config schema declares the optional `description` call argument (only then does the per-row switch make sense). */
+  const hasDescriptionProperty = (t: ToolDefinitionConfig): boolean => {
+    const props = (t.parameters as { properties?: Record<string, unknown> } | undefined)
+      ?.properties;
+    return props !== undefined && props !== null && props["description"] !== undefined;
+  };
+
   return (
     <div className="space-y-4">
       <div className="overflow-x-auto overflow-y-clip rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-        <table className="w-full min-w-[520px] text-left text-sm">
+        <table className="w-full min-w-[640px] text-left text-sm">
           <thead>
             <tr className="border-b border-gray-200 bg-gray-50/80 text-xs text-gray-500 dark:border-gray-800 dark:bg-gray-900">
               <th className="px-3 py-2">{S.common.name}</th>
               <th className="px-3 py-2">{S.agent.toolPermission}</th>
               <th className="px-3 py-2">{S.agent.toolTimeout}</th>
               <th className="px-3 py-2">{S.agent.toolMaxOutput}</th>
+              <th className="px-3 py-2">{S.agent.toolCallDescription}</th>
             </tr>
           </thead>
           <tbody>
@@ -777,11 +845,25 @@ function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn 
                     onChange={(e) => update(i, { maxOutputLength: e.target.value })}
                   />
                 </td>
+                <td className="px-3 py-2 align-top">
+                  {/* Per-tool call_description switch (missing = on): shown only for tools whose
+                      config schema actually declares the description argument. */}
+                  {hasDescriptionProperty(row.base) ? (
+                    <Switch
+                      checked={row.base.call_description !== false}
+                      onChange={(v) => update(i, { base: { ...row.base, call_description: v } })}
+                      aria-label={`${row.base.name} ${S.agent.toolCallDescription}`}
+                    />
+                  ) : (
+                    <span className="text-xs text-gray-300 dark:text-gray-600">—</span>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+      <p className="text-xs text-gray-400 dark:text-gray-500">{S.agent.callDescriptionHint}</p>
 
       <div>
         <p className="mb-1 text-xs font-medium text-gray-500">{S.agent.mcpServers}</p>

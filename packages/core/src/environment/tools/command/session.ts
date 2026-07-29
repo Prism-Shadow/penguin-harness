@@ -1,11 +1,14 @@
 /**
  * ManagedSession — runtime state and collection logic for a single command session.
  *
- * Spawns the process with `bash -lc <cmd>`, with stdout/stderr going through plain pipes (no
+ * Spawns the process with `bash -lc <cmd>` (on Windows, the shell picked by `sessionShell()`
+ * — see shell.ts), with stdout/stderr going through plain pipes (no
  * native dependency, clean output; an interactive program that detects no TTY falls back to
  * non-interactive mode, which parses more cleanly for the Agent anyway). `detached` makes the
  * child process the process-group leader, so both Ctrl-C and killing the whole group rely on
  * **process-group signals** (sending a signal to `-pid` also reaches background child processes).
+ * Windows has neither process groups nor real signals: every "signal" degrades to a hard
+ * TerminateProcess, and tree-wide cleanup goes through `taskkill /t` instead (see signalGroup).
  *
  * Key semantics:
  * - **Termination is determined by the foreground process exiting (the exit event, waitpid
@@ -22,9 +25,10 @@
  * - `kill()` sends SIGTERM to the process group, then SIGKILL after a grace period, reaping any
  *   leftover background child processes; idempotent.
  */
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import type { ToolResult } from "../types.js";
 import { CappedTextBuffer, WakeSignal } from "../background/index.js";
+import { sessionShell } from "./shell.js";
 
 /** Process-group semantics are available on POSIX; Windows falls back to signaling the child process directly. */
 const SUPPORTS_PROCESS_GROUP = process.platform !== "win32";
@@ -48,7 +52,7 @@ export interface ProcessExit {
 
 /** Arguments required to start a command. */
 export interface SpawnOptions {
-  /** Command string handed to `bash -lc`. */
+  /** Command string handed to the session shell (`bash -lc` on POSIX; see shell.ts for Windows). */
   cmd: string;
   /** Working directory (absolute path). */
   cwd: string;
@@ -71,11 +75,13 @@ export class ManagedSession {
   private readonly wakeSignal = new WakeSignal();
 
   constructor(opts: SpawnOptions) {
-    this.child = spawn("bash", ["-lc", opts.cmd], {
+    const shell = sessionShell();
+    this.child = spawn(shell.command, [...shell.args, opts.cmd], {
       cwd: opts.cwd,
       env: opts.env,
       detached: SUPPORTS_PROCESS_GROUP, // Become the process-group leader, so the whole group can be signaled
       stdio: ["pipe", "pipe", "pipe"],
+      windowsHide: true, // No flashing console window on Windows (ignored elsewhere)
     });
     this.child.stdout?.setEncoding("utf8");
     this.child.stderr?.setEncoding("utf8");
@@ -92,16 +98,51 @@ export class ManagedSession {
     this.child.on("error", (err) => this.handleError(err));
   }
 
-  /** Signals the process group; ignores the case where the process/group has already exited (ESRCH). */
-  private signalGroup(sig: NodeJS.Signals): void {
+  /**
+   * Signals the process group; ignores the case where the process/group has already exited (ESRCH).
+   *
+   * Windows has no signals: `child.kill()` is an unconditional TerminateProcess of the direct
+   * child only, which would orphan grandchildren (a `node server.js` started by the shell).
+   * Every signal therefore becomes a hard kill of the whole tree via `taskkill /t /f` — including
+   * SIGINT: without a shared console there is no way to deliver a real Ctrl-C to a piped child,
+   * so input_command's Ctrl-C degrades to this hard kill on Windows. `sync` uses spawnSync for
+   * the process-'exit' fallback, where the event loop is no longer running.
+   */
+  private signalGroup(sig: NodeJS.Signals, sync = false): void {
     try {
       if (SUPPORTS_PROCESS_GROUP && typeof this.child.pid === "number" && this.child.pid > 0) {
         process.kill(-this.child.pid, sig); // Negative pid = the whole process group
+      } else if (
+        process.platform === "win32" &&
+        typeof this.child.pid === "number" &&
+        this.child.pid > 0
+      ) {
+        this.killTreeWindows(this.child.pid, sync);
       } else {
         this.child.kill(sig);
       }
     } catch {
       // ESRCH etc., ignored.
+    }
+  }
+
+  /** Hard-kills the whole process tree on Windows; falls back to child.kill() if taskkill itself fails. */
+  private killTreeWindows(pid: number, sync: boolean): void {
+    const args = ["/pid", String(pid), "/t", "/f"];
+    if (sync) {
+      const res = spawnSync("taskkill", args, { stdio: "ignore", windowsHide: true });
+      if (res.error || res.status !== 0) this.child.kill();
+      return;
+    }
+    try {
+      const killer = spawn("taskkill", args, { stdio: "ignore", windowsHide: true });
+      // taskkill missing or failing (e.g. restricted environment): still terminate the direct child.
+      killer.on("error", () => this.child.kill());
+      killer.on("exit", (code) => {
+        if (code !== 0 && !this.exited) this.child.kill();
+      });
+    } catch {
+      this.child.kill();
     }
   }
 
@@ -191,6 +232,7 @@ export class ManagedSession {
       // stdin may already be closed, ignored.
     }
   }
+  /** Ctrl-C. POSIX: SIGINT to the process group; Windows: degrades to a hard tree kill (see signalGroup). */
   interrupt(): void {
     this.lastUsed = Date.now();
     this.signalGroup("SIGINT");
@@ -214,7 +256,7 @@ export class ManagedSession {
       clearTimeout(this.killTimer);
       this.killTimer = null;
     }
-    this.signalGroup("SIGKILL");
+    this.signalGroup("SIGKILL", true);
   }
 }
 

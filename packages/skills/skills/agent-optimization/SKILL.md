@@ -25,6 +25,19 @@ Each round starts from the Reference and tests a bounded, general **Candidate**.
 
 ## Access and changes
 
+Resolve paths from the Environment's App Data Dir without recursively discovering the Project:
+
+```text
+PROJECT_DIR = <app_data_dir>
+PROJECT_ID = <basename_of_project_dir>
+PENGUIN_HOME = <parent_of_project_dir>
+TARGET = <app_data_dir>/agents/<test_agent_id>
+STATE = <target>/agent_state
+TRACES = <target>/traces
+BENCHMARK = <target>/benchmarks/<benchmark_id>
+SCOREBOARD = <benchmark>/scoreboard.yaml
+```
+
 Inspect only the requested Test Agent and Benchmark: the Agent State, public Statements, Scoreboard, and score-linked Test Traces or artifacts from the Baseline and this optimization, including rejected Candidates.
 
 Do not inspect Rubrics, Gold answers, private scoring conditions, Evaluator State, Workspace, or Trace, other Agents, or Project secrets. If private evaluation information enters the Optimizer context, restore the active Candidate and stop as contaminated.

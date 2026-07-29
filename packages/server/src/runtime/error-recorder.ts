@@ -8,14 +8,16 @@
  *
  * - `expected`: anticipated by the system, has a defined handling path, part of normal
  *   operation, no human needed — HTTP business errors (`HttpError`, mostly 4xx); LLM
- *   `timeout` / `malformed` (the engine already reconnects and retries); tool execution
- *   `failed` / `timeout` (the error is fed back to the model, and the Agent adjusts on
- *   its own).
+ *   `timeout` / `malformed`, and an LLM `failed` the engine went on to retry (the engine
+ *   reconnects on all three, so a request the ladder carried cost the user nothing); tool
+ *   execution `failed` / `timeout` (the error is fed back to the model, and the Agent
+ *   adjusts on its own).
  * - `unexpected`: shouldn't happen, usually a bug or a config/environment fault,
  *   **needs a human** — internal errors converged to 500; process crashes; runtime
  *   errors escaping from background tasks (Session drive / usage persistence / title
- *   generation / subagent registration); LLM `failed` (not retryable: auth failure,
- *   invalid params, etc.).
+ *   generation / subagent registration); LLM `auth` (the credential was rejected and only
+ *   a human can replace it) and an LLM `failed` the retries did not recover (the run ended
+ *   on it and the user lost the turn).
  * - User-initiated actions **are not errors** and are never recorded: request/tool
  *   `aborted` (user clicked "stop", or denied a tool).
  *

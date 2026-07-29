@@ -101,7 +101,7 @@ Each family's latest generation only — the app's **Models** page lists every b
 
 | Requirement  | Supported                                                                  |
 | ------------ | -------------------------------------------------------------------------- |
-| OS           | Linux, macOS                                                               |
+| OS           | Linux, macOS, Windows 10+                                                  |
 | Architecture | x64, arm64                                                                 |
 | Runtime      | bundled by the one-line installer (npm installs need Node >= 24)           |
 | Model        | an API key for at least one model                                          |
@@ -116,6 +116,8 @@ Each family's latest generation only — the app's **Models** page lists every b
 curl -fsSL https://penguin.ooo/install.sh | sh
 penguin web        # start the service and open http://127.0.0.1:7364 (first login: admin / penguin-2026)
 ```
+
+🪟 On Windows (PowerShell): `irm https://penguin.ooo/install.ps1 | iex`
 
 📦 Or via npm: `npm install -g @prismshadow/penguin-cli`. Configure models on the in-app Models page, then chat.
 
@@ -149,7 +151,7 @@ for await (const output of session.run([userText("Create hello.txt containing hi
 
 - [ ] Public release of the benchmark suite
 - [ ] Desktop app
-- [ ] Windows support
+- [x] Windows support
 - [ ] Agent company and templates
 - [ ] Company-level self evolving
 - [ ] OpenShell integration (permission-governed shell)
@@ -163,6 +165,14 @@ pnpm dev                     # backend + web app together (prefixed logs, deps b
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workspace guide: dev commands, quality gates, repo layout, and the changelog rule.
+
+## Contributors
+
+Thanks to everyone who has contributed to PenguinHarness!
+
+<p align="center">
+  <a href="https://github.com/Prism-Shadow/penguin-harness/graphs/contributors"><img src="https://contrib.rocks/image?repo=Prism-Shadow/penguin-harness" alt="PenguinHarness contributors" /></a>
+</p>
 
 ## Citation
 

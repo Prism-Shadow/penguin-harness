@@ -26,6 +26,7 @@ import type {
   DirListResponse,
   FilesStatRequest,
   FilesStatResponse,
+  GoalResponse,
   MeResponse,
   MemberAddRequest,
   MemberAddResponse,
@@ -52,15 +53,23 @@ import type {
   SessionTracesResponse,
   SkillInstallRequest,
   SkillLibraryResponse,
+  RetryNowResponse,
+  SteerRequest,
   TaskCreateRequest,
   TaskCreateResponse,
   TraceAnalysisResponse,
   TraceEventsResponse,
+  TraceImportRequest,
+  TraceImportResponse,
   UiPrefs,
+  UpdateCheckResponse,
+  UpdateRunResponse,
+  UsageErrorsPage,
   UsageGroupBy,
   UsageResponse,
   VaultResponse,
   VaultUpdateRequest,
+  VersionResponse,
   WorkspaceFilesResponse,
 } from "@prismshadow/penguin-server/api";
 import { apiFetch } from "./client";
@@ -180,6 +189,13 @@ export const putAgentConfig = (
     { method: "PUT", body },
   );
 
+/** Overwrite system_config.yaml with the current defaults (keeps only name/description/version). */
+export const resetAgentConfig = (projectId: string, agentId: string) =>
+  apiFetch<AgentConfigResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/config/reset`,
+    { method: "POST" },
+  );
+
 export const getAgentTraces = (projectId: string, agentId: string) =>
   apiFetch<AgentTracesResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/traces`,
@@ -242,6 +258,9 @@ export const postTask = (sessionId: string, body: TaskCreateRequest) =>
     body,
   });
 
+export const getGoal = (sessionId: string) =>
+  apiFetch<GoalResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/goal`);
+
 export const postApproval = (
   sessionId: string,
   toolCallId: string,
@@ -256,6 +275,20 @@ export const postAbort = (sessionId: string) =>
   apiFetch<void>(`/api/sessions/${encodeURIComponent(sessionId)}/abort`, {
     method: "POST",
     body: {},
+  });
+
+/** "Retry now" on the reconnect countdown: skips the remaining backoff wait server-side (skipped:false is the benign "no wait in progress" case — e.g. the timer elapsed in a race — never an error). */
+export const postRetryNow = (sessionId: string) =>
+  apiFetch<RetryNowResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/retry-now`, {
+    method: "POST",
+    body: {},
+  });
+
+/** Mid-run steering: queues a message for the running Task (delivered between turns as a standalone `[user_steering]` user message); 409 not_running when no Task is in progress. */
+export const postSteer = (sessionId: string, body: SteerRequest) =>
+  apiFetch<void>(`/api/sessions/${encodeURIComponent(sessionId)}/steer`, {
+    method: "POST",
+    body,
   });
 
 export const postCompact = (sessionId: string) =>
@@ -310,7 +343,44 @@ export const getAgentTraceAnalysis = (
       `/traces/${encodeURIComponent(sessionId)}/${index}/analysis`,
   );
 
+/** Trace file download URL: the server sets Content-Disposition attachment, usable directly in <a download>. */
+export const agentTraceDownloadUrl = (
+  projectId: string,
+  agentId: string,
+  sessionId: string,
+  index: number,
+): string =>
+  `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
+  `/traces/${encodeURIComponent(sessionId)}/${index}/download`;
+
+/** Imports a Trace JSONL file (owner only); the response says where the file landed (sessionId / index / date). */
+export const importAgentTrace = (projectId: string, agentId: string, body: TraceImportRequest) =>
+  apiFetch<TraceImportResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/traces/import`,
+    { method: "POST", body },
+  );
+
 // Usage statistics ----------------------------------------------------------------------
+
+/**
+ * One page of the cost center's error table (newest first). The dashboard response already
+ * carries the first page; this is for paging back to earlier ones without refetching the
+ * whole aggregate. Takes the dashboard's date/agent filter only — the model filter never
+ * applied to errors.
+ */
+export const getUsageErrors = (
+  projectId: string,
+  params: { offset: number; limit: number; from?: string; to?: string; agentId?: string },
+) =>
+  apiFetch<UsageErrorsPage>(`/api/projects/${encodeURIComponent(projectId)}/usage/errors`, {
+    query: {
+      offset: String(params.offset),
+      limit: String(params.limit),
+      from: params.from,
+      to: params.to,
+      agentId: params.agentId,
+    },
+  });
 
 export const getUsage = (
   projectId: string,
@@ -493,3 +563,15 @@ export const importAgent = (projectId: string, agentId: string, body: AgentImpor
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/import`,
     { method: "POST", body },
   );
+
+// Version & self-update ----------------------------------------------------------------
+
+export const getVersion = () => apiFetch<VersionResponse>("/api/version");
+
+/** `force` (the manual "check for updates" action) bypasses the server's TTL cache. */
+export const checkUpdate = (force = false) =>
+  apiFetch<UpdateCheckResponse>(`/api/version/update-check${force ? "?force=1" : ""}`);
+
+/** Admin only: runs `penguin update` on the server host (long request — up to 10 minutes). */
+export const runUpdate = () =>
+  apiFetch<UpdateRunResponse>("/api/version/update", { method: "POST", body: {} });

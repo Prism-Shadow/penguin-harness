@@ -12,3 +12,8 @@ SKIP_BUILD=1 pnpm --filter @prismshadow/penguin-web test:e2e   # skip the build
 ```
 
 The first run requires `npx playwright install chromium`.
+
+The runner (`run.sh`) is POSIX-only and deliberately stays that way: `pnpm test` never
+invokes it (only the separate `test:e2e` script does), so a Windows checkout builds and
+tests fine without it. To run the browser e2e on Windows, use Git-Bash
+(`bash e2e/run.sh` from `packages/web`).

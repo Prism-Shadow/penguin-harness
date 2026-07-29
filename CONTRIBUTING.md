@@ -15,10 +15,11 @@ pnpm install
 pnpm build       # build first: core's exports point at dist/
 
 pnpm dev         # backend + web app together (prefixed logs, deps built once)
-pnpm dev:server  # backend at 127.0.0.1:7364
-pnpm dev:web     # web app (Vite) at 127.0.0.1:7365, /api proxied
+pnpm dev:server  # backend at 127.0.0.1:7368 (not the installed server's 7364)
+pnpm dev:web     # web app (Vite) at 127.0.0.1:7365, /api proxied to 7368
 pnpm dev:docs    # docs site (Vite) at 127.0.0.1:7367
 pnpm dev:landing # landing page (Vite) at 127.0.0.1:7366
+pnpm penguin ... # CLI from source; `penguin web` serves at 127.0.0.1:7369
 
 BASE_PATH=/ pnpm build:site   # assemble landing + docs exactly like the Pages deploy
 ```
@@ -30,6 +31,11 @@ pays nothing (the lockfile hash is stamped) — then prebuilds the workspace dep
 core) with back-to-back builds deduped: starting `dev:server` and `dev:web` at the same
 time (or just `pnpm dev`) installs and builds exactly once. `dev:docs` / `dev:landing`
 run the install check only (`--install-only`).
+
+Dev entry points that touch data (`pnpm dev`, `pnpm dev:server`, `pnpm penguin`) default
+to a separate data root, `~/.penguin/dev-data`, kept apart from the installed CLI/server's
+`~/.penguin/data` — hacking on the repo never mixes state with your real agents. Export
+`PENGUIN_HOME` to point them anywhere else; an explicit value always wins.
 
 Copy `.env.example` to `.env` for model credentials in development.
 

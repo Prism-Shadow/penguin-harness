@@ -32,8 +32,19 @@ export interface StreamRenderContext {
   taskRunning: boolean;
   /** Converts this turn's stats into cost (USD) using the current Model pricing; returns null when no price is configured (cost is hidden). */
   taskCost?: (stats: TaskStats) => number | null;
+  /**
+   * "Retry now" on the live reconnect countdown: skips the remaining backoff wait
+   * server-side (POST /retry-now); the line flips to "retrying" when the request_begin
+   * arrives. Only honored on main-session items — a subagent's backoff belongs to the
+   * child session, which the route does not target.
+   */
+  onRetryNow?: () => void;
+  /** "Give up" on the live reconnect countdown: the ordinary session abort (same call as the Stop button). */
+  onGiveUp?: () => void;
   /** Opens the Files panel and navigates to this file (triggered by clicking the file-summary card at the end of a message; takes a Workspace-relative path); the card doesn't render if this isn't wired up. */
   onOpenFile?: (path: string) => void;
+  /** Opens the subagents panel focused on this child session (subagent chip click); `origin` is the ctx.origin at the chip's render level — the child's ancestor chain, excluding its own id. */
+  onOpenSubagent?: (sessionId: string, origin: string[]) => void;
   /** Absolute Workspace path of the current Session (used by the file-summary card to normalize body paths). */
   workspace?: string | null;
   /** Batch file-existence check (with session-level caching); the card doesn't render if this isn't wired up. */

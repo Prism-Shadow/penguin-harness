@@ -8,6 +8,7 @@ import {
   formatBytes,
   formatDateTime,
   formatMoney,
+  formatMonthDay,
   formatPercent,
   formatRelativeDate,
   formatRelativeDays,
@@ -48,6 +49,30 @@ describe("humanizeDuration", () => {
     expect(humanizeDuration(63000)).toBe("1m3s");
     expect(humanizeDuration(130000)).toBe("2m10s");
   });
+
+  it("compact (narrow screens) drops the tenths from 10s up, keeps them below", () => {
+    expect(humanizeDuration(12700, { compact: true })).toBe("13s");
+    expect(humanizeDuration(59400, { compact: true })).toBe("59s");
+    expect(humanizeDuration(1700, { compact: true })).toBe("1.7s");
+    expect(humanizeDuration(820, { compact: true })).toBe("820ms");
+    expect(humanizeDuration(63000, { compact: true })).toBe("1m3s");
+  });
+
+  it("a seconds remainder that rounds to 60 carries into the minute", () => {
+    // Rounding the remainder against floored minutes would read 1m60s / 59m60s.
+    expect(humanizeDuration(119_500)).toBe("2m0s");
+    expect(humanizeDuration(119_700)).toBe("2m0s");
+    expect(humanizeDuration(179_600)).toBe("3m0s");
+    expect(humanizeDuration(3_599_700)).toBe("60m0s");
+    // Below the carry the remainder still rounds normally.
+    expect(humanizeDuration(119_400)).toBe("1m59s");
+  });
+
+  it("compact promotes a sub-minute value that rounds to 60s into the minute form", () => {
+    expect(humanizeDuration(59_600, { compact: true })).toBe("1m0s");
+    // Without compact the tenths are kept, so there is nothing to carry.
+    expect(humanizeDuration(59_600)).toBe("59.6s");
+  });
 });
 
 describe("signedDelta", () => {
@@ -75,6 +100,16 @@ describe("formatMoney", () => {
     expect(formatMoney(0, "CNY")).toBe("¥0");
     expect(formatMoney(1, "CNY")).toBe("¥7.00");
     expect(formatMoney(0.01, "CNY")).toBe("¥0.0700");
+  });
+
+  it("compact (narrow screens): sub-unit costs keep 2 significant digits, never rounding a nonzero cost to zero", () => {
+    expect(formatMoney(0.1234, "USD", { compact: true })).toBe("$0.12");
+    expect(formatMoney(0.0012, "USD", { compact: true })).toBe("$0.0012");
+    expect(formatMoney(0.00047, "USD", { compact: true })).toBe("$0.00047");
+    expect(formatMoney(1.5, "USD", { compact: true })).toBe("$1.50");
+    expect(formatMoney(150, "USD", { compact: true })).toBe("$150");
+    expect(formatMoney(0, "USD", { compact: true })).toBe("$0");
+    expect(formatMoney(0.01, "CNY", { compact: true })).toBe("¥0.07");
   });
 });
 
@@ -119,6 +154,14 @@ describe("formatBytes", () => {
     expect(formatBytes(812)).toBe("812B");
     expect(formatBytes(3481)).toBe("3.4KB");
     expect(formatBytes(2 * 1024 * 1024)).toBe("2MB");
+  });
+
+  it("a value that rounds up to 1024 carries into the next unit", () => {
+    // Picking the unit from the raw value would print 1024KB / 1024MB.
+    expect(formatBytes(1024 * 1024 - 6)).toBe("1MB");
+    expect(formatBytes(1024 * 1024 * 1024 - 800)).toBe("1GB");
+    // Just below the carry the unit is unchanged.
+    expect(formatBytes(1024 * 1024 - 60)).toBe("1023.9KB");
   });
 });
 
@@ -224,5 +267,27 @@ describe("formatRelativeDate (semantic update time on Skill cards)", () => {
   it("parse failure returns the input unchanged", () => {
     expect(formatRelativeDate("not-a-date", "zh")).toBe("not-a-date");
     expect(formatRelativeDate("", "en")).toBe("");
+  });
+});
+
+describe("formatMonthDay (version-line 'last updated' date)", () => {
+  it("formats a date-only string per locale, matching the owner-specified wording", () => {
+    expect(formatMonthDay("2026-07-26", "en")).toBe("Jul 26");
+    expect(formatMonthDay("2026-07-26", "zh")).toBe("7 月 26 日");
+    expect(formatMonthDay("2026-01-05", "en")).toBe("Jan 5");
+    expect(formatMonthDay("2026-12-31", "zh")).toBe("12 月 31 日");
+  });
+
+  it("reads only the date part of a full ISO timestamp — no timezone round-trip that could shift a day", () => {
+    expect(formatMonthDay("2026-07-01T00:00:00Z", "en")).toBe("Jul 1");
+    expect(formatMonthDay("2026-05-05T12:00:00Z", "zh")).toBe("5 月 5 日");
+  });
+
+  it("returns unparsable or out-of-range input unchanged", () => {
+    expect(formatMonthDay("not-a-date", "en")).toBe("not-a-date");
+    expect(formatMonthDay("2026-7-26", "zh")).toBe("2026-7-26"); // not the zero-padded wire format
+    expect(formatMonthDay("2026-07-26x", "en")).toBe("2026-07-26x");
+    expect(formatMonthDay("2026-13-01", "en")).toBe("2026-13-01");
+    expect(formatMonthDay("2026-00-10", "zh")).toBe("2026-00-10");
   });
 });

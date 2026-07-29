@@ -10,7 +10,7 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   assistantText,
   emptyTokenCounts,
@@ -30,7 +30,8 @@ import type { GenerativeModelParameters, LLMInterface, LLMOutcome } from "../src
 import type { OmniMessage, TextPayload, ToolCallPayload } from "../src/omnimessage/index.js";
 import { Environment } from "../src/environment/index.js";
 import { Writer, readTrace } from "../src/trace/index.js";
-import { ContextEngine } from "../src/engine/context-engine.js";
+import { ContextEngine, reconnectDelayMs } from "../src/engine/context-engine.js";
+import { goalRoundMessage } from "../src/goal/goal-prompts.js";
 import type { ApproveFn, EnvironmentInterface, ToolPermission } from "../src/interfaces.js";
 
 /** Deterministic fake LLM: the first turn yields a tool_call, the second yields the final reply. */
@@ -95,9 +96,9 @@ function execCommandToolConfig() {
 const isToolCall = (m: OmniMessage): boolean =>
   isCompleteModelMessage(m) && m.payload.type === "tool_call";
 
-/** Count of text messages in the list starting with `<turn_aborted>` (flatten carry-over count). */
+/** Count of text messages in the list starting with `[turn_aborted]` (flatten carry-over count). */
 const turnAbortedCount = (msgs: OmniMessage[]): number =>
-  msgs.filter((m) => ((m.payload as { text?: string }).text ?? "").startsWith("<turn_aborted>"))
+  msgs.filter((m) => ((m.payload as { text?: string }).text ?? "").startsWith("[turn_aborted]"))
     .length;
 
 /** An approval callback that allows everything. */
@@ -132,8 +133,10 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
   });
 
   afterEach(async () => {
-    await rm(workspace, { recursive: true, force: true });
-    await rm(traces, { recursive: true, force: true });
+    // Retries (here and in the other cleanups below): on Windows a just-killed process tree
+    // releases its cwd locks asynchronously, so an immediate rm can hit EBUSY.
+    await rm(workspace, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    await rm(traces, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   });
 
   it("approves a tool call, writes the file, returns the final answer, traces it", async () => {
@@ -174,6 +177,68 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
     expect(recordedTypes).toContain("tool_call");
     expect(recordedTypes).toContain("tool_call_output");
     expect(recordedTypes.some((t) => t?.startsWith("partial_"))).toBe(false);
+  });
+
+  it("a slow tool delays the run only by its own latency: the loop adds no waits, timers, or dropped wakes", async () => {
+    // Regression pin for the ci-windows timeout of the test above (goal-mode PR #66's
+    // merge-ref run): on one cold Windows runner the suite-start burst of first Git-Bash
+    // spawns ran ~28-36s and the test crossed the then-30s platform deadline, which looked
+    // like a goal-mode hang in the run loop. The loop's actual contract, pinned here with
+    // virtual tool latency instead of a real spawn (platform-neutral, deterministic): tool
+    // latency flows through 1:1 — wall time ≈ latency + ε. An engine-side wait inserted
+    // between turns would blow the upper bound, a dropped continuation wake would hang this
+    // test into its own deadline, and a timer armed alongside the tool would trip the spies
+    // (the engine's only setTimeout is the reconnect backoff, a failure-path affair).
+    const TOOL_LATENCY_MS = 300;
+    const EPSILON_MS = 1_000;
+    const realSetTimeout = globalThis.setTimeout.bind(globalThis);
+    const timeoutSpy = vi.spyOn(globalThis, "setTimeout");
+    const intervalSpy = vi.spyOn(globalThis, "setInterval");
+    try {
+      const llm = new FakeLLM();
+      const environment: EnvironmentInterface = {
+        async listTools() {
+          return [];
+        },
+        async *executeTool({ toolCall: tc }) {
+          // The injected "slow spawn" (through the pre-spy setTimeout, invisible to the spies).
+          await new Promise<void>((resolve) => realSetTimeout(resolve, TOOL_LATENCY_MS));
+          yield toolCallOutput({ output: "wrote hello.txt", toolCallId: tc.payload.tool_call_id });
+        },
+        toolPermission() {
+          return "rw";
+        },
+      };
+      const engine = new ContextEngine({ llm, environment });
+
+      const start = performance.now();
+      const collected = await collectRun(
+        engine,
+        [userText("Create hello.txt saying Hello, Penguin")],
+        allowAll,
+      );
+      const elapsed = performance.now() - start;
+      const timersArmed = timeoutSpy.mock.calls.length + intervalSpy.mock.calls.length;
+
+      // The flow completed both turns, with the slow tool's output fed back and paired.
+      expect(llm.calls).toBe(2);
+      expect(
+        llm.receivedSecondInput!.some(
+          (m) => (m.payload as { type?: string }).type === "tool_call_output",
+        ),
+      ).toBe(true);
+      expect(collected.map((m) => (m.payload as { type?: string }).type)).toContain(
+        "tool_call_output",
+      );
+      // Latency-additive: the tool's own wait, plus scheduling slack — nothing multiplied.
+      expect(elapsed).toBeGreaterThanOrEqual(TOOL_LATENCY_MS - 5);
+      expect(elapsed).toBeLessThan(TOOL_LATENCY_MS + EPSILON_MS);
+      // And no engine-armed wall-clock wait rode along.
+      expect(timersArmed).toBe(0);
+    } finally {
+      timeoutSpy.mockRestore();
+      intervalSpy.mockRestore();
+    }
   });
 
   it("streams origin-tagged nested messages to the consumer but keeps them out of trace and the next-turn input", async () => {
@@ -453,7 +518,106 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
     const texts = received[0]!.map((m) => (m.payload as { text?: string }).text ?? "");
     expect(texts).toContain("go");
     expect(texts).toContain("next");
-    expect(texts.join("\n")).not.toContain("<turn_aborted>");
+    expect(texts.join("\n")).not.toContain("[turn_aborted]");
+  });
+
+  it("downgrades a goal round's protocol in the [turn_aborted] transcript (auth exit path)", async () => {
+    // An aborted/failed goal round's input rides into the next task via flatten carry-over;
+    // its [goal] protocol ("the system sends the next round automatically", the file rules)
+    // is stale the moment the goal ends and must not re-enter the model as live instructions.
+    const goalInput = goalRoundMessage({
+      objective: "fix the tests",
+      goalFilePath: "/tmp/GOAL.yaml",
+      round: 1,
+      tokensUsed: 0,
+      budget: -1,
+      body: "fix the tests",
+    });
+    const received: OmniMessage[][] = [];
+    let calls = 0;
+    const llm: LLMInterface = {
+      async *streamGenerate(params) {
+        received.push(params.newMessages);
+        if (++calls === 1) {
+          yield partialText("start", "");
+          yield partialText("delta", "half a thought");
+          // `auth`: the one LLM status that still exits straight to the flatten path.
+          return { status: "auth", message: "boom" };
+        }
+        yield assistantText("ok");
+        yield tokenUsage(emptyTokenCounts(), {
+          cache_read: 0,
+          cache_write: 0,
+          output: 1,
+          total: 1,
+        });
+        return { status: "completed" };
+      },
+    };
+    const environment = new Environment({
+      workspaceDir: workspace,
+      toolConfig: execCommandToolConfig(),
+    });
+    const engine = new ContextEngine({ llm, environment });
+
+    await collectRun(engine, [userText(goalInput)], allowAll);
+    await collectRun(engine, [userText("unrelated new task")], allowAll);
+
+    expect(received).toHaveLength(2);
+    const texts = received[1]!.map((m) => (m.payload as { text?: string }).text ?? "");
+    const joined = texts.join("\n");
+    // The transcript survives (interrupted-work context), the protocol does not.
+    expect(joined).toContain("[turn_aborted]");
+    expect(joined).toContain("goal round 1 of an ended goal run");
+    expect(joined).toContain("fix the tests");
+    expect(joined).not.toContain("[goal]");
+    expect(joined).not.toContain("Do not modify the goal file");
+    expect(joined).toContain("unrelated new task");
+  });
+
+  it("downgrades a goal round held raw in carry-over (pre-dispatch abort path)", async () => {
+    // Aborted before the Request went out: the input is held AS-IS (not flattened) — without
+    // the downgrade, the full [goal] block would be re-sent verbatim as current input.
+    const goalInput = goalRoundMessage({
+      objective: "fix the tests",
+      goalFilePath: "/tmp/GOAL.yaml",
+      round: 2,
+      tokensUsed: 0,
+      budget: -1,
+      body: "fix the tests",
+    });
+    const received: OmniMessage[][] = [];
+    const llm: LLMInterface = {
+      async *streamGenerate(params) {
+        received.push(params.newMessages);
+        yield assistantText("ok");
+        yield tokenUsage(emptyTokenCounts(), {
+          cache_read: 0,
+          cache_write: 0,
+          output: 1,
+          total: 1,
+        });
+        return { status: "completed" };
+      },
+    };
+    const environment = new Environment({
+      workspaceDir: workspace,
+      toolConfig: execCommandToolConfig(),
+    });
+    const engine = new ContextEngine({ llm, environment });
+    const controller = new AbortController();
+    controller.abort();
+
+    await collectRun(engine, [userText(goalInput)], allowAll, controller.signal);
+    await collectRun(engine, [userText("unrelated new task")], allowAll);
+
+    expect(received).toHaveLength(1);
+    const texts = received[0]!.map((m) => (m.payload as { text?: string }).text ?? "");
+    const joined = texts.join("\n");
+    expect(joined).toContain("goal round 2 of an ended goal run");
+    expect(joined).toContain("fix the tests");
+    expect(joined).not.toContain("[goal]");
+    expect(joined).toContain("unrelated new task");
   });
 
   it("never writes the flatten carry-over to trace (case B): synthesized carry-over is memory-only", async () => {
@@ -580,7 +744,6 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
         model_context_window: 1000,
         system_prompt: "sys",
         tools: [],
-        thinking_level: "medium",
         agent_state: "/root/p/worker/agent_state",
         workspace: "/tmp/w",
       });
@@ -617,7 +780,7 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
     expect(rows.some((m) => m.origin !== undefined)).toBe(false);
   });
 
-  it("in-run reconnect never writes the synthesized <turn_retried> to trace", async () => {
+  it("in-run reconnect never writes the synthesized [turn_retried] to trace", async () => {
     let calls = 0;
     const inputs: OmniMessage[][] = [];
     const llm: LLMInterface = {
@@ -653,18 +816,78 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
 
     await collectRun(engine, [userText("go")], allowAll);
     expect(calls).toBe(2);
-    // Retry = original input + <turn_retried> (carrying the partial text).
-    expect((inputs[1]![1]!.payload as { text?: string }).text ?? "").toContain("<turn_retried>");
-    // The synthesized message is only sent to the model: Trace has no <turn_retried> /
-    // <turn_aborted>; the original input is written only on its first occurrence.
+    // Retry = original input + [turn_retried] (carrying the partial text).
+    expect((inputs[1]![1]!.payload as { text?: string }).text ?? "").toContain("[turn_retried]");
+    // The synthesized message is only sent to the model: Trace has no [turn_retried] /
+    // [turn_aborted]; the original input is written only on its first occurrence.
     const recorded = await readTrace(trace.currentPath());
     expect(turnAbortedCount(recorded)).toBe(0);
     expect(
       recorded.some((m) =>
-        ((m.payload as { text?: string }).text ?? "").startsWith("<turn_retried>"),
+        ((m.payload as { text?: string }).text ?? "").startsWith("[turn_retried]"),
       ),
     ).toBe(false);
     expect(recorded.filter((m) => (m.payload as { text?: string }).text === "go")).toHaveLength(1);
+  });
+
+  it("forwards RunOptions.thinkingLevel to every LLM request of the run (reconnects included); compaction keeps the default", async () => {
+    const levels: (string | undefined)[] = [];
+    let calls = 0;
+    const llm: LLMInterface = {
+      async *streamGenerate(params) {
+        calls += 1;
+        levels.push(params.thinkingLevel);
+        if (calls === 1) {
+          // First attempt drops: the reconnect retry must carry the same per-turn level.
+          yield assistantText("half", "timeout");
+          return { status: "timeout" };
+        }
+        if (calls === 2) {
+          // Retry completes with usage above the compaction threshold → a Task-boundary
+          // summarize compaction issues one more request (the engine's, not this run's turn):
+          // it must NOT carry the per-turn override.
+          yield assistantText("recovered");
+          yield tokenUsage(emptyTokenCounts(), {
+            cache_read: 0,
+            cache_write: 0,
+            output: 1,
+            total: 100,
+          });
+          return { status: "completed" };
+        }
+        yield assistantText("<summary>s</summary>");
+        yield tokenUsage(emptyTokenCounts(), {
+          cache_read: 0,
+          cache_write: 0,
+          output: 1,
+          total: 5,
+        });
+        return { status: "completed" };
+      },
+    };
+    const environment = new Environment({
+      workspaceDir: workspace,
+      toolConfig: execCommandToolConfig(),
+    });
+    const engine = new ContextEngine({
+      llm,
+      environment,
+      maxReconnects: 1,
+      reconnectBackoffMs: 1,
+      createLLM: () => llm,
+      compaction: { maxContextLength: 10, maxSessionTurns: -1, mode: "summarize", prompt: "SUM" },
+    });
+
+    const all: OmniMessage[] = [];
+    for await (const msg of engine.run([userText("go")], {
+      approve: allowAll,
+      thinkingLevel: "high",
+    })) {
+      all.push(msg);
+    }
+    expect(calls).toBe(3);
+    // Turn attempt + reconnect retry carry the run's level; the compaction request does not.
+    expect(levels).toEqual(["high", "high", undefined]);
   });
 });
 
@@ -674,7 +897,7 @@ describe("ContextEngine async/incremental tool calls (overlapping execution)", (
     workspace = await mkdtemp(join(tmpdir(), "penguin-ws2-"));
   });
   afterEach(async () => {
-    await rm(workspace, { recursive: true, force: true });
+    await rm(workspace, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   });
 
   it("emits both tool calls in one round; second is approved while the first executes; outputs come back in completion order", async () => {
@@ -750,7 +973,13 @@ describe("ContextEngine async/incremental tool calls (overlapping execution)", (
     // command has not finished yet) -- i.e., execution does not block the next approval.
     expect(approvedAt["t2"]!).toBeLessThan(firstCompleteAt["t1"] ?? Infinity);
     // The fast b.txt finishes first, the slow a.txt finishes later (outputs in completion order).
-    expect(firstCompleteAt["t2"]!).toBeLessThan(firstCompleteAt["t1"]!);
+    // POSIX only: on Windows a cold Git-Bash spawn costs 1-2s, which can swamp the 400ms sleep
+    // delta that makes t1 "the slow one" — CI has seen the two complete within 5ms — so the
+    // relative completion order is not controllable there. The overlap assertion above and the
+    // file contents below still run on Windows.
+    if (process.platform !== "win32") {
+      expect(firstCompleteAt["t2"]!).toBeLessThan(firstCompleteAt["t1"]!);
+    }
 
     expect(await readFile(join(workspace, "a.txt"), "utf8")).toBe("one");
     expect(await readFile(join(workspace, "b.txt"), "utf8")).toBe("two");
@@ -836,7 +1065,7 @@ describe("ContextEngine tool execution resilience", () => {
     workspace = await mkdtemp(join(tmpdir(), "penguin-ws4-"));
   });
   afterEach(async () => {
-    await rm(workspace, { recursive: true, force: true });
+    await rm(workspace, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   });
 
   it("feeds a failed tool output back and keeps tool_use/result paired (Environment converges errors, never throws)", async () => {
@@ -1046,7 +1275,7 @@ describe("ContextEngine abort during execution", () => {
     workspace = await mkdtemp(join(tmpdir(), "penguin-ws3-"));
   });
   afterEach(async () => {
-    await rm(workspace, { recursive: true, force: true });
+    await rm(workspace, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   });
 
   it("aborting a long-running tool ends the turn, emits abort, and carries tool results over (model output completed)", async () => {
@@ -1113,12 +1342,12 @@ describe("ContextEngine abort during execution", () => {
     );
     expect(out).toBeDefined();
     expect((out!.payload as { tool_call_id?: string }).tool_call_id).toBe("slow");
-    // Case A must be a structured backfill and must **not** be flattened into <turn_aborted>
+    // Case A must be a structured backfill and must **not** be flattened into [turn_aborted]
     // (otherwise the already-committed tool_call would lose its pairing).
     const carriedText = received[1]!
       .map((m) => (m.payload as { text?: string }).text ?? "")
       .join("");
-    expect(carriedText).not.toContain("<turn_aborted>");
+    expect(carriedText).not.toContain("[turn_aborted]");
   });
 
   it("case A backfills outputs for committed-but-undispatched tool_calls (preserves pairing)", async () => {
@@ -1196,10 +1425,10 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     workspace = await mkdtemp(join(tmpdir(), "penguin-ws4-"));
   });
   afterEach(async () => {
-    await rm(workspace, { recursive: true, force: true });
+    await rm(workspace, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   });
 
-  it("auto-retries on LLM timeout: original input + <turn_retried> carrying partial products", async () => {
+  it("auto-retries on LLM timeout: original input + [turn_retried] carrying partial products", async () => {
     let calls = 0;
     const inputs: OmniMessage[][] = [];
     const llm: LLMInterface = {
@@ -1240,14 +1469,14 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     const all = await collectRun(engine, [userText("go")], allowAll);
 
     expect(calls).toBe(2); // Initial timeout -> auto-retries once within the same run and succeeds.
-    // Retry = original input kept as-is + one <turn_retried> carrying the partial products
-    // already produced (not <turn_aborted>, to avoid the model mistaking it for a user interrupt).
+    // Retry = original input kept as-is + one [turn_retried] carrying the partial products
+    // already produced (not [turn_aborted], to avoid the model mistaking it for a user interrupt).
     expect(inputs[1]).toHaveLength(2);
     expect(inputs[1]![0]).toEqual(inputs[0]![0]);
     const retried = (inputs[1]![1]!.payload as { text?: string }).text ?? "";
-    expect(retried).toContain("<turn_retried>");
-    expect(retried).toContain("<text>thinking...</text>");
-    expect(retried).not.toContain("<turn_aborted>");
+    expect(retried).toContain("[turn_retried]");
+    expect(retried).toContain("[text]thinking...[/text]");
+    expect(retried).not.toContain("[turn_aborted]");
     // The final reply is produced, with no abort throughout.
     expect(
       all.some(
@@ -1318,7 +1547,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     expect(retryText).toBe("go");
   });
 
-  it("auto-retries on LLM malformed: original input + <turn_retried> carrying partial products", async () => {
+  it("auto-retries on LLM malformed: original input + [turn_retried] carrying partial products", async () => {
     let calls = 0;
     const inputs: OmniMessage[][] = [];
     const llm: LLMInterface = {
@@ -1360,13 +1589,13 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
 
     expect(calls).toBe(2);
     // The malformed attempt never entered AgentHub history: the original input is resent,
-    // plus <turn_retried> carrying the partial products already produced.
+    // plus [turn_retried] carrying the partial products already produced.
     expect(inputs[1]).toHaveLength(2);
     expect(inputs[1]![0]).toEqual(inputs[0]![0]);
     const retried = (inputs[1]![1]!.payload as { text?: string }).text ?? "";
-    expect(retried).toContain("<turn_retried>");
+    expect(retried).toContain("[turn_retried]");
     expect(retried).toContain("partial json response");
-    expect(retried).not.toContain("<turn_aborted>");
+    expect(retried).not.toContain("[turn_aborted]");
     expect(
       all.some(
         (m) => isCompleteModelMessage(m) && m.payload.type === "text" && m.payload.text === "done",
@@ -1403,56 +1632,334 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     expect(abort).toBeDefined();
     expect((abort!.payload as { reason?: string }).reason).toContain("reconnect failed");
 
-    // carry-over = original input + <turn_retried> (accumulating partial products from both
+    // carry-over = original input + [turn_retried] (accumulating partial products from both
     // failed attempts): the next run resends it merged with the new input, without producing
-    // <turn_aborted>.
+    // [turn_aborted].
     await collectRun(engine, [userText("next")], allowAll);
     const nextRunTexts = inputs[2]!.map((m) => (m.payload as { text?: string }).text ?? "");
     expect(nextRunTexts).toHaveLength(3);
     expect(nextRunTexts[0]).toBe("go");
-    expect(nextRunTexts[1]).toContain("<turn_retried>");
+    expect(nextRunTexts[1]).toContain("[turn_retried]");
     expect(nextRunTexts[1]).toContain("partial...");
     expect(nextRunTexts[2]).toBe("next");
-    expect(nextRunTexts.join("\n")).not.toContain("<turn_aborted>");
+    expect(nextRunTexts.join("\n")).not.toContain("[turn_aborted]");
   });
 
-  it("surfaces a non-retryable LLM failure (outcome=failed) as a graceful abort (run does not throw)", async () => {
+  it("a failed outcome retries like a timeout, then converges to a graceful abort (run does not throw)", async () => {
     let calls = 0;
     const inputs: OmniMessage[][] = [];
     const llm: LLMInterface = {
-      // The LLM must never throw an exception at the engine: a non-retryable error resolves
-      // by returning a failed outcome after closing the structure.
+      // The LLM must never throw an exception at the engine: an error resolves by returning
+      // a failed outcome after closing the structure. `failed` is still the honest
+      // classification for a parameter error — it is simply retried anyway, because the
+      // classifier cannot reliably tell a permanent 4xx from a gateway's transient one.
       // eslint-disable-next-line require-yield
       async *streamGenerate(params) {
         calls += 1;
         inputs.push(params.newMessages);
-        return { status: "failed", message: "invalid api key" };
+        return { status: "failed", message: "400 unknown parameter: max_output_tokens" };
       },
     };
     const environment = new Environment({
       workspaceDir: workspace,
       toolConfig: execCommandToolConfig(),
     });
-    const engine = new ContextEngine({ llm, environment, reconnectBackoffMs: 0 });
+    const engine = new ContextEngine({
+      llm,
+      environment,
+      maxReconnects: 2,
+      reconnectBackoffMs: 0,
+    });
 
-    // Must not throw; should gracefully converge to an abort.
+    // Must not throw; should gracefully converge to an abort once the ladder is spent.
     const all = await collectRun(engine, [userText("go")], allowAll);
-    expect(calls).toBe(1); // failed -> no retry.
+    expect(calls).toBe(3); // initial attempt + maxReconnects(2): `failed` takes the ladder now.
     const abort = all.find((m) => (m.payload as { type?: string }).type === "abort");
     expect(abort).toBeDefined();
+    // Asserted whole, not by fragments: this string is shown verbatim in the error panel and
+    // the CLI and is persisted as the error message, so its grammar is part of the contract.
     const reason = (abort!.payload as { reason?: string }).reason ?? "";
-    expect(reason).toContain("llm request error");
-    expect(reason).toContain("invalid api key");
+    expect(reason).toBe(
+      "llm request failed after 2 retries: 400 unknown parameter: max_output_tokens",
+    );
 
-    // The failed turn's input is flattened and stashed; the next run resends it merged with
-    // the new input.
+    // The spent turn's input is stashed as carry-over; the next run (attempt index 3, after
+    // this run's three) resends it merged with the new input.
     await collectRun(engine, [userText("next")], allowAll);
-    const text = inputs[1]!.map((m) => (m.payload as { text?: string }).text ?? "").join("\n");
+    const text = inputs[3]!.map((m) => (m.payload as { text?: string }).text ?? "").join("\n");
     expect(text).toContain("go");
     expect(text).toContain("next");
   });
 
-  it("LLM timeout after a tool already executed: retry carries the call/result via <turn_retried> (tool runs once)", async () => {
+  it("a failed request that succeeds on retry never reaches the user as an error", async () => {
+    // The point of retrying `failed`: the classifier is an allowlist, so a transient gateway
+    // fault phrased its own way ("Upstream HTTP/2 stream failed") lands here. It used to kill
+    // the turn; now the turn simply completes.
+    let calls = 0;
+    const llm: LLMInterface = {
+      async *streamGenerate() {
+        calls += 1;
+        if (calls === 1) {
+          return {
+            status: "failed" as const,
+            message: "Upstream HTTP/2 stream failed (upstream_http2_stream_error)",
+          };
+        }
+        yield assistantText("recovered");
+        return { status: "completed" as const };
+      },
+    };
+    const engine = new ContextEngine({
+      llm,
+      environment: new Environment({
+        workspaceDir: workspace,
+        toolConfig: execCommandToolConfig(),
+      }),
+      reconnectBackoffMs: 0,
+    });
+    const all = await collectRun(engine, [userText("go")], allowAll);
+    expect(calls).toBe(2);
+    expect(all.find((m) => (m.payload as { type?: string }).type === "abort")).toBeUndefined();
+    // The failure is still classified `failed` on the wire — the retry is a policy decision,
+    // not a relabelling, so observability still sees a real failure rather than a "timeout".
+    const ends = all.filter((m) => (m.payload as { type?: string }).type === "request_end");
+    expect(ends.map((m) => (m.payload as { status?: string }).status)).toEqual([
+      "failed",
+      "completed",
+    ]);
+    // ...and it announces its retry wait like any other retryable failure, so the frontend
+    // countdown works for it too.
+    expect((ends[0]!.payload as { retry_in_ms?: number }).retry_in_ms).toBeGreaterThanOrEqual(0);
+  });
+
+  it("auth is the only LLM status that stops the run: no retry, request_end carries status auth", async () => {
+    let calls = 0;
+    const llm: LLMInterface = {
+      // GenerativeModel classifies a 401/invalid_api_key as status "auth" (see
+      // llm.test.ts); the engine must stop directly — the auth branch is the second belt
+      // keeping a dead credential out of the retry loop (the classifier is the first).
+      // Every other failure, `failed` included, takes the ladder instead.
+      // eslint-disable-next-line require-yield
+      async *streamGenerate() {
+        calls += 1;
+        return { status: "auth", message: "401 invalid x-api-key" };
+      },
+    };
+    const environment = new Environment({
+      workspaceDir: workspace,
+      toolConfig: execCommandToolConfig(),
+    });
+    const engine = new ContextEngine({ llm, environment, reconnectBackoffMs: 1 });
+
+    const all = await collectRun(engine, [userText("go")], allowAll);
+    expect(calls).toBe(1); // A rejected credential cannot be retried into working.
+    // The request's own terminal status is the host signal (streams to the web).
+    const end = all.find((m) => (m.payload as { type?: string }).type === "request_end");
+    expect((end!.payload as { status?: string }).status).toBe("auth");
+    expect((end!.payload as { message?: string }).message).toBe("401 invalid x-api-key");
+    // No planned retry is announced for a terminal failure.
+    expect((end!.payload as { retry_in_ms?: number }).retry_in_ms).toBeUndefined();
+    const abort = all.find((m) => (m.payload as { type?: string }).type === "abort");
+    expect(abort).toBeDefined();
+    expect((abort!.payload as { reason?: string }).reason).toContain("llm request error");
+  });
+
+  it("a quota-403 (classified timeout) retries within the default cap and succeeds", async () => {
+    let calls = 0;
+    const llm: LLMInterface = {
+      async *streamGenerate() {
+        calls += 1;
+        // Two quota rejections (GenerativeModel classifies them as timeout), then success —
+        // attempt 3 is within the default cap of 5.
+        if (calls <= 2) return { status: "timeout" };
+        yield assistantText("recovered");
+        yield tokenUsage(emptyTokenCounts(), {
+          cache_read: 0,
+          cache_write: 0,
+          output: 1,
+          total: 1,
+        });
+        return { status: "completed" };
+      },
+    };
+    const environment = new Environment({
+      workspaceDir: workspace,
+      toolConfig: execCommandToolConfig(),
+    });
+    const engine = new ContextEngine({ llm, environment, reconnectBackoffMs: 1 });
+
+    const all = await collectRun(engine, [userText("go")], allowAll);
+    expect(calls).toBe(3);
+    expect(
+      all.some(
+        (m) =>
+          isCompleteModelMessage(m) && m.payload.type === "text" && m.payload.text === "recovered",
+      ),
+    ).toBe(true);
+    expect(all.map((m) => (m.payload as { type?: string }).type)).not.toContain("abort");
+  });
+
+  it("default reconnect cap is 5: the exhaustion abort message says so", async () => {
+    let calls = 0;
+    const llm: LLMInterface = {
+      // eslint-disable-next-line require-yield
+      async *streamGenerate() {
+        calls += 1;
+        return { status: "timeout" }; // Always needs a reconnect.
+      },
+    };
+    const environment = new Environment({
+      workspaceDir: workspace,
+      toolConfig: execCommandToolConfig(),
+    });
+    // No maxReconnects override: exercises the default cap (tiny base keeps the
+    // exponential waits at 1+2+4+8+16 = 31ms total).
+    const engine = new ContextEngine({ llm, environment, reconnectBackoffMs: 1 });
+
+    const all = await collectRun(engine, [userText("go")], allowAll);
+    expect(calls).toBe(6); // Initial attempt + 5 retries.
+    const abort = all.find((m) => (m.payload as { type?: string }).type === "abort");
+    expect((abort!.payload as { reason?: string }).reason).toBe("reconnect failed after 5 retries");
+  });
+
+  it("skipReconnectWait wakes the backoff early ('retry now'): attempt numbering unchanged; no-op without a wait", async () => {
+    let calls = 0;
+    const llm: LLMInterface = {
+      async *streamGenerate() {
+        calls += 1;
+        if (calls === 1) return { status: "timeout" };
+        yield assistantText("ok");
+        yield tokenUsage(emptyTokenCounts(), {
+          cache_read: 0,
+          cache_write: 0,
+          output: 1,
+          total: 1,
+        });
+        return { status: "completed" };
+      },
+    };
+    const environment = new Environment({
+      workspaceDir: workspace,
+      toolConfig: execCommandToolConfig(),
+    });
+    // A wait long enough that the run could only finish in time if the skip woke it.
+    const engine = new ContextEngine({
+      llm,
+      environment,
+      maxReconnects: 2,
+      reconnectBackoffMs: 60_000,
+    });
+
+    // No reconnect wait in progress yet: skip is a benign no-op.
+    expect(engine.skipReconnectWait()).toBe(false);
+
+    const started = Date.now();
+    const runP = collectRun(engine, [userText("go")], allowAll);
+    // Poll the skip itself: it keeps returning false until the engine parks in the
+    // backoff, and consumes the wait exactly once when it does.
+    while (!engine.skipReconnectWait()) {
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    const all = await runP;
+    expect(Date.now() - started).toBeLessThan(10_000); // woke early: the scheduled wait was 60s
+    // Exactly the one retry — the skipped wait consumed no extra attempt.
+    expect(calls).toBe(2);
+    const ends = all.filter((m) => (m.payload as { type?: string }).type === "request_end");
+    expect(ends.map((m) => (m.payload as { status?: string }).status)).toEqual([
+      "timeout",
+      "completed",
+    ]);
+    expect(all.map((m) => (m.payload as { type?: string }).type)).not.toContain("abort");
+    // The wait settled (skip won the race): further skips are no-ops again.
+    expect(engine.skipReconnectWait()).toBe(false);
+  });
+
+  it("reconnectDelayMs: exponential-with-ceiling ladder (defaults: 250ms base, 30s cap)", () => {
+    // The default cap (5) walks the first five steps — 250+500+1000+2000+4000 ≈ 7.75s of
+    // total patience; the formula keeps climbing to the 30s ceiling for larger caps.
+    const ladder = [1, 2, 3, 4, 5].map((n) => reconnectDelayMs(250, 30_000, n));
+    expect(ladder).toEqual([250, 500, 1000, 2000, 4000]);
+    expect(ladder.reduce((a, b) => a + b, 0)).toBe(7750);
+    expect([6, 7, 8].map((n) => reconnectDelayMs(250, 30_000, n))).toEqual([8000, 16000, 30000]);
+    // Past the ceiling the delay stays pinned (no overflow, no further growth).
+    expect(reconnectDelayMs(250, 30_000, 12)).toBe(30_000);
+    // The cap also applies when the base itself exceeds it.
+    expect(reconnectDelayMs(50_000, 30_000, 1)).toBe(30_000);
+  });
+
+  it("request_end carries the outcome's failure detail on non-completed statuses only", async () => {
+    let calls = 0;
+    const llm: LLMInterface = {
+      async *streamGenerate() {
+        calls += 1;
+        if (calls === 1) {
+          // A retryable provider rejection: the detail must reach observability via the
+          // event — a retried request never produces an abort to carry it.
+          return { status: "timeout", message: "403 quota exceeded (insufficient_user_quota)" };
+        }
+        yield assistantText("ok");
+        yield tokenUsage(emptyTokenCounts(), {
+          cache_read: 0,
+          cache_write: 0,
+          output: 1,
+          total: 1,
+        });
+        return { status: "completed" };
+      },
+    };
+    const environment = new Environment({
+      workspaceDir: workspace,
+      toolConfig: execCommandToolConfig(),
+    });
+    const engine = new ContextEngine({ llm, environment, maxReconnects: 1, reconnectBackoffMs: 0 });
+
+    const all = await collectRun(engine, [userText("go")], allowAll);
+    const ends = all.filter((m) => (m.payload as { type?: string }).type === "request_end") as {
+      payload: { status?: string; message?: string; retry_in_ms?: number };
+    }[];
+    expect(ends).toHaveLength(2);
+    expect(ends[0]!.payload.status).toBe("timeout");
+    expect(ends[0]!.payload.message).toBe("403 quota exceeded (insufficient_user_quota)");
+    // The engine will retry: the planned backoff is announced (base 0 here -> 0ms).
+    expect(ends[0]!.payload.retry_in_ms).toBe(0);
+    expect(ends[1]!.payload.status).toBe("completed");
+    expect(ends[1]!.payload.message).toBeUndefined();
+    expect(ends[1]!.payload.retry_in_ms).toBeUndefined();
+  });
+
+  it("request_end announces the planned backoff (retry_in_ms) from the shared ladder; absent once the cap is reached", async () => {
+    let calls = 0;
+    const llm: LLMInterface = {
+      // eslint-disable-next-line require-yield
+      async *streamGenerate() {
+        calls += 1;
+        return { status: "timeout" }; // Always needs a reconnect.
+      },
+    };
+    const environment = new Environment({
+      workspaceDir: workspace,
+      toolConfig: execCommandToolConfig(),
+    });
+    const engine = new ContextEngine({
+      llm,
+      environment,
+      maxReconnects: 2,
+      reconnectBackoffMs: 10,
+      reconnectBackoffMaxMs: 15,
+    });
+
+    const all = await collectRun(engine, [userText("go")], allowAll);
+    const ends = all.filter((m) => (m.payload as { type?: string }).type === "request_end") as {
+      payload: { retry_in_ms?: number };
+    }[];
+    // Announced waits follow the same exponential-with-ceiling formula the sleep uses
+    // (10, then min(20, 15) = 15); the FINAL failure carries none — no retry follows,
+    // the exhaustion abort does.
+    expect(ends.map((e) => e.payload.retry_in_ms)).toEqual([10, 15, undefined]);
+    expect(calls).toBe(3); // Initial attempt + 2 retries.
+  });
+
+  it("LLM timeout after a tool already executed: retry carries the call/result via [turn_retried] (tool runs once)", async () => {
     let calls = 0;
     const inputs: OmniMessage[][] = [];
     const llm: LLMInterface = {
@@ -1493,7 +2000,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
 
     const all = await collectRun(engine, [userText("go")], allowAll);
 
-    // The tool executes exactly once: retry input = original input + <turn_retried> (containing
+    // The tool executes exactly once: retry input = original input + [turn_retried] (containing
     // a text transcript of the t1 call/result), so the model does not call it again; the
     // transcript is plain text and is never dispatched again.
     const content = await readFile(join(workspace, "count.txt"), "utf8").catch(() => "");
@@ -1501,9 +2008,9 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     expect(calls).toBe(2); // Completes after one retry within the same run.
     expect(inputs[1]![0]).toEqual(inputs[0]![0]);
     const retried = (inputs[1]![1]!.payload as { text?: string }).text ?? "";
-    expect(retried).toContain("<turn_retried>");
-    expect(retried).toContain('<tool_call name="exec_command" id="t1">');
-    expect(retried).toContain('<tool_call_output id="t1"');
+    expect(retried).toContain("[turn_retried]");
+    expect(retried).toContain('[tool_call name="exec_command" id="t1"]');
+    expect(retried).toContain('[tool_call_output id="t1"');
     // Completes, no abort.
     expect(
       all.some(
@@ -1514,7 +2021,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     expect(all.map((m) => (m.payload as { type?: string }).type)).not.toContain("abort");
   });
 
-  it("flatten carry-over (failed exit) includes the model's partial thinking and text (PRN-014)", async () => {
+  it("flatten carry-over (auth exit) includes the model's partial thinking and text (PRN-014)", async () => {
     let calls = 0;
     const inputs: OmniMessage[][] = [];
     const llm: LLMInterface = {
@@ -1522,11 +2029,14 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
         calls += 1;
         inputs.push(params.newMessages);
         if (calls === 1) {
-          // Before the non-retryable error, partial thinking and text were already produced
-          // (the LLM finishes them as complete messages, stop_reason failed).
+          // Before the terminal error, partial thinking and text were already produced (the
+          // LLM finishes them as complete messages). `auth` is the trigger because it is the
+          // one LLM status that still exits straight to the flatten path — `failed` now takes
+          // the reconnect ladder, whose carry-over is [turn_retried] instead (covered by the
+          // exhausted-retries test below).
           yield thinkingMessage("half-thought", "failed");
           yield assistantText("half-text", "failed");
-          return { status: "failed", message: "boom" };
+          return { status: "auth", message: "boom" };
         }
         yield assistantText("ok");
         yield tokenUsage(emptyTokenCounts(), {
@@ -1545,20 +2055,20 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     const engine = new ContextEngine({ llm, environment, reconnectBackoffMs: 0 });
 
     await collectRun(engine, [userText("go")], allowAll);
-    expect(calls).toBe(1); // failed -> no retry, exits immediately.
+    expect(calls).toBe(1); // auth -> no retry, exits immediately.
 
     // Next run: the flattened carry-over contains the original input plus partial thinking/text
     // (both completed and incomplete messages are carried over).
     await collectRun(engine, [userText("next")], allowAll);
     const text = inputs[1]!.map((m) => (m.payload as { text?: string }).text ?? "").join("\n");
-    expect(text).toContain("<turn_aborted>");
-    expect(text).toContain("<thinking>half-thought</thinking>");
-    expect(text).toContain("<text>half-text</text>");
+    expect(text).toContain("[turn_aborted]");
+    expect(text).toContain("[thinking]half-thought[/thinking]");
+    expect(text).toContain("[text]half-text[/text]");
     expect(text).toContain("go");
     expect(text).toContain("next");
   });
 
-  it("carry-over after exhausted retries: raw original input + <turn_retried> with all attempts' products", async () => {
+  it("carry-over after exhausted retries: raw original input + [turn_retried] with all attempts' products", async () => {
     let calls = 0;
     const inputs: OmniMessage[][] = [];
     const llm: LLMInterface = {
@@ -1606,31 +2116,31 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
 
     await collectRun(engine, [userText("go")], allowAll);
     expect(calls).toBe(2);
-    // Retry = original input + <turn_retried> (attempt 1's t1 call/result).
+    // Retry = original input + [turn_retried] (attempt 1's t1 call/result).
     expect(inputs[1]![0]).toEqual(inputs[0]![0]);
-    expect((inputs[1]![1]!.payload as { text?: string }).text ?? "").toContain("<turn_retried>");
+    expect((inputs[1]![1]!.payload as { text?: string }).text ?? "").toContain("[turn_retried]");
 
-    // Next run: carry-over = original input + <turn_retried> (accumulating attempt 1's t1
+    // Next run: carry-over = original input + [turn_retried] (accumulating attempt 1's t1
     // call/result and attempt 2's partial thinking), a single un-nested block; produces no
-    // <turn_aborted>.
+    // [turn_aborted].
     await collectRun(engine, [userText("next")], allowAll);
     const nextRunTexts = inputs[2]!.map((m) => (m.payload as { text?: string }).text ?? "");
     expect(nextRunTexts).toHaveLength(3);
     expect(nextRunTexts[0]).toBe("go");
     const block = nextRunTexts[1]!;
-    expect(block).toContain('<tool_call name="exec_command" id="t1">');
-    expect(block).toContain('<tool_call_output id="t1"');
-    expect(block).toContain("<thinking>retry-thought</thinking>");
-    expect((block.match(/<turn_retried>/g) ?? []).length).toBe(1);
+    expect(block).toContain('[tool_call name="exec_command" id="t1"]');
+    expect(block).toContain('[tool_call_output id="t1"');
+    expect(block).toContain("[thinking]retry-thought[/thinking]");
+    expect((block.match(/\[turn_retried\]/g) ?? []).length).toBe(1);
     expect(nextRunTexts[2]).toBe("next");
-    expect(nextRunTexts.join("\n")).not.toContain("<turn_aborted>");
+    expect(nextRunTexts.join("\n")).not.toContain("[turn_aborted]");
     // t1 already executed once during the failed attempts (side effect occurred); the
     // transcript is plain text and is not dispatched again by either the retry or the next run.
     const content = await readFile(join(workspace, "chain.txt"), "utf8").catch(() => "");
     expect(content).toBe("x");
   });
 
-  it("user abort after a failed retry: <turn_retried> un-nests into the <turn_aborted> flatten", async () => {
+  it("user abort after a failed retry: [turn_retried] un-nests into the [turn_aborted] flatten", async () => {
     const controller = new AbortController();
     let calls = 0;
     const inputs: OmniMessage[][] = [];
@@ -1670,17 +2180,17 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
 
     await collectRun(engine, [userText("go")], allowAll, controller.signal);
     expect(calls).toBe(2);
-    // The retry input carries <turn_retried>.
-    expect((inputs[1]![1]!.payload as { text?: string }).text ?? "").toContain("<turn_retried>");
+    // The retry input carries [turn_retried].
+    expect((inputs[1]![1]!.payload as { text?: string }).text ?? "").toContain("[turn_retried]");
 
-    // The next run after the interrupt: flattens into a single-level <turn_aborted>, with
-    // <turn_retried>'s content un-nested and merged in.
+    // The next run after the interrupt: flattens into a single-level [turn_aborted], with
+    // [turn_retried]'s content un-nested and merged in.
     await collectRun(engine, [userText("next")], allowAll);
     const text = inputs[2]!.map((m) => (m.payload as { text?: string }).text ?? "").join("\n");
-    expect(text).toContain("<turn_aborted>");
-    expect(text).toContain("<thinking>half-1</thinking>");
-    expect(text).not.toContain("<turn_retried>");
-    expect((text.match(/<turn_aborted>/g) ?? []).length).toBe(1);
+    expect(text).toContain("[turn_aborted]");
+    expect(text).toContain("[thinking]half-1[/thinking]");
+    expect(text).not.toContain("[turn_retried]");
+    expect((text.match(/\[turn_aborted\]/g) ?? []).length).toBe(1);
   });
 
   it("keeps raw inputs across repeated pre-request aborts (no flatten)", async () => {
@@ -1714,11 +2224,224 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     await collectRun(engine, [userText("next")], allowAll, c2.signal);
 
     // Run 3 is normal: its first LLM input = the as-is preserved "go", "next" + "more",
-    // producing no <turn_aborted> (input that never made it to a Request is kept as-is
+    // producing no [turn_aborted] (input that never made it to a Request is kept as-is
     // per the trailing-input semantics).
     await collectRun(engine, [userText("more")], allowAll);
     const texts = received[0]!.map((m) => (m.payload as { text?: string }).text ?? "");
     expect(texts).toEqual(["go", "next", "more"]);
-    expect(texts.join("\n")).not.toContain("<turn_aborted>");
+    expect(texts.join("\n")).not.toContain("[turn_aborted]");
+  });
+});
+
+describe("ContextEngine mid-run steering ([user_steering])", () => {
+  let workspace: string;
+  let traces: string;
+
+  beforeEach(async () => {
+    workspace = await mkdtemp(join(tmpdir(), "penguin-ws-"));
+    traces = await mkdtemp(join(tmpdir(), "penguin-tr-"));
+  });
+
+  afterEach(async () => {
+    await rm(workspace, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    await rm(traces, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  });
+
+  /** Fake environment: streams a delta then closes with a fixed complete output (no real shell). */
+  function steeringEnvironment(result = "tool result"): EnvironmentInterface {
+    return {
+      listTools: async () => [],
+      toolPermission: (): ToolPermission => "rw",
+      async *executeTool({ toolCall: tc }) {
+        const toolCallId = tc.payload.tool_call_id;
+        yield partialToolCallOutput({ eventType: "start", toolCallId });
+        yield partialToolCallOutput({ eventType: "delta", output: result, toolCallId });
+        yield partialToolCallOutput({ eventType: "stop", toolCallId });
+        yield toolCallOutput({ output: result, toolCallId });
+      },
+    };
+  }
+
+  /** The text payloads of the [user_steering]-wrapped user messages in a list. */
+  const steeringTexts = (msgs: OmniMessage[]): string[] =>
+    msgs
+      .map((m) => m.payload as { role?: string; text?: string })
+      .filter((p) => p.role === "user" && (p.text ?? "").startsWith("[user_steering]"))
+      .map((p) => p.text!);
+
+  it("delivers queued steering as standalone user messages alongside the turn's tool outputs — traced, streamed, fed to the model in order; tool output untouched", async () => {
+    const llm = new FakeLLM();
+    const trace = new Writer({ tracesDir: traces, sessionId: "sess_steer" });
+    const engine = new ContextEngine({ llm, environment: steeringEnvironment(), trace });
+
+    // Idle: nothing running yet -> steer refuses, the host falls back to a normal task.
+    expect(engine.steer("too early")).toBe(false);
+
+    // Queue two messages while the task runs (deterministically: from the approval callback,
+    // i.e. after the tool_call streamed but before the tool executed).
+    const approve: ApproveFn = async () => {
+      expect(engine.steer("focus on the tests")).toBe(true);
+      expect(engine.steer("also update the docs")).toBe(true);
+      return "allow";
+    };
+    const all = await collectRun(engine, [userText("go")], approve);
+
+    const expected = [
+      "[user_steering]\nfocus on the tests\n[/user_steering]",
+      "[user_steering]\nalso update the docs\n[/user_steering]",
+    ];
+
+    // The tool output itself is never rewritten.
+    const outputs = all.filter(
+      (m) => isCompleteModelMessage(m) && m.payload.type === "tool_call_output",
+    );
+    expect(outputs).toHaveLength(1);
+    expect((outputs[0]!.payload as { output: string }).output).toBe("tool result");
+
+    // Streamed: the steering user messages are yielded (live consumers never saw this text).
+    expect(steeringTexts(all)).toEqual(expected);
+
+    // The next turn's LLM input = tool output first, then the steering user messages in order.
+    const second = llm.receivedSecondInput!;
+    expect(second.map((m) => (m.payload as { type?: string }).type)).toEqual([
+      "tool_call_output",
+      "text",
+      "text",
+    ]);
+    expect(steeringTexts(second)).toEqual(expected);
+
+    // Trace recorded them as real user input (replay attributes them to the next turn).
+    const recorded = await readTrace(trace.currentPath());
+    expect(steeringTexts(recorded)).toEqual(expected);
+    const recordedOutputs = recorded.filter(
+      (m) => (m.payload as { type?: string }).type === "tool_call_output",
+    );
+    expect((recordedOutputs[0]!.payload as { output: string }).output).toBe("tool result");
+
+    // Task over: the queue window is closed again.
+    expect(engine.steer("late")).toBe(false);
+  });
+
+  it("delivers steering left at loop end as a [user_steering] continuation turn (traced, streamed)", async () => {
+    // Turn 1 ends with no tool calls while steering is queued mid-stream -> the engine keeps
+    // looping and sends the queued text as the next input, wrapped in the same marker (UIs
+    // keep it inside the running Task; the model knows it is mid-task user input).
+    let engineRef: ContextEngine | null = null;
+    const inputs: OmniMessage[][] = [];
+    const llm: LLMInterface = {
+      async *streamGenerate(params): AsyncGenerator<OmniMessage, LLMOutcome> {
+        inputs.push(params.newMessages);
+        if (inputs.length === 1) {
+          yield assistantText("final answer");
+          expect(engineRef!.steer("one more thing")).toBe(true);
+          return { status: "completed" };
+        }
+        yield assistantText("handled the follow-up");
+        return { status: "completed" };
+      },
+    };
+    const trace = new Writer({ tracesDir: traces, sessionId: "sess_steer_loop" });
+    const engine = new ContextEngine({ llm, environment: steeringEnvironment(), trace });
+    engineRef = engine;
+
+    const all = await collectRun(engine, [userText("go")], allowAll);
+
+    const wrapped = "[user_steering]\none more thing\n[/user_steering]";
+    // Turn 2 received exactly the wrapped steering message as its input.
+    expect(inputs).toHaveLength(2);
+    expect(inputs[1]!.map((m) => (m.payload as { text?: string }).text)).toEqual([wrapped]);
+    // Streamed and traced like any user input.
+    expect(steeringTexts(all)).toEqual([wrapped]);
+    expect(steeringTexts(await readTrace(trace.currentPath()))).toEqual([wrapped]);
+  });
+
+  it("steering queued during a mid-run compaction is delivered right after it (never swallowed)", async () => {
+    // Turn 1 completes over the context threshold -> summarize compaction runs on the old
+    // LLM; the user steers DURING the compaction request (the acceptance window stays open);
+    // the new context's first input must be [summary, steering], not just the summary.
+    let engineRef: ContextEngine | null = null;
+    const newInputs: OmniMessage[][] = [];
+    const oldLLM: LLMInterface = {
+      async *streamGenerate(params): AsyncGenerator<OmniMessage, LLMOutcome> {
+        const texts = params.newMessages.map((m) => (m.payload as { text?: string }).text ?? "");
+        if (texts.some((t) => t.includes("summary prompt"))) {
+          // The compaction request: steering arrives while it streams.
+          expect(engineRef!.steer("switch to staging")).toBe(true);
+          yield assistantText("[summary]the gist[/summary]");
+          yield tokenUsage(emptyTokenCounts(), {
+            cache_read: 0,
+            cache_write: 0,
+            output: 1,
+            total: 10,
+          });
+          return { status: "completed" };
+        }
+        // Turn 1: final answer with usage over the threshold.
+        yield assistantText("done with the answer");
+        yield tokenUsage(emptyTokenCounts(), {
+          cache_read: 0,
+          cache_write: 0,
+          output: 5,
+          total: 5000,
+        });
+        return { status: "completed" };
+      },
+    };
+    const newLLM: LLMInterface = {
+      async *streamGenerate(params): AsyncGenerator<OmniMessage, LLMOutcome> {
+        newInputs.push(params.newMessages);
+        yield assistantText("continuing after compaction");
+        return { status: "completed" };
+      },
+    };
+    const engine = new ContextEngine({
+      llm: oldLLM,
+      environment: steeringEnvironment(),
+      createLLM: () => newLLM,
+      compaction: {
+        maxContextLength: 1000,
+        maxSessionTurns: -1,
+        mode: "summarize",
+        prompt: "summary prompt",
+      },
+    });
+    engineRef = engine;
+
+    const all = await collectRun(engine, [userText("go")], allowAll);
+
+    const wrapped = "[user_steering]\nswitch to staging\n[/user_steering]";
+    // The new context received the summary followed by the steering user message.
+    expect(newInputs).toHaveLength(1);
+    expect(newInputs[0]!.map((m) => (m.payload as { text?: string }).text)).toEqual([
+      "[context_summary]\nthe gist\n[/context_summary]",
+      wrapped,
+    ]);
+    // The steering message reached the output stream too.
+    expect(steeringTexts(all)).toEqual([wrapped]);
+  });
+
+  it("discards the queue on abort — the next run sees no leftover steering", async () => {
+    const llm = new FakeLLM();
+    const engine = new ContextEngine({ llm, environment: steeringEnvironment() });
+    const ac = new AbortController();
+    const approve: ApproveFn = async () => {
+      expect(engine.steer("stale steering")).toBe(true);
+      ac.abort();
+      return "allow";
+    };
+    const first = await collectRun(engine, [userText("go")], approve, ac.signal);
+    expect(first.some((m) => (m.payload as { type?: string }).type === "abort")).toBe(true);
+
+    // Aborted: whatever was queued is dropped with the run (documented steering contract).
+    expect(engine.steer("after abort")).toBe(false);
+    await collectRun(engine, [userText("continue")], allowAll);
+    const followUpTexts = (llm.receivedSecondInput ?? [])
+      .map((m) => {
+        const p = m.payload as { text?: string; output?: string };
+        return p.text ?? p.output ?? "";
+      })
+      .join("\n");
+    expect(followUpTexts).not.toContain("stale steering");
+    expect(followUpTexts).not.toContain("[user_steering]");
   });
 });

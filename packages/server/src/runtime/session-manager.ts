@@ -30,7 +30,11 @@ import path from "node:path";
 import {
   createAgent,
   findLatestTraceFile,
+  goalFinishedOf,
+  goalTokenDelta,
+  isGoalRoundInput,
   isSessionMeta,
+  stripLeadingMarkerBlocks,
   tracesDir,
 } from "@prismshadow/penguin-core";
 import type {
@@ -40,14 +44,17 @@ import type {
   SessionMetaPayload,
   SessionTitleResult,
   TextPayload,
+  ThinkingLevelName,
 } from "@prismshadow/penguin-core";
 import type { ServerEvent, SessionStatus } from "../api/types.js";
 import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/errors.js";
+import type { GoalsRepo } from "../db/repos/goals.js";
 import type { SessionRow, SessionsRepo } from "../db/repos/sessions.js";
 import { ApprovalRegistry, makeApprove } from "./approvals.js";
 import type { PendingApproval } from "./approvals.js";
 import type { ChannelHub } from "./channel.js";
 import type { ErrorSink } from "./error-recorder.js";
+import { LiveTailTracker } from "./live-tail.js";
 import { asSessionSource } from "./session-sources.js";
 import type { SessionSources } from "./session-sources.js";
 import { StreamErrorWatcher } from "./stream-error-watcher.js";
@@ -70,11 +77,21 @@ export interface RuntimeSession {
   readonly sessionId: string;
   run(
     newMessages: OmniMessage[],
-    opts: { approve: ApproveFn; signal: AbortSignal },
+    opts: {
+      approve: ApproveFn;
+      signal: AbortSignal;
+      thinkingLevel?: ThinkingLevelName;
+      /** Present = goal mode: core loops rounds inside this one run (see core SessionRunOptions). */
+      goal?: { budget?: number };
+    },
   ): AsyncGenerator<OmniMessage>;
   compact(opts: { signal: AbortSignal }): AsyncGenerator<OmniMessage>;
   /** Whether compaction is possible and why; when not ok, compact() yields no messages (see core ContextEngine.compactability). */
   compactability(): CompactAvailability;
+  /** Queues a mid-run steering message (core `Session.steer`); false when no Task is running. */
+  steer(text: string): boolean;
+  /** Skips the in-progress reconnect backoff, firing the next retry immediately (core `Session.skipReconnectWait`); false when no wait is in progress. */
+  skipReconnectWait(): boolean;
   toolPermission(name: string): "r" | "rw" | undefined;
   /**
    * Out-of-band one-shot request for title generation (core `Session.generateTitle`,
@@ -186,6 +203,14 @@ export interface SessionManagerDeps {
   /** Error persistence (optional: without it, only logs — same as before this was wired up). */
   errors?: ErrorSink;
   log?: (line: string) => void;
+  /** Goal run-state persistence (optional like `titles`: without it, goals run but leave no restorable record). */
+  goals?: GoalsRepo;
+}
+
+/** One queued follow-up task (`queueIfBusy`): the task input plus the per-turn thinking level it was posted with. */
+interface QueuedFollowUp {
+  input: OmniMessage[];
+  thinkingLevel?: ThinkingLevelName;
 }
 
 /** Active-table entry: a loaded runtime Session plus its running state. */
@@ -208,6 +233,14 @@ interface RuntimeEntry {
    * the entry is discarded on its next idle access and re-resumed via the loader.
    */
   generation: number;
+  /**
+   * Queued follow-up tasks (`queueIfBusy`): task inputs accepted while a Task/compaction was
+   * in progress, auto-started one at a time (in order) once the session returns to idle —
+   * ordinary tasks with normal semantics, unlike the mid-run steering queue. Each entry
+   * keeps the per-turn thinkingLevel it was posted with (applied at auto-start).
+   * Deliberately NOT discarded on abort: they are future tasks the user explicitly queued.
+   */
+  followUps: QueuedFollowUp[];
   /** Timestamp of last activity (refreshed on load / status flip / drive completion), used for idle-eviction checks. */
   lastActivityMs: number;
 }
@@ -310,6 +343,8 @@ export class SessionManager {
   private readonly deletingSessions = new Set<string>();
   /** Per-Agent config generation (key = agentKey), bumped by invalidateAgentRuntimes on vault updates. */
   private readonly agentGenerations = new Map<string, number>();
+  /** Open streaming fragments of running sessions (fed by drive, served to GET /messages; see live-tail.ts). */
+  private readonly liveTail = new LiveTailTracker();
   private readonly sweepTimer: NodeJS.Timeout;
 
   constructor(private readonly deps: SessionManagerDeps) {
@@ -330,6 +365,21 @@ export class SessionManager {
 
   pendingApprovals(sessionId: string): PendingApproval[] {
     return this.entries.get(sessionId)?.approvals.list() ?? [];
+  }
+
+  /** Number of queued follow-up tasks (`queueIfBusy`) awaiting auto-start. */
+  pendingFollowUpCount(sessionId: string): number {
+    return this.entries.get(sessionId)?.followUps.length ?? 0;
+  }
+
+  /**
+   * Live tail of a running session: one synthetic `partial_* start` OmniMessage per open
+   * streaming fragment, carrying the full accumulated content so far (see live-tail.ts).
+   * Empty when idle or when nothing is streaming. GET /messages attaches this (with a
+   * channel cursor) so a client joining mid-stream can render the in-progress message.
+   */
+  liveFragments(sessionId: string): OmniMessage[] {
+    return this.liveTail.fragments(sessionId);
   }
 
   /** Number of Sessions for this Agent that are currently running / compacting. */
@@ -355,6 +405,7 @@ export class SessionManager {
       abort: null,
       running: null,
       generation: this.generationOf(row.projectId, row.agentId),
+      followUps: [],
       lastActivityMs: Date.now(),
     });
   }
@@ -373,32 +424,101 @@ export class SessionManager {
     this.agentGenerations.set(key, this.generationOf(projectId, agentId) + 1);
   }
 
+  /**
+   * After a Project's models/credentials change: invalidate every cached runtime in this
+   * Project, so the next Task re-resumes with the new api_key / base_url. Same
+   * effective-value semantics as invalidateAgentRuntimes — no hot swap into a Task already
+   * in flight. Iterating the active table is complete here, not a shortcut: the generation
+   * map only matters for runtimes that are already cached, and an Agent with no cached
+   * entry builds fresh through the loader anyway.
+   */
+  invalidateProjectRuntimes(projectId: string): void {
+    const agentIds = new Set<string>();
+    for (const e of this.entries.values()) {
+      if (e.projectId === projectId) agentIds.add(e.agentId);
+    }
+    for (const agentId of agentIds) this.invalidateAgentRuntimes(projectId, agentId);
+  }
+
   // —— Task / compaction drive ——
 
   /**
    * Start a Task: get-or-load → 409
    * mutual-exclusion check → publish the input messages first → drive run in the
    * background. Returns the current actual session_id (the new id after self-heal).
+   * `opts.thinkingLevel` (optional, validated by the route) rides into this run's
+   * `session.run` options — a per-turn parameter, applied to this Task only.
+   * With `queueIfBusy`, a busy session (running/compacting) enqueues the input as a
+   * follow-up instead of 409: it auto-starts as an ordinary next task once the session
+   * returns to idle (`queued: true` in the result; see startQueuedFollowUp), keeping its
+   * thinkingLevel for that auto-start.
    */
-  async startTask(sessionId: string, input: OmniMessage[]): Promise<{ sessionId: string }> {
+  async startTask(
+    sessionId: string,
+    input: OmniMessage[],
+    opts?: { thinkingLevel?: ThinkingLevelName; queueIfBusy?: boolean },
+  ): Promise<{ sessionId: string; queued: boolean }> {
+    return this.withLock(sessionId, async () => {
+      this.assertOpen();
+      this.assertAgentNotDeleting(sessionId);
+      this.assertSessionNotDeleting(sessionId);
+      const entry = await this.ensureEntry(sessionId);
+      if (entry.status !== "idle" && opts?.queueIfBusy) {
+        entry.followUps.push({
+          input,
+          ...(opts.thinkingLevel !== undefined ? { thinkingLevel: opts.thinkingLevel } : {}),
+        });
+        entry.lastActivityMs = Date.now();
+        // Re-publish the current state so subscribers pick up the new queued count (the
+        // input itself is published when the follow-up actually starts).
+        this.publishState(entry, entry.status);
+        return { sessionId: entry.sessionId, queued: true };
+      }
+      this.assertIdle(entry);
+      this.launchTask(entry, input, opts?.thinkingLevel);
+      return { sessionId: entry.sessionId, queued: false };
+    });
+  }
+
+  /**
+   * Start a goal run: like startTask, but the run is core goal mode — one
+   * `session.run(input, { goal })` call loops rounds until a terminal state, and the
+   * Session stays `running` for the whole goal (every round), so the existing abort
+   * endpoint interrupts the entire loop and schedules queue behind it as usual. Round
+   * inputs are yielded by core and published like any streamed message; progress
+   * additionally goes out as goal_* server events and into goal_state (when a repo is
+   * wired).
+   */
+  async startGoal(
+    sessionId: string,
+    args: {
+      /** Round-1 input (text-only, route-validated); its marker-stripped text is the objective. */
+      input: OmniMessage[];
+      budget: number;
+      /** Optional per-goal thinking level: rides every round's Task (route-validated). */
+      thinkingLevel?: ThinkingLevelName;
+    },
+  ): Promise<{ sessionId: string }> {
     return this.withLock(sessionId, async () => {
       this.assertOpen();
       this.assertAgentNotDeleting(sessionId);
       this.assertSessionNotDeleting(sessionId);
       const entry = await this.ensureEntry(sessionId);
       this.assertIdle(entry);
-      const channel = this.deps.channels.get(entry.sessionId);
+      // The objective is the user's own text (leading skill-invocation blocks stripped) —
+      // the same derivation core records in GOAL.yaml; used for the run-state row, the
+      // goal_started event, and as title material.
+      const text = args.input
+        .filter(isPlainText("user"))
+        .map((m) => m.payload.text)
+        .join("\n");
+      const objective = stripLeadingMarkerBlocks(text).trim() || text.trim();
       const ac = new AbortController();
       entry.status = "running";
       entry.abort = ac;
       entry.lastActivityMs = Date.now();
-      // Publish the input messages first (visible to other subscribers; the Trace is
-      // persisted by the SDK), then flip the running status.
-      for (const msg of input) channel.publish(msg);
       this.publishState(entry, "running");
-
       const approve = makeApprove({
-        // Re-reads approval_mode from the DB on every decision (a PATCH takes effect immediately).
         getMode: () => this.deps.sessions.findById(entry.sessionId)?.approvalMode ?? "always-ask",
         toolPermission: (name) => entry.session.toolPermission(name),
         registry: entry.approvals,
@@ -409,17 +529,193 @@ export class SessionManager {
             ...(pending.origin !== undefined ? { origin: pending.origin } : {}),
           }),
       });
-      const gen = entry.session.run(input, { approve, signal: ac.signal });
-      // Title material is collected by the core Session itself during run; here we only
-      // keep this call's input user text, used both as the "material present → attempt
-      // generation" criterion and as the fallback title source if the LLM call fails.
-      const userExcerpt = input
-        .filter(isPlainText("user"))
-        .map((m) => m.payload.text)
-        .join("\n");
-      entry.running = this.drive(entry, gen, { userExcerpt });
+      const goalId = this.deps.goals?.create({
+        sessionId: entry.sessionId,
+        projectId: entry.projectId,
+        agentId: entry.agentId,
+        objective,
+        budget: args.budget,
+      });
+      this.publishEvent(entry, {
+        type: "goal_started",
+        sessionId: entry.sessionId,
+        objective,
+        budget: args.budget,
+      });
+      const gen = this.goalStream(entry, {
+        input: args.input,
+        budget: args.budget,
+        ...(args.thinkingLevel !== undefined ? { thinkingLevel: args.thinkingLevel } : {}),
+        approve,
+        signal: ac.signal,
+        ...(goalId !== undefined ? { goalId } : {}),
+      });
+      // The objective doubles as the title material (same role as a task's input text).
+      entry.running = this.drive(entry, gen, { userExcerpt: objective });
       return { sessionId: entry.sessionId };
     });
+  }
+
+  /**
+   * Taps core's goal-mode stream for `drive`: round boundaries (the injected `[goal]`
+   * inputs) become goal_round events + goal_state refreshes, and the terminal
+   * `goal_finished` event message becomes the goal_finished server event + the run-state
+   * row's final status. Token numbers mirror core's own accounting (same
+   * `goalTokenDelta`), so the UI shows exactly what the budget check uses.
+   */
+  private async *goalStream(
+    entry: RuntimeEntry,
+    args: {
+      input: OmniMessage[];
+      budget: number;
+      thinkingLevel?: ThinkingLevelName;
+      approve: ApproveFn;
+      signal: AbortSignal;
+      goalId?: number;
+    },
+  ): AsyncGenerator<OmniMessage> {
+    const gen = entry.session.run(args.input, {
+      approve: args.approve,
+      signal: args.signal,
+      ...(args.thinkingLevel !== undefined ? { thinkingLevel: args.thinkingLevel } : {}),
+      goal: { budget: args.budget },
+    });
+    let round = 0;
+    let used = 0;
+    let finished = false;
+    try {
+      for await (const msg of gen) {
+        used += goalTokenDelta(msg);
+        if (isGoalRoundInput(msg)) {
+          round++;
+          if (args.goalId !== undefined) this.deps.goals?.progress(args.goalId, round, used);
+          this.publishEvent(entry, {
+            type: "goal_round",
+            sessionId: entry.sessionId,
+            round,
+            used,
+            budget: args.budget,
+          });
+        }
+        const outcome = goalFinishedOf(msg);
+        if (outcome) {
+          finished = true;
+          if (args.goalId !== undefined) {
+            this.deps.goals?.finish(
+              args.goalId,
+              outcome.outcome,
+              outcome.rounds,
+              outcome.tokensUsed,
+            );
+          }
+          this.publishEvent(entry, {
+            type: "goal_finished",
+            sessionId: entry.sessionId,
+            outcome: outcome.outcome,
+            rounds: outcome.rounds,
+            used: outcome.tokensUsed,
+          });
+        }
+        yield msg;
+      }
+      if (!finished) {
+        // Defensive: core always ends a goal stream with goal_finished; a stream that
+        // didn't is a cut-off run — close the row so the UI never shows a forever-active
+        // goal.
+        this.finishAborted(entry, args.goalId, round, used);
+      }
+    } catch (err) {
+      // Core throws only on infrastructure failures (e.g. GOAL.yaml writes): close the
+      // run state as aborted, then let drive's defensive catch record the error. Guarded on
+      // `finished`: a throw after the terminal event must not overwrite the row's real
+      // outcome (repo.finish is an unconditional UPDATE) or publish a contradicting event.
+      if (!finished) this.finishAborted(entry, args.goalId, round, used);
+      throw err;
+    }
+  }
+
+  /** Closes a goal's run state as aborted (stream cut off / infrastructure failure). */
+  private finishAborted(
+    entry: RuntimeEntry,
+    goalId: number | undefined,
+    round: number,
+    used: number,
+  ): void {
+    if (goalId !== undefined) this.deps.goals?.finish(goalId, "aborted", round, used);
+    this.publishEvent(entry, {
+      type: "goal_finished",
+      sessionId: entry.sessionId,
+      outcome: "aborted",
+      rounds: round,
+      used,
+    });
+  }
+
+  /** Shared task launch (fresh tasks and auto-started follow-ups): flips to running, publishes the input, and drives the run with the per-turn thinking level (if any). Caller holds the session lock and has verified idle. */
+  private launchTask(
+    entry: RuntimeEntry,
+    input: OmniMessage[],
+    thinkingLevel?: ThinkingLevelName,
+  ): void {
+    const channel = this.deps.channels.get(entry.sessionId);
+    const ac = new AbortController();
+    entry.status = "running";
+    entry.abort = ac;
+    entry.lastActivityMs = Date.now();
+    // Publish the input messages first (visible to other subscribers; the Trace is
+    // persisted by the SDK), then flip the running status.
+    for (const msg of input) channel.publish(msg);
+    this.publishState(entry, "running");
+
+    const approve = makeApprove({
+      // Re-reads approval_mode from the DB on every decision (a PATCH takes effect immediately).
+      getMode: () => this.deps.sessions.findById(entry.sessionId)?.approvalMode ?? "always-ask",
+      toolPermission: (name) => entry.session.toolPermission(name),
+      registry: entry.approvals,
+      publishRequest: (pending) =>
+        this.publishEvent(entry, {
+          type: "approval_request",
+          toolCall: pending.toolCall,
+          ...(pending.origin !== undefined ? { origin: pending.origin } : {}),
+        }),
+    });
+    const gen = entry.session.run(input, {
+      approve,
+      signal: ac.signal,
+      ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
+    });
+    // Title material is collected by the core Session itself during run; here we only
+    // keep this call's input user text, used both as the "material present → attempt
+    // generation" criterion and as the fallback title source if the LLM call fails.
+    const userExcerpt = input
+      .filter(isPlainText("user"))
+      .map((m) => m.payload.text)
+      .join("\n");
+    entry.running = this.drive(entry, gen, { userExcerpt });
+  }
+
+  /**
+   * Auto-start of queued follow-ups: called from drive's finally whenever a Task or
+   * compaction finishes (abort included — follow-ups are future tasks the user queued, so
+   * an abort of the current run does not discard them). Re-validates everything under the
+   * session lock (another task may have snuck in, the server may be shutting down, the
+   * session may be getting deleted) and launches exactly one queued input — the next
+   * finish picks up the one after, keeping order and one-at-a-time semantics.
+   */
+  private async startQueuedFollowUp(sessionId: string): Promise<void> {
+    try {
+      await this.withLock(sessionId, async () => {
+        if (this.closed || this.deletingSessions.has(sessionId)) return;
+        const row = this.deps.sessions.findById(sessionId);
+        if (row && this.deletingAgents.has(agentKey(row.projectId, row.agentId))) return;
+        const entry = this.entries.get(sessionId);
+        if (!entry || entry.status !== "idle" || entry.followUps.length === 0) return;
+        const next = entry.followUps.shift()!;
+        this.launchTask(entry, next.input, next.thinkingLevel);
+      });
+    } catch (err) {
+      this.log(`[followup] auto-start failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   /** Manually compact the context: 409 if already running; compaction output also flows into the SSE channel. */
@@ -456,6 +752,42 @@ export class SessionManager {
     const entry = this.entries.get(sessionId);
     if (!entry) return false;
     return entry.approvals.decide(toolCallId, decision);
+  }
+
+  /**
+   * Mid-run steering: forward the text to the running Session (core delivers it between
+   * turns as a standalone `[user_steering]` user message — no SSE event of its own; the
+   * message arrives through the stream the drive loop already publishes). 409 when the
+   * Session isn't running a Task (idle / compacting / not loaded) or the run finished in the
+   * race window — the caller falls back to submitting a normal task.
+   */
+  steer(sessionId: string, text: string): void {
+    const entry = this.entries.get(sessionId);
+    if (!entry || entry.status !== "running" || !entry.session.steer(text)) {
+      throw new HttpError(
+        409,
+        "not_running",
+        "This Session has no Task in progress; send the message as a new task instead.",
+      );
+    }
+    entry.lastActivityMs = Date.now();
+  }
+
+  /**
+   * "Retry now" on the reconnect countdown: skip the in-progress backoff wait and fire
+   * the next retry immediately (the attempt counter is unchanged — the skipped wait does
+   * not consume an extra attempt). Returns false as a benign no-op when the session has
+   * no active runtime or no reconnect wait is in progress — timing races (the wait
+   * elapsed right before the click) must not surface as errors. Mirrors the steer seam:
+   * manager → RuntimeSession → core Session → engine.
+   */
+  retryNow(sessionId: string): boolean {
+    const entry = this.entries.get(sessionId);
+    // Both running Tasks and compactions can be parked in a reconnect backoff.
+    if (!entry || entry.status === "idle") return false;
+    const skipped = entry.session.skipReconnectWait();
+    if (skipped) entry.lastActivityMs = Date.now();
+    return skipped;
   }
 
   /**
@@ -570,6 +902,7 @@ export class SessionManager {
   sweepIdle(now: number = Date.now(), idleMs: number = ENTRY_IDLE_MS): void {
     for (const [key, entry] of this.entries) {
       if (entry.status !== "idle" || entry.approvals.size !== 0 || entry.running !== null) continue;
+      if (entry.followUps.length > 0) continue; // queued follow-ups must not be evicted with the entry
       if (now - entry.lastActivityMs <= idleMs) continue;
       this.entries.delete(key);
     }
@@ -682,6 +1015,7 @@ export class SessionManager {
       abort: null,
       running: null,
       generation,
+      followUps: [],
       lastActivityMs: Date.now(),
     };
     this.entries.set(currentId, entry);
@@ -807,6 +1141,10 @@ export class SessionManager {
             }
           }
         }
+        // Live-tail bookkeeping in the same synchronous tick as the publish below: the
+        // messages endpoint captures "channel cursor + open fragments" between two
+        // publishes, so the pair is always a consistent snapshot (see live-tail.ts).
+        this.liveTail.observe(entry.sessionId, msg);
         // Re-fetch the channel before every publish (matches publishEvent): the channel
         // may have been recycled and recreated during a long wait on approval, and
         // holding a stale reference would send output to an orphaned, detached channel.
@@ -829,6 +1167,9 @@ export class SessionManager {
     } finally {
       // Wrap-up: persist any still-pending LLM failure and clear the tool-name cache (the watcher's state doesn't carry across runs).
       watcher?.close();
+      // The run is over: no fragment will ever continue, so drop the live tail before the
+      // idle flip (GET /messages stops attaching `live` the moment status reads idle).
+      this.liveTail.clear(entry.sessionId);
       entry.approvals.denyAll();
       entry.status = "idle";
       entry.abort = null;
@@ -844,6 +1185,10 @@ export class SessionManager {
           fallbackText: titleSource.userExcerpt,
         });
       }
+      // Queued follow-ups: whenever a run finishes (Task or compaction, abort included),
+      // the next queued input auto-starts as an ordinary task. Fire-and-forget — it
+      // revalidates under the session lock.
+      if (entry.followUps.length > 0) void this.startQueuedFollowUp(entry.sessionId);
       // A subagent's title is likewise generated by the model, with material being the
       // subagent's **own conversation**: the prompt that spawned it plus its own reply
       // (material the parent Session collects belongs to the parent, hence the explicit
@@ -931,7 +1276,9 @@ export class SessionManager {
   }
 
   private publishState(entry: RuntimeEntry, state: SessionStatus): void {
-    this.publishEvent(entry, { type: "task_state", state });
+    // Every state flip also reports the queued follow-up count, so subscribers can render
+    // the "N queued" hint without a dedicated event type.
+    this.publishEvent(entry, { type: "task_state", state, queued: entry.followUps.length });
   }
 
   private publishEvent(entry: RuntimeEntry, event: ServerEvent): void {

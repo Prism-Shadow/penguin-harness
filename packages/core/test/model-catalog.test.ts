@@ -83,8 +83,9 @@ describe("model-catalog", () => {
     for (const m of MODEL_CATALOG) {
       if (UNPRICED.has(`${m.provider}\0${m.modelId}`)) {
         expect(m.pricing, m.modelId).toBeUndefined();
-      } else if (m.modelId.endsWith(":free")) {
-        // Free-tier gateway model: a genuine $0 price (not "unknown"), so costs compute to 0.
+      } else if (m.modelId.endsWith(":free") || m.modelId === "openrouter/free") {
+        // Free-tier gateway model (:free variants and the openrouter/free router): a genuine
+        // $0 price (not "unknown"), so costs compute to 0.
         expect(m.pricing, m.modelId).toBeDefined();
         expect([m.pricing!.cache_read, m.pricing!.cache_write, m.pricing!.output]).toEqual([
           0, 0, 0,
@@ -152,6 +153,7 @@ describe("model-catalog", () => {
     // opus-4.8 before 4.7) — precomputed in the catalog, no runtime sorting.
     expect(or.map((m) => m.modelId)).toEqual([
       "anthropic/claude-fable-5",
+      "anthropic/claude-opus-5",
       "anthropic/claude-opus-4.8",
       "anthropic/claude-opus-4.7",
       "anthropic/claude-sonnet-5",
@@ -160,6 +162,7 @@ describe("model-catalog", () => {
       "google/gemini-3.6-flash",
       "google/gemini-3.5-flash",
       "google/gemini-3.5-flash-lite",
+      "inclusionai/ling-3.0-flash:free",
       "minimax/minimax-m3",
       "moonshotai/kimi-k3",
       "moonshotai/kimi-k2.6",
@@ -167,6 +170,8 @@ describe("model-catalog", () => {
       "openai/gpt-5.6-sol",
       "openai/gpt-5.6-terra",
       "openai/gpt-5.5",
+      "openrouter/free",
+      "poolside/laguna-m.1:free",
       "qwen/qwen3.6-35b-a3b",
       "stepfun/step-3.7-flash",
       "tencent/hy3",
@@ -184,6 +189,7 @@ describe("model-catalog", () => {
       ["accounts/fireworks/models/deepseek-v4-flash", false],
       ["accounts/fireworks/models/deepseek-v4-pro", false],
       ["accounts/fireworks/models/glm-5p2", false],
+      ["accounts/fireworks/models/kimi-k3", true],
       ["accounts/fireworks/models/kimi-k2p7-code", true],
       ["accounts/fireworks/models/minimax-m3", true],
     ]);

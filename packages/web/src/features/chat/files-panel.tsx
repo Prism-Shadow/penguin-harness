@@ -74,9 +74,15 @@ export function FilesPanel({ session, panel }: { session: SessionInfo; panel: Fi
         // input) anchored to the nearest initial containing block instead, it would bypass this
         // overflow-hidden and stretch the **document** wide, making a horizontal scrollbar
         // appear out of nowhere.
-        className={`relative flex min-h-0 shrink-0 flex-col overflow-hidden border-l border-gray-200 dark:border-gray-800 ${
-          panel.resizing ? "pointer-events-none" : "transition-[width] duration-200"
-        }`}
+        //
+        // The divider belongs to the OPEN state only: with border-box sizing a closed panel's
+        // border still paints its 1px even at width 0, and since both docked panels stay
+        // mounted, the closed one left a stray line beside the open one — a hairline, a gap
+        // (the open panel's resize handle) and then the real divider, which reads as an extra
+        // empty panel wedged in. Both closed, the two leftover lines stacked at the window edge.
+        className={`relative flex min-h-0 shrink-0 flex-col overflow-hidden ${
+          panel.open ? "border-l border-gray-200 dark:border-gray-800" : ""
+        } ${panel.resizing ? "pointer-events-none" : "transition-[width] duration-200"}`}
       >
         {/* Content is fixed at the target width; the outer element is only a clipping window:
             during the open/close animation the outer element passes through intermediate

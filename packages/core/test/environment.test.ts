@@ -67,7 +67,9 @@ beforeEach(async () => {
 afterEach(async () => {
   if (originalHome === undefined) delete process.env.HOME;
   else process.env.HOME = originalHome;
-  await rm(tmp, { recursive: true, force: true });
+  // Retries: on Windows a just-killed process tree releases its cwd/file locks asynchronously,
+  // so an immediate recursive rm can hit EBUSY; fs.rm retries those with a linear backoff.
+  await rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 });
 
 describe("Environment.listTools", () => {
@@ -485,9 +487,12 @@ describe("Environment.executeTool — relaxed tool contract", () => {
 
 describe("Environment.executeTool — timeoutMs (PRN-013)", () => {
   it("fails a tool exceeding timeoutMs, keeps prior output, and streams the timeout reason", async () => {
+    // The timeout must stay below MIN_YIELD_MS (250): for larger values exec_command yields to
+    // background (with a process_id) before the Environment timeout can ever fire.
+    const timeoutMs = 200;
     const env = new Environment({
       workspaceDir: tmp,
-      toolConfig: makeToolConfig(execTool({ timeoutMs: 200 })),
+      toolConfig: makeToolConfig(execTool({ timeoutMs })),
     });
     const startedAt = Date.now();
 
@@ -513,8 +518,13 @@ describe("Environment.executeTool — timeoutMs (PRN-013)", () => {
     };
     expect(last.type).toBe("tool_call_output");
     expect(last.stop_reason).toBe("failed");
-    expect(last.output).toContain("begin");
-    expect(last.output).toContain("[tool timeout: exceeded 200ms]");
+    // Kept-prior-output is asserted only where the shell can win the race: a Git-Bash login
+    // shell on Windows needs several hundred ms to start, so nothing is printed before a
+    // sub-250ms timeout there — the timeout mechanics above are still fully exercised.
+    if (process.platform !== "win32") {
+      expect(last.output).toContain("begin");
+    }
+    expect(last.output).toContain(`[tool timeout: exceeded ${timeoutMs}ms]`);
     // The timeout marker is also produced via streaming: concatenating the streamed deltas ==
     // the complete content.
     const streamed = messages
@@ -735,14 +745,14 @@ describe("Environment.executeTool — robustness", () => {
 describe("Environment.toolPermission", () => {
   it("returns the configured permission for a known tool", () => {
     const env = new Environment({
-      workspaceDir: "/tmp",
+      workspaceDir: tmpdir(),
       toolConfig: makeToolConfig(execTool({ permission: "rw" })),
     });
     expect(env.toolPermission("exec_command")).toBe("rw");
   });
 
   it("returns undefined for an unknown tool", () => {
-    const env = new Environment({ workspaceDir: "/tmp", toolConfig: makeToolConfig() });
+    const env = new Environment({ workspaceDir: tmpdir(), toolConfig: makeToolConfig() });
     expect(env.toolPermission("nope")).toBeUndefined();
   });
 });

@@ -20,11 +20,23 @@
  *   when a resent approval_request can't find its tool card (sub-session
  *   messages aren't written to the parent Trace, so the card can be missing
  *   after a reload), the toolCall carried by the event (with origin) is fed
- *   to the reducer to rebuild the nested card, making the sub-session's approval visible and decidable.
+ *   to the reducer to rebuild the nested card, making the sub-session's approval visible and decidable;
+ * - Live-tail seeding: while a Task runs, `/messages` also returns `live`
+ *   ({cursor, fragments} — see MessagesLiveTail): buffered partial events at
+ *   or before the cursor are dropped (their content is already accumulated
+ *   inside the fragments), the synthetic `partial_* start` fragments are fed
+ *   through the normal reducer path at the cursor's position, and the rest of
+ *   the buffer replays on top — so the in-progress message survives a refresh
+ *   with its streamed prefix intact and keeps streaming.
  */
 import { isEventMessage, isPartialPayload } from "@prismshadow/penguin-core/omnimessage";
 import type { OmniMessage, ToolCallPayload } from "@prismshadow/penguin-core/omnimessage";
-import type { ServerEvent, SessionStatus } from "@prismshadow/penguin-server/api";
+import type {
+  GoalServerEvent,
+  MessagesLiveTail,
+  ServerEvent,
+  SessionStatus,
+} from "@prismshadow/penguin-server/api";
 import {
   approvalKey,
   buildDedupIndex,
@@ -46,13 +58,27 @@ export interface PendingApproval {
   origin?: string[];
 }
 
-type BufferedEvent = { kind: "omni"; msg: OmniMessage } | { kind: "server"; ev: ServerEvent };
+/** Buffered stream event; `id` is the SSE event id (`<epoch>-<seq>`, null when unknown); `seeded` marks a live-tail fragment injected at replay time (never carried over into a later round's buffer — the new round refetches fresh fragments). */
+type BufferedEvent =
+  | { kind: "omni"; msg: OmniMessage; id: string | null; seeded?: boolean }
+  | { kind: "server"; ev: ServerEvent; id: string | null };
+
+/** Parse a channel event id (`<epoch>-<seq>`); null when malformed (same split rule as the server's Channel.replayAfter). */
+function parseEventId(id: string): { epoch: string; seq: number } | null {
+  const sep = id.lastIndexOf("-");
+  if (sep <= 0) return null;
+  const seq = Number.parseInt(id.slice(sep + 1), 10);
+  if (!Number.isInteger(seq) || seq < 0) return null;
+  return { epoch: id.slice(0, sep), seq };
+}
 
 export interface StreamControllerDeps {
-  /** Fetch history messages (GET /api/sessions/:id/messages). */
-  loadMessages: () => Promise<OmniMessage[]>;
+  /** Fetch history messages (GET /api/sessions/:id/messages), including the live tail while running. */
+  loadMessages: () => Promise<{ messages: OmniMessage[]; live?: MessagesLiveTail }>;
   /** Authoritative running state from the stream (covers both the subscription snapshot and transition events). */
   onTaskState: (state: SessionStatus) => void;
+  /** Queued follow-up count carried on task_state events (absent on old servers -> 0). */
+  onQueuedFollowUps?: (count: number) => void;
   onLoading: (loading: boolean) => void;
   /** History load failure message (null = clear). */
   onError: (message: string | null) => void;
@@ -64,6 +90,8 @@ export interface StreamControllerDeps {
   onSessionTitle?: (sessionId: string, title: string) => void;
   /** A new session has been registered (sub-sessions are pushed along the parent session's channel; used to refresh the Session list). */
   onSessionCreated?: (sessionId: string) => void;
+  /** Goal-mode progress (goal_started / goal_round / goal_finished): drives the chat page's goal banner. */
+  onGoalEvent?: (ev: GoalServerEvent) => void;
   /** Local clock (injectable for tests). */
   now?: () => number;
 }
@@ -76,10 +104,10 @@ export interface StreamController {
   load: () => Promise<void>;
   /** Retry entry point after a history load failure (keeps the buffer, refetches history). */
   retry: () => Promise<void>;
-  /** SSE OmniMessage entry point. */
-  handleOmni: (msg: OmniMessage) => void;
-  /** SSE server-event entry point. */
-  handleServer: (ev: ServerEvent) => void;
+  /** SSE OmniMessage entry point (`eventId`: the SSE event id, used for live-tail cursor alignment). */
+  handleOmni: (msg: OmniMessage, eventId?: string | null) => void;
+  /** SSE server-event entry point (`eventId`: same as handleOmni). */
+  handleServer: (ev: ServerEvent, eventId?: string | null) => void;
   /** Register that this end clicked an approval ("manual" label, persists across resync rebuilds). */
   markLocalDecision: (toolCallId: string) => void;
   /** Remove a pending approval by its composite key (optimistic update; also removed as a fallback when the event arrives). */
@@ -99,6 +127,8 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
   let buffer: BufferedEvent[] = [];
   /** The most recent in-stream task_state (null = the snapshot hasn't arrived yet; history finalization trusts only this value). */
   let streamStatus: SessionStatus | null = null;
+  /** The most recent SSE event id seen on this connection (null = none yet): identifies the channel epoch the live-tail cursor must match. */
+  let lastEventId: string | null = null;
   /** Load epoch: incremented on rebuild/retry; any replay or finalization from an older epoch is discarded. */
   let epoch = 0;
   /** Whether the most recent load failed (retry only takes effect after a failure, to avoid mistakenly replaying history). */
@@ -150,6 +180,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
         // server sends the current snapshot as soon as it subscribes; the list's snapshot is only a first-frame placeholder).
         streamStatus = ev.state;
         deps.onTaskState(ev.state);
+        deps.onQueuedFollowUps?.(ev.queued ?? 0);
         if (ev.state === "idle") {
           // Task ended (or the snapshot confirms idle): finalize the current Task's stats; pending approvals have already converged server-side.
           notifyTaskIdle(model, now());
@@ -161,6 +192,16 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
       case "resync_required": {
         // The buffer has been evicted: refetch history to rebuild the model, then continue consuming the same connection.
         void rebuild();
+        return;
+      }
+      case "credentials_updated": {
+        // The Project's model credentials changed (Models page save): the server has
+        // already invalidated cached runtimes, so any auth-dead state is stale — clear it
+        // and let the user simply continue (it re-arms if the new key fails too). Buffered
+        // during history load like other model-affecting events, so it replays AFTER the
+        // history that set the flag.
+        model.lastAuthFailureMs = null;
+        deps.onModelChange();
         return;
       }
       case "hello":
@@ -187,9 +228,42 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
     await load(epoch, createStreamModel(localDecisions));
   };
 
+  /**
+   * Weave the live tail into the buffered replay (see MessagesLiveTail in the server API):
+   * entries at/or before the cursor come first with their partials dropped (the fragment
+   * snapshot already accumulates them; completes still replay — the dedup gate decides),
+   * then the synthetic fragment starts at the cursor's position, then everything after the
+   * cursor. Skipped entirely when the cursor's epoch doesn't match the epoch of the events
+   * seen on this connection (channel recycled/server restarted between the two requests —
+   * seq comparison would be meaningless; the resync flow covers that path).
+   */
+  const weaveLiveTail = (replay: BufferedEvent[], live: MessagesLiveTail): BufferedEvent[] => {
+    const cursor = parseEventId(live.cursor);
+    if (!cursor) return replay;
+    const seen = lastEventId === null ? null : parseEventId(lastEventId);
+    if (seen !== null && seen.epoch !== cursor.epoch) return replay;
+    const pre: BufferedEvent[] = [];
+    const post: BufferedEvent[] = [];
+    for (const e of replay) {
+      const eid = e.id === null ? null : parseEventId(e.id);
+      if (eid !== null && eid.epoch === cursor.epoch && eid.seq <= cursor.seq) {
+        if (e.kind !== "omni" || !isPartialPayload(e.msg.payload)) pre.push(e);
+      } else {
+        post.push(e);
+      }
+    }
+    const seeds: BufferedEvent[] = live.fragments.map((msg) => ({
+      kind: "omni",
+      msg,
+      id: null,
+      seeded: true,
+    }));
+    return [...pre, ...seeds, ...post];
+  };
+
   const load = async (currentEpoch: number, freshModel?: StreamModel): Promise<void> => {
     try {
-      const messages = await deps.loadMessages();
+      const { messages, live } = await deps.loadMessages();
       if (disposed || currentEpoch !== epoch) return;
       // Rebuild path: make the freshly-built model visible only now, atomically — the old model
       // stayed on screen throughout the refetch above (see rebuild). Initial load / retry pass no
@@ -198,8 +272,9 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
       const target = model;
       pushMessages(target, messages, now());
       const dedup = buildDedupIndex(messages, 100);
-      // Replay the buffer (events that arrived while fetching history), with dedup.
-      const replay = buffer;
+      // Replay the buffer (events that arrived while fetching history), with dedup; while a
+      // Task runs, the live tail is woven in so the in-progress message is seeded too.
+      const replay = live !== undefined ? weaveLiveTail(buffer, live) : buffer;
       buffer = [];
       for (let i = 0; i < replay.length; i += 1) {
         const e = replay[i]!;
@@ -209,8 +284,10 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
         if (currentEpoch !== epoch) {
           // A rebuild was triggered mid-replay (e.g. resync_required): this
           // round is discarded, and the remaining events are handed off to
-          // the new round's buffer — phase is left unchanged and the old buffer is never fed to the new model.
-          buffer.push(...replay.slice(i + 1));
+          // the new round's buffer — phase is left unchanged and the old buffer is never
+          // fed to the new model. Seeded fragments are snapshot-bound to THIS round and
+          // are dropped instead of carried over (the new round refetches fresh ones).
+          buffer.push(...replay.slice(i + 1).filter((r) => r.kind !== "omni" || !r.seeded));
           return;
         }
       }
@@ -256,17 +333,19 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
       epoch += 1;
       await load(epoch, createStreamModel(localDecisions));
     },
-    handleOmni: (msg) => {
+    handleOmni: (msg, eventId = null) => {
       if (disposed) return;
+      if (eventId !== null) lastEventId = eventId;
       if (phase === "buffering") {
-        buffer.push({ kind: "omni", msg });
+        buffer.push({ kind: "omni", msg, id: eventId });
         return;
       }
       feedOmni(msg, null);
       deps.onModelChange();
     },
-    handleServer: (ev) => {
+    handleServer: (ev, eventId = null) => {
       if (disposed) return;
+      if (eventId !== null) lastEventId = eventId;
       // session_title / session_created only affect list display (unrelated
       // to the view model/history): forwarded immediately at any phase, never buffered.
       if (ev.type === "session_title") {
@@ -277,6 +356,12 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
         deps.onSessionCreated?.(ev.sessionId);
         return;
       }
+      // Goal progress only affects the banner (UI state, not the transcript model): forwarded
+      // immediately at any phase, never buffered — same treatment as session_title.
+      if (ev.type === "goal_started" || ev.type === "goal_round" || ev.type === "goal_finished") {
+        deps.onGoalEvent?.(ev);
+        return;
+      }
       if (phase === "buffering") {
         // task_state is reflected immediately in the input area (authoritative
         // state, doesn't wait for history replay); model side effects like
@@ -284,8 +369,9 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
         if (ev.type === "task_state") {
           streamStatus = ev.state;
           deps.onTaskState(ev.state);
+          deps.onQueuedFollowUps?.(ev.queued ?? 0);
         }
-        buffer.push({ kind: "server", ev });
+        buffer.push({ kind: "server", ev, id: eventId });
         return;
       }
       handleServer(ev);

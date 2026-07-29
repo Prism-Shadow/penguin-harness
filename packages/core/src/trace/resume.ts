@@ -3,7 +3,7 @@
  *
  * Replay produces two results: the **history** injected via setHistory (committed turns only),
  * and the **carry-over** input resent with the first `run` after resume. Resume is **best-effort**:
- * Trace only records real messages, so synthesized carry-over (`<turn_aborted>` flattening, pairing
+ * Trace only records real messages, so synthesized carry-over (`[turn_aborted]` flattening, pairing
  * placeholders) is never written to Trace — replay reconstructs from the original messages
  * (unanswered input is resent as-is, pairing placeholders are resynthesized as needed). History is
  * guaranteed to be **structurally valid** (turns complete, tool_call pairs matched), not a
@@ -46,7 +46,7 @@ import type {
   TokenUsagePayload,
   ToolCallPayload,
 } from "../omnimessage/index.js";
-import { extractSummary } from "../engine/context-engine.js";
+import { buildContextSummaryText, extractSummary } from "../omnimessage/markers/index.js";
 
 /** Replay result: all the state needed to resume a Session. */
 export interface ResumeResult {
@@ -60,7 +60,7 @@ export interface ResumeResult {
   carryOver: OmniMessage[];
   /** Compaction closure (file-level): this file's context is fully closed; resume starts a new, empty context. */
   contextClosed: boolean;
-  /** Compaction closure in summarize mode: the reconstructed `<context_summary>` summary, prepended to the next run's input. */
+  /** Compaction closure in summarize mode: the reconstructed `[context_summary]` summary, prepended to the next run's input. */
   pendingSummary?: OmniMessage;
   /** Session-level cumulative Token carry-over (the session value from the last token_usage). */
   sessionTokens: TokenCounts;
@@ -226,15 +226,21 @@ export function resumeTrace(messages: OmniMessage[]): ResumeResult {
         renderMessages: [],
         meta,
       };
-      if (p.mode === "summarize") {
-        // Reconstruct the summary from the compaction request's output (the assistant text of
-        // the last completed Request).
-        const summaryText = lastCompletedRequestText(messages);
-        result.pendingSummary = userText(
-          `<context_summary>\n${extractSummary(summaryText)}\n</context_summary>`,
-        );
+      if (p.mode !== "summarize") return result;
+      // Reconstruct the summary from the compaction request's output (the assistant text of
+      // the last completed Request). Always rebuilt in the current [context_summary] form —
+      // extractSummary itself still accepts the old <summary> tags an old Trace may contain.
+      const summaryText = extractSummary(lastCompletedRequestText(messages));
+      if (summaryText !== "") {
+        result.pendingSummary = userText(buildContextSummaryText(summaryText));
+        return result;
       }
-      return result;
+      // The compaction output extracts to an **empty** summary: only a pre-#83 engine could
+      // have written such a "completed" closure (compaction now fails instead of committing an
+      // empty summary, which would erase the task state). Mirror the current contract: void
+      // the closure and fall through to turn-by-turn replay — the original context this file
+      // still holds is restored, and the committed compaction turn stays in history like any
+      // committed turn.
     }
   }
 
@@ -321,7 +327,11 @@ export function resumeTrace(messages: OmniMessage[]): ResumeResult {
             committedCallIds.add(p.tool_call_id);
           }
         }
-        sessionTurns += 1;
+        // A committed request inside a compaction span enters history as usual (AgentHub
+        // committed it — e.g. an invalid-summary attempt of a compaction that then failed),
+        // but does not count as a Session turn: in-process only runTurn increments the
+        // counter, never runCompactionRequest.
+        if (!inCompaction) sessionTurns += 1;
         snapshot = [];
         outputs = [];
         inRequest = false;
@@ -434,8 +444,9 @@ function lastCompletedRequestText(messages: OmniMessage[]): string {
       {
         // A completed request with empty text still overwrites (we take the text of “the last
         // completed request”, even if empty) — otherwise a textless compaction output would fall
-        // back to an earlier turn's normal reply and get mistakenly injected as the summary; the
-        // in-process path yields an empty summary here (extractSummary(“”)).
+        // back to an earlier turn's normal reply and get mistakenly injected as the summary. The
+        // caller treats the resulting empty extract as a void closure (a pre-#83 trace shape)
+        // and replays the original context instead.
         if (msg.payload.status === "completed") text = current;
         inRequest = false;
       }

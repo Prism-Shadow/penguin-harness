@@ -31,18 +31,25 @@
  * clicking a row toggles its selection without closing the menu; the button = book icon + label +
  * selected-count badge, disabled while running/compacting). With skills selected, sending with an
  * empty text body is allowed — the sent text automatically falls back to S.chat.skillsAutoMessage.
- * When sent, the text body wraps in a `<use_skills>` block (the handoff's rest-of-message body is
+ * When sent, the text body wraps in a `[use_skills]` block (the handoff's rest-of-message body is
  * wrapped the same way); the selection clears once sending succeeds. Quick-invoke pre-selects via
  * initialSkills (read once on mount; once the installed list is ready, names not in that list are
  * pruned); the slash menu also lists installed skills, and pressing Enter on `/<skill_name>`
  * selects it.
- * Switches to a "Stop" button while a Task is running; disabled with a reason shown while
- * compacting.
+ * While a Task is running the input stays enabled and the toolbar keeps ONE action button:
+ * an empty composer shows Stop (abort), and typing turns that same button into Send, which
+ * follows the remembered mid-run send mode — steer (delivered between turns as a
+ * [user_steering] user message) or queue-as-follow-up — chosen from the "+" menu's settings
+ * row (available in draft state too, persisted in localStorage); sending is disabled with a
+ * reason shown while compacting.
+ * The toolbar is a single left/right row: settings controls left (scrolling horizontally when
+ * the card is too narrow), status + model + the action button right (never shrinking), so a
+ * phone viewport never pushes the action button off-screen.
  * Renders only the card body itself: outer positioning such as bottom-docking or vertical
  * centering is decided by the page.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ChangeEvent, ClipboardEvent, KeyboardEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { ChangeEvent, ClipboardEvent, KeyboardEvent, ReactNode } from "react";
 import type {
   AgentSummary,
   ApprovalMode,
@@ -58,10 +65,17 @@ import { resolveContextWindow } from "../../lib/context";
 import { useLocale } from "../../state/locale";
 import { Dropdown } from "../../components/ui/dropdown";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
+import { noAutofill } from "../../components/ui/input";
 import { SkillIcon } from "../skills/skill-icon-view";
 import { ZoomableImage } from "../../components/ui/image-zoom";
 import { ProviderLogo } from "../../components/ui/provider-logo";
-import { hasConfiguredKey, sameModelRef, visibleChatModels } from "../models/model-grouping";
+import { Badge } from "../../components/ui/badge";
+import {
+  hasConfiguredKey,
+  isFreeModel,
+  sameModelRef,
+  visibleChatModels,
+} from "../models/model-grouping";
 import { filterAgents, matchMention, splitLeadingMention } from "./agent-mentions";
 import { matchSlash, removeSlashToken } from "./slash-token";
 import { SELECTABLE_THINKING_LEVELS, thinkingLevelLabel } from "./thinking-level";
@@ -72,6 +86,7 @@ import {
   localizedShortText,
   skillSlashItems,
 } from "./skill-use";
+import { GOAL_ICON, UNLIMITED_BUDGET, parseBudgetInput } from "./goal-use";
 
 const APPROVAL_MODES: ApprovalMode[] = ["always-ask", "read-only", "allow-all", "deny-all"];
 
@@ -114,12 +129,11 @@ function ApprovalModeSelect({
     <Dropdown
       open={open}
       setOpen={setOpen}
-      menuClass={
-        // w-max: width exactly wraps the longest line (no wrapping within a line), avoiding an overly wide panel.
-        direction === "down"
-          ? "left-0 top-full mt-1 w-max max-w-[calc(100vw-2rem)] origin-top-left"
-          : "bottom-full left-0 mb-1 w-max max-w-[calc(100vw-2rem)] origin-bottom-left"
-      }
+      // w-max: width exactly wraps the longest line (no wrapping within a line), avoiding an
+      // overly wide panel. Placement is portal-driven (the toolbar scrolls horizontally on
+      // phones, which would otherwise clip the panel); only size classes belong here.
+      menuClass="w-max"
+      portal={{ direction, align: "left" }}
       button={
         // Button styling matches the model selector (h-8 / rounded-md / solid hover background).
         <button
@@ -220,45 +234,37 @@ const NO_KEY_ICON =
   "M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4M2 2l20 20";
 
 /**
- * Model selector (draft state only; docked to the left of the send button): both the button and
- * candidate items show the provider logo. The menu opens **downward** — the draft card is
- * vertically centered with room below; a top quick-search box (reusing the model page's rule:
- * filters by id / display name / provider name), with the candidate list capped by an internal
- * scroll (max-h-56) so it never overflows the browser's viewport height no matter how many models
- * there are. On narrow screens only the logo remains (name hidden); list items mark the project
- * default.
- * By default only models with a configured API key are listed (stored masked key — the same
- * standard as the model page's key status; `envKey` is merely the NAME of a fallback env var and
- * doesn't count), with the selected and the default model always visible even without a key; a
- * muted bottom row reveals the remaining key-less models (marked by a struck-through key icon,
- * with the "no key" text in its title) without closing the menu or changing the selection. When
- * no model has a key at all, everything is listed directly.
+ * Model candidate panel (search box + grouped list + "show all" expander) shared by the
+ * draft-state ModelSelect dropdown and the in-session `/model` switch picker. Search and
+ * expanded state are internal and reset by remount (both hosts only render the panel while
+ * open); the list is capped by an internal scroll (max-h-56) so it never overflows the
+ * viewport no matter how many models there are.
+ * Dropdown order mirrors the model library page (visibleChatModels): a top quick-search box
+ * (the model page's rule — filters by id / display name / provider name); by default only
+ * models with a configured API key are listed (stored masked key — the same standard as the
+ * model page's key status; `envKey` is merely the NAME of a fallback env var and doesn't
+ * count), with the selected and the default model always visible even without a key; a muted
+ * bottom row reveals the remaining key-less models (marked by a struck-through key icon, with
+ * the "no key" text in its title) without closing the menu or changing the selection — when
+ * no model has a key at all, everything is listed directly. Rows carry the provider logo, the
+ * light-yellow "Free" badge for zero-cost models (same as the model library card), the
+ * project-default marker, and the selected checkmark.
  */
-function ModelSelect({
+function ModelMenuList({
   models,
   value,
   defaultModel,
-  onChange,
-  disabled,
+  onPick,
 }: {
   models: ModelInfo[];
   /** Currently selected (provider, modelId) pair; null = not yet chosen. */
   value: ModelRefDto | null;
   defaultModel?: ModelRefDto;
-  onChange: (ref: ModelRefDto) => void;
-  disabled: boolean;
+  onPick: (m: ModelInfo) => void;
 }) {
-  const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  // Expanded "show all" state: collapses back to key-configured models on each open.
+  // Expanded "show all" state: collapses back to key-configured models on each open (remount).
   const [showAll, setShowAll] = useState(false);
-  const current = models.find((m) => sameModelRef(m, value));
-  // Display rule matches the model page's card: display name, or falls back to the upstream id (grouping is already conveyed by the provider logo).
-  const label = current ? modelLabel(current) : (value?.modelId ?? "…");
-  // Dropdown order mirrors the model library page: provider groups in MODEL_PROVIDERS order
-  // (user-defined groups after, custom last), in-group order preserved. By default the list
-  // keeps only key-configured models (selected/default always included; lists everything when
-  // no model has a key); the query filters what's visible.
   const visible = visibleChatModels(models, { showAll, query, selected: value, defaultModel });
   // How many models the key filter hides under the current query (0 when expanded): drives the bottom "show all" row.
   const hiddenCount = showAll
@@ -266,57 +272,7 @@ function ModelSelect({
     : visibleChatModels(models, { showAll: true, query, selected: value, defaultModel }).length -
       visible.length;
   return (
-    <Dropdown
-      open={open}
-      setOpen={setOpen}
-      // right-0 docks the panel's right edge to the button, which itself sits ~4.5rem in from
-      // the viewport's right edge (page + card padding, gap, send button) — so the width clamp
-      // must reserve that anchor offset too, or the w-max panel's LEFT edge runs off-screen on
-      // phones (~34px off-screen at 375px with a 100vw-2rem clamp). Desktop is untouched:
-      // w-max stays far below the clamp there.
-      menuClass="right-0 top-full mt-1 w-max min-w-56 max-w-[calc(100vw-6rem)] origin-top-right"
-      button={
-        <button
-          type="button"
-          title={`${S.chat.chooseModel}：${label}`}
-          aria-label={S.chat.chooseModel}
-          disabled={disabled || models.length === 0}
-          onClick={() => {
-            const next = !open;
-            setOpen(next);
-            if (next) {
-              // Each open starts from the unsearched, collapsed (configured-only) list.
-              setQuery("");
-              setShowAll(false);
-            }
-          }}
-          className="flex h-8 max-w-44 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-        >
-          <ProviderLogo
-            provider={current?.provider ?? value?.provider ?? "custom"}
-            className="h-4 w-4 shrink-0"
-          />
-          {/* When the card is narrower than @md, only the provider logo remains (title shows the full name). */}
-          <span className="hidden min-w-0 truncate @md:block">{label}</span>
-          <svg
-            width="10"
-            height="10"
-            viewBox="0 0 12 12"
-            fill="none"
-            stroke="currentColor"
-            className="shrink-0"
-            aria-hidden
-          >
-            <path
-              d="M3 4.5l3 3 3-3"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
-      }
-    >
+    <>
       {/* Quick search: supports model id / display name / provider name */}
       <div className="border-b border-gray-100 px-2 pb-1.5 pt-0.5 dark:border-gray-800">
         <input
@@ -325,6 +281,7 @@ function ModelSelect({
           onChange={(e) => setQuery(e.target.value)}
           placeholder={S.models.searchPlaceholder}
           aria-label={S.models.searchPlaceholder}
+          {...noAutofill}
           className="w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-xs text-gray-700 placeholder:text-gray-400 focus:outline-none dark:text-gray-200 dark:placeholder:text-gray-500"
         />
       </div>
@@ -336,10 +293,7 @@ function ModelSelect({
           <button
             key={`${m.provider}:${m.modelId}`}
             type="button"
-            onClick={() => {
-              onChange({ provider: m.provider, modelId: m.modelId });
-              setOpen(false);
-            }}
+            onClick={() => onPick(m)}
             className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800 ${
               sameModelRef(m, value)
                 ? "font-medium text-gray-900 dark:text-gray-100"
@@ -348,6 +302,13 @@ function ModelSelect({
           >
             <ProviderLogo provider={m.provider} className="h-4 w-4 shrink-0" />
             <span className="min-w-0 flex-1 truncate">{modelLabel(m)}</span>
+            {/* Zero-cost rows (all three price buckets 0): same light-yellow "Free" badge as
+                the model library card, so free models stand out while picking. */}
+            {isFreeModel(m.pricing) && (
+              <span className="shrink-0">
+                <Badge tone="yellow">{S.models.freeBadge}</Badge>
+              </span>
+            )}
             {/* Key-less rows (visible via show-all / selected / default / no-key-at-all) carry a
                 struck-through key icon (the "no key" text lives in the title/aria-label). */}
             {!hasConfiguredKey(m) && (
@@ -385,6 +346,87 @@ function ModelSelect({
           </button>
         </div>
       )}
+    </>
+  );
+}
+
+/**
+ * Model selector (draft state only; docked to the left of the send button): the button shows
+ * the provider logo + name (logo only when the card is narrower than @md; the title carries
+ * the full name), and the menu opens **downward** — the draft card is vertically centered
+ * with room below. The candidate list itself is the shared ModelMenuList panel (search,
+ * key-configured-first grouping, Free badge, "show all" expander — documented there).
+ */
+function ModelSelect({
+  models,
+  value,
+  defaultModel,
+  onChange,
+  disabled,
+}: {
+  models: ModelInfo[];
+  /** Currently selected (provider, modelId) pair; null = not yet chosen. */
+  value: ModelRefDto | null;
+  defaultModel?: ModelRefDto;
+  onChange: (ref: ModelRefDto) => void;
+  disabled: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const current = models.find((m) => sameModelRef(m, value));
+  // Display rule matches the model page's card: display name, or falls back to the upstream id (grouping is already conveyed by the provider logo).
+  const label = current ? modelLabel(current) : (value?.modelId ?? "…");
+  return (
+    <Dropdown
+      open={open}
+      setOpen={setOpen}
+      // The panel's right edge docks to the button; portal placement then clamps both edges
+      // inside the viewport, so a w-max panel can no longer run off-screen on phones (it used
+      // to need a hand-tuned width clamp reserving the anchor offset).
+      menuClass="w-max min-w-56 origin-top-right"
+      portal={{ direction: "down", align: "right" }}
+      button={
+        <button
+          type="button"
+          title={`${S.chat.chooseModel}：${label}`}
+          aria-label={S.chat.chooseModel}
+          disabled={disabled || models.length === 0}
+          onClick={() => setOpen(!open)}
+          className="flex h-8 max-w-44 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+        >
+          <ProviderLogo
+            provider={current?.provider ?? value?.provider ?? "custom"}
+            className="h-4 w-4 shrink-0"
+          />
+          {/* When the card is narrower than @md, only the provider logo remains (title shows the full name). */}
+          <span className="hidden min-w-0 truncate @md:block">{label}</span>
+          <svg
+            width="10"
+            height="10"
+            viewBox="0 0 12 12"
+            fill="none"
+            stroke="currentColor"
+            className="shrink-0"
+            aria-hidden
+          >
+            <path
+              d="M3 4.5l3 3 3-3"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+      }
+    >
+      <ModelMenuList
+        models={models}
+        value={value}
+        {...(defaultModel !== undefined ? { defaultModel } : {})}
+        onPick={(m) => {
+          onChange({ provider: m.provider, modelId: m.modelId });
+          setOpen(false);
+        }}
+      />
     </Dropdown>
   );
 }
@@ -393,25 +435,33 @@ function ModelSelect({
 const SPARK_ICON = "M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z";
 
 /**
- * Conversation-time thinking-level picker (draft state only, docked left of the model
- * selector): shows the **selected Agent's** current `model.thinking_level` and writes a picked
- * level straight through to the Agent settings — llmConfig is assembled once per session, so
- * the level applies to the session created on first send and becomes the Agent's new default
- * (switch-becomes-default). Per review: a title bar names the control, and the menu lists
- * the selectable levels with short names only (no descriptions, no "default" row, and no
- * "none" — many models cannot disable thinking); an Agent without an explicit override shows
- * an em dash until a level is picked, and a stored legacy "none" still displays via the
- * label table (just never offered).
+ * Conversation-time thinking-level picker, used in two places. Both variants list only the
+ * concrete levels (per review: a title bar names the control; short names only, no
+ * descriptions, no "default"/"follow" row, and no "none" — many models cannot disable
+ * thinking; a stored legacy "none" still displays via the label table, just never offered):
+ * - Draft state (docked left of the model selector): shows the **selected Agent's** current
+ *   `model.thinking_level` and writes a picked level straight through to the Agent settings —
+ *   it applies to the session created on first send and becomes the Agent's new default
+ *   (switch-becomes-default). An Agent without an explicit override shows an em dash until a
+ *   level is picked.
+ * - Active session: the level is a **per-turn parameter** sent with each task. The displayed
+ *   value initializes to the Agent config's level and auto-follows it while the user hasn't
+ *   picked (the parent resolves the display value and keeps omitting the level from tasks
+ *   until touched); an explicit pick sticks for the session and rides on every subsequent
+ *   send, never writing through to the Agent config.
  */
 function ThinkingLevelSelect({
   value,
   onChange,
   disabled,
+  direction = "down",
 }: {
-  /** Current level ("" = no override yet); null = the Agent config is still loading. */
+  /** Level to display and mark selected ("" = none to show yet); null = the Agent config is still loading (draft). */
   value: string | null;
   onChange: (level: string) => void;
   disabled: boolean;
+  /** Popup direction: down for the draft card (room below), up for the bottom-docked session composer. */
+  direction?: "down" | "up";
 }) {
   const [open, setOpen] = useState(false);
   const label =
@@ -420,7 +470,8 @@ function ThinkingLevelSelect({
     <Dropdown
       open={open}
       setOpen={setOpen}
-      menuClass="right-0 top-full mt-1 w-36 origin-top-right"
+      menuClass="w-max min-w-36"
+      portal={{ direction, align: "right" }}
       button={
         <button
           type="button"
@@ -452,7 +503,7 @@ function ThinkingLevelSelect({
         </button>
       }
     >
-      {/* Title bar: names the control (the rows themselves are just the five short names). */}
+      {/* Title bar: names the control (the rows themselves are just the short names). */}
       <div className="border-b border-gray-100 px-3 pb-1.5 pt-0.5 text-xs font-semibold text-gray-500 dark:border-gray-800 dark:text-gray-400">
         {S.chat.thinkingLevel}
       </div>
@@ -477,6 +528,73 @@ function ThinkingLevelSelect({
         </button>
       ))}
     </Dropdown>
+  );
+}
+
+/**
+ * Mid-run send mode: steer (delivered mid-run as a [user_steering] input) vs follow-up
+ * (queued server-side until the run ends). A remembered per-user UI preference, persisted
+ * the same way as the sidebar grouping mode (validated localStorage read under a
+ * `penguin.*` key); configurable from the "+" menu's settings row in draft state and active
+ * sessions alike.
+ */
+type SteerMode = "steer" | "followup";
+const STEER_MODE_KEY = "penguin.steerMode";
+function initialSteerMode(): SteerMode {
+  return localStorage.getItem(STEER_MODE_KEY) === "followup" ? "followup" : "steer";
+}
+
+/** Sliders icon (24×24 line path) for the mid-run send-mode settings row. */
+const SLIDERS_ICON = "M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6";
+
+/**
+ * The mid-run send mode row, rendered as the "+" menu's settings footer: Steer (default) /
+ * Queue as a follow-up, the full explanation hover-only via each pill's title (the toolbar's
+ * "full meaning on hover" convention). Laid out like the menu's items — leading icon, label,
+ * the control where an item's description sits — so the menu reads as one list. Clicking a
+ * pill keeps the menu open — it's a setting, not an action — and the row is never disabled:
+ * the preference is settable before and during a run.
+ */
+function SteerModeRow({
+  steerMode,
+  onChangeSteerMode,
+}: {
+  steerMode: SteerMode;
+  onChangeSteerMode: (mode: SteerMode) => void;
+}) {
+  // Compact pills, no bordered wrapper: the control must not out-height an item's 16px text
+  // line by more than the row paddings absorb — h-5 pills inside py-1 land the row at the
+  // same 28px an item's text + py-1.5 does, so the menu keeps one line rhythm.
+  const modeButton = (mode: SteerMode, label: string, hint: string) => (
+    <button
+      type="button"
+      title={hint}
+      aria-pressed={steerMode === mode}
+      onClick={() => onChangeSteerMode(mode)}
+      className={`h-5 rounded px-1.5 text-xs transition-colors duration-150 ${
+        steerMode === mode
+          ? "bg-gray-200 font-medium text-gray-800 dark:bg-gray-700 dark:text-gray-100"
+          : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
+      }`}
+    >
+      {label}
+    </button>
+  );
+  return (
+    <div className="flex w-full items-center gap-2 px-3 py-1 text-xs">
+      <GlyphIcon d={SLIDERS_ICON} size={14} className="shrink-0 text-gray-400 dark:text-gray-500" />
+      <span className="min-w-0 flex-1 truncate text-gray-600 dark:text-gray-400">
+        {S.chat.steerModeLabel}
+      </span>
+      <div
+        role="group"
+        aria-label={S.chat.steerModeLabel}
+        className="flex shrink-0 items-center gap-0.5"
+      >
+        {modeButton("steer", S.chat.steerModeSteer, S.chat.steerModeSteerHint)}
+        {modeButton("followup", S.chat.steerModeFollowUp, S.chat.steerModeFollowUpHint)}
+      </div>
+    </div>
   );
 }
 
@@ -511,18 +629,10 @@ function SkillSelect({
     <Dropdown
       open={open}
       setOpen={setOpen}
-      menuClass={
-        // As wide as reasonably possible so descriptions stay readable. The panel is
-        // left-anchored to a button ~8rem into the toolbar (icon-only card; ~17rem once the
-        // card is wide enough for button labels, @md), so a plain 100vw clamp still let the
-        // right edge overrun the viewport on phones (~92px at 375px — the search box's
-        // autofocus then dragged the whole page sideways); the clamp must reserve the anchor
-        // offset plus a margin. Desktop is untouched: the fixed 26rem width stays below both
-        // clamps there.
-        direction === "down"
-          ? "left-0 top-full mt-1 w-[26rem] max-w-[calc(100vw-10rem)] @md:max-w-[calc(100vw-17rem)] origin-top-left"
-          : "bottom-full left-0 mb-1 w-[26rem] max-w-[calc(100vw-10rem)] @md:max-w-[calc(100vw-17rem)] origin-bottom-left"
-      }
+      // As wide as reasonably possible so descriptions stay readable; portal placement clamps
+      // it to the viewport, so the old hand-tuned anchor-offset clamps are no longer needed.
+      menuClass="w-[26rem]"
+      portal={{ direction, align: "left" }}
       button={
         <button
           type="button"
@@ -572,6 +682,7 @@ function SkillSelect({
           onChange={(e) => setQuery(e.target.value)}
           placeholder={S.chat.skillsSearchPlaceholder}
           aria-label={S.chat.skillsSearchPlaceholder}
+          {...noAutofill}
           className="w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-xs text-gray-700 placeholder:text-gray-400 focus:outline-none dark:text-gray-200 dark:placeholder:text-gray-500"
         />
       </div>
@@ -612,6 +723,99 @@ function SkillSelect({
           })
         )}
       </div>
+    </Dropdown>
+  );
+}
+
+/**
+ * Picture glyph (24×24 line path) for the "+" menu's image-upload entry: the framing rectangle
+ * and the mountain line as two subpaths of one `d`, since GlyphIcon renders a single `<path>`.
+ */
+const IMAGE_ICON =
+  "M6 5h12a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V8a3 3 0 0 1 3-3zM3 15l5-5 4 4 3-3 6 6";
+
+/** One entry of the composer's "+" extension menu. */
+interface PlusMenuItem {
+  key: string;
+  icon: string;
+  label: string;
+  desc: string;
+  /** Whether the entry is currently engaged (rendered with a check mark; clicking toggles). */
+  active: boolean;
+  /** Grayed out and inert (e.g. goal mode while a run is in progress); the menu still opens. */
+  disabled?: boolean;
+  onSelect: () => void;
+}
+
+/**
+ * The composer's "+" extension menu: a general-purpose entry point for input add-ons (goal
+ * mode today; future modes, plugins, apps, files slot in as further items) plus input
+ * settings (`footer`, currently the mid-run send mode row). Data-driven — the caller passes
+ * the item list and footer; the menu itself knows nothing about the entries. The button is
+ * never disabled: settings must stay reachable during a run, so unavailable *items* gray out
+ * individually instead.
+ */
+function PlusMenu({
+  items,
+  footer,
+  direction = "up",
+}: {
+  items: PlusMenuItem[];
+  footer?: ReactNode;
+  direction?: "up" | "down";
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Dropdown
+      open={open}
+      setOpen={setOpen}
+      // Placement is portal-driven like the rest of the toolbar (its scroll container would
+      // clip an absolutely-positioned panel); only size classes belong here.
+      menuClass="w-72"
+      portal={{ direction, align: "left" }}
+      button={
+        <button
+          type="button"
+          aria-label={S.chat.plusMenu}
+          title={S.chat.plusMenu}
+          onClick={() => setOpen(!open)}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+        >
+          <GlyphIcon d="M12 5v14M5 12h14" size={15} className="shrink-0" />
+        </button>
+      }
+    >
+      {items.map((item) => (
+        <button
+          key={item.key}
+          type="button"
+          aria-pressed={item.active}
+          disabled={item.disabled}
+          onClick={() => {
+            setOpen(false);
+            item.onSelect();
+          }}
+          className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors duration-150 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent dark:hover:bg-gray-800 dark:disabled:hover:bg-transparent ${
+            item.active
+              ? "font-medium text-gray-900 dark:text-gray-100"
+              : "text-gray-600 dark:text-gray-400"
+          }`}
+        >
+          <GlyphIcon
+            d={item.icon}
+            size={14}
+            className="shrink-0 text-gray-400 dark:text-gray-500"
+          />
+          <span className="shrink-0">{item.label}</span>
+          <span className="min-w-0 flex-1 truncate text-gray-400 dark:text-gray-500">
+            {item.desc}
+          </span>
+          <span className="w-3 shrink-0 text-center">{item.active ? "✓" : ""}</span>
+        </button>
+      ))}
+      {footer && (
+        <div className="mt-1 border-t border-gray-100 pt-1 dark:border-gray-800">{footer}</div>
+      )}
     </Dropdown>
   );
 }
@@ -680,7 +884,12 @@ function ContextGauge({
           transform="rotate(-90 7 7)"
         />
       </svg>
-      {unknown ? "—" : humanizeTokens(now)}/{humanizeTokens(max)}
+      {/* The ring alone carries the meaning on phones: the numbers hide below @md (the title
+          still shows the exact usage), keeping the right-hand control group inside a 320px
+          viewport in the running state. */}
+      <span className="hidden @md:inline">
+        {unknown ? "—" : humanizeTokens(now)}/{humanizeTokens(max)}
+      </span>
     </span>
   );
 }
@@ -688,15 +897,21 @@ function ContextGauge({
 export function ChatInput({
   status,
   onSend,
+  onSteer,
+  steeringDeliveredCount,
+  onQueueFollowUp,
+  queuedFollowUps = 0,
   onStop,
   onCompact,
   modelRef,
   models,
   onChangeModel,
+  onSwitchModel,
   defaultModel,
   thinkingLevel,
   onChangeThinkingLevel,
-  sessionThinkingLevel,
+  turnThinkingLevel,
+  onChangeTurnThinkingLevel,
   contextWindow,
   contextNow,
   contextStale = false,
@@ -714,10 +929,41 @@ export function ChatInput({
   onTextChange,
   initialHandoffTargetId,
   onHandoffTargetChange,
+  modelAuthDead = false,
+  onOpenModels,
+  onRetryModelAuth,
+  onNewSession,
 }: {
   status: SessionStatus;
-  /** Returns whether it succeeded: on failure the input draft is kept (not cleared). */
-  onSend: (input: TaskInputPart[]) => Promise<boolean>;
+  /**
+   * Returns whether it succeeded: on failure the input draft is kept (not cleared).
+   * `goal` is non-null when goal mode is engaged: the text is the objective and the server
+   * loops the Session until the goal reaches a terminal state (budget -1 = unlimited).
+   */
+  onSend: (input: TaskInputPart[], goal: { budget: number } | null) => Promise<boolean>;
+  /**
+   * Mid-run steering (session state only): while a Task is running, Enter/send queues the
+   * trimmed text for the running agent — it is delivered between turns as a standalone
+   * `[user_steering]` user message. `"queued"` clears the text and shows the queued hint;
+   * `"not_running"` (409 race with completion) makes the input fall back to its full normal
+   * send path; `"failed"` keeps the draft. When absent (draft state), the input stays
+   * send-disabled while running, as before.
+   */
+  onSteer?: (text: string) => Promise<"queued" | "not_running" | "failed">;
+  /**
+   * Count of steering messages already visible in the message stream: the queued hint stays
+   * up until this increases past its value at queue time (i.e. the message was delivered).
+   */
+  steeringDeliveredCount?: number;
+  /**
+   * Follow-up queue (session state only): posts the full input with `queueIfBusy` — a busy
+   * session holds it server-side and auto-sends it as an ordinary next task once the current
+   * run finishes. Offered as the "follow-up" choice of the mid-run mode switch; when absent,
+   * only steering is offered while running.
+   */
+  onQueueFollowUp?: (input: TaskInputPart[]) => Promise<boolean>;
+  /** Server-reported queued follow-up count (from task_state): renders the "N queued" hint until they auto-send. */
+  queuedFollowUps?: number;
   /**
    * Used instead of onSend when an @ target is present (chip or a leading @ typed manually):
    * opens a new chat for the target agent (the text body carries no @ marker, and the current
@@ -736,6 +982,14 @@ export function ChatInput({
   models?: ModelInfo[];
   /** Changes the selected model in draft state; no longer passed once the Session is created and the model is locked. */
   onChangeModel?: (ref: ModelRefDto) => void;
+  /**
+   * Session state: model switch via the `/model` command — forks the session onto the picked
+   * model (a NEW session carrying this conversation) and navigates there; any text remaining
+   * after the command token is posted as the new session's first task. Returns whether it
+   * succeeded (draft kept on failure). Only passed for an active session (the command is
+   * additionally gated on not running/compacting); picking the current model is a no-op.
+   */
+  onSwitchModel?: (ref: ModelRefDto, input: TaskInputPart[]) => Promise<boolean>;
   /** Project default model (marked "default" on the selector's candidate item). */
   defaultModel?: ModelRefDto;
   /**
@@ -751,11 +1005,17 @@ export function ChatInput({
    */
   onChangeThinkingLevel?: (level: string) => void;
   /**
-   * Session state: the session's fixed thinking level (captured from session_meta on replay;
-   * llmConfig is assembled once per session, so it cannot change mid-session). Rendered as a
-   * read-only tag next to the locked model; null/undefined = unknown (nothing shown).
+   * Session state: the per-turn thinking level to DISPLAY — the parent resolves it as "the
+   * user's pick for this session, else the Agent config's level" ("" = neither known yet),
+   * so the picker auto-follows the config until touched. The send path is the parent's own
+   * state: while untouched nothing is sent with tasks (the server/core fallback applies and
+   * mid-session Agent-config edits keep taking effect); an explicit pick sticks and is sent
+   * with every subsequent task, never writing through to the Agent config (that behavior
+   * stays draft-only).
    */
-  sessionThinkingLevel?: string | null;
+  turnThinkingLevel?: string;
+  /** Session state: pins the per-turn thinking level for this session; also enables the editable picker. */
+  onChangeTurnThinkingLevel?: (level: string) => void;
   /** Model's context window (from models config; when not configured, the ring's cap falls back to 128000 via resolveContextWindow). */
   contextWindow?: number;
   /** Current context usage (total of the most recent main-session Request). */
@@ -800,6 +1060,26 @@ export function ChatInput({
   initialHandoffTargetId?: string;
   /** Callback when the @ handoff target changes (selected/removed; the clear after a successful send does not call back, same as onTextChange). */
   onHandoffTargetChange?: (agentId: string | null) => void;
+  /**
+   * Session state: the Session's model credentials failed authentication (abort with
+   * status "auth") and the Project's credentials have not been updated since (the parent
+   * computes the time gate — see isModelAuthDead). Recoverable: only the model reference
+   * is fixed at creation, credentials come from the current Project config — so the
+   * composer disables and grays itself with a notice pointing at the Models page (primary),
+   * a Retry affordance, and a New Session escape. Updating the key auto-unlocks (live via
+   * the credentials_updated event, and across reloads via the time gate).
+   */
+  modelAuthDead?: boolean;
+  /** Navigates to the Models page (where the credential is actually fixed); renders the notice's primary button when supplied. */
+  onOpenModels?: () => void;
+  /**
+   * Clears the auth-dead state and re-enables the composer for another attempt (the state
+   * re-arms on the next auth failure). The escape hatch for credential changes the
+   * timestamps miss (e.g. edited outside the UI).
+   */
+  onRetryModelAuth?: () => void;
+  /** Navigates to a fresh draft (`/chat/new`); renders the notice's "New Session" button when supplied. */
+  onNewSession?: () => void;
 }) {
   const { locale } = useLocale();
   const [text, setText] = useState(initialText ?? "");
@@ -811,6 +1091,13 @@ export function ChatInput({
   const [slashIndex, setSlashIndex] = useState(0);
   // Slash token start where Escape closed the menu (mirrors mentionDismissed: the menu stays shut for that one token).
   const [slashDismissed, setSlashDismissed] = useState<number | null>(null);
+  // /model switch picker (session state): opened by the /model command. The command consumes
+  // its slash token immediately (same as /compact), so closing the picker — Escape, click
+  // outside, or the picked-current-model no-op — can never re-open the slash menu, and there
+  // is no stale token range to recompute at pick time; whatever text remains is the draft
+  // (and becomes the new session's first message on a successful pick).
+  const [modelSwitchOpen, setModelSwitchOpen] = useState(false);
+  const modelSwitchRef = useRef<HTMLDivElement>(null);
   // Anchor for the popups that open upward, and the room actually available above them.
   const anchorRef = useRef<HTMLDivElement>(null);
   const [upwardMaxH, setUpwardMaxH] = useState<number>();
@@ -828,14 +1115,162 @@ export function ChatInput({
 
   const running = status === "running";
   const compacting = status === "compacting";
+  // Goal mode (engaged via the "+" menu or /goal): the text body becomes the objective. It is
+  // exclusive with the @ handoff target (engaging either clears the other) and with images
+  // (the objective is re-injected every round as plain text); selected skills ride the
+  // round-1 message as a [use_skills] block, exactly like a normal send.
+  const [goalOn, setGoalOn] = useState(false);
+  const [goalBudgetText, setGoalBudgetText] = useState("");
+  const [goalBudgetOpen, setGoalBudgetOpen] = useState(false);
+  const [goalBudgetDraft, setGoalBudgetDraft] = useState("");
+  /** The committed budget is always valid: the popover keeps invalid edits in its local draft. */
+  const goalBudget = goalOn ? parseBudgetInput(goalBudgetText) : null;
+  const goalBudgetDraftValue = parseBudgetInput(goalBudgetDraft);
+  const goalBudgetDraftInvalid = goalBudgetDraftValue === null;
+  const goalBudgetSummary =
+    goalBudget !== null && goalBudget !== UNLIMITED_BUDGET
+      ? S.chat.goalBudgetValue(humanizeTokens(goalBudget))
+      : S.chat.goalBudgetUnlimited;
   // Sending is also allowed with only an @ target (chip) or skills selected and no text: a handoff's
-  // first message may be just a <handoff_from> source block; with skills and empty text, the sent
-  // text automatically falls back to S.chat.skillsAutoMessage (see send).
+  // first message may be just a [handoff_from] source block; with skills and empty text, the sent
+  // text automatically falls back to S.chat.skillsAutoMessage (see send). Goal mode instead
+  // requires a text objective and a parseable budget — and an open editor showing an invalid
+  // draft disables Send outright: combined with the editor refusing to close over an invalid
+  // draft (below), no click sequence can fire a goal with a stale committed budget.
   const canSend =
     !running &&
     !compacting &&
     !busy &&
+    !modelAuthDead &&
+    (goalOn
+      ? text.trim().length > 0 &&
+        images.length === 0 &&
+        goalBudget !== null &&
+        !(goalBudgetOpen && goalBudgetDraftInvalid)
+      : text.trim().length > 0 ||
+        images.length > 0 ||
+        target !== null ||
+        selectedSkills.length > 0);
+
+  /**
+   * The budget editor is a fixed upward popover. Opening copies the committed value; closing
+   * commits a valid draft — so typing a budget and clicking straight onto Send keeps it (the
+   * Send mousedown closes the popover before the click lands). An INVALID draft refuses to
+   * close: silently reverting would let the very next click fire the goal with the stale
+   * committed budget — fix the draft or cancel with Escape (cancelGoalBudget below).
+   */
+  const setGoalBudgetEditorOpen = useCallback(
+    (open: boolean) => {
+      if (open) {
+        setGoalBudgetDraft(goalBudgetText);
+        setGoalBudgetOpen(true);
+        return;
+      }
+      if (parseBudgetInput(goalBudgetDraft) === null) return;
+      setGoalBudgetText(goalBudgetDraft.trim());
+      setGoalBudgetOpen(false);
+    },
+    [goalBudgetText, goalBudgetDraft],
+  );
+
+  /**
+   * Cancel the budget editor: close WITHOUT committing (reopening re-copies the committed
+   * value). Wired to the Dropdown's window-level Escape, so it is genuinely
+   * focus-independent — including after an invalid draft refused an outside-click close and
+   * focus already left the chip (e.g. sits in the objective textarea).
+   */
+  const cancelGoalBudget = useCallback(() => {
+    setGoalBudgetOpen(false);
+    textareaRef.current?.focus();
+  }, []);
+
+  /** Commit only valid input; Enter and the check button share this path. */
+  const saveGoalBudget = useCallback(() => {
+    if (parseBudgetInput(goalBudgetDraft) === null) return;
+    setGoalBudgetText(goalBudgetDraft.trim());
+    setGoalBudgetOpen(false);
+    textareaRef.current?.focus();
+  }, [goalBudgetDraft]);
+
+  /**
+   * Engage/exit goal mode; engaging clears the @ target and images (genuinely exclusive:
+   * a handoff opens another session, and the server rejects non-text goal input). Selected
+   * skills stay — they ride the round-1 message as a [use_skills] block, like a normal send.
+   */
+  const toggleGoal = useCallback(
+    (on: boolean) => {
+      setGoalOn(on);
+      setGoalBudgetOpen(false);
+      setGoalBudgetDraft("");
+      if (on) {
+        setGoalBudgetText("");
+        setTarget(null);
+        onHandoffTargetChange?.(null);
+        // Images can't ride a goal (the server rejects non-text goal input): clear any already
+        // attached, or canSend would stay silently false with the objective looking ready.
+        setImages([]);
+      }
+    },
+    [onHandoffTargetChange],
+  );
+
+  // Mid-run steering: while running, Enter/send queues plain text for the running agent
+  // (delivered between turns as a [user_steering] user message). Text only — images / skills /
+  // @ target stay in the draft for a later normal send (an @ target also blocks steering: a
+  // leading mention means a handoff, not a message to this agent).
+  // `!goalOn`: with the goal chip engaged the text is an OBJECTIVE — steering it into a run
+  // that happens to be active (e.g. a schedule fired) would silently repurpose it.
+  const canSteer =
+    running &&
+    !busy &&
+    !goalOn &&
+    !modelAuthDead &&
+    onSteer !== undefined &&
+    target === null &&
+    text.trim().length > 0;
+  // Mid-run send mode (owner directive): the user chooses between "steer" (delivered
+  // mid-run as a [user_steering] input) and "follow-up" (held server-side and auto-sent as
+  // an ordinary next task once this run finishes). Set from the "+" menu's settings row —
+  // available in draft state and active sessions alike — and **remembered** across
+  // sessions/reloads (localStorage, see STEER_MODE_KEY); the running-state send simply
+  // follows the remembered mode.
+  const [steerMode, setSteerModeState] = useState<SteerMode>(initialSteerMode);
+  const setSteerMode = (mode: SteerMode): void => {
+    setSteerModeState(mode);
+    localStorage.setItem(STEER_MODE_KEY, mode);
+  };
+  const followUpMode = steerMode === "followup" && onQueueFollowUp !== undefined;
+  // A follow-up is a full normal message: the whole draft (text / images / skills / handoff)
+  // is eligible, same content rule as canSend.
+  const canFollowUp =
+    running &&
+    !busy &&
+    !goalOn &&
+    !modelAuthDead &&
+    followUpMode &&
     (text.trim().length > 0 || images.length > 0 || target !== null || selectedSkills.length > 0);
+  // The single action button's mode: while running, an **empty** composer means Stop
+  // (abort); as soon as there is something to send it becomes the send button (steer or
+  // follow-up per the remembered mode). Idle/compacting is always send.
+  const canMidRunSend = followUpMode ? canFollowUp : canSteer;
+  const midRunSendLabel = followUpMode ? S.chat.followUpSend : S.chat.steerSend;
+  const stopAction =
+    running &&
+    text.trim().length === 0 &&
+    images.length === 0 &&
+    target === null &&
+    selectedSkills.length === 0;
+  // Queued hint: shown after a successful steer until the message shows up in the stream
+  // (steeringDeliveredCount increases past the baseline captured at queue time) or the run
+  // stops being observable (task no longer running).
+  const [steerPending, setSteerPending] = useState(false);
+  const steerBaseline = useRef(0);
+  useEffect(() => {
+    if (!steerPending) return;
+    if (!running || (steeringDeliveredCount ?? 0) > steerBaseline.current) {
+      setSteerPending(false);
+    }
+  }, [steerPending, running, steeringDeliveredCount]);
 
   /** Toggle a skill on/off (shared by dropdown option clicks and the slash skill command); the change callback lets the parent write it into the draft. */
   const toggleSkill = useCallback(
@@ -852,13 +1287,12 @@ export function ChatInput({
   /** The slash token currently under the caret (kept in a ref so command run() closures always remove the live token). */
   const slashMatchRef = useRef<ReturnType<typeof matchSlash>>(null);
   const commands = useMemo<SlashCommand[]>(() => {
-    /** Removes just the slash token after a command runs (the rest of the text stays; setText is async: wait for the DOM value to update before measuring height). */
+    /** Removes just the slash token after a command runs (the rest of the text stays; the height re-measures itself off the new value, see the autoGrow layout effect). */
     const clearInput = () => {
       const match = slashMatchRef.current;
       const next = match ? removeSlashToken(textRef.current, match) : "";
       setText(next);
       onTextChange?.(next);
-      requestAnimationFrame(autoGrow);
     };
     return [
       {
@@ -869,6 +1303,30 @@ export function ChatInput({
           void onCompact();
         },
       },
+      {
+        cmd: "/goal",
+        desc: S.chat.goalModeDesc,
+        run: () => {
+          clearInput();
+          toggleGoal(!goalOn);
+        },
+      },
+      // Model switch (active idle session only — the parent passes onSwitchModel just there;
+      // draft state has its own model picker). Gated on the model list being loaded: without
+      // it the picker would open empty. Running the command consumes the /model token (like
+      // /compact) and opens the picker; the rest of the draft stays.
+      ...(onSwitchModel && models && models.length > 0
+        ? [
+            {
+              cmd: "/model",
+              desc: S.chat.switchModel,
+              run: () => {
+                clearInput();
+                setModelSwitchOpen(true);
+              },
+            },
+          ]
+        : []),
       // Each installed skill gets its own entry: `/<skill_name>` toggles that skill's selection (without sending), description follows the UI language.
       ...skillSlashItems(skills, locale).map((s) => ({
         cmd: s.cmd,
@@ -879,11 +1337,22 @@ export function ChatInput({
         },
       })),
     ];
-  }, [onCompact, onTextChange, skills, locale, toggleSkill]);
+  }, [
+    onCompact,
+    onSwitchModel,
+    models,
+    onTextChange,
+    skills,
+    locale,
+    toggleSkill,
+    toggleGoal,
+    goalOn,
+  ]);
   // Positional matching (like @ mentions): a slash opens the menu from any caret position;
   // running a command removes just the token, leaving the rest of the text intact. Doesn't
-  // reopen after Escape until the caret sits on a different token.
-  const slashTok = !running && !compacting ? matchSlash(text, caret) : null;
+  // reopen after Escape until the caret sits on a different token; suppressed while the
+  // /model picker is open (its trigger token is still in the text).
+  const slashTok = !running && !compacting && !modelSwitchOpen ? matchSlash(text, caret) : null;
   slashMatchRef.current = slashTok;
   const slashMatches =
     slashTok && slashTok.start !== slashDismissed
@@ -892,19 +1361,80 @@ export function ChatInput({
   const slashOpen = slashMatches.length > 0;
   const activeSlash = slashMatches[Math.min(slashIndex, slashMatches.length - 1)];
 
-  // @ subagent menu: the `@prefix` currently being typed at the cursor drives candidate filtering (slash menu takes priority; doesn't reopen after Escape).
-  const mention = !running && !compacting && !slashOpen ? matchMention(text, caret) : null;
+  // @ subagent menu: the `@prefix` currently being typed at the cursor drives candidate
+  // filtering (the slash menu and the /model picker take priority; doesn't reopen after Escape).
+  const mention =
+    !running && !compacting && !slashOpen && !modelSwitchOpen ? matchMention(text, caret) : null;
   const mentionMatches =
     mention && mention.start !== mentionDismissed ? filterAgents(agents, mention.query) : [];
   const mentionOpen = mentionMatches.length > 0;
   const activeMention = mentionMatches[Math.min(mentionIndex, mentionMatches.length - 1)];
 
-  // Both menus above are drawn upward (`bottom-full`) from the composer, so their ceiling is
+  // Close the /model picker on click-outside / Escape (same convention as Dropdown; the
+  // panel has no trigger button of its own, so the handling lives here).
+  useEffect(() => {
+    if (!modelSwitchOpen) return;
+    // globalThis.* event types: the React ones imported above would shadow the DOM ones here.
+    const onClick = (e: globalThis.MouseEvent) => {
+      if (modelSwitchRef.current && !modelSwitchRef.current.contains(e.target as Node)) {
+        setModelSwitchOpen(false);
+      }
+    };
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === "Escape") setModelSwitchOpen(false);
+    };
+    window.addEventListener("mousedown", onClick);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("mousedown", onClick);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [modelSwitchOpen]);
+
+  /**
+   * /model pick: the CURRENT model is a no-op (close only), and the run state is re-checked
+   * — the picker may have survived a status flip (a task/compaction starting while it was
+   * open). Otherwise the pick opens a new session on the chosen model via onSwitchModel,
+   * with the first-task input assembled **like a normal send**: the remaining draft text
+   * (wrapped with the selected skills; an interface-language auto-line when empty — same
+   * convention as the skills auto message) plus the attached images. On failure the draft
+   * is kept so the user can retry.
+   */
+  const pickSwitchModel = async (m: ModelInfo) => {
+    setModelSwitchOpen(false);
+    if (!onSwitchModel || busy || running || compacting) return;
+    if (sameModelRef(m, modelRef)) return;
+    const rest = textRef.current.trim();
+    const bodyText =
+      rest ||
+      (selectedSkills.length > 0
+        ? S.chat.skillsAutoMessage(selectedSkills)
+        : S.chat.modelSwitchAutoMessage);
+    const body = buildSkillsMessage(selectedSkills, bodyText);
+    const input: TaskInputPart[] = [{ type: "text", text: body }];
+    for (const url of images) input.push({ type: "image_url", imageUrl: url });
+    setBusy(true);
+    try {
+      const ok = await onSwitchModel({ provider: m.provider, modelId: m.modelId }, input);
+      if (ok) {
+        // Consumed into the new session's first task (the parent has already discarded the
+        // draft cache — no change callbacks here, same as send()).
+        setText("");
+        setImages([]);
+        setSelectedSkills([]);
+      }
+    } finally {
+      setBusy(false);
+      textareaRef.current?.focus();
+    }
+  };
+
+  // The menus above are drawn upward (`bottom-full`) from the composer, so their ceiling is
   // whatever ancestor clips overflow — on the draft page that's the centered scroll area, whose
   // top edge sits well below the viewport's. A static `40vh` cap can't know that distance and
   // clipped the first rows on shorter windows, so measure the real gap when a menu opens.
   useEffect(() => {
-    if (!slashOpen && !mentionOpen) return;
+    if (!slashOpen && !mentionOpen && !modelSwitchOpen) return;
     const measure = () => {
       const el = anchorRef.current;
       if (!el) return;
@@ -922,7 +1452,7 @@ export function ChatInput({
     measure();
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
-  }, [slashOpen, mentionOpen]);
+  }, [slashOpen, mentionOpen, modelSwitchOpen]);
 
   /** Auto-grow the textarea (caps at roughly 6 lines, scrolls internally beyond that). */
   const autoGrow = () => {
@@ -932,13 +1462,25 @@ export function ChatInput({
     el.style.height = `${Math.min(el.scrollHeight, 176)}px`;
   };
 
-  // Correct the height and cursor right on mount: a restored multi-line draft (initialText)
-  // would otherwise not expand until the first edit; move the cursor to the end of the draft
-  // (by default the browser places the cursor at the start when focusing a textarea that already
-  // has content), so typing continues the text naturally, and sync the caret state to match (the
-  // @ mention menu filters by cursor position).
+  /**
+   * The height follows the **rendered** value, measured in a layout effect — the single place
+   * that sizes the box, covering mount (a restored multi-line draft), typing, and the clear
+   * after a send alike.
+   *
+   * It must be a layout effect keyed on `text` rather than a call next to each `setText`: the
+   * textarea is controlled, so after `setText("")` the DOM still holds the old text until React
+   * commits. A `requestAnimationFrame` scheduled alongside the state update races that commit
+   * and, when it wins, measures the old multi-line content and re-pins the tall height — with
+   * nothing left to measure again, the composer stayed expanded after every send. A layout
+   * effect runs after the commit by construction, and before paint, so the box never flashes.
+   */
+  useLayoutEffect(autoGrow, [text]);
+
+  // Cursor placement on mount: move it to the end of a restored draft (by default the browser
+  // places the cursor at the start when focusing a textarea that already has content), so typing
+  // continues the text naturally, and sync the caret state to match (the @ mention menu filters
+  // by cursor position).
   useEffect(() => {
-    autoGrow();
     const el = textareaRef.current;
     if (el && el.value.length > 0) {
       const end = el.value.length;
@@ -998,16 +1540,50 @@ export function ChatInput({
     el.focus();
     setTarget(agent);
     onHandoffTargetChange?.(agent.agentId);
+    setGoalOn(false); // exclusive with goal mode: picking an @ target exits it (latest wins)
     setText(value);
     onTextChange?.(value);
     setCaret(start);
     setMentionIndex(0);
-    autoGrow();
   };
 
-  const send = async () => {
-    if (!canSend) return;
+  /**
+   * The full normal send path (task / handoff), also the follow-up queue path and the
+   * fallback target when a steer hits the completion race: assembles the [use_skills]
+   * block, images and @ handoff from the whole draft; `post` decides where a non-handoff
+   * message goes (default: onSend; follow-up mode: onQueueFollowUp). Deliberately not
+   * gated on `running` — the caller decides (send() gates the normal path; the steering
+   * fallback calls this directly after the server said 409 not_running, when the local
+   * `status` may still lag behind).
+   */
+  // `post` accepts onSend's goal parameter so onSend can be its default; the follow-up queue
+  // (fewer params) is assignable too. Non-goal calls always pass null.
+  const sendNormal = async (
+    post: (input: TaskInputPart[], goal: { budget: number } | null) => Promise<boolean> = onSend,
+  ) => {
     const t = text.trim();
+    // Goal mode: the trimmed text is the objective (no images, no @ handoff — cleared/blocked
+    // while the chip is on; a leading @ stays plain text). Selected skills prefix the round-1
+    // message as a [use_skills] block, exactly like a normal send — the server strips leading
+    // marker blocks when recording the objective, and rounds after the first re-inject the
+    // objective alone.
+    if (goalOn) {
+      setBusy(true);
+      try {
+        const ok = await onSend([{ type: "text", text: buildSkillsMessage(selectedSkills, t) }], {
+          budget: goalBudget!,
+        });
+        if (ok) {
+          setText("");
+          setSelectedSkills([]);
+          toggleGoal(false);
+        }
+      } finally {
+        setBusy(false);
+        textareaRef.current?.focus();
+      }
+      return;
+    }
     // @ target = the chip (selected via menu), or a leading `@<agentId>` typed/pasted manually
     // (an @ in the middle of the text is plain text); with a target present, this becomes a
     // handoff to a new chat, the current Session isn't sent to, and the text carries no @ marker.
@@ -1017,26 +1593,64 @@ export function ChatInput({
     const rest = lead ? lead.rest : t;
     const bodyText =
       selectedSkills.length > 0 && rest === "" ? S.chat.skillsAutoMessage(selectedSkills) : rest;
-    // With non-empty selected skills: the text body is replaced with a <use_skills> block + the text (the handoff branch wraps rest the same way).
+    // With non-empty selected skills: the text body is replaced with a [use_skills] block + the text (the handoff branch wraps rest the same way).
     const body = buildSkillsMessage(selectedSkills, bodyText);
     const input: TaskInputPart[] = [];
     if (body) input.push({ type: "text", text: body });
     for (const url of images) input.push({ type: "image_url", imageUrl: url });
     setBusy(true);
     try {
-      const ok = lead ? await onHandoff(lead.agent, input) : await onSend(input);
+      const ok = lead ? await onHandoff(lead.agent, input) : await post(input, null);
       // Only clear the draft after a successful send: on failure (network / conflict / server error) keep the user's input and images.
       if (ok) {
         setText("");
         setImages([]);
         setTarget(null);
         setSelectedSkills([]);
-        requestAnimationFrame(autoGrow);
       }
     } finally {
       setBusy(false);
       textareaRef.current?.focus();
     }
+  };
+
+  const send = async () => {
+    if (running) {
+      // Follow-up branch: the whole draft goes out through the normal composition path,
+      // but posted with queueIfBusy — the server holds it and auto-sends once this run
+      // finishes (an @ handoff still opens a new chat directly: the target session isn't
+      // the one running).
+      if (followUpMode) {
+        if (!canFollowUp) return;
+        await sendNormal(onQueueFollowUp!);
+        return;
+      }
+      // Steering branch: queue the trimmed text for the running agent; only the text is
+      // sent and cleared — attached images / selected skills stay for a normal send.
+      if (!canSteer) return;
+      const steerText = text.trim();
+      setBusy(true);
+      let res: "queued" | "not_running" | "failed" = "failed";
+      try {
+        res = await onSteer!(steerText);
+        if (res === "queued") {
+          // Show the "queued" hint until the steering message shows up in the stream
+          // (steeringDeliveredCount increases) — see the effect below.
+          steerBaseline.current = steeringDeliveredCount ?? 0;
+          setSteerPending(true);
+          setText("");
+        }
+      } finally {
+        setBusy(false);
+        textareaRef.current?.focus();
+      }
+      // Completion race (server: no Task running anymore): deliver the whole draft — images,
+      // skills and all — through the full normal send path instead of a text-only task.
+      if (res === "not_running") await sendNormal();
+      return;
+    }
+    if (!canSend) return;
+    await sendNormal();
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -1105,6 +1719,9 @@ export function ChatInput({
   };
 
   const addFiles = (files: Iterable<File>) => {
+    // Goal mode is text-only (the objective is re-injected each round): drop image attachments
+    // outright — including pastes — so send never lands in a silently-disabled state.
+    if (goalOn) return;
     for (const file of files) {
       if (!file.type.startsWith("image/")) continue;
       const reader = new FileReader();
@@ -1135,6 +1752,12 @@ export function ChatInput({
     if (e.target.files) addFiles(e.target.files);
     e.target.value = "";
   };
+  /**
+   * The image picker moved into the "+" menu, so the file input can no longer be a `<label>`
+   * wrapper: the menu unmounts its items on select. It lives outside the menu instead and the
+   * entry clicks it — still inside the click's user-activation window, so the dialog opens.
+   */
+  const imageInputRef = useRef<HTMLInputElement>(null);
 
   return (
     <div className="relative" ref={anchorRef}>
@@ -1168,6 +1791,29 @@ export function ChatInput({
               </span>
             </button>
           ))}
+        </div>
+      )}
+
+      {/* /model switch picker (session state): reuses the draft model dropdown's list —
+          search + configured-key-first grouping + "show all"; the current model is marked and
+          picking it is a no-op. The /model token was already consumed when the command ran,
+          so cancelling (Escape / click outside) keeps the remaining draft and cannot re-open
+          the slash menu. */}
+      {modelSwitchOpen && models && (
+        <div
+          ref={modelSwitchRef}
+          style={{ maxHeight: upwardMaxH }}
+          className="anim-pop absolute bottom-full left-0 z-40 mb-1.5 flex w-80 max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900"
+        >
+          <div className="border-b border-gray-100 px-3 pb-1.5 pt-0.5 text-xs font-semibold text-gray-500 dark:border-gray-800 dark:text-gray-400">
+            {S.chat.switchModelTitle}
+          </div>
+          <ModelMenuList
+            models={models}
+            value={modelRef}
+            {...(defaultModel !== undefined ? { defaultModel } : {})}
+            onPick={(m) => void pickSwitchModel(m)}
+          />
         </div>
       )}
 
@@ -1232,18 +1878,196 @@ export function ChatInput({
         </p>
       )}
 
+      {/* Mid-run steering queued: lightweight hint until the steering message appears in the
+          stream (or the run ends). */}
+      {steerPending && (
+        <p className="anim-fade mb-1 text-xs text-gray-400 dark:text-gray-500">
+          {S.chat.steerQueuedIndicator}
+        </p>
+      )}
+
+      {/* Queued follow-ups (server-side, auto-sent once this run finishes): count from
+          task_state — survives reloads because the queue lives on the server. */}
+      {queuedFollowUps > 0 && (
+        <p className="anim-fade mb-1 text-xs text-gray-400 dark:text-gray-500">
+          {S.chat.followUpQueuedChip(queuedFollowUps)}
+        </p>
+      )}
+
+      {/* Auth-dead session (model credentials failed): slim notice above the composer, same
+          width — the abort line in the stream keeps the raw reason, this adds the "what now"
+          guidance. Recoverable: primary CTA opens the Models page (fixing the key there
+          auto-unlocks the session), Retry clears the state for another attempt (re-arms on
+          the next auth failure), New Session stays as the escape. The composer below is
+          disabled and hazed. */}
+      {modelAuthDead && (
+        <div className="anim-fade mb-1.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:border-gray-700 dark:bg-gray-800/60 dark:text-gray-300">
+          <span className="min-w-0 flex-1 basis-56">{S.chat.modelAuthDead}</span>
+          <span className="flex shrink-0 flex-wrap items-center gap-1.5">
+            {onOpenModels && (
+              <button
+                type="button"
+                onClick={onOpenModels}
+                className="shrink-0 rounded-md bg-gray-900 px-2.5 py-1 font-medium text-white transition-colors duration-150 hover:bg-gray-700 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-300"
+              >
+                {S.chat.modelAuthDeadOpenModels}
+              </button>
+            )}
+            {onRetryModelAuth && (
+              <button
+                type="button"
+                onClick={onRetryModelAuth}
+                className="shrink-0 rounded-md border border-gray-300 bg-white px-2.5 py-1 font-medium text-gray-700 transition-colors duration-150 hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-700"
+              >
+                {S.chat.modelAuthDeadRetry}
+              </button>
+            )}
+            {onNewSession && (
+              <button
+                type="button"
+                onClick={onNewSession}
+                className="shrink-0 rounded-md border border-gray-300 bg-white px-2.5 py-1 font-medium text-gray-700 transition-colors duration-150 hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-700"
+              >
+                {S.chat.modelAuthDeadCta}
+              </button>
+            )}
+          </span>
+        </div>
+      )}
+
       {/* Unified input card: the multi-line text body occupies the top area, with all controls
           collected onto a single bottom row that never shares a line with the text.
           @container: the bottom toolbar row collapses based on the **card's actual width**
           (help text/button text visibility uses @md/@lg container breakpoints) — because the
           card's width changes with the viewport and the Files panel squeezing it, viewport
           breakpoints wouldn't judge it accurately. */}
-      <div className="@container rounded-lg border border-gray-300 bg-white px-2.5 pb-2 pt-2 transition-[border-color,box-shadow] duration-200 focus-within:border-gray-500 focus-within:ring-2 focus-within:ring-gray-400/30 dark:border-gray-700 dark:bg-gray-900 dark:focus-within:border-gray-400">
+      <div
+        // Auth-dead haze deliberately keeps pointer events and text selection: the
+        // textarea's `disabled` already blocks editing, and the stuck draft must stay
+        // selectable/copyable — a long message that failed to send is exactly what the
+        // user wants to copy back out.
+        className={`@container rounded-lg border border-gray-300 bg-white px-2.5 pb-2 pt-2 transition-[border-color,box-shadow] duration-200 focus-within:border-gray-500 focus-within:ring-2 focus-within:ring-gray-400/30 dark:border-gray-700 dark:bg-gray-900 dark:focus-within:border-gray-400${
+          modelAuthDead ? " opacity-50 grayscale" : ""
+        }`}
+      >
         {/* Chip row above the text body: the @ handoff target (fixed at the front — send-time
             @ semantics stay leading-only) followed by the selected skills, mirroring the
             agent chip's look. Remove buttons recolor the x on hover (no background wash). */}
-        {(target !== null || selectedSkills.length > 0) && (
+        {(target !== null || selectedSkills.length > 0 || goalOn) && (
           <div className="mb-1 flex flex-wrap items-center gap-1">
+            {/* Goal-mode chip: the budget stays compact as a value button; its editor is a
+                fixed upward popover so it never covers the objective textarea below. */}
+            {goalOn && (
+              <span className="anim-pop flex max-w-full items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 text-sm text-gray-800 dark:bg-gray-800 dark:text-gray-200">
+                <span className="flex shrink-0 items-center gap-1" title={S.chat.goalModeDesc}>
+                  <GlyphIcon d={GOAL_ICON} size={13} className="text-gray-500 dark:text-gray-400" />
+                  <span>{S.chat.goalMode}</span>
+                </span>
+                <span
+                  aria-hidden
+                  className="mx-0.5 h-4 w-px shrink-0 bg-gray-300 dark:bg-gray-600"
+                />
+                <Dropdown
+                  open={goalBudgetOpen}
+                  setOpen={setGoalBudgetEditorOpen}
+                  onEscape={cancelGoalBudget}
+                  className="min-w-0"
+                  menuClass="bottom-full left-1/2 -ml-32 mb-2 w-64 max-w-[calc(100vw-2rem)] origin-bottom"
+                  button={
+                    <button
+                      type="button"
+                      aria-label={goalBudgetSummary}
+                      aria-expanded={goalBudgetOpen}
+                      onClick={() => setGoalBudgetEditorOpen(!goalBudgetOpen)}
+                      className="flex h-5 min-w-0 items-center gap-1 rounded px-1.5 text-xs text-gray-600 transition-colors duration-150 hover:bg-white/80 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white"
+                    >
+                      <span className="truncate">{goalBudgetSummary}</span>
+                      <svg
+                        width="9"
+                        height="9"
+                        viewBox="0 0 12 12"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="shrink-0"
+                        aria-hidden
+                      >
+                        <path d="M3 4.5l3 3 3-3" />
+                      </svg>
+                    </button>
+                  }
+                >
+                  <div className="px-3 py-2">
+                    <label
+                      htmlFor="goal-budget-input"
+                      className="block text-xs font-medium text-gray-700 dark:text-gray-200"
+                    >
+                      {S.chat.goalBudgetLabel}
+                    </label>
+                    <div className="mt-1.5 flex items-center gap-1.5">
+                      <input
+                        id="goal-budget-input"
+                        autoFocus
+                        value={goalBudgetDraft}
+                        onChange={(e) => setGoalBudgetDraft(e.target.value)}
+                        onFocus={(e) => e.currentTarget.select()}
+                        onKeyDown={(e) => {
+                          // Escape is handled at the window level (Dropdown onEscape →
+                          // cancelGoalBudget), so it cancels no matter where focus sits.
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            saveGoalBudget();
+                          }
+                        }}
+                        placeholder={S.chat.goalBudgetPlaceholder}
+                        aria-invalid={goalBudgetDraftInvalid}
+                        aria-describedby="goal-budget-hint"
+                        {...noAutofill}
+                        title={
+                          goalBudgetDraftInvalid ? S.chat.goalBudgetInvalid : S.chat.goalBudgetHint
+                        }
+                        className={`min-w-0 flex-1 rounded-md border bg-white px-2 py-1 font-mono text-sm leading-5 placeholder:text-gray-400 focus:outline-none focus:ring-2 dark:bg-gray-950 dark:placeholder:text-gray-500 ${
+                          goalBudgetDraftInvalid
+                            ? "border-red-400 text-red-600 focus:border-red-500 focus:ring-red-400/20 dark:border-red-500 dark:text-red-400"
+                            : "border-gray-300 text-gray-800 focus:border-gray-500 focus:ring-gray-400/20 dark:border-gray-700 dark:text-gray-100 dark:focus:border-gray-500"
+                        }`}
+                      />
+                      <button
+                        type="button"
+                        aria-label={S.chat.goalBudgetSave}
+                        title={S.chat.goalBudgetSave}
+                        disabled={goalBudgetDraftInvalid}
+                        onClick={saveGoalBudget}
+                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-gray-900 text-white transition-colors duration-150 hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-35 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white"
+                      >
+                        <GlyphIcon d="M5 12l4 4L19 6" size={14} />
+                      </button>
+                    </div>
+                    <p
+                      id="goal-budget-hint"
+                      className={`mt-1.5 text-[11px] leading-4 ${
+                        goalBudgetDraftInvalid
+                          ? "text-red-500 dark:text-red-400"
+                          : "text-gray-400 dark:text-gray-500"
+                      }`}
+                    >
+                      {goalBudgetDraftInvalid ? S.chat.goalBudgetInvalid : S.chat.goalBudgetHint}
+                    </p>
+                  </div>
+                </Dropdown>
+                <button
+                  type="button"
+                  aria-label={S.chat.goalRemove}
+                  onClick={() => toggleGoal(false)}
+                  className="shrink-0 rounded p-0.5 text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:hover:text-gray-200"
+                >
+                  ×
+                </button>
+              </span>
+            )}
             {target !== null && (
               <span
                 className="anim-pop flex max-w-48 items-center gap-0.5 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 font-mono text-sm text-gray-800 dark:bg-gray-800 dark:text-gray-200"
@@ -1319,169 +2143,203 @@ export function ChatInput({
               const m = matchMention(value, caretNow);
               return m && m.start === d ? d : null;
             });
-            autoGrow();
           }}
           // Cursor movement (arrow keys/click) syncs to caret: the @ menu filters by the prefix at the cursor.
           onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
           onKeyDown={onKeyDown}
           onPaste={onPaste}
-          placeholder={narrow ? S.chat.inputPlaceholderShort : S.chat.inputPlaceholder}
+          disabled={modelAuthDead}
+          placeholder={
+            modelAuthDead
+              ? S.chat.modelAuthDeadPlaceholder
+              : running && followUpMode
+                ? narrow
+                  ? S.chat.followUpPlaceholderShort
+                  : S.chat.followUpPlaceholder
+                : running && onSteer
+                  ? narrow
+                    ? S.chat.steerPlaceholderShort
+                    : S.chat.steerPlaceholder
+                  : narrow
+                    ? S.chat.inputPlaceholderShort
+                    : S.chat.inputPlaceholder
+          }
           className="block max-h-44 min-h-[60px] w-full resize-none bg-transparent px-1 py-0.5 text-base leading-6 placeholder:text-gray-400 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60 dark:placeholder:text-gray-500"
         />
 
-        {/* Bottom toolbar row: attachments + approval mode + help text | context usage + Model + send */}
-        <div className="mt-1 flex items-center gap-2 text-xs">
-          <label
-            className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"
-            title={vision ? S.chat.imageAlt : S.chat.imagesAsPathHint}
-          >
+        {/* Bottom toolbar row — one line, two groups: the settings controls sit left, the
+            status/model/action controls right (`justify-between`). The left group is the only
+            one allowed to give way: `min-w-0` + horizontal scroll means a crowded phone
+            viewport scrolls those controls instead of pushing the right group (and with it the
+            action button) off-screen. The right group is `shrink-0` so the action button is
+            always reachable. */}
+        <div className="mt-1 flex items-center justify-between gap-2 text-xs">
+          <div className="no-scrollbar flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">
+            {/* The image picker's actual input: kept mounted here (outside the menu, which
+                unmounts its items on select) and driven by the menu entry below. */}
             <input
+              ref={imageInputRef}
               type="file"
               accept="image/*"
               multiple
+              disabled={goalOn}
               className="hidden"
               onChange={onPickFiles}
             />
-            <svg
-              width="17"
-              height="17"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.7"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden
-              className="block"
-            >
-              <rect x="3" y="5" width="18" height="14" rx="3" />
-              <path d="M3 15l5-5 4 4 3-3 6 6" />
-            </svg>
-          </label>
-          <ApprovalModeSelect
-            value={approvalMode}
-            onChange={onChangeApprovalMode}
-            disabled={modeSaving}
-            direction={models && onChangeModel ? "down" : "up"}
-          />
-          {/* Multi-select skills dropdown (after approval mode): selected state is conveyed via the button badge. */}
-          <SkillSelect
-            skills={skills}
-            selected={selectedSkills}
-            onToggle={toggleSkill}
-            disabled={running || compacting || busy}
-            direction={models && onChangeModel ? "down" : "up"}
-          />
-          {/* Help text also serves as a flexible spacer: truncated first when space is short
-              (min-w-0 truncate, full text goes into the title); hidden entirely when the card is
-              narrower than @lg, leaving only the spacer to push the right-side controls to the
-              end of the row — long copy (in English) still won't break the card layout. */}
-          <span className="min-w-0 flex-1">
+            {/* "+" extension menu, leading the row: input add-ons (image upload, goal mode)
+                plus the input settings footer (mid-run send mode — usable while running, which
+                is exactly when it matters, so the button itself never disables). Image upload
+                lives in here rather than as its own toolbar button: one 8x8 slot instead of
+                two, which is the difference between the phone row scrolling and not. */}
+            <PlusMenu
+              items={[
+                {
+                  key: "image",
+                  icon: IMAGE_ICON,
+                  label: S.chat.uploadImage,
+                  // Without vision the images still send — as scratchpad file paths — so the
+                  // entry stays usable and the hint explains what will happen instead.
+                  desc: vision ? S.chat.uploadImageDesc : S.chat.imagesAsPathHint,
+                  active: images.length > 0,
+                  // Goal mode is text-only (the objective is re-injected each round).
+                  disabled: goalOn,
+                  onSelect: () => imageInputRef.current?.click(),
+                },
+                {
+                  key: "goal",
+                  icon: GOAL_ICON,
+                  label: S.chat.goalMode,
+                  desc: S.chat.goalModeDesc,
+                  active: goalOn,
+                  disabled: running || compacting || busy,
+                  onSelect: () => toggleGoal(!goalOn),
+                },
+              ]}
+              footer={<SteerModeRow steerMode={steerMode} onChangeSteerMode={setSteerMode} />}
+              direction={models && onChangeModel ? "down" : "up"}
+            />
+            <ApprovalModeSelect
+              value={approvalMode}
+              onChange={onChangeApprovalMode}
+              disabled={modeSaving}
+              direction={models && onChangeModel ? "down" : "up"}
+            />
+            {/* Multi-select skills dropdown (after approval mode): selected state is conveyed via the button badge. */}
+            <SkillSelect
+              skills={skills}
+              selected={selectedSkills}
+              onToggle={toggleSkill}
+              disabled={running || compacting || busy}
+              direction={models && onChangeModel ? "down" : "up"}
+            />
+            {/* Help text: shown only when the card is wide enough (@lg); it never competes for
+                space on phones, where the group scrolls instead. */}
             <span
               title={`${S.chat.slashHint} · ${S.chat.mentionHint}`}
-              className="hidden truncate text-gray-300 @lg:block dark:text-gray-600"
+              className="hidden min-w-0 truncate text-gray-300 @lg:block dark:text-gray-600"
             >
               {S.chat.slashHint} · {S.chat.mentionHint}
             </span>
-          </span>
-          {/* Draft state (model still changeable = no session created yet) has no context usage to speak of: the ring isn't shown, it displays as usual once the session is created. */}
-          {!onChangeModel && (
-            <ContextGauge
-              now={contextNow}
-              unknown={contextStale}
-              {...(contextWindow !== undefined ? { window: contextWindow } : {})}
-            />
-          )}
-          {/* Draft state: conversation-time thinking level (backed by Agent settings), docked left of the model selector. */}
-          {models && onChangeModel && onChangeThinkingLevel && (
-            <ThinkingLevelSelect
-              value={thinkingLevel ?? null}
-              onChange={onChangeThinkingLevel}
-              disabled={busy}
-            />
-          )}
-          {/* Session state: the session's fixed thinking level (from session_meta), read-only next
-              to the locked model; hidden when it isn't one of the five levels (e.g. "default"). */}
-          {!onChangeModel &&
-            (() => {
-              const label = thinkingLevelLabel(S.chat.thinkingLevelNames, sessionThinkingLevel);
-              return (
-                label && (
-                  <span
-                    title={`${S.chat.thinkingLevel}：${label}`}
-                    className="hidden h-8 shrink-0 items-center gap-1 px-1 text-xs text-gray-400 @md:flex dark:text-gray-500"
-                  >
-                    <GlyphIcon d={SPARK_ICON} size={13} className="shrink-0" />
-                    {label}
-                  </span>
-                )
-              );
-            })()}
-          {/* Left of the send button: model selector in draft state; once the Session is created the model is locked, shown read-only (still with the provider logo). */}
-          {models && onChangeModel ? (
-            <ModelSelect
-              models={models}
-              value={modelRef}
-              {...(defaultModel !== undefined ? { defaultModel } : {})}
-              onChange={onChangeModel}
-              disabled={busy}
-            />
-          ) : (
-            <span
-              title={modelRef?.modelId ?? ""}
-              className="flex h-8 min-w-0 max-w-44 shrink items-center gap-1.5 px-1 text-gray-400 dark:text-gray-500"
-            >
-              {/* Read-only display in session state: both the logo and the name come from the Session DTO's paired fields (no prefix parsing). */}
-              <ProviderLogo
-                provider={modelRef?.provider ?? "custom"}
-                className="h-4 w-4 shrink-0"
+          </div>
+
+          {/* Right group: status + model + the single action button; never shrinks. */}
+          <div className="flex shrink-0 items-center gap-2">
+            {/* Draft state (model still changeable = no session created yet) has no context usage to speak of: the ring isn't shown, it displays as usual once the session is created. */}
+            {!onChangeModel && (
+              <ContextGauge
+                now={contextNow}
+                unknown={contextStale}
+                {...(contextWindow !== undefined ? { window: contextWindow } : {})}
               />
-              <span className="hidden min-w-0 truncate @md:block">
-                {(() => {
-                  const m = models?.find((x) => sameModelRef(x, modelRef));
-                  return m ? modelLabel(m) : (modelRef?.modelId ?? "…");
-                })()}
-              </span>
-            </span>
-          )}
-          {running ? (
-            <button
-              type="button"
-              title={S.chat.stop}
-              aria-label={S.chat.stop}
-              onClick={() => void onStop()}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-red-50 text-red-600 transition-colors duration-150 hover:bg-red-100 dark:bg-red-950/60 dark:text-red-400 dark:hover:bg-red-950"
-            >
-              <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden className="block">
-                <rect x="2" y="2" width="10" height="10" rx="2" fill="currentColor" />
-              </svg>
-            </button>
-          ) : (
-            <button
-              type="button"
-              title={S.chat.send}
-              aria-label={S.chat.send}
-              disabled={!canSend}
-              onClick={() => void send()}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-gray-900 text-white transition-colors duration-150 hover:bg-gray-700 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-300 dark:disabled:bg-gray-800 dark:disabled:text-gray-600"
-            >
-              {/* Up arrow (send) */}
-              <svg
-                width="17"
-                height="17"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden
-                className="block"
+            )}
+            {/* Draft state: conversation-time thinking level (backed by Agent settings), docked left of the model selector. */}
+            {models && onChangeModel && onChangeThinkingLevel && (
+              <ThinkingLevelSelect
+                value={thinkingLevel ?? null}
+                onChange={onChangeThinkingLevel}
+                disabled={busy}
+              />
+            )}
+            {/* Session state: per-turn thinking level (editable) — displays the user's pick,
+              else the Agent config's level (auto-follow; the parent resolves it). While
+              untouched nothing rides on tasks; a pick sticks for the session and is sent
+              with every subsequent send, never writing through to the Agent config. */}
+            {!onChangeModel && onChangeTurnThinkingLevel && (
+              <ThinkingLevelSelect
+                value={turnThinkingLevel ?? ""}
+                onChange={onChangeTurnThinkingLevel}
+                disabled={busy}
+                direction="up"
+              />
+            )}
+            {/* Left of the send button: model selector in draft state; once the Session is created the model is locked, shown read-only (still with the provider logo). */}
+            {models && onChangeModel ? (
+              <ModelSelect
+                models={models}
+                value={modelRef}
+                {...(defaultModel !== undefined ? { defaultModel } : {})}
+                onChange={onChangeModel}
+                disabled={busy}
+              />
+            ) : (
+              <span
+                title={modelRef?.modelId ?? ""}
+                className="flex h-8 min-w-0 max-w-44 shrink items-center gap-1.5 px-1 text-gray-400 dark:text-gray-500"
               >
-                <path d="M12 19V5M5 12l7-7 7 7" />
-              </svg>
+                {/* Read-only display in session state: both the logo and the name come from the Session DTO's paired fields (no prefix parsing). */}
+                <ProviderLogo
+                  provider={modelRef?.provider ?? "custom"}
+                  className="h-4 w-4 shrink-0"
+                />
+                <span className="hidden min-w-0 truncate @md:block">
+                  {(() => {
+                    const m = models?.find((x) => sameModelRef(x, modelRef));
+                    return m ? modelLabel(m) : (modelRef?.modelId ?? "…");
+                  })()}
+                </span>
+              </span>
+            )}
+            {/* One action button, never two: while running an empty composer means "Stop"
+              (abort), and typing turns the very same button into "Send" — which, mid-run,
+              steers or queues per the remembered send mode (the "+" menu's settings row).
+              Idle/compacting keeps the ordinary send button (disabled while compacting via
+              canSend). Merging the pair keeps the running-state row within a 320px viewport. */}
+            <button
+              type="button"
+              title={stopAction ? S.chat.stop : running ? midRunSendLabel : S.chat.send}
+              aria-label={stopAction ? S.chat.stop : running ? midRunSendLabel : S.chat.send}
+              disabled={stopAction ? false : running ? !canMidRunSend : !canSend}
+              onClick={() => (stopAction ? void onStop() : void send())}
+              className={
+                stopAction
+                  ? "flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-red-50 text-red-600 transition-colors duration-150 hover:bg-red-100 dark:bg-red-950/60 dark:text-red-400 dark:hover:bg-red-950"
+                  : "flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-gray-900 text-white transition-colors duration-150 hover:bg-gray-700 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-300 dark:disabled:bg-gray-800 dark:disabled:text-gray-600"
+              }
+            >
+              {stopAction ? (
+                /* Stop (filled square) */
+                <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden className="block">
+                  <rect x="2" y="2" width="10" height="10" rx="2" fill="currentColor" />
+                </svg>
+              ) : (
+                /* Up arrow (send) */
+                <svg
+                  width="17"
+                  height="17"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden
+                  className="block"
+                >
+                  <path d="M12 19V5M5 12l7-7 7 7" />
+                </svg>
+              )}
             </button>
-          )}
+          </div>
         </div>
       </div>
     </div>

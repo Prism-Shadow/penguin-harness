@@ -28,7 +28,7 @@ export const DOCS_NAV: DocsSectionDef[] = [
       "sessions-and-traces",
     ],
   },
-  { id: "guides", slugs: ["web-app", "self-improvement"] },
+  { id: "guides", slugs: ["web-app", "goal-mode", "self-improvement"] },
   { id: "reference", slugs: ["cli", "server-api", "configuration"] },
 ];
 

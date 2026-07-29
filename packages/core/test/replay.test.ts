@@ -5,8 +5,10 @@
  *   a start but no stop) are dropped entirely, keeping only outputs paired with already-committed
  *   tool_calls; trailing input is kept as-is as carry-over.
  * - Pairing fallback: committed tool_calls with no paired output get an interrupted-state placeholder.
- * - Compaction wrap-up (file level): summarize rebuilds <context_summary>, discard leaves no
- *   pending input; failed compaction rounds are dropped by the generic rule.
+ * - Compaction wrap-up (file level): summarize rebuilds [context_summary], discard leaves no
+ *   pending input; failed compaction rounds are dropped by the generic rule; a "completed"
+ *   summarize closure whose output extracts to an empty summary (a pre-#83 trace shape) is
+ *   voided and the original context replays.
  * - Tolerates a truncated trailing line left by an abnormal process exit.
  * - Round-trip: a Trace written out by the engine, once replayed, matches the history the model actually received.
  */
@@ -50,7 +52,6 @@ function meta(): OmniMessage {
     model_context_window: 1000000,
     system_prompt: "SP",
     tools: [],
-    thinking_level: "default",
     agent_state: "/agent/state",
     workspace: "/ws",
   });
@@ -185,7 +186,7 @@ describe("resumeTrace", () => {
       compactionBegin({ reason: "context", mode: "summarize", context: 10, turns: 1 }),
       userText("please summarize"),
       requestBegin(),
-      assistantText("<summary>the gist</summary>"),
+      assistantText("[summary]the gist[/summary]"),
       requestEnd("completed"),
       tokenUsage(usage(20), usage(20)),
       compactionEnd({ reason: "context", mode: "summarize", status: "completed" }),
@@ -194,9 +195,90 @@ describe("resumeTrace", () => {
     expect(result.history).toEqual([]);
     expect(result.renderMessages).toEqual([]);
     const summary = result.pendingSummary!.payload as { text: string };
-    expect(summary.text).toBe("<context_summary>\nthe gist\n</context_summary>");
+    expect(summary.text).toBe("[context_summary]\nthe gist\n[/context_summary]");
     expect(result.sessionTurns).toBe(0);
     expect(result.sessionTokens.total).toBe(20); // Token carry-over includes compaction consumption
+  });
+
+  it("closed context (summarize): the legacy <summary> form in an old Trace still rebuilds the summary", () => {
+    // Dual-form regression: compaction.prompt is persisted in old agents' system_config.yaml,
+    // so old Traces contain angle-bracket compaction output; extractSummary must keep
+    // accepting it (the rebuilt pending input always uses the current square form).
+    const result = resumeTrace([
+      meta(),
+      userText("hello"),
+      requestBegin(),
+      assistantText("hi"),
+      requestEnd("completed"),
+      tokenUsage(usage(10), usage(10)),
+      compactionBegin({ reason: "context", mode: "summarize", context: 10, turns: 1 }),
+      userText("please summarize"),
+      requestBegin(),
+      assistantText("<summary>the old-form gist</summary>"),
+      requestEnd("completed"),
+      tokenUsage(usage(20), usage(20)),
+      compactionEnd({ reason: "context", mode: "summarize", status: "completed" }),
+    ]);
+    expect(result.contextClosed).toBe(true);
+    const summary = result.pendingSummary!.payload as { text: string };
+    expect(summary.text).toBe("[context_summary]\nthe old-form gist\n[/context_summary]");
+  });
+
+  it("replays a trace containing [user_steering] user messages as ordinary turn input", () => {
+    // Mid-run steering is delivered as standalone [user_steering] user messages written to
+    // Trace alongside that turn's tool outputs: replay attributes them positionally like any
+    // user input — committed spans keep them in history verbatim (marker and all).
+    const steered = "[user_steering]\nswitch to the staging config\n[/user_steering]";
+    const result = resumeTrace([
+      meta(),
+      userText("run it"),
+      requestBegin(),
+      toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc1" }),
+      requestEnd("completed"),
+      tokenUsage(usage(10), usage(10)),
+      toolCallOutput({ output: "result-1", toolCallId: "tc1" }),
+      // Steering delivered with the tool output as the second turn's input.
+      userText(steered),
+      requestBegin(),
+      assistantText("done"),
+      requestEnd("completed"),
+      tokenUsage(usage(20), usage(20)),
+      // Loop-end steering continuation: a [user_steering] user turn of its own.
+      userText("[user_steering]\none more thing\n[/user_steering]"),
+      requestBegin(),
+      assistantText("handled"),
+      requestEnd("completed"),
+      tokenUsage(usage(30), usage(30)),
+    ]);
+    expect(textsOf(result.history)).toEqual([
+      "run it",
+      "exec_command",
+      "result-1",
+      steered,
+      "done",
+      "[user_steering]\none more thing\n[/user_steering]",
+      "handled",
+    ]);
+    expect(result.sessionTurns).toBe(3);
+    expect(result.carryOver).toEqual([]);
+  });
+
+  it("keeps trailing steering user messages as carry-over verbatim (unanswered input is resent)", () => {
+    // The steering message was persisted but its answering request never committed: it is
+    // resent as-is on resume, marker and all, next to the tool output it rode along with.
+    const steered = "[user_steering]\nalso check CI\n[/user_steering]";
+    const result = resumeTrace([
+      meta(),
+      userText("run it"),
+      requestBegin(),
+      toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc1" }),
+      requestEnd("completed"),
+      tokenUsage(usage(10), usage(10)),
+      toolCallOutput({ output: "late", toolCallId: "tc1" }),
+      userText(steered),
+    ]);
+    expect(textsOf(result.history)).toEqual(["run it", "exec_command"]);
+    expect(textsOf(result.carryOver)).toEqual(["late", steered]);
   });
 
   it("closed context (discard): empty history and no pending summary", () => {
@@ -360,7 +442,7 @@ describe("engine trace round-trip", () => {
     const recorded = await readTrace(trace.currentPath());
     expect(
       recorded.some((m) =>
-        ((m.payload as { text?: string }).text ?? "").includes("<turn_aborted>"),
+        ((m.payload as { text?: string }).text ?? "").includes("[turn_aborted]"),
       ),
     ).toBe(false);
     const result = resumeTrace(recorded);
@@ -442,10 +524,13 @@ describe("resumeTrace regressions (PR #39 review)", () => {
     expect(result.carryOver).toEqual([]);
   });
 
-  it("closed context (summarize) with a textless compaction output yields an empty summary", () => {
-    // The compaction request completed but produced no text (e.g. thinking-only): the summary is
-    // empty, and must not fall back to an earlier round's ordinary answer (consistent with the
-    // in-process extractSummary("") behavior).
+  it("closed context (summarize) with a textless compaction output voids the closure and replays the original context", () => {
+    // The compaction request completed but produced no text (e.g. thinking-only): only a
+    // pre-#83 engine wrote such a "completed" closure — the engine now fails the compaction
+    // instead of committing an empty summary that would erase the task state. Resume mirrors
+    // that contract: no empty [context_summary] is fabricated, nothing falls back to an
+    // earlier round's ordinary answer, and the original context held by this file is
+    // reconstructed (the committed compaction turn stays in history like any committed turn).
     const result = resumeTrace([
       meta(),
       userText("hello"),
@@ -461,9 +546,118 @@ describe("resumeTrace regressions (PR #39 review)", () => {
       tokenUsage(usage(20), usage(20)),
       compactionEnd({ reason: "context", mode: "summarize", status: "completed" }),
     ]);
-    expect(result.contextClosed).toBe(true);
-    const summary = result.pendingSummary!.payload as { text: string };
-    expect(summary.text).toBe("<context_summary>\n\n</context_summary>");
-    expect(summary.text).not.toContain("42");
+    expect(result.contextClosed).toBe(false);
+    expect(result.pendingSummary).toBeUndefined();
+    // Full original history, including the committed compaction exchange (AgentHub committed
+    // it, so the next request builds on top of it).
+    expect(result.history.map((m) => (m.payload as { type?: string }).type)).toEqual([
+      "text",
+      "text",
+      "text",
+      "thinking",
+    ]);
+    expect(textsOf(result.history.slice(0, 3))).toEqual([
+      "hello",
+      "The answer is 42.",
+      "please summarize",
+    ]);
+    // The committed compaction request does not count as a Session turn (in-process, only real
+    // turns increment the counter).
+    expect(result.sessionTurns).toBe(1);
+    expect(result.carryOver).toEqual([]);
+  });
+
+  it("absorbed mid-task compaction (committed rejections) replays with nothing left to resend", () => {
+    // Resume symmetry for issue #85: a mid-task compaction whose first attempt committed has
+    // absorbed the turn's tool output into history; the repair answering the rejected
+    // attempt's tool call rode the second committed attempt. After a process exit at the
+    // abandonment, replay must reconstruct exactly the live engine's state: everything in
+    // history, nothing in carry-over — the next request continues from the committed state
+    // without resending any tool_result.
+    const result = resumeTrace([
+      meta(),
+      userText("go"),
+      requestBegin(),
+      toolCall({ name: "exec_command", arguments: "{}", toolCallId: "ct" }),
+      requestEnd("completed"),
+      tokenUsage(usage(150), usage(150)),
+      toolCallOutput({ output: "tool ran", toolCallId: "ct" }),
+      compactionBegin({ reason: "context", mode: "summarize", context: 150, turns: 1 }),
+      userText("COMPACT NOW"),
+      requestBegin(),
+      assistantText("[summary]nope[/summary]"),
+      toolCall({ name: "t", arguments: "{}", toolCallId: "c1" }),
+      requestEnd("completed"),
+      tokenUsage(usage(160), usage(310)),
+      toolCallOutput({
+        output: "[tool error] the compaction request expects a summary, not tool calls",
+        toolCallId: "c1",
+        stopReason: "failed",
+      }),
+      requestBegin(),
+      thinkingMessage("still nothing"),
+      requestEnd("completed"),
+      tokenUsage(usage(170), usage(480)),
+      compactionEnd({ reason: "context", mode: "summarize", status: "failed" }),
+    ]);
+    expect(result.contextClosed).toBe(false);
+    expect(result.pendingSummary).toBeUndefined();
+    // Both committed compaction rounds enter history: the turn output was absorbed by the
+    // first, the repair by the second.
+    expect(result.history.map((m) => (m.payload as { type?: string }).type)).toEqual([
+      "text",
+      "tool_call",
+      "tool_call_output",
+      "text",
+      "text",
+      "tool_call",
+      "tool_call_output",
+      "thinking",
+    ]);
+    // Nothing left to resend — matching the live engine, which also holds no carry-over here.
+    expect(result.carryOver).toEqual([]);
+    expect(result.sessionTurns).toBe(1);
+  });
+
+  it("absorbed mid-task compaction abandoned with an unanswered repair replays it as carry-over", () => {
+    // The abort-in-window shape: the rejected attempt committed (absorbing the turn output),
+    // its repair was written, and the process exited before any request carried the repair.
+    // Replay's eligibility filter keeps exactly the repair (paired with the committed,
+    // unanswered c1) as carry-over — the same stash the live engine holds — and does not
+    // reclaim the absorbed turn output.
+    const result = resumeTrace([
+      meta(),
+      userText("go"),
+      requestBegin(),
+      toolCall({ name: "exec_command", arguments: "{}", toolCallId: "ct" }),
+      requestEnd("completed"),
+      tokenUsage(usage(150), usage(150)),
+      toolCallOutput({ output: "tool ran", toolCallId: "ct" }),
+      compactionBegin({ reason: "context", mode: "summarize", context: 150, turns: 1 }),
+      userText("COMPACT NOW"),
+      requestBegin(),
+      toolCall({ name: "t", arguments: "{}", toolCallId: "c1" }),
+      requestEnd("completed"),
+      tokenUsage(usage(160), usage(310)),
+      toolCallOutput({
+        output: "[tool error] the compaction request expects a summary, not tool calls",
+        toolCallId: "c1",
+        stopReason: "failed",
+      }),
+      compactionEnd({ reason: "context", mode: "summarize", status: "aborted" }),
+    ]);
+    expect(result.contextClosed).toBe(false);
+    // The absorbed turn output sits in history (attempt 1's committed input), not carry-over.
+    expect(result.history.map((m) => (m.payload as { type?: string }).type)).toEqual([
+      "text",
+      "tool_call",
+      "tool_call_output",
+      "text",
+      "tool_call",
+    ]);
+    expect(
+      result.carryOver.map((m) => (m.payload as { tool_call_id?: string }).tool_call_id),
+    ).toEqual(["c1"]);
+    expect((result.carryOver[0]!.payload as { output?: string }).output).toContain("[tool error]");
   });
 });

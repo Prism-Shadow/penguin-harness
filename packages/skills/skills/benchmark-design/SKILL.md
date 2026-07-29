@@ -39,11 +39,11 @@ Require a Test Agent id, target capability, desired baseline score, and a positi
 
 The current Session must provide `run_subagent`, and the current Agent must have `agent-evaluation` installed. If either is missing, stop and explain what is needed.
 
-Use the `Project Dir` from the Environment:
+Use the Environment's `App Data Dir` and the explicit Test Agent id:
 
 ```text
-TEST_AGENT_DIR = <project_dir>/agents/<test_agent_id>
-BENCHMARK_DIR = <test_agent_dir>/benchmarks/<benchmark_id>
+TEST_AGENT_DIR = <app_data_dir>/agents/<test_agent_id>
+BENCHMARK_DIR = <app_data_dir>/agents/<test_agent_id>/benchmarks/<benchmark_id>
 SCOREBOARD = <benchmark_dir>/scoreboard.yaml
 ```
 

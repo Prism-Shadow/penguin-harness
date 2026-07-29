@@ -40,6 +40,7 @@ interface LLMInterface {
 interface GenerativeModelParameters {
   newMessages: OmniMessage[];    // only this turn's new messages (the impl owns history; mixed roles rejected)
   signal?: AbortSignal;
+  thinkingLevel?: ThinkingLevelName;   // per-request override; omitted = the construction default
 }
 ```
 
@@ -49,18 +50,21 @@ The generator yields `partial_*` fragments and complete messages, emits Token us
 
 ```ts
 interface LLMOutcome {
-  status: StopReason;   // completed | timeout | malformed | aborted | failed
-  message?: string;     // display text when failed
+  status: StopReason;   // completed | timeout | malformed | aborted | failed | auth
+  message?: string;     // failure detail: on failed/auth, and on timeout/malformed when a
+                        // concrete error was caught — carried onto request_end so the
+                        // errors panel shows the real reason behind a retried request
 }
 ```
 
 | status | Meaning | Engine reaction |
 | --- | --- | --- |
 | `completed` | finished normally (token_usage already emitted) | proceed |
-| `timeout` | timeout / lost connection | auto-reconnect within the run |
+| `timeout` | timeout / transport disconnect / transient provider quota error | auto-reconnect within the run |
 | `malformed` | response parse failure | auto-reconnect within the run |
+| `failed` | an error the classifier did not judge transient (params, …) | auto-reconnect within the run as well — the status is still reported as `failed` |
 | `aborted` | user interrupt | stop, hand back to the user |
-| `failed` | non-retryable (auth/params, …) | stop, hand back to the user |
+| `auth` | credentials rejected | stop, hand back to the user — the one LLM status that never retries; hosts gate input until the model's API key is updated |
 
 Implementation constraints: never throw; no internal retries — reconnecting is the engine's job (see [The Agent Loop](/agent-loop)).
 
@@ -78,7 +82,7 @@ interface GenerativeModelConfig {
   systemPrompt?: string;           // fully assembled system prompt, placeholders substituted
   contextWindow?: number;
   maxTokens?: number;
-  thinkingLevel?: ThinkingLevelName;   // "none" | "low" | "medium" | "high" | "xhigh"
+  thinkingLevel?: ThinkingLevelName;   // construction default (a per-request parameter can override); "none" | "low" | "medium" | "high" | "xhigh"
   requestTimeoutMs?: number;       // per-Request timeout, default 120000; <=0 disables
   toolCallIds?: ToolCallIdAllocator;   // Session-level tool_call_id registry (pass the same instance across compaction)
 }
@@ -179,6 +183,7 @@ session.run(
 interface RunOptions {
   signal?: AbortSignal;    // interrupt (e.g. Ctrl-C)
   approve?: ApproveFn;     // per-tool approval; denies everything when omitted
+  thinkingLevel?: ThinkingLevelName;   // this run's thinking level (per-turn; compaction requests unaffected)
 }
 ```
 

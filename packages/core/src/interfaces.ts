@@ -56,6 +56,16 @@ export interface ToolDefinitionConfig {
   timeoutMs?: number;
   /** Max length of tool output; Environment truncates from the front (keeping the head) if exceeded; <=0 disables it. */
   maxOutputLength?: number;
+  /**
+   * Per-tool toggle for the optional `description` call argument (a model-written sentence
+   * shown to the user while the call runs). The argument itself is declared as a normal
+   * property in this entry's `parameters` (editable config is the single source of truth);
+   * setting `call_description: false` filters that property out of the schema handed to the
+   * LLM at assembly time (in-memory only — the stored YAML is never rewritten). Missing =
+   * true (the property stays). No effect on entries whose parameters declare no
+   * `description` property.
+   */
+  call_description?: boolean;
 }
 
 export interface MCPServerConfig {
@@ -103,6 +113,7 @@ export interface GenerativeModelConfig {
   contextWindow?: number;
   /** Output token cap per Request; non-positive (-1) means no explicit cap (omitted from the request). */
   maxTokens?: number;
+  /** Construction-time default thinking level; a per-request `GenerativeModelParameters.thinkingLevel` overrides it for that request. */
   thinkingLevel?: ThinkingLevelName;
   /** LLM Request timeout (ms): from system_config.model.timeoutMs; <=0 disables it. Defaults to 120000. */
   requestTimeoutMs?: number;
@@ -118,11 +129,17 @@ export interface GenerativeModelParameters {
   /** OmniMessage array for the input newly added this turn; implementations must merge it into a single UniMessage (multiple roles not accepted). */
   newMessages: OmniMessage[];
   signal?: AbortSignal;
+  /**
+   * Per-request thinking level override: applied to **this request only**; omitted falls back
+   * to the construction-time default (`GenerativeModelConfig.thinkingLevel`). The thinking
+   * level is a per-turn parameter, not a Session invariant.
+   */
+  thinkingLevel?: ThinkingLevelName;
 }
 
 /**
  * The terminal state of an LLM request, returned as the **return value** of the `streamGenerate`
- * async generator (not a yielded message). The status values share the same five-value protocol
+ * async generator (not a yielded message). The status values share the same six-value protocol
  * as OmniMessage `stop_reason`:
  *   - `completed`: finished normally (already produced `token_usage`);
  *   - `timeout`: LLM timed out or lost connection, needs reconnect — retried by `context_engine`
@@ -130,12 +147,26 @@ export interface GenerativeModelParameters {
  *   - `malformed`: AgentHub response failed JSON parsing, needs reconnect — also retried by
  *     `context_engine`;
  *   - `aborted`: user-initiated interruption — stop and hand back to the user;
- *   - `failed`: other non-retryable errors (auth/params, etc.) — stop and hand back to the user
- *     (`message` provides the display text).
+ *   - `failed`: an error the retry classifier did not judge transient (params, etc.) — still
+ *     retried by `context_engine` within the same run (`message` provides the display text).
+ *     The classification stays honest — this is reported as `failed`, not relabelled a
+ *     timeout — while the *policy* retries it, because that classifier is an allowlist and a
+ *     gateway phrasing a transient fault its own way lands here;
+ *   - `auth`: the provider rejected the credentials (see `isAuthenticationError`) — the one
+ *     status that stops the run outright, since no retry can turn a rejected credential into
+ *     a working one; hosts also key on it to disable input until the model's API key is
+ *     updated (only the model reference is fixed at Session creation; credentials come from
+ *     the current Project config, so a key update lets the Session continue).
  * Docs: /docs/interfaces § "LLMOutcome semantics".
  */
 export interface LLMOutcome {
   status: StopReason;
+  /**
+   * Failure detail (`describeError` text): present on `failed` / `auth`, and on `timeout` /
+   * `malformed` when a concrete transport/provider error was caught (a plain idle timeout
+   * has none). Carried onto the `request_end` event so observability (the Cost center's
+   * errors panel) can show the real reason behind a retried request.
+   */
   message?: string;
 }
 

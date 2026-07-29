@@ -16,6 +16,7 @@ import {
   VAULT_VALUE_MAX_LENGTH,
   isValidVaultKey,
   loadAgentVault,
+  resetSystemConfigToDefaults,
   saveAgentVault,
   systemConfigPath,
 } from "@prismshadow/penguin-core";
@@ -34,7 +35,13 @@ import type {
   VaultUpdateRequest,
 } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
-import { badRequest, optionalEnum, optionalNumber, optionalString } from "../http/validate.js";
+import {
+  badRequest,
+  optionalBoolean,
+  optionalEnum,
+  optionalNumber,
+  optionalString,
+} from "../http/validate.js";
 import { maskApiKey } from "./project-config-service.js";
 
 const THINKING_LEVELS: readonly ThinkingLevelName[] = ["none", "low", "medium", "high", "xhigh"];
@@ -171,6 +178,19 @@ export class AgentConfigService {
     if (req.agentsMd !== undefined) {
       await fs.writeFile(agentsMdPath(this.root, projectId, agentId), req.agentsMd, "utf8");
     }
+  }
+
+  /**
+   * Overwrites system_config.yaml with the current code defaults (core's
+   * resetSystemConfigToDefaults) — same semantics as updating an installed skill:
+   * only the identity fields (name / description / version) survive; the system
+   * prompt, max_turns, model/compaction settings and the tool list (incl. MCP
+   * servers) become the current defaults. AGENTS.md, skills and the vault are
+   * untouched.
+   */
+  async resetConfig(projectId: string, agentId: string): Promise<void> {
+    await this.requireExists(projectId, agentId);
+    await resetSystemConfigToDefaults(this.root, projectId, agentId);
   }
 
   private async applyConfigUpdate(
@@ -314,6 +334,7 @@ function validateToolsBuiltin(value: unknown): ToolDefinitionConfig[] {
     if (t.forModel !== undefined && t.forModel !== "vision" && t.forModel !== "text-only") {
       throw badRequest(`toolsBuiltin[${i}].forModel must be one of vision / text-only.`);
     }
+    optionalBoolean(t, "call_description", `toolsBuiltin[${i}].call_description`);
     optionalNumber(t, "timeoutMs", {
       integer: true,
       positiveOrMinusOne: true,

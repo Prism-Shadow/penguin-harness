@@ -9,10 +9,12 @@
  * responsible for the prompt format, driving the one-off request, and sanitizing the result —
  * when to generate a title and where to store it is decided by the host (Web server / CLI).
  * The narrow public surface — `SessionTitleResult` (part of `Session.generateTitle`'s
- * signature) and the sanitation helpers the host's title fallback builds on — is re-exported
- * by the barrel; the prompt/request internals are not.
+ * signature) and `sanitizeTitle` — is re-exported by the barrel; the prompt/request
+ * internals are not. Marker stripping (`stripConversationMarkers`) lives with the markers
+ * module, keeping every tag's producer, parser and stripper in one place.
  */
 import { userText } from "../omnimessage/index.js";
+import { stripConversationMarkers } from "../omnimessage/markers/index.js";
 import type {
   OmniMessage,
   TextPayload,
@@ -25,31 +27,6 @@ import type { LLMInterface } from "../interfaces.js";
 const EXCERPT_MAX_CHARS = 2000;
 /** Cap on title length (fallback truncation for when the model occasionally ignores the constraint). */
 const TITLE_MAX_CHARS = 30;
-
-/**
- * Special message markers that must never leak into a title. These are machine-inserted
- * XML-ish blocks (a skill invocation wraps the body in `<use_skills>…</use_skills>`, a
- * subagent handoff / scheduled task prepend their own blocks) — meaningful to the runtime,
- * noise in a title. The list is a fixed allowlist so ordinary angle-bracket text (e.g. a
- * user pasting `<div>`) is left untouched.
- */
-const MARKER_TAGS = ["use_skills", "handoff_from", "scheduled_task"];
-
-/**
- * Strips machine-inserted marker blocks (see MARKER_TAGS) from conversation text so titles are
- * built from the human-meaningful body only — both the material sent to the model and the
- * fallback derived from the raw first message. Removes the paired `<tag>…</tag>` block (any
- * inner content, across lines) and any stray unpaired `<tag>` / `</tag>` left behind.
- */
-export function stripConversationMarkers(text: string): string {
-  let out = text;
-  for (const tag of MARKER_TAGS) {
-    out = out
-      .replace(new RegExp(`<${tag}>[\\s\\S]*?</${tag}>`, "g"), "")
-      .replace(new RegExp(`</?${tag}>`, "g"), "");
-  }
-  return out.trim();
-}
 
 export interface SessionTitleResult {
   /** The sanitized title; null when material is insufficient, the request fails, or the output is empty. */

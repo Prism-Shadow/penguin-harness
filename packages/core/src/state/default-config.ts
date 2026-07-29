@@ -14,7 +14,7 @@
  *
  * Placeholders (`{{...}}`) appear only in the trailing injection zones (AGENTS.md / Vault /
  * Skills / Environment); elsewhere the body uses angle-bracket notation such as
- * \`<project_dir>\`, \`<agent_id>\`, \`<session_id>\` — these are **not substituted**; the model
+ * \`<app_data_dir>\`, \`<agent_id>\`, \`<session_id>\` — these are **not substituted**; the model
  * fills in the actual values from the Environment section itself.
  */
 import type { MCPServerConfig, ThinkingLevelName, ToolDefinitionConfig } from "../interfaces.js";
@@ -27,11 +27,14 @@ export const SKILL_METADATA_PLACEHOLDER = "{{SKILL_METADATA}}";
 export const SESSION_ID_PLACEHOLDER = "{{SESSION_ID}}";
 export const CWD_PLACEHOLDER = "{{CWD}}";
 export const AGENT_ID_PLACEHOLDER = "{{AGENT_ID}}";
+/** The Project directory — PenguinHarness's app data root, exposed in the default prompt as the "App Data Dir" Environment line (deliberately not called a project/task directory there). */
 export const PROJECT_DIR_PLACEHOLDER = "{{PROJECT_DIR}}";
 export const PROVIDER_PLACEHOLDER = "{{PROVIDER}}";
 export const MODEL_ID_PLACEHOLDER = "{{MODEL_ID}}";
 export const PLATFORM_PLACEHOLDER = "{{PLATFORM}}";
 export const OS_VERSION_PLACEHOLDER = "{{OS_VERSION}}";
+/** The shell exec_command runs (`bash` on POSIX; on Windows whatever shell.ts resolved), so the model knows which command syntax to write. */
+export const SHELL_PLACEHOLDER = "{{SHELL}}";
 export const DATE_PLACEHOLDER = "{{DATE}}";
 
 /**
@@ -72,7 +75,7 @@ export interface SystemConfig {
   /** Context compaction (enabled by default, max_context_length 128k, mode summarize). */
   compaction?: CompactionConfig;
   tools?: {
-    /** Built-in system tool configuration. */
+    /** Built-in system tool configuration (per-entry fields incl. the `call_description` toggle live on ToolDefinitionConfig). */
     builtin?: ToolDefinitionConfig[];
     /** MCP Server configuration. */
     mcpServers?: MCPServerConfig[];
@@ -107,45 +110,48 @@ Communicate with the user precisely and concisely, yet with warmth. Do not repea
 - When you need information from the internet, browse it with your shell tool — \`curl\` for pages and APIs, or Playwright (if installed) for dynamic sites.
 
 # System markers
-Some user-side messages are system-synthesized records, not user text to answer directly:
-- \`<turn_aborted>\`: the previous round was interrupted. Inside are the original request, your partial thinking/text, and the tool calls already issued with their results. Continue from where it left off; do not re-run tools whose results are already included.
-- \`<turn_retried>\`: the previous attempt of this round failed on a transport error (timeout or malformed response) — the user did NOT interrupt — and this request is the automatic retry. Inside are your partial thinking/text and the tool calls already executed with their results. Continue from them; do not re-run tools whose results are already included.
-- \`<context_summary>\`: earlier conversation was compacted. This summary replaced the raw transcript and is its only record; treat it as established context and continue the task from it.
+Some messages contain system-synthesized blocks written as \`[tag]...[/tag]\`, not user text to answer directly:
+- \`[turn_aborted]\`: the previous round was interrupted. Inside are the original request, your partial thinking/text, and the tool calls already issued with their results. Continue from where it left off; do not re-run tools whose results are already included.
+- \`[turn_retried]\`: the previous attempt of this round did not get through (a timeout, a disconnect, a malformed response, or an error the provider returned) — the user did NOT interrupt — and this request is the automatic retry. Inside are your partial thinking/text and the tool calls already executed with their results. Continue from them; do not re-run tools whose results are already included.
+- \`[context_summary]\`: earlier conversation was compacted. This summary replaced the raw transcript and is its only record; treat it as established context and continue the task from it.
+- \`[user_steering]\`: a user message sent while you were still working, delivered between turns alongside tool results. It is not a new task: incorporate it immediately and adjust course within the current task.
 
 # File system
-- Angle-bracket markers such as \`<project_dir>\`, \`<agent_id>\` and \`<session_id>\` are not literal paths — substitute the matching values from the Environment section.
+- Angle-bracket markers such as \`<app_data_dir>\`, \`<agent_id>\` and \`<session_id>\` are not literal paths — substitute the matching values from the Environment section.
 - You run inside the user's working folder (\`CWD\` in Environment).
-- The project directory is \`<project_dir>\`; every agent of this project lives under \`<project_dir>/agents/\`, so another agent's assets are at \`<project_dir>/agents/<its_agent_id>/agent_state/\`.
-- Your own Agent State is \`<project_dir>/agents/<agent_id>/agent_state/\` — it holds your assets such as \`skills/\`, and its \`AGENTS.md\` is already included in your context. Reach these paths directly.
-- For temporary and scratch files, create a subdirectory named after the current Session ID under your scratchpad: \`<project_dir>/agents/<agent_id>/scratchpad/<session_id>/\`. Build intermediates there, but always place final deliverables in the workspace (under \`CWD\`) — files left in the scratchpad are not part of your output.
+- The App Data Dir is PenguinHarness's application data root: it holds every agent's data files (\`<app_data_dir>/agents/<agent_id>/agent_state/\` and friends) plus the project-level data files. It is NOT the current task's directory and was not provided by the user — never treat its contents as task input, and never place task deliverables there; the working folder is \`CWD\`.
+- Another agent's assets are at \`<app_data_dir>/agents/<its_agent_id>/agent_state/\`.
+- Your own Agent State is \`<app_data_dir>/agents/<agent_id>/agent_state/\` — it holds your assets such as \`skills/\`, and its \`AGENTS.md\` is already included in your context. Reach these paths directly.
+- For temporary and scratch files, create a subdirectory named after the current Session ID under your scratchpad: \`<app_data_dir>/agents/<agent_id>/scratchpad/<session_id>/\`. Build intermediates there, but always place final deliverables in the workspace (under \`CWD\`) — files left in the scratchpad are not part of your output.
 - When you create or update a file in the workspace, mention its workspace-relative path in backticks (e.g. \`src/app.py\`) in your reply, so the user can open it from the message.
-- Never read, copy, print or otherwise access \`<project_dir>/.project_config.toml\` or any agent's \`agent_state/.vault.toml\` — they hold the user's API keys and other secrets, which are none of your business. Configuration is CLI-only: change models or credentials with \`penguin config ...\` commands. If a task seems to require these files, say so and ask the user instead.
+- Never read, copy, print or otherwise access \`.project_config.toml\` directly under the App Data Dir, or any agent's \`agent_state/.vault.toml\` — they hold the user's API keys and other secrets, which are none of your business. Configuration is CLI-only: change models or credentials with \`penguin config ...\` commands. If a task seems to require these files, say so and ask the user instead.
 
 # Suggested workflows
 These are recommendations, not requirements; adapt them as the task demands.
-- For a long-horizon task, first write a plan in Markdown to \`<project_dir>/agents/<agent_id>/scratchpad/<session_id>/PLAN.md\`, containing a task overview and an itemized step-by-step plan; update it after each completed step to keep execution consistent.
+- For a long-horizon task, first write a plan in Markdown to \`<app_data_dir>/agents/<agent_id>/scratchpad/<session_id>/PLAN.md\`, containing a task overview and an itemized step-by-step plan; update it after each completed step to keep execution consistent.
 - Delegate self-contained subtasks to other agents with the \`run_subagent\` tool; dispatch independent subtasks in parallel. Start every delegation prompt with your own agent id (e.g. "Caller agent: <agent_id>") and name the skill the subagent should use when the task matches one. Subagents share your Workspace — exchange data through files. If \`run_subagent\` is not in your tool list, you are the subagent: do the work yourself.
 - To visit web pages, prefer Playwright when installed; otherwise \`curl\`. When building a web app or frontend, prefer React.
 
-<developer_instructions>
+[developer_instructions]
 Custom instructions from the developer-editable AGENTS.md.
 
 {{AGENTS_MD}}
-</developer_instructions>
+[/developer_instructions]
 
 # Vault
 The vault holds this agent's per-agent secrets (agent_state/.vault.toml). Each entry is injected into your shell subprocesses as an environment variable — values never appear in your context. Use the variable names below in commands when a task needs them.
 {{VAULT_KEYS}}
 
 # Skills
-Skills are reusable instruction packages stored under <project_dir>/agents/<agent_id>/agent_state/skills/<skill_name>/SKILL.md. There is no skill tool: when a task matches an installed skill below, or the user asks to use one (a message may start with a <use_skills> block listing skill names), first read that skill's SKILL.md in full with a shell command, then follow it. If a request only names a skill without a concrete task, ask the user what they need before starting.
+Skills are reusable instruction packages stored under <app_data_dir>/agents/<agent_id>/agent_state/skills/<skill_name>/SKILL.md. There is no skill tool: when a task matches an installed skill below, or the user asks to use one (a message may start with a [use_skills] block listing skill names), first read that skill's SKILL.md in full with the read_file tool, then follow it. If a request only names a skill without a concrete task, ask the user what they need before starting.
 {{SKILL_METADATA}}
 
 # Environment
 - Platform: {{PLATFORM}}
 - OS Version: {{OS_VERSION}}
+- Shell: {{SHELL}}
 - Date: {{DATE}}
-- Project Dir: {{PROJECT_DIR}}
+- App Data Dir: {{PROJECT_DIR}}
 - Agent ID: {{AGENT_ID}}
 - CWD: {{CWD}}
 - Provider: {{PROVIDER}}
@@ -160,28 +166,122 @@ Skills are reusable instruction packages stored under <project_dir>/agents/<agen
  */
 export const DEFAULT_COMPACTION_PROMPT =
   "You have a partial transcript of the task above. Write a summary of it wrapped in " +
-  "`<summary></summary>` tags. This summary will replace the transcript: in the next " +
+  "`[summary][/summary]` tags. This summary will replace the transcript: in the next " +
   "context window the raw transcript above will no longer be visible and this summary " +
   "will be its only record, so include everything needed to continue the task — the " +
   "original request, current state, next steps, and any learnings. Do not call any " +
   "tools while writing the summary; respond with text only.";
 
 /**
- * Default built-in system tools: bash execution and subagent spawning.
+ * Default built-in system tools: file reading/editing/writing first, then bash execution
+ * and subagent spawning.
  * Docs: /docs/tools § "Built-in tools".
  */
 function defaultBuiltinTools(): ToolDefinitionConfig[] {
   return [
     {
+      name: "read_file",
+      description:
+        "Read a text file and return its content with line numbers (cat -n style) — the preferred " +
+        "way to inspect a file. Returns up to 2000 lines starting at the given offset; for longer " +
+        "files call again with offset to continue. Use the image tools for images and the shell " +
+        "tool for binary files.",
+      parameters: {
+        type: "object",
+        properties: {
+          file_path: {
+            type: "string",
+            description: "Path to the file to read; absolute, or relative to the workspace.",
+          },
+          offset: {
+            type: "number",
+            description: "1-based line number to start reading from; defaults to 1.",
+          },
+          limit: {
+            type: "number",
+            description: "Max lines to read; defaults to 2000.",
+          },
+        },
+        required: ["file_path"],
+      },
+      permission: "r",
+      timeoutMs: 30000,
+      // Wider than the other tools' cap: a 2000-line window of code rarely fits in 16k characters.
+      maxOutputLength: 64000,
+    },
+    {
+      name: "edit_file",
+      description:
+        "Edit a file by exact string replacement — the preferred way to make a precise change. " +
+        "old_string must match the file content exactly (including whitespace) and be unique " +
+        "unless replace_all is set; read the file first to copy the text verbatim. The result " +
+        "echoes a line-numbered snippet around the change for verification.",
+      parameters: {
+        type: "object",
+        properties: {
+          file_path: {
+            type: "string",
+            description: "Path to the file to edit; absolute, or relative to the workspace.",
+          },
+          old_string: {
+            type: "string",
+            description: "Exact text to replace, including whitespace/indentation.",
+          },
+          new_string: {
+            type: "string",
+            description: "Replacement text; must differ from old_string.",
+          },
+          replace_all: {
+            type: "boolean",
+            description: "Replace every occurrence of old_string; defaults to false.",
+          },
+        },
+        required: ["file_path", "old_string", "new_string"],
+      },
+      permission: "rw",
+      timeoutMs: 30000,
+      maxOutputLength: 16000,
+    },
+    {
+      name: "write_file",
+      description:
+        "Create or overwrite a file with the given content, creating parent directories as " +
+        "needed. Use it for new files or full rewrites; for precise changes to an existing file " +
+        "prefer edit_file.",
+      parameters: {
+        type: "object",
+        properties: {
+          file_path: {
+            type: "string",
+            description: "Path to the file to write; absolute, or relative to the workspace.",
+          },
+          content: {
+            type: "string",
+            description: "Full file content to write; an empty string creates an empty file.",
+          },
+        },
+        required: ["file_path", "content"],
+      },
+      permission: "rw",
+      timeoutMs: 30000,
+      maxOutputLength: 16000,
+    },
+    {
       name: "exec_command",
       description:
-        "Run a shell command in the workspace to read, write, edit files and run programs. " +
+        "Run a shell command in the workspace to run programs, search, install dependencies, and " +
+        "everything the file tools don't cover. " +
         "Run long-lived commands (servers, watchers, builds) in the foreground: past yield_time_ms " +
         "they keep running in the background with a process_id. Do not background them with `&` — " +
         "the whole process group is cleaned up when the foreground command exits.",
       parameters: {
         type: "object",
         properties: {
+          description: {
+            type: "string",
+            description:
+              "Required, and emit it first, before the other arguments: it is shown to the user while the call runs. One short sentence describing what this call is doing and why, written in the user's language.",
+          },
           cmd: {
             type: "string",
             description: "Shell command to execute.",
@@ -197,9 +297,10 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
               "How long to wait for the command before yielding. If it is still running when this elapses, the tool returns the output so far plus a process_id, and the command keeps running in the background (drive it with input_command). Defaults to 60000; minimum 250, capped below the tool timeout.",
           },
         },
-        required: ["cmd"],
+        required: ["description", "cmd"],
       },
       permission: "rw",
+      call_description: true,
       timeoutMs: 120000,
       maxOutputLength: 16000,
     },
@@ -210,6 +311,11 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
       parameters: {
         type: "object",
         properties: {
+          description: {
+            type: "string",
+            description:
+              "Required, and emit it first, before the other arguments: it is shown to the user while the call runs. One short sentence describing what this call is doing and why, written in the user's language.",
+          },
           process_id: {
             type: "string",
             description: "The process_id returned by exec_command for the running command session.",
@@ -225,9 +331,10 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
               "How long to wait for new output or exit before returning. Non-empty writes default to 250; empty polls default to 5000. Minimum 250, capped below the tool timeout.",
           },
         },
-        required: ["process_id"],
+        required: ["description", "process_id"],
       },
       permission: "rw",
+      call_description: true,
       // An empty poll can wait out a build/test run (the yield ceiling is derived from timeoutMs, clamped inside the tool).
       timeoutMs: 130000,
       maxOutputLength: 16000,
@@ -240,6 +347,11 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
       parameters: {
         type: "object",
         properties: {
+          description: {
+            type: "string",
+            description:
+              "Required, and emit it first, before the other arguments: it is shown to the user while the call runs. One short sentence describing what this call is doing and why, written in the user's language.",
+          },
           prompt: {
             type: "string",
             description:
@@ -266,9 +378,10 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
               "How long to wait for the subagent before yielding. If it is still working when this elapses, the tool returns the output so far plus a subagent_id, and the subagent keeps running in the background (drive it with input_subagent). Defaults to 300000; minimum 250, capped below the tool timeout.",
           },
         },
-        required: ["prompt"],
+        required: ["description", "prompt"],
       },
       permission: "rw",
+      call_description: true,
       // Subagent tasks typically run far longer than a single command, so the timeout ceiling is raised accordingly.
       timeoutMs: 600000,
       maxOutputLength: 16000,
@@ -280,6 +393,11 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
       parameters: {
         type: "object",
         properties: {
+          description: {
+            type: "string",
+            description:
+              "Required, and emit it first, before the other arguments: it is shown to the user while the call runs. One short sentence describing what this call is doing and why, written in the user's language.",
+          },
           subagent_id: {
             type: "string",
             description: "The subagent_id returned by run_subagent for the background subagent.",
@@ -295,9 +413,10 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
               "How long to wait for new output or completion before returning. Follow-up prompts default to 300000; empty polls default to 10000. Minimum 250, capped below the tool timeout.",
           },
         },
-        required: ["subagent_id"],
+        required: ["description", "subagent_id"],
       },
       permission: "rw",
+      call_description: true,
       // Same generous timeout tier as run_subagent: an empty poll can wait a long time for the subagent to wrap up.
       timeoutMs: 600000,
       maxOutputLength: 16000,

@@ -100,6 +100,8 @@ export function summarizeEvent(msg: OmniMessage): string {
       return `${String(p["mode"])} (${String(p["reason"])})${p["status"] ? ` · ${String(p["status"])}` : ""}`;
     case "abort":
       return p["reason"] != null ? String(p["reason"]) : "";
+    case "goal_finished":
+      return `${String(p["outcome"])} · rounds=${String(p["rounds"])} · tokens=${String(p["tokens_used"])}`;
     case "subagent":
       return String(p["session_id"] ?? "");
     default:
@@ -162,7 +164,12 @@ function SessionMetaBody({ p }: { p: Record<string, unknown> }) {
     ["source", String(p.source ?? "")],
     ["model_id", String(p.model_id ?? "")],
     ["context_window", String(p.model_context_window ?? "")],
-    ["thinking_level", String(p.thinking_level ?? "")],
+    // Legacy metas only: current traces no longer record a thinking level (it became a
+    // per-turn Task parameter), but old traces still carry the field — keep showing it
+    // for them (loose read) instead of losing the display.
+    ...(typeof p.thinking_level === "string" && p.thinking_level
+      ? ([["thinking_level", p.thinking_level]] as Array<[string, string]>)
+      : []),
     ["agent_state", String(p.agent_state ?? "")],
     ["workspace", String(p.workspace ?? "")],
   ];

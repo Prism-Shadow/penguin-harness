@@ -15,16 +15,18 @@ import {
   ThinkingLevel,
   ToolCallArgumentParseError,
 } from "@prismshadow/agenthub";
-import type { UniEvent, UniMessage, UsageMetadata } from "@prismshadow/agenthub";
-import type { LLMOutcome } from "../src/interfaces.js";
+import type { UniConfig, UniEvent, UniMessage, UsageMetadata } from "@prismshadow/agenthub";
+import type { LLMOutcome, ThinkingLevelName } from "../src/interfaces.js";
 
 import {
   EventTranslator,
   GenerativeModel,
   ToolCallIdAllocator,
   buildUniConfig,
+  isAuthenticationError,
   isIncompleteStreamError,
   isMalformedJsonParseError,
+  isQuotaExhaustedError,
   isRetryableError,
   mapThinkingLevel,
   mergeOmniToUniMessage,
@@ -1034,7 +1036,7 @@ describe("config helpers", () => {
     expect("parameters" in schemas[1]!).toBe(false);
   });
 
-  it("builds UniConfig with only provided fields", () => {
+  it("builds UniConfig with only provided fields (thinking level stays out — it is per-request)", () => {
     const cfg = buildUniConfig({
       modelId: "claude-sonnet-4-6",
       tools: [{ name: "t", description: "d" }],
@@ -1044,7 +1046,9 @@ describe("config helpers", () => {
     });
     expect(cfg.system_prompt).toBe("You are concise.");
     expect(cfg.max_tokens).toBe(256);
-    expect(cfg.thinking_level).toBe(ThinkingLevel.HIGH);
+    // The thinking level is applied per request (override ?? construction default), never
+    // baked into the frozen config — see the request-config test below.
+    expect("thinking_level" in cfg).toBe(false);
     expect(cfg.tools).toEqual([{ name: "t", description: "d" }]);
 
     const minimal = buildUniConfig({ modelId: "m", tools: [] });
@@ -1095,6 +1099,85 @@ describe("isRetryableError", () => {
     expect(isRetryableError(new Error("request timeout"))).toBe(true);
   });
 
+  it("treats undici transport failures as retryable, probing the cause chain", () => {
+    // Node fetch wraps a dropped connection as TypeError("terminated") with the real code on
+    // `cause` — exactly the field observed: "terminated: other side closed (UND_ERR_SOCKET)".
+    expect(
+      isRetryableError(
+        new TypeError("terminated", {
+          cause: Object.assign(new Error("other side closed"), { code: "UND_ERR_SOCKET" }),
+        }),
+      ),
+    ).toBe(true);
+    expect(isRetryableError({ code: "UND_ERR_SOCKET" })).toBe(true);
+    expect(isRetryableError({ code: "UND_ERR_CONNECT_TIMEOUT" })).toBe(true);
+    expect(isRetryableError({ code: "UND_ERR_HEADERS_TIMEOUT" })).toBe(true);
+    expect(isRetryableError({ code: "UND_ERR_BODY_TIMEOUT" })).toBe(true);
+    // A cause-less "fetch failed" still counts via the message keywords; "terminated" only
+    // counts alongside transport vocabulary — the real socket case always carries the
+    // UND_ERR_* code on its cause, and bare "terminated" appears in unrelated provider
+    // copy too (see the content-filter counter-case below).
+    expect(isRetryableError(new TypeError("fetch failed"))).toBe(true);
+    expect(isRetryableError(new TypeError("terminated: other side closed"))).toBe(true);
+    expect(isRetryableError(new TypeError("terminated"))).toBe(false);
+    // Provider verdict copy that merely contains the word must NOT retry.
+    expect(isRetryableError(new Error("Request terminated by content filter"))).toBe(false);
+    // Classic Node codes wrapped one level down are found too.
+    expect(
+      isRetryableError(
+        new Error("request failed", {
+          cause: Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" }),
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it("treats provider quota/subscription exhaustion as retryable (tight allowlist)", () => {
+    // The field case: a gateway 403 with an OpenAI-compatible body code.
+    expect(isRetryableError({ status: 403, code: "insufficient_user_quota" })).toBe(true);
+    expect(isRetryableError({ status: 403, error: { code: "insufficient_user_quota" } })).toBe(
+      true,
+    );
+    // Anthropic SDK shape: `error` holds the whole response body.
+    expect(
+      isRetryableError({ status: 403, error: { error: { code: "insufficient_quota" } } }),
+    ).toBe(true);
+    expect(isRetryableError({ status: 402, code: "insufficient_quota" })).toBe(true);
+    // Status-less quota code (some gateways surface only the provider code).
+    expect(isRetryableError({ code: "insufficient_user_quota" })).toBe(true);
+    // 403 with a quota/subscription message but no machine-readable code.
+    expect(isRetryableError({ status: 403, message: "no active subscription" })).toBe(true);
+    expect(isRetryableError({ status: 403, message: "订阅额度不足" })).toBe(true);
+    // A plain 403/400/404 without quota signals stays non-retryable.
+    expect(isRetryableError({ status: 403, message: "permission denied" })).toBe(false);
+    expect(isRetryableError({ status: 400, code: "insufficient_user_quota" })).toBe(false);
+    expect(isRetryableError({ status: 404 })).toBe(false);
+    // 401 keeps its auth classification even with a quota-looking message.
+    expect(isRetryableError({ status: 401, message: "quota" })).toBe(false);
+  });
+
+  it("auth wins over the quota heuristic: a definitive credential signal is never retried", () => {
+    // The adversarial case: a 403 whose BODY carries a definitive auth code but whose
+    // MESSAGE mentions a subscription (SDKs routinely put the body's message on
+    // err.message). The quota keyword fallback must not swallow it — auth is checked
+    // first, so it classifies failed (dead credential) instead of burning every reconnect.
+    const err = Object.assign(new Error("subscription key invalid"), {
+      status: 403,
+      error: { code: "invalid_api_key" },
+    });
+    expect(isAuthenticationError(err)).toBe(true);
+    expect(isQuotaExhaustedError(err)).toBe(false); // belt: an auth signal is never quota
+    expect(isRetryableError(err)).toBe(false); // never retried, never reclassified
+    // Same with the auth signal on the cause chain.
+    expect(
+      isRetryableError(
+        new Error("request failed: quota subscription issue", {
+          cause: { status: 403, error: { type: "authentication_error" } },
+        }),
+      ),
+    ).toBe(false);
+  });
+
   it("does not retry abort or unknown local errors", () => {
     const abort = new Error("aborted");
     abort.name = "AbortError";
@@ -1102,6 +1185,76 @@ describe("isRetryableError", () => {
     expect(isRetryableError(new Error("unexpected token in JSON"))).toBe(false);
     expect(isRetryableError(null)).toBe(false);
     expect(isRetryableError(undefined)).toBe(false);
+  });
+});
+
+describe("isQuotaExhaustedError", () => {
+  it("matches only 402/403 (or status-less) errors carrying a known quota code", () => {
+    expect(isQuotaExhaustedError({ status: 403, code: "insufficient_user_quota" })).toBe(true);
+    expect(isQuotaExhaustedError({ status: 402, error: { code: "insufficient_quota" } })).toBe(
+      true,
+    );
+    expect(isQuotaExhaustedError({ code: "insufficient_quota" })).toBe(true);
+    // The code may sit on the cause chain (wrapped by a higher layer).
+    expect(
+      isQuotaExhaustedError(
+        new Error("request failed", {
+          cause: { status: 403, code: "insufficient_user_quota" },
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      isQuotaExhaustedError(
+        Object.assign(new Error("request failed"), {
+          status: 403,
+          cause: { code: "insufficient_user_quota" },
+        }),
+      ),
+    ).toBe(true);
+    // Any other status keeps its own classification.
+    expect(isQuotaExhaustedError({ status: 429, code: "insufficient_quota" })).toBe(false);
+    expect(isQuotaExhaustedError({ status: 401, code: "insufficient_quota" })).toBe(false);
+  });
+
+  it("matches a 403 whose message names quota/subscription, but not a plain 403", () => {
+    expect(isQuotaExhaustedError({ status: 403, message: "monthly quota exceeded" })).toBe(true);
+    expect(isQuotaExhaustedError({ status: 403, message: "订阅额度不足" })).toBe(true);
+    expect(isQuotaExhaustedError({ status: 403, message: "forbidden" })).toBe(false);
+    // The message shortcut is 403-only: a status-less error needs the explicit code.
+    expect(isQuotaExhaustedError({ message: "quota exceeded" })).toBe(false);
+    expect(isQuotaExhaustedError(null)).toBe(false);
+  });
+});
+
+describe("isAuthenticationError", () => {
+  it("classifies HTTP 401 as auth, own or wrapped", () => {
+    expect(isAuthenticationError({ status: 401 })).toBe(true);
+    expect(isAuthenticationError({ statusCode: 401 })).toBe(true);
+    expect(isAuthenticationError(new Error("request failed", { cause: { status: 401 } }))).toBe(
+      true,
+    );
+  });
+
+  it("classifies known auth codes/types and the SDK AuthenticationError class", () => {
+    expect(isAuthenticationError({ code: "invalid_api_key" })).toBe(true);
+    expect(isAuthenticationError({ status: 403, error: { type: "authentication_error" } })).toBe(
+      true,
+    );
+    // Anthropic SDK shape: `error` holds the whole response body.
+    expect(isAuthenticationError({ error: { error: { code: "unauthorized" } } })).toBe(true);
+    class AuthenticationError extends Error {}
+    expect(isAuthenticationError(new AuthenticationError("bad key"))).toBe(true);
+    expect(
+      isAuthenticationError(new Error("request failed", { cause: { code: "invalid_api_key" } })),
+    ).toBe(true);
+  });
+
+  it("does not classify a bare 403 or unrelated failures as auth", () => {
+    expect(isAuthenticationError({ status: 403 })).toBe(false);
+    expect(isAuthenticationError({ status: 400, message: "invalid param" })).toBe(false);
+    expect(isAuthenticationError({ status: 403, code: "insufficient_user_quota" })).toBe(false);
+    expect(isAuthenticationError(new Error("socket hang up"))).toBe(false);
+    expect(isAuthenticationError(null)).toBe(false);
   });
 });
 
@@ -1181,6 +1334,72 @@ describe("isIncompleteStreamError", () => {
   });
 });
 
+describe("GenerativeModel per-request thinking level", () => {
+  // Captures the UniConfig each request goes out with (the openStream seam now receives the
+  // per-request resolved config): the effective level = params.thinkingLevel ?? the
+  // construction default, mapped onto the wire enum; neither → the key stays off the wire.
+  function capturingModel(defaultLevel?: ThinkingLevelName): {
+    model: GenerativeModel;
+    configs: (UniConfig | undefined)[];
+  } {
+    const configs: (UniConfig | undefined)[] = [];
+    class CapturingModel extends GenerativeModel {
+      protected override openStream(
+        _uni: UniMessage,
+        _signal: AbortSignal,
+        config?: UniConfig,
+      ): AsyncIterable<UniEvent> {
+        configs.push(config);
+        return (async function* () {
+          yield ev({
+            content_items: [{ type: "text", text: "ok" }],
+            finish_reason: "stop",
+            usage_metadata: {
+              cached_tokens: 0,
+              prompt_tokens: 1,
+              thoughts_tokens: 0,
+              response_tokens: 1,
+            },
+          });
+        })();
+      }
+    }
+    const model = new CapturingModel({
+      modelId: "claude-sonnet-4-6",
+      tools: [],
+      ...(defaultLevel !== undefined ? { thinkingLevel: defaultLevel } : {}),
+    });
+    return { model, configs };
+  }
+
+  async function drainAll(gen: AsyncGenerator<OmniMessage, LLMOutcome | void>): Promise<void> {
+    let res = await gen.next();
+    while (!res.done) res = await gen.next();
+  }
+
+  it("applies the construction default when no override is given, per request", async () => {
+    const { model, configs } = capturingModel("medium");
+    await drainAll(model.streamGenerate({ newMessages: [userText("hi")] }));
+    expect(configs[0]?.thinking_level).toBe(ThinkingLevel.MEDIUM);
+  });
+
+  it("a per-request override wins for that request only; the default returns afterwards", async () => {
+    const { model, configs } = capturingModel("medium");
+    await drainAll(model.streamGenerate({ newMessages: [userText("a")], thinkingLevel: "high" }));
+    await drainAll(model.streamGenerate({ newMessages: [userText("b")] }));
+    expect(configs[0]?.thinking_level).toBe(ThinkingLevel.HIGH);
+    expect(configs[1]?.thinking_level).toBe(ThinkingLevel.MEDIUM);
+  });
+
+  it("no default and no override: thinking_level stays off the wire; an override still applies", async () => {
+    const { model, configs } = capturingModel();
+    await drainAll(model.streamGenerate({ newMessages: [userText("a")] }));
+    await drainAll(model.streamGenerate({ newMessages: [userText("b")], thinkingLevel: "xhigh" }));
+    expect(configs[0] !== undefined && "thinking_level" in configs[0]).toBe(false);
+    expect(configs[1]?.thinking_level).toBe(ThinkingLevel.XHIGH);
+  });
+});
+
 describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () => {
   // Injects a controlled UniEvent stream through the protected openStream seam to verify the
   // outcome classification of timeout/network-drop/interrupt/error, without needing a real API.
@@ -1198,6 +1417,27 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
   }
 
   const abortError = (): Error => Object.assign(new Error("aborted"), { name: "AbortError" });
+
+  /**
+   * An upstream that IGNORES its AbortSignal: it never yields and never rejects, whatever
+   * happens to the signal. This is the shape that wedged real Sessions (observed with Kimi):
+   * the SDK's stream promise simply never settles, so `await it.next()` hangs forever and the
+   * idle timer cannot rescue it either, because by then `ac` is already aborted and its
+   * `ac.abort()` is a no-op.
+   */
+  async function* deaf(): AsyncGenerator<UniEvent> {
+    await new Promise(() => {}); // never settles, never observes the signal
+  }
+
+  /** Fails the test loudly instead of letting a regression hang the whole suite. */
+  function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+    return Promise.race([
+      p,
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`streamGenerate did not settle within ${ms}ms`)), ms),
+      ),
+    ]);
+  }
 
   // Never yields any event, and only ends with an AbortError once the signal aborts
   // (simulates idle/hanging).
@@ -1242,7 +1482,7 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
     return { messages, outcome: res.value as LLMOutcome };
   }
 
-  it("returns failed (never throws) on a build failure such as empty input", async () => {
+  it("returns failed on a build failure such as empty input (never throws)", async () => {
     const model = new SeamModel((sig) => hang(sig));
     const { messages, outcome } = await drain(model.streamGenerate({ newMessages: [] }));
     expect(outcome.status).toBe("failed"); // A mergeOmniToUniMessage failure converges to failed, never throws
@@ -1365,13 +1605,100 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
     expect(outcome2.status).toBe("malformed");
   });
 
-  it("classifies a non-retryable error as failed with message, no token_usage", async () => {
+  it("a user abort ends the run even when upstream ignores the signal and never settles", async () => {
+    const model = new SeamModel(() => deaf());
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 20); // the user presses Stop mid-request
+    // Without the race this never settles and the Session stays "running" forever.
+    const { outcome } = await withTimeout(
+      drain(model.streamGenerate({ newMessages: [userText("go")], signal: controller.signal })),
+      2000,
+    );
+    expect(outcome.status).toBe("aborted");
+  });
+
+  it("the idle timeout still ends the run when upstream ignores the signal", async () => {
+    const model = new SeamModel(() => deaf(), 50); // 50ms idle budget
+    const { outcome } = await withTimeout(
+      drain(model.streamGenerate({ newMessages: [userText("go")] })),
+      2000,
+    );
+    expect(outcome.status).toBe("timeout");
+  });
+
+  it("classifies a credentials failure as its own terminal status auth; params stay failed", async () => {
     const model = new SeamModel(() => authError());
     const { messages, outcome } = await drain(
       model.streamGenerate({ newMessages: [userText("go")] }),
     );
-    expect(outcome.status).toBe("failed");
+    // 401 = credentials failure: its own stop reason so hosts can gate input until the
+    // model's API key is updated (same engine behavior as failed).
+    expect(outcome.status).toBe("auth");
     expect(outcome.message).toContain("invalid api key");
+    expect(messages.map(typeOf)).not.toContain("token_usage");
+
+    // A genuinely non-retryable parameter error stays a plain failure.
+    async function* paramError(): AsyncGenerator<UniEvent> {
+      throw Object.assign(new Error("unknown parameter: max_output_tokens"), { status: 400 });
+    }
+    const model2 = new SeamModel(() => paramError());
+    const { outcome: outcome2 } = await drain(
+      model2.streamGenerate({ newMessages: [userText("go")] }),
+    );
+    expect(outcome2.status).toBe("failed");
+  });
+
+  it("an auth error dressed in quota language still funnels to status auth", async () => {
+    // The adversarial case from the review: 403 + body code invalid_api_key + a message
+    // mentioning the subscription. Must NOT classify as retryable quota (timeout): the
+    // ordering fix keeps the dead credential out of the reconnect loop entirely.
+    async function* dressedAuthError(): AsyncGenerator<UniEvent> {
+      throw Object.assign(new Error("subscription key invalid"), {
+        status: 403,
+        error: { code: "invalid_api_key" },
+      });
+    }
+    const model = new SeamModel(() => dressedAuthError());
+    const { messages, outcome } = await drain(
+      model.streamGenerate({ newMessages: [userText("go")] }),
+    );
+    expect(outcome.status).toBe("auth");
+    expect(outcome.message).toContain("subscription key invalid");
+    expect(messages.map(typeOf)).not.toContain("token_usage");
+  });
+
+  it("classifies provider quota exhaustion (403 + code) as timeout — the reconnect path", async () => {
+    async function* quotaError(): AsyncGenerator<UniEvent> {
+      throw Object.assign(new Error("订阅额度不足 no active subscription"), {
+        status: 403,
+        code: "insufficient_user_quota",
+      });
+    }
+    const model = new SeamModel(() => quotaError());
+    const { messages, outcome } = await drain(
+      model.streamGenerate({ newMessages: [userText("go")] }),
+    );
+    expect(outcome.status).toBe("timeout");
+    // The real reason rides on the outcome (request_end -> the Cost center's errors panel
+    // shows it): a retried quota rejection must not surface as a bare "timeout".
+    expect(outcome.message).toContain("insufficient_user_quota");
+    expect(messages.map(typeOf)).not.toContain("token_usage");
+  });
+
+  it("classifies an undici transport drop (TypeError terminated, cause UND_ERR_SOCKET) as timeout", async () => {
+    async function* socketDrop(): AsyncGenerator<UniEvent> {
+      yield ev({ content_items: [{ type: "text", text: "hi" }] });
+      throw new TypeError("terminated", {
+        cause: Object.assign(new Error("other side closed"), { code: "UND_ERR_SOCKET" }),
+      });
+    }
+    const model = new SeamModel(() => socketDrop());
+    const { messages, outcome } = await drain(
+      model.streamGenerate({ newMessages: [userText("go")] }),
+    );
+    expect(outcome.status).toBe("timeout");
+    const complete = messages.find((m) => typeOf(m) === "text");
+    expect((complete!.payload as TextPayload).stop_reason).toBe("timeout");
     expect(messages.map(typeOf)).not.toContain("token_usage");
   });
 

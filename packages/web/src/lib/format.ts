@@ -22,13 +22,21 @@ export function humanizeTokens(n: number): string {
   return `${trimZero(n / 1_000_000)}M`;
 }
 
-/** Convert milliseconds to a human-readable duration: `820ms`, `2.3s`, `1m3s`. */
-export function humanizeDuration(ms: number): string {
+/**
+ * Convert milliseconds to a human-readable duration: `820ms`, `2.3s`, `1m3s`.
+ * `compact` (narrow screens): seconds from 10s up drop the tenths (`12s`, not `12.7s` — at that
+ * scale the decimal no longer carries information worth the width); below 10s the tenth is
+ * significant and stays (`1.7s`), ms and minute forms are already whole-numbered.
+ */
+export function humanizeDuration(ms: number, opts?: { compact?: boolean }): string {
   if (ms < 1000) return `${Math.round(ms)}ms`;
   const s = ms / 1000;
-  if (s < 60) return `${trimZero(s)}s`;
-  const m = Math.floor(s / 60);
-  return `${m}m${Math.round(s % 60)}s`;
+  if (s < 60 && !(opts?.compact && s >= 10)) return `${trimZero(s)}s`;
+  // Every whole-second form rounds the total before splitting it: rounding the remainder
+  // while flooring the minutes lets 119.7s print as `1m60s` instead of `2m0s`.
+  const whole = Math.round(s);
+  if (whole < 60) return `${whole}s`;
+  return `${Math.floor(whole / 60)}m${whole % 60}s`;
 }
 
 /**
@@ -98,16 +106,22 @@ export function formatPercent(ratio: number | null | undefined): string {
  * Cost display (converted to the selected currency; prices are stored in
  * USD): null/undefined → `—`; 1 USD ≈ 7 CNY; decimal places scale with
  * magnitude (≥100 rounds to an integer, ≥1 uses two places, otherwise four).
+ * `compact` (narrow screens): sub-unit amounts keep 2 significant digits
+ * instead of 4 fixed decimals (`$0.1234` → `$0.12`, `$0.0012` stays
+ * `$0.0012`) — significant digits, not fixed decimals, so a nonzero cost is
+ * never rounded down to zero; amounts ≥ 1 are already short and unchanged.
  */
 export function formatMoney(
   usd: number | null | undefined,
   currency: "USD" | "CNY" = "USD",
+  opts?: { compact?: boolean },
 ): string {
   if (usd == null) return "—";
   const symbol = currency === "CNY" ? "¥" : "$";
   const v = currency === "CNY" ? usd * 7 : usd;
   if (v === 0) return `${symbol}0`;
   const abs = Math.abs(v);
+  if (opts?.compact && abs < 1) return `${symbol}${Number(v.toPrecision(2))}`;
   const digits = abs >= 100 ? 0 : abs >= 1 ? 2 : 4;
   return `${symbol}${v.toFixed(digits)}`;
 }
@@ -117,12 +131,21 @@ export function formatScore(n: number): string {
   return Number.isInteger(n) ? `${n}` : trimZero(n);
 }
 
+/** True while the one-decimal rendering of `v` still fits its unit: 1023.9 does, 1023.99 does not. */
+function fitsUnit(v: number): boolean {
+  return Number(v.toFixed(1)) < 1024;
+}
+
 /** Abbreviate a byte count: `812B`, `3.4KB`, `1.2MB`. */
 export function formatBytes(n: number): string {
   if (n < 1024) return `${n}B`;
-  if (n < 1024 * 1024) return `${trimZero(n / 1024)}KB`;
-  if (n < 1024 * 1024 * 1024) return `${trimZero(n / (1024 * 1024))}MB`;
-  return `${trimZero(n / (1024 * 1024 * 1024))}GB`;
+  // The unit is picked from the rounded value, not the raw one: 1048570 renders as `1024.0`
+  // KB at one decimal, which has to carry into `1MB` rather than print an out-of-range unit.
+  const kb = n / 1024;
+  if (fitsUnit(kb)) return `${trimZero(kb)}KB`;
+  const mb = kb / 1024;
+  if (fitsUnit(mb)) return `${trimZero(mb)}MB`;
+  return `${trimZero(mb / 1024)}GB`;
 }
 
 function pad2(n: number): string {
@@ -134,6 +157,42 @@ export function formatDateTime(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
+/** English month abbreviations for formatMonthDay (Intl-free — see the rationale there). */
+const EN_MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+] as const;
+
+/**
+ * `yyyy-mm-dd` (or a full ISO timestamp — only the date part is read) → localized
+ * month + day, no year: en `Jul 26`, zh `7 月 26 日` (the version footer's "last
+ * updated" date, product-specified wording — the zh form keeps the CJK/numeral
+ * spacing the owner asked for, which `Intl` would drop). The fields are read
+ * straight from the string rather than via `new Date()` + local-zone formatting:
+ * the input is a UTC calendar date (core's stamped BUILD_DATE, a release's
+ * publish timestamp), and round-tripping it through the viewer's timezone would
+ * render the previous day west of UTC. Unparsable or out-of-range input returns
+ * unchanged (same convention as formatDateTime).
+ */
+export function formatMonthDay(iso: string, locale: "zh" | "en"): string {
+  const m = /^\d{4}-(\d{2})-(\d{2})(?:$|T)/.exec(iso);
+  if (!m) return iso;
+  const month = Number(m[1]);
+  const day = Number(m[2]);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return iso;
+  return locale === "en" ? `${EN_MONTHS[month - 1]} ${day}` : `${month} 月 ${day} 日`;
 }
 
 /**

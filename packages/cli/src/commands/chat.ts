@@ -4,8 +4,9 @@
  *   penguin chat [--model-id <id> --provider <group>] [--project-id <id>] [--agent-id <id>]
  *                [--workspace <path>] [--approve <allow-all|deny-all|read-only|always-ask>]
  *
- * Each line of input starts one conversation turn; `/compact` proactively compacts the
- * context (reason=manual); `/exit` or `/quit` exits.
+ * Each line of input starts one conversation turn; `/goal[:<budget>] <objective>` runs
+ * goal mode (looping until the goal reaches a terminal state);
+ * `/compact` proactively compacts the context (reason=manual); `/exit` or `/quit` exits.
  * Uses the current directory when no Workspace is specified. A model reference is always an
  * explicit `(provider, model_id)` pair, so `--model-id` and `--provider` must be given
  * together; giving neither uses the Project's default model.
@@ -26,10 +27,11 @@
  */
 import { createInterface, type Interface } from "node:readline";
 import type { Command } from "commander";
-import { createAgent, userText } from "@prismshadow/penguin-core";
+import { createAgent, userText, VERSION } from "@prismshadow/penguin-core";
 import type { ApprovalDecision, OmniMessage, ToolCallPayload } from "@prismshadow/penguin-core";
-import { StreamRenderer, dim, renderHistory } from "../render.js";
+import { StreamRenderer, dim, renderHistory, sessionMetaTools } from "../render.js";
 import { runTask } from "../task-loop.js";
+import { parseGoalCommand } from "../goal-command.js";
 import { parseApprovalAnswer, resolveApprovalMode } from "../approval.js";
 import { LineComposer, PasteFilter } from "../input.js";
 import type { Messages } from "../i18n.js";
@@ -113,9 +115,11 @@ export function registerChatCommand(program: Command, t: Messages): void {
       }
 
       const renderer = new StreamRenderer(out, t);
+      // The assembled tool schemas decide each tool's call-line preview path (see render.ts).
+      renderer.useToolSchemas(sessionMetaTools(session));
 
       out.write(
-        `${t.header("chat", agent.state.agentId, session.workspaceDir, session.modelId)}\n` +
+        `${t.header("chat", VERSION, agent.state.agentId, session.workspaceDir, session.modelId)}\n` +
           `${t.chatHints()}\n`,
       );
       // On resume, first render the history messages of the current context per Trace
@@ -123,7 +127,7 @@ export function registerChatCommand(program: Command, t: Messages): void {
       // regular input.
       if (session.resumedHistory) {
         out.write(`${t.resumedBanner(session.sessionId, session.resumedHistory.length)}\n`);
-        renderHistory(session.resumedHistory, out);
+        renderHistory(session.resumedHistory, out, t);
       }
 
       // TTY: raw mode + bracketed paste + PasteFilter; non-TTY (pipe/test): read stdin directly.
@@ -146,11 +150,26 @@ export function registerChatCommand(program: Command, t: Messages): void {
       const rli = rl as unknown as RlInternals;
       const composer = new LineComposer();
 
+      // Typing lock (owner directive): while the user is composing a line mid-run, streamed
+      // output must not scribble over it — the renderer holds (queues) output while the input
+      // buffer is non-empty and flushes once the line is submitted or cleared. Synced after
+      // readline has processed each chunk (setImmediate: listener order is not guaranteed);
+      // TTY only — non-TTY input (pipe/tests) has no echoed line to protect. The approval
+      // prompt has its own lock (beginUserPrompt), so the hold applies to "running" only.
+      const syncInputHold = (): void => {
+        renderer.setInputHold(state === "running" && rli.line.length > 0);
+      };
+      if (isTTY) {
+        inputStream.on("data", () => setImmediate(syncInputHold));
+      }
+
       let state: ChatState = "idle";
       let closed = false;
       let taskAbort: AbortController | null = null;
       let pendingLine: ((line: string | null) => void) | null = null;
       let pendingApproval: ((decision: ApprovalDecision) => void) | null = null;
+      /** A line typed in the running->idle race window (steer refused): becomes the next prompt instead of being dropped. */
+      let queuedPrompt: string | null = null;
 
       const cleanup = () => {
         if (!isTTY) return;
@@ -219,8 +238,24 @@ export function registerChatCommand(program: Command, t: Messages): void {
           pendingApproval = null;
           // Tool approval defaults to allow: pressing Enter (empty input) is treated as allow.
           resolve(parseApprovalAnswer(line, "allow"));
+          return;
         }
-        // running: ignore any line typed at this moment.
+        // running: a non-empty line becomes a steering message for the running Task — core
+        // delivers it between turns as a standalone [user_steering] user message, so the
+        // model sees it without the loop being interrupted. Empty lines are still ignored.
+        // steer() returning false (race: the task just finished) must not drop the line:
+        // it is stashed and becomes the next normal prompt as soon as the loop asks again.
+        if (state === "running") {
+          const text = line.trim();
+          if (text.length === 0) return;
+          if (session.steer(text)) {
+            // Printed via the renderer while the typing hold is still engaged, so the ack
+            // lands before the held stream output flushes underneath it.
+            renderer.printLine(dim(t.steerQueued(text)));
+          } else {
+            queuedPrompt = text;
+          }
+        }
       });
 
       rl.on("SIGINT", () => {
@@ -268,6 +303,15 @@ export function registerChatCommand(program: Command, t: Messages): void {
         new Promise((resolve) => {
           if (closed) {
             resolve(null);
+            return;
+          }
+          // A line typed in the running->idle race window (steer refused): submit it as this
+          // prompt immediately — the text is already echoed on screen, no re-prompt needed.
+          if (queuedPrompt !== null) {
+            const line = queuedPrompt;
+            queuedPrompt = null;
+            state = "idle";
+            resolve(line);
             return;
           }
           state = "idle";
@@ -333,6 +377,25 @@ export function registerChatCommand(program: Command, t: Messages): void {
                 renderer.endCompact(Date.now() - startedAt);
               }
               if (!sawMessage) out.write(`${t.compactNothing()}\n`);
+            } else if (text === "/goal" || text.startsWith("/goal:") || text.startsWith("/goal ")) {
+              // Goal mode: one command drives the whole loop; Ctrl-C aborts the entire
+              // goal (a single signal spans every round), never just the current round.
+              const parsed = parseGoalCommand(text);
+              if (!parsed.ok) {
+                const message =
+                  parsed.reason === "budget" ? t.goalBudgetInvalid(parsed.value) : t.goalUsage();
+                out.write(`${t.error(message)}\n`);
+              } else {
+                resumable = true;
+                await runTask(session, [userText(parsed.objective)], {
+                  mode,
+                  signal: taskAbort.signal,
+                  renderer,
+                  interactivePrompt,
+                  t,
+                  goal: { budget: parsed.budget, out },
+                });
+              }
             } else {
               resumable = true;
               await runTask(session, [userText(text)], {

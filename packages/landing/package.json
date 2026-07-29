@@ -1,6 +1,6 @@
 {
   "name": "@prismshadow/penguin-landing",
-  "version": "0.1.1",
+  "version": "0.1.4",
   "private": true,
   "type": "module",
   "description": "PenguinHarness landing page (React + Vite + Tailwind CSS): multilingual, light/dark themes, benchmark showcase, and a local Markdown blog, deployed to GitHub Pages via GitHub Actions.",
@@ -10,13 +10,15 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
-    "shots": "node scripts/capture-shots.mjs"
+    "shots": "node scripts/capture-shots.mjs",
+    "blog-shots": "node scripts/capture-blog-shots.mjs",
+    "blog-013-shots": "node scripts/capture-blog-013-shots.mjs"
   },
   "dependencies": {
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-markdown": "^10.1.0",
-    "react-router": "^7.6.0",
+    "react-router": "^8.3.0",
     "rehype-raw": "^7.0.0",
     "remark-gfm": "^4.0.0"
   },
@@ -30,6 +32,6 @@
     "tailwindcss": "^4.1.0",
     "typescript": "^5.6.0",
     "vite": "^7.0.0",
-    "vitest": "^2.1.0"
+    "vitest": "^3.2.6"
   }
 }

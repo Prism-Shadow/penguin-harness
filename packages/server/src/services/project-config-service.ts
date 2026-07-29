@@ -121,6 +121,20 @@ export class ProjectConfigService {
     return projectConfigPath(this.root, projectId);
   }
 
+  /**
+   * When the Project config (models/credentials) last changed: the config file's mtime as
+   * ISO — an honest persistent source that survives server restarts (every models update
+   * rewrites the file). undefined when the file doesn't exist yet.
+   */
+  private async configUpdatedAt(projectId: string): Promise<string | undefined> {
+    try {
+      const st = await fs.stat(this.filePath(projectId));
+      return st.mtime.toISOString();
+    } catch {
+      return undefined;
+    }
+  }
+
   /** Reads the raw TOML object; returns an empty object if the file doesn't exist (does not write to disk). */
   async readRaw(projectId: string): Promise<RawTable> {
     let raw: string;
@@ -390,9 +404,11 @@ export class ProjectConfigService {
       provider: ref.provider,
       modelId: ref.model_id,
     });
+    const updatedAt = await this.configUpdatedAt(projectId);
     return {
       ...(defaultRef !== undefined ? { defaultModel: toDto(defaultRef) } : {}),
       ...(visionRef !== undefined ? { visionModel: toDto(visionRef) } : {}),
+      ...(updatedAt !== undefined ? { updatedAt } : {}),
       models,
     };
   }

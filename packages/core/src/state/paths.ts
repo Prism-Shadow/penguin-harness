@@ -29,9 +29,17 @@ export function projectDir(root: string, projectId: string): string {
   return path.join(root, projectId);
 }
 
+/**
+ * `<projectDir>/agents` from an already-resolved Project directory path — the single
+ * definition point of the agents-container layout.
+ */
+export function agentsDirFrom(projectDirPath: string): string {
+  return path.join(projectDirPath, "agents");
+}
+
 /** `<projectDir>/agents`, the container directory holding every Agent in the Project. */
 export function agentsDir(root: string, projectId: string): string {
-  return path.join(projectDir(root, projectId), "agents");
+  return agentsDirFrom(projectDir(root, projectId));
 }
 
 /** `<projectDir>/agents/<agentId>`. */
@@ -57,6 +65,19 @@ export function scratchpadDir(root: string, projectId: string, agentId: string):
 /** `<agentDir>/workspaces`. */
 export function workspacesDir(root: string, projectId: string, agentId: string): string {
   return path.join(agentDir(root, projectId, agentId), "workspaces");
+}
+
+/**
+ * `<agentDir>/scratchpad/<sessionId>/GOAL.yaml`, the goal-mode control file of one Session
+ * (sibling of the model's PLAN.md convention; see goal/goal-file.ts for field ownership).
+ */
+export function goalFilePath(
+  root: string,
+  projectId: string,
+  agentId: string,
+  sessionId: string,
+): string {
+  return path.join(scratchpadDir(root, projectId, agentId), sessionId, "GOAL.yaml");
 }
 
 /**

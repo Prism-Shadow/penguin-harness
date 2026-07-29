@@ -21,13 +21,15 @@
  * - when the head of the queue is held, the holder's own subsequent messages are let
  *   through first (preserving in-segment order), avoiding deadlock.
  *
- * **Pairing tags**: a tool call and its output may be separated by several segments, so
- * both are tagged with a shared word for pairing: the call line reads
- * `[tool-653] $ cmd`, the output line `[tool-653] >> ...` (653 being the last 3
- * characters of tool_call_id); nested (subagent) tools use
- * `[agent-f2a-tool-653] $ cmd` (f2a being the last 3 characters of the direct child
- * Session id). Approval lines carry no tag (they immediately follow the matching call
- * line, so context makes the pairing clear): `[approved]`.
+ * **Call/output pairing**: both sides carry the same `[tool-653] <toolName>` prefix
+ * (653 being the last 3 characters of tool_call_id) — the call line reads
+ * `[tool-653] exec_command <- $ cmd`, each output line `[tool-653] exec_command -> ...`;
+ * nested (subagent) tools use `[agent-f2a-tool-653] …` (f2a being the last 3 characters
+ * of the direct child Session id). The output-side tool name is resolved from the
+ * preceding call via a tool_call_id → name map (the call always precedes its output; if
+ * no call was seen, the bare `[tool-653]` tag remains). Approval lines carry no tag
+ * (they immediately follow the matching call line, so context makes the pairing clear):
+ * `[approved]`.
  *
  * **Nested sub-session messages** (those carrying an origin) are handled separately:
  * child tool calls (so the user can see what the subagent is calling before approval)
@@ -38,7 +40,7 @@
  *
  * No third-party color library is used; only minimal ANSI escapes.
  */
-import { isEventMessage, isModelMessage } from "@prismshadow/penguin-core";
+import { isEventMessage, isModelMessage, parseUserSteeringText } from "@prismshadow/penguin-core";
 import type {
   AbortPayload,
   ApprovalDecision,
@@ -52,19 +54,36 @@ import type {
   PartialToolCallPayload,
   PartialToolCallOutputPayload,
   RequestEndPayload,
+  SessionMetaPayload,
+  TextPayload,
   TokenUsagePayload,
   ToolCallPayload,
+  ToolDefinition,
 } from "@prismshadow/penguin-core";
-import { renderPartialToolCall } from "./tool-render.js";
+import { renderFileToolApprovalPayload, renderPartialToolCall } from "./tool-render.js";
 import { defaultMessages } from "./i18n.js";
 import type { Messages } from "./i18n.js";
 
 const DIM = "\x1b[2m";
+const GREEN = "\x1b[32m";
+const RED = "\x1b[31m";
 const CYAN = "\x1b[36m";
+const MAGENTA = "\x1b[35m";
 const RESET = "\x1b[0m";
 
 export function dim(text: string): string {
   return `${DIM}${text}${RESET}`;
+}
+
+/** The two file tools whose outputs carry git-style diffs; their `+`/`-`/`@@` lines get colored. */
+const DIFF_OUTPUT_TOOLS = new Set(["edit_file", "write_file"]);
+
+/** Color for one diff-output line, picked from its first character (null = plain). */
+function diffLineColor(firstChar: string | undefined): string | null {
+  if (firstChar === "+") return GREEN;
+  if (firstChar === "-") return RED;
+  if (firstChar === "@") return DIM;
+  return null;
 }
 
 /** Colors a tool call line cyan, distinguishing it from body text/thinking (review comment #5). */
@@ -115,12 +134,23 @@ function humanizeDuration(ms: number): string {
   if (ms < 1000) return `${Math.round(ms)}ms`;
   const s = ms / 1000;
   if (s < 60) return `${trimZero(s)}s`;
-  const m = Math.floor(s / 60);
-  return `${m}m${Math.round(s % 60)}s`;
+  // The minute form rounds the total before splitting it: rounding the remainder while
+  // flooring the minutes lets 119.7s print as `1m60s` instead of `2m0s`.
+  const whole = Math.round(s);
+  return `${Math.floor(whole / 60)}m${whole % 60}s`;
 }
 
 export function formatAbort(p: AbortPayload, t: Messages): string {
   return dim(t.abortLabel(p.reason ?? undefined));
+}
+
+/**
+ * The Session's assembled tool schemas, read off its `session_meta` — the definitions
+ * actually exposed to the model, so the per-tool `call_description` switch is already
+ * applied. Feeds `StreamRenderer.useToolSchemas`.
+ */
+export function sessionMetaTools(session: { metaMessage: OmniMessage }): readonly ToolDefinition[] {
+  return (session.metaMessage.payload as SessionMetaPayload).tools ?? [];
 }
 
 /**
@@ -135,6 +165,10 @@ export function renderHistory(
   out: NodeJS.WritableStream,
   t: Messages = defaultMessages(),
 ): void {
+  // tool_call_id -> tool name (keyed with the origin chain: parent/child ids may collide),
+  // so output lines can be labeled with the tool name of their preceding call.
+  const toolNames = new Map<string, string>();
+  const nameKey = (msg: OmniMessage, id: string): string => `${msg.origin?.join("/") ?? ""}:${id}`;
   for (const msg of messages) {
     if (isEventMessage(msg)) {
       const p = msg.payload as { type?: string } & AbortPayload;
@@ -157,8 +191,18 @@ export function renderHistory(
     const marker = p.stop_reason && p.stop_reason !== "completed" ? dim(` [${p.stop_reason}]`) : "";
     switch (p.type) {
       case "text":
-        if (p.role === "user") out.write(`\n> ${p.text ?? ""}\n`);
-        else out.write(`${p.text ?? ""}${marker}\n`);
+        if (p.role === "user") {
+          // Mid-run steering ([user_steering]-wrapped user text delivered between turns):
+          // rendered as distinct user-speech lines instead of a raw marker block or a prompt.
+          const steering = parseUserSteeringText(p.text ?? "");
+          if (steering !== null) {
+            writeSteeringLines(out, steering, t);
+          } else {
+            out.write(`\n> ${p.text ?? ""}\n`);
+          }
+        } else {
+          out.write(`${p.text ?? ""}${marker}\n`);
+        }
         break;
       case "image_url":
         out.write(`\n> ${dim("[image]")}\n`);
@@ -167,25 +211,44 @@ export function renderHistory(
         out.write(`${dim(p.thinking ?? "")}${marker}\n`);
         break;
       case "tool_call": {
+        if (p.name) toolNames.set(nameKey(msg, p.tool_call_id ?? ""), p.name);
         const preview =
-          renderPartialToolCall(p.name ?? "", p.arguments ?? "") ?? `${p.name} ${p.arguments}`;
+          renderPartialToolCall(p.name ?? "", p.arguments ?? "", { final: true }) ??
+          `${p.name} ${p.arguments}`;
         out.write(`${cyan(`[${callTag(p.tool_call_id ?? "")}] ${preview}`)}${marker}\n`);
         break;
       }
       case "tool_call_output": {
-        const tag = callTag(p.tool_call_id ?? "");
+        // Output lines carry the pairing tag plus the tool name (the bare tag when the
+        // transcript has no matching call); file-tool diff lines are colored like git's.
+        const tag = `[${callTag(p.tool_call_id ?? "")}]`;
+        const name = toolNames.get(nameKey(msg, p.tool_call_id ?? ""));
+        const label = name ? `${tag} ${name}` : tag;
+        const colorDiff = name !== undefined && DIFF_OUTPUT_TOOLS.has(name);
         for (const line of (p.output ?? "").split("\n")) {
-          out.write(`${DIM}[${tag}] >> ${RESET}${line}\n`);
+          const color = colorDiff ? diffLineColor(line[0]) : null;
+          out.write(
+            color
+              ? `${DIM}${label} -> ${RESET}${color}${line}${RESET}\n`
+              : `${DIM}${label} -> ${RESET}${line}\n`,
+          );
         }
         // Attached images aren't rendered by the terminal; print one placeholder line per image.
         for (const _ of p.images ?? []) {
-          out.write(`${DIM}[${tag}] >> [image]${RESET}\n`);
+          out.write(`${DIM}${label} -> [image]${RESET}\n`);
         }
         break;
       }
       default:
         break; // inline_data / inline_thinking etc.: not shown in static history rendering for now
     }
+  }
+}
+
+/** Writes a steering message's lines with the colored user prefix (shared by history rendering and the streaming renderer). */
+function writeSteeringLines(out: NodeJS.WritableStream, text: string, t: Messages): void {
+  for (const line of text.split("\n")) {
+    out.write(`${MAGENTA}${t.steerLinePrefix()}${line}${RESET}\n`);
   }
 }
 
@@ -204,6 +267,13 @@ export class StreamRenderer {
   private holder: string | null = null;
   /** Awaiting user input (approval prompt): locks the screen, all messages queue up. */
   private promptActive = false;
+  /**
+   * The user is composing an input line mid-run (chat REPL): streaming output must not
+   * scribble over the half-typed line, so rendering is held (messages queue up) until the
+   * line is submitted or cleared (see `setInputHold`). Independent of the approval-prompt
+   * lock — approval answers use `beginUserPrompt`/`endUserPrompt`.
+   */
+  private inputHold = false;
   /** Key of the call the current interactive prompt belongs to (the tool_call passed to beginUserPrompt); null = unattached. */
   private promptKey: string | null = null;
   /**
@@ -238,6 +308,22 @@ export class StreamRenderer {
   private inDim = false;
   /** Whether tool-call output is at the start of a line (decides whether the gutter needs to be written). */
   private toolOutLineStart = true;
+
+  /**
+   * tool_call_id -> tool name for the current task's parent-session calls (nested tool
+   * outputs are not gutter-rendered), so output lines can be prefixed with the tool name
+   * of the call that produced them. Populated from partial/complete call messages (the
+   * call always precedes its output); cleared with the other per-task registrations.
+   */
+  private toolNames = new Map<string, string>();
+  /**
+   * Names of the tools whose assembled schema carries the `description` argument (from
+   * `session_meta.tools`, i.e. after the per-tool `call_description` switch has been
+   * applied). Decides the preview path before a call's arguments stream: awaiting the
+   * description, or streaming the plain form right away (see tool-render.ts). An unknown
+   * tool falls back to "no description".
+   */
+  private describedTools = new Set<string>();
   /** Buffer for partial_tool_call; each delta streams out the newly appended suffix of the preview. */
   private partialToolCalls = new Map<
     string,
@@ -292,8 +378,8 @@ export class StreamRenderer {
    */
   private taskFirstTsMs: number | null = null;
   private taskLastReqEndMs: number | null = null;
-  /** Terminal state (timeout/malformed) of the previous request: the next request_begin is a retry, at which point a notice is printed. */
-  private pendingRetry: "timeout" | "malformed" | null = null;
+  /** Retryable terminal state (failed/timeout/malformed) of the previous request: the next request_begin is a retry, at which point a notice is printed. */
+  private pendingRetry: "failed" | "timeout" | "malformed" | null = null;
   /** Number of retries already initiated (increments on consecutive failures, reset once a request completes normally). */
   private reconnectRun = 0;
 
@@ -318,6 +404,21 @@ export class StreamRenderer {
   beginUserPrompt(toolCall?: OmniMessage<ToolCallPayload>): void {
     if (toolCall) this.ensureAdjacentCallLine(toolCall);
     this.finishLine();
+    // File-tool approvals: the one-line preview shows only the (shortened) path, but the
+    // user is approving a concrete rewrite — print the decoded payload
+    // (old_string/new_string/content), bounded with an explicit elision note, right before
+    // the prompt.
+    if (toolCall) {
+      const payload = renderFileToolApprovalPayload(
+        toolCall.payload.name,
+        toolCall.payload.arguments,
+      );
+      if (payload !== null) {
+        for (const line of payload.split("\n")) this.out.write(`${dim(line)}\n`);
+        // lastLineKey stays on the call's key: the payload lines belong to this call, so
+        // the later noteApprovalDecision must not re-render the call line as "not adjacent".
+      }
+    }
     this.promptActive = true;
     this.promptKey = toolCall
       ? this.callLineKey(toolCall.payload.tool_call_id, toolCall.origin)
@@ -384,10 +485,37 @@ export class StreamRenderer {
     key: string,
   ): void {
     this.ensuredCallLines.add(key);
-    const preview = renderPartialToolCall(p.name, p.arguments) ?? `${p.name} ${p.arguments}`;
+    // Parent-session calls feed the output-gutter name map (nested outputs are not
+    // gutter-rendered, and a child id could collide with a parent id).
+    if (!origin || origin.length === 0) this.toolNames.set(p.tool_call_id, p.name);
+    const preview =
+      renderPartialToolCall(p.name, p.arguments, { final: true }) ?? `${p.name} ${p.arguments}`;
     this.finishLine();
     this.out.write(`${cyan(`[${callTag(p.tool_call_id, origin)}] ${preview}`)}\n`);
     this.lastLineKey = key;
+  }
+
+  /**
+   * Chat REPL typing hold: while the user is composing a line mid-run, hold rendering so
+   * streamed output doesn't scribble over the input; releasing flushes everything queued in
+   * the meantime. Idempotent; `endTask` force-releases it as a safety net.
+   */
+  setInputHold(active: boolean): void {
+    if (this.inputHold === active) return;
+    this.inputHold = active;
+    if (!active) this.drain();
+  }
+
+  /**
+   * Writes one standalone line through the renderer at the current position (finishing any
+   * open streamed line first). Meant for host notices tied to the input flow — e.g. the chat
+   * REPL's steering acknowledgment — printed while the screen is held so they don't
+   * interleave with streamed output.
+   */
+  printLine(text: string): void {
+    this.finishLine();
+    this.out.write(`${text}\n`);
+    this.lastLineKey = null;
   }
 
   /** User interaction ends: unlocks the screen, first renders approval results deferred during the lock, then drains the queue. */
@@ -435,7 +563,7 @@ export class StreamRenderer {
     if (this.draining) return;
     this.draining = true;
     try {
-      while (!this.promptActive && this.pending.length > 0) {
+      while (!this.promptActive && !this.inputHold && this.pending.length > 0) {
         if (this.holder === null) {
           const msg = this.pending.shift()!;
           const owner = this.streamOwner(msg);
@@ -450,7 +578,7 @@ export class StreamRenderer {
         const keep: OmniMessage[] = [];
         let progressed = false;
         for (let i = 0; i < this.pending.length; i++) {
-          if (this.promptActive || this.holder === null) {
+          if (this.promptActive || this.inputHold || this.holder === null) {
             keep.push(...this.pending.slice(i));
             break;
           }
@@ -500,7 +628,29 @@ export class StreamRenderer {
         case "partial_tool_call_output":
           this.handlePartialToolOutput(payload as PartialToolCallOutputPayload);
           return;
-        // Complete (non-streaming) model_msg is never rendered (including image_url/inline_*); the content has already been shown by partial_*.
+        // Complete (non-streaming) model_msg is never rendered (including image_url/inline_*);
+        // the content has already been shown by partial_*. A complete tool_call still feeds
+        // the name map so its output gutter can carry the tool name.
+        case "tool_call": {
+          const p = payload as ToolCallPayload;
+          this.toolNames.set(p.tool_call_id, p.name);
+          return;
+        }
+        case "text": {
+          // Another exception: a mid-run steering message ([user_steering]-wrapped user text
+          // delivered between turns) has no streamed copy — it is rendered here, in the
+          // steering style.
+          const p = payload as TextPayload;
+          if (p.role === "user") {
+            const steering = parseUserSteeringText(p.text);
+            if (steering !== null) {
+              this.finishLine();
+              writeSteeringLines(this.out, steering, this.t);
+              this.lastLineKey = null;
+            }
+          }
+          return;
+        }
         default:
           return;
       }
@@ -543,8 +693,8 @@ export class StreamRenderer {
         this.out.write(`${formatAbort(payload as AbortPayload, this.t)}\n`);
         this.lastLineKey = null;
       } else if (payload.type === "request_begin") {
-        // The previous request ended in timeout/malformed -> this request is a retry
-        // carrying <turn_retried>: printed when the retry **actually starts** (when
+        // The previous request ended in a retryable status -> this request is a retry
+        // carrying [turn_retried]: printed when the retry **actually starts** (when
         // retries are exhausted, there's no retry after the last failure, only an abort
         // explaining why).
         if (this.pendingRetry) {
@@ -570,7 +720,10 @@ export class StreamRenderer {
             this.hasUsage = true;
           }
         }
-        if (p.status === "timeout" || p.status === "malformed") {
+        // Every status the engine reconnects on, `failed` included — only `auth` is terminal.
+        // Leaving `failed` out would print nothing for a retry that is really happening, and
+        // reset the counter mid-ladder so a mixed run renumbers back to retry #1.
+        if (p.status === "failed" || p.status === "timeout" || p.status === "malformed") {
           this.pendingRetry = p.status;
         } else {
           this.pendingRetry = null;
@@ -603,7 +756,26 @@ export class StreamRenderer {
       }
       return;
     }
-    // session_meta: not rendered.
+    // session_meta: not rendered, but its tool list settles each tool's preview path.
+    if (msg.type === "session_meta") {
+      this.useToolSchemas((msg.payload as SessionMetaPayload).tools);
+    }
+  }
+
+  /**
+   * Registers the Session's assembled tool schemas (`session_meta.tools`), which decide each
+   * tool's preview path before its arguments stream (see `describedTools`). The host calls
+   * this as soon as the Session exists; a `session_meta` flowing through the stream (resume,
+   * sub-sessions) registers the same way.
+   */
+  useToolSchemas(tools: readonly ToolDefinition[]): void {
+    for (const tool of tools) {
+      const properties = (tool.parameters as { properties?: Record<string, unknown> } | undefined)
+        ?.properties;
+      if (properties && Object.hasOwn(properties, "description"))
+        this.describedTools.add(tool.name);
+      else this.describedTools.delete(tool.name);
+    }
   }
 
   /**
@@ -677,6 +849,25 @@ export class StreamRenderer {
     }
   }
 
+  /**
+   * Renders a call line whose preview was withheld for the whole stream (the arguments never
+   * settled — e.g. the turn was interrupted mid-arguments — so a description could still have
+   * arrived, see tool-render.ts). Called once at `stop` with the fragment marked final, so an
+   * in-flight call is never left invisible.
+   */
+  private renderWithheldCallLine(
+    toolCallId: string,
+    partial: { name: string; arguments: string },
+  ): void {
+    const key = this.callLineKey(toolCallId);
+    if (this.ensuredCallLines.has(key)) return;
+    const preview = renderPartialToolCall(partial.name, partial.arguments, { final: true });
+    if (preview === null) return;
+    this.finishLine();
+    this.out.write(`${cyan(`[${callTag(toolCallId)}] ${preview}`)}\n`);
+    this.lastLineKey = key;
+  }
+
   private handlePartialToolCall(p: PartialToolCallPayload): void {
     // The call line was already rendered in place from the complete message at approval time: skip the whole late-arriving streaming copy (clean up the buffer on stop).
     if (this.ensuredCallLines.has(this.callLineKey(p.tool_call_id))) {
@@ -689,13 +880,18 @@ export class StreamRenderer {
       partial = { name: p.name, arguments: "", lastPreview: "" };
       this.partialToolCalls.set(p.tool_call_id, partial);
     }
-    if (p.name) partial.name = p.name;
+    if (p.name) {
+      partial.name = p.name;
+      // Remember the name for this call's output gutter (`<name> -> …`).
+      this.toolNames.set(p.tool_call_id, p.name);
+    }
     if (p.arguments) {
       partial.arguments += p.arguments;
     }
 
     if (p.event_type === "stop") {
       if (partial.lastPreview) this.finishLine();
+      else this.renderWithheldCallLine(p.tool_call_id, partial);
       this.partialToolCalls.delete(p.tool_call_id);
       return;
     }
@@ -703,7 +899,9 @@ export class StreamRenderer {
     if (!p.arguments) return;
 
     if (this.inDim) this.finishLine();
-    const preview = renderPartialToolCall(partial.name, partial.arguments);
+    const preview = renderPartialToolCall(partial.name, partial.arguments, {
+      expectDescription: this.describedTools.has(partial.name),
+    });
     if (preview === null) return;
 
     // The line starts with a pairing tag [tool-<last 3 chars of id>], matching the output line that follows.
@@ -731,40 +929,59 @@ export class StreamRenderer {
       return;
     }
     if (this.inDim) this.finishLine();
-    if (p.output) this.writeToolOutput(p.output, callTag(p.tool_call_id));
+    const label = this.outputLabel(p.tool_call_id);
+    const name = this.toolNames.get(p.tool_call_id);
+    const colorDiff = name !== undefined && DIFF_OUTPUT_TOOLS.has(name);
+    if (p.output) this.writeToolOutput(p.output, label, colorDiff);
     // Image delta (carried whole in a single delta): the terminal doesn't render the
-    // image itself, so print one placeholder line per image, using the same pairing tag
-    // as the output gutter.
+    // image itself, so print one placeholder line per image, using the same gutter label
+    // as the text output.
     if (p.images && p.images.length > 0) {
       this.finishLine();
-      const tag = callTag(p.tool_call_id);
       for (const _ of p.images) {
-        this.out.write(`${DIM}[${tag}] >> [image]${RESET}\n`);
+        this.out.write(`${DIM}${label} -> [image]${RESET}\n`);
       }
       this.lastLineKey = null;
     }
   }
 
+  /** Output-gutter label: the `[tool-xxx]` pairing tag plus the tool name of the preceding call (the bare tag when no call was seen). */
+  private outputLabel(toolCallId: string): string {
+    const tag = `[${callTag(toolCallId)}]`;
+    const name = this.toolNames.get(toolCallId);
+    return name ? `${tag} ${name}` : tag;
+  }
+
   /**
    * Writes tool-call **output** line by line, each line starting with the dim gutter
-   * `[tool-<last 3 chars of id>] >> `, paired with the call line (cyan `[tool-xxx] $
-   * cmd`). Streaming chunks arrive incrementally; whether to write the gutter is
-   * decided by the current line-start state.
+   * `[tool-xxx] <toolName> -> ` (the same prefix as the call line, cyan
+   * `[tool-xxx] <name> <- …`; the bare tag when no call was seen). Streaming chunks
+   * arrive incrementally; whether to write the gutter is decided by the current
+   * line-start state.
    */
-  private writeToolOutput(chunk: string, tag: string): void {
+  private writeToolOutput(chunk: string, label: string, colorDiff: boolean): void {
     let i = 0;
     while (i < chunk.length) {
+      let lineColor: string | null = null;
       if (this.toolOutLineStart) {
-        this.out.write(`${DIM}[${tag}] >> ${RESET}`);
+        this.out.write(`${DIM}${label} -> ${RESET}`);
         this.toolOutLineStart = false;
         this.inLine = true;
+        // Diff coloring keys off the line's first character. File-tool outputs arrive as
+        // one delta of whole lines, so the first character is always in this chunk; a
+        // line continued from a previous chunk stays plain.
+        if (colorDiff) lineColor = diffLineColor(chunk[i]);
       }
       const nl = chunk.indexOf("\n", i);
+      const end = nl === -1 ? chunk.length : nl;
+      const segment = chunk.slice(i, end);
+      if (segment) {
+        this.out.write(lineColor ? `${lineColor}${segment}${RESET}` : segment);
+      }
       if (nl === -1) {
-        this.out.write(chunk.slice(i));
         i = chunk.length;
       } else {
-        this.out.write(chunk.slice(i, nl + 1));
+        this.out.write("\n");
         this.toolOutLineStart = true;
         this.inLine = false;
         i = nl + 1;
@@ -787,6 +1004,7 @@ export class StreamRenderer {
   endTask(elapsedMs = 0): void {
     this.promptActive = false;
     this.promptKey = null;
+    this.inputHold = false;
     this.flushDeferredDecisions();
     this.holder = null;
     this.drain();
@@ -833,6 +1051,7 @@ export class StreamRenderer {
     this.ensuredCallLines.clear();
     this.renderedDecisions.clear();
     this.partialToolCalls.clear();
+    this.toolNames.clear();
   }
 
   /**

@@ -1,51 +1,20 @@
 /**
- * Skill invocation for the chat input area (pure logic, shared by chat-input / message-item /
- * the Skill library page, and unit tests).
- * The `<use_skills>` block is a globally agreed-upon format (shared by frontend, backend, and the
- * core prompt template):
+ * Skill-invocation helpers for the chat input area (pure logic, shared by chat-input /
+ * message-item / the Skill library page, and unit tests).
  *
- *   <use_skills>
- *   skills: name1, name2
- *   </use_skills>
- *   (blank line) body text…
- *
- * - `buildSkillsMessage`: prepends the source block to the body when selected skills are
- *   non-empty; returns the body unchanged for an empty list;
- * - `parseSkillsMessage`: only recognizes a block at **the start of the message**, returning the
- *   skill names and the remaining body (the message stream collapses the raw block into a
- *   "Skill used" banner and renders the body normally; the Trace page shows it as-is);
- * - `localizedText` / `skillSlashItems`: pure assembly of UI-language text lookup and slash
- *   skill command items.
+ * The `[use_skills]` marker block itself is **not** defined here: it is a globally agreed
+ * format shared by the frontend, the backend and the core prompt template, so its producer
+ * and parser live in core's marker module (`@prismshadow/penguin-core/markers`) and are
+ * re-exported below for this feature's existing importers. What stays local is the UI-only
+ * part: icon path, UI-language text selection, dropdown filtering and slash command items.
  */
 import type { SkillMetadataItem } from "@prismshadow/penguin-server/api";
+
+export { buildSkillsMessage, parseSkillsMessage } from "@prismshadow/penguin-core/markers";
 
 /** Book icon (24×24 line path): shared across skill-related UI (nav items are inlined separately in sidebar / app-layout). */
 export const BOOK_ICON =
   "M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2zM22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z";
-
-/** Generates a message body with a `<use_skills>` block: an empty list omits the block; when there's no body text, only the block is returned (no trailing blank line). */
-export function buildSkillsMessage(names: string[], text: string): string {
-  if (names.length === 0) return text;
-  const block = `<use_skills>\nskills: ${names.join(", ")}\n</use_skills>`;
-  return text ? `${block}\n\n${text}` : block;
-}
-
-/**
- * Reverse parse of `buildSkillsMessage`: when the message **starts with** a `<use_skills>`
- * block, returns the skill names and the remaining body; otherwise returns null (a block
- * appearing mid-body is treated as plain text and not parsed). The `skills:` line is split by
- * comma and whitespace-trimmed; an empty list is treated as not a source block.
- */
-export function parseSkillsMessage(text: string): { skills: string[]; rest: string } | null {
-  const m = /^<use_skills>\nskills: ([^\n]+)\n<\/use_skills>/.exec(text);
-  if (!m) return null;
-  const skills = m[1]!
-    .split(",")
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
-  if (skills.length === 0) return null;
-  return { skills, rest: text.slice(m[0].length).replace(/^\n+/, "") };
-}
 
 /**
  * Picks copy based on the UI language: uses the Chinese value when locale is zh and one is

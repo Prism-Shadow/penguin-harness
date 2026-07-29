@@ -1,6 +1,6 @@
 {
   "name": "penguin-harness",
-  "version": "0.1.1",
+  "version": "0.1.4",
   "private": true,
   "type": "module",
   "description": "PenguinHarness — TypeScript AI Agent (SDK + CLI).",
@@ -15,7 +15,7 @@
     "test:e2e": "pnpm --filter @prismshadow/penguin-core test:e2e",
     "build": "pnpm -r build && pnpm link:cli",
     "link:cli": "pnpm --dir packages/cli link --global || echo '[link:cli] pnpm global directory not configured; skipping the global penguin link (run pnpm setup once first)'",
-    "penguin": "tsx packages/cli/src/index.ts",
+    "penguin": "node scripts/run-with-env.mjs PENGUIN_HOME=~/.penguin/dev-data PORT=7369 -- tsx packages/cli/src/index.ts",
     "dev": "concurrently -n server,web -c cyan,magenta \"pnpm dev:server\" \"pnpm dev:web\"",
     "dev:server": "pnpm --filter @prismshadow/penguin-server dev",
     "dev:web": "node scripts/dev-prebuild.mjs && pnpm --filter @prismshadow/penguin-web dev",
@@ -27,11 +27,17 @@
     "@prismshadow/penguin-cli": "workspace:*",
     "@prismshadow/penguin-core": "workspace:*",
     "@types/node": "^24.0.0",
-    "concurrently": "^10.0.3",
+    "concurrently": "^10.0.4",
     "prettier": "^3.9.4",
     "tsx": "^4.20.0",
     "typescript": "^5.6.0",
-    "vitest": "^2.1.0"
+    "vitest": "^3.2.6"
   },
-  "packageManager": "pnpm@10.26.2"
+  "packageManager": "pnpm@10.26.2",
+  "pnpm": {
+    "overrides": {
+      "@anthropic-ai/sdk": "^0.91.1",
+      "esbuild": "^0.28.1"
+    }
+  }
 }

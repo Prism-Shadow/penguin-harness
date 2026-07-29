@@ -4,9 +4,9 @@
 # already-released tag skips the build/upload entirely and only re-runs npm publishing.
 # Two parallel jobs (the release job is gated on the existence check):
 # - release: build the monorepo -> pnpm deploy a production CLI dir -> assemble penguin/ (bin + lib + web)
-#   -> four platform packages each bundling the official Node runtime + a universal package -> SHA256 files -> upload to the Release.
-#   Artifacts: penguin-{linux,darwin}-{x64,arm64}.tar.gz, penguin-universal.tar.gz,
-#   their .sha256 files, SHA256SUMS, and install.sh; one version per tag, multiple versions coexist.
+#   -> five platform packages each bundling the official Node runtime + a universal package -> SHA256 files -> upload to the Release.
+#   Artifacts: penguin-{linux,darwin}-{x64,arm64}.tar.gz, penguin-win32-x64.zip, penguin-universal.tar.gz,
+#   their .sha256 files, SHA256SUMS, install.sh, and install.ps1; one version per tag, multiple versions coexist.
 # - publish-npm: publish the whole chain (@prismshadow/penguin-skills -> @prismshadow/penguin-core
 #   -> @prismshadow/penguin-server -> @prismshadow/penguin-cli) to npm at the tag version.
 #   skills/core serve the penguin-sdk Skill's `npm install`; server ships the built web assets inside
@@ -39,6 +39,12 @@ on:
 env:
   # Bundled Node runtime version (official nodejs.org dist, aligned with engines >=24).
   NODE_RUNTIME_VERSION: v24.18.0
+  # Bundled POSIX shell for the Windows package: Git for Windows' MinGit, whose usr/bin/sh.exe
+  # IS GNU bash (installed under the name `sh`), plus ~60 coreutils and git.exe. Pinned to an
+  # exact release so the shipped bytes are reproducible and the GPLv2 source offer in
+  # THIRD-PARTY-NOTICES.md names one version. Bump deliberately, not automatically.
+  MINGIT_VERSION: 2.55.0.3
+  MINGIT_TAG: v2.55.0.windows.3
 
 jobs:
   # Skip the build/upload when the tag's Release already exists (immutable releases forbid
@@ -88,12 +94,17 @@ jobs:
 
       # Inject the release tag into core's VERSION constant (the source for CLI --version and the install-complete
       # message); otherwise artifacts always carry the in-repo dev version and multiple installs can't be told apart.
+      # BUILD_DATE is stamped alongside it with this run's UTC date (the repo keeps null for dev builds).
       - name: Stamp release version
         run: |
           TAG="${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
           V="${TAG#v}"
           grep -q 'export const VERSION = "' packages/core/src/index.ts
           sed -i "s/export const VERSION = \"[^\"]*\"/export const VERSION = \"$V\"/" packages/core/src/index.ts
+          D="$(date -u +%Y-%m-%d)"
+          # BRE: the unescaped | in these patterns is literal (grep/sed default to POSIX BRE, where | is not alternation).
+          grep -q 'export const BUILD_DATE: string | null = ' packages/core/src/index.ts
+          sed -i "s/export const BUILD_DATE: string | null = [^;]*/export const BUILD_DATE: string | null = \"$D\"/" packages/core/src/index.ts
 
       - name: Build (tsup + vite)
         run: pnpm build
@@ -150,12 +161,72 @@ jobs:
           rm -rf out/penguin/node
           tar -czf dist-artifacts/penguin-universal.tar.gz -C out penguin
 
-      # SHA256SUMS summary + a same-named .sha256 per artifact (install.sh verifies against the latter).
+      # Windows package: same lib/ + web/ layout, but a .zip (the native format), the official
+      # win-x64 Node runtime — whose zip has node.exe at the ARCHIVE ROOT, not bin/ — and
+      # cmd/ps1 launchers replacing the sh one (resolve their own dir, default PENGUIN_WEB_DIST
+      # to the sibling web\, prefer the bundled node\node.exe, fall back to system node).
+      # install.ps1 verifies and unpacks this zip; in PowerShell the .ps1 shim wins over .cmd,
+      # in cmd.exe only the .cmd is found — both forward all args and the exit code.
+      #
+      # It also bundles MinGit under git\, so exec_command has a POSIX shell even on a machine
+      # with no Git for Windows: the shims advertise git\usr\bin\sh.exe as PENGUIN_BUNDLED_SHELL
+      # and the resolver (core's shell.ts) uses it only when the user has no bash of their own.
+      # MinGit is unpacked with its tree intact — MSYS binaries locate /etc relative to the
+      # directory holding msys-2.0.dll, so `sh -lc` finds git\etc\profile and gets the usual
+      # /mingw64/bin:/usr/bin:<inherited Windows PATH>, keeping System32's curl/tar reachable.
+      - name: Package win-x64 zip
+        run: |
+          name="node-$NODE_RUNTIME_VERSION-win-x64"
+          curl -fsSL "https://nodejs.org/dist/$NODE_RUNTIME_VERSION/$name.zip" -o "/tmp/$name.zip"
+          rm -rf /tmp/node-runtime out/penguin/node
+          mkdir -p /tmp/node-runtime
+          unzip -q "/tmp/$name.zip" -d /tmp/node-runtime
+          mv "/tmp/node-runtime/$name" out/penguin/node
+          # MinGit unzips flat (no top-level directory), so give it its own destination.
+          mingit="MinGit-$MINGIT_VERSION-64-bit.zip"
+          curl -fsSL "https://github.com/git-for-windows/git/releases/download/$MINGIT_TAG/$mingit" -o "/tmp/$mingit"
+          rm -rf out/penguin/git
+          mkdir -p out/penguin/git
+          unzip -q "/tmp/$mingit" -d out/penguin/git
+          # Fail loudly here rather than shipping a package whose shell silently does not exist.
+          test -f out/penguin/git/usr/bin/sh.exe
+          test -f out/penguin/git/etc/profile
+          rm -f out/penguin/bin/penguin
+          cat > out/penguin/bin/penguin.cmd <<'EOF'
+          @echo off
+          setlocal
+          set "DIR=%~dp0.."
+          if not defined PENGUIN_WEB_DIST set "PENGUIN_WEB_DIST=%DIR%\web"
+          if exist "%DIR%\git\usr\bin\sh.exe" set "PENGUIN_BUNDLED_SHELL=%DIR%\git\usr\bin\sh.exe"
+          if exist "%DIR%\node\node.exe" (
+            "%DIR%\node\node.exe" "%DIR%\lib\dist\index.js" %*
+          ) else (
+            node "%DIR%\lib\dist\index.js" %*
+          )
+          exit /b %ERRORLEVEL%
+          EOF
+          # cmd.exe is only fully reliable with CRLF batch files.
+          sed -i 's/$/\r/' out/penguin/bin/penguin.cmd
+          cat > out/penguin/bin/penguin.ps1 <<'EOF'
+          $dir = Split-Path -Parent $PSScriptRoot
+          if (-not $env:PENGUIN_WEB_DIST) { $env:PENGUIN_WEB_DIST = Join-Path $dir "web" }
+          $sh = Join-Path $dir "git\usr\bin\sh.exe"
+          if (Test-Path $sh) { $env:PENGUIN_BUNDLED_SHELL = $sh }
+          $node = Join-Path $dir "node\node.exe"
+          if (-not (Test-Path $node)) { $node = "node" }
+          & $node (Join-Path $dir "lib\dist\index.js") @args
+          exit $LASTEXITCODE
+          EOF
+          # PowerShell accepts LF, but ship CRLF like the .cmd (and the repo's *.ps1 eol=crlf attribute).
+          sed -i 's/$/\r/' out/penguin/bin/penguin.ps1
+          (cd out && zip -qr ../dist-artifacts/penguin-win32-x64.zip penguin)
+
+      # SHA256SUMS summary + a same-named .sha256 per artifact (install.sh / install.ps1 verify against the latter).
       - name: Generate SHA256 checksums
         run: |
           cd dist-artifacts
-          sha256sum *.tar.gz > SHA256SUMS
-          for f in *.tar.gz; do
+          sha256sum *.tar.gz *.zip > SHA256SUMS
+          for f in *.tar.gz *.zip; do
             sha256sum "$f" > "$f.sha256"
           done
 
@@ -192,9 +263,11 @@ jobs:
           generate_release_notes: ${{ steps.notes.outputs.generate }}
           files: |
             dist-artifacts/*.tar.gz
+            dist-artifacts/*.zip
             dist-artifacts/*.sha256
             dist-artifacts/SHA256SUMS
             install.sh
+            install.ps1
 
   publish-npm:
     name: Publish npm packages
@@ -236,12 +309,17 @@ jobs:
       # Version always comes from the tag: package version and core's VERSION constant are injected together (the
       # repo keeps the dev version). All published packages must bump in lockstep -- pnpm publish rewrites every
       # workspace:* dep to the dependency's current version, so the versions must match.
+      # BUILD_DATE is stamped alongside VERSION with this run's UTC date (the repo keeps null for dev builds).
       - name: Stamp release version
         run: |
           TAG="${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
           V="${TAG#v}"
           grep -q 'export const VERSION = "' packages/core/src/index.ts
           sed -i "s/export const VERSION = \"[^\"]*\"/export const VERSION = \"$V\"/" packages/core/src/index.ts
+          D="$(date -u +%Y-%m-%d)"
+          # BRE: the unescaped | in these patterns is literal (grep/sed default to POSIX BRE, where | is not alternation).
+          grep -q 'export const BUILD_DATE: string | null = ' packages/core/src/index.ts
+          sed -i "s/export const BUILD_DATE: string | null = [^;]*/export const BUILD_DATE: string | null = \"$D\"/" packages/core/src/index.ts
           (cd packages/skills && npm version --no-git-tag-version --allow-same-version "$V")
           (cd packages/core && npm version --no-git-tag-version --allow-same-version "$V")
           (cd packages/server && npm version --no-git-tag-version --allow-same-version "$V")

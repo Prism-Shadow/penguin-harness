@@ -20,6 +20,8 @@
 import { sessionMeta } from "./omnimessage/index.js";
 import type { OmniMessage, SessionMetaPayload, TokenCounts } from "./omnimessage/index.js";
 import { imagesToScratchpadPaths } from "./internal/session-support.js";
+import { runGoalLoop } from "./goal/goal-loop.js";
+import { goalFinishedOf } from "./goal/goal-stream.js";
 import type { EnvironmentInterface, LLMInterface, ToolPermission } from "./interfaces.js";
 import { generateTitleWithLLM } from "./internal/session-title.js";
 import type { SessionTitleResult } from "./internal/session-title.js";
@@ -33,7 +35,7 @@ import type {
 } from "./engine/context-engine.js";
 
 export interface SessionConfig {
-  /** Session metadata (session_id / provider / model_id / model_context_window / system_prompt / tools / thinking_level / agent_state / workspace). */
+  /** Session metadata — per-session invariants only (session_id / provider / model_id / model_context_window / system_prompt / tools / agent_state / workspace / source). */
   meta: SessionMetaPayload;
   llm: LLMInterface;
   environment: EnvironmentInterface;
@@ -64,7 +66,24 @@ export interface SessionConfig {
    * return a 400 outright on image input).
    */
   inputImagesDir?: string;
+  /**
+   * Absolute path of this Session's GOAL.yaml (the composition layer derives it from the
+   * agent scratchpad — see `goalFilePath` in state/paths.ts). Goal mode
+   * (`run(input, { goal })`) is unavailable without it.
+   */
+  goalFilePath?: string;
 }
+
+/** Options of a goal-mode `run` (`opts.goal`): present = the input starts a goal loop. */
+export interface GoalRunOptions {
+  /** Token budget; omitted or -1 (`UNLIMITED_BUDGET`) means no budget. */
+  budget?: number;
+  /** Hard cap on rounds — a runaway backstop, not a host knob (default 100; see goal-loop.ts). */
+  maxRounds?: number;
+}
+
+/** `Session.run` options: the engine's per-call options, plus goal mode. */
+export type SessionRunOptions = RunOptions & { goal?: GoalRunOptions };
 
 /**
  * Caps on captured title material (chars per side); accumulation stops once exceeded. The
@@ -108,6 +127,7 @@ export class Session {
   private readonly meta: OmniMessage;
   private readonly createBareLLM?: () => LLMInterface;
   private readonly inputImagesDir?: string;
+  private readonly goalFile?: string;
   private metaWritten = false;
   /** Title material (used by `generateTitle` as the default): the user input and model body text of the first Task that contains user text. */
   private titleUserText = "";
@@ -127,6 +147,7 @@ export class Session {
     if (config.resumedHistory) this.resumedHistory = config.resumedHistory;
     if (config.createBareLLM) this.createBareLLM = config.createBareLLM;
     if (config.inputImagesDir) this.inputImagesDir = config.inputImagesDir;
+    if (config.goalFilePath) this.goalFile = config.goalFilePath;
     this.engine = new ContextEngine({
       llm: config.llm,
       environment: config.environment,
@@ -150,8 +171,30 @@ export class Session {
    * approving and executing tools one at a time, feeding results back for the next turn,
    * until a turn no longer produces a tool_call (Task ends) or it's aborted.
    * Docs: /docs/agent-loop § "The loop at a glance".
+   *
+   * With `opts.goal` present, the same call runs **goal mode**: the input's text becomes the
+   * objective, and the Session loops Tasks — each round's input is the `[goal]` protocol
+   * block followed by the text (round 1 verbatim, later rounds the objective) — until the
+   * goal file says stop, the budget runs out, or a round is cut off. Round inputs are
+   * yielded onto the stream before each round (a plain run never yields its own input), and
+   * the final message is exactly one `goal_finished` event carrying the outcome.
+   * Docs: /docs/goal-mode.
    */
-  async *run(newMessages: OmniMessage[], opts?: RunOptions): AsyncGenerator<OmniMessage> {
+  async *run(newMessages: OmniMessage[], opts?: SessionRunOptions): AsyncGenerator<OmniMessage> {
+    if (opts?.goal) {
+      // Rounds run with the caller's per-call options minus `goal` (each round is a plain Task).
+      const { goal, ...roundOpts } = opts;
+      yield* this.runGoal(newMessages, goal, roundOpts);
+      return;
+    }
+    yield* this.runTask(newMessages, opts);
+  }
+
+  /** The single-Task path (a goal round runs one of these per round). */
+  private async *runTask(
+    newMessages: OmniMessage[],
+    opts?: RunOptions,
+  ): AsyncGenerator<OmniMessage> {
     // Model doesn't support images: input images are saved to disk first (session scratchpad),
     // then the path is appended to the text before it reaches the engine/Trace.
     if (this.inputImagesDir) {
@@ -185,6 +228,80 @@ export class Session {
       yield msg;
     }
     if (capture && this.titleUserText.trim()) this.titleMaterialFrozen = true;
+  }
+
+  /**
+   * The goal-mode branch of `run`: validates the input (text-only — the objective is
+   * re-injected every round, and images have no place in the protocol block), then drives
+   * the goal loop, running each round through the single-Task path with the same per-call
+   * options (approval, signal, thinking level). The loop's terminal `goal_finished` event is
+   * additionally written to the Trace (best-effort, like session_meta) so the goal's end
+   * survives with its conversation.
+   */
+  private async *runGoal(
+    newMessages: OmniMessage[],
+    goal: GoalRunOptions,
+    opts: RunOptions,
+  ): AsyncGenerator<OmniMessage> {
+    if (!this.goalFile) {
+      throw new Error("Goal mode is unavailable: this Session has no goal file path configured.");
+    }
+    const texts: string[] = [];
+    for (const m of newMessages) {
+      const p = m.payload as { type?: string; role?: string; text?: string };
+      if (m.type !== "model_msg" || p.type !== "text" || p.role !== "user" || !p.text) {
+        throw new Error("Goal mode requires text-only user input (the objective).");
+      }
+      texts.push(p.text);
+    }
+    const text = texts.join("\n").trim();
+    if (!text) throw new Error("Goal mode requires a non-empty objective.");
+    const loop = runGoalLoop(
+      { run: (msgs) => this.runTask(msgs, opts) },
+      {
+        text,
+        goalFilePath: this.goalFile,
+        ...(goal.budget !== undefined ? { budget: goal.budget } : {}),
+        ...(goal.maxRounds !== undefined ? { maxRounds: goal.maxRounds } : {}),
+        ...(opts.signal ? { signal: opts.signal } : {}),
+      },
+    );
+    for await (const msg of loop) {
+      if (goalFinishedOf(msg) && this.trace) {
+        try {
+          await this.trace.write(msg);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          process.stderr.write(`[trace] goal_finished write failed: ${message}\n`);
+        }
+      }
+      yield msg;
+    }
+  }
+
+  /**
+   * Queues a steering message for the running Task: the engine delivers it between turns as
+   * a standalone `[user_steering]` user message — sent with the next request input alongside
+   * that turn's tool outputs, or alone as the continuation input when the turn produced no
+   * tool calls — so the model sees it without the loop being interrupted. Returns false when
+   * no Task is running — the host should then submit the text as a normal task instead.
+   * Delivery is independent of approval mode; anything still queued when the run exits
+   * (abort included) is discarded.
+   */
+  steer(text: string): boolean {
+    return this.engine.steer(text);
+  }
+
+  /**
+   * Skips the in-progress reconnect backoff and fires the next retry immediately (the
+   * user's "retry now" on the reconnect countdown): the attempt counter is unchanged —
+   * the skipped wait does not consume an extra attempt. Returns false (a benign no-op)
+   * when no reconnect wait is in progress; idempotent under races with the timer/abort.
+   * Mirrors `steer` as a mid-run nudge (no message of its own — the effect surfaces as
+   * the next `request_begin` arriving early).
+   */
+  skipReconnectWait(): boolean {
+    return this.engine.skipReconnectWait();
   }
 
   /**

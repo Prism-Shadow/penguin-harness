@@ -296,6 +296,15 @@ export class WorkspaceFilesService {
     }
     const { dir, name } = await this.resolveWriteParent(workspace, rel);
     const file = path.join(dir, name);
+    // Windows has no O_NOFOLLOW (the `?? 0` below erases it), so the atomic ELOOP guard never
+    // fires there — refuse a final-segment symlink via lstat instead. Best effort (a link
+    // created between this check and the open wins the race), but it closes the practical
+    // "preset a symlink, overwrite an outside file by upload" escape; POSIX keeps the atomic
+    // open-time guarantee.
+    if (process.platform === "win32") {
+      const st = await fs.lstat(file).catch(() => null);
+      if (st?.isSymbolicLink()) throw badRequest("path must not be a symlink.");
+    }
     // O_NOFOLLOW: open reports ELOOP if the final segment is a symlink, refusing to use it as leverage to overwrite a file outside the sandbox.
     const flags = fsc.O_WRONLY | fsc.O_CREAT | fsc.O_TRUNC | (fsc.O_NOFOLLOW ?? 0);
     let handle;

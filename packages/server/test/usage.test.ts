@@ -38,7 +38,6 @@ function meta(sessionId: string, modelId: string, provider = "custom"): SessionM
     model_context_window: 100000,
     system_prompt: "",
     tools: [],
-    thinking_level: "default",
     agent_state: "/tmp/x",
     workspace: "/tmp/w",
   };
@@ -276,5 +275,105 @@ describe("usage-service (cost computed on the fly)", () => {
     // Filtering by a1: m2's requests belong to a2 and are excluded.
     const byAgent = await svc.query("p1", { groupBy: "date", agentId: "a1" });
     expect(byAgent.success.map((s) => s.modelId)).toEqual(["m1"]);
+  });
+});
+
+describe("usage-service.queryErrors (error table paging)", () => {
+  let db: DatabaseSync;
+  let errors: ErrorsRepo;
+  let service: UsageService;
+
+  beforeEach(() => {
+    db = openDatabase(":memory:");
+    errors = new ErrorsRepo(db);
+    service = new UsageService(new UsageRepo(db), errors, async () => undefined);
+    // 25 rows, oldest first — so "newest first" ordering is observable across a page boundary.
+    for (let i = 0; i < 25; i += 1) {
+      errors.insert({
+        ts: `2026-07-27T00:00:${String(i).padStart(2, "0")}.000Z`,
+        date: "2026-07-27",
+        projectId: "p1",
+        agentId: "a1",
+        sessionId: "s1",
+        source: "http",
+        kind: "expected",
+        code: `code_${i}`,
+        status: 400,
+        message: `m${i}`,
+      });
+    }
+  });
+  afterEach(() => db.close());
+
+  it("pages newest-first and reports the filtered total, so the caller knows where the end is", () => {
+    const first = service.queryErrors("p1", { offset: 0, limit: 20 });
+    expect(first.total).toBe(25);
+    expect(first.items).toHaveLength(20);
+    expect(first.items[0]!.code).toBe("code_24"); // newest
+    const second = service.queryErrors("p1", { offset: 20, limit: 20 });
+    expect(second.total).toBe(25);
+    // The tail is the five oldest, still descending, with no overlap against page one.
+    expect(second.items.map((e) => e.code)).toEqual([
+      "code_4",
+      "code_3",
+      "code_2",
+      "code_1",
+      "code_0",
+    ]);
+  });
+
+  it("past the end is empty rather than an error, and total stays the full count", () => {
+    const page = service.queryErrors("p1", { offset: 100, limit: 20 });
+    expect(page.items).toEqual([]);
+    expect(page.total).toBe(25);
+  });
+
+  it("filters before it offsets, so a later page never slides onto rows the summary excluded", () => {
+    // Five newer rows from another Agent, i.e. sitting at the head of the unfiltered table. If
+    // the offset were counted over that table and the filter applied afterwards, both pages
+    // below would come back shifted (and page two short); filtering first is what makes the
+    // 25-row filtered set page cleanly as 20 + 5.
+    for (let i = 0; i < 5; i += 1) {
+      errors.insert({
+        ts: `2026-07-28T00:00:0${i}.000Z`,
+        date: "2026-07-28",
+        projectId: "p1",
+        agentId: "other",
+        sessionId: "s2",
+        source: "http",
+        kind: "expected",
+        code: `other_${i}`,
+        status: 400,
+        message: "m",
+      });
+    }
+    const scoped = { offset: 0, limit: 20, agentId: "a1" };
+    const first = service.queryErrors("p1", scoped);
+    expect(first.total).toBe(25); // the other Agent's five are outside the count, not just the page
+    expect(first.items[0]!.code).toBe("code_24");
+    expect(first.items.at(-1)!.code).toBe("code_5");
+    const second = service.queryErrors("p1", { ...scoped, offset: 20 });
+    expect(second.items.map((e) => e.code)).toEqual([
+      "code_4",
+      "code_3",
+      "code_2",
+      "code_1",
+      "code_0",
+    ]);
+    // Unfiltered, the same offset lands on entirely different rows — the filter is doing work.
+    const unscoped = service.queryErrors("p1", { offset: 20, limit: 20 });
+    expect(unscoped.total).toBe(30);
+    expect(unscoped.items.map((e) => e.code)).toEqual([
+      "code_9",
+      "code_8",
+      "code_7",
+      "code_6",
+      "code_5",
+      "code_4",
+      "code_3",
+      "code_2",
+      "code_1",
+      "code_0",
+    ]);
   });
 });

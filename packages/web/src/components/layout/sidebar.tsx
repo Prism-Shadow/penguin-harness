@@ -25,6 +25,7 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
+import { formatMonthDay } from "../../lib/format";
 import { apiErrorText } from "../../lib/api-error";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
@@ -48,7 +49,7 @@ import { Dropdown } from "../ui/dropdown";
 import { AgentAvatar } from "../ui/agent-avatar";
 import { Chevron } from "../ui/chevron";
 import { ChevronDown } from "../ui/icons";
-import { toastError } from "../ui/toast";
+import { toastError, toastInfo, toastSuccess } from "../ui/toast";
 import { Truncated } from "../ui/truncated";
 import { Badge } from "../ui/badge";
 import { Modal } from "../ui/modal";
@@ -61,6 +62,8 @@ import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
 import { clearDraft, sessionDraftKey } from "../../features/chat/draft-cache";
 import { CreateProjectDialog, ProjectSettingsDialog } from "./project-dialogs";
 import { ChangePasswordDialog } from "../account/change-password-dialog";
+import { UpdateDialog } from "../account/update-dialog";
+import { forceUpdateCheck, useVersionInfo } from "../../lib/use-version-info";
 
 function Icon({ d, size = 16 }: { d: string; size?: number }) {
   return (
@@ -113,6 +116,14 @@ const PIN_ICON =
 
 const menuItemClass =
   "block w-full px-3.5 py-2 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800";
+
+/**
+ * Superscript "new version" pill on the version line (accent-colored, raised via
+ * align-super). Kept literally identical to the draft page's copy in
+ * features/chat/draft-view.tsx — the two surfaces must not drift apart.
+ */
+const versionBadgeClass =
+  "ml-1.5 inline-block rounded-full bg-[var(--accent-bg)] px-1.5 align-super text-[10px] font-medium leading-4 text-[var(--accent-fg)] transition-opacity duration-150 hover:opacity-80";
 
 /** Grouping mode of the Session list (persisted; Workspace is the default). */
 type GroupMode = "workspace" | "agent";
@@ -190,7 +201,7 @@ export function Sidebar({
   const { user, logout } = useAuth();
   const { mode, setMode, fontScale, setFontScale, accent, setAccent, currency, setCurrency } =
     useTheme();
-  const { lang, setLang } = useLocale();
+  const { lang, locale, setLang } = useLocale();
   const {
     projects,
     currentProject,
@@ -220,6 +231,40 @@ export function Sidebar({
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+  const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
+  // Version row + update reminder: nothing is fetched until the dropdown first opens.
+  const { version, update } = useVersionInfo(userOpen);
+  const updateAvailable = update?.updateAvailable === true;
+  // The running version's release date, stamped into core's BUILD_DATE at build time by
+  // the release workflow — displayed as-is, no network involved. Dev builds and releases
+  // that predate the stamping (v0.1.2 and earlier) carry null. Shown as the localized
+  // "last updated" tooltip on the check-for-updates row (the row itself stays uncluttered).
+  const versionDate = version?.buildDate ?? null;
+  /** Manual "check for updates" in flight (row disabled, busy label). */
+  const [updateChecking, setUpdateChecking] = useState(false);
+  /**
+   * Manual update check (owner request): forces a lookup past the server's TTL cache and
+   * pushes the result into the shared version-info store, so the reminder rows, badge,
+   * and dot appear immediately when a newer release is found — that visible change is
+   * the notification then. A toast fires only when nothing changes visibly (#54, one
+   * notification per action): up to date, checks disabled, or a failed lookup (the
+   * check is fail-soft — failure arrives as the `error` field, not an exception; the
+   * catch handles our own server being unreachable).
+   */
+  const runUpdateCheck = async () => {
+    if (updateChecking) return;
+    setUpdateChecking(true);
+    try {
+      const res = await forceUpdateCheck();
+      if (res.disabled === true) toastInfo(S.update.checkDisabled);
+      else if (res.error !== undefined) toastError(S.update.checkFailed);
+      else if (!res.updateAvailable) toastSuccess(S.update.upToDate);
+    } catch (e) {
+      toastError(apiErrorText(e));
+    } finally {
+      setUpdateChecking(false);
+    }
+  };
   const currentProjectId = currentProject?.projectId ?? null;
   const collapseStoreKey = currentProjectId === null ? null : collapsedGroupsKey(currentProjectId);
   const pinStoreKey = currentProjectId === null ? null : pinnedGroupsKey(currentProjectId);
@@ -958,8 +1003,17 @@ export function Sidebar({
               onClick={() => setUserOpen(!userOpen)}
               className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors duration-150 hover:bg-gray-200/70 dark:hover:bg-gray-800"
             >
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-900 text-xs font-bold text-white dark:bg-gray-200 dark:text-gray-900">
+              <span className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-900 text-xs font-bold text-white dark:bg-gray-200 dark:text-gray-900">
                 {(user?.userId ?? "?").slice(0, 1).toUpperCase()}
+                {/* Update reminder dot: only once the lazy check has actually run and found a
+                    newer release. The border (sidebar background color) separates it from the
+                    avatar for every accent — the neutral accent matches the avatar fill. */}
+                {updateAvailable && (
+                  <span
+                    aria-hidden
+                    className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-gray-50 bg-[var(--accent-bg)] dark:border-gray-900"
+                  />
+                )}
               </span>
               <span className="min-w-0 flex-1 truncate text-sm font-medium">{user?.userId}</span>
               {user?.isAdmin && (
@@ -990,6 +1044,41 @@ export function Sidebar({
               <Segmented options={langOptions} value={lang} onChange={setLang} />
             </SettingRow>
           </div>
+          {/* Update reminder: release-notes link, plus the self-update action for admins.
+              Only rendered after the lazy check found a newer release. */}
+          {update !== null && update.updateAvailable && update.latestVersion !== null && (
+            <div className="mt-1 border-t border-gray-100 pt-1 dark:border-gray-800">
+              {update.releaseUrl !== null ? (
+                <a
+                  href={update.releaseUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={S.update.releaseNotes}
+                  className={`${menuItemClass} flex items-center gap-2 font-medium`}
+                >
+                  <span aria-hidden className="h-2 w-2 rounded-full bg-[var(--accent-bg)]" />
+                  {S.update.newVersion(update.latestVersion)}
+                </a>
+              ) : (
+                <span className={`${menuItemClass} flex items-center gap-2 font-medium`}>
+                  <span aria-hidden className="h-2 w-2 rounded-full bg-[var(--accent-bg)]" />
+                  {S.update.newVersion(update.latestVersion)}
+                </span>
+              )}
+              {user?.isAdmin && (
+                <button
+                  type="button"
+                  className={menuItemClass}
+                  onClick={() => {
+                    setUserOpen(false);
+                    setUpdateDialogOpen(true);
+                  }}
+                >
+                  {S.update.updateNow}
+                </button>
+              )}
+            </div>
+          )}
           <div className="mt-1 border-t border-gray-100 pt-1 dark:border-gray-800">
             <button
               type="button"
@@ -1000,6 +1089,40 @@ export function Sidebar({
               }}
             >
               {S.account.changePassword}
+            </button>
+            {/* Manual update check, directly below Change password (owner layout). The
+                running version sits muted on the right of the same row — no product-name
+                prefix — and the superscript new-version badge rides along there as a
+                passive indicator: a nested button/link inside this button row would be
+                invalid HTML, and whenever the badge shows, the clickable affordances
+                (release link / Update now) are already present in the reminder rows
+                above. The "last updated" date lives in the row tooltip, keeping the row
+                itself uncluttered. While checking, the label swaps to the busy text and
+                the right-side version stays put. Nothing is fetched until the menu first
+                opens; the version span appears once /api/version resolves. */}
+            <button
+              type="button"
+              disabled={updateChecking}
+              onClick={() => void runUpdateCheck()}
+              {...(versionDate !== null
+                ? { title: S.update.lastUpdated(formatMonthDay(versionDate, locale)) }
+                : {})}
+              className={`${menuItemClass} flex items-center justify-between gap-2 disabled:cursor-default disabled:opacity-60`}
+            >
+              <span>{updateChecking ? S.update.checking : S.update.checkNow}</span>
+              {version !== null && (
+                <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
+                  {`v${version.version}`}
+                  {update !== null && update.updateAvailable && update.latestVersion !== null && (
+                    <span
+                      className={versionBadgeClass}
+                      title={S.update.newVersion(update.latestVersion)}
+                    >
+                      {S.update.newVersionBadge}
+                    </span>
+                  )}
+                </span>
+              )}
             </button>
             {/* User management is visible only to admins (the page route also has its own guard as a fallback). */}
             {user?.isAdmin && (
@@ -1031,6 +1154,11 @@ export function Sidebar({
       <ChangePasswordDialog
         open={changePasswordOpen}
         onClose={() => setChangePasswordOpen(false)}
+      />
+      <UpdateDialog
+        open={updateDialogOpen}
+        onClose={() => setUpdateDialogOpen(false)}
+        latestVersion={update?.latestVersion ?? null}
       />
 
       <CreateProjectDialog

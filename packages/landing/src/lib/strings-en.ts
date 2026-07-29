@@ -12,6 +12,7 @@ export const en: Strings = {
     label: "Announcements",
     prev: "Previous announcement",
     next: "Next announcement",
+    freeModels: "Free models Ling 3.0 Flash and the Free Models Router are now in PenguinHarness",
     gemini: "Gemini 3.6 Flash is now available in PenguinHarness",
     models: "Kimi K3 and Qwen 3.8 Max are now available in PenguinHarness",
     fireworks: "Claim $50 in Fireworks API credits with the AMD Developer Program",
@@ -58,7 +59,9 @@ export const en: Strings = {
     ctaPrimary: "Get started",
     ctaGithub: "GitHub",
     installHint:
-      "One-line install (Linux / macOS, x64 / arm64, bundled Node runtime — unpack and run)",
+      "One-line install (Linux / macOS / Windows, bundled Node runtime — unpack and run)",
+    installLabelPosix: "Linux / macOS",
+    installLabelWindows: "Windows",
     stats: [
       { value: "1000+", label: "supported models" },
       { value: "1×CPU", label: "minimum footprint" },
@@ -154,7 +157,9 @@ export const en: Strings = {
       "Install with one command and let the Agent work from a desktop-grade interface — all data stays in your local ~/.penguin/data directory.",
     step1: "Install",
     step1Desc:
-      "Linux / macOS (x64 / arm64) with a bundled Node runtime — unpack and run; upgrades never touch your data.",
+      "Linux / macOS / Windows with a bundled Node runtime — unpack and run; upgrades never touch your data.",
+    installLabelPosix: "Linux / macOS",
+    installLabelWindows: "Windows (PowerShell)",
     tabWeb: "Web UI",
     tabCli: "CLI",
     webStep2: "Open the web interface",

@@ -12,6 +12,7 @@ import rehypeRaw from "rehype-raw";
 import remarkGfm from "remark-gfm";
 import { Link, useParams } from "react-router";
 import { S } from "../lib/strings";
+import { blogAssetUrl } from "../lib/links";
 import { useLocale } from "../state/locale";
 import { formatAuthors, formatPostDate, getPost } from "../lib/blog";
 import { extractToc, slugifyHeading } from "../lib/toc";
@@ -50,6 +51,32 @@ export function MdLink({
   );
 }
 
+/** The path prefix post bodies use for images this repo does not carry. */
+const BLOG_ASSET_PREFIX = "/blog-assets/";
+
+/**
+ * Image adapter: rewrites `/blog-assets/<name>` sources to the community repo that actually hosts
+ * them (see blogAssetUrl in lib/links.ts). Every other src — absolute URLs, GitHub user-attachment
+ * uploads, anything else a post embeds — is forwarded untouched.
+ *
+ * The rewrite lives here rather than in the Markdown so there is one source of truth for the
+ * hosting location: post bodies keep the stable, portable relative path, they stay readable and
+ * diffable, and the tests that assert on those paths keep asserting on the paths. Applies equally
+ * to `![alt](…)` and to the raw `<img src="…">` tags posts use for theme-swapped screenshots,
+ * because rehype-raw turns those into ordinary `img` nodes before this map is consulted.
+ */
+export function MdImage({
+  node: _node,
+  src,
+  ...imgProps
+}: ComponentPropsWithoutRef<"img"> & ExtraProps) {
+  const resolved =
+    typeof src === "string" && src.startsWith(BLOG_ASSET_PREFIX)
+      ? blogAssetUrl(src.slice(BLOG_ASSET_PREFIX.length))
+      : src;
+  return <img {...imgProps} src={resolved} />;
+}
+
 /**
  * Built once at module scope rather than inline per render: react-markdown uses each entry as the
  * element **type**, so a fresh arrow every render is a new type on every commit and React remounts
@@ -68,6 +95,7 @@ const MD_COMPONENTS: Components = {
     </h3>
   ),
   a: MdLink,
+  img: MdImage,
 };
 
 /**

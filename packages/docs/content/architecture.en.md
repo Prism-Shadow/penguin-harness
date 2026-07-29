@@ -81,7 +81,7 @@ packages/
 │   ├── engine/context-engine.ts    # ReAct loop orchestration: turn lifecycle, approvals, carry-over, reconnect, compaction
 │   ├── omnimessage/                # types.ts protocol types · builders.ts constructors · aggregate.ts partial aggregation
 │   ├── llm/                        # generative-model.ts AgentHub adapter · tool-call-ids.ts id uniqueness
-│   ├── environment/                # environment.ts execution close-out · tools/ registry, 6 builtin tools, background sessions
+│   ├── environment/                # environment.ts execution close-out · tools/ registry, 9 builtin tools, background sessions
 │   ├── state/                      # paths · default-config · project-config · model-catalog
 │   │                               # agent-state (Skill install, prompt assembly) · agent-vault · builtin-agents
 │   ├── trace/                      # writer.ts append-only JSONL · resume.ts replay-based recovery
@@ -129,7 +129,7 @@ The Server keeps an additional SQLite index (users, authorization, usage stats) 
 ## Key design decisions
 
 - **One protocol, three jobs**: OmniMessage is simultaneously the SDK's external interface, the Trace on-disk format and the engine's internal currency — what streams, what is stored and what the model sees are the same thing.
-- **Errors converge into messages**: the LLM and Environment never throw into the engine; results carry a five-value `stop_reason` (`completed | failed | aborted | timeout | malformed`), and only LLM-side `timeout / malformed` trigger an in-run reconnect.
+- **Errors converge into messages**: the LLM and Environment never throw into the engine; results carry a six-value `stop_reason` (`completed | failed | aborted | timeout | malformed | auth`), and every LLM-side status except `auth` triggers an in-run reconnect (`failed / timeout / malformed`, up to 5 times with an exponential-with-ceiling backoff). `auth` is the one terminal class: a rejected credential cannot be retried into working. Retrying `failed` is a policy choice — the status itself is still reported as `failed`.
 - **A thin model layer**: core defines only `LLMInterface`; provider adaptation lives entirely in AgentHub (`@prismshadow/agenthub`), which is what makes any OpenAI-compatible endpoint reachable. See [Models & Providers](/models).
 
 Source entry points: `packages/core/src/engine/context-engine.ts`, `packages/core/src/interfaces.ts`.

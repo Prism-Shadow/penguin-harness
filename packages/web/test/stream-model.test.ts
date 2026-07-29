@@ -38,6 +38,7 @@ import {
   finalizeHistory,
   findToolCard,
   isDuplicate,
+  isModelAuthDead,
   notifyTaskIdle,
   pushMessage,
   pushMessages,
@@ -52,6 +53,7 @@ import type {
   TaskStatsItem,
   ThinkingItem,
   ToolCallItem,
+  UserSteeringItem,
   UserTextItem,
 } from "../src/lib/omni/stream-model";
 
@@ -77,7 +79,6 @@ function meta(sessionId: string): OmniMessage<SessionMetaPayload> {
     model_context_window: 200000,
     system_prompt: "",
     tools: [],
-    thinking_level: "default",
     agent_state: "/a",
     workspace: "/w",
   });
@@ -223,6 +224,110 @@ describe("partial aggregation and full-message convergence", () => {
   });
 });
 
+describe("live-tail synthetic starts (mid-stream join seeding)", () => {
+  it("a text start carrying the accumulated prefix opens a streaming item on top of history; deltas continue and the full message replaces", () => {
+    const m = createStreamModel();
+    pushMessage(m, userText("question"));
+    pushMessage(m, partialText("start", "Already streamed prefix"));
+    const item = items(m)[1] as AssistantTextItem;
+    expect(item.kind).toBe("assistant_text");
+    expect(item.text).toBe("Already streamed prefix");
+    expect(item.streaming).toBe(true);
+    pushMessage(m, partialText("delta", " + live tail"));
+    expect(item.text).toBe("Already streamed prefix + live tail");
+    pushMessage(m, partialText("stop"));
+    pushMessage(m, assistantText("Already streamed prefix + live tail."));
+    expect(items(m).filter((i) => i.kind === "assistant_text")).toHaveLength(1);
+    expect(item.text).toBe("Already streamed prefix + live tail.");
+  });
+
+  it("a thinking start carrying the accumulated prefix seeds a streaming thinking item with its start time", () => {
+    const m = createStreamModel();
+    pushMessage(m, at(partialThinking("start", "half a thought"), "2026-07-05T00:00:01.000Z"));
+    const item = items(m)[0] as ThinkingItem;
+    expect(item.thinking).toBe("half a thought");
+    expect(item.streaming).toBe(true);
+    expect(item.startedAtMs).toBe(Date.parse("2026-07-05T00:00:01.000Z"));
+  });
+
+  it("an output start seeds the prefix (and images) onto a call-complete card; a start on an outputComplete card is ignored", () => {
+    const dataUrl = "data:image/png;base64,AAAA";
+    const m = createStreamModel();
+    pushMessage(m, toolCall({ name: "exec_command", arguments: '{"cmd":"x"}', toolCallId: "t1" }));
+    const card = items(m)[0] as ToolCallItem;
+    // Synthetic start carries the accumulated prefix + the whole image set.
+    pushMessage(
+      m,
+      partialToolCallOutput({
+        eventType: "start",
+        output: "line 1\nline 2\n",
+        toolCallId: "t1",
+        images: [dataUrl],
+      }),
+    );
+    expect(card.output).toBe("line 1\nline 2\n");
+    expect(card.outputStreaming).toBe(true);
+    expect(card.images).toEqual([dataUrl]);
+    pushMessage(
+      m,
+      partialToolCallOutput({ eventType: "delta", output: "line 3\n", toolCallId: "t1" }),
+    );
+    expect(card.output).toBe("line 1\nline 2\nline 3\n");
+    // Once the output is complete, a stray synthetic start must not reopen or append.
+    pushMessage(m, toolCallOutput({ output: "final", toolCallId: "t1" }));
+    pushMessage(
+      m,
+      partialToolCallOutput({ eventType: "start", output: "stale", toolCallId: "t1" }),
+    );
+    expect(card.output).toBe("final");
+    expect(card.outputStreaming).toBe(false);
+  });
+
+  it("an arguments start for an id whose call is already complete is ignored (no duplicate card, no reset)", () => {
+    const m = createStreamModel();
+    pushMessage(m, toolCall({ name: "exec_command", arguments: '{"cmd":"x"}', toolCallId: "t1" }));
+    pushMessage(
+      m,
+      partialToolCall({
+        eventType: "start",
+        name: "exec_command",
+        arguments: '{"cmd":"x"}',
+        toolCallId: "t1",
+      }),
+    );
+    expect(items(m)).toHaveLength(1);
+    expect((items(m)[0] as ToolCallItem).argumentsText).toBe('{"cmd":"x"}');
+  });
+
+  it("an arguments start carrying accumulated arguments seeds a card that the full message then completes", () => {
+    const m = createStreamModel();
+    pushMessage(
+      m,
+      partialToolCall({
+        eventType: "start",
+        name: "exec_command",
+        arguments: '{"cmd":"seq 1',
+        toolCallId: "t1",
+      }),
+    );
+    const card = items(m)[0] as ToolCallItem;
+    expect(card.argumentsText).toBe('{"cmd":"seq 1');
+    expect(card.callStreaming).toBe(true);
+    pushMessage(
+      m,
+      partialToolCall({ eventType: "delta", name: "", arguments: ' 40"}', toolCallId: "t1" }),
+    );
+    pushMessage(m, partialToolCall({ eventType: "stop", name: "", toolCallId: "t1" }));
+    pushMessage(
+      m,
+      toolCall({ name: "exec_command", arguments: '{"cmd":"seq 1 40"}', toolCallId: "t1" }),
+    );
+    expect(items(m)).toHaveLength(1);
+    expect(card.argumentsText).toBe('{"cmd":"seq 1 40"}');
+    expect(card.callComplete).toBe(true);
+  });
+});
+
 describe("approvals and events", () => {
   it("approval_decision annotates the matching tool card; locally registered ones are manual, the rest remote", () => {
     const m = createStreamModel();
@@ -243,6 +348,89 @@ describe("approvals and events", () => {
     pushMessage(m, approvalDecision("allow", "t9"));
     pushMessage(m, toolCall({ name: "x", arguments: "{}", toolCallId: "t9" }));
     expect((items(m)[0] as ToolCallItem).decision).toBe("allow");
+  });
+
+  it("a main-session request_end(auth) records the failure timestamp; other aborts/events do not", () => {
+    const m = createStreamModel();
+    pushMessage(m, abortEvent("aborted by user"));
+    expect(m.lastAuthFailureMs).toBeNull();
+    const end = requestEnd("auth", "401 invalid x-api-key");
+    pushMessage(m, end);
+    // The recorded time is the event's envelope timestamp (so a reload can compare it
+    // against the Project's credentials-updated time).
+    expect(m.lastAuthFailureMs).toBe(Date.parse(end.timestamp));
+    // The abort that follows still renders its line (the notice is additional).
+    pushMessage(m, abortEvent("llm request error: 401 invalid x-api-key"));
+    expect(items(m)[1]).toMatchObject({
+      kind: "abort",
+      reason: "llm request error: 401 invalid x-api-key",
+    });
+    // Unrelated later messages don't clear it: only a COMPLETED request does (below) —
+    // request_begin alone proves nothing about the credential.
+    pushMessage(m, userText("hello?"));
+    pushMessage(m, requestBegin());
+    expect(m.lastAuthFailureMs).not.toBeNull();
+  });
+
+  it("a later completed request clears the auth-dead state; a new auth failure re-arms it", () => {
+    const m = createStreamModel();
+    pushMessage(m, requestEnd("auth", "401"));
+    expect(m.lastAuthFailureMs).not.toBeNull();
+    // The key was fixed and a request succeeded: the state must not outlive the success.
+    pushMessage(m, userText("again"));
+    pushMessage(m, requestBegin());
+    pushMessage(m, requestEnd("completed"));
+    expect(m.lastAuthFailureMs).toBeNull();
+    // A fresh auth failure re-arms (e.g. the replacement key is wrong too).
+    pushMessage(m, requestEnd("auth", "401"));
+    expect(m.lastAuthFailureMs).not.toBeNull();
+  });
+
+  it("history replay: order decides — auth failure then completed request stays alive; the reverse stays dead", () => {
+    // Replay of a Trace where the auth failure was followed by a successful request (the
+    // user fixed the key and continued): reload must NOT resurrect the dead composer.
+    const recovered = createStreamModel();
+    pushMessages(recovered, [
+      userText("go"),
+      requestBegin(),
+      requestEnd("auth", "401 invalid x-api-key"),
+      abortEvent("llm request error: 401 invalid x-api-key"),
+      userText("after fix"),
+      requestBegin(),
+      requestEnd("completed"),
+    ]);
+    finalizeHistory(recovered);
+    expect(recovered.lastAuthFailureMs).toBeNull();
+
+    // Replay where the auth failure is the LAST word: the dead state is rebuilt.
+    const dead = createStreamModel();
+    pushMessages(dead, [
+      userText("go"),
+      requestBegin(),
+      requestEnd("completed"),
+      userText("later"),
+      requestBegin(),
+      requestEnd("auth", "401 invalid x-api-key"),
+      abortEvent("llm request error: 401 invalid x-api-key"),
+    ]);
+    finalizeHistory(dead);
+    expect(dead.lastAuthFailureMs).not.toBeNull();
+  });
+
+  it("isModelAuthDead gates on the credentials-updated timestamp", () => {
+    expect(isModelAuthDead(null, null)).toBe(false); // no auth failure on record
+    expect(isModelAuthDead(1000, null)).toBe(true); // no update info -> nothing proves a fix
+    expect(isModelAuthDead(1000, 2000)).toBe(false); // key updated after the failure -> alive
+    expect(isModelAuthDead(3000, 2000)).toBe(true); // a fresh failure after the update re-arms
+  });
+
+  it("a subagent-origin auth failure does NOT kill the parent session's input", () => {
+    const m = createStreamModel();
+    pushMessage(m, withOrigin(requestEnd("auth", "401"), "child1"));
+    // The failure belongs to the child session: its nested model carries the state, the
+    // parent composer stays usable (the subagent simply surfaces as failed).
+    expect(m.lastAuthFailureMs).toBeNull();
+    expect(m.subagents.get("child1")!.lastAuthFailureMs).not.toBeNull();
   });
 
   it("abort events produce an abort marker item", () => {
@@ -279,34 +467,6 @@ describe("approvals and events", () => {
     expect(items(m)).toHaveLength(0);
   });
 
-  it("captures the session's thinking level from the main session_meta (read-only input-area tag)", () => {
-    const m = createStreamModel();
-    expect(m.thinkingLevel).toBeNull();
-    // The shared helper's meta carries thinking_level "default" (Agent config leaves it unset).
-    pushMessage(m, meta("session-x"));
-    expect(m.thinkingLevel).toBe("default");
-
-    const m2 = createStreamModel();
-    pushMessage(
-      m2,
-      sessionMeta({
-        session_id: "session-y",
-        model_id: "m",
-        provider: "custom",
-        model_context_window: 200000,
-        system_prompt: "",
-        tools: [],
-        thinking_level: "medium",
-        agent_state: "/a",
-        workspace: "/w",
-      }),
-    );
-    expect(m2.thinkingLevel).toBe("medium");
-    // An origin-tagged (sub-session) session_meta routes to the nested model and must not clobber the main session's level.
-    pushMessage(m2, withOrigin(meta("child"), "child"));
-    expect(m2.thinkingLevel).toBe("medium");
-  });
-
   it("request_end final state timeout/malformed produces a retry notice item (with attempt number); request_begin marks it as resent", () => {
     const m = createStreamModel();
     pushMessage(m, requestBegin());
@@ -334,11 +494,72 @@ describe("approvals and events", () => {
     expect((items(m)[2] as ReconnectItem).attempt).toBe(1);
   });
 
+  it("request_end(failed) renders a retry notice too, with its countdown inputs and give-up target", () => {
+    // The engine reconnects on `failed` exactly like timeout/malformed. Without an item there
+    // is no countdown and findLastWaitingReconnect returns null, so "Retry now" / "Give up"
+    // never render either — the session just stalls for up to 7.75s with nothing on screen.
+    const m = createStreamModel();
+    pushMessage(m, requestBegin());
+    pushMessage(
+      m,
+      requestEnd("failed", "Upstream HTTP/2 stream failed (upstream_http2_stream_error)", 4000),
+      111_000,
+    );
+    const retry = items(m)[0] as ReconnectItem;
+    expect(retry).toMatchObject({
+      kind: "reconnect",
+      status: "failed",
+      attempt: 1,
+      retrying: false,
+      plannedDelayMs: 4000, // the countdown
+      arrivedAtMs: 111_000, // its client-clock anchor
+    });
+    // Waiting, so it is the item the retry-now / give-up controls attach to; the retry then
+    // flips it out of the waiting state exactly like the other two statuses.
+    pushMessage(m, requestBegin());
+    expect(retry.retrying).toBe(true);
+  });
+
+  it("a mixed ladder keeps counting: failed no longer resets the attempt number mid-run", () => {
+    // `failed` used to fall through to the reset branch, so timeout → failed → timeout
+    // renumbered the third attempt back to #1 while the engine was on its third.
+    const m = createStreamModel();
+    pushMessage(m, requestBegin());
+    pushMessage(m, requestEnd("timeout"));
+    pushMessage(m, requestBegin());
+    pushMessage(m, requestEnd("failed", "502 bad gateway"));
+    pushMessage(m, requestBegin());
+    pushMessage(m, requestEnd("timeout"));
+    expect((items(m) as ReconnectItem[]).map((i) => [i.status, i.attempt])).toEqual([
+      ["timeout", 1],
+      ["failed", 2],
+      ["timeout", 3],
+    ]);
+    // A normal finish still resets it: the next run's first failure is #1 again.
+    pushMessage(m, requestBegin());
+    pushMessage(m, requestEnd("completed"));
+    pushMessage(m, requestBegin());
+    pushMessage(m, requestEnd("failed"));
+    expect((items(m)[3] as ReconnectItem).attempt).toBe(1);
+  });
+
+  it("request_end(auth) stays out of the ladder: terminal, so no retry notice and the count resets", () => {
+    // The one status the engine does not retry — an item would promise a countdown and a
+    // "Retry now" that will never happen, on top of the composer already being gated.
+    const m = createStreamModel();
+    pushMessage(m, requestBegin());
+    pushMessage(m, requestEnd("timeout"));
+    pushMessage(m, requestBegin());
+    pushMessage(m, requestEnd("auth", "401 invalid x-api-key"));
+    expect((items(m) as ReconnectItem[]).filter((i) => i.kind === "reconnect")).toHaveLength(1);
+    expect(m.reconnectRun).toBe(0);
+  });
+
   it("retries exhausted: an arriving abort marks the waiting retry notice gaveUp and resets the consecutive-failure count", () => {
     const m = createStreamModel();
     pushMessage(m, requestBegin());
     pushMessage(m, requestEnd("timeout"));
-    pushMessage(m, abortEvent("reconnect failed after 2 retries"));
+    pushMessage(m, abortEvent("reconnect failed after 5 retries"));
     const retry = items(m)[0] as ReconnectItem;
     expect(retry).toMatchObject({
       kind: "reconnect",
@@ -352,6 +573,58 @@ describe("approvals and events", () => {
     expect(retry.retrying).toBe(false);
     pushMessage(m, requestEnd("malformed"));
     expect((items(m)[2] as ReconnectItem).attempt).toBe(1);
+  });
+
+  it("request_end.retry_in_ms lands on the waiting item with the CLIENT arrival anchor (the countdown's inputs)", () => {
+    const m = createStreamModel();
+    pushMessage(m, requestBegin());
+    // The engine announced a 4s backoff before retry #1; nowMs (the injected client clock)
+    // is the countdown anchor — NOT the envelope timestamp, so server clock skew cannot
+    // bend the ticker.
+    pushMessage(m, requestEnd("timeout", "403 quota (insufficient_user_quota)", 4000), 111_000);
+    const item = items(m)[0] as ReconnectItem;
+    expect(item).toMatchObject({
+      kind: "reconnect",
+      status: "timeout",
+      attempt: 1,
+      retrying: false,
+      plannedDelayMs: 4000,
+      arrivedAtMs: 111_000,
+    });
+    // An event without the field (old Traces / final failures) leaves the fields unset —
+    // the view keeps the plain waiting text.
+    pushMessage(m, requestBegin());
+    pushMessage(m, requestEnd("timeout"));
+    const plain = items(m)[1] as ReconnectItem;
+    expect(plain.plannedDelayMs).toBeUndefined();
+    expect(plain.arrivedAtMs).toBeUndefined();
+  });
+
+  it("history replay of a retried failure leaves no live countdown: the following request_begin/abort flips the state", () => {
+    // Replay delivers the whole Trace back-to-back: the waiting state (the only state the
+    // countdown and the retry-now/give-up controls render for) never persists.
+    const retried = createStreamModel();
+    pushMessages(retried, [
+      userText("go"),
+      requestBegin(),
+      requestEnd("timeout", "quota", 30_000),
+      requestBegin(), // the engine's retry — replayed immediately after
+      requestEnd("completed"),
+    ]);
+    finalizeHistory(retried);
+    const item = items(retried).find((i) => i.kind === "reconnect") as ReconnectItem;
+    expect(item.retrying).toBe(true); // not waiting -> no countdown, no controls
+
+    const aborted = createStreamModel();
+    pushMessages(aborted, [
+      userText("go"),
+      requestBegin(),
+      requestEnd("timeout", "quota", 30_000),
+      abortEvent("aborted during reconnect backoff"), // the user gave up mid-wait
+    ]);
+    finalizeHistory(aborted);
+    const gaveUp = items(aborted).find((i) => i.kind === "reconnect") as ReconnectItem;
+    expect(gaveUp.gaveUp).toBe(true); // not waiting -> no countdown, no controls
   });
 
   it("a new Task closes the previous Task's dangling retry notice (server died in the backoff window, no abort in the Trace)", () => {
@@ -585,7 +858,7 @@ describe("Task segmentation and stats triggering", () => {
   });
 
   it("round end takes the last request_end: the next round's injection arriving after it does not inflate this round's elapsed time", () => {
-    // During history rebuild, the compaction summary `<context_summary>` is written alongside the
+    // During history rebuild, the compaction summary `[context_summary]` is written alongside the
     // next round, with its timestamp landing in that next round — it arrives while the previous
     // round is still open. If round-end took the latest message seen, this injection would
     // artificially inflate the previous round's elapsed time (the old bug where elapsed grows
@@ -597,7 +870,7 @@ describe("Task segmentation and stats triggering", () => {
       at(tokenUsage(out(100), out(100)), "2026-07-05T00:00:02.000Z"),
       at(requestEnd("completed"), "2026-07-05T00:00:03.000Z"), // this round's last request_end
       // Next round's summary injection, timestamped much later; it arrives while this round hasn't closed yet.
-      at(userText("<context_summary>\nsummary\n</context_summary>"), "2026-07-05T00:00:50.000Z"),
+      at(userText("[context_summary]\nsummary\n[/context_summary]"), "2026-07-05T00:00:50.000Z"),
       at(userText("next question"), "2026-07-05T00:01:00.000Z"), // startTask: closes the previous round
     ]);
     finalizeHistory(m);
@@ -822,7 +1095,7 @@ describe("compaction attribution by position: in-round counts toward the round, 
         compactionEnd({ reason: "manual", mode: "summarize", status: "completed" }),
         "2026-07-05T00:00:33.000Z",
       ),
-      at(userText("<context_summary>\nsummary\n</context_summary>"), "2026-07-05T00:00:33.000Z"),
+      at(userText("[context_summary]\nsummary\n[/context_summary]"), "2026-07-05T00:00:33.000Z"),
     ]);
     finalizeHistory(m);
     const stats = items(m).find((i) => i.kind === "task_stats") as TaskStatsItem;
@@ -847,7 +1120,7 @@ describe("compaction-internal messages (#17: history rebuild aligned with the li
       ),
       // Compaction prompt (user text) and the compaction request's summary output (assistant text): internal messages.
       at(userText("Summarize the above (compaction prompt)"), "2026-07-05T00:00:06.100Z"),
-      at(assistantText("<summary>summary content</summary>"), "2026-07-05T00:00:09.000Z"),
+      at(assistantText("[summary]summary content[/summary]"), "2026-07-05T00:00:09.000Z"),
       at(tokenUsage(counts(11000), counts(1000)), "2026-07-05T00:00:09.500Z"),
       at(
         compactionEnd({ reason: "context", mode: "summarize", status: "completed" }),
@@ -855,7 +1128,7 @@ describe("compaction-internal messages (#17: history rebuild aligned with the li
       ),
       // Summary injected at the start of the new context file: internal input.
       at(
-        userText("<context_summary>\nsummary content\n</context_summary>"),
+        userText("[context_summary]\nsummary content\n[/context_summary]"),
         "2026-07-05T00:00:10.500Z",
       ),
       at(userText("next question"), "2026-07-05T00:01:00.000Z"),
@@ -899,14 +1172,14 @@ describe("compaction-internal messages (#17: history rebuild aligned with the li
         "2026-07-05T00:00:06.000Z",
       ),
       at(userText("compaction prompt"), "2026-07-05T00:00:06.100Z"),
-      at(assistantText("<summary>progress summary</summary>"), "2026-07-05T00:00:08.000Z"),
+      at(assistantText("[summary]progress summary[/summary]"), "2026-07-05T00:00:08.000Z"),
       at(
         compactionEnd({ reason: "context", mode: "summarize", status: "completed" }),
         "2026-07-05T00:00:09.000Z",
       ),
       // Mid-round compaction: the summary is written as the new context's first input, after end.
       at(
-        userText("<context_summary>\nprogress summary\n</context_summary>"),
+        userText("[context_summary]\nprogress summary\n[/context_summary]"),
         "2026-07-05T00:00:09.500Z",
       ),
       at(assistantText("continue fixing and finish"), "2026-07-05T00:00:12.000Z"),
@@ -916,6 +1189,55 @@ describe("compaction-internal messages (#17: history rebuild aligned with the li
     // Only one Task: user, banner, assistant (output after compaction continues), stats.
     expect(kinds).toEqual(["user_text", "compaction", "assistant_text", "task_stats"]);
     expect((items(m)[2] as AssistantTextItem).text).toBe("continue fixing and finish");
+    expect(items(m).filter((i) => i.kind === "user_text")).toHaveLength(1);
+  });
+
+  it("legacy <context_summary> prefix (old Traces) is still treated as internal input, not a user bubble", () => {
+    // Old Traces contain the angle-bracket form; re-rendering them must keep hiding the
+    // summary injection exactly like the current [context_summary] form.
+    const m = createStreamModel();
+    pushMessages(m, [
+      at(
+        userText("<context_summary>\nold summary\n</context_summary>"),
+        "2026-07-05T00:00:00.000Z",
+      ),
+      at(userText("continue the task"), "2026-07-05T00:00:01.000Z"),
+      at(assistantText("resuming"), "2026-07-05T00:00:02.000Z"),
+    ]);
+    finalizeHistory(m);
+    const users = items(m).filter((i) => i.kind === "user_text") as UserTextItem[];
+    expect(users.map((u) => u.text)).toEqual(["continue the task"]);
+  });
+
+  it("[user_steering] user text renders as a steering chip inside the running Task — it never starts a new Task", () => {
+    // Mid-run steering is delivered as a standalone [user_steering] user message: it must
+    // stay inside the current Task (one stats row, one task) but render in-flow, marker
+    // stripped, as a user_steering item.
+    const m = createStreamModel();
+    pushMessages(m, [
+      at(userText("fix the bug"), "2026-07-05T00:00:00.000Z"),
+      at(assistantText("looking"), "2026-07-05T00:00:02.000Z"),
+      at(tokenUsage(counts(100), counts(100)), "2026-07-05T00:00:03.000Z"),
+      at(
+        userText("[user_steering]\nalso check the tests\n[/user_steering]"),
+        "2026-07-05T00:00:04.000Z",
+      ),
+      at(assistantText("checking the tests too"), "2026-07-05T00:00:06.000Z"),
+      at(tokenUsage(counts(200), counts(100)), "2026-07-05T00:00:07.000Z"),
+    ]);
+    finalizeHistory(m);
+    const kinds = items(m).map((i) => i.kind);
+    // One Task: user, assistant, steering chip, assistant, one stats row at the end.
+    expect(kinds).toEqual([
+      "user_text",
+      "assistant_text",
+      "user_steering",
+      "assistant_text",
+      "task_stats",
+    ]);
+    const steering = items(m).find((i) => i.kind === "user_steering") as UserSteeringItem;
+    expect(steering.text).toBe("also check the tests");
+    // Only the real prompt is a user bubble.
     expect(items(m).filter((i) => i.kind === "user_text")).toHaveLength(1);
   });
 });
@@ -1211,5 +1533,100 @@ describe("multiple calls with a repeated tool_call_id (fallback for legacy Trace
     expect(cards[0]!.outputComplete).toBe(true);
     expect(cards[0]!.outputStopReason).toBe("aborted");
     expect(cards[1]!.outputComplete).toBe(false); // new card waits for output as normal
+  });
+});
+
+describe("fidelity-only messages render nothing (empty assistant bubble after thinking)", () => {
+  // Core emits a complete text/thinking message with an empty body when a provider attaches an
+  // opaque payload to an otherwise empty part (Gemini's thoughtSignature on a text part, GPT-5's
+  // encrypted-reasoning phase markers) — see flushText / flushThinking. It must exist so the
+  // fidelity round-trips into history; it must not become a visible item.
+  it("an empty assistant text after thinking adds no item", () => {
+    const m = createStreamModel();
+    pushMessage(m, userText("hi"));
+    pushMessage(m, thinkingMessage("pondering"));
+    pushMessage(m, assistantText(""));
+    expect(items(m).map((i) => i.kind)).toEqual(["user_text", "thinking"]);
+  });
+
+  it("a whitespace-only body counts as empty too", () => {
+    const m = createStreamModel();
+    pushMessage(m, assistantText("\n  \n"));
+    pushMessage(m, thinkingMessage("   "));
+    expect(items(m)).toEqual([]);
+  });
+
+  it("real content is unaffected, including a lone space inside real text", () => {
+    const m = createStreamModel();
+    pushMessage(m, thinkingMessage("thought"));
+    pushMessage(m, assistantText("answer"));
+    expect(items(m).map((i) => i.kind)).toEqual(["thinking", "assistant_text"]);
+    expect((items(m)[1] as AssistantTextItem).text).toBe("answer");
+  });
+
+  it("a streamed segment is still settled by its complete message, not dropped", () => {
+    // The guard must only skip the append path — a fragment that streamed real content is
+    // replaced by its complete message as before.
+    const m = createStreamModel();
+    pushMessage(m, partialText("start", "Hel"));
+    pushMessage(m, partialText("delta", "lo"));
+    pushMessage(m, partialText("stop"));
+    pushMessage(m, assistantText("Hello"));
+    const texts = items(m).filter((i) => i.kind === "assistant_text");
+    expect(texts).toHaveLength(1);
+    expect((texts[0] as AssistantTextItem).text).toBe("Hello");
+    expect((texts[0] as AssistantTextItem).streaming).toBe(false);
+  });
+
+  // A blank body can also arrive through a fragment: core starts a text segment on the first
+  // truthy delta (`if (!item.text) break;`), and "\n\n" is truthy, so a whitespace-only segment
+  // really does stream. Guarding only the append path would leave live and after-refresh
+  // disagreeing — the fragment kept a blank bubble that a reload then dropped.
+  it("a blank streamed text segment is discarded, so live matches the history rebuild", () => {
+    const live = createStreamModel();
+    pushMessage(live, thinkingMessage("pondering"));
+    pushMessage(live, partialText("start", "\n\n"));
+    pushMessage(live, partialText("stop"));
+    pushMessage(live, assistantText("\n\n"));
+
+    const history = createStreamModel();
+    pushMessage(history, thinkingMessage("pondering"));
+    pushMessage(history, assistantText("\n\n"));
+
+    expect(items(live).map((i) => i.kind)).toEqual(["thinking"]);
+    expect(items(live).map((i) => i.kind)).toEqual(items(history).map((i) => i.kind));
+  });
+
+  it("a blank streamed thinking segment is discarded too", () => {
+    const live = createStreamModel();
+    pushMessage(live, partialThinking("start", "  "));
+    pushMessage(live, partialThinking("stop"));
+    pushMessage(live, thinkingMessage("  "));
+
+    const history = createStreamModel();
+    pushMessage(history, thinkingMessage("  "));
+
+    expect(items(live)).toEqual([]);
+    expect(items(history)).toEqual([]);
+  });
+
+  it("discarding a blank fragment clears the open-fragment slots, leaving no stuck spinner", () => {
+    // The fragment must be removed rather than blanked: a leftover openText would keep
+    // `streaming: true` forever (a permanent blinking cursor), and a stale pendingText would
+    // let the next complete message replace the wrong item.
+    const m = createStreamModel();
+    pushMessage(m, partialText("start", " "));
+    pushMessage(m, partialText("stop"));
+    pushMessage(m, assistantText(" "));
+    expect(items(m)).toEqual([]);
+
+    // The next real reply must append cleanly, not resurrect the discarded fragment.
+    pushMessage(m, partialText("start", "Hi"));
+    pushMessage(m, partialText("stop"));
+    pushMessage(m, assistantText("Hi"));
+    const texts = items(m).filter((i) => i.kind === "assistant_text");
+    expect(texts).toHaveLength(1);
+    expect((texts[0] as AssistantTextItem).text).toBe("Hi");
+    expect((texts[0] as AssistantTextItem).streaming).toBe(false);
   });
 });

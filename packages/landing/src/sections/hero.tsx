@@ -7,7 +7,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { Link } from "react-router";
 import { S } from "../lib/strings";
-import { INSTALL_CMD, REPO_URL } from "../lib/links";
+import { INSTALL_CMD, INSTALL_CMD_WINDOWS, REPO_URL } from "../lib/links";
 import { CopyButton } from "../components/copy-button";
 import { ArrowRightIcon, GitHubIcon } from "../components/icons";
 
@@ -115,12 +115,28 @@ export function Hero() {
           className="anim-rise mx-auto mt-10 w-fit max-w-full"
           style={{ animationDelay: "240ms" }}
         >
-          <div className="flex items-center gap-3 overflow-hidden rounded-xl border border-gray-200 bg-gray-50 py-2.5 pr-2.5 pl-4 text-left dark:border-gray-800 dark:bg-gray-900">
-            <code className="min-w-0 flex-1 overflow-x-auto font-mono text-[13px] whitespace-nowrap text-gray-800 dark:text-gray-200">
-              <span className="mr-2 text-gray-400 select-none dark:text-gray-500">$</span>
-              {INSTALL_CMD}
-            </code>
-            <CopyButton text={INSTALL_CMD} className="shrink-0" />
+          {/* One install row per OS (labels are language-neutral; prompt chars $ vs > match the shells). */}
+          <div className="overflow-hidden rounded-xl border border-gray-200 bg-gray-50 text-left dark:border-gray-800 dark:bg-gray-900">
+            <div className="flex items-center gap-3 py-2.5 pr-2.5 pl-4">
+              <span className="w-24 shrink-0 text-[11px] font-medium text-gray-400 dark:text-gray-500">
+                {S.hero.installLabelPosix}
+              </span>
+              <code className="min-w-0 flex-1 overflow-x-auto font-mono text-[13px] whitespace-nowrap text-gray-800 dark:text-gray-200">
+                <span className="mr-2 text-gray-400 select-none dark:text-gray-500">$</span>
+                {INSTALL_CMD}
+              </code>
+              <CopyButton text={INSTALL_CMD} className="shrink-0" />
+            </div>
+            <div className="flex items-center gap-3 border-t border-gray-200 py-2.5 pr-2.5 pl-4 dark:border-gray-800">
+              <span className="w-24 shrink-0 text-[11px] font-medium text-gray-400 dark:text-gray-500">
+                {S.hero.installLabelWindows}
+              </span>
+              <code className="min-w-0 flex-1 overflow-x-auto font-mono text-[13px] whitespace-nowrap text-gray-800 dark:text-gray-200">
+                <span className="mr-2 text-gray-400 select-none dark:text-gray-500">&gt;</span>
+                {INSTALL_CMD_WINDOWS}
+              </code>
+              <CopyButton text={INSTALL_CMD_WINDOWS} className="shrink-0" />
+            </div>
           </div>
           <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">{S.hero.installHint}</p>
         </div>
