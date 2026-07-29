@@ -27,6 +27,7 @@ import { useProject } from "../../state/project";
 import { Tabs } from "../../components/ui/tabs";
 import { Button } from "../../components/ui/button";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
+import { HiddenFileInput } from "../../components/ui/hidden-file-input";
 import { Input, Textarea } from "../../components/ui/input";
 import { OptionMenu, type OptionMenuChoice } from "../../components/ui/option-menu";
 import { Switch } from "../../components/ui/switch";
@@ -156,11 +157,8 @@ export function AgentSettingsPage() {
   }
 
   return (
-    /* relative: this page's scroller is its own containing block, so the snapshot-import
-       control's `sr-only` file input (position:absolute) anchors and scrolls inside it. Left
-       static, that input anchored to the initial containing block instead — past the fold it
-       sat at a document-level offset nothing clips, growing the document and adding a second
-       scrollbar (same failure as the Traces tree and the sidebar session list). */
+    /* relative: a scroller is its own containing block (see the invariant in styles.css) —
+       this page's snapshot-import control used to grow the document from below the fold. */
     <div className="no-scrollbar relative h-full overflow-y-auto p-4 md:p-6">
       <div className="mx-auto max-w-3xl">
         <Button
@@ -356,14 +354,7 @@ function OverviewTab({
             <label
               className={`${TRANSFER_BUTTON_CLASS} ${importing ? "pointer-events-none opacity-60" : ""}`}
             >
-              {/* sr-only rather than hidden: keeps it keyboard-Tab-focusable (same as the workspace-browser upload). */}
-              <input
-                type="file"
-                accept=".tar.gz,.tgz"
-                className="sr-only"
-                disabled={importing}
-                onChange={onPickFile}
-              />
+              <HiddenFileInput accept=".tar.gz,.tgz" disabled={importing} onChange={onPickFile} />
               {importing ? S.agent.importing : S.agent.importSnapshot}
             </label>
           )}
