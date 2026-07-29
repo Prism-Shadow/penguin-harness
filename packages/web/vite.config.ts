@@ -13,6 +13,23 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
 
+/**
+ * Resolves the `/api` proxy target: PENGUIN_API_PROXY replaces it outright, otherwise the
+ * development backend on PORT — the same variable `pnpm dev:server` binds — defaulting to 7368.
+ *
+ * Empty counts as unset, as everywhere else PORT is read in this repo (server/src/config.ts,
+ * cli/src/commands/serve.ts, scripts/run-with-env.mjs). Here `??` would be actively harmful: an
+ * exported-but-empty `PORT=` yields `http://127.0.0.1:` — port 80 — and every /api call would be
+ * answered by whatever happens to listen there, silently and without an error, which is the exact
+ * wrong-backend failure this default exists to prevent.
+ *
+ * Takes the environment as an argument so the resolution can be unit-tested (a vite config's
+ * `server.proxy` cannot be exercised without starting a dev server).
+ */
+export function apiProxyTarget(env: Record<string, string | undefined> = process.env): string {
+  return env.PENGUIN_API_PROXY || `http://127.0.0.1:${env.PORT || "7368"}`;
+}
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
@@ -21,7 +38,7 @@ export default defineConfig({
     port: 7365,
     proxy: {
       "/api": {
-        target: process.env.PENGUIN_API_PROXY ?? `http://127.0.0.1:${process.env.PORT ?? "7368"}`,
+        target: apiProxyTarget(),
         changeOrigin: false,
       },
     },
