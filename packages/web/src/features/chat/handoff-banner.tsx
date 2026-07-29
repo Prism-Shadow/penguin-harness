@@ -1,7 +1,7 @@
 /**
  * Provenance banners for conversations opened from another conversation — each collapses a
  * machine-inserted source block (the raw text is never shown; the model still sees it):
- * - `HandoffBanner` (`[handoff_from]`, @ delegation): "Handed off from <agent>'s chat";
+ * - `HandoffBanner` (`[handoff_from]`, the /agent handoff): "Handed off from <agent>'s chat";
  * - `ModelSwitchBanner` (`[model_switch_from]`, the /model command): "switched model —
  *   continued from the earlier conversation".
  * When there's a source Session, the whole line is clickable and jumps back to it (the
@@ -9,13 +9,18 @@
  */
 import { useNavigate } from "react-router";
 import { S } from "../../lib/strings";
-import type { HandoffOrigin, ModelSwitchOrigin } from "./agent-mentions";
+import type { HandoffOrigin, ModelSwitchOrigin } from "./agent-handoff";
 
-/** Display name of the source agent: `displayName (@id)` when the display name differs from the id, otherwise just `@id`. */
+/**
+ * Display name of the source agent: `displayName (id)` when the display name differs from the
+ * id, otherwise just the id. No `@` sigil — the mention trigger it stood for is gone (`/agent`
+ * replaced it), and the composer's own handoff chip spells the agent out without one, so the
+ * banner would otherwise name the same agent differently from the control that started it.
+ */
 function agentLabel(origin: HandoffOrigin): string {
   return origin.agentName && origin.agentName !== origin.agentId
-    ? `${origin.agentName} (@${origin.agentId})`
-    : `@${origin.agentId}`;
+    ? `${origin.agentName} (${origin.agentId})`
+    : origin.agentId;
 }
 
 const bannerFrame =

@@ -226,7 +226,7 @@ export function SkillsPage() {
    * would only be noise here), and points the Agent to default_agent before
    * entering draft mode — the route state explicitly carries agentId
    * (overriding whatever was last selected in the cache). handoffAgentId
-   * must be cleared: a leftover @ target would forward the whole skill
+   * must be cleared: a leftover handoff target would forward the whole skill
    * invocation to a different Agent — quick invoke must always start a new
    * conversation with default_agent.
    */

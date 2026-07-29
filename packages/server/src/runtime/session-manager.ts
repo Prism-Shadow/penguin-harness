@@ -443,6 +443,24 @@ export class SessionManager {
   // —— Task / compaction drive ——
 
   /**
+   * Cheap, lock-free rehearsal of the 409/503 conditions startTask checks, throwing exactly the
+   * same HttpErrors. **Advisory only**: it neither takes the Session lock nor loads an entry, so
+   * a session that isn't in the active table reads as acceptable and a status change racing this
+   * call is not caught — the authoritative check is still the one inside startTask.
+   *
+   * It exists so a caller that has irreversible work to do first (POST /tasks writes the
+   * message's file attachments to disk) can find out about the ordinary "a Task is already
+   * running" rejection before doing it, instead of undoing it afterwards.
+   */
+  assertCanAcceptTask(sessionId: string, opts?: { queueIfBusy?: boolean }): void {
+    this.assertOpen();
+    this.assertAgentNotDeleting(sessionId);
+    this.assertSessionNotDeleting(sessionId);
+    const entry = this.entries.get(sessionId);
+    if (entry && !opts?.queueIfBusy) this.assertIdle(entry);
+  }
+
+  /**
    * Start a Task: get-or-load → 409
    * mutual-exclusion check → publish the input messages first → drive run in the
    * background. Returns the current actual session_id (the new id after self-heal).

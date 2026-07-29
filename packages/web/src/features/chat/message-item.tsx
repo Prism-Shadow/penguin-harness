@@ -9,7 +9,7 @@ import { S } from "../../lib/strings";
 import { useLocale } from "../../state/locale";
 import { formatMessageTime } from "../../lib/format";
 import { STAT_ICONS } from "../../lib/stat-icons";
-import { splitImageAttachments } from "../../lib/attachments";
+import { splitAttachments } from "../../lib/attachments";
 import type { ChatItem, ReconnectItem } from "../../lib/omni/stream-model";
 import { Md } from "./md";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
@@ -23,11 +23,12 @@ import { GoalRoundBanner } from "./goal-banner";
 import { HandoffBanner, ModelSwitchBanner } from "./handoff-banner";
 import { ScheduledBanner } from "./scheduled-banner";
 import { SkillsBanner } from "./skills-banner";
+import { AttachedFilesBanner } from "./attached-files-banner";
 import {
   parseHandoffMessage,
   parseModelSwitchMessage,
   parseScheduledMessage,
-} from "./agent-mentions";
+} from "./agent-handoff";
 import { parseGoalMessage } from "./goal-use";
 import { parseSkillsMessage } from "./skill-use";
 import { TaskStatsLine } from "./task-stats-line";
@@ -176,7 +177,7 @@ function ReconnectLine({ item, ctx }: { item: ReconnectItem; ctx: StreamRenderCo
 export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderContext }) {
   switch (item.kind) {
     case "user_text": {
-      // Source block for a chat created via @ handoff: collapsed into a single-line handoff notice (the raw text isn't shown), clickable to jump back to the original chat.
+      // Source block for a chat created via the /agent handoff: collapsed into a single-line handoff notice (the raw text isn't shown), clickable to jump back to the original chat.
       const handoff = parseHandoffMessage(item.text);
       if (handoff) return <HandoffBanner origin={handoff} />;
       // Source block for a chat opened by the /model switch: collapsed into a single-line switch notice, clickable to jump back to the source conversation.
@@ -194,11 +195,13 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
       // "using skill" banner, with the body rendered as usual.
       const afterScheduled = scheduled ? scheduled.rest : afterGoal;
       const skills = parseSkillsMessage(afterScheduled);
-      // Attachment row restoration: for models that don't support images, input images are
-      // written to disk as a path row; this pulls that out at render time and shows the actual
-      // image. Mirrors the vision-model path (user_text + user_image as separate messages) in
-      // shape: one bubble for the text, one bubble per image, styled the same as user_image.
-      const { text, images } = splitImageAttachments(skills ? skills.rest : afterScheduled);
+      // Attachment row restoration (last in the chain — these lines trail the body rather than
+      // prefixing it): for models that don't support images, input images are written to disk
+      // as a path row; this pulls that out at render time and shows the actual image. Mirrors
+      // the vision-model path (user_text + user_image as separate messages) in shape: one
+      // bubble for the text, one bubble per image, styled the same as user_image. Uploaded
+      // files come out of the same pass and collapse into one banner naming them.
+      const { text, images, files } = splitAttachments(skills ? skills.rest : afterScheduled);
       // Every goal round reads like a normal user message: the body in a user bubble with
       // the round notice beneath (the system IS re-sending the user's request each round).
       if (goalRound) {
@@ -213,6 +216,10 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
         <>
           {scheduled && <ScheduledBanner origin={scheduled.origin} />}
           {skills && <SkillsBanner names={skills.skills} />}
+          {/* Files uploaded with this message: named above the bubble, like the other
+              message-level notices — the bytes live in the session scratchpad, the model
+              opens them by path (goal mode never gets here: it rejects non-text input). */}
+          {files.length > 0 && <AttachedFilesBanner files={files} />}
           {text && (
             <div className="anim-msg group my-4 flex flex-col items-end">
               <div className="max-w-[88%] rounded-lg bg-gray-100 px-4 py-2.5 md:max-w-[75%] dark:bg-gray-800">

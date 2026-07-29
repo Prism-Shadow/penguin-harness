@@ -5,7 +5,7 @@
  * agent's stored compaction prompt) while producers only ever emit the square form.
  *
  * Behavior covered here used to live next to each call site — engine (`extractSummary`),
- * omnimessage (`userSteeringText`), web (`skill-use` / `agent-mentions`) — and moved with the
+ * omnimessage (`userSteeringText`), web (`skill-use` / `agent-handoff`) — and moved with the
  * consolidation; the host-side tests keep covering the rendering/wiring around them.
  */
 import { describe, expect, it } from "vitest";
