@@ -104,6 +104,7 @@ import {
   skillSlashItems,
 } from "./skill-use";
 import { GOAL_ICON, UNLIMITED_BUDGET, parseBudgetInput } from "./goal-use";
+import { midRunAction } from "./composer-send";
 import { PAPERCLIP_ICON } from "./attached-files-banner";
 
 const APPROVAL_MODES: ApprovalMode[] = ["always-ask", "read-only", "allow-all", "deny-all"];
@@ -1506,69 +1507,41 @@ export function ChatInput({
   // that switch is about to open, not to the agent running here.
   // `!goalOn`: with the goal chip engaged the text is an OBJECTIVE — steering it into a run
   // that happens to be active (e.g. a schedule fired) would silently repurpose it.
-  const canSteer =
-    running &&
-    !busy &&
-    !goalOn &&
-    !modelAuthDead &&
-    onSteer !== undefined &&
-    target === null &&
-    pendingModel === null &&
-    (text.trim().length > 0 || images.length > 0);
-  // Mid-run send mode (owner directive): the user chooses between "steer" (delivered
-  // mid-run as a [user_steering] input) and "follow-up" (held server-side and auto-sent as
-  // an ordinary next task once this run finishes). Set from the "+" menu's settings row —
-  // available in draft state and active sessions alike — and **remembered** across
-  // sessions/reloads (localStorage, see STEER_MODE_KEY); the running-state send simply
-  // follows the remembered mode.
+  //
+  // Mid-run send mode (owner directive): the user chooses between "steer" (delivered mid-run
+  // as a [user_steering] input) and "follow-up" (held server-side and auto-sent as an ordinary
+  // next task once this run finishes). Set from the "+" menu's settings row — available in
+  // draft state and active sessions alike — and **remembered** across sessions/reloads
+  // (localStorage, see STEER_MODE_KEY).
   const [steerMode, setSteerModeState] = useState<SteerMode>(initialSteerMode);
   const setSteerMode = (mode: SteerMode): void => {
     setSteerModeState(mode);
     localStorage.setItem(STEER_MODE_KEY, mode);
   };
   const followUpMode = steerMode === "followup" && onQueueFollowUp !== undefined;
-  // A follow-up is a full normal message: the whole draft (text / attachments / skills / a
-  // staged switch) is eligible, same content rule as canSend.
-  // `stagedRoute !== "blocked"`: a staged model fork is never eligible mid-run — the follow-up
-  // path composes the whole draft and then hands it to onSwitchModel rather than to the queue,
-  // so without this gate Enter would fork off a Trace that is still being written.
-  const canFollowUp =
-    running &&
-    !busy &&
-    !goalOn &&
-    !modelAuthDead &&
-    followUpMode &&
-    stagedRoute !== "blocked" &&
-    draftHasContent;
-  // Steer mode holding a draft the steer channel can't carry — since steering carries text and
-  // images, what is left is file attachments, selected skills or a staged /agent or /model
-  // pick, with no text and no image of its own. The draft is still perfectly
-  // sendable, so THIS send falls back to the follow-up queue instead. Without the fallback the
-  // button face flips to send (any content does that) but could never enable, stranding the
-  // user on a dead button that also displaced Stop. `!goalOn` / `!modelAuthDead`: same gates as
-  // canSteer / canFollowUp — a goal draft is an objective, not a queueable message, and a dead
-  // model key has nothing to send with.
-  const steerFallbackToQueue =
-    running &&
-    !busy &&
-    !goalOn &&
-    !modelAuthDead &&
-    !followUpMode &&
-    !canSteer &&
-    stagedRoute !== "blocked" &&
-    onQueueFollowUp !== undefined &&
-    draftHasContent;
-  // The single action button's mode. While running it is Stop exactly when this send has
-  // nowhere to go — which is not the same as an empty composer, and the gap between the two
-  // is where Stop goes missing: a goal objective is content the mid-run channels all refuse
-  // (it is an objective, not a message for the turn under way), and a dead model key refuses
-  // every draft there is. Keyed off "is there content", either one leaves a permanently
-  // disabled send button standing where Stop should be. `!busy` keeps the in-flight window
-  // from arming Stop under a click aimed at send. Idle/compacting is always send.
-  const canMidRunSend = followUpMode ? canFollowUp : canSteer || steerFallbackToQueue;
-  const midRunSendLabel =
-    followUpMode || steerFallbackToQueue ? S.chat.followUpSend : S.chat.steerSend;
-  const stopAction = running && !busy && !canMidRunSend;
+  // Which of the two channels this draft can use, or Stop when neither will take it — the whole
+  // decision lives in midRunAction so it can be reasoned about and tested on its own, and so
+  // that Stop stays the fallthrough rather than a case somebody has to remember to widen. Only
+  // meaningful while running; idle/compacting is always Send, gated by canSend above.
+  const midRun = midRunAction({
+    sending: busy,
+    goalOn,
+    modelAuthDead,
+    canSteerChannel: onSteer !== undefined,
+    canQueueChannel: onQueueFollowUp !== undefined,
+    followUpMode,
+    stagedRoute,
+    hasHandoffTarget: target !== null,
+    hasPendingModel: pendingModel !== null,
+    hasText: text.trim().length > 0,
+    hasImages: images.length > 0,
+    hasContent: draftHasContent,
+  });
+  const steerAction = running && midRun === "steer";
+  const queueAction = running && midRun === "queue";
+  const canMidRunSend = steerAction || queueAction;
+  const midRunSendLabel = midRun === "queue" ? S.chat.followUpSend : S.chat.steerSend;
+  const stopAction = running && midRun === "stop";
   // Queued hint: shown after a successful steer until the message shows up in the stream
   // (steeringDeliveredCount increases past the baseline captured at queue time) or the run
   // stops being observable (task no longer running).
@@ -1993,25 +1966,20 @@ export function ChatInput({
 
   const send = async () => {
     if (running) {
-      // Follow-up branch: the whole draft goes out through the normal composition path,
-      // but posted with queueIfBusy — the server holds it and auto-sends once this run
-      // finishes (a staged switch still opens its new chat directly: neither the handoff
-      // target nor the model fork is the session that is running).
-      if (followUpMode) {
-        if (!canFollowUp) return;
-        await sendNormal(onQueueFollowUp!);
-        return;
-      }
-      // Steer mode, draft the steer channel can't carry: whole draft through the follow-up
-      // queue instead (one complete message; see steerFallbackToQueue).
-      if (steerFallbackToQueue) {
+      // Queue branch: the whole draft goes out through the normal composition path, posted
+      // with queueIfBusy — the server holds it and auto-sends once this run finishes (a staged
+      // switch still opens its new chat directly: neither the handoff target nor the model fork
+      // is the session that is running). One branch for both ways of getting here — follow-up
+      // mode, and steer mode meeting a draft steering cannot carry — since the message sent is
+      // the same either way.
+      if (queueAction) {
         await sendNormal(onQueueFollowUp!);
         return;
       }
       // Steering branch: queue the trimmed text and the attached images for the running agent;
       // both are sent and cleared together — file attachments and selected skills stay for a
-      // normal send (a staged switch chip blocks this branch outright, see canSteer).
-      if (!canSteer) return;
+      // normal send (a staged switch chip blocks this branch outright, see midRunAction).
+      if (!steerAction) return;
       const steerText = text.trim();
       const steerImages = images;
       setBusy(true);

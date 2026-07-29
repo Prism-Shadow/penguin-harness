@@ -80,19 +80,33 @@ const SESSION_CATEGORIES: readonly SessionCategory[] = [
 ];
 
 /**
+ * A base64 `data:` URL of an image, in the exact shape core parses it back out of
+ * (`imagesToScratchpadPaths`): one mime type, the `;base64,` marker, a non-empty base64 body.
+ * The mime is deliberately unconstrained — core maps the ones it knows to a file extension and
+ * falls back to `.bin`, and the image tools sniff the magic bytes rather than trusting either.
+ *
+ * Checking the body, not just the `data:` prefix, is what keeps the failure here instead of
+ * three layers down: core turns a data URL it cannot parse into an "[an attached image could
+ * not be saved and was dropped]" line, which for an HTTP caller means a 202 followed by a
+ * message quietly missing its picture. The file-attachment field has always validated its own
+ * payload this way (parseAttachmentPart); this is the same rule for images.
+ */
+const IMAGE_DATA_URL = /^data:[^;,]+;base64,[A-Za-z0-9+/=\s]+$/;
+
+/**
  * The image-URL rule every image-carrying request field obeys: a `data:` URL the session
  * keeps (inline, or written to the scratchpad without vision) or an http(s) URL it references.
  * `field` names the offending value in the error, so each caller reads as if it validated
  * inline.
  */
 function requireImageUrl(url: unknown, field: string): string {
-  if (
-    typeof url !== "string" ||
-    !(url.startsWith("data:") || url.startsWith("http://") || url.startsWith("https://"))
-  ) {
-    throw badRequest(`${field} only supports data: or http(s) URLs.`);
+  if (typeof url === "string") {
+    if (url.startsWith("http://") || url.startsWith("https://")) return url;
+    if (IMAGE_DATA_URL.test(url)) return url;
   }
-  return url;
+  throw badRequest(
+    `${field} must be an http(s) URL or a base64 data: URL (data:<mime>;base64,<bytes>).`,
+  );
 }
 
 /**

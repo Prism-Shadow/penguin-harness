@@ -125,6 +125,20 @@ describe("steer route", () => {
     expect((await api.post(`/api/sessions/${SID}/steer`, { text: "x", images: png })).status).toBe(
       400,
     );
+    // The data: body is checked here, not left to core: a URL core cannot parse comes back as
+    // an "could not be saved" line inside the delivered message, which for an HTTP caller is a
+    // 202 and then a picture quietly missing. These are the shapes that get that far.
+    for (const bad of [
+      "data:image/png", // no ;base64, marker at all
+      "data:image/png;base64,", // marker, empty body
+      "data:image/png;base64,not base64!", // body outside the base64 alphabet
+      "data:,aGk=", // no mime
+      "data:image/png;charset=utf-8;base64,aGk=", // an extra parameter core's parse rejects
+    ]) {
+      expect(
+        (await api.post(`/api/sessions/${SID}/steer`, { text: "x", images: [bad] })).status,
+      ).toBe(400);
+    }
     expect(steered).toHaveLength(2);
 
     t.deps.manager.decideApproval(SID, "tc-steer", "allow");
