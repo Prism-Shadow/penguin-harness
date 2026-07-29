@@ -134,8 +134,10 @@ function humanizeDuration(ms: number): string {
   if (ms < 1000) return `${Math.round(ms)}ms`;
   const s = ms / 1000;
   if (s < 60) return `${trimZero(s)}s`;
-  const m = Math.floor(s / 60);
-  return `${m}m${Math.round(s % 60)}s`;
+  // The minute form rounds the total before splitting it: rounding the remainder while
+  // flooring the minutes lets 119.7s print as `1m60s` instead of `2m0s`.
+  const whole = Math.round(s);
+  return `${Math.floor(whole / 60)}m${whole % 60}s`;
 }
 
 export function formatAbort(p: AbortPayload, t: Messages): string {
