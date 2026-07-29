@@ -90,10 +90,10 @@ function fieldLines(body: string, keys: readonly string[]): Array<[string, strin
 }
 
 // ---------------------------------------------------------------------------
-// [handoff_from] — @-mention handoff into a new conversation
+// [handoff_from] — handoff into a new conversation with another agent
 // ---------------------------------------------------------------------------
 
-/** Origin info for an @-handoff new conversation: source agent is always present; the source Session is omitted while it's still a draft. */
+/** Origin info for a handoff's new conversation: source agent is always present; the source Session is omitted while it's still a draft. */
 export interface HandoffOrigin {
   agentId: string;
   agentName?: string;
@@ -103,11 +103,16 @@ export interface HandoffOrigin {
 }
 
 /**
- * First message of an @-handoff new conversation (English): the `[handoff_from]` block states
- * that this conversation was opened by an @ mention and carries the source agent / Session /
- * Workspace, so the @-mentioned agent knows its origin (e.g. defaulting to the source agent as
- * its working target, or reaching source files via the Workspace path). The parenthetical
- * label is omitted when the display name/title equals the id or is absent.
+ * First message of a handoff's new conversation (English): the `[handoff_from]` block states
+ * that another conversation handed this one over (the Web composer's `/agent` command) and
+ * carries the source agent / Session / Workspace, so the receiving agent knows its origin
+ * (e.g. defaulting to the source agent as its working target, or reaching source files via the
+ * Workspace path). The parenthetical label is omitted when the display name/title equals the id
+ * or is absent.
+ *
+ * The prose is deliberately trigger-agnostic — the tag and the fields are a persisted format
+ * (old Traces still render through this parser), so the wording must survive the composer
+ * swapping how a handoff is started, as it did when `/agent` replaced the `@` mention.
  */
 export function buildHandoffMessage(origin: HandoffOrigin): string {
   const name =
@@ -121,7 +126,7 @@ export function buildHandoffMessage(origin: HandoffOrigin): string {
   return markerBlock(
     MARKER_TAGS.handoffFrom,
     [
-      "This conversation was opened by @-mentioning you from another conversation; its origin is listed below and the user's message, if any, follows. When the request refers to an agent, session, or files without naming them, it means this origin.",
+      "The user handed this conversation to you from another one; its origin is listed below and the user's message, if any, follows. When the request refers to an agent, session, or files without naming them, it means this origin.",
       ...lines,
     ].join("\n"),
   );
