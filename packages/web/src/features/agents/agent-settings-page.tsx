@@ -156,7 +156,12 @@ export function AgentSettingsPage() {
   }
 
   return (
-    <div className="no-scrollbar h-full overflow-y-auto p-4 md:p-6">
+    /* relative: this page's scroller is its own containing block, so the snapshot-import
+       control's `sr-only` file input (position:absolute) anchors and scrolls inside it. Left
+       static, that input anchored to the initial containing block instead — past the fold it
+       sat at a document-level offset nothing clips, growing the document and adding a second
+       scrollbar (same failure as the Traces tree and the sidebar session list). */
+    <div className="no-scrollbar relative h-full overflow-y-auto p-4 md:p-6">
       <div className="mx-auto max-w-3xl">
         <Button
           variant="ghost"

@@ -297,8 +297,15 @@ export function TracesPage() {
 
   return (
     <div className="flex h-full flex-col md:flex-row">
-      {/* Directory tree: Agent → Session title (≥md left column; <md top collapsible area) */}
-      <aside className="max-h-52 shrink-0 overflow-y-auto border-b border-gray-200 bg-gray-50 px-1 py-2 md:max-h-none md:w-72 md:border-b-0 md:border-r dark:border-gray-800 dark:bg-gray-900">
+      {/* Directory tree: Agent → Session title (≥md left column; <md top collapsible area).
+          relative: the tree scroller must be its own containing block. Each Agent node carries
+          an import control whose file input and label are `sr-only`, i.e. position:absolute —
+          anchored to the initial containing block instead, a node sitting past the fold (the
+          second Agent, below a long session list) placed those boxes at a document-level
+          offset that neither this overflow-y-auto nor main's overflow-hidden clips, stretching
+          the **document** and putting a second scrollbar on the page (same failure the sidebar
+          session list fixed, see sidebar.tsx). */}
+      <aside className="relative max-h-52 shrink-0 overflow-y-auto border-b border-gray-200 bg-gray-50 px-1 py-2 md:max-h-none md:w-72 md:border-b-0 md:border-r dark:border-gray-800 dark:bg-gray-900">
         <p className="px-3 pb-1 text-xs font-bold uppercase tracking-wide text-gray-500">
           {S.traces.title}
         </p>

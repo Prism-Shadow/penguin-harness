@@ -15,6 +15,10 @@
  *   ~34px off-screen left, the skills menu ~92px off-screen right — with its autofocused
  *   search box then horizontally scrolling the whole draft page — and the workspace menu
  *   ~143px off-screen right when the ownership pills share one row);
+ * - no page grows the **document**: the app shell is height-constrained and each page scrolls
+ *   inside its own container, so a second scrollbar means an absolutely positioned descendant
+ *   escaped its scroller (the Traces tree and the Agent settings page both had one, visible
+ *   only with a second Agent below a long list);
  * - the sidebar's "New chat" button has no background fill (same gray-scale style as nav items);
  * - the collapsed rail shows, in product-specified order, last conversation / new chat /
  *   Agents / Skills / Models / Costs / Traces / Benchmark with localized (en + zh) hover
@@ -644,6 +648,78 @@ test("layout: mobile chat dropdowns stay inside the viewport", async ({ page }) 
     await deniedHeader.evaluate((el) => el.clientHeight),
     "denied card header stays single-line @390",
   ).toBeLessThanOrEqual(40);
+});
+
+/**
+ * The app shell is height-constrained: every page scrolls inside its own container and the
+ * document itself must never scroll. What breaks that is an absolutely positioned descendant
+ * whose containing block is the initial containing block — nothing between it and the root
+ * clips it, so its static position past the fold grows the **document**, producing a second
+ * scrollbar that drags the whole shell up. The Traces tree and the Agent settings page both
+ * had one (the `sr-only` file inputs of their import controls), visible only once a second
+ * Agent sat below a long list. This sweep is the general guard: with the data that exposes it,
+ * no page may grow the document.
+ */
+test("layout: no page grows the document (absolute descendants stay in their scroller)", async ({
+  page,
+}) => {
+  await provisionAndLogin(page.request, "layoutheight", P);
+  const projects = await (await page.request.get(`${BASE}/api/projects`)).json();
+  const projectId = projects.projects[0].projectId;
+  const put = await page.request.put(`${BASE}/api/projects/${projectId}/models`, {
+    data: {
+      defaultModel: { provider: "custom", modelId: "claude-4-8" },
+      models: [
+        {
+          provider: "custom",
+          modelId: "claude-4-8",
+          apiKey: "sk-mock",
+          baseUrl: MOCK,
+          contextWindow: 200000,
+        },
+      ],
+    },
+  });
+  expect(put.ok(), "put models").toBeTruthy();
+  // A second Agent is what moves an import control below the fold; the Traces tree only lists
+  // Sessions that have a Trace file, so each one has to actually run a Task.
+  const second = await page.request.post(`${BASE}/api/projects/${projectId}/agents`, {
+    data: { agentId: "agent_two", name: "Agent Two" },
+  });
+  // 409 = the Agent survives from an earlier run of this spec against the same data root
+  // (provisioning is idempotent by convention here, so a spec can be rerun on its own).
+  expect([201, 409], "create second agent").toContain(second.status());
+  for (const agentId of ["default_agent", "agent_two"]) {
+    for (let i = 0; i < (agentId === "default_agent" ? 14 : 2); i += 1) {
+      const created = await (
+        await page.request.post(`${BASE}/api/projects/${projectId}/agents/${agentId}/sessions`, {
+          data: { provider: "custom", modelId: "claude-4-8" },
+        })
+      ).json();
+      await page.request.post(`${BASE}/api/sessions/${created.session.sessionId}/tasks`, {
+        data: { input: [{ type: "text", text: "hi" }] },
+      });
+    }
+  }
+
+  // A short viewport puts the second Agent's node below the fold with a handful of Sessions
+  // instead of dozens — the same geometry a full-height window reaches with a longer list.
+  // Not shorter than 420: below ~412px the sidebar's own fixed chrome (project switcher, the
+  // eight nav entries, the user row) no longer fits, which grows the document for its own
+  // unrelated reason and would mask what this test is after.
+  await page.setViewportSize({ width: 1440, height: 420 });
+  const paths = ["/traces", "/chat", "/agents", "/agents/default_agent", "/skills", "/models"];
+  const overflowing = [];
+  for (const path of paths) {
+    await page.goto(`${BASE}${path}`);
+    await page.waitForTimeout(1200);
+    const grew = await page.evaluate(() => {
+      const de = document.documentElement;
+      return de.scrollHeight - de.clientHeight;
+    });
+    if (grew > 0) overflowing.push(`${path} (+${grew}px)`);
+  }
+  expect(overflowing, "pages whose document scrolls").toEqual([]);
 });
 
 test("layout: login — blank start, non-crossing traces, lang/theme controls", async ({ page }) => {
