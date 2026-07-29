@@ -1,6 +1,6 @@
 {
   "name": "@prismshadow/penguin-skills",
-  "version": "0.1.2",
+  "version": "0.1.4",
   "type": "module",
   "description": "PenguinHarness skill library: built-in SKILL.md documents and skill groups, decoupled from core.",
   "license": "Apache-2.0",
@@ -26,7 +26,7 @@
     "@types/node": "^24.0.0",
     "tsup": "^8.3.0",
     "typescript": "^5.6.0",
-    "vitest": "^2.1.0"
+    "vitest": "^3.2.6"
   },
   "files": [
     "dist",

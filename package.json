@@ -1,6 +1,6 @@
 {
   "name": "penguin-harness",
-  "version": "0.1.2",
+  "version": "0.1.4",
   "private": true,
   "type": "module",
   "description": "PenguinHarness — TypeScript AI Agent (SDK + CLI).",
@@ -27,11 +27,17 @@
     "@prismshadow/penguin-cli": "workspace:*",
     "@prismshadow/penguin-core": "workspace:*",
     "@types/node": "^24.0.0",
-    "concurrently": "^10.0.3",
+    "concurrently": "^10.0.4",
     "prettier": "^3.9.4",
     "tsx": "^4.20.0",
     "typescript": "^5.6.0",
-    "vitest": "^2.1.0"
+    "vitest": "^3.2.6"
   },
-  "packageManager": "pnpm@10.26.2"
+  "packageManager": "pnpm@10.26.2",
+  "pnpm": {
+    "overrides": {
+      "@anthropic-ai/sdk": "^0.91.1",
+      "esbuild": "^0.28.1"
+    }
+  }
 }
