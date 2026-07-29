@@ -161,7 +161,7 @@ Trace 下载对任意成员开放；导入仅限 owner（同 Agent 快照导入�
 | DELETE | / | 删除 Session（连同 Trace 与暂存文件） |
 | GET | /messages | 完整 OmniMessage 历史；Task 运行期间响应额外携带 `live`（进行中的流式尾部，见下） |
 | GET | /stream | SSE 事件流（见下节） |
-| POST | /tasks | 发起 Task：`{input: TaskInputPart[], thinkingLevel?, queueIfBusy?}` → 202。带 `queueIfBusy` 时，运行中的 Session 会把输入暂存为跟进消息（`queued: true`），空闲后按序自动作为普通 Task 发出；`task_state` 事件携带排队数 |
+| POST | /tasks | 发起 Task：`{input: TaskInputPart[], thinkingLevel?, queueIfBusy?}` → 202。带 `queueIfBusy` 时，运行中的 Session 会把输入暂存为跟进消息（`queued: true`），空闲后按序自动作为普通 Task 发出；`task_state` 事件携带排队数。`file` 输入部分会写入该 Session 的 scratchpad，并以 `[attached file: <path>]` 行交给模型（见下方请求体） |
 | POST | /steer | 运行中插话：`{text}` 为运行中的 Task 排队一条消息（作为独立的 `[user_steering]` 用户消息随下一轮送达）→ 202；无 Task 运行返回 409 `not_running` |
 | POST | /approvals/:toolCallId | 审批决定：`{decision}` 取 `allow` 或 `deny` → 204 |
 | POST | /abort | 中断当前 Task：已触发返回 202，无任务返回 204 |
@@ -239,7 +239,11 @@ interface TaskCreateRequest {
 }
 type TaskInputPart =
   | { type: "text"; text: string }
-  | { type: "image_url"; imageUrl: string };   // 粘贴图片以 data URL 上送
+  | { type: "image_url"; imageUrl: string }    // 粘贴图片以 data URL 上送
+  // 文件附件：base64 data: URL，单个 ≤10MB（超出返回 413 file_too_large；整个请求仍受 20MB
+  // 请求体上限约束）。服务端以净化后的文件名写入该 Session 的 scratchpad，并在消息文本末尾
+  // 追加一行 `[attached file: <path>]`——模型按路径读取该文件。`fileName` 不得含路径分隔符。
+  | { type: "file"; fileName: string; dataUrl: string };
 
 // POST /api/sessions/:sessionId/approvals/:toolCallId
 interface ApprovalDecisionRequest {

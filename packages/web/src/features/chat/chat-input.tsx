@@ -34,6 +34,12 @@
  * the model already in use clears the staging, and both are exclusive with goal mode); a chip is
  * removed via backspace at the start of the text or its x button, and both are cached with the
  * draft so they survive a session switch or reload along with the text they belong to;
+ * The "+" menu carries the input add-ons: image upload, file attachment (any type, several at a
+ * time — they ride the task request as base64 data URLs, and the server writes them into the
+ * session scratchpad and appends an `[attached file: <path>]` line to the message, so the model
+ * opens them by path), and goal mode; selected files show as removable chips above the text
+ * body, next to the image thumbnails, and — like images — an attachments-only message is
+ * sendable with no text at all.
  * The bottom toolbar provides a searchable multi-select skills dropdown (styled like the model
  * selector: a top search box filtering by name and localized description, plus a checklist;
  * clicking a row toggles its selection without closing the menu; the button = book icon + label +
@@ -68,7 +74,7 @@ import type {
   TaskInputPart,
 } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
-import { humanizeTokens } from "../../lib/format";
+import { formatBytes, humanizeTokens } from "../../lib/format";
 import { resolveContextWindow } from "../../lib/context";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName } from "../../state/project";
@@ -97,6 +103,7 @@ import {
   skillSlashItems,
 } from "./skill-use";
 import { GOAL_ICON, UNLIMITED_BUDGET, parseBudgetInput } from "./goal-use";
+import { PAPERCLIP_ICON } from "./attached-files-banner";
 
 const APPROVAL_MODES: ApprovalMode[] = ["always-ask", "read-only", "allow-all", "deny-all"];
 
@@ -1078,6 +1085,33 @@ function ContextGauge({
   );
 }
 
+/**
+ * One file attachment staged in the composer. `dataUrl` is the base64 `data:` URL sent as the
+ * task input's `file` part; `name` / `size` only feed the chip (the server decides the name the
+ * file actually gets on disk).
+ */
+interface Attachment {
+  name: string;
+  size: number;
+  dataUrl: string;
+}
+
+/**
+ * Appends the draft's attachments to a task input — images first (in pick order), then files.
+ * One place, because every send path submits the same draft: the normal send, the follow-up
+ * queue, the @ handoff and the `/model` switch.
+ */
+function appendAttachmentParts(
+  input: TaskInputPart[],
+  images: string[],
+  attachments: Attachment[],
+): void {
+  for (const url of images) input.push({ type: "image_url", imageUrl: url });
+  for (const file of attachments) {
+    input.push({ type: "file", fileName: file.name, dataUrl: file.dataUrl });
+  }
+}
+
 export function ChatInput({
   status,
   onSend,
@@ -1286,6 +1320,10 @@ export function ChatInput({
   const textRef = useRef(text);
   textRef.current = text;
   const [images, setImages] = useState<string[]>([]);
+  // File attachments picked from the "+" menu (any type): held as base64 data URLs, exactly
+  // like images — a draft has no Session yet, so there is nothing to upload them to ahead of
+  // time; they travel with the task request and the server files them into the scratchpad.
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [busy, setBusy] = useState(false);
   const [slashIndex, setSlashIndex] = useState(0);
   // Slash token start where Escape closed the menu: it stays shut for that one token.
@@ -1347,13 +1385,14 @@ export function ChatInput({
     canSwitchModel: onSwitchModel !== undefined,
     sessionBusy: running || compacting,
   });
-  // Sending is also allowed with only a staged switch chip (/agent or /model) or skills selected
-  // and no text: a handoff's first message may be just a [handoff_from] source block, and the
-  // empty-text fallbacks fill in the rest (S.chat.skillsAutoMessage with skills selected,
-  // S.chat.modelSwitchAutoMessage for a staged model switch — see sendNormal). Goal mode instead
-  // requires a text objective and a parseable budget — and an open editor showing an invalid
-  // draft disables Send outright: combined with the editor refusing to close over an invalid
-  // draft (below), no click sequence can fire a goal with a stale committed budget.
+  // Sending is also allowed with no text at all: attachments (images or files), a staged switch
+  // chip (/agent or /model) and selected skills each carry a message on their own — a handoff's
+  // first message may be just a [handoff_from] source block, and the empty-text fallbacks fill in
+  // the rest (S.chat.skillsAutoMessage with skills selected, S.chat.modelSwitchAutoMessage for a
+  // staged model switch — see sendNormal). Goal mode instead requires a text objective and a
+  // parseable budget — and an open editor showing an invalid draft disables Send outright:
+  // combined with the editor refusing to close over an invalid draft (below), no click sequence
+  // can fire a goal with a stale committed budget.
   const canSend =
     !running &&
     !compacting &&
@@ -1362,10 +1401,12 @@ export function ChatInput({
     (goalOn
       ? text.trim().length > 0 &&
         images.length === 0 &&
+        attachments.length === 0 &&
         goalBudget !== null &&
         !(goalBudgetOpen && goalBudgetDraftInvalid)
       : text.trim().length > 0 ||
         images.length > 0 ||
+        attachments.length > 0 ||
         target !== null ||
         pendingModel !== null ||
         selectedSkills.length > 0);
@@ -1411,9 +1452,9 @@ export function ChatInput({
   }, [goalBudgetDraft]);
 
   /**
-   * Engage/exit goal mode; engaging clears any staged switch chip and the images (genuinely
-   * exclusive: a handoff or a model switch opens another session, and the server rejects
-   * non-text goal input). Selected skills stay — they ride the round-1 message as a
+   * Engage/exit goal mode; engaging clears any staged switch chip and every attachment
+   * (genuinely exclusive: a handoff or a model switch opens another session, and the server
+   * rejects non-text goal input). Selected skills stay — they ride the round-1 message as a
    * [use_skills] block, like a normal send.
    */
   const toggleGoal = useCallback(
@@ -1427,19 +1468,20 @@ export function ChatInput({
         onHandoffTargetChange?.(null);
         setPendingModel(null);
         onPendingModelChange?.(null);
-        // Images can't ride a goal (the server rejects non-text goal input): clear any already
-        // attached, or canSend would stay silently false with the objective looking ready.
+        // Attachments can't ride a goal (the server rejects non-text goal input): clear any
+        // already attached, or canSend would stay silently false with the objective looking ready.
         setImages([]);
+        setAttachments([]);
       }
     },
     [onHandoffTargetChange, onPendingModelChange],
   );
 
   // Mid-run steering: while running, Enter/send queues plain text for the running agent
-  // (delivered between turns as a [user_steering] user message). Text only — images / skills /
-  // a staged switch stay in the draft for a later normal send (a staged /agent or /model chip
-  // also blocks steering: the text belongs to the conversation the switch is about to open, not
-  // to the agent running here).
+  // (delivered between turns as a [user_steering] user message). Text only — attachments /
+  // skills / a staged switch stay in the draft for a later normal send (a staged /agent or
+  // /model chip also blocks steering: the text belongs to the conversation the switch is about
+  // to open, not to the agent running here).
   // `!goalOn`: with the goal chip engaged the text is an OBJECTIVE — steering it into a run
   // that happens to be active (e.g. a schedule fired) would silently repurpose it.
   const canSteer =
@@ -1463,8 +1505,8 @@ export function ChatInput({
     localStorage.setItem(STEER_MODE_KEY, mode);
   };
   const followUpMode = steerMode === "followup" && onQueueFollowUp !== undefined;
-  // A follow-up is a full normal message: the whole draft (text / images / skills / a staged
-  // switch) is eligible, same content rule as canSend.
+  // A follow-up is a full normal message: the whole draft (text / attachments / skills / a
+  // staged switch) is eligible, same content rule as canSend.
   // `stagedRoute !== "blocked"`: a staged model fork is never eligible mid-run — the follow-up
   // path composes the whole draft and then hands it to onSwitchModel rather than to the queue,
   // so without this gate Enter would fork off a Trace that is still being written.
@@ -1477,6 +1519,7 @@ export function ChatInput({
     stagedRoute !== "blocked" &&
     (text.trim().length > 0 ||
       images.length > 0 ||
+      attachments.length > 0 ||
       target !== null ||
       pendingModel !== null ||
       selectedSkills.length > 0);
@@ -1489,6 +1532,7 @@ export function ChatInput({
     running &&
     text.trim().length === 0 &&
     images.length === 0 &&
+    attachments.length === 0 &&
     target === null &&
     pendingModel === null &&
     selectedSkills.length === 0;
@@ -1823,11 +1867,11 @@ export function ChatInput({
   /**
    * The full normal send path (task / handoff / model switch), also the follow-up queue path
    * and the fallback target when a steer hits the completion race: assembles the [use_skills]
-   * block, the images and the staged switch from the whole draft; `post` decides where a
-   * message that switches nothing goes (default: onSend; follow-up mode: onQueueFollowUp).
-   * Deliberately not gated on `running` — the caller decides (send() gates the normal path;
-   * the steering fallback calls this directly after the server said 409 not_running, when the
-   * local `status` may still lag behind).
+   * block, the attachments (images and files) and the staged switch from the whole draft; `post`
+   * decides where a message that switches nothing goes (default: onSend; follow-up mode:
+   * onQueueFollowUp). Deliberately not gated on `running` — the caller decides (send() gates the
+   * normal path; the steering fallback calls this directly after the server said 409
+   * not_running, when the local `status` may still lag behind).
    */
   // `post` accepts onSend's goal parameter so onSend can be its default; the follow-up queue
   // (fewer params) is assignable too. Non-goal calls always pass null.
@@ -1840,6 +1884,8 @@ export function ChatInput({
     // [use_skills] block, exactly like a normal send — the server strips leading marker blocks
     // when recording the objective, and rounds after the first re-inject the objective alone.
     if (goalOn) {
+      // Objective only: attachments were already cleared when goal mode engaged (and blocked
+      // from being added since), so there is nothing to carry here.
       setBusy(true);
       try {
         const ok = await onSend([{ type: "text", text: buildSkillsMessage(selectedSkills, t) }], {
@@ -1882,7 +1928,7 @@ export function ChatInput({
     const body = buildSkillsMessage(selectedSkills, bodyText);
     const input: TaskInputPart[] = [];
     if (body) input.push({ type: "text", text: body });
-    for (const url of images) input.push({ type: "image_url", imageUrl: url });
+    appendAttachmentParts(input, images, attachments);
     setBusy(true);
     try {
       const ok = target
@@ -1893,10 +1939,11 @@ export function ChatInput({
               input,
             )
           : await post(input, null);
-      // Only clear the draft after a successful send: on failure (network / conflict / server error) keep the user's input and images.
+      // Only clear the draft after a successful send: on failure (network / conflict / server error) keep the user's input and attachments.
       if (ok) {
         setText("");
         setImages([]);
+        setAttachments([]);
         setTarget(null);
         setPendingModel(null);
         setSelectedSkills([]);
@@ -2023,12 +2070,40 @@ export function ChatInput({
     if (e.target.files) addFiles(e.target.files);
     e.target.value = "";
   };
+
+  /**
+   * File attachments (any type, no `accept` filter): read as base64 data URLs, the same
+   * transport images use — a draft has no Session to upload to yet. The name and size come
+   * from the File itself and only feed the chip; the server decides the on-disk name.
+   */
+  const addAttachments = (files: Iterable<File>) => {
+    if (goalOn) return; // goal input is text-only, same rule as images
+    for (const file of files) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === "string") {
+          setAttachments((prev) => [
+            ...prev,
+            { name: file.name, size: file.size, dataUrl: reader.result as string },
+          ]);
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const onPickAttachments = (e: ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) addAttachments(e.target.files);
+    e.target.value = "";
+  };
   /**
    * The image picker moved into the "+" menu, so the file input can no longer be a `<label>`
    * wrapper: the menu unmounts its items on select. It lives outside the menu instead and the
    * entry clicks it — still inside the click's user-activation window, so the dialog opens.
+   * The file-attachment picker below works the same way.
    */
   const imageInputRef = useRef<HTMLInputElement>(null);
+  const attachmentInputRef = useRef<HTMLInputElement>(null);
 
   return (
     <div className="relative" ref={anchorRef}>
@@ -2120,6 +2195,40 @@ export function ChatInput({
                 ×
               </button>
             </div>
+          ))}
+        </div>
+      )}
+
+      {/* Attached files, right below the image thumbnails: one removable chip each (name +
+          size), since there is nothing to preview. The name is the picked file's — the server
+          sanitizes it when writing to the scratchpad, and the message's banner then shows the
+          on-disk name. */}
+      {attachments.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-2">
+          {attachments.map((file, i) => (
+            <span
+              key={i}
+              title={file.name}
+              className="anim-pop flex max-w-56 items-center gap-1.5 rounded-md border border-gray-200 bg-gray-50 py-1 pl-2 pr-1 text-xs text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+            >
+              <GlyphIcon
+                d={PAPERCLIP_ICON}
+                size={13}
+                className="shrink-0 text-gray-400 dark:text-gray-500"
+              />
+              <span className="min-w-0 truncate">{file.name}</span>
+              <span className="shrink-0 font-mono text-[10px] text-gray-400 dark:text-gray-500">
+                {formatBytes(file.size)}
+              </span>
+              <button
+                type="button"
+                aria-label={`${S.chat.removeFile} ${file.name}`}
+                onClick={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}
+                className="shrink-0 rounded p-0.5 text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:hover:text-gray-200"
+              >
+                ×
+              </button>
+            </span>
           ))}
         </div>
       )}
@@ -2477,11 +2586,22 @@ export function ChatInput({
               className="hidden"
               onChange={onPickFiles}
             />
-            {/* "+" extension menu, leading the row: input add-ons (image upload, goal mode)
-                plus the input settings footer (mid-run send mode — usable while running, which
-                is exactly when it matters, so the button itself never disables). Image upload
-                lives in here rather than as its own toolbar button: one 8x8 slot instead of
-                two, which is the difference between the phone row scrolling and not. */}
+            {/* The file picker's actual input, same arrangement as the image one above; no
+                `accept` — an attachment can be any type, the model reads it from disk. */}
+            <input
+              ref={attachmentInputRef}
+              type="file"
+              multiple
+              disabled={goalOn}
+              className="hidden"
+              onChange={onPickAttachments}
+            />
+            {/* "+" extension menu, leading the row: input add-ons (image upload, file
+                attachment, goal mode) plus the input settings footer (mid-run send mode —
+                usable while running, which is exactly when it matters, so the button itself
+                never disables). The uploads live in here rather than as their own toolbar
+                buttons: one 8x8 slot instead of three, which is the difference between the
+                phone row scrolling and not. */}
             <PlusMenu
               items={[
                 {
@@ -2495,6 +2615,19 @@ export function ChatInput({
                   // Goal mode is text-only (the objective is re-injected each round).
                   disabled: goalOn,
                   onSelect: () => imageInputRef.current?.click(),
+                },
+                {
+                  key: "file",
+                  icon: PAPERCLIP_ICON,
+                  label: S.chat.uploadFile,
+                  // The description doubles as the explanation of where the file ends up:
+                  // it is filed into the session scratchpad and reached by path, never
+                  // inlined into the conversation.
+                  desc: S.chat.uploadFileDesc,
+                  active: attachments.length > 0,
+                  // Same rule as images: goal input is text-only.
+                  disabled: goalOn,
+                  onSelect: () => attachmentInputRef.current?.click(),
                 },
                 {
                   key: "goal",

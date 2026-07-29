@@ -46,6 +46,8 @@ import {
 } from "../validate.js";
 import type { AppDeps } from "../../app.js";
 import { MAX_UPLOAD_BYTES } from "../../services/workspace-files-service.js";
+import { attachFilesToInput, parseAttachmentPart } from "../../services/task-attachments.js";
+import type { TaskAttachment } from "../../services/task-attachments.js";
 
 /** Max title length for manual renames: looser than the auto-generated 30-char limit, to accommodate users' own organizing conventions. */
 const SESSION_TITLE_MAX = 120;
@@ -72,13 +74,26 @@ const SESSION_CATEGORIES: readonly SessionCategory[] = [
   "archived",
 ];
 
-/** Validate Prompt input parts: text or image (data: / http(s) URL). */
-function parseTaskInput(body: Record<string, unknown>): OmniMessage[] {
+/**
+ * A validated Prompt: the message parts that go straight into the run, plus the file
+ * attachments, which still have to be written to disk (see attachFilesToInput). Kept apart
+ * because validation stays synchronous and side-effect free — nothing touches the filesystem
+ * until the request is known to be good, and goal mode can reject files before any bytes land.
+ */
+interface ParsedTaskInput {
+  messages: OmniMessage[];
+  attachments: TaskAttachment[];
+}
+
+/** Validate Prompt input parts: text, image (data: / http(s) URL), or an uploaded file. */
+function parseTaskInput(body: Record<string, unknown>): ParsedTaskInput {
   const input = body.input;
   if (!Array.isArray(input) || input.length === 0) {
     throw badRequest("input must be an array with at least one item.");
   }
-  return input.map((item, i) => {
+  const messages: OmniMessage[] = [];
+  const attachments: TaskAttachment[] = [];
+  input.forEach((item, i) => {
     if (item === null || typeof item !== "object" || Array.isArray(item)) {
       throw badRequest(`input[${i}] must be an object.`);
     }
@@ -87,7 +102,8 @@ function parseTaskInput(body: Record<string, unknown>): OmniMessage[] {
       if (typeof part.text !== "string" || part.text.length === 0) {
         throw badRequest(`input[${i}].text must be a non-empty string.`);
       }
-      return userText(part.text);
+      messages.push(userText(part.text));
+      return;
     }
     if (part.type === "image_url") {
       const url = part.imageUrl;
@@ -97,10 +113,18 @@ function parseTaskInput(body: Record<string, unknown>): OmniMessage[] {
       ) {
         throw badRequest(`input[${i}].imageUrl only supports data: or http(s) URLs.`);
       }
-      return imageUrlMessage(url);
+      messages.push(imageUrlMessage(url));
+      return;
     }
-    throw badRequest(`input[${i}].type must be one of text / image_url.`);
+    if (part.type === "file") {
+      // Not an OmniMessage of its own: the file becomes an `[attached file: …]` line on the
+      // text message once written to the scratchpad, so it carries no payload into the run.
+      attachments.push(parseAttachmentPart(part, i));
+      return;
+    }
+    throw badRequest(`input[${i}].type must be one of text / image_url / file.`);
   });
+  return { messages, attachments };
 }
 
 /**
@@ -323,12 +347,13 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     return c.body(null, 204);
   });
 
-  // Session scratchpad files (e.g. input images saved to disk for image-unsupported
-  // models): read by filename, so the conversation UI can render a message's
-  // "[attached image: <path>]" attachment line back into an image. Restricted to this
-  // session's own scratchpad directory (the filename must not contain a path
-  // separator, blocking traversal); filenames include a timestamp and are globally
-  // unique, so the response is marked immutable and long-cacheable.
+  // Session scratchpad files (input images saved to disk for image-unsupported models, the
+  // composer's file attachments, model-generated temp files): read by filename, so the
+  // conversation UI can render a message's "[attached image: <path>]" attachment line back
+  // into an image. Restricted to this session's own scratchpad directory (the filename must
+  // not contain a path separator, blocking traversal); a name is never reused for different
+  // bytes — uploads take a random suffix on collision — so the response is marked immutable
+  // and long-cacheable.
   app.get("/:sessionId/scratchpad/:fileName", async (c) => {
     const row = resolveSession(c);
     const fileName = c.req.param("fileName") ?? "";
@@ -356,6 +381,11 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     const mime = MIME_BY_EXT[path.extname(fileName).toLowerCase()] ?? "application/octet-stream";
     return c.body(new Uint8Array(bytes), 200, {
       "content-type": mime,
+      // nosniff: the composer's file attachments land in this same directory, so the bytes
+      // here are arbitrary user content served from the App's own origin — without it a
+      // browser could sniff an `application/octet-stream` upload back into HTML and run it
+      // same-origin (the same defense workspace file reads apply).
+      "x-content-type-options": "nosniff",
       "cache-control": "private, max-age=31536000, immutable",
     });
   });
@@ -420,24 +450,40 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     const thinkingLevel = optionalEnum(body, "thinkingLevel", THINKING_LEVELS);
     if (goal) {
       // Goal mode: the input must be plain non-empty text (its marker-stripped text becomes
-      // the objective, re-injected every round — images have no place in the protocol).
-      const input = parseTaskInput(body);
-      const text = input
+      // the objective, re-injected every round — images and file attachments have no place in
+      // the protocol; rejected before any upload is written to disk).
+      const { messages, attachments } = parseTaskInput(body);
+      const text = messages
         .filter((m) => (m.payload as { type?: string }).type === "text")
         .map((m) => (m.payload as { text: string }).text)
         .join("\n")
         .trim();
-      if (!text || input.some((m) => (m.payload as { type?: string }).type !== "text")) {
+      if (
+        !text ||
+        attachments.length > 0 ||
+        messages.some((m) => (m.payload as { type?: string }).type !== "text")
+      ) {
         throw badRequest("goal mode requires text-only input (the objective).");
       }
       const { sessionId } = await deps.manager.startGoal(row.sessionId, {
-        input,
+        input: messages,
         budget: goal.budget,
         ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
       });
       return c.json({ sessionId } satisfies TaskCreateResponse, 202);
     }
-    const input = parseTaskInput(body);
+    const parsed = parseTaskInput(body);
+    // File attachments land in this Session's scratchpad (deleted along with the Session) and
+    // are handed to the model as `[attached file: <path>]` lines on the message text. Written
+    // even when the task ends up queued as a follow-up: the queued input must be complete, and
+    // the queue is drained by this same Session. A Trace-less Session that self-heals into a
+    // new id below keeps its files under the id they were written with — the paths in the
+    // message stay valid; only the delete-with-the-Session cleanup misses them in that case.
+    const input = await attachFilesToInput(
+      parsed.messages,
+      parsed.attachments,
+      path.join(scratchpadDir(deps.config.root, row.projectId, row.agentId), row.sessionId),
+    );
     // Follow-up queue: with queueIfBusy, a busy session enqueues the input instead of 409
     // (auto-starts as an ordinary next task once idle; the response says which happened).
     const queueIfBusy = body.queueIfBusy === true;

@@ -161,7 +161,7 @@ The paths below omit the `/api/sessions/:sessionId` prefix. For the storage mode
 | DELETE | / | Delete the Session (along with its Traces and scratch files) |
 | GET | /messages | Full OmniMessage history; while a Task runs the response also carries `live` (the in-progress stream tail, see below) |
 | GET | /stream | SSE event stream (next section) |
-| POST | /tasks | Start a Task: `{input: TaskInputPart[], thinkingLevel?, queueIfBusy?}` → 202. With `queueIfBusy`, a busy session holds the input as a follow-up (`queued: true`) and auto-starts it as an ordinary next task once idle; `task_state` events report the queued count |
+| POST | /tasks | Start a Task: `{input: TaskInputPart[], thinkingLevel?, queueIfBusy?}` → 202. With `queueIfBusy`, a busy session holds the input as a follow-up (`queued: true`) and auto-starts it as an ordinary next task once idle; `task_state` events report the queued count. `file` input parts are written to the Session scratchpad and handed to the model as `[attached file: <path>]` lines (see the request body below) |
 | POST | /steer | Mid-run steering: `{text}` queues a message for the running Task (delivered between turns as a standalone `[user_steering]` user message) → 202; 409 `not_running` when no Task is in progress |
 | POST | /approvals/:toolCallId | Approval decision: `{decision}` is `allow` or `deny` → 204 |
 | POST | /abort | Interrupt the current Task: 202 when triggered, 204 when idle |
@@ -241,7 +241,12 @@ interface TaskCreateRequest {
 }
 type TaskInputPart =
   | { type: "text"; text: string }
-  | { type: "image_url"; imageUrl: string };   // pasted images arrive as data URLs
+  | { type: "image_url"; imageUrl: string }    // pasted images arrive as data URLs
+  // File attachment: base64 data: URL, ≤10MB each (413 file_too_large beyond that; the whole
+  // request still has to fit the 20MB body limit). The server writes it into the Session
+  // scratchpad under a sanitized name and appends an `[attached file: <path>]` line to the
+  // message text — the model opens the file by path. `fileName` carries no path separators.
+  | { type: "file"; fileName: string; dataUrl: string };
 
 // POST /api/sessions/:sessionId/approvals/:toolCallId
 interface ApprovalDecisionRequest {

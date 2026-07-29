@@ -48,6 +48,10 @@ export type { GoalRunOptions, SessionConfig, SessionRunOptions } from "./session
 // (stripConversationMarkers) is exported from the markers module via the omnimessage barrel.
 export { sanitizeTitle } from "./internal/session-title.js";
 export type { SessionTitleResult } from "./internal/session-title.js";
+// Session assembly likewise stays internal; only the attachment-line placement rule is
+// re-exported, because the server appends `[attached file: …]` lines for the composer's
+// uploads and both producers must place them identically (see the markers module).
+export { appendAttachmentLines } from "./internal/session-support.js";
 export { Agent, createAgent } from "./agent.js";
 export type { CreateAgentOptions, CreateSessionOptions, ResumeSessionOptions } from "./agent.js";
 

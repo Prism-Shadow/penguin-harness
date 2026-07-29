@@ -792,10 +792,15 @@ When done, open index.html in a browser and self-test once.`,
     },
     skillsBanner: (names: string[]): string =>
       `Using skill${names.length === 1 ? "" : "s"}: ${names.join(", ")}`,
-    /** Composer "+" extension menu (currently only goal mode; more entries later) and the goal chip. */
+    attachedFilesBanner: (names: string[]): string =>
+      `Attached file${names.length === 1 ? "" : "s"}: ${names.join(", ")}`,
+    /** Composer "+" extension menu (image upload, file attachment, goal mode) and the goal chip. */
     plusMenu: "More input options",
     uploadImage: "Upload image",
     uploadImageDesc: "Attach images to this message",
+    uploadFile: "Upload file",
+    uploadFileDesc: "Saved to the session scratchpad; the model reads them by path",
+    removeFile: "Remove file",
     goalMode: "Goal mode",
     goalModeDesc: "Loop until the goal completes",
     goalBudgetLabel: "Token budget",
