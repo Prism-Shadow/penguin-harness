@@ -612,14 +612,11 @@ When done, open index.html in a browser and self-test once.`,
 Agent:
 - id: \`finite_choice_agent\`
 - capability: make stable, explainable finite choices when public information is incomplete or conflicting
-- thinking_level: \`medium\`
 - installed_skills: \`[]\`
 
 Benchmark:
 - id: \`contextual-choice-adaptation\`
 - capability: form and transfer a stable finite-choice decision process from public rules, historical examples, and current facts
-- provider: \`deepseek\`
-- model_id: \`deepseek-v4-flash\`
 - runs: \`1\`
 - desired_baseline_score: \`<75\`
 - pilot_iteration_limit: \`5\`

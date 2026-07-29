@@ -3,8 +3,8 @@ name: benchmark-design
 description: Design and calibrate a multi-Case capability Benchmark and establish a traceable Formal Baseline. Use when an explicit Test Agent and target capability need a new or revised Benchmark; stop after the baseline and do not optimize the Agent.
 short_description: Design and calibrate an Agent capability Benchmark.
 short_description_zh: 设计并校准 Agent 能力评测 Benchmark。
-version: 15
-updated: 2026-07-29T07:31:52Z
+version: 16
+updated: 2026-07-29T14:19:56Z
 ---
 
 # Benchmark Design
@@ -15,7 +15,7 @@ This Skill changes the Benchmark, never the Test Agent. It does not run or score
 
 ## Before you start
 
-If the request does not identify a Test Agent, target capability, desired baseline score, and Pilot iteration limit, ask for the missing inputs. When they are already supplied, proceed without asking the user to restate them. An evaluation `(provider, model_id)` is optional: when omitted, discover the Project default from the first Pilot results instead of asking for it.
+If the request does not identify a Test Agent, target capability, desired baseline score, and Pilot iteration limit, ask for the missing inputs. When they are already supplied, proceed without asking the user to restate them. An evaluation `(provider, model_id)` is optional: use a complete pair supplied by the user; when omitted, discover the Project default from the first Pilot results instead of asking for it. Use the Test Agent's configured thinking level, whether explicitly requested by the user during Agent setup or inherited from its default configuration.
 
 ## Workflow
 
@@ -35,7 +35,7 @@ Follow this order:
 
 ## Setup and access
 
-Require a Test Agent id, target capability, desired baseline score, and a positive Pilot iteration limit. Derive a short semantic Benchmark id if needed. Accept an optional evaluation `(provider, model_id)` only as a complete pair; reject a half pair. When the pair is omitted, do not ask for it or inspect Project configuration.
+Require a Test Agent id, target capability, desired baseline score, and a positive Pilot iteration limit. Derive a short semantic Benchmark id if needed. Accept an optional evaluation `(provider, model_id)` only as a complete pair; reject a half pair. When the pair is omitted, do not ask for it or inspect Project configuration. Do not choose or override the Test Agent's thinking level during Benchmark design.
 
 The current Session must provide `run_subagent`, and the current Agent must have `agent-evaluation` installed. If either is missing, stop and explain what is needed.
 

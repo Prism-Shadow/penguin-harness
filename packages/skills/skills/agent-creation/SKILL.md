@@ -3,8 +3,8 @@ name: agent-creation
 description: Create or configure an Agent State from a user requirement by writing AGENTS.md, setting identity metadata, and installing only needed Skills. Use when the user asks to create a new Agent or configure an existing one; do not use for Benchmark design, evaluation, or optimization.
 short_description: Turn a requirement into a working agent.
 short_description_zh: 把需求变成可用的 Agent。
-version: 6
-updated: 2026-07-27T04:13:17Z
+version: 7
+updated: 2026-07-29T14:19:56Z
 ---
 
 # Agent Creation
@@ -65,9 +65,9 @@ Library skills can be copied from any agent that already has them (e.g. `default
 
 When creating a Test Agent, install only the capabilities it needs to solve ordinary tasks.
 
-## Set name and description
+## Set identity and optional thinking level
 
-In the target's `agent_state/system_config.yaml`, set the top-level `name:` and `description:` fields so the agent is recognizable in lists. Edit only these two fields.
+In the target's `agent_state/system_config.yaml`, set the top-level `name:` and `description:` fields so the agent is recognizable in lists. If the user explicitly supplies a `thinking_level`, set `model.thinking_level` to that value. Otherwise keep the current or copied default. Do not choose a thinking level on the user's behalf.
 
 ## Creating a brand-new agent
 
@@ -87,6 +87,7 @@ Then set the top-level `name`, `description`, and `version: 1` in `system_config
 Before finishing:
 
 - parse `agent_state/system_config.yaml` and confirm `name`, `description`, and a positive integer `version`;
+- when the user supplied `thinking_level`, confirm that `model.thinking_level` matches it;
 - confirm `agent_state/AGENTS.md` exists and is non-empty;
 - confirm every installed Skill has a parseable `SKILL.md`, and its `name` matches its directory;
 - confirm no Agent outside `TARGET` was changed.

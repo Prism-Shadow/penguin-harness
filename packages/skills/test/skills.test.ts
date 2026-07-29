@@ -250,10 +250,13 @@ describe("librarySkill", () => {
   });
 
   it("evaluation is the only subagent leaf and optimization has a bounded valid-round loop", () => {
+    const creation = librarySkill("agent-creation")!.content.replace(/\s+/g, " ");
     const evaluation = librarySkill("agent-evaluation")!.content.replace(/\s+/g, " ");
     const benchmarkDesign = librarySkill("benchmark-design")!.content.replace(/\s+/g, " ");
     const optimization = librarySkill("agent-optimization")!.content.replace(/\s+/g, " ");
 
+    expect(creation).toContain("If the user explicitly supplies a `thinking_level`");
+    expect(creation).toContain("Otherwise keep the current or copied default");
     expect(evaluation).toContain("request from a `run_subagent` caller");
     expect(evaluation).toContain("Use the Penguin CLI only to launch the specified Test Agent");
     expect(evaluation).toContain('PROJECT_ID="$(basename "$PROJECT_DIR")"');
@@ -276,6 +279,7 @@ describe("librarySkill", () => {
     );
     expect(evaluation).not.toContain('PENGUIN_HOME="$(dirname "$PROJECT_DIR")" penguin run');
     expect(benchmarkDesign).toContain("An evaluation `(provider, model_id)` is optional");
+    expect(benchmarkDesign).toContain("Use the Test Agent's configured thinking level");
     expect(benchmarkDesign).toContain(
       "Require all cells in Pilot iteration 1 to report one identical runtime",
     );

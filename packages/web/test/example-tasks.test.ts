@@ -25,17 +25,15 @@ describe("draft example tasks", () => {
       buildMarkers: [
         "依次使用 `agent-creation` 和 `benchmark-design`",
         "id：`finite_choice_agent`",
-        "thinking_level：`medium`",
         "installed_skills：`[]`",
         "id：`contextual-choice-adaptation`",
-        "provider：`deepseek`",
-        "model_id：`deepseek-v4-flash`",
         "desired_baseline_score：`<75`",
         "pilot_iteration_limit：`5`",
         "足球投注决策",
         "售后政策与工单事实",
         "投资策略、历史市场与当前指标",
       ],
+      omittedRuntimeMarkers: ["thinking_level：", "provider：", "model_id："],
       optimizationMarkers: [
         "使用 `agent-optimization`",
         "test_agent_id：`finite_choice_agent`",
@@ -52,17 +50,15 @@ describe("draft example tasks", () => {
       buildMarkers: [
         "Use `agent-creation` followed by `benchmark-design`",
         "id: `finite_choice_agent`",
-        "thinking_level: `medium`",
         "installed_skills: `[]`",
         "id: `contextual-choice-adaptation`",
-        "provider: `deepseek`",
-        "model_id: `deepseek-v4-flash`",
         "desired_baseline_score: `<75`",
         "pilot_iteration_limit: `5`",
         "football betting decisions",
         "policy and ticket facts",
         "strategy, historical markets, and current indicators",
       ],
+      omittedRuntimeMarkers: ["thinking_level:", "provider:", "model_id:"],
       optimizationMarkers: [
         "Use `agent-optimization`",
         "test_agent_id: `finite_choice_agent`",
@@ -74,12 +70,21 @@ describe("draft example tasks", () => {
     },
   ])(
     "$locale preserves the two-session agent evolution contract",
-    ({ buildPrompt, optimizationPrompt, buildMarkers, optimizationMarkers }) => {
+    ({
+      buildPrompt,
+      optimizationPrompt,
+      buildMarkers,
+      omittedRuntimeMarkers,
+      optimizationMarkers,
+    }) => {
       const normalizedBuild = buildPrompt.replace(/\s+/g, " ");
       const normalizedOptimization = optimizationPrompt.replace(/\s+/g, " ");
 
       for (const marker of buildMarkers) {
         expect(normalizedBuild).toContain(marker);
+      }
+      for (const marker of omittedRuntimeMarkers) {
+        expect(normalizedBuild).not.toContain(marker);
       }
       for (const marker of optimizationMarkers) {
         expect(normalizedOptimization).toContain(marker);

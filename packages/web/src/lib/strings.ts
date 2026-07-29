@@ -596,14 +596,11 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
 Agent：
 - id：\`finite_choice_agent\`
 - 能力：面对有限选项，在公开信息不足或冲突时仍能给出稳定、可解释的选择
-- thinking_level：\`medium\`
 - installed_skills：\`[]\`
 
 Benchmark：
 - id：\`contextual-choice-adaptation\`
 - capability：从公开规则、历史案例和当前事实中形成并迁移稳定的有限选择决策过程
-- provider：\`deepseek\`
-- model_id：\`deepseek-v4-flash\`
 - runs：\`1\`
 - desired_baseline_score：\`<75\`
 - pilot_iteration_limit：\`5\`
