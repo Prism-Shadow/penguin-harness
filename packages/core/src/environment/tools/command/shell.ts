@@ -7,22 +7,37 @@
  * 1. `PENGUIN_SHELL` (explicit executable name or path) always wins, on every platform;
  *    the argument shape is inferred from its basename (see below).
  * 2. Otherwise, non-Windows uses `bash -lc` (today's behavior, bit for bit).
- * 3. On Windows, probe PATH for `bash` (Git for Windows — best compatibility with the
- *    skill/prompt ecosystem, which is written for a POSIX shell), then `pwsh`
- *    (PowerShell 7+), then fall back to `powershell` (Windows PowerShell 5.1, always
- *    present). A `bash` that resolves into the Windows system directory is ignored: that
- *    is the WSL launcher, which runs commands inside a Linux distro with a different
- *    filesystem view (and fails outright when no distro is configured).
+ * 3. On Windows, probe PATH for `bash` (a full Git for Windows install — best compatibility
+ *    with the skill/prompt ecosystem, which is written for a POSIX shell). A `bash` that
+ *    resolves into the Windows system directory is ignored: that is the WSL launcher, which
+ *    runs commands inside a Linux distro with a different filesystem view (and fails outright
+ *    when no distro is configured).
+ * 4. Then `PENGUIN_BUNDLED_SHELL` — the MinGit bash the Windows package ships (see the
+ *    release workflow), advertised by the launcher shims as an absolute path. It comes
+ *    *after* the PATH probe on purpose: a user's own Git for Windows carries the full MSYS
+ *    userland (curl, tar, less, perl …), while MinGit carries ~60 core tools, so when both
+ *    exist theirs is the better shell. This step is what makes the shell deterministic —
+ *    without it, the same Agent and the same Skill behave differently on two Windows
+ *    machines depending on what happens to be installed.
+ * 5. Only then `pwsh` (PowerShell 7+), and finally `powershell` (Windows PowerShell 5.1,
+ *    always present). These remain reachable for npm installs, which ship no bundle.
  *
  * Argument shapes by basename (also applied to `PENGUIN_SHELL` values):
  * - `pwsh` / `powershell` -> `-NoLogo -NoProfile -Command <cmd>`
  * - `cmd`                 -> `/d /s /c <cmd>`
  * - anything else         -> `-lc <cmd>` (bash/zsh/sh-style login shell)
  *
+ * `-lc` matters for the bundled shell: as a login shell it sources MinGit's `etc/profile`,
+ * which defaults to `MSYS2_PATH_TYPE=inherit` and yields
+ * `/mingw64/bin:/usr/local/bin:/usr/bin:/bin:<inherited Windows PATH>` — the bundled coreutils
+ * and git first, the inherited Windows PATH still behind them, so System32's `curl.exe` and
+ * `tar.exe` (which MinGit does not carry) keep resolving. Nothing has to plumb PATH by hand.
+ *
  * The resolved shell's name is surfaced to the model via the session environment (the
  * `Shell:` line in the system prompt), so it knows which syntax the exec tool speaks.
  */
 import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import path from "node:path";
 
 /** A resolved shell invocation: `spawn(command, [...args, cmd])` runs `cmd` in that shell. */
@@ -43,6 +58,8 @@ export interface ResolveShellOptions {
   whichAll?: (cmd: string) => string[];
   /** The Windows system root (to recognize the WSL bash launcher); default `env.SystemRoot` or C:\Windows. */
   systemRoot?: string;
+  /** Existence probe for the bundled shell path (injected in tests); default `fs.existsSync`. */
+  exists?: (filePath: string) => boolean;
 }
 
 /** Basename without a trailing .exe/.cmd/.bat/.ps1 extension, lowercased ("C:\...\pwsh.EXE" -> "pwsh"). */
@@ -98,6 +115,7 @@ export function resolveShell(opts: ResolveShellOptions = {}): ShellInvocation {
   }
 
   const whichAll = opts.whichAll ?? defaultWhichAll;
+  const exists = opts.exists ?? existsSync;
   const systemRoot = opts.systemRoot ?? env.SystemRoot ?? "C:\\Windows";
   // The WSL launcher lives in <SystemRoot>\System32 (or Sysnative under WOW64); a Git for
   // Windows bash lives under the Git install dir. Only the first PATH match counts — that
@@ -105,6 +123,13 @@ export function resolveShell(opts: ResolveShellOptions = {}): ShellInvocation {
   const bash = whichAll("bash")[0];
   if (bash && !bash.toLowerCase().startsWith(systemRoot.toLowerCase() + path.win32.sep)) {
     return { command: "bash", args: ["-lc"], name: "bash" };
+  }
+  // The bundled MinGit bash (installed-package layout only; absent for npm installs). Reported
+  // to the model as "bash" rather than its filename: MinGit installs GNU bash under the name
+  // `sh`, and the Skill ecosystem targets bash, so "sh" would understate what it can run.
+  const bundled = env.PENGUIN_BUNDLED_SHELL?.trim();
+  if (bundled && exists(bundled)) {
+    return { command: bundled, args: ["-lc"], name: "bash" };
   }
   if (whichAll("pwsh").length > 0) {
     return { command: "pwsh", args: argsForShell("pwsh"), name: "pwsh" };

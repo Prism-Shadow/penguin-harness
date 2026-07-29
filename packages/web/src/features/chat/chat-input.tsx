@@ -65,6 +65,7 @@ import { resolveContextWindow } from "../../lib/context";
 import { useLocale } from "../../state/locale";
 import { Dropdown } from "../../components/ui/dropdown";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
+import { noAutofill } from "../../components/ui/input";
 import { SkillIcon } from "../skills/skill-icon-view";
 import { ZoomableImage } from "../../components/ui/image-zoom";
 import { ProviderLogo } from "../../components/ui/provider-logo";
@@ -280,6 +281,7 @@ function ModelMenuList({
           onChange={(e) => setQuery(e.target.value)}
           placeholder={S.models.searchPlaceholder}
           aria-label={S.models.searchPlaceholder}
+          {...noAutofill}
           className="w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-xs text-gray-700 placeholder:text-gray-400 focus:outline-none dark:text-gray-200 dark:placeholder:text-gray-500"
         />
       </div>
@@ -680,6 +682,7 @@ function SkillSelect({
           onChange={(e) => setQuery(e.target.value)}
           placeholder={S.chat.skillsSearchPlaceholder}
           aria-label={S.chat.skillsSearchPlaceholder}
+          {...noAutofill}
           className="w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-xs text-gray-700 placeholder:text-gray-400 focus:outline-none dark:text-gray-200 dark:placeholder:text-gray-500"
         />
       </div>
@@ -1117,8 +1120,8 @@ export function ChatInput({
   const draftHasContent =
     text.trim().length > 0 || images.length > 0 || target !== null || selectedSkills.length > 0;
   // Goal mode (engaged via the "+" menu or /goal): the text body becomes the objective. It is
-  // exclusive with the @ handoff target (engaging either clears the other) and with images
-  // (the objective is re-injected every round as plain text); selected skills ride the
+  // exclusive with the @ handoff target (engaging either clears the other); attached images
+  // ride along (core folds them into the objective as path lines) and selected skills ride the
   // round-1 message as a [use_skills] block, exactly like a normal send.
   const [goalOn, setGoalOn] = useState(false);
   const [goalBudgetText, setGoalBudgetText] = useState("");
@@ -1138,9 +1141,8 @@ export function ChatInput({
   // requires a text objective and a parseable budget — and an open editor showing an invalid
   // draft disables Send outright: combined with the editor refusing to close over an invalid
   // draft (below), no click sequence can fire a goal with a stale committed budget.
-  // Images may ride along (core folds them into the objective as `[attached image: …]` lines,
-  // so the reference survives every round), but they can't stand in for the text: an image
-  // alone states no objective.
+  // Images may come along (core folds them into the objective as `[attached image: …]` lines
+  // so they survive the rounds), but they don't substitute for the text.
   const canSend =
     !running &&
     !compacting &&
@@ -1204,9 +1206,6 @@ export function ChatInput({
         setGoalBudgetText("");
         setTarget(null);
         onHandoffTargetChange?.(null);
-        // Images can't ride a goal (the server rejects non-text goal input): clear any already
-        // attached, or canSend would stay silently false with the objective looking ready.
-        setImages([]);
       }
     },
     [onHandoffTargetChange],
@@ -1580,8 +1579,8 @@ export function ChatInput({
     if (goalOn) {
       setBusy(true);
       try {
-        // Attached images ride the objective: core folds them into `[attached image: <path>]`
-        // lines inside it (unconditionally in goal mode), so the reference survives all rounds.
+        // Attached images go with the objective; core folds them into `[attached image: <path>]`
+        // lines inside it so they are still there in later rounds.
         const goalInput: TaskInputPart[] = [
           { type: "text", text: buildSkillsMessage(selectedSkills, t) },
         ];
@@ -1744,9 +1743,6 @@ export function ChatInput({
   };
 
   const addFiles = (files: Iterable<File>) => {
-    // Goal mode is text-only (the objective is re-injected each round): drop image attachments
-    // outright — including pastes — so send never lands in a silently-disabled state.
-    if (goalOn) return;
     for (const file of files) {
       if (!file.type.startsWith("image/")) continue;
       const reader = new FileReader();
@@ -2050,6 +2046,7 @@ export function ChatInput({
                         placeholder={S.chat.goalBudgetPlaceholder}
                         aria-invalid={goalBudgetDraftInvalid}
                         aria-describedby="goal-budget-hint"
+                        {...noAutofill}
                         title={
                           goalBudgetDraftInvalid ? S.chat.goalBudgetInvalid : S.chat.goalBudgetHint
                         }
@@ -2221,9 +2218,9 @@ export function ChatInput({
                   icon: IMAGE_ICON,
                   label: S.chat.uploadImage,
                   // Without vision the images still send — as scratchpad file paths — so the
-                  // entry stays usable and the hint explains what will happen instead. Goal
-                  // mode always sends them that way (whatever the model), since the objective
-                  // is re-injected as text every round.
+                  // entry stays usable and the hint says what will happen instead. Goal mode
+                  // sends them that way on any model, since the objective is re-injected as
+                  // text every round.
                   desc: vision && !goalOn ? S.chat.uploadImageDesc : S.chat.imagesAsPathHint,
                   active: images.length > 0,
                   onSelect: () => imageInputRef.current?.click(),

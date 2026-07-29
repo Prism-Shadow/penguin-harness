@@ -24,7 +24,7 @@ import {
   withOrigin,
 } from "@prismshadow/penguin-core";
 import type { OmniMessage } from "@prismshadow/penguin-core";
-import type { ProjectCreateResponse, UsageResponse } from "../src/api/types.js";
+import type { ProjectCreateResponse, UsageErrorsPage, UsageResponse } from "../src/api/types.js";
 import { openDatabase } from "../src/db/database.js";
 import { ErrorsRepo } from "../src/db/repos/errors.js";
 import type { ErrorRecordInsert } from "../src/db/repos/errors.js";
@@ -368,18 +368,20 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
 
   // —— LLM ——
 
-  it("LLM failed → unexpected (needs a human); message takes the abort reason", () => {
+  it("an unrecovered LLM failed → unexpected (needs a human); message takes the abort reason", () => {
+    // Nothing follows this failure but the abort, so the ladder did not carry it: the user
+    // lost the turn and it belongs in front of an operator.
     const got = feed([
       requestBegin(),
       requestEnd("failed"),
-      abortEvent("llm request error: 401 invalid api key"),
+      abortEvent("llm request failed after 5 retries: 400 unknown parameter"),
     ]);
     expect(got).toHaveLength(1);
     expect(got[0]).toMatchObject({
       source: "llm",
       kind: "unexpected",
       code: "llm_failed",
-      message: "llm request error: 401 invalid api key",
+      message: "llm request failed after 5 retries: 400 unknown parameter",
       project_id: "p1",
       agent_id: "a1",
       session_id: "s1",
@@ -406,9 +408,10 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
     });
   });
 
-  it("request_end(auth) shares the llm_failed/unexpected bucket; message takes the abort reason", () => {
-    // Credentials rejection is its own stop reason but no new error taxonomy: same code
-    // and kind as failed, resolved by the abort that follows like any failed exit.
+  it("request_end(auth) gets its own llm_auth code, out of the failed dedup bucket", () => {
+    // Credentials rejection needs a code of its own now that `failed` fires on every blip
+    // the ladder absorbs: dedup is (source, code, Project) over a short window, so sharing
+    // a bucket would let a real credential failure be dropped as a duplicate.
     const got = feed([
       requestBegin(),
       requestEnd("auth", "401 invalid x-api-key (invalid_api_key)"),
@@ -418,9 +421,47 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
     expect(got[0]).toMatchObject({
       source: "llm",
       kind: "unexpected",
-      code: "llm_failed",
+      code: "llm_auth",
       message: "llm request error: 401 invalid x-api-key (invalid_api_key)",
     });
+  });
+
+  it("a failed the ladder carried → expected under its own code, not an operator incident", () => {
+    // The inversion this guards against: the engine retries `failed`, so the same status now
+    // covers "a gateway hiccup the user never saw" and "the run died on it". A following
+    // request_begin proves another attempt happened — that one is expected, like a timeout.
+    const got = feed([
+      requestBegin(),
+      requestEnd("failed", "Upstream HTTP/2 stream failed (upstream_http2_stream_error)"),
+      requestBegin(),
+      requestEnd("completed"),
+    ]);
+    expect(got).toHaveLength(1);
+    expect(got[0]).toMatchObject({
+      source: "llm",
+      kind: "expected",
+      code: "llm_failed_retried",
+      // No abort ever arrives on the retry path: the staged request_end's own detail is the
+      // message of record.
+      message: "Upstream HTTP/2 stream failed (upstream_http2_stream_error)",
+    });
+  });
+
+  it("a recovered failed does not dedup away a credential failure that lands right after", () => {
+    // The two share a 2s dedup window and used to share the `llm_failed` code, so the auth
+    // record was dropped outright — the one failure that always needs a human, silenced by
+    // the one that never does.
+    const got = feed([
+      requestBegin(),
+      requestEnd("failed", "Upstream HTTP/2 stream failed"),
+      requestBegin(), // The retry: resolves the failure above as recovered.
+      requestEnd("auth", "401 invalid x-api-key"),
+      abortEvent("llm request error: 401 invalid x-api-key"),
+    ]);
+    expect(got.map((r) => [r.code, r.kind])).toEqual([
+      ["llm_failed_retried", "expected"],
+      ["llm_auth", "unexpected"],
+    ]);
   });
 
   it("a retried failure keeps its real detail: request_end(timeout).message lands in the record", () => {
@@ -498,8 +539,9 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
     w.close();
     const got = rows();
     expect(got).toHaveLength(1);
+    // close() is not proof of a retry, so it takes the conservative branch: unrecovered.
     expect(got[0]).toMatchObject({ code: "llm_failed", kind: "unexpected" });
-    expect(got[0]!.message).toContain("LLM request failed");
+    expect(got[0]!.message).toBe("LLM request failed and the retries did not recover it.");
   });
 
   it("parent/child LLM failures pend separately by origin; abort reasons never cross over", () => {
@@ -526,11 +568,102 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
 
   const call = (name: string, id: string) => toolCall({ name, arguments: "{}", toolCallId: id });
 
-  it("tool failed / timeout → environment + expected, code carries the tool name", () => {
+  it("a command tool's ordinary non-zero exit is not recorded: an exit status is information", () => {
+    // Both command tools end in resultForExit, which maps ANY non-zero exit to `failed`, so
+    // grep finding nothing (exit 1), `test -f` on a missing file, or a diff that differs would
+    // all land in the cost center and bury the real errors. input_command is covered alongside
+    // exec_command because it is how a backgrounded command is polled for its eventual exit —
+    // dropping one but not the other would depend on where the command happened to finish.
+    // Every other tool still records, whatever its output says.
     const got = feed([
       call("exec_command", "tc-1"),
       toolCallOutput({
-        output: "ls: /nope: No such file or directory\n[tool error] exit code 2",
+        output: "grep: no match\n[exit code: 1]",
+        toolCallId: "tc-1",
+        stopReason: "failed",
+      }),
+      call("input_command", "tc-2"),
+      toolCallOutput({
+        output: "make: *** [build] Error 2\n[exit code: 2]",
+        toolCallId: "tc-2",
+        stopReason: "failed",
+      }),
+      call("write_file", "tc-3"),
+      toolCallOutput({
+        output: "EACCES\n[exit code: 1]",
+        toolCallId: "tc-3",
+        stopReason: "failed",
+      }),
+    ]);
+    expect(got.map((r) => r.code)).toEqual(["tool_failed:write_file"]);
+  });
+
+  it("a command tool killed by a signal, or that never spawned, is still recorded", () => {
+    // `failed` from these tools is not only "exited non-zero": an OOM kill or a segfault
+    // (resultForExit's signal branch) and a spawn failure (nonexistent workdir, EMFILE, an
+    // unresolvable shell) are config/environment faults — the recorder's "needs a human"
+    // category — that no amount of Agent self-correction gets around. Only the exit marker
+    // separates them, which is why the rule reads the note rather than the tool name.
+    const got = feed([
+      call("exec_command", "tc-1"),
+      toolCallOutput({
+        output: "cc1plus: out of memory\n[terminated by signal SIGKILL]",
+        toolCallId: "tc-1",
+        stopReason: "failed",
+      }),
+      call("input_command", "tc-2"),
+      toolCallOutput({
+        output: "[spawn error: ENOENT: no such file or directory, posix_spawn '/bin/nope']",
+        toolCallId: "tc-2",
+        stopReason: "failed",
+      }),
+    ]);
+    expect(got.map((r) => r.code)).toEqual([
+      "tool_failed:exec_command",
+      "tool_failed:input_command",
+    ]);
+  });
+
+  it("a command tool's timeout and a missing session manager are recorded (neither is an exit)", () => {
+    // Environment finalizes a tool timeout as stop_reason `failed` plus its own note — it never
+    // emits stop_reason "timeout" for these tools — so a hung command surfaces as tool_failed
+    // with no exit marker to drop it. A missing command session manager is a server
+    // misconfiguration and produces no exit marker either.
+    const got = feed([
+      call("exec_command", "tc-1"),
+      toolCallOutput({
+        output: "still building…\n[tool timeout: exceeded 60000ms]",
+        toolCallId: "tc-1",
+        stopReason: "failed",
+      }),
+      call("input_command", "tc-2"),
+      toolCallOutput({
+        output: "[input_command unavailable: no command session manager configured]",
+        toolCallId: "tc-2",
+        stopReason: "failed",
+      }),
+    ]);
+    expect(got.map((r) => r.code)).toEqual([
+      "tool_failed:exec_command",
+      "tool_failed:input_command",
+    ]);
+  });
+
+  it("an exit marker with no cached tool name is dropped, not filed under tool_failed:unknown", () => {
+    // Only the command tools ever write that marker, so a cache miss (the tool_call evicted, or
+    // never seen) is still that noise — recording it nameless would defeat the exclusion.
+    const got = feed([
+      toolCallOutput({ output: "[exit code: 1]", toolCallId: "tc-1", stopReason: "failed" }),
+      toolCallOutput({ output: "boom", toolCallId: "tc-2", stopReason: "failed" }),
+    ]);
+    expect(got.map((r) => [r.code, r.message])).toEqual([["tool_failed:unknown", "boom"]]);
+  });
+
+  it("tool failed / timeout → environment + expected, code carries the tool name", () => {
+    const got = feed([
+      call("write_file", "tc-1"),
+      toolCallOutput({
+        output: "EACCES: permission denied\n[tool error] write failed",
         toolCallId: "tc-1",
         stopReason: "failed",
       }),
@@ -545,19 +678,19 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
     expect(got[0]).toMatchObject({
       source: "environment",
       kind: "expected", // error fed back to the model; the Agent adjusts on its own — no human needed
-      code: "tool_failed:exec_command",
+      code: "tool_failed:write_file",
       project_id: "p1",
       agent_id: "a1",
       session_id: "s1",
     });
-    expect(got[0]!.message).toContain("[tool error] exit code 2"); // the actual error text
+    expect(got[0]!.message).toContain("[tool error] write failed"); // the actual error text
     expect(got[1]).toMatchObject({ code: "tool_timeout:read_file", kind: "expected" });
   });
 
   it("tool aborted (denial / user interrupt) and completed are not recorded", () => {
     expect(
       feed([
-        call("exec_command", "tc-1"),
+        call("write_file", "tc-1"),
         toolCallOutput({
           output: "Tool call denied by user.",
           toolCallId: "tc-1",
@@ -571,20 +704,20 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
 
   it("parallel tools: each tool_call_id maps to its own name despite out-of-order outputs", () => {
     const got = feed([
-      call("exec_command", "tc-1"),
+      call("write_file", "tc-1"),
       call("read_file", "tc-2"),
       call("write_file", "tc-3"),
       toolCallOutput({ output: "boom-2", toolCallId: "tc-2", stopReason: "failed" }),
       toolCallOutput({ output: "ok", toolCallId: "tc-3", stopReason: "completed" }),
       toolCallOutput({ output: "boom-1", toolCallId: "tc-1", stopReason: "failed" }),
     ]);
-    expect(got.map((r) => r.code)).toEqual(["tool_failed:read_file", "tool_failed:exec_command"]);
+    expect(got.map((r) => r.code)).toEqual(["tool_failed:read_file", "tool_failed:write_file"]);
     expect(got.map((r) => r.message)).toEqual(["boom-2", "boom-1"]);
   });
 
   it("a child session's tool failure: no name mix-up with the parent's equal tool_call_id", () => {
     const got = feed([
-      call("exec_command", "tc-1"), // parent session
+      call("read_file", "tc-1"), // parent session
       withOrigin(call("write_file", "tc-1"), "session-child"), // sub-session happens to share the same id
       withOrigin(
         toolCallOutput({ output: "child boom", toolCallId: "tc-1", stopReason: "failed" }),
@@ -598,12 +731,12 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
       message: "child boom",
       session_id: "s1", // this test didn't feed the sub-session's session_meta → attribution falls back to the parent ctx (see the "attribution" test cases below)
     });
-    expect(got[1]).toMatchObject({ code: "tool_failed:exec_command", message: "parent boom" });
+    expect(got[1]).toMatchObject({ code: "tool_failed:read_file", message: "parent boom" });
   });
 
   it("overlong tool output: message takes the tail (the reason is at the end)", () => {
     const got = feed([
-      call("exec_command", "tc-1"),
+      call("write_file", "tc-1"),
       toolCallOutput({
         output: `${"x".repeat(2000)}\n[tool error] boom`,
         toolCallId: "tc-1",
@@ -620,7 +753,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
     expect(
       feed([
         assistantText("normal output"),
-        call("exec_command", "tc-1"),
+        call("write_file", "tc-1"),
         partialToolCallOutput({ eventType: "stop", toolCallId: "tc-1", stopReason: "failed" }),
       ]),
     ).toHaveLength(0);
@@ -649,7 +782,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
   it("a child session's tool failure attributes to it (code still carries the tool name)", () => {
     const got = feed([
       childMeta("session-child", "/data/agents/agent-child/agent_state"),
-      withOrigin(call("exec_command", "tc-1"), "session-child"),
+      withOrigin(call("write_file", "tc-1"), "session-child"),
       withOrigin(
         toolCallOutput({ output: "child boom", toolCallId: "tc-1", stopReason: "failed" }),
         "session-child",
@@ -658,7 +791,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
     expect(got).toHaveLength(1);
     expect(got[0]).toMatchObject({
       source: "environment",
-      code: "tool_failed:exec_command",
+      code: "tool_failed:write_file",
       message: "child boom",
       agent_id: "agent-child",
       session_id: "session-child",
@@ -678,7 +811,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
         toolCallOutput({ output: "child tool boom", toolCallId: "tc-9", stopReason: "failed" }),
         "session-child",
       ),
-      call("exec_command", "tc-9"), // parent session happens to share the same id
+      call("read_file", "tc-9"), // parent session happens to share the same id
       toolCallOutput({ output: "parent tool boom", toolCallId: "tc-9", stopReason: "failed" }),
       requestEnd("failed"), // the parent session's LLM failure only wraps up now
       abortEvent("llm request error: 500 upstream"),
@@ -687,7 +820,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
     expect(got.map((r) => [r.code, r.agent_id, r.session_id])).toEqual([
       ["llm_timeout", "agent-child", "session-child"],
       ["tool_failed:write_file", "agent-child", "session-child"],
-      ["tool_failed:exec_command", "a1", "s1"],
+      ["tool_failed:read_file", "a1", "s1"],
       ["llm_failed", "a1", "s1"],
     ]);
   });
@@ -820,6 +953,66 @@ describe("HTTP onError persistence (integration)", () => {
     expect(adminBody.errors.total).toBe(1);
     expect(adminBody.errors.topCode).toMatchObject({ source: "http", code: "invalid_credentials" });
     expect(adminBody.errors.recent[0]).toMatchObject({ code: "invalid_credentials" });
+  });
+
+  it("the paged error route pages inside the caller's own tenant, at every offset", async () => {
+    // The point of the route is that paging back is not a way around the dashboard's isolation:
+    // the rows a member can reach at offset N are the same set the summary counted, never
+    // another tenant's and never the unattributed ones. Seeded directly so the interleaving is
+    // exact — going through HTTP would collapse repeats into the recorder's dedup window.
+    const repo = new ErrorsRepo(t.deps.db);
+    const seed = (owner: string | null, code: string) =>
+      repo.insert({
+        ts: "2026-07-27T00:00:00.000Z",
+        date: "2026-07-27",
+        projectId: owner,
+        agentId: "a1",
+        sessionId: "s1",
+        source: "http",
+        kind: "expected",
+        code,
+        status: 404,
+        message: code,
+      });
+    const foreign = (await (
+      await api.post("/api/projects", { projectId: "err_user-tenant_2", name: "Other tenant" })
+    ).json()) as ProjectCreateResponse;
+    // Interleaved, so a mistaken filter would show up inside the first page rather than past it.
+    seed(projectId, "mine_0");
+    seed(foreign.project.projectId, "theirs_0");
+    seed(null, "unattributed_0");
+    seed(projectId, "mine_1");
+    seed(projectId, "mine_2");
+
+    const pageOf = async (offset: number, limit: number) =>
+      (await (
+        await api.get(`/api/projects/${projectId}/usage/errors?offset=${offset}&limit=${limit}`)
+      ).json()) as UsageErrorsPage;
+
+    const first = await pageOf(0, 2);
+    expect(first.total).toBe(3); // the filtered count, not the table's
+    expect(first.items.map((e) => e.code)).toEqual(["mine_2", "mine_1"]); // newest first
+    const second = await pageOf(2, 2);
+    expect(second.total).toBe(3);
+    expect(second.items.map((e) => e.code)).toEqual(["mine_0"]);
+    expect((await pageOf(3, 2)).items).toEqual([]); // past the end is empty, not an error
+
+    // The admin is the only one who reaches the unattributed rows — the same rule the dashboard
+    // applies, so paging cannot be used to slip past it.
+    const adminApi = apiClient(t.app, (await loginAdmin(t.app)).cookie);
+    const adminPage = (await (
+      await adminApi.get(`/api/projects/default_project/usage/errors?offset=0&limit=20`)
+    ).json()) as UsageErrorsPage;
+    expect(adminPage.items.map((e) => e.code)).toEqual(["unattributed_0"]);
+  });
+
+  it("the paged error route rejects a page it cannot serve rather than guessing", async () => {
+    expect((await api.get(`/api/projects/${projectId}/usage/errors?offset=-1`)).status).toBe(400);
+    expect((await api.get(`/api/projects/${projectId}/usage/errors?limit=0`)).status).toBe(400);
+    expect((await api.get(`/api/projects/${projectId}/usage/errors?limit=1001`)).status).toBe(400);
+    expect((await api.get(`/api/projects/${projectId}/usage/errors?from=2026-13-01`)).status).toBe(
+      400,
+    );
   });
 
   it("Project deletion cascade-cleans that Project's error records", async () => {

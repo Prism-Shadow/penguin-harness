@@ -76,6 +76,29 @@
   #root {
     height: 100%;
   }
+  /* Every scroll container is its own containing block.
+     The shell is height-constrained (the three rules above) and each page scrolls inside its
+     own container, so the document must never scroll. What breaks that is an absolutely
+     positioned descendant of a scroller that is itself `static`: its containing block is then
+     the initial containing block, which nothing clips — not the scroller's own overflow, not
+     an `overflow-hidden` ancestor — so its static position past the fold becomes the
+     *document's* scrollable overflow, and a second scrollbar appears that drags the whole
+     shell. That bug shipped three times (sidebar session list, Traces tree, Agent settings),
+     every time through a visually-hidden-but-focusable control, so the invariant is set here
+     once instead of being remembered per scroller.
+     Scoped to the scrollable utilities on purpose: `overflow-hidden` is also used as a plain
+     clipping box (the docked panels' clipping windows), where forcing a containing block is
+     more likely to surprise than to help. Declared in `base`, so an explicit
+     absolute/fixed/sticky utility on the same element still wins; `position: relative` at
+     `z-index: auto` creates no stacking context, so the convention in the file header holds. */
+  .overflow-auto,
+  .overflow-x-auto,
+  .overflow-y-auto,
+  .overflow-scroll,
+  .overflow-x-scroll,
+  .overflow-y-scroll {
+    position: relative;
+  }
   body {
     @apply bg-white text-gray-900 antialiased dark:bg-gray-950 dark:text-gray-100;
     font-family:

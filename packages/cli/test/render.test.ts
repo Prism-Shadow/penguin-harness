@@ -303,6 +303,30 @@ describe("StreamRenderer", () => {
     expect(lines).not.toContain("retry #3");
   });
 
+  it("prints the retry line for a failed request too, and keeps counting across a mixed ladder", () => {
+    // The engine reconnects on `failed` as well, so the CLI has to say so — otherwise the
+    // session goes quiet for the whole ladder. And because `failed` used to reset the
+    // counter, a mixed timeout → failed → timeout run renumbered back to retry #1.
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t);
+    r.handle(requestBegin());
+    r.handle(requestEnd("failed", "Upstream HTTP/2 stream failed"));
+    r.handle(requestBegin()); // retry #1 begins
+    let lines = stripAnsi(text());
+    expect(lines).toContain("the model provider returned an error");
+    expect(lines).toContain("retry #1");
+    r.handle(requestEnd("timeout"));
+    r.handle(requestBegin()); // retry #2 begins — the count does not restart
+    lines = stripAnsi(text());
+    expect(lines).toContain("connection timed out");
+    expect(lines).toContain("retry #2");
+    // `auth` is terminal: the engine never retries it, so the next request_begin (a new run)
+    // must not be announced as a retry.
+    r.handle(requestEnd("auth", "401 invalid x-api-key"));
+    r.handle(requestBegin());
+    expect(stripAnsi(text())).not.toContain("retry #3");
+  });
+
   it("locks the screen to one streaming tool output; other messages queue until its stop", () => {
     const { stream, text } = collector();
     const r = new StreamRenderer(stream, t);
@@ -394,6 +418,23 @@ describe("StreamRenderer", () => {
     // Exact full-line assertion: context 7k (delta = 7000 - 4000), cumulative session tokens 11k,
     // per-task token delta 7k, total session elapsed 5s (this task +3s).
     expect(last).toBe("[stats] context 7k (+3k) · tokens 11k (+7k) · 5s (+3s)");
+  });
+
+  it("an elapsed remainder that rounds to 60s carries into the minute", () => {
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t);
+    r.handle(
+      tokenUsage(
+        { cache_read: 0, cache_write: 0, output: 0, total: 4000 },
+        { cache_read: 0, cache_write: 0, output: 0, total: 4000 },
+      ),
+    );
+    // 119.7s: rounding the remainder against floored minutes would read 1m60s.
+    r.endTask(119_700);
+    const lines = stripAnsi(text()).trim().split("\n");
+    expect(lines[lines.length - 1]).toBe(
+      "[stats] context 4k (+4k) · tokens 4k (+4k) · 2m0s (+2m0s)",
+    );
   });
 
   it("context delta goes negative after compaction shrinks the context (no clamping)", () => {

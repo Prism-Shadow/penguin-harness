@@ -21,10 +21,7 @@ import type { GoalBannerState } from "./goal-use";
 /** Image glyph (24×24 line path) for the collapsed attachment chip on later goal rounds. */
 const ATTACHMENT_ICON = "M3 5h18v14H3zM3 16l5-5 4 4 3-3 6 6M15.5 8.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0";
 
-/**
- * The objective's attachments under a round bubble: full thumbnails on round 1 (and once
- * expanded), a one-line chip on later rounds. Renders nothing when there are none.
- */
+/** The objective's attachments under a round bubble: thumbnails when `showFull`, a chip otherwise. */
 function GoalRoundImages({
   images,
   showFull,
@@ -71,10 +68,9 @@ export function GoalRoundBanner({
   /** Images attached to the objective, restored from its `[attached image: …]` path lines. */
   images?: string[];
 }) {
-  // The objective's images are part of EVERY round's input (the path lines ride the re-injected
-  // text), so hiding them after round 1 would misrepresent what the model was sent. Showing
-  // them full-size every round would bury a 20-round goal under the same picture, so later
-  // rounds collapse to a chip that expands on click — honest and quiet at the same time.
+  // The path lines ride the re-injected text, so the images really are in every round's input
+  // — dropping them after round 1 would misreport what was sent. Showing them full-size every
+  // time would bury a long goal under the same picture, so later rounds collapse to a chip.
   const [expanded, setExpanded] = useState(false);
   const showFull = images.length > 0 && (round === 1 || expanded);
   // A regular right-aligned user bubble (same classes as message-item's user_text

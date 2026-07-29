@@ -7,7 +7,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { sessionMeta, userText } from "@prismshadow/penguin-core";
-import type { SessionMetaPayload } from "@prismshadow/penguin-core";
+import type { OmniMessage, SessionMetaPayload } from "@prismshadow/penguin-core";
 import type {
   ProjectCreateResponse,
   SessionCreateResponse,
@@ -600,7 +600,15 @@ describe("session-index", () => {
       goal: {},
     });
     expect(imageOnly.status).toBe(400);
-    // Alongside text they are accepted: core folds them into the objective as path lines.
+    // With text alongside them the images are fine: they reach the manager, and core folds
+    // them into the objective as path lines from there. startGoal stands in for the run so
+    // the assertion is about validation alone — a real goal loop would still be settling
+    // after the test closed its database.
+    const started: OmniMessage[][] = [];
+    t.deps.manager.startGoal = async (sessionId, args) => {
+      started.push(args.input);
+      return { sessionId };
+    };
     const withText = await api.post(`/api/sessions/${session.sessionId}/tasks`, {
       input: [
         { type: "text", text: "objective" },
@@ -609,5 +617,9 @@ describe("session-index", () => {
       goal: {},
     });
     expect(withText.status).toBe(202);
+    expect(started[0]?.map((m) => (m.payload as { type: string }).type)).toEqual([
+      "text",
+      "image_url",
+    ]);
   });
 });

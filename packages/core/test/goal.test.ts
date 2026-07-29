@@ -402,10 +402,9 @@ describe("runGoalLoop", () => {
 
 /**
  * The Session-level goal entry (`run(input, { goal })`): input validation and the image fold.
- * Unlike a Prompt, a goal objective folds its images to `[attached image: <path>]` lines on
- * EVERY model — it is re-injected as the text of each round's `[goal]` block, so an image
- * message could not ride along, and re-sending the picture per round would bill the goal's own
- * budget for it. See Session.runGoal.
+ * A goal objective folds its images to `[attached image: <path>]` lines on any model, unlike a
+ * Prompt — it is re-injected as the text of each round's `[goal]` block, which leaves an image
+ * message nowhere to sit. See Session.runGoal.
  */
 describe("Session.runGoal input", () => {
   const PNG_DATA_URL =
@@ -475,8 +474,9 @@ describe("Session.runGoal input", () => {
     expect(saved).toHaveLength(1);
     const line = `[attached image: ${path.join(dir, "scratchpad", "session-1", saved[0]!)}]`;
     for (const text of rounds) expect(text).toContain(line);
-    // Round 2 re-injects the objective alone, so the line surviving there is the whole point:
-    // stripLeadingMarkerBlocks only removes LEADING blocks, and the fold appends at the end.
+    // Round 2 re-injects the objective alone, which is where the line matters most: it
+    // survives because stripLeadingMarkerBlocks only removes leading blocks, and the fold
+    // appends at the end.
     expect(parseGoalMessage(rounds[1]!)?.rest).toBe(`Match this mockup\n\n${line}`);
     // No image message ever reaches the round input.
     expect(rounds.every((t) => !t.includes("data:image"))).toBe(true);

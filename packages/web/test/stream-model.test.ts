@@ -494,6 +494,67 @@ describe("approvals and events", () => {
     expect((items(m)[2] as ReconnectItem).attempt).toBe(1);
   });
 
+  it("request_end(failed) renders a retry notice too, with its countdown inputs and give-up target", () => {
+    // The engine reconnects on `failed` exactly like timeout/malformed. Without an item there
+    // is no countdown and findLastWaitingReconnect returns null, so "Retry now" / "Give up"
+    // never render either — the session just stalls for up to 7.75s with nothing on screen.
+    const m = createStreamModel();
+    pushMessage(m, requestBegin());
+    pushMessage(
+      m,
+      requestEnd("failed", "Upstream HTTP/2 stream failed (upstream_http2_stream_error)", 4000),
+      111_000,
+    );
+    const retry = items(m)[0] as ReconnectItem;
+    expect(retry).toMatchObject({
+      kind: "reconnect",
+      status: "failed",
+      attempt: 1,
+      retrying: false,
+      plannedDelayMs: 4000, // the countdown
+      arrivedAtMs: 111_000, // its client-clock anchor
+    });
+    // Waiting, so it is the item the retry-now / give-up controls attach to; the retry then
+    // flips it out of the waiting state exactly like the other two statuses.
+    pushMessage(m, requestBegin());
+    expect(retry.retrying).toBe(true);
+  });
+
+  it("a mixed ladder keeps counting: failed no longer resets the attempt number mid-run", () => {
+    // `failed` used to fall through to the reset branch, so timeout → failed → timeout
+    // renumbered the third attempt back to #1 while the engine was on its third.
+    const m = createStreamModel();
+    pushMessage(m, requestBegin());
+    pushMessage(m, requestEnd("timeout"));
+    pushMessage(m, requestBegin());
+    pushMessage(m, requestEnd("failed", "502 bad gateway"));
+    pushMessage(m, requestBegin());
+    pushMessage(m, requestEnd("timeout"));
+    expect((items(m) as ReconnectItem[]).map((i) => [i.status, i.attempt])).toEqual([
+      ["timeout", 1],
+      ["failed", 2],
+      ["timeout", 3],
+    ]);
+    // A normal finish still resets it: the next run's first failure is #1 again.
+    pushMessage(m, requestBegin());
+    pushMessage(m, requestEnd("completed"));
+    pushMessage(m, requestBegin());
+    pushMessage(m, requestEnd("failed"));
+    expect((items(m)[3] as ReconnectItem).attempt).toBe(1);
+  });
+
+  it("request_end(auth) stays out of the ladder: terminal, so no retry notice and the count resets", () => {
+    // The one status the engine does not retry — an item would promise a countdown and a
+    // "Retry now" that will never happen, on top of the composer already being gated.
+    const m = createStreamModel();
+    pushMessage(m, requestBegin());
+    pushMessage(m, requestEnd("timeout"));
+    pushMessage(m, requestBegin());
+    pushMessage(m, requestEnd("auth", "401 invalid x-api-key"));
+    expect((items(m) as ReconnectItem[]).filter((i) => i.kind === "reconnect")).toHaveLength(1);
+    expect(m.reconnectRun).toBe(0);
+  });
+
   it("retries exhausted: an arriving abort marks the waiting retry notice gaveUp and resets the consecutive-failure count", () => {
     const m = createStreamModel();
     pushMessage(m, requestBegin());
@@ -1180,6 +1241,10 @@ describe("compaction-internal messages (#17: history rebuild aligned with the li
     expect(items(m).filter((i) => i.kind === "user_text")).toHaveLength(1);
   });
 
+  // The server enforces the same grouping over the Trace (`steeringImages` in
+  // server/src/services/trace-service.ts, covered by its own "Task grouping" case). Both answer
+  // "what is one Task"; a change here needs the same change there, or the chat stream and the
+  // Trace timeline will disagree.
   it("images sent with a steering message join its chip; a later standalone image still starts a Task", () => {
     // Core delivers a steering message's images as user image messages right behind its text.
     // They belong to that chip — no bubble of their own and, crucially, no new Task — while an
@@ -1190,6 +1255,9 @@ describe("compaction-internal messages (#17: history rebuild aligned with the li
       at(assistantText("looking"), "2026-07-05T00:00:02.000Z"),
       at(userText("[user_steering]\nlike this mock\n[/user_steering]"), "2026-07-05T00:00:04.000Z"),
       at(imageUrlMessage("data:image/png;base64,AAAA"), "2026-07-05T00:00:04.100Z"),
+      // A subagent message belongs to another session's stream: it routes away before the
+      // window is touched, so the image after it still joins the chip (the server matches).
+      at(withOrigin(assistantText("child thinking"), "child1"), "2026-07-05T00:00:04.150Z"),
       at(imageUrlMessage("data:image/png;base64,BBBB"), "2026-07-05T00:00:04.200Z"),
       at(assistantText("matching the mock"), "2026-07-05T00:00:06.000Z"),
       at(tokenUsage(counts(200), counts(100)), "2026-07-05T00:00:07.000Z"),
@@ -1198,10 +1266,13 @@ describe("compaction-internal messages (#17: history rebuild aligned with the li
       at(assistantText("on it"), "2026-07-05T00:00:22.000Z"),
     ]);
     finalizeHistory(m);
+    // The subagent gets its own card, but no `user_image` bubble appears before the last one:
+    // both of the steering message's images went into the chip across it.
     expect(items(m).map((i) => i.kind)).toEqual([
       "user_text",
       "assistant_text",
       "user_steering",
+      "subagent",
       "assistant_text",
       "task_stats",
       "user_image",
@@ -1521,5 +1592,100 @@ describe("multiple calls with a repeated tool_call_id (fallback for legacy Trace
     expect(cards[0]!.outputComplete).toBe(true);
     expect(cards[0]!.outputStopReason).toBe("aborted");
     expect(cards[1]!.outputComplete).toBe(false); // new card waits for output as normal
+  });
+});
+
+describe("fidelity-only messages render nothing (empty assistant bubble after thinking)", () => {
+  // Core emits a complete text/thinking message with an empty body when a provider attaches an
+  // opaque payload to an otherwise empty part (Gemini's thoughtSignature on a text part, GPT-5's
+  // encrypted-reasoning phase markers) — see flushText / flushThinking. It must exist so the
+  // fidelity round-trips into history; it must not become a visible item.
+  it("an empty assistant text after thinking adds no item", () => {
+    const m = createStreamModel();
+    pushMessage(m, userText("hi"));
+    pushMessage(m, thinkingMessage("pondering"));
+    pushMessage(m, assistantText(""));
+    expect(items(m).map((i) => i.kind)).toEqual(["user_text", "thinking"]);
+  });
+
+  it("a whitespace-only body counts as empty too", () => {
+    const m = createStreamModel();
+    pushMessage(m, assistantText("\n  \n"));
+    pushMessage(m, thinkingMessage("   "));
+    expect(items(m)).toEqual([]);
+  });
+
+  it("real content is unaffected, including a lone space inside real text", () => {
+    const m = createStreamModel();
+    pushMessage(m, thinkingMessage("thought"));
+    pushMessage(m, assistantText("answer"));
+    expect(items(m).map((i) => i.kind)).toEqual(["thinking", "assistant_text"]);
+    expect((items(m)[1] as AssistantTextItem).text).toBe("answer");
+  });
+
+  it("a streamed segment is still settled by its complete message, not dropped", () => {
+    // The guard must only skip the append path — a fragment that streamed real content is
+    // replaced by its complete message as before.
+    const m = createStreamModel();
+    pushMessage(m, partialText("start", "Hel"));
+    pushMessage(m, partialText("delta", "lo"));
+    pushMessage(m, partialText("stop"));
+    pushMessage(m, assistantText("Hello"));
+    const texts = items(m).filter((i) => i.kind === "assistant_text");
+    expect(texts).toHaveLength(1);
+    expect((texts[0] as AssistantTextItem).text).toBe("Hello");
+    expect((texts[0] as AssistantTextItem).streaming).toBe(false);
+  });
+
+  // A blank body can also arrive through a fragment: core starts a text segment on the first
+  // truthy delta (`if (!item.text) break;`), and "\n\n" is truthy, so a whitespace-only segment
+  // really does stream. Guarding only the append path would leave live and after-refresh
+  // disagreeing — the fragment kept a blank bubble that a reload then dropped.
+  it("a blank streamed text segment is discarded, so live matches the history rebuild", () => {
+    const live = createStreamModel();
+    pushMessage(live, thinkingMessage("pondering"));
+    pushMessage(live, partialText("start", "\n\n"));
+    pushMessage(live, partialText("stop"));
+    pushMessage(live, assistantText("\n\n"));
+
+    const history = createStreamModel();
+    pushMessage(history, thinkingMessage("pondering"));
+    pushMessage(history, assistantText("\n\n"));
+
+    expect(items(live).map((i) => i.kind)).toEqual(["thinking"]);
+    expect(items(live).map((i) => i.kind)).toEqual(items(history).map((i) => i.kind));
+  });
+
+  it("a blank streamed thinking segment is discarded too", () => {
+    const live = createStreamModel();
+    pushMessage(live, partialThinking("start", "  "));
+    pushMessage(live, partialThinking("stop"));
+    pushMessage(live, thinkingMessage("  "));
+
+    const history = createStreamModel();
+    pushMessage(history, thinkingMessage("  "));
+
+    expect(items(live)).toEqual([]);
+    expect(items(history)).toEqual([]);
+  });
+
+  it("discarding a blank fragment clears the open-fragment slots, leaving no stuck spinner", () => {
+    // The fragment must be removed rather than blanked: a leftover openText would keep
+    // `streaming: true` forever (a permanent blinking cursor), and a stale pendingText would
+    // let the next complete message replace the wrong item.
+    const m = createStreamModel();
+    pushMessage(m, partialText("start", " "));
+    pushMessage(m, partialText("stop"));
+    pushMessage(m, assistantText(" "));
+    expect(items(m)).toEqual([]);
+
+    // The next real reply must append cleanly, not resurrect the discarded fragment.
+    pushMessage(m, partialText("start", "Hi"));
+    pushMessage(m, partialText("stop"));
+    pushMessage(m, assistantText("Hi"));
+    const texts = items(m).filter((i) => i.kind === "assistant_text");
+    expect(texts).toHaveLength(1);
+    expect((texts[0] as AssistantTextItem).text).toBe("Hi");
+    expect((texts[0] as AssistantTextItem).streaming).toBe(false);
   });
 });

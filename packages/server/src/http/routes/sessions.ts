@@ -72,6 +72,22 @@ const SESSION_CATEGORIES: readonly SessionCategory[] = [
   "archived",
 ];
 
+/**
+ * The image-URL rule every image-carrying request field obeys: a `data:` URL the session
+ * keeps (inline, or written to the scratchpad without vision) or an http(s) URL it references.
+ * `field` names the offending value in the error, so each caller reads as if it validated
+ * inline.
+ */
+function requireImageUrl(url: unknown, field: string): string {
+  if (
+    typeof url !== "string" ||
+    !(url.startsWith("data:") || url.startsWith("http://") || url.startsWith("https://"))
+  ) {
+    throw badRequest(`${field} only supports data: or http(s) URLs.`);
+  }
+  return url;
+}
+
 /** Validate Prompt input parts: text or image (data: / http(s) URL). */
 function parseTaskInput(body: Record<string, unknown>): OmniMessage[] {
   const input = body.input;
@@ -90,14 +106,7 @@ function parseTaskInput(body: Record<string, unknown>): OmniMessage[] {
       return userText(part.text);
     }
     if (part.type === "image_url") {
-      const url = part.imageUrl;
-      if (
-        typeof url !== "string" ||
-        !(url.startsWith("data:") || url.startsWith("http://") || url.startsWith("https://"))
-      ) {
-        throw badRequest(`input[${i}].imageUrl only supports data: or http(s) URLs.`);
-      }
-      return imageUrlMessage(url);
+      return imageUrlMessage(requireImageUrl(part.imageUrl, `input[${i}].imageUrl`));
     }
     throw badRequest(`input[${i}].type must be one of text / image_url.`);
   });
@@ -111,15 +120,7 @@ function parseSteerImages(body: Record<string, unknown>): string[] {
   const images = body.images;
   if (images === undefined) return [];
   if (!Array.isArray(images)) throw badRequest("images must be an array.");
-  return images.map((url, i) => {
-    if (
-      typeof url !== "string" ||
-      !(url.startsWith("data:") || url.startsWith("http://") || url.startsWith("https://"))
-    ) {
-      throw badRequest(`images[${i}] only supports data: or http(s) URLs.`);
-    }
-    return url;
-  });
+  return images.map((url, i) => requireImageUrl(url, `images[${i}]`));
 }
 
 /**
@@ -438,10 +439,10 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     // follow-up keeps its level for its auto-start.
     const thinkingLevel = optionalEnum(body, "thinkingLevel", THINKING_LEVELS);
     if (goal) {
-      // Goal mode: the input must carry non-empty text — its marker-stripped text becomes the
-      // objective, re-injected every round, and an image alone states no goal. Images may ride
-      // along: core folds them into `[attached image: <path>]` lines inside the objective
-      // (unconditionally, vision model or not) so the reference survives every round.
+      // Goal mode: the input needs non-empty text, since its marker-stripped text becomes the
+      // objective that every round re-injects and an image on its own doesn't say what the
+      // goal is. Images can come along — core folds them into `[attached image: <path>]` lines
+      // inside the objective (whatever the model's vision) so they survive the rounds.
       const input = parseTaskInput(body);
       const text = input
         .filter((m) => (m.payload as { type?: string }).type === "text")

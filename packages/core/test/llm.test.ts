@@ -1418,6 +1418,27 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
 
   const abortError = (): Error => Object.assign(new Error("aborted"), { name: "AbortError" });
 
+  /**
+   * An upstream that IGNORES its AbortSignal: it never yields and never rejects, whatever
+   * happens to the signal. This is the shape that wedged real Sessions (observed with Kimi):
+   * the SDK's stream promise simply never settles, so `await it.next()` hangs forever and the
+   * idle timer cannot rescue it either, because by then `ac` is already aborted and its
+   * `ac.abort()` is a no-op.
+   */
+  async function* deaf(): AsyncGenerator<UniEvent> {
+    await new Promise(() => {}); // never settles, never observes the signal
+  }
+
+  /** Fails the test loudly instead of letting a regression hang the whole suite. */
+  function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+    return Promise.race([
+      p,
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`streamGenerate did not settle within ${ms}ms`)), ms),
+      ),
+    ]);
+  }
+
   // Never yields any event, and only ends with an AbortError once the signal aborts
   // (simulates idle/hanging).
   async function* hang(signal: AbortSignal): AsyncGenerator<UniEvent> {
@@ -1461,7 +1482,7 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
     return { messages, outcome: res.value as LLMOutcome };
   }
 
-  it("returns failed (never throws) on a build failure such as empty input", async () => {
+  it("returns failed on a build failure such as empty input (never throws)", async () => {
     const model = new SeamModel((sig) => hang(sig));
     const { messages, outcome } = await drain(model.streamGenerate({ newMessages: [] }));
     expect(outcome.status).toBe("failed"); // A mergeOmniToUniMessage failure converges to failed, never throws
@@ -1582,6 +1603,27 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
       model2.streamGenerate({ newMessages: [userText("go")] }),
     );
     expect(outcome2.status).toBe("malformed");
+  });
+
+  it("a user abort ends the run even when upstream ignores the signal and never settles", async () => {
+    const model = new SeamModel(() => deaf());
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 20); // the user presses Stop mid-request
+    // Without the race this never settles and the Session stays "running" forever.
+    const { outcome } = await withTimeout(
+      drain(model.streamGenerate({ newMessages: [userText("go")], signal: controller.signal })),
+      2000,
+    );
+    expect(outcome.status).toBe("aborted");
+  });
+
+  it("the idle timeout still ends the run when upstream ignores the signal", async () => {
+    const model = new SeamModel(() => deaf(), 50); // 50ms idle budget
+    const { outcome } = await withTimeout(
+      drain(model.streamGenerate({ newMessages: [userText("go")] })),
+      2000,
+    );
+    expect(outcome.status).toBe("timeout");
   });
 
   it("classifies a credentials failure as its own terminal status auth; params stay failed", async () => {

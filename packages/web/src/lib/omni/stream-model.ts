@@ -22,8 +22,8 @@
  *     token_usage counts toward this level's stats (same convention as the CLI).
  *   - Events: approval_decision annotates the corresponding tool card
  *     (labeled "manual" if clicked on this end, "automatic" otherwise);
- *     abort → an interruption marker item; request_end ending in
- *     timeout/malformed → a retry-hint item (the engine discards that
+ *     abort → an interruption marker item; request_end ending in any status
+ *     the engine reconnects on (failed/timeout/malformed) → a retry-hint item (the engine discards that
  *     attempt and resends the original input; the next request_begin marks the hint as resent, and an
  *     arriving abort marks it as retries exhausted); other request_begin/end
  *     events aren't rendered (Request duration is covered by Trace
@@ -203,12 +203,23 @@ export interface AbortItem {
   reason?: string;
 }
 
-/** An LLM Request ending in timeout/malformed → the engine retries carrying the content already produced. */
+/**
+ * The statuses the engine reconnects on — every LLM failure except `auth`, which is terminal
+ * (see core's TURN_RETRY_STATUSES). A retry the user cannot see is a stalled session with no
+ * explanation and no way out, so all three render the same countdown and the same controls.
+ */
+export type ReconnectStatus = "failed" | "timeout" | "malformed";
+
+function isReconnectStatus(status: StopReason | undefined): status is ReconnectStatus {
+  return status === "failed" || status === "timeout" || status === "malformed";
+}
+
+/** An LLM Request ending in failed/timeout/malformed → the engine retries carrying the content already produced. */
 export interface ReconnectItem {
   kind: "reconnect";
   id: number;
-  /** Trigger reason: timeout (timed out / disconnected) or malformed (an incomplete or unparseable response). */
-  status: "timeout" | "malformed";
+  /** Trigger reason: timeout (timed out / disconnected), malformed (an incomplete or unparseable response), or failed (the provider returned an error). */
+  status: ReconnectStatus;
   /** Which retry attempt this is (increments on consecutive failures within the same round; resets to 1 after a request finishes normally). */
   attempt: number;
   /** The retry request has been sent (set true by the next request_begin). */
@@ -364,7 +375,7 @@ export interface StreamModel {
    * dispatches it via `void executeOne`, which doesn't block the streaming loop — execution happens between two Requests).
    */
   openApprovalWaitMs: number;
-  /** Consecutive reconnect-failure count (incremented when request_end is timeout/malformed, reset to zero on any other terminal status). */
+  /** Consecutive reconnect-failure count (incremented when request_end carries a status the engine reconnects on, reset to zero on any other terminal status). */
   reconnectRun: number;
   /**
    * Timestamp (ms) of the most recent auth failure: a main-session `request_end` with
@@ -483,8 +494,12 @@ export function pushMessage(
     return;
   }
   // A steering message's images arrive as user image messages directly behind its text, with
-  // nothing interleaved (core delivers the batch in one go) — so anything that is not one of
-  // those images closes the collection window opened by the chip (see openSteering).
+  // nothing interleaved (core delivers the batch in one go) — so anything else on this session
+  // closes the collection window opened by the chip (see openSteering). Subagent messages
+  // returned above never reach here, so they leave the window alone.
+  // The rule is stated once in core's markers/steering.ts, and the server implements the same
+  // one over the Trace — see `steeringImages` in server/src/services/trace-service.ts. The two
+  // must agree on what a Task is; change one and the other needs the same change.
   if (!isCompleteUserImage(msg)) model.openSteering = null;
   if (msg.type === "model_msg") {
     // Internal messages within a compaction range (between begin and end)
@@ -923,6 +938,17 @@ function handleComplete(
       // The complete message usually follows right after a fragment's stop: prefer replacing an already-closed pending fragment, then a still-open one.
       const target = model.pendingText ?? model.openText;
       if (target) {
+        // A blank body discards the fragment instead of settling it (same fidelity-only case as
+        // below — core starts a text segment on the first *truthy* delta, so a whitespace-only
+        // segment does stream). Blanking it in place would leave the live view showing an empty
+        // bubble that a reload then drops. Removing the item and clearing both slots is what
+        // discardFragmentFor does for the dedup path, and it leaves no fragment stuck streaming.
+        if (!p.text.trim()) {
+          removeItem(model, target);
+          if (target === model.openText) model.openText = null;
+          model.pendingText = null;
+          return;
+        }
         // The complete message replaces the fragment's content (this guarantees consistency).
         target.text = p.text;
         target.streaming = false;
@@ -933,6 +959,17 @@ function handleComplete(
         model.pendingText = null;
         return;
       }
+      // Fidelity-only message: core emits a complete text/thinking message with an empty body
+      // when the provider attached an opaque payload to an otherwise empty part — on this text
+      // branch a Gemini thoughtSignature or a GPT-5 `fidelity.phase` segment marker (GPT-5's
+      // encrypted reasoning rides the *thinking* branch instead) — which is why the blank bubble
+      // showed up right after a thinking segment. The message has to exist so the fidelity
+      // round-trips into history, but it has nothing to show, and usually no fragment was opened
+      // for it either (core only starts a segment once a truthy delta arrives). Rendering it
+      // produced a blank "assistant:" bubble; collectTaskAssistant already skipped these when
+      // gathering the reply text, and with the blank-fragment discard above both the live and the
+      // history path now agree with it.
+      if (!p.text.trim()) return;
       // No open fragment (history / mid-stream join): append directly.
       const doneMs = tsOf(timestamp);
       const item: AssistantTextItem = {
@@ -969,6 +1006,13 @@ function handleComplete(
       const tsMs = tsOf(timestamp);
       const target = model.pendingThinking ?? model.openThinking;
       if (target) {
+        // Blank body: discard the fragment rather than settle it (see the text branch).
+        if (!p.thinking.trim()) {
+          removeItem(model, target);
+          if (target === model.openThinking) model.openThinking = null;
+          model.pendingThinking = null;
+          return;
+        }
         target.thinking = p.thinking;
         target.streaming = false;
         if (p.stop_reason !== undefined) target.stopReason = p.stop_reason;
@@ -977,6 +1021,9 @@ function handleComplete(
         model.pendingThinking = null;
         return;
       }
+      // Same fidelity-only case as the text branch above (GPT-5 encrypted reasoning): the
+      // message carries the payload, not a thought to show.
+      if (!p.thinking.trim()) return;
       const item: ThinkingItem = {
         kind: "thinking",
         id: nextId(model),
@@ -1265,9 +1312,9 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       return;
     }
     case "request_end": {
-      // timeout/malformed: the engine retries carrying the content already
-      // produced, rendering a retry hint (with the attempt number); other
-      // terminal statuses aren't rendered (Request duration is covered by Trace performance
+      // failed/timeout/malformed: the engine retries carrying the content already
+      // produced, rendering a retry hint (with the attempt number); the terminal
+      // statuses aren't rendered (Request duration is covered by Trace performance
       // analysis) and reset the consecutive-failure count. request events
       // within a compaction range (only visible during history rebuild)
       // are neither rendered nor counted — the compaction process only exposes the compaction event pair to the Human.
@@ -1305,7 +1352,11 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       // round, so the pending compaction usage never reaches this step and is discarded at finalization (not counted into this round).
       if (tsMs !== undefined) model.taskLastReqEndMs = tsMs;
       commitPendingCompaction(model.stats);
-      if (p.status === "timeout" || p.status === "malformed") {
+      // Every status the engine reconnects on gets an item, `failed` included: it is retried
+      // exactly like the other two, so leaving it out would stall the session for the whole
+      // ladder with nothing on screen and no give-up control. It would also reset the counter
+      // mid-ladder, renumbering a mixed timeout → failed → timeout run back to retry #1.
+      if (isReconnectStatus(p.status)) {
         model.reconnectRun += 1;
         const item: ReconnectItem = {
           kind: "reconnect",

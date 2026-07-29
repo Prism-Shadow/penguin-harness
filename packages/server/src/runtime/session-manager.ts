@@ -508,11 +508,10 @@ export class SessionManager {
       // The objective is the user's own text (leading skill-invocation blocks stripped) —
       // the same derivation core records in GOAL.yaml; used for the run-state row, the
       // goal_started event, and as title material.
-      // `isPlainText` deliberately excludes attached images, so THIS objective is the display
-      // one: no `[attached image: <path>]` lines. Core folds the images into its own copy at
-      // run time (Session.runGoal), which is what every round re-injects. Do not "fix" the
-      // divergence by folding here too — the status card and the generated title would grow a
-      // string of absolute scratchpad paths.
+      // `isPlainText` leaves attached images out, so this copy carries no
+      // `[attached image: <path>]` lines — which suits its readers, since a status card and a
+      // generated title read better without absolute scratchpad paths. Core keeps its own
+      // folded copy (Session.runGoal) for what the rounds actually re-inject.
       const text = args.input
         .filter(isPlainText("user"))
         .map((m) => m.payload.text)

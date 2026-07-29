@@ -51,7 +51,7 @@ const ROW: SessionRow = {
 };
 
 /** A simple, scriptable fake Session: run yields one tool_call and requests approval for it. */
-function approvalFakeSession(sessionId: string, toolName = "exec_command"): RuntimeSession {
+function approvalFakeSession(sessionId: string, toolName = "write_file"): RuntimeSession {
   return {
     sessionId,
     toolPermission: (name) => (name === "read_tool" ? "r" : "rw"),
@@ -197,7 +197,7 @@ describe("session-manager", () => {
       skipReconnectWait: () => false,
       async *run(): AsyncGenerator<OmniMessage> {
         yield requestBegin();
-        yield toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc-1" });
+        yield toolCall({ name: "write_file", arguments: "{}", toolCallId: "tc-1" });
         yield toolCallOutput({
           output: "ls: /nope\n[tool error] exit code 2",
           toolCallId: "tc-1",
@@ -213,8 +213,8 @@ describe("session-manager", () => {
     await waitFor(() => manager.statusOf("session-1") === "idle" && captured.length >= 2);
 
     expect(captured.map((a) => [a.source, a.code, a.kind])).toEqual([
-      ["environment", "tool_failed:exec_command", "expected"], // error fed back to the model; the Agent adjusts on its own
-      ["llm", "llm_failed", "unexpected"], // not retryable, requires human intervention
+      ["environment", "tool_failed:write_file", "expected"], // error fed back to the model; the Agent adjusts on its own
+      ["llm", "llm_failed", "unexpected"], // the abort follows it: the retries did not recover it, so a human is needed
     ]);
     expect(captured[0]!.ctx).toEqual({ projectId: "p1", agentId: "a1", sessionId: "session-1" });
     expect(String(captured[0]!.err)).toContain("[tool error] exit code 2");

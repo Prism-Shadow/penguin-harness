@@ -19,7 +19,7 @@
  */
 import { sessionMeta } from "./omnimessage/index.js";
 import type { OmniMessage, SessionMetaPayload, TokenCounts } from "./omnimessage/index.js";
-import { imagesToScratchpadPaths } from "./internal/session-support.js";
+import { dropInputImages, imagesToScratchpadPaths } from "./internal/session-support.js";
 import { runGoalLoop } from "./goal/goal-loop.js";
 import { goalFinishedOf } from "./goal/goal-stream.js";
 import type { EnvironmentInterface, LLMInterface, ToolPermission } from "./interfaces.js";
@@ -59,17 +59,16 @@ export interface SessionConfig {
   /** Session resume: the full historical messages of the current context (for rendering, including interrupted turns and their markers), for frontend display. */
   resumedHistory?: OmniMessage[];
   /**
-   * This Session's scratchpad directory — where input images are written when they have to
-   * become `[attached image: <path>]` path lines instead of riding the request as images (the
-   * model then views them via describe_image / read_image, and the Web restores the thumbnail
-   * from the path). Always present: whether a given input folds is decided per call site, not
-   * by this field's presence — see `foldImages`.
+   * This Session's scratchpad directory: where an input image is saved when it becomes an
+   * `[attached image: <path>]` line instead of riding the request as an image. The model
+   * reads it back with describe_image / read_image, and the Web turns the path into a
+   * thumbnail again. Always set — each input path decides on its own whether to use it.
    */
   imagesDir: string;
   /**
-   * Whether the session's model accepts image input (the composition layer decides this via
-   * ModelEntry.vision). False makes every Prompt and steering message fold; goal objectives
-   * fold either way (see `runGoal`).
+   * Whether the session's model accepts image input (from ModelEntry.vision). Prompts and
+   * steering messages fold their images only when this is false; goal objectives fold either
+   * way, since they are re-injected as text every round (see `runGoal`).
    */
   modelVision: boolean;
   /**
@@ -137,13 +136,11 @@ export class Session {
   private readonly goalFile?: string;
   private metaWritten = false;
   /**
-   * The image fold, bound to this Session's scratchpad — the single seam every input path
-   * shares. Session is the lowest layer that knows both the directory and the model's
-   * capability, so the binding lives here and the **gating lives at each call site**: a Prompt
-   * (`runTask`) and a steering message (the engine, via `foldInputImages`) fold only without
-   * vision, while a goal objective folds either way (`runGoal`) — it is re-injected as text
-   * every round, so it cannot carry an image message.
-   * (Reads `imagesDir` when invoked, so the constructor's assignment order doesn't matter.)
+   * The image fold, bound to this Session's scratchpad. Session is the layer that knows both
+   * the directory and the model's capability, so it binds the conversion once and each input
+   * path decides whether to call it: `runTask` and the engine's steering delivery fold only
+   * without vision, `runGoal` always. (The body reads `imagesDir` at call time, so field
+   * ordering in the constructor doesn't matter.)
    */
   private readonly foldImages = (messages: OmniMessage[]): Promise<OmniMessage[]> =>
     imagesToScratchpadPaths(messages, this.imagesDir);
@@ -176,11 +173,23 @@ export class Session {
       ...(config.createLLM ? { createLLM: config.createLLM } : {}),
       ...(config.compaction ? { compaction: config.compaction } : {}),
       ...(config.initialEngineState ? { initialState: config.initialEngineState } : {}),
-      // Model without vision: the engine assembles one input of its own — a steering message
-      // with images — and folds it through the same converter `runTask` applies to a Prompt.
-      // Withheld from a vision model, so the engine's steering path keeps carrying real image
-      // messages: "was I given the function" is the engine's whole knowledge of the matter.
-      ...(config.modelVision ? {} : { foldInputImages: this.foldImages }),
+      // The engine assembles one input of its own — a steering message with images — and folds
+      // it through the same converter `runTask` uses. A vision model simply isn't given the
+      // function, which is all the engine needs to know about the subject.
+      // Steering arrives mid-Task, so this copy swallows a disk failure and delivers the text
+      // with the images dropped; a Prompt keeps the throwing fold, where nothing is in flight
+      // yet and the sender is there to hear about it.
+      ...(config.modelVision
+        ? {}
+        : {
+            foldInputImages: async (messages: OmniMessage[]) => {
+              try {
+                return await this.foldImages(messages);
+              } catch {
+                return dropInputImages(messages);
+              }
+            },
+          }),
       sessionMeta: this.meta,
     });
   }
@@ -261,18 +270,16 @@ export class Session {
    * `goal_finished` event is additionally written to the Trace (best-effort, like session_meta)
    * so the goal's end survives with its conversation.
    *
-   * Images fold **unconditionally here** — vision model or not. The objective is re-injected
-   * verbatim as the text of every round's `[goal]` block, so an image message cannot be part of
-   * it: re-sending the image each round would multiply its tokens against the goal's own budget,
-   * and sending it only in round 1 would leave every later round pointing at something the model
-   * can no longer see (compaction makes that certain, not merely likely). As `[attached image:
-   * <path>]` lines the reference survives every round and every compaction, and the model spends
-   * tokens on the picture only when it actually looks — which is the right trade in a budgeted
-   * loop. The lines land at the END of the text, so `stripLeadingMarkerBlocks` (which derives the
-   * objective in goal-loop) keeps them.
+   * Images fold here whether or not the model has vision, because the objective is re-injected
+   * as the text of every round's `[goal]` block — an image message has nowhere to sit in that.
+   * Re-sending the picture each round would keep charging the goal's own budget for it, and
+   * sending it in round 1 only would leave later rounds referring to something compaction has
+   * likely dropped. A path line costs one line per round and the model pays for the picture
+   * when it actually looks. The lines go at the end of the text, where goal-loop's
+   * `stripLeadingMarkerBlocks` leaves them alone.
    *
-   * The text requirement is checked BEFORE the fold: an image with no words is a complete
-   * steering message but not a complete objective — "[attached image: …]" alone states no goal.
+   * Text is checked before folding: an uncaptioned image is a complete steering message, but
+   * on its own it doesn't say what the goal is.
    */
   private async *runGoal(
     newMessages: OmniMessage[],
@@ -286,6 +293,8 @@ export class Session {
       const p = m.payload as { type?: string; role?: string; text?: string };
       return m.type === "model_msg" && p.type === "text" && p.role === "user" && !!p.text?.trim();
     };
+    // The objective itself. Checked before the fold, which only ever appends to a user text —
+    // so once this passes, the joined text below cannot come out empty.
     if (!newMessages.some(isUserText)) {
       throw new Error("Goal mode requires a non-empty text objective.");
     }
@@ -293,13 +302,14 @@ export class Session {
     const texts: string[] = [];
     for (const m of folded) {
       const p = m.payload as { type?: string; role?: string; text?: string };
+      // The fold has already turned the images into text, so anything left that isn't user
+      // text was never one of the two kinds goal mode accepts.
       if (m.type !== "model_msg" || p.type !== "text" || p.role !== "user" || !p.text) {
-        throw new Error("Goal mode requires text or image user input (the objective).");
+        throw new Error("Goal mode accepts user text and images only (the objective).");
       }
       texts.push(p.text);
     }
     const text = texts.join("\n").trim();
-    if (!text) throw new Error("Goal mode requires a non-empty objective.");
     const loop = runGoalLoop(
       { run: (msgs) => this.runTask(msgs, opts) },
       {

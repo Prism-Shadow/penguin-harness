@@ -62,9 +62,9 @@ interface LLMOutcome {
 | `completed` | finished normally (token_usage already emitted) | proceed |
 | `timeout` | timeout / transport disconnect / transient provider quota error | auto-reconnect within the run |
 | `malformed` | response parse failure | auto-reconnect within the run |
+| `failed` | an error the classifier did not judge transient (params, …) | auto-reconnect within the run as well — the status is still reported as `failed` |
 | `aborted` | user interrupt | stop, hand back to the user |
-| `failed` | non-retryable (params, …) | stop, hand back to the user |
-| `auth` | credentials rejected | stop like `failed`; hosts gate input until the model's API key is updated |
+| `auth` | credentials rejected | stop, hand back to the user — the one LLM status that never retries; hosts gate input until the model's API key is updated |
 
 Implementation constraints: never throw; no internal retries — reconnecting is the engine's job (see [The Agent Loop](/agent-loop)).
 

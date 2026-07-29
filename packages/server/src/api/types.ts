@@ -1093,8 +1093,20 @@ export interface UsageErrors {
   unexpected: number;
   /** The most frequent source · code (null when there are no errors). */
   topCode: UsageErrorCount | null;
-  /** Most recent N items (reverse chronological). */
+  /** Most recent N items (reverse chronological) — the first page; older ones come from `GET /usage/errors`. */
   recent: UsageErrorItem[];
+}
+
+/**
+ * GET /api/projects/:projectId/usage/errors — one page of the error detail table, newest
+ * first. The dashboard response above already carries the first page; this exists so
+ * "show me earlier ones" does not have to refetch the whole aggregate. It takes the same
+ * date/agent filter as the dashboard, so a page never widens what the summary counted.
+ */
+export interface UsageErrorsPage {
+  items: UsageErrorItem[];
+  /** Filtered row count, so the caller knows when it has reached the end. */
+  total: number;
 }
 
 export interface UsageResponse {

@@ -291,10 +291,9 @@ export class Agent {
       createLLM: rt.createLLM,
       createBareLLM: rt.createBareLLM,
       compaction: rt.compaction,
-      // Where an input image is written when it has to become a path line instead of riding
-      // the request as an image (viewed via describe_image / read_image). Always wired — which
-      // inputs fold is Session's per-call-site decision, driven by `modelVision`: without
-      // vision every Prompt and steering message folds; a goal objective folds either way.
+      // Where an input image lands when it becomes a path line instead of riding the request
+      // as an image (read back via describe_image / read_image). Always wired; Session decides
+      // per input whether to use it, from `modelVision`.
       imagesDir: path.join(
         scratchpadDir(this.state.root, this.state.projectId, this.state.agentId),
         sessionId,
@@ -451,10 +450,9 @@ export class Agent {
       createLLM: rt.createLLM,
       createBareLLM: rt.createBareLLM,
       compaction: rt.compaction,
-      // Where an input image is written when it has to become a path line instead of riding
-      // the request as an image (viewed via describe_image / read_image). Always wired — which
-      // inputs fold is Session's per-call-site decision, driven by `modelVision`: without
-      // vision every Prompt and steering message folds; a goal objective folds either way.
+      // Where an input image lands when it becomes a path line instead of riding the request
+      // as an image (read back via describe_image / read_image). Always wired; Session decides
+      // per input whether to use it, from `modelVision`.
       imagesDir: path.join(
         scratchpadDir(this.state.root, this.state.projectId, this.state.agentId),
         sessionId,

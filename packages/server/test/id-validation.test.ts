@@ -97,6 +97,7 @@ describe("id-validation", () => {
     expect((await attacker.get(`/api/projects/..%2Fetc/agents`)).status).toBe(404);
     expect((await attacker.get(`/api/projects/..%2Fetc/models`)).status).toBe(404);
     expect((await attacker.get(`/api/projects/..%2Fetc/usage`)).status).toBe(404);
+    expect((await attacker.get(`/api/projects/..%2Fetc/usage/errors`)).status).toBe(404);
     expect((await attacker.get(`/api/projects/..%2Fetc/members`)).status).toBe(404);
     expect((await attacker.delete(`/api/projects/..%2F${victimProject}`)).status).toBe(404);
   });

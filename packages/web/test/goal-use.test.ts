@@ -38,10 +38,9 @@ describe("parseGoalMessage (re-exported from core)", () => {
     expect(parseGoalMessage(crafted)).toEqual({ round: 1, rest: "body" });
   });
 
-  // message-item strips the blocks in a chain (goal → scheduled → skills) and only then splits
-  // the attachment lines, so the objective's images have to survive that order. Goal mode folds
-  // them for EVERY model (the objective is re-injected as text each round), which makes this the
-  // only shape a goal round's images ever arrive in.
+  // message-item strips the blocks in a chain (goal → scheduled → skills) and splits the
+  // attachment lines last, so the objective's images have to survive that order. Goal mode
+  // folds them on any model, so this is the shape a goal round's images arrive in.
   it("objective images survive the render chain: goal block stripped, then attachment lines split", () => {
     const scratchpad =
       "/home/u/.penguin/data/p1/agents/a1/scratchpad/session-1/upload-ab12cd34.png";

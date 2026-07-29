@@ -9,8 +9,19 @@
  * (its state wraps up accordingly, see close).
  *
  * LLM (source = `llm`): reads the status of `request_end` —
- * - `failed` / `auth` → unexpected (not retryable: credentials rejected, invalid params,
- *   etc., needs a human; both share the llm_failed code — no separate taxonomy);
+ * - `auth` → unexpected (`llm_auth`): the credential was rejected, the engine never retries
+ *   it, and only a human holding the key can fix it. Its own code rather than the failed
+ *   bucket, because dedup is `(source, code, Project)` over a short window: sharing a code
+ *   with a class that now fires on every recovered blip would let a real credential failure
+ *   be swallowed as a duplicate of something already handled.
+ * - `failed` → depends on whether the retry ladder carried it. The engine reconnects on
+ *   `failed` too, so the same status covers both "a gateway hiccup nobody needed to know
+ *   about" and "the run died on it":
+ *     - another attempt followed (a `request_begin` resolved the pending record) → expected
+ *       (`llm_failed_retried`), same footing as timeout/malformed: recorded for the record,
+ *       not raised at an operator;
+ *     - nothing followed but the end of the run (an `abort`, or close) → unexpected
+ *       (`llm_failed`): the retries did not recover it, the user lost the turn, needs a human.
  * - `timeout` / `malformed` → expected (the engine already reconnects and retries, part
  *   of normal operation);
  * - `aborted` / `completed` are not recorded (the former is a user-initiated interrupt,
@@ -24,7 +35,8 @@
  * - Immediately followed by `abort` → use its reason as the message (the real reason);
  * - Immediately followed by `request_begin` (the engine is retrying — no abort will ever
  *   arrive) → use the staged request_end's own `message` (the real detail, e.g. a quota
- *   code), falling back to the generic status text when it carried none;
+ *   code), falling back to the generic status text when it carried none. This boundary is
+ *   also what tells a survived `failed` from an exhausted one (see the classification above);
  * - Still unresolved when the run ends → close persists it the same way.
  * Exception: when reason is a user-interrupt message (`aborted …`), it's not trusted —
  * "the user clicked stop during backoff" isn't the reason for this timeout, so the
@@ -34,7 +46,10 @@
  *
  * Environment (source = `environment`): reads `tool_call_output`'s stop_reason ∈
  * {failed, timeout} → expected (the error is fed back to the model, and the Agent
- * adjusts on its own; `aborted` is denial/interruption, not recorded).
+ * adjusts on its own; `aborted` is denial/interruption, not recorded). Exactly one shape is
+ * dropped: a command tool's ordinary non-zero exit, which is how a shell command reports
+ * information rather than a fault — see isOrdinaryCommandExit; the same tools' environment
+ * faults (killed by a signal, spawn failure, tool timeout) still record.
  * `tool_call_output` only has tool_call_id, no tool name, so `tool_call_id → tool name`
  * is cached (tool_call always arrives before its output), and the tool name is written
  * into code (`tool_failed:exec_command`) — so the stats dashboard's "most common error
@@ -75,12 +90,31 @@ export const ORIGIN_CTX_MAX = 200;
 /** Recorded LLM failure states (`aborted` / `completed` are not errors and aren't included here). */
 type LlmFailure = "failed" | "timeout" | "malformed" | "auth";
 
-/** LLM failure state → error code, classification, and fallback message (used when the abort reason isn't available). */
-const LLM_FAILURES: Record<LlmFailure, { code: string; kind: ErrorKind; text: string }> = {
-  failed: { code: "llm_failed", kind: "unexpected", text: "LLM request failed (not retryable)." },
-  // Credentials rejection shares the failed bucket (no new taxonomy): same code/kind, the
-  // real reason arrives via the abort reason or the event's own message as usual.
-  auth: { code: "llm_failed", kind: "unexpected", text: "LLM request failed (not retryable)." },
+/** Error code, classification, and fallback message (the last used when no abort reason is available). */
+interface FailureSpec {
+  code: string;
+  kind: ErrorKind;
+  text: string;
+}
+
+/** LLM failure state → its spec, for a failure the retry ladder did NOT carry (see the file header). */
+const LLM_FAILURES: Record<LlmFailure, FailureSpec> = {
+  // Reached here only when no further attempt followed: the ladder ran out (or the run ended
+  // on it), so the user lost the turn and someone should look. A `failed` that was retried
+  // takes LLM_FAILED_RETRIED instead.
+  failed: {
+    code: "llm_failed",
+    kind: "unexpected",
+    text: "LLM request failed and the retries did not recover it.",
+  },
+  // Its own code, not the failed bucket: dedup is `(source, code, Project)` over a short
+  // window, and `llm_failed_retried` can now fire on any recovered blip — sharing a bucket
+  // would let a genuine credential failure be dropped as a duplicate of one.
+  auth: {
+    code: "llm_auth",
+    kind: "unexpected",
+    text: "LLM request rejected: the provider did not accept the credentials.",
+  },
   timeout: {
     code: "llm_timeout",
     kind: "expected",
@@ -93,6 +127,18 @@ const LLM_FAILURES: Record<LlmFailure, { code: string; kind: ErrorKind; text: st
   },
 };
 
+/**
+ * A `failed` the engine went on to retry: expected, exactly like timeout/malformed — the
+ * engine's defined handling path absorbed it and the user never lost anything, so it belongs
+ * in the record but not in an operator's queue. Its own code so the exhausted case keeps
+ * `llm_failed` to itself and neither can dedup the other away.
+ */
+const LLM_FAILED_RETRIED: FailureSpec = {
+  code: "llm_failed_retried",
+  kind: "expected",
+  text: "LLM request failed (the engine reconnects and retries).",
+};
+
 /** Recorded tool failure states (`aborted` = denial/interruption, not an error). */
 type ToolFailure = "failed" | "timeout";
 
@@ -102,6 +148,50 @@ function isLlmFailure(s: unknown): s is LlmFailure {
 
 function isToolFailure(s: unknown): s is ToolFailure {
   return s === "failed" || s === "timeout";
+}
+
+/**
+ * The command tools. Both funnel their exit status through core's `resultForExit`, which maps
+ * *any* non-zero exit to `failed` — and a non-zero exit is how shell commands return
+ * information, not a fault: `grep` exits 1 when nothing matches, `test -f` when the file is
+ * absent, `diff` when files differ. Recording those made the cost center's error table mostly a
+ * log of ordinary Agent work, burying the real errors and eating the row cap that exists to
+ * protect them. (Only the row cap: the recorder's dedup key carries the error code, so this
+ * noise could ever have crowded out only *itself*.) The Agent sees the failure in the tool
+ * output and adjusts — nothing about it needs a human.
+ *
+ * Both belong here: `input_command` is how a backgrounded `exec_command` is polled for its
+ * eventual exit, so covering only one would record the *same* command's non-zero exit when it
+ * finishes in the background and drop it when it finishes in the foreground.
+ */
+const COMMAND_TOOLS: ReadonlySet<string> = new Set(["exec_command", "input_command"]);
+
+/**
+ * `resultForExit`'s terminal marker for an ordinary non-zero exit. Anchored to the end because
+ * the marker is a `note`, which Environment appends after the (possibly truncated) output — a
+ * command's own stdout may contain anything, including this text.
+ */
+const ORDINARY_EXIT_NOTE = /\[exit code: [^\]\n]*\]\s*$/;
+
+/**
+ * Whether a command-tool failure is just an ordinary non-zero exit — the one failure shape the
+ * error table is better off without (see COMMAND_TOOLS).
+ *
+ * The discrimination is by note rather than by tool name, because `failed` from these tools is
+ * not only "the command exited non-zero": it also covers termination by signal (an OOM kill, a
+ * segfault), a spawn failure (nonexistent workdir, EMFILE, an unresolvable shell), a missing
+ * command session manager, and a tool timeout. Those are config/environment faults — the
+ * recorder's own "needs a human" category — and no amount of Agent self-correction resolves
+ * them, so they must keep landing in the table. `resultForExit` writes the exit code as the
+ * output's last note, which tells the two apart precisely.
+ *
+ * An unknown name (tool_call evicted from the cache, or never seen) still qualifies: only these
+ * two tools ever emit that marker, so dropping it beats recording a nameless
+ * `tool_failed:unknown` for exactly the noise this exists to remove.
+ */
+function isOrdinaryCommandExit(name: string | undefined, output: string): boolean {
+  if (name !== undefined && !COMMAND_TOOLS.has(name)) return false;
+  return ORDINARY_EXIT_NOTE.test(output);
 }
 
 /** A user-interrupt abort message (core's `aborted by user` / `aborted during …`): not a failure reason. */
@@ -220,12 +310,15 @@ export class StreamErrorWatcher {
       }
       return;
     }
-    // A new attempt begins (the engine is retrying): no reason text left to wait for the previous failure, persist using the status text.
+    // A new attempt begins (the engine is retrying): no reason text left to wait for the
+    // previous failure, persist using the status text — and this is the proof the ladder
+    // carried it, which is what downgrades a `failed` from unexpected to expected.
     if (p.type === "request_begin") {
-      this.flush(key);
+      this.flush(key, null, true);
       return;
     }
-    // Interrupted/failed exit: reason is core's only failure-reason text.
+    // Interrupted/failed exit: reason is core's only failure-reason text. No attempt follows
+    // an abort, so a `failed` resolved here is one the retries did not recover.
     if (p.type === "abort") {
       this.flush(key, typeof p.reason === "string" ? p.reason : null);
     }
@@ -233,15 +326,22 @@ export class StreamErrorWatcher {
 
   /**
    * Persist a pending LLM failure (no-op if none is pending); `reason` is the abort
-   * message that arrived afterward. Pending state is already bucketed by origin, so
+   * message that arrived afterward, and `retried` says whether another attempt followed
+   * (only a `request_begin` proves that). Pending state is already bucketed by origin, so
    * `key` is exactly "the session that produced this failure" — attribution is looked
    * up from it (see file header).
+   *
+   * `retried` defaults to false so every other resolution — an abort, the defensive flush at
+   * the next request_end, or close() at the end of the run — is read as "nothing came after
+   * this failure". That is the conservative direction: at worst a recovered blip is escalated,
+   * never a lost turn silently downgraded.
    */
-  private flush(key: string, reason?: string | null): void {
+  private flush(key: string, reason?: string | null, retried = false): void {
     const entry = this.pending.get(key);
     if (entry === undefined) return;
     this.pending.delete(key);
-    const spec = LLM_FAILURES[entry.status];
+    const spec =
+      retried && entry.status === "failed" ? LLM_FAILED_RETRIED : LLM_FAILURES[entry.status];
     const trimmed = reason?.trim();
     // Message priority: the abort reason (core's failure prose) → the staged request_end's
     // own detail (the retry path: no abort ever arrives) → the generic status text. A
@@ -285,9 +385,11 @@ export class StreamErrorWatcher {
     const name = this.toolNames.get(key);
     this.toolNames.delete(key); // This call has settled: dequeue it, the cache only keeps in-flight calls
     if (!isToolFailure(p.stop_reason)) return; // completed / aborted (denial, user interrupt) are not errors
+    const output = p.output ?? "";
+    if (isOrdinaryCommandExit(name, output)) return; // a shell's exit status is information, not a fault
     this.errors.record({
       source: "environment",
-      err: toolFailureText(p.output ?? ""),
+      err: toolFailureText(output),
       ctx: this.ctxFor(origin),
       // The tool name goes into code: so the stats dashboard's "most common error code" and table can show which tool failed.
       code: `tool_${p.stop_reason}:${name ?? "unknown"}`,

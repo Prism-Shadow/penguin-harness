@@ -255,10 +255,9 @@ describe("SessionManager.startGoal", () => {
   });
 
   it("records the objective without the attached images: the display copy stays path-free", async () => {
-    // Attached images ride the input into core, which folds them into `[attached image: …]`
-    // lines inside the objective it re-injects each round. The objective recorded HERE is the
-    // display one — status card, goal_started, title material — and must keep the user's words
-    // only: `isPlainText` filtering the image messages out is what makes that true.
+    // Core folds the attached images into `[attached image: …]` lines inside the objective it
+    // re-injects each round. The objective recorded here is the one shown to people — status
+    // card, goal_started, title material — so it keeps the user's words only.
     const session = goalFakeSession(() => [goalFinished("complete", 1, 10)]);
     const manager = makeManager(session);
     const events: ChannelEvent[] = [];

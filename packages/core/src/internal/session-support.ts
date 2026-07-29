@@ -105,10 +105,10 @@ export async function createTempWorkspace(
 
 /**
  * Stands in for an image that could not be turned into a path line — an unparseable data URL
- * here, or (in the engine's steering fold) a scratchpad write that failed. Shown to the model
- * and the user instead of silently dropping the attachment.
+ * in `imagesToScratchpadPaths`, or a failed scratchpad write in `dropInputImages`. Shown to
+ * the model and the user instead of silently dropping the attachment.
  */
-export const IMAGE_DROPPED_NOTE = "[an attached image could not be saved and was dropped]";
+const IMAGE_DROPPED_NOTE = "[an attached image could not be saved and was dropped]";
 
 /** Maps a data URL's mime type to a file extension on disk; unknown mimes use bin (the image-reading tool sniffs the magic bytes and doesn't rely on the extension). */
 const MIME_TO_EXT: Record<string, string> = {
@@ -168,9 +168,32 @@ export async function imagesToScratchpadPaths(
     lines.push(`[attached image: ${file}]`);
   }
 
-  // Concatenation: the path lines are appended after the last user text message; if the input is images only, add a plain path-only text message.
-  const rest = input.filter((m) => !isImage(m));
-  const suffix = lines.join("\n");
+  return appendToLastUserText(
+    input.filter((m) => !isImage(m)),
+    lines.join("\n"),
+  );
+}
+
+/**
+ * What the fold degrades to when it cannot run at all — an unwritable scratchpad, say. The
+ * images are dropped and the text says so, one line each exactly as a single unparseable one
+ * is handled above, so the count is still visible. Callers that must not fail over a disk
+ * problem (mid-run steering: the Task is already in flight) fall back to this; a Prompt lets
+ * the error through, since nothing is running yet and the sender is there to hear about it.
+ */
+export function dropInputImages(input: OmniMessage[]): OmniMessage[] {
+  const isImage = (m: OmniMessage): boolean =>
+    (m.payload as { type?: string }).type === "image_url";
+  const dropped = input.filter(isImage);
+  if (dropped.length === 0) return input;
+  return appendToLastUserText(
+    input.filter((m) => !isImage(m)),
+    dropped.map(() => IMAGE_DROPPED_NOTE).join("\n"),
+  );
+}
+
+/** Appends a block after the last user text; an input with none gets one carrying just the block. */
+function appendToLastUserText(rest: OmniMessage[], suffix: string): OmniMessage[] {
   const lastTextIdx = rest.findLastIndex((m) => {
     const p = m.payload as { type?: string; role?: string };
     return p.type === "text" && p.role === "user";
