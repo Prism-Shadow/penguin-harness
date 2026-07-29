@@ -14,17 +14,6 @@ In the chat, round 1 shows the attachments in full under its bubble and later ro
 
 The three input paths now share one fold, bound once per Session, with each path deciding for itself whether to apply it: a prompt and a steering message fold only without vision, a goal objective always. The gate used to be implicit — "was the scratchpad directory configured" stood in for "does the model lack vision" — which worked only while there was exactly one rule to encode.
 
-### Breaking: `SessionConfig` replaces `inputImagesDir`
-
-Making that gate explicit changes the SDK type. `SessionConfig.inputImagesDir?: string` is gone, replaced by two **required** fields:
-
-| Was | Is |
-| --- | --- |
-| `inputImagesDir?: string` — set only when the model lacked vision | `imagesDir: string` — always set: the session scratchpad, wherever an image lands when it becomes a path |
-| (the same field, doing double duty as the gate) | `modelVision: boolean` — from `ModelEntry.vision !== false` |
-
-Only code that constructs `new Session(...)` by hand is affected, and nothing documented does: `agent.createSession(...)` fills both in and stays source-compatible. A caller that does build the config directly sets `imagesDir` to the session's scratchpad directory and `modelVision` to whether the model takes image input — passing `modelVision: true` with any `imagesDir` reproduces the old behaviour for a vision model, and `false` reproduces it for a model that had `inputImagesDir` set.
-
 ## The mid-run button stops being able to strand you
 
 While a task runs, the composer's single action button flips from Stop to its send face as soon as the draft has any content. Steer mode could not carry every draft, so a draft it could not carry — an image with no text, back when images were not steerable — produced a **permanently disabled** send button that had also displaced Stop: the message could not be sent, and the run could not be stopped from the composer either. The only exit was deleting the attachment.
