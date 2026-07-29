@@ -10,7 +10,7 @@ The PenguinHarness server exposes a same-origin HTTP API used by the bundled Web
 - Stack: Hono + @hono/node-server, requires Node >= 24;
 - Storage: SQLite (built-in `node:sqlite`, WAL mode) holds only indexes and aggregates — users, auth sessions, Project authorization, Agent / Session indexes, usage, UI preferences, error records, and Schedule state; all Agent, Trace, and Workspace data stays as files under `~/.penguin/data`, shared with the CLI / SDK — see the [Configuration Reference](/configuration);
 - Binding: defaults to `127.0.0.1:7364`, adjustable via the `PORT` / `HOST` environment variables;
-- Request bodies: writes accept JSON only (Content-Type check, one of the CSRF defenses), capped at 20MB;
+- Request bodies: writes accept JSON only (Content-Type check, one of the CSRF defenses), capped at 20MB — counted as the body is read, so a request that declares no length (chunked) is capped just the same;
 - Errors share a single shape:
 
 ```text
@@ -161,7 +161,7 @@ The paths below omit the `/api/sessions/:sessionId` prefix. For the storage mode
 | DELETE | / | Delete the Session (along with its Traces and scratch files) |
 | GET | /messages | Full OmniMessage history; while a Task runs the response also carries `live` (the in-progress stream tail, see below) |
 | GET | /stream | SSE event stream (next section) |
-| POST | /tasks | Start a Task: `{input: TaskInputPart[], thinkingLevel?, queueIfBusy?}` → 202. With `queueIfBusy`, a busy session holds the input as a follow-up (`queued: true`) and auto-starts it as an ordinary next task once idle; `task_state` events report the queued count. With `goal: {budget?}` the input starts a goal loop instead: it must carry non-empty text (an image alone states no objective), and any images it carries fold into the objective as scratchpad path lines whatever the model's vision — see [Goal mode](/docs/goal-mode) |
+| POST | /tasks | Start a Task: `{input: TaskInputPart[], thinkingLevel?, queueIfBusy?}` → 202. With `queueIfBusy`, a busy session holds the input as a follow-up (`queued: true`) and auto-starts it as an ordinary next task once idle; `task_state` events report the queued count. `file` input parts are written to the Session scratchpad and handed to the model as `[attached file: <path>]` lines (see the request body below). With `goal: {budget?}` the input starts a goal loop instead: it must carry non-empty text (an image alone states no objective), any images it carries fold into the objective as scratchpad path lines whatever the model's vision, and `file` parts are refused — nothing folds them into a re-injected objective — see [Goal mode](/docs/goal-mode) |
 | POST | /steer | Mid-run steering: `{text, images?}` queues a message for the running Task (delivered between turns as a standalone `[user_steering]` user message, with its images right behind it) → 202; either field can carry the message on its own, but a request with neither is a 400; 409 `not_running` when no Task is in progress |
 | POST | /approvals/:toolCallId | Approval decision: `{decision}` is `allow` or `deny` → 204 |
 | POST | /abort | Interrupt the current Task: 202 when triggered, 204 when idle |
@@ -175,7 +175,7 @@ The paths below omit the `/api/sessions/:sessionId` prefix. For the storage mode
 | GET | /traces | List this Session's Trace files |
 | GET | /traces/:index | Read Trace events (paginated) |
 | GET | /traces/:index/analysis | Trace performance analysis |
-| GET | /scratchpad/:fileName | Read a session scratch file (e.g. input images) |
+| GET | /scratchpad/:fileName | Read a session scratch file (e.g. input images, file attachments) |
 
 General conventions: Sessions the user cannot access always return 404 — their existence is never leaked; only one Task or compaction runs per Session at a time, and conflicts return 409 (`task_in_progress` / `compacting`).
 
@@ -209,6 +209,8 @@ Workspace files may be Agent-generated, so `GET /files/content` treats them as u
 | `preview=1` | the real type (`text/html`, `image/svg+xml`, …) | `inline` | `sandbox allow-scripts allow-popups allow-modals allow-forms`, sent only for `.html` / `.htm` / `.svg` |
 | `download=1` | the real type | `attachment` | — |
 
+`GET /scratchpad/:fileName` serves the same kind of untrusted bytes (uploads and Agent-written temp files) and is locked down the same way, without the flags: `nosniff` always, a fixed allowlist of five inert image types (`.png` / `.jpg` / `.jpeg` / `.gif` / `.webp`) served inline for the conversation's `<img>` tags, and everything else `application/octet-stream` with `Content-Disposition: attachment` — so nothing that isn't one of those images can render as a document on the App's origin.
+
 The filename always rides along as `filename*=UTF-8''` with percent-encoding. `preview=1` is where the preview redirect falls back when no separate preview origin is available: the document keeps its real type and does render and run, but the sandbox deliberately omits `allow-same-origin`, so it lands in an opaque origin and can reach neither this origin's cookies nor the API. That isolation is also why `localStorage`, `document.cookie` and third-party embeds do not work there.
 
 ### Preview on a separate origin
@@ -241,7 +243,15 @@ interface TaskCreateRequest {
 }
 type TaskInputPart =
   | { type: "text"; text: string }
-  | { type: "image_url"; imageUrl: string };   // pasted images arrive as data URLs
+  | { type: "image_url"; imageUrl: string }    // pasted images arrive as data URLs
+  // File attachment: base64 data: URL, ≤10MB each (413 file_too_large beyond that), at most 20
+  // per request and 12MB of decoded bytes in total (413 too_many_files / payload_too_large;
+  // all three are checked before anything is written). The server writes it into the Session
+  // scratchpad and appends an `[attached file: <path>]` line to the message text — the model
+  // opens the file by path. `fileName` carries no path separators; on disk it keeps its own
+  // words (`报告 2026.pdf` → `报告-2026.pdf`: non-ASCII survives, shell-hostile ASCII becomes
+  // `-`), so a name is readable in the message and safe to paste into a command.
+  | { type: "file"; fileName: string; dataUrl: string };
 
 // POST /api/sessions/:sessionId/approvals/:toolCallId
 interface ApprovalDecisionRequest {
@@ -249,7 +259,7 @@ interface ApprovalDecisionRequest {
 }
 ```
 
-The Web's `/model` switch has no dedicated endpoint: like the @ handoff, it composes the ordinary APIs above — session creation opens a new Session for the same Agent (the chosen model, the source Workspace carried over), then POST /tasks sends a first message opening with a `[model_switch_from]` source block (the source session id, its `tracePath`, the Workspace, and the previous model pair); the model reads that Trace file itself when it needs the earlier history.
+The Web's `/model` switch has no dedicated endpoint: like the `/agent` handoff, it composes the ordinary APIs above — session creation opens a new Session for the same Agent (the chosen model, the source Workspace carried over), then POST /tasks sends a first message opening with a `[model_switch_from]` source block (the source session id, its `tracePath`, the Workspace, and the previous model pair); the model reads that Trace file itself when it needs the earlier history.
 
 ## Streaming (SSE)
 

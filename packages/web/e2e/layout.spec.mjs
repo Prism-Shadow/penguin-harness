@@ -16,9 +16,11 @@
  *   search box then horizontally scrolling the whole draft page — and the workspace menu
  *   ~143px off-screen right when the ownership pills share one row);
  * - no page grows the **document**: the app shell is height-constrained and each page scrolls
- *   inside its own container, so a second scrollbar means an absolutely positioned descendant
- *   escaped its scroller (the Traces tree and the Agent settings page both had one, visible
- *   only with a second Agent below a long list);
+ *   inside its own container, so a second scrollbar means either an absolutely positioned
+ *   descendant escaped its scroller (the Traces tree and the Agent settings page both had one,
+ *   visible only with a second Agent below a long list) or something that cannot shrink no
+ *   longer fits — checked at 420/320/240px tall in both sidebar states, since the sidebar's
+ *   chrome used to stop fitting below ~412px;
  * - the sidebar's "New chat" button has no background fill (same gray-scale style as nav items);
  * - the collapsed rail shows, in product-specified order, last conversation / new chat /
  *   Agents / Skills / Models / Costs / Traces / Benchmark with localized (en + zh) hover
@@ -704,22 +706,42 @@ test("layout: no page grows the document (absolute descendants stay in their scr
 
   // A short viewport puts the second Agent's node below the fold with a handful of Sessions
   // instead of dozens — the same geometry a full-height window reaches with a longer list.
-  // Not shorter than 420: below ~412px the sidebar's own fixed chrome (project switcher, the
-  // eight nav entries, the user row) no longer fits, which grows the document for its own
-  // unrelated reason and would mask what this test is after.
   await page.setViewportSize({ width: 1440, height: 420 });
   const paths = ["/traces", "/chat", "/agents", "/agents/default_agent", "/skills", "/models"];
+  const grewBy = (p) =>
+    p.evaluate(() => {
+      const de = document.documentElement;
+      return de.scrollHeight - de.clientHeight;
+    });
   const overflowing = [];
   for (const path of paths) {
     await page.goto(`${BASE}${path}`);
     await page.waitForTimeout(1200);
-    const grew = await page.evaluate(() => {
-      const de = document.documentElement;
-      return de.scrollHeight - de.clientHeight;
-    });
+    const grew = await grewBy(page);
     if (grew > 0) overflowing.push(`${path} (+${grew}px)`);
   }
   expect(overflowing, "pages whose document scrolls").toEqual([]);
+
+  // The other way to grow the document: content that cannot shrink. The sidebar's own chrome
+  // (Project switcher, New chat, eight nav entries, user row) used to be fixed height and
+  // stopped fitting below ~412px — a window that short is reachable by browser zoom or docked
+  // devtools. The nav now scrolls with the session list, and the collapsed rail scrolls its
+  // icons the same way, so both states shrink to nothing instead of pushing the page out.
+  const railToggle = page.getByRole("button", { name: "收起侧栏" });
+  for (const height of [420, 320, 240]) {
+    await page.setViewportSize({ width: 1440, height });
+    await page.goto(`${BASE}/chat`);
+    await page.waitForTimeout(900);
+    expect(await grewBy(page), `pinned sidebar @${height}`).toBe(0);
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`${BASE}/chat`);
+  await railToggle.click();
+  for (const height of [420, 320, 240]) {
+    await page.setViewportSize({ width: 1440, height });
+    await page.waitForTimeout(700);
+    expect(await grewBy(page), `collapsed rail @${height}`).toBe(0);
+  }
 });
 
 test("layout: login — blank start, non-crossing traces, lang/theme controls", async ({ page }) => {

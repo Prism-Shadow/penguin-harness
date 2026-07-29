@@ -604,11 +604,21 @@ export interface MessagesResponse {
 // ---------------------------------------------------------------------------
 
 /**
- * A single Prompt's input parts: text or image (data: / http(s) URL).
+ * A single Prompt's input parts: text, image (data: / http(s) URL), or an uploaded file.
  * Docs: /docs/server-api § "Session-Level Endpoints".
  */
 export type TaskInputPart =
-  { type: "text"; text: string } | { type: "image_url"; imageUrl: string };
+  | { type: "text"; text: string }
+  | { type: "image_url"; imageUrl: string }
+  /**
+   * File attachment (the composer's "+" menu): `dataUrl` is a base64 `data:` URL of the
+   * file's bytes, capped at 10MB each (413 `file_too_large` beyond that; the request as a
+   * whole still has to fit the global 20MB body limit). The server writes it into the
+   * Session scratchpad under a sanitized name and appends an `[attached file: <path>]` line
+   * to the message text — the bytes never enter the conversation, the model opens the file
+   * by path. `fileName` is the original name (no path separators, no `..`).
+   */
+  | { type: "file"; fileName: string; dataUrl: string };
 
 export interface TaskCreateRequest {
   input: TaskInputPart[];

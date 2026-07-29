@@ -67,18 +67,18 @@ describe("session-title", () => {
     const result = await generateTitleWithLLM(
       fakeLLM(
         [
-          thinkingMessage("想一下"), // thinking does not count
-          assistantText("「Tailwind 主题配置」。"),
+          thinkingMessage("thinking"), // thinking does not count
+          assistantText("「Tailwind theme setup」。"),
           tokenUsage(emptyTokenCounts(), { cache_read: 1, cache_write: 2, output: 3, total: 6 }),
         ],
         { status: "completed" },
         seen,
       ),
-      { userText: "解释 @theme", assistantText: "好的……" },
+      { userText: "explain @theme", assistantText: "sure thing." },
     );
-    expect(result.title).toBe("Tailwind 主题配置");
+    expect(result.title).toBe("Tailwind theme setup");
     expect(result.usage).toEqual({ cache_read: 1, cache_write: 2, output: 3, total: 6 });
-    expect(seen[0]).toBe(buildTitlePrompt("解释 @theme", "好的……"));
+    expect(seen[0]).toBe(buildTitlePrompt("explain @theme", "sure thing."));
     expect(seen[0]).toContain("SAME language");
   });
 
@@ -108,23 +108,23 @@ describe("session-title", () => {
   it("still generates with empty assistant material (tool-only turn): uses only the user request, prompt omits the assistant section", async () => {
     const seen: string[] = [];
     const result = await generateTitleWithLLM(
-      fakeLLM([assistantText("配置 Tailwind 主题")], { status: "completed" }, seen),
-      { userText: "帮我配置 @theme", assistantText: "" },
+      fakeLLM([assistantText("Configure the Tailwind theme")], { status: "completed" }, seen),
+      { userText: "help me configure @theme", assistantText: "" },
     );
-    expect(result.title).toBe("配置 Tailwind 主题");
-    expect(seen[0]).toBe(buildTitlePrompt("帮我配置 @theme", ""));
+    expect(result.title).toBe("Configure the Tailwind theme");
+    expect(seen[0]).toBe(buildTitlePrompt("help me configure @theme", ""));
     expect(seen[0]).not.toContain("[Assistant]");
   });
 
   it("sanitizeTitle: strips quotes/punctuation to a fixed point, collapses whitespace, truncates overlong input, returns null for empty", () => {
-    expect(sanitizeTitle("“ 构建配置 说明 。”")).toBe("构建配置 说明");
-    expect(sanitizeTitle("『标题』！")).toBe("标题");
+    expect(sanitizeTitle("“ Build config notes 。”")).toBe("Build config notes");
+    expect(sanitizeTitle("『Title』！")).toBe("Title");
     expect(sanitizeTitle("  \n ")).toBeNull();
     expect(sanitizeTitle("x".repeat(50))).toHaveLength(30);
     // A leaked [use_skills] block is stripped from the model output.
-    expect(sanitizeTitle("[use_skills]\nskills: web-design\n[/use_skills]\n构建落地页")).toBe(
-      "构建落地页",
-    );
+    expect(
+      sanitizeTitle("[use_skills]\nskills: web-design\n[/use_skills]\nBuild a landing page"),
+    ).toBe("Build a landing page");
   });
 
   it("Session.generateTitle: sends via createBareLLM; returns null when no factory is provided", async () => {

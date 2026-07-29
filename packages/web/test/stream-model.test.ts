@@ -44,6 +44,7 @@ import {
   pushMessages,
   registerLocalDecision,
 } from "../src/lib/omni/stream-model";
+import { liveSessionElapsedMs } from "../src/lib/omni/task-stats";
 import type {
   AssistantTextItem,
   CompactionItem,
@@ -731,7 +732,7 @@ describe("origin nested routing", () => {
       m,
       at(withOrigin(tokenUsage(counts(400), counts(400)), "c1"), "2026-07-05T00:00:02.000Z"),
     );
-    notifyTaskIdle(m, Date.now());
+    notifyTaskIdle(m);
     const stats = items(m).find((i) => i.kind === "task_stats") as TaskStatsItem;
     expect(stats.stats!.tokens).toBe(1400);
     expect(stats.stats!.tokensDelta).toBe(1400);
@@ -814,13 +815,15 @@ describe("Task segmentation and stats triggering", () => {
     expect(items(m).filter((i) => i.kind === "task_stats")).toHaveLength(0);
   });
 
-  it("live streams close at task_state:idle, measuring the delta with the local clock", () => {
+  it("live streams close at task_state:idle, measuring the delta from Trace timestamps", () => {
     const m = createStreamModel();
-    pushMessage(m, userText("live question"), 10_000);
-    pushMessage(m, tokenUsage(counts(800), counts(800)), 11_000);
-    notifyTaskIdle(m, 15_100);
+    // The local clock advances 5.1s across this round, but only the message timestamps decide
+    // the settled figure — the same span a reload would replay out of the Trace.
+    pushMessage(m, at(userText("live question"), "2026-07-05T00:00:00.000Z"), 10_000);
+    pushMessage(m, at(tokenUsage(counts(800), counts(800)), "2026-07-05T00:00:01.000Z"), 11_000);
+    notifyTaskIdle(m);
     const stats = items(m).find((i) => i.kind === "task_stats") as TaskStatsItem;
-    expect(stats.stats!.elapsedDeltaMs).toBe(5100);
+    expect(stats.stats!.elapsedDeltaMs).toBe(1_000);
     expect(stats.stats!.tokens).toBe(800);
   });
 
@@ -839,7 +842,7 @@ describe("Task segmentation and stats triggering", () => {
     const m = createStreamModel();
     pushMessage(m, at(userText("one"), "2026-07-05T00:00:00.000Z"));
     pushMessage(m, at(tokenUsage(counts(1000), counts(1000)), "2026-07-05T00:00:01.000Z"));
-    notifyTaskIdle(m, Date.now());
+    notifyTaskIdle(m);
     // Manual /compact (outside the Task boundary).
     pushMessage(
       m,
@@ -850,7 +853,7 @@ describe("Task segmentation and stats triggering", () => {
     // Next Task.
     pushMessage(m, at(userText("two"), "2026-07-05T00:02:00.000Z"));
     pushMessage(m, at(tokenUsage(counts(1800), counts(500)), "2026-07-05T00:02:01.000Z"));
-    notifyTaskIdle(m, Date.now());
+    notifyTaskIdle(m);
     const statsItems = items(m).filter((i) => i.kind === "task_stats") as TaskStatsItem[];
     const last = statsItems[statsItems.length - 1]!;
     expect(last.stats!.tokensDelta).toBe(500); // excludes the compaction's 300
@@ -888,7 +891,7 @@ describe("output TPS (request event pair timing)", () => {
     // happening between the two requests isn't counted).
     pushMessage(m, at(tokenUsage(out(900), out(900)), "2026-07-05T00:00:03.500Z"));
     pushMessage(m, at(requestEnd("completed"), "2026-07-05T00:00:04.000Z"));
-    notifyTaskIdle(m, Date.now());
+    notifyTaskIdle(m);
     const stats = items(m).find((i) => i.kind === "task_stats") as TaskStatsItem;
     expect(stats.stats!.outputTps).toBe(300); // 900 / 3s
     expect(stats.stats!.tokensByBucket).toEqual({ cacheRead: 0, cacheWrite: 0, output: 900 });
@@ -899,7 +902,7 @@ describe("output TPS (request event pair timing)", () => {
     // No request events -> no LLM timing -> TPS is null.
     pushMessage(m, at(userText("q1"), "2026-07-05T00:00:00.000Z"));
     pushMessage(m, at(tokenUsage(out(100), out(100)), "2026-07-05T00:00:01.000Z"));
-    notifyTaskIdle(m, Date.now());
+    notifyTaskIdle(m);
     const s1 = items(m).find((i) => i.kind === "task_stats") as TaskStatsItem;
     expect(s1.stats!.outputTps).toBeNull();
     // Next Task: two request rounds of 2s each, 400 output tokens each -> 800 / 4s = 200 tok/s.
@@ -910,7 +913,7 @@ describe("output TPS (request event pair timing)", () => {
     pushMessage(m, at(requestBegin(), "2026-07-05T00:01:05.000Z"));
     pushMessage(m, at(tokenUsage(out(400), out(400)), "2026-07-05T00:01:06.500Z"));
     pushMessage(m, at(requestEnd("completed"), "2026-07-05T00:01:07.000Z")); // 2s
-    notifyTaskIdle(m, Date.now());
+    notifyTaskIdle(m);
     const stats = items(m).filter((i) => i.kind === "task_stats") as TaskStatsItem[];
     expect(stats[stats.length - 1]!.stats!.outputTps).toBe(200);
   });
@@ -932,7 +935,7 @@ describe("output TPS (request event pair timing)", () => {
     pushMessage(m, at(approvalDecision("allow", "t1"), "2026-07-05T00:00:32.000Z"));
     pushMessage(m, at(tokenUsage(out(1000), out(1000)), "2026-07-05T00:00:32.500Z"));
     pushMessage(m, at(requestEnd("completed"), "2026-07-05T00:00:33.000Z"));
-    notifyTaskIdle(m, Date.now());
+    notifyTaskIdle(m);
     const stats = items(m).find((i) => i.kind === "task_stats") as TaskStatsItem;
     // Wall clock 32s, minus 30s approval -> 2s of generation: 1000 / 2s = 500 tok/s
     // (without subtracting it, it would be only 31 tok/s).
@@ -963,7 +966,7 @@ describe("output TPS (request event pair timing)", () => {
         "2026-07-05T00:00:21.000Z",
       ),
     );
-    notifyTaskIdle(m, Date.now());
+    notifyTaskIdle(m);
     const stats = items(m).find((i) => i.kind === "task_stats") as TaskStatsItem;
     expect(stats.stats!.outputTps).toBe(300); // 600 / 2s (the compaction request's 999 output and 15.5s are excluded)
   });
@@ -1298,7 +1301,64 @@ describe("compaction-internal messages (#17: history rebuild aligned with the li
   });
 });
 
-describe("live close-out elapsed (#5/#20: mid-join takes the message-timestamp lower bound)", () => {
+describe("elapsed comes from Trace timestamps (#5/#20: settled spans, reload-stable live anchor)", () => {
+  it("reloading mid-run resumes the header's live elapsed instead of restarting it", () => {
+    const m = createStreamModel();
+    const loadNow = 1_000_000;
+    // The Task started 60s ago and is STILL running — nothing finalizes it, so the header
+    // renders sessionElapsedMs + (now − taskStartLocalMs). Every message in a rebuild is fed
+    // the same `nowMs`, so without the re-anchor that addend would be 0 and the chip would
+    // drop back to the settled total and climb from zero on every reload.
+    pushMessages(
+      m,
+      [
+        at(userText("long-running task"), "2026-07-05T00:00:00.000Z"),
+        at(assistantText("working"), "2026-07-05T00:01:00.000Z"),
+      ],
+      loadNow,
+    );
+    expect(m.taskOpen).toBe(true);
+    expect(loadNow - m.taskStartLocalMs).toBe(60_000);
+    // No `Date` header came back, so the Trace's own span decides the anchor. Note the local
+    // clock here is nowhere near the server timestamps, and the figure is unaffected: only
+    // differences between server-side values ever reach it.
+    expect(liveSessionElapsedMs(m.stats, m.taskOpen, m.taskStartLocalMs, loadNow + 5000)).toBe(
+      65_000,
+    );
+  });
+
+  it("a reload while an event is still in flight counts it, from the server's own clock", () => {
+    // A tool started executing 10s into the Task and is STILL running 300s later. Nothing has
+    // been appended to the Trace since it began, so its span reaches only those first 10s —
+    // the server's clock at read time is the only thing that sees the other 290s.
+    const replay = [
+      at(userText("run the build"), "2026-07-05T00:00:00.000Z"),
+      at(toolCall({ name: "bash", arguments: "{}", toolCallId: "t1" }), "2026-07-05T00:00:10.000Z"),
+    ];
+    const serverNow = Date.parse("2026-07-05T00:05:00.000Z");
+    // The client's clock is deliberately nothing like the server's: a 90-minute offset that must
+    // not reach the figure, since both ends of the measured interval are server-side values.
+    const loadNow = serverNow + 90 * 60_000;
+    const m = createStreamModel();
+    pushMessages(m, replay, loadNow, serverNow);
+    expect(m.taskOpen).toBe(true);
+    expect(liveSessionElapsedMs(m.stats, m.taskOpen, m.taskStartLocalMs, loadNow)).toBe(300_000);
+    // Without the header the Trace's span is the floor: short, but never an overshoot.
+    const noHeader = createStreamModel();
+    pushMessages(noHeader, replay, loadNow, null);
+    expect(
+      liveSessionElapsedMs(noHeader.stats, noHeader.taskOpen, noHeader.taskStartLocalMs, loadNow),
+    ).toBe(10_000);
+  });
+
+  it("a live stream is unaffected: the anchor stays the real Task start", () => {
+    const m = createStreamModel();
+    // One message at a time with the real current clock — the Trace span is still 0 when the
+    // Task opens, so the re-anchor is a no-op and must not shift the origin.
+    pushMessage(m, at(userText("live question"), "2026-07-05T00:00:00.000Z"), 10_000);
+    expect(m.taskStartLocalMs).toBe(10_000);
+  });
+
   it("a Task ending right after a refresh: elapsed takes the message-timestamp span, not the local-clock delta", () => {
     const m = createStreamModel();
     const loadNow = 1_000_000;
@@ -1313,19 +1373,31 @@ describe("live close-out elapsed (#5/#20: mid-join takes the message-timestamp l
       loadNow,
     );
     // task_state:idle arrives 2s after joining.
-    notifyTaskIdle(m, loadNow + 2000);
+    notifyTaskIdle(m);
     const stats = items(m).find((i) => i.kind === "task_stats") as TaskStatsItem;
     expect(stats.stats!.elapsedDeltaMs).toBe(60_000);
     expect(stats.stats!.elapsedMs).toBe(60_000); // sessionElapsedMs is corrected in sync
   });
 
-  it("when the local-clock delta is larger (normal live stream), the local clock still wins", () => {
-    const m = createStreamModel();
-    pushMessage(m, at(userText("live question"), "2026-07-05T00:00:00.000Z"), 10_000);
-    pushMessage(m, at(tokenUsage(counts(800), counts(800)), "2026-07-05T00:00:01.000Z"), 11_000);
-    notifyTaskIdle(m, 15_100);
-    const stats = items(m).find((i) => i.kind === "task_stats") as TaskStatsItem;
-    expect(stats.stats!.elapsedDeltaMs).toBe(5100);
+  it("a degenerate round settles to the same figure live and replayed — the local clock never leaks in", () => {
+    // No request_end anywhere (interrupted before its first Request ran), which used to be the
+    // one case that fell back to the local clock. Watching it live and replaying it out of the
+    // Trace must now agree, or the header would silently change on reload.
+    const msgs = [
+      at(userText("live question"), "2026-07-05T00:00:00.000Z"),
+      at(tokenUsage(counts(800), counts(800)), "2026-07-05T00:00:01.000Z"),
+    ];
+    const live = createStreamModel();
+    pushMessage(live, msgs[0]!, 10_000);
+    pushMessage(live, msgs[1]!, 11_000);
+    notifyTaskIdle(live); // idle detected 4.1s later by the local clock — irrelevant now
+    const replayed = createStreamModel();
+    pushMessages(replayed, msgs, 9_000_000); // reloaded much later, different clock entirely
+    finalizeHistory(replayed);
+    const of = (m: StreamModel) =>
+      (items(m).find((i) => i.kind === "task_stats") as TaskStatsItem).stats!.elapsedDeltaMs;
+    expect(of(live)).toBe(1_000);
+    expect(of(replayed)).toBe(of(live));
   });
 });
 
@@ -1491,7 +1563,7 @@ describe("thinking/tool durations (collapsed-row display data)", () => {
     const m = createStreamModel();
     pushMessage(m, at(userText("Q"), T0));
     pushMessage(m, at(toolCall({ name: "x", arguments: "{}", toolCallId: "tb" }), T1));
-    notifyTaskIdle(m, Date.parse(T2));
+    notifyTaskIdle(m);
     const card = items(m).find((i) => i.kind === "tool_call") as ToolCallItem;
     expect(card.outputComplete).toBe(true);
     expect(card.outputStopReason).toBe("aborted");

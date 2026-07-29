@@ -4,7 +4,7 @@ import {
   parseBudgetInput,
   parseGoalMessage,
 } from "../src/features/chat/goal-use";
-import { splitImageAttachments } from "../src/lib/attachments";
+import { splitAttachments } from "../src/lib/attachments";
 
 describe("parseGoalMessage (re-exported from core)", () => {
   const block = (round: number, body: string) =>
@@ -47,9 +47,11 @@ describe("parseGoalMessage (re-exported from core)", () => {
     const rest = parseGoalMessage(
       block(4, `Match this mockup\n\n[attached image: ${scratchpad}]`),
     )?.rest;
-    expect(splitImageAttachments(rest!)).toEqual({
+    expect(splitAttachments(rest!)).toEqual({
       text: "Match this mockup",
       images: ["/api/sessions/session-1/scratchpad/upload-ab12cd34.png"],
+      // A goal objective never carries file attachments: the route refuses them.
+      files: [],
     });
   });
 });

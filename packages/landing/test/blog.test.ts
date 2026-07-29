@@ -36,7 +36,7 @@ describe("formatPostDate", () => {
     expect(formatPostDate("2026-07-20", "en")).toBe("July 20, 2026");
   });
 
-  it("formats zh dates as 年月日", () => {
+  it("formats zh dates as year-month-day", () => {
     expect(formatPostDate("2026-06-18", "zh")).toBe("2026年6月18日");
     expect(formatPostDate("2026-07-20", "zh")).toBe("2026年7月20日");
   });
@@ -68,9 +68,9 @@ describe("parseAuthors / formatAuthors", () => {
     expect(parseAuthors("  ")).toEqual([DEFAULT_AUTHOR]);
   });
 
-  it("joins with a comma in English and 顿号 in Chinese", () => {
+  it("joins with a comma in English and an ideographic comma in Chinese", () => {
     expect(formatAuthors(["A", "B"], "en")).toBe("A, B");
-    expect(formatAuthors(["甲", "乙"], "zh")).toBe("甲、乙");
+    expect(formatAuthors(["A", "B"], "zh")).toBe("A、B");
     expect(formatAuthors(["A"], "en")).toBe("A");
   });
 });

@@ -34,6 +34,11 @@ The data root is the `PENGUIN_HOME` environment variable, defaulting to `~/.peng
         ├── traces/
         │   └── <yyyy-mm-dd>/<sessionId>_<index3>.jsonl
         ├── scratchpad/               # temp files, one subdirectory per Session id (e.g. pasted images)
+        ├── shared_env/               # shared interpreter/tool environments (virtualenvs, pipx,
+        │                             # caches) the Agent creates on demand — a system prompt
+        │                             # convention, not a path the code creates, so tooling is
+        │                             # installed once for any task; project dependencies stay
+        │                             # in the project
         ├── workspaces/               # temp Workspaces (tmp-<8hex>)
         ├── benchmarks/               # capability Benchmark cases and scores
         └── snapshots/                # Agent State version snapshots
@@ -81,7 +86,7 @@ Special case: if the latest Trace file ends with a completed compaction, that co
 
 ## Model switch (/model)
 
-The Web's `/model` command changes models the way the @ handoff does: it creates a new Session under the same Agent via the ordinary session-creation API (the chosen model, **the source session's Workspace** — so files stay reachable), and the first message opens with a `[model_switch_from]` source block — the source session id, the absolute path of its latest Trace file, the Workspace, and the previous model pair — followed by whatever the user typed. The history is **not injected** into the new context: some models require thinking payloads and `fidelity` byte-for-byte when history is replayed, which cannot cross models — instead the model reads the source Trace file itself (JSONL, one message envelope per line) when it needs the earlier context. The source session and its Trace are untouched.
+The Web's `/model` command changes models the way the `/agent` handoff does: picking a model stages it in the composer, and sending creates a new Session under the same Agent via the ordinary session-creation API (the chosen model, **the source session's Workspace** — so files stay reachable), and the first message opens with a `[model_switch_from]` source block — the source session id, the absolute path of its latest Trace file, the Workspace, and the previous model pair — followed by whatever the user typed. The history is **not injected** into the new context: some models require thinking payloads and `fidelity` byte-for-byte when history is replayed, which cannot cross models — instead the model reads the source Trace file itself (JSONL, one message envelope per line) when it needs the earlier context. The source session and its Trace are untouched.
 
 ## Field fidelity
 

@@ -205,7 +205,7 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
       : failed
         ? "failed"
         : "done";
-  // Decision wording ("Approved · manual" / "已拒绝 · 手动" …): carried ONLY by the left status
+  // Decision wording ("Approved · manual", "Denied · manual", …): carried ONLY by the left status
   // icon's title/aria-label — per review the row shows no visible decision text at any
   // breakpoint; the icon is the single source of truth for how the call was decided.
   const decisionText = item.decision

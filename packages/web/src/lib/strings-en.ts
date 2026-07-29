@@ -21,7 +21,7 @@ export const en: Strings = {
     benchmark: "Evaluation Center",
     // Collapsed-rail tooltips (product-specified wording; new chat reuses chat.newSessionMenu, the other pages reuse the page names above).
     lastConversation: "Last conversation",
-    // Deliberately equal to nav.agents: the key exists for the zh-only wording difference (智能体 vs 智能体仓库).
+    // Deliberately equal to nav.agents: the key exists only because the zh dictionary words the rail entry differently ("Agents" vs "Agent library").
     railAgents: "Agents",
     collapseSidebar: "Collapse sidebar",
     expandSidebar: "Expand sidebar",
@@ -731,8 +731,12 @@ When done, open index.html in a browser and self-test once.`,
     contextUsage: "Context usage",
     contextUnknown: "Context usage: unknown until the next request reports it",
     slashHint: "Type / for commands",
-    mentionHint: "@ to handoff to another agent",
-    mentionRemove: "Remove @ target",
+    switchAgent: "Hand off to another agent — opens a new session on send",
+    switchAgentTitle: "Choose agent",
+    agentSearchPlaceholder: "Search agents: id / name",
+    agentsNoMatch: "No matching agents",
+    handoffTargetTitle: (agent: string) => `Sending hands this conversation to ${agent}`,
+    handoffRemove: "Remove handoff target",
     skillsSelect: "Skills",
     skillRemove: "Remove skill",
     skillsSearchPlaceholder: "Search skills",
@@ -743,8 +747,12 @@ When done, open index.html in a browser and self-test once.`,
     handoffFrom: (agent: string) => `Handed off from ${agent}'s conversation`,
     handoffBack: (title?: string) =>
       title ? `Back to the original conversation: ${title}` : "Back to the original conversation",
-    switchModel: "Switch model — continue this conversation in a new session",
+    switchModel: "Switch model — on send, continues this conversation in a new session",
     switchModelTitle: "Switch model",
+    modelSwitchTargetTitle: (model: string) => `Sending continues this conversation on ${model}`,
+    modelSwitchRemove: "Remove model switch",
+    modelSwitchBusyHint:
+      "The model switch waits for this turn to finish: the new session continues from this session's record",
     modelSwitchFrom: (prevModel?: string) =>
       prevModel
         ? `Switched model (was ${prevModel}) — continued from the earlier conversation`
@@ -784,10 +792,17 @@ When done, open index.html in a browser and self-test once.`,
     },
     skillsBanner: (names: string[]): string =>
       `Using skill${names.length === 1 ? "" : "s"}: ${names.join(", ")}`,
-    /** Composer "+" extension menu (currently only goal mode; more entries later) and the goal chip. */
+    attachedFilesBanner: (names: string[]): string =>
+      `Attached file${names.length === 1 ? "" : "s"}: ${names.join(", ")}`,
+    /** Composer "+" extension menu (image upload, file attachment, goal mode) and the goal chip. */
     plusMenu: "More input options",
     uploadImage: "Upload image",
     uploadImageDesc: "Attach images to this message",
+    uploadFile: "Upload file",
+    uploadFileDesc: "Saved to the session scratchpad; the model reads them by path",
+    removeFile: "Remove file",
+    attachmentTooLarge: (name: string): string =>
+      `${name} exceeds the 10MB limit and was not attached.`,
     goalMode: "Goal mode",
     goalModeDesc: "Loop until the goal completes",
     goalBudgetLabel: "Token budget",
@@ -969,6 +984,7 @@ When done, open index.html in a browser and self-test once.`,
       unknown_skill: "This skill is not in the library.",
       file_not_found: "This file no longer exists.",
       file_too_large: "The file is too large.",
+      too_many_files: "Too many files attached to one message.",
       payload_too_large: "The request is too large.",
       dir_not_absolute: "The directory must be an absolute path.",
       not_a_dir: "That path is not a directory.",

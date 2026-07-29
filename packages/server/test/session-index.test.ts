@@ -621,5 +621,21 @@ describe("session-index", () => {
       "text",
       "image_url",
     ]);
+    // A file attachment is the one input a goal cannot take, images notwithstanding: nothing
+    // folds it into the objective every round re-injects, so it is refused before any upload
+    // is written to disk (startGoal is never reached).
+    const withFile = await api.post(`/api/sessions/${session.sessionId}/tasks`, {
+      input: [
+        { type: "text", text: "objective" },
+        {
+          type: "file",
+          fileName: "report.pdf",
+          dataUrl: `data:application/pdf;base64,${Buffer.from("PDF-BYTES").toString("base64")}`,
+        },
+      ],
+      goal: {},
+    });
+    expect(withFile.status).toBe(400);
+    expect(started).toHaveLength(1);
   });
 });

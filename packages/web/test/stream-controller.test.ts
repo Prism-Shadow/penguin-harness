@@ -41,13 +41,21 @@ interface Harness {
   errors: Array<string | null>;
   loadings: boolean[];
   loadCalls: () => number;
-  resolveLoad: (messages: OmniMessage[], live?: MessagesLiveTail) => void;
+  resolveLoad: (
+    messages: OmniMessage[],
+    live?: MessagesLiveTail,
+    serverNowMs?: number | null,
+  ) => void;
   rejectLoad: (err: Error) => void;
 }
 
 function createHarness(): Harness {
   const pendingLoads: Array<{
-    resolve: (m: { messages: OmniMessage[]; live?: MessagesLiveTail }) => void;
+    resolve: (m: {
+      messages: OmniMessage[];
+      live?: MessagesLiveTail;
+      serverNowMs?: number | null;
+    }) => void;
     reject: (e: unknown) => void;
   }> = [];
   const states: SessionStatus[] = [];
@@ -56,7 +64,11 @@ function createHarness(): Harness {
   let calls = 0;
   const controller = createStreamController({
     loadMessages: () =>
-      new Promise<{ messages: OmniMessage[]; live?: MessagesLiveTail }>((resolve, reject) => {
+      new Promise<{
+        messages: OmniMessage[];
+        live?: MessagesLiveTail;
+        serverNowMs?: number | null;
+      }>((resolve, reject) => {
         calls += 1;
         pendingLoads.push({ resolve, reject });
       }),
@@ -73,8 +85,12 @@ function createHarness(): Harness {
     errors,
     loadings,
     loadCalls: () => calls,
-    resolveLoad: (messages, live) =>
-      pendingLoads.shift()!.resolve({ messages, ...(live !== undefined ? { live } : {}) }),
+    resolveLoad: (messages, live, serverNowMs) =>
+      pendingLoads.shift()!.resolve({
+        messages,
+        ...(live !== undefined ? { live } : {}),
+        ...(serverNowMs !== undefined ? { serverNowMs } : {}),
+      }),
     rejectLoad: (err) => pendingLoads.shift()!.reject(err),
   };
 }
@@ -84,6 +100,31 @@ const HISTORY_TASK: OmniMessage[] = [
   at(assistantText("answer"), "2026-07-05T00:00:03.000Z"),
   at(tokenUsage(counts(1000), counts(1000)), "2026-07-05T00:00:05.000Z"),
 ];
+
+describe("the running Task's live anchor is back-dated from the server's clock at read time", () => {
+  it("counts an event still in flight, which the Trace's own span cannot see", async () => {
+    const h = createHarness();
+    const p = h.controller.load();
+    // Still running, so the Task stays open. Its last Trace entry is 5s in, but the server's
+    // clock says 300s have passed — a tool has been executing throughout, appending nothing.
+    h.controller.handleServer({ type: "task_state", state: "running" });
+    h.resolveLoad(HISTORY_TASK, undefined, Date.parse("2026-07-05T00:05:00.000Z"));
+    await p;
+    expect(h.controller.model.taskOpen).toBe(true);
+    // The harness's local clock is 1_000_000, nothing like the server's: the anchor is
+    // back-dated by the full 300s the server reports, not by the 5s the Trace shows.
+    expect(1_000_000 - h.controller.model.taskStartLocalMs).toBe(300_000);
+  });
+
+  it("falls back to the Trace's span when no Date header came back", async () => {
+    const h = createHarness();
+    const p = h.controller.load();
+    h.controller.handleServer({ type: "task_state", state: "running" });
+    h.resolveLoad(HISTORY_TASK, undefined, null);
+    await p;
+    expect(1_000_000 - h.controller.model.taskStartLocalMs).toBe(5_000);
+  });
+});
 
 describe("in-stream task_state is the authoritative running state (history-closing decision)", () => {
   it("subscription snapshot idle: history closes, producing the last Task's stats row", async () => {

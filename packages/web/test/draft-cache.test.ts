@@ -41,7 +41,7 @@ describe("parseDraft (field-by-field validation)", () => {
     expect(parseDraft("[1,2]")).toEqual({});
   });
 
-  it("valid fields pass through one by one (the model is a paired reference)", () => {
+  it("valid fields pass through one by one (both model fields are paired references)", () => {
     const raw = JSON.stringify({
       text: "Write me a script",
       agentId: "default_agent",
@@ -49,6 +49,7 @@ describe("parseDraft (field-by-field validation)", () => {
       approvalMode: "read-only",
       modelRef: { provider: "anthropic", modelId: "claude-opus-4-8" },
       handoffAgentId: "agent_helper",
+      switchModelRef: { provider: "openai", modelId: "gpt-5" },
       skills: ["agent-creation", "penguin-sdk"],
     });
     expect(parseDraft(raw)).toEqual({
@@ -58,6 +59,7 @@ describe("parseDraft (field-by-field validation)", () => {
       approvalMode: "read-only",
       modelRef: { provider: "anthropic", modelId: "claude-opus-4-8" },
       handoffAgentId: "agent_helper",
+      switchModelRef: { provider: "openai", modelId: "gpt-5" },
       skills: ["agent-creation", "penguin-sdk"],
     });
   });
@@ -70,6 +72,7 @@ describe("parseDraft (field-by-field validation)", () => {
       approvalMode: "read-only",
       modelRef: ["m"],
       handoffAgentId: 7,
+      switchModelRef: "custom:claude-4-8",
     });
     expect(parseDraft(raw)).toEqual({ approvalMode: "read-only" });
   });
@@ -78,6 +81,28 @@ describe("parseDraft (field-by-field validation)", () => {
     expect(parseDraft(JSON.stringify({ modelId: "claude-opus-4-8" }))).toEqual({});
     expect(parseDraft(JSON.stringify({ modelRef: { modelId: "claude-opus-4-8" } }))).toEqual({});
     expect(parseDraft(JSON.stringify({ modelRef: { provider: "anthropic" } }))).toEqual({});
+  });
+
+  it("the staged /model target validates exactly like modelRef: half references and non-objects are dropped", () => {
+    // The staged switch chip is cached alongside the text it belongs to (a chip lost while its
+    // text survived would send that text to the current session on the old model), so a
+    // corrupted entry must degrade to "no chip" rather than to a half-formed model reference.
+    expect(parseDraft(JSON.stringify({ switchModelRef: { modelId: "gpt-5" } }))).toEqual({});
+    expect(parseDraft(JSON.stringify({ switchModelRef: { provider: "openai" } }))).toEqual({});
+    expect(parseDraft(JSON.stringify({ switchModelRef: null }))).toEqual({});
+    expect(parseDraft(JSON.stringify({ switchModelRef: 42 }))).toEqual({});
+    expect(
+      parseDraft(JSON.stringify({ switchModelRef: { provider: "openai", modelId: 5 } })),
+    ).toEqual({});
+    // The two model fields are independent: a bad one never takes the good one down with it.
+    expect(
+      parseDraft(
+        JSON.stringify({
+          modelRef: { provider: "anthropic", modelId: "claude-opus-4-8" },
+          switchModelRef: { provider: 1, modelId: "gpt-5" },
+        }),
+      ),
+    ).toEqual({ modelRef: { provider: "anthropic", modelId: "claude-opus-4-8" } });
   });
 
   it("approvalMode accepts only the four valid values", () => {
