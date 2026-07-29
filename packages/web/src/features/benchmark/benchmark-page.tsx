@@ -25,6 +25,8 @@ import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { formatDateTime, formatMoney, formatScore, humanizeDuration } from "../../lib/format";
 import { agentDisplayName, useProject } from "../../state/project";
+import { useTheme } from "../../state/theme";
+import type { Currency } from "../../state/theme";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { Chevron } from "../../components/ui/chevron";
 import { Segmented } from "../../components/ui/segmented";
@@ -152,11 +154,11 @@ function metricLabel(metric: BenchmarkMetric): string {
 }
 
 /** Display format for a metric value (shared by y-axis ticks and the tooltip): score / cost / duration each have their own formatting rule. */
-function formatMetric(metric: BenchmarkMetric, v: number): string {
+function formatMetric(metric: BenchmarkMetric, v: number, currency: Currency): string {
   return metric === "score"
     ? formatScore(v)
     : metric === "cost"
-      ? formatMoney(v)
+      ? formatMoney(v, currency)
       : humanizeDuration(v);
 }
 
@@ -176,10 +178,12 @@ function MetricTrendChart({
   evaluations,
   series,
   metric,
+  currency,
 }: {
   evaluations: BenchmarkEvaluation[];
   series: EvaluationSeries[];
   metric: BenchmarkMetric;
+  currency: Currency;
 }) {
   const [hover, setHover] = useState<number | null>(null);
   const [ref, width] = useChartWidth();
@@ -194,7 +198,7 @@ function MetricTrendChart({
       {width > 0 && (
         <ChartFrame
           geom={geom}
-          fmtY={(v) => formatMetric(metric, v)}
+          fmtY={(v) => formatMetric(metric, v, currency)}
           dates={dates}
           hover={hover}
           onHover={setHover}
@@ -205,7 +209,7 @@ function MetricTrendChart({
               <>
                 <p className="text-gray-400">{formatDateTime(e.time)}</p>
                 <p className="font-mono">
-                  {v === null ? "—" : formatMetric(metric, v)}
+                  {v === null ? "—" : formatMetric(metric, v, currency)}
                   {e.version !== undefined && (
                     <span className="ml-1.5 text-gray-400">v{e.version}</span>
                   )}
@@ -277,7 +281,13 @@ function MetricTrendChart({
  * disambiguate. Mounted under a keyed container per Benchmark: switching Benchmarks resets back
  * to "score".
  */
-function TrendSection({ evaluations }: { evaluations: BenchmarkEvaluation[] }) {
+function TrendSection({
+  evaluations,
+  currency,
+}: {
+  evaluations: BenchmarkEvaluation[];
+  currency: Currency;
+}) {
   const [metric, setMetric] = useState<BenchmarkMetric>("score");
   const series = modelSeries(evaluations);
   const ids = series.map((s) => s.modelId).filter((v): v is string => v !== undefined);
@@ -324,7 +334,12 @@ function TrendSection({ evaluations }: { evaluations: BenchmarkEvaluation[] }) {
           ))}
         </div>
       )}
-      <MetricTrendChart evaluations={evaluations} series={series} metric={metric} />
+      <MetricTrendChart
+        evaluations={evaluations}
+        series={series}
+        metric={metric}
+        currency={currency}
+      />
     </div>
   );
 }
@@ -335,9 +350,11 @@ const CELL = "px-3 py-2";
 function EvaluationRow({
   agentId,
   evaluation,
+  currency,
 }: {
   agentId: string;
   evaluation: BenchmarkEvaluation;
+  currency: Currency;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -365,7 +382,7 @@ function EvaluationRow({
           {formatScore(evaluation.score)}
         </td>
         <td className={`${CELL} font-mono text-xs tabular-nums text-gray-500 dark:text-gray-400`}>
-          {formatMoney(evaluation.cost)}
+          {formatMoney(evaluation.cost, currency)}
         </td>
         <td className={`${CELL} font-mono text-xs tabular-nums text-gray-500 dark:text-gray-400`}>
           {evaluation.durationMs !== undefined ? humanizeDuration(evaluation.durationMs) : "—"}
@@ -406,7 +423,7 @@ function EvaluationRow({
               </thead>
               <tbody>
                 {evaluation.cases.map((c) => (
-                  <CaseRow key={c.case} agentId={agentId} caseScore={c} />
+                  <CaseRow key={c.case} agentId={agentId} caseScore={c} currency={currency} />
                 ))}
               </tbody>
             </table>
@@ -437,7 +454,15 @@ function SessionLink({ agentId, sessionId }: { agentId: string; sessionId?: stri
  * of each run (#index + score / cost / duration / Session link); with the old format lacking
  * runs, it's not expandable and the case-level single Session link is used as before.
  */
-function CaseRow({ agentId, caseScore: c }: { agentId: string; caseScore: BenchmarkCaseScore }) {
+function CaseRow({
+  agentId,
+  caseScore: c,
+  currency,
+}: {
+  agentId: string;
+  caseScore: BenchmarkCaseScore;
+  currency: Currency;
+}) {
   const [open, setOpen] = useState(false);
   const runs = c.runs ?? [];
   const expandable = runs.length > 0;
@@ -455,7 +480,7 @@ function CaseRow({ agentId, caseScore: c }: { agentId: string; caseScore: Benchm
         </td>
         <td className="px-2 py-1 font-mono tabular-nums">{formatScore(c.score)}</td>
         <td className="px-2 py-1 font-mono tabular-nums text-gray-500 dark:text-gray-400">
-          {formatMoney(c.cost)}
+          {formatMoney(c.cost, currency)}
         </td>
         <td className="px-2 py-1 font-mono tabular-nums text-gray-500 dark:text-gray-400">
           {c.durationMs !== undefined ? humanizeDuration(c.durationMs) : "—"}
@@ -472,7 +497,7 @@ function CaseRow({ agentId, caseScore: c }: { agentId: string; caseScore: Benchm
               {S.benchmark.colRun} #{i + 1}
             </td>
             <td className="px-2 py-1 font-mono tabular-nums">{formatScore(run.score)}</td>
-            <td className="px-2 py-1 font-mono tabular-nums">{formatMoney(run.cost)}</td>
+            <td className="px-2 py-1 font-mono tabular-nums">{formatMoney(run.cost, currency)}</td>
             <td className="px-2 py-1 font-mono tabular-nums">
               {run.durationMs !== undefined ? humanizeDuration(run.durationMs) : "—"}
             </td>
@@ -491,6 +516,7 @@ function CaseRow({ agentId, caseScore: c }: { agentId: string; caseScore: Benchm
 export function BenchmarkPage() {
   useDocumentTitle(S.benchmark.title);
   const { currentProject, agents, agentsLoading } = useProject();
+  const { currency } = useTheme();
   const projectId = currentProject?.projectId ?? null;
   // ?agentId= deep link (entered from the "Benchmark" tab on the Agent settings page): only the target Agent is expanded by default.
   const [searchParams] = useSearchParams();
@@ -555,7 +581,7 @@ export function BenchmarkPage() {
               <EmptyState title={S.benchmark.noEvaluations} />
             ) : (
               <>
-                <TrendSection evaluations={evaluations} />
+                <TrendSection evaluations={evaluations} currency={currency} />
 
                 <div>
                   <p className="mb-1 text-xs font-semibold text-gray-500">
@@ -575,7 +601,12 @@ export function BenchmarkPage() {
                       </thead>
                       <tbody>
                         {[...evaluations].reverse().map((ev, i) => (
-                          <EvaluationRow key={i} agentId={selection.agentId} evaluation={ev} />
+                          <EvaluationRow
+                            key={i}
+                            agentId={selection.agentId}
+                            evaluation={ev}
+                            currency={currency}
+                          />
                         ))}
                       </tbody>
                     </table>
