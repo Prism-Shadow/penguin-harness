@@ -1558,14 +1558,17 @@ export function ChatInput({
     stagedRoute !== "blocked" &&
     onQueueFollowUp !== undefined &&
     draftHasContent;
-  // The single action button's mode: while running, an **empty** composer means Stop
-  // (abort); as soon as there is any content it becomes the send button — steer or
-  // follow-up per the remembered mode, with the label following the path this send will
-  // actually take. Idle/compacting is always send.
+  // The single action button's mode. While running it is Stop exactly when this send has
+  // nowhere to go — which is not the same as an empty composer, and the gap between the two
+  // is where Stop goes missing: a goal objective is content the mid-run channels all refuse
+  // (it is an objective, not a message for the turn under way), and a dead model key refuses
+  // every draft there is. Keyed off "is there content", either one leaves a permanently
+  // disabled send button standing where Stop should be. `!busy` keeps the in-flight window
+  // from arming Stop under a click aimed at send. Idle/compacting is always send.
   const canMidRunSend = followUpMode ? canFollowUp : canSteer || steerFallbackToQueue;
   const midRunSendLabel =
     followUpMode || steerFallbackToQueue ? S.chat.followUpSend : S.chat.steerSend;
-  const stopAction = running && !draftHasContent;
+  const stopAction = running && !busy && !canMidRunSend;
   // Queued hint: shown after a successful steer until the message shows up in the stream
   // (steeringDeliveredCount increases past the baseline captured at queue time) or the run
   // stops being observable (task no longer running).
