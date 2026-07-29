@@ -42,9 +42,6 @@ function sourceCode(source: string, code: string): string {
   return `[${SOURCE_ABBREV[source] ?? source}] ${code}`;
 }
 
-/** Rows per page of the detail table -- matches the first page the dashboard response carries. */
-const PAGE_SIZE = 20;
-
 /** A single small stat: name + value, one row side by side (not turned into a chart). */
 function Stat({
   label,
@@ -91,32 +88,55 @@ export function ErrorsPanel({
 }: {
   errors: UsageErrors;
   projectId: string;
-  /** The dashboard's own date/agent filter — a page must never widen what the summary counted. */
+  /**
+   * The dashboard's own date/agent filter — a page must never widen what the summary counted.
+   * Memoize it at the call site: the fetch effect depends on the object's identity.
+   */
   filters: { from?: string; to?: string; agentId?: string };
 }) {
   const { total, unexpected, topCode, recent } = errors;
+  // Page size is read off the first page rather than duplicating the server's ERROR_RECENT_N:
+  // whenever a second page exists at all, `recent` is exactly that many rows, so the two cannot
+  // drift apart into skipping or repeating rows. (Empty means a single empty page anyway.)
+  const pageSize = Math.max(1, recent.length);
   // Paging: page 0 is the `recent` the dashboard response already carried, so it costs no
-  // request; later pages are fetched on demand. Resets whenever a new dashboard response
-  // arrives (a filter changed), since the offsets it was paging through no longer apply.
+  // request; later pages are fetched on demand.
   const [page, setPage] = useState(0);
   const [items, setItems] = useState<UsageErrorItem[]>(recent);
+  // The row count the pager counts pages against: seeded from the dashboard snapshot, then
+  // replaced by each page's own total. The snapshot goes stale (rows evicted by the row cap, an
+  // Agent deleted between load and click), and pinning to it computes a page count that can
+  // strand the caller on a page the data no longer has.
+  const [pagedTotal, setPagedTotal] = useState(total);
   const [pageError, setPageError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  useEffect(() => {
-    setPage(0);
-    setItems(recent);
-    setPageError(null);
-  }, [recent]);
+  // A new dashboard response invalidates the offsets being paged through, so paging goes back to
+  // page 0 — whose rows the effect below restores from that same response. Today the panel is
+  // remounted on every filter change, which resets this anyway; the reset does not rely on that.
+  useEffect(() => setPage(0), [recent]);
 
+  // Every value this effect reads is a dep, the page-0 branch's included: one left out would be
+  // served from a stale closure, and the repo has no lint rule that would catch it.
   useEffect(() => {
-    if (page === 0) return;
+    // Page 0 is restored, never fetched — the dashboard response already carries it. Restoring
+    // is the whole point of the early return: leaving `items` untouched would keep the previous
+    // page's rows and its error on screen under a "page 1" label, with no way out short of
+    // changing a filter.
+    if (page === 0) {
+      setItems(recent);
+      setPagedTotal(total);
+      setPageError(null);
+      return;
+    }
     let cancelled = false;
     setLoading(true);
     setPageError(null);
     api
-      .getUsageErrors(projectId, { offset: page * PAGE_SIZE, limit: PAGE_SIZE, ...filters })
+      .getUsageErrors(projectId, { offset: page * pageSize, limit: pageSize, ...filters })
       .then((res) => {
-        if (!cancelled) setItems(res.items);
+        if (cancelled) return;
+        setItems(res.items);
+        setPagedTotal(res.total);
       })
       .catch((e: unknown) => {
         // Keep the rows already on screen rather than blanking the table under an error.
@@ -128,9 +148,9 @@ export function ErrorsPanel({
     return () => {
       cancelled = true;
     };
-  }, [page, projectId, filters.from, filters.to, filters.agentId]);
+  }, [page, pageSize, projectId, filters, recent, total]);
 
-  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const pageCount = Math.max(1, Math.ceil(pagedTotal / pageSize));
   // Message rows expanded to their full text (index into the current page); one line each by default.
   const [expanded, setExpanded] = useState<ReadonlySet<number>>(new Set());
   useEffect(() => setExpanded(new Set()), [items]);
@@ -163,7 +183,7 @@ export function ErrorsPanel({
       </div>
 
       {/* Recent-errors table */}
-      {items.length === 0 && page === 0 ? (
+      {items.length === 0 ? (
         <Empty text={S.usage.errorsEmpty} />
       ) : (
         <div className="mt-2.5 max-h-72 overflow-y-auto border-t border-gray-200 dark:border-gray-800">
@@ -172,7 +192,7 @@ export function ErrorsPanel({
               <tr>
                 <Th className="w-32">{S.common.time}</Th>
                 {/* Wide enough to fully fit the longest error code: a tool
-                    failure's code carries the tool name (e.g. environment ·
+                    failure's code carries the tool name (e.g. [env]
                     tool_failed:exec_command), and truncating it would hide which tool failed. */}
                 <Th className="w-72">{S.usage.errorsColCode}</Th>
                 <Th className="w-20">{S.usage.errorsColKind}</Th>
@@ -217,12 +237,16 @@ export function ErrorsPanel({
         </div>
       )}
 
-      {/* Pager: only once there is more than one page. Kept outside the scroll box so it
-          stays reachable without scrolling to the bottom of the rows. */}
-      {items.length > 0 && pageCount > 1 && (
+      {/* Pager: once there is more than one page — and unconditionally while paged away from
+          the first, so a later page that came back empty or shrank below the page count still
+          offers the way back instead of stranding the reader on a bare table. Kept outside the
+          scroll box so it stays reachable without scrolling to the bottom of the rows. */}
+      {(pageCount > 1 || page > 0) && (
         <div className="mt-2 flex items-center justify-end gap-2 text-xs text-gray-500 dark:text-gray-400">
           {pageError !== null && <span className="mr-auto text-rose-500">{pageError}</span>}
-          <span className="tabular-nums">{S.usage.errorsPageOf(page + 1, pageCount, total)}</span>
+          <span className="tabular-nums">
+            {S.usage.errorsPageOf(page + 1, pageCount, pagedTotal)}
+          </span>
           <PagerButton
             label={S.usage.errorsNewer}
             disabled={page === 0 || loading}
