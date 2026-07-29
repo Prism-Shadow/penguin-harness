@@ -1,15 +1,21 @@
-# Tooling: harness environment variables no longer leak into Agent commands
+# The harness's own port stops colliding: out of the Agent's environment, off the dev server
 
-Agent-spawned commands now start from a host environment with PenguinHarness-owned server variables removed, and the development backend moves off the installed server's default port so local app work is less likely to talk to the wrong process.
+Two places where PenguinHarness's listen port reached somewhere it should not have.
 
-## Child command environment
+## `PORT` no longer leaks into commands the Agent runs
 
-`exec_command` and `input_command` build their child process environment through the command session manager. That path now deletes `PORT`, `HOST`, `PENGUIN_CLI_ENTRY`, and `PENGUIN_WEB_DIST` from the inherited host environment before applying the Agent vault and command-hardening defaults.
+`penguin web` writes `PORT` and `HOST` into its own `process.env` as the channel to the server module, and the command Environment built child environments straight from `process.env`. Every `exec_command` therefore inherited `PORT=7364` — and `npm run dev`, Vite, Next and most Express templates read `PORT`, so an Agent asked to start a dev server tried to bind **the harness's own port** instead of picking one.
 
-The change keeps the harness's own listen address and internal launch paths out of programs an Agent starts. A generated Vite, Next.js, Express, or similar dev server can therefore choose its own port instead of inheriting the port that PenguinHarness itself is using. When an Agent really does need to force a command's `PORT`, the vault still applies after the host strip, so that explicit per-Agent value wins.
+The child environment now drops `PORT`, `HOST`, and the internal `PENGUIN_CLI_ENTRY` / `PENGUIN_WEB_DIST`. Keys are removed rather than blanked, since a program may test `PORT` for presence rather than value. Stripping applies even when the value came from the user's shell (`PORT=3000 penguin web`): it still means "the port PenguinHarness is on", which is precisely the port a spawned server must avoid. The Agent's vault is applied afterwards, so setting `PORT` there deliberately still reaches commands.
 
-## Development ports
+`PENGUIN_HOME` and the other user-facing `PENGUIN_*` settings are deliberately kept — an Agent working on PenguinHarness itself may legitimately want the same data root, and that is a configuration decision rather than a leak.
 
-The repository's development backend now defaults to `7368`, leaving the installed server and Web UI on the packaged default `7364`. The Web package's Vite proxy points at that development backend by default, while `PENGUIN_API_PROXY` can still override the whole proxy target and `PORT` can still move the backend/proxy pair together for local experiments.
+## The development backend moves off 7364
 
-The port allocation table in core documents the local development ports alongside the installed default, and the development docs now call out the split so developers can tell which process their browser is reaching.
+`pnpm dev:server` bound the same port as an installed `penguin web`, and the two routinely run at once. Either the dev server failed to bind, or — quieter and worse — the Vite proxy talked to the **installed** server instead of the one being worked on, so code changes appeared to do nothing.
+
+The development backend now listens on **7368**; 7365, 7366 and 7367 are already the web, landing and docs dev servers. `pnpm dev:web` is unchanged at 7365 and remains the address to open — only what it proxies to has moved. The full port allocation is documented in `core/internal/ports.ts`, which is where a reader looks, even though the dev ports themselves have to be literals in vite configs and package.json scripts.
+
+Overrides still work and now move together: the dev scripts apply `PORT` only when it is unset, and the Vite proxy reads `PORT` with 7368 as its fallback, so changing the backend port carries the proxy with it instead of leaving it pointed at the old one.
+
+The dev *data root* was separated from the installed one for exactly this reason; this finishes the job for the port.
