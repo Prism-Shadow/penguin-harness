@@ -169,7 +169,7 @@ describe("loadOrInitAgentState", () => {
       expect(tpl).toContain("[use_skills]");
       // Skill dependencies are installed once into a shared per-Agent directory rather than per
       // task, so a Session's scratchpad never becomes the home of a virtualenv.
-      expect(tpl).toContain("<app_data_dir>/agents/<agent_id>/env/");
+      expect(tpl).toContain("<app_data_dir>/agents/<agent_id>/shared_env/");
       expect(tpl.indexOf("[/developer_instructions]")).toBeLessThan(tpl.indexOf("# Vault"));
       expect(tpl.indexOf("# Vault")).toBeLessThan(tpl.indexOf(VAULT_KEYS_PLACEHOLDER));
       expect(tpl.indexOf(VAULT_KEYS_PLACEHOLDER)).toBeLessThan(tpl.indexOf("# Skills"));
@@ -498,8 +498,10 @@ describe("assembleSystemPrompt", () => {
     // Auth/key failures live entirely in Stop rules, as a special case of the
     // unresolvable-error rule: retry at most once, then stop and ask the user to update the key
     // outside the chat — no CLI commands, no secret values in the conversation.
-    expect(prompt).toContain("retry at most once");
-    expect(prompt).toContain("# Stop rules");
+    // Position, not presence: `# Stop rules` exists either way, so only the ordering pins that
+    // the retry rule sits inside that section instead of back up in Constraints.
+    expect(prompt.indexOf("# Stop rules")).toBeLessThan(prompt.indexOf("retry at most once"));
+    expect(prompt.indexOf("retry at most once")).toBeLessThan(prompt.indexOf("# Tool use"));
     expect(prompt).toContain("stop calling tools");
     expect(prompt).toContain("never be pasted into the conversation");
     expect(prompt).toContain("next conversation");

@@ -34,8 +34,9 @@ PenguinHarness 的全部运行数据都落在本地文件系统：配置是可�
         ├── traces/
         │   └── <yyyy-mm-dd>/<sessionId>_<index3>.jsonl
         ├── scratchpad/               # 临时文件，按 Session id 建子目录（如粘贴的图片）
-        ├── env/                      # 共享依赖（虚拟环境、npm 安装），由 Agent 按需创建——
-        │                             # 属于系统提示词约定而非代码创建的路径，使 Skill 的依赖只装一次
+        ├── shared_env/               # 共享的解释器/工具环境（虚拟环境、pipx、各类缓存），由 Agent
+        │                             # 按需创建——属于系统提示词约定而非代码创建的路径，使 Skill 的
+        │                             # 工具只装一次；项目自身的依赖仍留在项目内
         ├── workspaces/               # 临时 Workspace（tmp-<8hex>）
         ├── benchmarks/               # 能力评测题库与得分
         └── snapshots/                # Agent State 版本快照
