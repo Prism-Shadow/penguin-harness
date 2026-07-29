@@ -46,7 +46,12 @@ import {
 } from "../validate.js";
 import type { AppDeps } from "../../app.js";
 import { MAX_UPLOAD_BYTES } from "../../services/workspace-files-service.js";
-import { attachFilesToInput, parseAttachmentPart } from "../../services/task-attachments.js";
+import {
+  assertAttachmentBudget,
+  attachFilesToInput,
+  parseAttachmentPart,
+  removeAttachments,
+} from "../../services/task-attachments.js";
 import type { TaskAttachment } from "../../services/task-attachments.js";
 
 /** Max title length for manual renames: looser than the auto-generated 30-char limit, to accommodate users' own organizing conventions. */
@@ -142,6 +147,9 @@ function parseTaskInput(body: Record<string, unknown>): ParsedTaskInput {
       // Not an OmniMessage of its own: the file becomes an `[attached file: …]` line on the
       // text message once written to the scratchpad, so it carries no payload into the run.
       attachments.push(parseAttachmentPart(part, i));
+      // Per-request count / total-bytes caps, re-checked on every part so a hostile `input`
+      // is cut off at the item that crosses the line (see assertAttachmentBudget).
+      assertAttachmentBudget(attachments);
       return;
     }
     throw badRequest(`input[${i}].type must be one of text / image_url / file.`);
@@ -389,6 +397,13 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     } catch {
       throw new HttpError(404, "file_not_found", "File does not exist.");
     }
+    // SECURITY BOUNDARY — do not extend casually. This map is an allowlist of types that are
+    // safe to hand a browser inline from the App's own origin, and it is the only reason the
+    // bytes below (arbitrary user uploads and Agent-written temp files) cannot become stored
+    // XSS. Every image type here is inert when rendered. Adding `.svg`, `.html`, `.pdf` or
+    // anything else that a browser parses as a document would look like a one-line convenience
+    // and would immediately be same-origin script execution — such a type needs the treatment
+    // the Workspace read gives it (plain-text downgrade or a sandbox CSP), not a map entry.
     const MIME_BY_EXT: Record<string, string> = {
       ".png": "image/png",
       ".jpg": "image/jpeg",
@@ -396,14 +411,23 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       ".gif": "image/gif",
       ".webp": "image/webp",
     };
-    const mime = MIME_BY_EXT[path.extname(fileName).toLowerCase()] ?? "application/octet-stream";
+    const mime = MIME_BY_EXT[path.extname(fileName).toLowerCase()];
     return c.body(new Uint8Array(bytes), 200, {
-      "content-type": mime,
+      "content-type": mime ?? "application/octet-stream",
       // nosniff: the composer's file attachments land in this same directory, so the bytes
       // here are arbitrary user content served from the App's own origin — without it a
       // browser could sniff an `application/octet-stream` upload back into HTML and run it
       // same-origin (the same defense workspace file reads apply).
       "x-content-type-options": "nosniff",
+      // Second, independent layer for everything that fell off the allowlist: the only reason
+      // this endpoint is fetched inline is the conversation's <img> tags, so anything that is
+      // not one of those images is served as a download and never renders as a document —
+      // nosniff alone would be the whole defense otherwise.
+      ...(mime === undefined
+        ? {
+            "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`,
+          }
+        : {}),
       "cache-control": "private, max-age=31536000, immutable",
     });
   });
@@ -491,26 +515,40 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       return c.json({ sessionId } satisfies TaskCreateResponse, 202);
     }
     const parsed = parseTaskInput(body);
+    // Follow-up queue: with queueIfBusy, a busy session enqueues the input instead of 409
+    // (auto-starts as an ordinary next task once idle; the response says which happened).
+    const queueIfBusy = body.queueIfBusy === true;
+    // Advisory pre-check, so the overwhelmingly common rejection — sending while a Task is
+    // running, without queueIfBusy — never writes bytes it would then have to take back. The
+    // authoritative check still runs under the Session lock inside startTask; this one is
+    // lock-free and may pass on a race, which the cleanup below covers.
+    deps.manager.assertCanAcceptTask(row.sessionId, { queueIfBusy });
     // File attachments land in this Session's scratchpad (deleted along with the Session) and
     // are handed to the model as `[attached file: <path>]` lines on the message text. Written
     // even when the task ends up queued as a follow-up: the queued input must be complete, and
     // the queue is drained by this same Session. A Trace-less Session that self-heals into a
     // new id below keeps its files under the id they were written with — the paths in the
     // message stay valid; only the delete-with-the-Session cleanup misses them in that case.
-    const input = await attachFilesToInput(
+    const { input, written } = await attachFilesToInput(
       parsed.messages,
       parsed.attachments,
-      path.join(scratchpadDir(deps.config.root, row.projectId, row.agentId), row.sessionId),
+      scratchpadDir(deps.config.root, row.projectId, row.agentId),
+      row.sessionId,
     );
-    // Follow-up queue: with queueIfBusy, a busy session enqueues the input instead of 409
-    // (auto-starts as an ordinary next task once idle; the response says which happened).
-    const queueIfBusy = body.queueIfBusy === true;
-    // 202: the Task executes on the server, decoupled from the SSE connection; sessionId is the current actual id (the new id after self-heal).
-    const { sessionId, queued } = await deps.manager.startTask(row.sessionId, input, {
-      ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
-      queueIfBusy,
-    });
-    return c.json({ sessionId, queued } satisfies TaskCreateResponse, 202);
+    try {
+      // 202: the Task executes on the server, decoupled from the SSE connection; sessionId is the current actual id (the new id after self-heal).
+      const { sessionId, queued } = await deps.manager.startTask(row.sessionId, input, {
+        ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
+        queueIfBusy,
+      });
+      return c.json({ sessionId, queued } satisfies TaskCreateResponse, 202);
+    } catch (err) {
+      // The Task never started, so nothing references these files and nothing will ever clean
+      // them up — and the Web keeps the chips on failure, so the user's retry would otherwise
+      // land a second copy of every one of them.
+      await removeAttachments(written);
+      throw err;
+    }
   });
 
   // Mid-run steering: queue a user message for the running Task; core delivers it between

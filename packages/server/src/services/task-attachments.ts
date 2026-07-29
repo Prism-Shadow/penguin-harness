@@ -30,6 +30,22 @@ import { badRequest } from "../http/validate.js";
 export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 
 /**
+ * Per-request caps, checked while the parts are validated — before a single byte reaches the
+ * disk. They are deliberately NOT delegated to the global body cap: this module has to hold on
+ * its own, so that a change to that middleware (or a caller that never goes through it) cannot
+ * silently unbound it. Without them a legal 20MB body fits ~350k minimal `file` parts, which is
+ * 350k sequential writes into one directory and 350k marker lines on one message.
+ *
+ * 20 files is far past any plausible composer use — the chip row stops being usable long before
+ * that — while still allowing "drop a folder of small files in". 12MB of decoded bytes keeps one
+ * full-size 10MB attachment usable next to a couple of ordinary ones; base64 inflates by 4/3, so
+ * 12MB decoded is ~16MB of body and this cap, not the 20MB body cap, is the one a caller
+ * actually reaches.
+ */
+export const MAX_ATTACHMENT_COUNT = 20;
+export const MAX_TOTAL_ATTACHMENT_BYTES = 12 * 1024 * 1024;
+
+/**
  * Longest stem kept on disk, measured in **UTF-8 bytes**: filesystems cap a name near 255
  * bytes, and a CJK character costs three of them — a character count would let a Chinese name
  * blow the real limit while an English one stayed far under it.
@@ -130,6 +146,32 @@ export function parseAttachmentPart(part: Record<string, unknown>, index: number
 }
 
 /**
+ * Enforce the per-request caps against everything accepted so far. Called after **each** `file`
+ * part rather than once at the end, so an oversized `input` stops at the part that crosses the
+ * line instead of base64-decoding the whole array first. Both answer 413: the count reuses a
+ * dedicated `too_many_files` code, the aggregate the `payload_too_large` the body cap already
+ * uses — from the caller's side it is the same "this request is too big" outcome.
+ */
+export function assertAttachmentBudget(attachments: TaskAttachment[]): void {
+  if (attachments.length > MAX_ATTACHMENT_COUNT) {
+    throw new HttpError(
+      413,
+      "too_many_files",
+      `A message may carry at most ${MAX_ATTACHMENT_COUNT} attached files.`,
+    );
+  }
+  let total = 0;
+  for (const a of attachments) total += a.bytes.length;
+  if (total > MAX_TOTAL_ATTACHMENT_BYTES) {
+    throw new HttpError(
+      413,
+      "payload_too_large",
+      `Attached files exceed the ${MAX_TOTAL_ATTACHMENT_BYTES / (1024 * 1024)}MB total limit for one message.`,
+    );
+  }
+}
+
+/**
  * Map a submitted name onto a name that is safe on disk **and** still recognizably the user's
  * own: `报告 2026.pdf` becomes `报告-2026.pdf` (see unsafeNameChar — the words survive, only the
  * shell-hostile ASCII is replaced), so the model reads a meaningful path and a person looking
@@ -156,6 +198,10 @@ function scratchpadName(fileName: string): string {
  * id); "wx" makes the create exclusive, so a second upload of the same name lands next to the
  * first as `report-3f9a1c.pdf` instead of overwriting it (same convention as core's image
  * uploads).
+ *
+ * "wx" is O_CREAT|O_EXCL, which also refuses to follow a symlink at the final component: a link
+ * planted at `report.pdf` fails with EEXIST and the retry allocates a suffixed name instead of
+ * writing through it. The containment check for the *directory* is separate — see openScratchpadDir.
  */
 async function writeAttachment(dir: string, attachment: TaskAttachment): Promise<string> {
   const base = scratchpadName(attachment.fileName);
@@ -177,25 +223,75 @@ async function writeAttachment(dir: string, attachment: TaskAttachment): Promise
 }
 
 /**
- * Land every attachment in the Session scratchpad `dir` and return the Prompt with one
+ * Create (or reuse) this Session's scratchpad directory and hand back the path to write into.
+ *
+ * `fs.mkdir(…, {recursive:true})` succeeds silently when the directory is already a **symlink**
+ * to somewhere else, and nothing downstream would notice — so the result is realpath'd and
+ * required to still sit inside the Agent's scratchpad root, the same containment rule the
+ * Workspace upload path applies (workspace-files-service.resolveWriteParent). Only the Agent
+ * process can plant such a link and it runs as this server's uid, so this is consistency rather
+ * than a privilege boundary; it costs one resolution per message that carries attachments.
+ *
+ * The check is on the canonical path but the write stays on the logical one: the path travels
+ * into the message text, and the read/delete endpoints address a Session by its logical
+ * directory, so canonicalizing here would only make those disagree on hosts where the data root
+ * itself sits behind a link (macOS `/var`, a Windows 8.3 temp path).
+ */
+async function openScratchpadDir(root: string, sessionId: string): Promise<string> {
+  const dir = path.join(root, sessionId);
+  await fs.mkdir(dir, { recursive: true });
+  const canonicalRoot = await fs.realpath(root);
+  const rel = path.relative(canonicalRoot, await fs.realpath(dir));
+  if (rel !== sessionId) {
+    throw new Error(
+      `session scratchpad ${dir} resolves outside the agent scratchpad root; refusing to write attachments`,
+    );
+  }
+  return dir;
+}
+
+/** Best-effort undo of a batch of writes; errors are swallowed because every caller is already on an error path (a failed cleanup must not replace the original failure). */
+export async function removeAttachments(files: string[]): Promise<void> {
+  await Promise.all(files.map((f) => fs.rm(f, { force: true }).catch(() => {})));
+}
+
+/** Result of a write batch: the Prompt to run, plus the paths written so the caller can undo them if the Task never starts. */
+export interface AttachedFiles {
+  input: OmniMessage[];
+  written: string[];
+}
+
+/**
+ * Land every attachment in the Session scratchpad under `root` and return the Prompt with one
  * `[attached file: <path>]` line appended per file. Placement follows core's shared rule
  * (after the last user text message; attachments-only input becomes a line-only text
  * message), so a Prompt carrying both images and files still ends in a single trailing block.
  * Returns `messages` untouched when there is nothing to attach — no directory is created.
+ *
+ * All-or-nothing: a failure part-way through the batch removes what it already wrote, so a 500
+ * never leaves files on disk that no message refers to. The caller owns the other half of that
+ * guarantee — if starting the Task fails afterwards it must call removeAttachments(written),
+ * otherwise the user's retry would land a second copy of every file.
  */
 export async function attachFilesToInput(
   messages: OmniMessage[],
   attachments: TaskAttachment[],
-  dir: string,
-): Promise<OmniMessage[]> {
-  if (attachments.length === 0) return messages;
-  await fs.mkdir(dir, { recursive: true });
-  const lines: string[] = [];
-  // Sequential on purpose: the exclusive-create retry above resolves collisions against files
-  // that already exist, and writing the batch one at a time keeps two same-named uploads in
-  // the same message from racing each other for the plain name.
-  for (const attachment of attachments) {
-    lines.push(attachedFileLine(await writeAttachment(dir, attachment)));
+  root: string,
+  sessionId: string,
+): Promise<AttachedFiles> {
+  if (attachments.length === 0) return { input: messages, written: [] };
+  const dir = await openScratchpadDir(root, sessionId);
+  const written: string[] = [];
+  try {
+    // Sequential on purpose: the exclusive-create retry above resolves collisions against files
+    // that already exist, and writing the batch one at a time keeps two same-named uploads in
+    // the same message from racing each other for the plain name.
+    for (const attachment of attachments) {
+      written.push(await writeAttachment(dir, attachment));
+    }
+  } catch (err) {
+    await removeAttachments(written);
+    throw err;
   }
-  return appendAttachmentLines(messages, lines);
+  return { input: appendAttachmentLines(messages, written.map(attachedFileLine)), written };
 }
