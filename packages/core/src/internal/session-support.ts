@@ -12,7 +12,7 @@ import { formatLocalDate } from "./dates.js";
 import { sessionShell } from "../environment/tools/command/shell.js";
 import type { SessionEnvironmentValues } from "../state/agent-state.js";
 import { workspacesDir } from "../state/index.js";
-import { userText } from "../omnimessage/index.js";
+import { attachedImageLine, userText } from "../omnimessage/index.js";
 import type { OmniMessage } from "../omnimessage/index.js";
 
 /** Session runtime environment fields: the placeholder substitution values for `assembleSystemPrompt`; producer and consumer share the same type. */
@@ -144,7 +144,7 @@ export async function imagesToScratchpadPaths(
     if (!isImage(msg)) continue;
     const url = (msg.payload as { image_url?: string }).image_url ?? "";
     if (/^https?:\/\//i.test(url)) {
-      lines.push(`[attached image: ${url}]`);
+      lines.push(attachedImageLine(url));
       continue;
     }
     const match = /^data:([^;,]+);base64,(.+)$/s.exec(url);
@@ -167,7 +167,7 @@ export async function imagesToScratchpadPaths(
         if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
       }
     }
-    lines.push(`[attached image: ${file}]`);
+    lines.push(attachedImageLine(file));
   }
 
   return appendToLastUserText(

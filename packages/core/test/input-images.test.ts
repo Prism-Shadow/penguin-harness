@@ -9,7 +9,13 @@ import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { imagesToScratchpadPaths } from "../src/internal/session-support.js";
-import { imageUrlMessage, userText } from "../src/omnimessage/index.js";
+import {
+  attachedImageLine,
+  hasAttachedImageLine,
+  imageUrlMessage,
+  parseAttachedImageLine,
+  userText,
+} from "../src/omnimessage/index.js";
 import type { TextPayload } from "../src/omnimessage/index.js";
 
 const PNG_1X1 = Buffer.from(
@@ -78,5 +84,45 @@ describe("imagesToScratchpadPaths", () => {
     );
     const p = out[0]!.payload as TextPayload;
     expect(p.text).toContain("could not be saved");
+  });
+});
+
+/**
+ * The line's spelling crosses a package boundary — core writes it here, the Web reads it back
+ * to restore the thumbnail (`splitImageAttachments` in web/src/lib/attachments.ts, which now
+ * calls the parser below). Both sides go through these two functions, so this round trip is
+ * what keeps them honest; a reworded line would otherwise just stop rendering, silently.
+ */
+describe("attachedImageLine / parseAttachedImageLine", () => {
+  it("round-trips a scratchpad path and an http(s) URL, in both directions", () => {
+    for (const address of [
+      "/home/u/.penguin/data/p1/agents/a1/scratchpad/session-1/upload-ab12cd34.png",
+      "C:\\Users\\u\\penguin\\scratchpad\\session-1\\upload-ab12cd34.png",
+      "https://example.com/shot.png?v=2",
+    ]) {
+      expect(parseAttachedImageLine(attachedImageLine(address))).toBe(address);
+      expect(hasAttachedImageLine(`caption\n\n${attachedImageLine(address)}`)).toBe(true);
+    }
+  });
+
+  it("is what the fold actually emits, not a parallel spelling of it", async () => {
+    const out = await imagesToScratchpadPaths(
+      [userText("look"), imageUrlMessage("https://example.com/shot.png")],
+      tmp,
+    );
+    const line = (out[0]!.payload as TextPayload).text.split("\n").at(-1)!;
+    expect(parseAttachedImageLine(line)).toBe("https://example.com/shot.png");
+  });
+
+  it("leaves every other line alone — the dropped-image note included", () => {
+    for (const line of [
+      "[an attached image could not be saved and was dropped]",
+      "[attached image: ]",
+      "attached image: /x.png",
+      "look at [attached image: /x.png] inline",
+      "plain text",
+    ]) {
+      expect(parseAttachedImageLine(line)).toBeNull();
+    }
   });
 });
