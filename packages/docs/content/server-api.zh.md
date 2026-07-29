@@ -10,7 +10,7 @@ PenguinHarness Server 提供一套同源 HTTP API，自带的 Web App 与其他 
 - 技术栈：Hono + @hono/node-server，要求 Node >= 24；
 - 存储：SQLite（内置 `node:sqlite`，WAL 模式）仅存放索引与聚合数据——用户、登录会话、Project 授权、Agent / Session 索引、用量、UI 偏好、错误记录与 Schedule 状态；Agent、Trace 与 Workspace 数据全部以文件形式存放在 `~/.penguin/data` 下，与 CLI / SDK 共享，见[配置参考](/configuration)；
 - 监听：默认 `127.0.0.1:7364`，可用环境变量 `PORT` / `HOST` 调整；
-- 请求体：写请求仅接受 JSON（Content-Type 校验，CSRF 防线之一），上限 20MB；
+- 请求体：写请求仅接受 JSON（Content-Type 校验，CSRF 防线之一），上限 20MB —— 按读取到的字节数统计，未声明长度（分块传输）的请求同样受限；
 - 错误响应统一为：
 
 ```text
@@ -161,7 +161,7 @@ Trace 下载对任意成员开放；导入仅限 owner（同 Agent 快照导入�
 | DELETE | / | 删除 Session（连同 Trace 与暂存文件） |
 | GET | /messages | 完整 OmniMessage 历史；Task 运行期间响应额外携带 `live`（进行中的流式尾部，见下） |
 | GET | /stream | SSE 事件流（见下节） |
-| POST | /tasks | 发起 Task：`{input: TaskInputPart[], thinkingLevel?, queueIfBusy?}` → 202。带 `queueIfBusy` 时，运行中的 Session 会把输入暂存为跟进消息（`queued: true`），空闲后按序自动作为普通 Task 发出；`task_state` 事件携带排队数 |
+| POST | /tasks | 发起 Task：`{input: TaskInputPart[], thinkingLevel?, queueIfBusy?}` → 202。带 `queueIfBusy` 时，运行中的 Session 会把输入暂存为跟进消息（`queued: true`），空闲后按序自动作为普通 Task 发出；`task_state` 事件携带排队数。`file` 输入部分会写入该 Session 的 scratchpad，并以 `[attached file: <path>]` 行交给模型（见下方请求体） |
 | POST | /steer | 运行中插话：`{text}` 为运行中的 Task 排队一条消息（作为独立的 `[user_steering]` 用户消息随下一轮送达）→ 202；无 Task 运行返回 409 `not_running` |
 | POST | /approvals/:toolCallId | 审批决定：`{decision}` 取 `allow` 或 `deny` → 204 |
 | POST | /abort | 中断当前 Task：已触发返回 202，无任务返回 204 |
@@ -175,7 +175,7 @@ Trace 下载对任意成员开放；导入仅限 owner（同 Agent 快照导入�
 | GET | /traces | 本 Session 的 Trace 文件列表 |
 | GET | /traces/:index | 读取 Trace 事件（分页） |
 | GET | /traces/:index/analysis | Trace 性能分析结果 |
-| GET | /scratchpad/:fileName | 读取会话暂存文件（如输入图片） |
+| GET | /scratchpad/:fileName | 读取会话暂存文件（如输入图片、文件附件） |
 
 通用约定：无权访问的 Session 一律返回 404，不泄露其存在性；每个 Session 同时只允许一个 Task 或压缩在运行，冲突时返回 409（`task_in_progress` / `compacting`）。
 
@@ -208,6 +208,8 @@ Workspace 文件可能由 Agent 生成，`GET /files/content` 一律按不可信
 | `preview=1` | 真实类型（`text/html`、`image/svg+xml` 等） | `inline` | `sandbox allow-scripts allow-popups allow-modals allow-forms`，仅对 `.html` / `.htm` / `.svg` 下发 |
 | `download=1` | 真实类型 | `attachment` | 无 |
 
+`GET /scratchpad/:fileName` 提供的同样是不可信字节（用户上传与 Agent 写下的临时文件），防护口径一致，只是没有那两个开关：始终带 `nosniff`；仅五种可安全内联的图片类型（`.png` / `.jpg` / `.jpeg` / `.gif` / `.webp`）按真实类型内联，供对话里的 `<img>` 使用；其余一律 `application/octet-stream` 并带 `Content-Disposition: attachment` —— 非图片内容无法在 App 所在源上作为文档渲染。
+
 文件名始终以 `filename*=UTF-8''` 形式携带（百分号编码）。`preview=1` 是预览跳转在没有独立预览源时的回退目标：文档保留真实类型，可以正常渲染并执行脚本，但沙箱刻意不含 `allow-same-origin`，因此它落在一个不透明源里，既拿不到本源的 Cookie，也调不动 API。这份隔离也正是那里 `localStorage`、`document.cookie` 与第三方 embed 全都不可用的原因。
 
 ### 独立源预览
@@ -239,7 +241,14 @@ interface TaskCreateRequest {
 }
 type TaskInputPart =
   | { type: "text"; text: string }
-  | { type: "image_url"; imageUrl: string };   // 粘贴图片以 data URL 上送
+  | { type: "image_url"; imageUrl: string }    // 粘贴图片以 data URL 上送
+  // 文件附件：base64 data: URL，单个 ≤10MB（超出返回 413 file_too_large），单次请求最多 20 个、
+  // 解码后合计 ≤12MB（超出返回 413 too_many_files / payload_too_large；三项校验都在落盘前完成）。
+  // 服务端将其写入该 Session 的 scratchpad，并在消息文本末尾追加一行
+  // `[attached file: <path>]`——模型按路径读取该文件。`fileName` 不得含路径分隔符；落盘时保留
+  // 原有词形（`报告 2026.pdf` → `报告-2026.pdf`：非 ASCII 字符原样保留，对 shell 不友好的
+  // ASCII 字符替换为 `-`），既便于在消息中辨认，也可安全地拼进命令。
+  | { type: "file"; fileName: string; dataUrl: string };
 
 // POST /api/sessions/:sessionId/approvals/:toolCallId
 interface ApprovalDecisionRequest {

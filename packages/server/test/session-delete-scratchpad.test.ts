@@ -88,6 +88,16 @@ describe("session deletion cleans up the scratchpad", () => {
     expect(res.headers.get("content-type")).toBe("image/png");
     expect(Buffer.from(await res.arrayBuffer())).toEqual(png);
 
+    // A non-ASCII attachment name round-trips: the composer percent-encodes it into the URL,
+    // and the route contains the read by resolving the path rather than by whitelisting
+    // characters — so `报告.pdf` stays fetchable instead of having to be renamed on upload.
+    await fs.writeFile(path.join(dir, "报告.pdf"), "cjk");
+    const cjk = await owner.get(
+      `/api/sessions/${session.sessionId}/scratchpad/${encodeURIComponent("报告.pdf")}`,
+    );
+    expect(cjk.status).toBe(200);
+    expect(await cjk.text()).toBe("cjk");
+
     // Missing files and filenames with path separators/traversal both 404 (no existence leak).
     expect((await owner.get(`/api/sessions/${session.sessionId}/scratchpad/nope.png`)).status).toBe(
       404,
@@ -95,5 +105,10 @@ describe("session deletion cleans up the scratchpad", () => {
     expect(
       (await owner.get(`/api/sessions/${session.sessionId}/scratchpad/..%2Fsecret.png`)).status,
     ).toBe(404);
+    // Backslash separators and a bare relative marker are rejected the same way.
+    expect(
+      (await owner.get(`/api/sessions/${session.sessionId}/scratchpad/..%5Csecret.png`)).status,
+    ).toBe(404);
+    expect((await owner.get(`/api/sessions/${session.sessionId}/scratchpad/..`)).status).toBe(404);
   });
 });

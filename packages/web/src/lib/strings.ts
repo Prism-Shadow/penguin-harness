@@ -774,10 +774,17 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
       archived: (n: number) => `已归档（${n}）`,
     },
     skillsBanner: (names: string[]): string => `使用技能：${names.join("、")}`,
-    /** Composer "+" extension menu (currently only goal mode; more entries later) and the goal chip. */
+    /** Attached-file notice above a user message (file names only; the paths stay in the Trace). */
+    attachedFilesBanner: (names: string[]): string => `附加文件：${names.join("、")}`,
+    /** Composer "+" extension menu (image upload, file attachment, goal mode) and the goal chip. */
     plusMenu: "更多输入方式",
     uploadImage: "上传图片",
     uploadImageDesc: "为本条消息附加图片",
+    uploadFile: "上传文件",
+    uploadFileDesc: "文件存入会话临时目录，模型按路径读取",
+    removeFile: "移除文件",
+    /** Toast for a picked file rejected before reading (the server's per-file cap is 10MB). */
+    attachmentTooLarge: (name: string): string => `${name} 超过 10MB 上限，未添加。`,
     goalMode: "目标模式",
     goalModeDesc: "循环运行直至目标完成",
     goalBudgetLabel: "Token 预算",
@@ -958,6 +965,7 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
       unknown_skill: "该技能不在技能库中。",
       file_not_found: "该文件已不存在。",
       file_too_large: "文件过大。",
+      too_many_files: "一条消息附加的文件过多。",
       payload_too_large: "请求体过大。",
       dir_not_absolute: "目录必须是绝对路径。",
       not_a_dir: "该路径不是目录。",
