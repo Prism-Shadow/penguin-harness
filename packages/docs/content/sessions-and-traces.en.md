@@ -34,6 +34,11 @@ The data root is the `PENGUIN_HOME` environment variable, defaulting to `~/.peng
         ├── traces/
         │   └── <yyyy-mm-dd>/<sessionId>_<index3>.jsonl
         ├── scratchpad/               # temp files, one subdirectory per Session id (e.g. pasted images)
+        ├── shared_env/               # shared interpreter/tool environments (virtualenvs, pipx,
+        │                             # caches) the Agent creates on demand — a system prompt
+        │                             # convention, not a path the code creates, so tooling is
+        │                             # installed once for any task; project dependencies stay
+        │                             # in the project
         ├── workspaces/               # temp Workspaces (tmp-<8hex>)
         ├── benchmarks/               # capability Benchmark cases and scores
         └── snapshots/                # Agent State version snapshots
