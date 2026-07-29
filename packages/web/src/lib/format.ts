@@ -31,9 +31,12 @@ export function humanizeTokens(n: number): string {
 export function humanizeDuration(ms: number, opts?: { compact?: boolean }): string {
   if (ms < 1000) return `${Math.round(ms)}ms`;
   const s = ms / 1000;
-  if (s < 60) return opts?.compact && s >= 10 ? `${Math.round(s)}s` : `${trimZero(s)}s`;
-  const m = Math.floor(s / 60);
-  return `${m}m${Math.round(s % 60)}s`;
+  if (s < 60 && !(opts?.compact && s >= 10)) return `${trimZero(s)}s`;
+  // Every whole-second form rounds the total before splitting it: rounding the remainder
+  // while flooring the minutes lets 119.7s print as `1m60s` instead of `2m0s`.
+  const whole = Math.round(s);
+  if (whole < 60) return `${whole}s`;
+  return `${Math.floor(whole / 60)}m${whole % 60}s`;
 }
 
 /**
@@ -128,12 +131,21 @@ export function formatScore(n: number): string {
   return Number.isInteger(n) ? `${n}` : trimZero(n);
 }
 
+/** True while the one-decimal rendering of `v` still fits its unit: 1023.9 does, 1023.99 does not. */
+function fitsUnit(v: number): boolean {
+  return Number(v.toFixed(1)) < 1024;
+}
+
 /** Abbreviate a byte count: `812B`, `3.4KB`, `1.2MB`. */
 export function formatBytes(n: number): string {
   if (n < 1024) return `${n}B`;
-  if (n < 1024 * 1024) return `${trimZero(n / 1024)}KB`;
-  if (n < 1024 * 1024 * 1024) return `${trimZero(n / (1024 * 1024))}MB`;
-  return `${trimZero(n / (1024 * 1024 * 1024))}GB`;
+  // The unit is picked from the rounded value, not the raw one: 1048570 renders as `1024.0`
+  // KB at one decimal, which has to carry into `1MB` rather than print an out-of-range unit.
+  const kb = n / 1024;
+  if (fitsUnit(kb)) return `${trimZero(kb)}KB`;
+  const mb = kb / 1024;
+  if (fitsUnit(mb)) return `${trimZero(mb)}MB`;
+  return `${trimZero(mb / 1024)}GB`;
 }
 
 function pad2(n: number): string {
