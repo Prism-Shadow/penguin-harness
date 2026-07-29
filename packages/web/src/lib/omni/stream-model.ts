@@ -39,9 +39,9 @@
  *     session's user side starts a new Task; a Task ends when the live
  *     stream receives task_state:idle (notifyTaskIdle), or — during history
  *     rebuild — when the next Task starts / the stream ends
- *     (finalizeHistory). Live finalization takes the duration as the larger
- *     of the local-clock delta and the message-timestamp span (the local
- *     clock only covers the time since a mid-stream join). A stats row is only added if token_usage occurred during the Task.
+ *     (finalizeHistory). Either way the duration comes from Trace timestamps
+ *     alone and never the local clock, so a round settles to the same figure
+ *     watched live and replayed after a reload. A stats row is only added if token_usage occurred during the Task.
  *   - Overlap-dedup helpers: buildDedupIndex/isDuplicate
  *     judge duplicates by exact match of the envelope JSON; when a complete
  *     message hits the dedup check, discardFragmentFor also discards the corresponding in-flight fragment.
@@ -389,10 +389,13 @@ export interface StreamModel {
   taskStartLocalMs: number;
   taskFirstTsMs: number;
   /**
-   * The latest timestamp seen among this round's messages, used only as a
-   * **fallback for the round's end**: only used for a degenerate round that
-   * has no request_end at all (interrupted before its first Request even
-   * ran). The normal round-end is taken from taskLastReqEndMs.
+   * The latest timestamp seen among this round's messages. Two readers:
+   *   - the **fallback for the round's end**, used only for a degenerate
+   *     round that has no request_end at all (interrupted before its first
+   *     Request even ran) — the normal round-end is taken from taskLastReqEndMs;
+   *   - the span pushMessages back-dates taskStartLocalMs by, for a round
+   *     still open when a history rebuild ends. That reader fires for every
+   *     such round, degenerate or not.
    */
   taskLastTsMs: number;
   /**
@@ -593,6 +596,15 @@ export function pushMessages(
   // clock, so client/server clock skew never enters the result. A live stream
   // pushes one message at a time with the real current clock, where the span
   // is still zero at startTask and this is a no-op.
+  //
+  // The span reaches the last *recorded* event, not the present moment, so a
+  // reload landing in a quiet stretch — a long tool execution, a long Request,
+  // a compaction in flight — resumes that much short and stays short for the
+  // rest of the Task (the live tail replayed after this point arrives through
+  // pushMessage, which never re-anchors). That is a floor and never an
+  // overshoot, and it is display-only: finalizeOpenTask recomputes the settled
+  // figure from timestamps either way. Closing the gap would take a
+  // server-supplied "now" — exactly the clock coupling avoided above.
   if (model.taskOpen) {
     model.taskStartLocalMs = nowMs - Math.max(0, model.taskLastTsMs - model.taskFirstTsMs);
   }
@@ -644,12 +656,15 @@ export function findToolCard(
 // ---------------------------------------------------------------------------
 
 /**
- * Advance this round's "latest timestamp seen among its messages" — used
- * only as a **fallback for the round's end** (see taskLastReqEndMs). The
- * normal round-end is set by request_end; this only guarantees a usable
- * upper bound for a degenerate round with no request_end at all
- * (interrupted before its first Request even ran). Compaction forms its
- * own round, and messages within its range don't belong to this round, so this isn't advanced for them.
+ * Advance this round's "latest timestamp seen among its messages" — the
+ * **fallback for the round's end** (see taskLastReqEndMs: the normal
+ * round-end is set by request_end, and this only guarantees a usable
+ * upper bound for a degenerate round with no request_end at all,
+ * interrupted before its first Request even ran), and the span the live
+ * anchor is back-dated by on a history rebuild (see taskLastTsMs).
+ * Compaction forms its own round, and messages within its range don't
+ * belong to this round, so this isn't advanced for them — which also keeps
+ * a compaction still in flight out of that anchor.
  */
 function touchTask(model: StreamModel, timestamp: string): void {
   if (!model.taskOpen) return;
