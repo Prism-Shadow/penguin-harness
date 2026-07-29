@@ -549,54 +549,38 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
       agentBenchmarkBuild: {
         label: "示例：创建决策 Agent 和能力评测",
         desc: "创建一个通用决策 Agent，并用足球、售后和投资任务检验它",
-        prompt: `请创建一个决策 Agent，并为它构建能力 Benchmark 和 Formal Baseline。
+        prompt: `请依次使用 \`agent-creation\` 和 \`benchmark-design\`，创建决策 Agent，并产出 Frozen Benchmark 与 Formal Baseline。
 
-在当前顶层 Session 中依次直接使用 \`agent-creation\` 和 \`benchmark-design\`；不要把 Agent Creation 或 Benchmark Design 委托给子 Agent。需要评测时，按照 Skill 要求通过 \`run_subagent\` 委托使用 \`agent-evaluation\` 的 Evaluator。
+Agent：
+- id：\`finite_choice_agent\`
+- 能力：面对有限选项，在公开信息不足或冲突时仍能给出稳定、可解释的选择
+- thinking_level：\`medium\`
+- installed_skills：\`[]\`
 
-## 创建 Agent
+Benchmark：
+- id：\`contextual-choice-adaptation\`
+- capability：从公开规则、历史案例和当前事实中形成并迁移稳定的有限选择决策过程
+- provider：\`deepseek\`
+- model_id：\`deepseek-v4-flash\`
+- runs：\`1\`
+- desired_baseline_score：\`<75\`
+- pilot_iteration_limit：\`5\`
 
-创建通用有限选择 Agent \`finite_choice_agent\`。它需要在公开信息不足但必须作答时采用简单、稳定的决策方式；具体策略由你设计并说明。
-
-不安装任何 Skill。设置 \`thinking_level: medium\`，初始 version 为 1。保持 Agent 通用，不得针对后续 Benchmark 预置题目知识、私有规则、Gold 或优化提示。
-
-## 构建 Benchmark
-
-- Benchmark ID：\`contextual-choice-adaptation\`
-- Test Provider：\`deepseek\`
-- Test Model：\`deepseek-v4-flash\`
-- Runs：1
-- 期望 Pilot 分数：低于 75
-- 有效 Pilot iteration 上限：5
-
-评估 Agent 能否从公开证据提出并验证候选决策规律，排除与历史结果冲突的解释，判断证据是否充分，并把稳定的决策过程迁移到新的有限选择任务。构建三个 Case：
-
-1. 足球投注决策：提供已结算的历史比赛、赛前赔率、近期状态、主客场、伤停、天气和最终赛果，再提供若干待判断比赛。Agent 必须选择 \`Home\`、\`Draw\`、\`Away\` 或 \`No Bet\`。
-2. 售后工单处置：提供售后政策、订单记录、用户诉求和时间信息。Agent 必须选择 \`Refund\`、\`Replace\`、\`Reject\` 或 \`Escalate\`。
-3. 模拟投资决策：提供公开的投资策略、历史市场样本和当前市场指标。Agent 必须对候选资产排序或选择规定的投资动作。
-
-三个 Case 应覆盖不同的决策难点，共同考察 Agent 能否从公开规则、历史案例和当前事实中恢复稳定的决策过程，判断证据是否充分，处理规则优先级和例外，并迁移到新实例。Freeze 前确认每个 Case 都能暴露稳定缺陷，或者覆盖其他 Case 未覆盖的必要能力；不能只依靠一个低分 Case 拉低总分。难度应来自必要的推理依赖，而不是数据量、隐藏关键信息或答案歧义。每个 Statement 必须提供完成任务所需的全部公开材料，但只呈现题目，不解释考点、解法或关键证据。
-
-完整有效的 Pilot 达到期望分数时可以提前 Freeze。否则最多完成 5 个有效 Pilot iteration，选择其中分数最低的有效 Benchmark revision Freeze；无效评测和修复重跑不计入轮数。Freeze 后运行全新完整的 Formal matrix，不复用 Pilot 运行。只要 Formal 有效就记录 Baseline，即使分数没有低于 75。
-
-完成后报告 Agent 与 Benchmark 路径、Pilot 分数与选择结果、Formal Baseline、Test Session ids 和已知限制，然后停止；不要开始优化 Agent。`,
+场景：
+1. 根据历史比赛与当前信息进行足球投注决策。
+2. 根据售后政策与工单事实选择处置动作。
+3. 根据投资策略、历史市场与当前指标选择投资动作。`,
       },
       agentOptimization: {
         label: "示例：根据评测优化决策 Agent",
         desc: "根据已有评测结果改进 Agent，并验证新版本是否真正提升",
-        prompt: `请根据已冻结的能力 Benchmark 优化决策 Agent。
+        prompt: `请使用 \`agent-optimization\`，根据 Frozen Benchmark 优化决策 Agent。
 
-在当前顶层 Session 中直接使用 \`agent-optimization\`；不要把 Optimization 委托给子 Agent。需要评测时，按照 Skill 要求通过 \`run_subagent\` 委托使用 \`agent-evaluation\` 的 Evaluator。
-
-- Test Agent：\`finite_choice_agent\`
-- Benchmark ID：\`contextual-choice-adaptation\`
-- 期望目标分数：至少 85
-- 有效 Candidate round 上限：5
-
-开始前检查 Benchmark 是否存在，以及 Scoreboard 是否包含第一条完整有效的 Formal Baseline。缺少任一条件就停止，不要自行创建或修改 Benchmark。
-
-根据公开 Statement、评测分数和 Test Trace 改进 Test Agent 的通用能力。Reference 达到 85 时可以提前结束；否则最多完成 5 个有效 Candidate round。无效评测和修复重跑不计入轮数，完整有效但未被接受的 Candidate 计入轮数。只接受总分严格高于当前 Reference 的 Candidate；达到轮数上限后保留得分最高的已接受 Reference。
-
-Optimizer 不得读取 Rubric、Gold 或其他私有评分信息。完成后报告 Baseline/Candidate 分数曲线、关键假设、接受和回滚的版本、最终保留版本、Test Session ids 和已知限制。`,
+- test_agent_id：\`finite_choice_agent\`
+- benchmark_id：\`contextual-choice-adaptation\`
+- capability_direction：提高信息不完整、规则冲突和有限选项决策中的稳定性
+- desired_score：\`>=95\`
+- candidate_round_limit：\`5\``,
       },
     },
     sessionList: "Session",
@@ -836,7 +820,6 @@ Optimizer 不得读取 Rubric、Gold 或其他私有评分信息。完成后报�
     /** Chart legend: older evaluation records with no model label (gray series). */
     legendUnlabeled: "未标注模型",
     colVersion: "版本",
-    colModel: "模型",
     colScore: "总分",
     colDuration: "耗时",
     colCase: "题目",

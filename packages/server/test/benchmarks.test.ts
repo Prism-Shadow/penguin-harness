@@ -119,6 +119,7 @@ describe("benchmarks api", () => {
         "    version: 3",
         '    provider: "deepseek"',
         '    model_id: "deepseek-v4-pro"',
+        '    thinking_level: "medium"',
         '    summary_title: "Added planning steps to the system Prompt"',
         '    summary: "Each case run twice and averaged; added planning steps."',
         "    score: 8.0",
@@ -172,6 +173,7 @@ describe("benchmarks api", () => {
     // The evaluation entry carries this run's model (as a pair) and a summary title (curve series / title-body are displayed separately).
     expect(evaluation.provider).toBe("deepseek");
     expect(evaluation.modelId).toBe("deepseek-v4-pro");
+    expect(evaluation.thinkingLevel).toBe("medium");
     expect(evaluation.summaryTitle).toBe("Added planning steps to the system Prompt");
     expect(evaluation.summary).toBe("Each case run twice and averaged; added planning steps.");
     expect(evaluation.score).toBe(8.0);
@@ -307,6 +309,7 @@ describe("benchmarks api", () => {
       cost: 1.25,
       durationMs: 60000,
     });
+    expect("thinkingLevel" in bench.evaluations[0]!).toBe(false);
     expect("summary" in bench.evaluations[0]!).toBe(false);
     // Legacy per-case format: fields unchanged, plus one backfilled run matching the case-level values (the frontend uniformly expands via runs).
     expect(bench.evaluations[0]?.cases).toEqual([

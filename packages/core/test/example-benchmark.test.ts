@@ -59,6 +59,7 @@ interface Evaluation extends Omit<CaseScore, "case" | "runs"> {
   version: number;
   provider: string;
   model_id: string;
+  thinking_level: string;
   summary_title: string;
   summary: string;
   cases: CaseScore[];
@@ -112,6 +113,7 @@ describe("example benchmark provisioning", () => {
     ]);
     for (const e of scoreboard.evaluations) {
       expect(e.provider).toBe("deepseek");
+      expect(e.thinking_level).toBe("medium");
       expect(e.summary_title.length).toBeGreaterThan(0);
       expect(e.summary.toLowerCase()).toContain("example");
       expect(e.cases).toHaveLength(2);

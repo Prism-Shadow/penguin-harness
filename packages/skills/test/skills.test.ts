@@ -193,14 +193,56 @@ describe("librarySkill", () => {
     expect(pilotIndex).toBeGreaterThan(-1);
     expect(baselineIndex).toBeGreaterThan(pilotIndex);
     expect(normalizedContent).toContain("Keep Pilot results out of the Scoreboard");
-    expect(normalizedContent).toContain("at most five valid Pilot iterations");
+    expect(normalizedContent).toContain("requested valid-iteration limit");
     expect(normalizedContent).toContain("lowest-scoring valid Pilot revision");
+    expect(normalizedContent).toContain("retain only one temporary restorable copy");
+    expect(normalizedContent).toContain("Store it outside `benchmarks/`");
+    expect(normalizedContent).toContain("delete the temporary lowest-revision copy");
+    expect(normalizedContent).toContain("A single iteration may refine multiple Cases");
+    expect(normalizedContent).toContain(
+      "do not require the public Statement to uniquely determine the Gold",
+    );
+    expect(normalizedContent).toContain("stable reusable policy, priority, inference boundary");
+    expect(normalizedContent).toContain(
+      "do not disclose every decisive premise or priority merely to make the public task complete",
+    );
+    expect(normalizedContent).toContain("Allocate most points to decisions or concise artifacts");
+    expect(normalizedContent).toContain(
+      "Keep generic format compliance, evidence enumeration, and analysis completeness from creating a high score floor",
+    );
+    expect(normalizedContent).toContain(
+      "Before the first dispatch of every new or changed Case revision",
+    );
+    expect(normalizedContent).toContain("current Statement is internally coherent");
+    expect(normalizedContent).toContain("current Rubric is consistent with the current Statement");
+    expect(normalizedContent).toContain("must not refer to an earlier revision or missing context");
+    expect(normalizedContent).toContain(
+      "every scoring item applies to the Case's actual requested output",
+    );
+    expect(normalizedContent).toContain(
+      "does not require the public Statement to contain enough information",
+    );
+    expect(normalizedContent).toContain(
+      "Prefer refinements that create one or more scored separating decisions",
+    );
+    expect(normalizedContent).toContain(
+      "Adding another explicit rule, exception, source, or checklist is not a difficulty increase",
+    );
+    expect(normalizedContent).toContain("Separating prediction");
+    expect(normalizedContent).toContain(
+      "If both behaviors are expected to reach the same scored result, choose another refinement",
+    );
+    expect(normalizedContent).toContain("A Rubric-only refinement is allowed but not preferred");
+    expect(normalizedContent).toContain(
+      "Do not add points merely because the previous Test Agent omitted a phrase",
+    );
+    expect(normalizedContent).toContain(
+      "Run a complete consistency review and final leak check across every Case",
+    );
     expect(normalizedContent).toContain(
       "Do not run another difficulty refinement merely to create more score margin",
     );
-    expect(normalizedContent).toContain(
-      "missing the desired score alone is not a failure",
-    );
+    expect(normalizedContent).toContain("missing the desired score alone is not a failure");
     expect(normalizedContent).toContain("never reuse a Pilot result");
     expect(normalizedContent).toContain(
       "Record the Formal Baseline even when its score does not meet the desired baseline score",
@@ -209,6 +251,7 @@ describe("librarySkill", () => {
 
   it("evaluation is the only subagent leaf and optimization has a bounded valid-round loop", () => {
     const evaluation = librarySkill("agent-evaluation")!.content.replace(/\s+/g, " ");
+    const benchmarkDesign = librarySkill("benchmark-design")!.content.replace(/\s+/g, " ");
     const optimization = librarySkill("agent-optimization")!.content.replace(/\s+/g, " ");
 
     expect(evaluation).toContain("request from a `run_subagent` caller");
@@ -217,14 +260,55 @@ describe("librarySkill", () => {
     expect(evaluation).toContain('PENGUIN_HOME="$(dirname "$PROJECT_DIR")"');
     expect(evaluation).toContain("export PENGUIN_HOME");
     expect(evaluation).toContain('--project-id "$PROJECT_ID"');
-    expect(evaluation).not.toContain(
-      'PENGUIN_HOME="$(dirname "$PROJECT_DIR")" penguin run',
+    expect(evaluation).toContain("Perform these as separate shell statements in this order");
+    expect(evaluation).toContain("Never compress the assignments onto one command line");
+    expect(evaluation).toContain("Do not impose a numeric retry limit");
+    expect(evaluation).toContain("Never browse, query a pricing service");
+    expect(evaluation).toContain("resend only the clean protocol YAML");
+    expect(evaluation).toContain('--workspace "<absolute_unique_workspace_path>"');
+    expect(evaluation).toContain("resolve it to an absolute canonical path");
+    expect(evaluation).toContain(
+      "`provider` and `model_id` must be either both non-empty or both omitted",
     );
+    expect(evaluation).toContain("let Penguin resolve the Project default");
+    expect(evaluation).toContain(
+      "Read the actual non-empty `provider`, `model_id`, and `thinking_level`",
+    );
+    expect(evaluation).not.toContain('PENGUIN_HOME="$(dirname "$PROJECT_DIR")" penguin run');
+    expect(benchmarkDesign).toContain("An evaluation `(provider, model_id)` is optional");
+    expect(benchmarkDesign).toContain(
+      "Require all cells in Pilot iteration 1 to report one identical runtime",
+    );
+    expect(benchmarkDesign).toContain("Scoreboard values come from these verified actual results");
+    expect(benchmarkDesign).toContain(
+      "Before reading `status`, `score`, or any other protocol field",
+    );
+    expect(benchmarkDesign).toContain("Ask the same Evaluator to resend only the clean YAML");
     expect(optimization).toContain("Delegate every evaluation to an `agent-evaluation` subagent");
+    expect(optimization).toContain("Before reading `status`, `score`, or any other protocol field");
+    expect(optimization).toContain("Ask the same Evaluator to resend only the clean YAML");
     expect(optimization).toContain(
       "A round counts only after one Candidate has a complete valid Evaluation",
     );
-    expect(optimization).toContain("At the round limit, retain the highest-scoring accepted Reference");
+    expect(optimization).toContain("keep the same Candidate and incomplete matrix");
+    expect(optimization).toContain(
+      "Do not inspect private Evaluator State or abandon the Candidate",
+    );
+    expect(optimization).toContain(
+      "Immediately append and verify every accepted Candidate Evaluation",
+    );
+    expect(optimization).toContain(
+      "distinguish the acceptance decision from whether its stated hypothesis was supported",
+    );
+    expect(optimization).toContain(
+      "At the round limit, retain the highest-scoring accepted Reference",
+    );
+    expect(optimization).toContain("Read the evaluation `(provider, model_id, thinking_level)`");
+    expect(optimization).toContain(
+      "require its actual `provider`, `model_id`, and `thinking_level` to equal the Reference runtime",
+    );
+    expect(optimization).toContain("Do not edit `system_prompt` unless requested");
+    expect(optimization).toContain("change `model.thinking_level`");
   });
 
   it("rejects illegal-character names (path traversal guard) and never hits the filesystem", () => {

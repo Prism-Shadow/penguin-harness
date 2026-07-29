@@ -224,7 +224,6 @@ function MetricTrendChart({
                     <span className="ml-1.5 text-gray-400">v{e.version}</span>
                   )}
                 </p>
-                {e.modelId && <p className="font-mono text-gray-400">{e.modelId}</p>}
               </>
             );
           }}
@@ -373,12 +372,6 @@ function EvaluationRow({
         <td className={`${CELL} font-mono text-xs text-gray-500 dark:text-gray-400`}>
           {evaluation.version !== undefined ? `v${evaluation.version}` : "—"}
         </td>
-        <td
-          className={`${CELL} max-w-40 truncate font-mono text-xs text-gray-500 dark:text-gray-400`}
-          title={evaluation.provider}
-        >
-          {evaluation.modelId ?? "—"}
-        </td>
         <td className={`${CELL} font-mono text-xs font-semibold tabular-nums`}>
           {formatScoreWithMax(evaluation.score, evaluation.maxScore)}
         </td>
@@ -391,7 +384,7 @@ function EvaluationRow({
       </tr>
       {open && (
         <tr className="border-b border-gray-100 last:border-b-0 dark:border-gray-800/60">
-          <td colSpan={6} className="bg-gray-50/80 px-3 py-2 dark:bg-gray-950/40">
+          <td colSpan={5} className="bg-gray-50/80 px-3 py-2 dark:bg-gray-950/40">
             {/* Evaluation summary (title + body shown separately; the generating side always
                 writes both, but the display side tolerates missing values — with an old-style
                 single-paragraph summary only, it's still shown as usual, prefixed with the
@@ -648,6 +641,7 @@ export function BenchmarkPage() {
   const bm = selection?.benchmark ?? null;
   // Chart uses ascending time order (the scoreboard is already ordered, this sort is defensive); the detail table shows newest first.
   const evaluations = bm ? [...bm.evaluations].sort((a, b) => a.time.localeCompare(b.time)) : [];
+  const evaluationRuntime = evaluations[0];
   const caseTitles = new Map(caseStatements?.map((item) => [item.id, item.title]) ?? []);
   const openCase = caseStatements?.find((item) => item.id === openCaseId) ?? null;
   const openCaseMax = openCase === null ? undefined : caseMaxScores(evaluations).get(openCase.id);
@@ -682,13 +676,21 @@ export function BenchmarkPage() {
         {selection && bm ? (
           // Changing the key on Benchmark switch resets expand state (a detail row's open doesn't linger across Benchmarks).
           <div key={`${selection.agentId}/${bm.id}`} className="mx-auto max-w-4xl space-y-4">
-            {/* Title row: title + case count (the model isn't part of config — each evaluation
-                carries its own, see the chart legend and the detail table's model column) +
-                description */}
+            {/* The frozen evaluation runtime is shared by every Evaluation in this Benchmark,
+                so it is shown once beside the title instead of repeated in each detail row. */}
             <div>
               <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                 <h1 className="min-w-0 truncate text-lg font-semibold">{bm.title}</h1>
                 <span className="text-xs text-gray-500">{S.benchmark.caseCount(bm.caseCount)}</span>
+                {evaluationRuntime && (
+                  <span
+                    className="font-mono text-[11px] text-gray-400"
+                    title={evaluationRuntime.provider}
+                  >
+                    {evaluationRuntime.modelId ?? "—"}
+                    {evaluationRuntime.thinkingLevel ? ` · ${evaluationRuntime.thinkingLevel}` : ""}
+                  </span>
+                )}
               </div>
               {bm.description && (
                 <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{bm.description}</p>
@@ -713,12 +715,11 @@ export function BenchmarkPage() {
                     {S.benchmark.evaluations}
                   </p>
                   <div className="overflow-x-auto overflow-y-clip rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-                    <table className="w-full min-w-[600px] text-left text-sm">
+                    <table className="w-full min-w-[520px] text-left text-sm">
                       <thead>
                         <tr className="border-b border-gray-200 bg-gray-50/80 text-xs text-gray-500 dark:border-gray-800 dark:bg-gray-900">
                           <th className="px-3 py-2.5">{S.common.time}</th>
                           <th className="px-3 py-2.5">{S.benchmark.colVersion}</th>
-                          <th className="px-3 py-2.5">{S.benchmark.colModel}</th>
                           <th className="px-3 py-2.5">{S.benchmark.colScore}</th>
                           <th className="px-3 py-2.5">{S.common.cost}</th>
                           <th className="px-3 py-2.5">{S.benchmark.colDuration}</th>

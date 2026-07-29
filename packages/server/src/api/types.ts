@@ -1076,6 +1076,8 @@ export interface BenchmarkEvaluation {
   modelId?: string;
   /** Provider group for `modelId`. */
   provider?: string;
+  /** Thinking level actually recorded by the evaluated root Session. */
+  thinkingLevel?: string;
   /** Agent State version number under test. */
   version?: number;
   /** Total score (sum of per-case scores; max score defined by the scoring rubric). */

@@ -566,54 +566,38 @@ When done, open index.html in a browser and self-test once.`,
       agentBenchmarkBuild: {
         label: "Example: create a decision Agent and capability evaluation",
         desc: "Create a general decision Agent and test it on football, after-sales, and investment tasks",
-        prompt: `Create a decision Agent, then build a capability Benchmark and Formal Baseline for it.
+        prompt: `Use \`agent-creation\` followed by \`benchmark-design\` to create a decision Agent and produce a frozen Benchmark with a Formal Baseline.
 
-In this top-level Session, directly use \`agent-creation\` followed by \`benchmark-design\`; do not delegate Agent Creation or Benchmark Design to a subagent. When evaluation is needed, follow the Skills and use \`run_subagent\` to delegate to an Evaluator using \`agent-evaluation\`.
+Agent:
+- id: \`finite_choice_agent\`
+- capability: make stable, explainable finite choices when public information is incomplete or conflicting
+- thinking_level: \`medium\`
+- installed_skills: \`[]\`
 
-## Create the Agent
+Benchmark:
+- id: \`contextual-choice-adaptation\`
+- capability: form and transfer a stable finite-choice decision process from public rules, historical examples, and current facts
+- provider: \`deepseek\`
+- model_id: \`deepseek-v4-flash\`
+- runs: \`1\`
+- desired_baseline_score: \`<75\`
+- pilot_iteration_limit: \`5\`
 
-Create \`finite_choice_agent\`, a general finite-choice Agent. When it must answer despite insufficient public information, it should use a simple, stable decision method; design and explain that method.
-
-Install no Skills. Set \`thinking_level: medium\` and initial version 1. Keep the Agent general; do not preset knowledge from later Benchmark scenarios, private rules, Gold answers, or optimization hints.
-
-## Build the Benchmark
-
-- Benchmark ID: \`contextual-choice-adaptation\`
-- Test Provider: \`deepseek\`
-- Test Model: \`deepseek-v4-flash\`
-- Runs: 1
-- Desired Pilot score: below 75
-- Valid Pilot iteration limit: 5
-
-Measure whether the Agent can propose and test candidate decision rules from public evidence, reject explanations that conflict with historical outcomes, judge whether evidence is sufficient, and transfer a stable decision process to new finite-choice tasks. Build three Cases:
-
-1. Football betting: provide settled matches, pre-match odds, recent form, home or away status, injuries, weather, and outcomes, followed by matches to decide. The Agent selects \`Home\`, \`Draw\`, \`Away\`, or \`No Bet\`.
-2. After-sales handling: provide policies, order records, customer requests, and timing. The Agent selects \`Refund\`, \`Replace\`, \`Reject\`, or \`Escalate\`.
-3. Simulated investment: provide a public strategy, historical market samples, and current indicators. The Agent ranks candidate assets or selects the required investment action.
-
-The three Cases must cover different decision challenges while jointly measuring whether the Agent can recover a stable process from public rules, historical examples, and current facts; judge evidence sufficiency; handle priorities and exceptions; and transfer the process to new instances. Before Freeze, confirm that each Case exposes a stable limitation or covers a necessary capability not measured by the other Cases; do not rely on one low-scoring Case to pull down the total. Difficulty must come from necessary reasoning dependencies, not data volume, hidden evidence, or answer ambiguity. Each Statement must provide all public materials needed to complete the task while presenting only the task, without explaining the tested capability, solution, or decisive evidence.
-
-Freeze early when a complete valid Pilot meets the desired score. Otherwise complete no more than five valid Pilot iterations and freeze the lowest-scoring valid Benchmark revision. Invalid evaluations and correction reruns do not count toward the limit. After Freeze, run a fresh complete Formal matrix without reusing Pilot runs. Record every valid Formal Baseline even when its score is not below 75.
-
-Report the Agent and Benchmark paths, Pilot scores and selection, Formal Baseline, Test Session ids, and known limitations, then stop. Do not begin Agent optimization.`,
+Scenarios:
+1. Make football betting decisions from historical matches and current information.
+2. Choose after-sales actions from policy and ticket facts.
+3. Choose investment actions from a strategy, historical markets, and current indicators.`,
       },
       agentOptimization: {
         label: "Example: optimize a decision Agent from its evaluation",
         desc: "Improve an Agent from existing evaluation results and verify that the new version is better",
-        prompt: `Optimize a decision Agent against its frozen capability Benchmark.
+        prompt: `Use \`agent-optimization\` to optimize a decision Agent against its frozen Benchmark.
 
-In this top-level Session, directly use \`agent-optimization\`; do not delegate Optimization to a subagent. When evaluation is needed, follow the Skill and use \`run_subagent\` to delegate to an Evaluator using \`agent-evaluation\`.
-
-- Test Agent: \`finite_choice_agent\`
-- Benchmark ID: \`contextual-choice-adaptation\`
-- Desired target score: at least 85
-- Valid Candidate round limit: 5
-
-Before starting, confirm that the Benchmark exists and that its Scoreboard contains a first complete valid Formal Baseline. If either prerequisite is missing, stop; do not create or modify the Benchmark.
-
-Improve the Test Agent's general capability using public Statements, evaluation scores, and Test Traces. Stop early when the Reference reaches 85; otherwise complete no more than five valid Candidate rounds. Invalid evaluations and correction reruns do not count toward the limit; a completely and validly evaluated rejected Candidate does count. Accept a Candidate only when its total score is strictly higher than the current Reference. At the round limit, retain the highest-scoring accepted Reference.
-
-The Optimizer must not read Rubrics, Gold answers, or other private scoring information. Report the Baseline/Candidate score curve, key hypotheses, accepted and rolled-back versions, final retained version, Test Session ids, and known limitations.`,
+- test_agent_id: \`finite_choice_agent\`
+- benchmark_id: \`contextual-choice-adaptation\`
+- capability_direction: improve stability under incomplete information, conflicting rules, and finite choices
+- desired_score: \`>=95\`
+- candidate_round_limit: \`5\``,
       },
     },
     sessionList: "Sessions",
@@ -854,7 +838,6 @@ The Optimizer must not read Rubrics, Gold answers, or other private scoring info
     summaryLabel: "Summary",
     legendUnlabeled: "unlabeled model",
     colVersion: "Version",
-    colModel: "Model",
     colScore: "Score",
     colDuration: "Duration",
     colCase: "Case",

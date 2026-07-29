@@ -81,14 +81,14 @@ interface ExampleRun {
 /**
  * Raw runs for the three sample evaluations (case-level and evaluation-level metrics are
  * computed from these, keeping the numbers self-consistent). Each carries the model actually
- * used for that round (paired, since the evaluation center's chart splits series by model);
- * the examples all use deepseek-v4-pro (a single model, single series).
+ * used for that round; the examples all use deepseek-v4-pro at medium thinking.
  */
 const EXAMPLE_EVALUATIONS: Array<{
   time: string;
   version: number;
   provider: string;
   model_id: string;
+  thinking_level: string;
   summary_title: string;
   summary: string;
   cases: Array<{ case: string; runs: ExampleRun[] }>;
@@ -98,6 +98,7 @@ const EXAMPLE_EVALUATIONS: Array<{
     version: 1,
     provider: "deepseek",
     model_id: "deepseek-v4-pro",
+    thinking_level: "medium",
     summary_title: "Baseline before any optimization",
     summary:
       "Example data (not a real evaluation): baseline scores of the built-in sample " +
@@ -145,6 +146,7 @@ const EXAMPLE_EVALUATIONS: Array<{
     version: 2,
     provider: "deepseek",
     model_id: "deepseek-v4-pro",
+    thinking_level: "medium",
     summary_title: "Added an explicit planning step",
     summary:
       "Example data (not a real evaluation): after adding an explicit planning step to the " +
@@ -192,6 +194,7 @@ const EXAMPLE_EVALUATIONS: Array<{
     version: 3,
     provider: "deepseek",
     model_id: "deepseek-v4-pro",
+    thinking_level: "medium",
     summary_title: "Verify deliverables before finishing",
     summary:
       "Example data (not a real evaluation): after instructing the agent to verify its " +
@@ -262,6 +265,7 @@ export function buildExampleScoreboard(): {
     version: number;
     provider: string;
     model_id: string;
+    thinking_level: string;
     summary_title: string;
     summary: string;
     score: number;
@@ -290,6 +294,7 @@ export function buildExampleScoreboard(): {
         version: e.version,
         provider: e.provider,
         model_id: e.model_id,
+        thinking_level: e.thinking_level,
         summary_title: e.summary_title,
         summary: e.summary,
         score: sum(cases.map((c) => c.score)),

@@ -88,6 +88,7 @@ describe("built-in Agent provisioning", () => {
     expect(bench.caseCount).toBe(2);
     expect(bench.evaluations).toHaveLength(3);
     for (const evaluation of bench.evaluations) {
+      expect(evaluation.thinkingLevel).toBe("medium");
       expect(evaluation.summary).toBeTruthy();
       expect(evaluation.cases).toHaveLength(2);
       for (const c of evaluation.cases) {

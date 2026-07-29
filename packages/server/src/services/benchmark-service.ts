@@ -157,10 +157,11 @@ function toEvaluation(v: unknown): BenchmarkEvaluation | null {
   // Title and body are separate: summary_title is a one-line
   // conclusion, summary is the body text.
   const summaryTitle = stringOr(r.summary_title);
-  // The Model actually used for this evaluation run (paired with provider):
-  // charted curves are split into series by model, each with a distinct color.
+  // The runtime actually used for this evaluation run. Curves remain split by
+  // the paired model reference; thinking_level is additive audit metadata.
   const modelId = stringOr(r.model_id);
   const provider = stringOr(r.provider);
+  const thinkingLevel = stringOr(r.thinking_level);
   const version = numberOr(r.version);
   const cost = numberOr(r.cost);
   const durationMs = numberOr(r.duration_ms);
@@ -170,6 +171,7 @@ function toEvaluation(v: unknown): BenchmarkEvaluation | null {
     ...(summary !== undefined ? { summary } : {}),
     ...(modelId !== undefined ? { modelId } : {}),
     ...(provider !== undefined ? { provider } : {}),
+    ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
     score,
     ...(maxScore !== undefined ? { maxScore } : {}),
     ...(version !== undefined ? { version } : {}),
