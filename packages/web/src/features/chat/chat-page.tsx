@@ -287,11 +287,14 @@ export function ChatPage() {
     () => void reloadSessions(),
   );
 
-  // Chat input area draft: caches text, handoff target, and selected skills keyed by sessionId; restored after navigating away and back or a refresh, discarded on successful send.
+  // Chat input area draft: caches text, both staged switch chips (`/agent` target, `/model`
+  // target) and the selected skills keyed by sessionId; restored after navigating away and back
+  // or a refresh, discarded on successful send.
   const {
     initial: sessionDraft,
     onTextChange: onDraftTextChange,
     onHandoffTargetChange: onDraftHandoffChange,
+    onPendingModelChange: onDraftPendingModelChange,
     onSkillsChange: onDraftSkillsChange,
     discard: discardSessionDraft,
   } = useSessionDraft(selected?.sessionId ?? null);
@@ -887,6 +890,7 @@ export function ChatPage() {
       modeSaving={modeSaving}
       autoFocus
       agents={agents}
+      currentAgentId={selected.agentId}
       skills={agentSkills}
       {...(sessionDraft.skills && sessionDraft.skills.length > 0
         ? { initialSkills: sessionDraft.skills }
@@ -899,6 +903,10 @@ export function ChatPage() {
         ? { initialHandoffTargetId: sessionDraft.handoffAgentId }
         : {})}
       onHandoffTargetChange={onDraftHandoffChange}
+      {...(sessionDraft.switchModelRef
+        ? { initialPendingModelRef: sessionDraft.switchModelRef }
+        : {})}
+      onPendingModelChange={onDraftPendingModelChange}
     />
   );
 

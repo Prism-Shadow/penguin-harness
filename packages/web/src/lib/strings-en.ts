@@ -751,6 +751,8 @@ When done, open index.html in a browser and self-test once.`,
     switchModelTitle: "Switch model",
     modelSwitchTargetTitle: (model: string) => `Sending continues this conversation on ${model}`,
     modelSwitchRemove: "Remove model switch",
+    modelSwitchBusyHint:
+      "The model switch waits for this turn to finish: the new session continues from this session's record",
     modelSwitchFrom: (prevModel?: string) =>
       prevModel
         ? `Switched model (was ${prevModel}) — continued from the earlier conversation`

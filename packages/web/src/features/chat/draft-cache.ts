@@ -28,6 +28,15 @@ export interface DraftCache {
   /** The `/agent` handoff target (chip) at the front of the input box: resolved again by id on restore, dropped if no longer valid. */
   handoffAgentId?: string;
   /**
+   * The `/model` switch target (the other switch chip; a paired reference, same shape as
+   * modelRef above): cached for exactly the same reason as handoffAgentId — the composer text
+   * is cached and ChatInput remounts on every session switch, so a chip left in component state
+   * would vanish while the text it belongs to came back, and the next Enter would post to the
+   * current session on the old model. Resolved again against the model list on restore and
+   * dropped when that model is no longer available.
+   */
+  switchModelRef?: { provider: string; modelId: string };
+  /**
    * Preselected skill names (written by the quick-invoke action on the Skill library page):
    * used as the initial selection when ChatInput mounts, then trimmed to remove names not in the
    * installed list once it's ready; cleared along with the entire draft on successful send.
@@ -50,6 +59,18 @@ export const draftKey = (userId: string, projectId: string): string =>
 export const sessionDraftKey = (userId: string, sessionId: string): string =>
   `penguin.chatDraft.session.${userId}.${sessionId}`;
 
+/**
+ * A cached model reference must be a paired `{ provider, modelId }` object; anything else — the
+ * old string-typed modelId, a half reference, a non-object — yields undefined and the field is
+ * dropped. Shared by the two model fields (the draft's selection and the staged `/model` switch).
+ */
+function parseModelRef(value: unknown): { provider: string; modelId: string } | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const r = value as Record<string, unknown>;
+  if (typeof r.provider !== "string" || typeof r.modelId !== "string") return undefined;
+  return { provider: r.provider, modelId: r.modelId };
+}
+
 /** Parses and validates raw JSON field-by-field: null / malformed JSON / non-object / invalid fields are all dropped. */
 export function parseDraft(raw: string | null): DraftCache {
   if (!raw) return {};
@@ -61,15 +82,11 @@ export function parseDraft(raw: string | null): DraftCache {
     if (typeof o.text === "string") out.text = o.text;
     if (typeof o.agentId === "string") out.agentId = o.agentId;
     if (typeof o.workspace === "string") out.workspace = o.workspace;
-    // The model reference must be a paired { provider, modelId } object; the old string-typed
-    // modelId and any malformed shape are dropped.
-    if (typeof o.modelRef === "object" && o.modelRef !== null) {
-      const r = o.modelRef as Record<string, unknown>;
-      if (typeof r.provider === "string" && typeof r.modelId === "string") {
-        out.modelRef = { provider: r.provider, modelId: r.modelId };
-      }
-    }
+    const modelRef = parseModelRef(o.modelRef);
+    if (modelRef) out.modelRef = modelRef;
     if (typeof o.handoffAgentId === "string") out.handoffAgentId = o.handoffAgentId;
+    const switchModelRef = parseModelRef(o.switchModelRef);
+    if (switchModelRef) out.switchModelRef = switchModelRef;
     if (Array.isArray(o.skills)) {
       // Elements are validated one by one: non-string items are filtered out; if empty after
       // filtering, the whole field is omitted.

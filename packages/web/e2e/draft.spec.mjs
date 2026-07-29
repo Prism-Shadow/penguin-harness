@@ -12,7 +12,11 @@
  *   persists per Project (order re-checked after a reload);
  * - after switching the sidebar to agent mode (toggle persisted in localStorage), the agent
  *   group header's "+" creates a draft scoped to that group's Agent (explicitly set via router
- *   state, overriding the cache).
+ *   state, overriding the cache);
+ * - both switch commands are **staged**: `/model` and `/agent` pin a chip and send nothing, the
+ *   chip is cached with the body text (it survives a reload), and pressing Enter afterwards is
+ *   what actually forks the conversation onto the picked model / hands it to the picked Agent —
+ *   carrying the text typed after the pick into the new conversation.
  */
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -292,4 +296,82 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   await expect(ta).toHaveValue("Draft inside the session");
   await page.getByRole("button", { name: "发送" }).click();
   await expect.poll(() => page.evaluate((k) => localStorage.getItem(k), sessionKey)).toBeNull();
+
+  // —— /model stages the fork; Enter is what performs it ——
+  // Wait for the run above to finish first: the slash menu is suppressed while a Task runs, and
+  // a staged fork deliberately refuses to send until the Session is idle (it continues from a
+  // Trace the run is still appending to). Two signals, in order: the second round's closing
+  // text lands (this Session has now answered two messages), then the action button stops being
+  // Stop — which it is for as long as a Task runs with an empty composer.
+  await expect(page.getByText("Command finished; the result looks as expected.")).toHaveCount(2);
+  await expect(page.getByRole("button", { name: "停止" })).toHaveCount(0);
+
+  await ta.fill("/model");
+  await ta.press("Enter");
+  await expect(page.getByText("切换模型", { exact: true })).toBeVisible(); // picker title bar
+  await expect(ta).toHaveValue(""); // the command consumed its own token
+  await page.getByPlaceholder(/搜索模型/).fill("claude-4-8");
+  // Both models match the query (one id is the other's prefix); pick the non-mini one, i.e. not
+  // the model this Session already runs on.
+  await page
+    .getByRole("button", { name: /claude-4-8/ })
+    .filter({ hasNotText: "mini" })
+    .click();
+
+  // Nothing was sent: we are still in the same Session, with the pick pinned as a chip — which
+  // is why the body can be typed AFTER the pick and still ride along.
+  await expect(page).toHaveURL(new RegExp(`/chat/${secondSessionId}$`));
+  await expect(page.getByLabel("移除切换模型")).toBeVisible();
+  await ta.fill("Fork body typed after the pick");
+
+  // The chip is draft content, cached in the SAME entry as the text (poll on the text: it is
+  // the debounced field, so its arrival means everything is flushed), and a reload restores
+  // BOTH. A chip lost while its text survived would send that text to the current Session on
+  // the old model — the opposite of what was staged.
+  await expect
+    .poll(() => page.evaluate((k) => localStorage.getItem(k), sessionKey))
+    .toContain("Fork body typed after the pick");
+  expect(await page.evaluate((k) => localStorage.getItem(k), sessionKey)).toContain("claude-4-8");
+  await page.reload();
+  await expect(ta).toHaveValue("Fork body typed after the pick");
+  await expect(page.getByLabel("移除切换模型")).toBeVisible();
+
+  // Enter performs the fork: a NEW Session on the picked model, same Agent, carrying the body.
+  await ta.press("Enter");
+  await page.waitForURL(
+    (url) => /\/chat\/session-/.test(url.pathname) && !url.href.endsWith(secondSessionId),
+  );
+  const thirdSessionId = page.url().split("/chat/")[1];
+  const third = await (await page.request.get(`${BASE}/api/sessions/${thirdSessionId}`)).json();
+  expect(third.session.modelId).toBe("claude-4-8");
+  expect(third.session.agentId).toBe("agent_helper");
+  // The source block collapses into the "switched model" banner, and the typed body follows it.
+  await expect(page.getByText(/已切换模型（原为 claude-4-8-mini）/)).toBeVisible();
+  await expect(page.getByText("Fork body typed after the pick")).toBeVisible();
+
+  // —— /agent stages the handoff; Enter is what performs it ——
+  // The forked Session started its own run; wait it out the same way (a fresh stream, so its
+  // first closing text is the only one).
+  await expect(page.getByText("Command finished; the result looks as expected.")).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "停止" })).toHaveCount(0);
+  await ta.fill("/agent");
+  await ta.press("Enter");
+  await page.getByPlaceholder(/搜索 Agent/).fill("default");
+  await page.getByRole("button", { name: /default_agent/ }).click();
+  // Staged only: still in the forked Session, still able to type the message to hand over.
+  await expect(page).toHaveURL(new RegExp(`/chat/${thirdSessionId}$`));
+  await expect(page.getByLabel("移除交接目标")).toBeVisible();
+  await ta.fill("Handoff body typed after the pick");
+
+  await ta.press("Enter");
+  await page.waitForURL(
+    (url) => /\/chat\/session-/.test(url.pathname) && !url.href.endsWith(thirdSessionId),
+  );
+  const fourthSessionId = page.url().split("/chat/")[1];
+  const fourth = await (await page.request.get(`${BASE}/api/sessions/${fourthSessionId}`)).json();
+  expect(fourth.session.agentId).toBe("default_agent");
+  // The [handoff_from] block collapses into the origin banner (the source agent is named
+  // without an @ sigil, matching the composer chip), and the typed body follows it.
+  await expect(page.getByText(/由 .*agent_helper.* 的对话交接而来/)).toBeVisible();
+  await expect(page.getByText("Handoff body typed after the pick")).toBeVisible();
 });

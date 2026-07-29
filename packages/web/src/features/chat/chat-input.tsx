@@ -25,9 +25,13 @@
  * becomes a highlighted chip above the text body instead of switching on the spot. The user
  * keeps typing; **Enter/Send** performs the switch — an agent chip hands the conversation off to
  * a new chat for that agent (the current Session is not sent to), a model chip forks this
- * conversation onto the picked model. With an empty text body the default auto-message is filled
- * in. Only one chip at a time (picking either clears the other, and both are exclusive with goal
- * mode); it is removed via backspace at the start of the text or the chip's x button;
+ * conversation onto the picked model. A model fork additionally waits for this Session to be
+ * idle (it branches off a Trace that a run or a compaction is still appending to) and says so
+ * above the composer rather than just disabling Send. With an empty text body the default
+ * auto-message is filled in. Only one chip at a time (picking either clears the other, picking
+ * the model already in use clears the staging, and both are exclusive with goal mode); a chip is
+ * removed via backspace at the start of the text or its x button, and both are cached with the
+ * draft so they survive a session switch or reload along with the text they belong to;
  * The bottom toolbar provides a searchable multi-select skills dropdown (styled like the model
  * selector: a top search box filtering by name and localized description, plus a checklist;
  * clicking a row toggles its selection without closing the menu; the button = book icon + label +
@@ -51,7 +55,7 @@
  * centering is decided by the page.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { ChangeEvent, ClipboardEvent, KeyboardEvent, ReactNode } from "react";
+import type { ChangeEvent, ClipboardEvent, KeyboardEvent, ReactNode, RefObject } from "react";
 import type {
   AgentSummary,
   ApprovalMode,
@@ -80,7 +84,7 @@ import {
   sameModelRef,
   visibleChatModels,
 } from "../models/model-grouping";
-import { filterAgents } from "./agent-handoff";
+import { filterAgents, stagedSendRoute } from "./agent-handoff";
 import { matchSlash, removeSlashToken } from "./slash-token";
 import { SELECTABLE_THINKING_LEVELS, thinkingLevelLabel } from "./thinking-level";
 import {
@@ -238,6 +242,114 @@ const NO_KEY_ICON =
   "M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4M2 2l20 20";
 
 /**
+ * Candidate panel shared by every picker in this file (the model dropdown / `/model` switch
+ * picker and the `/agent` handoff picker): the search box, the internal scroll cap, the row
+ * chrome, the keyboard navigation and the "current entry" marker slot all live here, so the
+ * two pickers can differ only in what a row *contains* (provider logo vs Agent avatar) and in
+ * what they hang below the list (`footer`, e.g. the model list's "show all" expander).
+ *
+ * Keyboard navigation deliberately starts with **no** row highlighted: the search box is
+ * autofocused, and pre-highlighting a row would repaint a panel that has looked the same since
+ * before this control existed. ArrowDown/ArrowUp begin the navigation, and Enter/Tab commits —
+ * the highlighted row if there is one, otherwise the top match, which is what makes "type a few
+ * letters, press Enter" work. Escape is NOT handled here: each host closes its own panel at the
+ * window level (an IME-safe handler for the switch pickers, Dropdown's for the model dropdown).
+ */
+function PickerList<T>({
+  items,
+  itemKey,
+  isCurrent,
+  query,
+  onQueryChange,
+  searchPlaceholder,
+  emptyText,
+  onPick,
+  renderRow,
+  footer,
+}: {
+  items: T[];
+  /** Stable React key AND identity for the highlighted row. */
+  itemKey: (item: T) => string;
+  /** Marks the entry already in effect (the session's model / its Agent): renders the ✓ slot and the emphasized row style. */
+  isCurrent?: (item: T) => boolean;
+  query: string;
+  onQueryChange: (query: string) => void;
+  searchPlaceholder: string;
+  /** Shown in place of the list when the query matches nothing. */
+  emptyText: string;
+  onPick: (item: T) => void;
+  /** The row's own content, left of the ✓ slot. */
+  renderRow: (item: T) => ReactNode;
+  /** Pinned below the scroll area (mirroring the search box above it). */
+  footer?: ReactNode;
+}) {
+  // -1 = nothing highlighted yet (see the note above); reset whenever the candidate set changes.
+  const [active, setActive] = useState(-1);
+  const activeKey = active >= 0 && active < items.length ? itemKey(items[active]!) : null;
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (items.length === 0) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActive((i) => (i + 1) % items.length);
+      return;
+    }
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActive((i) => (i <= 0 ? items.length - 1 : i - 1));
+      return;
+    }
+    // Same guard as the composer's own Enter handling: an IME commit must not be read as a pick.
+    if (((e.key === "Enter" && !e.shiftKey) || e.key === "Tab") && !e.nativeEvent.isComposing) {
+      e.preventDefault();
+      onPick(items[active >= 0 ? active : 0]!);
+    }
+  };
+  return (
+    <div className="contents" onKeyDown={onKeyDown}>
+      {/* Quick search (autofocused: it also owns the keyboard while the panel is up) */}
+      <div className="border-b border-gray-100 px-2 pb-1.5 pt-0.5 dark:border-gray-800">
+        <input
+          autoFocus
+          value={query}
+          onChange={(e) => {
+            onQueryChange(e.target.value);
+            setActive(-1);
+          }}
+          placeholder={searchPlaceholder}
+          aria-label={searchPlaceholder}
+          {...noAutofill}
+          className="w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-xs text-gray-700 placeholder:text-gray-400 focus:outline-none dark:text-gray-200 dark:placeholder:text-gray-500"
+        />
+      </div>
+      <div className="max-h-56 overflow-y-auto">
+        {items.length === 0 && <p className="px-3 py-1.5 text-xs text-gray-400">{emptyText}</p>}
+        {items.map((item) => {
+          const key = itemKey(item);
+          const current = isCurrent?.(item) ?? false;
+          return (
+            <button
+              key={key}
+              type="button"
+              ref={key === activeKey ? (el) => el?.scrollIntoView({ block: "nearest" }) : undefined}
+              onClick={() => onPick(item)}
+              className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800 ${
+                current
+                  ? "font-medium text-gray-900 dark:text-gray-100"
+                  : "text-gray-600 dark:text-gray-400"
+              }${key === activeKey ? " bg-gray-100 dark:bg-gray-800" : ""}`}
+            >
+              {renderRow(item)}
+              <span className="w-3 shrink-0 text-center text-xs">{current ? "✓" : ""}</span>
+            </button>
+          );
+        })}
+      </div>
+      {footer}
+    </div>
+  );
+}
+
+/**
  * Model candidate panel (search box + grouped list + "show all" expander) shared by the
  * draft-state ModelSelect dropdown and the in-session `/model` switch picker. Search and
  * expanded state are internal and reset by remount (both hosts only render the panel while
@@ -276,81 +388,65 @@ function ModelMenuList({
     : visibleChatModels(models, { showAll: true, query, selected: value, defaultModel }).length -
       visible.length;
   return (
-    <>
-      {/* Quick search: supports model id / display name / provider name */}
-      <div className="border-b border-gray-100 px-2 pb-1.5 pt-0.5 dark:border-gray-800">
-        <input
-          autoFocus
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder={S.models.searchPlaceholder}
-          aria-label={S.models.searchPlaceholder}
-          {...noAutofill}
-          className="w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-xs text-gray-700 placeholder:text-gray-400 focus:outline-none dark:text-gray-200 dark:placeholder:text-gray-500"
-        />
-      </div>
-      <div className="max-h-56 overflow-y-auto">
-        {visible.length === 0 && (
-          <p className="px-3 py-1.5 text-xs text-gray-400">{S.models.noSearchResults}</p>
-        )}
-        {visible.map((m) => (
-          <button
-            key={`${m.provider}:${m.modelId}`}
-            type="button"
-            onClick={() => onPick(m)}
-            className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800 ${
-              sameModelRef(m, value)
-                ? "font-medium text-gray-900 dark:text-gray-100"
-                : "text-gray-600 dark:text-gray-400"
-            }`}
-          >
-            <ProviderLogo provider={m.provider} className="h-4 w-4 shrink-0" />
-            <span className="min-w-0 flex-1 truncate">{modelLabel(m)}</span>
-            {/* Zero-cost rows (all three price buckets 0): same light-yellow "Free" badge as
-                the model library card, so free models stand out while picking. */}
-            {isFreeModel(m.pricing) && (
-              <span className="shrink-0">
-                <Badge tone="yellow">{S.models.freeBadge}</Badge>
-              </span>
-            )}
-            {/* Key-less rows (visible via show-all / selected / default / no-key-at-all) carry a
-                struck-through key icon (the "no key" text lives in the title/aria-label). */}
-            {!hasConfiguredKey(m) && (
-              <span
-                role="img"
-                title={S.models.noKey}
-                aria-label={S.models.noKey}
-                className="shrink-0 text-gray-400 dark:text-gray-500"
-              >
-                <GlyphIcon d={NO_KEY_ICON} size={13} />
-              </span>
-            )}
-            {sameModelRef(m, defaultModel) && (
-              <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
-                {S.models.default}
-              </span>
-            )}
-            <span className="w-3 shrink-0 text-center text-xs">
-              {sameModelRef(m, value) ? "✓" : ""}
+    <PickerList
+      items={visible}
+      itemKey={(m) => `${m.provider}:${m.modelId}`}
+      isCurrent={(m) => sameModelRef(m, value)}
+      query={query}
+      onQueryChange={setQuery}
+      // Quick search: supports model id / display name / provider name
+      searchPlaceholder={S.models.searchPlaceholder}
+      emptyText={S.models.noSearchResults}
+      onPick={onPick}
+      renderRow={(m) => (
+        <>
+          <ProviderLogo provider={m.provider} className="h-4 w-4 shrink-0" />
+          <span className="min-w-0 flex-1 truncate">{modelLabel(m)}</span>
+          {/* Zero-cost rows (all three price buckets 0): same light-yellow "Free" badge as
+              the model library card, so free models stand out while picking. */}
+          {isFreeModel(m.pricing) && (
+            <span className="shrink-0">
+              <Badge tone="yellow">{S.models.freeBadge}</Badge>
             </span>
-          </button>
-        ))}
-      </div>
-      {/* Bottom expander row (pinned below the scroll area, mirroring the search box on top):
-          reveals the models hidden by the configured-key filter in place — the menu stays open
-          and the selection is untouched. */}
-      {hiddenCount > 0 && (
-        <div className="border-t border-gray-100 dark:border-gray-800">
-          <button
-            type="button"
-            onClick={() => setShowAll(true)}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-300"
-          >
-            {S.models.showModelsWithoutKey(hiddenCount)}
-          </button>
-        </div>
+          )}
+          {/* Key-less rows (visible via show-all / selected / default / no-key-at-all) carry a
+              struck-through key icon (the "no key" text lives in the title/aria-label). */}
+          {!hasConfiguredKey(m) && (
+            <span
+              role="img"
+              title={S.models.noKey}
+              aria-label={S.models.noKey}
+              className="shrink-0 text-gray-400 dark:text-gray-500"
+            >
+              <GlyphIcon d={NO_KEY_ICON} size={13} />
+            </span>
+          )}
+          {sameModelRef(m, defaultModel) && (
+            <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
+              {S.models.default}
+            </span>
+          )}
+        </>
       )}
-    </>
+      // Bottom expander row (pinned below the scroll area, mirroring the search box on top):
+      // reveals the models hidden by the configured-key filter in place — the menu stays open
+      // and the selection is untouched.
+      {...(hiddenCount > 0
+        ? {
+            footer: (
+              <div className="border-t border-gray-100 dark:border-gray-800">
+                <button
+                  type="button"
+                  onClick={() => setShowAll(true)}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+                >
+                  {S.models.showModelsWithoutKey(hiddenCount)}
+                </button>
+              </div>
+            ),
+          }
+        : {})}
+    />
   );
 }
 
@@ -436,64 +532,84 @@ function ModelSelect({
 }
 
 /**
- * Agent candidate panel (search box + list) for the `/agent` switch picker — the agent-side
- * counterpart of ModelMenuList, built the same way: the search text is internal state reset by
- * remount (the host only renders the panel while open), and the list is capped by an internal
- * scroll (max-h-56) so a Project with many Agents never overflows the viewport. Rows carry the
- * Agent avatar (the same identity tile the draft Agent picker uses), the agentId in monospace —
- * the id is what identifies an Agent everywhere else in the app — and the display name after it
- * when it differs.
+ * Agent candidate panel for the `/agent` switch picker — the agent-side counterpart of
+ * ModelMenuList, and now literally the same panel (PickerList: search, scroll cap, keyboard
+ * navigation, current-entry marker). Only the row differs: the Agent avatar (the same identity
+ * tile the draft Agent picker uses), the agentId in monospace — the id is what identifies an
+ * Agent everywhere else in the app — and the display name after it when it differs. The
+ * conversation's own Agent is marked like the model list marks the session's model; picking it
+ * is still a real action (a fresh conversation with the same Agent), not a no-op.
  */
 function AgentMenuList({
   agents,
+  currentAgentId,
   onPick,
 }: {
   agents: AgentSummary[];
+  /** The Agent this conversation already belongs to (marked ✓); undefined while it is unknown. */
+  currentAgentId?: string;
   onPick: (agent: AgentSummary) => void;
 }) {
   const [query, setQuery] = useState("");
-  const visible = filterAgents(agents, query);
   return (
-    <>
-      {/* Quick search: supports agentId / display name */}
-      <div className="border-b border-gray-100 px-2 pb-1.5 pt-0.5 dark:border-gray-800">
-        <input
-          autoFocus
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder={S.chat.agentSearchPlaceholder}
-          aria-label={S.chat.agentSearchPlaceholder}
-          {...noAutofill}
-          className="w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-xs text-gray-700 placeholder:text-gray-400 focus:outline-none dark:text-gray-200 dark:placeholder:text-gray-500"
-        />
+    <PickerList
+      items={filterAgents(agents, query)}
+      itemKey={(a) => a.agentId}
+      isCurrent={(a) => a.agentId === currentAgentId}
+      query={query}
+      onQueryChange={setQuery}
+      // Quick search: supports agentId / display name
+      searchPlaceholder={S.chat.agentSearchPlaceholder}
+      emptyText={S.chat.agentsNoMatch}
+      onPick={onPick}
+      renderRow={(a) => (
+        <>
+          <AgentAvatar
+            id={a.agentId}
+            name={agentDisplayName(a)}
+            size={16}
+            className="shrink-0 rounded"
+          />
+          <span className="shrink-0 font-mono text-gray-800 dark:text-gray-200">{a.agentId}</span>
+          {a.name && a.name !== a.agentId && (
+            <span className="min-w-0 flex-1 truncate text-gray-400 dark:text-gray-500">
+              {a.name}
+            </span>
+          )}
+        </>
+      )}
+    />
+  );
+}
+
+/**
+ * Popup frame shared by the two `/` switch pickers (`/model`, `/agent`): the upward-opening
+ * panel and its title bar. It opens upward from the composer and is height-capped to the room
+ * actually measured above it (see upwardMaxH), so it can never render off-screen; the panel has
+ * no trigger button of its own, so dismissal (click-outside / Escape) is handled by the host.
+ */
+function SwitchPickerPanel({
+  panelRef,
+  maxHeight,
+  title,
+  children,
+}: {
+  panelRef: RefObject<HTMLDivElement | null>;
+  maxHeight: number | undefined;
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      ref={panelRef}
+      style={{ maxHeight }}
+      className="anim-pop absolute bottom-full left-0 z-40 mb-1.5 flex w-80 max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900"
+    >
+      <div className="border-b border-gray-100 px-3 pb-1.5 pt-0.5 text-xs font-semibold text-gray-500 dark:border-gray-800 dark:text-gray-400">
+        {title}
       </div>
-      <div className="max-h-56 overflow-y-auto">
-        {visible.length === 0 && (
-          <p className="px-3 py-1.5 text-xs text-gray-400">{S.chat.agentsNoMatch}</p>
-        )}
-        {visible.map((a) => (
-          <button
-            key={a.agentId}
-            type="button"
-            onClick={() => onPick(a)}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-gray-600 transition-colors duration-150 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
-          >
-            <AgentAvatar
-              id={a.agentId}
-              name={agentDisplayName(a)}
-              size={16}
-              className="shrink-0 rounded"
-            />
-            <span className="shrink-0 font-mono text-gray-800 dark:text-gray-200">{a.agentId}</span>
-            {a.name && a.name !== a.agentId && (
-              <span className="min-w-0 flex-1 truncate text-gray-400 dark:text-gray-500">
-                {a.name}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
-    </>
+      {children}
+    </div>
   );
 }
 
@@ -987,6 +1103,7 @@ export function ChatInput({
   modeSaving,
   autoFocus,
   agents,
+  currentAgentId,
   skills,
   initialSkills,
   onSkillsChange,
@@ -995,6 +1112,8 @@ export function ChatInput({
   onTextChange,
   initialHandoffTargetId,
   onHandoffTargetChange,
+  initialPendingModelRef,
+  onPendingModelChange,
   modelAuthDead = false,
   onOpenModels,
   onRetryModelAuth,
@@ -1096,6 +1215,8 @@ export function ChatInput({
   autoFocus?: boolean;
   /** Agent list of the current Project: the `/agent` command's candidates (without any, the command isn't offered). */
   agents: AgentSummary[];
+  /** The Agent this composer already belongs to (the Session's, or the draft's selection): marked as the current entry in the `/agent` picker. */
+  currentAgentId?: string;
   /**
    * Skills installed on the current Agent (in session state, fetched by chat-page keyed on the
    * Session's Agent; in draft state, fetched by draft-view keyed on the selected Agent; a failed
@@ -1126,6 +1247,15 @@ export function ChatInput({
   initialHandoffTargetId?: string;
   /** Callback when the staged handoff target changes (picked/removed; the clear after a successful send does not call back, same as onTextChange). */
   onHandoffTargetChange?: (agentId: string | null) => void;
+  /**
+   * Draft restore: the staged `/model` switch target (resolved once models are ready; discarded
+   * when that model is gone or is the one this session already runs). Cached for the same
+   * reason as the handoff target — the composer text survives an unmount, so its chip must too,
+   * or Enter would post the message to the current session on the old model.
+   */
+  initialPendingModelRef?: ModelRefDto;
+  /** Callback when the staged model switch changes (picked/removed; the clear after a successful send does not call back, same as onTextChange). */
+  onPendingModelChange?: (ref: ModelRefDto | null) => void;
   /**
    * Session state: the Session's model credentials failed authentication (abort with
    * status "auth") and the Project's credentials have not been updated since (the parent
@@ -1171,9 +1301,10 @@ export function ChatInput({
   const [upwardMaxH, setUpwardMaxH] = useState<number>();
   // Staged handoff target from /agent (chip, fixed at the front of the input); only one allowed, picking again replaces it directly.
   const [target, setTarget] = useState<AgentSummary | null>(null);
-  // Staged model switch from /model (chip too): transient UI state — unlike the handoff target
-  // it is deliberately NOT cached in the draft, since a fork of *this* session only makes sense
-  // for as long as the composer is on screen.
+  // Staged model switch from /model (chip too), cached in the draft exactly like the handoff
+  // target: the composer's text is cached and this component is keyed by session id, so a chip
+  // kept only in component state would disappear on a session switch while the text it belongs
+  // to came back — and Enter would then post that text to the current session on the old model.
   const [pendingModel, setPendingModel] = useState<ModelInfo | null>(null);
   // Selected skills (dropdown checklist, multi-select): initial value comes from draft restore (quick-invoke pre-selection), cleared on successful send.
   const [selectedSkills, setSelectedSkills] = useState<string[]>(initialSkills ?? []);
@@ -1201,6 +1332,18 @@ export function ChatInput({
     goalBudget !== null && goalBudget !== UNLIMITED_BUDGET
       ? S.chat.goalBudgetValue(humanizeTokens(goalBudget))
       : S.chat.goalBudgetUnlimited;
+  /**
+   * Where a send with a staged chip would go — and, for a `/model` fork, whether it may go at
+   * all right now (see stagedSendRoute): a fork branches a NEW session off this session's
+   * Trace, so it waits for the session to be idle. Both the eligibility below and the send path
+   * read this one value, so the button and what the button does can't disagree.
+   */
+  const stagedRoute = stagedSendRoute({
+    handoffTarget: target !== null,
+    pendingModel: pendingModel !== null,
+    canSwitchModel: onSwitchModel !== undefined,
+    sessionBusy: running || compacting,
+  });
   // Sending is also allowed with only a staged switch chip (/agent or /model) or skills selected
   // and no text: a handoff's first message may be just a [handoff_from] source block, and the
   // empty-text fallbacks fill in the rest (S.chat.skillsAutoMessage with skills selected,
@@ -1280,12 +1423,13 @@ export function ChatInput({
         setTarget(null);
         onHandoffTargetChange?.(null);
         setPendingModel(null);
+        onPendingModelChange?.(null);
         // Images can't ride a goal (the server rejects non-text goal input): clear any already
         // attached, or canSend would stay silently false with the objective looking ready.
         setImages([]);
       }
     },
-    [onHandoffTargetChange],
+    [onHandoffTargetChange, onPendingModelChange],
   );
 
   // Mid-run steering: while running, Enter/send queues plain text for the running agent
@@ -1318,12 +1462,16 @@ export function ChatInput({
   const followUpMode = steerMode === "followup" && onQueueFollowUp !== undefined;
   // A follow-up is a full normal message: the whole draft (text / images / skills / a staged
   // switch) is eligible, same content rule as canSend.
+  // `stagedRoute !== "blocked"`: a staged model fork is never eligible mid-run — the follow-up
+  // path composes the whole draft and then hands it to onSwitchModel rather than to the queue,
+  // so without this gate Enter would fork off a Trace that is still being written.
   const canFollowUp =
     running &&
     !busy &&
     !goalOn &&
     !modelAuthDead &&
     followUpMode &&
+    stagedRoute !== "blocked" &&
     (text.trim().length > 0 ||
       images.length > 0 ||
       target !== null ||
@@ -1466,9 +1614,12 @@ export function ChatInput({
   // time — the slash menu that opens them is suppressed while either is up.
   useEffect(() => {
     if (!modelSwitchOpen && !agentSwitchOpen) return;
+    // Dismissing the panel puts the caret back where the user was typing: the picker's search
+    // box stole the focus when it opened, and without this it would be left on <body>.
     const closeAll = () => {
       setModelSwitchOpen(false);
       setAgentSwitchOpen(false);
+      textareaRef.current?.focus();
     };
     // globalThis.* event types: the React ones imported above would shadow the DOM ones here.
     const onClick = (e: globalThis.MouseEvent) => {
@@ -1476,7 +1627,11 @@ export function ChatInput({
       if (panel && !panel.contains(e.target as Node)) closeAll();
     };
     const onKey = (e: globalThis.KeyboardEvent) => {
-      if (e.key === "Escape") closeAll();
+      // `isComposing`: Escape while an IME candidate list is up means "drop the candidates",
+      // not "close the picker". Closing there would be unrecoverable — the command already
+      // consumed its `/agent` / `/model` token, so the user's remaining draft is all they have
+      // and the picker is the only way back to the pick they were making.
+      if (e.key === "Escape" && !e.isComposing) closeAll();
     };
     window.addEventListener("mousedown", onClick);
     window.addEventListener("keydown", onKey);
@@ -1486,21 +1641,32 @@ export function ChatInput({
     };
   }, [modelSwitchOpen, agentSwitchOpen]);
 
+  /** Stage a model as the /model chip (null = drop it), keeping the draft cache in step. */
+  const stageModel = (m: ModelInfo | null) => {
+    setPendingModel(m);
+    onPendingModelChange?.(m ? { provider: m.provider, modelId: m.modelId } : null);
+  };
+
   /**
    * /model pick: **stages** the model as a chip instead of switching on the spot — the user
    * keeps typing and Enter/Send performs the fork (see sendNormal), so the message that opens
-   * the new session is the one they meant to write. Picking the CURRENT model is a no-op (close
-   * only): forking a session onto the model it already runs is nothing but a lost conversation.
+   * the new session is the one they meant to write. Picking the CURRENT model **clears** the
+   * staging: forking a session onto the model it already runs is nothing but a lost
+   * conversation, so that pick can only mean "never mind, stay here" — leaving an earlier pick
+   * armed would fork onto it on the next Enter, the opposite of what was just asked for.
    * Exclusive with a staged handoff target and with goal mode (the latest pick wins).
    */
   const pickSwitchModel = (m: ModelInfo) => {
     setModelSwitchOpen(false);
-    if (sameModelRef(m, modelRef)) return;
-    setPendingModel(m);
+    textareaRef.current?.focus();
+    if (sameModelRef(m, modelRef)) {
+      stageModel(null);
+      return;
+    }
+    stageModel(m);
     setTarget(null);
     onHandoffTargetChange?.(null);
     setGoalOn(false);
-    textareaRef.current?.focus();
   };
 
   /**
@@ -1514,7 +1680,7 @@ export function ChatInput({
     setAgentSwitchOpen(false);
     setTarget(agent);
     onHandoffTargetChange?.(agent.agentId);
-    setPendingModel(null);
+    stageModel(null);
     setGoalOn(false);
     textareaRef.current?.focus();
   };
@@ -1525,7 +1691,7 @@ export function ChatInput({
       setTarget(null);
       onHandoffTargetChange?.(null);
     }
-    setPendingModel(null);
+    stageModel(null);
   };
 
   // The menus above are drawn upward (`bottom-full`) from the composer, so their ceiling is
@@ -1609,15 +1775,45 @@ export function ChatInput({
     onSkillsChange?.(next);
   }, [skills, selectedSkills, onSkillsChange]);
 
+  /**
+   * The two chips are restored from the draft cache by two effects that fire whenever their own
+   * list finishes loading — and `agents` and `models` are separate fetches, so either can land
+   * first, possibly after the user has already staged something by hand. `staged` is what keeps
+   * that from painting two chips at once (which sendNormal would silently resolve in favour of
+   * the handoff): a restore only fills an EMPTY slot. When the user has staged a chip or turned
+   * goal mode on in the meantime, that live intent is newer than the cached one and wins — the
+   * restore is dropped, not merely deferred, exactly as one pick drops the other.
+   *
+   * Only one of the two can be cached at a time anyway (each pick clears the other's cache
+   * entry), so in the ordinary case this changes nothing.
+   */
+  const staged = target !== null || pendingModel !== null || goalOn;
+
   // Restore the cached handoff target: resolved once by id when agents becomes ready for
   // the first time (discarded if stale); a chip the user manually removes afterward is not restored again.
   const handoffRestored = useRef(false);
   useEffect(() => {
     if (handoffRestored.current || !initialHandoffTargetId || agents.length === 0) return;
     handoffRestored.current = true;
+    if (staged) return;
     const restored = agents.find((a) => a.agentId === initialHandoffTargetId);
     if (restored) setTarget(restored);
-  }, [agents, initialHandoffTargetId]);
+  }, [agents, initialHandoffTargetId, staged]);
+
+  // Restore the cached /model switch target, mirroring the handoff restore above: resolved once
+  // against the model list when it first becomes ready. Dropped when that model is no longer
+  // configured, or when it is the model this session already runs on (the cache outlived a
+  // fork), since staging either would leave a chip that can only lose the conversation.
+  const pendingModelRestored = useRef(false);
+  useEffect(() => {
+    if (pendingModelRestored.current || !initialPendingModelRef || !models || models.length === 0) {
+      return;
+    }
+    pendingModelRestored.current = true;
+    if (staged || !onSwitchModel) return;
+    const restored = models.find((m) => sameModelRef(m, initialPendingModelRef));
+    if (restored && !sameModelRef(restored, modelRef)) setPendingModel(restored);
+  }, [models, initialPendingModelRef, modelRef, onSwitchModel, staged]);
 
   /**
    * The full normal send path (task / handoff / model switch), also the follow-up queue path
@@ -1659,7 +1855,12 @@ export function ChatInput({
     // Session: an agent target hands the draft to a NEW chat for that agent, a model target
     // forks this conversation onto that model. The two are mutually exclusive by construction
     // (picking either clears the other); the model chip only exists where onSwitchModel does.
-    const switchModel = onSwitchModel ? pendingModel : null;
+    // "blocked" = a staged fork while this Session is running or compacting: canSend/canFollowUp
+    // already refuse, but this path is deliberately not gated on run state (the steering
+    // completion race calls it directly), so refuse here too rather than fall through to `post`
+    // — that would deliver the message to the very Session the user was switching away from.
+    if (stagedRoute === "blocked") return;
+    const switchModel = stagedRoute === "model" ? pendingModel : null;
     // Empty text body: fall back to an auto-line rather than sending nothing — the localized
     // skills invocation when skills are selected, otherwise the model-switch line for a staged
     // switch. A handoff needs no fallback: its first message may legitimately be nothing but
@@ -1865,37 +2066,35 @@ export function ChatInput({
           so cancelling (Escape / click outside) keeps the remaining draft and cannot re-open
           the slash menu. A pick only stages the chip below — the switch happens on send. */}
       {modelSwitchOpen && models && (
-        <div
-          ref={modelSwitchRef}
-          style={{ maxHeight: upwardMaxH }}
-          className="anim-pop absolute bottom-full left-0 z-40 mb-1.5 flex w-80 max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900"
+        <SwitchPickerPanel
+          panelRef={modelSwitchRef}
+          maxHeight={upwardMaxH}
+          title={S.chat.switchModelTitle}
         >
-          <div className="border-b border-gray-100 px-3 pb-1.5 pt-0.5 text-xs font-semibold text-gray-500 dark:border-gray-800 dark:text-gray-400">
-            {S.chat.switchModelTitle}
-          </div>
           <ModelMenuList
             models={models}
             value={modelRef}
             {...(defaultModel !== undefined ? { defaultModel } : {})}
             onPick={pickSwitchModel}
           />
-        </div>
+        </SwitchPickerPanel>
       )}
 
-      {/* /agent handoff picker: same panel construction as the /model one above (title bar +
-          search box + capped list), and the same staged semantics — the pick becomes the
-          target chip, and sending is what hands the conversation over. */}
+      {/* /agent handoff picker: the same panel as the /model one above (title bar + search box
+          + capped list + keyboard navigation), and the same staged semantics — the pick becomes
+          the target chip, and sending is what hands the conversation over. */}
       {agentSwitchOpen && (
-        <div
-          ref={agentSwitchRef}
-          style={{ maxHeight: upwardMaxH }}
-          className="anim-pop absolute bottom-full left-0 z-40 mb-1.5 flex w-80 max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900"
+        <SwitchPickerPanel
+          panelRef={agentSwitchRef}
+          maxHeight={upwardMaxH}
+          title={S.chat.switchAgentTitle}
         >
-          <div className="border-b border-gray-100 px-3 pb-1.5 pt-0.5 text-xs font-semibold text-gray-500 dark:border-gray-800 dark:text-gray-400">
-            {S.chat.switchAgentTitle}
-          </div>
-          <AgentMenuList agents={agents} onPick={pickHandoffTarget} />
-        </div>
+          <AgentMenuList
+            agents={agents}
+            {...(currentAgentId !== undefined ? { currentAgentId } : {})}
+            onPick={pickHandoffTarget}
+          />
+        </SwitchPickerPanel>
       )}
 
       {images.length > 0 && (
@@ -1927,6 +2126,16 @@ export function ChatInput({
       {!vision && images.length > 0 && (
         <p className="anim-fade mb-1 text-xs text-gray-400 dark:text-gray-500">
           {S.chat.imagesAsPathHint}
+        </p>
+      )}
+
+      {/* A staged /model fork that has to wait for this Session to go idle (a run started from
+          outside the composer, or a compaction): the Send button is disabled either way, and
+          this is the line that says why — the chip stays staged and goes out on the next Enter
+          once the Session settles. */}
+      {stagedRoute === "blocked" && (
+        <p className="anim-fade mb-1 text-xs text-gray-400 dark:text-gray-500">
+          {S.chat.modelSwitchBusyHint}
         </p>
       )}
 
@@ -2162,7 +2371,7 @@ export function ChatInput({
                   type="button"
                   aria-label={S.chat.modelSwitchRemove}
                   onClick={() => {
-                    setPendingModel(null);
+                    stageModel(null);
                     textareaRef.current?.focus();
                   }}
                   className="shrink-0 rounded p-0.5 text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:hover:text-gray-200"

@@ -540,6 +540,7 @@ export function DraftView({
           modeSaving={false}
           autoFocus
           agents={agents}
+          {...(agentId ? { currentAgentId: agentId } : {})}
           skills={agentSkills}
           {...(cached.skills && cached.skills.length > 0 ? { initialSkills: cached.skills } : {})}
           onSkillsChange={onSkillsChange}

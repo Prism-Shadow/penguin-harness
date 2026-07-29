@@ -715,7 +715,7 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     contextUsage: "上下文占用",
     contextUnknown: "上下文占用：压缩后待下次请求回报",
     slashHint: "输入 / 使用命令",
-    /** /agent 交接：命令描述、拾取器标题、搜索框、无匹配提示、暂存目标的说明与移除按钮。 */
+    /** `/agent` handoff: command description, picker title, search box, no-match hint, and the staged target's description and remove button. */
     switchAgent: "交给其他 Agent，发送时开启新会话",
     switchAgentTitle: "选择 Agent",
     agentSearchPlaceholder: "搜索 Agent：id / 名称",
@@ -732,14 +732,16 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     skillsAutoMessage: (names: string[]): string => `使用 ${names.join("、")} 技能`,
     handoffFrom: (agent: string) => `由 ${agent} 的对话交接而来`,
     handoffBack: (title?: string) => (title ? `回到原对话：${title}` : "回到原对话"),
-    /** /model 切换：命令描述、拾取器标题、暂存目标的说明与移除按钮、切换来源横幅与空正文自动消息。 */
+    /** `/model` switch: command description, picker title, the staged target's description and remove button, the switch-origin banner, and the empty-body auto message. */
     switchModel: "切换模型，发送时开启新会话延续本对话",
     switchModelTitle: "切换模型",
     modelSwitchTargetTitle: (model: string) => `发送后换用 ${model} 延续本对话`,
     modelSwitchRemove: "移除切换模型",
+    /** Why Send is disabled with a model switch staged: the fork branches off a Trace this Session is still writing. */
+    modelSwitchBusyHint: "本轮结束后才能切换模型：新会话要从当前会话的记录接续",
     modelSwitchFrom: (prevModel?: string) =>
       prevModel ? `已切换模型（原为 ${prevModel}），延续原会话` : "已切换模型，延续原会话",
-    /** /model 切换且正文为空时自动发送的首条消息正文（与 skillsAutoMessage 同一约定）。 */
+    /** First message body auto-sent when `/model` is staged and the composer is empty (same convention as skillsAutoMessage). */
     modelSwitchAutoMessage: "换用新模型继续这段对话",
     scheduledFrom: (name: string) => `由定时任务「${name}」触发`,
     emptyGreeting: "开始一段新对话",
