@@ -792,6 +792,9 @@ When done, open index.html in a browser and self-test once.`,
     goalBudgetSave: "Save budget",
     goalRemove: "Exit goal mode",
     goalRoundBanner: (round: number): string => `Goal · round ${round}`,
+    /** Later rounds collapse the objective's images into this chip (round 1 shows them in full). */
+    goalRoundImages: (count: number): string =>
+      count === 1 ? "1 attached image" : `${count} attached images`,
     goalProgress: (rounds: number, tokens: string): string => `round ${rounds} · tokens ${tokens}`,
     goalStatus: {
       active: "running",

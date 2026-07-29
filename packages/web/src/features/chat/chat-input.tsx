@@ -1138,16 +1138,16 @@ export function ChatInput({
   // requires a text objective and a parseable budget — and an open editor showing an invalid
   // draft disables Send outright: combined with the editor refusing to close over an invalid
   // draft (below), no click sequence can fire a goal with a stale committed budget.
+  // Images may ride along (core folds them into the objective as `[attached image: …]` lines,
+  // so the reference survives every round), but they can't stand in for the text: an image
+  // alone states no objective.
   const canSend =
     !running &&
     !compacting &&
     !busy &&
     !modelAuthDead &&
     (goalOn
-      ? text.trim().length > 0 &&
-        images.length === 0 &&
-        goalBudget !== null &&
-        !(goalBudgetOpen && goalBudgetDraftInvalid)
+      ? text.trim().length > 0 && goalBudget !== null && !(goalBudgetOpen && goalBudgetDraftInvalid)
       : draftHasContent);
 
   /**
@@ -1580,11 +1580,16 @@ export function ChatInput({
     if (goalOn) {
       setBusy(true);
       try {
-        const ok = await onSend([{ type: "text", text: buildSkillsMessage(selectedSkills, t) }], {
-          budget: goalBudget!,
-        });
+        // Attached images ride the objective: core folds them into `[attached image: <path>]`
+        // lines inside it (unconditionally in goal mode), so the reference survives all rounds.
+        const goalInput: TaskInputPart[] = [
+          { type: "text", text: buildSkillsMessage(selectedSkills, t) },
+        ];
+        for (const url of images) goalInput.push({ type: "image_url", imageUrl: url });
+        const ok = await onSend(goalInput, { budget: goalBudget! });
         if (ok) {
           setText("");
+          setImages([]);
           setSelectedSkills([]);
           toggleGoal(false);
         }
@@ -2201,7 +2206,6 @@ export function ChatInput({
               type="file"
               accept="image/*"
               multiple
-              disabled={goalOn}
               className="hidden"
               onChange={onPickFiles}
             />
@@ -2217,11 +2221,11 @@ export function ChatInput({
                   icon: IMAGE_ICON,
                   label: S.chat.uploadImage,
                   // Without vision the images still send — as scratchpad file paths — so the
-                  // entry stays usable and the hint explains what will happen instead.
-                  desc: vision ? S.chat.uploadImageDesc : S.chat.imagesAsPathHint,
+                  // entry stays usable and the hint explains what will happen instead. Goal
+                  // mode always sends them that way (whatever the model), since the objective
+                  // is re-injected as text every round.
+                  desc: vision && !goalOn ? S.chat.uploadImageDesc : S.chat.imagesAsPathHint,
                   active: images.length > 0,
-                  // Goal mode is text-only (the objective is re-injected each round).
-                  disabled: goalOn,
                   onSelect: () => imageInputRef.current?.click(),
                 },
                 {

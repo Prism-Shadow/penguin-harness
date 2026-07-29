@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { parse as parseYaml } from "yaml";
 import {
   UNLIMITED_BUDGET,
+  Session,
   abortEvent,
   assistantText,
   buildSkillsMessage,
@@ -12,6 +13,7 @@ import {
   emptyTokenCounts,
   goalFilePath,
   goalFinishedOf,
+  imageUrlMessage,
   isGoalRoundInput,
   parseGoalMessage,
   stripConversationMarkers,
@@ -19,7 +21,15 @@ import {
   userText,
   withOrigin,
 } from "../src/index.js";
-import type { GoalOutcome, OmniMessage, TokenCounts } from "../src/index.js";
+import type {
+  EnvironmentInterface,
+  GoalOutcome,
+  LLMInterface,
+  LLMOutcome,
+  OmniMessage,
+  SessionMetaPayload,
+  TokenCounts,
+} from "../src/index.js";
 // The file protocol, prompt composition and the loop are internal to `session.run` (not part
 // of the SDK barrel); tests reach them through their modules directly.
 import { readGoalStatus, serializeGoalFile, writeGoalFile } from "../src/goal/goal-file.js";
@@ -387,5 +397,109 @@ describe("runGoalLoop", () => {
   it("sanity: userText/emptyTokenCounts helpers exist for hosts", () => {
     expect(userText("x").payload.text).toBe("x");
     expect(emptyTokenCounts().total).toBe(0);
+  });
+});
+
+/**
+ * The Session-level goal entry (`run(input, { goal })`): input validation and the image fold.
+ * Unlike a Prompt, a goal objective folds its images to `[attached image: <path>]` lines on
+ * EVERY model — it is re-injected as the text of each round's `[goal]` block, so an image
+ * message could not ride along, and re-sending the picture per round would bill the goal's own
+ * budget for it. See Session.runGoal.
+ */
+describe("Session.runGoal input", () => {
+  const PNG_DATA_URL =
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+  const fakeEnvironment: EnvironmentInterface = {
+    listTools: async () => [],
+    // eslint-disable-next-line require-yield
+    executeTool: async function* () {
+      throw new Error("not used");
+    },
+    toolPermission: () => undefined,
+  };
+
+  /** A model that answers each round with one final text, marking the goal complete on `completeOn`. */
+  function fakeLLM(completeOn: number): LLMInterface {
+    let round = 0;
+    return {
+      async *streamGenerate() {
+        round++;
+        if (round >= completeOn) await setStatus("complete");
+        yield assistantText(`round ${round} done`);
+        return { status: "completed" } satisfies LLMOutcome;
+      },
+    };
+  }
+
+  function makeSession(modelVision: boolean, completeOn = 1): Session {
+    const meta: SessionMetaPayload = {
+      session_id: "session-1",
+      provider: "custom",
+      model_id: "m1",
+      model_context_window: 1000,
+      system_prompt: "sp",
+      tools: [],
+      agent_state: dir,
+      workspace: dir,
+    };
+    return new Session({
+      meta,
+      llm: fakeLLM(completeOn),
+      environment: fakeEnvironment,
+      imagesDir: path.join(dir, "scratchpad", "session-1"),
+      modelVision,
+      goalFilePath: file,
+    });
+  }
+
+  /** Drives the goal and returns the text of each round's injected `[goal]` input. */
+  async function roundInputs(session: Session, input: OmniMessage[]): Promise<string[]> {
+    const texts: string[] = [];
+    for await (const msg of session.run(input, { goal: {} })) {
+      if (isGoalRoundInput(msg)) texts.push((msg.payload as { text: string }).text);
+    }
+    return texts;
+  }
+
+  it("folds an attached image into the objective and re-injects it every round — vision model included", async () => {
+    const session = makeSession(true, 2);
+    const rounds = await roundInputs(session, [
+      userText("Match this mockup"),
+      imageUrlMessage(PNG_DATA_URL),
+    ]);
+    expect(rounds).toHaveLength(2);
+    // The picture is on disk, and both rounds point at that same file.
+    const saved = await fs.readdir(path.join(dir, "scratchpad", "session-1"));
+    expect(saved).toHaveLength(1);
+    const line = `[attached image: ${path.join(dir, "scratchpad", "session-1", saved[0]!)}]`;
+    for (const text of rounds) expect(text).toContain(line);
+    // Round 2 re-injects the objective alone, so the line surviving there is the whole point:
+    // stripLeadingMarkerBlocks only removes LEADING blocks, and the fold appends at the end.
+    expect(parseGoalMessage(rounds[1]!)?.rest).toBe(`Match this mockup\n\n${line}`);
+    // No image message ever reaches the round input.
+    expect(rounds.every((t) => !t.includes("data:image"))).toBe(true);
+  });
+
+  it("folds on a model without vision too — same lines, same single code path", async () => {
+    const session = makeSession(false, 1);
+    const rounds = await roundInputs(session, [
+      userText("Match this mockup"),
+      imageUrlMessage(PNG_DATA_URL),
+    ]);
+    expect(rounds).toHaveLength(1);
+    expect(rounds[0]).toContain("[attached image: ");
+  });
+
+  it("rejects an objective with no text: an image alone states no goal", async () => {
+    const session = makeSession(true, 1);
+    await expect(roundInputs(session, [imageUrlMessage(PNG_DATA_URL)])).rejects.toThrow(
+      /non-empty text objective/,
+    );
+    // A blank text is no better.
+    await expect(
+      roundInputs(session, [userText("   "), imageUrlMessage(PNG_DATA_URL)]),
+    ).rejects.toThrow(/non-empty text objective/);
   });
 });

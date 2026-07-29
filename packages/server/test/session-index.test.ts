@@ -594,14 +594,20 @@ describe("session-index", () => {
       });
       expect(bad.status).toBe(400);
     }
-    // Image parts have no place in the re-injected objective.
-    const image = await api.post(`/api/sessions/${session.sessionId}/tasks`, {
+    // An image alone states no goal: the objective is re-injected as text every round.
+    const imageOnly = await api.post(`/api/sessions/${session.sessionId}/tasks`, {
+      input: [{ type: "image_url", imageUrl: "data:image/png;base64,aGk=" }],
+      goal: {},
+    });
+    expect(imageOnly.status).toBe(400);
+    // Alongside text they are accepted: core folds them into the objective as path lines.
+    const withText = await api.post(`/api/sessions/${session.sessionId}/tasks`, {
       input: [
         { type: "text", text: "objective" },
         { type: "image_url", imageUrl: "data:image/png;base64,aGk=" },
       ],
       goal: {},
     });
-    expect(image.status).toBe(400);
+    expect(withText.status).toBe(202);
   });
 });

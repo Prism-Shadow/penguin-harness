@@ -10,6 +10,7 @@ import {
   buildSkillsMessage,
   emptyTokenCounts,
   goalFinished,
+  imageUrlMessage,
   tokenUsage,
   userText,
 } from "@prismshadow/penguin-core";
@@ -154,17 +155,20 @@ describe("SessionManager.startGoal", () => {
    */
   function goalFakeSession(
     stream: (input: OmniMessage[]) => OmniMessage[],
-  ): RuntimeSession & { runOpts: RunOpts[] } {
+  ): RuntimeSession & { runOpts: RunOpts[]; runs: OmniMessage[][] } {
     const runOpts: RunOpts[] = [];
+    const runs: OmniMessage[][] = [];
     return {
       sessionId: ROW.sessionId,
       runOpts,
+      runs,
       toolPermission: () => "rw",
       generateTitle: async () => ({ title: null, usage: null }),
       compactability: () => "ok" as const,
       steer: () => false,
       skipReconnectWait: () => false,
       async *run(input: OmniMessage[], opts) {
+        runs.push(input);
         runOpts.push({
           ...(opts.thinkingLevel !== undefined ? { thinkingLevel: opts.thinkingLevel } : {}),
           ...(opts.goal !== undefined ? { goal: opts.goal } : {}),
@@ -248,6 +252,32 @@ describe("SessionManager.startGoal", () => {
     expect(published).toHaveLength(2);
     // Round 1 carries the caller's input verbatim — the [use_skills] block included.
     expect((published[0]!.payload as { text: string }).text).toContain("[use_skills]");
+  });
+
+  it("records the objective without the attached images: the display copy stays path-free", async () => {
+    // Attached images ride the input into core, which folds them into `[attached image: …]`
+    // lines inside the objective it re-injects each round. The objective recorded HERE is the
+    // display one — status card, goal_started, title material — and must keep the user's words
+    // only: `isPlainText` filtering the image messages out is what makes that true.
+    const session = goalFakeSession(() => [goalFinished("complete", 1, 10)]);
+    const manager = makeManager(session);
+    const events: ChannelEvent[] = [];
+    channels.get(ROW.sessionId).subscribe((e) => events.push(e));
+
+    await manager.startGoal(ROW.sessionId, {
+      input: [userText("Match this mockup"), imageUrlMessage("data:image/png;base64,aGk=")],
+      budget: -1,
+    });
+    await waitFor(() => manager.statusOf(ROW.sessionId) === "idle");
+
+    // The whole input still reaches core (the images included) — only the recorded copy differs.
+    expect(session.runs[0]).toHaveLength(2);
+    const started = events
+      .filter((e) => e.event === "server_event")
+      .map((e) => JSON.parse(e.data) as { type: string; objective?: string })
+      .find((e) => e.type === "goal_started");
+    expect(started?.objective).toBe("Match this mockup");
+    expect(goals.latestForSession(ROW.sessionId)?.objective).toBe("Match this mockup");
   });
 
   it("409s while a goal is running (mutual exclusion); runs without a goals repo", async () => {

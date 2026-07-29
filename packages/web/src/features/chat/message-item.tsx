@@ -201,11 +201,14 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
       const { text, images } = splitImageAttachments(skills ? skills.rest : afterScheduled);
       // Every goal round reads like a normal user message: the body in a user bubble with
       // the round notice beneath (the system IS re-sending the user's request each round).
+      // Objective images fold to path lines for every model in goal mode (the objective is
+      // re-injected as text each round), so `images` here is always the restored-from-path
+      // kind — and it rides EVERY round, which is why the banner collapses it after round 1.
       if (goalRound) {
         return (
           <>
             {skills && <SkillsBanner names={skills.skills} />}
-            <GoalRoundBanner round={goalRound.round} objective={text} />
+            <GoalRoundBanner round={goalRound.round} objective={text} images={images} />
           </>
         );
       }

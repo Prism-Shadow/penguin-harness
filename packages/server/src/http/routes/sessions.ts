@@ -438,16 +438,18 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     // follow-up keeps its level for its auto-start.
     const thinkingLevel = optionalEnum(body, "thinkingLevel", THINKING_LEVELS);
     if (goal) {
-      // Goal mode: the input must be plain non-empty text (its marker-stripped text becomes
-      // the objective, re-injected every round — images have no place in the protocol).
+      // Goal mode: the input must carry non-empty text — its marker-stripped text becomes the
+      // objective, re-injected every round, and an image alone states no goal. Images may ride
+      // along: core folds them into `[attached image: <path>]` lines inside the objective
+      // (unconditionally, vision model or not) so the reference survives every round.
       const input = parseTaskInput(body);
       const text = input
         .filter((m) => (m.payload as { type?: string }).type === "text")
         .map((m) => (m.payload as { text: string }).text)
         .join("\n")
         .trim();
-      if (!text || input.some((m) => (m.payload as { type?: string }).type !== "text")) {
-        throw badRequest("goal mode requires text-only input (the objective).");
+      if (!text) {
+        throw badRequest("goal mode requires a non-empty text objective.");
       }
       const { sessionId } = await deps.manager.startGoal(row.sessionId, {
         input,

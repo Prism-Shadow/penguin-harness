@@ -58,6 +58,9 @@ const META: SessionMetaPayload = {
   workspace: "/tmp/w",
 };
 
+/** Image-fold wiring every Session takes; these tests send no images, so it is never exercised. */
+const IMAGES = { imagesDir: "/tmp/scratchpad/session-title-1", modelVision: true } as const;
+
 describe("session-title", () => {
   it("generateTitleWithLLM: collects model text and usage, returns the sanitized result", async () => {
     const seen: string[] = [];
@@ -127,6 +130,7 @@ describe("session-title", () => {
   it("Session.generateTitle: sends via createBareLLM; returns null when no factory is provided", async () => {
     const withFactory = new Session({
       meta: META,
+      ...IMAGES,
       llm: fakeLLM([]),
       environment: fakeEnvironment,
       createBareLLM: () => fakeLLM([assistantText("Title A")]),
@@ -140,6 +144,7 @@ describe("session-title", () => {
 
     const withoutFactory = new Session({
       meta: META,
+      ...IMAGES,
       llm: fakeLLM([]),
       environment: fakeEnvironment,
     });
@@ -153,6 +158,7 @@ describe("session-title", () => {
     const seen: string[] = [];
     const session = new Session({
       meta: META,
+      ...IMAGES,
       llm: fakeLLM([thinkingMessage("thinking"), assistantText("answer body")]),
       environment: fakeEnvironment,
       createBareLLM: () => fakeLLM([assistantText("Title B")], { status: "completed" }, seen),
@@ -173,6 +179,7 @@ describe("session-title", () => {
     // No request is sent when no material has been collected (run was never called).
     const idle = new Session({
       meta: META,
+      ...IMAGES,
       llm: fakeLLM([]),
       environment: fakeEnvironment,
       createBareLLM: () => fakeLLM([assistantText("must not be produced")]),

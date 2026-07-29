@@ -492,7 +492,7 @@ export class SessionManager {
   async startGoal(
     sessionId: string,
     args: {
-      /** Round-1 input (text-only, route-validated); its marker-stripped text is the objective. */
+      /** Round-1 input (route-validated to carry text; images may ride along); its marker-stripped text is the objective. */
       input: OmniMessage[];
       budget: number;
       /** Optional per-goal thinking level: rides every round's Task (route-validated). */
@@ -508,6 +508,11 @@ export class SessionManager {
       // The objective is the user's own text (leading skill-invocation blocks stripped) —
       // the same derivation core records in GOAL.yaml; used for the run-state row, the
       // goal_started event, and as title material.
+      // `isPlainText` deliberately excludes attached images, so THIS objective is the display
+      // one: no `[attached image: <path>]` lines. Core folds the images into its own copy at
+      // run time (Session.runGoal), which is what every round re-injects. Do not "fix" the
+      // divergence by folding here too — the status card and the generated title would grow a
+      // string of absolute scratchpad paths.
       const text = args.input
         .filter(isPlainText("user"))
         .map((m) => m.payload.text)

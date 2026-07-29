@@ -771,6 +771,8 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     goalBudgetSave: "保存预算",
     goalRemove: "退出目标模式",
     goalRoundBanner: (round: number): string => `目标 · 第 ${round} 轮`,
+    /** Later rounds collapse the objective's images into this chip (round 1 shows them in full). */
+    goalRoundImages: (count: number): string => `${count} 张附图`,
     goalProgress: (rounds: number, tokens: string): string => `第 ${rounds} 轮 · tokens ${tokens}`,
     goalStatus: {
       active: "进行中",

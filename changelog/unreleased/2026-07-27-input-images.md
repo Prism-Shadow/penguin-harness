@@ -1,10 +1,18 @@
-# Mid-run steering carries images, and the action button is never a dead key
+# Images reach every input: mid-run steering, goal objectives, and no dead action button
 
 Steering — the message you send to an agent that is already running, delivered between turns as a `[user_steering]` user message — used to be text and nothing else. That was a limitation of the channel, not of the model: the very moment an image is most useful is mid-run, when the agent has just produced the wrong layout and the fastest correction is a screenshot. Steering now carries images the way a prompt does, and an image with no caption is a complete steering message on its own.
 
 Core queues the images with the text (`session.steer(text, images?)`) and delivers them as ordinary user image messages directly behind the `[user_steering]` block — the same shape a prompt uses, so the LLM client, the Trace, and replay all already know what to do with them. On a model without vision they fold into `[attached image: <path>]` lines **inside** the block, exactly as a prompt's images fold, because the block has to remain the whole text: a line appended after the closing tag would cost the message its steering identity and every render layer would read it as a new Task. A fold that fails on an unwritable scratchpad drops the images with a note rather than taking the running Task down with it.
 
 The renderers follow the same grouping rule they already apply to a prompt's images — everything up to the next non-image message belongs to the message in front of it. In the web app the images land inside the steering chip instead of becoming bubbles of their own, and neither the chat stream nor the Trace timeline opens a new Task for them; an images-only prompt sent later is still a genuine new turn.
+
+## A goal can be stated with a picture
+
+"Make the page match this mockup" is a goal, and a screenshot states it better than a paragraph — but a goal objective used to reject images outright. It accepts them now, with one deliberate difference from every other input: they are folded to scratchpad paths **whatever the model's vision**. A goal objective is re-injected as the text of every round's `[goal]` block, so an image cannot ride along as an image. Sending the picture each round would bill the goal's own token budget for it over and over; sending it in round 1 alone would leave every later round pointing at something compaction has since removed — a silent failure, since the objective still *reads* correct. As a path line it survives every round and every compaction, and the model spends tokens on it only when it actually looks. Text is still required: a picture alone states no objective, so a text-less goal input is refused.
+
+In the chat, round 1 shows the attachments in full under its bubble and later rounds collapse them into a one-line chip that expands on click — they really are in every round's input, but a twenty-round goal should not repeat the same picture twenty times.
+
+The three input paths now share one fold, bound once per Session, with each path deciding for itself whether to apply it: a prompt and a steering message fold only without vision, a goal objective always. The gate used to be implicit — "was the scratchpad directory configured" stood in for "does the model lack vision" — which worked only while there was exactly one rule to encode.
 
 ## The mid-run button stops being able to strand you
 

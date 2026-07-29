@@ -291,15 +291,15 @@ export class Agent {
       createLLM: rt.createLLM,
       createBareLLM: rt.createBareLLM,
       compaction: rt.compaction,
-      // Model doesn't support images: input images are written to the session scratchpad and their paths appended to the text (viewed via describe_image).
-      ...(modelEntry.vision === false
-        ? {
-            inputImagesDir: path.join(
-              scratchpadDir(this.state.root, this.state.projectId, this.state.agentId),
-              sessionId,
-            ),
-          }
-        : {}),
+      // Where an input image is written when it has to become a path line instead of riding
+      // the request as an image (viewed via describe_image / read_image). Always wired — which
+      // inputs fold is Session's per-call-site decision, driven by `modelVision`: without
+      // vision every Prompt and steering message folds; a goal objective folds either way.
+      imagesDir: path.join(
+        scratchpadDir(this.state.root, this.state.projectId, this.state.agentId),
+        sessionId,
+      ),
+      modelVision: modelEntry.vision !== false,
       // Goal mode's control file lives in the session scratchpad; the path is fixed per
       // Session, so it is wired here rather than passed per-run.
       goalFilePath: goalFilePath(
@@ -451,15 +451,15 @@ export class Agent {
       createLLM: rt.createLLM,
       createBareLLM: rt.createBareLLM,
       compaction: rt.compaction,
-      // Model doesn't support images: input images are written to the session scratchpad and their paths appended to the text (viewed via describe_image).
-      ...(modelEntry.vision === false
-        ? {
-            inputImagesDir: path.join(
-              scratchpadDir(this.state.root, this.state.projectId, this.state.agentId),
-              sessionId,
-            ),
-          }
-        : {}),
+      // Where an input image is written when it has to become a path line instead of riding
+      // the request as an image (viewed via describe_image / read_image). Always wired — which
+      // inputs fold is Session's per-call-site decision, driven by `modelVision`: without
+      // vision every Prompt and steering message folds; a goal objective folds either way.
+      imagesDir: path.join(
+        scratchpadDir(this.state.root, this.state.projectId, this.state.agentId),
+        sessionId,
+      ),
+      modelVision: modelEntry.vision !== false,
       // Goal mode's control file lives in the session scratchpad; the path is fixed per
       // Session, so it is wired here rather than passed per-run.
       goalFilePath: goalFilePath(
