@@ -65,6 +65,7 @@ import { resolveContextWindow } from "../../lib/context";
 import { useLocale } from "../../state/locale";
 import { Dropdown } from "../../components/ui/dropdown";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
+import { noAutofill } from "../../components/ui/input";
 import { SkillIcon } from "../skills/skill-icon-view";
 import { ZoomableImage } from "../../components/ui/image-zoom";
 import { ProviderLogo } from "../../components/ui/provider-logo";
@@ -280,6 +281,7 @@ function ModelMenuList({
           onChange={(e) => setQuery(e.target.value)}
           placeholder={S.models.searchPlaceholder}
           aria-label={S.models.searchPlaceholder}
+          {...noAutofill}
           className="w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-xs text-gray-700 placeholder:text-gray-400 focus:outline-none dark:text-gray-200 dark:placeholder:text-gray-500"
         />
       </div>
@@ -680,6 +682,7 @@ function SkillSelect({
           onChange={(e) => setQuery(e.target.value)}
           placeholder={S.chat.skillsSearchPlaceholder}
           aria-label={S.chat.skillsSearchPlaceholder}
+          {...noAutofill}
           className="w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-xs text-gray-700 placeholder:text-gray-400 focus:outline-none dark:text-gray-200 dark:placeholder:text-gray-500"
         />
       </div>
@@ -2022,6 +2025,7 @@ export function ChatInput({
                         placeholder={S.chat.goalBudgetPlaceholder}
                         aria-invalid={goalBudgetDraftInvalid}
                         aria-describedby="goal-budget-hint"
+                        {...noAutofill}
                         title={
                           goalBudgetDraftInvalid ? S.chat.goalBudgetInvalid : S.chat.goalBudgetHint
                         }

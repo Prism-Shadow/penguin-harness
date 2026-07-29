@@ -19,6 +19,7 @@
 import type {
   UsageBucket,
   UsageErrors,
+  UsageErrorsPage,
   UsageGroupBy,
   UsageGroupRow,
   UsageResponse,
@@ -32,7 +33,12 @@ import type {
 } from "../db/repos/usage.js";
 import { formatLocalDate, localDateMinusDays } from "../internal/dates.js";
 
-/** Number of most-recent entries kept in the error detail table. */
+/**
+ * Number of most-recent entries kept in the error detail table. Also the page size the whole
+ * feature runs on, but nothing needs to hard-code it: `errors.recent` is exactly this many rows
+ * whenever a second page exists, so the client derives its page size from the response instead
+ * of holding a constant that could drift out of step with this one.
+ */
 const ERROR_RECENT_N = 20;
 
 /** The three pricing buckets (usd_per_mtok convention), returned by the pricing lookup callback. */
@@ -58,6 +64,17 @@ export interface UsageQuery {
   provider?: string;
   modelId?: string;
   /** Whether to include unattributed errors: admin only (the route passes user.isAdmin), defaults to false. */
+  includeGlobalErrors?: boolean;
+}
+
+/** One page of the error detail table (see {@link UsageService.queryErrors}). */
+export interface UsageErrorsQuery {
+  offset: number;
+  limit: number;
+  from?: string;
+  to?: string;
+  agentId?: string;
+  /** Admin only: include errors with no Project attribution (see the ErrorsRepo file header). */
   includeGlobalErrors?: boolean;
 }
 
@@ -161,6 +178,34 @@ export class UsageService {
       errors: this.foldErrors(projectId, errorFilter),
       agentIds: this.usage.distinctAgentIds(projectId),
       models: this.usage.distinctModels(projectId),
+    };
+  }
+
+  /**
+   * One page of the error detail table, newest first. The dashboard's own response already
+   * carries the first page (`errors.recent`); this serves the "show me earlier ones" paging,
+   * where refetching the whole aggregate to move one page would be wasteful. `total` is the
+   * filtered row count, so the caller knows when it has reached the end.
+   *
+   * Takes the same filter the dashboard applies — date + agent, and admin-only visibility of
+   * unattributed errors — so a page never widens what the summary above it counted.
+   *
+   * Paging is by offset into a newest-first table that grows at its head, so errors recorded
+   * between two page requests shift every row down and a page can re-show rows already seen.
+   * Accepted deliberately: this is a diagnostic table read at a moment in time, not a feed to
+   * be walked exhaustively, and keying off the newest row's id would cost a cursor the caller
+   * has no other use for.
+   */
+  queryErrors(projectId: string, q: UsageErrorsQuery): UsageErrorsPage {
+    const f: ErrorFilter = {
+      ...(q.agentId !== undefined ? { agentId: q.agentId } : {}),
+      ...(q.from !== undefined ? { from: q.from } : {}),
+      ...(q.to !== undefined ? { to: q.to } : {}),
+      ...(q.includeGlobalErrors === true ? { includeGlobal: true } : {}),
+    };
+    return {
+      items: this.errors.recent(projectId, f, q.limit, q.offset),
+      total: this.errors.summary(projectId, f).total,
     };
   }
 

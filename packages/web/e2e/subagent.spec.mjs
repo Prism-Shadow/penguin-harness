@@ -180,6 +180,21 @@ test("subagent renders as a chip; the panel shows the call graph and child conve
   await expect(filesToggle).toHaveAttribute("aria-expanded", "false");
   await expect(agentsHeading).toBeInViewport();
   await expect(filesHeading).not.toBeInViewport();
+  // The closed panel must leave NOTHING behind: its clipping window is zero-width, and with
+  // border-box sizing a divider there would still paint its 1px right beside the open panel —
+  // a hairline, the resize gutter, then the real divider, which reads as a second, empty panel.
+  // Polled: the width transition is still running right after the toggle click.
+  const shellWidth = (heading) =>
+    heading.evaluate((el) => el.closest(".overflow-hidden").getBoundingClientRect().width);
+  await expect
+    .poll(() => shellWidth(filesHeading), {
+      message: "closed panel occupies no width, divider included",
+    })
+    .toBe(0);
+  expect(
+    await shellWidth(agentsHeading),
+    "open panel is the only one taking width",
+  ).toBeGreaterThan(0);
 
   // --- Historical topology: a plain follow-up Task makes the first turn's graph historical
   // (the boundary itself — the panel closing on a new Task — is covered by the reload-free

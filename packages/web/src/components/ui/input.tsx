@@ -48,6 +48,39 @@ export const errorClass =
   "!border-red-400 !bg-red-50 hover:!border-red-500 focus:!border-red-500 focus:!ring-red-400/30 " +
   "dark:!border-red-800 dark:!bg-red-950/40 dark:hover:!border-red-700 dark:focus:!border-red-600";
 
+/**
+ * Autofill policy: a control opts OUT unless its caller declares a real credential role.
+ * Almost every field in this app holds an API key, a model id, a URL, a directory or a
+ * price, and the browser's saved-login heuristics kept dropping the account's username and
+ * password into them (a dialog's fields are unowned — no <form> element — so the browser
+ * groups them with everything else on the page and picks a "username" box on its own).
+ * Only login.tsx and the password dialogs pass a role ("username" / "current-password" /
+ * "new-password"), and those keep the browser's help.
+ *
+ * `autocomplete="off"` alone does NOT cover a password box: Chrome and Safari ignore it
+ * there and offer the saved login anyway. An opted-out SECRET field therefore goes out as
+ * `new-password` — the one value password managers read as "not the account password" —
+ * and both cases carry the manager-extension opt-outs (1Password / LastPass / Bitwarden /
+ * Dashlane), which read their own attributes rather than `autocomplete`.
+ */
+export function autofillProps(autoComplete: string | undefined, secret: boolean) {
+  // A declared role (anything but the opt-out) is the caller's decision: pass it through untouched.
+  if (autoComplete !== undefined && autoComplete !== "off") return { autoComplete };
+  return {
+    autoComplete: secret ? "new-password" : "off",
+    "data-1p-ignore": "",
+    "data-lpignore": "true",
+    "data-bwignore": "",
+    "data-form-type": "other",
+  };
+}
+
+/**
+ * The same opt-out as a spreadable constant, for the handful of raw `<input>`s that don't go
+ * through Input (menu search boxes, the Workspace path editor): `{...noAutofill}`.
+ */
+export const noAutofill = autofillProps(undefined, false);
+
 export function Input({
   label,
   hint,
@@ -56,6 +89,7 @@ export function Input({
   required,
   size = "base",
   className,
+  autoComplete,
   ...rest
 }: InputProps) {
   const bad = Boolean(error) || Boolean(invalid);
@@ -70,6 +104,9 @@ export function Input({
         aria-invalid={bad ? true : undefined}
         aria-required={required || undefined}
         aria-describedby={error ? errorId : undefined}
+        // Secret while masked; PasswordInput's reveal toggle flips the type to text, and the
+        // opt-out that matters was already read from the password state.
+        {...autofillProps(autoComplete, rest.type === "password")}
         {...rest}
       />
     </Field>
@@ -89,7 +126,7 @@ export interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElemen
 }
 
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function Textarea(
-  { label, hint, error, invalid, required, mono, size = "base", className, ...rest },
+  { label, hint, error, invalid, required, mono, size = "base", className, autoComplete, ...rest },
   ref,
 ) {
   const bad = Boolean(error) || Boolean(invalid);
@@ -102,6 +139,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
         aria-invalid={bad ? true : undefined}
         aria-required={required || undefined}
         aria-describedby={error ? errorId : undefined}
+        {...autofillProps(autoComplete, false)}
         {...rest}
       />
     </Field>
