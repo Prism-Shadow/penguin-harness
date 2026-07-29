@@ -1,23 +1,25 @@
 /**
  * Tool call card: collapses to a single line by
- * default — status icon + tool name + duration (a live-ticking timer while running) + status
- * badge; clicking expands full arguments and output; a bound subagent renders as a full-width
- * shortcut row below them regardless of collapsed state (the child conversation itself lives
- * in the subagents side panel; the row carries its own pending-approval dot, so the card no
- * longer needs to auto-expand for nested approvals).
+ * default — status icon + tool name + duration (a live-ticking timer while running) + a plain
+ * `[stop reason]` marker when the step did not finish cleanly; clicking expands full arguments
+ * and output; a bound subagent renders as a full-width shortcut row below them regardless of
+ * collapsed state (the child conversation itself lives in the subagents side panel; the row
+ * carries its own pending-approval dot, so the card no longer needs to auto-expand for nested
+ * approvals).
  *
  * Duration accounting = **argument-generation segment + execution segment** (excludes time
  * spent waiting on human approval): the model streaming out arguments token by token is often
  * slower than the tool call itself, so reporting only the execution segment would badly
  * understate this step's cost. While waiting on approval, the already-settled generation
- * segment is shown, with a separate "Waiting for approval" badge attached.
+ * segment is shown; the wait itself is marked by the amber hourglass icon alone, since the
+ * approval block below the row is always on screen and names the tool and its arguments.
  */
 import { useRef, useState } from "react";
 import { S } from "../../lib/strings";
 import { humanizeDuration } from "../../lib/format";
+import type { StopReason } from "@prismshadow/penguin-core/omnimessage";
 import { approvalKey } from "../../lib/omni/stream-model";
 import type { ToolCallItem } from "../../lib/omni/stream-model";
-import { Badge, stopReasonTone } from "../../components/ui/badge";
 import { Chevron } from "../../components/ui/chevron";
 import { ZoomableImage } from "../../components/ui/image-zoom";
 import { StatusIcon } from "../../components/ui/status-icon";
@@ -38,6 +40,18 @@ const DESCRIBED_TOOLS = new Set([
 
 /** The three file tools: previewed by their `file_path` argument. */
 const FILE_TOOLS = new Set(["read_file", "edit_file", "write_file"]);
+
+/**
+ * Colour for the row's `[stop reason]` marker: amber for a user interruption, red for a real
+ * failure. StatusIcon has a single failure tone, so the icon alone cannot carry this — without
+ * the marker an aborted call reads exactly like a failed one. Mirrors the warning-vs-error
+ * split `stopReasonTone` gives the Badge used elsewhere (Trace viewer, composer).
+ */
+function stopReasonToneClass(stopReason: string): string {
+  return stopReason === "aborted"
+    ? "text-amber-600 dark:text-amber-400"
+    : "text-red-600 dark:text-red-400";
+}
 
 /**
  * Shortens a path for one-line display: at most one parent directory plus the filename
@@ -200,9 +214,9 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
       }`
     : null;
   // A user denial reports stop_reason "aborted" on the output it feeds back; that abort IS the
-  // decision, not an independent outcome — the icon reads "Denied", and no separate "aborted"
-  // badge repeats it. A user-abort of a RUNNING tool carries no deny decision and keeps its own
-  // "aborted" marker (the stop-reason branch below).
+  // decision, not an independent outcome — the icon reads "Denied", and no separate `[aborted]`
+  // marker repeats it. A user-abort of a RUNNING tool carries no deny decision, so the label
+  // falls through to its stop reason below.
   const deniedByUser = item.decision === "deny" && item.outputStopReason === "aborted";
   const stateLabel = pending
     ? S.chat.approvalWaiting
@@ -213,10 +227,38 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
         : deniedByUser
           ? (decisionText ?? undefined)
           : (item.outputStopReason ?? item.callStopReason);
+  // Stop reasons to spell out on the row. The two segments frequently carry the SAME value —
+  // a call that closed undispatched copies its own reason onto the output it will never
+  // produce (settleUndispatchedCall) — so equal values collapse to one marker instead of the
+  // `[malformed][malformed]` the two old pills rendered side by side.
+  const outcomes = [
+    ...new Set(
+      [item.callStopReason, deniedByUser ? undefined : item.outputStopReason].filter(
+        (r): r is StopReason => r !== undefined && r !== "completed",
+      ),
+    ),
+  ];
 
   return (
     <div>
-      {/* Collapsed row: status icon + tool name + total duration (generation + execution, excluding approval wait). Expand chevron on the right. */}
+      {/* Collapsed row: status icon + tool name + total duration (generation + execution,
+          excluding approval wait) + the stop reason when the step did not finish cleanly.
+          Expand chevron on the right.
+
+          The stop reason used to render as a padded Badge pill, which competed for width on a
+          phone. It is now the same plain `[reason]` marker the thinking row directly above it
+          already uses (thinking-block.tsx) — cheap enough for 390px, and the two rows in a
+          work group finally read alike. Dropping it entirely and leaving the icon to carry the
+          outcome does not work: the icon has one failure tone, so an interrupted call would
+          look identical to a hard failure, and a call that never ran — malformed, or closed
+          undispatched — has no output block to expand into, so its title/aria-label would be
+          the only explanation anywhere, out of reach on touch. The Trace viewer still shows
+          the raw stop reason per event, which is where the literal value belongs.
+
+          A pending call gets no "awaiting approval" text either: the approval block below is
+          always on screen while one is pending — it names the tool, shows the arguments and
+          carries the Allow/Deny buttons — so the row would only repeat it. The amber hourglass
+          StatusIcon (labeled) marks the wait, at every breakpoint. */}
       <button
         type="button"
         aria-expanded={open}
@@ -256,21 +298,14 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
             )
           ) : null}
         </span>
-        {/* Below sm only the amber hourglass StatusIcon (labeled) marks the wait: the text would
-            crowd the one-line row out of a phone's width. */}
-        {pending && (
-          <span className="hidden shrink-0 font-mono text-xs text-amber-600 sm:inline dark:text-amber-400">
-            {S.chat.approvalWaiting}
+        {outcomes.map((reason) => (
+          <span
+            key={reason}
+            className={`shrink-0 font-mono text-xs ${stopReasonToneClass(reason)}`}
+          >
+            [{reason}]
           </span>
-        )}
-        {item.callStopReason && item.callStopReason !== "completed" && (
-          <Badge tone={stopReasonTone(item.callStopReason)}>{item.callStopReason}</Badge>
-        )}
-        {/* Writing "aborted" next to the Denied pill would state the same outcome twice — see
-            deniedByUser above. */}
-        {item.outputStopReason && item.outputStopReason !== "completed" && !deniedByUser && (
-          <Badge tone={stopReasonTone(item.outputStopReason)}>{item.outputStopReason}</Badge>
-        )}
+        ))}
         <span className="min-w-0 flex-1" />
         {/* Expand indicator on the right */}
         <Chevron open={open} className="text-gray-400" />
