@@ -8,7 +8,7 @@ The chip renders the settled cross-Task total plus the running Task's wall clock
 
 The anchor is now back-dated, once the replay finishes, by the span the Trace already shows, so the ticking value resumes where it left off. Only differences between server timestamps are applied to the local clock, which keeps a client/server clock offset out of the result and lets the chip keep ticking smoothly. A live stream is unaffected: it pushes one message at a time with the real current clock, where that span is still zero when the Task opens.
 
-The span reaches the last *recorded* event rather than the present moment, so a reload landing inside a quiet stretch — a long tool execution, a long Request — resumes that much short and catches up when the Task settles. It is a floor, never an overshoot, and it never affects the settled figure.
+That back-dated origin is a floor rather than the whole figure, because it reaches the last *recorded* event: while an event is still in flight — a tool executing, a Request streaming, a compaction running — nothing has been appended to the Trace since it began, and a reload landing there would show none of the time it has taken so far. The chip therefore counts from whichever is earlier of that origin and the Task's first message timestamp in server time — the same basis every other running item on the page already ticks from, including running tool and thinking cards and the subagent topology's running nodes. The event in flight is covered, and since the earlier origin is the larger elapsed, a client clock running behind the server's falls back to the skew-free floor rather than shortening the figure.
 
 ## A settled round reads the same live and replayed
 
