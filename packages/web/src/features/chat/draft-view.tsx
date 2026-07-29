@@ -683,8 +683,8 @@ const versionBadgeClass =
   "ml-1.5 inline-block rounded-full bg-[var(--accent-bg)] px-1.5 align-super text-[10px] font-medium leading-4 text-[var(--accent-fg)] transition-opacity duration-150 hover:opacity-80";
 
 /**
- * Quiet version line under the brand subtitle: `vX.Y.Z · 最近更新日期 7 月 26 日` /
- * `… · Last updated Jul 26`. The product name is not repeated here — the brand wordmark
+ * Quiet version line under the brand subtitle: `vX.Y.Z · Last updated Jul 26`
+ * (localized per dictionary). The product name is not repeated here — the brand wordmark
  * sits directly above, and the sidebar's version footer is bare `vX.Y.Z` too. The date is
  * the running version's release
  * date, stamped into core's BUILD_DATE at build time — displayed as-is, no network;

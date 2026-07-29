@@ -36,7 +36,7 @@ export function parseAuthors(raw: string | undefined): string[] {
   return authors.length > 0 ? authors : [DEFAULT_AUTHOR];
 }
 
-/** Join authors for display: 顿号 in Chinese, comma otherwise. */
+/** Join authors for display: an ideographic comma in Chinese, an ASCII comma otherwise. */
 export function formatAuthors(authors: string[], locale: Locale): string {
   return authors.join(locale === "zh" ? "、" : ", ");
 }
@@ -82,7 +82,8 @@ export function comparePosts(
 }
 
 /**
- * Format a YYYY-MM-DD post date for display ("July 20, 2026" / "2026年7月20日").
+ * Format a YYYY-MM-DD post date for display (e.g. "July 20, 2026" in English, the
+ * year-month-day form in Chinese).
  * Parsed as UTC and formatted in UTC so the calendar day never shifts with the
  * viewer's timezone; unexpected input falls back to the raw string.
  */

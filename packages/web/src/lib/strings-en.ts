@@ -21,7 +21,7 @@ export const en: Strings = {
     benchmark: "Evaluation Center",
     // Collapsed-rail tooltips (product-specified wording; new chat reuses chat.newSessionMenu, the other pages reuse the page names above).
     lastConversation: "Last conversation",
-    // Deliberately equal to nav.agents: the key exists for the zh-only wording difference (智能体 vs 智能体仓库).
+    // Deliberately equal to nav.agents: the key exists only because the zh dictionary words the rail entry differently ("Agents" vs "Agent library").
     railAgents: "Agents",
     collapseSidebar: "Collapse sidebar",
     expandSidebar: "Expand sidebar",

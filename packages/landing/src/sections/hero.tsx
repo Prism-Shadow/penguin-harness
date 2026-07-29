@@ -1,7 +1,7 @@
 /**
  * Hero: enlarged logo + product name, the slogan inside the pill badge, then the
  * one-line headline whose rotating word crossfades through a gaussian blur
- * (Desktop <-> Server / 桌面 <-> 服务器), three keywords, the install one-liner
+ * (Desktop <-> Server, localized per dictionary), three keywords, the install one-liner
  * and stats. The rotating word is a stacked inline-grid so line width never jumps.
  */
 import { Fragment, useEffect, useState } from "react";

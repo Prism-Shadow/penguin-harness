@@ -100,21 +100,21 @@ describe("title-generator", () => {
       CTX,
       fakeSession(
         {
-          title: "Tailwind 主题配置",
+          title: "Tailwind theme setup",
           usage: { cache_read: 1, cache_write: 2, output: 3, total: 6 },
         },
         calls,
       ),
-      { fallbackText: "解释一下 @theme" },
+      { fallbackText: "explain @theme" },
     );
     await waitFor(() => sessions.findById(ROW.sessionId)?.title !== null);
 
-    expect(sessions.findById(ROW.sessionId)?.title).toBe("Tailwind 主题配置");
+    expect(sessions.findById(ROW.sessionId)?.title).toBe("Tailwind theme setup");
     // No material override passed: generateTitle is called with no argument, and the core Session gathers its own material.
     expect(calls.args[0]).toBeUndefined();
     expect(
       serverEvents(events).some(
-        (e) => e.type === "session_title" && e.title === "Tailwind 主题配置",
+        (e) => e.type === "session_title" && e.title === "Tailwind theme setup",
       ),
     ).toBe(true);
     // usage is converted into token_usage and handed to the recorder (metered normally, same as a real call).
@@ -125,14 +125,14 @@ describe("title-generator", () => {
   it("material override (sub-session scenario) is passed to generateTitle verbatim", async () => {
     const calls = { count: 0, args: [] as unknown[] };
     const gen = makeGenerator();
-    const material = { userText: "子会话 prompt", assistantText: "子会话回答" };
-    gen.maybeGenerate(CTX, fakeSession({ title: "子标题", usage: null }, calls), {
-      fallbackText: "子会话 prompt",
+    const material = { userText: "sub-session prompt", assistantText: "sub-session reply" };
+    gen.maybeGenerate(CTX, fakeSession({ title: "Sub title", usage: null }, calls), {
+      fallbackText: "sub-session prompt",
       material,
     });
     await waitFor(() => sessions.findById(ROW.sessionId)?.title !== null);
     expect(calls.args[0]).toEqual({ material });
-    expect(sessions.findById(ROW.sessionId)?.title).toBe("子标题");
+    expect(sessions.findById(ROW.sessionId)?.title).toBe("Sub title");
   });
 
   it("an existing title is never regenerated (no one-shot request issued)", async () => {
@@ -155,11 +155,11 @@ describe("title-generator", () => {
         { title: null, usage: { cache_read: 0, cache_write: 0, output: 1, total: 1 } },
         calls,
       ),
-      { fallbackText: "配置 Tailwind 主题\n第二行" },
+      { fallbackText: "Configure the Tailwind theme\nsecond line" },
     );
     // Fallback = the material's first non-empty line, sanitized and truncated, guaranteeing a title is always produced.
     await waitFor(() => sessions.findById(ROW.sessionId)?.title !== null);
-    expect(sessions.findById(ROW.sessionId)?.title).toBe("配置 Tailwind 主题");
+    expect(sessions.findById(ROW.sessionId)?.title).toBe("Configure the Tailwind theme");
     // The one-off request's usage is still recorded normally.
     await waitFor(() => recorded.length > 0);
   });
@@ -168,21 +168,21 @@ describe("title-generator", () => {
     const calls = { count: 0, args: [] as unknown[] };
     const gen = makeGenerator();
     gen.maybeGenerate(CTX, fakeSession({ title: null, usage: null }, calls), {
-      fallbackText: "[use_skills]\nskills: web-design\n[/use_skills]\n做一个落地页",
+      fallbackText: "[use_skills]\nskills: web-design\n[/use_skills]\nBuild a landing page",
     });
     await waitFor(() => sessions.findById(ROW.sessionId)?.title !== null);
     // Not "[use_skills]" — the marker block is removed before the first line is taken.
-    expect(sessions.findById(ROW.sessionId)?.title).toBe("做一个落地页");
+    expect(sessions.findById(ROW.sessionId)?.title).toBe("Build a landing page");
   });
 
   it("fallback also strips the legacy angle-bracket <use_skills> block (material from old Traces)", async () => {
     const calls = { count: 0, args: [] as unknown[] };
     const gen = makeGenerator();
     gen.maybeGenerate(CTX, fakeSession({ title: null, usage: null }, calls), {
-      fallbackText: "<use_skills>\nskills: web-design\n</use_skills>\n做一个落地页",
+      fallbackText: "<use_skills>\nskills: web-design\n</use_skills>\nBuild a landing page",
     });
     await waitFor(() => sessions.findById(ROW.sessionId)?.title !== null);
-    expect(sessions.findById(ROW.sessionId)?.title).toBe("做一个落地页");
+    expect(sessions.findById(ROW.sessionId)?.title).toBe("Build a landing page");
   });
 
   it("LLM returns null and the fallback material is blank → the title stays NULL (retryable next time)", async () => {

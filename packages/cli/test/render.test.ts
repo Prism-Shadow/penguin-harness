@@ -147,12 +147,14 @@ describe("StreamRenderer", () => {
       partialToolCall({
         eventType: "delta",
         name: "",
-        arguments: '"description":"列出当前目录的文件"}',
+        arguments: '"description":"List files in the current directory"}',
         toolCallId: "c9",
       }),
     );
     r.handle(partialToolCall({ eventType: "stop", name: "", toolCallId: "c9" }));
-    expect(stripAnsi(text())).toBe("[tool-c9] exec_command <- 列出当前目录的文件 ($ ls -la)\n");
+    expect(stripAnsi(text())).toBe(
+      "[tool-c9] exec_command <- List files in the current directory ($ ls -la)\n",
+    );
   });
 
   it("streams the command live when the schema has no description argument", () => {
