@@ -7,7 +7,7 @@
  */
 import { S } from "../../lib/strings";
 import { formatDateTime } from "../../lib/format";
-import type { ScheduledOrigin } from "./agent-mentions";
+import type { ScheduledOrigin } from "./agent-handoff";
 
 export function ScheduledBanner({ origin }: { origin: ScheduledOrigin }) {
   return (

@@ -731,8 +731,12 @@ When done, open index.html in a browser and self-test once.`,
     contextUsage: "Context usage",
     contextUnknown: "Context usage: unknown until the next request reports it",
     slashHint: "Type / for commands",
-    mentionHint: "@ to handoff to another agent",
-    mentionRemove: "Remove @ target",
+    switchAgent: "Hand off to another agent — opens a new session on send",
+    switchAgentTitle: "Choose agent",
+    agentSearchPlaceholder: "Search agents: id / name",
+    agentsNoMatch: "No matching agents",
+    handoffTargetTitle: (agent: string) => `Sending hands this conversation to ${agent}`,
+    handoffRemove: "Remove handoff target",
     skillsSelect: "Skills",
     skillRemove: "Remove skill",
     skillsSearchPlaceholder: "Search skills",
@@ -743,8 +747,12 @@ When done, open index.html in a browser and self-test once.`,
     handoffFrom: (agent: string) => `Handed off from ${agent}'s conversation`,
     handoffBack: (title?: string) =>
       title ? `Back to the original conversation: ${title}` : "Back to the original conversation",
-    switchModel: "Switch model — continue this conversation in a new session",
+    switchModel: "Switch model — on send, continues this conversation in a new session",
     switchModelTitle: "Switch model",
+    modelSwitchTargetTitle: (model: string) => `Sending continues this conversation on ${model}`,
+    modelSwitchRemove: "Remove model switch",
+    modelSwitchBusyHint:
+      "The model switch waits for this turn to finish: the new session continues from this session's record",
     modelSwitchFrom: (prevModel?: string) =>
       prevModel
         ? `Switched model (was ${prevModel}) — continued from the earlier conversation`

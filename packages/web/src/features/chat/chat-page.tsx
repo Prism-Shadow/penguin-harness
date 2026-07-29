@@ -59,7 +59,7 @@ import { latestTaskHasSubagent, taskStartCount } from "./agent-topology";
 import { ChatInput } from "./chat-input";
 import { DraftView } from "./draft-view";
 import { GoalStatusBanner } from "./goal-banner";
-import { handoffMessage, modelSwitchMessage } from "./agent-mentions";
+import { handoffMessage, modelSwitchMessage } from "./agent-handoff";
 import { sameModelRef } from "../models/model-grouping";
 import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
 import { FilesPanel } from "./files-panel";
@@ -287,11 +287,14 @@ export function ChatPage() {
     () => void reloadSessions(),
   );
 
-  // Chat input area draft: caches text, @ target, and selected skills keyed by sessionId; restored after navigating away and back or a refresh, discarded on successful send.
+  // Chat input area draft: caches text, both staged switch chips (`/agent` target, `/model`
+  // target) and the selected skills keyed by sessionId; restored after navigating away and back
+  // or a refresh, discarded on successful send.
   const {
     initial: sessionDraft,
     onTextChange: onDraftTextChange,
     onHandoffTargetChange: onDraftHandoffChange,
+    onPendingModelChange: onDraftPendingModelChange,
     onSkillsChange: onDraftSkillsChange,
     discard: discardSessionDraft,
   } = useSessionDraft(selected?.sessionId ?? null);
@@ -636,10 +639,10 @@ export function ChatPage() {
     [projectId, selected, addSession, discardSessionDraft, navigate],
   );
 
-  // @ handoff: doesn't use the current Session — creates a new chat for the @-mentioned agent
+  // /agent handoff: doesn't use the current Session — creates a new chat for the picked agent
   // (approval mode carries over from the input area's current value; model/Workspace use the
   // creation defaults). The first input = a [handoff_from] source block (current agent / Session
-  // / Workspace info) + the user's input and images with the @ mention stripped; jumps to the new
+  // / Workspace info) + the user's input and images; jumps to the new
   // chat once sent.
   // Returns false on failure, keeping the draft so it can be resent (deletes the empty Session that never got its first message sent).
   const onHandoff = useCallback(
@@ -887,6 +890,7 @@ export function ChatPage() {
       modeSaving={modeSaving}
       autoFocus
       agents={agents}
+      currentAgentId={selected.agentId}
       skills={agentSkills}
       {...(sessionDraft.skills && sessionDraft.skills.length > 0
         ? { initialSkills: sessionDraft.skills }
@@ -899,6 +903,10 @@ export function ChatPage() {
         ? { initialHandoffTargetId: sessionDraft.handoffAgentId }
         : {})}
       onHandoffTargetChange={onDraftHandoffChange}
+      {...(sessionDraft.switchModelRef
+        ? { initialPendingModelRef: sessionDraft.switchModelRef }
+        : {})}
+      onPendingModelChange={onDraftPendingModelChange}
     />
   );
 

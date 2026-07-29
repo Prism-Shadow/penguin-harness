@@ -27,7 +27,7 @@ import {
   parseHandoffMessage,
   parseModelSwitchMessage,
   parseScheduledMessage,
-} from "./agent-mentions";
+} from "./agent-handoff";
 import { parseGoalMessage } from "./goal-use";
 import { parseSkillsMessage } from "./skill-use";
 import { TaskStatsLine } from "./task-stats-line";
@@ -176,7 +176,7 @@ function ReconnectLine({ item, ctx }: { item: ReconnectItem; ctx: StreamRenderCo
 export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderContext }) {
   switch (item.kind) {
     case "user_text": {
-      // Source block for a chat created via @ handoff: collapsed into a single-line handoff notice (the raw text isn't shown), clickable to jump back to the original chat.
+      // Source block for a chat created via the /agent handoff: collapsed into a single-line handoff notice (the raw text isn't shown), clickable to jump back to the original chat.
       const handoff = parseHandoffMessage(item.text);
       if (handoff) return <HandoffBanner origin={handoff} />;
       // Source block for a chat opened by the /model switch: collapsed into a single-line switch notice, clickable to jump back to the source conversation.
