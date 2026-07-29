@@ -1516,4 +1516,56 @@ describe("fidelity-only messages render nothing (empty assistant bubble after th
     expect((texts[0] as AssistantTextItem).text).toBe("Hello");
     expect((texts[0] as AssistantTextItem).streaming).toBe(false);
   });
+
+  // A blank body can also arrive through a fragment: core starts a text segment on the first
+  // truthy delta (`if (!item.text) break;`), and "\n\n" is truthy, so a whitespace-only segment
+  // really does stream. Guarding only the append path would leave live and after-refresh
+  // disagreeing — the fragment kept a blank bubble that a reload then dropped.
+  it("a blank streamed text segment is discarded, so live matches the history rebuild", () => {
+    const live = createStreamModel();
+    pushMessage(live, thinkingMessage("pondering"));
+    pushMessage(live, partialText("start", "\n\n"));
+    pushMessage(live, partialText("stop"));
+    pushMessage(live, assistantText("\n\n"));
+
+    const history = createStreamModel();
+    pushMessage(history, thinkingMessage("pondering"));
+    pushMessage(history, assistantText("\n\n"));
+
+    expect(items(live).map((i) => i.kind)).toEqual(["thinking"]);
+    expect(items(live).map((i) => i.kind)).toEqual(items(history).map((i) => i.kind));
+  });
+
+  it("a blank streamed thinking segment is discarded too", () => {
+    const live = createStreamModel();
+    pushMessage(live, partialThinking("start", "  "));
+    pushMessage(live, partialThinking("stop"));
+    pushMessage(live, thinkingMessage("  "));
+
+    const history = createStreamModel();
+    pushMessage(history, thinkingMessage("  "));
+
+    expect(items(live)).toEqual([]);
+    expect(items(history)).toEqual([]);
+  });
+
+  it("discarding a blank fragment clears the open-fragment slots, leaving no stuck spinner", () => {
+    // The fragment must be removed rather than blanked: a leftover openText would keep
+    // `streaming: true` forever (a permanent blinking cursor), and a stale pendingText would
+    // let the next complete message replace the wrong item.
+    const m = createStreamModel();
+    pushMessage(m, partialText("start", " "));
+    pushMessage(m, partialText("stop"));
+    pushMessage(m, assistantText(" "));
+    expect(items(m)).toEqual([]);
+
+    // The next real reply must append cleanly, not resurrect the discarded fragment.
+    pushMessage(m, partialText("start", "Hi"));
+    pushMessage(m, partialText("stop"));
+    pushMessage(m, assistantText("Hi"));
+    const texts = items(m).filter((i) => i.kind === "assistant_text");
+    expect(texts).toHaveLength(1);
+    expect((texts[0] as AssistantTextItem).text).toBe("Hi");
+    expect((texts[0] as AssistantTextItem).streaming).toBe(false);
+  });
 });
