@@ -200,17 +200,32 @@ describe("liveSessionElapsedMs", () => {
   it("idle (no open Task): exactly the settled cumulative — the header renders the same value as before", () => {
     const t = createTaskStatsTracker();
     t.sessionElapsedMs = 2300;
-    expect(liveSessionElapsedMs(t, false, 1000, 99_999)).toBe(2300);
-    // Open but without a recorded start clock: nothing to add either.
-    expect(liveSessionElapsedMs(t, true, null, 99_999)).toBe(2300);
+    expect(liveSessionElapsedMs(t, false, 1000, 1000, 99_999)).toBe(2300);
+    // Open but with neither origin recorded: nothing to add either.
+    expect(liveSessionElapsedMs(t, true, null, null, 99_999)).toBe(2300);
+    // A zero origin is "never stamped", not "the epoch" — it must not add 30 years.
+    expect(liveSessionElapsedMs(t, true, 0, 0, 99_999)).toBe(2300);
   });
 
   it("running: settled cumulative + wall clock since the Task started, never going backwards", () => {
     const t = createTaskStatsTracker();
     t.sessionElapsedMs = 2000;
-    expect(liveSessionElapsedMs(t, true, 5000, 8000)).toBe(5000); // 2000 + 3000
-    // A clock anomaly (now before the recorded start) adds nothing instead of subtracting.
-    expect(liveSessionElapsedMs(t, true, 5000, 4000)).toBe(2000);
+    expect(liveSessionElapsedMs(t, true, 5000, 5000, 8000)).toBe(5000); // 2000 + 3000
+    // A clock anomaly (now before both origins) adds nothing instead of subtracting.
+    expect(liveSessionElapsedMs(t, true, 5000, 5000, 4000)).toBe(2000);
+  });
+
+  it("an event still in flight is covered: the Trace-derived origin is a floor, not the figure", () => {
+    const t = createTaskStatsTracker();
+    // Reloaded mid-run: the Trace's last recorded event is 10s into a Task that actually
+    // started 300s ago (a long tool has been executing since), so the back-dated local origin
+    // only reaches 10s. The server-time origin reaches the present moment and wins.
+    const now = 1_000_000;
+    expect(liveSessionElapsedMs(t, true, now - 10_000, now - 300_000, now)).toBe(300_000);
+    // Symmetrically, the local origin wins whenever it is the earlier of the two — which is
+    // what a client clock running behind the server's gets, so skew can never shorten the
+    // figure below the span the Trace proves.
+    expect(liveSessionElapsedMs(t, true, now - 300_000, now + 30_000, now)).toBe(300_000);
   });
 
   it("no double count across the Task boundary: endTask folds the Task in as taskOpen flips off", () => {
@@ -218,11 +233,11 @@ describe("liveSessionElapsedMs", () => {
     // Task 1 settled earlier.
     endTask(t, 1000);
     // Task 2 runs: started at 10_000, now 14_000 -> 1000 settled + 4000 live.
-    expect(liveSessionElapsedMs(t, true, 10_000, 14_000)).toBe(5000);
+    expect(liveSessionElapsedMs(t, true, 10_000, 10_000, 14_000)).toBe(5000);
     // Task 2 ends: the same model update folds its elapsed into the cumulative AND flips
     // taskOpen off — the live view continues from the settled value without re-adding.
     endTask(t, 4000);
-    expect(liveSessionElapsedMs(t, false, 10_000, 15_000)).toBe(5000);
+    expect(liveSessionElapsedMs(t, false, 10_000, 10_000, 15_000)).toBe(5000);
   });
 });
 

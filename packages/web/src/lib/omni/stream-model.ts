@@ -384,9 +384,19 @@ export interface StreamModel {
    * which reads Trace timestamps alone). A live stream sets it to the real
    * start; a history rebuild would otherwise stamp the page-load instant and
    * restart the ticking value from zero on every reload, so pushMessages
-   * back-dates it by the span the Trace already shows.
+   * back-dates it by the span the Trace already shows. That back-dating is a
+   * skew-free **floor**, not the whole figure — it reaches the last recorded
+   * event only — so liveSessionElapsedMs pairs it with taskFirstTsMs, which
+   * reaches the present moment and so covers an event still in flight.
    */
   taskStartLocalMs: number;
+  /**
+   * The Task's first message timestamp, in SERVER time. The settled duration
+   * measures from it (see finalizeOpenTask), and liveSessionElapsedMs also
+   * ticks the running Task from it against the local clock — the convention
+   * every other running item on the page already uses (see LiveDuration's
+   * sinceMs, and the subagent topology's running nodes).
+   */
   taskFirstTsMs: number;
   /**
    * The latest timestamp seen among this round's messages. Two readers:
@@ -597,14 +607,14 @@ export function pushMessages(
   // pushes one message at a time with the real current clock, where the span
   // is still zero at startTask and this is a no-op.
   //
-  // The span reaches the last *recorded* event, not the present moment, so a
-  // reload landing in a quiet stretch — a long tool execution, a long Request,
-  // a compaction in flight — resumes that much short and stays short for the
-  // rest of the Task (the live tail replayed after this point arrives through
-  // pushMessage, which never re-anchors). That is a floor and never an
-  // overshoot, and it is display-only: finalizeOpenTask recomputes the settled
-  // figure from timestamps either way. Closing the gap would take a
-  // server-supplied "now" — exactly the clock coupling avoided above.
+  // The span reaches the last *recorded* event, not the present moment, so on
+  // its own this under-reports a reload that lands in a quiet stretch — a long
+  // tool execution, a long Request, a compaction in flight — where nothing has
+  // been appended to the Trace since that event began. It is therefore a floor
+  // rather than the whole figure: liveSessionElapsedMs counts from this or
+  // from taskFirstTsMs, whichever is earlier, so the in-flight event is
+  // covered while this keeps the result from ever dropping below the span the
+  // Trace proves (which is also what a client clock behind the server's gets).
   if (model.taskOpen) {
     model.taskStartLocalMs = nowMs - Math.max(0, model.taskLastTsMs - model.taskFirstTsMs);
   }

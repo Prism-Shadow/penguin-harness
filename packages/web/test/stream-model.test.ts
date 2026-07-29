@@ -1263,11 +1263,44 @@ describe("elapsed comes from Trace timestamps (#5/#20: settled spans, reload-sta
     );
     expect(m.taskOpen).toBe(true);
     expect(loadNow - m.taskStartLocalMs).toBe(60_000);
-    // Anchored to the local clock, not to the server's: it keeps ticking from there, and a
-    // client/server clock offset never reaches the figure (only Trace-timestamp deltas do).
-    expect(liveSessionElapsedMs(m.stats, m.taskOpen, m.taskStartLocalMs, loadNow + 5_000)).toBe(
-      65_000,
+    // This model's local clock is far behind the server timestamps, so the skew-free origin is
+    // the earlier of the two and the header counts from it: a client clock behind the server's
+    // can never shorten the figure below the span the Trace proves.
+    expect(
+      liveSessionElapsedMs(
+        m.stats,
+        m.taskOpen,
+        m.taskStartLocalMs,
+        m.taskFirstTsMs,
+        loadNow + 5000,
+      ),
+    ).toBe(65_000);
+  });
+
+  it("a reload while an event is still in flight counts it: the Trace-derived origin is only a floor", () => {
+    const m = createStreamModel();
+    const T0 = "2026-07-05T00:00:00.000Z";
+    // A tool started executing 10s into the Task and is STILL running 300s later. Nothing has
+    // been appended to the Trace since it began, so the span — and the local origin back-dated
+    // by it — reaches only those first 10s.
+    const loadNow = Date.parse("2026-07-05T00:05:00.000Z");
+    pushMessages(
+      m,
+      [
+        at(userText("run the build"), T0),
+        at(
+          toolCall({ name: "bash", arguments: "{}", toolCallId: "t1" }),
+          "2026-07-05T00:00:10.000Z",
+        ),
+      ],
+      loadNow,
     );
+    expect(m.taskOpen).toBe(true);
+    expect(loadNow - m.taskStartLocalMs).toBe(10_000); // the floor, on its own far too short
+    // Counting from the earlier origin picks up the 290s the tool has been executing.
+    expect(
+      liveSessionElapsedMs(m.stats, m.taskOpen, m.taskStartLocalMs, m.taskFirstTsMs, loadNow),
+    ).toBe(300_000);
   });
 
   it("a live stream is unaffected: the anchor stays the real Task start", () => {
