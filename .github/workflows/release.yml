@@ -39,6 +39,12 @@ on:
 env:
   # Bundled Node runtime version (official nodejs.org dist, aligned with engines >=24).
   NODE_RUNTIME_VERSION: v24.18.0
+  # Bundled POSIX shell for the Windows package: Git for Windows' MinGit, whose usr/bin/sh.exe
+  # IS GNU bash (installed under the name `sh`), plus ~60 coreutils and git.exe. Pinned to an
+  # exact release so the shipped bytes are reproducible and the GPLv2 source offer in
+  # THIRD-PARTY-NOTICES.md names one version. Bump deliberately, not automatically.
+  MINGIT_VERSION: 2.55.0.3
+  MINGIT_TAG: v2.55.0.windows.3
 
 jobs:
   # Skip the build/upload when the tag's Release already exists (immutable releases forbid
@@ -161,6 +167,13 @@ jobs:
       # to the sibling web\, prefer the bundled node\node.exe, fall back to system node).
       # install.ps1 verifies and unpacks this zip; in PowerShell the .ps1 shim wins over .cmd,
       # in cmd.exe only the .cmd is found — both forward all args and the exit code.
+      #
+      # It also bundles MinGit under git\, so exec_command has a POSIX shell even on a machine
+      # with no Git for Windows: the shims advertise git\usr\bin\sh.exe as PENGUIN_BUNDLED_SHELL
+      # and the resolver (core's shell.ts) uses it only when the user has no bash of their own.
+      # MinGit is unpacked with its tree intact — MSYS binaries locate /etc relative to the
+      # directory holding msys-2.0.dll, so `sh -lc` finds git\etc\profile and gets the usual
+      # /mingw64/bin:/usr/bin:<inherited Windows PATH>, keeping System32's curl/tar reachable.
       - name: Package win-x64 zip
         run: |
           name="node-$NODE_RUNTIME_VERSION-win-x64"
@@ -169,12 +182,22 @@ jobs:
           mkdir -p /tmp/node-runtime
           unzip -q "/tmp/$name.zip" -d /tmp/node-runtime
           mv "/tmp/node-runtime/$name" out/penguin/node
+          # MinGit unzips flat (no top-level directory), so give it its own destination.
+          mingit="MinGit-$MINGIT_VERSION-64-bit.zip"
+          curl -fsSL "https://github.com/git-for-windows/git/releases/download/$MINGIT_TAG/$mingit" -o "/tmp/$mingit"
+          rm -rf out/penguin/git
+          mkdir -p out/penguin/git
+          unzip -q "/tmp/$mingit" -d out/penguin/git
+          # Fail loudly here rather than shipping a package whose shell silently does not exist.
+          test -f out/penguin/git/usr/bin/sh.exe
+          test -f out/penguin/git/etc/profile
           rm -f out/penguin/bin/penguin
           cat > out/penguin/bin/penguin.cmd <<'EOF'
           @echo off
           setlocal
           set "DIR=%~dp0.."
           if not defined PENGUIN_WEB_DIST set "PENGUIN_WEB_DIST=%DIR%\web"
+          if exist "%DIR%\git\usr\bin\sh.exe" set "PENGUIN_BUNDLED_SHELL=%DIR%\git\usr\bin\sh.exe"
           if exist "%DIR%\node\node.exe" (
             "%DIR%\node\node.exe" "%DIR%\lib\dist\index.js" %*
           ) else (
@@ -187,6 +210,8 @@ jobs:
           cat > out/penguin/bin/penguin.ps1 <<'EOF'
           $dir = Split-Path -Parent $PSScriptRoot
           if (-not $env:PENGUIN_WEB_DIST) { $env:PENGUIN_WEB_DIST = Join-Path $dir "web" }
+          $sh = Join-Path $dir "git\usr\bin\sh.exe"
+          if (Test-Path $sh) { $env:PENGUIN_BUNDLED_SHELL = $sh }
           $node = Join-Path $dir "node\node.exe"
           if (-not (Test-Path $node)) { $node = "node" }
           & $node (Join-Path $dir "lib\dist\index.js") @args

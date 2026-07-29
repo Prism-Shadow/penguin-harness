@@ -110,3 +110,79 @@ describe("resolveShell — PENGUIN_SHELL override", () => {
     expect(shell).toEqual({ command: "bash", args: ["-lc"], name: "bash" });
   });
 });
+
+describe("resolveShell — the bundled MinGit bash (PENGUIN_BUNDLED_SHELL)", () => {
+  const BUNDLED = "C:\\Users\\u\\.penguin\\git\\usr\\bin\\sh.exe";
+  /** An exists() stub answering true only for the bundled path. */
+  const bundledExists = (p: string) => p === BUNDLED;
+
+  it("is used when the machine has no bash of its own, and reports itself as bash", () => {
+    // MinGit installs GNU bash under the name `sh`; the model is told "bash" because that is
+    // what it is and what the Skill ecosystem targets — "sh" would understate it.
+    const shell = resolveShell({
+      platform: "win32",
+      env: { PENGUIN_BUNDLED_SHELL: BUNDLED },
+      whichAll: which({ pwsh: ["C:\\pwsh.exe"] }),
+      exists: bundledExists,
+    });
+    expect(shell).toEqual({ command: BUNDLED, args: ["-lc"], name: "bash" });
+  });
+
+  it("yields to a real Git for Windows on PATH (its MSYS userland is the fuller one)", () => {
+    const shell = resolveShell({
+      platform: "win32",
+      env: { PENGUIN_BUNDLED_SHELL: BUNDLED },
+      whichAll: which({ bash: ["C:\\Program Files\\Git\\bin\\bash.exe"] }),
+      exists: bundledExists,
+    });
+    expect(shell).toEqual({ command: "bash", args: ["-lc"], name: "bash" });
+  });
+
+  it("beats pwsh and powershell — the point of bundling is that neither is reached", () => {
+    const shell = resolveShell({
+      platform: "win32",
+      env: { PENGUIN_BUNDLED_SHELL: BUNDLED },
+      whichAll: which({ pwsh: ["C:\\pwsh.exe"], powershell: ["C:\\powershell.exe"] }),
+      exists: bundledExists,
+    });
+    expect(shell.command).toBe(BUNDLED);
+  });
+
+  it("still loses to an explicit PENGUIN_SHELL", () => {
+    const shell = resolveShell({
+      platform: "win32",
+      env: { PENGUIN_SHELL: "pwsh", PENGUIN_BUNDLED_SHELL: BUNDLED },
+      exists: bundledExists,
+    });
+    expect(shell).toEqual({ command: "pwsh", args: POWERSHELL_ARGS, name: "pwsh" });
+  });
+
+  it("a stale path (dir deleted) falls through to pwsh rather than spawning a missing exe", () => {
+    const shell = resolveShell({
+      platform: "win32",
+      env: { PENGUIN_BUNDLED_SHELL: BUNDLED },
+      whichAll: which({ pwsh: ["C:\\pwsh.exe"] }),
+      exists: () => false,
+    });
+    expect(shell).toEqual({ command: "pwsh", args: POWERSHELL_ARGS, name: "pwsh" });
+  });
+
+  it("is ignored on POSIX (npm installs and source checkouts never set it anyway)", () => {
+    const shell = resolveShell({
+      platform: "linux",
+      env: { PENGUIN_BUNDLED_SHELL: BUNDLED },
+      exists: bundledExists,
+    });
+    expect(shell).toEqual({ command: "bash", args: ["-lc"], name: "bash" });
+  });
+
+  it("a blank value is ignored (unset-but-defined shims must not win)", () => {
+    const shell = resolveShell({
+      platform: "win32",
+      env: { PENGUIN_BUNDLED_SHELL: "  " },
+      whichAll: which({ powershell: ["C:\\powershell.exe"] }),
+      exists: () => true,
+    });
+    expect(shell.name).toBe("powershell");
+  });
+});

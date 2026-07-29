@@ -10,7 +10,7 @@
 # `npm install -g @prismshadow/penguin-cli` instead.
 #
 # The data dir (%USERPROFILE%\.penguin\data) sits under the install home but is never touched by
-# reinstall/upgrade (which only replace bin/lib/web/node). Upgrading = re-running this installer.
+# reinstall/upgrade (which only replace bin/lib/web/node/git). Upgrading = re-running this installer.
 #
 # Docs: https://penguin.ooo/docs/installation
 param(
@@ -112,7 +112,7 @@ try {
   if (-not (Test-Path $NewRoot)) { Fail "unexpected archive layout: top-level penguin\ missing." }
   if (-not (Test-Path (Join-Path $NewRoot "bin"))) { Fail "unexpected archive layout: penguin\bin missing." }
 
-  $Dirs = @("bin", "lib", "web", "node")
+  $Dirs = @("bin", "lib", "web", "node", "git")
   $Moved = @()
   New-Item -ItemType Directory -Path $OldDir | Out-Null
   try {
@@ -153,6 +153,7 @@ if (-not (Test-Path $CmdShim)) {
     'setlocal'
     'set "DIR=%~dp0.."'
     'if not defined PENGUIN_WEB_DIST set "PENGUIN_WEB_DIST=%DIR%\web"'
+    'if exist "%DIR%\git\usr\bin\sh.exe" set "PENGUIN_BUNDLED_SHELL=%DIR%\git\usr\bin\sh.exe"'
     'if exist "%DIR%\node\node.exe" ('
     '  "%DIR%\node\node.exe" "%DIR%\lib\dist\index.js" %*'
     ') else ('
@@ -166,6 +167,8 @@ if (-not (Test-Path $Ps1Shim)) {
   @(
     '$dir = Split-Path -Parent $PSScriptRoot'
     'if (-not $env:PENGUIN_WEB_DIST) { $env:PENGUIN_WEB_DIST = Join-Path $dir "web" }'
+    '$sh = Join-Path $dir "git\usr\bin\sh.exe"'
+    'if (Test-Path $sh) { $env:PENGUIN_BUNDLED_SHELL = $sh }'
     '$node = Join-Path $dir "node\node.exe"'
     'if (-not (Test-Path $node)) { $node = "node" }'
     '& $node (Join-Path $dir "lib\dist\index.js") @args'
