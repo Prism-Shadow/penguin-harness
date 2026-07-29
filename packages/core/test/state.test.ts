@@ -167,9 +167,13 @@ describe("loadOrInitAgentState", () => {
       expect(tpl).toContain("# Skills");
       expect(tpl).toContain(SKILL_METADATA_PLACEHOLDER);
       expect(tpl).toContain("[use_skills]");
-      // Skill dependencies are installed once into a shared per-Agent directory rather than per
-      // task, so a Session's scratchpad never becomes the home of a virtualenv.
+      // Tooling installs once into a shared per-Agent directory rather than per task, so a
+      // Session's scratchpad never becomes the home of a virtualenv. It governs every task, not
+      // just skill runs, so it belongs to # File system — pinned by position, since the rule
+      // reads as skills-only the moment it drifts back under # Skills.
       expect(tpl).toContain("<app_data_dir>/agents/<agent_id>/shared_env/");
+      expect(tpl.indexOf("# File system")).toBeLessThan(tpl.indexOf("shared_env/"));
+      expect(tpl.indexOf("shared_env/")).toBeLessThan(tpl.indexOf("# Skills"));
       expect(tpl.indexOf("[/developer_instructions]")).toBeLessThan(tpl.indexOf("# Vault"));
       expect(tpl.indexOf("# Vault")).toBeLessThan(tpl.indexOf(VAULT_KEYS_PLACEHOLDER));
       expect(tpl.indexOf(VAULT_KEYS_PLACEHOLDER)).toBeLessThan(tpl.indexOf("# Skills"));
