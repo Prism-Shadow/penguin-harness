@@ -420,6 +420,23 @@ describe("StreamRenderer", () => {
     expect(last).toBe("[stats] context 7k (+3k) · tokens 11k (+7k) · 5s (+3s)");
   });
 
+  it("an elapsed remainder that rounds to 60s carries into the minute", () => {
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t);
+    r.handle(
+      tokenUsage(
+        { cache_read: 0, cache_write: 0, output: 0, total: 4000 },
+        { cache_read: 0, cache_write: 0, output: 0, total: 4000 },
+      ),
+    );
+    // 119.7s: rounding the remainder against floored minutes would read 1m60s.
+    r.endTask(119_700);
+    const lines = stripAnsi(text()).trim().split("\n");
+    expect(lines[lines.length - 1]).toBe(
+      "[stats] context 4k (+4k) · tokens 4k (+4k) · 2m0s (+2m0s)",
+    );
+  });
+
   it("context delta goes negative after compaction shrinks the context (no clamping)", () => {
     const { stream, text } = collector();
     const r = new StreamRenderer(stream, t);

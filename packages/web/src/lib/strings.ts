@@ -855,6 +855,11 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     errorsColKind: "类型",
     errorsColMessage: "消息",
     errorsEmpty: "暂无异常",
+    /** Detail-table pager: newer/older step back through pages of the same filtered set. */
+    errorsNewer: "较新",
+    errorsOlder: "更早",
+    errorsPageOf: (page: number, pages: number, total: number) =>
+      `第 ${page} / ${pages} 页 · 共 ${total} 条`,
   },
 
   traces: {

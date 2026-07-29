@@ -45,6 +45,9 @@ describe("authz", () => {
     expect((await outsider.get(`/api/projects/${projectId}/agents`)).status).toBe(404);
     expect((await outsider.get(`/api/projects/${projectId}/members`)).status).toBe(404);
     expect((await outsider.get(`/api/projects/${projectId}/usage`)).status).toBe(404);
+    // The error table's paging route is checked separately from /usage: it is the one place a
+    // reader can walk past the dashboard's first page, so it must refuse the same way.
+    expect((await outsider.get(`/api/projects/${projectId}/usage/errors`)).status).toBe(404);
   });
 
   it("member can read models (masked) but not write; owner can write", async () => {

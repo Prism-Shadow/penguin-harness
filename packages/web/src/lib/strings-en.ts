@@ -876,6 +876,11 @@ When done, open index.html in a browser and self-test once.`,
     errorsColKind: "Type",
     errorsColMessage: "Message",
     errorsEmpty: "No errors",
+    /** Detail-table pager: newer/older step back through pages of the same filtered set. */
+    errorsNewer: "Newer",
+    errorsOlder: "Older",
+    errorsPageOf: (page: number, pages: number, total: number) =>
+      `Page ${page} / ${pages} · ${total} total`,
   },
 
   traces: {

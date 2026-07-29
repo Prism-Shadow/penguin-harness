@@ -46,7 +46,10 @@
  *
  * Environment (source = `environment`): reads `tool_call_output`'s stop_reason ∈
  * {failed, timeout} → expected (the error is fed back to the model, and the Agent
- * adjusts on its own; `aborted` is denial/interruption, not recorded).
+ * adjusts on its own; `aborted` is denial/interruption, not recorded). Exactly one shape is
+ * dropped: a command tool's ordinary non-zero exit, which is how a shell command reports
+ * information rather than a fault — see isOrdinaryCommandExit; the same tools' environment
+ * faults (killed by a signal, spawn failure, tool timeout) still record.
  * `tool_call_output` only has tool_call_id, no tool name, so `tool_call_id → tool name`
  * is cached (tool_call always arrives before its output), and the tool name is written
  * into code (`tool_failed:exec_command`) — so the stats dashboard's "most common error
@@ -145,6 +148,50 @@ function isLlmFailure(s: unknown): s is LlmFailure {
 
 function isToolFailure(s: unknown): s is ToolFailure {
   return s === "failed" || s === "timeout";
+}
+
+/**
+ * The command tools. Both funnel their exit status through core's `resultForExit`, which maps
+ * *any* non-zero exit to `failed` — and a non-zero exit is how shell commands return
+ * information, not a fault: `grep` exits 1 when nothing matches, `test -f` when the file is
+ * absent, `diff` when files differ. Recording those made the cost center's error table mostly a
+ * log of ordinary Agent work, burying the real errors and eating the row cap that exists to
+ * protect them. (Only the row cap: the recorder's dedup key carries the error code, so this
+ * noise could ever have crowded out only *itself*.) The Agent sees the failure in the tool
+ * output and adjusts — nothing about it needs a human.
+ *
+ * Both belong here: `input_command` is how a backgrounded `exec_command` is polled for its
+ * eventual exit, so covering only one would record the *same* command's non-zero exit when it
+ * finishes in the background and drop it when it finishes in the foreground.
+ */
+const COMMAND_TOOLS: ReadonlySet<string> = new Set(["exec_command", "input_command"]);
+
+/**
+ * `resultForExit`'s terminal marker for an ordinary non-zero exit. Anchored to the end because
+ * the marker is a `note`, which Environment appends after the (possibly truncated) output — a
+ * command's own stdout may contain anything, including this text.
+ */
+const ORDINARY_EXIT_NOTE = /\[exit code: [^\]\n]*\]\s*$/;
+
+/**
+ * Whether a command-tool failure is just an ordinary non-zero exit — the one failure shape the
+ * error table is better off without (see COMMAND_TOOLS).
+ *
+ * The discrimination is by note rather than by tool name, because `failed` from these tools is
+ * not only "the command exited non-zero": it also covers termination by signal (an OOM kill, a
+ * segfault), a spawn failure (nonexistent workdir, EMFILE, an unresolvable shell), a missing
+ * command session manager, and a tool timeout. Those are config/environment faults — the
+ * recorder's own "needs a human" category — and no amount of Agent self-correction resolves
+ * them, so they must keep landing in the table. `resultForExit` writes the exit code as the
+ * output's last note, which tells the two apart precisely.
+ *
+ * An unknown name (tool_call evicted from the cache, or never seen) still qualifies: only these
+ * two tools ever emit that marker, so dropping it beats recording a nameless
+ * `tool_failed:unknown` for exactly the noise this exists to remove.
+ */
+function isOrdinaryCommandExit(name: string | undefined, output: string): boolean {
+  if (name !== undefined && !COMMAND_TOOLS.has(name)) return false;
+  return ORDINARY_EXIT_NOTE.test(output);
 }
 
 /** A user-interrupt abort message (core's `aborted by user` / `aborted during …`): not a failure reason. */
@@ -338,9 +385,11 @@ export class StreamErrorWatcher {
     const name = this.toolNames.get(key);
     this.toolNames.delete(key); // This call has settled: dequeue it, the cache only keeps in-flight calls
     if (!isToolFailure(p.stop_reason)) return; // completed / aborted (denial, user interrupt) are not errors
+    const output = p.output ?? "";
+    if (isOrdinaryCommandExit(name, output)) return; // a shell's exit status is information, not a fault
     this.errors.record({
       source: "environment",
-      err: toolFailureText(p.output ?? ""),
+      err: toolFailureText(output),
       ctx: this.ctxFor(origin),
       // The tool name goes into code: so the stats dashboard's "most common error code" and table can show which tool failed.
       code: `tool_${p.stop_reason}:${name ?? "unknown"}`,

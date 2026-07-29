@@ -292,3 +292,81 @@ describe("exec_command — long-running command sessions", () => {
     }
   });
 });
+
+describe("harness environment variables never reach a spawned command", () => {
+  const KEYS = ["PORT", "HOST", "PENGUIN_CLI_ENTRY", "PENGUIN_WEB_DIST"] as const;
+  const saved: Partial<Record<(typeof KEYS)[number], string | undefined>> = {};
+
+  beforeEach(() => {
+    // `penguin web` writes PORT/HOST into its own process env as the channel to the server
+    // module, so this is exactly the state a real serving process is in.
+    for (const k of KEYS) saved[k] = process.env[k];
+    process.env.PORT = "7364";
+    process.env.HOST = "127.0.0.1";
+    process.env.PENGUIN_CLI_ENTRY = "/opt/penguin/lib/dist/index.js";
+    process.env.PENGUIN_WEB_DIST = "/opt/penguin/web";
+  });
+  afterEach(() => {
+    for (const k of KEYS) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+  });
+
+  // Read through node rather than the shell: `echo $PORT` would mean different things in
+  // bash and PowerShell, and the resolver picks either depending on the machine.
+  const READ_ENV = KEYS.map((k) => `${k}=[' + (process.env.${k} ?? '') + ']`).join(", ");
+
+  it("PORT/HOST and the CLI plumbing are absent, so a dev server the Agent starts picks its own port", async () => {
+    const res = await runTool(env, "exec_command", {
+      cmd: `node -e "console.log('${READ_ENV}')"`,
+    });
+    for (const k of KEYS) {
+      expect(res.output, `${k} must not reach the child`).toContain(`${k}=[]`);
+    }
+  });
+
+  it("a differently-cased spelling is stripped too, for Windows' sake", async () => {
+    // Windows looks environment names up without regard to case but stores the casing that was
+    // written, so `set Port=3000` before `penguin web` reaches a child as PORT — invisible to a
+    // strip that only removes the upper-case name. POSIX keeps `Port` and `PORT` apart, which is
+    // what lets this run here at all: without the case-insensitive match it passes through.
+    process.env.Port = "3000";
+    try {
+      const res = await runTool(env, "exec_command", {
+        cmd: `node -e "console.log('Port=[' + (process.env.Port ?? '') + ']')"`,
+      });
+      expect(res.output).toContain("Port=[]");
+    } finally {
+      delete process.env.Port;
+    }
+  });
+
+  it("the rest of the host environment still passes through", async () => {
+    process.env.PENGUIN_TEST_PASSTHROUGH = "kept";
+    try {
+      const res = await runTool(env, "exec_command", {
+        cmd: `node -e "console.log('V=[' + (process.env.PENGUIN_TEST_PASSTHROUGH ?? '') + ']')"`,
+      });
+      expect(res.output).toContain("V=[kept]");
+    } finally {
+      delete process.env.PENGUIN_TEST_PASSTHROUGH;
+    }
+  });
+
+  it("the vault can put PORT back — stripping the host value is not a hard ban", async () => {
+    const vaultEnv = new Environment({
+      workspaceDir: tmp,
+      toolConfig: sessionConfig(),
+      vault: { PORT: "3000" },
+    });
+    try {
+      const res = await runTool(vaultEnv, "exec_command", {
+        cmd: `node -e "console.log('PORT=[' + (process.env.PORT ?? '') + ']')"`,
+      });
+      expect(res.output).toContain("PORT=[3000]");
+    } finally {
+      vaultEnv.dispose();
+    }
+  });
+});
