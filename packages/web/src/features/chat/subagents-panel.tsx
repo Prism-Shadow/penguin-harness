@@ -82,11 +82,14 @@ export function SubagentsPanel({
         style={{ width: panel.open ? panel.width : 0 }}
         // Same inert + clipping-window handling as the Files panel (see files-panel.tsx).
         inert={!panel.open}
-        className={`relative flex min-h-0 shrink-0 flex-col overflow-hidden border-l border-gray-200 dark:border-gray-800 ${
+        className={`relative flex min-h-0 shrink-0 flex-col overflow-hidden ${
           panel.resizing ? "pointer-events-none" : "transition-[width] duration-200"
         }`}
       >
-        <div style={{ width: panel.width }} className="flex h-full min-h-0 flex-col">
+        <div
+          style={{ width: panel.width }}
+          className="flex h-full min-h-0 flex-col border-l border-gray-200 dark:border-gray-800"
+        >
           <div className="flex shrink-0 items-center gap-1 px-3 pt-2">
             <h4 className="min-w-0 flex-1 truncate text-sm font-semibold">
               {S.subagentPanel.title}

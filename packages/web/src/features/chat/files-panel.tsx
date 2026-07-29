@@ -74,7 +74,7 @@ export function FilesPanel({ session, panel }: { session: SessionInfo; panel: Fi
         // input) anchored to the nearest initial containing block instead, it would bypass this
         // overflow-hidden and stretch the **document** wide, making a horizontal scrollbar
         // appear out of nowhere.
-        className={`relative flex min-h-0 shrink-0 flex-col overflow-hidden border-l border-gray-200 dark:border-gray-800 ${
+        className={`relative flex min-h-0 shrink-0 flex-col overflow-hidden ${
           panel.resizing ? "pointer-events-none" : "transition-[width] duration-200"
         }`}
       >
@@ -83,8 +83,12 @@ export function FilesPanel({ session, panel }: { session: SessionInfo; panel: Fi
             widths, and if the content resized along with it, the text would get squeezed into
             a column frame-by-frame before expanding back out. With a fixed width, the content
             behaves as a rigid body that slides in and out past the clipping edge with zero
-            reflow. While dragging to resize, both values stay in sync, so this isn't affected. */}
-        <div style={{ width: panel.width }} className="flex h-full min-h-0 flex-col">
+            reflow. The divider belongs to this inner panel so the clipping window hides it
+            completely at zero width. While dragging to resize, both values stay in sync. */}
+        <div
+          style={{ width: panel.width }}
+          className="flex h-full min-h-0 flex-col border-l border-gray-200 dark:border-gray-800"
+        >
           {/* Title row for docked state (the Sheet state has its own title bar via Sheet, no duplication needed) */}
           <div className="flex shrink-0 items-center gap-1 px-3 pt-2">
             <h4 className="min-w-0 flex-1 truncate text-sm font-semibold">{S.files.title}</h4>
