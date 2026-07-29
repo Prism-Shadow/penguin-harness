@@ -895,6 +895,17 @@ function handleComplete(
       // The complete message usually follows right after a fragment's stop: prefer replacing an already-closed pending fragment, then a still-open one.
       const target = model.pendingText ?? model.openText;
       if (target) {
+        // A blank body discards the fragment instead of settling it (same fidelity-only case as
+        // below — core starts a text segment on the first *truthy* delta, so a whitespace-only
+        // segment does stream). Blanking it in place would leave the live view showing an empty
+        // bubble that a reload then drops. Removing the item and clearing both slots is what
+        // discardFragmentFor does for the dedup path, and it leaves no fragment stuck streaming.
+        if (!p.text.trim()) {
+          removeItem(model, target);
+          if (target === model.openText) model.openText = null;
+          model.pendingText = null;
+          return;
+        }
         // The complete message replaces the fragment's content (this guarantees consistency).
         target.text = p.text;
         target.streaming = false;
@@ -905,6 +916,17 @@ function handleComplete(
         model.pendingText = null;
         return;
       }
+      // Fidelity-only message: core emits a complete text/thinking message with an empty body
+      // when the provider attached an opaque payload to an otherwise empty part — on this text
+      // branch a Gemini thoughtSignature or a GPT-5 `fidelity.phase` segment marker (GPT-5's
+      // encrypted reasoning rides the *thinking* branch instead) — which is why the blank bubble
+      // showed up right after a thinking segment. The message has to exist so the fidelity
+      // round-trips into history, but it has nothing to show, and usually no fragment was opened
+      // for it either (core only starts a segment once a truthy delta arrives). Rendering it
+      // produced a blank "assistant:" bubble; collectTaskAssistant already skipped these when
+      // gathering the reply text, and with the blank-fragment discard above both the live and the
+      // history path now agree with it.
+      if (!p.text.trim()) return;
       // No open fragment (history / mid-stream join): append directly.
       const doneMs = tsOf(timestamp);
       const item: AssistantTextItem = {
@@ -934,6 +956,13 @@ function handleComplete(
       const tsMs = tsOf(timestamp);
       const target = model.pendingThinking ?? model.openThinking;
       if (target) {
+        // Blank body: discard the fragment rather than settle it (see the text branch).
+        if (!p.thinking.trim()) {
+          removeItem(model, target);
+          if (target === model.openThinking) model.openThinking = null;
+          model.pendingThinking = null;
+          return;
+        }
         target.thinking = p.thinking;
         target.streaming = false;
         if (p.stop_reason !== undefined) target.stopReason = p.stop_reason;
@@ -942,6 +971,9 @@ function handleComplete(
         model.pendingThinking = null;
         return;
       }
+      // Same fidelity-only case as the text branch above (GPT-5 encrypted reasoning): the
+      // message carries the payload, not a thought to show.
+      if (!p.thinking.trim()) return;
       const item: ThinkingItem = {
         kind: "thinking",
         id: nextId(model),
