@@ -183,7 +183,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
         deps.onQueuedFollowUps?.(ev.queued ?? 0);
         if (ev.state === "idle") {
           // Task ended (or the snapshot confirms idle): finalize the current Task's stats; pending approvals have already converged server-side.
-          notifyTaskIdle(model, now());
+          notifyTaskIdle(model);
           clearPending();
           deps.onModelChange();
         }

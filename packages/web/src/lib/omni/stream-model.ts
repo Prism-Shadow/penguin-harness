@@ -378,6 +378,14 @@ export interface StreamModel {
   lastAuthFailureMs: number | null;
   /** Task segmentation state. */
   taskOpen: boolean;
+  /**
+   * Local-clock instant the running Task's header elapsed ticks from — display
+   * only; no settled duration is ever derived from it (see finalizeOpenTask,
+   * which reads Trace timestamps alone). A live stream sets it to the real
+   * start; a history rebuild would otherwise stamp the page-load instant and
+   * restart the ticking value from zero on every reload, so pushMessages
+   * back-dates it by the span the Trace already shows.
+   */
   taskStartLocalMs: number;
   taskFirstTsMs: number;
   /**
@@ -572,16 +580,32 @@ export function pushMessages(
   nowMs: number = Date.now(),
 ): void {
   for (const msg of messages) pushMessage(model, msg, nowMs);
+  // Re-anchor a Task still open at the end of the replay. Every message in a
+  // rebuild is fed the same `nowMs`, so startTask stamped taskStartLocalMs
+  // with the instant the page loaded — and the header's live elapsed, which
+  // ticks over `now − taskStartLocalMs`, would restart from zero on every
+  // reload of a running Session. Back-date the anchor by the elapsed the
+  // Trace already shows, so the ticking value resumes where it left off:
+  //
+  //   now − anchor  ==  (now − loadInstant) + (taskLastTsMs − taskFirstTsMs)
+  //
+  // Only differences between server timestamps are used, applied to the local
+  // clock, so client/server clock skew never enters the result. A live stream
+  // pushes one message at a time with the real current clock, where the span
+  // is still zero at startTask and this is a no-op.
+  if (model.taskOpen) {
+    model.taskStartLocalMs = nowMs - Math.max(0, model.taskLastTsMs - model.taskFirstTsMs);
+  }
 }
 
-/** The live stream received task_state:idle: finalize the current Task using the local clock. */
-export function notifyTaskIdle(model: StreamModel, nowMs: number = Date.now()): void {
-  finalizeOpenTask(model, "live", nowMs);
+/** The live stream received task_state:idle: finalize the current Task from its Trace timestamps. */
+export function notifyTaskIdle(model: StreamModel): void {
+  finalizeOpenTask(model);
 }
 
 /** History rebuild is complete (end of stream): finalize the last Task using message timestamps. */
 export function finalizeHistory(model: StreamModel): void {
-  finalizeOpenTask(model, "history");
+  finalizeOpenTask(model);
 }
 
 /** Register an approval clicked on this end (so the subsequent approval_decision event is labeled "manual"). */
@@ -637,7 +661,7 @@ function touchTask(model: StreamModel, timestamp: string): void {
 
 function startTask(model: StreamModel, timestamp: string, nowMs: number): void {
   // The previous Task is finalized by "the next Task starting" (the history-rebuild convention).
-  finalizeOpenTask(model, "history");
+  finalizeOpenTask(model);
   // Finalize any retry state left over from the previous Task: when the
   // server dies during a backoff window, the Trace's tail is
   // request_end(timeout) with no abort, and history rebuild would leave a
@@ -659,7 +683,7 @@ function startTask(model: StreamModel, timestamp: string, nowMs: number): void {
   resetTaskCounters(model.stats);
 }
 
-function finalizeOpenTask(model: StreamModel, mode: "history" | "live", nowMs?: number): void {
+function finalizeOpenTask(model: StreamModel): void {
   if (!model.taskOpen) return;
   model.taskOpen = false;
   // No more tool output will arrive once a Task is finalized: close cards still "executing" and stop their LiveDuration.
@@ -672,23 +696,18 @@ function finalizeOpenTask(model: StreamModel, mode: "history" | "live", nowMs?: 
   // and is naturally excluded — no compaction wall-clock addition/subtraction
   // is needed at all, and history rebuild and live share the same
   // convention, consistent before and after a refresh (see taskLastReqEndMs).
+  //
+  // Trace timestamps are the ONLY source here — the local clock is never
+  // consulted, so a round settles to the same number whether it was watched
+  // live or replayed from the Trace after a reload. A degenerate round (no
+  // request_end at all, e.g. interrupted before its first Request even ran)
+  // falls back to its message span, which the abort event's own timestamp
+  // still bounds; that span is what a later reload would compute, so taking
+  // the local clock instead — as this did before — only bought a number that
+  // silently changed on refresh, along with idle-detection and mid-join
+  // latency folded into it.
   const endMs = model.taskLastReqEndMs ?? model.taskLastTsMs;
-  const tsElapsed = Math.max(0, endMs - model.taskFirstTsMs);
-  // Only a degenerate round (no request_end at all for the whole round,
-  // e.g. interrupted before its first Request even ran) falls back to the
-  // local clock: during a mid-stream join / resync rebuild, the local clock
-  // only covers the time since joining, so it's compared against the
-  // message span and the larger is taken to avoid underestimating. When
-  // there is a request_end, it's the accurate round-end and is used
-  // directly (not compared against the local clock, to avoid folding in noise like idle-detection latency).
-  let elapsed: number;
-  if (model.taskLastReqEndMs !== null) {
-    elapsed = tsElapsed;
-  } else if (mode === "live") {
-    elapsed = Math.max((nowMs ?? Date.now()) - model.taskStartLocalMs, tsElapsed);
-  } else {
-    elapsed = tsElapsed;
-  }
+  const elapsed = Math.max(0, endMs - model.taskFirstTsMs);
   const stats = endTask(model.stats, elapsed);
   if (model.nested) return;
   const reply = collectTaskAssistant(model);

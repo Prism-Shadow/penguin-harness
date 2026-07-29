@@ -321,6 +321,11 @@ export function endTask(t: TaskStatsTracker, elapsedMs: number): TaskStats | nul
  * anomaly never makes the sum go backwards. At task end {@link endTask} folds the Task's
  * elapsed into `sessionElapsedMs` in the same model update that flips `taskOpen` off, so the
  * live addition never double-counts across the boundary.
+ *
+ * This is the only place a local clock reaches the elapsed figure at all, and only to animate
+ * the Task in flight: `taskStartLocalMs` is back-dated on history rebuild (see StreamModel), so
+ * reloading mid-run resumes the ticking value instead of restarting it, and the moment the Task
+ * settles the number is replaced by one computed from Trace timestamps alone.
  */
 export function liveSessionElapsedMs(
   t: TaskStatsTracker,
