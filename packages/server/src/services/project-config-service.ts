@@ -208,6 +208,16 @@ export class ProjectConfigService {
     return typeof raw.name === "string" ? raw.name : undefined;
   }
 
+  /**
+   * Rewrites the display name, preserving every other field (models, credentials, default
+   * model): read-modify-write of the same toml, like ensurePresetModels. The id itself is
+   * immutable — only this label changes.
+   */
+  async setName(projectId: string, name: string): Promise<void> {
+    const raw = await this.readRaw(projectId);
+    await this.writeRaw(projectId, { ...raw, name });
+  }
+
   /** Paired reference of the default Model; returns undefined if unconfigured (or in the old string format). */
   async getDefaultModelRef(projectId: string): Promise<ModelRef | undefined> {
     const raw = await this.readRaw(projectId);

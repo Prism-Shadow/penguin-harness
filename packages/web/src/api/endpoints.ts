@@ -40,6 +40,8 @@ import type {
   PrefsResponse,
   ProjectCreateRequest,
   ProjectCreateResponse,
+  ProjectUpdateRequest,
+  ProjectUpdateResponse,
   ProjectsResponse,
   ScheduleItem,
   SchedulesResponse,
@@ -113,6 +115,13 @@ export const listProjects = () => apiFetch<ProjectsResponse>("/api/projects");
 
 export const createProject = (body: ProjectCreateRequest) =>
   apiFetch<ProjectCreateResponse>("/api/projects", { method: "POST", body });
+
+/** Rename a Project's display name (owner); the id is immutable. */
+export const updateProject = (projectId: string, body: ProjectUpdateRequest) =>
+  apiFetch<ProjectUpdateResponse>(`/api/projects/${encodeURIComponent(projectId)}`, {
+    method: "PATCH",
+    body,
+  });
 
 export const deleteProject = (projectId: string) =>
   apiFetch<void>(`/api/projects/${encodeURIComponent(projectId)}`, { method: "DELETE" });

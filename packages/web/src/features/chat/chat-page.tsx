@@ -313,12 +313,23 @@ export function ChatPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSessionId, selectedAgentId, setCurrentAgentId]);
 
-  // TASK-SCOPED panel visibility (owner rule: an open panel belongs to the task it was opened
-  // for). The pure tracker (advancePanelTaskScope, unit-tested) decides at each observation:
-  //   - entering a session / a NEW Task starting (a user message — taskStartCount increase)
-  //     closes the panel by default, so an unrelated task never inherits it;
-  //   - the CURRENT task's first live spawn auto-opens it (re-armed per task; a manual close
-  //     afterwards is respected until the next boundary).
+  // A NEW chat starts with both panels closed: a panel opened for an earlier conversation must
+  // not carry into a freshly created one. The draft is the reset point — it renders no panels
+  // itself, so the Session created from it (first send navigates to /chat/:id) begins closed,
+  // while a plain conversation switch keeps whatever the user had open. This effect owns the
+  // ONLY automatic close of either panel.
+  useEffect(() => {
+    if (!draft) return;
+    filesPanelRaw.setOpen(false);
+    subagentsPanelRaw.setOpen(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft]);
+
+  // Subagents panel AUTO-OPEN (the one visibility rule this panel has beyond the Files panel's):
+  // the pure tracker (advancePanelTaskScope, unit-tested) opens it on the CURRENT task's first
+  // live spawn, re-armed at every task boundary so a manual close is respected until the next
+  // one. Boundaries themselves no longer close anything — an open panel now survives Session
+  // switches and new Tasks alike, matching the Files panel.
   // The auto-open applies only when docked (a mobile Sheet sliding over the conversation
   // uninvited would be worse than staying discoverable via the row), never over an open Files
   // panel (an automatic open must not steal an explicit one — the row and the toolbar's amber
@@ -333,9 +344,7 @@ export function ChatPage() {
       taskCount,
       liveSpawn,
     });
-    if (action === "close") {
-      subagentsPanelRaw.setOpen(false);
-    } else if (
+    if (
       action === "autoOpen" &&
       subagentsPanelRaw.isDocked &&
       !subagentsPanelRaw.open &&

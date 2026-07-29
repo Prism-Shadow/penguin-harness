@@ -1,10 +1,14 @@
 /**
- * Admin self-update dialog (opened from the sidebar user menu's update reminder):
- * explains that the new release is downloaded into the install directory and that the
- * service must be restarted afterwards, then runs POST /api/version/update and shows the
- * outcome — the CLI's own output tail in a scrollable <pre> for the failed/unsupported
- * states, and a restart hint on success. Closing is blocked while the update runs (the
- * request can take minutes; navigating away would just hide the result).
+ * Update dialog, opened from the user menu's single update row once a newer release is known.
+ * It is the only place the update story is told, so it carries everything the menu used to
+ * spread across three rows: the new version, the release-notes link, and — for admins only —
+ * the self-update action. It explains that the release is downloaded into the install
+ * directory and that the service must be restarted afterwards, then runs
+ * POST /api/version/update and shows the outcome: the CLI's own output tail in a scrollable
+ * <pre> for the failed/unsupported states, a restart hint on success. Non-admins get the same
+ * information plus the link, with no action to run (the endpoint is admin-only anyway).
+ * Closing is blocked while the update runs (the request can take minutes; navigating away
+ * would just hide the result).
  */
 import { useEffect, useState } from "react";
 import type { UpdateRunResponse } from "@prismshadow/penguin-server/api";
@@ -20,10 +24,16 @@ export function UpdateDialog({
   open,
   onClose,
   latestVersion,
+  releaseUrl = null,
+  canUpdate,
 }: {
   open: boolean;
   onClose: () => void;
   latestVersion: string | null;
+  /** Release page of the new version; omitted/null when the check couldn't resolve one. */
+  releaseUrl?: string | null;
+  /** Admin: the self-update action is offered. Otherwise the dialog is read-only. */
+  canUpdate: boolean;
 }) {
   const [phase, setPhase] = useState<Phase>("confirm");
   const [result, setResult] = useState<UpdateRunResponse | null>(null);
@@ -61,7 +71,7 @@ export function UpdateDialog({
       title={S.update.updateNow}
       onClose={phase === "running" ? () => undefined : onClose}
       footer={
-        phase === "done" ? (
+        phase === "done" || !canUpdate ? (
           <Button onClick={onClose}>{S.common.close}</Button>
         ) : (
           <>
@@ -92,7 +102,22 @@ export function UpdateDialog({
           {latestVersion !== null && (
             <p className="text-sm font-medium">{S.update.newVersion(latestVersion)}</p>
           )}
-          <p className="text-sm text-gray-600 dark:text-gray-400">{S.update.confirmBody}</p>
+          {/* Release notes: the menu no longer carries this link, so it lives here. */}
+          {releaseUrl !== null && (
+            <p>
+              <a
+                href={releaseUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm text-brand-600 underline-offset-2 hover:underline dark:text-brand-300"
+              >
+                {S.update.releaseNotes}
+              </a>
+            </p>
+          )}
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            {canUpdate ? S.update.confirmBody : S.update.adminOnly}
+          </p>
           {phase === "running" && (
             <p className="text-sm text-gray-500 dark:text-gray-400">{S.update.updating}</p>
           )}

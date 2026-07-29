@@ -55,7 +55,8 @@ import { toastError } from "../../components/ui/toast";
 import { useVersionInfo } from "../../lib/use-version-info";
 import { ChatInput } from "./chat-input";
 import { buildSkillsMessage } from "./skill-use";
-import { EXAMPLE_TASKS, type ExampleTask, type ExampleTaskId } from "./example-tasks";
+import { EXAMPLE_FOLDERS } from "./example-tasks";
+import type { ExampleFolderId, ExampleTask, ExampleTaskId } from "./example-tasks";
 import { clearDraft, draftKey, loadDraft, saveDraft } from "./draft-cache";
 import type { DraftCache } from "./draft-cache";
 import { sameModelRef } from "../models/model-grouping";
@@ -87,6 +88,93 @@ function saveAppliedRouteKey(field: RouteStateField, key: string): void {
   } catch {
     /* best-effort: the dedup marker falls back to the per-mount ref */
   }
+}
+
+/** Folder outline, closed / open (the sidebar's workspace-group glyphs). */
+const FOLDER_ICON = "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z";
+const FOLDER_OPEN_ICON =
+  "m6 14 1.45-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2";
+
+/**
+ * 20×20 line icon per example (gamepad / game grid / music note / evaluation loop / sparkle).
+ * The two Agent-evolution examples share the loop glyph — they are the two halves of one
+ * build-then-optimize cycle.
+ */
+function ExampleIcon({ id }: { id: ExampleTaskId }) {
+  const common = {
+    width: 20,
+    height: 20,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    className: "shrink-0 text-brand-500 dark:text-brand-400",
+    "aria-hidden": true,
+  } as const;
+  if (id === "agentBenchmarkBuild" || id === "agentOptimization") {
+    return (
+      <svg {...common}>
+        <path
+          d="M7 7h8a4 4 0 0 1 4 4v1M17 5l2 2-2 2M17 17H9a4 4 0 0 1-4-4v-1M7 19l-2-2 2-2"
+          strokeWidth="1.7"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <circle cx="12" cy="12" r="2" strokeWidth="1.7" />
+      </svg>
+    );
+  }
+  if (id === "lol") {
+    return (
+      <svg {...common}>
+        <path d="M9 18V6l11-2v12" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+        <circle cx="6.5" cy="18" r="2.5" strokeWidth="1.7" />
+        <circle cx="17.5" cy="16" r="2.5" strokeWidth="1.7" />
+      </svg>
+    );
+  }
+  if (id === "game") {
+    return (
+      <svg {...common}>
+        <path
+          d="M6.7 6h10.6a4 4 0 0 1 3.97 3.56c.2 1.8.73 5.05.73 6.44a3 3 0 0 1-3 3c-1 0-1.5-.5-2-1l-1.4-1.4a2 2 0 0 0-1.42-.6H9.82a2 2 0 0 0-1.41.6L7 18c-.5.5-1 1-2 1a3 3 0 0 1-3-3c0-1.39.52-4.64.73-6.44A4 4 0 0 1 6.7 6z"
+          strokeWidth="1.7"
+          strokeLinejoin="round"
+        />
+        <path d="M6.5 11h4M8.5 9v4M15 12h.01M18 10h.01" strokeWidth="1.7" strokeLinecap="round" />
+      </svg>
+    );
+  }
+  if (id === "gamecenter") {
+    // A grid of game tiles: many games behind one index page.
+    return (
+      <svg {...common}>
+        <path
+          d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"
+          strokeWidth="1.7"
+          strokeLinejoin="round"
+        />
+        <path
+          d="M6 7h2M17 7v-2M17 7h2M6.5 17h3M16 16.5h2"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+        />
+      </svg>
+    );
+  }
+  return (
+    <svg {...common}>
+      <path
+        d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z"
+        strokeWidth="1.7"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M18.5 15.5l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9.9-2.1z"
+        strokeWidth="1.4"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
 }
 
 export function DraftView({
@@ -422,6 +510,17 @@ export function DraftView({
     [exampleBusy, agentSkills, onSend],
   );
 
+  /** Open example folders (all collapsed on mount — that resting state IS the three-row height). */
+  const [openExampleFolders, setOpenExampleFolders] = useState<ReadonlySet<ExampleFolderId>>(
+    new Set(),
+  );
+  const toggleExampleFolder = (id: ExampleFolderId) =>
+    setOpenExampleFolders((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+
   const selectedAgent = agents.find((a) => a.agentId === agentId) ?? null;
 
   // Capability info for the currently selected model (vision/context window) switches instantly with the selection (matched by paired reference).
@@ -491,130 +590,98 @@ export function DraftView({
         </div>
 
         {/* Example tasks: one-click canned builds showing off the one-sentence → app flow,
-            stacked vertically in display order on every viewport. Disabled until
-            agents/models/skills are resolved (onSend would silently no-op without an Agent);
-            hover only darkens the border, per the card convention. */}
-        <div className="mt-6 flex flex-col items-stretch gap-2">
-          {EXAMPLE_TASKS.map((task) => {
-            const copy = S.chat.exampleTasks[task.id];
+            filed into collapsible folders so the showcase can grow without growing the page.
+            The max-height is the whole point of the folders: collapsed it is three folder rows
+            (well under the cap), and an open folder scrolls INSIDE this box instead of pushing
+            the input card up the viewport — the block's footprint never exceeds three cards.
+            Cards are disabled until agents/models/skills are resolved (onSend would silently
+            no-op without an Agent); hover only darkens the border, per the card convention. */}
+        <div className="mt-6 max-h-60 space-y-1 overflow-y-auto">
+          {EXAMPLE_FOLDERS.map((folder) => {
+            const open = openExampleFolders.has(folder.id);
             return (
-              <button
-                key={task.id}
-                type="button"
-                disabled={exampleBusy !== null || sending || !skillsLoaded || !agentId || !models}
-                onClick={() => void runExample(task)}
-                className="group flex min-w-0 items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 text-left transition-colors duration-150 hover:border-gray-300 disabled:cursor-default disabled:opacity-60 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-gray-700"
-              >
-                {/* 24×24 line icons (gamepad / music note / sparkle), consistent with the icon convention */}
-                {task.id === "agentBenchmarkBuild" || task.id === "agentOptimization" ? (
-                  <svg
-                    width="20"
-                    height="20"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    className="shrink-0 text-brand-500 dark:text-brand-400"
-                    aria-hidden
-                  >
-                    <path
-                      d="M7 7h8a4 4 0 0 1 4 4v1M17 5l2 2-2 2M17 17H9a4 4 0 0 1-4-4v-1M7 19l-2-2 2-2"
+              <div key={folder.id}>
+                <button
+                  type="button"
+                  aria-expanded={open}
+                  onClick={() => toggleExampleFolder(folder.id)}
+                  className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800/70"
+                >
+                  <span className="shrink-0 text-gray-400 dark:text-gray-500">
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
                       strokeWidth="1.7"
                       strokeLinecap="round"
                       strokeLinejoin="round"
-                    />
-                    <circle cx="12" cy="12" r="2" strokeWidth="1.7" />
-                  </svg>
-                ) : task.id === "lol" ? (
-                  <svg
-                    width="20"
-                    height="20"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    className="shrink-0 text-brand-500 dark:text-brand-400"
-                    aria-hidden
-                  >
-                    <path
-                      d="M9 18V6l11-2v12"
-                      strokeWidth="1.7"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                    <circle cx="6.5" cy="18" r="2.5" strokeWidth="1.7" />
-                    <circle cx="17.5" cy="16" r="2.5" strokeWidth="1.7" />
-                  </svg>
-                ) : task.id === "game" ? (
-                  <svg
-                    width="20"
-                    height="20"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    className="shrink-0 text-brand-500 dark:text-brand-400"
-                    aria-hidden
-                  >
-                    <path
-                      d="M6.7 6h10.6a4 4 0 0 1 3.97 3.56c.2 1.8.73 5.05.73 6.44a3 3 0 0 1-3 3c-1 0-1.5-.5-2-1l-1.4-1.4a2 2 0 0 0-1.42-.6H9.82a2 2 0 0 0-1.41.6L7 18c-.5.5-1 1-2 1a3 3 0 0 1-3-3c0-1.39.52-4.64.73-6.44A4 4 0 0 1 6.7 6z"
-                      strokeWidth="1.7"
-                      strokeLinejoin="round"
-                    />
-                    <path
-                      d="M6.5 11h4M8.5 9v4M15 12h.01M18 10h.01"
-                      strokeWidth="1.7"
-                      strokeLinecap="round"
-                    />
-                  </svg>
-                ) : (
-                  <svg
-                    width="20"
-                    height="20"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    className="shrink-0 text-brand-500 dark:text-brand-400"
-                    aria-hidden
-                  >
-                    <path
-                      d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z"
-                      strokeWidth="1.7"
-                      strokeLinejoin="round"
-                    />
-                    <path
-                      d="M18.5 15.5l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9.9-2.1z"
-                      strokeWidth="1.4"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                )}
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium text-gray-900 dark:text-gray-100">
-                    {copy.label}
+                      aria-hidden
+                    >
+                      <path d={open ? FOLDER_OPEN_ICON : FOLDER_ICON} />
+                    </svg>
                   </span>
-                  <span className="line-clamp-2 text-xs text-gray-500 dark:text-gray-400">
-                    {copy.desc}
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {S.chat.exampleFolders[folder.id]}
                   </span>
-                </span>
-                {exampleBusy === task.id ? (
-                  <span className="ml-1 shrink-0 text-xs text-gray-400">{S.common.loading}</span>
-                ) : (
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    className="ml-1 shrink-0 text-gray-300 transition-colors duration-150 group-hover:text-gray-500 dark:text-gray-600 dark:group-hover:text-gray-400"
-                    aria-hidden
-                  >
-                    <path
-                      d="M5 12h14M13 6l6 6-6 6"
-                      strokeWidth="1.7"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
+                  <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
+                    {folder.tasks.length}
+                  </span>
+                  <Chevron open={open} size={14} className="text-gray-400" />
+                </button>
+
+                {open && (
+                  <div className="mt-1 flex flex-col items-stretch gap-2 pl-3">
+                    {folder.tasks.map((task) => {
+                      const copy = S.chat.exampleTasks[task.id];
+                      return (
+                        <button
+                          key={task.id}
+                          type="button"
+                          disabled={
+                            exampleBusy !== null || sending || !skillsLoaded || !agentId || !models
+                          }
+                          onClick={() => void runExample(task)}
+                          className="group flex min-w-0 items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 text-left transition-colors duration-150 hover:border-gray-300 disabled:cursor-default disabled:opacity-60 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-gray-700"
+                        >
+                          <ExampleIcon id={task.id} />
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-medium text-gray-900 dark:text-gray-100">
+                              {copy.label}
+                            </span>
+                            <span className="line-clamp-2 text-xs text-gray-500 dark:text-gray-400">
+                              {copy.desc}
+                            </span>
+                          </span>
+                          {exampleBusy === task.id ? (
+                            <span className="ml-1 shrink-0 text-xs text-gray-400">
+                              {S.common.loading}
+                            </span>
+                          ) : (
+                            <svg
+                              width="16"
+                              height="16"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              className="ml-1 shrink-0 text-gray-300 transition-colors duration-150 group-hover:text-gray-500 dark:text-gray-600 dark:group-hover:text-gray-400"
+                              aria-hidden
+                            >
+                              <path
+                                d="M5 12h14M13 6l6 6-6 6"
+                                strokeWidth="1.7"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              />
+                            </svg>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
                 )}
-              </button>
+              </div>
             );
           })}
         </div>
@@ -628,8 +695,8 @@ export function DraftView({
 
 /**
  * Superscript "new version" pill on the version line (accent-colored, raised via
- * align-super). Kept literally identical to the sidebar footer's copy in
- * components/layout/sidebar.tsx — the two surfaces must not drift apart.
+ * align-super). The only remaining copy: the sidebar's version row dropped its badge when
+ * the three update rows collapsed into one whose label already names the new version.
  */
 const versionBadgeClass =
   "ml-1.5 inline-block rounded-full bg-[var(--accent-bg)] px-1.5 align-super text-[10px] font-medium leading-4 text-[var(--accent-fg)] transition-opacity duration-150 hover:opacity-80";
@@ -642,8 +709,8 @@ const versionBadgeClass =
  * date, stamped into core's BUILD_DATE at build time — displayed as-is, no network;
  * dev builds and releases that predate the stamping (v0.1.2 and earlier) carry null
  * and show the version alone. When the update check knows a newer release, a small
- * superscript badge follows, linking to the release page (this surface's existing
- * affordance; the sidebar's badge additionally offers admins the update dialog).
+ * superscript badge follows, linking to the release page (this surface's affordance; the
+ * sidebar user menu instead routes its single update row into the update dialog).
  * Fetching starts on mount — useVersionInfo caches at module level, so after the first
  * resolution anywhere in the app this renders instantly and never refetches. Nothing
  * renders until the version resolves (no placeholder flicker under the brand).

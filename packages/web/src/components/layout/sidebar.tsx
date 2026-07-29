@@ -117,14 +117,6 @@ const PIN_ICON =
 const menuItemClass =
   "block w-full px-3.5 py-2 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800";
 
-/**
- * Superscript "new version" pill on the version line (accent-colored, raised via
- * align-super). Kept literally identical to the draft page's copy in
- * features/chat/draft-view.tsx — the two surfaces must not drift apart.
- */
-const versionBadgeClass =
-  "ml-1.5 inline-block rounded-full bg-[var(--accent-bg)] px-1.5 align-super text-[10px] font-medium leading-4 text-[var(--accent-fg)] transition-opacity duration-150 hover:opacity-80";
-
 /** Grouping mode of the Session list (persisted; Workspace is the default). */
 type GroupMode = "workspace" | "agent";
 const GROUP_MODE_KEY = "penguin.sidebarGroupMode";
@@ -235,6 +227,13 @@ export function Sidebar({
   // Version row + update reminder: nothing is fetched until the dropdown first opens.
   const { version, update } = useVersionInfo(userOpen);
   const updateAvailable = update?.updateAvailable === true;
+  /**
+   * The newer release's version string, or null while none is known — the single update row's
+   * whole state machine. A resolved version is required, not just the boolean: the row's label
+   * names it, so a would-be "available but unnamed" result stays on the check action rather
+   * than rendering a versionless reminder.
+   */
+  const newVersion = updateAvailable ? (update?.latestVersion ?? null) : null;
   // The running version's release date, stamped into core's BUILD_DATE at build time by
   // the release workflow — displayed as-is, no network involved. Dev builds and releases
   // that predate the stamping (v0.1.2 and earlier) carry null. Shown as the localized
@@ -776,8 +775,13 @@ export function Sidebar({
       {/* New chat: the only pinned entry besides the Project switcher above and the user row
           below. No background fill, the same gray hover/active styling as the nav items,
           distinguished only by its position and font-medium; shows the same gray active state
-          while on the draft page. */}
-      <div className="shrink-0 px-2 pt-2">
+          while on the draft page.
+          The gap to the scroll area below is this block's OWN pb-2, not padding inside the
+          scroller: padding-top there belongs to the scrollable content and slides away with
+          it, so a scrolled nav entry ended up flush against this pinned button, the two
+          labels touching. Outside the scroller the 8px stays put at every scroll offset —
+          the same text-to-text rhythm two adjacent nav rows have. */}
+      <div className="shrink-0 px-2 pb-2 pt-2">
         <button
           type="button"
           onClick={() => newChat(defaultAgentId)}
@@ -805,7 +809,7 @@ export function Sidebar({
           overflow-y-auto and stretch the **document**, so expanding "More" / a source
           folder made the whole page scroll (composer pushed up, blank space below). */}
       <div className="relative min-h-0 flex-1 overflow-y-auto px-2 pb-2">
-        <nav className="space-y-0.5 pt-2">
+        <nav className="space-y-0.5">
           {navItems.map((item) => (
             <NavLink
               key={item.to}
@@ -1055,41 +1059,6 @@ export function Sidebar({
               <Segmented options={langOptions} value={lang} onChange={setLang} />
             </SettingRow>
           </div>
-          {/* Update reminder: release-notes link, plus the self-update action for admins.
-              Only rendered after the lazy check found a newer release. */}
-          {update !== null && update.updateAvailable && update.latestVersion !== null && (
-            <div className="mt-1 border-t border-gray-100 pt-1 dark:border-gray-800">
-              {update.releaseUrl !== null ? (
-                <a
-                  href={update.releaseUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title={S.update.releaseNotes}
-                  className={`${menuItemClass} flex items-center gap-2 font-medium`}
-                >
-                  <span aria-hidden className="h-2 w-2 rounded-full bg-[var(--accent-bg)]" />
-                  {S.update.newVersion(update.latestVersion)}
-                </a>
-              ) : (
-                <span className={`${menuItemClass} flex items-center gap-2 font-medium`}>
-                  <span aria-hidden className="h-2 w-2 rounded-full bg-[var(--accent-bg)]" />
-                  {S.update.newVersion(update.latestVersion)}
-                </span>
-              )}
-              {user?.isAdmin && (
-                <button
-                  type="button"
-                  className={menuItemClass}
-                  onClick={() => {
-                    setUserOpen(false);
-                    setUpdateDialogOpen(true);
-                  }}
-                >
-                  {S.update.updateNow}
-                </button>
-              )}
-            </div>
-          )}
           <div className="mt-1 border-t border-gray-100 pt-1 dark:border-gray-800">
             <button
               type="button"
@@ -1101,37 +1070,52 @@ export function Sidebar({
             >
               {S.account.changePassword}
             </button>
-            {/* Manual update check, directly below Change password (owner layout). The
-                running version sits muted on the right of the same row — no product-name
-                prefix — and the superscript new-version badge rides along there as a
-                passive indicator: a nested button/link inside this button row would be
-                invalid HTML, and whenever the badge shows, the clickable affordances
-                (release link / Update now) are already present in the reminder rows
-                above. The "last updated" date lives in the row tooltip, keeping the row
-                itself uncluttered. While checking, the label swaps to the busy text and
-                the right-side version stays put. Nothing is fetched until the menu first
-                opens; the version span appears once /api/version resolves. */}
+            {/* THE update row — one button, two jobs, directly below Change password (owner
+                layout: the menu used to stack a release-notes link, an admin "Update now" row
+                and this check row on top of each other). It reads "Check for updates" and runs
+                the manual check until a newer release is known; from then on it reads "New
+                version vX available" with a leading accent dot and opens the update dialog
+                instead, which carries the release-notes link and the admin-only self-update.
+                The running version sits muted on the right — no product-name prefix, and no
+                superscript badge any more: the label itself already names the new version.
+                The "last updated" date lives in the row tooltip, keeping the row uncluttered.
+                While checking, the label swaps to the busy text and the version stays put.
+                Nothing is fetched until the menu first opens; the version span appears once
+                /api/version resolves. */}
             <button
               type="button"
               disabled={updateChecking}
-              onClick={() => void runUpdateCheck()}
+              onClick={() => {
+                if (newVersion !== null) {
+                  setUserOpen(false);
+                  setUpdateDialogOpen(true);
+                } else {
+                  void runUpdateCheck();
+                }
+              }}
               {...(versionDate !== null
                 ? { title: S.update.lastUpdated(formatMonthDay(versionDate, locale)) }
                 : {})}
               className={`${menuItemClass} flex items-center justify-between gap-2 disabled:cursor-default disabled:opacity-60`}
             >
-              <span>{updateChecking ? S.update.checking : S.update.checkNow}</span>
+              <span className="flex min-w-0 items-center gap-2">
+                {newVersion !== null && (
+                  <span
+                    aria-hidden
+                    className="h-2 w-2 shrink-0 rounded-full bg-[var(--accent-bg)]"
+                  />
+                )}
+                <span className="min-w-0 truncate">
+                  {updateChecking
+                    ? S.update.checking
+                    : newVersion !== null
+                      ? S.update.newVersion(newVersion)
+                      : S.update.checkNow}
+                </span>
+              </span>
               {version !== null && (
                 <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
                   {`v${version.version}`}
-                  {update !== null && update.updateAvailable && update.latestVersion !== null && (
-                    <span
-                      className={versionBadgeClass}
-                      title={S.update.newVersion(update.latestVersion)}
-                    >
-                      {S.update.newVersionBadge}
-                    </span>
-                  )}
                 </span>
               )}
             </button>
@@ -1169,7 +1153,9 @@ export function Sidebar({
       <UpdateDialog
         open={updateDialogOpen}
         onClose={() => setUpdateDialogOpen(false)}
-        latestVersion={update?.latestVersion ?? null}
+        latestVersion={newVersion}
+        releaseUrl={update?.releaseUrl ?? null}
+        canUpdate={user?.isAdmin === true}
       />
 
       <CreateProjectDialog
