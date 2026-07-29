@@ -17,15 +17,17 @@
  * session), shown as a read-only tag from session_meta;
  * `/` opens the slash command menu (`/compact` compresses context, replacing the button; each
  * installed skill gets its own entry; pressing Enter on `/<skill_name>` toggles that skill's
- * selection without sending). Matching is positional like `@`: a slash opens the menu from any
- * caret position, running a command removes just that token, and Escape only dismisses the menu —
+ * selection without sending). Matching is positional: a slash opens the menu from any caret
+ * position, running a command removes just that token, and Escape only dismisses the menu —
  * the rest of the draft is never touched;
- * `@` opens the agent selection menu; once picked it becomes a fixed highlighted target chip
- * above the text body (only one allowed, picking again replaces it; removed via backspace or the
- * x button); only a leading `@` at the start of the text counts — typing or pasting text starting
- * with `@<agentId>` also works the same way, while an `@` in the middle of the text is just plain
- * text. Sending doesn't use the current Session: it opens a new chat for the target agent instead,
- * and the text body carries no `@` marker;
+ * `/agent` and `/model` are the two **switch** commands, and both are staged rather than
+ * immediate: running one consumes its token and opens a picker (agents / models), and the pick
+ * becomes a highlighted chip above the text body instead of switching on the spot. The user
+ * keeps typing; **Enter/Send** performs the switch — an agent chip hands the conversation off to
+ * a new chat for that agent (the current Session is not sent to), a model chip forks this
+ * conversation onto the picked model. With an empty text body the default auto-message is filled
+ * in. Only one chip at a time (picking either clears the other, and both are exclusive with goal
+ * mode); it is removed via backspace at the start of the text or the chip's x button;
  * The bottom toolbar provides a searchable multi-select skills dropdown (styled like the model
  * selector: a top search box filtering by name and localized description, plus a checklist;
  * clicking a row toggles its selection without closing the menu; the button = book icon + label +
@@ -63,6 +65,8 @@ import { S } from "../../lib/strings";
 import { humanizeTokens } from "../../lib/format";
 import { resolveContextWindow } from "../../lib/context";
 import { useLocale } from "../../state/locale";
+import { agentDisplayName } from "../../state/project";
+import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { Dropdown } from "../../components/ui/dropdown";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { noAutofill } from "../../components/ui/input";
@@ -76,7 +80,7 @@ import {
   sameModelRef,
   visibleChatModels,
 } from "../models/model-grouping";
-import { filterAgents, matchMention, splitLeadingMention } from "./agent-mentions";
+import { filterAgents } from "./agent-handoff";
 import { matchSlash, removeSlashToken } from "./slash-token";
 import { SELECTABLE_THINKING_LEVELS, thinkingLevelLabel } from "./thinking-level";
 import {
@@ -428,6 +432,68 @@ function ModelSelect({
         }}
       />
     </Dropdown>
+  );
+}
+
+/**
+ * Agent candidate panel (search box + list) for the `/agent` switch picker — the agent-side
+ * counterpart of ModelMenuList, built the same way: the search text is internal state reset by
+ * remount (the host only renders the panel while open), and the list is capped by an internal
+ * scroll (max-h-56) so a Project with many Agents never overflows the viewport. Rows carry the
+ * Agent avatar (the same identity tile the draft Agent picker uses), the agentId in monospace —
+ * the id is what identifies an Agent everywhere else in the app — and the display name after it
+ * when it differs.
+ */
+function AgentMenuList({
+  agents,
+  onPick,
+}: {
+  agents: AgentSummary[];
+  onPick: (agent: AgentSummary) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const visible = filterAgents(agents, query);
+  return (
+    <>
+      {/* Quick search: supports agentId / display name */}
+      <div className="border-b border-gray-100 px-2 pb-1.5 pt-0.5 dark:border-gray-800">
+        <input
+          autoFocus
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={S.chat.agentSearchPlaceholder}
+          aria-label={S.chat.agentSearchPlaceholder}
+          {...noAutofill}
+          className="w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-xs text-gray-700 placeholder:text-gray-400 focus:outline-none dark:text-gray-200 dark:placeholder:text-gray-500"
+        />
+      </div>
+      <div className="max-h-56 overflow-y-auto">
+        {visible.length === 0 && (
+          <p className="px-3 py-1.5 text-xs text-gray-400">{S.chat.agentsNoMatch}</p>
+        )}
+        {visible.map((a) => (
+          <button
+            key={a.agentId}
+            type="button"
+            onClick={() => onPick(a)}
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-gray-600 transition-colors duration-150 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
+          >
+            <AgentAvatar
+              id={a.agentId}
+              name={agentDisplayName(a)}
+              size={16}
+              className="shrink-0 rounded"
+            />
+            <span className="shrink-0 font-mono text-gray-800 dark:text-gray-200">{a.agentId}</span>
+            {a.name && a.name !== a.agentId && (
+              <span className="min-w-0 flex-1 truncate text-gray-400 dark:text-gray-500">
+                {a.name}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+    </>
   );
 }
 
@@ -965,9 +1031,9 @@ export function ChatInput({
   /** Server-reported queued follow-up count (from task_state): renders the "N queued" hint until they auto-send. */
   queuedFollowUps?: number;
   /**
-   * Used instead of onSend when an @ target is present (chip or a leading @ typed manually):
-   * opens a new chat for the target agent (the text body carries no @ marker, and the current
-   * Session receives no message). Returns whether it succeeded (draft kept on failure).
+   * Used instead of onSend when an `/agent` target chip is staged: opens a new chat for the
+   * target agent (the current Session receives no message). Returns whether it succeeded
+   * (draft kept on failure).
    */
   onHandoff: (target: AgentSummary, input: TaskInputPart[]) => Promise<boolean>;
   onStop: () => Promise<void>;
@@ -984,10 +1050,10 @@ export function ChatInput({
   onChangeModel?: (ref: ModelRefDto) => void;
   /**
    * Session state: model switch via the `/model` command — forks the session onto the picked
-   * model (a NEW session carrying this conversation) and navigates there; any text remaining
-   * after the command token is posted as the new session's first task. Returns whether it
-   * succeeded (draft kept on failure). Only passed for an active session (the command is
-   * additionally gated on not running/compacting); picking the current model is a no-op.
+   * model (a NEW session carrying this conversation) and navigates there; the draft written
+   * after the pick is posted as the new session's first task. Returns whether it succeeded
+   * (draft kept on failure). Only passed for an active session (the command is additionally
+   * gated on not running/compacting); picking the current model is a no-op.
    */
   onSwitchModel?: (ref: ModelRefDto, input: TaskInputPart[]) => Promise<boolean>;
   /** Project default model (marked "default" on the selector's candidate item). */
@@ -1028,7 +1094,7 @@ export function ChatInput({
   onChangeApprovalMode: (mode: ApprovalMode) => void;
   modeSaving: boolean;
   autoFocus?: boolean;
-  /** Agent list of the current Project: typing `@` opens the agent selection popup. */
+  /** Agent list of the current Project: the `/agent` command's candidates (without any, the command isn't offered). */
   agents: AgentSummary[];
   /**
    * Skills installed on the current Agent (in session state, fetched by chat-page keyed on the
@@ -1050,15 +1116,15 @@ export function ChatInput({
   /** Draft's initial text (restored on mount; paired with onTextChange for draft auto-caching). */
   initialText?: string;
   /**
-   * Callback when the user edits the text body (including paths that rewrite the text such as @
-   * selection / slash clearing); the clear after a successful send does **not** call back — at
+   * Callback when the user edits the text body (including paths that rewrite the text such as
+   * running a slash command); the clear after a successful send does **not** call back — at
    * that point the parent has already cleared the draft cache entirely, and calling back would
    * resurrect it.
    */
   onTextChange?: (text: string) => void;
-  /** Draft restore: the agentId of the @ handoff target (resolved once agents are ready; discarded if stale). */
+  /** Draft restore: the agentId of the staged handoff target (resolved once agents are ready; discarded if stale). */
   initialHandoffTargetId?: string;
-  /** Callback when the @ handoff target changes (selected/removed; the clear after a successful send does not call back, same as onTextChange). */
+  /** Callback when the staged handoff target changes (picked/removed; the clear after a successful send does not call back, same as onTextChange). */
   onHandoffTargetChange?: (agentId: string | null) => void;
   /**
    * Session state: the Session's model credentials failed authentication (abort with
@@ -1089,26 +1155,30 @@ export function ChatInput({
   const [images, setImages] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [slashIndex, setSlashIndex] = useState(0);
-  // Slash token start where Escape closed the menu (mirrors mentionDismissed: the menu stays shut for that one token).
+  // Slash token start where Escape closed the menu: it stays shut for that one token.
   const [slashDismissed, setSlashDismissed] = useState<number | null>(null);
-  // /model switch picker (session state): opened by the /model command. The command consumes
-  // its slash token immediately (same as /compact), so closing the picker — Escape, click
-  // outside, or the picked-current-model no-op — can never re-open the slash menu, and there
-  // is no stale token range to recompute at pick time; whatever text remains is the draft
-  // (and becomes the new session's first message on a successful pick).
+  // Switch pickers (opened by /model — session state — and /agent). Each command consumes its
+  // slash token immediately (same as /compact), so closing a picker — Escape, click outside, or
+  // the picked-current-model no-op — can never re-open the slash menu, and there is no stale
+  // token range to recompute at pick time; whatever text remains is the draft (and becomes the
+  // new session's first message once the staged switch is sent).
   const [modelSwitchOpen, setModelSwitchOpen] = useState(false);
   const modelSwitchRef = useRef<HTMLDivElement>(null);
+  const [agentSwitchOpen, setAgentSwitchOpen] = useState(false);
+  const agentSwitchRef = useRef<HTMLDivElement>(null);
   // Anchor for the popups that open upward, and the room actually available above them.
   const anchorRef = useRef<HTMLDivElement>(null);
   const [upwardMaxH, setUpwardMaxH] = useState<number>();
-  // @ handoff target (chip, fixed at the front of the input); only one allowed, picking again replaces it directly.
+  // Staged handoff target from /agent (chip, fixed at the front of the input); only one allowed, picking again replaces it directly.
   const [target, setTarget] = useState<AgentSummary | null>(null);
+  // Staged model switch from /model (chip too): transient UI state — unlike the handoff target
+  // it is deliberately NOT cached in the draft, since a fork of *this* session only makes sense
+  // for as long as the composer is on screen.
+  const [pendingModel, setPendingModel] = useState<ModelInfo | null>(null);
   // Selected skills (dropdown checklist, multi-select): initial value comes from draft restore (quick-invoke pre-selection), cleared on successful send.
   const [selectedSkills, setSelectedSkills] = useState<string[]>(initialSkills ?? []);
-  // @ mention: cursor position (tracked via onChange/onSelect), candidate highlight, and the mention start where Escape closes it.
+  // Cursor position (tracked via onChange/onSelect): the slash menu matches the token at the caret.
   const [caret, setCaret] = useState(0);
-  const [mentionIndex, setMentionIndex] = useState(0);
-  const [mentionDismissed, setMentionDismissed] = useState<number | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   // Short placeholder on narrow screens: a long hint would wrap and get clipped in a single-line textarea.
   const [narrow] = useState(() => window.matchMedia("(max-width: 767px)").matches);
@@ -1116,8 +1186,8 @@ export function ChatInput({
   const running = status === "running";
   const compacting = status === "compacting";
   // Goal mode (engaged via the "+" menu or /goal): the text body becomes the objective. It is
-  // exclusive with the @ handoff target (engaging either clears the other) and with images
-  // (the objective is re-injected every round as plain text); selected skills ride the
+  // exclusive with a staged /agent or /model switch (engaging either clears the other) and with
+  // images (the objective is re-injected every round as plain text); selected skills ride the
   // round-1 message as a [use_skills] block, exactly like a normal send.
   const [goalOn, setGoalOn] = useState(false);
   const [goalBudgetText, setGoalBudgetText] = useState("");
@@ -1131,9 +1201,10 @@ export function ChatInput({
     goalBudget !== null && goalBudget !== UNLIMITED_BUDGET
       ? S.chat.goalBudgetValue(humanizeTokens(goalBudget))
       : S.chat.goalBudgetUnlimited;
-  // Sending is also allowed with only an @ target (chip) or skills selected and no text: a handoff's
-  // first message may be just a [handoff_from] source block; with skills and empty text, the sent
-  // text automatically falls back to S.chat.skillsAutoMessage (see send). Goal mode instead
+  // Sending is also allowed with only a staged switch chip (/agent or /model) or skills selected
+  // and no text: a handoff's first message may be just a [handoff_from] source block, and the
+  // empty-text fallbacks fill in the rest (S.chat.skillsAutoMessage with skills selected,
+  // S.chat.modelSwitchAutoMessage for a staged model switch — see sendNormal). Goal mode instead
   // requires a text objective and a parseable budget — and an open editor showing an invalid
   // draft disables Send outright: combined with the editor refusing to close over an invalid
   // draft (below), no click sequence can fire a goal with a stale committed budget.
@@ -1150,6 +1221,7 @@ export function ChatInput({
       : text.trim().length > 0 ||
         images.length > 0 ||
         target !== null ||
+        pendingModel !== null ||
         selectedSkills.length > 0);
 
   /**
@@ -1193,9 +1265,10 @@ export function ChatInput({
   }, [goalBudgetDraft]);
 
   /**
-   * Engage/exit goal mode; engaging clears the @ target and images (genuinely exclusive:
-   * a handoff opens another session, and the server rejects non-text goal input). Selected
-   * skills stay — they ride the round-1 message as a [use_skills] block, like a normal send.
+   * Engage/exit goal mode; engaging clears any staged switch chip and the images (genuinely
+   * exclusive: a handoff or a model switch opens another session, and the server rejects
+   * non-text goal input). Selected skills stay — they ride the round-1 message as a
+   * [use_skills] block, like a normal send.
    */
   const toggleGoal = useCallback(
     (on: boolean) => {
@@ -1206,6 +1279,7 @@ export function ChatInput({
         setGoalBudgetText("");
         setTarget(null);
         onHandoffTargetChange?.(null);
+        setPendingModel(null);
         // Images can't ride a goal (the server rejects non-text goal input): clear any already
         // attached, or canSend would stay silently false with the objective looking ready.
         setImages([]);
@@ -1216,8 +1290,9 @@ export function ChatInput({
 
   // Mid-run steering: while running, Enter/send queues plain text for the running agent
   // (delivered between turns as a [user_steering] user message). Text only — images / skills /
-  // @ target stay in the draft for a later normal send (an @ target also blocks steering: a
-  // leading mention means a handoff, not a message to this agent).
+  // a staged switch stay in the draft for a later normal send (a staged /agent or /model chip
+  // also blocks steering: the text belongs to the conversation the switch is about to open, not
+  // to the agent running here).
   // `!goalOn`: with the goal chip engaged the text is an OBJECTIVE — steering it into a run
   // that happens to be active (e.g. a schedule fired) would silently repurpose it.
   const canSteer =
@@ -1227,6 +1302,7 @@ export function ChatInput({
     !modelAuthDead &&
     onSteer !== undefined &&
     target === null &&
+    pendingModel === null &&
     text.trim().length > 0;
   // Mid-run send mode (owner directive): the user chooses between "steer" (delivered
   // mid-run as a [user_steering] input) and "follow-up" (held server-side and auto-sent as
@@ -1240,15 +1316,19 @@ export function ChatInput({
     localStorage.setItem(STEER_MODE_KEY, mode);
   };
   const followUpMode = steerMode === "followup" && onQueueFollowUp !== undefined;
-  // A follow-up is a full normal message: the whole draft (text / images / skills / handoff)
-  // is eligible, same content rule as canSend.
+  // A follow-up is a full normal message: the whole draft (text / images / skills / a staged
+  // switch) is eligible, same content rule as canSend.
   const canFollowUp =
     running &&
     !busy &&
     !goalOn &&
     !modelAuthDead &&
     followUpMode &&
-    (text.trim().length > 0 || images.length > 0 || target !== null || selectedSkills.length > 0);
+    (text.trim().length > 0 ||
+      images.length > 0 ||
+      target !== null ||
+      pendingModel !== null ||
+      selectedSkills.length > 0);
   // The single action button's mode: while running, an **empty** composer means Stop
   // (abort); as soon as there is something to send it becomes the send button (steer or
   // follow-up per the remembered mode). Idle/compacting is always send.
@@ -1259,6 +1339,7 @@ export function ChatInput({
     text.trim().length === 0 &&
     images.length === 0 &&
     target === null &&
+    pendingModel === null &&
     selectedSkills.length === 0;
   // Queued hint: shown after a successful steer until the message shows up in the stream
   // (steeringDeliveredCount increases past the baseline captured at queue time) or the run
@@ -1327,6 +1408,21 @@ export function ChatInput({
             },
           ]
         : []),
+      // Agent handoff: same shape as /model — the command consumes its token and opens the
+      // agent picker, whose pick is staged as a chip and only acted on at send time. Offered
+      // wherever there are candidates (draft state included: onHandoff is a required prop).
+      ...(agents.length > 0
+        ? [
+            {
+              cmd: "/agent",
+              desc: S.chat.switchAgent,
+              run: () => {
+                clearInput();
+                setAgentSwitchOpen(true);
+              },
+            },
+          ]
+        : []),
       // Each installed skill gets its own entry: `/<skill_name>` toggles that skill's selection (without sending), description follows the UI language.
       ...skillSlashItems(skills, locale).map((s) => ({
         cmd: s.cmd,
@@ -1341,6 +1437,7 @@ export function ChatInput({
     onCompact,
     onSwitchModel,
     models,
+    agents,
     onTextChange,
     skills,
     locale,
@@ -1348,11 +1445,14 @@ export function ChatInput({
     toggleGoal,
     goalOn,
   ]);
-  // Positional matching (like @ mentions): a slash opens the menu from any caret position;
-  // running a command removes just the token, leaving the rest of the text intact. Doesn't
-  // reopen after Escape until the caret sits on a different token; suppressed while the
-  // /model picker is open (its trigger token is still in the text).
-  const slashTok = !running && !compacting && !modelSwitchOpen ? matchSlash(text, caret) : null;
+  // Positional matching: a slash opens the menu from any caret position; running a command
+  // removes just the token, leaving the rest of the text intact. Doesn't reopen after Escape
+  // until the caret sits on a different token; suppressed while a switch picker is open (the
+  // picker took over the interaction, and its own search box owns the keyboard).
+  const slashTok =
+    !running && !compacting && !modelSwitchOpen && !agentSwitchOpen
+      ? matchSlash(text, caret)
+      : null;
   slashMatchRef.current = slashTok;
   const slashMatches =
     slashTok && slashTok.start !== slashDismissed
@@ -1361,27 +1461,22 @@ export function ChatInput({
   const slashOpen = slashMatches.length > 0;
   const activeSlash = slashMatches[Math.min(slashIndex, slashMatches.length - 1)];
 
-  // @ subagent menu: the `@prefix` currently being typed at the cursor drives candidate
-  // filtering (the slash menu and the /model picker take priority; doesn't reopen after Escape).
-  const mention =
-    !running && !compacting && !slashOpen && !modelSwitchOpen ? matchMention(text, caret) : null;
-  const mentionMatches =
-    mention && mention.start !== mentionDismissed ? filterAgents(agents, mention.query) : [];
-  const mentionOpen = mentionMatches.length > 0;
-  const activeMention = mentionMatches[Math.min(mentionIndex, mentionMatches.length - 1)];
-
-  // Close the /model picker on click-outside / Escape (same convention as Dropdown; the
-  // panel has no trigger button of its own, so the handling lives here).
+  // Close a switch picker on click-outside / Escape (same convention as Dropdown; these panels
+  // have no trigger button of their own, so the handling lives here). Only one can be open at a
+  // time — the slash menu that opens them is suppressed while either is up.
   useEffect(() => {
-    if (!modelSwitchOpen) return;
+    if (!modelSwitchOpen && !agentSwitchOpen) return;
+    const closeAll = () => {
+      setModelSwitchOpen(false);
+      setAgentSwitchOpen(false);
+    };
     // globalThis.* event types: the React ones imported above would shadow the DOM ones here.
     const onClick = (e: globalThis.MouseEvent) => {
-      if (modelSwitchRef.current && !modelSwitchRef.current.contains(e.target as Node)) {
-        setModelSwitchOpen(false);
-      }
+      const panel = modelSwitchOpen ? modelSwitchRef.current : agentSwitchRef.current;
+      if (panel && !panel.contains(e.target as Node)) closeAll();
     };
     const onKey = (e: globalThis.KeyboardEvent) => {
-      if (e.key === "Escape") setModelSwitchOpen(false);
+      if (e.key === "Escape") closeAll();
     };
     window.addEventListener("mousedown", onClick);
     window.addEventListener("keydown", onKey);
@@ -1389,44 +1484,48 @@ export function ChatInput({
       window.removeEventListener("mousedown", onClick);
       window.removeEventListener("keydown", onKey);
     };
-  }, [modelSwitchOpen]);
+  }, [modelSwitchOpen, agentSwitchOpen]);
 
   /**
-   * /model pick: the CURRENT model is a no-op (close only), and the run state is re-checked
-   * — the picker may have survived a status flip (a task/compaction starting while it was
-   * open). Otherwise the pick opens a new session on the chosen model via onSwitchModel,
-   * with the first-task input assembled **like a normal send**: the remaining draft text
-   * (wrapped with the selected skills; an interface-language auto-line when empty — same
-   * convention as the skills auto message) plus the attached images. On failure the draft
-   * is kept so the user can retry.
+   * /model pick: **stages** the model as a chip instead of switching on the spot — the user
+   * keeps typing and Enter/Send performs the fork (see sendNormal), so the message that opens
+   * the new session is the one they meant to write. Picking the CURRENT model is a no-op (close
+   * only): forking a session onto the model it already runs is nothing but a lost conversation.
+   * Exclusive with a staged handoff target and with goal mode (the latest pick wins).
    */
-  const pickSwitchModel = async (m: ModelInfo) => {
+  const pickSwitchModel = (m: ModelInfo) => {
     setModelSwitchOpen(false);
-    if (!onSwitchModel || busy || running || compacting) return;
     if (sameModelRef(m, modelRef)) return;
-    const rest = textRef.current.trim();
-    const bodyText =
-      rest ||
-      (selectedSkills.length > 0
-        ? S.chat.skillsAutoMessage(selectedSkills)
-        : S.chat.modelSwitchAutoMessage);
-    const body = buildSkillsMessage(selectedSkills, bodyText);
-    const input: TaskInputPart[] = [{ type: "text", text: body }];
-    for (const url of images) input.push({ type: "image_url", imageUrl: url });
-    setBusy(true);
-    try {
-      const ok = await onSwitchModel({ provider: m.provider, modelId: m.modelId }, input);
-      if (ok) {
-        // Consumed into the new session's first task (the parent has already discarded the
-        // draft cache — no change callbacks here, same as send()).
-        setText("");
-        setImages([]);
-        setSelectedSkills([]);
-      }
-    } finally {
-      setBusy(false);
-      textareaRef.current?.focus();
+    setPendingModel(m);
+    setTarget(null);
+    onHandoffTargetChange?.(null);
+    setGoalOn(false);
+    textareaRef.current?.focus();
+  };
+
+  /**
+   * /agent pick: stages the target agent as the handoff chip — nothing is sent yet, and the
+   * draft text is left alone (Enter/Send hands it to the new chat; an empty body still opens
+   * one, carrying just the [handoff_from] block). Exclusive with a staged model switch and with
+   * goal mode, exactly like the model pick above; the target is cached in the draft so the chip
+   * survives a reload.
+   */
+  const pickHandoffTarget = (agent: AgentSummary) => {
+    setAgentSwitchOpen(false);
+    setTarget(agent);
+    onHandoffTargetChange?.(agent.agentId);
+    setPendingModel(null);
+    setGoalOn(false);
+    textareaRef.current?.focus();
+  };
+
+  /** Drop whichever switch chip is staged (the chips' x buttons, and Backspace at the start of the text). */
+  const clearSwitchTarget = () => {
+    if (target !== null) {
+      setTarget(null);
+      onHandoffTargetChange?.(null);
     }
+    setPendingModel(null);
   };
 
   // The menus above are drawn upward (`bottom-full`) from the composer, so their ceiling is
@@ -1434,7 +1533,7 @@ export function ChatInput({
   // top edge sits well below the viewport's. A static `40vh` cap can't know that distance and
   // clipped the first rows on shorter windows, so measure the real gap when a menu opens.
   useEffect(() => {
-    if (!slashOpen && !mentionOpen && !modelSwitchOpen) return;
+    if (!slashOpen && !modelSwitchOpen && !agentSwitchOpen) return;
     const measure = () => {
       const el = anchorRef.current;
       if (!el) return;
@@ -1452,7 +1551,7 @@ export function ChatInput({
     measure();
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
-  }, [slashOpen, mentionOpen, modelSwitchOpen]);
+  }, [slashOpen, modelSwitchOpen, agentSwitchOpen]);
 
   /** Auto-grow the textarea (caps at roughly 6 lines, scrolls internally beyond that). */
   const autoGrow = () => {
@@ -1478,8 +1577,8 @@ export function ChatInput({
 
   // Cursor placement on mount: move it to the end of a restored draft (by default the browser
   // places the cursor at the start when focusing a textarea that already has content), so typing
-  // continues the text naturally, and sync the caret state to match (the @ mention menu filters
-  // by cursor position).
+  // continues the text naturally, and sync the caret state to match (the slash menu matches the
+  // token at the cursor).
   useEffect(() => {
     const el = textareaRef.current;
     if (el && el.value.length > 0) {
@@ -1510,7 +1609,7 @@ export function ChatInput({
     onSkillsChange?.(next);
   }, [skills, selectedSkills, onSkillsChange]);
 
-  // Restore the cached @ handoff target: resolved once by id when agents becomes ready for
+  // Restore the cached handoff target: resolved once by id when agents becomes ready for
   // the first time (discarded if stale); a chip the user manually removes afterward is not restored again.
   const handoffRestored = useRef(false);
   useEffect(() => {
@@ -1521,40 +1620,13 @@ export function ChatInput({
   }, [agents, initialHandoffTargetId]);
 
   /**
-   * Select a candidate: set it as the @ target chip (fixed at the front of the input, picking
-   * again replaces it), and remove the `@token` that triggered the menu (`mention.start..end`,
-   * including any leftover token fragment to the right of the cursor) along with one adjacent
-   * space from the text body.
-   */
-  const insertMention = (agent: AgentSummary) => {
-    const el = textareaRef.current;
-    if (!mention || !el) return;
-    let { start, end } = mention;
-    if (el.value[end] === " ") end++;
-    else if (start > 0 && el.value[start - 1] === " ") start--;
-    const value = el.value.slice(0, start) + el.value.slice(end);
-    // Mutate the DOM synchronously before writing back to state (same value on re-render, cursor
-    // preserved), avoiding a race between async cursor restoration and the next keystroke.
-    el.value = value;
-    el.setSelectionRange(start, start);
-    el.focus();
-    setTarget(agent);
-    onHandoffTargetChange?.(agent.agentId);
-    setGoalOn(false); // exclusive with goal mode: picking an @ target exits it (latest wins)
-    setText(value);
-    onTextChange?.(value);
-    setCaret(start);
-    setMentionIndex(0);
-  };
-
-  /**
-   * The full normal send path (task / handoff), also the follow-up queue path and the
-   * fallback target when a steer hits the completion race: assembles the [use_skills]
-   * block, images and @ handoff from the whole draft; `post` decides where a non-handoff
-   * message goes (default: onSend; follow-up mode: onQueueFollowUp). Deliberately not
-   * gated on `running` — the caller decides (send() gates the normal path; the steering
-   * fallback calls this directly after the server said 409 not_running, when the local
-   * `status` may still lag behind).
+   * The full normal send path (task / handoff / model switch), also the follow-up queue path
+   * and the fallback target when a steer hits the completion race: assembles the [use_skills]
+   * block, the images and the staged switch from the whole draft; `post` decides where a
+   * message that switches nothing goes (default: onSend; follow-up mode: onQueueFollowUp).
+   * Deliberately not gated on `running` — the caller decides (send() gates the normal path;
+   * the steering fallback calls this directly after the server said 409 not_running, when the
+   * local `status` may still lag behind).
    */
   // `post` accepts onSend's goal parameter so onSend can be its default; the follow-up queue
   // (fewer params) is assignable too. Non-goal calls always pass null.
@@ -1562,11 +1634,10 @@ export function ChatInput({
     post: (input: TaskInputPart[], goal: { budget: number } | null) => Promise<boolean> = onSend,
   ) => {
     const t = text.trim();
-    // Goal mode: the trimmed text is the objective (no images, no @ handoff — cleared/blocked
-    // while the chip is on; a leading @ stays plain text). Selected skills prefix the round-1
-    // message as a [use_skills] block, exactly like a normal send — the server strips leading
-    // marker blocks when recording the objective, and rounds after the first re-inject the
-    // objective alone.
+    // Goal mode: the trimmed text is the objective (no images, no staged switch — both are
+    // cleared when the chip goes on). Selected skills prefix the round-1 message as a
+    // [use_skills] block, exactly like a normal send — the server strips leading marker blocks
+    // when recording the objective, and rounds after the first re-inject the objective alone.
     if (goalOn) {
       setBusy(true);
       try {
@@ -1584,28 +1655,44 @@ export function ChatInput({
       }
       return;
     }
-    // @ target = the chip (selected via menu), or a leading `@<agentId>` typed/pasted manually
-    // (an @ in the middle of the text is plain text); with a target present, this becomes a
-    // handoff to a new chat, the current Session isn't sent to, and the text carries no @ marker.
-    const lead = target ? { agent: target, rest: t } : splitLeadingMention(t, agents);
-    // With skills selected and an empty text body: the sent text automatically falls back to a
-    // localized invocation sentence generated per the UI language.
-    const rest = lead ? lead.rest : t;
+    // A staged switch chip (from /agent or /model) redirects the send away from the current
+    // Session: an agent target hands the draft to a NEW chat for that agent, a model target
+    // forks this conversation onto that model. The two are mutually exclusive by construction
+    // (picking either clears the other); the model chip only exists where onSwitchModel does.
+    const switchModel = onSwitchModel ? pendingModel : null;
+    // Empty text body: fall back to an auto-line rather than sending nothing — the localized
+    // skills invocation when skills are selected, otherwise the model-switch line for a staged
+    // switch. A handoff needs no fallback: its first message may legitimately be nothing but
+    // the [handoff_from] source block.
     const bodyText =
-      selectedSkills.length > 0 && rest === "" ? S.chat.skillsAutoMessage(selectedSkills) : rest;
-    // With non-empty selected skills: the text body is replaced with a [use_skills] block + the text (the handoff branch wraps rest the same way).
+      t !== ""
+        ? t
+        : selectedSkills.length > 0
+          ? S.chat.skillsAutoMessage(selectedSkills)
+          : switchModel
+            ? S.chat.modelSwitchAutoMessage
+            : t;
+    // With non-empty selected skills: the text body is replaced with a [use_skills] block + the text (every branch wraps its body the same way).
     const body = buildSkillsMessage(selectedSkills, bodyText);
     const input: TaskInputPart[] = [];
     if (body) input.push({ type: "text", text: body });
     for (const url of images) input.push({ type: "image_url", imageUrl: url });
     setBusy(true);
     try {
-      const ok = lead ? await onHandoff(lead.agent, input) : await post(input, null);
+      const ok = target
+        ? await onHandoff(target, input)
+        : switchModel
+          ? await onSwitchModel!(
+              { provider: switchModel.provider, modelId: switchModel.modelId },
+              input,
+            )
+          : await post(input, null);
       // Only clear the draft after a successful send: on failure (network / conflict / server error) keep the user's input and images.
       if (ok) {
         setText("");
         setImages([]);
         setTarget(null);
+        setPendingModel(null);
         setSelectedSkills([]);
       }
     } finally {
@@ -1618,15 +1705,16 @@ export function ChatInput({
     if (running) {
       // Follow-up branch: the whole draft goes out through the normal composition path,
       // but posted with queueIfBusy — the server holds it and auto-sends once this run
-      // finishes (an @ handoff still opens a new chat directly: the target session isn't
-      // the one running).
+      // finishes (a staged switch still opens its new chat directly: neither the handoff
+      // target nor the model fork is the session that is running).
       if (followUpMode) {
         if (!canFollowUp) return;
         await sendNormal(onQueueFollowUp!);
         return;
       }
       // Steering branch: queue the trimmed text for the running agent; only the text is
-      // sent and cleared — attached images / selected skills stay for a normal send.
+      // sent and cleared — attached images / selected skills stay for a normal send (a
+      // staged switch chip blocks this branch outright, see canSteer).
       if (!canSteer) return;
       const steerText = text.trim();
       setBusy(true);
@@ -1678,38 +1766,15 @@ export function ChatInput({
         return;
       }
     }
-    if (mentionOpen) {
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        setMentionIndex((i) => (i + 1) % mentionMatches.length);
-        return;
-      }
-      if (e.key === "ArrowUp") {
-        e.preventDefault();
-        setMentionIndex((i) => (i - 1 + mentionMatches.length) % mentionMatches.length);
-        return;
-      }
-      if (((e.key === "Enter" && !e.shiftKey) || e.key === "Tab") && !e.nativeEvent.isComposing) {
-        e.preventDefault();
-        if (activeMention) insertMention(activeMention);
-        return;
-      }
-      if (e.key === "Escape") {
-        // Only closes the popup, doesn't clear the input (the `@token` is part of the text body), reopens if the user keeps typing.
-        setMentionDismissed(mention?.start ?? null);
-        return;
-      }
-    }
-    // Backspace at the start of the text: removes the @ target chip (consistent with common chip-input interaction).
+    // Backspace at the start of the text: removes the staged switch chip (consistent with common chip-input interaction).
     if (
       e.key === "Backspace" &&
-      target !== null &&
+      (target !== null || pendingModel !== null) &&
       e.currentTarget.selectionStart === 0 &&
       e.currentTarget.selectionEnd === 0
     ) {
       e.preventDefault();
-      setTarget(null);
-      onHandoffTargetChange?.(null);
+      clearSwitchTarget();
       return;
     }
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -1798,7 +1863,7 @@ export function ChatInput({
           search + configured-key-first grouping + "show all"; the current model is marked and
           picking it is a no-op. The /model token was already consumed when the command ran,
           so cancelling (Escape / click outside) keeps the remaining draft and cannot re-open
-          the slash menu. */}
+          the slash menu. A pick only stages the chip below — the switch happens on send. */}
       {modelSwitchOpen && models && (
         <div
           ref={modelSwitchRef}
@@ -1812,37 +1877,24 @@ export function ChatInput({
             models={models}
             value={modelRef}
             {...(defaultModel !== undefined ? { defaultModel } : {})}
-            onPick={(m) => void pickSwitchModel(m)}
+            onPick={pickSwitchModel}
           />
         </div>
       )}
 
-      {/* @ subagent menu (triggered by typing @; interaction matches the slash menu) */}
-      {mentionOpen && (
+      {/* /agent handoff picker: same panel construction as the /model one above (title bar +
+          search box + capped list), and the same staged semantics — the pick becomes the
+          target chip, and sending is what hands the conversation over. */}
+      {agentSwitchOpen && (
         <div
-          style={{ maxHeight: Math.min(256, upwardMaxH ?? 256) }}
-          className="anim-pop absolute bottom-full left-0 z-40 mb-1.5 w-72 overflow-y-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900"
+          ref={agentSwitchRef}
+          style={{ maxHeight: upwardMaxH }}
+          className="anim-pop absolute bottom-full left-0 z-40 mb-1.5 flex w-80 max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900"
         >
-          {mentionMatches.map((a, i) => (
-            <button
-              key={a.agentId}
-              type="button"
-              onMouseEnter={() => setMentionIndex(i)}
-              onClick={() => insertMention(a)}
-              className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm ${
-                a === activeMention ? "bg-gray-100 dark:bg-gray-800" : ""
-              }`}
-            >
-              <span className="shrink-0 font-mono text-gray-800 dark:text-gray-200">
-                @{a.agentId}
-              </span>
-              {a.name && a.name !== a.agentId && (
-                <span className="min-w-0 truncate text-xs text-gray-500 dark:text-gray-400">
-                  {a.name}
-                </span>
-              )}
-            </button>
-          ))}
+          <div className="border-b border-gray-100 px-3 pb-1.5 pt-0.5 text-xs font-semibold text-gray-500 dark:border-gray-800 dark:text-gray-400">
+            {S.chat.switchAgentTitle}
+          </div>
+          <AgentMenuList agents={agents} onPick={pickHandoffTarget} />
         </div>
       )}
 
@@ -1950,10 +2002,10 @@ export function ChatInput({
           modelAuthDead ? " opacity-50 grayscale" : ""
         }`}
       >
-        {/* Chip row above the text body: the @ handoff target (fixed at the front — send-time
-            @ semantics stay leading-only) followed by the selected skills, mirroring the
-            agent chip's look. Remove buttons recolor the x on hover (no background wash). */}
-        {(target !== null || selectedSkills.length > 0 || goalOn) && (
+        {/* Chip row above the text body: the staged switch target (an /agent handoff or a
+            /model fork — never both) followed by the selected skills, all sharing the same
+            chip look. Remove buttons recolor the x on hover (no background wash). */}
+        {(target !== null || pendingModel !== null || selectedSkills.length > 0 || goalOn) && (
           <div className="mb-1 flex flex-wrap items-center gap-1">
             {/* Goal-mode chip: the budget stays compact as a value button; its editor is a
                 fixed upward popover so it never covers the objective textarea below. */}
@@ -2068,18 +2120,49 @@ export function ChatInput({
                 </button>
               </span>
             )}
+            {/* Staged /agent handoff target: the Agent avatar (the identity tile used
+                everywhere Agents are picked) + its id, so the chip reads as "this goes to that
+                Agent" without spelling the sentence out. */}
             {target !== null && (
               <span
-                className="anim-pop flex max-w-48 items-center gap-0.5 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 font-mono text-sm text-gray-800 dark:bg-gray-800 dark:text-gray-200"
-                {...(target.name && target.name !== target.agentId ? { title: target.name } : {})}
+                title={S.chat.handoffTargetTitle(agentDisplayName(target))}
+                className="anim-pop flex max-w-48 items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 font-mono text-sm text-gray-800 dark:bg-gray-800 dark:text-gray-200"
               >
-                <span className="truncate">@{target.agentId}</span>
+                <AgentAvatar
+                  id={target.agentId}
+                  name={agentDisplayName(target)}
+                  size={13}
+                  className="shrink-0 rounded-sm"
+                />
+                <span className="truncate">{target.agentId}</span>
                 <button
                   type="button"
-                  aria-label={S.chat.mentionRemove}
+                  aria-label={S.chat.handoffRemove}
                   onClick={() => {
                     setTarget(null);
                     onHandoffTargetChange?.(null);
+                    textareaRef.current?.focus();
+                  }}
+                  className="shrink-0 rounded p-0.5 text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:hover:text-gray-200"
+                >
+                  ×
+                </button>
+              </span>
+            )}
+            {/* Staged /model switch: provider logo + model name, matching the composer's own
+                model display; sending forks the conversation onto it. */}
+            {pendingModel !== null && (
+              <span
+                title={S.chat.modelSwitchTargetTitle(modelLabel(pendingModel))}
+                className="anim-pop flex max-w-48 items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 text-sm text-gray-800 dark:bg-gray-800 dark:text-gray-200"
+              >
+                <ProviderLogo provider={pendingModel.provider} className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">{modelLabel(pendingModel)}</span>
+                <button
+                  type="button"
+                  aria-label={S.chat.modelSwitchRemove}
+                  onClick={() => {
+                    setPendingModel(null);
                     textareaRef.current?.focus();
                   }}
                   className="shrink-0 rounded p-0.5 text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:hover:text-gray-200"
@@ -2129,22 +2212,16 @@ export function ChatInput({
             onTextChange?.(value);
             setCaret(caretNow);
             setSlashIndex(0);
-            setMentionIndex(0);
             // Closing via Escape only persists for "the same token": continuing to type within
-            // that slash command / mention won't reopen the menu; it re-opens once the cursor is
-            // no longer on that token (deleted, moved away, or replaced by a new one).
+            // that slash command won't reopen the menu; it re-opens once the cursor is no longer
+            // on that token (deleted, moved away, or replaced by a new one).
             setSlashDismissed((d) => {
               if (d === null) return null;
               const m = matchSlash(value, caretNow);
               return m && m.start === d ? d : null;
             });
-            setMentionDismissed((d) => {
-              if (d === null) return null;
-              const m = matchMention(value, caretNow);
-              return m && m.start === d ? d : null;
-            });
           }}
-          // Cursor movement (arrow keys/click) syncs to caret: the @ menu filters by the prefix at the cursor.
+          // Cursor movement (arrow keys/click) syncs to caret: the slash menu matches the token at the cursor.
           onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
           onKeyDown={onKeyDown}
           onPaste={onPaste}
@@ -2235,10 +2312,10 @@ export function ChatInput({
             {/* Help text: shown only when the card is wide enough (@lg); it never competes for
                 space on phones, where the group scrolls instead. */}
             <span
-              title={`${S.chat.slashHint} · ${S.chat.mentionHint}`}
+              title={S.chat.slashHint}
               className="hidden min-w-0 truncate text-gray-300 @lg:block dark:text-gray-600"
             >
-              {S.chat.slashHint} · {S.chat.mentionHint}
+              {S.chat.slashHint}
             </span>
           </div>
 

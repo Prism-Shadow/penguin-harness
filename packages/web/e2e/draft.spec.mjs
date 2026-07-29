@@ -58,7 +58,7 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   });
   expect(put.ok(), "put models").toBeTruthy();
 
-  // The only builtin Agent is default_agent, so the @ delegation and sidebar group-header "+" targets use a custom-created Agent.
+  // The only builtin Agent is default_agent, so the /agent handoff and sidebar group-header "+" targets use a custom-created Agent.
   const created = await page.request.post(`${BASE}/api/projects/${projectId}/agents`, {
     data: { agentId: "agent_helper", name: "Helper Agent" },
   });
@@ -69,14 +69,17 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   await expect(page.getByRole("heading", { name: "PenguinHarness" })).toBeVisible();
 
   const ta = page.getByPlaceholder(/输入消息/);
-  await ta.fill("Draft body must not be lost");
 
-  // The @ delegation target is also draft content: typing an @ prefix at the end summons the
-  // menu, selecting it turns into a chip (the @token in the body text is stripped out).
-  await ta.fill("Draft body must not be lost @agent_hel");
-  await page.getByRole("button", { name: /@agent_helper/ }).click();
-  await expect(page.getByText("@agent_helper")).toBeVisible();
-  await expect(ta).toHaveValue("Draft body must not be lost");
+  // The handoff target is also draft content: `/agent` runs like any slash command (its own
+  // token is consumed) and opens the agent picker, whose pick only **stages** a chip — nothing
+  // is sent, so the body is typed afterwards and rides along on the eventual send.
+  await ta.fill("/agent");
+  await ta.press("Enter");
+  await page.getByPlaceholder(/搜索 Agent/).fill("helper");
+  await page.getByRole("button", { name: /agent_helper/ }).click();
+  await expect(page.getByText("agent_helper")).toBeVisible();
+  await expect(ta).toHaveValue("");
+  await ta.fill("Draft body must not be lost");
 
   // Switch the model: the selector sits to the left of the send button, opens downward, with a quick-search field at the top.
   await page.getByRole("button", { name: "选择模型" }).click();
@@ -131,10 +134,10 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   await expect(page.getByRole("button", { name: "审批模式" })).toContainText("放行只读");
   // The thinking level is NOT draft state: it restores from the Agent config (written through above), not the cache.
   await expect(page.getByRole("button", { name: "思考等级" })).toContainText("高");
-  // The @ target restores along with the draft; removing it falls back to a normal send (no delegation triggered).
-  await expect(page.getByText("@agent_helper")).toBeVisible();
-  await page.getByRole("button", { name: "移除 @ 目标" }).click();
-  await expect(page.getByText("@agent_helper")).toHaveCount(0);
+  // The staged handoff target restores along with the draft; removing it falls back to a normal send (no handoff triggered).
+  await expect(page.getByText("agent_helper")).toBeVisible();
+  await page.getByRole("button", { name: "移除交接目标" }).click();
+  await expect(page.getByText("agent_helper")).toHaveCount(0);
 
   // Send: the Session is only created now, and the selections land faithfully in its meta.
   await page.getByRole("button", { name: "发送" }).click();

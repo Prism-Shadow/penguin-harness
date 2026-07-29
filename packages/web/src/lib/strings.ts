@@ -715,8 +715,13 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     contextUsage: "上下文占用",
     contextUnknown: "上下文占用：压缩后待下次请求回报",
     slashHint: "输入 / 使用命令",
-    mentionHint: "@ handoff 给其他 Agent",
-    mentionRemove: "移除 @ 目标",
+    /** /agent 交接：命令描述、拾取器标题、搜索框、无匹配提示、暂存目标的说明与移除按钮。 */
+    switchAgent: "交给其他 Agent，发送时开启新会话",
+    switchAgentTitle: "选择 Agent",
+    agentSearchPlaceholder: "搜索 Agent：id / 名称",
+    agentsNoMatch: "没有匹配的 Agent",
+    handoffTargetTitle: (agent: string) => `发送后交接给 ${agent}`,
+    handoffRemove: "移除交接目标",
     /** Skill multi-select dropdown (input toolbar): button text, search box, empty state, and no-match hint. */
     skillsSelect: "技能",
     skillRemove: "移除技能",
@@ -727,9 +732,11 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     skillsAutoMessage: (names: string[]): string => `使用 ${names.join("、")} 技能`,
     handoffFrom: (agent: string) => `由 ${agent} 的对话交接而来`,
     handoffBack: (title?: string) => (title ? `回到原对话：${title}` : "回到原对话"),
-    /** /model 切换：命令描述、拾取器标题、切换来源横幅与空正文自动消息。 */
-    switchModel: "切换模型开启新会话延续本对话",
+    /** /model 切换：命令描述、拾取器标题、暂存目标的说明与移除按钮、切换来源横幅与空正文自动消息。 */
+    switchModel: "切换模型，发送时开启新会话延续本对话",
     switchModelTitle: "切换模型",
+    modelSwitchTargetTitle: (model: string) => `发送后换用 ${model} 延续本对话`,
+    modelSwitchRemove: "移除切换模型",
     modelSwitchFrom: (prevModel?: string) =>
       prevModel ? `已切换模型（原为 ${prevModel}），延续原会话` : "已切换模型，延续原会话",
     /** /model 切换且正文为空时自动发送的首条消息正文（与 skillsAutoMessage 同一约定）。 */

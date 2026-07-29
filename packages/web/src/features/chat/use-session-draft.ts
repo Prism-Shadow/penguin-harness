@@ -1,12 +1,12 @@
 /**
  * Draft auto-cache for an existing session's input area: text +
- * @-handoff target + selected skills are cached to localStorage keyed by "user x Session"
+ * handoff target + selected skills are cached to localStorage keyed by "user x Session"
  * (see draft-cache's sessionDraftKey; the user dimension prevents cross-account leakage on
  * the same browser, #68), restored after navigating away/reloading. Model / Workspace /
  * approval mode are locked to the Session and need no caching.
  *
  * Write strategy matches the draft page: text is debounced and merge-written (an unflushed
- * edit gets one extra flush before switching sessions/unmounting); @ target and skill
+ * edit gets one extra flush before switching sessions/unmounting); handoff target and skill
  * selection write immediately; **clearing content deletes the key** (leaving an empty shell
  * per session would bloat localStorage); discard on a successful send cancels the pending
  * timer first, otherwise it would write the just-cleared draft back.
@@ -106,7 +106,7 @@ export function useSessionDraft(sessionId: string | null): {
   const onSkillsChange = useCallback(
     (names: string[]) => {
       skillsRef.current = names;
-      // Same as @ target: discrete action writes immediately.
+      // Same as the handoff target: discrete action writes immediately.
       persistNow();
     },
     [persistNow],

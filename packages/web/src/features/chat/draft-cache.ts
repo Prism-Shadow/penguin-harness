@@ -8,7 +8,7 @@
  *
  * The key must include userId (#68): if the same browser logs into different accounts in
  * succession and the key only contains the Project/Session ID, the later user would recover the
- * previous user's text, Workspace, model selection, and @ target — a cross-account information leak.
+ * previous user's text, Workspace, model selection, and handoff target — a cross-account information leak.
  */
 import type { ApprovalMode } from "@prismshadow/penguin-server/api";
 
@@ -25,7 +25,7 @@ export interface DraftCache {
    * (product hasn't shipped, so no migration is done).
    */
   modelRef?: { provider: string; modelId: string };
-  /** The @ handoff target (chip) at the front of the input box: resolved again by id on restore, dropped if no longer valid. */
+  /** The `/agent` handoff target (chip) at the front of the input box: resolved again by id on restore, dropped if no longer valid. */
   handoffAgentId?: string;
   /**
    * Preselected skill names (written by the quick-invoke action on the Skill library page):
@@ -46,7 +46,7 @@ export interface DraftStorage {
 export const draftKey = (userId: string, projectId: string): string =>
   `penguin.chatDraft.${userId}.${projectId}`;
 
-/** Cache key for an existing session's input area: one per "user × Session" (only stores text and @ target; everything else is locked to the Session). */
+/** Cache key for an existing session's input area: one per "user × Session" (only stores text and the handoff target; everything else is locked to the Session). */
 export const sessionDraftKey = (userId: string, sessionId: string): string =>
   `penguin.chatDraft.session.${userId}.${sessionId}`;
 

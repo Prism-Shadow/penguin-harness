@@ -1,9 +1,9 @@
 /**
  * Positional slash-command matching for the chat input (pure logic, unit-tested):
- * like @ mentions, a `/` opens the command menu from ANY caret position — it must sit at
- * the start of the text or be preceded by whitespace (so URLs and paths like `a/b` never
- * trigger it), with only command characters between the `/` and the caret. Running a
- * command removes just the `start..end` token, leaving the rest of the text intact.
+ * a `/` opens the command menu from ANY caret position — it must sit at the start of the
+ * text or be preceded by whitespace (so URLs and paths like `a/b` never trigger it), with
+ * only command characters between the `/` and the caret. Running a command removes just the
+ * `start..end` token, leaving the rest of the text intact.
  */
 
 /** Command characters allowed between `/` and the caret (command names and skill names: letters, digits, underscore, hyphen). */

@@ -57,7 +57,7 @@ import { ChatInput } from "./chat-input";
 import { buildSkillsMessage } from "./skill-use";
 import { clearDraft, draftKey, loadDraft, saveDraft } from "./draft-cache";
 import type { DraftCache } from "./draft-cache";
-import { handoffMessage } from "./agent-mentions";
+import { handoffMessage } from "./agent-handoff";
 import { sameModelRef } from "../models/model-grouping";
 
 /** Coalescing window for writing body text to the cache: keystrokes are frequent, so a short batch accumulates before persisting (option changes are still written immediately). */
@@ -135,7 +135,7 @@ export function DraftView({
     cached.approvalMode ?? "allow-all",
   );
   const [modelRef, setModelRef] = useState<ModelRefDto | null>(cached.modelRef ?? null);
-  /** @-handoff target (chip): draft content just like the body text, cached alongside it (fed in via the ChatInput callback). */
+  /** `/agent` handoff target (chip): draft content just like the body text, cached alongside it (fed in via the ChatInput callback). */
   const [handoffAgentId, setHandoffAgentId] = useState<string | null>(
     cached.handoffAgentId ?? null,
   );
@@ -375,7 +375,7 @@ export function DraftView({
   };
 
   // One in-flight guard shared by every send entry point (composer send / example task /
-  // @-handoff): a second submission while one is running would create a second Session with
+  // /agent handoff): a second submission while one is running would create a second Session with
   // its own first task and a racing navigation. The ref is the synchronous guard; the state
   // drives disabled styling on the example button (the composer has its own busy state).
   const sendingRef = useRef(false);
@@ -448,9 +448,9 @@ export function DraftView({
     [exampleBusy, agentSkills, onSend],
   );
 
-  // @ handoff: opens a new chat for the @-mentioned agent (approval mode carries over from the
+  // /agent handoff: opens a new chat for the picked agent (approval mode carries over from the
   // draft's current value; model/Workspace use the creation defaults), first input =
-  // [handoff_from] source block + the text and images with the @ mention stripped.
+  // [handoff_from] source block + the text and images.
   const selectedAgent = agents.find((a) => a.agentId === agentId) ?? null;
   const onHandoff = useCallback(
     async (target: AgentSummary, input: TaskInputPart[]): Promise<boolean> => {
