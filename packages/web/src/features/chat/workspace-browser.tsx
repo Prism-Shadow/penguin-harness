@@ -27,6 +27,7 @@ import { Button } from "../../components/ui/button";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { Dropdown } from "../../components/ui/dropdown";
+import { HiddenFileInput } from "../../components/ui/hidden-file-input";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { CodeBlock } from "./code-block";
 
@@ -745,14 +746,7 @@ export function WorkspaceBrowser({
         </Button>
         {/* Matches the same visual style and font size (sm = text-xs) as the adjacent ghost Buttons (Details/Refresh): no border, light background on hover. */}
         <label className="inline-flex cursor-pointer items-center rounded-md border border-transparent bg-transparent px-2.5 py-1 text-xs font-medium text-gray-600 transition-colors duration-150 focus-within:ring-2 focus-within:ring-gray-400/30 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100">
-          {/* sr-only rather than hidden: keyboard users can still Tab-focus it (display:none would remove it from the focus order). */}
-          <input
-            type="file"
-            multiple
-            className="sr-only"
-            onChange={onUpload}
-            disabled={uploading}
-          />
+          <HiddenFileInput multiple onChange={onUpload} disabled={uploading} />
           {uploading ? S.common.saving : S.files.upload}
         </label>
       </div>

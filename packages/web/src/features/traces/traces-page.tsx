@@ -17,6 +17,7 @@ import { formatBytes } from "../../lib/format";
 import { agentDisplayName, useProject } from "../../state/project";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { Chevron } from "../../components/ui/chevron";
+import { HiddenFileInput } from "../../components/ui/hidden-file-input";
 import { DownloadIcon, UploadIcon } from "../../components/ui/icons";
 import { toastError } from "../../components/ui/toast";
 import { Truncated } from "../../components/ui/truncated";
@@ -197,14 +198,7 @@ function AgentNode({
               importing ? "pointer-events-none opacity-60" : ""
             }`}
           >
-            {/* sr-only rather than hidden: keeps it keyboard-Tab-focusable (same as the snapshot import). */}
-            <input
-              type="file"
-              accept=".jsonl"
-              className="sr-only"
-              disabled={importing}
-              onChange={onPickFile}
-            />
+            <HiddenFileInput accept=".jsonl" disabled={importing} onChange={onPickFile} />
             <UploadIcon size={13} />
             <span className="sr-only">{importing ? S.traces.importing : S.traces.importTrace}</span>
           </label>
@@ -297,8 +291,12 @@ export function TracesPage() {
 
   return (
     <div className="flex h-full flex-col md:flex-row">
-      {/* Directory tree: Agent → Session title (≥md left column; <md top collapsible area) */}
-      <aside className="max-h-52 shrink-0 overflow-y-auto border-b border-gray-200 bg-gray-50 px-1 py-2 md:max-h-none md:w-72 md:border-b-0 md:border-r dark:border-gray-800 dark:bg-gray-900">
+      {/* Directory tree: Agent → Session title (≥md left column; <md top collapsible area).
+          relative: a scroller is its own containing block — the invariant and the failure it
+          prevents are documented in styles.css; this is where it first bit (an Agent node past
+          the fold put its import control's absolutely positioned box at a document-level
+          offset, growing the document). */}
+      <aside className="relative max-h-52 shrink-0 overflow-y-auto border-b border-gray-200 bg-gray-50 px-1 py-2 md:max-h-none md:w-72 md:border-b-0 md:border-r dark:border-gray-800 dark:bg-gray-900">
         <p className="px-3 pb-1 text-xs font-bold uppercase tracking-wide text-gray-500">
           {S.traces.title}
         </p>
