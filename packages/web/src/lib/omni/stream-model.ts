@@ -22,8 +22,8 @@
  *     token_usage counts toward this level's stats (same convention as the CLI).
  *   - Events: approval_decision annotates the corresponding tool card
  *     (labeled "manual" if clicked on this end, "automatic" otherwise);
- *     abort → an interruption marker item; request_end ending in
- *     timeout/malformed → a retry-hint item (the engine discards that
+ *     abort → an interruption marker item; request_end ending in any status
+ *     the engine reconnects on (failed/timeout/malformed) → a retry-hint item (the engine discards that
  *     attempt and resends the original input; the next request_begin marks the hint as resent, and an
  *     arriving abort marks it as retries exhausted); other request_begin/end
  *     events aren't rendered (Request duration is covered by Trace
@@ -195,12 +195,23 @@ export interface AbortItem {
   reason?: string;
 }
 
-/** An LLM Request ending in timeout/malformed → the engine retries carrying the content already produced. */
+/**
+ * The statuses the engine reconnects on — every LLM failure except `auth`, which is terminal
+ * (see core's TURN_RETRY_STATUSES). A retry the user cannot see is a stalled session with no
+ * explanation and no way out, so all three render the same countdown and the same controls.
+ */
+export type ReconnectStatus = "failed" | "timeout" | "malformed";
+
+function isReconnectStatus(status: StopReason | undefined): status is ReconnectStatus {
+  return status === "failed" || status === "timeout" || status === "malformed";
+}
+
+/** An LLM Request ending in failed/timeout/malformed → the engine retries carrying the content already produced. */
 export interface ReconnectItem {
   kind: "reconnect";
   id: number;
-  /** Trigger reason: timeout (timed out / disconnected) or malformed (an incomplete or unparseable response). */
-  status: "timeout" | "malformed";
+  /** Trigger reason: timeout (timed out / disconnected), malformed (an incomplete or unparseable response), or failed (the provider returned an error). */
+  status: ReconnectStatus;
   /** Which retry attempt this is (increments on consecutive failures within the same round; resets to 1 after a request finishes normally). */
   attempt: number;
   /** The retry request has been sent (set true by the next request_begin). */
@@ -349,7 +360,7 @@ export interface StreamModel {
    * dispatches it via `void executeOne`, which doesn't block the streaming loop — execution happens between two Requests).
    */
   openApprovalWaitMs: number;
-  /** Consecutive reconnect-failure count (incremented when request_end is timeout/malformed, reset to zero on any other terminal status). */
+  /** Consecutive reconnect-failure count (incremented when request_end carries a status the engine reconnects on, reset to zero on any other terminal status). */
   reconnectRun: number;
   /**
    * Timestamp (ms) of the most recent auth failure: a main-session `request_end` with
@@ -1230,9 +1241,9 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       return;
     }
     case "request_end": {
-      // timeout/malformed: the engine retries carrying the content already
-      // produced, rendering a retry hint (with the attempt number); other
-      // terminal statuses aren't rendered (Request duration is covered by Trace performance
+      // failed/timeout/malformed: the engine retries carrying the content already
+      // produced, rendering a retry hint (with the attempt number); the terminal
+      // statuses aren't rendered (Request duration is covered by Trace performance
       // analysis) and reset the consecutive-failure count. request events
       // within a compaction range (only visible during history rebuild)
       // are neither rendered nor counted — the compaction process only exposes the compaction event pair to the Human.
@@ -1270,7 +1281,11 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       // round, so the pending compaction usage never reaches this step and is discarded at finalization (not counted into this round).
       if (tsMs !== undefined) model.taskLastReqEndMs = tsMs;
       commitPendingCompaction(model.stats);
-      if (p.status === "timeout" || p.status === "malformed") {
+      // Every status the engine reconnects on gets an item, `failed` included: it is retried
+      // exactly like the other two, so leaving it out would stall the session for the whole
+      // ladder with nothing on screen and no give-up control. It would also reset the counter
+      // mid-ladder, renumbering a mixed timeout → failed → timeout run back to retry #1.
+      if (isReconnectStatus(p.status)) {
         model.reconnectRun += 1;
         const item: ReconnectItem = {
           kind: "reconnect",
