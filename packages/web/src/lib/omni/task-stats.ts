@@ -334,13 +334,13 @@ export function liveSessionElapsedMs(
 
 /** Localized labels for {@link formatTaskStats} (supplied by the view layer's active dictionary). */
 export interface TaskStatsLabels {
-  /** Row prefix, e.g. "Stats" / "统计信息". */
+  /** Row prefix, e.g. "Stats". */
   stats: string;
-  /** Input-tokens label, e.g. "Input tokens" / "输入 tokens". */
+  /** Input-tokens label, e.g. "Input tokens". */
   input: string;
-  /** Cached-amount label, e.g. "cached" / "已缓存". */
+  /** Cached-amount label, e.g. "cached". */
   cached: string;
-  /** Output-tokens label, e.g. "Output tokens" / "输出 tokens". */
+  /** Output-tokens label, e.g. "Output tokens". */
   output: string;
   /** Opening wrapper before the cached amount — keeps per-locale typography (e.g. " (" / "（"). */
   parenOpen: string;

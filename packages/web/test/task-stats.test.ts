@@ -1,5 +1,5 @@
 /**
- * Unit tests for task-stats.ts: the stats-row convention matches the CLI's "统计信息"
+ * Unit tests for task-stats.ts: the stats-row convention matches the CLI's stats-row
  * output item for item.
  */
 import { describe, expect, it } from "vitest";

@@ -21,16 +21,16 @@
  *   Agent's v_old → v_new and warns the overwriting reinstall drops local
  *   edits), then reinstalls the current library copy on every outdated Agent
  *   (install-again-is-update semantics), with a single success toast; the
- *   manage-installs Modal marks outdated rows with an accent "更新"/"Update"
- *   button doing the same per Agent (through the same confirm);
+ *   manage-installs Modal marks outdated rows with an accent "Update" button
+ *   doing the same per Agent (through the same confirm);
  * - Paper plane "quick invoke": enters /chat/new draft mode with default_agent,
  *   pre-selects the skill, and pre-fills the invocation text per UI language
- *   (zh "使用 X 技能" / en "use the X skill", overwriting any existing draft body);
+ *   ("use the X skill" in the active dictionary, overwriting any existing draft body);
  * - Download "manage installs": a Modal listing every Agent in the current
- *   Project — not-installed shows "安装"/"Install", installed shows
- *   "已安装"/"Installed" (hover switches to "卸载"/"Uninstall", click to
- *   uninstall); any member can operate it; optimistic update, a top-level
- *   toast on success for install/uninstall, rollback plus a toast on failure.
+ *   Project — not-installed shows "Install", installed shows "Installed"
+ *   (hover switches to "Uninstall", click to uninstall); any member can
+ *   operate it; optimistic update, a top-level toast on success for
+ *   install/uninstall, rollback plus a toast on failure.
  */
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
@@ -550,11 +550,11 @@ function SkillCard({
 
 /**
  * One Agent row in the "manage installs" Modal: not-installed shows
- * "安装"/"Install"; installed shows "已安装"/"Installed", switching to
- * "卸载"/"Uninstall" on hover (same button, click to uninstall); an installed
- * copy older than the library additionally shows an accent "更新"/"Update"
- * button (reinstall = update). Install and uninstall go through optimistic
- * updates (toggleInstall), rolling back on failure.
+ * "Install"; installed shows "Installed", switching to "Uninstall" on hover
+ * (same button, click to uninstall); an installed copy older than the library
+ * additionally shows an accent "Update" button (reinstall = update). Install
+ * and uninstall go through optimistic updates (toggleInstall), rolling back on
+ * failure.
  */
 function InstallRow({
   agentId,
@@ -589,7 +589,7 @@ function InstallRow({
         </Button>
       )}
       {installed ? (
-        // group: on hover the button's copy switches "已安装"/"Installed" → "卸载"/"Uninstall" (the same button carries the uninstall action).
+        // group: on hover the button's copy switches "Installed" → "Uninstall" (the same button carries the uninstall action).
         <Button
           size="sm"
           variant="ghost"

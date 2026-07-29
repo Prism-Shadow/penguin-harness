@@ -44,7 +44,7 @@ type TabKey = "overview" | "prompt" | "runtime" | "tools" | "vault" | "schedules
  * The "" (not-overridden / inherit) row is filtered out per review — the menus offer only
  * concrete values in dictionary order, the user picks explicitly. An unset stored value
  * simply matches no row, so the OptionMenu trigger falls back to its placeholder
- * (（缺省）/(default), the same convention as the tools-table permission menu); nothing is
+ * ("(default)", the same convention as the tools-table permission menu); nothing is
  * ever written silently, and the reset link next to each menu rewinds a local pick back to "".
  */
 export function optionRows(

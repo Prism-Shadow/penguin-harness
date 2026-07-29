@@ -1236,7 +1236,7 @@ export function Sidebar({
  * pinned indicator. The header row carries the `group/header` scope so the reveal only
  * reacts to its own row, not to the session rows' plain `group` scope.
  * The accessible name stays STATIC and aria-pressed alone carries the state (the toggle
- * pattern the grouping-mode buttons use) — a name that swaps 置顶/取消置顶 alongside
+ * pattern the grouping-mode buttons use) — a name that swaps Pin/Unpin alongside
  * aria-pressed reads as "Unpin group, pressed", saying the state twice in conflicting
  * ways. The title tooltip may still swap: it is presentation for pointer users and does
  * not feed the accessible name while aria-label is present.

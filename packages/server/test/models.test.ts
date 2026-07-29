@@ -45,7 +45,7 @@ describe("models preset & catalog enrichment", () => {
     const { cookie } = await provisionUser(t.app, "alice");
     api = apiClient(t.app, cookie);
     const created = (await (
-      await api.post("/api/projects", { projectId: "alice-preset", name: "预置项目" })
+      await api.post("/api/projects", { projectId: "alice-preset", name: "Preset project" })
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
   });
@@ -53,7 +53,7 @@ describe("models preset & catalog enrichment", () => {
     await t.cleanup();
   });
 
-  it("credential 内联单文件：PUT 的 apiKey 落 .project_config.toml（0600），GET 只回掩码", async () => {
+  it("credentials are inlined in one file: the apiKey from PUT lands in .project_config.toml (0600), GET returns only a mask", async () => {
     const put = await api.put(url(), {
       defaultModel: { provider: "custom", modelId: "m-inline" },
       models: [
@@ -93,7 +93,7 @@ describe("models preset & catalog enrichment", () => {
     await expect(readFile(path.join(projectDir, "project_config.toml"), "utf8")).rejects.toThrow();
   });
 
-  it("新建 Project 即预置全部内置模型（provider 与 model_id 分列 + 目录信息）", async () => {
+  it("a new Project is preset with every built-in model (provider and model_id as separate fields + catalog info)", async () => {
     const res = await api.get(url());
     expect(res.status).toBe(200);
     const body = (await res.json()) as ModelsResponse;
@@ -125,7 +125,7 @@ describe("models preset & catalog enrichment", () => {
     expect(mimo.credential?.apiKeyMasked).toBeUndefined();
   });
 
-  it("PUT 自定义模型：持久化 vision 标注；openai 协议给 OPENAI_API_KEY 兜底；provider 必填", async () => {
+  it("PUT a custom model: the vision flag persists; the openai protocol falls back to OPENAI_API_KEY; provider is required", async () => {
     const put = await api.put(url(), {
       defaultModel: { provider: "custom", modelId: "my-model" },
       models: [
@@ -167,7 +167,7 @@ describe("models preset & catalog enrichment", () => {
     expect(noProvider.status).toBe(400);
   });
 
-  it("PUT maxTokens：落盘为 max_tokens 并经 GET 回读；整表省略即清除；0/负数/非数字 400", async () => {
+  it("PUT maxTokens: persisted as max_tokens and read back through GET; omitting it table-wide clears it; 0 / negative / non-numeric 400", async () => {
     const put = await api.put(url(), {
       models: [
         { provider: "custom", modelId: "local-qwen", clientType: "openai", maxTokens: 8000 },
@@ -204,7 +204,7 @@ describe("models preset & catalog enrichment", () => {
     }
   });
 
-  it("同名 model_id 可在不同 provider 下并存（成对键，互不覆盖）", async () => {
+  it("the same model_id can coexist under different providers (paired keys, neither overwrites the other)", async () => {
     const put = await api.put(url(), {
       models: [
         { provider: "moonshot", modelId: "kimi-k2.6", apiKey: "sk-official-aaaa1111" },
@@ -231,7 +231,7 @@ describe("models preset & catalog enrichment", () => {
   });
 });
 
-describe("default_project 预置", () => {
+describe("default_project presets", () => {
   let t: TestApp;
   let prevKey: string | undefined;
 
@@ -247,7 +247,7 @@ describe("default_project 预置", () => {
     await t.cleanup();
   });
 
-  it("种子 admin 纳管 default_project 时补齐预置模型与默认模型（此前无 .project_config.toml）", async () => {
+  it("when the seeded admin adopts default_project, the preset models and the default model are filled in (no prior .project_config.toml)", async () => {
     // The default_project shared by admin seeding and the CLI (the dir already exists, so writeInitialConfig is skipped).
     t = await createTestApp();
     const { cookie } = await loginAdmin(t.app);
@@ -269,7 +269,7 @@ describe("default_project 预置", () => {
     expect(session.modelId).toBe("deepseek-v4-pro");
   });
 
-  it("已配置过模型的 default_project 原样保留（不覆盖 CLI 既有配置）", async () => {
+  it("a default_project that already has models configured is left untouched (existing CLI config is not overwritten)", async () => {
     // First have the "CLI" write a config with a single custom model, then admin seeding adopts it.
     t = await createTestApp({
       beforeSeed: async (root) => {
@@ -290,7 +290,7 @@ describe("default_project 预置", () => {
   });
 });
 
-describe("模型引用改键与连通性测试", () => {
+describe("model-reference rekeying and the connectivity test", () => {
   let t: TestApp;
   let api: ReturnType<typeof apiClient>;
   let projectId: string;
@@ -302,7 +302,7 @@ describe("模型引用改键与连通性测试", () => {
     const { cookie } = await provisionUser(t.app, "carol");
     api = apiClient(t.app, cookie);
     const created = (await (
-      await api.post("/api/projects", { projectId: "carol-rename", name: "改名项目" })
+      await api.post("/api/projects", { projectId: "carol-rename", name: "Rename project" })
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
   });
@@ -310,7 +310,7 @@ describe("模型引用改键与连通性测试", () => {
     await t.cleanup();
   });
 
-  it("renamedFrom 迁移 credential 与配置，默认/视觉模型指针跟随改键", async () => {
+  it("renamedFrom migrates the credential and the config; the default / vision model pointers follow the rekey", async () => {
     await api.put(url(), {
       defaultModel: { provider: "custom", modelId: "old-id" },
       visionModel: { provider: "custom", modelId: "old-id" },
@@ -347,7 +347,7 @@ describe("模型引用改键与连通性测试", () => {
     expect(again.defaultModel).toEqual({ provider: "custom", modelId: "new-id" });
   });
 
-  it("分组变更也是改键：credential 随迁；envKey 按 client 解析、不随分组（PRN-021）", async () => {
+  it("a group change is a rekey too: the credential migrates with it; envKey resolves by client, not by group (PRN-021)", async () => {
     // Move the preset DeepSeek model to another group (changing provider is a key change; the paired renamedFrom migrates it).
     const put = await api.put(url(), {
       models: [
@@ -384,28 +384,28 @@ describe("模型引用改键与连通性测试", () => {
     expect(moved.envKey).toBe("DEEPSEEK_API_KEY");
   });
 
-  it("展示名可编辑：与内置目录一致时不落盘；provider 恒作为条目字段落盘", async () => {
+  it("the display name is editable: not persisted when it matches the built-in catalog; provider is always persisted as an entry field", async () => {
     // Preset model: saved as-is → the display name falls back to the built-in catalog, and display_name isn't written to the config file.
     await api.put(url(), {
       models: [
         { provider: "openai", modelId: "gpt-5.5", displayName: "GPT-5.5" },
-        { provider: "openai", modelId: "gpt-5.4", displayName: "我的 GPT" },
+        { provider: "openai", modelId: "gpt-5.4", displayName: "My GPT" },
       ],
     });
     const body = (await (await api.get(url())).json()) as ModelsResponse;
     expect(pick(body, "openai", "gpt-5.5").displayName).toBe("GPT-5.5");
     // Edited one: the display name takes effect per the user's setting.
-    expect(pick(body, "openai", "gpt-5.4").displayName).toBe("我的 GPT");
+    expect(pick(body, "openai", "gpt-5.4").displayName).toBe("My GPT");
 
     // Clean on disk: unchanged preset models don't write display_name; provider is stored as a separate column, no concatenated string.
     const toml = await readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
     expect(toml).not.toContain('display_name = "GPT-5.5"');
-    expect(toml).toContain('display_name = "我的 GPT"');
+    expect(toml).toContain('display_name = "My GPT"');
     expect(toml).toContain('provider = "openai"');
     expect(toml).not.toContain("openai/gpt-5.5");
   });
 
-  it("renamedFrom 非法值 400；不带 renamedFrom 改键等于删旧建新（credential 不迁移）", async () => {
+  it("an invalid renamedFrom is 400; rekeying without renamedFrom equals delete-old-then-create-new (the credential does not migrate)", async () => {
     await api.put(url(), {
       models: [{ provider: "custom", modelId: "m-a", apiKey: "sk-secret-abcd1234" }],
     });
@@ -426,7 +426,7 @@ describe("模型引用改键与连通性测试", () => {
     expect(body.models[0]!.credential).toBeUndefined();
   });
 
-  it("连通性测试发的是条目的上游 model_id（引用成对随请求体）", async () => {
+  it("the connectivity test sends the entry's upstream model_id (the reference pair travels with the request body)", async () => {
     // Local openai-compatible endpoint: records the model field from the request body, then always rejects with 401 (never hits the network).
     const seenModels: string[] = [];
     const server = createServer((req, res) => {
@@ -472,7 +472,7 @@ describe("模型引用改键与连通性测试", () => {
     }
   });
 
-  it("连通性测试请求体不含 tools 与 tool_choice（空工具列表整体省略，vLLM 等严格端点不再 400）", async () => {
+  it("the connectivity-test request body carries no tools or tool_choice (an empty tool list is omitted entirely, so strict endpoints such as vLLM no longer 400)", async () => {
     // The probe runs with an empty tool list. The wire body must omit `tools` entirely —
     // `tools: []` is rejected by strict OpenAI-compatible servers (vLLM: "tools must not be an
     // empty array") — and must never carry `tool_choice`.
@@ -512,7 +512,7 @@ describe("模型引用改键与连通性测试", () => {
     }
   });
 
-  it("连通性测试：已保存的模型与**尚未保存**的自定义模型都可测（LLM 层不抛异常，一律收敛）", async () => {
+  it("connectivity test: both a saved model and a **not-yet-saved** custom model can be tested (the LLM layer throws nothing, every outcome converges)", async () => {
     await api.put(url(), {
       models: [{ provider: "openai", modelId: "gpt-5.5", apiKey: "sk-invalid-key-for-test" }],
     });
@@ -536,7 +536,7 @@ describe("模型引用改键与连通性测试", () => {
     expect(typeof unsavedBody.message).toBe("string");
   }, 40_000);
 
-  it("连通性测试：模型完全没有 credential 时收敛为 ok:false，而非 500", async () => {
+  it("connectivity test: a model with no credential at all converges to ok:false instead of 500", async () => {
     // A model using the OpenAI protocol: the provider SDK throws at **client construction** because
     // the key is missing — if that construction were outside the try it would bubble up as a 500. Clear the env-var key so there's nowhere to get one (no real network request).
     const prev = process.env.OPENAI_API_KEY;
@@ -555,7 +555,7 @@ describe("模型引用改键与连通性测试", () => {
     }
   });
 
-  it("连通性测试：clearApiKey 时不回落已存 key（照当前草稿测）", async () => {
+  it("connectivity test: clearApiKey does not fall back to the stored key (the current draft is what gets tested)", async () => {
     // A key is already saved, but the test request carries clearApiKey — the server must **not** use
     // the saved key. Clear the env var so "don't use the saved key" == no credential at all, so construction synchronously throws missing-credential (no network request, deterministic).
     const prev = process.env.OPENAI_API_KEY;
