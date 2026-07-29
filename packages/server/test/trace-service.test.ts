@@ -378,6 +378,52 @@ describe("trace-service", () => {
     expect(a.elapsedMs).toBe(4_100);
   });
 
+  it("a failed request the engine retries stays inside the same turn (it is a reconnect, not a turn end)", async () => {
+    // The engine reconnects on `failed` as well as timeout/malformed, so the resent Request
+    // belongs to the same user turn. If segmentation still keyed on timeout/malformed only,
+    // one gateway blip would split a single turn's Tokens, duration and TPS across two Tasks
+    // and inflate the Task count — the same smearing the timeout rule exists to prevent.
+    await writeTraceFile(root, P, A, "2026-07-05", S, 1, [
+      at("2026-07-05T10:00:00.000Z", sessionMeta(metaPayload())),
+      at("2026-07-05T10:00:00.000Z", userText("question one")),
+      at("2026-07-05T10:00:01.000Z", requestBegin()),
+      at("2026-07-05T10:00:02.000Z", requestEnd("failed")), // a gateway error → the engine reconnects
+      at("2026-07-05T10:00:03.000Z", requestBegin()),
+      at("2026-07-05T10:00:05.000Z", requestEnd("completed")),
+      at("2026-07-05T10:00:05.100Z", tokenUsage(counts(1000), buckets(0, 900, 100))),
+    ]);
+    const a = await service.analyze(P, A, S, 1);
+    expect(a.requests.map((r) => r.taskIndex)).toEqual([0, 0]); // one turn, two Requests
+    expect(a.tasks.map((t) => t.taskIndex)).toEqual([0]);
+    expect(a.reconnectCount).toBe(1);
+    expect(a.tasks[0]!.tokens.output).toBe(100);
+  });
+
+  it("a failed compaction request is NOT a reconnect: compaction fails fast on it", async () => {
+    // Segmentation has to track the engine loop by loop: the turn loop retries `failed`, the
+    // compaction loop deliberately does not (it keeps the old context and tries again on the
+    // next trigger). Counting this as a reconnect would invent an attempt that never happened.
+    await writeTraceFile(root, P, A, "2026-07-05", S, 1, [
+      at("2026-07-05T10:00:00.000Z", sessionMeta(metaPayload())),
+      at("2026-07-05T10:00:00.000Z", userText("question one")),
+      at("2026-07-05T10:00:01.000Z", requestBegin()),
+      at("2026-07-05T10:00:02.000Z", requestEnd("completed")),
+      at("2026-07-05T10:00:02.100Z", tokenUsage(counts(1000), buckets(0, 900, 100))),
+      at(
+        "2026-07-05T10:00:03.000Z",
+        compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 1 }),
+      ),
+      at("2026-07-05T10:00:04.000Z", requestBegin()),
+      at("2026-07-05T10:00:05.000Z", requestEnd("failed")), // compaction gives up here
+      at(
+        "2026-07-05T10:00:06.000Z",
+        compactionEnd({ reason: "context", mode: "summarize", status: "failed" }),
+      ),
+    ]);
+    const a = await service.analyze(P, A, S, 1);
+    expect(a.reconnectCount).toBe(0);
+  });
+
   it("after the previous turn ends in timeout (retries exhausted), a new user message starts a new turn", async () => {
     // "timeout → continuation" holds only for **automatic retries within the
     // same run**. Once retries are exhausted and the engine gives up, a message

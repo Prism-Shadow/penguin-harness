@@ -494,6 +494,67 @@ describe("approvals and events", () => {
     expect((items(m)[2] as ReconnectItem).attempt).toBe(1);
   });
 
+  it("request_end(failed) renders a retry notice too, with its countdown inputs and give-up target", () => {
+    // The engine reconnects on `failed` exactly like timeout/malformed. Without an item there
+    // is no countdown and findLastWaitingReconnect returns null, so "Retry now" / "Give up"
+    // never render either — the session just stalls for up to 7.75s with nothing on screen.
+    const m = createStreamModel();
+    pushMessage(m, requestBegin());
+    pushMessage(
+      m,
+      requestEnd("failed", "Upstream HTTP/2 stream failed (upstream_http2_stream_error)", 4000),
+      111_000,
+    );
+    const retry = items(m)[0] as ReconnectItem;
+    expect(retry).toMatchObject({
+      kind: "reconnect",
+      status: "failed",
+      attempt: 1,
+      retrying: false,
+      plannedDelayMs: 4000, // the countdown
+      arrivedAtMs: 111_000, // its client-clock anchor
+    });
+    // Waiting, so it is the item the retry-now / give-up controls attach to; the retry then
+    // flips it out of the waiting state exactly like the other two statuses.
+    pushMessage(m, requestBegin());
+    expect(retry.retrying).toBe(true);
+  });
+
+  it("a mixed ladder keeps counting: failed no longer resets the attempt number mid-run", () => {
+    // `failed` used to fall through to the reset branch, so timeout → failed → timeout
+    // renumbered the third attempt back to #1 while the engine was on its third.
+    const m = createStreamModel();
+    pushMessage(m, requestBegin());
+    pushMessage(m, requestEnd("timeout"));
+    pushMessage(m, requestBegin());
+    pushMessage(m, requestEnd("failed", "502 bad gateway"));
+    pushMessage(m, requestBegin());
+    pushMessage(m, requestEnd("timeout"));
+    expect((items(m) as ReconnectItem[]).map((i) => [i.status, i.attempt])).toEqual([
+      ["timeout", 1],
+      ["failed", 2],
+      ["timeout", 3],
+    ]);
+    // A normal finish still resets it: the next run's first failure is #1 again.
+    pushMessage(m, requestBegin());
+    pushMessage(m, requestEnd("completed"));
+    pushMessage(m, requestBegin());
+    pushMessage(m, requestEnd("failed"));
+    expect((items(m)[3] as ReconnectItem).attempt).toBe(1);
+  });
+
+  it("request_end(auth) stays out of the ladder: terminal, so no retry notice and the count resets", () => {
+    // The one status the engine does not retry — an item would promise a countdown and a
+    // "Retry now" that will never happen, on top of the composer already being gated.
+    const m = createStreamModel();
+    pushMessage(m, requestBegin());
+    pushMessage(m, requestEnd("timeout"));
+    pushMessage(m, requestBegin());
+    pushMessage(m, requestEnd("auth", "401 invalid x-api-key"));
+    expect((items(m) as ReconnectItem[]).filter((i) => i.kind === "reconnect")).toHaveLength(1);
+    expect(m.reconnectRun).toBe(0);
+  });
+
   it("retries exhausted: an arriving abort marks the waiting retry notice gaveUp and resets the consecutive-failure count", () => {
     const m = createStreamModel();
     pushMessage(m, requestBegin());

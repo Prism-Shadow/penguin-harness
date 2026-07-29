@@ -1482,7 +1482,7 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
     return { messages, outcome: res.value as LLMOutcome };
   }
 
-  it("returns failed (never throws) on a build failure such as empty input", async () => {
+  it("returns failed on a build failure such as empty input (never throws)", async () => {
     const model = new SeamModel((sig) => hang(sig));
     const { messages, outcome } = await drain(model.streamGenerate({ newMessages: [] }));
     expect(outcome.status).toBe("failed"); // A mergeOmniToUniMessage failure converges to failed, never throws

@@ -153,8 +153,12 @@ export interface Messages {
   }): string;
   /** Abort event label (may include a reason). */
   abortLabel(reason?: string): string;
-  /** request_end ended with timeout/malformed: the engine retries (reconnect) carrying already-produced content; attempt is the retry count. */
-  reconnectLabel(status: "timeout" | "malformed", attempt: number): string;
+  /**
+   * request_end ended with a status the engine reconnects on (`failed` / `timeout` /
+   * `malformed` — only `auth` is terminal): the engine retries carrying already-produced
+   * content; attempt is the retry count.
+   */
+  reconnectLabel(status: "failed" | "timeout" | "malformed", attempt: number): string;
   /** compaction start event: indicates compaction in progress (mode is summarize/discard, reason is context/turns/manual). */
   compactionStart(mode: string, reason: string): string;
   /**
@@ -383,7 +387,13 @@ const en: Messages = {
     `[stats] context ${s.context} (${s.contextDelta}) · tokens ${s.tokens} (${s.tokensDelta}) · ${s.elapsed} (${s.elapsedDelta})`,
   abortLabel: (reason) => `[abort]${reason ? `: ${reason}` : ""}`,
   reconnectLabel: (status, attempt) =>
-    `[retry] ${status === "timeout" ? "connection timed out" : "response incomplete or unparseable"}; sending retry #${attempt}…`,
+    `[retry] ${
+      status === "timeout"
+        ? "connection timed out"
+        : status === "malformed"
+          ? "response incomplete or unparseable"
+          : "the model provider returned an error"
+    }; sending retry #${attempt}…`,
   compactionStart: (mode, reason) =>
     mode === "discard"
       ? `[compaction] discarding context (${reason})…`
@@ -571,7 +581,13 @@ const zh: Messages = {
     `[统计信息] 上下文 ${s.context} (${s.contextDelta}) · tokens ${s.tokens} (${s.tokensDelta}) · 用时 ${s.elapsed} (${s.elapsedDelta})`,
   abortLabel: (reason) => `[已中断]${reason ? `：${reason}` : ""}`,
   reconnectLabel: (status, attempt) =>
-    `[重试] ${status === "timeout" ? "连接超时或网络中断" : "响应不完整或无法解析"}，正在发起第 ${attempt} 次重试……`,
+    `[重试] ${
+      status === "timeout"
+        ? "连接超时或网络中断"
+        : status === "malformed"
+          ? "响应不完整或无法解析"
+          : "模型服务返回错误"
+    }，正在发起第 ${attempt} 次重试……`,
   compactionStart: (mode, reason) =>
     mode === "discard"
       ? `[压缩] 正在丢弃旧上下文（${reason}）……`

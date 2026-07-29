@@ -62,9 +62,9 @@ interface LLMOutcome {
 | `completed` | 正常完成(已产出 token_usage) | 继续下一步 |
 | `timeout` | 超时/传输层断连/瞬时的供应商额度错误 | 同一 run 内自动重连 |
 | `malformed` | 响应解析失败 | 同一 run 内自动重连 |
+| `failed` | 分类器未判定为瞬时的错误(参数等) | 同样在同一 run 内自动重连——状态本身仍如实上报为 `failed` |
 | `aborted` | 用户中断 | 停止交还用户 |
-| `failed` | 参数等不可重试错误 | 停止交还用户 |
-| `auth` | 凭据被拒绝 | 与 `failed` 同样停止；宿主据此禁用输入，直到该模型的 API key 被更新 |
+| `auth` | 凭据被拒绝 | 停止交还用户——唯一从不重试的 LLM 终态；宿主据此禁用输入，直到该模型的 API key 被更新 |
 
 实现约束：从不抛异常；不做内部重试(重连是引擎的职责，见 [Agent 运行循环](/agent-loop))。
 

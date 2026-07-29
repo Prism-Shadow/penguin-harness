@@ -303,6 +303,30 @@ describe("StreamRenderer", () => {
     expect(lines).not.toContain("retry #3");
   });
 
+  it("prints the retry line for a failed request too, and keeps counting across a mixed ladder", () => {
+    // The engine reconnects on `failed` as well, so the CLI has to say so — otherwise the
+    // session goes quiet for the whole ladder. And because `failed` used to reset the
+    // counter, a mixed timeout → failed → timeout run renumbered back to retry #1.
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t);
+    r.handle(requestBegin());
+    r.handle(requestEnd("failed", "Upstream HTTP/2 stream failed"));
+    r.handle(requestBegin()); // retry #1 begins
+    let lines = stripAnsi(text());
+    expect(lines).toContain("the model provider returned an error");
+    expect(lines).toContain("retry #1");
+    r.handle(requestEnd("timeout"));
+    r.handle(requestBegin()); // retry #2 begins — the count does not restart
+    lines = stripAnsi(text());
+    expect(lines).toContain("connection timed out");
+    expect(lines).toContain("retry #2");
+    // `auth` is terminal: the engine never retries it, so the next request_begin (a new run)
+    // must not be announced as a retry.
+    r.handle(requestEnd("auth", "401 invalid x-api-key"));
+    r.handle(requestBegin());
+    expect(stripAnsi(text())).not.toContain("retry #3");
+  });
+
   it("locks the screen to one streaming tool output; other messages queue until its stop", () => {
     const { stream, text } = collector();
     const r = new StreamRenderer(stream, t);

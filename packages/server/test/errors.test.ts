@@ -368,18 +368,20 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
 
   // —— LLM ——
 
-  it("LLM failed → unexpected (needs a human); message takes the abort reason", () => {
+  it("an unrecovered LLM failed → unexpected (needs a human); message takes the abort reason", () => {
+    // Nothing follows this failure but the abort, so the ladder did not carry it: the user
+    // lost the turn and it belongs in front of an operator.
     const got = feed([
       requestBegin(),
       requestEnd("failed"),
-      abortEvent("llm request error: 401 invalid api key"),
+      abortEvent("llm request failed after 5 retries: 400 unknown parameter"),
     ]);
     expect(got).toHaveLength(1);
     expect(got[0]).toMatchObject({
       source: "llm",
       kind: "unexpected",
       code: "llm_failed",
-      message: "llm request error: 401 invalid api key",
+      message: "llm request failed after 5 retries: 400 unknown parameter",
       project_id: "p1",
       agent_id: "a1",
       session_id: "s1",
@@ -406,9 +408,10 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
     });
   });
 
-  it("request_end(auth) shares the llm_failed/unexpected bucket; message takes the abort reason", () => {
-    // Credentials rejection is its own stop reason but no new error taxonomy: same code
-    // and kind as failed, resolved by the abort that follows like any failed exit.
+  it("request_end(auth) gets its own llm_auth code, out of the failed dedup bucket", () => {
+    // Credentials rejection needs a code of its own now that `failed` fires on every blip
+    // the ladder absorbs: dedup is (source, code, Project) over a short window, so sharing
+    // a bucket would let a real credential failure be dropped as a duplicate.
     const got = feed([
       requestBegin(),
       requestEnd("auth", "401 invalid x-api-key (invalid_api_key)"),
@@ -418,9 +421,47 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
     expect(got[0]).toMatchObject({
       source: "llm",
       kind: "unexpected",
-      code: "llm_failed",
+      code: "llm_auth",
       message: "llm request error: 401 invalid x-api-key (invalid_api_key)",
     });
+  });
+
+  it("a failed the ladder carried → expected under its own code, not an operator incident", () => {
+    // The inversion this guards against: the engine retries `failed`, so the same status now
+    // covers "a gateway hiccup the user never saw" and "the run died on it". A following
+    // request_begin proves another attempt happened — that one is expected, like a timeout.
+    const got = feed([
+      requestBegin(),
+      requestEnd("failed", "Upstream HTTP/2 stream failed (upstream_http2_stream_error)"),
+      requestBegin(),
+      requestEnd("completed"),
+    ]);
+    expect(got).toHaveLength(1);
+    expect(got[0]).toMatchObject({
+      source: "llm",
+      kind: "expected",
+      code: "llm_failed_retried",
+      // No abort ever arrives on the retry path: the staged request_end's own detail is the
+      // message of record.
+      message: "Upstream HTTP/2 stream failed (upstream_http2_stream_error)",
+    });
+  });
+
+  it("a recovered failed does not dedup away a credential failure that lands right after", () => {
+    // The two share a 2s dedup window and used to share the `llm_failed` code, so the auth
+    // record was dropped outright — the one failure that always needs a human, silenced by
+    // the one that never does.
+    const got = feed([
+      requestBegin(),
+      requestEnd("failed", "Upstream HTTP/2 stream failed"),
+      requestBegin(), // The retry: resolves the failure above as recovered.
+      requestEnd("auth", "401 invalid x-api-key"),
+      abortEvent("llm request error: 401 invalid x-api-key"),
+    ]);
+    expect(got.map((r) => [r.code, r.kind])).toEqual([
+      ["llm_failed_retried", "expected"],
+      ["llm_auth", "unexpected"],
+    ]);
   });
 
   it("a retried failure keeps its real detail: request_end(timeout).message lands in the record", () => {
@@ -498,8 +539,9 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
     w.close();
     const got = rows();
     expect(got).toHaveLength(1);
+    // close() is not proof of a retry, so it takes the conservative branch: unrecovered.
     expect(got[0]).toMatchObject({ code: "llm_failed", kind: "unexpected" });
-    expect(got[0]!.message).toContain("LLM request failed");
+    expect(got[0]!.message).toBe("LLM request failed and the retries did not recover it.");
   });
 
   it("parent/child LLM failures pend separately by origin; abort reasons never cross over", () => {

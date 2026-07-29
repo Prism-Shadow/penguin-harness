@@ -378,8 +378,8 @@ export class StreamRenderer {
    */
   private taskFirstTsMs: number | null = null;
   private taskLastReqEndMs: number | null = null;
-  /** Terminal state (timeout/malformed) of the previous request: the next request_begin is a retry, at which point a notice is printed. */
-  private pendingRetry: "timeout" | "malformed" | null = null;
+  /** Retryable terminal state (failed/timeout/malformed) of the previous request: the next request_begin is a retry, at which point a notice is printed. */
+  private pendingRetry: "failed" | "timeout" | "malformed" | null = null;
   /** Number of retries already initiated (increments on consecutive failures, reset once a request completes normally). */
   private reconnectRun = 0;
 
@@ -693,7 +693,7 @@ export class StreamRenderer {
         this.out.write(`${formatAbort(payload as AbortPayload, this.t)}\n`);
         this.lastLineKey = null;
       } else if (payload.type === "request_begin") {
-        // The previous request ended in timeout/malformed -> this request is a retry
+        // The previous request ended in a retryable status -> this request is a retry
         // carrying [turn_retried]: printed when the retry **actually starts** (when
         // retries are exhausted, there's no retry after the last failure, only an abort
         // explaining why).
@@ -720,7 +720,10 @@ export class StreamRenderer {
             this.hasUsage = true;
           }
         }
-        if (p.status === "timeout" || p.status === "malformed") {
+        // Every status the engine reconnects on, `failed` included — only `auth` is terminal.
+        // Leaving `failed` out would print nothing for a retry that is really happening, and
+        // reset the counter mid-ladder so a mixed run renumbers back to retry #1.
+        if (p.status === "failed" || p.status === "timeout" || p.status === "malformed") {
           this.pendingRetry = p.status;
         } else {
           this.pendingRetry = null;

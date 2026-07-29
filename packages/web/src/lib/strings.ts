@@ -654,14 +654,23 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     modelAuthDeadRetry: "重试",
     modelAuthDeadCta: "新建会话",
     modelAuthDeadPlaceholder: "模型认证失败，请先更新 API key",
-    /** Reconnect hint line; `secondsLeft` (waiting state only) switches to the live-countdown wording. */
+    /**
+     * Reconnect hint line; `secondsLeft` (waiting state only) switches to the live-countdown
+     * wording. `failed` is in the union because the engine retries it like the other two —
+     * its cause names the provider rather than the transport, since that is where it came from.
+     */
     reconnect: (
-      status: "timeout" | "malformed",
+      status: "failed" | "timeout" | "malformed",
       state: "waiting" | "retried" | "gaveUp",
       attempt: number,
       secondsLeft?: number,
     ) => {
-      const cause = status === "timeout" ? "连接超时或网络中断" : "响应不完整或无法解析";
+      const cause =
+        status === "timeout"
+          ? "连接超时或网络中断"
+          : status === "malformed"
+            ? "响应不完整或无法解析"
+            : "模型服务返回错误";
       const action =
         state === "gaveUp"
           ? "已停止重试"

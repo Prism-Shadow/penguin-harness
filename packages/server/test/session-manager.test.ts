@@ -214,7 +214,7 @@ describe("session-manager", () => {
 
     expect(captured.map((a) => [a.source, a.code, a.kind])).toEqual([
       ["environment", "tool_failed:write_file", "expected"], // error fed back to the model; the Agent adjusts on its own
-      ["llm", "llm_failed", "unexpected"], // not retryable, requires human intervention
+      ["llm", "llm_failed", "unexpected"], // the abort follows it: the retries did not recover it, so a human is needed
     ]);
     expect(captured[0]!.ctx).toEqual({ projectId: "p1", agentId: "a1", sessionId: "session-1" });
     expect(String(captured[0]!.err)).toContain("[tool error] exit code 2");

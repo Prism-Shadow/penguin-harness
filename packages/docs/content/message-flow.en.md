@@ -102,7 +102,7 @@ Therefore **a renderer must never reconstruct the context from arrival order** �
 | Case | Observable order on the stream |
 | --- | --- |
 | User interrupt | (messages produced so far) → the `abort` event — the last message before `run` returns; carry-over goes to the model context only, never streamed, never written to Trace |
-| Automatic reconnect | `request_end(timeout \| malformed)` → a fresh `request_begin` (up to 5 times, exponential backoff with a 30s ceiling; `timeout` covers transport disconnects and transient provider quota errors too); the `[turn_retried]` block is model-visible only |
+| Automatic reconnect | `request_end(failed \| timeout \| malformed)` → a fresh `request_begin` (up to 5 times, exponential backoff with a 30s ceiling; only `auth` skips the ladder); the `[turn_retried]` block is model-visible only |
 | Compaction | `compaction_begin` → the compaction request runs against the old context (its streamed output is **not** forwarded, only written to Trace) → that request's `token_usage` → `compaction_end(status)` |
 | max_turns reached | a length notice → the run ends; unsubmitted input is kept as carry-over |
 | The Prompt itself | written to Trace, not echoed back onto the stream (the caller already has it) |

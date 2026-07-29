@@ -521,7 +521,7 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
     expect(texts.join("\n")).not.toContain("[turn_aborted]");
   });
 
-  it("downgrades a goal round's protocol in the [turn_aborted] transcript (LLM failure path)", async () => {
+  it("downgrades a goal round's protocol in the [turn_aborted] transcript (auth exit path)", async () => {
     // An aborted/failed goal round's input rides into the next task via flatten carry-over;
     // its [goal] protocol ("the system sends the next round automatically", the file rules)
     // is stale the moment the goal ends and must not re-enter the model as live instructions.
@@ -541,7 +541,8 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
         if (++calls === 1) {
           yield partialText("start", "");
           yield partialText("delta", "half a thought");
-          return { status: "failed", message: "boom" };
+          // `auth`: the one LLM status that still exits straight to the flatten path.
+          return { status: "auth", message: "boom" };
         }
         yield assistantText("ok");
         yield tokenUsage(emptyTokenCounts(), {
@@ -1644,14 +1645,14 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     expect(nextRunTexts.join("\n")).not.toContain("[turn_aborted]");
   });
 
-  it("surfaces a non-retryable LLM failure (outcome=failed) as a graceful abort (run does not throw)", async () => {
+  it("a failed outcome retries like a timeout, then converges to a graceful abort (run does not throw)", async () => {
     let calls = 0;
     const inputs: OmniMessage[][] = [];
     const llm: LLMInterface = {
-      // The LLM must never throw an exception at the engine: a non-retryable error resolves
-      // by returning a failed outcome after closing the structure. A genuinely non-retryable
-      // failure nowadays is a parameter error (quota 403s retry as timeout, 401s carry
-      // code "auth" — both covered by their own tests below).
+      // The LLM must never throw an exception at the engine: an error resolves by returning
+      // a failed outcome after closing the structure. `failed` is still the honest
+      // classification for a parameter error — it is simply retried anyway, because the
+      // classifier cannot reliably tell a permanent 4xx from a gateway's transient one.
       // eslint-disable-next-line require-yield
       async *streamGenerate(params) {
         calls += 1;
@@ -1663,31 +1664,81 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
       workspaceDir: workspace,
       toolConfig: execCommandToolConfig(),
     });
-    const engine = new ContextEngine({ llm, environment, reconnectBackoffMs: 0 });
+    const engine = new ContextEngine({
+      llm,
+      environment,
+      maxReconnects: 2,
+      reconnectBackoffMs: 0,
+    });
 
-    // Must not throw; should gracefully converge to an abort.
+    // Must not throw; should gracefully converge to an abort once the ladder is spent.
     const all = await collectRun(engine, [userText("go")], allowAll);
-    expect(calls).toBe(1); // failed -> no retry.
+    expect(calls).toBe(3); // initial attempt + maxReconnects(2): `failed` takes the ladder now.
     const abort = all.find((m) => (m.payload as { type?: string }).type === "abort");
     expect(abort).toBeDefined();
+    // Asserted whole, not by fragments: this string is shown verbatim in the error panel and
+    // the CLI and is persisted as the error message, so its grammar is part of the contract.
     const reason = (abort!.payload as { reason?: string }).reason ?? "";
-    expect(reason).toContain("llm request error");
-    expect(reason).toContain("unknown parameter");
+    expect(reason).toBe(
+      "llm request failed after 2 retries: 400 unknown parameter: max_output_tokens",
+    );
 
-    // The failed turn's input is flattened and stashed; the next run resends it merged with
-    // the new input.
+    // The spent turn's input is stashed as carry-over; the next run (attempt index 3, after
+    // this run's three) resends it merged with the new input.
     await collectRun(engine, [userText("next")], allowAll);
-    const text = inputs[1]!.map((m) => (m.payload as { text?: string }).text ?? "").join("\n");
+    const text = inputs[3]!.map((m) => (m.payload as { text?: string }).text ?? "").join("\n");
     expect(text).toContain("go");
     expect(text).toContain("next");
   });
 
-  it("an auth outcome stops immediately like failed: no retry, request_end carries status auth", async () => {
+  it("a failed request that succeeds on retry never reaches the user as an error", async () => {
+    // The point of retrying `failed`: the classifier is an allowlist, so a transient gateway
+    // fault phrased its own way ("Upstream HTTP/2 stream failed") lands here. It used to kill
+    // the turn; now the turn simply completes.
+    let calls = 0;
+    const llm: LLMInterface = {
+      async *streamGenerate() {
+        calls += 1;
+        if (calls === 1) {
+          return {
+            status: "failed" as const,
+            message: "Upstream HTTP/2 stream failed (upstream_http2_stream_error)",
+          };
+        }
+        yield assistantText("recovered");
+        return { status: "completed" as const };
+      },
+    };
+    const engine = new ContextEngine({
+      llm,
+      environment: new Environment({
+        workspaceDir: workspace,
+        toolConfig: execCommandToolConfig(),
+      }),
+      reconnectBackoffMs: 0,
+    });
+    const all = await collectRun(engine, [userText("go")], allowAll);
+    expect(calls).toBe(2);
+    expect(all.find((m) => (m.payload as { type?: string }).type === "abort")).toBeUndefined();
+    // The failure is still classified `failed` on the wire — the retry is a policy decision,
+    // not a relabelling, so observability still sees a real failure rather than a "timeout".
+    const ends = all.filter((m) => (m.payload as { type?: string }).type === "request_end");
+    expect(ends.map((m) => (m.payload as { status?: string }).status)).toEqual([
+      "failed",
+      "completed",
+    ]);
+    // ...and it announces its retry wait like any other retryable failure, so the frontend
+    // countdown works for it too.
+    expect((ends[0]!.payload as { retry_in_ms?: number }).retry_in_ms).toBeGreaterThanOrEqual(0);
+  });
+
+  it("auth is the only LLM status that stops the run: no retry, request_end carries status auth", async () => {
     let calls = 0;
     const llm: LLMInterface = {
       // GenerativeModel classifies a 401/invalid_api_key as status "auth" (see
-      // llm.test.ts); the engine must stop directly — the auth/failed branch is the second
-      // belt keeping a dead credential out of the retry loop (the classifier is the first).
+      // llm.test.ts); the engine must stop directly — the auth branch is the second belt
+      // keeping a dead credential out of the retry loop (the classifier is the first).
+      // Every other failure, `failed` included, takes the ladder instead.
       // eslint-disable-next-line require-yield
       async *streamGenerate() {
         calls += 1;
@@ -1701,7 +1752,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     const engine = new ContextEngine({ llm, environment, reconnectBackoffMs: 1 });
 
     const all = await collectRun(engine, [userText("go")], allowAll);
-    expect(calls).toBe(1); // Auth behaves like failed: never enters the reconnect loop.
+    expect(calls).toBe(1); // A rejected credential cannot be retried into working.
     // The request's own terminal status is the host signal (streams to the web).
     const end = all.find((m) => (m.payload as { type?: string }).type === "request_end");
     expect((end!.payload as { status?: string }).status).toBe("auth");
@@ -1970,7 +2021,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     expect(all.map((m) => (m.payload as { type?: string }).type)).not.toContain("abort");
   });
 
-  it("flatten carry-over (failed exit) includes the model's partial thinking and text (PRN-014)", async () => {
+  it("flatten carry-over (auth exit) includes the model's partial thinking and text (PRN-014)", async () => {
     let calls = 0;
     const inputs: OmniMessage[][] = [];
     const llm: LLMInterface = {
@@ -1978,11 +2029,14 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
         calls += 1;
         inputs.push(params.newMessages);
         if (calls === 1) {
-          // Before the non-retryable error, partial thinking and text were already produced
-          // (the LLM finishes them as complete messages, stop_reason failed).
+          // Before the terminal error, partial thinking and text were already produced (the
+          // LLM finishes them as complete messages). `auth` is the trigger because it is the
+          // one LLM status that still exits straight to the flatten path — `failed` now takes
+          // the reconnect ladder, whose carry-over is [turn_retried] instead (covered by the
+          // exhausted-retries test below).
           yield thinkingMessage("half-thought", "failed");
           yield assistantText("half-text", "failed");
-          return { status: "failed", message: "boom" };
+          return { status: "auth", message: "boom" };
         }
         yield assistantText("ok");
         yield tokenUsage(emptyTokenCounts(), {
@@ -2001,7 +2055,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     const engine = new ContextEngine({ llm, environment, reconnectBackoffMs: 0 });
 
     await collectRun(engine, [userText("go")], allowAll);
-    expect(calls).toBe(1); // failed -> no retry, exits immediately.
+    expect(calls).toBe(1); // auth -> no retry, exits immediately.
 
     // Next run: the flattened carry-over contains the original input plus partial thinking/text
     // (both completed and incomplete messages are carried over).
