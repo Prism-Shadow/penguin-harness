@@ -241,8 +241,10 @@ type TaskInputPart =
   | { type: "text"; text: string }
   | { type: "image_url"; imageUrl: string }    // 粘贴图片以 data URL 上送
   // 文件附件：base64 data: URL，单个 ≤10MB（超出返回 413 file_too_large；整个请求仍受 20MB
-  // 请求体上限约束）。服务端以净化后的文件名写入该 Session 的 scratchpad，并在消息文本末尾
-  // 追加一行 `[attached file: <path>]`——模型按路径读取该文件。`fileName` 不得含路径分隔符。
+  // 请求体上限约束）。服务端将其写入该 Session 的 scratchpad，并在消息文本末尾追加一行
+  // `[attached file: <path>]`——模型按路径读取该文件。`fileName` 不得含路径分隔符；落盘时保留
+  // 原有词形（`报告 2026.pdf` → `报告-2026.pdf`：非 ASCII 字符原样保留，对 shell 不友好的
+  // ASCII 字符替换为 `-`），既便于在消息中辨认，也可安全地拼进命令。
   | { type: "file"; fileName: string; dataUrl: string };
 
 // POST /api/sessions/:sessionId/approvals/:toolCallId

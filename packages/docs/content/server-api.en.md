@@ -244,8 +244,10 @@ type TaskInputPart =
   | { type: "image_url"; imageUrl: string }    // pasted images arrive as data URLs
   // File attachment: base64 data: URL, ≤10MB each (413 file_too_large beyond that; the whole
   // request still has to fit the 20MB body limit). The server writes it into the Session
-  // scratchpad under a sanitized name and appends an `[attached file: <path>]` line to the
-  // message text — the model opens the file by path. `fileName` carries no path separators.
+  // scratchpad and appends an `[attached file: <path>]` line to the message text — the model
+  // opens the file by path. `fileName` carries no path separators; on disk it keeps its own
+  // words (`报告 2026.pdf` → `报告-2026.pdf`: non-ASCII survives, shell-hostile ASCII becomes
+  // `-`), so a name is readable in the message and safe to paste into a command.
   | { type: "file"; fileName: string; dataUrl: string };
 
 // POST /api/sessions/:sessionId/approvals/:toolCallId

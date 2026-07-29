@@ -29,8 +29,48 @@ import { badRequest } from "../http/validate.js";
  */
 export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 
-/** Longest sanitized stem kept on disk: enough to stay recognizable, short enough to keep paths sane. */
-const MAX_STEM_LEN = 80;
+/**
+ * Longest stem kept on disk, measured in **UTF-8 bytes**: filesystems cap a name near 255
+ * bytes, and a CJK character costs three of them — a character count would let a Chinese name
+ * blow the real limit while an English one stayed far under it.
+ */
+const MAX_STEM_BYTES = 80;
+
+/** Windows reserves these device names with or without an extension (`con`, `con.txt`), case-insensitively. */
+const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+
+/** Format and control characters (Unicode category C) — invisible, and the vector behind right-to-left file-name spoofing. */
+const INVISIBLE_CHAR = /\p{C}/u;
+
+/**
+ * True when a character must not reach a file name. ASCII keeps the long-standing whitelist:
+ * a space or a shell metacharacter inside a path the model is about to paste into a command is
+ * a footgun, so anything outside `[A-Za-z0-9._-]` still becomes `-` down there. Above ASCII the
+ * rule inverts — the character is kept as typed, so `报告.pdf` reaches the model as `报告.pdf`
+ * instead of collapsing to an anonymous `file.pdf` (CJK, accents and emoji are all harmless to
+ * a shell). The exception is Unicode category C: invisible controls, and the bidi overrides
+ * that let a name render as something it is not.
+ */
+function unsafeNameChar(ch: string): boolean {
+  if (/[A-Za-z0-9._-]/.test(ch)) return false;
+  return ch.codePointAt(0)! < 0x80 || INVISIBLE_CHAR.test(ch);
+}
+
+/** Replace every unsafe character with `-`, iterating code points so a surrogate pair survives intact. */
+function sanitizeSegment(value: string): string {
+  return Array.from(value, (ch) => (unsafeNameChar(ch) ? "-" : ch)).join("");
+}
+
+/** Truncate to a UTF-8 byte budget on character boundaries (iterating a string yields whole code points, so a surrogate pair is never split). */
+function truncateBytes(value: string, maxBytes: number): string {
+  if (Buffer.byteLength(value) <= maxBytes) return value;
+  let out = "";
+  for (const ch of value) {
+    if (Buffer.byteLength(out) + Buffer.byteLength(ch) > maxBytes) break;
+    out += ch;
+  }
+  return out;
+}
 
 /** The 6-hex space makes a second collision negligible; the cap only guards against a filesystem stuck on EEXIST. */
 const MAX_NAME_ATTEMPTS = 16;
@@ -90,17 +130,24 @@ export function parseAttachmentPart(part: Record<string, unknown>, index: number
 }
 
 /**
- * Map a submitted name onto a name that is safe on disk **and** readable back out: everything
- * outside `[A-Za-z0-9._-]` becomes `-` (the same character set the scratchpad read endpoint
- * serves, so an attachment stays fetchable), the extension is preserved, and a stem that
- * sanitizes away entirely (e.g. an all-CJK name) falls back to `file` rather than producing a
- * bare extension.
+ * Map a submitted name onto a name that is safe on disk **and** still recognizably the user's
+ * own: `报告 2026.pdf` becomes `报告-2026.pdf` (see unsafeNameChar — the words survive, only the
+ * shell-hostile ASCII is replaced), so the model reads a meaningful path and a person looking
+ * at the message recognizes what they attached.
+ *
+ * The rest is Windows-shaped hygiene: trailing dots and spaces are dropped (Windows silently
+ * strips them, so `a.` and `a` would be the same file), a reserved device name is prefixed
+ * (`con.txt` → `_con.txt`), the stem is capped by UTF-8 bytes, and a stem that sanitizes away
+ * entirely falls back to `file` rather than producing a bare extension.
  */
 function scratchpadName(fileName: string): string {
-  const ext = path.extname(fileName);
-  const clean = (s: string) => s.replace(/[^A-Za-z0-9._-]/g, "-");
-  const stem = clean(fileName.slice(0, fileName.length - ext.length)).slice(0, MAX_STEM_LEN);
-  return `${stem.replace(/^-+$/, "") || "file"}${clean(ext)}`;
+  const ext = sanitizeSegment(path.extname(fileName));
+  const rawStem = fileName.slice(0, fileName.length - path.extname(fileName).length);
+  // Trim after truncating: a cut can expose a trailing dot or space that was mid-name before.
+  const stem = truncateBytes(sanitizeSegment(rawStem), MAX_STEM_BYTES).replace(/[. ]+$/, "");
+  // Nothing but replacement dashes carries no more information than an empty stem did.
+  if (!stem || /^-+$/.test(stem)) return `file${ext}`;
+  return WINDOWS_RESERVED.test(stem) ? `_${stem}${ext}` : `${stem}${ext}`;
 }
 
 /**

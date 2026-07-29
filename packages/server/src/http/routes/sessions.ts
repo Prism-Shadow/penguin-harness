@@ -75,6 +75,28 @@ const SESSION_CATEGORIES: readonly SessionCategory[] = [
 ];
 
 /**
+ * Resolve a scratchpad file name to an absolute path inside `dir`, or null when it could point
+ * anywhere else (the caller turns that into the same 404 a missing file gets, so a probe learns
+ * nothing either way).
+ *
+ * A character whitelist is deliberately NOT the guard: an attachment keeps the name the user
+ * gave it, `报告.pdf` included, so the check is structural instead — no separators, no control
+ * characters, not a relative marker — and then *confirmed* by resolving the path and requiring
+ * its parent to be this session's directory exactly. That last step is what actually contains
+ * the read: it also rejects the shapes a character class misses, such as a Windows
+ * drive-relative `C:evil.png`.
+ */
+function resolveScratchpadFile(dir: string, fileName: string): string | null {
+  if (!fileName || fileName === "." || fileName === "..") return null;
+  for (const ch of fileName) {
+    const code = ch.codePointAt(0)!;
+    if (code < 0x20 || code === 0x7f || ch === "/" || ch === "\\") return null;
+  }
+  const resolved = path.resolve(dir, fileName);
+  return path.dirname(resolved) === path.resolve(dir) ? resolved : null;
+}
+
+/**
  * A validated Prompt: the message parts that go straight into the run, plus the file
  * attachments, which still have to be written to disk (see attachFilesToInput). Kept apart
  * because validation stays synchronous and side-effect free — nothing touches the filesystem
@@ -350,21 +372,17 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
   // Session scratchpad files (input images saved to disk for image-unsupported models, the
   // composer's file attachments, model-generated temp files): read by filename, so the
   // conversation UI can render a message's "[attached image: <path>]" attachment line back
-  // into an image. Restricted to this session's own scratchpad directory (the filename must
-  // not contain a path separator, blocking traversal); a name is never reused for different
-  // bytes — uploads take a random suffix on collision — so the response is marked immutable
-  // and long-cacheable.
+  // into an image. Restricted to this session's own scratchpad directory (see
+  // resolveScratchpadFile); a name is never reused for different bytes — uploads take a random
+  // suffix on collision — so the response is marked immutable and long-cacheable.
   app.get("/:sessionId/scratchpad/:fileName", async (c) => {
     const row = resolveSession(c);
     const fileName = c.req.param("fileName") ?? "";
-    if (!/^[A-Za-z0-9._-]+$/.test(fileName) || fileName.includes("..")) {
-      throw new HttpError(404, "file_not_found", "File does not exist.");
-    }
-    const filePath = path.join(
-      scratchpadDir(deps.config.root, row.projectId, row.agentId),
-      row.sessionId,
+    const filePath = resolveScratchpadFile(
+      path.join(scratchpadDir(deps.config.root, row.projectId, row.agentId), row.sessionId),
       fileName,
     );
+    if (!filePath) throw new HttpError(404, "file_not_found", "File does not exist.");
     let bytes: Buffer;
     try {
       bytes = await fs.readFile(filePath);

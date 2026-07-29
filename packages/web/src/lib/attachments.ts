@@ -31,8 +31,13 @@ export interface ParsedAttachments {
   files: string[];
 }
 
-/** Local scratchpad path → session file endpoint (Windows separators supported). */
-const SCRATCHPAD_PATH = /[/\\]scratchpad[/\\]([^/\\]+)[/\\]([A-Za-z0-9._-]+)$/;
+/**
+ * Local scratchpad path → session file endpoint (Windows separators supported). The file name
+ * is anything but a separator: an attachment keeps the name the user gave it (`报告.pdf`), and
+ * both segments are percent-encoded into the URL below, so restricting the character set here
+ * would only make non-ASCII uploads unreachable.
+ */
+const SCRATCHPAD_PATH = /[/\\]scratchpad[/\\]([^/\\]+)[/\\]([^/\\]+)$/;
 
 /** Resolves a single image line's address; returns null if unrecognized (the line is kept in the text). */
 function resolveAttachment(value: string): string | null {

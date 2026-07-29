@@ -135,6 +135,51 @@ describe("task input file attachments", () => {
     expect(await fs.readFile(filePath, "utf8")).toBe("a,b");
   });
 
+  it("keeps a non-ASCII name instead of flattening it, and caps the stem by UTF-8 bytes", async () => {
+    // A CJK character costs three bytes: 40 of them are 120 bytes, well past the 80-byte cap,
+    // so the name is cut on a character boundary rather than mid-character (a split would leave
+    // an invalid sequence on disk and an unopenable path in the message).
+    const long = "报".repeat(40);
+    const res = await api.post(`/api/sessions/${SID}/tasks`, {
+      input: [
+        { type: "file", fileName: "报告 2026.pdf", dataUrl: dataUrl("cjk") },
+        { type: "file", fileName: `${long}.txt`, dataUrl: dataUrl("long") },
+      ],
+    });
+    expect(res.status).toBe(202);
+    await waitFor(() => runs.length === 1);
+
+    const paths = [...promptText(runs[0]!).matchAll(/\[attached file: (.+)\]/g)].map((m) => m[1]!);
+    // The words survive; only the space (shell-hostile, and ASCII) is replaced.
+    expect(path.basename(paths[0]!)).toBe("报告-2026.pdf");
+    expect(await fs.readFile(paths[0]!, "utf8")).toBe("cjk");
+    const capped = path.basename(paths[1]!);
+    expect(capped).toBe(`${"报".repeat(26)}.txt`);
+    expect(Buffer.byteLength(capped.slice(0, capped.length - 4))).toBeLessThanOrEqual(80);
+    expect(await fs.readFile(paths[1]!, "utf8")).toBe("long");
+  });
+
+  it("prefixes a Windows device name and falls back when the stem sanitizes away", async () => {
+    const res = await api.post(`/api/sessions/${SID}/tasks`, {
+      input: [
+        { type: "file", fileName: "con.txt", dataUrl: dataUrl("device") },
+        // Zero-width joiner only (spelled by code point — an invisible character in the source
+        // would read as an empty string): category C, so nothing is left to name the file with.
+        {
+          type: "file",
+          fileName: `${String.fromCodePoint(0x200d)}.bin`,
+          dataUrl: dataUrl("invisible"),
+        },
+      ],
+    });
+    expect(res.status).toBe(202);
+    await waitFor(() => runs.length === 1);
+
+    const paths = [...promptText(runs[0]!).matchAll(/\[attached file: (.+)\]/g)].map((m) => m[1]!);
+    expect(path.basename(paths[0]!)).toBe("_con.txt");
+    expect(path.basename(paths[1]!)).toBe("file.bin");
+  });
+
   it("accepts a data URL whose media type carries parameters", async () => {
     const res = await api.post(`/api/sessions/${SID}/tasks`, {
       input: [
