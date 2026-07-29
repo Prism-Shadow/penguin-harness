@@ -281,3 +281,25 @@ export function parseModelSwitchMessage(text: string): ModelSwitchOrigin | null 
   }
   return origin.sessionId ? origin : null;
 }
+
+// ---------------------------------------------------------------------------
+// Shared predicate over the whole-message origin blocks
+// ---------------------------------------------------------------------------
+
+/**
+ * True when `text` is **entirely** one origin block whose parser demands a whole-message match:
+ * `[handoff_from]` and `[model_switch_from]`, both of which compare the match length against the
+ * trimmed message. Anything appended after such a block — not just prefixed to it — makes it
+ * unparseable, and the raw marker then renders verbatim in a user bubble.
+ *
+ * Exported for the producers that append to an existing message (see core's
+ * `appendAttachmentLines`): a message of this shape is a machine-written frame, not user text,
+ * and must be left alone. Deliberately implemented by running the parsers rather than
+ * re-testing their patterns, so the predicate cannot drift from what they accept.
+ *
+ * `[use_skills]` and `[scheduled_task]` are **not** included: they are prefix blocks followed by
+ * the message's own body and are parsed at index 0 only, so appending after that body is safe.
+ */
+export function isWholeOriginBlock(text: string): boolean {
+  return parseHandoffMessage(text) !== null || parseModelSwitchMessage(text) !== null;
+}

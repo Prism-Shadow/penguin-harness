@@ -12,7 +12,7 @@ import { formatLocalDate } from "./dates.js";
 import { sessionShell } from "../environment/tools/command/shell.js";
 import type { SessionEnvironmentValues } from "../state/agent-state.js";
 import { workspacesDir } from "../state/index.js";
-import { attachedImageLine, userText } from "../omnimessage/index.js";
+import { attachedImageLine, isWholeOriginBlock, userText } from "../omnimessage/index.js";
 import type { OmniMessage } from "../omnimessage/index.js";
 
 /** Session runtime environment fields: the placeholder substitution values for `assembleSystemPrompt`; producer and consumer share the same type. */
@@ -170,8 +170,17 @@ export async function imagesToScratchpadPaths(
 /**
  * Concatenation rule shared by every attachment-line producer (see the markers module's
  * attachment-lines.ts): the lines are appended as one block after the **last user text
- * message**; if the input carries no user text at all (attachments only), they become a
- * plain line-only text message of their own.
+ * message**; if the input carries no such message (attachments only), they become a plain
+ * line-only text message of their own.
+ *
+ * "User text" here excludes a message that is entirely a whole-message origin block —
+ * `[handoff_from]` / `[model_switch_from]` (isWholeOriginBlock). Those parsers only recognize
+ * the block when it IS the whole message, so appending to one would turn a one-line banner
+ * back into a raw marker in a user bubble. The Web composer reaches exactly that shape when a
+ * message carries attachments, no text, and a staged handoff: its only text message is the
+ * origin block. Such input therefore falls through to the line-only message, leaving the block
+ * intact. Prefix blocks (`[use_skills]`, `[scheduled_task]`) are parsed at index 0 and keep
+ * their own body, so they still take the lines as usual.
  *
  * Exported from the package barrel because the server writes `[attached file: …]` lines for
  * the composer's uploads and must place them exactly the same way — one rule, so a message
@@ -182,8 +191,8 @@ export function appendAttachmentLines(input: OmniMessage[], lines: string[]): Om
   if (lines.length === 0) return input;
   const suffix = lines.join("\n");
   const lastTextIdx = input.findLastIndex((m) => {
-    const p = m.payload as { type?: string; role?: string };
-    return p.type === "text" && p.role === "user";
+    const p = m.payload as { type?: string; role?: string; text?: string };
+    return p.type === "text" && p.role === "user" && !isWholeOriginBlock(p.text ?? "");
   });
   if (lastTextIdx === -1) return [...input, userText(suffix)];
   return input.map((m, i) => {
