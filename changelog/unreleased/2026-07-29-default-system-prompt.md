@@ -10,13 +10,17 @@ API auth handling stops being split across two sections. Constraints carried "re
 
 System markers lose about half their words while keeping all four markers and their instructions. File system goes from eight bullets to six, merging the workspace-relative-path convention into the `CWD` bullet and another agent's state into the description of your own. Suggested workflows already recommended dispatching independent subtasks in parallel; it now says out loud that this is the fast way through a large task. Its Playwright/curl line folds into the Tool use bullet, which keeps both halves the two lines used to carry separately: prefer Playwright when it is installed, otherwise `curl`.
 
-## Skill tooling installs once
+## Tooling installs once
 
-The Skills section loses the "There is no skill tool" filler — the sentence explained an absence — and gains a convention in its place: install a skill's tooling once, not per task. Interpreter and tool environments — Python virtualenvs, pipx tools, model and package caches — go under the shared `<app_data_dir>/agents/<agent_id>/shared_env/`, one subdirectory per environment, and are reused across Sessions; an environment already present in the current directory always wins.
+File system gains a convention, and the Skills section loses the "There is no skill tool" filler that explained an absence: install tooling once, not per task. Interpreter and tool environments — Python virtualenvs, pipx tools, model and package caches — go under the shared `<app_data_dir>/agents/<agent_id>/shared_env/`, one subdirectory per environment, and are reused across Sessions; an environment already present in the current directory always wins. It sits in File system rather than Skills because it governs any task that installs a tool, not only a skill run.
 
 A project's own dependencies are deliberately the opposite case, and the prompt says so: Node resolves `node_modules` from the project, so anything installed under the agent directory would be unreachable from `CWD`. They install inside the project itself, with pnpm preferred there — its shared store keeps repeated installs from duplicating on disk.
 
-`shared_env/` is a prompt-level convention, not a path the code creates: `paths.ts` is untouched, and Agent State snapshots still package `agent_state/` alone, so a virtualenv can never bloat an export. The data-layout tree in the Sessions & Traces documentation lists the directory with that caveat spelled out.
+`shared_env/` is a prompt-level convention, not a path the code creates: `paths.ts` is untouched, and Agent State snapshots still package `agent_state/` alone, so a virtualenv can never bloat an export. The data-layout tree in the Sessions & Traces documentation lists the directory with that caveat spelled out, and the per-Agent layout in `01-PRINCIPLES.md` records it too.
+
+## The App Data Dir bullet stops contradicting itself
+
+The same section's App Data Dir bullet said the directory "is NOT the task's directory" and that deliverables must never be left there. A temporary Workspace is `<app_data_dir>/agents/<agent_id>/workspaces/tmp-<8hex>` — inside that very tree, and `CWD` for any task that is given one — so the rule broke exactly where it was needed. It now carries the input rule alone (the App Data Dir's contents were not supplied by the user and are never task input) and says plainly that `CWD` may sit inside the tree, that one folder being the task's and the rest not. Where deliverables go was already stated positively by the scratchpad bullet below it, which holds wherever `CWD` points.
 
 ## Existing Agents
 
