@@ -20,9 +20,11 @@
  * selection without sending). Matching is positional: a slash opens the menu from any caret
  * position, running a command removes just that token, and Escape only dismisses the menu —
  * the rest of the draft is never touched;
- * `/agent` and `/model` are the two **switch** commands, and both are staged rather than
- * immediate: running one consumes its token and opens a picker (agents / models), and the pick
- * becomes a highlighted chip above the text body instead of switching on the spot. The user
+ * `/agent` and `/model` are the two **switch** commands, both offered in an active Session
+ * only — a draft has no conversation to switch, and picks its Agent and model in the draft
+ * page's own selectors. Both are staged rather than immediate: running one consumes its token
+ * and opens a picker (agents / models), and the pick becomes a highlighted chip above the text
+ * body instead of switching on the spot. The user
  * keeps typing; **Enter/Send** performs the switch — an agent chip hands the conversation off to
  * a new chat for that agent (the current Session is not sent to), a model chip forks this
  * conversation onto the picked model. A model fork additionally waits for this Session to be
@@ -1152,9 +1154,10 @@ export function ChatInput({
   /**
    * Used instead of onSend when an `/agent` target chip is staged: opens a new chat for the
    * target agent (the current Session receives no message). Returns whether it succeeded
-   * (draft kept on failure).
+   * (draft kept on failure). Supplied for an active Session only — a draft has no conversation
+   * to hand over, so `/agent` is not offered there (same gating as `/model`'s onSwitchModel).
    */
-  onHandoff: (target: AgentSummary, input: TaskInputPart[]) => Promise<boolean>;
+  onHandoff?: (target: AgentSummary, input: TaskInputPart[]) => Promise<boolean>;
   onStop: () => Promise<void>;
   onCompact: () => Promise<void>;
   /** Currently selected model reference ((provider, modelId) is the unique key); null = not yet chosen. */
@@ -1557,9 +1560,11 @@ export function ChatInput({
           ]
         : []),
       // Agent handoff: same shape as /model — the command consumes its token and opens the
-      // agent picker, whose pick is staged as a chip and only acted on at send time. Offered
-      // wherever there are candidates (draft state included: onHandoff is a required prop).
-      ...(agents.length > 0
+      // agent picker, whose pick is staged as a chip and only acted on at send time. Gated the
+      // same way too: the parent passes onHandoff for an active Session only, because a draft
+      // has nothing to hand over (and already picks its Agent in the draft page's own
+      // selector). Candidates must exist, or the picker would open empty.
+      ...(onHandoff && agents.length > 0
         ? [
             {
               cmd: "/agent",
@@ -1881,7 +1886,7 @@ export function ChatInput({
     setBusy(true);
     try {
       const ok = target
-        ? await onHandoff(target, input)
+        ? await onHandoff!(target, input)
         : switchModel
           ? await onSwitchModel!(
               { provider: switchModel.provider, modelId: switchModel.modelId },

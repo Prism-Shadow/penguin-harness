@@ -74,15 +74,16 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
 
   const ta = page.getByPlaceholder(/输入消息/);
 
-  // The handoff target is also draft content: `/agent` runs like any slash command (its own
-  // token is consumed) and opens the agent picker, whose pick only **stages** a chip — nothing
-  // is sent, so the body is typed afterwards and rides along on the eventual send.
+  // `/agent` is a SESSION command: a draft has no conversation to hand over, and its Agent is
+  // chosen by the draft page's own selector — so the slash menu must not offer it here (the
+  // staged-handoff flow itself is covered in the session section below). The menu does open on
+  // the same prefix, matching the installed `/agent-*` skills — which is what makes the absent
+  // command row a real assertion rather than a menu that simply never appeared.
   await ta.fill("/agent");
-  await ta.press("Enter");
-  await page.getByPlaceholder(/搜索 Agent/).fill("helper");
-  await page.getByRole("button", { name: /agent_helper/ }).click();
-  await expect(page.getByText("agent_helper")).toBeVisible();
-  await expect(ta).toHaveValue("");
+  await expect(page.getByRole("button", { name: /^\/agent-creation/ })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "/agent 交给其他 Agent，发送时开启新会话" }),
+  ).toHaveCount(0);
   await ta.fill("Draft body must not be lost");
 
   // Switch the model: the selector sits to the left of the send button, opens downward, with a quick-search field at the top.
@@ -138,11 +139,6 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   await expect(page.getByRole("button", { name: "审批模式" })).toContainText("放行只读");
   // The thinking level is NOT draft state: it restores from the Agent config (written through above), not the cache.
   await expect(page.getByRole("button", { name: "思考等级" })).toContainText("高");
-  // The staged handoff target restores along with the draft; removing it falls back to a normal send (no handoff triggered).
-  await expect(page.getByText("agent_helper")).toBeVisible();
-  await page.getByRole("button", { name: "移除交接目标" }).click();
-  await expect(page.getByText("agent_helper")).toHaveCount(0);
-
   // Send: the Session is only created now, and the selections land faithfully in its meta.
   await page.getByRole("button", { name: "发送" }).click();
   await page.waitForURL(/\/chat\/session-/);
