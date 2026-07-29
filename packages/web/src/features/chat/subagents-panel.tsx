@@ -80,11 +80,13 @@ export function SubagentsPanel({
       <div
         ref={panel.panelRef}
         style={{ width: panel.open ? panel.width : 0 }}
-        // Same inert + clipping-window handling as the Files panel (see files-panel.tsx).
+        // Same inert + clipping-window handling as the Files panel, and the same open-only
+        // divider (a closed panel's 1px border would otherwise paint next to the open one —
+        // see files-panel.tsx).
         inert={!panel.open}
-        className={`relative flex min-h-0 shrink-0 flex-col overflow-hidden border-l border-gray-200 dark:border-gray-800 ${
-          panel.resizing ? "pointer-events-none" : "transition-[width] duration-200"
-        }`}
+        className={`relative flex min-h-0 shrink-0 flex-col overflow-hidden ${
+          panel.open ? "border-l border-gray-200 dark:border-gray-800" : ""
+        } ${panel.resizing ? "pointer-events-none" : "transition-[width] duration-200"}`}
       >
         <div style={{ width: panel.width }} className="flex h-full min-h-0 flex-col">
           <div className="flex shrink-0 items-center gap-1 px-3 pt-2">
