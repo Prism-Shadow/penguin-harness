@@ -1263,44 +1263,36 @@ describe("elapsed comes from Trace timestamps (#5/#20: settled spans, reload-sta
     );
     expect(m.taskOpen).toBe(true);
     expect(loadNow - m.taskStartLocalMs).toBe(60_000);
-    // This model's local clock is far behind the server timestamps, so the skew-free origin is
-    // the earlier of the two and the header counts from it: a client clock behind the server's
-    // can never shorten the figure below the span the Trace proves.
-    expect(
-      liveSessionElapsedMs(
-        m.stats,
-        m.taskOpen,
-        m.taskStartLocalMs,
-        m.taskFirstTsMs,
-        loadNow + 5000,
-      ),
-    ).toBe(65_000);
+    // No `Date` header came back, so the Trace's own span decides the anchor. Note the local
+    // clock here is nowhere near the server timestamps, and the figure is unaffected: only
+    // differences between server-side values ever reach it.
+    expect(liveSessionElapsedMs(m.stats, m.taskOpen, m.taskStartLocalMs, loadNow + 5000)).toBe(
+      65_000,
+    );
   });
 
-  it("a reload while an event is still in flight counts it: the Trace-derived origin is only a floor", () => {
-    const m = createStreamModel();
-    const T0 = "2026-07-05T00:00:00.000Z";
+  it("a reload while an event is still in flight counts it, from the server's own clock", () => {
     // A tool started executing 10s into the Task and is STILL running 300s later. Nothing has
-    // been appended to the Trace since it began, so the span — and the local origin back-dated
-    // by it — reaches only those first 10s.
-    const loadNow = Date.parse("2026-07-05T00:05:00.000Z");
-    pushMessages(
-      m,
-      [
-        at(userText("run the build"), T0),
-        at(
-          toolCall({ name: "bash", arguments: "{}", toolCallId: "t1" }),
-          "2026-07-05T00:00:10.000Z",
-        ),
-      ],
-      loadNow,
-    );
+    // been appended to the Trace since it began, so its span reaches only those first 10s —
+    // the server's clock at read time is the only thing that sees the other 290s.
+    const replay = [
+      at(userText("run the build"), "2026-07-05T00:00:00.000Z"),
+      at(toolCall({ name: "bash", arguments: "{}", toolCallId: "t1" }), "2026-07-05T00:00:10.000Z"),
+    ];
+    const serverNow = Date.parse("2026-07-05T00:05:00.000Z");
+    // The client's clock is deliberately nothing like the server's: a 90-minute offset that must
+    // not reach the figure, since both ends of the measured interval are server-side values.
+    const loadNow = serverNow + 90 * 60_000;
+    const m = createStreamModel();
+    pushMessages(m, replay, loadNow, serverNow);
     expect(m.taskOpen).toBe(true);
-    expect(loadNow - m.taskStartLocalMs).toBe(10_000); // the floor, on its own far too short
-    // Counting from the earlier origin picks up the 290s the tool has been executing.
+    expect(liveSessionElapsedMs(m.stats, m.taskOpen, m.taskStartLocalMs, loadNow)).toBe(300_000);
+    // Without the header the Trace's span is the floor: short, but never an overshoot.
+    const noHeader = createStreamModel();
+    pushMessages(noHeader, replay, loadNow, null);
     expect(
-      liveSessionElapsedMs(m.stats, m.taskOpen, m.taskStartLocalMs, m.taskFirstTsMs, loadNow),
-    ).toBe(300_000);
+      liveSessionElapsedMs(noHeader.stats, noHeader.taskOpen, noHeader.taskStartLocalMs, loadNow),
+    ).toBe(10_000);
   });
 
   it("a live stream is unaffected: the anchor stays the real Task start", () => {

@@ -42,8 +42,29 @@ export interface ApiFetchOptions {
   query?: Record<string, string | number | undefined>;
 }
 
+/** Response metadata a caller may need alongside the parsed body. */
+export interface ApiFetchMeta {
+  /**
+   * The server's own clock at the moment it produced the response, read from the HTTP `Date`
+   * header; null when absent or unparseable. Lets a caller measure a server-side interval
+   * entirely in server time — differencing it against a server-supplied timestamp cancels any
+   * client/server clock offset, which a local `Date.now()` cannot do. Whole-second precision
+   * (RFC 9110 fixes the header's format), so treat it as ±1s. `Date` is CORS-safelisted, so it
+   * is readable cross-origin too.
+   */
+  serverNowMs: number | null;
+}
+
 /** Makes an API request; non-2xx responses uniformly throw ApiError; 204/empty body returns undefined. */
 export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise<T> {
+  return (await apiFetchWithMeta<T>(path, options)).data;
+}
+
+/** {@link apiFetch} plus the response metadata in {@link ApiFetchMeta}; identical in every other respect. */
+export async function apiFetchWithMeta<T>(
+  path: string,
+  options: ApiFetchOptions = {},
+): Promise<{ data: T } & ApiFetchMeta> {
   let url = path;
   if (options.query) {
     const params = new URLSearchParams();
@@ -84,8 +105,11 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
     throw new ApiError(response.status, code, message);
   }
 
-  if (response.status === 204) return undefined as T;
+  const headerDate = Date.parse(response.headers.get("date") ?? "");
+  const serverNowMs = Number.isFinite(headerDate) ? headerDate : null;
+
+  if (response.status === 204) return { data: undefined as T, serverNowMs };
   const text = await response.text();
-  if (!text) return undefined as T;
-  return JSON.parse(text) as T;
+  if (!text) return { data: undefined as T, serverNowMs };
+  return { data: JSON.parse(text) as T, serverNowMs };
 }

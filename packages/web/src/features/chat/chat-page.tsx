@@ -123,12 +123,10 @@ function SessionElapsed({
   stats,
   taskOpen,
   taskStartLocalMs,
-  taskFirstTsMs,
 }: {
   stats: TaskStatsTracker;
   taskOpen: boolean;
   taskStartLocalMs: number;
-  taskFirstTsMs: number;
 }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -142,13 +140,7 @@ function SessionElapsed({
     return () => clearInterval(id);
   }, [taskOpen]);
   if (!taskOpen) return <>{humanizeDuration(stats.sessionElapsedMs)}</>;
-  return (
-    <>
-      {humanizeDurationLive(
-        liveSessionElapsedMs(stats, taskOpen, taskStartLocalMs, taskFirstTsMs, now),
-      )}
-    </>
-  );
+  return <>{humanizeDurationLive(liveSessionElapsedMs(stats, taskOpen, taskStartLocalMs, now))}</>;
 }
 
 /** The header's three statistics — the chip row and the info dropdown render these verbatim. */
@@ -210,7 +202,6 @@ function headerStats(
         stats={stats}
         taskOpen={model.taskOpen}
         taskStartLocalMs={model.taskStartLocalMs}
-        taskFirstTsMs={model.taskFirstTsMs}
       />
     ),
   };

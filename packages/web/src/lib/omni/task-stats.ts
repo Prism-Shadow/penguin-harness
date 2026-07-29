@@ -320,36 +320,24 @@ export function endTask(t: TaskStatsTracker, elapsedMs: number): TaskStats | nul
  * folds the Task's elapsed into `sessionElapsedMs` in the same model update that flips `taskOpen`
  * off, so the live addition never double-counts across the boundary.
  *
- * The running addition counts from whichever of the Task's two origins is **earlier**, clamped so
- * a clock anomaly never makes the sum go backwards. Neither origin is right on its own:
- *   - `taskStartLocalMs` is a local-clock instant, back-dated on history rebuild by the span the
- *     Trace shows (see StreamModel). Client/server clock skew cannot reach it, but it only
- *     reaches the last *recorded* event: while an event is still in flight — a tool executing, a
- *     Request streaming, a compaction running — nothing has been appended to the Trace since it
- *     began, so a reload landing there under-reports by however long that event has been running.
- *   - `taskFirstTsMs` is the Task's first message timestamp in SERVER time, ticked against the
- *     local clock. It reaches the present moment, so the in-flight event is covered, at the cost
- *     of drifting with the clock offset — the same trade every other running item on the page
- *     already makes (LiveDuration's `sinceMs`, the subagent topology's running nodes).
- * The earlier origin is the larger elapsed, so the figure is never below what the Trace proves
- * and never hides an event still running; a client clock behind the server's simply falls back to
- * the skew-free origin. This is the only place a local clock reaches the elapsed figure at all,
- * and only to animate the Task in flight — the moment the Task settles the number is replaced by
- * one computed from Trace timestamps alone.
+ * The running addition counts from the model's task-start local clock (`taskStartLocalMs`),
+ * clamped so a clock anomaly never makes the sum go backwards.
+ *
+ * This is the only place a local clock reaches the elapsed figure at all, and only to animate the
+ * Task in flight. `taskStartLocalMs` is not the instant this client loaded the page: on a history
+ * rebuild it is back-dated by the elapsed already behind the Task, measured entirely in server
+ * time (see pushMessages), so reloading mid-run resumes the ticking value instead of restarting
+ * it, covers an event still in flight, and carries no client/server clock offset. The moment the
+ * Task settles the number is replaced by one computed from Trace timestamps alone.
  */
 export function liveSessionElapsedMs(
   t: TaskStatsTracker,
   taskOpen: boolean,
   taskStartLocalMs: number | null,
-  taskFirstTsMs: number | null,
   nowMs: number,
 ): number {
-  if (!taskOpen) return t.sessionElapsedMs;
-  // Zero = never stamped (a fresh model), which is not an origin — only a started Task has one.
-  const local = taskStartLocalMs != null && taskStartLocalMs > 0 ? taskStartLocalMs : null;
-  const server = taskFirstTsMs != null && taskFirstTsMs > 0 ? taskFirstTsMs : null;
-  const origin = local != null && server != null ? Math.min(local, server) : (local ?? server);
-  return t.sessionElapsedMs + (origin == null ? 0 : Math.max(0, nowMs - origin));
+  const running = taskOpen && taskStartLocalMs != null ? Math.max(0, nowMs - taskStartLocalMs) : 0;
+  return t.sessionElapsedMs + running;
 }
 
 /** Localized labels for {@link formatTaskStats} (supplied by the view layer's active dictionary). */

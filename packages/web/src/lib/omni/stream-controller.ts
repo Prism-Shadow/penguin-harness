@@ -73,8 +73,17 @@ function parseEventId(id: string): { epoch: string; seq: number } | null {
 }
 
 export interface StreamControllerDeps {
-  /** Fetch history messages (GET /api/sessions/:id/messages), including the live tail while running. */
-  loadMessages: () => Promise<{ messages: OmniMessage[]; live?: MessagesLiveTail }>;
+  /**
+   * Fetch history messages (GET /api/sessions/:id/messages), including the live tail while
+   * running. `serverNowMs` is the server's clock at read time (the response's `Date` header);
+   * omitted/null just costs a running Task's header the time its in-flight event has taken so
+   * far, which falls back to the Trace's own span (see pushMessages).
+   */
+  loadMessages: () => Promise<{
+    messages: OmniMessage[];
+    live?: MessagesLiveTail;
+    serverNowMs?: number | null;
+  }>;
   /** Authoritative running state from the stream (covers both the subscription snapshot and transition events). */
   onTaskState: (state: SessionStatus) => void;
   /** Queued follow-up count carried on task_state events (absent on old servers -> 0). */
@@ -263,14 +272,14 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
 
   const load = async (currentEpoch: number, freshModel?: StreamModel): Promise<void> => {
     try {
-      const { messages, live } = await deps.loadMessages();
+      const { messages, live, serverNowMs } = await deps.loadMessages();
       if (disposed || currentEpoch !== epoch) return;
       // Rebuild path: make the freshly-built model visible only now, atomically — the old model
       // stayed on screen throughout the refetch above (see rebuild). Initial load / retry pass no
       // freshModel and keep operating on the current model.
       if (freshModel) model = freshModel;
       const target = model;
-      pushMessages(target, messages, now());
+      pushMessages(target, messages, now(), serverNowMs ?? null);
       const dedup = buildDedupIndex(messages, 100);
       // Replay the buffer (events that arrived while fetching history), with dedup; while a
       // Task runs, the live tail is woven in so the in-progress message is seeded too.

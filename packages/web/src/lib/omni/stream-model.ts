@@ -384,28 +384,24 @@ export interface StreamModel {
    * which reads Trace timestamps alone). A live stream sets it to the real
    * start; a history rebuild would otherwise stamp the page-load instant and
    * restart the ticking value from zero on every reload, so pushMessages
-   * back-dates it by the span the Trace already shows. That back-dating is a
-   * skew-free **floor**, not the whole figure — it reaches the last recorded
-   * event only — so liveSessionElapsedMs pairs it with taskFirstTsMs, which
-   * reaches the present moment and so covers an event still in flight.
+   * back-dates it by the elapsed already behind the Task — measured entirely
+   * in server time, so no client/server clock offset reaches it, and taken
+   * from the server's own clock rather than the Trace's tail so that an event
+   * still in flight is counted too.
    */
   taskStartLocalMs: number;
-  /**
-   * The Task's first message timestamp, in SERVER time. The settled duration
-   * measures from it (see finalizeOpenTask), and liveSessionElapsedMs also
-   * ticks the running Task from it against the local clock — the convention
-   * every other running item on the page already uses (see LiveDuration's
-   * sinceMs, and the subagent topology's running nodes).
-   */
+  /** The Task's first message timestamp, in SERVER time: both the settled duration and the back-dated live anchor measure from it. */
   taskFirstTsMs: number;
   /**
    * The latest timestamp seen among this round's messages. Two readers:
    *   - the **fallback for the round's end**, used only for a degenerate
    *     round that has no request_end at all (interrupted before its first
    *     Request even ran) — the normal round-end is taken from taskLastReqEndMs;
-   *   - the span pushMessages back-dates taskStartLocalMs by, for a round
-   *     still open when a history rebuild ends. That reader fires for every
-   *     such round, degenerate or not.
+   *   - the floor under the anchor pushMessages back-dates taskStartLocalMs
+   *     to, for a round still open when a history rebuild ends. That reader
+   *     fires for every such round, degenerate or not, but only decides the
+   *     anchor when the server's own clock did not come back with the
+   *     response — it cannot see an event still in flight.
    */
   taskLastTsMs: number;
   /**
@@ -587,36 +583,44 @@ function advanceLastTs(model: StreamModel, timestamp: string): void {
   if (Number.isFinite(ms)) model.lastTsMs = ms;
 }
 
+/**
+ * Replay a history rebuild. `serverNowMs` is the server's clock when it produced the
+ * response (see StreamControllerDeps.loadMessages); null when unavailable.
+ */
 export function pushMessages(
   model: StreamModel,
   messages: OmniMessage[],
   nowMs: number = Date.now(),
+  serverNowMs: number | null = null,
 ): void {
   for (const msg of messages) pushMessage(model, msg, nowMs);
   // Re-anchor a Task still open at the end of the replay. Every message in a
   // rebuild is fed the same `nowMs`, so startTask stamped taskStartLocalMs
   // with the instant the page loaded — and the header's live elapsed, which
   // ticks over `now − taskStartLocalMs`, would restart from zero on every
-  // reload of a running Session. Back-date the anchor by the elapsed the
-  // Trace already shows, so the ticking value resumes where it left off:
+  // reload of a running Session. Back-date the anchor by the elapsed already
+  // behind this Task, so the ticking value resumes where it left off:
   //
-  //   now − anchor  ==  (now − loadInstant) + (taskLastTsMs − taskFirstTsMs)
+  //   now − anchor  ==  (now − loadInstant) + elapsedSoFar
   //
-  // Only differences between server timestamps are used, applied to the local
-  // clock, so client/server clock skew never enters the result. A live stream
-  // pushes one message at a time with the real current clock, where the span
-  // is still zero at startTask and this is a no-op.
-  //
-  // The span reaches the last *recorded* event, not the present moment, so on
-  // its own this under-reports a reload that lands in a quiet stretch — a long
-  // tool execution, a long Request, a compaction in flight — where nothing has
-  // been appended to the Trace since that event began. It is therefore a floor
-  // rather than the whole figure: liveSessionElapsedMs counts from this or
-  // from taskFirstTsMs, whichever is earlier, so the in-flight event is
-  // covered while this keeps the result from ever dropping below the span the
-  // Trace proves (which is also what a client clock behind the server's gets).
+  // elapsedSoFar is measured in SERVER time and applied to the local clock, so
+  // a client/server clock offset cancels out and never enters the result. Two
+  // readings of it, the larger winning:
+  //   - serverNowMs − taskFirstTsMs: the true elapsed, and the only one that
+  //     covers an event still in flight — a tool executing, a Request
+  //     streaming, a compaction running — where nothing has been appended to
+  //     the Trace since it began. Whole-second precision (the `Date` header's
+  //     format), which a chip ticking in whole seconds cannot show.
+  //   - taskLastTsMs − taskFirstTsMs: the span the Trace itself proves. The
+  //     fallback when no `Date` header came back, and a floor under a stale
+  //     one: a cached or intermediary-rewritten reading can only be older
+  //     than the true now, so it can under-report but never overshoot.
+  // A live stream pushes one message at a time with the real current clock,
+  // where both readings are still zero at startTask and this is a no-op.
   if (model.taskOpen) {
-    model.taskStartLocalMs = nowMs - Math.max(0, model.taskLastTsMs - model.taskFirstTsMs);
+    const tracedSpan = model.taskLastTsMs - model.taskFirstTsMs;
+    const serverSpan = serverNowMs === null ? 0 : serverNowMs - model.taskFirstTsMs;
+    model.taskStartLocalMs = nowMs - Math.max(0, tracedSpan, serverSpan);
   }
 }
 
@@ -670,11 +674,11 @@ export function findToolCard(
  * **fallback for the round's end** (see taskLastReqEndMs: the normal
  * round-end is set by request_end, and this only guarantees a usable
  * upper bound for a degenerate round with no request_end at all,
- * interrupted before its first Request even ran), and the span the live
- * anchor is back-dated by on a history rebuild (see taskLastTsMs).
+ * interrupted before its first Request even ran), and the floor under the
+ * live anchor back-dated on a history rebuild when the server's own clock
+ * did not come back with the response (see taskLastTsMs, pushMessages).
  * Compaction forms its own round, and messages within its range don't
- * belong to this round, so this isn't advanced for them — which also keeps
- * a compaction still in flight out of that anchor.
+ * belong to this round, so this isn't advanced for them.
  */
 function touchTask(model: StreamModel, timestamp: string): void {
   if (!model.taskOpen) return;
