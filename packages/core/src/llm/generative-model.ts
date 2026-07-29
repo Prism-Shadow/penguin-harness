@@ -1188,9 +1188,13 @@ export class GenerativeModel implements LLMInterface {
         if (res === STOPPED) {
           // Upstream never settled after the abort. Abandon it rather than await it: ask it to
           // close (best effort — a stream that ignored the signal may ignore this too, so the
-          // rejection is swallowed and the promise is not awaited) and classify by trigger.
+          // rejection is swallowed and the promise is not awaited). A received finish_reason
+          // means AgentHub already committed the response, so preserve normal completion;
+          // otherwise classify the interrupted request by its trigger.
           void Promise.resolve(it.return?.(undefined)).catch(() => undefined);
-          outcome = userSignal?.aborted ? { status: "aborted" } : { status: "timeout" };
+          if (!translator.sawFinishReason()) {
+            outcome = userSignal?.aborted ? { status: "aborted" } : { status: "timeout" };
+          }
           break;
         }
         if (res.done) break;

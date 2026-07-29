@@ -1429,6 +1429,23 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
     await new Promise(() => {}); // never settles, never observes the signal
   }
 
+  /** A committed terminal tool-call event whose transport never closes afterward. */
+  async function* committedThenDeaf(): AsyncGenerator<UniEvent> {
+    yield ev({
+      event_type: "stop",
+      finish_reason: "tool_call",
+      content_items: [
+        {
+          type: "tool_call",
+          name: "exec_command",
+          arguments: { cmd: "echo done" },
+          tool_call_id: "committed-call",
+        },
+      ],
+    });
+    await new Promise(() => {}); // response committed, but the transport never closes
+  }
+
   /** Fails the test loudly instead of letting a regression hang the whole suite. */
   function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
     return Promise.race([
@@ -1624,6 +1641,30 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
       2000,
     );
     expect(outcome.status).toBe("timeout");
+  });
+
+  it("a user abort after finish_reason preserves the committed response when upstream never settles", async () => {
+    const model = new SeamModel(() => committedThenDeaf());
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 20);
+    const { messages, outcome } = await withTimeout(
+      drain(model.streamGenerate({ newMessages: [userText("go")], signal: controller.signal })),
+      2000,
+    );
+    expect(messages.map(typeOf)).toContain("tool_call");
+    expect(messages.map(typeOf)).toContain("token_usage");
+    expect(outcome.status).toBe("completed");
+  });
+
+  it("an idle timeout after finish_reason preserves the committed response when upstream never settles", async () => {
+    const model = new SeamModel(() => committedThenDeaf(), 50);
+    const { messages, outcome } = await withTimeout(
+      drain(model.streamGenerate({ newMessages: [userText("go")] })),
+      2000,
+    );
+    expect(messages.map(typeOf)).toContain("tool_call");
+    expect(messages.map(typeOf)).toContain("token_usage");
+    expect(outcome.status).toBe("completed");
   });
 
   it("classifies a credentials failure as its own terminal status auth; params stay failed", async () => {
