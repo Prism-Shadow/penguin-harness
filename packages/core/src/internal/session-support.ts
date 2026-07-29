@@ -104,9 +104,10 @@ export async function createTempWorkspace(
 }
 
 /**
- * Stands in for an image that could not be turned into a path line — an unparseable data URL
- * in `imagesToScratchpadPaths`, or a failed scratchpad write in `dropInputImages`. Shown to
- * the model and the user instead of silently dropping the attachment.
+ * Stands in for a single image that could not be turned into a path line — a data URL that
+ * doesn't parse. Shown to the model and the user instead of silently dropping the attachment.
+ * A scratchpad that can't be written to is a different matter: the fold throws and the run
+ * ends, rather than carrying on without what the sender attached.
  */
 const IMAGE_DROPPED_NOTE = "[an attached image could not be saved and was dropped]";
 
@@ -172,22 +173,6 @@ export async function imagesToScratchpadPaths(
   return appendToLastUserText(
     input.filter((m) => !isImage(m)),
     lines.join("\n"),
-  );
-}
-
-/**
- * What the fold degrades to when it cannot run at all — an unwritable scratchpad, say. The
- * images are dropped and the text says so, one line each exactly as a single unparseable one
- * is handled above, so the count is still visible. Callers that must not fail over a disk
- * problem (mid-run steering: the Task is already in flight) fall back to this; a Prompt lets
- * the error through, since nothing is running yet and the sender is there to hear about it.
- */
-export function dropInputImages(input: OmniMessage[]): OmniMessage[] {
-  const dropped = input.filter(isImage);
-  if (dropped.length === 0) return input;
-  return appendToLastUserText(
-    input.filter((m) => !isImage(m)),
-    dropped.map(() => IMAGE_DROPPED_NOTE).join("\n"),
   );
 }
 

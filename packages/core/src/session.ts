@@ -19,7 +19,7 @@
  */
 import { sessionMeta } from "./omnimessage/index.js";
 import type { OmniMessage, SessionMetaPayload, TokenCounts } from "./omnimessage/index.js";
-import { dropInputImages, imagesToScratchpadPaths } from "./internal/session-support.js";
+import { imagesToScratchpadPaths } from "./internal/session-support.js";
 import { runGoalLoop } from "./goal/goal-loop.js";
 import { goalFinishedOf } from "./goal/goal-stream.js";
 import type { EnvironmentInterface, LLMInterface, ToolPermission } from "./interfaces.js";
@@ -173,22 +173,12 @@ export class Session {
       ...(config.compaction ? { compaction: config.compaction } : {}),
       ...(config.initialEngineState ? { initialState: config.initialEngineState } : {}),
       // The engine assembles one input of its own — a steering message with images — and folds
-      // it through the same converter `runTask` uses. A vision model simply isn't given the
-      // function, which is all the engine needs to know about the subject.
-      // Steering arrives mid-Task, so this copy swallows a disk failure and delivers the text
-      // with the images dropped; a Prompt keeps the throwing fold, where nothing is in flight
-      // yet and the sender is there to hear about it.
-      ...(config.modelVision
-        ? {}
-        : {
-            foldInputImages: async (messages: OmniMessage[]) => {
-              try {
-                return await this.foldImages(messages);
-              } catch {
-                return dropInputImages(messages);
-              }
-            },
-          }),
+      // it through the same converter `runTask` uses, failures included: a scratchpad that
+      // can't be written to ends the run rather than dropping the attachment and carrying on.
+      // The picture usually arrives BECAUSE the run is going the wrong way, so continuing
+      // without it spends the rest of the Task heading further that way. A vision model simply
+      // isn't given the function, which is all the engine needs to know about the subject.
+      ...(config.modelVision ? {} : { foldInputImages: this.foldImages }),
       sessionMeta: this.meta,
     });
   }

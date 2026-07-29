@@ -2,7 +2,7 @@
 
 Steering — the message you send to an agent that is already running, delivered between turns as a `[user_steering]` user message — used to be text and nothing else. That was a limitation of the channel, not of the model: the very moment an image is most useful is mid-run, when the agent has just produced the wrong layout and the fastest correction is a screenshot. Steering now carries images the way a prompt does, and an image with no caption is a complete steering message on its own.
 
-Core queues the images with the text (`session.steer(text, images?)`) and delivers them as ordinary user image messages directly behind the `[user_steering]` block — the same shape a prompt uses, so the LLM client, the Trace, and replay all already know what to do with them. On a model without vision they fold into `[attached image: <path>]` lines **inside** the block, exactly as a prompt's images fold, because the block has to remain the whole text: a line appended after the closing tag would cost the message its steering identity and every render layer would read it as a new Task. A fold that fails on an unwritable scratchpad drops the images with a note rather than taking the running Task down with it.
+Core queues the images with the text (`session.steer(text, images?)`) and delivers them as ordinary user image messages directly behind the `[user_steering]` block — the same shape a prompt uses, so the LLM client, the Trace, and replay all already know what to do with them. On a model without vision they fold into `[attached image: <path>]` lines **inside** the block, exactly as a prompt's images fold, because the block has to remain the whole text: a line appended after the closing tag would cost the message its steering identity and every render layer would read it as a new Task. A scratchpad that cannot be written to ends the run — the picture usually arrives *because* the run is going the wrong way, so carrying on without it would spend the rest of the task heading further that way.
 
 The renderers follow the same grouping rule they already apply to a prompt's images — everything up to the next non-image message belongs to the message in front of it. In the web app the images land inside the steering chip instead of becoming bubbles of their own, and neither the chat stream nor the Trace timeline opens a new Task for them; an images-only prompt sent later is still a genuine new turn.
 
@@ -13,6 +13,17 @@ The renderers follow the same grouping rule they already apply to a prompt's ima
 In the chat, round 1 shows the attachments in full under its bubble and later rounds collapse them into a one-line chip that expands on click — they really are in every round's input, but a twenty-round goal should not repeat the same picture twenty times.
 
 The three input paths now share one fold, bound once per Session, with each path deciding for itself whether to apply it: a prompt and a steering message fold only without vision, a goal objective always. The gate used to be implicit — "was the scratchpad directory configured" stood in for "does the model lack vision" — which worked only while there was exactly one rule to encode.
+
+### Breaking: `SessionConfig` replaces `inputImagesDir`
+
+Making that gate explicit changes the SDK type. `SessionConfig.inputImagesDir?: string` is gone, replaced by two **required** fields:
+
+| Was | Is |
+| --- | --- |
+| `inputImagesDir?: string` — set only when the model lacked vision | `imagesDir: string` — always set: the session scratchpad, wherever an image lands when it becomes a path |
+| (the same field, doing double duty as the gate) | `modelVision: boolean` — from `ModelEntry.vision !== false` |
+
+Only code that constructs `new Session(...)` by hand is affected, and nothing documented does: `agent.createSession(...)` fills both in and stays source-compatible. A caller that does build the config directly sets `imagesDir` to the session's scratchpad directory and `modelVision` to whether the model takes image input — passing `modelVision: true` with any `imagesDir` reproduces the old behaviour for a vision model, and `false` reproduces it for a model that had `inputImagesDir` set.
 
 ## The mid-run button stops being able to strand you
 

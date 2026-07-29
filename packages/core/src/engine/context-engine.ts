@@ -494,16 +494,22 @@ export class ContextEngine {
   private async steeringMessages(entry: SteeringEntry): Promise<OmniMessage[]> {
     if (entry.images.length === 0) return [userText(userSteeringText(entry.text))];
     const images = entry.images.map((url) => imageUrlMessage(url));
-    // No fold (vision model), or a fold that returned something unreadable: send the images
-    // along as messages rather than quietly losing what the user attached — the model may
-    // refuse them, but that is a visible failure instead of a silent one.
-    const unfolded = [userText(userSteeringText(entry.text)), ...images];
-    if (!this.deps.foldInputImages) return unfolded;
+    // Vision model: the images ride behind the text as their own messages.
+    if (!this.deps.foldInputImages) {
+      return [userText(userSteeringText(entry.text)), ...images];
+    }
     // The fold puts every image into the last user text message, so exactly one text message
-    // comes back for this single-text input.
+    // comes back for this single-text input. `foldInputImages` is public API, so a third-party
+    // adapter can return something else — say which contract it broke. Carrying the images on
+    // as messages would be the worse answer: a fold is configured precisely because the model
+    // does not take images, so the "fallback" hands them to the one model known to refuse them.
     const folded = await this.deps.foldInputImages([userText(entry.text), ...images]);
     const p = folded[0]?.payload as { type?: string; text?: string } | undefined;
-    if (p?.type !== "text" || typeof p.text !== "string") return unfolded;
+    if (p?.type !== "text" || typeof p.text !== "string") {
+      throw new Error(
+        "foldInputImages must return the input's text message with the images folded into it.",
+      );
+    }
     return [userText(userSteeringText(p.text))];
   }
 

@@ -33,7 +33,7 @@ import { Writer, readTrace } from "../src/trace/index.js";
 import { ContextEngine, reconnectDelayMs } from "../src/engine/context-engine.js";
 import { goalRoundMessage } from "../src/goal/goal-prompts.js";
 import { parseUserSteeringText } from "../src/omnimessage/markers/index.js";
-import { dropInputImages, imagesToScratchpadPaths } from "../src/internal/session-support.js";
+import { imagesToScratchpadPaths } from "../src/internal/session-support.js";
 import type { ApproveFn, EnvironmentInterface, ToolPermission } from "../src/interfaces.js";
 
 /** A real 1x1 PNG data URL: the non-vision fold actually decodes and writes it to disk. */
@@ -2450,52 +2450,11 @@ describe("ContextEngine mid-run steering ([user_steering])", () => {
     }
   });
 
-  // Session binds this degrading fold for the engine (a Prompt keeps the throwing one), so the
-  // engine just awaits whatever comes back — the note arrives as ordinary folded text.
-  it("a steering fold that fails drops the images with a note instead of killing the running Task", async () => {
-    let engineRef: ContextEngine | null = null;
-    const inputs: OmniMessage[][] = [];
-    const llm: LLMInterface = {
-      async *streamGenerate(params): AsyncGenerator<OmniMessage, LLMOutcome> {
-        inputs.push(params.newMessages);
-        if (inputs.length === 1) {
-          expect(
-            engineRef!.steer("look at this", [
-              "data:image/png;base64,AAAA",
-              "data:image/png;base64,BBBB",
-            ]),
-          ).toBe(true);
-          yield assistantText("final answer");
-          return { status: "completed" };
-        }
-        yield assistantText("carried on");
-        return { status: "completed" };
-      },
-    };
-    const engine = new ContextEngine({
-      llm,
-      environment: steeringEnvironment(),
-      // What Session hands over when its scratchpad write fails.
-      foldInputImages: async (messages) => dropInputImages(messages),
-    });
-    engineRef = engine;
-    const all = await collectRun(engine, [userText("go")], allowAll);
-
-    // The run completed (turn 2 happened) and the text still arrived. One note per dropped
-    // image, so the count stays visible — the same shape a single unparseable image produces.
-    expect(inputs).toHaveLength(2);
-    expect(parseUserSteeringText((inputs[1]![0]!.payload as { text: string }).text)).toBe(
-      "look at this\n\n[an attached image could not be saved and was dropped]\n" +
-        "[an attached image could not be saved and was dropped]",
-    );
-    expect(steeredImages(all)).toEqual([]);
-  });
-
-  it("a fold returning an unreadable shape keeps the images as messages rather than losing them", async () => {
-    // A broken adapter must not swallow what the user attached: the engine can't spell the
-    // dropped-image note (that lives with the fold, in Session's layer), so it carries the
-    // images through as ordinary image messages instead. The model may refuse them — a visible
-    // failure, unlike a silent disappearance.
+  // Session hands the engine the same throwing fold a Prompt gets: an unwritable scratchpad
+  // ends the run rather than dropping the attachment and carrying on. The picture usually
+  // arrives BECAUSE the run is going the wrong way, so continuing without it would spend the
+  // rest of the Task heading further that way.
+  it("a steering fold that fails ends the run instead of carrying on without the images", async () => {
     let engineRef: ContextEngine | null = null;
     const inputs: OmniMessage[][] = [];
     const llm: LLMInterface = {
@@ -2503,10 +2462,37 @@ describe("ContextEngine mid-run steering ([user_steering])", () => {
         inputs.push(params.newMessages);
         if (inputs.length === 1) {
           expect(engineRef!.steer("look at this", ["data:image/png;base64,AAAA"])).toBe(true);
-          yield assistantText("final answer");
-          return { status: "completed" };
         }
-        yield assistantText("carried on");
+        yield assistantText("final answer");
+        return { status: "completed" };
+      },
+    };
+    const engine = new ContextEngine({
+      llm,
+      environment: steeringEnvironment(),
+      foldInputImages: () =>
+        Promise.reject(Object.assign(new Error("ENOSPC: no space left"), { code: "ENOSPC" })),
+    });
+    engineRef = engine;
+
+    await expect(collectRun(engine, [userText("go")], allowAll)).rejects.toThrow(/ENOSPC/);
+    // It ended at delivery: no second request went out carrying a note in place of the image.
+    expect(inputs).toHaveLength(1);
+  });
+
+  it("a fold returning an unreadable shape names the broken contract instead of carrying on", async () => {
+    // foldInputImages is public API (ContextEngineDeps is exported), so a third-party adapter
+    // can return the wrong thing. Sending the images on as messages would be the worse answer:
+    // a fold is configured precisely because the model does not take images.
+    let engineRef: ContextEngine | null = null;
+    const inputs: OmniMessage[][] = [];
+    const llm: LLMInterface = {
+      async *streamGenerate(params): AsyncGenerator<OmniMessage, LLMOutcome> {
+        inputs.push(params.newMessages);
+        if (inputs.length === 1) {
+          expect(engineRef!.steer("look at this", ["data:image/png;base64,AAAA"])).toBe(true);
+        }
+        yield assistantText("final answer");
         return { status: "completed" };
       },
     };
@@ -2516,13 +2502,11 @@ describe("ContextEngine mid-run steering ([user_steering])", () => {
       foldInputImages: async () => [],
     });
     engineRef = engine;
-    const all = await collectRun(engine, [userText("go")], allowAll);
 
-    expect(inputs).toHaveLength(2);
-    expect(parseUserSteeringText((inputs[1]![0]!.payload as { text: string }).text)).toBe(
-      "look at this",
+    await expect(collectRun(engine, [userText("go")], allowAll)).rejects.toThrow(
+      /foldInputImages must return/,
     );
-    expect(steeredImages(all)).toEqual(["data:image/png;base64,AAAA"]);
+    expect(inputs).toHaveLength(1);
   });
 
   it("a steering message with neither text nor images queues nothing (and asks for no fallback)", async () => {
