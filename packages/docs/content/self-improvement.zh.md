@@ -3,7 +3,7 @@ title: 自我进化
 description: 由 Skill 编排的 Benchmark 评测与优化闭环：评分、改进、Snapshot 与回滚。
 ---
 
-PenguinHarness 中的自我进化不依赖专用引擎代码，而是由 Skill 编排普通的 Agent 机制完成：评测是普通的 Session，优化是普通的文件编辑。创建评测与优化分别运行在两个独立的顶层 Session 中，只有单次评测通过内置的 `run_subagent` 工具委托。顶层 Prompt 只提供 Agent、Benchmark、能力目标、分数和轮数等本次设定；调用关系、校准、Freeze、协议、重试、回滚和报告格式由 Skill 负责。
+PenguinHarness 中的自我进化由 Skill 编排普通的 Agent 机制完成：评测是普通的 Session，优化是普通的文件编辑。创建评测与优化分别运行在两个独立的顶层 Session 中，单次评测通过内置的 `run_subagent` 工具委托。顶层 Prompt 提供 Agent、Benchmark、能力目标、分数和轮数等本次设定；调用关系、校准、Freeze、协议、重试、回滚和报告格式由 Skill 负责。
 
 ## 角色与调用关系
 
@@ -14,7 +14,7 @@ PenguinHarness 中的自我进化不依赖专用引擎代码，而是由 Skill �
 | Evaluator | `run_subagent` 创建的叶子 Worker，执行并评分一次 Benchmark Case 运行 |
 | Optimizer | 新顶层 Agent，直接执行 `agent-optimization` |
 
-Builder 和 Optimizer 亲自遵循各自的 Skill，不把工作流再委托给子 Agent。只有 Evaluator 由它们通过 `run_subagent` 创建；Evaluator 遵循 `agent-evaluation`，并通过 Penguin CLI 在绝对路径的隔离 Workspace 中启动指定的 Target Agent。CLI 不用于创建额外的 Builder、Optimizer 或 Evaluator。
+Builder 和 Optimizer 在各自的顶层 Session 中直接遵循对应 Skill。Evaluator 通过 `run_subagent` 创建，遵循 `agent-evaluation`，并通过 Penguin CLI 在绝对路径的隔离 Workspace 中启动指定的 Target Agent。Penguin CLI 在每次请求中启动 Target Agent 完成对应的 Case Run。
 
 ## 两个独立步骤
 
