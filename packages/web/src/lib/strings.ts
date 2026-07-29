@@ -783,6 +783,8 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     uploadFile: "上传文件",
     uploadFileDesc: "文件存入会话临时目录，模型按路径读取",
     removeFile: "移除文件",
+    /** Toast for a picked file rejected before reading (the server's per-file cap is 10MB). */
+    attachmentTooLarge: (name: string): string => `${name} 超过 10MB 上限，未添加。`,
     goalMode: "目标模式",
     goalModeDesc: "循环运行直至目标完成",
     goalBudgetLabel: "Token 预算",
@@ -963,6 +965,7 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
       unknown_skill: "该技能不在技能库中。",
       file_not_found: "该文件已不存在。",
       file_too_large: "文件过大。",
+      too_many_files: "一条消息附加的文件过多。",
       payload_too_large: "请求体过大。",
       dir_not_absolute: "目录必须是绝对路径。",
       not_a_dir: "该路径不是目录。",

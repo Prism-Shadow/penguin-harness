@@ -82,6 +82,7 @@ import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { Dropdown } from "../../components/ui/dropdown";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { noAutofill } from "../../components/ui/input";
+import { toastError } from "../../components/ui/toast";
 import { SkillIcon } from "../skills/skill-icon-view";
 import { ZoomableImage } from "../../components/ui/image-zoom";
 import { ProviderLogo } from "../../components/ui/provider-logo";
@@ -1096,6 +1097,19 @@ interface Attachment {
   dataUrl: string;
 }
 
+/** Mirrors the server's per-file attachment cap (services/task-attachments.ts), so an oversize pick is refused here instead of costing an upload and a 413. */
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+
+/** Reads one file as a base64 data URL; resolves to null on a read error rather than rejecting, so one unreadable file cannot drop the rest of the batch. */
+function readDataUrl(file: File): Promise<string | null> {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : null);
+    reader.onerror = () => resolve(null);
+    reader.readAsDataURL(file);
+  });
+}
+
 /**
  * Appends the draft's attachments to a task input — images first (in pick order), then files.
  * One place, because every send path submits the same draft: the normal send, the follow-up
@@ -2075,21 +2089,32 @@ export function ChatInput({
    * File attachments (any type, no `accept` filter): read as base64 data URLs, the same
    * transport images use — a draft has no Session to upload to yet. The name and size come
    * from the File itself and only feed the chip; the server decides the on-disk name.
+   *
+   * Oversize files are rejected from `File.size` before anything is read, the same way trace
+   * import does it (traces-page.tsx): base64-encoding a rejected file in the tab first would
+   * cost the user a freeze and a 33%-larger upload to earn the same 413.
+   *
+   * The whole batch is read before any of it is staged, so the chips — and therefore the
+   * `[attached file: …]` lines the message ends up with — follow the order the files were
+   * picked in, not the order the reads happened to finish in.
    */
   const addAttachments = (files: Iterable<File>) => {
     if (goalOn) return; // goal input is text-only, same rule as images
+    const picked: File[] = [];
     for (const file of files) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result === "string") {
-          setAttachments((prev) => [
-            ...prev,
-            { name: file.name, size: file.size, dataUrl: reader.result as string },
-          ]);
-        }
-      };
-      reader.readAsDataURL(file);
+      if (file.size > MAX_ATTACHMENT_BYTES) {
+        toastError(S.chat.attachmentTooLarge(file.name));
+        continue;
+      }
+      picked.push(file);
     }
+    if (picked.length === 0) return;
+    void Promise.all(picked.map(readDataUrl)).then((urls) => {
+      const staged = picked.flatMap((file, i) =>
+        urls[i] ? [{ name: file.name, size: file.size, dataUrl: urls[i]! }] : [],
+      );
+      if (staged.length > 0) setAttachments((prev) => [...prev, ...staged]);
+    });
   };
 
   const onPickAttachments = (e: ChangeEvent<HTMLInputElement>) => {

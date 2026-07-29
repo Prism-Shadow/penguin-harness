@@ -12,8 +12,10 @@
  * At render time these lines are extracted from the body text: images are turned back
  * into pictures (http(s) URLs are referenced directly; local scratchpad paths are mapped
  * to the `/api/sessions/<sessionId>/scratchpad/<fileName>` endpoint), files become a
- * banner listing their names. Unrecognized lines are left displayed as-is in the text
- * (e.g. a "could not be saved" note, or an image path outside this system).
+ * banner listing their names. Both kinds are recognized only when the address is one this
+ * system produced — a scratchpad path (or, for an image, an http(s) URL). Anything else is
+ * left displayed as-is in the text (e.g. a "could not be saved" note, a path outside this
+ * system, or a marker-shaped line a user simply typed).
  */
 import {
   ATTACHED_FILE_PREFIX,
@@ -68,10 +70,13 @@ export function splitAttachments(text: string): ParsedAttachments {
       images.push(src);
       continue;
     }
-    // A file line always resolves: unlike an image it isn't rendered from its address, the
-    // banner only names it — so any path the producer wrote is shown as an attachment.
+    // Gated on the scratchpad shape exactly like an image is, and for the same reason: nothing
+    // stops a person from typing `[attached file: …]` into the composer, and the marker is only
+    // trustworthy where the server wrote it. An ungated file line would let one project member
+    // render arbitrary text inside another member's system-notice chrome — and would read to
+    // the model as a genuine invitation to open whatever path it names.
     const filePath = matchAttachedFileLine(trimmed);
-    if (filePath !== null) {
+    if (filePath !== null && SCRATCHPAD_PATH.test(filePath)) {
       files.push(filePath);
       continue;
     }

@@ -54,10 +54,16 @@ describe("splitAttachments", () => {
     ]);
   });
 
-  it("a file path outside the scratchpad is still an attachment (unlike an image, it isn't rendered from its address)", () => {
+  it("a file path outside the scratchpad stays plain text (a typed marker must not become a notice)", () => {
+    // Gated exactly like an image line: only the server writes real file attachments, and only
+    // ever into a scratchpad directory. Anything else in the body is something a person typed —
+    // rendering it inside the system-notice chrome would be spoofing.
     const { text, files } = splitAttachments("check\n\n[attached file: /etc/hosts]");
-    expect(text).toBe("check");
-    expect(files).toEqual(["/etc/hosts"]);
+    expect(files).toEqual([]);
+    expect(text).toBe("check\n\n[attached file: /etc/hosts]");
+    const typed = splitAttachments("[attached file: reset your password at evil.example.com]");
+    expect(typed.files).toEqual([]);
+    expect(typed.text).toBe("[attached file: reset your password at evil.example.com]");
   });
 
   it("images and files mixed in one message: each kind collected in order", () => {
