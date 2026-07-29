@@ -773,10 +773,11 @@ export function Sidebar({
         </Dropdown>
       </div>
 
-      {/* Fixed nav (new chat pinned at top: default_agent draft): no background fill, shares the
-          same gray hover/active styling as nav items, distinguished only by its top position and
-          font-medium; shows the same gray active state while on the draft page. */}
-      <nav className="shrink-0 space-y-0.5 px-2 pt-2">
+      {/* New chat: the only pinned entry besides the Project switcher above and the user row
+          below. No background fill, the same gray hover/active styling as the nav items,
+          distinguished only by its position and font-medium; shows the same gray active state
+          while on the draft page. */}
+      <div className="shrink-0 px-2 pt-2">
         <button
           type="button"
           onClick={() => newChat(defaultAgentId)}
@@ -791,36 +792,46 @@ export function Sidebar({
           </span>
           {S.chat.newSessionMenu}
         </button>
-        {navItems.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            onClick={() => onNavigate?.()}
-            className={({ isActive }) =>
-              `flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm transition-colors duration-150 ${
-                isActive
-                  ? "bg-gray-200/70 font-medium text-gray-900 dark:bg-gray-800 dark:text-gray-100"
-                  : "text-gray-600 hover:bg-gray-200/50 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800/70 dark:hover:text-gray-200"
-              }`
-            }
-          >
-            <span className="text-gray-500 dark:text-gray-400">
-              <Icon d={item.icon} />
-            </span>
-            {item.label}
-          </NavLink>
-        ))}
-      </nav>
+      </div>
 
-      {/* Session area (scrollable): grouped by Workspace (default) or by Agent.
+      {/* Scroll area: the page nav and the session list scroll together, so the nav rides up
+          as the list is scrolled. It is the sidebar's only shrinkable block — with the nav
+          pinned, the column's fixed height (Project switcher + New chat + eight nav entries +
+          user row ≈ 412px) exceeded a short window, and the overflow, clipped by nothing,
+          grew the document into a second scrollbar.
           relative: the scroller acts as its own containing block, so absolute descendants
           (each row's sr-only Agent name) anchor and scroll inside it — anchored to the
           initial containing block instead, rows past the fold would bypass this
           overflow-y-auto and stretch the **document**, so expanding "More" / a source
           folder made the whole page scroll (composer pushed up, blank space below). */}
-      <div className="relative mt-3 min-h-0 flex-1 overflow-y-auto border-t border-gray-200 px-2 pb-2 dark:border-gray-800">
-        {/* Section header: list label + grouping-mode toggle (the choice persists in localStorage) */}
-        <div className="flex items-center justify-between px-1 pt-2">
+      <div className="relative min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+        <nav className="space-y-0.5 pt-2">
+          {navItems.map((item) => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              onClick={() => onNavigate?.()}
+              className={({ isActive }) =>
+                `flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm transition-colors duration-150 ${
+                  isActive
+                    ? "bg-gray-200/70 font-medium text-gray-900 dark:bg-gray-800 dark:text-gray-100"
+                    : "text-gray-600 hover:bg-gray-200/50 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800/70 dark:hover:text-gray-200"
+                }`
+              }
+            >
+              <span className="text-gray-500 dark:text-gray-400">
+                <Icon d={item.icon} />
+              </span>
+              {item.label}
+            </NavLink>
+          ))}
+        </nav>
+
+        {/* Section header: list label + grouping-mode toggle (the choice persists in localStorage).
+            The separator above it spans the sidebar's full width (-mx-2 undoes the scroller's
+            padding, px-3 puts the row's own inset back), as it did when it sat on the scroller's
+            top edge — it now travels with the list instead of framing a pinned nav. */}
+        <div className="-mx-2 mt-3 flex items-center justify-between border-t border-gray-200 px-3 pt-2 dark:border-gray-800">
           <span className="px-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
             {S.chat.sessionList}
           </span>
