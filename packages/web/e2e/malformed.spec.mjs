@@ -78,7 +78,14 @@ test("a malformed tool_call settles unpaired; the retry line shows and the retry
     .first()
     .click();
   const group = page.locator(".anim-msg.my-2").first();
-  await expect(group).toContainText("malformed");
+  // Visibility is asserted explicitly: `toContainText` walks every descendant except
+  // SCRIPT/NOSCRIPT/STYLE, so the StatusIcon's own SVG <title>malformed</title> satisfies it
+  // even when nothing is drawn. This call never ran, so it has no output block to expand
+  // into — the row's `[malformed]` marker is the only explanation a touch user can reach.
+  await expect(
+    group.getByText("[malformed]").filter({ visible: true }),
+    "the broken tool card shows a visible malformed marker",
+  ).toHaveCount(1);
   // A running spinner has role=status; none should remain after the turn ends.
   await expect(page.locator('[role="status"]')).toHaveCount(0);
 });
