@@ -24,7 +24,7 @@ import {
   withOrigin,
 } from "@prismshadow/penguin-core";
 import type { OmniMessage } from "@prismshadow/penguin-core";
-import type { ProjectCreateResponse, UsageResponse } from "../src/api/types.js";
+import type { ProjectCreateResponse, UsageErrorsPage, UsageResponse } from "../src/api/types.js";
 import { openDatabase } from "../src/db/database.js";
 import { ErrorsRepo } from "../src/db/repos/errors.js";
 import type { ErrorRecordInsert } from "../src/db/repos/errors.js";
@@ -526,34 +526,95 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
 
   const call = (name: string, id: string) => toolCall({ name, arguments: "{}", toolCallId: id });
 
-  it("command-tool failures are never recorded: a non-zero exit is information, not a fault", () => {
+  it("a command tool's ordinary non-zero exit is not recorded: an exit status is information", () => {
     // Both command tools end in resultForExit, which maps ANY non-zero exit to `failed`, so
     // grep finding nothing (exit 1), `test -f` on a missing file, or a diff that differs would
-    // all land in the cost center and bury the real errors. input_command is excluded alongside
+    // all land in the cost center and bury the real errors. input_command is covered alongside
     // exec_command because it is how a backgrounded command is polled for its eventual exit —
-    // recording one but not the other would depend on where the command happened to finish.
-    // Every other tool still records.
+    // dropping one but not the other would depend on where the command happened to finish.
+    // Every other tool still records, whatever its output says.
     const got = feed([
       call("exec_command", "tc-1"),
       toolCallOutput({
-        output: "[tool error] exit code 1",
+        output: "grep: no match\n[exit code: 1]",
         toolCallId: "tc-1",
         stopReason: "failed",
       }),
-      call("exec_command", "tc-2"),
-      toolCallOutput({ output: "[tool timeout]", toolCallId: "tc-2", stopReason: "timeout" }),
-      call("input_command", "tc-3"),
+      call("input_command", "tc-2"),
       toolCallOutput({
-        output: "[tool error] exit code 2",
+        output: "make: *** [build] Error 2\n[exit code: 2]",
+        toolCallId: "tc-2",
+        stopReason: "failed",
+      }),
+      call("write_file", "tc-3"),
+      toolCallOutput({
+        output: "EACCES\n[exit code: 1]",
         toolCallId: "tc-3",
         stopReason: "failed",
       }),
-      call("input_command", "tc-4"),
-      toolCallOutput({ output: "[tool timeout]", toolCallId: "tc-4", stopReason: "timeout" }),
-      call("write_file", "tc-5"),
-      toolCallOutput({ output: "EACCES", toolCallId: "tc-5", stopReason: "failed" }),
     ]);
     expect(got.map((r) => r.code)).toEqual(["tool_failed:write_file"]);
+  });
+
+  it("a command tool killed by a signal, or that never spawned, is still recorded", () => {
+    // `failed` from these tools is not only "exited non-zero": an OOM kill or a segfault
+    // (resultForExit's signal branch) and a spawn failure (nonexistent workdir, EMFILE, an
+    // unresolvable shell) are config/environment faults — the recorder's "needs a human"
+    // category — that no amount of Agent self-correction gets around. Only the exit marker
+    // separates them, which is why the rule reads the note rather than the tool name.
+    const got = feed([
+      call("exec_command", "tc-1"),
+      toolCallOutput({
+        output: "cc1plus: out of memory\n[terminated by signal SIGKILL]",
+        toolCallId: "tc-1",
+        stopReason: "failed",
+      }),
+      call("input_command", "tc-2"),
+      toolCallOutput({
+        output: "[spawn error: ENOENT: no such file or directory, posix_spawn '/bin/nope']",
+        toolCallId: "tc-2",
+        stopReason: "failed",
+      }),
+    ]);
+    expect(got.map((r) => r.code)).toEqual([
+      "tool_failed:exec_command",
+      "tool_failed:input_command",
+    ]);
+  });
+
+  it("a command tool's timeout and a missing session manager are recorded (neither is an exit)", () => {
+    // Environment finalizes a tool timeout as stop_reason `failed` plus its own note — it never
+    // emits stop_reason "timeout" for these tools — so a hung command surfaces as tool_failed
+    // with no exit marker to drop it. A missing command session manager is a server
+    // misconfiguration and produces no exit marker either.
+    const got = feed([
+      call("exec_command", "tc-1"),
+      toolCallOutput({
+        output: "still building…\n[tool timeout: exceeded 60000ms]",
+        toolCallId: "tc-1",
+        stopReason: "failed",
+      }),
+      call("input_command", "tc-2"),
+      toolCallOutput({
+        output: "[input_command unavailable: no command session manager configured]",
+        toolCallId: "tc-2",
+        stopReason: "failed",
+      }),
+    ]);
+    expect(got.map((r) => r.code)).toEqual([
+      "tool_failed:exec_command",
+      "tool_failed:input_command",
+    ]);
+  });
+
+  it("an exit marker with no cached tool name is dropped, not filed under tool_failed:unknown", () => {
+    // Only the command tools ever write that marker, so a cache miss (the tool_call evicted, or
+    // never seen) is still that noise — recording it nameless would defeat the exclusion.
+    const got = feed([
+      toolCallOutput({ output: "[exit code: 1]", toolCallId: "tc-1", stopReason: "failed" }),
+      toolCallOutput({ output: "boom", toolCallId: "tc-2", stopReason: "failed" }),
+    ]);
+    expect(got.map((r) => [r.code, r.message])).toEqual([["tool_failed:unknown", "boom"]]);
   });
 
   it("tool failed / timeout → environment + expected, code carries the tool name", () => {
@@ -850,6 +911,66 @@ describe("HTTP onError persistence (integration)", () => {
     expect(adminBody.errors.total).toBe(1);
     expect(adminBody.errors.topCode).toMatchObject({ source: "http", code: "invalid_credentials" });
     expect(adminBody.errors.recent[0]).toMatchObject({ code: "invalid_credentials" });
+  });
+
+  it("the paged error route pages inside the caller's own tenant, at every offset", async () => {
+    // The point of the route is that paging back is not a way around the dashboard's isolation:
+    // the rows a member can reach at offset N are the same set the summary counted, never
+    // another tenant's and never the unattributed ones. Seeded directly so the interleaving is
+    // exact — going through HTTP would collapse repeats into the recorder's dedup window.
+    const repo = new ErrorsRepo(t.deps.db);
+    const seed = (owner: string | null, code: string) =>
+      repo.insert({
+        ts: "2026-07-27T00:00:00.000Z",
+        date: "2026-07-27",
+        projectId: owner,
+        agentId: "a1",
+        sessionId: "s1",
+        source: "http",
+        kind: "expected",
+        code,
+        status: 404,
+        message: code,
+      });
+    const foreign = (await (
+      await api.post("/api/projects", { projectId: "err_user-tenant_2", name: "Other tenant" })
+    ).json()) as ProjectCreateResponse;
+    // Interleaved, so a mistaken filter would show up inside the first page rather than past it.
+    seed(projectId, "mine_0");
+    seed(foreign.project.projectId, "theirs_0");
+    seed(null, "unattributed_0");
+    seed(projectId, "mine_1");
+    seed(projectId, "mine_2");
+
+    const pageOf = async (offset: number, limit: number) =>
+      (await (
+        await api.get(`/api/projects/${projectId}/usage/errors?offset=${offset}&limit=${limit}`)
+      ).json()) as UsageErrorsPage;
+
+    const first = await pageOf(0, 2);
+    expect(first.total).toBe(3); // the filtered count, not the table's
+    expect(first.items.map((e) => e.code)).toEqual(["mine_2", "mine_1"]); // newest first
+    const second = await pageOf(2, 2);
+    expect(second.total).toBe(3);
+    expect(second.items.map((e) => e.code)).toEqual(["mine_0"]);
+    expect((await pageOf(3, 2)).items).toEqual([]); // past the end is empty, not an error
+
+    // The admin is the only one who reaches the unattributed rows — the same rule the dashboard
+    // applies, so paging cannot be used to slip past it.
+    const adminApi = apiClient(t.app, (await loginAdmin(t.app)).cookie);
+    const adminPage = (await (
+      await adminApi.get(`/api/projects/default_project/usage/errors?offset=0&limit=20`)
+    ).json()) as UsageErrorsPage;
+    expect(adminPage.items.map((e) => e.code)).toEqual(["unattributed_0"]);
+  });
+
+  it("the paged error route rejects a page it cannot serve rather than guessing", async () => {
+    expect((await api.get(`/api/projects/${projectId}/usage/errors?offset=-1`)).status).toBe(400);
+    expect((await api.get(`/api/projects/${projectId}/usage/errors?limit=0`)).status).toBe(400);
+    expect((await api.get(`/api/projects/${projectId}/usage/errors?limit=1001`)).status).toBe(400);
+    expect((await api.get(`/api/projects/${projectId}/usage/errors?from=2026-13-01`)).status).toBe(
+      400,
+    );
   });
 
   it("Project deletion cascade-cleans that Project's error records", async () => {

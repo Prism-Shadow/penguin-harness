@@ -328,21 +328,52 @@ describe("usage-service.queryErrors (error table paging)", () => {
     expect(page.total).toBe(25);
   });
 
-  it("applies the dashboard's filter, so a page never widens what the summary counted", () => {
-    errors.insert({
-      ts: "2026-07-20T00:00:00.000Z",
-      date: "2026-07-20",
-      projectId: "p1",
-      agentId: "other",
-      sessionId: "s2",
-      source: "http",
-      kind: "expected",
-      code: "older_agent",
-      status: 400,
-      message: "m",
-    });
-    const scoped = service.queryErrors("p1", { offset: 0, limit: 50, agentId: "a1" });
-    expect(scoped.total).toBe(25);
-    expect(scoped.items.some((e) => e.code === "older_agent")).toBe(false);
+  it("filters before it offsets, so a later page never slides onto rows the summary excluded", () => {
+    // Five newer rows from another Agent, i.e. sitting at the head of the unfiltered table. If
+    // the offset were counted over that table and the filter applied afterwards, both pages
+    // below would come back shifted (and page two short); filtering first is what makes the
+    // 25-row filtered set page cleanly as 20 + 5.
+    for (let i = 0; i < 5; i += 1) {
+      errors.insert({
+        ts: `2026-07-28T00:00:0${i}.000Z`,
+        date: "2026-07-28",
+        projectId: "p1",
+        agentId: "other",
+        sessionId: "s2",
+        source: "http",
+        kind: "expected",
+        code: `other_${i}`,
+        status: 400,
+        message: "m",
+      });
+    }
+    const scoped = { offset: 0, limit: 20, agentId: "a1" };
+    const first = service.queryErrors("p1", scoped);
+    expect(first.total).toBe(25); // the other Agent's five are outside the count, not just the page
+    expect(first.items[0]!.code).toBe("code_24");
+    expect(first.items.at(-1)!.code).toBe("code_5");
+    const second = service.queryErrors("p1", { ...scoped, offset: 20 });
+    expect(second.items.map((e) => e.code)).toEqual([
+      "code_4",
+      "code_3",
+      "code_2",
+      "code_1",
+      "code_0",
+    ]);
+    // Unfiltered, the same offset lands on entirely different rows — the filter is doing work.
+    const unscoped = service.queryErrors("p1", { offset: 20, limit: 20 });
+    expect(unscoped.total).toBe(30);
+    expect(unscoped.items.map((e) => e.code)).toEqual([
+      "code_9",
+      "code_8",
+      "code_7",
+      "code_6",
+      "code_5",
+      "code_4",
+      "code_3",
+      "code_2",
+      "code_1",
+      "code_0",
+    ]);
   });
 });
