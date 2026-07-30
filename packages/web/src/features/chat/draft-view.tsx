@@ -90,92 +90,17 @@ function saveAppliedRouteKey(field: RouteStateField, key: string): void {
   }
 }
 
-/** Folder outline, closed / open (the sidebar's workspace-group glyphs). */
-const FOLDER_ICON = "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z";
-const FOLDER_OPEN_ICON =
-  "m6 14 1.45-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2";
-
 /**
- * 20×20 line icon per example (gamepad / game grid / music note / evaluation loop / sparkle).
- * The two Agent-evolution examples share the loop glyph — they are the two halves of one
- * build-then-optimize cycle.
+ * One glyph per example folder, 16×16 (a browser window / an evolution loop). Icons live on the
+ * folder rather than on each example: with the examples reduced to single-line titles, a column
+ * of per-row icons was noise competing with the titles, while the folder row is exactly where a
+ * glyph earns its place — it is what you scan to pick a category.
  */
-function ExampleIcon({ id }: { id: ExampleTaskId }) {
-  const common = {
-    width: 20,
-    height: 20,
-    viewBox: "0 0 24 24",
-    fill: "none",
-    stroke: "currentColor",
-    className: "shrink-0 text-brand-500 dark:text-brand-400",
-    "aria-hidden": true,
-  } as const;
-  if (id === "agentBenchmarkBuild" || id === "agentOptimization") {
-    return (
-      <svg {...common}>
-        <path
-          d="M7 7h8a4 4 0 0 1 4 4v1M17 5l2 2-2 2M17 17H9a4 4 0 0 1-4-4v-1M7 19l-2-2 2-2"
-          strokeWidth="1.7"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        <circle cx="12" cy="12" r="2" strokeWidth="1.7" />
-      </svg>
-    );
-  }
-  if (id === "lol") {
-    return (
-      <svg {...common}>
-        <path d="M9 18V6l11-2v12" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-        <circle cx="6.5" cy="18" r="2.5" strokeWidth="1.7" />
-        <circle cx="17.5" cy="16" r="2.5" strokeWidth="1.7" />
-      </svg>
-    );
-  }
-  if (id === "game") {
-    return (
-      <svg {...common}>
-        <path
-          d="M6.7 6h10.6a4 4 0 0 1 3.97 3.56c.2 1.8.73 5.05.73 6.44a3 3 0 0 1-3 3c-1 0-1.5-.5-2-1l-1.4-1.4a2 2 0 0 0-1.42-.6H9.82a2 2 0 0 0-1.41.6L7 18c-.5.5-1 1-2 1a3 3 0 0 1-3-3c0-1.39.52-4.64.73-6.44A4 4 0 0 1 6.7 6z"
-          strokeWidth="1.7"
-          strokeLinejoin="round"
-        />
-        <path d="M6.5 11h4M8.5 9v4M15 12h.01M18 10h.01" strokeWidth="1.7" strokeLinecap="round" />
-      </svg>
-    );
-  }
-  if (id === "gamecenter") {
-    // A grid of game tiles: many games behind one index page.
-    return (
-      <svg {...common}>
-        <path
-          d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"
-          strokeWidth="1.7"
-          strokeLinejoin="round"
-        />
-        <path
-          d="M6 7h2M17 7v-2M17 7h2M6.5 17h3M16 16.5h2"
-          strokeWidth="1.4"
-          strokeLinecap="round"
-        />
-      </svg>
-    );
-  }
-  return (
-    <svg {...common}>
-      <path
-        d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z"
-        strokeWidth="1.7"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M18.5 15.5l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9.9-2.1z"
-        strokeWidth="1.4"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
+const FOLDER_GLYPHS: Record<ExampleFolderId, string> = {
+  webapps:
+    "M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6zM3 9h18M6 6.5h.01M9 6.5h.01",
+  agents: "M7 7h8a4 4 0 0 1 4 4v1M17 5l2 2-2 2M17 17H9a4 4 0 0 1-4-4v-1M7 19l-2-2 2-2",
+};
 
 export function DraftView({
   projectId,
@@ -510,16 +435,13 @@ export function DraftView({
     [exampleBusy, agentSkills, onSend],
   );
 
-  /** Open example folders (all collapsed on mount — that resting state IS the three-row height). */
-  const [openExampleFolders, setOpenExampleFolders] = useState<ReadonlySet<ExampleFolderId>>(
-    new Set(),
-  );
-  const toggleExampleFolder = (id: ExampleFolderId) =>
-    setOpenExampleFolders((prev) => {
-      const next = new Set(prev);
-      if (!next.delete(id)) next.add(id);
-      return next;
-    });
+  /**
+   * The one open example folder (bookmark-style: opening another closes this one; clicking the
+   * open one closes it). The first folder starts open so the draft page lands on real examples
+   * rather than two closed rows — with every folder the same length, which one is open never
+   * changes the block's height.
+   */
+  const [openFolder, setOpenFolder] = useState<ExampleFolderId | null>(EXAMPLE_FOLDERS[0].id);
 
   const selectedAgent = agents.find((a) => a.agentId === agentId) ?? null;
 
@@ -589,25 +511,26 @@ export function DraftView({
           <WorkspaceSelect projectId={projectId} workspace={workspace} onChange={setWorkspace} />
         </div>
 
-        {/* Example tasks: one-click canned builds showing off the one-sentence → app flow,
-            filed into collapsible folders so the showcase can grow without growing the page.
-            The max-height is the whole point of the folders: collapsed it is three folder rows
-            (well under the cap), and an open folder scrolls INSIDE this box instead of pushing
-            the input card up the viewport — the block's footprint never exceeds three cards.
-            Cards are disabled until agents/models/skills are resolved (onSend would silently
-            no-op without an Agent); hover only darkens the border, per the card convention. */}
-        <div className="mt-6 max-h-60 space-y-1 overflow-y-auto">
+        {/* Example tasks: one-click canned builds showing off the one-sentence → app flow.
+            Bookmark-style folders — exactly one open, opening another closes it — so the block
+            is two folder rows plus one folder's rows and nothing else. That bound is why there
+            is no scroll container here: a scrollbar inside a six-line showcase reads as a
+            defect, and the folders are what keep the height from ever needing one.
+            Each example is a single-line title; its one-sentence description rides in the row
+            tooltip rather than a second line. Rows are disabled until agents/models/skills are
+            resolved (onSend would silently no-op without an Agent). */}
+        <div className="mt-6 space-y-1">
           {EXAMPLE_FOLDERS.map((folder) => {
-            const open = openExampleFolders.has(folder.id);
+            const open = folder.id === openFolder;
             return (
               <div key={folder.id}>
                 <button
                   type="button"
                   aria-expanded={open}
-                  onClick={() => toggleExampleFolder(folder.id)}
+                  onClick={() => setOpenFolder(open ? null : folder.id)}
                   className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800/70"
                 >
-                  <span className="shrink-0 text-gray-400 dark:text-gray-500">
+                  <span className="shrink-0 text-brand-500 dark:text-brand-400">
                     <svg
                       width="16"
                       height="16"
@@ -619,7 +542,7 @@ export function DraftView({
                       strokeLinejoin="round"
                       aria-hidden
                     >
-                      <path d={open ? FOLDER_OPEN_ICON : FOLDER_ICON} />
+                      <path d={FOLDER_GLYPHS[folder.id]} />
                     </svg>
                   </span>
                   <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -632,54 +555,35 @@ export function DraftView({
                 </button>
 
                 {open && (
-                  <div className="mt-1 flex flex-col items-stretch gap-2 pl-3">
+                  <ul className="mt-0.5 space-y-0.5 pl-4">
                     {folder.tasks.map((task) => {
                       const copy = S.chat.exampleTasks[task.id];
                       return (
-                        <button
-                          key={task.id}
-                          type="button"
-                          disabled={
-                            exampleBusy !== null || sending || !skillsLoaded || !agentId || !models
-                          }
-                          onClick={() => void runExample(task)}
-                          className="group flex min-w-0 items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 text-left transition-colors duration-150 hover:border-gray-300 disabled:cursor-default disabled:opacity-60 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-gray-700"
-                        >
-                          <ExampleIcon id={task.id} />
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-sm font-medium text-gray-900 dark:text-gray-100">
-                              {copy.label}
-                            </span>
-                            <span className="line-clamp-2 text-xs text-gray-500 dark:text-gray-400">
-                              {copy.desc}
-                            </span>
-                          </span>
-                          {exampleBusy === task.id ? (
-                            <span className="ml-1 shrink-0 text-xs text-gray-400">
-                              {S.common.loading}
-                            </span>
-                          ) : (
-                            <svg
-                              width="16"
-                              height="16"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              className="ml-1 shrink-0 text-gray-300 transition-colors duration-150 group-hover:text-gray-500 dark:text-gray-600 dark:group-hover:text-gray-400"
-                              aria-hidden
-                            >
-                              <path
-                                d="M5 12h14M13 6l6 6-6 6"
-                                strokeWidth="1.7"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                              />
-                            </svg>
-                          )}
-                        </button>
+                        <li key={task.id}>
+                          <button
+                            type="button"
+                            title={copy.desc}
+                            disabled={
+                              exampleBusy !== null ||
+                              sending ||
+                              !skillsLoaded ||
+                              !agentId ||
+                              !models
+                            }
+                            onClick={() => void runExample(task)}
+                            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-gray-600 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-900 disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent dark:text-gray-400 dark:hover:bg-gray-800/70 dark:hover:text-gray-200"
+                          >
+                            <span className="min-w-0 flex-1 truncate">{copy.label}</span>
+                            {exampleBusy === task.id && (
+                              <span className="shrink-0 text-xs text-gray-400">
+                                {S.common.loading}
+                              </span>
+                            )}
+                          </button>
+                        </li>
                       );
                     })}
-                  </div>
+                  </ul>
                 )}
               </div>
             );

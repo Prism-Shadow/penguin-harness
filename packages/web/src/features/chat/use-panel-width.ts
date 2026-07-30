@@ -22,9 +22,12 @@ const MIN_WIDTH = 320;
 const WIDTH_STORAGE_KEY = "penguin.panelWidth";
 /**
  * Pre-unification per-panel keys, adopted once on first load so a dragged width survives the
- * merge instead of silently snapping back to the default. The migration deletes them as it
- * reads, so this block can be dropped in a later release with no visible effect for anyone who
- * has opened the app since — nothing else reads these keys.
+ * merge instead of silently snapping back to the default. The WIDER of the two wins: the two
+ * panels were sized independently, so picking either one arbitrarily could hand the merged
+ * panel the narrower of the user's two choices — visibly a regression on the panel that used
+ * to be wide. The migration deletes the keys as it reads, so this block can be dropped in a
+ * later release with no visible effect for anyone who has opened the app since — nothing else
+ * reads these keys.
  */
 const LEGACY_WIDTH_KEYS = ["penguin.filesPanelWidth", "penguin.subagentsPanelWidth"] as const;
 
@@ -33,9 +36,14 @@ export function maxWidthFor(windowWidth: number): number {
   return Math.max(MIN_WIDTH, Math.min(720, Math.round(windowWidth * 0.5)));
 }
 
-/** Default width ≈ 1/3 of the window (matching Codex's Review panel proportion), clamped within the min/max bounds. */
+/**
+ * Default width ≈ 40% of the window, clamped within the min/max bounds. Deliberately wider than
+ * the old ~1/3: one panel now serves both the file tree and the subagent transcript, and the
+ * transcript is the demanding tenant — a third of the window renders it as a narrow column of
+ * wrapped tool output.
+ */
 export function defaultWidthFor(windowWidth: number): number {
-  return Math.min(maxWidthFor(windowWidth), Math.max(MIN_WIDTH, Math.round(windowWidth * 0.34)));
+  return Math.min(maxWidthFor(windowWidth), Math.max(MIN_WIDTH, Math.round(windowWidth * 0.4)));
 }
 
 /** Reads the stored preference, migrating a legacy per-panel key the first time. Returns null when nothing is stored. */
@@ -46,8 +54,9 @@ function storedWidth(): number | null {
     let adopted: number | null = null;
     for (const key of LEGACY_WIDTH_KEYS) {
       const legacy = Number(localStorage.getItem(key));
-      // The Workspace panel's key is listed first and wins: it is the more used of the two.
-      if (adopted === null && Number.isFinite(legacy) && legacy > 0) adopted = legacy;
+      // Widest wins — see LEGACY_WIDTH_KEYS: the merged panel must not come out narrower than
+      // either panel the user had sized.
+      if (Number.isFinite(legacy) && legacy > 0) adopted = Math.max(adopted ?? 0, legacy);
       localStorage.removeItem(key);
     }
     if (adopted !== null) localStorage.setItem(WIDTH_STORAGE_KEY, String(Math.round(adopted)));

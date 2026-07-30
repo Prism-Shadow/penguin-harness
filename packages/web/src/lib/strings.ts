@@ -542,12 +542,10 @@ export const zh = {
      * are the FULL working prompts — descriptions stay short, but the submitted instructions
      * remain detailed because execution quality depends on them.
      */
-    /** 首页示例的折叠分组名（折叠态只占三行，展开后在同一高度内滚动）。 */
+    /** 首页示例的折叠分组名（书签式，同时只展开一个）。 */
     exampleFolders: {
-      games: "小游戏",
-      webapps: "网页应用",
-      knowledge: "知识检索",
-      agents: "智能体与评测",
+      webapps: "搭建网页应用",
+      agents: "搭建和优化智能体",
     },
     exampleTasks: {
       game: {

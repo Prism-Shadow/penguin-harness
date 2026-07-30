@@ -164,24 +164,40 @@ export function SubagentsView({
         </div>
       ) : (
         <>
-          {/* Slim identity strip for the conversation below. */}
-          <div className="flex shrink-0 items-center gap-2 border-b border-gray-100 px-3 py-1.5 dark:border-gray-800/60">
-            <AgentAvatar
-              id={activeModel.meta?.agentId ?? active.sessionId}
-              name={activeLabel}
-              size={16}
-            />
-            <span className="min-w-0 truncate text-xs font-semibold text-gray-700 dark:text-gray-300">
-              {activeLabel}
-            </span>
-            <span
-              title={active.sessionId}
-              className="shrink-0 font-mono text-[10px] text-gray-400 dark:text-gray-500"
-            >
-              {shortSessionId(active.sessionId)}
-            </span>
-            {activeRunning && (
-              <StatusIcon state="running" size={10} label={S.chat.subagentRunning} />
+          {/* Slim identity strip for the conversation below, plus the spawning call's
+              description underneath — the agent name says WHO is running, only the
+              run_subagent `description` says what it was asked to do, and without it a child
+              transcript opens with no statement of its own purpose. Absent (model omitted it,
+              `call_description: false`, a standalone child, or a node outside the displayed
+              Task) the line simply doesn't render. Clamped to two lines: it is a sentence, not
+              a prompt, and the transcript below is what the panel is for. */}
+          <div className="shrink-0 border-b border-gray-100 px-3 py-1.5 dark:border-gray-800/60">
+            <div className="flex items-center gap-2">
+              <AgentAvatar
+                id={activeModel.meta?.agentId ?? active.sessionId}
+                name={activeLabel}
+                size={16}
+              />
+              <span className="min-w-0 truncate text-xs font-semibold text-gray-700 dark:text-gray-300">
+                {activeLabel}
+              </span>
+              <span
+                title={active.sessionId}
+                className="shrink-0 font-mono text-[10px] text-gray-400 dark:text-gray-500"
+              >
+                {shortSessionId(active.sessionId)}
+              </span>
+              {activeRunning && (
+                <StatusIcon state="running" size={10} label={S.chat.subagentRunning} />
+              )}
+            </div>
+            {activeNode?.description != null && (
+              <p
+                title={activeNode.description}
+                className="mt-1 line-clamp-2 text-xs text-gray-500 dark:text-gray-400"
+              >
+                {activeNode.description}
+              </p>
             )}
           </div>
           <div className="min-h-0 flex-1">

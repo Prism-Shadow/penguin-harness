@@ -555,12 +555,10 @@ export const en: Strings = {
     tempWorkspaces: "Temp workspaces",
     newSessionInWorkspace: "New chat in this workspace",
     draftSubtitle: "The self-evolving agent that excels at AI development tasks",
-    /** Folder names for the draft page's collapsible examples (three rows collapsed; expanding scrolls within the same height). */
+    /** Folder names for the draft page's collapsible examples (bookmark-style: exactly one open at a time). */
     exampleFolders: {
-      games: "Games",
-      webapps: "Web apps",
-      knowledge: "Knowledge & retrieval",
-      agents: "Agents & evaluation",
+      webapps: "Build web apps",
+      agents: "Build and optimize agents",
     },
     exampleTasks: {
       game: {

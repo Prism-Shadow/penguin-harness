@@ -53,13 +53,19 @@ export function AgentTopologyView({
           const label = labelFor(node);
           const selected = node.sessionId === selectedId;
           const stateLabel = node.running ? S.subagentPanel.nodeRunning : S.subagentPanel.nodeDone;
+          // The node box is a fixed-size chip, so the spawning call's description rides in the
+          // tooltip rather than the label; the panel shows it in full above the transcript.
+          const tooltip =
+            node.description !== null
+              ? `${label} · ${stateLabel}\n${node.description}`
+              : `${label} · ${stateLabel}`;
           return (
             <button
               key={node.sessionId}
               type="button"
               aria-label={`${label} · ${stateLabel}`}
               aria-pressed={selected}
-              title={`${label} · ${stateLabel}`}
+              title={tooltip}
               onClick={() => onSelect(node)}
               style={{ left: x, top: y, width: NODE_W, height: NODE_H }}
               className={`absolute flex items-center gap-1.5 rounded-md border bg-white px-2 text-left transition-colors duration-150 dark:bg-gray-900 ${
