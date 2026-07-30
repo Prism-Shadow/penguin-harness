@@ -12,6 +12,7 @@
  *   pending buffer as a whole and is sent on Enter.
  */
 import { Transform, type TransformCallback } from "node:stream";
+import { StringDecoder } from "node:string_decoder";
 
 const PASTE_START = "\x1b[200~";
 const PASTE_END = "\x1b[201~";
@@ -35,9 +36,19 @@ export class PasteFilter extends Transform {
   private inPaste = false;
   private pasteBuf = "";
   private leftover = "";
+  /**
+   * Decodes across chunk boundaries: a raw-mode stdin chunk ends wherever the terminal's
+   * buffer did, so a multi-byte character can be torn in half. Decoding each chunk on its own
+   * would turn both halves into U+FFFD; the decoder holds an incomplete trailing sequence
+   * until the next chunk completes it. `leftover` below is the same idea one layer up, for a
+   * paste marker split across chunks, and it can only work on already-intact characters.
+   */
+  private decoder = new StringDecoder("utf8");
 
   override _transform(chunk: Buffer | string, _enc: BufferEncoding, cb: TransformCallback): void {
-    let data = this.leftover + chunk.toString("utf8");
+    // stdin always delivers Buffers here (Writable decodes strings before _transform), but the
+    // signature allows a string, which is already-decoded text and needs no decoder.
+    let data = this.leftover + (typeof chunk === "string" ? chunk : this.decoder.write(chunk));
     this.leftover = "";
 
     while (data.length > 0) {

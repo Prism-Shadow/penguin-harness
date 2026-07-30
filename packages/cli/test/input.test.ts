@@ -22,6 +22,24 @@ async function runFilter(chunks: string[]): Promise<{ forwarded: string; pastes:
   return { forwarded, pastes };
 }
 
+/**
+ * Feeds raw byte slices, so a multi-byte character can be torn across chunks the way a
+ * terminal's buffer tears one during a large paste. Output Buffers are concatenated before
+ * decoding: decoding each one on its own would introduce the very corruption under test.
+ */
+async function runFilterBytes(parts: Buffer[]): Promise<{ forwarded: string; pastes: string[] }> {
+  const filter = new PasteFilter();
+  const out: Buffer[] = [];
+  const pastes: string[] = [];
+  filter.on("data", (d: Buffer) => out.push(d));
+  filter.on("paste", (t: string) => pastes.push(t));
+  for (const p of parts) filter.write(p);
+  await new Promise<void>((resolve) => {
+    filter.end(() => resolve());
+  });
+  return { forwarded: Buffer.concat(out).toString("utf8"), pastes };
+}
+
 describe("splitTrailingPartial", () => {
   it("holds a trailing partial-marker prefix", () => {
     expect(splitTrailingPartial("abc\x1b[200", "\x1b[200~")).toEqual({
@@ -60,6 +78,39 @@ describe("PasteFilter", () => {
     const { forwarded, pastes } = await runFilter(["x\x1b[20", "0~mid\x1b[201", "~y\r"]);
     expect(forwarded).toBe("xy\r");
     expect(pastes).toEqual(["mid"]);
+  });
+
+  it("keeps a typed CJK character split across chunks intact", async () => {
+    const b = Buffer.from("你好世界\r", "utf8");
+    // Cut inside 「好」, between its first and second byte.
+    const { forwarded } = await runFilterBytes([b.subarray(0, 4), b.subarray(4)]);
+    expect(forwarded).toBe("你好世界\r");
+  });
+
+  it("keeps a pasted emoji split across chunks intact", async () => {
+    const b = Buffer.from("\x1b[200~ok🐧done\x1b[201~", "utf8");
+    // Cut two bytes into the 4-byte emoji.
+    const cut = b.indexOf(Buffer.from("🐧", "utf8")) + 2;
+    const { forwarded, pastes } = await runFilterBytes([b.subarray(0, cut), b.subarray(cut)]);
+    expect(pastes).toEqual(["ok🐧done"]);
+    expect(forwarded).toBe("");
+  });
+
+  it("keeps CJK intact when fed one byte at a time", async () => {
+    const b = Buffer.from("中\r", "utf8");
+    const { forwarded } = await runFilterBytes([...b].map((x) => Buffer.from([x])));
+    expect(forwarded).toBe("中\r");
+  });
+
+  it("handles markers and multi-byte characters both split across the same chunks", async () => {
+    // 前(0-2) START(3-8) 文(9-11) 字(12-14) END(15-20) 後(21-23) \r(24); every cut below
+    // falls inside either a marker or a character.
+    const b = Buffer.from("前\x1b[200~文字\x1b[201~後\r", "utf8");
+    const cuts = [2, 5, 10, 17, 22];
+    const parts = [0, ...cuts].map((from, i) => b.subarray(from, cuts[i] ?? b.length));
+    const { forwarded, pastes } = await runFilterBytes(parts);
+    expect(pastes).toEqual(["文字"]);
+    expect(forwarded).toBe("前後\r");
   });
 });
 

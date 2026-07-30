@@ -1,0 +1,9 @@
+# CLI: pasting CJK or emoji into chat no longer corrupts characters at chunk boundaries
+
+`penguin chat` decoded each stdin chunk on its own, so a multi-byte character that a terminal split across two reads was destroyed in both halves. Pasting a few thousand Chinese characters was enough to lose one.
+
+`PasteFilter` sits between raw-mode stdin and readline, and a raw-mode chunk ends wherever the terminal's buffer ended — routinely mid-character, since a paste is delivered in fixed-size blocks that have nothing to do with character boundaries. Decoding a chunk in isolation turned its incomplete trailing bytes into U+FFFD immediately, and the leading bytes of the next chunk into more of them: a single 3-byte character came out as three replacement characters rather than one, so the text also silently grew. Pasting about 1400 Chinese characters — roughly one 4KB terminal block — was already enough to hit it, and the loss was invisible until the model answered about text the user never sent.
+
+Decoding now spans chunks via `StringDecoder`, which holds an incomplete trailing sequence until the following chunk completes it. This is what `setEncoding("utf8")` already does for the output of commands the Agent runs; the input path was the one place decoding was hand-rolled. The existing `leftover` mechanism, which reassembles a bracketed-paste marker split across chunks, is untouched: it works on decoded text and could only ever see characters that were already intact.
+
+Tests feed byte slices rather than strings, since a string chunk is by definition a whole number of characters and cannot express the bug: a typed CJK character cut in half, a pasted emoji cut two bytes in, a character delivered one byte at a time, and a marker and a character torn across the same chunk boundaries.

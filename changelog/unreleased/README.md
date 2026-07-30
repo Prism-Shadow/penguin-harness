@@ -2,6 +2,8 @@
 
 Changes since v0.1.4. The version number is assigned at release, when this folder is renamed.
 
+- [2026-07-30] CLI: pasting CJK or emoji into `penguin chat` no longer corrupts a character wherever the terminal split its stdin blocks — each chunk was decoded on its own, so a character torn across two reads became three replacement characters instead of one, and about 1400 Chinese characters was enough to trigger it. ([details](2026-07-30-paste-filter-utf8.md))
+
 - [2026-07-30] Docs: three reference blocks catch up with the code they document — `run_subagent`'s argument block lists the `provider` that `model_id` must be paired with, the provider credential table covers the three gateway groups it had been missing, and the Project model entry table documents `max_tokens`. ([details](2026-07-30-docs-tools-and-configuration-reference.md))
 
 - [2026-07-29] Core: every LLM failure except a rejected credential now retries inside the run — the classifier separating transient from permanent is an allowlist, so a gateway wording a transient fault its own way used to kill the turn — with the retry visible in both frontends, compaction on the same set under its own shorter budget, and a recovered failure no longer reported to the operator as an incident. Separately, pressing Stop mid-request can no longer leave a Session running forever when the provider's stream neither yields nor rejects after the abort. ([details](2026-07-29-llm-request-lifecycle.md))
