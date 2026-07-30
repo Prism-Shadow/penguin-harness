@@ -215,6 +215,13 @@ function headerStats(
  */
 export const DRAFT_SESSION_ID = "new";
 
+/**
+ * Server-enforced ceiling on paths per files/stat call (STAT_MAX_PATHS in the sessions routes,
+ * which 400s above it). A Task-level summary aggregates candidates across the whole Task and can
+ * exceed it, so cache misses are checked in chunks of this size.
+ */
+const STAT_PATHS_PER_REQUEST = 100;
+
 export function ChatPage() {
   const navigate = useNavigate();
   const params = useParams<{ sessionId?: string }>();
@@ -475,18 +482,21 @@ export function ChatPage() {
       const cache = statCacheRef.current;
       const misses = sessionId === null ? [] : paths.filter((p) => !cache.has(p));
       if (sessionId !== null && misses.length > 0) {
-        const batch = api
-          .statSessionFiles(sessionId, misses)
-          .then((res) => new Set(res.existing))
-          .catch(() => null);
-        for (const p of misses) {
-          const pending = batch.then((existing) => existing?.has(p) ?? false);
-          cache.set(p, pending);
-          void pending.then((exists) => {
-            if (cache.get(p) !== pending) return;
-            if (exists) cache.set(p, true);
-            else cache.delete(p);
-          });
+        for (let i = 0; i < misses.length; i += STAT_PATHS_PER_REQUEST) {
+          const chunk = misses.slice(i, i + STAT_PATHS_PER_REQUEST);
+          const batch = api
+            .statSessionFiles(sessionId, chunk)
+            .then((res) => new Set(res.existing))
+            .catch(() => null);
+          for (const p of chunk) {
+            const pending = batch.then((existing) => existing?.has(p) ?? false);
+            cache.set(p, pending);
+            void pending.then((exists) => {
+              if (cache.get(p) !== pending) return;
+              if (exists) cache.set(p, true);
+              else cache.delete(p);
+            });
+          }
         }
       }
       const result = new Set<string>();
