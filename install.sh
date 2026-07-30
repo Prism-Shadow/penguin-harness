@@ -182,24 +182,33 @@ rm -rf "$STAGING"
 # --- Symlink into ~/.local/bin and check PATH ---
 mkdir -p "$BIN_DIR"
 ln -sf "$INSTALL_DIR/bin/penguin" "$BIN_DIR/penguin"
+PATH_MISSING=0
 case ":$PATH:" in
   *":$BIN_DIR:"*) ;;
-  *)
-    echo ""
-    echo "note: $BIN_DIR is not on your PATH. Add it to your shell profile:"
-    case "${SHELL:-}" in
-      */zsh) echo "  echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.zshrc && source ~/.zshrc" ;;
-      */bash) echo "  echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.bashrc && source ~/.bashrc" ;;
-      */fish) echo "  fish_add_path \$HOME/.local/bin" ;;
-      *) echo "  export PATH=\"\$HOME/.local/bin:\$PATH\"" ;;
-    esac
-    ;;
+  *) PATH_MISSING=1 ;;
 esac
 
-# --- Finish: print version and getting-started tips ---
-installed_version="$("$INSTALL_DIR/bin/penguin" --version 2>/dev/null || echo "unknown")"
+# --- Finish: verify the installed command before reporting success. Keep its stderr visible so
+#    platform policy, permission and runtime errors are not disguised as an "unknown" version. ---
+if installed_version="$("$INSTALL_DIR/bin/penguin" --version)"; then
+  [ -n "$installed_version" ] || fail "installed PenguinHarness returned an empty version."
+else
+  version_status=$?
+  fail "installed PenguinHarness failed to run (exit status $version_status). See the error above."
+fi
+
 echo ""
 echo "PenguinHarness $installed_version installed to $INSTALL_DIR"
+if [ "$PATH_MISSING" -eq 1 ]; then
+  echo ""
+  echo "note: installation succeeded, but $BIN_DIR is not on your PATH. Add it to your shell profile:"
+  case "${SHELL:-}" in
+    */zsh) echo "  echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.zshrc && source ~/.zshrc" ;;
+    */bash) echo "  echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.bashrc && source ~/.bashrc" ;;
+    */fish) echo "  fish_add_path \$HOME/.local/bin" ;;
+    *) echo "  export PATH=\"\$HOME/.local/bin:\$PATH\"" ;;
+  esac
+fi
 echo ""
 echo "Get started:"
 echo "  penguin --help    # all commands"

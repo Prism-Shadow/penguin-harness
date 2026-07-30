@@ -243,6 +243,7 @@ if (-not (Test-Path $CmdShim)) { Fail "install incomplete: $CmdShim missing." }
 #     The registry only exists on Windows; skip the block elsewhere (functional test runs
 #     of this script on pwsh/Linux — where the old API was a silent no-op anyway). ---
 $BinDir = Join-Path $InstallDir "bin"
+$PathUpdateMessage = ""
 if ($env:OS -eq "Windows_NT") {
   $EnvKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey("Environment", $true)
   if ($null -eq $EnvKey) { $EnvKey = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey("Environment") }
@@ -259,8 +260,7 @@ if ($env:OS -eq "Windows_NT") {
     if (-not $OnPath) {
       $NewPath = if ($RawPath -and -not $RawPath.EndsWith(";")) { "$RawPath;$BinDir" } else { "$RawPath$BinDir" }
       $EnvKey.SetValue("Path", $NewPath, $Kind)
-      Write-Host ""
-      Write-Host "note: appended $BinDir to your user Path. Restart your terminal so 'penguin' is found."
+      $PathUpdateMessage = "note: installation succeeded and $BinDir was appended to your user Path. Restart your terminal so 'penguin' is found."
     }
   } finally {
     $EnvKey.Close()
@@ -269,11 +269,24 @@ if ($env:OS -eq "Windows_NT") {
 # Make `penguin` work in this session too.
 if (($env:Path -split ";") -notcontains $BinDir) { $env:Path = "$env:Path;$BinDir" }
 
-# --- Finish: print version and getting-started tips ---
-$InstalledVersion = "unknown"
-try { $InstalledVersion = (& $CmdShim --version 2>$null | Select-Object -First 1) } catch {}
+# --- Finish: verify the installed command before reporting success. Keep stderr visible so
+# platform policy, permission and runtime errors are not disguised as an "unknown" version.
+$VersionOutput = @(& $CmdShim --version)
+$VersionExitCode = $LASTEXITCODE
+if ($VersionExitCode -ne 0) {
+  Fail "installed PenguinHarness failed to run (exit code $VersionExitCode). See the error above."
+}
+$InstalledVersion = $VersionOutput | Select-Object -First 1
+if ([string]::IsNullOrWhiteSpace([string]$InstalledVersion)) {
+  Fail "installed PenguinHarness returned an empty version."
+}
+
 Write-Host ""
 Write-Host "PenguinHarness $InstalledVersion installed to $InstallDir"
+if ($PathUpdateMessage) {
+  Write-Host ""
+  Write-Host $PathUpdateMessage
+}
 Write-Host ""
 Write-Host "Get started:"
 Write-Host "  penguin --help    # all commands"
