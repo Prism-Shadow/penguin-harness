@@ -33,6 +33,28 @@ function Fail([string]$Message) {
   throw "error: $Message"
 }
 
+function Restore-PreviousInstall(
+  [string]$InstallDir,
+  [string]$OldDir,
+  [string[]]$MovedOld,
+  [string[]]$MovedNew
+) {
+  foreach ($d in @($MovedNew)) {
+    if (-not $d) { continue }
+    $Current = Join-Path $InstallDir $d
+    if (Test-Path -LiteralPath $Current) {
+      Remove-Item -LiteralPath $Current -Recurse -Force -ErrorAction Stop
+    }
+  }
+  foreach ($d in @($MovedOld)) {
+    if (-not $d) { continue }
+    $Previous = Join-Path $OldDir $d
+    if (Test-Path -LiteralPath $Previous) {
+      Move-Item -LiteralPath $Previous -Destination (Join-Path $InstallDir $d) -ErrorAction Stop
+    }
+  }
+}
+
 # --- Resolve options (parameters win over env vars, mirroring install.sh's --version) ---
 if (-not $Version) { $Version = if ($env:PENGUIN_VERSION) { $env:PENGUIN_VERSION } else { "" } }
 if (-not $InstallDir) {
@@ -136,10 +158,9 @@ try {
     }
   }
 
-  # --- Extract and swap into place: expand into a staging dir under the install dir (same volume,
-  #    so the swap below is cheap renames), then rename-then-delete: move the old dirs aside first
-  #    (a locked file fails fast here, before anything is deleted), move the new ones in, then
-  #    drop the old. The data dir (%USERPROFILE%\.penguin\data) is untouched. ---
+  # --- Extract into staging, then swap by same-volume renames. Keep the previous dirs in .old.$PID
+  #    until the installed command runs successfully; any move or launch failure restores them.
+  #    The data dir (%USERPROFILE%\.penguin\data) is never part of the swap. ---
   New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
   $Staging = Join-Path $InstallDir ".staging.$PID"
   $OldDir = Join-Path $InstallDir ".old.$PID"
@@ -171,71 +192,100 @@ try {
   }
 
   $Dirs = @("bin", "lib", "web", "node", "git")
-  $Moved = @()
+  $MovedOld = @()
+  $MovedNew = @()
   New-Item -ItemType Directory -Path $OldDir | Out-Null
   try {
     foreach ($d in $Dirs) {
       $Existing = Join-Path $InstallDir $d
-      if (Test-Path $Existing) {
-        Move-Item -Path $Existing -Destination (Join-Path $OldDir $d)
-        $Moved += $d
+      if (Test-Path -LiteralPath $Existing) {
+        Move-Item -LiteralPath $Existing -Destination (Join-Path $OldDir $d)
+        $MovedOld += $d
       }
     }
+    foreach ($d in $Dirs) {
+      $Src = Join-Path $NewRoot $d
+      if (Test-Path -LiteralPath $Src) {
+        Move-Item -LiteralPath $Src -Destination (Join-Path $InstallDir $d)
+        $MovedNew += $d
+      }
+    }
+
+    # --- Launcher shims: shipped in the zip; (re)generate only when missing. ---
+    $CmdShim = Join-Path $InstallDir "bin\penguin.cmd"
+    if (-not (Test-Path -LiteralPath $CmdShim)) {
+      @(
+        '@echo off'
+        'setlocal'
+        'set "DIR=%~dp0.."'
+        'if not defined PENGUIN_WEB_DIST set "PENGUIN_WEB_DIST=%DIR%\web"'
+        'if exist "%DIR%\git\usr\bin\sh.exe" set "PENGUIN_BUNDLED_SHELL=%DIR%\git\usr\bin\sh.exe"'
+        'if exist "%DIR%\node\node.exe" ('
+        '  "%DIR%\node\node.exe" "%DIR%\lib\dist\index.js" %*'
+        ') else ('
+        '  node "%DIR%\lib\dist\index.js" %*'
+        ')'
+        'exit /b %ERRORLEVEL%'
+      ) | Set-Content -LiteralPath $CmdShim -Encoding ascii
+    }
+    $Ps1Shim = Join-Path $InstallDir "bin\penguin.ps1"
+    if (-not (Test-Path -LiteralPath $Ps1Shim)) {
+      @(
+        '$dir = Split-Path -Parent $PSScriptRoot'
+        'if (-not $env:PENGUIN_WEB_DIST) { $env:PENGUIN_WEB_DIST = Join-Path $dir "web" }'
+        '$sh = Join-Path $dir "git\usr\bin\sh.exe"'
+        'if (Test-Path $sh) { $env:PENGUIN_BUNDLED_SHELL = $sh }'
+        '$node = Join-Path $dir "node\node.exe"'
+        'if (-not (Test-Path $node)) { $node = "node" }'
+        '& $node (Join-Path $dir "lib\dist\index.js") @args'
+        'exit $LASTEXITCODE'
+      ) | Set-Content -LiteralPath $Ps1Shim -Encoding ascii
+    }
+    if (-not (Test-Path -LiteralPath $CmdShim)) { Fail "install incomplete: $CmdShim missing." }
+
+    # Verify from the final path before deleting the backup. Keep stderr visible so platform
+    # policy, permission and runtime errors are not disguised as an "unknown" version.
+    # Windows PowerShell 5.1 turns native stderr into NativeCommandError records. Temporarily
+    # keep those non-terminating so the real stderr stays visible and the exit code remains the
+    # authoritative result; restore Stop immediately afterwards for installer operations.
+    $PreviousErrorActionPreference = $ErrorActionPreference
+    try {
+      $ErrorActionPreference = "Continue"
+      $VersionOutput = @(& $CmdShim --version)
+      $VersionExitCode = $LASTEXITCODE
+    } finally {
+      $ErrorActionPreference = $PreviousErrorActionPreference
+    }
+    if ($VersionExitCode -ne 0) {
+      Fail "installed PenguinHarness failed to run (exit code $VersionExitCode). See the error above."
+    }
+    $InstalledVersion = $VersionOutput | Select-Object -First 1
+    if ([string]::IsNullOrWhiteSpace([string]$InstalledVersion)) {
+      Fail "installed PenguinHarness returned an empty version."
+    }
   } catch {
-    # Roll the already-moved dirs back so a locked install stays intact and usable.
-    foreach ($d in $Moved) {
-      Move-Item -Path (Join-Path $OldDir $d) -Destination (Join-Path $InstallDir $d) -ErrorAction SilentlyContinue
+    $InstallFailure = $_
+    try {
+      Restore-PreviousInstall -InstallDir $InstallDir -OldDir $OldDir -MovedOld $MovedOld -MovedNew $MovedNew
+      Write-Host "Previous PenguinHarness installation restored."
+    } catch {
+      throw "error: installation failed and automatic rollback was incomplete. Original error: $($InstallFailure.Exception.Message) Rollback error: $($_.Exception.Message) Previous files may remain in $OldDir"
     }
-    Fail "files in $InstallDir are locked: close running penguin processes (and any node.exe they started), then retry. ($($_.Exception.Message))"
+    throw $InstallFailure
   }
-  foreach ($d in $Dirs) {
-    $Src = Join-Path $NewRoot $d
-    if (Test-Path $Src) {
-      Move-Item -Path $Src -Destination (Join-Path $InstallDir $d)
-    }
-  }
-  Remove-Item -Recurse -Force $OldDir -ErrorAction SilentlyContinue
-  if (Test-Path $OldDir) {
-    Write-Host "warning: could not fully remove $OldDir (files in use); delete it after closing running penguin processes."
+
+  Remove-Item -LiteralPath $OldDir -Recurse -Force -ErrorAction SilentlyContinue
+  if (Test-Path -LiteralPath $OldDir) {
+    Write-Host "warning: could not fully remove $OldDir; delete it after closing running penguin processes."
   }
 } finally {
-  Remove-Item -Recurse -Force $Tmp -ErrorAction SilentlyContinue
-  if ($Staging -and (Test-Path $Staging)) { Remove-Item -Recurse -Force $Staging -ErrorAction SilentlyContinue }
+  Remove-Item -LiteralPath $Tmp -Recurse -Force -ErrorAction SilentlyContinue
+  if ($Staging -and (Test-Path -LiteralPath $Staging)) {
+    Remove-Item -LiteralPath $Staging -Recurse -Force -ErrorAction SilentlyContinue
+  }
 }
 
-# --- Launcher shims: shipped in the zip; (re)generate only when missing ---
-$CmdShim = Join-Path $InstallDir "bin\penguin.cmd"
-if (-not (Test-Path $CmdShim)) {
-  @(
-    '@echo off'
-    'setlocal'
-    'set "DIR=%~dp0.."'
-    'if not defined PENGUIN_WEB_DIST set "PENGUIN_WEB_DIST=%DIR%\web"'
-    'if exist "%DIR%\git\usr\bin\sh.exe" set "PENGUIN_BUNDLED_SHELL=%DIR%\git\usr\bin\sh.exe"'
-    'if exist "%DIR%\node\node.exe" ('
-    '  "%DIR%\node\node.exe" "%DIR%\lib\dist\index.js" %*'
-    ') else ('
-    '  node "%DIR%\lib\dist\index.js" %*'
-    ')'
-    'exit /b %ERRORLEVEL%'
-  ) | Set-Content -Path $CmdShim -Encoding ascii
-}
-$Ps1Shim = Join-Path $InstallDir "bin\penguin.ps1"
-if (-not (Test-Path $Ps1Shim)) {
-  @(
-    '$dir = Split-Path -Parent $PSScriptRoot'
-    'if (-not $env:PENGUIN_WEB_DIST) { $env:PENGUIN_WEB_DIST = Join-Path $dir "web" }'
-    '$sh = Join-Path $dir "git\usr\bin\sh.exe"'
-    'if (Test-Path $sh) { $env:PENGUIN_BUNDLED_SHELL = $sh }'
-    '$node = Join-Path $dir "node\node.exe"'
-    'if (-not (Test-Path $node)) { $node = "node" }'
-    '& $node (Join-Path $dir "lib\dist\index.js") @args'
-    'exit $LASTEXITCODE'
-  ) | Set-Content -Path $Ps1Shim -Encoding ascii
-}
-if (-not (Test-Path $CmdShim)) { Fail "install incomplete: $CmdShim missing." }
-
-# --- User PATH: append <install>\bin once; new terminals pick it up.
+# --- User PATH: append <install>\bin once only after the installed command is known to work.
 #     Go through the registry, not [Environment]::*EnvironmentVariable: GetEnvironmentVariable
 #     expands REG_EXPAND_SZ and SetEnvironmentVariable writes back REG_SZ, which would
 #     irreversibly hard-code a user's %USERPROFILE%-style Path entries. Read the raw
@@ -268,18 +318,6 @@ if ($env:OS -eq "Windows_NT") {
 }
 # Make `penguin` work in this session too.
 if (($env:Path -split ";") -notcontains $BinDir) { $env:Path = "$env:Path;$BinDir" }
-
-# --- Finish: verify the installed command before reporting success. Keep stderr visible so
-# platform policy, permission and runtime errors are not disguised as an "unknown" version.
-$VersionOutput = @(& $CmdShim --version)
-$VersionExitCode = $LASTEXITCODE
-if ($VersionExitCode -ne 0) {
-  Fail "installed PenguinHarness failed to run (exit code $VersionExitCode). See the error above."
-}
-$InstalledVersion = $VersionOutput | Select-Object -First 1
-if ([string]::IsNullOrWhiteSpace([string]$InstalledVersion)) {
-  Fail "installed PenguinHarness returned an empty version."
-}
 
 Write-Host ""
 Write-Host "PenguinHarness $InstalledVersion installed to $InstallDir"

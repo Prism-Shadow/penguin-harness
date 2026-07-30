@@ -84,7 +84,46 @@ if [ "$UNIVERSAL" -eq 1 ]; then
 fi
 
 TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
+STAGING=""
+OLD_DIR=""
+SWAP_ACTIVE=0
+MOVED_OLD=""
+MOVED_NEW=""
+
+rollback_install() {
+  rollback_failed=0
+  for d in $MOVED_NEW; do
+    rm -rf "$INSTALL_DIR/$d" || rollback_failed=1
+  done
+  for d in $MOVED_OLD; do
+    if [ -e "$OLD_DIR/$d" ]; then
+      mv "$OLD_DIR/$d" "$INSTALL_DIR/$d" || rollback_failed=1
+    fi
+  done
+  if [ "$rollback_failed" -ne 0 ]; then
+    echo "error: automatic rollback was incomplete; previous files remain in $OLD_DIR" >&2
+    return 1
+  fi
+  echo "Previous PenguinHarness installation restored." >&2
+}
+
+cleanup() {
+  status=$?
+  trap - EXIT HUP INT TERM
+  set +e
+  if [ "$SWAP_ACTIVE" -eq 1 ]; then
+    rollback_install
+  fi
+  rm -rf "$TMP"
+  [ -z "$STAGING" ] || rm -rf "$STAGING"
+  [ -z "$OLD_DIR" ] || rm -rf "$OLD_DIR"
+  exit "$status"
+}
+
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # --- Resolve local/offline archive or download from GitHub. ---
 LOCAL_ARCHIVE=0
@@ -143,11 +182,9 @@ else
   echo "warning: checksum file not available; skipping verification." >&2
 fi
 
-# --- Extract and swap into place: first move the new dirs into a staging area inside the install
-#    dir (same filesystem as the final location, so any slow cross-device copy happens before the
-#    old install is touched), then swap fast (rm old + same-disk mv is a rename; tiny window).
-#    No stale files after upgrade; the universal package has no node/, so cleanup lets the wrapper
-#    fall back to system Node. The data dir (~/.penguin/data) is untouched. ---
+# --- Extract and validate in staging before touching the current install. The final same-filesystem
+#    swap keeps the previous dirs in .old.$$ until the installed command runs successfully; any
+#    move or launch failure restores them automatically. The data dir is never part of the swap. ---
 tar -xzf "$ARCHIVE_PATH" -C "$TMP"
 [ -d "$TMP/penguin" ] || fail "unexpected archive layout: top-level penguin/ missing."
 MANIFEST_PATH="$TMP/penguin/package-manifest.json"
@@ -161,25 +198,66 @@ elif [ "$LOCAL_ARCHIVE" -eq 1 ] && [ "$ARCHIVE_NAME" != "$ASSET" ]; then
 fi
 mkdir -p "$INSTALL_DIR"
 STAGING="$INSTALL_DIR/.staging.$$"
+OLD_DIR="$INSTALL_DIR/.old.$$"
 rm -rf "$STAGING"
+rm -rf "$OLD_DIR"
 mkdir -p "$STAGING"
-trap 'rm -rf "$TMP" "$STAGING"' EXIT
 for d in bin lib web node; do
   if [ -e "$TMP/penguin/$d" ]; then
     mv "$TMP/penguin/$d" "$STAGING/$d"
   fi
 done
 [ -x "$STAGING/bin/penguin" ] || fail "unexpected archive layout: bin/penguin missing."
-rm -rf "$INSTALL_DIR/bin" "$INSTALL_DIR/lib" "$INSTALL_DIR/web" "$INSTALL_DIR/node"
+
+# The launcher resolves lib/, web/ and node/ relative to itself, so staging is a faithful
+# preflight that catches macOS execution policy and runtime/package failures before replacement.
+if candidate_version="$("$STAGING/bin/penguin" --version)"; then
+  [ -n "$candidate_version" ] || fail "candidate PenguinHarness returned an empty version."
+else
+  candidate_status=$?
+  fail "candidate PenguinHarness failed to run (exit status $candidate_status). See the error above."
+fi
+
+mkdir -p "$OLD_DIR"
+SWAP_ACTIVE=1
 for d in bin lib web node; do
-  if [ -e "$STAGING/$d" ]; then
-    mv "$STAGING/$d" "$INSTALL_DIR/$d"
+  if [ -e "$INSTALL_DIR/$d" ]; then
+    if mv "$INSTALL_DIR/$d" "$OLD_DIR/$d"; then
+      MOVED_OLD="$MOVED_OLD $d"
+    else
+      fail "could not move the existing $d directory aside; the previous installation will be restored."
+    fi
   fi
 done
-rm -rf "$STAGING"
+for d in bin lib web node; do
+  if [ -e "$STAGING/$d" ]; then
+    if mv "$STAGING/$d" "$INSTALL_DIR/$d"; then
+      MOVED_NEW="$MOVED_NEW $d"
+    else
+      fail "could not install the new $d directory; the previous installation will be restored."
+    fi
+  fi
+done
 [ -x "$INSTALL_DIR/bin/penguin" ] || fail "install incomplete: $INSTALL_DIR/bin/penguin missing."
 
-# --- Symlink into ~/.local/bin and check PATH ---
+# Verify again from the final path before deleting the backup. Keep stderr visible so platform
+# policy, permission and runtime errors are not disguised as an "unknown" version.
+if installed_version="$("$INSTALL_DIR/bin/penguin" --version)"; then
+  [ -n "$installed_version" ] || fail "installed PenguinHarness returned an empty version."
+else
+  version_status=$?
+  fail "installed PenguinHarness failed to run (exit status $version_status); the previous installation will be restored. See the error above."
+fi
+
+SWAP_ACTIVE=0
+if ! rm -rf "$OLD_DIR"; then
+  echo "warning: could not remove the previous installation backup at $OLD_DIR" >&2
+fi
+OLD_DIR=""
+rm -rf "$STAGING"
+STAGING=""
+
+# --- Symlink into ~/.local/bin and check PATH only after the install is known to work. ---
 mkdir -p "$BIN_DIR"
 ln -sf "$INSTALL_DIR/bin/penguin" "$BIN_DIR/penguin"
 PATH_MISSING=0
@@ -187,15 +265,6 @@ case ":$PATH:" in
   *":$BIN_DIR:"*) ;;
   *) PATH_MISSING=1 ;;
 esac
-
-# --- Finish: verify the installed command before reporting success. Keep its stderr visible so
-#    platform policy, permission and runtime errors are not disguised as an "unknown" version. ---
-if installed_version="$("$INSTALL_DIR/bin/penguin" --version)"; then
-  [ -n "$installed_version" ] || fail "installed PenguinHarness returned an empty version."
-else
-  version_status=$?
-  fail "installed PenguinHarness failed to run (exit status $version_status). See the error above."
-fi
 
 echo ""
 echo "PenguinHarness $installed_version installed to $INSTALL_DIR"
