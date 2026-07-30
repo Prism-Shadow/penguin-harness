@@ -21,7 +21,7 @@ export const MARKER_TAGS = {
   goal: "goal",
   /** Skill invocation block prefixed to a user message (Web composer). */
   useSkills: "use_skills",
-  /** @-handoff origin block, first message of the delegated conversation (Web). */
+  /** `/agent` handoff origin block, first message of the delegated conversation (Web). */
   handoffFrom: "handoff_from",
   /** Scheduled-task trigger origin block (server scheduler). */
   scheduledTask: "scheduled_task",

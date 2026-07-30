@@ -15,6 +15,11 @@
  *   - **goal** (`goal-block.ts`): `[goal]`, the goal-mode round protocol block prefixed to
  *     each round's input by the Session's goal loop (line-anchored close — see the module).
  *
+ * `attachment-lines.ts` is the one exception to the block form: `[attached image: …]` /
+ * `[attached file: …]` are single lines **appended after** a user message, naming a file the
+ * model must open by path. They live here for the same reason the blocks do — core, the
+ * server and the Web renderer all have to spell them identically.
+ *
  * `block.ts` owns the spelling itself — the canonical square form for producers and the
  * dual-form (square + legacy angle) matching every parser applies, because markers persist in
  * Traces and in each agent's stored compaction prompt. `tags.ts` owns the tag list.
@@ -24,6 +29,7 @@
  */
 export * from "./block.js";
 export * from "./tags.js";
+export * from "./attachment-lines.js";
 export * from "./engine-blocks.js";
 export * from "./origin-blocks.js";
 export * from "./steering.js";

@@ -58,7 +58,6 @@ import { buildSkillsMessage } from "./skill-use";
 import { EXAMPLE_TASKS, type ExampleTask, type ExampleTaskId } from "./example-tasks";
 import { clearDraft, draftKey, loadDraft, saveDraft } from "./draft-cache";
 import type { DraftCache } from "./draft-cache";
-import { handoffMessage } from "./agent-mentions";
 import { sameModelRef } from "../models/model-grouping";
 
 /** Coalescing window for writing body text to the cache: keystrokes are frequent, so a short batch accumulates before persisting (option changes are still written immediately). */
@@ -124,10 +123,6 @@ export function DraftView({
     cached.approvalMode ?? "allow-all",
   );
   const [modelRef, setModelRef] = useState<ModelRefDto | null>(cached.modelRef ?? null);
-  /** @-handoff target (chip): draft content just like the body text, cached alongside it (fed in via the ChatInput callback). */
-  const [handoffAgentId, setHandoffAgentId] = useState<string | null>(
-    cached.handoffAgentId ?? null,
-  );
   const textRef = useRef(cached.text ?? "");
   /**
    * Selected skills (prefilled by "quick invoke" from the Skills page + checked in
@@ -290,19 +285,9 @@ export function DraftView({
     const data: DraftCache = { text: textRef.current, workspace, approvalMode };
     if (agentId) data.agentId = agentId;
     if (modelRef) data.modelRef = modelRef;
-    if (handoffAgentId) data.handoffAgentId = handoffAgentId;
     if (skillsRef.current.length > 0) data.skills = skillsRef.current;
     saveDraft(draftKey(userId, projectId), data);
-  }, [
-    cancelPendingSave,
-    userId,
-    projectId,
-    agentId,
-    workspace,
-    approvalMode,
-    modelRef,
-    handoffAgentId,
-  ]);
+  }, [cancelPendingSave, userId, projectId, agentId, workspace, approvalMode, modelRef]);
 
   // The timer and unmount cleanup read persistNow via a ref to always get the **latest version**: a stale closure would write back outdated options.
   const persistRef = useRef(persistNow);
@@ -363,8 +348,8 @@ export function DraftView({
     setCurrentAgentId(a.agentId);
   };
 
-  // One in-flight guard shared by every send entry point (composer send / example task /
-  // @-handoff): a second submission while one is running would create a second Session with
+  // One in-flight guard shared by both send entry points (composer send / example task): a
+  // second submission while one is running would create a second Session with
   // its own first task and a racing navigation. The ref is the synchronous guard; the state
   // drives disabled styling on the example button (the composer has its own busy state).
   const sendingRef = useRef(false);
@@ -437,45 +422,7 @@ export function DraftView({
     [exampleBusy, agentSkills, onSend],
   );
 
-  // @ handoff: opens a new chat for the @-mentioned agent (approval mode carries over from the
-  // draft's current value; model/Workspace use the creation defaults), first input =
-  // [handoff_from] source block + the text and images with the @ mention stripped.
   const selectedAgent = agents.find((a) => a.agentId === agentId) ?? null;
-  const onHandoff = useCallback(
-    async (target: AgentSummary, input: TaskInputPart[]): Promise<boolean> => {
-      if (!selectedAgent || sendingRef.current) return false;
-      sendingRef.current = true;
-      setSending(true);
-      const origin: TaskInputPart = {
-        type: "text",
-        text: handoffMessage({
-          agentId: selectedAgent.agentId,
-          ...(selectedAgent.name !== undefined ? { agentName: selectedAgent.name } : {}),
-        }),
-      };
-      let createdId: string | null = null;
-      try {
-        const created = await api.createSession(projectId, target.agentId, { approvalMode });
-        createdId = created.session.sessionId;
-        const res = await api.postTask(createdId, { input: [origin, ...input] });
-        add(created.session);
-        discardDraft();
-        navigate(`/chat/${res.sessionId}`);
-        return true;
-      } catch (e) {
-        if (createdId) void api.deleteSession(createdId).catch(() => undefined);
-        // The new chat uses the project's default model (createSession doesn't specify a model reference), so the error copy's model context follows suit.
-        toastError(
-          apiErrorText(e, models?.defaultModel ? { modelId: models.defaultModel.modelId } : {}),
-        );
-        return false;
-      } finally {
-        sendingRef.current = false;
-        setSending(false);
-      }
-    },
-    [projectId, selectedAgent, approvalMode, add, discardDraft, navigate, models],
-  );
 
   // Capability info for the currently selected model (vision/context window) switches instantly with the selection (matched by paired reference).
   const modelInfo = models?.models.find((m) => sameModelRef(m, modelRef));
@@ -529,14 +476,12 @@ export function DraftView({
           modeSaving={false}
           autoFocus
           agents={agents}
+          {...(agentId ? { currentAgentId: agentId } : {})}
           skills={agentSkills}
           {...(cached.skills && cached.skills.length > 0 ? { initialSkills: cached.skills } : {})}
           onSkillsChange={onSkillsChange}
-          onHandoff={onHandoff}
           initialText={cached.text ?? ""}
           onTextChange={onTextChange}
-          {...(cached.handoffAgentId ? { initialHandoffTargetId: cached.handoffAgentId } : {})}
-          onHandoffTargetChange={setHandoffAgentId}
         />
 
         {/* Ownership selection right below the card (small pill dropdowns, styled after ChatGPT's project picker button) */}
@@ -690,8 +635,8 @@ const versionBadgeClass =
   "ml-1.5 inline-block rounded-full bg-[var(--accent-bg)] px-1.5 align-super text-[10px] font-medium leading-4 text-[var(--accent-fg)] transition-opacity duration-150 hover:opacity-80";
 
 /**
- * Quiet version line under the brand subtitle: `vX.Y.Z · 最近更新日期 7 月 26 日` /
- * `… · Last updated Jul 26`. The product name is not repeated here — the brand wordmark
+ * Quiet version line under the brand subtitle: `vX.Y.Z · Last updated Jul 26`
+ * (localized per dictionary). The product name is not repeated here — the brand wordmark
  * sits directly above, and the sidebar's version footer is bare `vX.Y.Z` too. The date is
  * the running version's release
  * date, stamped into core's BUILD_DATE at build time — displayed as-is, no network;

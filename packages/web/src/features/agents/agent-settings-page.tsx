@@ -27,6 +27,7 @@ import { useProject } from "../../state/project";
 import { Tabs } from "../../components/ui/tabs";
 import { Button } from "../../components/ui/button";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
+import { HiddenFileInput } from "../../components/ui/hidden-file-input";
 import { Input, Textarea } from "../../components/ui/input";
 import { OptionMenu, type OptionMenuChoice } from "../../components/ui/option-menu";
 import { Switch } from "../../components/ui/switch";
@@ -43,7 +44,7 @@ type TabKey = "overview" | "prompt" | "runtime" | "tools" | "vault" | "schedules
  * The "" (not-overridden / inherit) row is filtered out per review — the menus offer only
  * concrete values in dictionary order, the user picks explicitly. An unset stored value
  * simply matches no row, so the OptionMenu trigger falls back to its placeholder
- * (（缺省）/(default), the same convention as the tools-table permission menu); nothing is
+ * ("(default)", the same convention as the tools-table permission menu); nothing is
  * ever written silently, and the reset link next to each menu rewinds a local pick back to "".
  */
 export function optionRows(
@@ -156,7 +157,9 @@ export function AgentSettingsPage() {
   }
 
   return (
-    <div className="no-scrollbar h-full overflow-y-auto p-4 md:p-6">
+    /* relative: a scroller is its own containing block (see the invariant in styles.css) —
+       this page's snapshot-import control used to grow the document from below the fold. */
+    <div className="no-scrollbar relative h-full overflow-y-auto p-4 md:p-6">
       <div className="mx-auto max-w-3xl">
         <Button
           variant="ghost"
@@ -351,14 +354,7 @@ function OverviewTab({
             <label
               className={`${TRANSFER_BUTTON_CLASS} ${importing ? "pointer-events-none opacity-60" : ""}`}
             >
-              {/* sr-only rather than hidden: keeps it keyboard-Tab-focusable (same as the workspace-browser upload). */}
-              <input
-                type="file"
-                accept=".tar.gz,.tgz"
-                className="sr-only"
-                disabled={importing}
-                onChange={onPickFile}
-              />
+              <HiddenFileInput accept=".tar.gz,.tgz" disabled={importing} onChange={onPickFile} />
               {importing ? S.agent.importing : S.agent.importSnapshot}
             </label>
           )}

@@ -122,7 +122,7 @@ describe("skillSlashItems (slash skill command item assembly)", () => {
 });
 
 describe("quickInvokeText (prefill text for skill-library quick invoke, zh/en dictionaries)", () => {
-  it('same convention as the empty-body auto-invoke text: zh "使用 X 技能" / en "use the X skill"', () => {
+  it('same convention as the empty-body auto-invoke text: "use the X skill", localized per dictionary', () => {
     expect(zh.skills.quickInvokeText("agent-creation")).toBe("使用 agent-creation 技能");
     expect(en.skills.quickInvokeText("agent-creation")).toBe("use the agent-creation skill");
   });

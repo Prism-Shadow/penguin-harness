@@ -5,7 +5,7 @@
  * agent's stored compaction prompt) while producers only ever emit the square form.
  *
  * Behavior covered here used to live next to each call site — engine (`extractSummary`),
- * omnimessage (`userSteeringText`), web (`skill-use` / `agent-mentions`) — and moved with the
+ * omnimessage (`userSteeringText`), web (`skill-use` / `agent-handoff`) — and moved with the
  * consolidation; the host-side tests keep covering the rendering/wiring around them.
  */
 import { describe, expect, it } from "vitest";
@@ -79,19 +79,19 @@ describe("stripConversationMarkers (whole-message title cleaning)", () => {
     // The skill-invocation block that wraps a first user message must not reach the title.
     expect(
       stripConversationMarkers(
-        "[use_skills]\nskills: penguin-sdk, web-design\n[/use_skills]\n做一个 RAG 应用",
+        "[use_skills]\nskills: penguin-sdk, web-design\n[/use_skills]\nBuild a RAG app",
       ),
-    ).toBe("做一个 RAG 应用");
+    ).toBe("Build a RAG app");
     // Handoff and scheduled-task markers are stripped too; ordinary bracketed text stays.
-    expect(stripConversationMarkers("[handoff_from]data_analyst[/handoff_from]继续分析")).toBe(
-      "继续分析",
-    );
+    expect(
+      stripConversationMarkers("[handoff_from]data_analyst[/handoff_from]continue the analysis"),
+    ).toBe("continue the analysis");
     // The /model switch origin block (the new session's first message) must not leak into the title either.
     expect(
       stripConversationMarkers(
-        "[model_switch_from]\nsession: session-01\ntrace: /t/x_001.jsonl\n[/model_switch_from]\n继续这个任务",
+        "[model_switch_from]\nsession: session-01\ntrace: /t/x_001.jsonl\n[/model_switch_from]\ncontinue this task",
       ),
-    ).toBe("继续这个任务");
+    ).toBe("continue this task");
     expect(stripConversationMarkers("render a <div> element")).toBe("render a <div> element");
     expect(stripConversationMarkers("check the [config] section")).toBe(
       "check the [config] section",
@@ -100,14 +100,18 @@ describe("stripConversationMarkers (whole-message title cleaning)", () => {
 
   it("the old angle-bracket marker form is still stripped (material from old Traces)", () => {
     expect(
-      stripConversationMarkers("<use_skills>\nskills: web-design\n</use_skills>\n做一个落地页"),
-    ).toBe("做一个落地页");
-    expect(stripConversationMarkers("<handoff_from>data_analyst</handoff_from>继续分析")).toBe(
-      "继续分析",
-    );
+      stripConversationMarkers(
+        "<use_skills>\nskills: web-design\n</use_skills>\nBuild a landing page",
+      ),
+    ).toBe("Build a landing page");
     expect(
-      stripConversationMarkers("<model_switch_from>session: s1</model_switch_from>继续这个任务"),
-    ).toBe("继续这个任务");
+      stripConversationMarkers("<handoff_from>data_analyst</handoff_from>continue the analysis"),
+    ).toBe("continue the analysis");
+    expect(
+      stripConversationMarkers(
+        "<model_switch_from>session: s1</model_switch_from>continue this task",
+      ),
+    ).toBe("continue this task");
   });
 });
 

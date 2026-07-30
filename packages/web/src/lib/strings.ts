@@ -746,8 +746,13 @@ Benchmark：
     contextUsage: "上下文占用",
     contextUnknown: "上下文占用：压缩后待下次请求回报",
     slashHint: "输入 / 使用命令",
-    mentionHint: "@ handoff 给其他 Agent",
-    mentionRemove: "移除 @ 目标",
+    /** `/agent` handoff: command description, picker title, search box, no-match hint, and the staged target's description and remove button. */
+    switchAgent: "交给其他 Agent，发送时开启新会话",
+    switchAgentTitle: "选择 Agent",
+    agentSearchPlaceholder: "搜索 Agent：id / 名称",
+    agentsNoMatch: "没有匹配的 Agent",
+    handoffTargetTitle: (agent: string) => `发送后交接给 ${agent}`,
+    handoffRemove: "移除交接目标",
     /** Skill multi-select dropdown (input toolbar): button text, search box, empty state, and no-match hint. */
     skillsSelect: "技能",
     skillRemove: "移除技能",
@@ -758,12 +763,16 @@ Benchmark：
     skillsAutoMessage: (names: string[]): string => `使用 ${names.join("、")} 技能`,
     handoffFrom: (agent: string) => `由 ${agent} 的对话交接而来`,
     handoffBack: (title?: string) => (title ? `回到原对话：${title}` : "回到原对话"),
-    /** /model 切换：命令描述、拾取器标题、切换来源横幅与空正文自动消息。 */
-    switchModel: "切换模型开启新会话延续本对话",
+    /** `/model` switch: command description, picker title, the staged target's description and remove button, the switch-origin banner, and the empty-body auto message. */
+    switchModel: "切换模型，发送时开启新会话延续本对话",
     switchModelTitle: "切换模型",
+    modelSwitchTargetTitle: (model: string) => `发送后换用 ${model} 延续本对话`,
+    modelSwitchRemove: "移除切换模型",
+    /** Why Send is disabled with a model switch staged: the fork branches off a Trace this Session is still writing. */
+    modelSwitchBusyHint: "本轮结束后才能切换模型：新会话要从当前会话的记录接续",
     modelSwitchFrom: (prevModel?: string) =>
       prevModel ? `已切换模型（原为 ${prevModel}），延续原会话` : "已切换模型，延续原会话",
-    /** /model 切换且正文为空时自动发送的首条消息正文（与 skillsAutoMessage 同一约定）。 */
+    /** First message body auto-sent when `/model` is staged and the composer is empty (same convention as skillsAutoMessage). */
     modelSwitchAutoMessage: "换用新模型继续这段对话",
     scheduledFrom: (name: string) => `由定时任务「${name}」触发`,
     emptyGreeting: "开始一段新对话",
@@ -796,10 +805,17 @@ Benchmark：
       archived: (n: number) => `已归档（${n}）`,
     },
     skillsBanner: (names: string[]): string => `使用技能：${names.join("、")}`,
-    /** Composer "+" extension menu (currently only goal mode; more entries later) and the goal chip. */
+    /** Attached-file notice above a user message (file names only; the paths stay in the Trace). */
+    attachedFilesBanner: (names: string[]): string => `附加文件：${names.join("、")}`,
+    /** Composer "+" extension menu (image upload, file attachment, goal mode) and the goal chip. */
     plusMenu: "更多输入方式",
     uploadImage: "上传图片",
     uploadImageDesc: "为本条消息附加图片",
+    uploadFile: "上传文件",
+    uploadFileDesc: "文件存入会话临时目录，模型按路径读取",
+    removeFile: "移除文件",
+    /** Toast for a picked file rejected before reading (the server's per-file cap is 10MB). */
+    attachmentTooLarge: (name: string): string => `${name} 超过 10MB 上限，未添加。`,
     goalMode: "目标模式",
     goalModeDesc: "循环运行直至目标完成",
     goalBudgetLabel: "Token 预算",
@@ -986,6 +1002,7 @@ Benchmark：
       unknown_skill: "该技能不在技能库中。",
       file_not_found: "该文件已不存在。",
       file_too_large: "文件过大。",
+      too_many_files: "一条消息附加的文件过多。",
       payload_too_large: "请求体过大。",
       dir_not_absolute: "目录必须是绝对路径。",
       not_a_dir: "该路径不是目录。",

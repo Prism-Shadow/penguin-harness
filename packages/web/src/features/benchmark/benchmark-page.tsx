@@ -22,6 +22,8 @@ import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { formatDateTime, formatMoney, formatScore, humanizeDuration } from "../../lib/format";
 import { agentDisplayName, useProject } from "../../state/project";
+import { useTheme } from "../../state/theme";
+import type { Currency } from "../../state/theme";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { Chevron } from "../../components/ui/chevron";
 import { Truncated } from "../../components/ui/truncated";
@@ -274,11 +276,13 @@ function EvaluationRow({
   evaluation,
   caseTitles,
   onOpenCase,
+  currency,
 }: {
   agentId: string;
   evaluation: BenchmarkEvaluation;
   caseTitles: ReadonlyMap<string, string>;
   onOpenCase: (caseId: string) => void;
+  currency: Currency;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -309,7 +313,7 @@ function EvaluationRow({
           {formatScore(evaluation.score)}
         </td>
         <td className={`${CELL} font-mono text-xs tabular-nums text-gray-500 dark:text-gray-400`}>
-          {formatMoney(evaluation.cost)}
+          {formatMoney(evaluation.cost, currency)}
         </td>
         <td className={`${CELL} font-mono text-xs tabular-nums text-gray-500 dark:text-gray-400`}>
           {evaluation.durationMs !== undefined ? humanizeDuration(evaluation.durationMs) : "—"}
@@ -353,6 +357,7 @@ function EvaluationRow({
                     caseScore={c}
                     title={caseTitles.get(c.case)}
                     onOpenCase={caseTitles.has(c.case) ? onOpenCase : undefined}
+                    currency={currency}
                   />
                 ))}
               </tbody>
@@ -387,11 +392,13 @@ function CaseRow({
   caseScore: c,
   title,
   onOpenCase,
+  currency,
 }: {
   agentId: string;
   caseScore: BenchmarkCaseScore;
   title?: string;
   onOpenCase?: (caseId: string) => void;
+  currency: Currency;
 }) {
   const [open, setOpen] = useState(false);
   const runs = c.runs;
@@ -429,7 +436,7 @@ function CaseRow({
         </td>
         <td className="px-2 py-1 font-mono tabular-nums">{formatScore(c.score)}</td>
         <td className="px-2 py-1 font-mono tabular-nums text-gray-500 dark:text-gray-400">
-          {formatMoney(c.cost)}
+          {formatMoney(c.cost, currency)}
         </td>
         <td className="px-2 py-1 font-mono tabular-nums text-gray-500 dark:text-gray-400">
           {c.durationMs !== undefined ? humanizeDuration(c.durationMs) : "—"}
@@ -446,7 +453,7 @@ function CaseRow({
               {S.benchmark.colRun} #{i + 1}
             </td>
             <td className="px-2 py-1 font-mono tabular-nums">{formatScore(run.score)}</td>
-            <td className="px-2 py-1 font-mono tabular-nums">{formatMoney(run.cost)}</td>
+            <td className="px-2 py-1 font-mono tabular-nums">{formatMoney(run.cost, currency)}</td>
             <td className="px-2 py-1 font-mono tabular-nums">
               {run.durationMs !== undefined ? humanizeDuration(run.durationMs) : "—"}
             </td>
@@ -510,6 +517,7 @@ function CasesSection({
 export function BenchmarkPage() {
   useDocumentTitle(S.benchmark.title);
   const { currentProject, agents, agentsLoading } = useProject();
+  const { currency } = useTheme();
   const projectId = currentProject?.projectId ?? null;
   // ?agentId= deep link (entered from the "Benchmark" tab on the Agent settings page): only the target Agent is expanded by default.
   const [searchParams] = useSearchParams();
@@ -626,6 +634,7 @@ export function BenchmarkPage() {
                             evaluation={ev}
                             caseTitles={caseTitles}
                             onOpenCase={setOpenCaseId}
+                            currency={currency}
                           />
                         ))}
                       </tbody>

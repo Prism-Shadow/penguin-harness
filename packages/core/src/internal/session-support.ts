@@ -12,7 +12,7 @@ import { formatLocalDate } from "./dates.js";
 import { sessionShell } from "../environment/tools/command/shell.js";
 import type { SessionEnvironmentValues } from "../state/agent-state.js";
 import { workspacesDir } from "../state/index.js";
-import { userText } from "../omnimessage/index.js";
+import { attachedImageLine, isWholeOriginBlock, userText } from "../omnimessage/index.js";
 import type { OmniMessage } from "../omnimessage/index.js";
 
 /** Session runtime environment fields: the placeholder substitution values for `assembleSystemPrompt`; producer and consumer share the same type. */
@@ -135,7 +135,7 @@ export async function imagesToScratchpadPaths(
     if (!isImage(msg)) continue;
     const url = (msg.payload as { image_url?: string }).image_url ?? "";
     if (/^https?:\/\//i.test(url)) {
-      lines.push(`[attached image: ${url}]`);
+      lines.push(attachedImageLine(url));
       continue;
     }
     const match = /^data:([^;,]+);base64,(.+)$/s.exec(url);
@@ -158,18 +158,44 @@ export async function imagesToScratchpadPaths(
         if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
       }
     }
-    lines.push(`[attached image: ${file}]`);
+    lines.push(attachedImageLine(file));
   }
 
-  // Concatenation: the path lines are appended after the last user text message; if the input is images only, add a plain path-only text message.
-  const rest = input.filter((m) => !isImage(m));
+  return appendAttachmentLines(
+    input.filter((m) => !isImage(m)),
+    lines,
+  );
+}
+
+/**
+ * Concatenation rule shared by every attachment-line producer (see the markers module's
+ * attachment-lines.ts): the lines are appended as one block after the **last user text
+ * message**; if the input carries no such message (attachments only), they become a plain
+ * line-only text message of their own.
+ *
+ * "User text" here excludes a message that is entirely a whole-message origin block —
+ * `[handoff_from]` / `[model_switch_from]` (isWholeOriginBlock). Those parsers only recognize
+ * the block when it IS the whole message, so appending to one would turn a one-line banner
+ * back into a raw marker in a user bubble. The Web composer reaches exactly that shape when a
+ * message carries attachments, no text, and a staged handoff: its only text message is the
+ * origin block. Such input therefore falls through to the line-only message, leaving the block
+ * intact. Prefix blocks (`[use_skills]`, `[scheduled_task]`) are parsed at index 0 and keep
+ * their own body, so they still take the lines as usual.
+ *
+ * Exported from the package barrel because the server writes `[attached file: …]` lines for
+ * the composer's uploads and must place them exactly the same way — one rule, so a message
+ * carrying both kinds of attachment still reads as a single trailing block.
+ * Returns `input` unchanged when there are no lines to append.
+ */
+export function appendAttachmentLines(input: OmniMessage[], lines: string[]): OmniMessage[] {
+  if (lines.length === 0) return input;
   const suffix = lines.join("\n");
-  const lastTextIdx = rest.findLastIndex((m) => {
-    const p = m.payload as { type?: string; role?: string };
-    return p.type === "text" && p.role === "user";
+  const lastTextIdx = input.findLastIndex((m) => {
+    const p = m.payload as { type?: string; role?: string; text?: string };
+    return p.type === "text" && p.role === "user" && !isWholeOriginBlock(p.text ?? "");
   });
-  if (lastTextIdx === -1) return [...rest, userText(suffix)];
-  return rest.map((m, i) => {
+  if (lastTextIdx === -1) return [...input, userText(suffix)];
+  return input.map((m, i) => {
     if (i !== lastTextIdx) return m;
     const p = m.payload as { type: string; role: string; text: string };
     return { ...m, payload: { ...p, text: `${p.text}\n\n${suffix}` } } as OmniMessage;

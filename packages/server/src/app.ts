@@ -11,6 +11,7 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 import { Hono } from "hono";
 import type { Context } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import type { DatabaseSync } from "node:sqlite";
 import type { ServerConfig } from "./config.js";
 import { openDatabase } from "./db/database.js";
@@ -332,13 +333,23 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   }
 
   // API common defenses: request body size cap (20MB) and write-request Content-Type (one of the CSRF MVP defenses).
-  app.use("/api/*", async (c, next) => {
-    const contentLength = Number(c.req.header("content-length") ?? 0);
-    if (contentLength > MAX_BODY_BYTES) {
-      throw new HttpError(413, "payload_too_large", "Request body exceeds the 20MB limit.");
-    }
-    await next();
-  });
+  //
+  // The cap has to be measured, not read: a chunked request carries no `content-length` at all,
+  // so a header check alone passes a body of any size — the sinks behind it (task input images,
+  // file attachments, Trace import) then decode whatever arrives. hono's bodyLimit keeps the
+  // header fast path when the length is declared and otherwise counts bytes off the stream,
+  // aborting the moment the total crosses the cap.
+  app.use(
+    "/api/*",
+    bodyLimit({
+      maxSize: MAX_BODY_BYTES,
+      // Its default is a bare text/plain 413; throw the App's own error instead so the response
+      // stays the documented `payload_too_large` body that every client already handles.
+      onError: () => {
+        throw new HttpError(413, "payload_too_large", "Request body exceeds the 20MB limit.");
+      },
+    }),
+  );
   app.use("/api/*", jsonOnlyWrites);
 
   // Public routes (no login required).

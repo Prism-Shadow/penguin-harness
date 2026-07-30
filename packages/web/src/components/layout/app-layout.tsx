@@ -77,11 +77,16 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
         title={S.nav.expandSidebar}
         aria-label={S.nav.expandSidebar}
         onClick={onExpand}
-        className="flex h-8 w-8 items-center justify-center rounded-md text-gray-500 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-500 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
       >
         <GlyphIcon d="M9 6l6 6-6 6M20 4v16" size={18} />
       </button>
-      <nav className="mt-1 flex flex-col items-center gap-1">
+      {/* The entries scroll as one block, like the pinned sidebar's nav + session list: the rail
+          keeps only the expand control and the account avatar at fixed height, so a window too
+          short for eight icons scrolls them here instead of pushing them out of the rail and
+          growing the document. Scrollbar hidden — at 48px wide it would cost a third of the
+          rail's width. */}
+      <nav className="no-scrollbar mt-1 flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto">
         {/* 1. Last conversation: lit on any non-draft conversation. Dimmed/disabled (tooltip kept) only
             once the list has settled with no non-archived Session — while it is still loading the
             entry keeps its normal look (no flash) and a click is a graceful no-op. */}
@@ -127,7 +132,7 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
         title={`${user?.userId ?? ""} · ${S.nav.expandSidebar}`}
         aria-label={user?.userId ?? S.auth.admin}
         onClick={onExpand}
-        className="mt-auto flex h-8 w-8 items-center justify-center rounded-full bg-gray-900 text-xs font-bold text-white dark:bg-gray-200 dark:text-gray-900"
+        className="mt-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-900 text-xs font-bold text-white dark:bg-gray-200 dark:text-gray-900"
       >
         {(user?.userId ?? "?").slice(0, 1).toUpperCase()}
       </button>

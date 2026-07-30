@@ -316,11 +316,19 @@ export function endTask(t: TaskStatsTracker, elapsedMs: number): TaskStats | nul
 /**
  * Session elapsed time for live display (the header chip): the settled cross-Task cumulative
  * plus the currently running Task's wall clock so far. While no Task is open this is exactly
- * `sessionElapsedMs`, so the idle rendering equals the settled value; the running addition
- * counts from the model's task-start local clock (`taskStartLocalMs`), clamped so a clock
- * anomaly never makes the sum go backwards. At task end {@link endTask} folds the Task's
- * elapsed into `sessionElapsedMs` in the same model update that flips `taskOpen` off, so the
- * live addition never double-counts across the boundary.
+ * `sessionElapsedMs`, so the idle rendering equals the settled value. At task end {@link endTask}
+ * folds the Task's elapsed into `sessionElapsedMs` in the same model update that flips `taskOpen`
+ * off, so the live addition never double-counts across the boundary.
+ *
+ * The running addition counts from the model's task-start local clock (`taskStartLocalMs`),
+ * clamped so a clock anomaly never makes the sum go backwards.
+ *
+ * This is the only place a local clock reaches the elapsed figure at all, and only to animate the
+ * Task in flight. `taskStartLocalMs` is not the instant this client loaded the page: on a history
+ * rebuild it is back-dated by the elapsed already behind the Task, measured entirely in server
+ * time (see pushMessages), so reloading mid-run resumes the ticking value instead of restarting
+ * it, covers an event still in flight, and carries no client/server clock offset. The moment the
+ * Task settles the number is replaced by one computed from Trace timestamps alone.
  */
 export function liveSessionElapsedMs(
   t: TaskStatsTracker,
@@ -334,13 +342,13 @@ export function liveSessionElapsedMs(
 
 /** Localized labels for {@link formatTaskStats} (supplied by the view layer's active dictionary). */
 export interface TaskStatsLabels {
-  /** Row prefix, e.g. "Stats" / "统计信息". */
+  /** Row prefix, e.g. "Stats". */
   stats: string;
-  /** Input-tokens label, e.g. "Input tokens" / "输入 tokens". */
+  /** Input-tokens label, e.g. "Input tokens". */
   input: string;
-  /** Cached-amount label, e.g. "cached" / "已缓存". */
+  /** Cached-amount label, e.g. "cached". */
   cached: string;
-  /** Output-tokens label, e.g. "Output tokens" / "输出 tokens". */
+  /** Output-tokens label, e.g. "Output tokens". */
   output: string;
   /** Opening wrapper before the cached amount — keeps per-locale typography (e.g. " (" / "（"). */
   parenOpen: string;
