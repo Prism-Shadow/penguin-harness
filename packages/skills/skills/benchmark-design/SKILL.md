@@ -166,7 +166,7 @@ If Formal reveals a design defect, abandon the matrix and repair the frozen cand
 
 ## Record and finish
 
-After validation, append only the accepted Formal Baseline to `scoreboard.yaml` using exactly this structure:
+After validation, obtain the current UTC timestamp from the environment, for example with `date -u +"%Y-%m-%dT%H:%M:%SZ"`, rather than inferring UTC from a displayed local time. Append only the accepted Formal Baseline to `scoreboard.yaml` using exactly this structure:
 
 ```yaml
 evaluations:

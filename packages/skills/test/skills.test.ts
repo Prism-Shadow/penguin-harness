@@ -299,6 +299,7 @@ describe("librarySkill", () => {
     expect(benchmarkDesign).toContain("average of the Case scores");
     expect(benchmarkDesign).toContain("ignore `null` values when averaging cost");
     expect(benchmarkDesign).toContain("stored values are authoritative");
+    expect(benchmarkDesign).toContain("obtain the current UTC timestamp from the environment");
     expect(benchmarkDesignRaw).not.toMatch(/\n\s+max_score:/);
     expect(benchmarkDesign).toContain(
       "Before reading `status`, `score`, or any other protocol field",
@@ -340,6 +341,7 @@ describe("librarySkill", () => {
     expect(optimization).toContain("fixed `0..100` scale");
     expect(optimization).toContain("average of the Case scores");
     expect(optimization).toContain("stored values are authoritative");
+    expect(optimization).toContain("Obtain the current UTC timestamp from the environment");
     expect(optimizationRaw).not.toMatch(/\n\s+max_score:/);
   });
 

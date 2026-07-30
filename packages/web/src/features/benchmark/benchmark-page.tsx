@@ -139,10 +139,6 @@ function AgentNode({
   );
 }
 
-function formatScoreOutOf100(score: number): string {
-  return `${formatScore(score)} / 100`;
-}
-
 /**
  * Score-over-time line chart. Every Run, Case, and Evaluation uses the fixed 0..100 scale.
  * Evaluations remain grouped by model ID and thinking level so a runtime change stays visible
@@ -161,7 +157,6 @@ function ScoreTrendChart({
   const values = scoreValues(evaluations);
   const geom = makeGeom(evaluations.length, Math.max(metricMax(values), 100), width);
   const dates = evaluations.map((e) => formatDateTime(e.time));
-  const baseY = geom.y(0);
 
   return (
     <div ref={ref}>
@@ -179,7 +174,7 @@ function ScoreTrendChart({
               <>
                 <p className="text-gray-400">{formatDateTime(e.time)}</p>
                 <p className="font-mono">
-                  {v === null ? "—" : formatScoreOutOf100(v)}
+                  {v === null ? "—" : formatScore(v)}
                   {e.version !== undefined && (
                     <span className="ml-1.5 text-gray-400">v{e.version}</span>
                   )}
@@ -202,18 +197,8 @@ function ScoreTrendChart({
                   const line = seg
                     .map((p, j) => `${j === 0 ? "M" : "L"}${geom.x(p.index)},${geom.y(p.value)}`)
                     .join(" ");
-                  const area = `${line} L${geom.x(seg[seg.length - 1]!.index)},${baseY} L${geom.x(seg[0]!.index)},${baseY} Z`;
                   return (
                     <g key={k}>
-                      {/* Area fill: line closed to the baseline, low opacity reinforces the trend's sense of "volume" (no area for single-point segments) */}
-                      {seg.length > 1 && (
-                        <path
-                          d={area}
-                          className="fill-current"
-                          stroke="none"
-                          opacity={hover !== null ? 0.06 : 0.1}
-                        />
-                      )}
                       {seg.length > 1 && (
                         <path
                           d={line}
@@ -321,7 +306,7 @@ function EvaluationRow({
           {evaluation.thinkingLevel}
         </td>
         <td className={`${CELL} font-mono text-xs font-semibold tabular-nums`}>
-          {formatScoreOutOf100(evaluation.score)}
+          {formatScore(evaluation.score)}
         </td>
         <td className={`${CELL} font-mono text-xs tabular-nums text-gray-500 dark:text-gray-400`}>
           {formatMoney(evaluation.cost)}
@@ -442,7 +427,7 @@ function CaseRow({
             </span>
           </span>
         </td>
-        <td className="px-2 py-1 font-mono tabular-nums">{formatScoreOutOf100(c.score)}</td>
+        <td className="px-2 py-1 font-mono tabular-nums">{formatScore(c.score)}</td>
         <td className="px-2 py-1 font-mono tabular-nums text-gray-500 dark:text-gray-400">
           {formatMoney(c.cost)}
         </td>
@@ -460,7 +445,7 @@ function CaseRow({
             <td className="py-1 pl-7 pr-2 font-mono">
               {S.benchmark.colRun} #{i + 1}
             </td>
-            <td className="px-2 py-1 font-mono tabular-nums">{formatScoreOutOf100(run.score)}</td>
+            <td className="px-2 py-1 font-mono tabular-nums">{formatScore(run.score)}</td>
             <td className="px-2 py-1 font-mono tabular-nums">{formatMoney(run.cost)}</td>
             <td className="px-2 py-1 font-mono tabular-nums">
               {run.durationMs !== undefined ? humanizeDuration(run.durationMs) : "—"}
@@ -561,8 +546,9 @@ export function BenchmarkPage() {
   if (!projectId) return null;
 
   const bm = selection?.benchmark ?? null;
-  // Chart uses ascending time order (the scoreboard is already ordered, this sort is defensive); the detail table shows newest first.
-  const evaluations = bm ? [...bm.evaluations].sort((a, b) => a.time.localeCompare(b.time)) : [];
+  // The Scoreboard append order is the evaluation sequence. Preserve it even when a malformed
+  // timestamp would otherwise reorder Agent versions; the detail table shows that sequence newest first.
+  const evaluations = bm ? [...bm.evaluations] : [];
   const caseTitles = new Map(caseStatements?.map((item) => [item.id, item.title]) ?? []);
   const openCase = caseStatements?.find((item) => item.id === openCaseId) ?? null;
 

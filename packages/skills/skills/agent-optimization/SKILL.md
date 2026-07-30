@@ -98,7 +98,7 @@ For `evaluation_failed`, keep the same Candidate and incomplete matrix. Ask the 
 
 ## Record and report
 
-Append each complete accepted Candidate Evaluation to `scoreboard.yaml` immediately after acceptance and verify the stored version, score, matrix, and Session ids before continuing. Use the same field names as the Baseline:
+Append each complete accepted Candidate Evaluation to `scoreboard.yaml` immediately after acceptance and verify the stored version, score, matrix, and Session ids before continuing. Obtain the current UTC timestamp from the environment, for example with `date -u +"%Y-%m-%dT%H:%M:%SZ"`, rather than inferring UTC from a displayed local time. Use the same field names as the Baseline:
 
 ```yaml
 - time: <ISO-8601 timestamp>
