@@ -6,7 +6,7 @@ commands, quality gates, and the repo's working rules.
 ## Prerequisites
 
 - Node >= 24
-- pnpm 10 (`corepack enable` or `npm install -g pnpm`)
+- pnpm 11 (`corepack enable` or `npm install -g pnpm`)
 
 ## Setup and daily commands
 

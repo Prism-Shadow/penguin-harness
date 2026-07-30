@@ -33,11 +33,5 @@
     "typescript": "^5.6.0",
     "vitest": "^3.2.6"
   },
-  "packageManager": "pnpm@10.26.2",
-  "pnpm": {
-    "overrides": {
-      "@anthropic-ai/sdk": "^0.91.1",
-      "esbuild": "^0.28.1"
-    }
-  }
+  "packageManager": "pnpm@11.18.0"
 }
