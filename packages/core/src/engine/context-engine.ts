@@ -36,7 +36,6 @@ import {
   compactionBegin,
   compactionEnd,
   emptyTokenCounts,
-  imageUrlMessage,
   isCompleteModelMessage,
   isSessionMeta,
   partialText,
@@ -213,12 +212,14 @@ export interface ContextEngineDeps {
   foldInputImages?: (messages: OmniMessage[]) => Promise<OmniMessage[]>;
 }
 
-/** One queued steering message: the user's text plus any images sent with it. */
-interface SteeringEntry {
-  text: string;
-  /** Image URLs (`data:` or http(s)), delivered as user image messages right behind the text. */
-  images: string[];
-}
+const isImageMessage = (m: OmniMessage): boolean =>
+  (m.payload as { type?: string }).type === "image_url";
+
+/** Whether a message carries steering of its own — an image, or text that isn't blank. */
+const carriesSteering = (m: OmniMessage): boolean => {
+  const p = m.payload as { type?: string; text?: string };
+  return p.type === "image_url" || (p.type === "text" && (p.text ?? "").trim().length > 0);
+};
 
 /** Whether compaction is possible; when not `ok`, `compact()` is a no-op and yields no messages (see ContextEngine.compactability). */
 export type CompactAvailability = "ok" | "unsupported" | "empty" | "just_compacted";
@@ -396,7 +397,7 @@ export class ContextEngine {
    * later Task would be more surprising than losing it; hosts get `steer() === false`
    * after that point and fall back to a normal task).
    */
-  private steeringQueue: SteeringEntry[] = [];
+  private steeringQueue: OmniMessage[][] = [];
   /** Whether a `run` is currently in flight (gates `steer`; compaction does not count). */
   private taskRunning = false;
 
@@ -442,20 +443,21 @@ export class ContextEngine {
    * Queues a steering message for the running Task: it is delivered with the next request
    * input as a standalone `[user_steering]` user message — alongside that turn's tool
    * outputs, or alone as the continuation input when the turn produced no tool calls.
-   * `images` (data:/http(s) URLs) ride along as user image messages right behind that text,
-   * exactly as a Prompt carries its images; on a model without vision they are folded into
-   * path lines at delivery (see deliverSteering). Returns false when no Task is running (the
-   * host should then submit the message as a normal task instead).
+   * `input` is an OmniMessage list, the shape `run` takes a Prompt in: its user text becomes
+   * the block's body and its images ride behind that text, exactly as a Prompt carries them;
+   * on a model without vision they are folded into path lines at delivery (see
+   * deliverSteering). Returns false when no Task is running (the host should then submit the
+   * message as a normal task instead).
    *
-   * A message with neither text nor images queues nothing and still returns true: `false` is
+   * An input with neither text nor images queues nothing and still returns true: `false` is
    * specifically "send this as a normal task", which would be the wrong advice for an empty
    * one. Every host guards against this already; the check is here so an empty
    * `[user_steering]` block can't reach the model through a host that forgets.
    */
-  steer(text: string, images: string[] = []): boolean {
+  steer(input: OmniMessage[]): boolean {
     if (!this.taskRunning) return false;
-    if (!text.trim() && images.length === 0) return true;
-    this.steeringQueue.push({ text, images });
+    if (!input.some(carriesSteering)) return true;
+    this.steeringQueue.push(input);
     return true;
   }
 
@@ -473,7 +475,7 @@ export class ContextEngine {
     const drained = this.steeringQueue;
     this.steeringQueue = [];
     const messages: OmniMessage[] = [];
-    for (const entry of drained) messages.push(...(await this.steeringMessages(entry)));
+    for (const input of drained) messages.push(...(await this.steeringMessages(input)));
     for (const msg of messages) {
       yield msg;
       await this.write(msg);
@@ -482,35 +484,36 @@ export class ContextEngine {
   }
 
   /**
-   * One queued steering entry -> the messages carrying it: the `[user_steering]`-wrapped text,
-   * followed by one user image message per attached image (the same shape a Prompt uses, so
-   * every consumer down the line — LLM client, Trace, replay — already knows it).
+   * One queued steering input -> the messages carrying it: its user text collected into the
+   * `[user_steering]`-wrapped message, followed by everything else it held — the images, on a
+   * vision model. That is the shape a Prompt uses, so every consumer down the line — LLM
+   * client, Trace, replay — already knows it.
    *
-   * When `deps.foldInputImages` is given, the images go through it **before** the wrapping so
-   * they land inside the block: `parseUserSteeringText` only recognizes a text that is exactly
-   * one block, and anything appended after the closing tag would cost the message its steering
-   * identity — every render layer would read it as a new Task.
+   * When `deps.foldInputImages` is given, the input goes through it **before** the wrapping so
+   * the images land inside the block: `parseUserSteeringText` only recognizes a text that is
+   * exactly one block, and anything appended after the closing tag would cost the message its
+   * steering identity — every render layer would read it as a new Task.
    */
-  private async steeringMessages(entry: SteeringEntry): Promise<OmniMessage[]> {
-    if (entry.images.length === 0) return [userText(userSteeringText(entry.text))];
-    const images = entry.images.map((url) => imageUrlMessage(url));
-    // Vision model: the images ride behind the text as their own messages.
-    if (!this.deps.foldInputImages) {
-      return [userText(userSteeringText(entry.text)), ...images];
+  private async steeringMessages(input: OmniMessage[]): Promise<OmniMessage[]> {
+    // No images, no fold: an image-free steering message is the same message either way.
+    const fold = input.some(isImageMessage) ? this.deps.foldInputImages : undefined;
+    const messages = fold ? await fold(input) : input;
+    const texts: string[] = [];
+    const rest: OmniMessage[] = [];
+    for (const msg of messages) {
+      const p = msg.payload as { type?: string; role?: string; text?: string };
+      if (p.type === "text" && p.role === "user") texts.push(p.text ?? "");
+      else rest.push(msg);
     }
-    // The fold puts every image into the last user text message, so exactly one text message
-    // comes back for this single-text input. `foldInputImages` is public API, so a third-party
-    // adapter can return something else — say which contract it broke. Carrying the images on
-    // as messages would be the worse answer: a fold is configured precisely because the model
-    // does not take images, so the "fallback" hands them to the one model known to refuse them.
-    const folded = await this.deps.foldInputImages([userText(entry.text), ...images]);
-    const p = folded[0]?.payload as { type?: string; text?: string } | undefined;
-    if (p?.type !== "text" || typeof p.text !== "string") {
-      throw new Error(
-        "foldInputImages must return the input's text message with the images folded into it.",
-      );
+    // `foldInputImages` is public API, so a third-party adapter can return something else, and
+    // both ways it can break lose the picture: an image that survived the fold goes to the one
+    // model known to refuse it, and no text at all means the images were dropped rather than
+    // written down as paths. Name the contract instead of delivering a steering message that
+    // lost what it was sent to carry.
+    if (fold && (rest.some(isImageMessage) || texts.length === 0)) {
+      throw new Error("foldInputImages must return the input's images folded into a user text.");
     }
-    return [userText(userSteeringText(p.text))];
+    return [userText(userSteeringText(texts.join("\n\n"))), ...rest];
   }
 
   /** The actual Task loop behind `run` (split out so run's finally can close the steering window on every exit path). */

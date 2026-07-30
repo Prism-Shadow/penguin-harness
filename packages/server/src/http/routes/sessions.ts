@@ -602,7 +602,13 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     if (!text && images.length === 0) {
       throw badRequest("text or images must carry the steering message.");
     }
-    deps.manager.steer(row.sessionId, text, images);
+    // The wire shape becomes core's: a user text message (omitted when the images are the
+    // whole message, so the fold's path lines aren't preceded by a blank one) plus one image
+    // message each — the same input a normal task would carry.
+    deps.manager.steer(row.sessionId, [
+      ...(text ? [userText(text)] : []),
+      ...images.map((url) => imageUrlMessage(url)),
+    ]);
     return c.body(null, 202);
   });
 

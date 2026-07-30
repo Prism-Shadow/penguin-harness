@@ -17,20 +17,22 @@ import type { TestApp } from "./helpers.js";
 const SID = "session-2026-07-06-10-00-00-ccdd0001";
 
 /** One recorded steer call: the trimmed text plus the images that rode along with it. */
-interface Steered {
-  text: string;
-  images: string[];
-}
+/** A recorded steering input, one `text:`/`img:` line per message, in delivered order. */
+const shape = (input: OmniMessage[]): string[] =>
+  input.map((m) => {
+    const p = m.payload as { type: string; text?: string; image_url?: string };
+    return p.type === "image_url" ? `img:${p.image_url}` : `text:${p.text}`;
+  });
 
 /** Fake Session that parks on one approval (keeps the Task running) and records steer calls. */
-function steeringFakeSession(sessionId: string, steered: Steered[]): RuntimeSession {
+function steeringFakeSession(sessionId: string, steered: OmniMessage[][]): RuntimeSession {
   return {
     sessionId,
     toolPermission: () => "rw",
     generateTitle: async () => ({ title: null, usage: null }),
     compactability: () => "ok" as const,
-    steer: (text: string, images: string[] = []) => {
-      steered.push({ text, images });
+    steer: (input: OmniMessage[]) => {
+      steered.push(input);
       return true;
     },
     skipReconnectWait: () => false,
@@ -48,7 +50,7 @@ function steeringFakeSession(sessionId: string, steered: Steered[]): RuntimeSess
 describe("steer route", () => {
   let t: TestApp;
   let api: ReturnType<typeof apiClient>;
-  let steered: Steered[];
+  let steered: OmniMessage[][];
 
   beforeEach(async () => {
     t = await createTestApp();
@@ -94,7 +96,7 @@ describe("steer route", () => {
 
     const ok = await api.post(`/api/sessions/${SID}/steer`, { text: "  focus on tests  " });
     expect(ok.status).toBe(202);
-    expect(steered).toEqual([{ text: "focus on tests", images: [] }]);
+    expect(steered.map(shape)).toEqual([["text:focus on tests"]]);
 
     t.deps.manager.decideApproval(SID, "tc-steer", "allow");
     await waitFor(() => t.deps.manager.statusOf(SID) === "idle");
@@ -113,9 +115,12 @@ describe("steer route", () => {
     // An image with no caption is a complete steering message: empty text is accepted here.
     const bare = await api.post(`/api/sessions/${SID}/steer`, { text: "", images: [png] });
     expect(bare.status).toBe(202);
-    expect(steered).toEqual([
-      { text: "look at this", images: [png, "https://example.com/shot.png"] },
-      { text: "", images: [png] },
+    // The route hands core the same message list a task input would carry — and drops the
+    // text message entirely when the images are the whole message, so a fold's path lines
+    // aren't preceded by an empty line.
+    expect(steered.map(shape)).toEqual([
+      ["text:look at this", `img:${png}`, "img:https://example.com/shot.png"],
+      [`img:${png}`],
     ]);
 
     // Same URL rule as a task input's imageUrl; a non-array images field is rejected outright.

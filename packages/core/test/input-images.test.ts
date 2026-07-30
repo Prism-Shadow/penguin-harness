@@ -224,7 +224,7 @@ describe("Session input-image wiring", () => {
     session = new Session({
       meta: meta(),
       llm: steeringLLM(() => {
-        expect(session.steer("look at this", [DATA_URL])).toBe(true);
+        expect(session.steer([userText("look at this"), imageUrlMessage(DATA_URL)])).toBe(true);
       }),
       environment: fakeEnvironment,
       imagesDir: await unwritableDir(),
@@ -250,7 +250,7 @@ describe("Session input-image wiring", () => {
         async *streamGenerate(params): AsyncGenerator<OmniMessage, LLMOutcome> {
           inputs.push(params.newMessages);
           if (inputs.length === 1) {
-            expect(session.steer("look at this", [DATA_URL])).toBe(true);
+            expect(session.steer([userText("look at this"), imageUrlMessage(DATA_URL)])).toBe(true);
           }
           yield assistantText(`turn ${inputs.length}`);
           return { status: "completed" };

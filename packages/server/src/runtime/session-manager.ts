@@ -88,8 +88,8 @@ export interface RuntimeSession {
   compact(opts: { signal: AbortSignal }): AsyncGenerator<OmniMessage>;
   /** Whether compaction is possible and why; when not ok, compact() yields no messages (see core ContextEngine.compactability). */
   compactability(): CompactAvailability;
-  /** Queues a mid-run steering message with its images (core `Session.steer`); false when no Task is running. */
-  steer(text: string, images?: string[]): boolean;
+  /** Queues a mid-run steering input (core `Session.steer`); false when no Task is running. */
+  steer(input: OmniMessage[]): boolean;
   /** Skips the in-progress reconnect backoff, firing the next retry immediately (core `Session.skipReconnectWait`); false when no wait is in progress. */
   skipReconnectWait(): boolean;
   toolPermission(name: string): "r" | "rw" | undefined;
@@ -784,9 +784,9 @@ export class SessionManager {
    * or the run finished in the race window — the caller falls back to submitting a normal
    * task, which carries the same text and images.
    */
-  steer(sessionId: string, text: string, images: string[] = []): void {
+  steer(sessionId: string, input: OmniMessage[]): void {
     const entry = this.entries.get(sessionId);
-    if (!entry || entry.status !== "running" || !entry.session.steer(text, images)) {
+    if (!entry || entry.status !== "running" || !entry.session.steer(input)) {
       throw new HttpError(
         409,
         "not_running",

@@ -322,16 +322,16 @@ export class Session {
    * Queues a steering message for the running Task: the engine delivers it between turns as
    * a standalone `[user_steering]` user message — sent with the next request input alongside
    * that turn's tool outputs, or alone as the continuation input when the turn produced no
-   * tool calls — so the model sees it without the loop being interrupted. `images` (data: or
-   * http(s) URLs) ride along as user image messages right behind the text, the same shape a
-   * Prompt carries them in; on a model without vision they become `[attached image: …]` path
-   * lines inside the block instead (see the engine's steeringMessages). Returns false when
-   * no Task is running — the host should then submit the message as a normal task instead.
-   * Delivery is independent of approval mode; anything still queued when the run exits
-   * (abort included) is discarded.
+   * tool calls — so the model sees it without the loop being interrupted. `input` is an
+   * OmniMessage list, the same shape `run` takes a Prompt in: its user text becomes the
+   * block's body, and its images ride behind that message just as a Prompt's do; on a model
+   * without vision they become `[attached image: …]` path lines inside the block instead (see
+   * the engine's steeringMessages). Returns false when no Task is running — the host should
+   * then submit the message as a normal task instead. Delivery is independent of approval
+   * mode; anything still queued when the run exits (abort included) is discarded.
    */
-  steer(text: string, images: string[] = []): boolean {
-    return this.engine.steer(text, images);
+  steer(input: OmniMessage[]): boolean {
+    return this.engine.steer(input);
   }
 
   /**

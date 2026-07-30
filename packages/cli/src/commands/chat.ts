@@ -248,7 +248,7 @@ export function registerChatCommand(program: Command, t: Messages): void {
         if (state === "running") {
           const text = line.trim();
           if (text.length === 0) return;
-          if (session.steer(text)) {
+          if (session.steer([userText(text)])) {
             // Printed via the renderer while the typing hold is still engaged, so the ack
             // lands before the held stream output flushes underneath it.
             renderer.printLine(dim(t.steerQueued(text)));
