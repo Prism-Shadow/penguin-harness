@@ -8,10 +8,10 @@
  * is a built-in example and the whole directory can be deleted or replaced. Only
  * default_agent gets this; ordinary Agents do not.
  *
- * Scoring numbers are self-consistent: each case's score / cost / duration_ms is the
- * **average** computed from its runs array, and each evaluation's totals are the sum over
- * its cases (written this way so it already satisfies the scoreboard v2 convention, and
- * tests can verify it).
+ * Scoring numbers follow the current Scoreboard contract: every Case is scored out of 100;
+ * Case metrics are model-written Run averages and Evaluation metrics are model-written Case
+ * averages. Cost ignores unknown values, Scores and costs keep two decimals, and durations
+ * are rounded to integer milliseconds.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -42,11 +42,11 @@ Read the provided \`notes.txt\` in your workspace and write \`summary.md\` conta
 2. A bullet list of the three most important facts.
 Keep the whole summary under 150 words.
 `,
-    rubric: `# Scoring rubric (max 5 points)
+    rubric: `# Scoring rubric (max 100 points)
 
-- 2 pts: \`summary.md\` exists and stays under 150 words.
-- 2 pts: The three bullet facts are accurate and taken from \`notes.txt\`.
-- 1 pt: The overview paragraph is coherent and at most 3 sentences.
+- 40 pts: \`summary.md\` exists and stays under 150 words.
+- 40 pts: The three bullet facts are accurate and taken from \`notes.txt\`.
+- 20 pts: The overview paragraph is coherent and at most 3 sentences.
 Award partial credit per item; the case score is the sum.
 `,
   },
@@ -60,20 +60,20 @@ Produce \`users_clean.csv\` where:
 2. Exact duplicate rows are dropped, keeping the first occurrence.
 Do not change the column order.
 `,
-    rubric: `# Scoring rubric (max 5 points)
+    rubric: `# Scoring rubric (max 100 points)
 
-- 2 pts: \`users_clean.csv\` exists and keeps the original column order.
-- 2 pts: Emails are lowercased, empty-email rows removed, duplicates dropped (first kept).
-- 1 pt: No unrelated rows or columns were modified.
+- 40 pts: \`users_clean.csv\` exists and keeps the original column order.
+- 40 pts: Emails are lowercased, empty-email rows removed, duplicates dropped (first kept).
+- 20 pts: No unrelated rows or columns were modified.
 Award partial credit per item; the case score is the sum.
 `,
   },
 ];
 
-/** Raw result of a single run (a runs element in scoreboard v2). */
+/** Raw result of a single Run in the current Scoreboard format. */
 interface ExampleRun {
   score: number;
-  cost: number;
+  cost: number | null;
   duration_ms: number;
   session_id: string;
 }
@@ -109,14 +109,14 @@ const EXAMPLE_EVALUATIONS: Array<{
         case: "CASE-001-file-summary",
         runs: [
           {
-            score: 2.5,
-            cost: 0.012,
+            score: 50,
+            cost: 0.01,
             duration_ms: 42000,
             session_id: "session-2026-07-14-09-05-11-1a2b3c01",
           },
           {
-            score: 3.5,
-            cost: 0.014,
+            score: 70,
+            cost: 0.01,
             duration_ms: 48000,
             session_id: "session-2026-07-14-09-13-27-1a2b3c02",
           },
@@ -126,14 +126,14 @@ const EXAMPLE_EVALUATIONS: Array<{
         case: "CASE-002-data-cleanup",
         runs: [
           {
-            score: 3.0,
-            cost: 0.018,
+            score: 60,
+            cost: null,
             duration_ms: 66000,
             session_id: "session-2026-07-14-09-21-45-1a2b3c03",
           },
           {
-            score: 3.0,
-            cost: 0.022,
+            score: 60,
+            cost: null,
             duration_ms: 74000,
             session_id: "session-2026-07-14-09-28-52-1a2b3c04",
           },
@@ -157,14 +157,14 @@ const EXAMPLE_EVALUATIONS: Array<{
         case: "CASE-001-file-summary",
         runs: [
           {
-            score: 3.5,
-            cost: 0.011,
+            score: 70,
+            cost: 0.01,
             duration_ms: 39000,
             session_id: "session-2026-07-15-09-04-33-2b3c4d01",
           },
           {
-            score: 4.0,
-            cost: 0.013,
+            score: 80,
+            cost: 0.01,
             duration_ms: 45000,
             session_id: "session-2026-07-15-09-12-08-2b3c4d02",
           },
@@ -174,13 +174,13 @@ const EXAMPLE_EVALUATIONS: Array<{
         case: "CASE-002-data-cleanup",
         runs: [
           {
-            score: 3.5,
-            cost: 0.016,
+            score: 70,
+            cost: 0.02,
             duration_ms: 60000,
             session_id: "session-2026-07-15-09-19-40-2b3c4d03",
           },
           {
-            score: 4.0,
+            score: 80,
             cost: 0.02,
             duration_ms: 68000,
             session_id: "session-2026-07-15-09-26-59-2b3c4d04",
@@ -206,14 +206,14 @@ const EXAMPLE_EVALUATIONS: Array<{
         case: "CASE-001-file-summary",
         runs: [
           {
-            score: 4.0,
+            score: 80,
             cost: 0.01,
             duration_ms: 36000,
             session_id: "session-2026-07-16-09-03-21-3c4d5e01",
           },
           {
-            score: 4.5,
-            cost: 0.012,
+            score: 90,
+            cost: 0.01,
             duration_ms: 40000,
             session_id: "session-2026-07-16-09-10-46-3c4d5e02",
           },
@@ -223,14 +223,14 @@ const EXAMPLE_EVALUATIONS: Array<{
         case: "CASE-002-data-cleanup",
         runs: [
           {
-            score: 4.5,
-            cost: 0.015,
+            score: 90,
+            cost: 0.02,
             duration_ms: 55000,
             session_id: "session-2026-07-16-09-18-02-3c4d5e03",
           },
           {
-            score: 4.0,
-            cost: 0.017,
+            score: 80,
+            cost: 0.02,
             duration_ms: 61000,
             session_id: "session-2026-07-16-09-25-30-3c4d5e04",
           },
@@ -240,24 +240,27 @@ const EXAMPLE_EVALUATIONS: Array<{
   },
 ];
 
-/** Round floats to 1e-6 (so binary error from averaging/summing isn't persisted to disk). */
-function round(v: number): number {
-  return Math.round(v * 1e6) / 1e6;
+function roundTwo(v: number): number {
+  return Math.round(v * 100) / 100;
 }
 
-function average(values: number[]): number {
-  return round(values.reduce((a, b) => a + b, 0) / values.length);
+function averageTwo(values: number[]): number {
+  return roundTwo(values.reduce((a, b) => a + b, 0) / values.length);
 }
 
-function sum(values: number[]): number {
-  return round(values.reduce((a, b) => a + b, 0));
+function averageDuration(values: number[]): number {
+  return Math.round(values.reduce((a, b) => a + b, 0) / values.length);
+}
+
+function averageKnownCost(values: Array<number | null>): number | null {
+  const known = values.filter((value): value is number => value !== null);
+  return known.length > 0 ? averageTwo(known) : null;
 }
 
 /**
- * Builds the scoreboard object from raw runs data: each case's three metrics are the
- * average of its runs, and each evaluation's metrics are the sum of its cases' averages
- * (following the scoreboard v2 convention). Exported so tests can verify the numbers
- * are self-consistent.
+ * Builds the example Scoreboard exactly as the model is instructed to write it. This helper
+ * exists only to provision deterministic sample data; runtime readers trust the stored values
+ * and never call it to recompute a user Scoreboard.
  */
 export function buildExampleScoreboard(): {
   evaluations: Array<{
@@ -269,12 +272,12 @@ export function buildExampleScoreboard(): {
     summary_title: string;
     summary: string;
     score: number;
-    cost: number;
+    cost: number | null;
     duration_ms: number;
     cases: Array<{
       case: string;
       score: number;
-      cost: number;
+      cost: number | null;
       duration_ms: number;
       runs: ExampleRun[];
     }>;
@@ -284,9 +287,9 @@ export function buildExampleScoreboard(): {
     evaluations: EXAMPLE_EVALUATIONS.map((e) => {
       const cases = e.cases.map((c) => ({
         case: c.case,
-        score: average(c.runs.map((r) => r.score)),
-        cost: average(c.runs.map((r) => r.cost)),
-        duration_ms: average(c.runs.map((r) => r.duration_ms)),
+        score: averageTwo(c.runs.map((r) => r.score)),
+        cost: averageKnownCost(c.runs.map((r) => r.cost)),
+        duration_ms: averageDuration(c.runs.map((r) => r.duration_ms)),
         runs: c.runs,
       }));
       return {
@@ -297,9 +300,9 @@ export function buildExampleScoreboard(): {
         thinking_level: e.thinking_level,
         summary_title: e.summary_title,
         summary: e.summary,
-        score: sum(cases.map((c) => c.score)),
-        cost: sum(cases.map((c) => c.cost)),
-        duration_ms: sum(cases.map((c) => c.duration_ms)),
+        score: averageTwo(cases.map((c) => c.score)),
+        cost: averageKnownCost(cases.map((c) => c.cost)),
+        duration_ms: averageDuration(cases.map((c) => c.duration_ms)),
         cases,
       };
     }),

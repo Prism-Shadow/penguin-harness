@@ -3,8 +3,8 @@ name: agent-creation
 description: Create or configure an Agent State from a user requirement by writing AGENTS.md, setting identity metadata, and installing only needed Skills. Use when the user asks to create a new Agent or configure an existing one; do not use for Benchmark design, evaluation, or optimization.
 short_description: Turn a requirement into a working agent.
 short_description_zh: 把需求变成可用的 Agent。
-version: 7
-updated: 2026-07-29T14:19:56Z
+version: 6
+updated: 2026-07-29T17:20:58Z
 ---
 
 # Agent Creation
@@ -14,6 +14,15 @@ This skill turns a user requirement into a working agent configuration — plain
 ## Before you start
 
 If the user's message only invokes this skill (e.g. "use agent-creation skill") without a concrete requirement, ask the user what agent they want and what it should do. But when the requirement is already concrete — even a single sentence like "an expert that answers questions about X" — do **not** ask follow-up questions: derive the role and rules from that sentence, apply the defaults below, and list your assumptions in the final reply.
+
+## Resolve the inherited runtime
+
+Treat the current Agent as the **Builder**. Resolve the runtime before creating a new Agent:
+
+- `provider` and `model_id` are one complete pair. If the user explicitly supplies both, use that pair. If the user supplies neither, inherit the current Builder Session's `Provider` and `Model ID` from the Environment. Reject a half pair.
+- `thinking_level` is independent. If the user explicitly supplies it, use that value. Otherwise read `model.thinking_level` from the Builder's own `agent_state/system_config.yaml`; when the field is absent, use the normal Agent-config default `medium`.
+
+Write the resolved `thinking_level` into a brand-new target Agent's `model.thinking_level`, preserving all other copied `model` fields. Penguin does not persist `provider` or `model_id` in Agent State, so never add either field to `system_config.yaml`. When the same request continues into Benchmark design, carry the resolved model pair forward explicitly so evaluation uses the Builder runtime instead of a Project default. When configuring an existing Agent, change `model.thinking_level` only when the user explicitly requests that runtime change.
 
 ## Locate the target agent
 
@@ -65,9 +74,9 @@ Library skills can be copied from any agent that already has them (e.g. `default
 
 When creating a Test Agent, install only the capabilities it needs to solve ordinary tasks.
 
-## Set identity and optional thinking level
+## Set name and description
 
-In the target's `agent_state/system_config.yaml`, set the top-level `name:` and `description:` fields so the agent is recognizable in lists. If the user explicitly supplies a `thinking_level`, set `model.thinking_level` to that value. Otherwise keep the current or copied default. Do not choose a thinking level on the user's behalf.
+In the target's `agent_state/system_config.yaml`, set the top-level `name:` and `description:` fields so the agent is recognizable in lists. For an existing Agent, edit only these two fields unless the user explicitly requested a `thinking_level` change.
 
 ## Creating a brand-new agent
 
@@ -80,19 +89,18 @@ mkdir -p "$TARGET/agent_state/skills" "$TARGET/agent_state/memory" "$TARGET/agen
 cp "$APP_DATA_DIR/agents/default_agent/agent_state/system_config.yaml" "$TARGET/agent_state/"
 ```
 
-Then set the top-level `name`, `description`, and `version: 1` in `system_config.yaml`, write `AGENTS.md`, and install only the Skills required by the user's requirement.
+Then set the top-level `name`, `description`, and `version: 1`, set `model.thinking_level` to the resolved value, write `AGENTS.md`, and install only the Skills required by the user's requirement. Do not persist the resolved provider/model pair in the Agent State.
 
 ## Validate and report
 
 Before finishing:
 
-- parse `agent_state/system_config.yaml` and confirm `name`, `description`, and a positive integer `version`;
-- when the user supplied `thinking_level`, confirm that `model.thinking_level` matches it;
+- parse `agent_state/system_config.yaml` and confirm `name`, `description`, a positive integer `version`, and the expected `model.thinking_level`;
 - confirm `agent_state/AGENTS.md` exists and is non-empty;
 - confirm every installed Skill has a parseable `SKILL.md`, and its `name` matches its directory;
 - confirm no Agent outside `TARGET` was changed.
 
-Report the target path, whether an existing Agent was configured or a new Agent was created, assumptions, installed Skills, and validation results.
+Report the target path, whether an existing Agent was configured or a new Agent was created, assumptions, installed Skills, the resolved runtime and whether each value was user-specified or inherited, and validation results.
 
 ## The embedded agent of an SDK app
 

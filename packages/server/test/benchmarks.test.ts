@@ -1,10 +1,9 @@
 /**
  * Benchmark scoreboard read integration tests (read-only display): benchmark_config.toml title/description and runs
  * pass-through (falls back to directory name if missing), scoreboard.yaml v2's
- * evaluations[] (summary pass-through, per-case runs array; per-case metrics trust the
- * file values, falling back to an average over runs when missing), the legacy format
- * (per-case single session_id) parsed as a single run and backfilled, bad entries
- * discarded, case count, empty when unconfigured, permissions (members can read,
+ * evaluations[] (summary pass-through, model-written Case/Evaluation averages and per-case
+ * runs arrays), rejection of legacy Scoreboard entries, case count, empty when
+ * unconfigured, permissions (members can read,
  * outsiders get 404).
  *
  * Tested with a plain Agent (no sample Benchmark pre-installed); default_agent's sample
@@ -64,7 +63,7 @@ describe("benchmarks api", () => {
     });
   });
 
-  it("scoreboard v2: summary/runs pass through; metrics trust file or average runs", async () => {
+  it("current scoreboard: model-written averages, runtime, and runs pass through", async () => {
     const dir = path.join(benchmarksDir(t.root, projectId, AGENT), "swe-bench-v2");
     await fs.mkdir(path.join(dir, "CASE-001-excel-task", "statement"), { recursive: true });
     await fs.mkdir(path.join(dir, "CASE-001-excel-task", "statement", "assets"), {
@@ -122,35 +121,36 @@ describe("benchmarks api", () => {
         '    thinking_level: "medium"',
         '    summary_title: "Added planning steps to the system Prompt"',
         '    summary: "Each case run twice and averaged; added planning steps."',
-        "    score: 8.0",
-        "    cost: 0.05",
-        "    duration_ms: 120000",
+        "    score: 72.35",
+        "    cost: 0.04",
+        "    duration_ms: 42500",
         "    cases:",
-        // Per-case metrics are all present: trust the file values (no recomputation even if inconsistent with the runs average).
+        // Stored averages are authoritative even when inconsistent with the raw Runs.
         '      - case: "CASE-001-excel-task"',
-        "        max_score: 5",
-        "        score: 4.2",
-        "        cost: 0.02",
+        "        score: 80.2",
+        "        cost: 0.04",
         "        duration_ms: 50000",
         "        runs:",
-        "          - score: 4.0",
-        "            cost: 0.018",
+        "          - score: 80",
+        "            cost: null",
         "            duration_ms: 48000",
         '            session_id: "session-run-1"',
-        "          - score: 4.5",
-        "            cost: 0.022",
+        "          - score: 82",
+        "            cost: 0.04",
         "            duration_ms: 52000",
         '            session_id: "session-run-2"',
-        // Per-case metrics are missing: computed as the average over runs.
+        // All unknown Run costs produce a model-written null Case cost; the Evaluation ignores it.
         '      - case: "CASE-002-web-task"',
-        "        max_score: 5",
+        "        score: 64.5",
+        "        cost: null",
+        "        duration_ms: 35000",
         "        runs:",
-        "          - score: 3.0",
-        "            cost: 0.01",
+        "          - score: 60",
+        "            cost: null",
         "            duration_ms: 30000",
         '            session_id: "session-run-3"',
-        "          - score: 4.0",
-        "            cost: 0.03",
+        "          - score: 70",
+        "            cost: null",
         "            duration_ms: 40000",
         '            session_id: "session-run-4"',
       ].join("\n"),
@@ -176,26 +176,27 @@ describe("benchmarks api", () => {
     expect(evaluation.thinkingLevel).toBe("medium");
     expect(evaluation.summaryTitle).toBe("Added planning steps to the system Prompt");
     expect(evaluation.summary).toBe("Each case run twice and averaged; added planning steps.");
-    expect(evaluation.score).toBe(8.0);
-    expect(evaluation.maxScore).toBe(10);
-    // Per-case metrics are all present: trust the file (4.2, not the runs average of 4.25).
+    expect(evaluation.score).toBe(72.35);
+    expect(evaluation.cost).toBe(0.04);
+    expect(evaluation.durationMs).toBe(42500);
+    expect("maxScore" in evaluation).toBe(false);
+    // Per-case metrics trust the file (80.2, not the Runs' arithmetic mean of 81).
     const full = evaluation.cases.find((c) => c.case === "CASE-001-excel-task")!;
-    expect(full.score).toBe(4.2);
-    expect(full.maxScore).toBe(5);
-    expect(full.cost).toBe(0.02);
+    expect(full.score).toBe(80.2);
+    expect(full.cost).toBe(0.04);
     expect(full.durationMs).toBe(50000);
     expect(full.runs).toEqual([
-      { score: 4.0, cost: 0.018, durationMs: 48000, sessionId: "session-run-1" },
-      { score: 4.5, cost: 0.022, durationMs: 52000, sessionId: "session-run-2" },
+      { score: 80, cost: null, durationMs: 48000, sessionId: "session-run-1" },
+      { score: 82, cost: 0.04, durationMs: 52000, sessionId: "session-run-2" },
     ]);
-    // Per-case metrics are missing: computed as the average over runs.
-    const derived = evaluation.cases.find((c) => c.case === "CASE-002-web-task")!;
-    expect(derived.score).toBe(3.5);
-    expect(derived.maxScore).toBe(5);
-    expect(derived.cost).toBeCloseTo(0.02, 10);
-    expect(derived.durationMs).toBe(35000);
-    expect(derived.runs).toHaveLength(2);
-    expect(derived.sessionId).toBeUndefined();
+    const partialCost = evaluation.cases.find((c) => c.case === "CASE-002-web-task")!;
+    expect(partialCost.score).toBe(64.5);
+    expect(partialCost.cost).toBeNull();
+    expect(partialCost.durationMs).toBe(35000);
+    expect(partialCost.runs).toEqual([
+      { score: 60, cost: null, durationMs: 30000, sessionId: "session-run-3" },
+      { score: 70, cost: null, durationMs: 40000, sessionId: "session-run-4" },
+    ]);
 
     const caseResponse = (await (
       await member.get(`${base}/swe-bench-v2/cases`)
@@ -265,7 +266,7 @@ describe("benchmarks api", () => {
     expect((await outsider.get(filesBase)).status).toBe(404);
   });
 
-  it("legacy per-case session_id parsed as one backfilled run; bad entries dropped", async () => {
+  it("does not migrate or backfill legacy Scoreboard entries", async () => {
     const dir = path.join(benchmarksDir(t.root, projectId, AGENT), "swe-bench-v1");
     await fs.mkdir(path.join(dir, "CASE-001-excel-task", "statement"), { recursive: true });
     await fs.writeFile(path.join(dir, "benchmark_config.toml"), `title = "SWE Bench v1"\n`, "utf8");
@@ -301,27 +302,7 @@ describe("benchmarks api", () => {
     const bench = res.benchmarks[1]!;
     expect(bench).toMatchObject({ title: "SWE Bench v1", caseCount: 1 });
     expect("runs" in bench).toBe(false);
-    expect(bench.evaluations).toHaveLength(1);
-    expect(bench.evaluations[0]).toMatchObject({
-      time: "2026-07-16T10:00:00Z",
-      version: 1,
-      score: 62.5,
-      cost: 1.25,
-      durationMs: 60000,
-    });
-    expect("thinkingLevel" in bench.evaluations[0]!).toBe(false);
-    expect("summary" in bench.evaluations[0]!).toBe(false);
-    // Legacy per-case format: fields unchanged, plus one backfilled run matching the case-level values (the frontend uniformly expands via runs).
-    expect(bench.evaluations[0]?.cases).toEqual([
-      {
-        case: "CASE-001-excel-task",
-        score: 30,
-        cost: 0.5,
-        durationMs: 20000,
-        sessionId: "session-abc",
-        runs: [{ score: 30, cost: 0.5, durationMs: 20000, sessionId: "session-abc" }],
-      },
-    ]);
+    expect(bench.evaluations).toEqual([]);
     expect(res.benchmarks[0]).toMatchObject({
       title: "empty-bench",
       caseCount: 0,

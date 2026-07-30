@@ -39,8 +39,8 @@ export interface SeriesColor {
 }
 
 /**
- * Fixed color sequence for line series (the eval center splits series by
- * model): maintained separately from CATEGORY_COLORS — adjacent line colors
+ * Fixed color sequence for line series (the eval center splits series by model ID and thinking
+ * level): maintained separately from CATEGORY_COLORS — adjacent line colors
  * must pass color-vision-deficiency (CVD) separation checks and dark shades
  * must land within the brightness band. The violet / amber / sky / rose
  * ordering passes the dataviz validator in both modes (dark-mode amber / sky

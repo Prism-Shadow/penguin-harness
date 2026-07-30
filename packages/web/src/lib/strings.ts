@@ -938,7 +938,7 @@ Benchmark：
     selectBenchmark: "在左侧选择一个 Benchmark",
     emptyAgent: "该 Agent 暂无 Benchmark",
     caseCount: (n: number): string => `${n} 题`,
-    /** Chart title, varies by selected metric (score / cost / duration over time). */
+    /** Score-only chart title. */
     trendTitle: (metric: string): string => `${metric}随时间变化`,
     cases: "题目",
     viewCase: "查看题目",
@@ -952,7 +952,9 @@ Benchmark：
     /** Chart legend: older evaluation records with no model label (gray series). */
     legendUnlabeled: "未标注模型",
     colVersion: "版本",
-    colScore: "总分",
+    colModel: "模型 ID",
+    colThinkingLevel: "推理强度",
+    colScore: "Score",
     colDuration: "耗时",
     colCase: "题目",
     colRun: "运行",

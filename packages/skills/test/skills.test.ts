@@ -206,7 +206,9 @@ describe("librarySkill", () => {
     expect(normalizedContent).toContain(
       "do not disclose every decisive premise or priority merely to make the public task complete",
     );
-    expect(normalizedContent).toContain("Allocate most points to decisions or concise artifacts");
+    expect(normalizedContent).toContain(
+      "Allocate most points within each Case to decisions or concise artifacts",
+    );
     expect(normalizedContent).toContain(
       "Keep generic format compliance, evidence enumeration, and analysis completeness from creating a high score floor",
     );
@@ -252,11 +254,17 @@ describe("librarySkill", () => {
   it("evaluation is the only subagent leaf and optimization has a bounded valid-round loop", () => {
     const creation = librarySkill("agent-creation")!.content.replace(/\s+/g, " ");
     const evaluation = librarySkill("agent-evaluation")!.content.replace(/\s+/g, " ");
-    const benchmarkDesign = librarySkill("benchmark-design")!.content.replace(/\s+/g, " ");
-    const optimization = librarySkill("agent-optimization")!.content.replace(/\s+/g, " ");
+    const benchmarkDesignRaw = librarySkill("benchmark-design")!.content;
+    const benchmarkDesign = benchmarkDesignRaw.replace(/\s+/g, " ");
+    const optimizationRaw = librarySkill("agent-optimization")!.content;
+    const optimization = optimizationRaw.replace(/\s+/g, " ");
 
-    expect(creation).toContain("If the user explicitly supplies a `thinking_level`");
-    expect(creation).toContain("Otherwise keep the current or copied default");
+    expect(creation).toContain("inherit the current Builder Session's `Provider` and `Model ID`");
+    expect(creation).toContain(
+      "read `model.thinking_level` from the Builder's own `agent_state/system_config.yaml`",
+    );
+    expect(creation).toContain("Write the resolved `thinking_level` into a brand-new target Agent");
+    expect(creation).toContain("never add either field to `system_config.yaml`");
     expect(evaluation).toContain("request from a `run_subagent` caller");
     expect(evaluation).toContain("Use the Penguin CLI only to launch the specified Test Agent");
     expect(evaluation).toContain('PROJECT_ID="$(basename "$PROJECT_DIR")"');
@@ -270,20 +278,28 @@ describe("librarySkill", () => {
     expect(evaluation).toContain("resend only the clean protocol YAML");
     expect(evaluation).toContain('--workspace "<absolute_unique_workspace_path>"');
     expect(evaluation).toContain("resolve it to an absolute canonical path");
+    expect(evaluation).toContain("`provider` and `model_id` must both be non-empty");
+    expect(evaluation).toContain("Never omit either model flag");
     expect(evaluation).toContain(
-      "`provider` and `model_id` must be either both non-empty or both omitted",
+      "Read and snapshot `model.thinking_level` from this Target Agent config",
     );
-    expect(evaluation).toContain("let Penguin resolve the Project default");
-    expect(evaluation).toContain(
-      "Read the actual non-empty `provider`, `model_id`, and `thinking_level`",
-    );
+    expect(evaluation).toContain("not Trace metadata—for `thinking_level`");
+    expect(evaluation).toContain("outside `0..100`");
     expect(evaluation).not.toContain('PENGUIN_HOME="$(dirname "$PROJECT_DIR")" penguin run');
-    expect(benchmarkDesign).toContain("An evaluation `(provider, model_id)` is optional");
-    expect(benchmarkDesign).toContain("Use the Test Agent's configured thinking level");
     expect(benchmarkDesign).toContain(
-      "Require all cells in Pilot iteration 1 to report one identical runtime",
+      "otherwise inherit the current Builder Session's complete `Provider` and `Model ID`",
     );
-    expect(benchmarkDesign).toContain("Scoreboard values come from these verified actual results");
+    expect(benchmarkDesign).toContain(
+      "Read `thinking_level` from the Test Agent's `model.thinking_level`",
+    );
+    expect(benchmarkDesign).toContain(
+      "Pass the resolved `(provider, model_id)` explicitly in every Pilot and Formal Evaluator request",
+    );
+    expect(benchmarkDesign).toContain("Every Case Rubric has a fixed maximum of 100 points");
+    expect(benchmarkDesign).toContain("average of the Case scores");
+    expect(benchmarkDesign).toContain("ignore `null` values when averaging cost");
+    expect(benchmarkDesign).toContain("stored values are authoritative");
+    expect(benchmarkDesignRaw).not.toMatch(/\n\s+max_score:/);
     expect(benchmarkDesign).toContain(
       "Before reading `status`, `score`, or any other protocol field",
     );
@@ -313,6 +329,18 @@ describe("librarySkill", () => {
     );
     expect(optimization).toContain("Do not edit `system_prompt` unless requested");
     expect(optimization).toContain("change `model.thinking_level`");
+    expect(optimization).toContain(
+      "ensure `<target>/snapshots/v<Reference version>.tar.gz` exists",
+    );
+    expect(optimization).toContain("Reuse it when present");
+    expect(optimization).toContain("create it yourself before editing");
+    expect(optimization).toContain("excluding `.vault.toml`");
+    expect(optimization).toContain("never overwrite an existing same-version snapshot");
+    expect(optimization).not.toContain("stop and ask the user to export");
+    expect(optimization).toContain("fixed `0..100` scale");
+    expect(optimization).toContain("average of the Case scores");
+    expect(optimization).toContain("stored values are authoritative");
+    expect(optimizationRaw).not.toMatch(/\n\s+max_score:/);
   });
 
   it("rejects illegal-character names (path traversal guard) and never hits the filesystem", () => {

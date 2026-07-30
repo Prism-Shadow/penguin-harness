@@ -33,7 +33,7 @@ describe("draft example tasks", () => {
         "售后政策与工单事实",
         "投资策略、历史市场与当前指标",
       ],
-      omittedRuntimeMarkers: ["thinking_level：", "provider：", "model_id："],
+      buildForbiddenMarkers: ["thinking_level", "provider", "model_id"],
       optimizationMarkers: [
         "使用 `agent-optimization`",
         "test_agent_id：`finite_choice_agent`",
@@ -58,7 +58,7 @@ describe("draft example tasks", () => {
         "policy and ticket facts",
         "strategy, historical markets, and current indicators",
       ],
-      omittedRuntimeMarkers: ["thinking_level:", "provider:", "model_id:"],
+      buildForbiddenMarkers: ["thinking_level", "provider", "model_id"],
       optimizationMarkers: [
         "Use `agent-optimization`",
         "test_agent_id: `finite_choice_agent`",
@@ -74,7 +74,7 @@ describe("draft example tasks", () => {
       buildPrompt,
       optimizationPrompt,
       buildMarkers,
-      omittedRuntimeMarkers,
+      buildForbiddenMarkers,
       optimizationMarkers,
     }) => {
       const normalizedBuild = buildPrompt.replace(/\s+/g, " ");
@@ -83,7 +83,7 @@ describe("draft example tasks", () => {
       for (const marker of buildMarkers) {
         expect(normalizedBuild).toContain(marker);
       }
-      for (const marker of omittedRuntimeMarkers) {
+      for (const marker of buildForbiddenMarkers) {
         expect(normalizedBuild).not.toContain(marker);
       }
       for (const marker of optimizationMarkers) {

@@ -9,7 +9,7 @@ import type { Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
-import { formatBytes, formatScore } from "../../lib/format";
+import { formatBytes } from "../../lib/format";
 import { S } from "../../lib/strings";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { CodeBlock } from "../chat/code-block";
@@ -60,7 +60,6 @@ interface Props {
   agentId: string;
   benchmarkId: string;
   caseSummary: BenchmarkCaseSummary;
-  maxScore?: number;
 }
 
 function extOf(name: string): string {
@@ -114,13 +113,7 @@ function languageFor(name: string): string {
   );
 }
 
-export function BenchmarkStatementBrowser({
-  projectId,
-  agentId,
-  benchmarkId,
-  caseSummary,
-  maxScore,
-}: Props) {
+export function BenchmarkStatementBrowser({ projectId, agentId, benchmarkId, caseSummary }: Props) {
   const [path, setPath] = useState("");
   const [listing, setListing] = useState<WorkspaceFilesResponse | null>(null);
   const [listError, setListError] = useState<string | null>(null);
@@ -311,11 +304,7 @@ export function BenchmarkStatementBrowser({
               {preview?.path ?? caseSummary.id}
             </p>
           </div>
-          {maxScore !== undefined && (
-            <span className="shrink-0 text-xs text-gray-400">
-              {S.benchmark.maxScore(formatScore(maxScore))}
-            </span>
-          )}
+          <span className="shrink-0 text-xs text-gray-400">{S.benchmark.maxScore("100")}</span>
           {downloadUrl && preview && (
             <a
               href={downloadUrl}

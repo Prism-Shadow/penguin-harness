@@ -3,8 +3,8 @@ name: agent-optimization
 description: Improve an Agent State through versioned scores and score-linked Traces from a frozen Benchmark. Use when an explicit Test Agent has a complete current baseline; do not use for direct feedback, Benchmark construction, or direct scoring.
 short_description: Improve an Agent from measured Benchmark results.
 short_description_zh: 根据 Benchmark 结果改进 Agent。
-version: 11
-updated: 2026-07-29T07:31:52Z
+version: 7
+updated: 2026-07-30T02:51:10Z
 ---
 
 # Agent Optimization
@@ -36,25 +36,26 @@ STATE = <target>/agent_state
 TRACES = <target>/traces
 BENCHMARK = <target>/benchmarks/<benchmark_id>
 SCOREBOARD = <benchmark>/scoreboard.yaml
+SNAPSHOTS = <target>/snapshots
 ```
 
 Inspect only the requested Test Agent and Benchmark: the Agent State, public Statements, Scoreboard, and score-linked Test Traces or artifacts from the Baseline and this optimization, including rejected Candidates.
 
 Do not inspect Rubrics, Gold answers, private scoring conditions, Evaluator State, Workspace, or Trace, other Agents, or Project secrets. If private evaluation information enters the Optimizer context, restore the active Candidate and stop as contaminated.
 
-Modify only the Test Agent State. Do not change the frozen Benchmark, Test Traces, or Project configuration. The only Benchmark write is appending a complete accepted Candidate Evaluation to `scoreboard.yaml`.
+Modify only the Test Agent State and the versioned snapshot required to protect it. Do not change the frozen Benchmark, Test Traces, or Project configuration. The only Benchmark write is appending a complete accepted Candidate Evaluation to `scoreboard.yaml`.
 
 ## Optimization loop
 
 For each round:
 
 1. **Establish the Reference.** Confirm that its complete Evaluation uses the frozen Case × Run matrix and evaluation runtime and that its version matches the current Agent State.
-2. **Diagnose capability gaps.** Compare each Case's `runs[].score` with its `max_score`; use the Evaluation's top-level `score` only for whole-version comparison. Use public Statements, score-linked Test Traces, and prior accepted or rejected attempts to identify observable behaviors that general Agent State changes could improve. Use repeated Runs to distinguish stable behavior from variation.
+2. **Diagnose capability gaps.** Compare each Case's `runs[].score` on the fixed `0..100` scale; use the Evaluation's top-level average `score` only for whole-version comparison. Use public Statements, score-linked Test Traces, and prior accepted or rejected attempts to identify observable behaviors that general Agent State changes could improve. Use repeated Runs to distinguish stable behavior from variation.
 3. **State a falsifiable hypothesis.** Choose the related gaps to address, connect them to a bounded Candidate, and state which observable decisions or artifacts should change and why. A change that only adds analysis steps without predicting a behavioral change is not a useful hypothesis. If the current diagnosis is exhausted, use the remaining public evidence and prior attempts to construct a different admissible Candidate.
 4. **Create one Candidate from the Reference.** Apply the change and its Candidate version under the construction and rollback rules below. Do not carry rejected Candidate files into the next attempt.
 5. **Check admissibility.** Confirm that the change is general, uses no private evaluation information, and modifies only permitted Test Agent State.
 6. **Evaluate the Candidate.** Delegate the complete frozen Case × Run matrix in parallel under the evaluation rules below and assemble all returned cells. Do not modify the Candidate while any cell is in flight.
-7. **Decide.** Accept the Candidate only when every cell is valid and its Evaluation's top-level `score` is strictly higher than the Reference Evaluation's `score`. Otherwise restore the Reference. Record separately whether the predicted Case behavior changed; a higher total accepts the Candidate even when the stated hypothesis was not supported.
+7. **Decide.** Accept the Candidate only when every cell is valid and its Evaluation's top-level average `score` is strictly higher than the Reference Evaluation's `score`. Otherwise restore the Reference. Record separately whether the predicted Case behavior changed; a higher Evaluation score accepts the Candidate even when the stated hypothesis was not supported.
 8. **Persist and continue.** Immediately append and verify every accepted Candidate Evaluation before starting another round. An accepted Candidate becomes the next Reference. Use valid results from rejected Candidates only as evidence for a later hypothesis. Stop when the Reference reaches the desired target. Otherwise complete the requested number of valid Candidate rounds unless infrastructure, contamination, concurrent State changes, or the inability to construct any admissible Candidate creates a concrete blocker. At the round limit, retain the highest-scoring accepted Reference.
 
 A round counts only after one Candidate has a complete valid Evaluation. Corrected requests, validity repairs, and evaluation retries do not consume the round limit. A complete valid Evaluation of a rejected Candidate does count.
@@ -64,6 +65,10 @@ A round counts only after one Candidate has a complete valid Evaluation. Correct
 Create one Candidate per round from the current Reference. Put behavioral guidance in `AGENTS.md`, reusable target-owned capabilities in a focused Skill, and runtime limits in safe `system_config.yaml` fields. Do not edit `system_prompt` unless requested, modify library-provided Skills for target-specific behavior, or change `model.thinking_level`; the Reference Scoreboard fixes the evaluation thinking level.
 
 Candidate version numbers only increase. Start with `Reference version + 1` and never reuse a rejected version. Before changing the Agent State, save the original contents and record any files the Candidate creates.
+
+Before changing each Reference State, ensure `<target>/snapshots/v<Reference version>.tar.gz` exists. Reuse it when present. Otherwise create it yourself before editing by atomically archiving `agent_state/` while excluding `.vault.toml`; validate the archived version and never overwrite an existing same-version snapshot. If snapshot creation fails, stop before changing Agent State and report the failure.
+
+Keep the exact original-file record for fast in-round rollback.
 
 If the Candidate is rejected or cannot be evaluated, restore the Reference files and version, remove files created by the Candidate, and verify the restoration. If another process changes the Agent State, stop without overwriting it.
 
@@ -103,12 +108,14 @@ Append each complete accepted Candidate Evaluation to `scoreboard.yaml` immediat
   thinking_level: <thinking_level>
   summary_title: <public title>
   summary: <public summary>
-  score: <sum of the Cases' average Run scores>
-  cost: <sum of the Cases' average Run costs; null if any Run cost is unknown>
-  duration_ms: <sum of the Cases' average Run durations>
+  score: <average of the Case scores>
+  cost: <average of known Case costs, or null when every Case cost is null>
+  duration_ms: <average of the Case durations>
   cases:
     - case: <case_id>
-      max_score: <maximum score for one Run of this Case>
+      score: <average of the Run scores>
+      cost: <average of known Run costs, or null when every Run cost is null>
+      duration_ms: <average of the Run durations>
       runs:
         - score: <Run score>
           cost: <Run cost or null>
@@ -116,6 +123,6 @@ Append each complete accepted Candidate Evaluation to `scoreboard.yaml` immediat
           session_id: <Test Session id>
 ```
 
-Copy every Case's `max_score` unchanged from the Baseline. Do not add an `aggregate` object or use `case_id` or `mean_score`. Do not record rejected Candidates in the Scoreboard.
+Every Run and Case score is on the fixed `0..100` scale. Do not write `max_score`. Calculate and write every Case and Evaluation average directly in the Scoreboard: ignore `null` values when averaging cost and write `null` only when all contributing costs are unknown; round `score` and `cost` averages to two decimal places and `duration_ms` averages to the nearest integer. These stored values are authoritative—do not add a server, frontend, script, or consistency check that recomputes or validates them. Do not add an `aggregate` object or use `case_id`, `mean_score`, `mean_cost`, or `mean_duration_ms`. Do not record rejected Candidates in the Scoreboard.
 
 Report the Baseline and every fully evaluated Candidate with its score, version, change, decision, and Test Session ids. For each Candidate, distinguish the acceptance decision from whether its stated hypothesis was supported by the predicted Case behavior. Include the final retained version, stop reason, and known limitations. Never report a score for an Agent State that was not evaluated.

@@ -126,9 +126,9 @@ export function formatMoney(
   return `${symbol}${v.toFixed(digits)}`;
 }
 
-/** Benchmark total score display: integers unchanged, decimals keep one place (full-score convention is defined per-Benchmark by its scoring rubric). */
+/** Benchmark score display: integers unchanged, decimals keep up to the stored two places. */
 export function formatScore(n: number): string {
-  return Number.isInteger(n) ? `${n}` : trimZero(n);
+  return Number.isInteger(n) ? `${n}` : n.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
 }
 
 /** True while the one-decimal rendering of `v` still fits its unit: 1023.9 does, 1023.99 does not. */

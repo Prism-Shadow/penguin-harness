@@ -31,12 +31,12 @@ Pilot 分数是期望目标：达到后可以提前 Freeze；未达到时完成�
 1. 通过 `run_subagent` 并行编排 Evaluator，覆盖 Case × 运行次数矩阵；
 2. 根据得分和关联 Trace 提出一个有界 Candidate；
 3. 编辑 Target Agent 的可编辑状态——`AGENTS.md`、Skills、配置——产出版本 N+1；
-4. 总分严格提升才保留 Candidate，否则回滚；
+4. Evaluation 分数严格提升才保留 Candidate，否则回滚；
 5. 达到期望分数时提前结束，否则完成本次设定数量的有效 Candidate round，并保留最高分 Reference。
 
 无效评测和修复重跑不计入轮数。出现执行失败时，Optimizer 保持同一个 Candidate，只补齐失败单元；只要还能根据新诊断提出不同的安全修复，就继续尝试。Builder 和 Optimizer 都先验证 Evaluator 的完整响应是否为纯协议 YAML，再读取状态或分数；格式不合规时，由同一个 Evaluator 基于已有结果重发，不重新运行 Target Agent。
 
-每个 Accepted Candidate 立即写入并校验 Scoreboard。总分严格提高决定是否接受；假设是否在预期 Case 上得到支持单独报告，避免把单次运行中的无关波动解释为改动因果。Agent 优化要求 Scoreboard 中已有完整 Formal Baseline——没有基线，就没有可比较的提升。
+每个 Accepted Candidate 立即写入并校验 Scoreboard。Evaluation 分数严格提高决定是否接受；假设是否在预期 Case 上得到支持单独报告，避免把单次运行中的无关波动解释为改动因果。Agent 优化要求 Scoreboard 中已有完整 Formal Baseline——没有基线，就没有可比较的提升。
 
 ## Benchmark 存储
 
@@ -48,17 +48,19 @@ benchmarks/<id>/
 ├── <case-id>/
 │   ├── statement/              # 交给 Target Agent 的任务描述
 │   └── rubric/                 # 私有评分标准，对 Target Agent 隔离
-└── scoreboard.yaml             # 评测记录（v2 格式）
+└── scoreboard.yaml             # 当前格式的评测记录
 ```
 
 `rubric/` 与 `statement/` 的隔离是刻意设计：Target Agent 只能看到题面，永远接触不到评分标准。
 
-`scoreboard.yaml`（v2 格式）中的每条评测记录带时间戳，并记录：
+`scoreboard.yaml` 中的每条评测记录带时间戳，并记录：
 
-- 本轮实际使用的 Runtime：模型成对引用 `(provider, model_id)` 与 `thinking_level`；省略顶层 Prompt 中的模型参数时，首次 Pilot 使用 Project 默认模型，后续评测复用已解析的模型；
+- 本轮 Runtime：用户显式指定的 `(provider, model_id)` 成对值优先，否则继承 Builder Session；`thinking_level` 从 Target Agent 配置读取，不依赖 Trace 元数据；
 - `summary_title` 与 `summary`（本轮结论与下一轮假设）；
-- 总分、成本与耗时——Case 级指标是各次运行的平均值，评测级指标是各 Case 的加和；
+- 由模型写入的 Score、成本与耗时平均值——Case 级对 Runs 求平均，Evaluation 级对 Cases 求平均；成本忽略 `null`，全部未知时才为 `null`；Score 与成本保留两位小数，`duration_ms` 取整；
 - 每个 Case 的逐次运行明细，每次运行含 `score`、`cost`、`duration_ms` 与 `session_id`。
+
+每个 Run 和每个 Case 都固定满分 100，因此 Scoreboard 不再记录 `max_score`。服务端与 Web UI 直接信任已写入的聚合值，不重算、不交叉校验；旧 Scoreboard 不迁移、不回填。
 
 内置的 `default_agent` 预置了一个示例 Benchmark（`packages/core/src/state/example-benchmark.ts`），评测页面开箱即有数据；整个目录可随时删除或替换。
 
@@ -70,7 +72,7 @@ benchmarks/<id>/
 
 - 每次 Evaluator 运行都是一个普通的 Session，留有完整 Trace；
 - scoreboard 记录通过 `session_id` 链接回这些 Session，见 [Session 与 Trace](/sessions-and-traces)；
-- Web 的评测页面是这些文件的只读视图，见 [Web App 指南](/web-app)。
+- Web 的评测页面是这些文件的只读视图；折线图只展示 Score，明细表将模型 ID 与推理强度分列显示。见 [Web App 指南](/web-app)。
 
 分数不是黑盒输出：任何一个数字都可以回溯到产生它的那次运行。
 

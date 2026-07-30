@@ -972,6 +972,8 @@ Scenarios:
     summaryLabel: "Summary",
     legendUnlabeled: "unlabeled model",
     colVersion: "Version",
+    colModel: "Model ID",
+    colThinkingLevel: "Thinking level",
     colScore: "Score",
     colDuration: "Duration",
     colCase: "Case",

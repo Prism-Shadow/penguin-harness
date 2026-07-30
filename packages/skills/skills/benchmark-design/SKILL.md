@@ -3,8 +3,8 @@ name: benchmark-design
 description: Design and calibrate a multi-Case capability Benchmark and establish a traceable Formal Baseline. Use when an explicit Test Agent and target capability need a new or revised Benchmark; stop after the baseline and do not optimize the Agent.
 short_description: Design and calibrate an Agent capability Benchmark.
 short_description_zh: 设计并校准 Agent 能力评测 Benchmark。
-version: 16
-updated: 2026-07-29T14:19:56Z
+version: 5
+updated: 2026-07-29T17:20:58Z
 ---
 
 # Benchmark Design
@@ -15,7 +15,7 @@ This Skill changes the Benchmark, never the Test Agent. It does not run or score
 
 ## Before you start
 
-If the request does not identify a Test Agent, target capability, desired baseline score, and Pilot iteration limit, ask for the missing inputs. When they are already supplied, proceed without asking the user to restate them. An evaluation `(provider, model_id)` is optional: use a complete pair supplied by the user; when omitted, discover the Project default from the first Pilot results instead of asking for it. Use the Test Agent's configured thinking level, whether explicitly requested by the user during Agent setup or inherited from its default configuration.
+If the request does not identify a Test Agent, target capability, desired baseline score, and Pilot iteration limit, ask for the missing inputs. When they are already supplied, proceed without asking the user to restate them. Treat the current Agent as the **Builder**. A user-specified evaluation `(provider, model_id)` takes priority; otherwise inherit the current Builder Session's complete `Provider` and `Model ID` from the Environment. Never use a Project default as an implicit evaluation runtime.
 
 ## Workflow
 
@@ -25,7 +25,7 @@ If the request does not identify a Test Agent, target capability, desired baseli
 
 Follow this order:
 
-1. Validate the Test Agent, target capability, any optional evaluation Model, and evaluation access.
+1. Validate the Test Agent, target capability, resolved evaluation Runtime, and evaluation access.
 2. Write a Capability Contract that defines the observable process to measure, common weaker behavior, and the general Agent State improvement the Benchmark should train.
 3. Plan the complete initial Case set and point allocation. For each Case, privately state the intended behavior, a plausible shortcut for a strong Test Agent, and how the Case distinguishes them. Write and leak-check the complete initial Benchmark.
 4. Complete one valid evaluation for every planned Case. Together these results form Pilot iteration 1; finish this complete set before refining any Case.
@@ -35,7 +35,7 @@ Follow this order:
 
 ## Setup and access
 
-Require a Test Agent id, target capability, desired baseline score, and a positive Pilot iteration limit. Derive a short semantic Benchmark id if needed. Accept an optional evaluation `(provider, model_id)` only as a complete pair; reject a half pair. When the pair is omitted, do not ask for it or inspect Project configuration. Do not choose or override the Test Agent's thinking level during Benchmark design.
+Require a Test Agent id, target capability, desired baseline score on the fixed `0..100` scale, and a positive Pilot iteration limit. Derive a short semantic Benchmark id if needed. Resolve `(provider, model_id)` once before the first Pilot: use a user-supplied complete pair when present, otherwise inherit the current Builder Session's `Provider` and `Model ID` from the Environment. Reject a half pair or an unavailable inherited value. Read `thinking_level` from the Test Agent's `model.thinking_level` in `agent_state/system_config.yaml`, using the normal Agent-config default `medium` only when that field is absent. Do not read `thinking_level` from a Trace and do not inspect Project configuration.
 
 The current Session must provide `run_subagent`, and the current Agent must have `agent-evaluation` installed. If either is missing, stop and explain what is needed.
 
@@ -74,7 +74,7 @@ Both directories require a `README.md` and may contain supporting files. Do not 
 
 Create `benchmark_config.toml` with `title`, `description`, and `runs = 3`. Use another positive Run count only when requested. Initialize `scoreboard.yaml` with `evaluations: []`.
 
-When the request supplies `(provider, model_id)`, pass that pair from the first Pilot onward. When it omits the pair, omit both fields from every Pilot-iteration-1 Evaluator request so the Test Agent uses the Project default. In either mode, read the actual `(provider, model_id, thinking_level)` from every scored Evaluator result. Require all cells in Pilot iteration 1 to report one identical runtime, then freeze that runtime: pass its resolved model pair explicitly in every later Pilot and Formal request, and require every later result to report the same complete runtime. Never inspect Project configuration or infer runtime values from the Builder Session.
+Pass the resolved `(provider, model_id)` explicitly in every Pilot and Formal Evaluator request, starting with the first cell. Freeze that pair and the Test Agent's configured `thinking_level` for the complete Benchmark workflow. Every scored Evaluator result must report the requested pair and the same configured thinking level. A mismatch invalidates the matrix.
 
 Before planning Cases, state the Capability Contract:
 
@@ -91,7 +91,7 @@ Keep the evaluation contract well-defined, but do not require the public Stateme
 
 The first complete revision is an exploratory probe. Use its Pilot to learn how the Test Agent interprets the tasks, forms candidate rules, and uses shortcuts; refine the Benchmark before treating it as calibrated. A later revision may intentionally add information gaps, conflicts, private preferences, or other capability-relevant distinctions in response to an earlier Trace, provided the next revision's Rubric is fixed before dispatch.
 
-Rubric maxima across all Cases must total 100 points, with observable scoring items and meaningful partial credit. Allocate most points to decisions or concise artifacts on which the intended behavior and plausible shortcut differ. Keep generic format compliance, evidence enumeration, and analysis completeness from creating a high score floor unless those are themselves the target capability. Allocate points from capability coverage before the first Pilot. Do not change Case weights solely to satisfy the desired score; when a redesign changes coverage, re-plan the allocation before evaluating the revised Case set. When final choices do not distinguish the intended behavior from a shortcut, score a concise auditable artifact, but define only its required content or format—not the method used to produce it.
+Every Case Rubric has a fixed maximum of 100 points, with observable scoring items and meaningful partial credit. Allocate most points within each Case to decisions or concise artifacts on which the intended behavior and plausible shortcut differ. Keep generic format compliance, evidence enumeration, and analysis completeness from creating a high score floor unless those are themselves the target capability. Allocate points from capability coverage before the first Pilot. Do not change scoring items solely to satisfy the desired score; when a redesign changes coverage, re-plan that Case's 100-point allocation before evaluating the revised Case set. When final choices do not distinguish the intended behavior from a shortcut, score a concise auditable artifact, but define only its required content or format—not the method used to produce it.
 
 Before the first dispatch of every new or changed Case revision, run a consistency review:
 
@@ -115,13 +115,13 @@ run: <1_based_run_index>
 expected_version: <test_agent_state_version>
 test_agent_id: <test_agent_id>
 benchmark_id: <benchmark_id>
-provider: <provider>       # optional only before the default model is resolved
-model_id: <model_id>       # optional only before the default model is resolved
+provider: <provider>
+model_id: <model_id>
 ```
 
 Inspect the complete streamed and final worker response. Before reading `status`, `score`, or any other protocol field, verify that the worker-authored text is exactly one plain protocol YAML document. Narration, headings, code fences, summaries, or scoring details are not valid protocol. Ask the same Evaluator to resend only the clean YAML from its existing result; do not rerun the Test Agent for a formatting repair and do not extract YAML from the invalid response yourself. Transport metadata added by `run_subagent` is not worker-authored text. A wrong or missing Test Agent artifact is a valid scored result and must not be retried.
 
-For every scored result, require non-empty actual `provider`, `model_id`, and `thinking_level`. The first complete Pilot establishes the one evaluation runtime; reject a Pilot or Formal matrix whose cells report mixed runtimes. After the runtime is established, reject any cell whose returned runtime differs from it. Scoreboard values come from these verified actual results, not from requested or assumed defaults.
+For every scored result, require non-empty `provider`, `model_id`, and `thinking_level`. Require the model pair to equal the explicitly resolved pair and the thinking level to equal the Test Agent configuration read before dispatch. Reject a Pilot or Formal matrix whose cells report mixed or mismatched runtimes. The Evaluator verifies provider/model from the root Trace and reports thinking from the unchanged Target Agent configuration; it does not require Trace metadata for thinking.
 
 Correct and resend an `invalid_request`. For `benchmark_invalid`, repair and rerun the affected Case during Pilot; during Formal, abandon the matrix and return to Pilot. For `version_changed`, discard the matrix and restart after the Agent version is stable.
 
@@ -177,12 +177,14 @@ evaluations:
     thinking_level: <thinking_level>
     summary_title: <public title>
     summary: <public summary>
-    score: <sum of the Cases' average Run scores>
-    cost: <sum of the Cases' average Run costs; null if any Run cost is unknown>
-    duration_ms: <sum of the Cases' average Run durations>
+    score: <average of the Case scores>
+    cost: <average of known Case costs, or null when every Case cost is null>
+    duration_ms: <average of the Case durations>
     cases:
       - case: <case_id>
-        max_score: <maximum score for one Run of this Case>
+        score: <average of the Run scores>
+        cost: <average of known Run costs, or null when every Run cost is null>
+        duration_ms: <average of the Run durations>
         runs:
           - score: <Run score>
             cost: <Run cost or null>
@@ -190,9 +192,9 @@ evaluations:
             session_id: <Test Session id>
 ```
 
-The Case `max_score` values must total 100. Do not add an `aggregate` object or use `case_id`, `mean_score`, `mean_cost`, or `mean_duration_ms` in the Scoreboard.
+Every Run and Case score is on the fixed `0..100` scale. Do not write `max_score`. Calculate and write every Case and Evaluation average directly in the Scoreboard: ignore `null` values when averaging cost and write `null` only when all contributing costs are unknown; round `score` and `cost` averages to two decimal places and `duration_ms` averages to the nearest integer. These stored values are authoritative—do not add a server, frontend, script, or consistency check that recomputes or validates them. Do not add an `aggregate` object or use `case_id`, `mean_score`, `mean_cost`, or `mean_duration_ms`.
 
-Report the Benchmark path, configuration, Agent State version, total and Case Run scores, Test Session ids, and known limitations. Include one compact row per Pilot iteration with its score, diagnosed capability gap, difficulty adjustment, and freeze or stop decision.
+Report the Benchmark path, configuration, Agent State version, Evaluation average and Case Run scores, Test Session ids, and known limitations. Include one compact row per Pilot iteration with its score, diagnosed capability gap, difficulty adjustment, and freeze or stop decision.
 
 After the accepted Formal Baseline is recorded, delete the temporary lowest-revision copy and other Builder calibration scaffolding. Keep the frozen Benchmark, Scoreboard, evaluation Workspaces, and score-linked Traces.
 

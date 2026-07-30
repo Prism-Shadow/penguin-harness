@@ -1,47 +1,32 @@
 /**
- * Unit tests for benchmark-metrics.ts: metric switching on the evaluation-center
- * chart (score / cost / duration) — value extraction (missing -> null), gap
- * segmentation (skipped points: connect within a segment, break between
- * segments, a lone point still forms its own segment), and the y-axis max.
+ * Unit tests for the Evaluation center's Score-only chart helpers: Score extraction,
+ * gap segmentation across runtime series, y-axis max, and runtime grouping.
  */
 import { describe, expect, it } from "vitest";
 import {
   lineSegments,
   metricMax,
-  metricValues,
   modelSeries,
+  scoreValues,
   seriesValues,
 } from "../src/features/benchmark/benchmark-metrics";
 
-const evaluations = [
-  { score: 6, cost: 0.12, durationMs: 90_000 },
-  { score: 7.5 }, // legacy record: no cost / durationMs
-  { score: 8.5, cost: 0.2, durationMs: 60_000 },
-];
+const evaluations = [{ score: 60 }, { score: 75.25 }, { score: 85.5 }];
 
-describe("metricValues (value extraction by metric, missing → null)", () => {
-  it("score is always present", () => {
-    expect(metricValues(evaluations, "score")).toEqual([6, 7.5, 8.5]);
-  });
-
-  it("missing cost / duration yields null (skipped point)", () => {
-    expect(metricValues(evaluations, "cost")).toEqual([0.12, null, 0.2]);
-    expect(metricValues(evaluations, "duration")).toEqual([90_000, null, 60_000]);
-  });
-
-  it("non-finite values (NaN / Infinity) are treated as missing", () => {
-    expect(metricValues([{ score: 1, cost: Number.NaN }], "cost")).toEqual([null]);
-    expect(metricValues([{ score: 1, durationMs: Infinity }], "duration")).toEqual([null]);
+describe("scoreValues", () => {
+  it("extracts stored Scores and treats non-finite malformed input as a gap", () => {
+    expect(scoreValues(evaluations)).toEqual([60, 75.25, 85.5]);
+    expect(scoreValues([{ score: Number.NaN }, { score: Infinity }])).toEqual([null, null]);
   });
 });
 
 describe("lineSegments (gap segmentation)", () => {
   it("no gaps: one segment with everything (consecutive indexes)", () => {
-    expect(lineSegments([6, 7.5, 8.5])).toEqual([
+    expect(lineSegments([60, 75.25, 85.5])).toEqual([
       [
-        { index: 0, value: 6 },
-        { index: 1, value: 7.5 },
-        { index: 2, value: 8.5 },
+        { index: 0, value: 60 },
+        { index: 1, value: 75.25 },
+        { index: 2, value: 85.5 },
       ],
     ]);
   });
@@ -77,42 +62,78 @@ describe("metricMax (y-axis upper bound)", () => {
   });
 });
 
-describe("modelSeries / seriesValues (curves split into series by model)", () => {
+describe("modelSeries / seriesValues (curves split by model ID and thinking level)", () => {
   const mixed = [
-    { score: 6, provider: "deepseek", modelId: "deepseek-v4-flash" },
-    { score: 7 }, // legacy record: no model tagged -> trailing gray series
-    { score: 7.5, provider: "deepseek", modelId: "deepseek-v4-pro" },
-    { score: 8.5, provider: "deepseek", modelId: "deepseek-v4-pro" },
+    {
+      score: 6,
+      provider: "deepseek",
+      modelId: "deepseek-v4-flash",
+      thinkingLevel: "medium",
+    },
+    { score: 7 }, // Defensive untagged input -> trailing gray series.
+    {
+      score: 7.5,
+      provider: "deepseek",
+      modelId: "deepseek-v4-pro",
+      thinkingLevel: "xhigh",
+    },
+    {
+      score: 8.5,
+      provider: "deepseek",
+      modelId: "deepseek-v4-pro",
+      thinkingLevel: "xhigh",
+    },
   ];
 
-  it("groups by (provider, modelId) in first-appearance order; untagged records go to a trailing unnamed series", () => {
+  it("groups by (modelId, thinkingLevel) in first-appearance order; untagged records go to a trailing unnamed series", () => {
     const series = modelSeries(mixed);
     expect(series.map((s) => s.modelId)).toEqual([
       "deepseek-v4-flash",
       "deepseek-v4-pro",
       undefined,
     ]);
+    expect(series.map((s) => s.thinkingLevel)).toEqual(["medium", "xhigh", undefined]);
     expect(series.map((s) => s.indices)).toEqual([[0], [2, 3], [1]]);
     expect(series[2]!.key).toBe("");
   });
 
-  it("the same modelId across providers forms separate series (paired grouping, no concatenation semantics)", () => {
-    const dup = [
-      { score: 1, provider: "moonshot", modelId: "kimi-k2.6" },
-      { score: 2, provider: "siliconflow", modelId: "kimi-k2.6" },
+  it("the same model ID and thinking level across providers stays in one series", () => {
+    const sameRuntime = [
+      {
+        score: 1,
+        provider: "moonshot",
+        modelId: "kimi-k2.6",
+        thinkingLevel: "medium",
+      },
+      {
+        score: 2,
+        provider: "siliconflow",
+        modelId: "kimi-k2.6",
+        thinkingLevel: "medium",
+      },
     ];
-    const series = modelSeries(dup);
+    const series = modelSeries(sameRuntime);
+    expect(series).toHaveLength(1);
+    expect(series[0]!.indices).toEqual([0, 1]);
+  });
+
+  it("the same model ID at different thinking levels forms separate series", () => {
+    const levels = [
+      { score: 1, modelId: "deepseek-v4-pro", thinkingLevel: "medium" },
+      { score: 2, modelId: "deepseek-v4-pro", thinkingLevel: "xhigh" },
+    ];
+    const series = modelSeries(levels);
     expect(series).toHaveLength(2);
-    expect(series.map((s) => s.provider)).toEqual(["moonshot", "siliconflow"]);
+    expect(series.map((s) => s.thinkingLevel)).toEqual(["medium", "xhigh"]);
   });
 
   it("seriesValues: indexes outside the series are null (skipped points), keeping the global time axis", () => {
     const series = modelSeries(mixed);
-    expect(seriesValues(mixed, series[1]!, "score")).toEqual([null, null, 7.5, 8.5]);
-    expect(seriesValues(mixed, series[2]!, "score")).toEqual([null, 7, null, null]);
+    expect(seriesValues(mixed, series[1]!)).toEqual([null, null, 7.5, 8.5]);
+    expect(seriesValues(mixed, series[2]!)).toEqual([null, 7, null, null]);
   });
 
-  it("all untagged: just one unnamed series (legacy data still draws as a single series)", () => {
+  it("all untagged defensive input forms one unnamed series", () => {
     const series = modelSeries([{}, {}]);
     expect(series).toHaveLength(1);
     expect(series[0]!.key).toBe("");

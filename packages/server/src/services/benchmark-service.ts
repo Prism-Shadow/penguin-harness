@@ -1,16 +1,15 @@
 /**
  * Benchmark score reading (read-only display): walks `benchmarks/<id>/`, reads
- * `benchmark_config.toml` (title,
- * description, evaluation Model, per-case run count `runs`) and `scoreboard.yaml`
- * (evaluations[], scoreboard v2: each case carries a runs array and a summary).
+ * `benchmark_config.toml` (title, description, per-case run count `runs`) and
+ * `scoreboard.yaml` (evaluations[], each case carries its model-written averages
+ * and a runs array).
  * Content is created and refined by benchmark_builder; the server only reads it.
  * Missing or corrupt files always degrade gracefully (title falls back to the
  * directory name, scores come back empty) rather than throwing.
  *
- * The three per-case metrics trust the file's own values; when missing they're
- * computed as the average over the runs array. The old format (no runs at the
- * case level, a single session_id) is parsed as a single run — the server backfills
- * one run entry.
+ * Case and Evaluation averages are authoritative file values. The server validates
+ * the current shape but never recomputes aggregates and does not migrate or backfill
+ * old Scoreboard formats.
  * Docs: /docs/self-improvement § "Benchmark storage".
  */
 import fs from "node:fs/promises";
@@ -47,6 +46,27 @@ function numberOr(v: unknown): number | undefined {
   return typeof v === "number" && Number.isFinite(v) ? v : undefined;
 }
 
+function scoreOr(v: unknown): number | undefined {
+  const value = numberOr(v);
+  return value !== undefined && value >= 0 && value <= 100 ? value : undefined;
+}
+
+function nonNegativeOr(v: unknown): number | undefined {
+  const value = numberOr(v);
+  return value !== undefined && value >= 0 ? value : undefined;
+}
+
+function nonNegativeIntegerOr(v: unknown): number | undefined {
+  const value = nonNegativeOr(v);
+  return value !== undefined && Number.isInteger(value) ? value : undefined;
+}
+
+/** `null` is the one valid unknown-cost representation; undefined means invalid input. */
+function nullableCostOr(v: unknown): number | null | undefined {
+  if (v === null) return null;
+  return nonNegativeOr(v);
+}
+
 function stringOr(v: unknown): string | undefined {
   return typeof v === "string" && v !== "" ? v : undefined;
 }
@@ -72,111 +92,96 @@ async function readStatementTitle(readme: string, fallback: string): Promise<str
   }
 }
 
-/** Shapes a single run entry: score is the minimum requirement, other fields tolerate being absent; a bad entry returns null and is dropped. */
+/** Shapes one current-format Run; a malformed entry invalidates its containing Case. */
 function toRun(v: unknown): BenchmarkRunScore | null {
   const r = asRecord(v);
-  const score = numberOr(r.score);
-  if (score === undefined) return null;
-  const cost = numberOr(r.cost);
-  const durationMs = numberOr(r.duration_ms);
+  const score = scoreOr(r.score);
+  const cost = nullableCostOr(r.cost);
+  const durationMs = nonNegativeIntegerOr(r.duration_ms);
   const sessionId = stringOr(r.session_id);
-  return {
-    score,
-    ...(cost !== undefined ? { cost } : {}),
-    ...(durationMs !== undefined ? { durationMs } : {}),
-    ...(sessionId !== undefined ? { sessionId } : {}),
-  };
-}
-
-/** Average of a metric across runs; undefined when there's no value at all (never forced to 0). */
-function averageOf(runs: BenchmarkRunScore[], pick: (r: BenchmarkRunScore) => number | undefined) {
-  const values = runs.map(pick).filter((v): v is number => v !== undefined);
-  if (values.length === 0) return undefined;
-  return values.reduce((a, b) => a + b, 0) / values.length;
+  if (score === undefined || cost === undefined || durationMs === undefined || !sessionId)
+    return null;
+  return { score, cost, durationMs, sessionId };
 }
 
 /**
- * Shapes a case-level entry (scoreboard v2): the three metrics trust the file's own
- * values, falling back to an average over runs when missing; the old format (no
- * runs, a single case-level session_id) is backfilled into a single run. case and a
- * score (from the file or derivable from runs) are the minimum requirement,
- * otherwise the entry is dropped.
+ * Shapes one current-format Case. Its stored aggregates are trusted as written:
+ * this parser intentionally performs no average or consistency calculation.
  */
 function toCase(v: unknown): BenchmarkCaseScore | null {
   const cr = asRecord(v);
   const caseId = stringOr(cr.case);
-  if (caseId === undefined) return null;
-  const parsedRuns = Array.isArray(cr.runs)
-    ? cr.runs.map(toRun).filter((r): r is BenchmarkRunScore => r !== null)
-    : [];
-  const score = numberOr(cr.score) ?? averageOf(parsedRuns, (r) => r.score);
-  if (score === undefined) return null;
-  const rawMaxScore = numberOr(cr.max_score);
-  const maxScore = rawMaxScore !== undefined && rawMaxScore > 0 ? rawMaxScore : undefined;
-  const cost = numberOr(cr.cost) ?? averageOf(parsedRuns, (r) => r.cost);
-  const durationMs = numberOr(cr.duration_ms) ?? averageOf(parsedRuns, (r) => r.durationMs);
-  const sessionId = stringOr(cr.session_id);
-  const runs: BenchmarkRunScore[] =
-    parsedRuns.length > 0
-      ? parsedRuns
-      : [
-          // The old format is parsed as a single run: the case-level values are that run's raw result.
-          {
-            score,
-            ...(cost !== undefined ? { cost } : {}),
-            ...(durationMs !== undefined ? { durationMs } : {}),
-            ...(sessionId !== undefined ? { sessionId } : {}),
-          },
-        ];
+  const score = scoreOr(cr.score);
+  const cost = nullableCostOr(cr.cost);
+  const durationMs = nonNegativeIntegerOr(cr.duration_ms);
+  if (
+    !caseId ||
+    score === undefined ||
+    cost === undefined ||
+    durationMs === undefined ||
+    "max_score" in cr ||
+    !Array.isArray(cr.runs) ||
+    cr.runs.length === 0
+  ) {
+    return null;
+  }
+  const parsedRuns = cr.runs.map(toRun);
+  if (parsedRuns.some((run) => run === null)) return null;
+  const runs = parsedRuns as BenchmarkRunScore[];
   return {
     case: caseId,
     score,
-    ...(maxScore !== undefined ? { maxScore } : {}),
-    ...(cost !== undefined ? { cost } : {}),
-    ...(durationMs !== undefined ? { durationMs } : {}),
-    ...(sessionId !== undefined ? { sessionId } : {}),
+    cost,
+    durationMs,
     runs,
   };
 }
 
-/** Shapes a single evaluation record: time and score are the minimum requirement, other fields (summary, etc.) tolerate being absent. */
+/** Shapes one current-format Evaluation and trusts its stored aggregate metrics. */
 function toEvaluation(v: unknown): BenchmarkEvaluation | null {
   const r = asRecord(v);
   const time = r.time instanceof Date ? r.time.toISOString() : r.time;
-  const score = numberOr(r.score);
-  if (typeof time !== "string" || time === "" || score === undefined) return null;
-  const cases: BenchmarkCaseScore[] = Array.isArray(r.cases)
-    ? r.cases.map(toCase).filter((c): c is BenchmarkCaseScore => c !== null)
-    : [];
-  const caseMaxScores = cases.map((item) => item.maxScore);
-  const maxScore =
-    cases.length > 0 && caseMaxScores.every((value): value is number => value !== undefined)
-      ? caseMaxScores.reduce((sum, value) => sum + value, 0)
-      : undefined;
+  const score = scoreOr(r.score);
+  const cost = nullableCostOr(r.cost);
+  const durationMs = nonNegativeIntegerOr(r.duration_ms);
   const summary = stringOr(r.summary);
   // Title and body are separate: summary_title is a one-line
   // conclusion, summary is the body text.
   const summaryTitle = stringOr(r.summary_title);
-  // The runtime actually used for this evaluation run. Curves remain split by
-  // the paired model reference; thinking_level is additive audit metadata.
   const modelId = stringOr(r.model_id);
   const provider = stringOr(r.provider);
   const thinkingLevel = stringOr(r.thinking_level);
-  const version = numberOr(r.version);
-  const cost = numberOr(r.cost);
-  const durationMs = numberOr(r.duration_ms);
+  const version = nonNegativeIntegerOr(r.version);
+  if (
+    typeof time !== "string" ||
+    time === "" ||
+    score === undefined ||
+    cost === undefined ||
+    durationMs === undefined ||
+    !modelId ||
+    !provider ||
+    !thinkingLevel ||
+    version === undefined ||
+    version < 1 ||
+    !Array.isArray(r.cases) ||
+    r.cases.length === 0
+  ) {
+    return null;
+  }
+  const parsedCases = r.cases.map(toCase);
+  if (parsedCases.some((item) => item === null)) return null;
+  const cases = parsedCases as BenchmarkCaseScore[];
   return {
     time,
     ...(summaryTitle !== undefined ? { summaryTitle } : {}),
     ...(summary !== undefined ? { summary } : {}),
-    ...(modelId !== undefined ? { modelId } : {}),
-    ...(provider !== undefined ? { provider } : {}),
-    ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
+    modelId,
+    provider,
+    thinkingLevel,
     score,
-    ...(maxScore !== undefined ? { maxScore } : {}),
-    ...(version !== undefined ? { version } : {}),
-    ...(cost !== undefined ? { cost } : {}),
-    ...(durationMs !== undefined ? { durationMs } : {}),
+    version,
+    cost,
+    durationMs,
     cases,
   };
 }

@@ -31,12 +31,12 @@ After the user confirms that step is complete, they start the second top-level S
 1. orchestrate Evaluators in parallel through `run_subagent`, covering the Case × runs matrix;
 2. use scores and linked Traces to propose one bounded Candidate;
 3. edit the Target Agent's editable state — `AGENTS.md`, Skills, config — to produce version N+1;
-4. keep the Candidate only when its total score strictly improves; otherwise roll it back;
+4. keep the Candidate only when its Evaluation score strictly improves; otherwise roll it back;
 5. stop early when the desired score is reached, or complete the configured number of valid Candidate rounds and retain the highest-scoring Reference.
 
 Invalid evaluations and correction reruns do not count toward the round limit. On an execution failure, the Optimizer keeps the same Candidate and repairs only the missing cell; it keeps trying while each attempt follows a new diagnosis and applies a distinct safe repair. Both Builder and Optimizer validate that the complete Evaluator response is plain protocol YAML before reading status or score; if formatting is invalid, that same Evaluator resends from its existing result without rerunning the Target Agent.
 
-Every accepted Candidate is appended to and verified in the Scoreboard immediately. A strictly higher total decides acceptance; whether the predicted Case behavior changed is reported separately so unrelated single-run variation is not presented as causal evidence. Agent optimization requires a complete Formal Baseline in the Scoreboard — without one there is no improvement to compare against.
+Every accepted Candidate is appended to and verified in the Scoreboard immediately. A strictly higher Evaluation score decides acceptance; whether the predicted Case behavior changed is reported separately so unrelated single-run variation is not presented as causal evidence. Agent optimization requires a complete Formal Baseline in the Scoreboard — without one there is no improvement to compare against.
 
 ## Benchmark storage
 
@@ -48,17 +48,19 @@ benchmarks/<id>/
 ├── <case-id>/
 │   ├── statement/              # the task given to the Target Agent
 │   └── rubric/                 # private scoring rubric, isolated from the Target Agent
-└── scoreboard.yaml             # evaluation records (v2 format)
+└── scoreboard.yaml             # evaluation records (current format)
 ```
 
 The separation of `rubric/` from `statement/` is deliberate: the Target Agent sees only the task statement and never touches the scoring rubric.
 
-Each evaluation record in `scoreboard.yaml` (v2 format) is timestamped and carries:
+Each evaluation record in `scoreboard.yaml` is timestamped and carries:
 
-- the actual runtime used for the round: paired model reference `(provider, model_id)` and `thinking_level`; when the top-level prompt omits a model, the first Pilot uses the Project default and later evaluations reuse the resolved model;
+- the evaluation runtime: a user-specified `(provider, model_id)` pair takes priority, otherwise the pair is inherited from the Builder Session; `thinking_level` is read from the Target Agent config and does not depend on Trace metadata;
 - `summary_title` and `summary` (the round's conclusion and the hypothesis for the next one);
-- total score, cost, and duration — Case-level metrics are the average over its runs, evaluation-level metrics are the sum over its Cases;
+- Score, cost, and duration averages written by the model — Case-level values average Runs and Evaluation-level values average Cases; cost ignores `null` inputs and remains `null` only when every contributing cost is unknown; Score and cost use two decimals and `duration_ms` is an integer;
 - per-Case run details, each run recording `score`, `cost`, `duration_ms`, and `session_id`.
+
+Every Run and every Case has a fixed maximum Score of 100, so Scoreboard entries do not carry `max_score`. The server and Web UI trust the stored aggregate values and do not recompute or cross-check them. Old Scoreboard formats are not migrated or backfilled.
 
 The built-in `default_agent` ships with an example Benchmark (`packages/core/src/state/example-benchmark.ts`) so the evaluation pages have data out of the box; the whole directory can be deleted or replaced at any time.
 
@@ -70,7 +72,7 @@ Before each optimization round, the Agent State is packed into `snapshots/v<vers
 
 - Every Evaluator run is an ordinary Session with a full Trace;
 - Scoreboard records link back to those Sessions via `session_id`; see [Sessions & Traces](/sessions-and-traces);
-- The Web evaluation pages are read-only views of these files; see the [Web App Guide](/web-app).
+- The Web evaluation pages are read-only views of these files; the trend chart shows Score only, while the detail table shows model ID and thinking level as separate columns. See the [Web App Guide](/web-app).
 
 Scores are not black-box output: every number can be traced back to the run that produced it.
 
