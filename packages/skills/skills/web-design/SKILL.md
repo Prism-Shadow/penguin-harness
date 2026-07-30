@@ -3,19 +3,30 @@ name: web-design
 description: Penguin visual language for generated web pages and app UIs — GitHub-style simplicity with a single blue accent, light and pure-black dark themes, design tokens, component and chat-interface recipes, plus an opt-in warm paper editorial theme.
 short_description: Penguin-style visual defaults for generated web UIs.
 short_description_zh: 生成网页的 Penguin 风格视觉规范。
-version: 4
-updated: 2026-07-30T10:00:00Z
+version: 5
+updated: 2026-07-30T10:30:00Z
 ---
 
 # Web Design
 
-Default visual language for every web page or frontend you generate, distilled from the Penguin Harness landing page and web app. The idea is **GitHub-style simplicity**: solid backgrounds, 1px borders instead of shadows, system fonts, one blue accent used sparingly. Depth comes from hairline borders, not shadows or gradients; dark mode is pure black, not navy. Apply these defaults unless the user explicitly asks for another style. One packaged alternative exists — the **paper editorial** theme below, for requests that call for a warm, print-like feel; pick one language per product and never mix them. The typography discipline, language, motion, IME, citation and responsiveness rules apply under both.
+Default visual language for every web page or frontend you generate, distilled from the Penguin Harness landing page and web app. The idea is **GitHub-style simplicity**: solid backgrounds, 1px borders instead of shadows, system fonts, one blue accent used sparingly. Depth comes from hairline borders, not shadows or gradients; dark mode is pure black, not navy. Apply these defaults unless the user explicitly asks for another style. One packaged alternative exists — the **paper editorial** theme below, for requests that call for a warm, print-like feel; pick one language per product and never mix them. The typography discipline, language, motion, IME, citation and responsiveness rules apply under both. Treat the user's one-line request as the whole spec: this skill fills every unstated gap, so the result is a finished page — never a wireframe that waits for styling feedback.
 
 ## Before you start
 
-If the user's message only invokes this skill (e.g. "use web-design skill") without a concrete page or interface to build, ask what they want to build. When a concrete build is already requested (an app UI, a landing page, a RAG chat interface), do **not** ask about styling — apply the defaults below.
+If the user's message only invokes this skill (e.g. "use web-design skill") without a concrete page or interface to build, ask what they want to build. When a concrete build is already requested (an app UI, a landing page, a RAG chat interface), do **not** ask about styling — colors, fonts, spacing, radii and layout are all decided by the defaults below; the only question ever worth asking is *what to build*, never *how it should look*. Route by request shape: conversational or docs-QA → the chat/RAG layout; product or marketing → the page layout; tool-like apps → a sticky nav + panels composed from the components.
 
 Non-negotiable for ANY text input that sends on Enter: **never send while an IME composition is in progress** (check `event.isComposing`, falling back to `event.keyCode === 229`, on keydown). For Chinese/Japanese/Korean input methods, that Enter only confirms the composed text — auto-sending on it fires half-typed messages. Details in the composer recipe below.
+
+## Ship complete
+
+Every delivery, even from a one-line request, includes all of this unasked:
+
+- `<html lang>` matching the UI language; `<meta name="viewport" content="width=device-width, initial-scale=1">`; a real `<title>`.
+- Dark mode wired and persisted when using the default language (the paper theme is light-only); single column under 640px; no horizontal scroll.
+- Every async surface has designed loading, empty, error and success states — never a blank region or a silent failure.
+- A working keyboard path: visible `:focus-visible`, Esc closes overlays (focus returning to the trigger), Enter submits (IME-safe as above).
+- `alt` text on images, `aria-label` on icon-only buttons; tap targets ≥ 40px.
+- Zero external requests: system fonts, inline or local CSS/JS, inline SVG icons — no CDN, no icon font, no analytics.
 
 ## Design tokens
 
@@ -109,8 +120,10 @@ The default shape for a generated conversational or docs-QA app:
 - **Shell** — centered column, `max-width: 48rem`, `padding: 0 16px`; sticky nav on top with the app name; message list grows, composer pinned at the bottom. A docs-QA app whose index is worth showing may add a left **knowledge panel** (grid `310px 1fr` under the nav; panel-toned bg `--gray-50` / paper `--panel`, 1px right border): kicker, display title, one-paragraph description, an index-status block of label-vs-mono-value rows (docs, chunks, last synced, a LIVE dot), and a one-line pipeline (`corpus → retrieval → cited answer`); the chat pane keeps its own centered column. On mobile the panel hides behind an ⓘ button in the nav and drops down fixed beneath it.
 - **Empty state** — a vertically centered composition: uppercase eyebrow (brand / `--accent-deep`) → title with at most one accent word → one-line subtitle in `--fg-muted`, over the theme flourish (default: dot-grid backdrop `background-image: radial-gradient(rgb(26 115 232 / .14) 1px, transparent 1px); background-size: 22px 22px;` faded out with a bottom mask; paper: the orbit medallion) — the only decorative flourish allowed. Below it, 3–4 example questions the app can genuinely answer, as pill chips or as a 2-column grid (1-column mobile) of numbered cards — mono `01` in accent, the question at 13px, a `↗` corner affordance; hover tints the border (paper may also lift 2px). Clicking one fills and submits the composer.
 - **Messages** — user messages right-aligned in a `--gray-100`/dark `#1f1f1f` rounded bubble (radius 12px, padding 8px 14px, max-width 85%); assistant messages plain on the page background, no bubble. Stream deltas into the assistant message as they arrive with a 1-character pulsing cursor; render markdown (escape any HTML in the model text before your own transforms — never inject it raw). Retrieval-backed answers may open with a small status line above the text — breathing dot + "已检索 N 个相关片段" / "N sources matched", 11px in `--live`/`--fg-faint` — so evidence visibly precedes prose.
+- **Thinking** — reasoning models may stream a chain of thought before the answer. Give it its own collapsible block above the answer text: a header row ("思考过程" / "Thinking" + chevron + elapsed seconds) over 13px `--fg-muted` content behind a hairline left border, expanded while it streams, auto-collapsed the moment the first answer delta arrives (reopenable). Never restyle thinking as answer prose and never cite from it; when the model emits none, no placeholder space appears.
 - **Citations** — inline `[n]` markers render as small raised accent superscripts (mono, ~10px). After the answer, either surface works, but it must reveal both the **verbatim original text block** and a link to the full source — a citation that is only a label or only a link is not enough: (a) a wrapped row of brand-tinted pill chips `[1] path — heading` opening a popover/panel on click; or (b) an **accordion of source cards** under the answer — each row a tinted numbered circle + doc title + section + `+/−` chevron, expanding to the verbatim excerpt as a mono blockquote (accent left border, max-height ≈150px, scrollable) plus the source link.
 - **Composer** — a bordered card (radius 12px; paper: 4–5px with the warm shadow) holding a borderless textarea and a footer row: kbd hints on the left (`Enter` send · `Shift+Enter` newline, 11px muted, hidden on mobile), the primary send button on the right (paper: circular accent icon button); Enter sends, Shift+Enter for newline; disable while streaming. A short gradient from transparent into the page bg eases the list into the composer zone; below it, one 10–11px muted disclaimer line says what answers are based on. **Never send while an IME composition is in progress**: on keydown, ignore Enter when `event.isComposing` (or `event.keyCode === 229`) — for CJK input methods that Enter only confirms the composed text, and auto-sending on it fires half-typed messages.
+- **Attachments** (when the app accepts images) — a paperclip button plus paste and drag-drop onto the composer; queued images preview above the textarea as 48px rounded thumbnails with a hover `×`; send attaches and clears the queue. In sent user messages, thumbnails render at max-height ~160px, radius 8px, click to view full size.
 - **States** — loading: three pulsing dots in `--fg-faint`; error: 13px `#b91c1c` text on `#fef2f2` (dark: `#f87171` on `#450a0a`) in a rounded box with a retry affordance. Never leave a silent failure.
 
 ## Page layout (marketing / landing)
