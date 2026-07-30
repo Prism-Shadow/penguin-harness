@@ -59,7 +59,7 @@ const META: SessionMetaPayload = {
 };
 
 /** Image-fold wiring every Session takes; these tests send no images, so it is never exercised. */
-const IMAGES = { imagesDir: "/tmp/scratchpad/session-title-1", modelVision: true } as const;
+const IMAGES = { imagesDir: "/tmp/scratchpad/session-title-1", modelHasVision: true } as const;
 
 describe("session-title", () => {
   it("generateTitleWithLLM: collects model text and usage, returns the sanitized result", async () => {

@@ -70,7 +70,7 @@ export interface SessionConfig {
    * steering messages fold their images only when this is false; goal objectives fold either
    * way, since they are re-injected as text every round (see `runGoal`).
    */
-  modelVision: boolean;
+  modelHasVision: boolean;
   /**
    * Absolute path of this Session's GOAL.yaml (the composition layer derives it from the
    * agent scratchpad — see `goalFilePath` in state/paths.ts). Goal mode
@@ -132,13 +132,13 @@ export class Session {
   private readonly meta: OmniMessage;
   private readonly createBareLLM?: () => LLMInterface;
   private readonly imagesDir: string;
-  private readonly modelVision: boolean;
+  private readonly modelHasVision: boolean;
   private readonly goalFile?: string;
   private metaWritten = false;
   /**
    * The image fold, bound to this Session's scratchpad — Session is the layer that knows both
    * the directory and the model's capability, so it binds the conversion once and each input
-   * path calls it under its own rule (see `modelVision`). The body reads `imagesDir` at call
+   * path calls it under its own rule (see `modelHasVision`). The body reads `imagesDir` at call
    * time, so field ordering in the constructor doesn't matter.
    */
   private readonly foldImages = (messages: OmniMessage[]): Promise<OmniMessage[]> =>
@@ -161,7 +161,7 @@ export class Session {
     if (config.resumedHistory) this.resumedHistory = config.resumedHistory;
     if (config.createBareLLM) this.createBareLLM = config.createBareLLM;
     this.imagesDir = config.imagesDir;
-    this.modelVision = config.modelVision;
+    this.modelHasVision = config.modelHasVision;
     if (config.goalFilePath) this.goalFile = config.goalFilePath;
     this.engine = new ContextEngine({
       llm: config.llm,
@@ -178,7 +178,7 @@ export class Session {
       // The picture usually arrives BECAUSE the run is going the wrong way, so continuing
       // without it spends the rest of the Task heading further that way. A vision model simply
       // isn't given the function, which is all the engine needs to know about the subject.
-      ...(config.modelVision ? {} : { foldInputImages: this.foldImages }),
+      ...(config.modelHasVision ? {} : { foldInputImages: this.foldImages }),
       sessionMeta: this.meta,
     });
   }
@@ -219,7 +219,7 @@ export class Session {
     opts?: RunOptions,
   ): AsyncGenerator<OmniMessage> {
     // Folded before Trace and title material, so the path lines are what gets recorded.
-    if (!this.modelVision) newMessages = await this.foldImages(newMessages);
+    if (!this.modelHasVision) newMessages = await this.foldImages(newMessages);
     await this.ensureMetaWritten();
     // Self-captures title material (the title is derived from the first-turn
     // conversation text): while material isn't frozen yet, collect this call's user text and

@@ -296,7 +296,7 @@ export class Agent {
         scratchpadDir(this.state.root, this.state.projectId, this.state.agentId),
         sessionId,
       ),
-      modelVision: modelEntry.vision !== false,
+      modelHasVision: modelEntry.vision !== false,
       // Goal mode's control file lives in the session scratchpad; the path is fixed per
       // Session, so it is wired here rather than passed per-run.
       goalFilePath: goalFilePath(
@@ -453,7 +453,7 @@ export class Agent {
         scratchpadDir(this.state.root, this.state.projectId, this.state.agentId),
         sessionId,
       ),
-      modelVision: modelEntry.vision !== false,
+      modelHasVision: modelEntry.vision !== false,
       // Goal mode's control file lives in the session scratchpad; the path is fixed per
       // Session, so it is wired here rather than passed per-run.
       goalFilePath: goalFilePath(

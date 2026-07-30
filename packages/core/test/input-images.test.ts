@@ -228,7 +228,7 @@ describe("Session input-image wiring", () => {
       }),
       environment: fakeEnvironment,
       imagesDir: await unwritableDir(),
-      modelVision: false,
+      modelHasVision: false,
     });
 
     const drain = async () => {
@@ -258,7 +258,7 @@ describe("Session input-image wiring", () => {
       },
       environment: fakeEnvironment,
       imagesDir: await unwritableDir(),
-      modelVision: true,
+      modelHasVision: true,
     });
 
     for await (const _ of session.run([userText("go")])) {

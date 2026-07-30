@@ -432,8 +432,8 @@ describe("Session.runGoal input", () => {
     };
   }
 
-  // `modelVision: true` throughout: the fold runs regardless, and a vision model is the case
-  // that would break if runGoal ever grew the `if (!this.modelVision)` the other paths have.
+  // `modelHasVision: true` throughout: the fold runs regardless, and a vision model is the case
+  // that would break if runGoal ever grew the `if (!this.modelHasVision)` the other paths have.
   function makeSession(completeOn = 1): Session {
     const meta: SessionMetaPayload = {
       session_id: "session-1",
@@ -450,7 +450,7 @@ describe("Session.runGoal input", () => {
       llm: fakeLLM(completeOn),
       environment: fakeEnvironment,
       imagesDir: path.join(dir, "scratchpad", "session-1"),
-      modelVision: true,
+      modelHasVision: true,
       goalFilePath: file,
     });
   }
