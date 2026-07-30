@@ -55,7 +55,8 @@ import { toastError } from "../../components/ui/toast";
 import { useVersionInfo } from "../../lib/use-version-info";
 import { ChatInput } from "./chat-input";
 import { buildSkillsMessage } from "./skill-use";
-import { EXAMPLE_TASKS, type ExampleTask, type ExampleTaskId } from "./example-tasks";
+import { EXAMPLE_FOLDERS } from "./example-tasks";
+import type { ExampleFolderId, ExampleTask, ExampleTaskId } from "./example-tasks";
 import { clearDraft, draftKey, loadDraft, saveDraft } from "./draft-cache";
 import type { DraftCache } from "./draft-cache";
 import { sameModelRef } from "../models/model-grouping";
@@ -88,6 +89,24 @@ function saveAppliedRouteKey(field: RouteStateField, key: string): void {
     /* best-effort: the dedup marker falls back to the per-mount ref */
   }
 }
+
+/**
+ * One glyph per example folder, 16×16. Icons live on the folder rather than on each example:
+ * with the examples reduced to single-line titles, a column of per-row icons was noise
+ * competing with the titles, while the folder row is exactly where a glyph earns its place —
+ * it is what you scan to pick a category.
+ *
+ * webapps: a browser window (chrome bar + two dots). agents: the SAME robot head the sidebar's
+ * Agents entry uses (NAV_ICONS.agents) — deliberately not a generic refresh loop, because the
+ * app already has one glyph that means "agent" and a folder of agent examples should wear it.
+ * Duplicated as a literal rather than imported: sidebar.tsx imports from chat-page.tsx, which
+ * renders this file, so importing it back would close an import cycle.
+ */
+const FOLDER_GLYPHS: Record<ExampleFolderId, string> = {
+  webapps:
+    "M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6zM3 9h18M6 6.5h.01M9 6.5h.01",
+  agents: "M12 3v3m-6 4a6 6 0 0 1 12 0v5a3 3 0 0 1-3 3H9a3 3 0 0 1-3-3v-5zm3 3h.01M15 13h.01",
+};
 
 export function DraftView({
   projectId,
@@ -422,6 +441,15 @@ export function DraftView({
     [exampleBusy, agentSkills, onSend],
   );
 
+  /**
+   * The open example folder — bookmark-style, and ALWAYS exactly one: selecting another closes
+   * the previous, and clicking the open one is a no-op rather than collapsing it. Never
+   * nullable on purpose. With every folder the same length, "one open" is what makes the
+   * block's height a constant: the examples area can neither collapse to bare folder rows nor
+   * grow, so nothing below it shifts as folders are switched.
+   */
+  const [openFolder, setOpenFolder] = useState<ExampleFolderId>(EXAMPLE_FOLDERS[0].id);
+
   const selectedAgent = agents.find((a) => a.agentId === agentId) ?? null;
 
   // Capability info for the currently selected model (vision/context window) switches instantly with the selection (matched by paired reference).
@@ -490,131 +518,89 @@ export function DraftView({
           <WorkspaceSelect projectId={projectId} workspace={workspace} onChange={setWorkspace} />
         </div>
 
-        {/* Example tasks: one-click canned builds showing off the one-sentence → app flow,
-            stacked vertically in display order on every viewport. Disabled until
-            agents/models/skills are resolved (onSend would silently no-op without an Agent);
-            hover only darkens the border, per the card convention. */}
-        <div className="mt-6 flex flex-col items-stretch gap-2">
-          {EXAMPLE_TASKS.map((task) => {
-            const copy = S.chat.exampleTasks[task.id];
+        {/* Example tasks: one-click canned builds showing off the one-sentence → app flow.
+            Bookmark-style folders with ALWAYS exactly one open — selecting another closes the
+            previous, and the open one cannot be collapsed. The block is therefore a FIXED
+            height: two folder rows plus one folder's rows, whichever folder that is (they are
+            kept the same length). Nothing below shifts when folders are switched, and no
+            scroll container is needed — a scrollbar inside a six-line showcase reads as a
+            defect. Each example is a single-line title; its one-sentence description rides in
+            the row tooltip rather than a second line. Rows are disabled until
+            agents/models/skills are resolved (onSend would silently no-op without an Agent). */}
+        <div className="mt-6 space-y-1">
+          {EXAMPLE_FOLDERS.map((folder) => {
+            const open = folder.id === openFolder;
             return (
-              <button
-                key={task.id}
-                type="button"
-                disabled={exampleBusy !== null || sending || !skillsLoaded || !agentId || !models}
-                onClick={() => void runExample(task)}
-                className="group flex min-w-0 items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 text-left transition-colors duration-150 hover:border-gray-300 disabled:cursor-default disabled:opacity-60 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-gray-700"
-              >
-                {/* 24×24 line icons (gamepad / music note / sparkle), consistent with the icon convention */}
-                {task.id === "agentBenchmarkBuild" || task.id === "agentOptimization" ? (
-                  <svg
-                    width="20"
-                    height="20"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    className="shrink-0 text-brand-500 dark:text-brand-400"
-                    aria-hidden
-                  >
-                    <path
-                      d="M7 7h8a4 4 0 0 1 4 4v1M17 5l2 2-2 2M17 17H9a4 4 0 0 1-4-4v-1M7 19l-2-2 2-2"
+              <div key={folder.id}>
+                {/* A tab, not a disclosure: the open folder stays open (clicking it is a
+                    no-op) and carries the selected fill, so the block always shows one
+                    folder's examples and its height never changes. */}
+                <button
+                  type="button"
+                  aria-expanded={open}
+                  onClick={() => setOpenFolder(folder.id)}
+                  className={`flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left transition-colors duration-150 ${
+                    open
+                      ? "bg-gray-100 dark:bg-gray-800/70"
+                      : "hover:bg-gray-100 dark:hover:bg-gray-800/70"
+                  }`}
+                >
+                  <span className="shrink-0 text-brand-500 dark:text-brand-400">
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
                       strokeWidth="1.7"
                       strokeLinecap="round"
                       strokeLinejoin="round"
-                    />
-                    <circle cx="12" cy="12" r="2" strokeWidth="1.7" />
-                  </svg>
-                ) : task.id === "lol" ? (
-                  <svg
-                    width="20"
-                    height="20"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    className="shrink-0 text-brand-500 dark:text-brand-400"
-                    aria-hidden
-                  >
-                    <path
-                      d="M9 18V6l11-2v12"
-                      strokeWidth="1.7"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                    <circle cx="6.5" cy="18" r="2.5" strokeWidth="1.7" />
-                    <circle cx="17.5" cy="16" r="2.5" strokeWidth="1.7" />
-                  </svg>
-                ) : task.id === "game" ? (
-                  <svg
-                    width="20"
-                    height="20"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    className="shrink-0 text-brand-500 dark:text-brand-400"
-                    aria-hidden
-                  >
-                    <path
-                      d="M6.7 6h10.6a4 4 0 0 1 3.97 3.56c.2 1.8.73 5.05.73 6.44a3 3 0 0 1-3 3c-1 0-1.5-.5-2-1l-1.4-1.4a2 2 0 0 0-1.42-.6H9.82a2 2 0 0 0-1.41.6L7 18c-.5.5-1 1-2 1a3 3 0 0 1-3-3c0-1.39.52-4.64.73-6.44A4 4 0 0 1 6.7 6z"
-                      strokeWidth="1.7"
-                      strokeLinejoin="round"
-                    />
-                    <path
-                      d="M6.5 11h4M8.5 9v4M15 12h.01M18 10h.01"
-                      strokeWidth="1.7"
-                      strokeLinecap="round"
-                    />
-                  </svg>
-                ) : (
-                  <svg
-                    width="20"
-                    height="20"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    className="shrink-0 text-brand-500 dark:text-brand-400"
-                    aria-hidden
-                  >
-                    <path
-                      d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z"
-                      strokeWidth="1.7"
-                      strokeLinejoin="round"
-                    />
-                    <path
-                      d="M18.5 15.5l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9.9-2.1z"
-                      strokeWidth="1.4"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                )}
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium text-gray-900 dark:text-gray-100">
-                    {copy.label}
+                      aria-hidden
+                    >
+                      <path d={FOLDER_GLYPHS[folder.id]} />
+                    </svg>
                   </span>
-                  <span className="line-clamp-2 text-xs text-gray-500 dark:text-gray-400">
-                    {copy.desc}
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {S.chat.exampleFolders[folder.id]}
                   </span>
-                </span>
-                {exampleBusy === task.id ? (
-                  <span className="ml-1 shrink-0 text-xs text-gray-400">{S.common.loading}</span>
-                ) : (
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    className="ml-1 shrink-0 text-gray-300 transition-colors duration-150 group-hover:text-gray-500 dark:text-gray-600 dark:group-hover:text-gray-400"
-                    aria-hidden
-                  >
-                    <path
-                      d="M5 12h14M13 6l6 6-6 6"
-                      strokeWidth="1.7"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
+                  <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
+                    {folder.tasks.length}
+                  </span>
+                  <Chevron open={open} size={14} className="text-gray-400" />
+                </button>
+
+                {open && (
+                  <ul className="mt-0.5 space-y-0.5 pl-4">
+                    {folder.tasks.map((task) => {
+                      const copy = S.chat.exampleTasks[task.id];
+                      return (
+                        <li key={task.id}>
+                          <button
+                            type="button"
+                            title={copy.desc}
+                            disabled={
+                              exampleBusy !== null ||
+                              sending ||
+                              !skillsLoaded ||
+                              !agentId ||
+                              !models
+                            }
+                            onClick={() => void runExample(task)}
+                            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-gray-600 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-900 disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent dark:text-gray-400 dark:hover:bg-gray-800/70 dark:hover:text-gray-200"
+                          >
+                            <span className="min-w-0 flex-1 truncate">{copy.label}</span>
+                            {exampleBusy === task.id && (
+                              <span className="shrink-0 text-xs text-gray-400">
+                                {S.common.loading}
+                              </span>
+                            )}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
                 )}
-              </button>
+              </div>
             );
           })}
         </div>
@@ -628,8 +614,8 @@ export function DraftView({
 
 /**
  * Superscript "new version" pill on the version line (accent-colored, raised via
- * align-super). Kept literally identical to the sidebar footer's copy in
- * components/layout/sidebar.tsx — the two surfaces must not drift apart.
+ * align-super). The only remaining copy: the sidebar's version row dropped its badge when
+ * the three update rows collapsed into one whose label already names the new version.
  */
 const versionBadgeClass =
   "ml-1.5 inline-block rounded-full bg-[var(--accent-bg)] px-1.5 align-super text-[10px] font-medium leading-4 text-[var(--accent-fg)] transition-opacity duration-150 hover:opacity-80";
@@ -642,8 +628,8 @@ const versionBadgeClass =
  * date, stamped into core's BUILD_DATE at build time — displayed as-is, no network;
  * dev builds and releases that predate the stamping (v0.1.2 and earlier) carry null
  * and show the version alone. When the update check knows a newer release, a small
- * superscript badge follows, linking to the release page (this surface's existing
- * affordance; the sidebar's badge additionally offers admins the update dialog).
+ * superscript badge follows, linking to the release page (this surface's affordance; the
+ * sidebar user menu instead routes its single update row into the update dialog).
  * Fetching starts on mount — useVersionInfo caches at module level, so after the first
  * resolution anywhere in the app this renders instantly and never refetches. Nothing
  * renders until the version resolves (no placeholder flicker under the brand).

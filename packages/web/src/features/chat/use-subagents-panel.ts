@@ -1,27 +1,27 @@
 /**
- * Subagents panel state machine (cloned from use-files-panel.ts, which documents the shared
- * mechanics in detail): panel open/close, drag-to-resize with its own persisted width key, the
- * desktop-dock vs. mobile-Sheet breakpoint, the "focus this child conversation" command driven
- * by clicking a subagent chip inside a message, and the displayed Task scope (latest vs. the
- * historical Task a chip was clicked on — see taskScope).
+ * Subagents panel state machine (a sibling of use-files-panel.ts, which documents the shared
+ * mechanics): panel open/close, the desktop-dock vs. mobile-Sheet breakpoint, the "focus this
+ * child conversation" command driven by clicking a subagent chip inside a message, and the
+ * displayed Task scope (latest vs. the historical Task a chip was clicked on — see taskScope).
+ * Width and drag-to-resize live in use-panel-width.ts, shared with the Files panel so the two
+ * mutually exclusive panels always open at the same width.
  *
- * VISIBILITY IS TASK-SCOPED — this deliberately diverges from the Files panel's
- * open-persists-across-sessions convention: an open panel belongs to the task it was opened
- * for. Starting a new Task (a user message) closes it by default, entering a session starts
- * closed, and it comes back only via a manual open (toolbar/chip) or the CURRENT task spawning
- * a subagent (auto-open, re-armed per task). The pure tracker below
- * (createPanelTaskScope/advancePanelTaskScope) owns those boundary decisions; the chat page
- * observes the stream and applies its actions.
+ * Visibility now follows the Files panel: an open panel survives a Session switch, and only a
+ * NEW chat resets both to closed (the chat page owns that reset — it owns both panels). What
+ * stays specific to this panel is the AUTO-OPEN: the current Task's first live spawn opens it
+ * once, re-armed at each task boundary, so a manual close mid-task is respected. The pure
+ * tracker below (createPanelTaskScope/advancePanelTaskScope) owns that decision; the chat page
+ * observes the stream and applies it under its own layout guards.
  *
- * Width remains a layout preference persisted to localStorage, and the focus command uses the
- * fresh-object idiom so clicking the same chip again still re-triggers the panel's focus
- * effect.
+ * The focus command uses the fresh-object idiom so clicking the same chip again still
+ * re-triggers the panel's focus effect.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { MouseEvent as ReactMouseEvent, RefObject } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { SheetSnap } from "../../components/ui/sheet";
+import { usePanelWidth } from "./use-panel-width";
+import type { PanelWidthState } from "./use-panel-width";
 
-export interface SubagentsPanelState {
+export interface SubagentsPanelState extends PanelWidthState {
   open: boolean;
   setOpen: (open: boolean) => void;
   /** Snap point for the mobile bottom Sheet; unused in the desktop docked state. */
@@ -42,21 +42,12 @@ export interface SubagentsPanelState {
   taskScope: { anchorSessionId: string } | null;
   /** Docked at >=1024px (lg); otherwise a bottom Sheet — mounted mutually exclusively. */
   isDocked: boolean;
-  width: number;
-  resizing: boolean;
-  startResize: (e: ReactMouseEvent<HTMLDivElement>) => void;
-  /** Double-clicking the drag handle: width reverts to the window-proportional default. */
-  resetWidth: () => void;
-  /** Ref to the docked panel's root node (drag-to-resize measures its right edge). */
-  panelRef: RefObject<HTMLDivElement | null>;
 }
 
-const MIN_WIDTH = 320;
 const DOCK_QUERY = "(min-width: 1024px)";
-const WIDTH_STORAGE_KEY = "penguin.subagentsPanelWidth";
 
 // ---------------------------------------------------------------------------
-// Task-scoped visibility tracker (pure — unit-tested in test/panel-task-scope.test.ts)
+// Auto-open tracker (pure — unit-tested in test/panel-task-scope.test.ts)
 // ---------------------------------------------------------------------------
 
 /**
@@ -76,29 +67,27 @@ export function createPanelTaskScope(): PanelTaskScope {
 }
 
 /**
- * Advance the tracker with one observation of the current session's stream and return what the
- * panel should do — the whole task-scoped lifecycle in one place:
- *   - session switch → "close" (a session is entered closed; no inherited open state), unless
- *     its CURRENT task already has a live spawn, which wins as "autoOpen" (a mid-run entry —
- *     reload included — counts as the spawn introducing itself);
- *   - a new Task (taskCount increase) → "close" by default (an unrelated task must not inherit
- *     an open panel) and RE-ARMS the auto-open;
- *   - a live spawn in the current task → "autoOpen", at most once per task — a manual close
+ * Advance the tracker with one observation of the current session's stream and return whether
+ * the panel should auto-open:
+ *   - a live spawn in the current task → "autoOpen", at most once per task, so a manual close
  *     afterwards is respected until the next boundary;
+ *   - a boundary (a Session switch, or a new Task within the session) RE-ARMS that one attempt
+ *     but is never itself an action — an open panel is not closed here any more. Entering a
+ *     session mid-run therefore auto-opens on the spawn that is already live, which reads as
+ *     that spawn introducing itself;
  *   - anything else (steering, compaction, more messages in the same task) → null.
  * A taskCount DECREASE is a defensive re-baseline (a resync swapped in a smaller model):
- * adopted silently — no boundary, and the auto-open attempt counts as consumed so a rebuild
- * can never surprise-reopen a panel the user closed mid-task.
- * The caller applies "autoOpen" under its own layout guards (docked, files panel closed, not
+ * adopted silently, with the auto-open attempt marked consumed so a rebuild can never
+ * surprise-open a panel the user closed mid-task.
+ * The caller applies "autoOpen" under its own layout guards (docked, Files panel closed, not
  * already open); the attempt is consumed here regardless, so a suppressed attempt never
  * retriggers within the same task.
  */
 export function advancePanelTaskScope(
   state: PanelTaskScope,
   obs: { sessionId: string | null; taskCount: number; liveSpawn: boolean },
-): "close" | "autoOpen" | null {
+): "autoOpen" | null {
   const switched = obs.sessionId !== state.sessionId;
-  const newTask = !switched && obs.taskCount > state.taskCount;
   const rebaseline = !switched && obs.taskCount < state.taskCount;
   if (switched || obs.taskCount !== state.taskCount) {
     state.sessionId = obs.sessionId;
@@ -110,25 +99,7 @@ export function advancePanelTaskScope(
     state.autoOpenedAt = state.taskCount;
     return "autoOpen";
   }
-  if (switched || newTask) return "close";
   return null;
-}
-
-/** Width cap: at most half the window (keeping the chat column usable), plus a hard 720px readability ceiling. */
-function maxWidthFor(windowWidth: number): number {
-  return Math.max(MIN_WIDTH, Math.min(720, Math.round(windowWidth * 0.5)));
-}
-
-/** Default width ≈ 1/3 of the window, clamped within the min/max bounds (same proportion as the Files panel). */
-function defaultWidthFor(windowWidth: number): number {
-  return Math.min(maxWidthFor(windowWidth), Math.max(MIN_WIDTH, Math.round(windowWidth * 0.34)));
-}
-
-/** Initial width: stored preference (clamped back within the current window's bounds) over the proportional default. */
-function initialWidth(): number {
-  const stored = Number(localStorage.getItem(WIDTH_STORAGE_KEY));
-  if (!Number.isFinite(stored) || stored <= 0) return defaultWidthFor(window.innerWidth);
-  return Math.min(maxWidthFor(window.innerWidth), Math.max(MIN_WIDTH, Math.round(stored)));
 }
 
 export function useSubagentsPanel(sessionId: string | null): SubagentsPanelState {
@@ -152,18 +123,13 @@ export function useSubagentsPanel(sessionId: string | null): SubagentsPanelState
     }
     setOpenRaw(next);
   }, []);
-  const [width, setWidth] = useState(initialWidth);
-  /** Synchronous mirror of width, read by the mouseup persist step (sidesteps the stale closure). */
-  const widthRef = useRef(width);
-  const [resizing, setResizing] = useState(false);
+  const widthState = usePanelWidth();
   const [isDocked, setIsDocked] = useState(() => window.matchMedia(DOCK_QUERY).matches);
-  const panelRef = useRef<HTMLDivElement>(null);
 
   // Switching Session resets the focus command and any pinned historical Task scope (both
   // pointed into the old session's stream — the new session opens on its latest topology).
-  // The open/closed state is NOT touched here: visibility is task-scoped and owned by the
-  // chat page's tracker (advancePanelTaskScope above), which closes on session entry and new
-  // Tasks, and auto-opens on the current task's first live spawn.
+  // The open/closed state is NOT touched: like the Files panel, an open panel survives the
+  // switch, and only a new chat closes it (chat-page.tsx).
   useEffect(() => {
     setFocusRequest(null);
     setTaskScope(null);
@@ -184,58 +150,6 @@ export function useSubagentsPanel(sessionId: string | null): SubagentsPanelState
     setFocusRequest({ sessionId: sid, origin });
   }, []);
 
-  // Drag-to-resize: identical handling to the Files panel (see use-files-panel.ts for the rationale comments).
-  useEffect(() => {
-    if (!resizing) return;
-    const onMove = (e: MouseEvent) => {
-      const rect = panelRef.current?.getBoundingClientRect();
-      const right = rect ? rect.right : window.innerWidth;
-      const next = Math.min(maxWidthFor(window.innerWidth), Math.max(MIN_WIDTH, right - e.clientX));
-      widthRef.current = next;
-      setWidth(next);
-    };
-    const onUp = () => {
-      setResizing(false);
-      localStorage.setItem(WIDTH_STORAGE_KEY, String(Math.round(widthRef.current)));
-    };
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-    return () => {
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
-  }, [resizing]);
-
-  const startResize = useCallback((e: ReactMouseEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setResizing(true);
-  }, []);
-
-  const resetWidth = useCallback(() => {
-    const next = defaultWidthFor(window.innerWidth);
-    widthRef.current = next;
-    setWidth(next);
-    // Clear rather than write the default: the default keeps following the window's proportion.
-    localStorage.removeItem(WIDTH_STORAGE_KEY);
-  }, []);
-
-  // When the window shrinks, clamp the panel back within the cap (shrinks only, like the Files panel).
-  useEffect(() => {
-    const onResize = () => {
-      setWidth((w) => {
-        const clamped = Math.min(w, maxWidthFor(window.innerWidth));
-        if (clamped !== w) widthRef.current = clamped;
-        return clamped;
-      });
-    };
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, []);
-
   return {
     open,
     setOpen,
@@ -245,10 +159,6 @@ export function useSubagentsPanel(sessionId: string | null): SubagentsPanelState
     focusRequest,
     taskScope,
     isDocked,
-    width,
-    resizing,
-    startResize,
-    resetWidth,
-    panelRef,
+    ...widthState,
   };
 }

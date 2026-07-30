@@ -130,6 +130,28 @@ async function collectRun(
   return all;
 }
 
+/**
+ * Reads a file the shell just wrote, retrying briefly until it holds `expected`.
+ *
+ * A tool completes when its shell process exits, which does not promise the write is visible to
+ * this process yet — on Windows CI it intermittently is not, surfacing as ENOENT or stale
+ * content. Retrying asserts the same exact content; it only stops the assertion racing the
+ * filesystem, and a genuinely wrong write still fails one timeout later.
+ */
+async function readFileEventually(
+  file: string,
+  expected: string,
+  timeoutMs = 2000,
+): Promise<string> {
+  const deadline = Date.now() + timeoutMs;
+  let last = "";
+  for (;;) {
+    last = await readFile(file, "utf8").catch(() => "");
+    if (last === expected || Date.now() >= deadline) return last;
+    await new Promise((r) => setTimeout(r, 25));
+  }
+}
+
 describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
   let workspace: string;
   let traces: string;
@@ -167,7 +189,9 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
         (m) => (m.payload as { type?: string }).type === "tool_call_output",
       ),
     ).toBe(true);
-    expect(await readFile(join(workspace, "hello.txt"), "utf8")).toBe("Hello, Penguin");
+    expect(await readFileEventually(join(workspace, "hello.txt"), "Hello, Penguin")).toBe(
+      "Hello, Penguin",
+    );
 
     const types = collected.map((m) => (m.payload as { type?: string }).type);
     expect(types).toContain("tool_call_output");
@@ -988,8 +1012,8 @@ describe("ContextEngine async/incremental tool calls (overlapping execution)", (
       expect(firstCompleteAt["t2"]!).toBeLessThan(firstCompleteAt["t1"]!);
     }
 
-    expect(await readFile(join(workspace, "a.txt"), "utf8")).toBe("one");
-    expect(await readFile(join(workspace, "b.txt"), "utf8")).toBe("two");
+    expect(await readFileEventually(join(workspace, "a.txt"), "one")).toBe("one");
+    expect(await readFileEventually(join(workspace, "b.txt"), "two")).toBe("two");
     // Both tool outputs are fed back into the second turn, producing the final reply.
     expect(
       all.some(

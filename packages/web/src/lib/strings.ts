@@ -15,15 +15,14 @@ export const zh = {
   nav: {
     chat: "对话",
     newChat: "新对话",
-    agents: "智能体仓库",
+    agents: "智能体",
     skills: "技能库",
-    models: "模型仓库",
+    models: "模型库",
     usage: "成本中心",
     traces: "轨迹观测",
     benchmark: "评估中心",
-    // Collapsed-rail tooltips (product-specified wording; new chat reuses chat.newSessionMenu, the other pages reuse the page names above).
+    // Collapsed-rail tooltip (product-specified wording; new chat reuses chat.newSessionMenu, the other pages reuse the page names above).
     lastConversation: "最近一次对话",
-    railAgents: "智能体",
     collapseSidebar: "收起侧栏",
     expandSidebar: "展开侧栏",
     collapseGroup: "折叠",
@@ -62,7 +61,10 @@ export const zh = {
     /** Superscript badge on the version lines when the update check found a newer release (owner-specified wording). */
     newVersionBadge: "有新版本可用",
     newVersion: (v: string) => `新版本 v${v} 可用`,
-    /** Manual check action in the sidebar user menu (owner request), with its busy label and toast outcomes. */
+    /**
+     * 用户菜单里**唯一**的更新行：未知新版本时显示「检查更新」并执行手动检查；已知新版本后改为
+     * newVersion() 文案，点击打开更新弹窗（弹窗内含更新说明链接，管理员另有自更新操作）。
+     */
     checkNow: "检查更新",
     checking: "检查中…",
     upToDate: "已是最新版本",
@@ -77,6 +79,8 @@ export const zh = {
     unsupported: "当前安装方式不支持在线更新",
     confirmBody:
       "将下载最新版本并安装到服务器上的安装目录（数据目录不受影响）。安装完成后需要重启服务才会生效。",
+    /** 非管理员看到的说明（可查看更新说明，但不能在此执行更新），替代 confirmBody。 */
+    adminOnly: "只有管理员可以在这里执行更新。",
   },
 
   common: {
@@ -157,6 +161,8 @@ export const zh = {
     idHint: "2~64 位：小写字母开头，仅小写字母、数字与下划线；创建后不可修改",
     idPrefixHint: "id 固定以「用户名-」为前缀，后接小写字母、数字或下划线；创建后不可修改",
     name: "显示名（可选，缺省为 Project id）",
+    /** Project 设置里的显示名字段（此处必填，与新建对话框的「可选」措辞区分）。 */
+    displayName: "显示名",
     settings: "Project 设置",
     settingsTitle: "Project 设置",
     members: "成员",
@@ -531,6 +537,11 @@ export const zh = {
     tempWorkspaces: "临时工作区",
     newSessionInWorkspace: "在此工作区新建对话",
     draftSubtitle: "最擅长 AI 开发任务的自进化 Agent",
+    /** 首页示例的折叠分组名（书签式，同时只展开一个）。 */
+    exampleFolders: {
+      webapps: "搭建网页应用",
+      agents: "搭建和优化智能体",
+    },
     /**
      * Example task cards on the draft screen: one click auto-submits the canned prompt. These
      * are the FULL working prompts — descriptions stay short, but the submitted instructions
@@ -538,7 +549,7 @@ export const zh = {
      */
     exampleTasks: {
       game: {
-        label: "示例：2D 企鹅雪橇越野小游戏",
+        label: "2D 企鹅雪橇越野小游戏",
         desc: "可爱南极企鹅滑雪橇跳石头，难度由易到难的 2D 纯前端小游戏",
         prompt:
           "做一个可爱的南极企鹅滑雪橇越野 2D 小游戏：按空格键起跳，跃过冰面上迎面而来的石头；" +
@@ -547,8 +558,30 @@ export const zh = {
           "2D 横版画面、可爱卡通风，纯前端实现（单个 HTML 文件即可），界面遵循 web-design 技能。" +
           "完成后在浏览器里自测一次，确认开局能轻松玩过几秒，并告诉我怎么打开和怎么玩。",
       },
+      gamecenter: {
+        label: "多智能体搭建小游戏中心",
+        desc: "并行产出 10 个玩法互不重复的纯前端小游戏，配一个统一风格的索引首页",
+        prompt: `用多智能体并行搭建一个网页小游戏中心：10 个玩法互不重复的纯前端小游戏，外加一个索引首页。
+
+## 分工方式
+- 先规划这 10 个游戏（例如贪吃蛇、2048、俄罗斯方块、打砖块、扫雷、记忆翻牌、推箱子、太空射击、跳跃平台、节奏点击），确认玩法确实互不重复，并定好统一的目录结构、配色与交互规范。
+- 再把 10 个游戏分派给多个子智能体并行实现，每个子智能体只负责自己的那一个游戏，严格按既定规范产出，互不改动他人的文件。
+
+## 每个游戏
+- 独立的 \`games/<slug>/index.html\`，纯前端单文件、file:// 直接打开即可运行，不依赖后端与任何 CDN 资源。
+- 具备开始 / 重新开始、实时计分或计时、失败或通关结算，并同时支持键盘与触摸操作，页面内写明玩法说明。
+- 提供返回索引首页的入口。
+
+## 索引首页
+- 根目录 \`index.html\`：卡片网格列出全部 10 个游戏（名称 + 一句话玩法 + 操作方式），点击进入对应游戏。
+- 与所有游戏共用一套设计语言，遵循 web-design 技能；深色 / 浅色主题（\`<html data-theme>\`）并用 localStorage 记忆；响应式，手机端单列。
+
+## 收尾
+- 统一验收：10 个游戏玩法确实不重复、风格一致，索引页的链接全部可达。
+- 在浏览器里逐个自测，确认都能开始、能结束、能重开，然后告诉我怎么打开。`,
+      },
       lol: {
-        label: "示例：英雄联盟音乐播放器",
+        label: "英雄联盟音乐播放器",
         desc: "用 SoundCloud Widget API 播放历届 Worlds 主题曲，单文件即开即用",
         prompt: `用 SoundCloud Widget API（见 https://developers.soundcloud.com/docs/api/html5-widget）做一个英雄联盟 Worlds 主题曲播放器，单文件 index.html，file:// 打开即用。
 
@@ -578,7 +611,7 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
 完成后在浏览器打开 index.html 自测一次。`,
       },
       rag: {
-        label: "示例：构建 Claude Code 文档专家",
+        label: "构建 Claude Code 文档 RAG 智能体",
         desc: "收集 claude-code-docs 仓库，生成可对话、带来源引用的 RAG 知识应用",
         prompt:
           "收集 https://github.com/ericbuess/claude-code-docs 的文档，构建一个 RAG 知识应用：" +
@@ -586,10 +619,15 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
           "检索增强回答 Claude Code 相关问题并标注可点击的来源引用——" +
           "引用要能展示命中的原文片段，并链接到真实文档；" +
           "按 web-design 技能提供美观的 Web 聊天界面，空态展示几个示例问题。" +
-          "完成后运行应用、自测一个问题验证流式回答，并告诉我访问方式。",
+          "特别注意提问与语料的语言匹配：语料是英文，提问很可能是中文。" +
+          "如果用 BM25 之类的词法检索，中文查询必须先转换成英文（翻译或抽取英文关键词）再进入检索，" +
+          "否则中文词在英文索引里一个都命不中，会静默退化成空召回；" +
+          "中英混合提问同样要能正确召回，且回答语言跟随提问语言。" +
+          "完成后运行应用，用一个中文问题和一个英文问题各自测一次，" +
+          "确认两者都检索到了正确的英文文档、流式回答正常，并告诉我访问方式。",
       },
       agentBenchmarkBuild: {
-        label: "示例：创建决策 Agent 和能力评测",
+        label: "构建通用决策智能体和评测基准",
         desc: "创建一个通用决策 Agent，并用足球、售后和投资任务检验它",
         prompt: `请依次使用 \`agent-creation\` 和 \`benchmark-design\`，创建决策 Agent，并产出 Frozen Benchmark 与 Formal Baseline。
 
@@ -611,7 +649,7 @@ Benchmark：
 3. 根据投资策略、历史市场与当前指标选择投资动作。`,
       },
       agentOptimization: {
-        label: "示例：根据评测优化决策 Agent",
+        label: "优化通用决策智能体的准确率",
         desc: "根据已有评测结果改进 Agent，并验证新版本是否真正提升",
         prompt: `请使用 \`agent-optimization\`，根据 Frozen Benchmark 优化决策 Agent。
 
@@ -962,7 +1000,6 @@ Benchmark：
     viewCase: "查看题目",
     publicMaterials: "公开材料",
     statementUnavailable: "题面暂时无法读取",
-    maxScore: (score: string): string => `满分 ${score}`,
     evaluations: "评估明细",
     noEvaluations: "暂无评估记录",
     /** Evaluation notes (scoreboard's summary: score source and notes on this round's changes). */

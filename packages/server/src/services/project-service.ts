@@ -245,6 +245,25 @@ export class ProjectService {
   }
 
   /**
+   * Rename a Project's display name (owner): the id stays immutable — it names the directory,
+   * the Workspace paths and every stored reference — so only the label in project_config.toml
+   * changes. Returns the refreshed summary so the caller can swap it into its list without a
+   * reload.
+   */
+  async renameProject(userId: string, projectId: string, name: string): Promise<ProjectSummary> {
+    const row = this.requireProjectOwner(userId, projectId);
+    await this.deps.projectConfig.setName(projectId, name);
+    // requireProjectOwner already established the role; it returns the plain row.
+    return {
+      projectId,
+      name,
+      role: "owner",
+      ownerUserId: row.ownerUserId,
+      createdAt: row.createdAt,
+    };
+  }
+
+  /**
    * Delete a Project (owner): default_project is refused; deleting the user's
    * **last accessible Project** is refused too (deleting it would leave the list
    * empty, with no Project to select in the Web client and the page stuck on a

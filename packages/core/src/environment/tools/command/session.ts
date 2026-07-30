@@ -33,8 +33,19 @@ import { sessionShell } from "./shell.js";
 /** Process-group semantics are available on POSIX; Windows falls back to signaling the child process directly. */
 const SUPPORTS_PROCESS_GROUP = process.platform !== "win32";
 
-/** Extra wait cap (ms) after the command exits to collect trailing output: enough to drain the last flush, without hanging. */
-const POST_EXIT_DRAIN_MS = 50;
+/**
+ * Extra wait cap (ms) after the command exits to collect trailing output: enough to drain the
+ * last flush, without hanging.
+ *
+ * Windows gets a far larger budget. `exit` fires on process termination without waiting for
+ * pipe EOF (see the listener below), so this window is the only thing standing between a
+ * fast-exiting command and losing its output — and Git-Bash pipe delivery on Windows routinely
+ * misses a 50ms window that POSIX pipes never come close to. Symptom when it is too tight: a
+ * command that ran fine reports empty or truncated output, intermittently and under load. The
+ * cost of the larger cap is bounded and only paid on Windows, and only when a command exits
+ * with its pipe still draining: the loop breaks as soon as the buffer goes quiet.
+ */
+const POST_EXIT_DRAIN_MS = process.platform === "win32" ? 500 : 50;
 /** Capacity cap (characters) for a single session's unread output: prevents a chatty background process from blowing up memory. */
 const OUTPUT_BUFFER_CAP = 1024 * 1024; // 1 MiB
 /**

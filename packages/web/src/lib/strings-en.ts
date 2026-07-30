@@ -16,13 +16,11 @@ export const en: Strings = {
     agents: "Agents",
     skills: "Skills",
     models: "Models",
-    usage: "Costs",
-    traces: "Trajectory",
+    usage: "Cost Center",
+    traces: "Trajectories",
     benchmark: "Evaluation Center",
-    // Collapsed-rail tooltips (product-specified wording; new chat reuses chat.newSessionMenu, the other pages reuse the page names above).
+    // Collapsed-rail tooltip (product-specified wording; new chat reuses chat.newSessionMenu, the other pages reuse the page names above).
     lastConversation: "Last conversation",
-    // Deliberately equal to nav.agents: the key exists only because the zh dictionary words the rail entry differently ("Agents" vs "Agent library").
-    railAgents: "Agents",
     collapseSidebar: "Collapse sidebar",
     expandSidebar: "Expand sidebar",
     collapseGroup: "Collapse",
@@ -61,7 +59,12 @@ export const en: Strings = {
     /** Superscript badge on the version lines when the update check found a newer release. */
     newVersionBadge: "New version available",
     newVersion: (v: string) => `New version v${v} available`,
-    /** Manual check action in the sidebar user menu, with its busy label and toast outcomes. */
+    /**
+     * The sidebar user menu's SINGLE update row: it reads "Check for updates" until a newer
+     * release is known and runs the manual check; once one is known it reads newVersion() and
+     * opens the update dialog instead (which carries the release-notes link and, for admins,
+     * the self-update action).
+     */
     checkNow: "Check for updates",
     checking: "Checking…",
     upToDate: "You're on the latest version",
@@ -76,6 +79,8 @@ export const en: Strings = {
     unsupported: "This install cannot be updated from the web UI",
     confirmBody:
       "Downloads the latest release and installs it into the install directory on the server (the data directory is not touched). Restart the service afterwards for the update to take effect.",
+    /** Shown in place of confirmBody to non-admins, who can read the release notes but cannot run the update. */
+    adminOnly: "Only an administrator can run the update from here.",
   },
 
   common: {
@@ -162,6 +167,8 @@ export const en: Strings = {
     idPrefixHint:
       "The id is prefixed with your username and a hyphen; append lowercase letters, digits or underscores. Cannot be changed later.",
     name: "Display name (optional, defaults to the Project id)",
+    /** The display-name field in Project settings (required there, unlike the create dialog's optional one). */
+    displayName: "Display name",
     settings: "Project settings",
     settingsTitle: "Project settings",
     members: "Members",
@@ -548,9 +555,14 @@ export const en: Strings = {
     tempWorkspaces: "Temp workspaces",
     newSessionInWorkspace: "New chat in this workspace",
     draftSubtitle: "The self-evolving agent that excels at AI development tasks",
+    /** Folder names for the draft page's collapsible examples (bookmark-style: exactly one open at a time). */
+    exampleFolders: {
+      webapps: "Build web apps",
+      agents: "Build and optimize agents",
+    },
     exampleTasks: {
       game: {
-        label: "Example: 2D penguin sled game",
+        label: "2D penguin sled game",
         desc: "A cute Antarctic penguin sleds over rocks, easy start with a gentle difficulty ramp — a 2D pure-frontend mini game",
         prompt:
           "Build a cute Antarctic penguin sledding 2D game: press Space to jump over the rocks " +
@@ -562,8 +574,30 @@ export const en: Strings = {
           "When done, test it in a browser once, confirm the first few seconds are easy to " +
           "clear, and tell me how to open it and how to play.",
       },
+      gamecenter: {
+        label: "A mini-game center built by multiple agents",
+        desc: "Ten pure-frontend games with no repeated mechanics, built in parallel behind one index page",
+        prompt: `Build a web mini-game center with multiple agents working in parallel: 10 pure-frontend games with no two sharing the same mechanic, plus an index page.
+
+## How to split the work
+- First plan the 10 games (say snake, 2048, tetris, breakout, minesweeper, memory match, sokoban, space shooter, platform jumper, rhythm tap), confirm no two mechanics repeat, and fix a shared directory layout, palette and interaction spec.
+- Then hand the 10 games to several subagents to implement in parallel — each subagent owns exactly one game, follows the agreed spec, and never edits another's files.
+
+## Each game
+- Its own \`games/<slug>/index.html\`: pure frontend, a single file that runs straight from file://, with no backend and no CDN assets.
+- Start / restart, live score or timer, a lose-or-clear summary, both keyboard and touch controls, and the rules written on the page.
+- A way back to the index page.
+
+## Index page
+- \`index.html\` at the root: a card grid listing all 10 games (name + one-line mechanic + controls), each card opening its game.
+- One design language shared with every game, following the web-design skill; dark/light themes via \`<html data-theme>\` remembered in localStorage; responsive, single column on phones.
+
+## Wrap-up
+- Review as a whole: the 10 mechanics really are distinct, the styling is consistent, and every index link resolves.
+- Self-test each game in a browser — it starts, it ends, it restarts — then tell me how to open it.`,
+      },
       lol: {
-        label: "Example: League of Legends music player",
+        label: "League of Legends music player",
         desc: "Worlds anthems on the SoundCloud Widget API — a single file that opens from file://",
         prompt: `Build a League of Legends Worlds anthem player with the SoundCloud Widget API (see https://developers.soundcloud.com/docs/api/html5-widget): a single index.html that works when opened from file://.
 
@@ -593,7 +627,7 @@ Penguin visual style (see the web-design skill), dark/light themes via <html dat
 When done, open index.html in a browser and self-test once.`,
       },
       rag: {
-        label: "Example: build a Claude Code docs expert",
+        label: "Build a Claude Code docs RAG agent",
         desc: "Collect the claude-code-docs repo into a conversational RAG knowledge app with source citations",
         prompt:
           "Collect the docs from https://github.com/ericbuess/claude-code-docs and build a RAG knowledge app: " +
@@ -602,10 +636,16 @@ When done, open index.html in a browser and self-test once.`,
           "with retrieval-augmented replies and clickable citations that reveal the matched " +
           "original text chunk and link to the real documents; " +
           "give it a beautiful web chat UI following the web-design skill, with a few example questions in the empty state. " +
-          "When done, run the app, verify one streamed answer yourself, and tell me how to access it.",
+          "Pay particular attention to matching the question's language against the corpus: the docs are English, " +
+          "while questions will often be Chinese. With a lexical retriever such as BM25, a Chinese query MUST be " +
+          "converted to English first (translate it, or extract English keywords) before it reaches the index — " +
+          "otherwise not a single Chinese term matches the English index and retrieval silently degrades to nothing. " +
+          "Mixed Chinese/English questions must retrieve correctly too, and the answer should follow the language of the question. " +
+          "When done, run the app and self-test one Chinese question and one English question, confirming both retrieve " +
+          "the right English documents and stream their answers, then tell me how to access it.",
       },
       agentBenchmarkBuild: {
-        label: "Example: create a decision Agent and capability evaluation",
+        label: "Build a general-purpose decision agent and its benchmark",
         desc: "Create a general decision Agent and test it on football, after-sales, and investment tasks",
         prompt: `Use \`agent-creation\` followed by \`benchmark-design\` to create a decision Agent and produce a frozen Benchmark with a Formal Baseline.
 
@@ -627,7 +667,7 @@ Scenarios:
 3. Choose investment actions from a strategy, historical markets, and current indicators.`,
       },
       agentOptimization: {
-        label: "Example: optimize a decision Agent from its evaluation",
+        label: "Improve the general-purpose decision agent's accuracy",
         desc: "Improve an Agent from existing evaluation results and verify that the new version is better",
         prompt: `Use \`agent-optimization\` to optimize a decision Agent against its frozen Benchmark.
 
@@ -984,7 +1024,6 @@ Scenarios:
     viewCase: "View task",
     publicMaterials: "Public materials",
     statementUnavailable: "The public Statement is unavailable",
-    maxScore: (score: string): string => `Max ${score}`,
     evaluations: "Evaluations",
     noEvaluations: "No evaluations yet",
     summaryLabel: "Summary",

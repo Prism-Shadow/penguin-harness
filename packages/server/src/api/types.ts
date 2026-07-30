@@ -152,6 +152,15 @@ export interface ProjectCreateResponse {
   project: ProjectSummary;
 }
 
+export interface ProjectUpdateRequest {
+  /** New display name. The projectId itself is immutable — only this label can change. */
+  name: string;
+}
+
+export interface ProjectUpdateResponse {
+  project: ProjectSummary;
+}
+
 export interface MemberInfo {
   userId: string;
   role: ProjectRole;

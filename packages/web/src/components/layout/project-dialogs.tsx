@@ -143,7 +143,10 @@ export function CreateProjectDialog({
   );
 }
 
-/** Project settings dialog: member management (owner) and deletion (owner); members see a read-only member list. */
+/**
+ * Project settings dialog: display name (owner-editable), member management (owner) and
+ * deletion (owner); members see the name and member list read-only.
+ */
 export function ProjectSettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { user } = useAuth();
   const { currentProject, setCurrentProjectId, projects, reloadProjects } = useProject();
@@ -152,22 +155,54 @@ export function ProjectSettingsDialog({ open, onClose }: { open: boolean; onClos
   // Only the initial member-list load shows inline (in place of the table); action failures pop a toast.
   const [loadError, setLoadError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  /** Display-name edit buffer (owner only); saving is explicit, so it stays dirty until Save or reopen. */
+  const [name, setName] = useState("");
+  const [nameBusy, setNameBusy] = useState(false);
+  const [nameError, setNameError] = useState<string | undefined>(undefined);
 
   const projectId = currentProject?.projectId;
   const isOwner = currentProject?.role === "owner";
+  /** The saved display name, with the same id fallback the switcher shows. */
+  const savedName = currentProject ? projectDisplayName(currentProject) : "";
 
   useEffect(() => {
     if (!open || !projectId) return;
     setMembers(null);
     setLoadError(null);
     setConfirmDelete(false);
+    setName(savedName);
+    setNameError(undefined);
     api
       .listMembers(projectId)
       .then((res) => setMembers(res.members))
       .catch((e: unknown) => setLoadError(apiErrorText(e)));
+    // savedName is read at open time only: retyping in the field must not be clobbered by a
+    // list refresh, and reopening the dialog re-seeds it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, projectId]);
 
   if (!currentProject || !projectId) return null;
+
+  /**
+   * Save the display name (owner). The id is immutable, so this is the only editable field of
+   * the Project itself. Success needs no toast: the switcher, this dialog's field and every
+   * Project list re-render with the new name once reloadProjects settles (#54, one notification
+   * per action) — only failures pop one, and the field keeps what was typed so it can be retried.
+   */
+  const saveName = async () => {
+    const next = name.trim();
+    if (!next || next === savedName || nameBusy) return;
+    setNameBusy(true);
+    setNameError(undefined);
+    try {
+      await api.updateProject(projectId, { name: next });
+      await reloadProjects();
+    } catch (e) {
+      setNameError(apiErrorText(e));
+    } finally {
+      setNameBusy(false);
+    }
+  };
 
   const addMember = async () => {
     if (!newMemberId.trim()) return;
@@ -206,12 +241,45 @@ export function ProjectSettingsDialog({ open, onClose }: { open: boolean; onClos
   return (
     <Modal open={open} title={S.project.settingsTitle} onClose={onClose}>
       <div className="space-y-4">
+        {/* Display name: the Project's only editable field (the id names the directory and every
+            stored reference, so it stays immutable and sits below as a muted mono caption).
+            Members see the resolved name as plain text. */}
         <div>
-          <p className="mb-1 text-xs font-medium text-gray-500">{S.project.switcher}</p>
-          <p className="text-sm">
-            {projectDisplayName(currentProject)}{" "}
-            <span className="font-mono text-xs text-gray-400">{projectId}</span>
-          </p>
+          {isOwner ? (
+            <>
+              <FieldLabel>{S.project.displayName}</FieldLabel>
+              <div className="flex items-stretch gap-2">
+                <Input
+                  size="sm"
+                  className="min-w-0 flex-1"
+                  value={name}
+                  invalid={Boolean(nameError)}
+                  maxLength={100}
+                  onChange={(e) => {
+                    setName(e.target.value);
+                    if (nameError) setNameError(undefined);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") void saveName();
+                  }}
+                />
+                <Button
+                  size="sm"
+                  disabled={nameBusy || !name.trim() || name.trim() === savedName}
+                  onClick={() => void saveName()}
+                >
+                  {S.common.save}
+                </Button>
+              </div>
+              {nameError !== undefined && <FieldError>{nameError}</FieldError>}
+            </>
+          ) : (
+            <>
+              <p className="mb-1 text-xs font-medium text-gray-500">{S.project.switcher}</p>
+              <p className="text-sm">{savedName}</p>
+            </>
+          )}
+          <p className="mt-1 font-mono text-xs text-gray-400">{projectId}</p>
         </div>
 
         <div>

@@ -169,7 +169,7 @@ export const zh = {
     webCmd: "penguin web   # 打开 http://127.0.0.1:7364",
     webStep3: "在界面里配置模型，开始对话",
     webStep3Desc:
-      "进入「模型仓库」页，在 DeepSeek 或 OpenRouter 分组里粘贴 API key 并设为默认；回到对话页把第一个任务交给 Agent，例如「分析 data.csv，输出各季度销售额汇总」。",
+      "进入「模型库」页，在 DeepSeek 或 OpenRouter 分组里粘贴 API key 并设为默认；回到对话页把第一个任务交给 Agent，例如「分析 data.csv，输出各季度销售额汇总」。",
     getKeyPrefix: "获取 API key：",
     getDeepseekKey: "DeepSeek 控制台",
     getOpenrouterKey: "OpenRouter 控制台",

@@ -23,7 +23,8 @@
  *   chrome used to stop fitting below ~412px;
  * - the sidebar's "New chat" button has no background fill (same gray-scale style as nav items);
  * - the collapsed rail shows, in product-specified order, last conversation / new chat /
- *   Agents / Skills / Models / Costs / Traces / Benchmark with localized (en + zh) hover
+ *   Agents / Skills / Models / Cost Center / Trajectories / Evaluation Center with localized
+ *   (en + zh) hover
  *   tooltips; "last conversation" targets the newest non-archived session and is disabled
  *   while none exists; expanding from the rail restores the pinned sidebar;
  * - login page: a single brand penguin logo above the form (part of the form area; the
@@ -289,8 +290,8 @@ test("layout: collapsed rail — order, bilingual tooltips, last conversation", 
     "Agents",
     "Skills",
     "Models",
-    "Costs",
-    "Trajectory",
+    "Cost Center",
+    "Trajectories",
     "Evaluation Center",
   ];
   const attrs = (name) =>
@@ -355,7 +356,7 @@ test("layout: collapsed rail — order, bilingual tooltips, last conversation", 
     "新建对话",
     "智能体",
     "技能库",
-    "模型仓库",
+    "模型库",
     "成本中心",
     "轨迹观测",
     "评估中心",

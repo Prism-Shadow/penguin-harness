@@ -25,6 +25,8 @@ export interface TopologyNode {
   sessionId: string;
   /** Agent running this node: the child's session_meta capture first, else the run_subagent `agent_id` argument; null when unknown (root: filled by the view from the Session DTO). */
   agentId: string | null;
+  /** The spawning call's model-written `description` — what this child was asked to do; null for the root, a standalone item, or when the model omitted it. */
+  description: string | null;
   /** Still running — the spawning card's output hasn't completed (root: the Task's own running state; a standalone item has no card, so it reads as done). */
   running: boolean;
   /** 0 = the main session; +1 per spawn hop. */
@@ -73,18 +75,34 @@ export function taskStartCount(items: readonly ChatItem[]): number {
   return n;
 }
 
-/** Lenient `agent_id` extraction from run_subagent arguments (complete JSON by the time a child is bound; unparseable/absent → null). */
-export function agentIdFromRunSubagentArgs(argsJson: string): string | null {
+/** Lenient string-field read from run_subagent arguments (complete JSON by the time a child is bound; unparseable/absent → null). */
+function runSubagentArg(argsJson: string, field: string): string | null {
   try {
     const parsed: unknown = JSON.parse(argsJson);
     if (parsed !== null && typeof parsed === "object") {
-      const id = (parsed as Record<string, unknown>)["agent_id"];
-      if (typeof id === "string" && id.length > 0) return id;
+      const value = (parsed as Record<string, unknown>)[field];
+      if (typeof value === "string" && value.length > 0) return value;
     }
   } catch {
-    // Arguments still streaming or malformed: no agent id to offer.
+    // Arguments still streaming or malformed: nothing to offer.
   }
   return null;
+}
+
+/** Lenient `agent_id` extraction from run_subagent arguments. */
+export function agentIdFromRunSubagentArgs(argsJson: string): string | null {
+  return runSubagentArg(argsJson, "agent_id");
+}
+
+/**
+ * The model-written `description` argument of run_subagent — one sentence saying what this
+ * child was spawned to do. It is the only human-readable statement of a subagent's purpose
+ * (the agent name says who, not what), so the graph renders it as each node's second line and
+ * repeats it untruncated in the node tooltip. Optional: a model may omit it, and
+ * `call_description: false` removes the property from the schema entirely — both read as null.
+ */
+export function descriptionFromRunSubagentArgs(argsJson: string): string | null {
+  return runSubagentArg(argsJson, "description");
 }
 
 /** Extract the latest Task's spawn tree: root first, then children in DFS preorder (document order). */
@@ -154,6 +172,8 @@ function extractFromSlice(
     {
       sessionId: rootSessionId,
       agentId: null,
+      // The root was not spawned by anyone, so there is no spawning call to describe.
+      description: null,
       running: root.running,
       depth: 0,
       origin: [],
@@ -169,6 +189,7 @@ function extractFromSlice(
     parentId: string,
     parentOrigin: string[],
     argsAgentId: string | null,
+    argsDescription: string | null,
   ): void => {
     if (seen.has(sessionId)) return;
     seen.add(sessionId);
@@ -185,6 +206,7 @@ function extractFromSlice(
     nodes.push({
       sessionId,
       agentId: child.meta?.agentId ?? argsAgentId,
+      description: argsDescription,
       running,
       depth: origin.length,
       origin,
@@ -206,9 +228,11 @@ function extractFromSlice(
           parentId,
           parentOrigin,
           agentIdFromRunSubagentArgs(item.argumentsText),
+          descriptionFromRunSubagentArgs(item.argumentsText),
         );
       } else if (item.kind === "subagent") {
-        addChild(item.sessionId, item.model, false, parentId, parentOrigin, null);
+        // A standalone child has no spawning card in this stream, so neither argument is available.
+        addChild(item.sessionId, item.model, false, parentId, parentOrigin, null, null);
       }
     }
   };
@@ -251,8 +275,12 @@ export function modelAtOrigin(model: StreamModel, origin: readonly string[]): St
 // ---------------------------------------------------------------------------
 
 /** Fixed node box (avatar + truncated name + elapsed time + status glyph) — no text measurement, so the layout stays pure. */
-export const NODE_W = 168;
-export const NODE_H = 34;
+// Node box: two stacked lines — the Agent name (with elapsed + status) over the spawning
+// call's description. Sized uniformly rather than per-node: variable heights would have to be
+// threaded through row placement and edge geometry below, for the sake of a few nodes that
+// carry no description (the root never does) and simply center their single line instead.
+export const NODE_W = 200;
+export const NODE_H = 46;
 export const GAP_X = 32;
 export const GAP_Y = 10;
 export const PAD = 6;

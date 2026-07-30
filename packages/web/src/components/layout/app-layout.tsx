@@ -60,9 +60,9 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
     navigate(`/chat/${DRAFT_SESSION_ID}`, agentId ? { state: { agentId } } : undefined);
   };
 
-  /** Page entries (rail positions 3-8): same routes as the pinned nav; Agents uses the rail-specific short label. */
+  /** Page entries (rail positions 3-8): same routes, same labels as the pinned nav. */
   const pages: ReadonlyArray<{ to: string; label: string; icon: string }> = [
-    { to: "/agents", label: S.nav.railAgents, icon: NAV_ICONS.agents },
+    { to: "/agents", label: S.nav.agents, icon: NAV_ICONS.agents },
     { to: "/skills", label: S.nav.skills, icon: NAV_ICONS.skills },
     { to: "/models", label: S.nav.models, icon: NAV_ICONS.models },
     { to: "/usage", label: S.nav.usage, icon: NAV_ICONS.usage },
