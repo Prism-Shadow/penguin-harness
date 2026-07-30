@@ -1,6 +1,6 @@
 ---
 name: agent-creation
-description: Create or configure an Agent State from a user requirement by writing AGENTS.md, setting identity metadata, and installing only needed Skills. Use when the user asks to create a new Agent or configure an existing one; do not use for Benchmark design, evaluation, or optimization.
+description: Create or configure an Agent State from a user requirement by writing AGENTS.md, setting identity metadata, and installing only needed Skills.
 short_description: Turn a requirement into a working agent.
 short_description_zh: 把需求变成可用的 Agent。
 version: 6

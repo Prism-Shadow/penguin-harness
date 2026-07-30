@@ -1,6 +1,6 @@
 ---
 name: agent-evaluation
-description: Internal leaf worker that runs one specified Test Agent on one specified Benchmark Case exactly once, privately scores that execution, and returns one protocol result. Use only when benchmark-design or agent-optimization supplies the complete request; do not use for user-facing evaluation, Benchmark design, or Agent changes.
+description: Run one specified Test Agent on one specified Benchmark Case exactly once, privately score that execution, and return one protocol result.
 short_description: Run and score one isolated Benchmark Case.
 short_description_zh: 隔离执行并评分一个 Benchmark Case。
 version: 5

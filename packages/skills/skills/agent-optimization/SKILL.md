@@ -1,6 +1,6 @@
 ---
 name: agent-optimization
-description: Improve an Agent State through versioned scores and score-linked Traces from a frozen Benchmark. Use when an explicit Test Agent has a complete current baseline; do not use for direct feedback, Benchmark construction, or direct scoring.
+description: Improve an Agent State through versioned scores and score-linked Traces from a frozen Benchmark.
 short_description: Improve an Agent from measured Benchmark results.
 short_description_zh: 根据 Benchmark 结果改进 Agent。
 version: 7

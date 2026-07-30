@@ -1,6 +1,6 @@
 ---
 name: benchmark-design
-description: Design and calibrate a multi-Case capability Benchmark and establish a traceable Formal Baseline. Use when an explicit Test Agent and target capability need a new or revised Benchmark; stop after the baseline and do not optimize the Agent.
+description: Design and calibrate a multi-Case capability Benchmark and establish a traceable Formal Baseline.
 short_description: Design and calibrate an Agent capability Benchmark.
 short_description_zh: 设计并校准 Agent 能力评测 Benchmark。
 version: 5
