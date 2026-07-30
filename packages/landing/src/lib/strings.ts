@@ -13,9 +13,7 @@ export const zh = {
     label: "公告",
     prev: "上一条公告",
     next: "下一条公告",
-    freeModels: "Ling 3.0 Flash 与 Free Models Router 等免费模型现已在 PenguinHarness 可用",
-    gemini: "Gemini 3.6 Flash 现已在 PenguinHarness 可用",
-    models: "Kimi K3 与 Qwen 3.8 Max 模型现已在 PenguinHarness 可用",
+    k3AndFree: "Kimi K3 与 Ling 3.0 Flash 等免费模型现已在 PenguinHarness 可用",
     fireworks: "携手 AMD 开发者计划：$50 Fireworks API 额度免费领取中",
   },
 
@@ -49,29 +47,43 @@ export const zh = {
   },
 
   hero: {
-    badge: "让 Agent 为你构建 Agent",
     /**
      * Headline: {titlePrefix}<nowrap>{titleNoWrap}{word}{titleSuffix}</nowrap>, the word
-     * rotating through titleWords (桌面/服务器 — where the builder lives; the README
-     * states Desktop only). The nowrap span pins the wrap point in front of it, so a
-     * break never splits "Agent Builder" / "Lives on Your Desktop" mid-phrase.
+     * rotating through titleWords (桌面/服务器 — where the builder runs; the README
+     * writes the pair as "桌面 / 服务器"). The nowrap span pins the wrap point in front
+     * of it, so a break never splits "Agent Builder" / "Right on Your Desktop" mid-phrase.
      */
-    titlePrefix: "全自动 Agent 构建器，",
-    titleNoWrap: "住在你的",
+    titlePrefix: "全自动 Agent 构建平台，",
+    titleNoWrap: "运行在你的",
     titleWords: ["桌面", "服务器"],
     titleSuffix: "上",
-    keywords: ["轻量", "高效", "开源"],
+    subtitle: "一键创建自进化 Agent",
     ctaPrimary: "快速开始",
     ctaGithub: "GitHub",
-    installHint: "一行命令安装（Linux / macOS / Windows，内嵌 Node 运行时，解压即用）",
-    installLabelPosix: "Linux / macOS",
-    installLabelWindows: "Windows",
+    installHint: "一行命令安装（内嵌 Node 运行时，解压即用）",
     stats: [
       { value: "1000+", label: "支持模型数量" },
       { value: "1×CPU", label: "最低运行配置" },
       { value: "100%", label: "开源，可本地部署" },
       { value: "首个原生", label: "递归自我进化 Harness" },
     ],
+  },
+
+  /** Install-method switcher (hero + quick start): OS tabs, online/offline methods. */
+  install: {
+    linux: "Linux",
+    macos: "macOS",
+    windows: "Windows",
+    online: "在线安装",
+    offline: "离线安装包",
+    offlineNote:
+      "每个 GitHub Release 附带五个自包含离线安装包（Linux / macOS 各 x64 与 arm64，Windows 为 x64），内含程序包、SHA256 校验文件与安装器：在有网机器下载，拷贝到目标机器安装，全程无需联网。",
+    offlineHints: {
+      linux: "arm64 机器换用 penguin-linux-arm64-offline.tar.gz。",
+      macos: "Apple 芯片用 arm64 包，Intel 芯片换用 penguin-darwin-x64-offline.tar.gz。",
+      windows: "解压后也可直接双击 install.cmd 完成安装。",
+    },
+    offlineRelease: "前往 GitHub Releases 下载离线安装包",
   },
 
   copy: {
@@ -108,7 +120,7 @@ export const zh = {
 
   compare: {
     eyebrow: "对比 LangChain",
-    title: "1× 与 100× 的差距",
+    title: "用 Agent 构建 Agent",
     subtitle: [
       "使用 LangChain，以 1 倍速度人工构建 Agent；",
       "使用 PenguinHarness，以 100 倍速度用 Agent 构建 Agent。",
@@ -158,9 +170,8 @@ export const zh = {
     subtitle:
       "一行命令安装，打开桌面级界面即可让 Agent 开始工作；数据全部保存在本地 ~/.penguin/data 目录。",
     step1: "安装",
-    step1Desc: "Linux / macOS / Windows，产物内嵌 Node 运行时，解压即用；升级与重装不触碰数据。",
-    installLabelPosix: "Linux / macOS",
-    installLabelWindows: "Windows（PowerShell）",
+    step1Desc:
+      "选择你的系统与安装方式：在线一行命令，或离线安装包；产物内嵌 Node 运行时，解压即用，升级与重装不触碰数据。",
     tabWeb: "Web 界面",
     tabCli: "命令行",
     webStep2: "启动 Web 界面",

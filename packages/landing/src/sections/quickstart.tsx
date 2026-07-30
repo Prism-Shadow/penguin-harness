@@ -11,7 +11,9 @@ import {
   DEEPSEEK_KEYS_URL,
   INSTALL_CMD,
   INSTALL_CMD_WINDOWS,
+  OFFLINE_INSTALL_CMDS,
   OPENROUTER_KEYS_URL,
+  RELEASES_URL,
 } from "../lib/links";
 import { Section } from "../components/section";
 import { CodeCard } from "../components/code-card";
@@ -75,6 +77,8 @@ function KeyLinks() {
 export function Quickstart() {
   const [mode, setMode] = useState<"web" | "cli">("web");
   const [provider, setProvider] = useState<"deepseek" | "openrouter">("deepseek");
+  const [os, setOs] = useState<"linux" | "macos" | "windows">("linux");
+  const [method, setMethod] = useState<"online" | "offline">("online");
 
   const modeBtn = (active: boolean) =>
     `inline-flex items-center gap-1.5 rounded-md px-3.5 py-1.5 text-sm font-medium transition-colors ${
@@ -130,12 +134,71 @@ export function Quickstart() {
             title={S.quickstart.step1}
             desc={S.quickstart.step1Desc}
           >
-            <CodeCard code={INSTALL_CMD} label={S.quickstart.installLabelPosix} />
-            <CodeCard
-              code={INSTALL_CMD_WINDOWS}
-              label={S.quickstart.installLabelWindows}
-              className="mt-2"
-            />
+            {/* Two switch rows — OS, then online/offline — so exactly one method shows at a time. */}
+            <div className="mb-2 flex flex-wrap gap-2">
+              <div
+                className="inline-flex gap-1 rounded-lg border border-gray-200 bg-white p-1 dark:border-gray-800 dark:bg-gray-900"
+                role="tablist"
+              >
+                {(["linux", "macos", "windows"] as const).map((key) => (
+                  <button
+                    key={key}
+                    type="button"
+                    role="tab"
+                    aria-selected={os === key}
+                    className={providerBtn(os === key)}
+                    onClick={() => setOs(key)}
+                  >
+                    {S.install[key]}
+                  </button>
+                ))}
+              </div>
+              <div
+                className="inline-flex gap-1 rounded-lg border border-gray-200 bg-white p-1 dark:border-gray-800 dark:bg-gray-900"
+                role="tablist"
+              >
+                {(["online", "offline"] as const).map((key) => (
+                  <button
+                    key={key}
+                    type="button"
+                    role="tab"
+                    aria-selected={method === key}
+                    className={providerBtn(method === key)}
+                    onClick={() => setMethod(key)}
+                  >
+                    {S.install[key]}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {method === "online" ? (
+              <CodeCard
+                code={os === "windows" ? INSTALL_CMD_WINDOWS : INSTALL_CMD}
+                label={os === "windows" ? "PowerShell" : "curl | sh"}
+              />
+            ) : (
+              <>
+                <p className="mb-2 text-xs leading-5 text-gray-500 dark:text-gray-400">
+                  {S.install.offlineNote}
+                </p>
+                <CodeCard
+                  code={OFFLINE_INSTALL_CMDS[os]}
+                  label={os === "windows" ? "PowerShell" : "shell"}
+                />
+                <p className="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">
+                  {S.install.offlineHints[os]}{" "}
+                  <a
+                    href={RELEASES_URL}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 text-brand-700 underline decoration-brand-300 underline-offset-2 transition-colors hover:text-brand-600 dark:text-brand-300 dark:decoration-brand-700"
+                  >
+                    {S.install.offlineRelease}
+                    <ExternalLinkIcon className="h-3 w-3" />
+                  </a>
+                </p>
+              </>
+            )}
           </Step>
 
           {mode === "web" ? (

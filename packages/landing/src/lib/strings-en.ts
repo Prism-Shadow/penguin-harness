@@ -12,9 +12,7 @@ export const en: Strings = {
     label: "Announcements",
     prev: "Previous announcement",
     next: "Next announcement",
-    freeModels: "Free models Ling 3.0 Flash and the Free Models Router are now in PenguinHarness",
-    gemini: "Gemini 3.6 Flash is now available in PenguinHarness",
-    models: "Kimi K3 and Qwen 3.8 Max are now available in PenguinHarness",
+    k3AndFree: "Kimi K3 and free models like Ling 3.0 Flash are now available in PenguinHarness",
     fireworks: "Claim $50 in Fireworks API credits with the AMD Developer Program",
   },
 
@@ -48,26 +46,39 @@ export const en: Strings = {
   },
 
   hero: {
-    badge: "Agents building agents",
     // The trailing space lives in the PREFIX (a breakable space before the nowrap
-    // span) — inside titleNoWrap it would glue "Builder" to the unbreakable chunk.
-    titlePrefix: "Your Automated Agent Builder ",
-    titleNoWrap: "Lives on Your ",
+    // span) — inside titleNoWrap it would glue "Builder," to the unbreakable chunk.
+    titlePrefix: "Your Automated Agent Builder, ",
+    titleNoWrap: "Right on Your ",
     titleWords: ["Desktop", "Server"],
     titleSuffix: "",
-    keywords: ["Lightweight", "Efficient", "Open Source"],
+    subtitle: "Create Self-Evolving Agents in One Click",
     ctaPrimary: "Get started",
     ctaGithub: "GitHub",
-    installHint:
-      "One-line install (Linux / macOS / Windows, bundled Node runtime — unpack and run)",
-    installLabelPosix: "Linux / macOS",
-    installLabelWindows: "Windows",
+    installHint: "One-line install (bundled Node runtime — unpack and run)",
     stats: [
       { value: "1000+", label: "supported models" },
       { value: "1×CPU", label: "minimum footprint" },
       { value: "100%", label: "open source, local deploy" },
       { value: "First native", label: "recursively self-improving harness" },
     ],
+  },
+
+  install: {
+    linux: "Linux",
+    macos: "macOS",
+    windows: "Windows",
+    online: "Online install",
+    offline: "Offline package",
+    offlineNote:
+      "Every GitHub Release attaches five self-contained offline bundles (Linux / macOS in x64 and arm64, Windows in x64), each carrying the program archive, its SHA256 checksum and the installer: download on a networked machine, copy to the target, and install with no network at all.",
+    offlineHints: {
+      linux: "On arm64 machines, use penguin-linux-arm64-offline.tar.gz.",
+      macos:
+        "Apple silicon uses the arm64 bundle; on Intel, use penguin-darwin-x64-offline.tar.gz.",
+      windows: "After unzipping you can also just double-click install.cmd.",
+    },
+    offlineRelease: "Download offline packages from GitHub Releases",
   },
 
   copy: {
@@ -105,7 +116,7 @@ export const en: Strings = {
 
   compare: {
     eyebrow: "vs. LangChain",
-    title: "The gap between 1× and 100×",
+    title: "Building Agents with Agents",
     subtitle: [
       "With LangChain, you build agents by hand — at 1× speed.",
       "With PenguinHarness, agents build agents — at 100×.",
@@ -157,9 +168,7 @@ export const en: Strings = {
       "Install with one command and let the Agent work from a desktop-grade interface — all data stays in your local ~/.penguin/data directory.",
     step1: "Install",
     step1Desc:
-      "Linux / macOS / Windows with a bundled Node runtime — unpack and run; upgrades never touch your data.",
-    installLabelPosix: "Linux / macOS",
-    installLabelWindows: "Windows (PowerShell)",
+      "Pick your OS and method — the online one-liner, or an offline package; the bundle carries its own Node runtime, and upgrades never touch your data.",
     tabWeb: "Web UI",
     tabCli: "CLI",
     webStep2: "Open the web interface",
