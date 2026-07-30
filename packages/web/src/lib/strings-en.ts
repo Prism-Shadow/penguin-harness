@@ -590,7 +590,7 @@ export const en: Strings = {
 
 ## Index page
 - \`index.html\` at the root: a card grid listing all 10 games (name + one-line mechanic + controls), each card opening its game.
-- One design language shared with every game, following the web-design skill; dark/light themes via \`<html data-theme>\` remembered in localStorage; responsive, single column on phones.
+- One design language shared with every game, following the web-design skill.
 
 ## Wrap-up
 - Review as a whole: the 10 mechanics really are distinct, the styling is consistent, and every index link resolves.
@@ -622,7 +622,7 @@ export const en: Strings = {
 - Keyboard shortcuts: Space play/pause, ← → previous/next, ↑ ↓ volume
 
 ## Design
-Penguin visual style (see the web-design skill), dark/light themes via <html data-theme>, dark by default, remembered in localStorage. Responsive: on phones the sidebar becomes a horizontally scrolling top bar.
+Penguin visual style (see the web-design skill), dark by default. On phones the sidebar becomes a horizontally scrolling top bar.
 
 When done, open index.html in a browser and self-test once.`,
       },
@@ -635,12 +635,7 @@ When done, open index.html in a browser and self-test once.`,
           "the app acts as a Claude Code configuration expert, answering Claude Code questions " +
           "with retrieval-augmented replies and clickable citations that reveal the matched " +
           "original text chunk and link to the real documents; " +
-          "give it a beautiful web chat UI following the web-design skill, with a few example questions in the empty state. " +
-          "Pay particular attention to matching the question's language against the corpus: the docs are English, " +
-          "while questions will often be Chinese. With a lexical retriever such as BM25, a Chinese query MUST be " +
-          "converted to English first (translate it, or extract English keywords) before it reaches the index — " +
-          "otherwise not a single Chinese term matches the English index and retrieval silently degrades to nothing. " +
-          "Mixed Chinese/English questions must retrieve correctly too, and the answer should follow the language of the question. " +
+          "give it a beautiful web chat UI following the web-design skill. " +
           "When done, run the app and self-test one Chinese question and one English question, confirming both retrieve " +
           "the right English documents and stream their answers, then tell me how to access it.",
       },
