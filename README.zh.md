@@ -4,7 +4,7 @@
 
 <h1 align="center">PenguinHarness</h1>
 
-<p align="center"><b>全自动 Agent 构建器，住在你的桌面上，连接 1,000+ 模型。</b></p>
+<p align="center"><b>全自动 Agent 构建平台，运行在你的桌面 / 服务器上</b><br />一键创建自进化 Agent</p>
 
 <p align="center">
   <a href="https://www.producthunt.com/products/penguinharness?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-penguinharness" target="_blank" rel="noopener noreferrer"><img alt="PenguinHarness - Let Agents Autonomously Build Better Agents for $0.02 | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1202577&amp;theme=light&amp;t=1784804711946" /></a>
@@ -108,18 +108,66 @@ https://github.com/user-attachments/assets/aec49ae9-b743-467b-b247-37bedfeaa36e
 
 ## 安装
 
-### 🌐 Web 应用——面向人
+每种方式装出的都是同一个 `penguin` 命令：`penguin web` 启动完整 Web 体验（多会话对话、Agent / 技能 / 模型管理、用量统计、轨迹观测、评估中心；首次登录 admin / penguin-2026，登录后请尽快修改密码），在应用内模型页配置模型后即可对话。在线安装器自带 Node 运行时，解压即用，升级与重装不触碰数据。
 
-🚀 一行安装，启动完整体验（多会话对话、Agent / 技能 / 模型管理、用量统计、轨迹观测、评估中心）：
+### 🐧 Linux（在线安装）
 
 ```bash
 curl -fsSL https://penguin.ooo/install.sh | sh
-penguin web        # 启动服务并打开 http://127.0.0.1:7364（首次登录：admin / penguin-2026）
+penguin web        # 启动服务并打开 http://127.0.0.1:7364
 ```
 
-🪟 Windows（PowerShell）：`irm https://penguin.ooo/install.ps1 | iex`
+### 🍎 macOS（在线安装）
 
-📦 或经 npm 安装：`npm install -g @prismshadow/penguin-cli`。在应用内模型页配置模型后即可对话。
+```bash
+curl -fsSL https://penguin.ooo/install.sh | sh
+penguin web        # 启动服务并打开 http://127.0.0.1:7364
+```
+
+### 🪟 Windows（在线安装，PowerShell）
+
+```powershell
+irm https://penguin.ooo/install.ps1 | iex
+penguin web        # 启动服务并打开 http://127.0.0.1:7364
+```
+
+### 📦 npm（任意平台，需 Node >= 24）
+
+```bash
+npm install -g @prismshadow/penguin-cli
+penguin web        # 启动服务并打开 http://127.0.0.1:7364
+```
+
+<details>
+<summary><b>📴 离线安装包（无网环境）</b></summary>
+
+每个 <a href="https://github.com/Prism-Shadow/penguin-harness/releases">GitHub Release</a> 附带五个自包含的离线安装包——Linux 与 macOS 各有 x64 / arm64 两种架构，Windows 为 x64。包内自带程序压缩包、SHA256 校验文件与对应平台的安装器，在有网机器下载后拷贝到目标机器即可安装，全程无需联网（离线安装强制校验 SHA256）。
+
+**Linux（arm64 机器换用 `penguin-linux-arm64-offline.tar.gz`）：**
+
+```bash
+mkdir penguin-offline
+tar -xzf penguin-linux-x64-offline.tar.gz -C penguin-offline
+./penguin-offline/install.sh
+```
+
+**macOS（Apple 芯片用 arm64 包，Intel 芯片换用 `penguin-darwin-x64-offline.tar.gz`）：**
+
+```bash
+mkdir penguin-offline
+tar -xzf penguin-darwin-arm64-offline.tar.gz -C penguin-offline
+./penguin-offline/install.sh
+```
+
+**Windows（解压后双击 `install.cmd`，或在 PowerShell 中运行）：**
+
+```powershell
+Expand-Archive penguin-win32-x64-offline.zip -DestinationPath penguin-offline
+cd penguin-offline
+.\install.cmd
+```
+
+</details>
 
 ### 🤖 CLI 与 SDK——面向 Agent
 

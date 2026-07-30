@@ -1,35 +1,3 @@
 # Unreleased
 
-Changes since v0.1.4. The version number is assigned at release, when this folder is renamed.
-
-- [2026-07-30] Backward compatibility: the batch's compat decisions in one place — the two per-panel localStorage width keys adopted into one shared key (widest wins, self-cleaning, with its removal release named), plus the changes checked and found to need no handling. ([details](2026-07-30-backward-compatibility.md))
-
-- [2026-07-30] Web App: navigation entries settle on one name each across the sidebar, the collapsed rail and page titles; the user menu's three update rows collapse into one; the Workspace and Agents panels share a single (wider) width and a single open/closed lifetime, closing only on a new chat; the Agents panel says what each subagent was sent to do; Project display names become editable; and the draft page's examples become a fixed-height, always-one-open folder shelf with a multi-agent game-center example added. ([details](2026-07-30-web-app-refinements.md))
-
-- [2026-07-30] CLI: pasting CJK or emoji into `penguin chat` no longer corrupts a character wherever the terminal split its stdin blocks — each chunk was decoded on its own, so a character torn across two reads became three replacement characters instead of one, and about 1400 Chinese characters was enough to trigger it. ([details](2026-07-30-paste-filter-utf8.md))
-
-- [2026-07-30] Docs: three reference blocks catch up with the code they document — `run_subagent`'s argument block lists the `provider` that `model_id` must be paired with, the provider credential table covers the three gateway groups it had been missing, and the Project model entry table documents `max_tokens`. ([details](2026-07-30-docs-tools-and-configuration-reference.md))
-
-- [2026-07-29] Core: every LLM failure except a rejected credential now retries inside the run — the classifier separating transient from permanent is an allowlist, so a gateway wording a transient fault its own way used to kill the turn — with the retry visible in both frontends, compaction on the same set under its own shorter budget, and a recovered failure no longer reported to the operator as an incident. Separately, pressing Stop mid-request can no longer leave a Session running forever when the provider's stream neither yields nor rejects after the abort. ([details](2026-07-29-llm-request-lifecycle.md))
-
-- [2026-07-29] Cost center: the error table can page back through the whole history instead of showing only the newest 20, its source column reads `[env]` rather than `environment ·`, and an ordinary non-zero exit from a command tool is no longer recorded as an error — `grep` finding nothing had been crowding out the failures the table exists to show. ([details](2026-07-29-cost-center-errors.md))
-
-- [2026-07-29] Core and tooling: `PORT` / `HOST` and the internal CLI plumbing no longer reach commands the Agent runs, so a dev server started by `exec_command` picks its own port instead of binding the harness's; and the development backend moves to 7368, so `pnpm dev` no longer collides with an installed `penguin web` — or, quieter and worse, proxies to it. ([details](2026-07-29-harness-env-and-dev-ports.md))
-
-- [2026-07-29] Web App: the composer can attach files of any type — written to the Session scratchpad and handed to the model as `[attached file: <path>]` lines, keeping non-ASCII names — and the `@` mention becomes an `/agent` command; both switch commands are session-only and stage their pick as a chip, cached with the text, until Enter sends. ([details](2026-07-29-composer-attachments-and-switch-commands.md))
-
-- [2026-07-29] Core: the default system prompt is about a tenth shorter (1087 → 969 words), with the trim concentrated in the sections re-read every turn. It now pins replies to the user's language, states the API-key stop rule once, points at parallel subagents for large tasks, and has tooling installed once into a shared per-Agent `shared_env/` directory while project dependencies stay in the project. The App Data Dir rule also stops forbidding deliverables in a tree that a temporary Workspace lives inside. Existing Agents keep their own prompt. ([details](2026-07-29-default-system-prompt.md))
-
-- [2026-07-29] Web App: the chat header's elapsed chip no longer restarts from zero when a running Session is reloaded and now counts an event still in flight, and a round interrupted before its first Request settles to the same figure whether it was watched live or replayed — the running Task is anchored to the server's own clock instead of the browser's. ([details](2026-07-29-session-elapsed.md))
-
-- [2026-07-28] Web App: model configuration stops inviting the browser's saved login — every form control opts out of autofill unless it declares a real credential role, and a secret field says `new-password`, the only value Chrome and Safari honor on a password box; a closed docked side panel no longer paints its 1px divider next to the open one, which read as a second, empty panel beside the Workspace files; a provider-signature message carrying no text stops drawing an empty reply bubble after a thinking segment; Benchmark costs now follow the display currency selected in settings; the tool card states a call's outcome once instead of twice; and no page can grow the document into a second scrollbar that drags the whole shell. ([details](2026-07-28-web-app.md))
-
-- [2026-07-28] Web App and CLI: duration and byte abbreviations now carry into the next unit instead of printing `1m60s` or `1024KB` — both helpers rounded the value they displayed but chose the unit (or the minute/second split) from the raw input. ([details](2026-07-28-duration-and-byte-formatting.md))
-
-- [2026-07-27] Input images: mid-run steering carries them (an uncaptioned image is a complete steering message), a goal objective accepts them as scratchpad paths on every model since it is re-injected as text each round, and the composer's mid-run action button can no longer sit disabled with Stop displaced. ([details](2026-07-27-input-images.md))
-
-- [2026-07-27] Windows: the `win32-x64` package bundles MinGit under `git/`, so `exec_command` has a real bash even on a machine with no Git for Windows — the shell stops depending on what happens to be installed. A user's own Git for Windows still wins (its MSYS userland is the fuller one); the bundle is the floor, and PowerShell is now reached only by npm installs. GPLv2 obligations are recorded in a new root `THIRD-PARTY-NOTICES.md`. ([details](2026-07-27-windows-bundled-shell.md))
-
-- [2026-07-27] Sites: the 0.1.4 release post in both languages, with a capture script for its screenshots. ([details](2026-07-27-sites-and-blog.md))
-
-- [2026-07-25] Agent tuning: the Web App gains an end-to-end example for creating, benchmarking, and optimizing an Agent through isolated CLI Sessions, while the built-in tuning Skills tighten phase ownership, private evaluation boundaries, and Evaluator dispatch contracts. ([details](2026-07-25-agent-tuning-pipeline.md))
+Changes since v0.1.5. The version number is assigned at release, when this folder is renamed.

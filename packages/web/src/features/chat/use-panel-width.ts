@@ -30,7 +30,7 @@ const WIDTH_STORAGE_KEY = "penguin.panelWidth";
  *
  * REMOVAL: delete this constant and storedWidth()'s legacy branch in the release AFTER the one
  * shipping this change, as part of preparing that release. Nothing else in the repo reads these
- * keys, so it is a pure deletion. See changelog/unreleased/2026-07-30-backward-compatibility.md.
+ * keys, so it is a pure deletion. See changelog/0.1.5/2026-07-30-backward-compatibility.md.
  */
 const LEGACY_WIDTH_KEYS = ["penguin.filesPanelWidth", "penguin.subagentsPanelWidth"] as const;
 

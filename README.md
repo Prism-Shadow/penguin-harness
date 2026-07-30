@@ -4,7 +4,7 @@
 
 <h1 align="center">PenguinHarness</h1>
 
-<p align="center"><b>Your automated agent builder lives on your desktop, connected to 1,000+ models.</b></p>
+<p align="center"><b>Your Automated Agent Builder, Right on Your Desktop / Server</b><br />Create Self-Evolving Agents in One Click</p>
 
 <p align="center">
   <a href="https://www.producthunt.com/products/penguinharness?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-penguinharness" target="_blank" rel="noopener noreferrer"><img alt="PenguinHarness - Let Agents Autonomously Build Better Agents for $0.02 | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1202577&amp;theme=light&amp;t=1784804711946" /></a>
@@ -108,18 +108,66 @@ Each family's latest generation only — the app's **Models** page lists every b
 
 ## Installation
 
-### 🌐 Web App — for humans
+Every route installs the same `penguin` command: `penguin web` launches the full Web experience (multi-session chat, agent/skill/model management, usage stats, Trace observability, evaluation center; first login admin / penguin-2026 — change the password right after), and models are configured on the in-app Models page. The online installers bundle their own Node runtime — unpack and run; upgrades and reinstalls never touch your data.
 
-🚀 Install and launch the full experience (multi-session chat, agent/skill/model management, usage stats, Trace observability, evaluation center):
+### 🐧 Linux (online install)
 
 ```bash
 curl -fsSL https://penguin.ooo/install.sh | sh
-penguin web        # start the service and open http://127.0.0.1:7364 (first login: admin / penguin-2026)
+penguin web        # start the service and open http://127.0.0.1:7364
 ```
 
-🪟 On Windows (PowerShell): `irm https://penguin.ooo/install.ps1 | iex`
+### 🍎 macOS (online install)
 
-📦 Or via npm: `npm install -g @prismshadow/penguin-cli`. Configure models on the in-app Models page, then chat.
+```bash
+curl -fsSL https://penguin.ooo/install.sh | sh
+penguin web        # start the service and open http://127.0.0.1:7364
+```
+
+### 🪟 Windows (online install, PowerShell)
+
+```powershell
+irm https://penguin.ooo/install.ps1 | iex
+penguin web        # start the service and open http://127.0.0.1:7364
+```
+
+### 📦 npm (any platform, Node >= 24)
+
+```bash
+npm install -g @prismshadow/penguin-cli
+penguin web        # start the service and open http://127.0.0.1:7364
+```
+
+<details>
+<summary><b>📴 Offline install packages (air-gapped machines)</b></summary>
+
+Every <a href="https://github.com/Prism-Shadow/penguin-harness/releases">GitHub Release</a> attaches five self-contained offline bundles — Linux and macOS in x64 / arm64, Windows in x64. Each bundle carries the program archive, its SHA256 checksum and the platform's installer: download on a networked machine, copy to the target, and install with no network at all (offline installs verify the SHA256 unconditionally).
+
+**Linux (on arm64, use `penguin-linux-arm64-offline.tar.gz`):**
+
+```bash
+mkdir penguin-offline
+tar -xzf penguin-linux-x64-offline.tar.gz -C penguin-offline
+./penguin-offline/install.sh
+```
+
+**macOS (Apple silicon shown; on Intel, use `penguin-darwin-x64-offline.tar.gz`):**
+
+```bash
+mkdir penguin-offline
+tar -xzf penguin-darwin-arm64-offline.tar.gz -C penguin-offline
+./penguin-offline/install.sh
+```
+
+**Windows (unzip, then double-click `install.cmd` — or run it in PowerShell):**
+
+```powershell
+Expand-Archive penguin-win32-x64-offline.zip -DestinationPath penguin-offline
+cd penguin-offline
+.\install.cmd
+```
+
+</details>
 
 ### 🤖 CLI & SDK — for agents
 

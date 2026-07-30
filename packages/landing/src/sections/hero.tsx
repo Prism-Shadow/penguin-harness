@@ -1,10 +1,10 @@
 /**
- * Hero: enlarged logo + product name, the slogan inside the pill badge, then the
- * one-line headline whose rotating word crossfades through a gaussian blur
- * (Desktop <-> Server, localized per dictionary), three keywords, the install one-liner
- * and stats. The rotating word is a stacked inline-grid so line width never jumps.
+ * Hero: enlarged logo + product name, the one-line headline whose rotating word
+ * crossfades through a gaussian blur (Desktop <-> Server, localized per dictionary),
+ * the one-sentence subtitle, the install one-liner behind an OS switcher, and stats.
+ * The rotating word is a stacked inline-grid so line width never jumps.
  */
-import { Fragment, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { S } from "../lib/strings";
 import { INSTALL_CMD, INSTALL_CMD_WINDOWS, REPO_URL } from "../lib/links";
@@ -12,6 +12,54 @@ import { CopyButton } from "../components/copy-button";
 import { ArrowRightIcon, GitHubIcon } from "../components/icons";
 
 const ROTATE_MS = 2600;
+
+type InstallOs = "linux" | "macos" | "windows";
+
+/**
+ * Install one-liner behind an OS tab row: one command visible at a time (Linux and
+ * macOS share the POSIX one-liner; the tabs still name them apart so nobody has to
+ * know that). Prompt char follows the shell: $ for POSIX, > for PowerShell.
+ */
+function InstallBox() {
+  const [os, setOs] = useState<InstallOs>("linux");
+  const cmd = os === "windows" ? INSTALL_CMD_WINDOWS : INSTALL_CMD;
+  const osBtn = (active: boolean) =>
+    `rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+      active
+        ? "bg-white text-gray-900 shadow-sm dark:bg-gray-700 dark:text-gray-100"
+        : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+    }`;
+  return (
+    <div className="overflow-hidden rounded-xl border border-gray-200 bg-gray-50 text-left dark:border-gray-800 dark:bg-gray-900">
+      <div
+        className="flex items-center gap-1 border-b border-gray-200 bg-gray-100/70 px-2 py-1.5 dark:border-gray-800 dark:bg-gray-800/40"
+        role="tablist"
+      >
+        {(["linux", "macos", "windows"] as const).map((key) => (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={os === key}
+            className={osBtn(os === key)}
+            onClick={() => setOs(key)}
+          >
+            {S.install[key]}
+          </button>
+        ))}
+      </div>
+      <div className="flex items-center gap-3 py-2.5 pr-2.5 pl-4">
+        <code className="min-w-0 flex-1 overflow-x-auto font-mono text-[13px] whitespace-nowrap text-gray-800 dark:text-gray-200">
+          <span className="mr-2 text-gray-400 select-none dark:text-gray-500">
+            {os === "windows" ? ">" : "$"}
+          </span>
+          {cmd}
+        </code>
+        <CopyButton text={cmd} className="shrink-0" />
+      </div>
+    </div>
+  );
+}
 
 function RotatingWord({ words }: { words: string[] }) {
   const [active, setActive] = useState(0);
@@ -50,16 +98,9 @@ export function Hero() {
           />
           <span className="text-3xl font-semibold tracking-tight sm:text-4xl">{S.siteName}</span>
         </div>
-        <p
-          className="anim-rise mx-auto mt-6 inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3.5 py-1 text-[13px] text-gray-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400"
-          style={{ animationDelay: "40ms" }}
-        >
-          <span className="h-1.5 w-1.5 rounded-full bg-brand-500" aria-hidden="true" />
-          {S.hero.badge}
-        </p>
         {/* No text-balance: balance may break inside the breakable prefix ("…Agent /
             Builder…"); greedy wrapping + the nowrap span pins the desktop break to
-            "Your Automated Agent Builder / Lives on Your Desktop". */}
+            "Your Automated Agent Builder, / Right on Your Desktop". */}
         <h1
           className="anim-rise mx-auto mt-6 max-w-full text-3xl font-semibold tracking-tight sm:text-5xl"
           style={{ animationDelay: "80ms" }}
@@ -72,22 +113,12 @@ export function Hero() {
           </span>
         </h1>
 
-        <div
-          className="anim-rise mt-6 flex items-center justify-center gap-4 text-base font-medium text-gray-600 sm:text-lg dark:text-gray-300"
+        <p
+          className="anim-rise mt-6 text-base font-medium text-gray-600 sm:text-lg dark:text-gray-300"
           style={{ animationDelay: "140ms" }}
         >
-          {S.hero.keywords.map((keyword, i) => (
-            <Fragment key={keyword}>
-              {i > 0 && (
-                <span
-                  className="h-1 w-1 rounded-full bg-gray-300 dark:bg-gray-600"
-                  aria-hidden="true"
-                />
-              )}
-              <span>{keyword}</span>
-            </Fragment>
-          ))}
-        </div>
+          {S.hero.subtitle}
+        </p>
 
         <div
           className="anim-rise mt-8 flex flex-wrap items-center justify-center gap-3"
@@ -115,29 +146,7 @@ export function Hero() {
           className="anim-rise mx-auto mt-10 w-fit max-w-full"
           style={{ animationDelay: "240ms" }}
         >
-          {/* One install row per OS (labels are language-neutral; prompt chars $ vs > match the shells). */}
-          <div className="overflow-hidden rounded-xl border border-gray-200 bg-gray-50 text-left dark:border-gray-800 dark:bg-gray-900">
-            <div className="flex items-center gap-3 py-2.5 pr-2.5 pl-4">
-              <span className="w-24 shrink-0 text-[11px] font-medium text-gray-400 dark:text-gray-500">
-                {S.hero.installLabelPosix}
-              </span>
-              <code className="min-w-0 flex-1 overflow-x-auto font-mono text-[13px] whitespace-nowrap text-gray-800 dark:text-gray-200">
-                <span className="mr-2 text-gray-400 select-none dark:text-gray-500">$</span>
-                {INSTALL_CMD}
-              </code>
-              <CopyButton text={INSTALL_CMD} className="shrink-0" />
-            </div>
-            <div className="flex items-center gap-3 border-t border-gray-200 py-2.5 pr-2.5 pl-4 dark:border-gray-800">
-              <span className="w-24 shrink-0 text-[11px] font-medium text-gray-400 dark:text-gray-500">
-                {S.hero.installLabelWindows}
-              </span>
-              <code className="min-w-0 flex-1 overflow-x-auto font-mono text-[13px] whitespace-nowrap text-gray-800 dark:text-gray-200">
-                <span className="mr-2 text-gray-400 select-none dark:text-gray-500">&gt;</span>
-                {INSTALL_CMD_WINDOWS}
-              </code>
-              <CopyButton text={INSTALL_CMD_WINDOWS} className="shrink-0" />
-            </div>
-          </div>
+          <InstallBox />
           <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">{S.hero.installHint}</p>
         </div>
 
