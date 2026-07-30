@@ -998,7 +998,6 @@ Benchmark：
     viewCase: "查看题目",
     publicMaterials: "公开材料",
     statementUnavailable: "题面暂时无法读取",
-    maxScore: (score: string): string => `满分 ${score}`,
     evaluations: "评估明细",
     noEvaluations: "暂无评估记录",
     /** Evaluation notes (scoreboard's summary: score source and notes on this round's changes). */

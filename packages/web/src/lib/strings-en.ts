@@ -1021,7 +1021,6 @@ Scenarios:
     viewCase: "View task",
     publicMaterials: "Public materials",
     statementUnavailable: "The public Statement is unavailable",
-    maxScore: (score: string): string => `Max ${score}`,
     evaluations: "Evaluations",
     noEvaluations: "No evaluations yet",
     summaryLabel: "Summary",

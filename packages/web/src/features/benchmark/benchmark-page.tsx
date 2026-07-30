@@ -500,10 +500,10 @@ function CasesSection({
                   {item.id}
                 </span>
               </span>
-              <span className="shrink-0 font-mono text-xs text-gray-500">
-                {S.benchmark.maxScore("100")}
-              </span>
-              <span className="shrink-0 text-xs text-brand-700 dark:text-brand-300">
+              {/* Styled as the quiet gray action the Workspace download link is, not as a
+                  link: the row itself is the button, so an accent-colored label here read as
+                  a second, separately clickable target. Hover feedback comes from the row. */}
+              <span className="shrink-0 rounded-md px-2.5 py-1 text-xs font-medium text-gray-600 dark:text-gray-300">
                 {S.benchmark.viewCase}
               </span>
             </button>

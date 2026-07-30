@@ -304,7 +304,6 @@ export function BenchmarkStatementBrowser({ projectId, agentId, benchmarkId, cas
               {preview?.path ?? caseSummary.id}
             </p>
           </div>
-          <span className="shrink-0 text-xs text-gray-400">{S.benchmark.maxScore("100")}</span>
           {downloadUrl && preview && (
             <a
               href={downloadUrl}
