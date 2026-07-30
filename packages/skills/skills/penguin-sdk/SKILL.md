@@ -1,10 +1,10 @@
 ---
 name: penguin-sdk
-description: Build AI apps on the Penguin Harness SDK — self-contained projects, the createSession/run streaming loop, and a complete RAG recipe that ingests documents into a knowledge base and answers with citations behind a web UI.
+description: Build AI apps on the Penguin Harness SDK — self-contained projects, the createSession/run streaming loop with thinking and image messages, and a complete RAG recipe that ingests documents into a knowledge base and answers with citations behind a web UI.
 short_description: Build AI and RAG apps on the Penguin Harness SDK.
 short_description_zh: 基于 Penguin SDK 构建 AI 与 RAG 应用。
-version: 14
-updated: 2026-07-25T00:00:00Z
+version: 17
+updated: 2026-07-30T11:10:00Z
 ---
 
 # Penguin Harness SDK
@@ -31,23 +31,19 @@ const agent = await createAgent({ root: path.join(import.meta.dirname, "penguin_
 
 With every reference relative to the project, the user can move or copy the folder anywhere and it still runs.
 
-## Before you build: keys and the data root
+## Keys and the data root — check before you build
 
-**Important prerequisite — set the key up first, then develop.** For AI-app development, have the user add the model API key in **this agent's key vault** (gear icon on its card, Agents page → settings → key vault tab) *before* you start building, so the credential is in your shell environment when you configure and test the app. Model ids to offer the user can come straight from the penguin CLI catalog (`penguin config model add --help`, and the agenthub-models skill's id table).
+**The app's Penguin data root must live inside the CWD workspace — never `~/.penguin`.** Point `createAgent({ root })` and every `penguin config ... --root <dir>` at a directory under the current working directory (e.g. `./penguin_data`); the global `~/.penguin` belongs to the person running Penguin and must never hold — or lend — the app's config or keys.
 
-**The app's Penguin data root must live inside the CWD workspace — never `~/.penguin`.** Point `createAgent({ root })` and every `penguin config ... --root <dir>` at a directory under the current working directory (e.g. `./penguin_data`); the global `~/.penguin` directory belongs to the person running Penguin and must never hold the app's config or keys.
-
-## Check the model first
-
-Before writing any code, verify a usable model credential exists — a finished app that cannot answer is a failed delivery discovered too late:
+**Credential first, code second** — a finished app that cannot answer is a failed delivery discovered too late. Before writing any code:
 
 ```bash
 env | grep -oE "(DEEPSEEK|OPENAI|ANTHROPIC|GEMINI)_API_KEY" || echo none
 ```
 
-Vault keys also appear in your Vault Keys section. **Only two sources count as a usable credential**: a vault-injected environment variable (the check above), or a key already configured in the app's own data root (`penguin config model list --root <data_dir>`). Keys living in the global `~/.penguin` or any other `.penguin` directory do **not** count — a bare `penguin config model list` (no `--root`) reads the global store, because the CLI defaults to the global root unless `--root` is given, so a key showing up there proves nothing for the app and must never be used or copied.
+**Only two sources count as a usable credential**: a vault-injected environment variable (the check above; vault keys also appear in your Vault Keys section), or a key already configured in the app's own data root (`penguin config model list --root <data_dir>`). Keys in the global `~/.penguin` or any other `.penguin` directory do **not** count — a bare `penguin config model list` (no `--root`) reads the global store, because the CLI defaults to the global root unless `--root` is given, so a key showing up there proves nothing for the app and must never be used or copied.
 
-If neither counted source yields a usable key, **stop immediately and ask the user to configure one — do not start building, and do not keep calling tools to retry**: ask them to open the agent's settings via the **gear icon** on its card (left side, Agents page) and add a model API key (e.g. `DEEPSEEK_API_KEY`) in the **key vault** tab — vault values reach your shell environment on the next task. Re-running `env`, re-checking the vault, or attempting the build in a loop wastes turns and money; one clear check, then hand back to the user. Build only after a credential is confirmed, or clearly agree with the user to build now and verify later.
+If neither counted source yields a key, **stop immediately and ask the user to configure one — do not start building, and do not burn turns re-checking in a loop**: have them open this agent's settings via the **gear icon** on its card (left side, Agents page) and add a model API key (e.g. `DEEPSEEK_API_KEY`) in the **key vault** tab — vault values reach your shell environment on the next task. One clear check, then hand back to the user. Build only after a credential is confirmed, or after clearly agreeing with the user to build now and verify later. Model ids to offer the user come from the penguin CLI catalog (`penguin config model add --help`) and the agenthub-models skill's id table.
 
 ## Setup
 
@@ -66,7 +62,7 @@ Keep model API keys **project-local**: configure them with the penguin CLI into 
 
 Model config lives in one hidden file under the data root's project directory: `.project_config.toml`. It is CLI-only — never read, print or edit it.
 
-If neither route yields a usable credential, do not fake the verification: finish the build, report it as **unverified**, and tell the user exactly how to unblock you — in the Penguin web app, open this agent's settings via the **gear icon** on its card (Agents page) and add a model API key (e.g. `DEEPSEEK_API_KEY`) under the **key vault** tab. Vault keys are injected into your shell environment on the next task, so once the user has added one, you can run the self-test to completion.
+If the user agreed to build before a credential exists, do not fake the verification: finish the build, report it as **unverified**, and point them at the key vault flow above — once a key is added, vault values reach your environment on the next task and you can run the self-test to completion.
 
 ## Streaming loop
 
@@ -91,6 +87,8 @@ for (;;) {
     if (isModelMessage(msg)) {
       const p = msg.payload;
       if (p.type === "partial_text" && p.event_type === "delta") process.stdout.write(p.text);
+      // CoT stream from reasoning models — show progress, but keep it out of the answer channel.
+      if (p.type === "partial_thinking" && p.event_type === "delta") process.stderr.write(p.thinking);
     }
   }
   process.stdout.write("\n");
@@ -101,8 +99,26 @@ session.dispose();
 
 - `createSession({ workspaceDir, provider, modelId })` — `workspaceDir` must already exist (omit for an auto temp dir); the model reference is the `(provider, modelId)` pair, so pass both to pick a configured model or neither for the project default — passing one alone throws.
 - The `approve` callback gates every tool call; **omitting it denies everything**.
+- `opts.thinkingLevel` (`"none" | "low" | "medium" | "high" | "xhigh"`) overrides the agent's default (`model.thinking_level` in `system_config.yaml`) for this turn only — raise it for hard questions, drop it for latency-sensitive calls like titling or classification.
+- Session lifetime is the app's memory model: reuse one Session for a stateful chat (context accumulates, as above), create one per request for stateless QA (the RAG recipe below); either way call `session.dispose()` when done to release background processes.
 - An Agent's behavior is edited in its `agent_state/` files (system_config.yaml, AGENTS.md, skills/), not in code.
-- Call `session.dispose()` when done to release background processes.
+
+## Thinking and image messages
+
+Modern models think before answering and accept images; the stream and the input protocol carry both — use them instead of flattening everything to text.
+
+**Thinking (CoT) out.** Reasoning models stream `partial_thinking` (field `thinking`) before any `partial_text`, and a complete `thinking` message follows. Show the stream — a silent 20-second wait reads as a hang — but keep it in its own channel: a collapsible muted block per the web-design skill, auto-collapsed once answer text starts. Never concatenate thinking into the answer, store it as the answer, or cite from it; ignore its `fidelity` field (core's replay bookkeeping). Non-reasoning models simply never emit it — don't reserve UI space.
+
+**Images in.** Build image input with `imageUrlMessage` (a web URL or a base64 data URL) beside `userText` in the same `run` input:
+
+```ts
+import { imageUrlMessage, userText } from "@prismshadow/penguin-core";
+session.run([userText(question), ...images.map(imageUrlMessage)], { ... });
+```
+
+Browser flow: `<input type="file" accept="image/*">` plus paste/drag-drop → `FileReader.readAsDataURL` → POST `{ question, images: [dataUrl] }` → the server maps each entry to `imageUrlMessage`. Reject non-image MIME types and cap size (a data URL rides the context window; a few MB is plenty). Whether the session model actually sees pixels is the model config's `vision` flag (`penguin config model list` prints `vision=Y/-`; set via `--vision/--no-vision` on `model add`, default supported): with `vision=false` the core folds the image into an `[attached image: <path>]` line and the built-in image tools read it through the project's configured `vision_model` (`penguin config model vision --provider <group> --model-id <id> --root <data_dir>`) — the app still works, through a description instead of direct sight.
+
+**Other payloads worth handling** (always narrow with the guards first): `partial_tool_call` / `partial_tool_call_output` — surface as an activity line ("running `search`…") in apps that grant tools; `request_end` (event) — a non-`completed` `status` is the error signal (`auth` → ask for a key; `message` carries the failure detail; `retry_in_ms` announces a planned in-run retry, renderable as a countdown); `token_usage` (event) — session-cumulative and last-request counts, if the app shows cost; `compaction_begin` / `compaction_end` (events) — long-lived chats only, show a brief "context being compacted" notice. Everything else is safe to ignore.
 
 ## RAG knowledge app
 
@@ -270,12 +286,15 @@ http.createServer(async (req, res) => {
     }
     res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
     try {
-      const prompt = `Answer from the context below; cite blocks inline as [1][2]. If the context is not enough, say so.\n\n${context}\n\nQuestion: ${question}`;
+      const prompt = `Answer in plain text (no Markdown; short paragraphs) from the context below; cite blocks inline as [1][2]. If the context is not enough, say so.\n\n${context}\n\nQuestion: ${question}`;
       for await (const msg of session.run([userText(prompt)], { approve: async () => "deny", signal: ac.signal })) {
         if (isModelMessage(msg)) {
           const p = msg.payload;
           if (p.type === "partial_text" && p.event_type === "delta" && !res.writableEnded)
             res.write(`data: ${JSON.stringify({ delta: p.text })}\n\n`);
+          // Reasoning models: forward CoT on its own SSE field so the UI can collapse it.
+          if (p.type === "partial_thinking" && p.event_type === "delta" && !res.writableEnded)
+            res.write(`data: ${JSON.stringify({ thinking: p.thinking })}\n\n`);
         }
       }
       // Sources carry the matched chunk text verbatim: the UI must be able to show the exact
@@ -311,12 +330,17 @@ http.createServer(async (req, res) => {
 }).listen(Number(process.env.PORT ?? 4630), () => console.log("http://localhost:4630"));
 ```
 
-**UI** (`public/index.html`) — a chat interface built per the web-design skill: message list, streamed assistant text appended delta by delta, the final `sources` event rendered as citation chips, an empty state inviting the first question with **3–4 example questions the corpus can actually answer** (pill chips; clicking one submits it), and a visible error state when `/api/ask` fails. Citations must satisfy both of these, never bare text:
+**UI** (`public/index.html`) — a chat interface built per the web-design skill: message list, streamed assistant text appended delta by delta (plain text under the output contract below: escape, split blank-line paragraphs, style the `[n]` markers), `thinking` events into the collapsible reasoning block (collapse it when the first answer delta arrives), the final `sources` event rendered as citations (pill chips or accordion source cards), an empty state inviting the first question with **3–4 example questions the corpus can actually answer** (clicking one submits it), and a visible error state when `/api/ask` fails. Citations must satisfy both of these, never bare text:
 
 - **Reveal the original chunk**: clicking a citation chip (or an inline `[n]`) opens a popover/panel showing the matched chunk's `text` from the sources event **verbatim** — the numbering maps 1:1 to the context blocks in the prompt, so `[n]` always reveals exactly the block the answer drew on.
 - **Link to the real document**: inside the popover, `<a href="<url>" target="_blank">` using the `url` field (`/corpus/<path>`, which this server serves) — clicking the chip itself opens the popover, the document link lives within it. When the corpus was cloned from a public repository, prefer mapping the path to the canonical upstream page instead (e.g. the GitHub blob URL derived from the clone URL).
 
-**Persona** (`persona.md`) — the embedded agent's role, written per the agent-creation skill. Shape: one role sentence ("You are an expert on X; you answer strictly from the provided context blocks"), citation and refusal rules, answer language follows the question.
+**Output format and language** — settle both up front, in the persona and the retriever, not in the UI:
+
+- **No Markdown pipeline — set the output format instead**: instruct the embedded agent (in `persona.md` and the per-request prompt) to answer in plain text — short paragraphs separated by blank lines, citations as bare `[n]`, no Markdown syntax. The UI then only escapes the text, splits paragraphs and styles the `[n]` markers; there is no renderer to build. When richer structure genuinely matters, have the model emit a small whitelisted HTML subset (`<p> <ul> <li> <strong> <code>`) and sanitize to exactly that whitelist before inserting — never inject unsanitized model output.
+- **Cross-language retrieval**: the corpus and the user often speak different languages (English docs, Chinese questions), and BM25 is purely lexical — a Chinese question scores zero against English chunks. At ingest time derive a small bilingual keyword map for the corpus's core vocabulary (10–20 domain terms, e.g. `权限 → permissions / allow / deny`, `钩子 → hooks`) and expand query tokens through it in `search()` before scoring; keep the per-character CJK tokenizer. The persona already pins the answer language to the question's language.
+
+**Persona** (`persona.md`) — the embedded agent's role, written per the agent-creation skill. Shape: one role sentence ("You are an expert on X; you answer strictly from the provided context blocks"), citation and refusal rules, plain-text output (no Markdown — the output contract above), answer language follows the question.
 
 ## Verify before you hand over
 
@@ -330,4 +354,4 @@ Never declare the app done without running it:
    Then `curl` one of the returned source `url`s — it must return the document, not a 404 (citation links have to resolve).
 5. Open the UI (or screenshot it) to confirm the layout renders.
 
-Fix any failure and re-verify. Report with backtick-wrapped relative paths (`server.ts`, `public/index.html`, …), how to start the app, and the assumptions you made.
+Fix any failure and re-verify; when the app accepts image input, one verification question must include a real image. Report with backtick-wrapped relative paths (`server.ts`, `public/index.html`, …), how to start the app, and the assumptions you made.
