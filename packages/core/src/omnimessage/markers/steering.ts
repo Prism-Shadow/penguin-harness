@@ -5,7 +5,11 @@
  * queues it and delivers it as a **standalone user text message** wrapped in a
  * `[user_steering]…[/user_steering]` block, sent with the next request input alongside that
  * turn's tool outputs (or as the continuation input when the turn produced no tool calls) —
- * the model sees it without the agent loop being interrupted. The message is real user input:
+ * the model sees it without the agent loop being interrupted. Images sent with the message
+ * follow it as ordinary user image messages (a model without vision gets `[attached image: …]`
+ * lines inside the block instead), so consumers group them the way they already group a
+ * Prompt's images: everything up to the next non-image message belongs to the steering
+ * message, and none of it starts a new Task. The message is real user input:
  * written to Trace like any Prompt and yielded to the output stream. The marker exists so the
  * model and the render layers can tell it apart from a task-starting Prompt: UIs keep it inside
  * the running Task (no new Task segment) and render it as user speech instead of raw markers.

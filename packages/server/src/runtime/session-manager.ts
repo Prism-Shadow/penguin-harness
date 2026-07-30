@@ -88,8 +88,8 @@ export interface RuntimeSession {
   compact(opts: { signal: AbortSignal }): AsyncGenerator<OmniMessage>;
   /** Whether compaction is possible and why; when not ok, compact() yields no messages (see core ContextEngine.compactability). */
   compactability(): CompactAvailability;
-  /** Queues a mid-run steering message (core `Session.steer`); false when no Task is running. */
-  steer(text: string): boolean;
+  /** Queues a mid-run steering input (core `Session.steer`); false when no Task is running. */
+  steer(input: OmniMessage[]): boolean;
   /** Skips the in-progress reconnect backoff, firing the next retry immediately (core `Session.skipReconnectWait`); false when no wait is in progress. */
   skipReconnectWait(): boolean;
   toolPermission(name: string): "r" | "rw" | undefined;
@@ -510,7 +510,7 @@ export class SessionManager {
   async startGoal(
     sessionId: string,
     args: {
-      /** Round-1 input (text-only, route-validated); its marker-stripped text is the objective. */
+      /** Round-1 input (route-validated to carry text; images may ride along); its marker-stripped text is the objective. */
       input: OmniMessage[];
       budget: number;
       /** Optional per-goal thinking level: rides every round's Task (route-validated). */
@@ -526,6 +526,10 @@ export class SessionManager {
       // The objective is the user's own text (leading skill-invocation blocks stripped) —
       // the same derivation core records in GOAL.yaml; used for the run-state row, the
       // goal_started event, and as title material.
+      // `isPlainText` leaves attached images out, so this copy carries no
+      // `[attached image: <path>]` lines — which suits its readers, since a status card and a
+      // generated title read better without absolute scratchpad paths. Core keeps its own
+      // folded copy (Session.runGoal) for what the rounds actually re-inject.
       const text = args.input
         .filter(isPlainText("user"))
         .map((m) => m.payload.text)
@@ -773,15 +777,16 @@ export class SessionManager {
   }
 
   /**
-   * Mid-run steering: forward the text to the running Session (core delivers it between
-   * turns as a standalone `[user_steering]` user message — no SSE event of its own; the
-   * message arrives through the stream the drive loop already publishes). 409 when the
-   * Session isn't running a Task (idle / compacting / not loaded) or the run finished in the
-   * race window — the caller falls back to submitting a normal task.
+   * Mid-run steering: forward the message to the running Session (core delivers it between
+   * turns as a standalone `[user_steering]` user message followed by its images — no SSE
+   * event of its own; the messages arrive through the stream the drive loop already
+   * publishes). 409 when the Session isn't running a Task (idle / compacting / not loaded)
+   * or the run finished in the race window — the caller falls back to submitting a normal
+   * task, which carries the same text and images.
    */
-  steer(sessionId: string, text: string): void {
+  steer(sessionId: string, input: OmniMessage[]): void {
     const entry = this.entries.get(sessionId);
-    if (!entry || entry.status !== "running" || !entry.session.steer(text)) {
+    if (!entry || entry.status !== "running" || !entry.session.steer(input)) {
       throw new HttpError(
         409,
         "not_running",

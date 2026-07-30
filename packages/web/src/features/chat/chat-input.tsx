@@ -104,6 +104,7 @@ import {
   skillSlashItems,
 } from "./skill-use";
 import { GOAL_ICON, UNLIMITED_BUDGET, parseBudgetInput } from "./goal-use";
+import { midRunAction } from "./composer-send";
 import { PAPERCLIP_ICON } from "./attached-files-banner";
 
 const APPROVAL_MODES: ApprovalMode[] = ["always-ask", "read-only", "allow-all", "deny-all"];
@@ -1178,13 +1179,13 @@ export function ChatInput({
   onSend: (input: TaskInputPart[], goal: { budget: number } | null) => Promise<boolean>;
   /**
    * Mid-run steering (session state only): while a Task is running, Enter/send queues the
-   * trimmed text for the running agent — it is delivered between turns as a standalone
-   * `[user_steering]` user message. `"queued"` clears the text and shows the queued hint;
-   * `"not_running"` (409 race with completion) makes the input fall back to its full normal
-   * send path; `"failed"` keeps the draft. When absent (draft state), the input stays
-   * send-disabled while running, as before.
+   * trimmed text **and any attached images** for the running agent — delivered between turns
+   * as a standalone `[user_steering]` user message followed by its images. `"queued"` clears
+   * the text and images and shows the queued hint; `"not_running"` (409 race with completion)
+   * makes the input fall back to its full normal send path; `"failed"` keeps the draft. When
+   * absent (draft state), the input stays send-disabled while running, as before.
    */
-  onSteer?: (text: string) => Promise<"queued" | "not_running" | "failed">;
+  onSteer?: (text: string, images: string[]) => Promise<"queued" | "not_running" | "failed">;
   /**
    * Count of steering messages already visible in the message stream: the queued hint stays
    * up until this increases past its value at queue time (i.e. the message was delivered).
@@ -1371,9 +1372,18 @@ export function ChatInput({
 
   const running = status === "running";
   const compacting = status === "compacting";
+  // The draft's "anything sendable at all" rule, shared by canSend / canFollowUp / the
+  // steer-mode queue fallback and (negated) by the Stop face of the action button.
+  const draftHasContent =
+    text.trim().length > 0 ||
+    images.length > 0 ||
+    attachments.length > 0 ||
+    target !== null ||
+    pendingModel !== null ||
+    selectedSkills.length > 0;
   // Goal mode (engaged via the "+" menu or /goal): the text body becomes the objective. It is
-  // exclusive with a staged /agent or /model switch (engaging either clears the other) and with
-  // images (the objective is re-injected every round as plain text); selected skills ride the
+  // exclusive with a staged /agent or /model switch (engaging either clears the other); attached
+  // images ride along (core folds them into the objective as path lines) and selected skills ride
   // round-1 message as a [use_skills] block, exactly like a normal send.
   const [goalOn, setGoalOn] = useState(false);
   const [goalBudgetText, setGoalBudgetText] = useState("");
@@ -1407,6 +1417,9 @@ export function ChatInput({
   // parseable budget — and an open editor showing an invalid draft disables Send outright:
   // combined with the editor refusing to close over an invalid draft (below), no click sequence
   // can fire a goal with a stale committed budget.
+  // Images may come along with a goal objective (core folds them into `[attached image: …]`
+  // lines so they survive the rounds), but they don't substitute for the text; file
+  // attachments cannot — nothing folds those into a re-injected objective.
   const canSend =
     !running &&
     !compacting &&
@@ -1414,16 +1427,10 @@ export function ChatInput({
     !modelAuthDead &&
     (goalOn
       ? text.trim().length > 0 &&
-        images.length === 0 &&
         attachments.length === 0 &&
         goalBudget !== null &&
         !(goalBudgetOpen && goalBudgetDraftInvalid)
-      : text.trim().length > 0 ||
-        images.length > 0 ||
-        attachments.length > 0 ||
-        target !== null ||
-        pendingModel !== null ||
-        selectedSkills.length > 0);
+      : draftHasContent);
 
   /**
    * The budget editor is a fixed upward popover. Opening copies the committed value; closing
@@ -1482,74 +1489,59 @@ export function ChatInput({
         onHandoffTargetChange?.(null);
         setPendingModel(null);
         onPendingModelChange?.(null);
-        // Attachments can't ride a goal (the server rejects non-text goal input): clear any
-        // already attached, or canSend would stay silently false with the objective looking ready.
-        setImages([]);
+        // Images ride a goal (folded into the objective as path lines), file attachments do not
+        // — the server refuses those, so clear them or canSend would stay silently false with
+        // the objective looking ready.
         setAttachments([]);
       }
     },
     [onHandoffTargetChange, onPendingModelChange],
   );
 
-  // Mid-run steering: while running, Enter/send queues plain text for the running agent
-  // (delivered between turns as a [user_steering] user message). Text only — attachments /
-  // skills / a staged switch stay in the draft for a later normal send (a staged /agent or
-  // /model chip also blocks steering: the text belongs to the conversation the switch is about
-  // to open, not to the agent running here).
+  // Mid-run steering: while running, Enter/send queues the text **and the attached images**
+  // for the running agent (delivered between turns as a [user_steering] user message followed
+  // by its images) — so an image with no caption is a complete steering message on its own.
+  // File attachments and selected skills stay in the draft for a later normal send: a
+  // [use_skills] block is task-level setup, not something to hand a turn already under way. A
+  // staged /agent or /model chip also blocks steering: the text belongs to the conversation
+  // that switch is about to open, not to the agent running here.
   // `!goalOn`: with the goal chip engaged the text is an OBJECTIVE — steering it into a run
   // that happens to be active (e.g. a schedule fired) would silently repurpose it.
-  const canSteer =
-    running &&
-    !busy &&
-    !goalOn &&
-    !modelAuthDead &&
-    onSteer !== undefined &&
-    target === null &&
-    pendingModel === null &&
-    text.trim().length > 0;
-  // Mid-run send mode (owner directive): the user chooses between "steer" (delivered
-  // mid-run as a [user_steering] input) and "follow-up" (held server-side and auto-sent as
-  // an ordinary next task once this run finishes). Set from the "+" menu's settings row —
-  // available in draft state and active sessions alike — and **remembered** across
-  // sessions/reloads (localStorage, see STEER_MODE_KEY); the running-state send simply
-  // follows the remembered mode.
+  //
+  // Mid-run send mode (owner directive): the user chooses between "steer" (delivered mid-run
+  // as a [user_steering] input) and "follow-up" (held server-side and auto-sent as an ordinary
+  // next task once this run finishes). Set from the "+" menu's settings row — available in
+  // draft state and active sessions alike — and **remembered** across sessions/reloads
+  // (localStorage, see STEER_MODE_KEY).
   const [steerMode, setSteerModeState] = useState<SteerMode>(initialSteerMode);
   const setSteerMode = (mode: SteerMode): void => {
     setSteerModeState(mode);
     localStorage.setItem(STEER_MODE_KEY, mode);
   };
   const followUpMode = steerMode === "followup" && onQueueFollowUp !== undefined;
-  // A follow-up is a full normal message: the whole draft (text / attachments / skills / a
-  // staged switch) is eligible, same content rule as canSend.
-  // `stagedRoute !== "blocked"`: a staged model fork is never eligible mid-run — the follow-up
-  // path composes the whole draft and then hands it to onSwitchModel rather than to the queue,
-  // so without this gate Enter would fork off a Trace that is still being written.
-  const canFollowUp =
-    running &&
-    !busy &&
-    !goalOn &&
-    !modelAuthDead &&
-    followUpMode &&
-    stagedRoute !== "blocked" &&
-    (text.trim().length > 0 ||
-      images.length > 0 ||
-      attachments.length > 0 ||
-      target !== null ||
-      pendingModel !== null ||
-      selectedSkills.length > 0);
-  // The single action button's mode: while running, an **empty** composer means Stop
-  // (abort); as soon as there is something to send it becomes the send button (steer or
-  // follow-up per the remembered mode). Idle/compacting is always send.
-  const canMidRunSend = followUpMode ? canFollowUp : canSteer;
-  const midRunSendLabel = followUpMode ? S.chat.followUpSend : S.chat.steerSend;
-  const stopAction =
-    running &&
-    text.trim().length === 0 &&
-    images.length === 0 &&
-    attachments.length === 0 &&
-    target === null &&
-    pendingModel === null &&
-    selectedSkills.length === 0;
+  // Which of the two channels this draft can use, or Stop when neither will take it — the whole
+  // decision lives in midRunAction so it can be reasoned about and tested on its own, and so
+  // that Stop stays the fallthrough rather than a case somebody has to remember to widen. Only
+  // meaningful while running; idle/compacting is always Send, gated by canSend above.
+  const midRun = midRunAction({
+    sending: busy,
+    goalOn,
+    modelAuthDead,
+    canSteerChannel: onSteer !== undefined,
+    canQueueChannel: onQueueFollowUp !== undefined,
+    followUpMode,
+    stagedRoute,
+    hasHandoffTarget: target !== null,
+    hasPendingModel: pendingModel !== null,
+    hasText: text.trim().length > 0,
+    hasImages: images.length > 0,
+    hasContent: draftHasContent,
+  });
+  const steerAction = running && midRun === "steer";
+  const queueAction = running && midRun === "queue";
+  const canMidRunSend = steerAction || queueAction;
+  const midRunSendLabel = midRun === "queue" ? S.chat.followUpSend : S.chat.steerSend;
+  const stopAction = running && midRun === "stop";
   // Queued hint: shown after a successful steer until the message shows up in the stream
   // (steeringDeliveredCount increases past the baseline captured at queue time) or the run
   // stops being observable (task no longer running).
@@ -1902,11 +1894,15 @@ export function ChatInput({
       // from being added since), so there is nothing to carry here.
       setBusy(true);
       try {
-        const ok = await onSend([{ type: "text", text: buildSkillsMessage(selectedSkills, t) }], {
-          budget: goalBudget!,
-        });
+        // Attached images go with the objective (see the goalOn declaration above).
+        const goalInput: TaskInputPart[] = [
+          { type: "text", text: buildSkillsMessage(selectedSkills, t) },
+        ];
+        for (const url of images) goalInput.push({ type: "image_url", imageUrl: url });
+        const ok = await onSend(goalInput, { budget: goalBudget! });
         if (ok) {
           setText("");
+          setImages([]);
           setSelectedSkills([]);
           toggleGoal(false);
         }
@@ -1970,37 +1966,41 @@ export function ChatInput({
 
   const send = async () => {
     if (running) {
-      // Follow-up branch: the whole draft goes out through the normal composition path,
-      // but posted with queueIfBusy — the server holds it and auto-sends once this run
-      // finishes (a staged switch still opens its new chat directly: neither the handoff
-      // target nor the model fork is the session that is running).
-      if (followUpMode) {
-        if (!canFollowUp) return;
+      // Queue branch: the whole draft goes out through the normal composition path, posted
+      // with queueIfBusy — the server holds it and auto-sends once this run finishes (a staged
+      // switch still opens its new chat directly: neither the handoff target nor the model fork
+      // is the session that is running). One branch for both ways of getting here — follow-up
+      // mode, and steer mode meeting a draft steering cannot carry — since the message sent is
+      // the same either way.
+      if (queueAction) {
         await sendNormal(onQueueFollowUp!);
         return;
       }
-      // Steering branch: queue the trimmed text for the running agent; only the text is
-      // sent and cleared — attached images / selected skills stay for a normal send (a
-      // staged switch chip blocks this branch outright, see canSteer).
-      if (!canSteer) return;
+      // Steering branch: queue the trimmed text and the attached images for the running agent;
+      // both are sent and cleared together — file attachments and selected skills stay for a
+      // normal send (a staged switch chip blocks this branch outright, see midRunAction).
+      if (!steerAction) return;
       const steerText = text.trim();
+      const steerImages = images;
       setBusy(true);
       let res: "queued" | "not_running" | "failed" = "failed";
       try {
-        res = await onSteer!(steerText);
+        res = await onSteer!(steerText, steerImages);
         if (res === "queued") {
           // Show the "queued" hint until the steering message shows up in the stream
           // (steeringDeliveredCount increases) — see the effect below.
           steerBaseline.current = steeringDeliveredCount ?? 0;
           setSteerPending(true);
           setText("");
+          setImages([]);
         }
       } finally {
         setBusy(false);
         textareaRef.current?.focus();
       }
-      // Completion race (server: no Task running anymore): deliver the whole draft — images,
-      // skills and all — through the full normal send path instead of a text-only task.
+      // Completion race (server: no Task running anymore): deliver the whole draft — skills
+      // and all — through the full normal send path. The draft is untouched in this branch
+      // (nothing was cleared), so the images go out with it.
       if (res === "not_running") await sendNormal();
       return;
     }
@@ -2051,9 +2051,6 @@ export function ChatInput({
   };
 
   const addFiles = (files: Iterable<File>) => {
-    // Goal mode is text-only (the objective is re-injected each round): drop image attachments
-    // outright — including pastes — so send never lands in a silently-disabled state.
-    if (goalOn) return;
     for (const file of files) {
       if (!file.type.startsWith("image/")) continue;
       const reader = new FileReader();
@@ -2607,7 +2604,6 @@ export function ChatInput({
               type="file"
               accept="image/*"
               multiple
-              disabled={goalOn}
               className="hidden"
               onChange={onPickFiles}
             />
@@ -2634,11 +2630,11 @@ export function ChatInput({
                   icon: IMAGE_ICON,
                   label: S.chat.uploadImage,
                   // Without vision the images still send — as scratchpad file paths — so the
-                  // entry stays usable and the hint explains what will happen instead.
-                  desc: vision ? S.chat.uploadImageDesc : S.chat.imagesAsPathHint,
+                  // entry stays usable and the hint says what will happen instead. Goal mode
+                  // sends them that way on any model, since the objective is re-injected as
+                  // text every round.
+                  desc: vision && !goalOn ? S.chat.uploadImageDesc : S.chat.imagesAsPathHint,
                   active: images.length > 0,
-                  // Goal mode is text-only (the objective is re-injected each round).
-                  disabled: goalOn,
                   onSelect: () => imageInputRef.current?.click(),
                 },
                 {
@@ -2650,7 +2646,8 @@ export function ChatInput({
                   // inlined into the conversation.
                   desc: S.chat.uploadFileDesc,
                   active: attachments.length > 0,
-                  // Same rule as images: goal input is text-only.
+                  // Unlike images, a file cannot ride a goal: nothing folds it into the
+                  // objective that every round re-injects, so the server refuses it.
                   disabled: goalOn,
                   onSelect: () => attachmentInputRef.current?.click(),
                 },

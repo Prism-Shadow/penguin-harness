@@ -674,8 +674,16 @@ export interface TaskCreateResponse {
  * task POST).
  */
 export interface SteerRequest {
-  /** Non-empty message text (trimmed server-side). */
+  /** Message text (trimmed server-side); may be empty when `images` carries the message. */
   text: string;
+  /**
+   * Images sent with the steering message (`data:` or http(s) URLs, same rule as
+   * `TaskInputPart.image_url`): delivered as user image messages right behind the
+   * `[user_steering]` text. A model without vision receives them as scratchpad path lines
+   * instead, exactly as it would a Prompt's images. At least one of `text` / `images` must
+   * be non-empty.
+   */
+  images?: string[];
 }
 
 export interface ApprovalDecisionRequest {

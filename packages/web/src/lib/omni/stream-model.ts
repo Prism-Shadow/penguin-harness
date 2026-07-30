@@ -101,6 +101,14 @@ export interface UserSteeringItem {
   kind: "user_steering";
   id: number;
   text: string;
+  /**
+   * Images sent with this steering message: core delivers them as ordinary user image
+   * messages right behind the text, and they are folded in here rather than rendered as
+   * standalone bubbles — they are part of the same message and must not start a Task.
+   * (Without vision the images arrive as `[attached image: …]` lines inside `text` instead,
+   * which the chip restores at render time like any user message.)
+   */
+  images?: string[];
   /** Message timestamp (milliseconds): shown on footer hover. */
   atMs?: number;
 }
@@ -328,6 +336,13 @@ export interface StreamModel {
   /** A fragment that has stopped and is waiting to be replaced by the complete message. */
   pendingText: AssistantTextItem | null;
   pendingThinking: ThinkingItem | null;
+  /**
+   * The steering chip still collecting its images: core delivers a steering message's images
+   * as user image messages immediately behind its text, so an image arriving while this is
+   * set belongs to that chip. Any other message closes the window (see pushMessage) — an
+   * images-only Prompt sent after a steering message is a genuine new Task.
+   */
+  openSteering: UserSteeringItem | null;
   /** tool_call_id → tool card (shared by both fragment attribution and complete-message replacement). */
   toolCards: Map<string, ToolCallItem>;
   /** Direct child Session id → nested model. */
@@ -435,6 +450,7 @@ function newModel(nested: boolean, localDecisions: Set<string>): StreamModel {
     openThinking: null,
     pendingText: null,
     pendingThinking: null,
+    openSteering: null,
     toolCards: new Map(),
     subagents: new Map(),
     localDecisions,
@@ -494,6 +510,13 @@ export function pushMessage(
     routeNested(model, msg, nowMs);
     return;
   }
+  // A steering message's images arrive as user image messages directly behind its text, with
+  // nothing interleaved (core delivers the batch in one go) — so anything else on this session
+  // closes the collection window opened by the chip (see openSteering). Subagent messages
+  // returned above never reach here, so they leave the window alone.
+  // The server answers the same "what is one Task" question over the Trace — see
+  // `steeringImages` in server/src/services/trace-service.ts; the two need to stay in step.
+  if (!isCompleteUserImage(msg)) model.openSteering = null;
   if (msg.type === "model_msg") {
     // Internal messages within a compaction range (between begin and end)
     // (the compaction prompt, summary output): never rendered, never
@@ -537,6 +560,11 @@ export function pushMessage(
     if (p.source !== undefined) meta.source = p.source;
     model.meta = meta;
   }
+}
+
+/** Whether the message is a complete user image — the only kind that can join an open steering chip. */
+function isCompleteUserImage(msg: OmniMessage): boolean {
+  return msg.type === "model_msg" && (msg.payload as { type?: string }).type === "image_url";
 }
 
 /**
@@ -931,12 +959,15 @@ function handleComplete(
         if (steering !== null) {
           touchTask(model, timestamp);
           const steerMs = tsOf(timestamp);
-          model.items.push({
+          const item: UserSteeringItem = {
             kind: "user_steering",
             id: nextId(model),
             text: steering,
             ...(steerMs !== undefined ? { atMs: steerMs } : {}),
-          });
+          };
+          model.items.push(item);
+          // Open the window for the images core delivers right behind this text.
+          model.openSteering = item;
           return;
         }
         // A complete text message on the main session's user side: starts a new Task.
@@ -1000,6 +1031,13 @@ function handleComplete(
       return;
     }
     case "image_url": {
+      // An image belonging to the steering message just rendered: it joins that chip and
+      // leaves the running Task alone — unlike a Prompt's image, it starts nothing.
+      if (model.openSteering) {
+        touchTask(model, timestamp);
+        model.openSteering.images = [...(model.openSteering.images ?? []), p.image_url];
+        return;
+      }
       startTask(model, timestamp, nowMs);
       const imgMs = tsOf(timestamp);
       model.items.push({

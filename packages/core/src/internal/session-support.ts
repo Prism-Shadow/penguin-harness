@@ -103,6 +103,14 @@ export async function createTempWorkspace(
   );
 }
 
+/**
+ * Stands in for a single image that could not be turned into a path line — a data URL that
+ * doesn't parse. Shown to the model and the user instead of silently dropping the attachment.
+ * A scratchpad that can't be written to is a different matter: the fold throws and the run
+ * ends, rather than carrying on without what the sender attached.
+ */
+const IMAGE_DROPPED_NOTE = "[an attached image could not be saved and was dropped]";
+
 /** Maps a data URL's mime type to a file extension on disk; unknown mimes use bin (the image-reading tool sniffs the magic bytes and doesn't rely on the extension). */
 const MIME_TO_EXT: Record<string, string> = {
   "image/png": "png",
@@ -110,6 +118,9 @@ const MIME_TO_EXT: Record<string, string> = {
   "image/gif": "gif",
   "image/webp": "webp",
 };
+
+/** An input image message — what both conversions below pull out of the input. */
+const isImage = (m: OmniMessage): boolean => (m.payload as { type?: string }).type === "image_url";
 
 /**
  * Input conversion for when the session model doesn't support images: image messages
@@ -126,8 +137,6 @@ export async function imagesToScratchpadPaths(
   input: OmniMessage[],
   dir: string,
 ): Promise<OmniMessage[]> {
-  const isImage = (m: OmniMessage): boolean =>
-    (m.payload as { type?: string }).type === "image_url";
   if (!input.some(isImage)) return input;
 
   const lines: string[] = [];
@@ -140,7 +149,7 @@ export async function imagesToScratchpadPaths(
     }
     const match = /^data:([^;,]+);base64,(.+)$/s.exec(url);
     if (!match) {
-      lines.push("[an attached image could not be saved and was dropped]");
+      lines.push(IMAGE_DROPPED_NOTE);
       continue;
     }
     await fs.mkdir(dir, { recursive: true });

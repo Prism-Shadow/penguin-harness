@@ -291,15 +291,12 @@ export class Agent {
       createLLM: rt.createLLM,
       createBareLLM: rt.createBareLLM,
       compaction: rt.compaction,
-      // Model doesn't support images: input images are written to the session scratchpad and their paths appended to the text (viewed via describe_image).
-      ...(modelEntry.vision === false
-        ? {
-            inputImagesDir: path.join(
-              scratchpadDir(this.state.root, this.state.projectId, this.state.agentId),
-              sessionId,
-            ),
-          }
-        : {}),
+      // Where an input image lands when it becomes a path line (see SessionConfig.imagesDir).
+      imagesDir: path.join(
+        scratchpadDir(this.state.root, this.state.projectId, this.state.agentId),
+        sessionId,
+      ),
+      modelHasVision: modelEntry.vision !== false,
       // Goal mode's control file lives in the session scratchpad; the path is fixed per
       // Session, so it is wired here rather than passed per-run.
       goalFilePath: goalFilePath(
@@ -451,15 +448,12 @@ export class Agent {
       createLLM: rt.createLLM,
       createBareLLM: rt.createBareLLM,
       compaction: rt.compaction,
-      // Model doesn't support images: input images are written to the session scratchpad and their paths appended to the text (viewed via describe_image).
-      ...(modelEntry.vision === false
-        ? {
-            inputImagesDir: path.join(
-              scratchpadDir(this.state.root, this.state.projectId, this.state.agentId),
-              sessionId,
-            ),
-          }
-        : {}),
+      // Where an input image lands when it becomes a path line (see SessionConfig.imagesDir).
+      imagesDir: path.join(
+        scratchpadDir(this.state.root, this.state.projectId, this.state.agentId),
+        sessionId,
+      ),
+      modelHasVision: modelEntry.vision !== false,
       // Goal mode's control file lives in the session scratchpad; the path is fixed per
       // Session, so it is wired here rather than passed per-run.
       goalFilePath: goalFilePath(

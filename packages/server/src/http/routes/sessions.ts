@@ -80,6 +80,36 @@ const SESSION_CATEGORIES: readonly SessionCategory[] = [
 ];
 
 /**
+ * A base64 `data:` URL of an image, in the exact shape core parses it back out of
+ * (`imagesToScratchpadPaths`): one mime type, the `;base64,` marker, a non-empty base64 body.
+ * The mime is deliberately unconstrained — core maps the ones it knows to a file extension and
+ * falls back to `.bin`, and the image tools sniff the magic bytes rather than trusting either.
+ *
+ * Checking the body, not just the `data:` prefix, is what keeps the failure here instead of
+ * three layers down: core turns a data URL it cannot parse into an "[an attached image could
+ * not be saved and was dropped]" line, which for an HTTP caller means a 202 followed by a
+ * message quietly missing its picture. The file-attachment field has always validated its own
+ * payload this way (parseAttachmentPart); this is the same rule for images.
+ */
+const IMAGE_DATA_URL = /^data:[^;,]+;base64,[A-Za-z0-9+/=\s]+$/;
+
+/**
+ * The image-URL rule every image-carrying request field obeys: a `data:` URL the session
+ * keeps (inline, or written to the scratchpad without vision) or an http(s) URL it references.
+ * `field` names the offending value in the error, so each caller reads as if it validated
+ * inline.
+ */
+function requireImageUrl(url: unknown, field: string): string {
+  if (typeof url === "string") {
+    if (url.startsWith("http://") || url.startsWith("https://")) return url;
+    if (IMAGE_DATA_URL.test(url)) return url;
+  }
+  throw badRequest(
+    `${field} must be an http(s) URL or a base64 data: URL (data:<mime>;base64,<bytes>).`,
+  );
+}
+
+/**
  * Resolve a scratchpad file name to an absolute path inside `dir`, or null when it could point
  * anywhere else (the caller turns that into the same 404 a missing file gets, so a probe learns
  * nothing either way).
@@ -133,14 +163,7 @@ function parseTaskInput(body: Record<string, unknown>): ParsedTaskInput {
       return;
     }
     if (part.type === "image_url") {
-      const url = part.imageUrl;
-      if (
-        typeof url !== "string" ||
-        !(url.startsWith("data:") || url.startsWith("http://") || url.startsWith("https://"))
-      ) {
-        throw badRequest(`input[${i}].imageUrl only supports data: or http(s) URLs.`);
-      }
-      messages.push(imageUrlMessage(url));
+      messages.push(imageUrlMessage(requireImageUrl(part.imageUrl, `input[${i}].imageUrl`)));
       return;
     }
     if (part.type === "file") {
@@ -155,6 +178,17 @@ function parseTaskInput(body: Record<string, unknown>): ParsedTaskInput {
     throw badRequest(`input[${i}].type must be one of text / image_url / file.`);
   });
   return { messages, attachments };
+}
+
+/**
+ * Validate the optional `images` field of a steer request: a list of `data:` / http(s) URLs
+ * (same rule as a task input's `imageUrl`), absent or empty = a text-only steering message.
+ */
+function parseSteerImages(body: Record<string, unknown>): string[] {
+  const images = body.images;
+  if (images === undefined) return [];
+  if (!Array.isArray(images)) throw badRequest("images must be an array.");
+  return images.map((url, i) => requireImageUrl(url, `images[${i}]`));
 }
 
 /**
@@ -491,21 +525,23 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     // follow-up keeps its level for its auto-start.
     const thinkingLevel = optionalEnum(body, "thinkingLevel", THINKING_LEVELS);
     if (goal) {
-      // Goal mode: the input must be plain non-empty text (its marker-stripped text becomes
-      // the objective, re-injected every round — images and file attachments have no place in
-      // the protocol; rejected before any upload is written to disk).
+      // Goal mode: the input needs non-empty text, since its marker-stripped text becomes the
+      // objective that every round re-injects and an image on its own doesn't say what the
+      // goal is. Images can come along — core folds them into `[attached image: <path>]` lines
+      // inside the objective (whatever the model's vision) so they survive the rounds. File
+      // attachments cannot: nothing folds them into the objective, so they are turned away
+      // here, before any upload is written to disk.
       const { messages, attachments } = parseTaskInput(body);
       const text = messages
         .filter((m) => (m.payload as { type?: string }).type === "text")
         .map((m) => (m.payload as { text: string }).text)
         .join("\n")
         .trim();
-      if (
-        !text ||
-        attachments.length > 0 ||
-        messages.some((m) => (m.payload as { type?: string }).type !== "text")
-      ) {
-        throw badRequest("goal mode requires text-only input (the objective).");
+      if (!text) {
+        throw badRequest("goal mode requires a non-empty text objective.");
+      }
+      if (attachments.length > 0) {
+        throw badRequest("goal mode accepts text and images only (no file attachments).");
       }
       const { sessionId } = await deps.manager.startGoal(row.sessionId, {
         input: messages,
@@ -552,15 +588,27 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
   });
 
   // Mid-run steering: queue a user message for the running Task; core delivers it between
-  // turns as a standalone `[user_steering]` user message (the model sees it without the loop
-  // being interrupted). 409 not_running when no Task is in progress — the frontend then falls
-  // back to a normal task POST.
+  // turns as a standalone `[user_steering]` user message, with any images following it as
+  // user image messages (the model sees the whole thing without the loop being interrupted).
+  // 409 not_running when no Task is in progress — the frontend then falls back to a normal
+  // task POST.
   app.post("/:sessionId/steer", async (c) => {
     const row = resolveSession(c);
     const body = await readJson(c);
     const text = typeof body.text === "string" ? body.text.trim() : "";
-    if (!text) throw badRequest("text must be a non-empty string.");
-    deps.manager.steer(row.sessionId, text);
+    const images = parseSteerImages(body);
+    // Either half can carry the message on its own: an image with no caption is a complete
+    // steering message, and so is plain text.
+    if (!text && images.length === 0) {
+      throw badRequest("text or images must carry the steering message.");
+    }
+    // The wire shape becomes core's: a user text message (omitted when the images are the
+    // whole message, so the fold's path lines aren't preceded by a blank one) plus one image
+    // message each — the same input a normal task would carry.
+    deps.manager.steer(row.sessionId, [
+      ...(text ? [userText(text)] : []),
+      ...images.map((url) => imageUrlMessage(url)),
+    ]);
     return c.body(null, 202);
   });
 

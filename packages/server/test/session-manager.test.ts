@@ -23,7 +23,7 @@ import {
   userText,
   withOrigin,
 } from "@prismshadow/penguin-core";
-import type { ApproveFn, OmniMessage } from "@prismshadow/penguin-core";
+import type { ApproveFn, OmniMessage, TextPayload } from "@prismshadow/penguin-core";
 import { openDatabase } from "../src/db/database.js";
 import { HttpError } from "../src/http/errors.js";
 import { SessionsRepo } from "../src/db/repos/sessions.js";
@@ -239,14 +239,14 @@ describe("session-manager", () => {
   it("steer: forwards to the running session; idle / lost race → 409 not_running", async () => {
     const steered: string[] = [];
     const fake = approvalFakeSession("session-1");
-    fake.steer = (text: string) => {
-      steered.push(text);
+    fake.steer = (input: OmniMessage[]) => {
+      steered.push((input[0]!.payload as TextPayload).text);
       return true;
     };
     const manager = makeManager(loaderOf(fake));
     const steerErr = (text: string): unknown => {
       try {
-        manager.steer("session-1", text);
+        manager.steer("session-1", [userText(text)]);
         return null;
       } catch (e) {
         return e;

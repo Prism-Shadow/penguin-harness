@@ -44,6 +44,12 @@ Each round's user message is a `[goal]` protocol block followed by a plain body 
 - `blocked` → the loop stops; what the model needs from you is in its final reply. The injected rules require the **same blocking condition to persist for three consecutive rounds** before the model may claim `blocked`, so a transient obstacle doesn't end the goal.
 - `active` → budget permitting, the next round fires.
 
+### Images in an objective
+
+An objective may carry attached images — "make the page match this mockup" is a goal, and a screenshot states it better than a paragraph. They are always saved to the session scratchpad and referenced from the objective as `[attached image: <path>]` lines, **whatever the model's vision**: the objective is re-injected as the text of every round's block, so an image cannot ride along as an image. Sending it in round 1 alone would leave every later round pointing at something compaction has since removed, while the objective still reads correct. As a path it survives every round and every compaction, and the model spends tokens on it only when it actually looks (`read_image`, or `describe_image` without vision). An image cannot stand in for the text — a picture alone states no objective, so a text-less goal input is rejected.
+
+The chat page shows the attachments in full under round 1's bubble and collapses them into a one-line chip on later rounds (click to expand): they are part of every round's input, but a twenty-round goal shouldn't repeat the same picture twenty times.
+
 A round that ends in an abort (user stop, LLM failure) ends the whole goal without re-firing — on-disk state stays `active`, so the workspace and goal file remain a clean resume point. In the Web App the regular stop button aborts the entire loop; in the CLI, Ctrl-C does. The same applies to a round the engine cut off at the per-Task turn cap (`max_turns`): the model never got to write the goal file, so the loop ends as `aborted` instead of re-firing the same cutoff forever.
 
 ## Token budget

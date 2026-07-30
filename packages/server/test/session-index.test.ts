@@ -7,7 +7,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { sessionMeta, userText } from "@prismshadow/penguin-core";
-import type { SessionMetaPayload } from "@prismshadow/penguin-core";
+import type { OmniMessage, SessionMetaPayload } from "@prismshadow/penguin-core";
 import type {
   ProjectCreateResponse,
   SessionCreateResponse,
@@ -594,14 +594,48 @@ describe("session-index", () => {
       });
       expect(bad.status).toBe(400);
     }
-    // Image parts have no place in the re-injected objective.
-    const image = await api.post(`/api/sessions/${session.sessionId}/tasks`, {
+    // An image alone states no goal: the objective is re-injected as text every round.
+    const imageOnly = await api.post(`/api/sessions/${session.sessionId}/tasks`, {
+      input: [{ type: "image_url", imageUrl: "data:image/png;base64,aGk=" }],
+      goal: {},
+    });
+    expect(imageOnly.status).toBe(400);
+    // With text alongside them the images are fine: they reach the manager, and core folds
+    // them into the objective as path lines from there. startGoal stands in for the run so
+    // the assertion is about validation alone — a real goal loop would still be settling
+    // after the test closed its database.
+    const started: OmniMessage[][] = [];
+    t.deps.manager.startGoal = async (sessionId, args) => {
+      started.push(args.input);
+      return { sessionId };
+    };
+    const withText = await api.post(`/api/sessions/${session.sessionId}/tasks`, {
       input: [
         { type: "text", text: "objective" },
         { type: "image_url", imageUrl: "data:image/png;base64,aGk=" },
       ],
       goal: {},
     });
-    expect(image.status).toBe(400);
+    expect(withText.status).toBe(202);
+    expect(started[0]?.map((m) => (m.payload as { type: string }).type)).toEqual([
+      "text",
+      "image_url",
+    ]);
+    // A file attachment is the one input a goal cannot take, images notwithstanding: nothing
+    // folds it into the objective every round re-injects, so it is refused before any upload
+    // is written to disk (startGoal is never reached).
+    const withFile = await api.post(`/api/sessions/${session.sessionId}/tasks`, {
+      input: [
+        { type: "text", text: "objective" },
+        {
+          type: "file",
+          fileName: "report.pdf",
+          dataUrl: `data:application/pdf;base64,${Buffer.from("PDF-BYTES").toString("base64")}`,
+        },
+      ],
+      goal: {},
+    });
+    expect(withFile.status).toBe(400);
+    expect(started).toHaveLength(1);
   });
 });

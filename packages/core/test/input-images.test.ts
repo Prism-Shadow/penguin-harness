@@ -8,11 +8,20 @@
  * images above and the server's `[attached file: …]` uploads).
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { appendAttachmentLines, imagesToScratchpadPaths } from "../src/internal/session-support.js";
+import { Session } from "../src/index.js";
+import type {
+  EnvironmentInterface,
+  LLMInterface,
+  LLMOutcome,
+  OmniMessage,
+  SessionMetaPayload,
+} from "../src/index.js";
 import {
+  assistantText,
   buildHandoffMessage,
   buildModelSwitchMessage,
   buildScheduledMessage,
@@ -158,5 +167,107 @@ describe("appendAttachmentLines placement", () => {
     expect(out).toHaveLength(2);
     expect(textAt(out, 0)).toBe(`hello\n\n${LINE}`);
     expect(textAt(out, 1)).toBe(block);
+  });
+});
+
+/**
+ * Session's own wiring of the fold, which is where the per-input rules live: a Prompt and a
+ * steering message fold only without vision, and BOTH keep the throwing conversion. Steering
+ * used to get a copy that swallowed a disk failure and delivered the text with the images
+ * replaced by a note; it does not any more, because a picture sent mid-run usually arrives
+ * *because* the run is going the wrong way — carrying on without it spends the rest of the
+ * Task heading further that way. The engine only ever awaits what Session hands it, so this
+ * is the layer the rule actually lives in.
+ */
+describe("Session input-image wiring", () => {
+  const fakeEnvironment: EnvironmentInterface = {
+    listTools: async () => [],
+    // eslint-disable-next-line require-yield
+    executeTool: async function* () {
+      throw new Error("not used");
+    },
+    toolPermission: () => undefined,
+  };
+
+  const meta = (): SessionMetaPayload => ({
+    session_id: "session-1",
+    provider: "custom",
+    model_id: "m1",
+    model_context_window: 1000,
+    system_prompt: "sp",
+    tools: [],
+    agent_state: tmp,
+    workspace: tmp,
+  });
+
+  /** An LLM that steers once from inside its first request, then answers. */
+  function steeringLLM(steer: () => void): LLMInterface {
+    let turn = 0;
+    return {
+      async *streamGenerate(): AsyncGenerator<OmniMessage, LLMOutcome> {
+        if (++turn === 1) steer();
+        yield assistantText(`turn ${turn}`);
+        return { status: "completed" };
+      },
+    };
+  }
+
+  /** A path that cannot be created: `<tmp>/blocker` is a regular file, so mkdir under it fails. */
+  async function unwritableDir(): Promise<string> {
+    const blocker = path.join(tmp, "blocker");
+    await writeFile(blocker, "not a directory", "utf8");
+    return path.join(blocker, "session-1");
+  }
+
+  it("a steering image that cannot be saved ends the run instead of being dropped with a note", async () => {
+    let session!: Session;
+    session = new Session({
+      meta: meta(),
+      llm: steeringLLM(() => {
+        expect(session.steer([userText("look at this"), imageUrlMessage(DATA_URL)])).toBe(true);
+      }),
+      environment: fakeEnvironment,
+      imagesDir: await unwritableDir(),
+      modelHasVision: false,
+    });
+
+    const drain = async () => {
+      for await (const _ of session.run([userText("go")])) {
+        // consume
+      }
+    };
+    await expect(drain()).rejects.toThrow(/ENOTDIR|ENOENT|EEXIST|not a directory/i);
+  });
+
+  it("a vision model gets no fold at all, so an unwritable scratchpad never comes up", async () => {
+    // The engine is handed no converter when the model takes images: the steering images ride
+    // as messages and nothing touches the directory, broken or not.
+    const inputs: OmniMessage[][] = [];
+    let session!: Session;
+    session = new Session({
+      meta: meta(),
+      llm: {
+        async *streamGenerate(params): AsyncGenerator<OmniMessage, LLMOutcome> {
+          inputs.push(params.newMessages);
+          if (inputs.length === 1) {
+            expect(session.steer([userText("look at this"), imageUrlMessage(DATA_URL)])).toBe(true);
+          }
+          yield assistantText(`turn ${inputs.length}`);
+          return { status: "completed" };
+        },
+      },
+      environment: fakeEnvironment,
+      imagesDir: await unwritableDir(),
+      modelHasVision: true,
+    });
+
+    for await (const _ of session.run([userText("go")])) {
+      // consume
+    }
+    expect(inputs).toHaveLength(2);
+    expect(inputs[1]!.map((m) => (m.payload as { type: string }).type)).toEqual([
+      "text",
+      "image_url",
+    ]);
   });
 });

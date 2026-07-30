@@ -1243,6 +1243,62 @@ describe("compaction-internal messages (#17: history rebuild aligned with the li
     // Only the real prompt is a user bubble.
     expect(items(m).filter((i) => i.kind === "user_text")).toHaveLength(1);
   });
+
+  // The server's Trace twin of this case lives in trace-service.test.ts.
+  it("images sent with a steering message join its chip; a later standalone image still starts a Task", () => {
+    // Core delivers a steering message's images as user image messages right behind its text.
+    // They belong to that chip — no bubble of their own and, crucially, no new Task — while an
+    // image arriving with anything in between is an ordinary Prompt again.
+    const m = createStreamModel();
+    pushMessages(m, [
+      at(userText("fix the bug"), "2026-07-05T00:00:00.000Z"),
+      at(assistantText("looking"), "2026-07-05T00:00:02.000Z"),
+      at(userText("[user_steering]\nlike this mock\n[/user_steering]"), "2026-07-05T00:00:04.000Z"),
+      at(imageUrlMessage("data:image/png;base64,AAAA"), "2026-07-05T00:00:04.100Z"),
+      // A subagent message belongs to another session's stream: it routes away before the
+      // window is touched, so the image after it still joins the chip (the server matches).
+      at(withOrigin(assistantText("child thinking"), "child1"), "2026-07-05T00:00:04.150Z"),
+      at(imageUrlMessage("data:image/png;base64,BBBB"), "2026-07-05T00:00:04.200Z"),
+      at(assistantText("matching the mock"), "2026-07-05T00:00:06.000Z"),
+      at(tokenUsage(counts(200), counts(100)), "2026-07-05T00:00:07.000Z"),
+      // A new Prompt that is nothing but an image: a Task of its own.
+      at(imageUrlMessage("data:image/png;base64,CCCC"), "2026-07-05T00:00:20.000Z"),
+      at(assistantText("on it"), "2026-07-05T00:00:22.000Z"),
+    ]);
+    finalizeHistory(m);
+    // The subagent gets its own card, but no `user_image` bubble appears before the last one:
+    // both of the steering message's images went into the chip across it.
+    expect(items(m).map((i) => i.kind)).toEqual([
+      "user_text",
+      "assistant_text",
+      "user_steering",
+      "subagent",
+      "assistant_text",
+      "task_stats",
+      "user_image",
+      "assistant_text",
+      "task_stats",
+    ]);
+    const steering = items(m).find((i) => i.kind === "user_steering") as UserSteeringItem;
+    expect(steering.text).toBe("like this mock");
+    expect(steering.images).toEqual(["data:image/png;base64,AAAA", "data:image/png;base64,BBBB"]);
+  });
+
+  it("an images-only steering message keeps an empty chip text (the images are the message)", () => {
+    const m = createStreamModel();
+    pushMessages(m, [
+      at(userText("fix the bug"), "2026-07-05T00:00:00.000Z"),
+      at(assistantText("looking"), "2026-07-05T00:00:02.000Z"),
+      at(userText("[user_steering]\n\n[/user_steering]"), "2026-07-05T00:00:04.000Z"),
+      at(imageUrlMessage("data:image/png;base64,AAAA"), "2026-07-05T00:00:04.100Z"),
+      at(assistantText("got it"), "2026-07-05T00:00:06.000Z"),
+    ]);
+    finalizeHistory(m);
+    const steering = items(m).find((i) => i.kind === "user_steering") as UserSteeringItem;
+    expect(steering.text).toBe("");
+    expect(steering.images).toEqual(["data:image/png;base64,AAAA"]);
+    expect(items(m).filter((i) => i.kind === "user_image")).toHaveLength(0);
+  });
 });
 
 describe("elapsed comes from Trace timestamps (#5/#20: settled spans, reload-stable live anchor)", () => {

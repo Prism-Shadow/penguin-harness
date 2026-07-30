@@ -87,7 +87,19 @@ Carry-over enters the model context only — it is never written to the Trace, w
 
 ## Mid-run steering
 
-While a Task is running, the host can queue a user message with `session.steer(text)` without interrupting the loop: at the next input assembly the engine delivers it as a **standalone user text message** wrapped in `[user_steering]…[/user_steering]`, sent alongside that turn's tool outputs (or alone as the continuation input when the turn produced no tool calls — the Task keeps going instead of ending). Steering is real user input: written to Trace like any Prompt, yielded to the output stream, and replayed as ordinary turn input on resume; tool outputs are never rewritten. The queue is drained at **every** input assembly — including right after a mid-run compaction, so steering that arrives during the compaction request is delivered, never swallowed. `steer` returns `false` when no Task is running (hosts then submit a normal task); the queue is discarded only when the run exits (abort included).
+While a Task is running, the host can queue a user message with `session.steer(input)` — an OmniMessage list, the same shape `run` takes a Prompt in — without interrupting the loop: at the next input assembly the engine delivers it as a **standalone user text message** wrapped in `[user_steering]…[/user_steering]`, sent alongside that turn's tool outputs (or alone as the continuation input when the turn produced no tool calls — the Task keeps going instead of ending). The input's user text becomes the block's body; its images follow it as ordinary user image messages, so an image with no caption is a complete steering message; on a model without vision they fold into `[attached image: <path>]` lines **inside** the block instead, exactly as a Prompt's images do (the block must stay the whole text, or the message would lose its steering identity and read as a new Task). Steering is real user input: written to Trace like any Prompt, yielded to the output stream, and replayed as ordinary turn input on resume; tool outputs are never rewritten. The queue is drained at **every** input assembly — including right after a mid-run compaction, so steering that arrives during the compaction request is delivered, never swallowed. `steer` returns `false` when no Task is running (hosts then submit a normal task); the queue is discarded only when the run exits (abort included).
+
+## Input images
+
+An input image either rides the request as an image message or becomes an `[attached image: <path>]` line pointing at a file in the session scratchpad — the model then views it with `read_image` / `describe_image`, and the Web restores the thumbnail from the path. The conversion is one function bound once per Session (it is the only layer that knows both the scratchpad and the model's capability), and **each input path decides for itself whether to apply it**:
+
+| Input | Folds when | Applied at |
+| --- | --- | --- |
+| Prompt (`run`) | the model has no vision | run entry, before Trace and title material |
+| Steering (`steer`) | the model has no vision | delivery, at the turn boundary — queuing must stay synchronous, and a queue discarded on abort would otherwise leave orphan files |
+| Goal objective | **always** | before the objective is extracted, so the path lines survive every round's re-injection |
+
+Goal mode is the exception because its objective is re-injected as text every round: see [Goal mode](/docs/goal-mode).
 
 ## Automatic reconnect
 

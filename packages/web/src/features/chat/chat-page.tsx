@@ -707,16 +707,16 @@ export function ChatPage() {
     [selected, discardSessionDraft, syncHealedSessionId],
   );
 
-  // Mid-run steering: the text is queued on the server and delivered between turns as a
-  // standalone `[user_steering]` user message (visible once it arrives over SSE / from the
-  // Trace). "not_running" (409) means no Task is in progress anymore (race with completion):
-  // the input area then falls back to its **full** normal send path — images / skills / the
-  // whole draft included — rather than a text-only task.
+  // Mid-run steering: the message is queued on the server and delivered between turns as a
+  // standalone `[user_steering]` user message followed by its images (visible once they
+  // arrive over SSE / from the Trace). "not_running" (409) means no Task is in progress
+  // anymore (race with completion): the input area then falls back to its **full** normal
+  // send path — skills and the whole draft included — rather than a text+images task.
   const onSteer = useCallback(
-    async (text: string): Promise<"queued" | "not_running" | "failed"> => {
+    async (text: string, images: string[] = []): Promise<"queued" | "not_running" | "failed"> => {
       if (!selected) return "failed";
       try {
-        await api.postSteer(selected.sessionId, { text });
+        await api.postSteer(selected.sessionId, { text, ...(images.length > 0 ? { images } : {}) });
         return "queued";
       } catch (e) {
         if (e instanceof ApiError && e.status === 409) return "not_running";
