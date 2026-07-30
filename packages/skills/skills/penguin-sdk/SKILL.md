@@ -3,8 +3,8 @@ name: penguin-sdk
 description: Build AI apps on the Penguin Harness SDK — self-contained projects, the createSession/run streaming loop, and a complete RAG recipe that ingests documents into a knowledge base and answers with citations behind a web UI.
 short_description: Build AI and RAG apps on the Penguin Harness SDK.
 short_description_zh: 基于 Penguin SDK 构建 AI 与 RAG 应用。
-version: 14
-updated: 2026-07-25T00:00:00Z
+version: 15
+updated: 2026-07-30T10:00:00Z
 ---
 
 # Penguin Harness SDK
@@ -311,10 +311,16 @@ http.createServer(async (req, res) => {
 }).listen(Number(process.env.PORT ?? 4630), () => console.log("http://localhost:4630"));
 ```
 
-**UI** (`public/index.html`) — a chat interface built per the web-design skill: message list, streamed assistant text appended delta by delta, the final `sources` event rendered as citation chips, an empty state inviting the first question with **3–4 example questions the corpus can actually answer** (pill chips; clicking one submits it), and a visible error state when `/api/ask` fails. Citations must satisfy both of these, never bare text:
+**UI** (`public/index.html`) — a chat interface built per the web-design skill: message list, streamed assistant text appended delta by delta and rendered as Markdown, the final `sources` event rendered as citations (pill chips or accordion source cards), an empty state inviting the first question with **3–4 example questions the corpus can actually answer** (clicking one submits it; keep them short — see Markdown and language below), and a visible error state when `/api/ask` fails. Citations must satisfy both of these, never bare text:
 
 - **Reveal the original chunk**: clicking a citation chip (or an inline `[n]`) opens a popover/panel showing the matched chunk's `text` from the sources event **verbatim** — the numbering maps 1:1 to the context blocks in the prompt, so `[n]` always reveals exactly the block the answer drew on.
 - **Link to the real document**: inside the popover, `<a href="<url>" target="_blank">` using the `url` field (`/corpus/<path>`, which this server serves) — clicking the chip itself opens the popover, the document link lives within it. When the corpus was cloned from a public repository, prefer mapping the path to the canonical upstream page instead (e.g. the GitHub blob URL derived from the clone URL).
+
+**Markdown and language** — handle both in app code, never by lengthening prompts; this is what lets the homepage examples stay short:
+
+- **Render Markdown**: answers arrive as Markdown — render bold, lists, inline and fenced code, and the inline `[n]` markers (styled per the web-design skill) instead of dumping raw text; escape any HTML in the model text before applying your own markdown transforms so it can never inject markup. Do not add prompt instructions like "answer in plain text" to dodge rendering — fix the renderer.
+- **Cross-language retrieval**: the corpus and the user often speak different languages (English docs, Chinese questions), and BM25 is purely lexical — a Chinese question scores zero against English chunks. At ingest time derive a small bilingual keyword map for the corpus's core vocabulary (10–20 domain terms, e.g. `权限 → permissions / allow / deny`, `钩子 → hooks`) and expand query tokens through it in `search()` before scoring; keep the per-character CJK tokenizer. The persona already pins the answer language to the question's language.
+- **Short examples**: with rendering and retrieval handled above, each homepage example is one short natural question in the UI language — no keyword stuffing in the corpus language, no embedded formatting or language instructions ("请用 Markdown 列出…"). An example is a real prompt: clicking it must yield a well-grounded, cited answer.
 
 **Persona** (`persona.md`) — the embedded agent's role, written per the agent-creation skill. Shape: one role sentence ("You are an expert on X; you answer strictly from the provided context blocks"), citation and refusal rules, answer language follows the question.
 
