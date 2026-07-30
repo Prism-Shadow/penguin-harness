@@ -549,7 +549,7 @@ export const zh = {
     },
     exampleTasks: {
       game: {
-        label: "示例：2D 企鹅雪橇越野小游戏",
+        label: "2D 企鹅雪橇越野小游戏",
         desc: "可爱南极企鹅滑雪橇跳石头，难度由易到难的 2D 纯前端小游戏",
         prompt:
           "做一个可爱的南极企鹅滑雪橇越野 2D 小游戏：按空格键起跳，跃过冰面上迎面而来的石头；" +
@@ -559,7 +559,7 @@ export const zh = {
           "完成后在浏览器里自测一次，确认开局能轻松玩过几秒，并告诉我怎么打开和怎么玩。",
       },
       gamecenter: {
-        label: "示例：多智能体搭建小游戏中心",
+        label: "多智能体搭建小游戏中心",
         desc: "并行产出 10 个玩法互不重复的纯前端小游戏，配一个统一风格的索引首页",
         prompt: `用多智能体并行搭建一个网页小游戏中心：10 个玩法互不重复的纯前端小游戏，外加一个索引首页。
 
@@ -581,7 +581,7 @@ export const zh = {
 - 在浏览器里逐个自测，确认都能开始、能结束、能重开，然后告诉我怎么打开。`,
       },
       lol: {
-        label: "示例：英雄联盟音乐播放器",
+        label: "英雄联盟音乐播放器",
         desc: "用 SoundCloud Widget API 播放历届 Worlds 主题曲，单文件即开即用",
         prompt: `用 SoundCloud Widget API（见 https://developers.soundcloud.com/docs/api/html5-widget）做一个英雄联盟 Worlds 主题曲播放器，单文件 index.html，file:// 打开即用。
 
@@ -611,7 +611,7 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
 完成后在浏览器打开 index.html 自测一次。`,
       },
       rag: {
-        label: "示例：构建 Claude Code 文档专家",
+        label: "构建 Claude Code 文档 RAG 智能体",
         desc: "收集 claude-code-docs 仓库，生成可对话、带来源引用的 RAG 知识应用",
         prompt:
           "收集 https://github.com/ericbuess/claude-code-docs 的文档，构建一个 RAG 知识应用：" +
@@ -627,7 +627,7 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
           "确认两者都检索到了正确的英文文档、流式回答正常，并告诉我访问方式。",
       },
       agentBenchmarkBuild: {
-        label: "示例：创建决策 Agent 和能力评测",
+        label: "构建通用决策智能体和评测基准",
         desc: "创建一个通用决策 Agent，并用足球、售后和投资任务检验它",
         prompt: `请依次使用 \`agent-creation\` 和 \`benchmark-design\`，创建决策 Agent，并产出 Frozen Benchmark 与 Formal Baseline。
 
@@ -649,7 +649,7 @@ Benchmark：
 3. 根据投资策略、历史市场与当前指标选择投资动作。`,
       },
       agentOptimization: {
-        label: "示例：根据评测优化决策 Agent",
+        label: "优化通用决策智能体的准确率",
         desc: "根据已有评测结果改进 Agent，并验证新版本是否真正提升",
         prompt: `请使用 \`agent-optimization\`，根据 Frozen Benchmark 优化决策 Agent。
 

@@ -91,15 +91,21 @@ function saveAppliedRouteKey(field: RouteStateField, key: string): void {
 }
 
 /**
- * One glyph per example folder, 16×16 (a browser window / an evolution loop). Icons live on the
- * folder rather than on each example: with the examples reduced to single-line titles, a column
- * of per-row icons was noise competing with the titles, while the folder row is exactly where a
- * glyph earns its place — it is what you scan to pick a category.
+ * One glyph per example folder, 16×16. Icons live on the folder rather than on each example:
+ * with the examples reduced to single-line titles, a column of per-row icons was noise
+ * competing with the titles, while the folder row is exactly where a glyph earns its place —
+ * it is what you scan to pick a category.
+ *
+ * webapps: a browser window (chrome bar + two dots). agents: the SAME robot head the sidebar's
+ * Agents entry uses (NAV_ICONS.agents) — deliberately not a generic refresh loop, because the
+ * app already has one glyph that means "agent" and a folder of agent examples should wear it.
+ * Duplicated as a literal rather than imported: sidebar.tsx imports from chat-page.tsx, which
+ * renders this file, so importing it back would close an import cycle.
  */
 const FOLDER_GLYPHS: Record<ExampleFolderId, string> = {
   webapps:
     "M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6zM3 9h18M6 6.5h.01M9 6.5h.01",
-  agents: "M7 7h8a4 4 0 0 1 4 4v1M17 5l2 2-2 2M17 17H9a4 4 0 0 1-4-4v-1M7 19l-2-2 2-2",
+  agents: "M12 3v3m-6 4a6 6 0 0 1 12 0v5a3 3 0 0 1-3 3H9a3 3 0 0 1-3-3v-5zm3 3h.01M15 13h.01",
 };
 
 export function DraftView({
@@ -436,12 +442,13 @@ export function DraftView({
   );
 
   /**
-   * The one open example folder (bookmark-style: opening another closes this one; clicking the
-   * open one closes it). The first folder starts open so the draft page lands on real examples
-   * rather than two closed rows — with every folder the same length, which one is open never
-   * changes the block's height.
+   * The open example folder — bookmark-style, and ALWAYS exactly one: selecting another closes
+   * the previous, and clicking the open one is a no-op rather than collapsing it. Never
+   * nullable on purpose. With every folder the same length, "one open" is what makes the
+   * block's height a constant: the examples area can neither collapse to bare folder rows nor
+   * grow, so nothing below it shifts as folders are switched.
    */
-  const [openFolder, setOpenFolder] = useState<ExampleFolderId | null>(EXAMPLE_FOLDERS[0].id);
+  const [openFolder, setOpenFolder] = useState<ExampleFolderId>(EXAMPLE_FOLDERS[0].id);
 
   const selectedAgent = agents.find((a) => a.agentId === agentId) ?? null;
 
@@ -512,23 +519,31 @@ export function DraftView({
         </div>
 
         {/* Example tasks: one-click canned builds showing off the one-sentence → app flow.
-            Bookmark-style folders — exactly one open, opening another closes it — so the block
-            is two folder rows plus one folder's rows and nothing else. That bound is why there
-            is no scroll container here: a scrollbar inside a six-line showcase reads as a
-            defect, and the folders are what keep the height from ever needing one.
-            Each example is a single-line title; its one-sentence description rides in the row
-            tooltip rather than a second line. Rows are disabled until agents/models/skills are
-            resolved (onSend would silently no-op without an Agent). */}
+            Bookmark-style folders with ALWAYS exactly one open — selecting another closes the
+            previous, and the open one cannot be collapsed. The block is therefore a FIXED
+            height: two folder rows plus one folder's rows, whichever folder that is (they are
+            kept the same length). Nothing below shifts when folders are switched, and no
+            scroll container is needed — a scrollbar inside a six-line showcase reads as a
+            defect. Each example is a single-line title; its one-sentence description rides in
+            the row tooltip rather than a second line. Rows are disabled until
+            agents/models/skills are resolved (onSend would silently no-op without an Agent). */}
         <div className="mt-6 space-y-1">
           {EXAMPLE_FOLDERS.map((folder) => {
             const open = folder.id === openFolder;
             return (
               <div key={folder.id}>
+                {/* A tab, not a disclosure: the open folder stays open (clicking it is a
+                    no-op) and carries the selected fill, so the block always shows one
+                    folder's examples and its height never changes. */}
                 <button
                   type="button"
                   aria-expanded={open}
-                  onClick={() => setOpenFolder(open ? null : folder.id)}
-                  className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800/70"
+                  onClick={() => setOpenFolder(folder.id)}
+                  className={`flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left transition-colors duration-150 ${
+                    open
+                      ? "bg-gray-100 dark:bg-gray-800/70"
+                      : "hover:bg-gray-100 dark:hover:bg-gray-800/70"
+                  }`}
                 >
                   <span className="shrink-0 text-brand-500 dark:text-brand-400">
                     <svg

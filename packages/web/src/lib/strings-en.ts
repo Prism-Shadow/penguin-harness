@@ -562,7 +562,7 @@ export const en: Strings = {
     },
     exampleTasks: {
       game: {
-        label: "Example: 2D penguin sled game",
+        label: "2D penguin sled game",
         desc: "A cute Antarctic penguin sleds over rocks, easy start with a gentle difficulty ramp — a 2D pure-frontend mini game",
         prompt:
           "Build a cute Antarctic penguin sledding 2D game: press Space to jump over the rocks " +
@@ -575,7 +575,7 @@ export const en: Strings = {
           "clear, and tell me how to open it and how to play.",
       },
       gamecenter: {
-        label: "Example: a mini-game center built by multiple agents",
+        label: "A mini-game center built by multiple agents",
         desc: "Ten pure-frontend games with no repeated mechanics, built in parallel behind one index page",
         prompt: `Build a web mini-game center with multiple agents working in parallel: 10 pure-frontend games with no two sharing the same mechanic, plus an index page.
 
@@ -597,7 +597,7 @@ export const en: Strings = {
 - Self-test each game in a browser — it starts, it ends, it restarts — then tell me how to open it.`,
       },
       lol: {
-        label: "Example: League of Legends music player",
+        label: "League of Legends music player",
         desc: "Worlds anthems on the SoundCloud Widget API — a single file that opens from file://",
         prompt: `Build a League of Legends Worlds anthem player with the SoundCloud Widget API (see https://developers.soundcloud.com/docs/api/html5-widget): a single index.html that works when opened from file://.
 
@@ -627,7 +627,7 @@ Penguin visual style (see the web-design skill), dark/light themes via <html dat
 When done, open index.html in a browser and self-test once.`,
       },
       rag: {
-        label: "Example: build a Claude Code docs expert",
+        label: "Build a Claude Code docs RAG agent",
         desc: "Collect the claude-code-docs repo into a conversational RAG knowledge app with source citations",
         prompt:
           "Collect the docs from https://github.com/ericbuess/claude-code-docs and build a RAG knowledge app: " +
@@ -645,7 +645,7 @@ When done, open index.html in a browser and self-test once.`,
           "the right English documents and stream their answers, then tell me how to access it.",
       },
       agentBenchmarkBuild: {
-        label: "Example: create a decision Agent and capability evaluation",
+        label: "Build a general-purpose decision agent and its benchmark",
         desc: "Create a general decision Agent and test it on football, after-sales, and investment tasks",
         prompt: `Use \`agent-creation\` followed by \`benchmark-design\` to create a decision Agent and produce a frozen Benchmark with a Formal Baseline.
 
@@ -667,7 +667,7 @@ Scenarios:
 3. Choose investment actions from a strategy, historical markets, and current indicators.`,
       },
       agentOptimization: {
-        label: "Example: optimize a decision Agent from its evaluation",
+        label: "Improve the general-purpose decision agent's accuracy",
         desc: "Improve an Agent from existing evaluation results and verify that the new version is better",
         prompt: `Use \`agent-optimization\` to optimize a decision Agent against its frozen Benchmark.
 
