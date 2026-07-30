@@ -97,9 +97,9 @@ export function agentIdFromRunSubagentArgs(argsJson: string): string | null {
 /**
  * The model-written `description` argument of run_subagent — one sentence saying what this
  * child was spawned to do. It is the only human-readable statement of a subagent's purpose
- * (the agent name says who, not what), so the panel surfaces it above the child's transcript
- * and in the graph node's tooltip. Optional: a model may omit it, and `call_description: false`
- * removes the property from the schema entirely — both read as null.
+ * (the agent name says who, not what), so the graph renders it as each node's second line and
+ * repeats it untruncated in the node tooltip. Optional: a model may omit it, and
+ * `call_description: false` removes the property from the schema entirely — both read as null.
  */
 export function descriptionFromRunSubagentArgs(argsJson: string): string | null {
   return runSubagentArg(argsJson, "description");

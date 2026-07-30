@@ -53,8 +53,8 @@ export function AgentTopologyView({
           const label = labelFor(node);
           const selected = node.sessionId === selectedId;
           const stateLabel = node.running ? S.subagentPanel.nodeRunning : S.subagentPanel.nodeDone;
-          // The node box is a fixed-size chip, so the spawning call's description rides in the
-          // tooltip rather than the label; the panel shows it in full above the transcript.
+          // The node renders the description truncated on its second line; the tooltip carries
+          // the full sentence, which is the only place it appears untruncated.
           const tooltip =
             node.description !== null
               ? `${label} · ${stateLabel}\n${node.description}`
