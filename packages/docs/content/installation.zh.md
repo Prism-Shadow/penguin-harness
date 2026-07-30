@@ -37,6 +37,24 @@ $env:PENGUIN_VERSION = "vX.Y.Z"; irm https://penguin.ooo/install.ps1 | iex
 penguin -v
 ```
 
+### 离线安装包
+
+每个 Release 还会分别提供 Windows x64、Linux x64/arm64 与 macOS x64/arm64 的完整离线包。先在可联网电脑上下载与目标电脑匹配的离线包，传输到目标电脑后解压一次。
+
+Windows 上双击 `install.cmd`，或执行：
+
+```powershell
+.\install.ps1 -ArchivePath .\penguin-win32-x64.zip
+```
+
+Linux / macOS 上执行：
+
+```bash
+./install.sh
+```
+
+解压后的目录同时包含对应平台的程序压缩包、`.sha256` 文件和离线安装入口。离线包内的 `install.sh` 会将同包内的程序压缩包显式传给实际安装器，强制完成 checksum 校验，并且不会发起任何网络请求。也可以使用 Release 中单独发布的安装器显式指定本地文件：`install.sh --archive <file>`、`PENGUIN_ARCHIVE=<file>`、`install.ps1 -ArchivePath <file>` 或 `$env:PENGUIN_ARCHIVE`。
+
 ### 安装位置与选项
 
 | 项目 | 说明 |
@@ -44,6 +62,7 @@ penguin -v
 | 安装目录 | 默认 `~/.penguin`，可用环境变量 `PENGUIN_INSTALL_DIR` 覆盖 |
 | 命令入口 | 创建符号链接 `~/.local/bin/penguin`（若 `~/.local/bin` 不在 PATH 上，脚本会给出提示） |
 | 版本固定 | 环境变量 `PENGUIN_VERSION=vX.Y.Z`，或脚本参数 `--version vX.Y.Z`；默认安装最新 Release |
+| 本地压缩包 | `PENGUIN_ARCHIVE=<file>` 或 `--archive <file>`；允许重命名，要求旁边存在 `<file>.sha256` 或平台标准名称的 `.sha256` |
 | 完整性校验 | Release 提供 checksum 资产时自动进行 sha256 校验 |
 | 升级 | 重新执行安装脚本即可，文件原子替换 |
 
@@ -56,6 +75,7 @@ penguin -v
 | 安装目录 | 默认 `%USERPROFILE%\.penguin`，可用环境变量 `PENGUIN_INSTALL_DIR` 覆盖 |
 | 命令入口 | `bin\penguin.cmd` 与 `bin\penguin.ps1` 启动器；安装器会把 `%USERPROFILE%\.penguin\bin` 加入**用户** Path（重启终端后生效） |
 | 版本固定 | 运行安装器前设置 `$env:PENGUIN_VERSION = "vX.Y.Z"` |
+| 本地压缩包 | `$env:PENGUIN_ARCHIVE = "<file>"` 或 `-ArchivePath <file>`；允许重命名，要求旁边存在 `<file>.sha256` 或 `penguin-win32-x64.zip.sha256` |
 | 完整性校验 | Release 提供 checksum 资产时自动进行 sha256 校验 |
 | 升级 | 重新运行安装器；只替换 `bin`/`lib`/`web`/`node`，绝不触碰 `data` |
 

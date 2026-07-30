@@ -37,6 +37,24 @@ Verify the install:
 penguin -v
 ```
 
+### Offline bundles
+
+Each Release also publishes self-contained offline bundles for Windows x64, Linux x64/arm64 and macOS x64/arm64. Download the bundle matching the target computer on a connected machine, transfer it, then extract it once.
+
+On Windows, double-click `install.cmd`, or run:
+
+```powershell
+.\install.ps1 -ArchivePath .\penguin-win32-x64.zip
+```
+
+On Linux / macOS, run:
+
+```bash
+./install.sh
+```
+
+The extracted bundle keeps the matching program archive, its `.sha256` file and an offline entry point together. The bundle's `install.sh` passes that archive explicitly to the real installer, requires a successful checksum verification and performs no network requests. You can also use the separately published Release installer with an explicit local path: `install.sh --archive <file>`, `PENGUIN_ARCHIVE=<file>`, `install.ps1 -ArchivePath <file>`, or `$env:PENGUIN_ARCHIVE`.
+
 ### Install location and options
 
 | Item | Details |
@@ -44,6 +62,7 @@ penguin -v
 | Install dir | `~/.penguin` by default; override with the `PENGUIN_INSTALL_DIR` env var |
 | Command entry | A symlink `~/.local/bin/penguin` is created (the script warns if `~/.local/bin` is not on PATH) |
 | Version pin | `PENGUIN_VERSION=vX.Y.Z` env var, or the `--version vX.Y.Z` script flag; defaults to the latest Release |
+| Local archive | `PENGUIN_ARCHIVE=<file>` or `--archive <file>`; renamed files are accepted with an adjacent `<file>.sha256` or the platform asset's canonical `.sha256` |
 | Integrity check | Downloads are sha256-verified when the Release ships checksum assets |
 | Upgrade | Re-run the install script; files are swapped atomically |
 
@@ -56,6 +75,7 @@ Script flags go after `sh -s --`, e.g. `curl -fsSL https://penguin.ooo/install.s
 | Install dir | `%USERPROFILE%\.penguin` by default; override with the `PENGUIN_INSTALL_DIR` env var |
 | Command entry | `bin\penguin.cmd` and `bin\penguin.ps1` launchers; the installer adds `%USERPROFILE%\.penguin\bin` to your **user** Path (restart the terminal once) |
 | Version pin | `$env:PENGUIN_VERSION = "vX.Y.Z"` before running the installer |
+| Local archive | `$env:PENGUIN_ARCHIVE = "<file>"` or `-ArchivePath <file>`; renamed files are accepted with an adjacent `<file>.sha256` or `penguin-win32-x64.zip.sha256` |
 | Integrity check | Downloads are sha256-verified when the Release ships checksum assets |
 | Upgrade | Re-run the installer; it swaps `bin`/`lib`/`web`/`node` and never touches `data` |
 

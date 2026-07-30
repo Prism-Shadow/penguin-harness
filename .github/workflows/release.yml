@@ -110,12 +110,13 @@ jobs:
         run: pnpm build
 
       # lib/: the CLI and its production deps (including workspace core/server/skills, all build outputs);
-      # pnpm 10's deploy needs --legacy (this repo doesn't enable inject-workspace-packages).
+      # Use pnpm's current deploy implementation with injected workspace packages; the hoisted target layout
+      # avoids deeply nested .pnpm/node_modules paths that exceed Windows PowerShell 5.1's legacy MAX_PATH limit.
       # bin/penguin launcher: resolve its own real path (following symlinks) -> default PENGUIN_WEB_DIST to
       # the sibling web/ -> use the bundled runtime (node/bin/node) if present, else fall back to system node.
       - name: Assemble penguin/ (lib + web + bin)
         run: |
-          pnpm --filter @prismshadow/penguin-cli --prod deploy --legacy "$PWD/out/penguin/lib"
+          pnpm --config.node-linker=hoisted --filter @prismshadow/penguin-cli --prod deploy "$PWD/out/penguin/lib"
           cp -r packages/web/dist out/penguin/web
           mkdir -p out/penguin/bin
           cat > out/penguin/bin/penguin <<'EOF'
@@ -155,10 +156,12 @@ jobs:
             fi
             mv "/tmp/node-runtime/$name" out/penguin/node
             rm -rf out/penguin/node/share/doc out/penguin/node/share/man
+            printf '{"schemaVersion":1,"target":"%s"}\n' "$os-$arch" > out/penguin/package-manifest.json
             tar -czf "dist-artifacts/penguin-$os-$arch.tar.gz" -C out penguin
           done
           # Universal package: no bundled runtime, requires system Node >= 24.
           rm -rf out/penguin/node
+          printf '{"schemaVersion":1,"target":"universal"}\n' > out/penguin/package-manifest.json
           tar -czf dist-artifacts/penguin-universal.tar.gz -C out penguin
 
       # Windows package: same lib/ + web/ layout, but a .zip (the native format), the official
@@ -192,6 +195,7 @@ jobs:
           test -f out/penguin/git/usr/bin/sh.exe
           test -f out/penguin/git/etc/profile
           rm -f out/penguin/bin/penguin
+          printf '{"schemaVersion":1,"target":"win32-x64"}\n' > out/penguin/package-manifest.json
           cat > out/penguin/bin/penguin.cmd <<'EOF'
           @echo off
           setlocal
@@ -221,14 +225,25 @@ jobs:
           sed -i 's/$/\r/' out/penguin/bin/penguin.ps1
           (cd out && zip -qr ../dist-artifacts/penguin-win32-x64.zip penguin)
 
-      # SHA256SUMS summary + a same-named .sha256 per artifact (install.sh / install.ps1 verify against the latter).
-      - name: Generate SHA256 checksums
+      # Per-payload checksums are included inside the offline bundles and are also consumed by
+      # the online install.sh / install.ps1 downloads.
+      - name: Generate payload SHA256 checksums
         run: |
           cd dist-artifacts
-          sha256sum *.tar.gz *.zip > SHA256SUMS
           for f in *.tar.gz *.zip; do
             sha256sum "$f" > "$f.sha256"
           done
+
+      # Each offline bundle contains exactly one platform payload, its checksum and the native installer.
+      # Users extract once, then run install.sh (Linux/macOS) or double-click install.cmd (Windows).
+      - name: Package offline installer bundles
+        run: sh scripts/package-offline-bundles.sh dist-artifacts
+
+      # Summary covers both raw program archives and their offline installer wrappers.
+      - name: Generate SHA256SUMS
+        run: |
+          cd dist-artifacts
+          sha256sum *.tar.gz *.zip > SHA256SUMS
 
       # Release notes come from changelog/<version>/RELEASE.md, written during release preparation and
       # committed BEFORE the tag (the release job runs on the tag's checkout, so a file added afterwards

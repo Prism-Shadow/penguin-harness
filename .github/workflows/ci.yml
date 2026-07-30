@@ -45,6 +45,9 @@ jobs:
       - name: Unit tests (vitest)
         run: pnpm test
 
+      - name: Offline bundle and POSIX installer tests
+        run: sh scripts/test-offline-bundles.sh
+
       # The secret is exposed only in this step (step-level env); earlier steps and third-party actions can't see it.
       # The secrets context can't be used in if expressions, so skip inside the shell when it's absent (e.g. forks).
       - name: E2E (live LLM via DeepSeek)
@@ -108,3 +111,7 @@ jobs:
             }
           }
           if ($failed) { exit 1 }
+
+      - name: Windows offline installer tests
+        shell: pwsh
+        run: ./scripts/test-offline-install.ps1

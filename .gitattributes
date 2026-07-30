@@ -9,6 +9,7 @@
 # PowerShell is the one Windows-native text format we ship; keep it CRLF for notepad/PS 5.1
 # friendliness (PowerShell itself accepts both).
 *.ps1 text eol=crlf
+*.cmd text eol=crlf
 
 # Binary assets: never subject to text normalization or diffs.
 *.png binary
