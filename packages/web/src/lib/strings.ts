@@ -532,11 +532,9 @@ export const zh = {
     newSessionInWorkspace: "在此工作区新建对话",
     draftSubtitle: "最擅长 AI 开发任务的自进化 Agent",
     /**
-     * Example task cards on the draft screen: one click auto-submits the canned prompt (game
-     * card, then the LoL-player card, then the RAG card). These are the FULL working prompts — the README and
-     * landing page show a condensed one-sentence version of the RAG example for reading, and
-     * the cards' own desc lines stay short, but what actually gets submitted stays detailed:
-     * build quality depends on it.
+     * Example task cards on the draft screen: one click auto-submits the canned prompt. These
+     * are the FULL working prompts — descriptions stay short, but the submitted instructions
+     * remain detailed because execution quality depends on them.
      */
     exampleTasks: {
       game: {
@@ -589,6 +587,39 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
           "引用要能展示命中的原文片段，并链接到真实文档；" +
           "按 web-design 技能提供美观的 Web 聊天界面，空态展示几个示例问题。" +
           "完成后运行应用、自测一个问题验证流式回答，并告诉我访问方式。",
+      },
+      agentBenchmarkBuild: {
+        label: "示例：创建决策 Agent 和能力评测",
+        desc: "创建一个通用决策 Agent，并用足球、售后和投资任务检验它",
+        prompt: `请依次使用 \`agent-creation\` 和 \`benchmark-design\`，创建决策 Agent，并产出 Frozen Benchmark 与 Formal Baseline。
+
+Agent：
+- id：\`finite_choice_agent\`
+- 能力：面对有限选项，在公开信息不足或冲突时仍能给出稳定、可解释的选择
+- installed_skills：\`[]\`
+
+Benchmark：
+- id：\`contextual-choice-adaptation\`
+- capability：从公开规则、历史案例和当前事实中形成并迁移稳定的有限选择决策过程
+- runs：\`1\`
+- desired_baseline_score：\`<75\`
+- pilot_iteration_limit：\`5\`
+
+场景：
+1. 根据历史比赛与当前信息进行足球投注决策。
+2. 根据售后政策与工单事实选择处置动作。
+3. 根据投资策略、历史市场与当前指标选择投资动作。`,
+      },
+      agentOptimization: {
+        label: "示例：根据评测优化决策 Agent",
+        desc: "根据已有评测结果改进 Agent，并验证新版本是否真正提升",
+        prompt: `请使用 \`agent-optimization\`，根据 Frozen Benchmark 优化决策 Agent。
+
+- test_agent_id：\`finite_choice_agent\`
+- benchmark_id：\`contextual-choice-adaptation\`
+- capability_direction：提高信息不完整、规则冲突和有限选项决策中的稳定性
+- desired_score：\`>=95\`
+- candidate_round_limit：\`5\``,
       },
     },
     sessionList: "Session",
@@ -923,8 +954,13 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     selectBenchmark: "在左侧选择一个 Benchmark",
     emptyAgent: "该 Agent 暂无 Benchmark",
     caseCount: (n: number): string => `${n} 题`,
-    /** Chart title, varies by selected metric (score / cost / duration over time). */
+    /** Score-only chart title. */
     trendTitle: (metric: string): string => `${metric}随时间变化`,
+    cases: "题目",
+    viewCase: "查看题目",
+    publicMaterials: "公开材料",
+    statementUnavailable: "题面暂时无法读取",
+    maxScore: (score: string): string => `满分 ${score}`,
     evaluations: "评估明细",
     noEvaluations: "暂无评估记录",
     /** Evaluation notes (scoreboard's summary: score source and notes on this round's changes). */
@@ -932,8 +968,9 @@ Penguin 视觉风格（见 web-design 技能），深色/浅色主题（<html da
     /** Chart legend: older evaluation records with no model label (gray series). */
     legendUnlabeled: "未标注模型",
     colVersion: "版本",
-    colModel: "模型",
-    colScore: "总分",
+    colModel: "模型 ID",
+    colThinkingLevel: "推理强度",
+    colScore: "Score",
     colDuration: "耗时",
     colCase: "题目",
     colRun: "运行",

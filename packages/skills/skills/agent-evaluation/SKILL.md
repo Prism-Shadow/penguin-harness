@@ -1,25 +1,27 @@
 ---
 name: agent-evaluation
-description: Run and score exactly one Benchmark Case run with CLI execution, Trace provenance checks, and private Rubric isolation.
+description: Run one specified Test Agent on one specified Benchmark Case exactly once, privately score that execution, and return one protocol result.
 short_description: Run and score one isolated Benchmark Case.
 short_description_zh: 隔离执行并评分一个 Benchmark Case。
-version: 4
-updated: 2026-07-25T00:00:00Z
+version: 5
+updated: 2026-07-29T17:20:58Z
 ---
 
 # Agent Evaluation
 
-Act as an internal leaf worker. For one valid request, run and score exactly one Benchmark Case once, then return minimal protocol metadata. Do not design or refine the Benchmark, modify the Test Agent State, or write `scoreboard.yaml`. Do not use `run_subagent` or `input_subagent`.
+Handle one evaluation request from a `run_subagent` caller: run the specified Test Agent on one Benchmark Case once, score that execution privately, and return one protocol result.
+
+The top-level Benchmark Designer or Optimizer owns all Case and Run loops, concurrency, and follow-up handling. This worker handles no other Case or Run, launches no evaluator or subagent, modifies no Agent or Benchmark, and never writes `scoreboard.yaml`. Use the Penguin CLI only to launch the specified Test Agent; do not use it to create another phase, designer, optimizer, or evaluator.
+
+Operate silently. Call tools without progress messages. Across all streamed and final responses, the only worker-authored text must be the final plain protocol YAML. Emit no narration, headings, Markdown fences, summaries, private scoring details, or other text.
 
 ## Before you start
 
-This Skill is invoked by `benchmark-design` or Benchmark mode in `agent-optimization`. Require one unambiguous protocol request containing every identity field below. If the request is missing, duplicated, or conflicting, return `invalid_request` without creating a Workspace or launching the Test Agent. Do not ask an interactive clarification from this leaf worker.
+Use this Skill only for a complete request from a `run_subagent` caller. If the request is incomplete or inconsistent, return `invalid_request` through the protocol instead of asking the user a question.
 
-## Privacy boundary
+## Contract
 
-Before the final protocol YAML, emit no assistant text; use private reasoning and tool calls only. Never serialize Statement or artifact contents, Rubric items, expected values, correct outcomes, per-item scoring, diagnostics, secret configuration, Workspace paths, or Trace paths into an assistant message. The final assistant message is the protocol YAML only. It may echo the public identity fields supplied by the caller.
-
-A valid request contains exactly one value for each field:
+Require exactly one value for every field below:
 
 ```text
 protocol_version: 1
@@ -27,71 +29,74 @@ case_id: <case_id>
 run: <1_based_run_index>
 expected_version: <tested_agent_state_version>
 test_agent_id: <test_agent_id>
-benchmark_dir: <absolute_benchmark_dir>
+benchmark_id: <benchmark_id>
 provider: <provider>
-model_id: <upstream_model_id>
+model_id: <model_id>
 ```
 
-## Validate and prepare
+One request represents one Test Agent execution. The `run` value identifies that execution; it is not a repeat count. `provider` and `model_id` must both be non-empty and select that exact configured model. If a required field is missing, duplicated, or conflicting, return `invalid_request` without creating a Workspace or launching the Test Agent.
+
+Return a **scored result** when the Test Agent ran and the Rubric could be applied. Wrong, malformed, or missing Test Agent output is still a scored result. Return an **evaluation failure** when the request, Benchmark, launch, version check, Trace binding, or scoring process prevents a valid score.
 
 Resolve the Project, Test Agent, Benchmark, and Case only from the explicit request and Environment App Data Dir. Reject traversal, symlink escape, or any path outside the requested Test Agent. Never read a Project configuration file, credential, or vault.
 
-Require:
+## Prepare
+
+Use the `App Data Dir` from the Environment:
 
 ```text
-<test_agent_dir>/agent_state/system_config.yaml
-<benchmark_dir>/benchmark_config.toml
-<benchmark_dir>/<case_id>/statement/README.md
-<benchmark_dir>/<case_id>/rubric/README.md
+TEST_AGENT_DIR = <app_data_dir>/agents/<test_agent_id>
+BENCHMARK_DIR = <test_agent_dir>/benchmarks/<benchmark_id>
 ```
 
-Require `benchmark_config.toml` to contain a positive integer `runs`; the requested `run` must be within `1..runs`. The canonical State version is the top-level `version` in `system_config.yaml`, defaulting to 1, and must equal `expected_version`.
+Reject path traversal, symlink escape, or any resolved path outside the requested Test Agent. Inspect only the requested Agent State, Benchmark config and Case, isolated Test Workspace, and Traces needed to verify this execution. Do not inspect another Agent, Project secrets, hidden configuration, or unrelated Workspaces or Traces.
 
-Read and retain the exact Statement and Rubric bytes before launch. Reject an unusable, contradictory, non-atomic, or unbounded Rubric. The Rubric must declare a finite Case maximum; the returned score must fall within `0..case_max`.
+Require `agent_state/system_config.yaml`, `benchmark_config.toml`, `<case_id>/statement/README.md`, and `<case_id>/rubric/README.md`. Check that `runs` is positive and `run` is within `1..runs`. The top-level Agent State `version`, defaulting to 1, must equal `expected_version`; otherwise return `version_changed`. Read and snapshot `model.thinking_level` from this Target Agent config, using the normal Agent-config default `medium` only when the field is absent. This configured value is the evaluation `thinking_level`; do not require or read thinking metadata from a Trace.
 
-Create a collision-checked Workspace at `<test_agent_dir>/workspaces/tmp-<8hex>`. Copy only the contents of `statement/` into it. Never copy, link, or disclose `rubric/`, and never reuse another Case or run's Workspace.
+Before launch, snapshot every file under the Case's `statement/` and `rubric/` directories. Require a usable Rubric whose scoring items total exactly 100 points. Create a unique Workspace under `<test_agent_dir>/workspaces/`, resolve it to an absolute canonical path, and verify that the resolved path remains under that directory. Copy only `statement/` into it. The Test Agent may see the Statement and its own State, but never the Rubric, Gold answers, scoring rules, or Evaluator reasoning.
 
-## Launch and bind the Test Session
+## Run and verify
 
-Use an existing verified Penguin CLI or repository-local launcher already available in the runtime. Do not install a CLI and do not use `penguin run` as a probe. If no launcher is available, return `cli_failed`.
+Use an existing verified Penguin CLI or repository-local launcher. Do not install or probe a launcher. Snapshot the isolated Workspace and record the existing Trace files.
 
-Run the Test Agent exactly once in the foreground with a fresh top-level Session:
+Resolve `PROJECT_DIR`, then derive and verify `PROJECT_ID`, then derive and verify `PENGUIN_HOME`. Perform these as separate shell statements in this order. Never compress the assignments onto one command line, derive a value before its input exists, or substitute another Penguin home. Before launch, confirm that `PROJECT_ID` equals the basename of `PROJECT_DIR` and `PENGUIN_HOME` equals its dirname.
+
+Start one foreground execution with a fresh top-level Session. With an explicit pair, use:
 
 ```bash
 PROJECT_DIR="<app_data_dir>"   # the App Data Dir value from your Environment section is the project root
 PROJECT_ID="$(basename "$PROJECT_DIR")"
 PENGUIN_HOME="$(dirname "$PROJECT_DIR")"
-WORKSPACE="$PROJECT_DIR/agents/<test_agent_id>/workspaces/<unique_workspace_id>"
 export PENGUIN_HOME
-penguin run --message "Read README.md in the current Workspace and complete the task exactly as specified there." \
+penguin run \
+  --message "Read README.md in the current Workspace and complete the task exactly as specified there." \
   --provider "<provider>" --model-id "<model_id>" --project-id "$PROJECT_ID" \
-  --agent-id "<test_agent_id>" --workspace "$WORKSPACE" --approve allow-all
+  --agent-id "<test_agent_id>" --workspace "<absolute_unique_workspace_path>" --approve allow-all
 ```
 
-Use the exact Project, Test Agent, Model pair, and Workspace. Do not fall back to another value. Poll the same process until it exits. A nonzero, interrupted, or misrouted launch is `cli_failed`, not score zero. Do not relaunch within the same run or target processes by a global name or pattern.
+Use the exact requested Agent, Project, absolute Workspace path, and model pair. Never omit either model flag and never fall back to a Project default. If a launch fails, retry only when unchanged Workspace and Trace evidence proves that the Test Agent did not start. Every retry must follow a new diagnosis and apply a specific correction; never repeat an unchanged launch. Do not impose a numeric retry limit while distinct safe repairs remain. Return `evaluation_failed` when no new repair remains, external configuration is required, or it is unclear whether the Test Agent started.
 
-Read the canonical State version before and after the Test run; any change is `version_changed`. Confirm the Statement and Rubric bytes are unchanged before scoring.
+Verify after the run that the State version, configured `model.thinking_level`, and both directory snapshots are unchanged. Return `version_changed` when the State version or configured thinking level differs and `benchmark_invalid` when the Statement or Rubric differs.
 
-Search only the explicitly requested Test Agent's `traces/` tree and never inspect another Agent's traces. Group rotated shards by Session. Evaluate every Session group that could contain the exact Workspace match; never infer ownership from recency or a fixed-size latest subset. Bind the Test Trace mechanically from `session_meta`:
+Inspect only new or changed Traces. Bind exactly one root Test Trace whose Workspace, Agent State path, provider, and model match this request. Ignore unrelated parallel Traces and exclude the root Trace's directly referenced child Sessions. Return `evaluation_failed` if there is no unique match. Read the actual non-empty `provider` and `model_id` from the bound root Trace's `session_meta`; return `evaluation_failed` if either is unavailable. Use the unchanged Target Agent configuration snapshot—not Trace metadata—for `thinking_level`.
 
-- `payload.workspace` equals the unique Workspace;
-- `payload.agent_state` equals the exact Test Agent State path;
-- `payload.provider` equals the requested provider;
-- `payload.model_id` equals the requested model id.
+## Score
 
-When matching Test subagents exist, exclude child ids referenced by subagent events and require one unique matching root Test Session. Unrelated concurrent traces are not conflicts. Missing, multiple, malformed, or identity-mismatched roots are `provenance_mismatch`.
+Inspect only the isolated Workspace, the bound root Trace, its directly referenced child Traces, and the private Rubric. Apply every scoring item and allowed equivalent. Keep Rubric contents, Gold answers, per-item scoring, and scoring rationale private.
 
-## Score and account
+A wrong answer, missing artifact, malformed output, or task failure attributable to the Test Agent is scored behavior and returns `status: ok`. A launcher, Trace-binding, or Evaluator failure is not scored. Return `benchmark_invalid` when the Rubric cannot be applied and `evaluation_failed` when the score is non-finite or outside `0..100`.
 
-Inspect only the unique Test Workspace, its bound Test Trace, and the retained private Rubric. Apply every atomic item exactly and normalize only allowed equivalents. A missing, malformed, wrong-type, or incorrect Test artifact is ordinary scored Test Agent behavior: apply the Rubric's zero or partial credit and return `status: ok`. Only a changed or unusable Rubric, or a non-finite/out-of-range result, is `invalid_score`. Detailed reasoning remains in Evaluator Trace.
+Set `duration_ms` from the root Test Session. Compute cost only from reliable final cumulative usage or cost already recorded in that Session and directly referenced child Traces found in the same bounded pass. Never browse, query a pricing service, or infer cost from external model prices. If the required data is unavailable, return `cost: null`. Missing cost data must not invalidate a score.
 
-Compute `duration_ms` from the bound root Test Session, not from the Evaluator. Compute cost only from that root and child Sessions mechanically referenced by subagent events whose traces are available within the explicitly requested Test Agent's `traces/` tree. For each included Session, use final cumulative token usage rather than summing intermediate cumulative events, and apply the matching public `(provider, model_id)` pricing. If any referenced child trace or usage is unavailable there, including because the Test Session delegated to another Agent, or if any included usage is unpriced, return `cost: null` rather than inspecting another Agent or reporting a known partial sum as complete cost.
+Round `score` to two decimal places. Preserve a non-null `cost` at the precision recorded in the Trace; do not round it. Write `duration_ms` as a non-negative integer rounded to the nearest millisecond.
 
-## Return protocol
+## Return
 
-Emit exactly one plain YAML document beginning with `protocol_version:` and stop. Do not use a code fence or add explanations.
+Return the required YAML as the only worker-authored text. Do not wrap it in backticks or a Markdown fence.
 
-On success:
+If the caller reports that your response formatting was invalid, use the scored or failed result already present in this Session and resend only the clean protocol YAML. Do not call tools, relaunch the Test Agent, rescore, or add an explanation.
+
+For a scored result:
 
 ```text
 protocol_version: 1
@@ -99,25 +104,34 @@ status: ok
 case_id: <case_id>
 run: <run>
 expected_version: <version>
-provider: <provider>
-model_id: <model_id>
-score: <0_to_case_max>
+provider: <actual_provider>
+model_id: <actual_model_id>
+thinking_level: <configured_thinking_level>
+score: <0_to_100>
 cost: <number_or_null>
 duration_ms: <non_negative_integer>
 session_id: <test_session_id>
 ```
 
-On failure:
+For an evaluation failure, use `null` for an identity field that was missing or conflicting:
 
 ```text
 protocol_version: 1
-status: infrastructure_failure
-case_id: <case_id>
-run: <run>
-expected_version: <version>
-provider: <provider>
-model_id: <model_id>
+status: failed
+case_id: <case_id_or_null>
+run: <run_or_null>
+expected_version: <version_or_null>
+provider: <provider_or_null>
+model_id: <model_id_or_null>
+thinking_level: <thinking_level_or_null>
 failure_code: <stable_failure_code>
 ```
 
-Stable codes are `invalid_request`, `invalid_statement`, `invalid_rubric`, `cli_failed`, `provenance_mismatch`, `version_changed`, and `invalid_score`. Do not include score, cost, duration, Session id, private data, or optimization advice on failure.
+Use four failure codes:
+
+- `invalid_request`: the request is incomplete or inconsistent.
+- `benchmark_invalid`: the Statement, Rubric, or scoring contract is invalid.
+- `version_changed`: the Test Agent version does not match the request or changed during evaluation.
+- `evaluation_failed`: launch could not be safely repaired, or Trace binding or scoring failed.
+
+Never include score, cost, duration, Session id, private data, or optimization advice on failure.

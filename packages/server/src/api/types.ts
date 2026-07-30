@@ -1214,22 +1214,23 @@ export interface AgentImportResponse {
 /** Raw result of a single run (a scoreboard per-case runs[] entry). */
 export interface BenchmarkRunScore {
   score: number;
-  cost?: number;
-  durationMs?: number;
+  /** Run cost, or null when unavailable. */
+  cost: number | null;
+  durationMs: number;
   /** Id of the Session under test in this run (links to Trace). */
-  sessionId?: string;
+  sessionId: string;
 }
 
 export interface BenchmarkCaseScore {
   case: string;
-  /** Per-case score = average of runs (equals that single run's score under the legacy single-run format). */
+  /** Model-written average of this Case's Run scores, on the fixed 0..100 scale. */
   score: number;
-  cost?: number;
-  durationMs?: number;
-  /** For legacy format compatibility: per-case single Session id (new format keeps it inside runs[]). */
-  sessionId?: string;
-  /** Raw results per run; unset under the legacy format (the server backfills one entry when parsing as a single run). */
-  runs?: BenchmarkRunScore[];
+  /** Model-written average of known Run costs; null when every Run cost is unknown. */
+  cost: number | null;
+  /** Model-written average of Run durations, rounded to an integer. */
+  durationMs: number;
+  /** Raw results per Run. */
+  runs: BenchmarkRunScore[];
 }
 
 export interface BenchmarkEvaluation {
@@ -1240,15 +1241,19 @@ export interface BenchmarkEvaluation {
   /** Evaluation summary body: how the score was derived, what optimizations were made to the Agent this round (required when generating, tolerated as unset when displaying). */
   summary?: string;
   /** Model actually used for this evaluation round (upstream id, paired with provider; the chart series is split by model). */
-  modelId?: string;
+  modelId: string;
   /** Provider group for `modelId`. */
-  provider?: string;
+  provider: string;
+  /** Thinking level read from the unchanged Target Agent configuration. */
+  thinkingLevel: string;
   /** Agent State version number under test. */
-  version?: number;
-  /** Total score (sum of per-case scores; max score defined by the scoring rubric). */
+  version: number;
+  /** Model-written average of Case scores, on the fixed 0..100 scale. */
   score: number;
-  cost?: number;
-  durationMs?: number;
+  /** Model-written average of known Case costs; null when every Case cost is unknown. */
+  cost: number | null;
+  /** Model-written average of Case durations, rounded to an integer. */
+  durationMs: number;
   cases: BenchmarkCaseScore[];
 }
 
@@ -1268,6 +1273,17 @@ export interface BenchmarkSummary {
 
 export interface BenchmarksResponse {
   benchmarks: BenchmarkSummary[];
+}
+
+/** Public Benchmark Case metadata. Rubric and Gold content are never included. */
+export interface BenchmarkCaseSummary {
+  id: string;
+  /** First Markdown heading with an optional leading "Case N:" removed; falls back to id. */
+  title: string;
+}
+
+export interface BenchmarkCasesResponse {
+  cases: BenchmarkCaseSummary[];
 }
 
 // ---------------------------------------------------------------------------

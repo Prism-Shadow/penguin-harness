@@ -46,7 +46,7 @@ async function exists(p: string): Promise<boolean> {
 
 interface RunScore {
   score: number;
-  cost: number;
+  cost: number | null;
   duration_ms: number;
   session_id: string;
 }
@@ -59,6 +59,7 @@ interface Evaluation extends Omit<CaseScore, "case" | "runs"> {
   version: number;
   provider: string;
   model_id: string;
+  thinking_level: string;
   summary_title: string;
   summary: string;
   cases: CaseScore[];
@@ -88,6 +89,7 @@ describe("example benchmark provisioning", () => {
       const rubric = await fs.readFile(path.join(dir, caseId, "rubric", "README.md"), "utf8");
       expect(statement.length).toBeGreaterThan(50);
       expect(rubric).toContain("pts");
+      expect(rubric).toContain("max 100 points");
     }
 
     // scoreboard.yaml: 3 evaluations, with version/time increasing and scores rising, and
@@ -96,6 +98,7 @@ describe("example benchmark provisioning", () => {
       evaluations: Evaluation[];
     };
     expect(scoreboard.evaluations).toHaveLength(3);
+    expect(JSON.stringify(scoreboard)).not.toContain("max_score");
     expect(scoreboard.evaluations.map((e) => e.version)).toEqual([1, 2, 3]);
     const times = scoreboard.evaluations.map((e) => new Date(e.time).getTime());
     expect(times[0]!).toBeLessThan(times[1]!);
@@ -112,6 +115,7 @@ describe("example benchmark provisioning", () => {
     ]);
     for (const e of scoreboard.evaluations) {
       expect(e.provider).toBe("deepseek");
+      expect(e.thinking_level).toBe("medium");
       expect(e.summary_title.length).toBeGreaterThan(0);
       expect(e.summary.toLowerCase()).toContain("example");
       expect(e.cases).toHaveLength(2);
@@ -124,19 +128,30 @@ describe("example benchmark provisioning", () => {
     }
   });
 
-  it("scoreboard numbers are self-consistent (case = avg of runs, evaluation = sum of cases)", async () => {
+  it("scoreboard numbers preserve Run cost precision and use model-written averages", async () => {
     const { evaluations } = buildExampleScoreboard();
+    expect(evaluations[0]?.cases[0]?.runs.map((run) => run.cost)).toEqual([0.012, 0.014]);
     const avg = (vals: number[]): number => vals.reduce((a, b) => a + b, 0) / vals.length;
-    const sum = (vals: number[]): number => vals.reduce((a, b) => a + b, 0);
+    const knownCostAvg = (vals: Array<number | null>): number | null => {
+      const known = vals.filter((value): value is number => value !== null);
+      return known.length > 0 ? avg(known) : null;
+    };
     for (const e of evaluations) {
       for (const c of e.cases) {
-        expect(c.score).toBeCloseTo(avg(c.runs.map((r) => r.score)), 6);
-        expect(c.cost).toBeCloseTo(avg(c.runs.map((r) => r.cost)), 6);
-        expect(c.duration_ms).toBeCloseTo(avg(c.runs.map((r) => r.duration_ms)), 6);
+        expect(c.runs.every((run) => run.score >= 0 && run.score <= 100)).toBe(true);
+        expect(c.score).toBe(Math.round(avg(c.runs.map((r) => r.score)) * 100) / 100);
+        const expectedCost = knownCostAvg(c.runs.map((r) => r.cost));
+        expect(c.cost).toBe(
+          expectedCost === null ? null : Math.round(expectedCost * 1_000_000) / 1_000_000,
+        );
+        expect(c.duration_ms).toBe(Math.round(avg(c.runs.map((r) => r.duration_ms))));
       }
-      expect(e.score).toBeCloseTo(sum(e.cases.map((c) => c.score)), 6);
-      expect(e.cost).toBeCloseTo(sum(e.cases.map((c) => c.cost)), 6);
-      expect(e.duration_ms).toBeCloseTo(sum(e.cases.map((c) => c.duration_ms)), 6);
+      expect(e.score).toBe(Math.round(avg(e.cases.map((c) => c.score)) * 100) / 100);
+      const expectedCost = knownCostAvg(e.cases.map((c) => c.cost));
+      expect(e.cost).toBe(
+        expectedCost === null ? null : Math.round(expectedCost * 1_000_000) / 1_000_000,
+      );
+      expect(e.duration_ms).toBe(Math.round(avg(e.cases.map((c) => c.duration_ms))));
     }
   });
 

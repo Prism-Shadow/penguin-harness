@@ -154,7 +154,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
   // Per-process secret: preview tokens are short-lived, so losing them on restart is
   // harmless and there is nothing to persist or rotate.
   const previewTokens = createPreviewTokenSigner();
-  const benchmarks = new BenchmarkService(config.root);
+  const benchmarks = new BenchmarkService(config.root, workspaceFiles);
   const snapshots = new SnapshotService(config.root);
   const usageService = new UsageService(
     usageRepo,

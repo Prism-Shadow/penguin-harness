@@ -182,6 +182,169 @@ describe("librarySkill", () => {
     expect(librarySkill("no-such-skill")).toBeUndefined();
   });
 
+  it("benchmark-design selects a valid Pilot revision before the Formal Baseline", () => {
+    const content = librarySkill("benchmark-design")?.content;
+    expect(content).toBeDefined();
+
+    const pilotIndex = content!.indexOf("## Refine the Benchmark");
+    const baselineIndex = content!.indexOf("## Freeze and run the Formal Baseline");
+    const normalizedContent = content!.replace(/\s+/g, " ");
+
+    expect(pilotIndex).toBeGreaterThan(-1);
+    expect(baselineIndex).toBeGreaterThan(pilotIndex);
+    expect(normalizedContent).toContain("Keep Pilot results out of the Scoreboard");
+    expect(normalizedContent).toContain("requested valid-iteration limit");
+    expect(normalizedContent).toContain("lowest-scoring valid Pilot revision");
+    expect(normalizedContent).toContain("retain only one temporary restorable copy");
+    expect(normalizedContent).toContain("Store it outside `benchmarks/`");
+    expect(normalizedContent).toContain("delete the temporary lowest-revision copy");
+    expect(normalizedContent).toContain("A single iteration may refine multiple Cases");
+    expect(normalizedContent).toContain(
+      "do not require the public Statement to uniquely determine the Gold",
+    );
+    expect(normalizedContent).toContain("stable reusable policy, priority, inference boundary");
+    expect(normalizedContent).toContain(
+      "do not disclose every decisive premise or priority merely to make the public task complete",
+    );
+    expect(normalizedContent).toContain(
+      "Allocate most points within each Case to decisions or concise artifacts",
+    );
+    expect(normalizedContent).toContain(
+      "Keep generic format compliance, evidence enumeration, and analysis completeness from creating a high score floor",
+    );
+    expect(normalizedContent).toContain(
+      "Before the first dispatch of every new or changed Case revision",
+    );
+    expect(normalizedContent).toContain("current Statement is internally coherent");
+    expect(normalizedContent).toContain("current Rubric is consistent with the current Statement");
+    expect(normalizedContent).toContain("must not refer to an earlier revision or missing context");
+    expect(normalizedContent).toContain(
+      "every scoring item applies to the Case's actual requested output",
+    );
+    expect(normalizedContent).toContain(
+      "does not require the public Statement to contain enough information",
+    );
+    expect(normalizedContent).toContain(
+      "Prefer refinements that create one or more scored separating decisions",
+    );
+    expect(normalizedContent).toContain(
+      "Adding another explicit rule, exception, source, or checklist is not a difficulty increase",
+    );
+    expect(normalizedContent).toContain("Separating prediction");
+    expect(normalizedContent).toContain(
+      "If both behaviors are expected to reach the same scored result, choose another refinement",
+    );
+    expect(normalizedContent).toContain("A Rubric-only refinement is allowed but not preferred");
+    expect(normalizedContent).toContain(
+      "Do not add points merely because the previous Test Agent omitted a phrase",
+    );
+    expect(normalizedContent).toContain(
+      "Run a complete consistency review and final leak check across every Case",
+    );
+    expect(normalizedContent).toContain(
+      "Do not run another difficulty refinement merely to create more score margin",
+    );
+    expect(normalizedContent).toContain("missing the desired score alone is not a failure");
+    expect(normalizedContent).toContain("never reuse a Pilot result");
+    expect(normalizedContent).toContain(
+      "Record the Formal Baseline even when its score does not meet the desired baseline score",
+    );
+  });
+
+  it("evaluation is the only subagent leaf and optimization has a bounded valid-round loop", () => {
+    const creation = librarySkill("agent-creation")!.content.replace(/\s+/g, " ");
+    const evaluation = librarySkill("agent-evaluation")!.content.replace(/\s+/g, " ");
+    const benchmarkDesignRaw = librarySkill("benchmark-design")!.content;
+    const benchmarkDesign = benchmarkDesignRaw.replace(/\s+/g, " ");
+    const optimizationRaw = librarySkill("agent-optimization")!.content;
+    const optimization = optimizationRaw.replace(/\s+/g, " ");
+
+    expect(creation).toContain("inherit the current Builder Session's `Provider` and `Model ID`");
+    expect(creation).toContain(
+      "read `model.thinking_level` from the Builder's own `agent_state/system_config.yaml`",
+    );
+    expect(creation).toContain("Write the resolved `thinking_level` into a brand-new target Agent");
+    expect(creation).toContain("never add either field to `system_config.yaml`");
+    expect(evaluation).toContain("request from a `run_subagent` caller");
+    expect(evaluation).toContain("Use the Penguin CLI only to launch the specified Test Agent");
+    expect(evaluation).toContain('PROJECT_ID="$(basename "$PROJECT_DIR")"');
+    expect(evaluation).toContain('PENGUIN_HOME="$(dirname "$PROJECT_DIR")"');
+    expect(evaluation).toContain("export PENGUIN_HOME");
+    expect(evaluation).toContain('--project-id "$PROJECT_ID"');
+    expect(evaluation).toContain("Perform these as separate shell statements in this order");
+    expect(evaluation).toContain("Never compress the assignments onto one command line");
+    expect(evaluation).toContain("Do not impose a numeric retry limit");
+    expect(evaluation).toContain("Never browse, query a pricing service");
+    expect(evaluation).toContain("resend only the clean protocol YAML");
+    expect(evaluation).toContain('--workspace "<absolute_unique_workspace_path>"');
+    expect(evaluation).toContain("resolve it to an absolute canonical path");
+    expect(evaluation).toContain("`provider` and `model_id` must both be non-empty");
+    expect(evaluation).toContain("Never omit either model flag");
+    expect(evaluation).toContain(
+      "Read and snapshot `model.thinking_level` from this Target Agent config",
+    );
+    expect(evaluation).toContain("not Trace metadata—for `thinking_level`");
+    expect(evaluation).toContain("outside `0..100`");
+    expect(evaluation).not.toContain('PENGUIN_HOME="$(dirname "$PROJECT_DIR")" penguin run');
+    expect(benchmarkDesign).toContain(
+      "otherwise inherit the current Builder Session's complete `Provider` and `Model ID`",
+    );
+    expect(benchmarkDesign).toContain(
+      "Read `thinking_level` from the Test Agent's `model.thinking_level`",
+    );
+    expect(benchmarkDesign).toContain(
+      "Pass the resolved `(provider, model_id)` explicitly in every Pilot and Formal Evaluator request",
+    );
+    expect(benchmarkDesign).toContain("Every Case Rubric has a fixed maximum of 100 points");
+    expect(benchmarkDesign).toContain("average of the Case scores");
+    expect(benchmarkDesign).toContain("ignore `null` values when averaging cost");
+    expect(benchmarkDesign).toContain("stored values are authoritative");
+    expect(benchmarkDesign).toContain("obtain the current UTC timestamp from the environment");
+    expect(benchmarkDesignRaw).not.toMatch(/\n\s+max_score:/);
+    expect(benchmarkDesign).toContain(
+      "Before reading `status`, `score`, or any other protocol field",
+    );
+    expect(benchmarkDesign).toContain("Ask the same Evaluator to resend only the clean YAML");
+    expect(optimization).toContain("Delegate every evaluation to an `agent-evaluation` subagent");
+    expect(optimization).toContain("Before reading `status`, `score`, or any other protocol field");
+    expect(optimization).toContain("Ask the same Evaluator to resend only the clean YAML");
+    expect(optimization).toContain(
+      "A round counts only after one Candidate has a complete valid Evaluation",
+    );
+    expect(optimization).toContain("keep the same Candidate and incomplete matrix");
+    expect(optimization).toContain(
+      "Do not inspect private Evaluator State or abandon the Candidate",
+    );
+    expect(optimization).toContain(
+      "Immediately append and verify every accepted Candidate Evaluation",
+    );
+    expect(optimization).toContain(
+      "distinguish the acceptance decision from whether its stated hypothesis was supported",
+    );
+    expect(optimization).toContain(
+      "At the round limit, retain the highest-scoring accepted Reference",
+    );
+    expect(optimization).toContain("Read the evaluation `(provider, model_id, thinking_level)`");
+    expect(optimization).toContain(
+      "require its actual `provider`, `model_id`, and `thinking_level` to equal the Reference runtime",
+    );
+    expect(optimization).toContain("Do not edit `system_prompt` unless requested");
+    expect(optimization).toContain("change `model.thinking_level`");
+    expect(optimization).toContain(
+      "ensure `<target>/snapshots/v<Reference version>.tar.gz` exists",
+    );
+    expect(optimization).toContain("Reuse it when present");
+    expect(optimization).toContain("create it yourself before editing");
+    expect(optimization).toContain("excluding `.vault.toml`");
+    expect(optimization).toContain("never overwrite an existing same-version snapshot");
+    expect(optimization).not.toContain("stop and ask the user to export");
+    expect(optimization).toContain("fixed `0..100` scale");
+    expect(optimization).toContain("average of the Case scores");
+    expect(optimization).toContain("stored values are authoritative");
+    expect(optimization).toContain("Obtain the current UTC timestamp from the environment");
+    expect(optimizationRaw).not.toMatch(/\n\s+max_score:/);
+  });
+
   it("rejects illegal-character names (path traversal guard) and never hits the filesystem", () => {
     for (const name of ["../penguin-sdk", "..", "penguin-sdk/SKILL.md", "a/../b", ".", ""]) {
       expect(librarySkill(name), name).toBeUndefined();

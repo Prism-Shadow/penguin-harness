@@ -1,16 +1,15 @@
 /**
  * Benchmark score reading (read-only display): walks `benchmarks/<id>/`, reads
- * `benchmark_config.toml` (title,
- * description, evaluation Model, per-case run count `runs`) and `scoreboard.yaml`
- * (evaluations[], scoreboard v2: each case carries a runs array and a summary).
+ * `benchmark_config.toml` (title, description, per-case run count `runs`) and
+ * `scoreboard.yaml` (evaluations[], each case carries its model-written averages
+ * and a runs array).
  * Content is created and refined by benchmark_builder; the server only reads it.
  * Missing or corrupt files always degrade gracefully (title falls back to the
  * directory name, scores come back empty) rather than throwing.
  *
- * The three per-case metrics trust the file's own values; when missing they're
- * computed as the average over the runs array. The old format (no runs at the
- * case level, a single session_id) is parsed as a single run — the server backfills
- * one run entry.
+ * Case and Evaluation averages are authoritative file values. The server validates
+ * the current shape but never recomputes aggregates and does not migrate or backfill
+ * old Scoreboard formats.
  * Docs: /docs/self-improvement § "Benchmark storage".
  */
 import fs from "node:fs/promises";
@@ -20,11 +19,22 @@ import { parse as parseYaml } from "yaml";
 import { benchmarksDir } from "@prismshadow/penguin-core";
 import type {
   BenchmarkCaseScore,
+  BenchmarkCaseSummary,
+  BenchmarkCasesResponse,
   BenchmarkEvaluation,
   BenchmarkRunScore,
   BenchmarkSummary,
   BenchmarksResponse,
+  WorkspaceFilesResponse,
 } from "../api/types.js";
+import type {
+  WorkspaceFileContent,
+  WorkspaceFileReadOptions,
+  WorkspaceFilesService,
+} from "./workspace-files-service.js";
+import { HttpError } from "../http/errors.js";
+
+const STATEMENT_TITLE_READ_BYTES = 64 * 1024;
 
 function asRecord(v: unknown): Record<string, unknown> {
   return v !== null && typeof v === "object" && !Array.isArray(v)
@@ -36,110 +46,151 @@ function numberOr(v: unknown): number | undefined {
   return typeof v === "number" && Number.isFinite(v) ? v : undefined;
 }
 
+function scoreOr(v: unknown): number | undefined {
+  const value = numberOr(v);
+  return value !== undefined && value >= 0 && value <= 100 ? value : undefined;
+}
+
+function nonNegativeOr(v: unknown): number | undefined {
+  const value = numberOr(v);
+  return value !== undefined && value >= 0 ? value : undefined;
+}
+
+function nonNegativeIntegerOr(v: unknown): number | undefined {
+  const value = nonNegativeOr(v);
+  return value !== undefined && Number.isInteger(value) ? value : undefined;
+}
+
+/** `null` is the one valid unknown-cost representation; undefined means invalid input. */
+function nullableCostOr(v: unknown): number | null | undefined {
+  if (v === null) return null;
+  return nonNegativeOr(v);
+}
+
 function stringOr(v: unknown): string | undefined {
   return typeof v === "string" && v !== "" ? v : undefined;
 }
 
-/** Shapes a single run entry: score is the minimum requirement, other fields tolerate being absent; a bad entry returns null and is dropped. */
-function toRun(v: unknown): BenchmarkRunScore | null {
-  const r = asRecord(v);
-  const score = numberOr(r.score);
-  if (score === undefined) return null;
-  const cost = numberOr(r.cost);
-  const durationMs = numberOr(r.duration_ms);
-  const sessionId = stringOr(r.session_id);
-  return {
-    score,
-    ...(cost !== undefined ? { cost } : {}),
-    ...(durationMs !== undefined ? { durationMs } : {}),
-    ...(sessionId !== undefined ? { sessionId } : {}),
-  };
+function isWithin(parent: string, child: string): boolean {
+  const relative = path.relative(parent, child);
+  return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
 }
 
-/** Average of a metric across runs; undefined when there's no value at all (never forced to 0). */
-function averageOf(runs: BenchmarkRunScore[], pick: (r: BenchmarkRunScore) => number | undefined) {
-  const values = runs.map(pick).filter((v): v is number => v !== undefined);
-  if (values.length === 0) return undefined;
-  return values.reduce((a, b) => a + b, 0) / values.length;
+function statementTitle(statement: string, fallback: string): string {
+  const heading = /^#\s+(.+)$/m.exec(statement)?.[1]?.trim();
+  return heading?.replace(/^Case\s+\d+\s*:\s*/i, "") || fallback;
+}
+
+async function readStatementTitle(readme: string, fallback: string): Promise<string> {
+  const handle = await fs.open(readme, "r");
+  try {
+    const buffer = Buffer.alloc(STATEMENT_TITLE_READ_BYTES);
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+    return statementTitle(buffer.subarray(0, bytesRead).toString("utf8"), fallback);
+  } finally {
+    await handle.close();
+  }
+}
+
+/** Shapes one current-format Run; a malformed entry invalidates its containing Case. */
+function toRun(v: unknown): BenchmarkRunScore | null {
+  const r = asRecord(v);
+  const score = scoreOr(r.score);
+  const cost = nullableCostOr(r.cost);
+  const durationMs = nonNegativeIntegerOr(r.duration_ms);
+  const sessionId = stringOr(r.session_id);
+  if (score === undefined || cost === undefined || durationMs === undefined || !sessionId)
+    return null;
+  return { score, cost, durationMs, sessionId };
 }
 
 /**
- * Shapes a case-level entry (scoreboard v2): the three metrics trust the file's own
- * values, falling back to an average over runs when missing; the old format (no
- * runs, a single case-level session_id) is backfilled into a single run. case and a
- * score (from the file or derivable from runs) are the minimum requirement,
- * otherwise the entry is dropped.
+ * Shapes one current-format Case. Its stored aggregates are trusted as written:
+ * this parser intentionally performs no average or consistency calculation.
  */
 function toCase(v: unknown): BenchmarkCaseScore | null {
   const cr = asRecord(v);
   const caseId = stringOr(cr.case);
-  if (caseId === undefined) return null;
-  const parsedRuns = Array.isArray(cr.runs)
-    ? cr.runs.map(toRun).filter((r): r is BenchmarkRunScore => r !== null)
-    : [];
-  const score = numberOr(cr.score) ?? averageOf(parsedRuns, (r) => r.score);
-  if (score === undefined) return null;
-  const cost = numberOr(cr.cost) ?? averageOf(parsedRuns, (r) => r.cost);
-  const durationMs = numberOr(cr.duration_ms) ?? averageOf(parsedRuns, (r) => r.durationMs);
-  const sessionId = stringOr(cr.session_id);
-  const runs: BenchmarkRunScore[] =
-    parsedRuns.length > 0
-      ? parsedRuns
-      : [
-          // The old format is parsed as a single run: the case-level values are that run's raw result.
-          {
-            score,
-            ...(cost !== undefined ? { cost } : {}),
-            ...(durationMs !== undefined ? { durationMs } : {}),
-            ...(sessionId !== undefined ? { sessionId } : {}),
-          },
-        ];
+  const score = scoreOr(cr.score);
+  const cost = nullableCostOr(cr.cost);
+  const durationMs = nonNegativeIntegerOr(cr.duration_ms);
+  if (
+    !caseId ||
+    score === undefined ||
+    cost === undefined ||
+    durationMs === undefined ||
+    "max_score" in cr ||
+    !Array.isArray(cr.runs) ||
+    cr.runs.length === 0
+  ) {
+    return null;
+  }
+  const parsedRuns = cr.runs.map(toRun);
+  if (parsedRuns.some((run) => run === null)) return null;
+  const runs = parsedRuns as BenchmarkRunScore[];
   return {
     case: caseId,
     score,
-    ...(cost !== undefined ? { cost } : {}),
-    ...(durationMs !== undefined ? { durationMs } : {}),
-    ...(sessionId !== undefined ? { sessionId } : {}),
+    cost,
+    durationMs,
     runs,
   };
 }
 
-/** Shapes a single evaluation record: time and score are the minimum requirement, other fields (summary, etc.) tolerate being absent. */
+/** Shapes one current-format Evaluation and trusts its stored aggregate metrics. */
 function toEvaluation(v: unknown): BenchmarkEvaluation | null {
   const r = asRecord(v);
   const time = r.time instanceof Date ? r.time.toISOString() : r.time;
-  const score = numberOr(r.score);
-  if (typeof time !== "string" || time === "" || score === undefined) return null;
-  const cases: BenchmarkCaseScore[] = Array.isArray(r.cases)
-    ? r.cases.map(toCase).filter((c): c is BenchmarkCaseScore => c !== null)
-    : [];
+  const score = scoreOr(r.score);
+  const cost = nullableCostOr(r.cost);
+  const durationMs = nonNegativeIntegerOr(r.duration_ms);
   const summary = stringOr(r.summary);
   // Title and body are separate: summary_title is a one-line
   // conclusion, summary is the body text.
   const summaryTitle = stringOr(r.summary_title);
-  // The Model actually used for this evaluation run (paired with provider):
-  // charted curves are split into series by model, each with a distinct color.
   const modelId = stringOr(r.model_id);
   const provider = stringOr(r.provider);
-  const version = numberOr(r.version);
-  const cost = numberOr(r.cost);
-  const durationMs = numberOr(r.duration_ms);
+  const thinkingLevel = stringOr(r.thinking_level);
+  const version = nonNegativeIntegerOr(r.version);
+  if (
+    typeof time !== "string" ||
+    time === "" ||
+    score === undefined ||
+    cost === undefined ||
+    durationMs === undefined ||
+    !modelId ||
+    !provider ||
+    !thinkingLevel ||
+    version === undefined ||
+    version < 1 ||
+    !Array.isArray(r.cases) ||
+    r.cases.length === 0
+  ) {
+    return null;
+  }
+  const parsedCases = r.cases.map(toCase);
+  if (parsedCases.some((item) => item === null)) return null;
+  const cases = parsedCases as BenchmarkCaseScore[];
   return {
     time,
     ...(summaryTitle !== undefined ? { summaryTitle } : {}),
     ...(summary !== undefined ? { summary } : {}),
-    ...(modelId !== undefined ? { modelId } : {}),
-    ...(provider !== undefined ? { provider } : {}),
+    modelId,
+    provider,
+    thinkingLevel,
     score,
-    ...(version !== undefined ? { version } : {}),
-    ...(cost !== undefined ? { cost } : {}),
-    ...(durationMs !== undefined ? { durationMs } : {}),
+    version,
+    cost,
+    durationMs,
     cases,
   };
 }
 
 export class BenchmarkService {
-  constructor(private readonly root: string) {}
+  constructor(
+    private readonly root: string,
+    private readonly workspaceFiles: WorkspaceFilesService,
+  ) {}
 
   async list(projectId: string, agentId: string): Promise<BenchmarksResponse> {
     const dir = benchmarksDir(this.root, projectId, agentId);
@@ -155,6 +206,98 @@ export class BenchmarkService {
       benchmarks.push(await this.readBenchmark(path.join(dir, item.name), item.name));
     }
     return { benchmarks };
+  }
+
+  async listCases(
+    projectId: string,
+    agentId: string,
+    benchmarkId: string,
+  ): Promise<BenchmarkCasesResponse> {
+    const baseDir = benchmarksDir(this.root, projectId, agentId);
+    const benchDir = path.join(baseDir, benchmarkId);
+    let entries: Array<{ name: string; isDirectory(): boolean }>;
+    let realBaseDir: string;
+    let realBenchDir: string;
+    try {
+      [entries, realBaseDir, realBenchDir] = await Promise.all([
+        fs.readdir(benchDir, { withFileTypes: true }),
+        fs.realpath(baseDir),
+        fs.realpath(benchDir),
+      ]);
+    } catch {
+      return { cases: [] };
+    }
+    if (!isWithin(realBaseDir, realBenchDir)) return { cases: [] };
+
+    const cases: BenchmarkCaseSummary[] = [];
+    for (const entry of entries
+      .filter((item) => item.isDirectory() && item.name.startsWith("CASE-"))
+      .sort((a, b) => a.name.localeCompare(b.name))) {
+      const fallback: BenchmarkCaseSummary = { id: entry.name, title: entry.name };
+      try {
+        const statementDir = await this.statementRoot(projectId, agentId, benchmarkId, entry.name);
+        const realReadme = await fs.realpath(path.join(statementDir, "README.md"));
+        if (!isWithin(statementDir, realReadme)) throw new Error("README escapes Statement");
+        cases.push({
+          id: entry.name,
+          title: await readStatementTitle(realReadme, entry.name),
+        });
+      } catch {
+        cases.push(fallback);
+      }
+    }
+    return { cases };
+  }
+
+  async listCaseFiles(
+    projectId: string,
+    agentId: string,
+    benchmarkId: string,
+    caseId: string,
+    rel: string,
+  ): Promise<WorkspaceFilesResponse> {
+    const statementDir = await this.statementRoot(projectId, agentId, benchmarkId, caseId);
+    return this.workspaceFiles.list(statementDir, rel);
+  }
+
+  async readCaseFile(
+    projectId: string,
+    agentId: string,
+    benchmarkId: string,
+    caseId: string,
+    rel: string,
+    options?: WorkspaceFileReadOptions,
+  ): Promise<WorkspaceFileContent> {
+    const statementDir = await this.statementRoot(projectId, agentId, benchmarkId, caseId);
+    return this.workspaceFiles.read(statementDir, rel, options);
+  }
+
+  private async statementRoot(
+    projectId: string,
+    agentId: string,
+    benchmarkId: string,
+    caseId: string,
+  ): Promise<string> {
+    const benchDir = path.join(benchmarksDir(this.root, projectId, agentId), benchmarkId);
+    const caseDir = path.join(benchDir, caseId);
+    const statementDir = path.join(caseDir, "statement");
+    try {
+      const [realBenchDir, realCaseDir, realStatementDir] = await Promise.all([
+        fs.realpath(benchDir),
+        fs.realpath(caseDir),
+        fs.realpath(statementDir),
+      ]);
+      if (
+        !isWithin(realBenchDir, realCaseDir) ||
+        path.dirname(realStatementDir) !== realCaseDir ||
+        path.basename(realStatementDir) !== "statement"
+      ) {
+        throw new Error("Statement path is not canonical");
+      }
+      return realStatementDir;
+    } catch {
+      throw new HttpError(404, "not_found", "Public Case Statement does not exist.");
+    }
   }
 
   private async readBenchmark(benchDir: string, id: string): Promise<BenchmarkSummary> {
@@ -195,11 +338,11 @@ export class BenchmarkService {
       // No scores yet.
     }
 
-    // Case count: number of case subfolders (the statement/rubric structure isn't validated here).
+    // Case count: number of semantic Case subfolders.
     let caseCount = 0;
     try {
       const entries = await fs.readdir(benchDir, { withFileTypes: true });
-      caseCount = entries.filter((e) => e.isDirectory()).length;
+      caseCount = entries.filter((e) => e.isDirectory() && e.name.startsWith("CASE-")).length;
     } catch {
       // Stays at 0.
     }

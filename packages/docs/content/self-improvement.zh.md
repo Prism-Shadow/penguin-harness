@@ -3,27 +3,40 @@ title: 自我进化
 description: 由 Skill 编排的 Benchmark 评测与优化闭环：评分、改进、Snapshot 与回滚。
 ---
 
-PenguinHarness 中的自我进化不依赖专用引擎代码，而是由 Skill 编排普通的 Agent 机制完成：评测是普通的 Session，优化是普通的文件编辑，编排靠内置的 `run_subagent` 工具。这样做的直接收益是——整个过程与日常运行共用同一套可观测性与恢复机制。
+PenguinHarness 中的自我进化由 Skill 编排普通的 Agent 机制完成：评测是普通的 Session，优化是普通的文件编辑。创建评测与优化分别运行在两个独立的顶层 Session 中，单次评测通过内置的 `run_subagent` 工具委托。顶层 Prompt 提供 Agent、Benchmark、能力目标、分数和轮数等本次设定；调用关系、校准、Freeze、协议、重试、回滚和报告格式由 Skill 负责。
 
-## 三个角色
+## 角色与调用关系
 
 | 角色 | 职责 |
 | --- | --- |
+| Builder | 顶层 Agent，依次直接执行 `agent-creation` 和 `benchmark-design` |
 | Target Agent | 被改进的 Agent，只在自己的 Workspace 里执行评测任务 |
-| Evaluator | 执行并评分一次 Benchmark Case 运行 |
-| Optimizer | 驱动整个优化循环 |
+| Evaluator | `run_subagent` 创建的叶子 Worker，执行并评分一次 Benchmark Case 运行 |
+| Optimizer | 新顶层 Agent，直接执行 `agent-optimization` |
 
-角色由 Skill 定义而非硬编码：Evaluator 遵循 `agent-evaluation` Skill，Optimizer 遵循 `agent-optimization` Skill。这正是[配置参考](/configuration)所述设计原则的应用——Agent 的行为是磁盘上的可编辑文件，所以 Agent 可以被 Agent 改进。
+Builder 和 Optimizer 在各自的顶层 Session 中直接遵循对应 Skill。Evaluator 通过 `run_subagent` 创建，遵循 `agent-evaluation`，并通过 Penguin CLI 在绝对路径的隔离 Workspace 中启动指定的 Target Agent。Penguin CLI 在每次请求中启动 Target Agent 完成对应的 Case Run。
 
-## 优化循环
+## 两个独立步骤
 
-1. `benchmark-design` 构建多 Case 的能力 Benchmark：重复独立运行，先校准出可追溯的基线；
-2. Optimizer 通过 `run_subagent` 工具并行编排 Evaluator，覆盖 Case × 运行次数矩阵；
-3. 得分与其关联的 Trace 共同指出失分位置；
-4. Optimizer 编辑 Target Agent 的可编辑状态——`AGENTS.md`、Skills、配置——产出版本 N+1；
-5. 每轮开始前先打 Snapshot；总分严格提升才保留候选版本，否则回滚。
+第一个顶层 Session 创建 Agent 和能力评测。Builder 先使用 `agent-creation`，再使用 `benchmark-design` 构建多 Case Benchmark。初版 Cases 可以一次建好并形成完整 Pilot 1；后续每轮可以同时调整多个 Case 或难度维度。评测契约和私有标准必须明确、固定，公开 Statement 则不必唯一决定 Gold。Benchmark 可以通过公开信息不足、冲突信号和固定的私有决策标准形成信息差，只要该标准表达可复用的策略、优先级或推断边界，而且不会根据本次答案改写。
 
-Benchmark 优化模式要求 scoreboard 中已有完整的基线序列——没有校准过的基线，就没有可比较的提升。除此之外 `agent-optimization` 还支持一次性反馈模式：把一条具体的纠正意见直接落实为对 Target Agent 状态的编辑，不经过评测循环。
+每个新增或修改后的 Case 在首次派发前都要检查 Statement 自洽、Rubric 与当前 Statement 和固定私有标准一致，并确认评分项只依赖已定义、已提供或明确属于私有标准的前提；这不要求公开材料足以复现私有标准。Freeze 前再对所有 Case 完整检查一次。大部分分数应落在目标行为与合理捷径会产生不同结果的决定或简洁产物上，避免格式、证据罗列和分析完整度形成过高的保底分。
+
+每轮校准都要在派发前预测：当前 Trace 中的策略会产生什么结果、期望行为会产生什么不同结果，以及会影响多少分。增加一条模型可以直接执行的公开规则、例外、来源或检查项并不会自动增加难度；如果两种策略仍会得到相同的计分结果，就应选择其他改法。
+
+Pilot 分数是期望目标：达到后可以提前 Freeze；未达到时完成设定数量的有效 Pilot iteration，并选择其中分数最低的有效版本 Freeze。Builder 在临时目录只保留当前最低有效版本，Formal Baseline 记录后清理该副本和校准脚手架。Freeze 后必须运行全新完整的 Formal matrix；只要 Formal 有效就记录 Baseline，分数没有达到期望也不会使 Benchmark 作废。
+
+用户确认第一步完成后，在新对话中启动第二个顶层 Session。Optimizer 先检查 Benchmark 和第一条完整 Formal Baseline，再使用 `agent-optimization`：
+
+1. 通过 `run_subagent` 并行编排 Evaluator，覆盖 Case × 运行次数矩阵；
+2. 根据得分和关联 Trace 提出一个有界 Candidate；
+3. 编辑 Target Agent 的可编辑状态——`AGENTS.md`、Skills、配置——产出版本 N+1；
+4. Evaluation 分数严格提升才保留 Candidate，否则回滚；
+5. 达到期望分数时提前结束，否则完成本次设定数量的有效 Candidate round，并保留最高分 Reference。
+
+无效评测和修复重跑不计入轮数。出现执行失败时，Optimizer 保持同一个 Candidate，只补齐失败单元；只要还能根据新诊断提出不同的安全修复，就继续尝试。Builder 和 Optimizer 都先验证 Evaluator 的完整响应是否为纯协议 YAML，再读取状态或分数；格式不合规时，由同一个 Evaluator 基于已有结果重发，不重新运行 Target Agent。
+
+每个 Accepted Candidate 立即写入并校验 Scoreboard。Evaluation 分数严格提高决定是否接受；假设是否在预期 Case 上得到支持单独报告，避免把单次运行中的无关波动解释为改动因果。Agent 优化要求 Scoreboard 中已有完整 Formal Baseline——没有基线，就没有可比较的提升。
 
 ## Benchmark 存储
 
@@ -35,17 +48,19 @@ benchmarks/<id>/
 ├── <case-id>/
 │   ├── statement/              # 交给 Target Agent 的任务描述
 │   └── rubric/                 # 私有评分标准，对 Target Agent 隔离
-└── scoreboard.yaml             # 评测记录（v2 格式）
+└── scoreboard.yaml             # 当前格式的评测记录
 ```
 
 `rubric/` 与 `statement/` 的隔离是刻意设计：Target Agent 只能看到题面，永远接触不到评分标准。
 
-`scoreboard.yaml`（v2 格式）中的每条评测记录带时间戳，并记录：
+`scoreboard.yaml` 中的每条评测记录带时间戳，并记录：
 
-- 本轮使用的模型成对引用 `(provider, model_id)`；
+- 本轮 Runtime：用户显式指定的 `(provider, model_id)` 成对值优先，否则继承 Builder Session；`thinking_level` 从 Target Agent 配置读取，不依赖 Trace 元数据；
 - `summary_title` 与 `summary`（本轮结论与下一轮假设）；
-- 总分、成本与耗时——Case 级指标是各次运行的平均值，评测级指标是各 Case 的加和；
+- 由模型写入的 Score、成本与耗时平均值——Case 级对 Runs 求平均，Evaluation 级对 Cases 求平均；单次 Run 成本保留记录中的原始精度，成本平均值忽略 `null`，全部未知时才为 `null`；Score 保留两位小数，成本平均值保留六位小数，`duration_ms` 取整；
 - 每个 Case 的逐次运行明细，每次运行含 `score`、`cost`、`duration_ms` 与 `session_id`。
+
+每个 Run 和每个 Case 都固定满分 100，因此 Scoreboard 不再记录 `max_score`。服务端与 Web UI 直接信任已写入的聚合值，不重算、不交叉校验；旧 Scoreboard 不迁移、不回填。
 
 内置的 `default_agent` 预置了一个示例 Benchmark（`packages/core/src/state/example-benchmark.ts`），评测页面开箱即有数据；整个目录可随时删除或替换。
 
@@ -57,7 +72,7 @@ benchmarks/<id>/
 
 - 每次 Evaluator 运行都是一个普通的 Session，留有完整 Trace；
 - scoreboard 记录通过 `session_id` 链接回这些 Session，见 [Session 与 Trace](/sessions-and-traces)；
-- Web 的评测页面是这些文件的只读视图，见 [Web App 指南](/web-app)。
+- Web 的评测页面是这些文件的只读视图；折线图只展示 Score，明细表将模型 ID 与推理强度分列显示。见 [Web App 指南](/web-app)。
 
 分数不是黑盒输出：任何一个数字都可以回溯到产生它的那次运行。
 
@@ -68,6 +83,6 @@ benchmarks/<id>/
 | `agent-creation` | 把需求变成可用的 Agent：撰写其 `AGENTS.md`、安装所需 Skill |
 | `benchmark-design` | 设计并校准多 Case 的能力 Benchmark |
 | `agent-evaluation` | 隔离执行并评分一次 Benchmark Case 运行 |
-| `agent-optimization` | 根据反馈或 Benchmark 结果改进 Agent |
+| `agent-optimization` | 根据 Benchmark 结果改进 Agent |
 
 Skill 的组织与安装方式见[技能系统](/skills)。

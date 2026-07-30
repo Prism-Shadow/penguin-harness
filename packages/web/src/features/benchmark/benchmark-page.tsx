@@ -1,21 +1,18 @@
 /**
  * Benchmark page (read-only display):
  * the left directory lists Benchmarks grouped by Agent (the scoreboard is only fetched once
- * expanded); the right side shows the selected Benchmark's title info, a chart (switches between
- * score / cost / duration metrics on the same time axis; **grouped into series by the model each
- * evaluation carries** — the model isn't part of benchmark_config, each evaluation carries its
- * own — one color per series plus a legend, with older untagged records shown as a gray series;
- * missing values are skipped points, breaking the line; reuses the usage center's ChartFrame
- * coordinate system) and an evaluation detail table (includes a model column; rows expand to
- * show the evaluation summary — title and body shown separately — and per-case scores, and case
- * rows further expand to show the raw results of each run, with a Session link straight to that
- * Session's trace observability).
+ * expanded); the right side shows the selected Benchmark's title info, a Score-only chart grouped
+ * into series by each Evaluation's model ID and thinking level, and an evaluation detail table
+ * with separate model ID and thinking-level columns. Rows expand to show the evaluation summary
+ * and per-case scores, and Case rows further expand to show the raw results of each Run with a
+ * Session link.
  * With a ?agentId= deep link, only the target Agent is expanded by default.
  */
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import type {
   BenchmarkCaseScore,
+  BenchmarkCaseSummary,
   BenchmarkEvaluation,
   BenchmarkSummary,
 } from "@prismshadow/penguin-server/api";
@@ -29,22 +26,22 @@ import { useTheme } from "../../state/theme";
 import type { Currency } from "../../state/theme";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { Chevron } from "../../components/ui/chevron";
-import { Segmented } from "../../components/ui/segmented";
 import { Truncated } from "../../components/ui/truncated";
 import { EmptyState } from "../../components/ui/empty-state";
+import { Modal } from "../../components/ui/modal";
 import { SkeletonList } from "../../components/ui/skeleton";
-import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
 import { seriesColor } from "../../lib/category-colors";
 import { makeGeom } from "../usage/chart-geom";
 import { ChartFrame, useChartWidth } from "../usage/chart-svg";
 import {
   lineSegments,
   metricMax,
-  metricValues,
   modelSeries,
+  scoreValues,
   seriesValues,
 } from "./benchmark-metrics";
-import type { BenchmarkMetric, EvaluationSeries } from "./benchmark-metrics";
+import type { EvaluationSeries } from "./benchmark-metrics";
+import { BenchmarkStatementBrowser } from "./benchmark-statement-browser";
 
 interface Selection {
   agentId: string;
@@ -144,61 +141,31 @@ function AgentNode({
   );
 }
 
-/** Display label for a metric (shared by the Segmented options and the chart title; S is a live binding, must be read during render). */
-function metricLabel(metric: BenchmarkMetric): string {
-  return metric === "score"
-    ? S.benchmark.colScore
-    : metric === "cost"
-      ? S.common.cost
-      : S.benchmark.colDuration;
-}
-
-/** Display format for a metric value (shared by y-axis ticks and the tooltip): score / cost / duration each have their own formatting rule. */
-function formatMetric(metric: BenchmarkMetric, v: number, currency: Currency): string {
-  return metric === "score"
-    ? formatScore(v)
-    : metric === "cost"
-      ? formatMoney(v, currency)
-      : humanizeDuration(v);
-}
-
 /**
- * Metric-over-time line chart (cloned from the usage center's TrendChart: area + line + data
- * points, sharing the ChartFrame coordinate system). **Grouped into series** by the model each
- * evaluation carries: one color per series (SERIES_COLORS is a fixed color sequence, color
- * follows the model; older records with no model tag get a gray series), all series share the
- * same time axis and y-axis range. Missing values within a series (indices outside this series,
- * or cost / durationMs not recorded) are **skipped points** — lineSegments splits the
- * value-bearing indices into segments, drawing area + line + data points within each segment and
- * breaking between segments (a single-point segment draws only a point). ChartFrame's x-axis
- * labels take slice(5) of dates: passing `yyyy-MM-dd HH:mm` displays as `MM-dd HH:mm`. A single
- * evaluation is still drawn; no evaluations falls back to an empty state.
+ * Score-over-time line chart. Every Run, Case, and Evaluation uses the fixed 0..100 scale.
+ * Evaluations remain grouped by model ID and thinking level so a runtime change stays visible
+ * without adding other metric modes.
  */
-function MetricTrendChart({
+function ScoreTrendChart({
   evaluations,
   series,
-  metric,
-  currency,
 }: {
   evaluations: BenchmarkEvaluation[];
   series: EvaluationSeries[];
-  metric: BenchmarkMetric;
-  currency: Currency;
 }) {
   const [hover, setHover] = useState<number | null>(null);
   const [ref, width] = useChartWidth();
 
-  const values = metricValues(evaluations, metric);
-  const geom = makeGeom(evaluations.length, metricMax(values), width);
+  const values = scoreValues(evaluations);
+  const geom = makeGeom(evaluations.length, Math.max(metricMax(values), 100), width);
   const dates = evaluations.map((e) => formatDateTime(e.time));
-  const baseY = geom.y(0);
 
   return (
     <div ref={ref}>
       {width > 0 && (
         <ChartFrame
           geom={geom}
-          fmtY={(v) => formatMetric(metric, v, currency)}
+          fmtY={formatScore}
           dates={dates}
           hover={hover}
           onHover={setHover}
@@ -209,18 +176,20 @@ function MetricTrendChart({
               <>
                 <p className="text-gray-400">{formatDateTime(e.time)}</p>
                 <p className="font-mono">
-                  {v === null ? "—" : formatMetric(metric, v, currency)}
+                  {v === null ? "—" : formatScore(v)}
                   {e.version !== undefined && (
                     <span className="ml-1.5 text-gray-400">v{e.version}</span>
                   )}
                 </p>
-                {e.modelId && <p className="font-mono text-gray-400">{e.modelId}</p>}
+                <p className="font-mono text-gray-400">
+                  {e.modelId} · {e.thinkingLevel}
+                </p>
               </>
             );
           }}
         >
           {series.map((s, si) => {
-            const segments = lineSegments(seriesValues(evaluations, s, metric));
+            const segments = lineSegments(seriesValues(evaluations, s));
             return (
               <g
                 key={s.key === "" ? "unlabeled" : s.key}
@@ -230,18 +199,8 @@ function MetricTrendChart({
                   const line = seg
                     .map((p, j) => `${j === 0 ? "M" : "L"}${geom.x(p.index)},${geom.y(p.value)}`)
                     .join(" ");
-                  const area = `${line} L${geom.x(seg[seg.length - 1]!.index)},${baseY} L${geom.x(seg[0]!.index)},${baseY} Z`;
                   return (
                     <g key={k}>
-                      {/* Area fill: line closed to the baseline, low opacity reinforces the trend's sense of "volume" (no area for single-point segments) */}
-                      {seg.length > 1 && (
-                        <path
-                          d={area}
-                          className="fill-current"
-                          stroke="none"
-                          opacity={hover !== null ? 0.06 : 0.1}
-                        />
-                      )}
                       {seg.length > 1 && (
                         <path
                           d={line}
@@ -274,55 +233,25 @@ function MetricTrendChart({
 }
 
 /**
- * Chart section: title (follows metric) + metric switch (score / cost / duration, segmented
- * control) + model legend (only shown with >=2 series; a single series' identity is carried by
- * the detail table's model column and the hover tooltip instead) + the line chart. When the same
- * modelId coexists across providers, the legend appends the provider's display name to
- * disambiguate. Mounted under a keyed container per Benchmark: switching Benchmarks resets back
- * to "score".
+ * Score chart + runtime legend. Provider is deliberately not part of chart identity.
  */
-function TrendSection({
-  evaluations,
-  currency,
-}: {
-  evaluations: BenchmarkEvaluation[];
-  currency: Currency;
-}) {
-  const [metric, setMetric] = useState<BenchmarkMetric>("score");
+function TrendSection({ evaluations }: { evaluations: BenchmarkEvaluation[] }) {
   const series = modelSeries(evaluations);
-  const ids = series.map((s) => s.modelId).filter((v): v is string => v !== undefined);
-  const dupIds = new Set(ids.filter((id, i) => ids.indexOf(id) !== i));
   const labelOf = (s: EvaluationSeries): string => {
     if (!s.modelId) return S.benchmark.legendUnlabeled;
-    if (!dupIds.has(s.modelId)) return s.modelId;
-    const provider = s.provider ? (providerInfo(s.provider)?.label ?? s.provider) : "";
-    return provider ? `${s.modelId} · ${provider}` : s.modelId;
+    return s.thinkingLevel ? `${s.modelId} · ${s.thinkingLevel}` : s.modelId;
   };
   return (
     <div>
-      <div className="mb-1 flex items-center justify-between gap-2">
-        <p className="text-xs font-semibold text-gray-500">
-          {S.benchmark.trendTitle(metricLabel(metric))}
-        </p>
-        <div className="w-44 shrink-0">
-          <Segmented
-            options={[
-              { value: "score", label: metricLabel("score") },
-              { value: "cost", label: metricLabel("cost") },
-              { value: "duration", label: metricLabel("duration") },
-            ]}
-            value={metric}
-            onChange={setMetric}
-          />
-        </div>
-      </div>
+      <p className="mb-1 text-xs font-semibold text-gray-500">
+        {S.benchmark.trendTitle(S.benchmark.colScore)}
+      </p>
       {series.length >= 2 && (
         <div className="mb-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
           {series.map((s, i) => (
             <span
               key={s.key === "" ? "unlabeled" : s.key}
               className="flex items-center gap-1.5 text-[11px] text-gray-500 dark:text-gray-400"
-              title={s.provider ? (providerInfo(s.provider)?.label ?? s.provider) : undefined}
             >
               <span
                 className={`inline-block h-2 w-2 shrink-0 rounded-sm ${
@@ -334,26 +263,25 @@ function TrendSection({
           ))}
         </div>
       )}
-      <MetricTrendChart
-        evaluations={evaluations}
-        series={series}
-        metric={metric}
-        currency={currency}
-      />
+      <ScoreTrendChart evaluations={evaluations} series={series} />
     </div>
   );
 }
 
 const CELL = "px-3 py-2";
 
-/** One evaluation record: main row (time/version/total score/cost/duration) + a sub-table of per-case scores that expands on click. */
+/** One evaluation record: main row + a sub-table of per-Case scores that expands on click. */
 function EvaluationRow({
   agentId,
   evaluation,
+  caseTitles,
+  onOpenCase,
   currency,
 }: {
   agentId: string;
   evaluation: BenchmarkEvaluation;
+  caseTitles: ReadonlyMap<string, string>;
+  onOpenCase: (caseId: string) => void;
   currency: Currency;
 }) {
   const [open, setOpen] = useState(false);
@@ -376,7 +304,10 @@ function EvaluationRow({
           className={`${CELL} max-w-40 truncate font-mono text-xs text-gray-500 dark:text-gray-400`}
           title={evaluation.provider}
         >
-          {evaluation.modelId ?? "—"}
+          {evaluation.modelId}
+        </td>
+        <td className={`${CELL} font-mono text-xs text-gray-500 dark:text-gray-400`}>
+          {evaluation.thinkingLevel}
         </td>
         <td className={`${CELL} font-mono text-xs font-semibold tabular-nums`}>
           {formatScore(evaluation.score)}
@@ -390,11 +321,8 @@ function EvaluationRow({
       </tr>
       {open && (
         <tr className="border-b border-gray-100 last:border-b-0 dark:border-gray-800/60">
-          <td colSpan={6} className="bg-gray-50/80 px-3 py-2 dark:bg-gray-950/40">
-            {/* Evaluation summary (title + body shown separately; the generating side always
-                writes both, but the display side tolerates missing values — with an old-style
-                single-paragraph summary only, it's still shown as usual, prefixed with the
-                "Evaluation Summary" label). */}
+          <td colSpan={7} className="bg-gray-50/80 px-3 py-2 dark:bg-gray-950/40">
+            {/* Evaluation summary title and body are displayed separately when present. */}
             {(evaluation.summaryTitle || evaluation.summary) && (
               <div className="mb-2">
                 {evaluation.summaryTitle ? (
@@ -423,7 +351,14 @@ function EvaluationRow({
               </thead>
               <tbody>
                 {evaluation.cases.map((c) => (
-                  <CaseRow key={c.case} agentId={agentId} caseScore={c} currency={currency} />
+                  <CaseRow
+                    key={c.case}
+                    agentId={agentId}
+                    caseScore={c}
+                    title={caseTitles.get(c.case)}
+                    onOpenCase={caseTitles.has(c.case) ? onOpenCase : undefined}
+                    currency={currency}
+                  />
                 ))}
               </tbody>
             </table>
@@ -449,33 +384,54 @@ function SessionLink({ agentId, sessionId }: { agentId: string; sessionId?: stri
 }
 
 /**
- * Score row for one case: the case-level metrics = the average of its runs (already computed by
- * the server, trust its values). With runs[] present, the row can expand to show the raw results
- * of each run (#index + score / cost / duration / Session link); with the old format lacking
- * runs, it's not expandable and the case-level single Session link is used as before.
+ * Score row for one Case: stored Case averages are authoritative. Expanding shows raw Run
+ * results; the UI never recomputes averages.
  */
 function CaseRow({
   agentId,
   caseScore: c,
+  title,
+  onOpenCase,
   currency,
 }: {
   agentId: string;
   caseScore: BenchmarkCaseScore;
+  title?: string;
+  onOpenCase?: (caseId: string) => void;
   currency: Currency;
 }) {
   const [open, setOpen] = useState(false);
-  const runs = c.runs ?? [];
-  const expandable = runs.length > 0;
+  const runs = c.runs;
   return (
     <>
       <tr
-        onClick={expandable ? () => setOpen((v) => !v) : undefined}
-        className={`text-xs ${expandable ? "cursor-pointer transition-colors duration-150 hover:bg-gray-100/70 dark:hover:bg-gray-800/40" : ""}`}
+        onClick={() => setOpen((v) => !v)}
+        className="cursor-pointer text-xs transition-colors duration-150 hover:bg-gray-100/70 dark:hover:bg-gray-800/40"
       >
-        <td className="px-2 py-1 font-mono">
-          <span className="flex items-center gap-1.5">
-            {expandable && <Chevron open={open} size={12} className="text-gray-400" />}
-            {c.case}
+        <td className="px-2 py-1">
+          <span className="flex items-start gap-1.5">
+            <Chevron open={open} size={12} className="text-gray-400" />
+            <span className="min-w-0">
+              {onOpenCase ? (
+                <button
+                  type="button"
+                  className="block text-left font-medium text-gray-800 hover:underline dark:text-gray-200"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onOpenCase(c.case);
+                  }}
+                >
+                  {title ?? c.case}
+                </button>
+              ) : (
+                <span className="block font-medium text-gray-800 dark:text-gray-200">
+                  {title ?? c.case}
+                </span>
+              )}
+              {title && title !== c.case && (
+                <span className="block font-mono text-[11px] text-gray-400">{c.case}</span>
+              )}
+            </span>
           </span>
         </td>
         <td className="px-2 py-1 font-mono tabular-nums">{formatScore(c.score)}</td>
@@ -486,7 +442,7 @@ function CaseRow({
           {c.durationMs !== undefined ? humanizeDuration(c.durationMs) : "—"}
         </td>
         <td className="px-2 py-1">
-          <SessionLink agentId={agentId} {...(c.sessionId ? { sessionId: c.sessionId } : {})} />
+          <span className="text-gray-400">—</span>
         </td>
       </tr>
       {open &&
@@ -513,6 +469,51 @@ function CaseRow({
   );
 }
 
+function CasesSection({
+  cases,
+  error,
+  onOpenCase,
+}: {
+  cases: BenchmarkCaseSummary[] | null;
+  error: string | null;
+  onOpenCase: (caseId: string) => void;
+}) {
+  return (
+    <div>
+      <p className="mb-1 text-xs font-semibold text-gray-500">{S.benchmark.cases}</p>
+      <div className="overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+        {error && <p className="px-3 py-2 text-xs text-red-500">{error}</p>}
+        {!cases && !error && <p className="px-3 py-2 text-xs text-gray-400">{S.common.loading}</p>}
+        {cases?.map((item) => {
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => onOpenCase(item.id)}
+              className="flex w-full items-center gap-3 border-b border-gray-100 px-3 py-2 text-left transition-colors last:border-b-0 hover:bg-gray-50 dark:border-gray-800/70 dark:hover:bg-gray-800/50"
+            >
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-medium text-gray-800 dark:text-gray-200">
+                  {item.title}
+                </span>
+                <span className="block truncate font-mono text-[11px] text-gray-400">
+                  {item.id}
+                </span>
+              </span>
+              <span className="shrink-0 font-mono text-xs text-gray-500">
+                {S.benchmark.maxScore("100")}
+              </span>
+              <span className="shrink-0 text-xs text-brand-700 dark:text-brand-300">
+                {S.benchmark.viewCase}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function BenchmarkPage() {
   useDocumentTitle(S.benchmark.title);
   const { currentProject, agents, agentsLoading } = useProject();
@@ -522,17 +523,42 @@ export function BenchmarkPage() {
   const [searchParams] = useSearchParams();
   const focusAgentId = searchParams.get("agentId");
   const [selection, setSelection] = useState<Selection | null>(null);
+  const [caseStatements, setCaseStatements] = useState<BenchmarkCaseSummary[] | null>(null);
+  const [caseError, setCaseError] = useState<string | null>(null);
+  const [openCaseId, setOpenCaseId] = useState<string | null>(null);
 
   // Clear the selection when the Project changes.
   useEffect(() => {
     setSelection(null);
   }, [projectId]);
 
+  useEffect(() => {
+    setCaseStatements(null);
+    setCaseError(null);
+    setOpenCaseId(null);
+    if (!projectId || !selection) return;
+    let cancelled = false;
+    api
+      .listBenchmarkCases(projectId, selection.agentId, selection.benchmark.id)
+      .then((data) => {
+        if (!cancelled) setCaseStatements(data.cases);
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) setCaseError(apiErrorText(error));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, selection]);
+
   if (!projectId) return null;
 
   const bm = selection?.benchmark ?? null;
-  // Chart uses ascending time order (the scoreboard is already ordered, this sort is defensive); the detail table shows newest first.
-  const evaluations = bm ? [...bm.evaluations].sort((a, b) => a.time.localeCompare(b.time)) : [];
+  // The Scoreboard append order is the evaluation sequence. Preserve it even when a malformed
+  // timestamp would otherwise reorder Agent versions; the detail table shows that sequence newest first.
+  const evaluations = bm ? [...bm.evaluations] : [];
+  const caseTitles = new Map(caseStatements?.map((item) => [item.id, item.title]) ?? []);
+  const openCase = caseStatements?.find((item) => item.id === openCaseId) ?? null;
 
   return (
     <div className="flex h-full flex-col md:flex-row">
@@ -564,9 +590,7 @@ export function BenchmarkPage() {
         {selection && bm ? (
           // Changing the key on Benchmark switch resets expand state (a detail row's open doesn't linger across Benchmarks).
           <div key={`${selection.agentId}/${bm.id}`} className="mx-auto max-w-4xl space-y-4">
-            {/* Title row: title + case count (the model isn't part of config — each evaluation
-                carries its own, see the chart legend and the detail table's model column) +
-                description */}
+            {/* Runtime belongs to each Evaluation and is shown in the detail table. */}
             <div>
               <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                 <h1 className="min-w-0 truncate text-lg font-semibold">{bm.title}</h1>
@@ -577,23 +601,26 @@ export function BenchmarkPage() {
               )}
             </div>
 
+            <CasesSection cases={caseStatements} error={caseError} onOpenCase={setOpenCaseId} />
+
             {evaluations.length === 0 ? (
               <EmptyState title={S.benchmark.noEvaluations} />
             ) : (
               <>
-                <TrendSection evaluations={evaluations} currency={currency} />
+                <TrendSection evaluations={evaluations} />
 
                 <div>
                   <p className="mb-1 text-xs font-semibold text-gray-500">
                     {S.benchmark.evaluations}
                   </p>
                   <div className="overflow-x-auto overflow-y-clip rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-                    <table className="w-full min-w-[600px] text-left text-sm">
+                    <table className="w-full min-w-[720px] text-left text-sm">
                       <thead>
                         <tr className="border-b border-gray-200 bg-gray-50/80 text-xs text-gray-500 dark:border-gray-800 dark:bg-gray-900">
                           <th className="px-3 py-2.5">{S.common.time}</th>
                           <th className="px-3 py-2.5">{S.benchmark.colVersion}</th>
                           <th className="px-3 py-2.5">{S.benchmark.colModel}</th>
+                          <th className="px-3 py-2.5">{S.benchmark.colThinkingLevel}</th>
                           <th className="px-3 py-2.5">{S.benchmark.colScore}</th>
                           <th className="px-3 py-2.5">{S.common.cost}</th>
                           <th className="px-3 py-2.5">{S.benchmark.colDuration}</th>
@@ -605,6 +632,8 @@ export function BenchmarkPage() {
                             key={i}
                             agentId={selection.agentId}
                             evaluation={ev}
+                            caseTitles={caseTitles}
+                            onOpenCase={setOpenCaseId}
                             currency={currency}
                           />
                         ))}
@@ -613,6 +642,21 @@ export function BenchmarkPage() {
                   </div>
                 </div>
               </>
+            )}
+            {openCase && (
+              <Modal
+                open
+                title={openCase.title}
+                widthClass="sm:max-w-6xl"
+                onClose={() => setOpenCaseId(null)}
+              >
+                <BenchmarkStatementBrowser
+                  projectId={projectId}
+                  agentId={selection.agentId}
+                  benchmarkId={bm.id}
+                  caseSummary={openCase}
+                />
+              </Modal>
             )}
           </div>
         ) : (

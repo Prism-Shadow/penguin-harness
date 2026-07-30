@@ -7,7 +7,7 @@
 import fs from "node:fs/promises";
 import { constants as fsc } from "node:fs";
 import path from "node:path";
-import type { WorkspaceFilesResponse } from "../api/types.js";
+import type { WorkspaceFileEntry, WorkspaceFilesResponse } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
 
@@ -48,6 +48,13 @@ export interface WorkspaceFileContent {
   contentType: string;
   /** Types whose same-origin inline rendering would execute scripts (html/svg): inline preview must fall back to plain text. */
   scriptable: boolean;
+  /** True when a bounded preview returned only the beginning of the file. */
+  truncated?: boolean;
+}
+
+export interface WorkspaceFileReadOptions {
+  /** Return at most this many bytes. Used for bounded text previews. */
+  maxBytes?: number;
 }
 
 export class WorkspaceFilesService {
@@ -181,9 +188,14 @@ export class WorkspaceFilesService {
     return unique.filter((_, i) => exists[i]);
   }
 
-  /** List a directory: dirs come first, each group sorted by name; kind follows the symlink target (consistent with read behavior). */
+  /**
+   * List a directory: dirs come first, each group sorted by name. Entries whose
+   * canonical target leaves the Workspace are omitted, so listing cannot expose
+   * metadata for an out-of-bounds symlink.
+   */
   async list(workspace: string, rel: string): Promise<WorkspaceFilesResponse> {
     const dir = await this.resolveRead(workspace, rel);
+    const realBase = await this.realBase(workspace);
     let dirents;
     try {
       dirents = await fs.readdir(dir, { withFileTypes: true });
@@ -196,28 +208,24 @@ export class WorkspaceFilesService {
       }
       throw err;
     }
-    const entries = await Promise.all(
-      dirents.map(async (d) => {
-        let sizeBytes = 0;
-        let mtime = "";
-        // Dirent doesn't report the target type for a symlink, so stat (following the link) is used to determine dir/file.
-        let isDir = d.isDirectory();
+    const listed = await Promise.all(
+      dirents.map(async (d): Promise<WorkspaceFileEntry | null> => {
         try {
-          const stat = await fs.stat(path.join(dir, d.name));
-          sizeBytes = stat.size;
-          mtime = stat.mtime.toISOString();
-          isDir = stat.isDirectory();
+          const canonical = await fs.realpath(path.join(dir, d.name));
+          this.assertInside(canonical, realBase);
+          const stat = await fs.stat(canonical);
+          return {
+            name: d.name,
+            kind: stat.isDirectory() ? "dir" : "file",
+            sizeBytes: stat.size,
+            mtime: stat.mtime.toISOString(),
+          };
         } catch {
-          // A dangling symlink or similar: keep the entry, with size/time left at defaults.
+          return null;
         }
-        return {
-          name: d.name,
-          kind: isDir ? ("dir" as const) : ("file" as const),
-          sizeBytes,
-          mtime,
-        };
       }),
     );
+    const entries = listed.filter((entry): entry is WorkspaceFileEntry => entry !== null);
     entries.sort((a, b) =>
       a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === "dir" ? -1 : 1,
     );
@@ -225,7 +233,11 @@ export class WorkspaceFilesService {
   }
 
   /** Read a file (preview/download): IO on the canonical path (resolveRead has already eliminated symlink escapes). */
-  async read(workspace: string, rel: string): Promise<WorkspaceFileContent> {
+  async read(
+    workspace: string,
+    rel: string,
+    options?: WorkspaceFileReadOptions,
+  ): Promise<WorkspaceFileContent> {
     const file = await this.resolveRead(workspace, rel);
     let stat;
     try {
@@ -234,16 +246,38 @@ export class WorkspaceFilesService {
       throw new HttpError(404, "path_not_found", "File does not exist.");
     }
     if (stat.isDirectory()) throw badRequest("path is a directory.");
-    if (stat.size > MAX_READ_BYTES) {
+    const maxBytes = options?.maxBytes;
+    if (
+      maxBytes !== undefined &&
+      (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > MAX_READ_BYTES)
+    ) {
+      throw badRequest("maxBytes must be a positive integer within the read limit.");
+    }
+    if (maxBytes === undefined && stat.size > MAX_READ_BYTES) {
       throw new HttpError(413, "file_too_large", "File exceeds the 50MB read limit.");
     }
-    const data = await fs.readFile(file);
+    let data: Buffer;
+    let truncated = false;
+    if (maxBytes !== undefined && stat.size > maxBytes) {
+      const handle = await fs.open(file, "r");
+      try {
+        const buffer = Buffer.alloc(maxBytes);
+        const { bytesRead } = await handle.read(buffer, 0, maxBytes, 0);
+        data = buffer.subarray(0, bytesRead);
+        truncated = true;
+      } finally {
+        await handle.close();
+      }
+    } else {
+      data = await fs.readFile(file);
+    }
     const ext = path.extname(file).toLowerCase();
     return {
       data,
       fileName: path.basename(file),
       contentType: CONTENT_TYPES[ext] ?? "application/octet-stream",
       scriptable: ext === ".html" || ext === ".htm" || ext === ".svg",
+      ...(truncated ? { truncated: true } : {}),
     };
   }
 

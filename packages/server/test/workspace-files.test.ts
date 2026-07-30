@@ -45,6 +45,9 @@ describe("workspace-files-service", () => {
     const file = await svc.read(ws, "sub/c.md");
     expect(file.data.toString()).toBe("# md");
     expect(file.contentType).toContain("markdown");
+    const preview = await svc.read(ws, "sub/c.md", { maxBytes: 2 });
+    expect(preview.data.toString()).toBe("# ");
+    expect(preview.truncated).toBe(true);
     await expect(svc.read(ws, "sub")).rejects.toMatchObject({ status: 400 });
     await expect(svc.read(ws, "nope.txt")).rejects.toMatchObject({ status: 404 });
   });
@@ -86,6 +89,8 @@ describe("workspace-files-service", () => {
 
   it("symlink escape: reads and writes are both rejected when the link points outside the Workspace", async () => {
     await fs.symlink(outside, path.join(ws, "link-out"));
+    const root = await svc.list(ws, "");
+    expect(root.entries.map((entry) => entry.name)).not.toContain("link-out");
     await expect(svc.list(ws, "link-out")).rejects.toMatchObject({ status: 400 });
     await expect(svc.read(ws, "link-out/secret.txt")).rejects.toMatchObject({ status: 400 });
     // Writing outside via a directory symlink: caught by the parent-directory realpath check.

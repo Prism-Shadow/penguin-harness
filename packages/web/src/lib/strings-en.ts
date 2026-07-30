@@ -604,6 +604,39 @@ When done, open index.html in a browser and self-test once.`,
           "give it a beautiful web chat UI following the web-design skill, with a few example questions in the empty state. " +
           "When done, run the app, verify one streamed answer yourself, and tell me how to access it.",
       },
+      agentBenchmarkBuild: {
+        label: "Example: create a decision Agent and capability evaluation",
+        desc: "Create a general decision Agent and test it on football, after-sales, and investment tasks",
+        prompt: `Use \`agent-creation\` followed by \`benchmark-design\` to create a decision Agent and produce a frozen Benchmark with a Formal Baseline.
+
+Agent:
+- id: \`finite_choice_agent\`
+- capability: make stable, explainable finite choices when public information is incomplete or conflicting
+- installed_skills: \`[]\`
+
+Benchmark:
+- id: \`contextual-choice-adaptation\`
+- capability: form and transfer a stable finite-choice decision process from public rules, historical examples, and current facts
+- runs: \`1\`
+- desired_baseline_score: \`<75\`
+- pilot_iteration_limit: \`5\`
+
+Scenarios:
+1. Make football betting decisions from historical matches and current information.
+2. Choose after-sales actions from policy and ticket facts.
+3. Choose investment actions from a strategy, historical markets, and current indicators.`,
+      },
+      agentOptimization: {
+        label: "Example: optimize a decision Agent from its evaluation",
+        desc: "Improve an Agent from existing evaluation results and verify that the new version is better",
+        prompt: `Use \`agent-optimization\` to optimize a decision Agent against its frozen Benchmark.
+
+- test_agent_id: \`finite_choice_agent\`
+- benchmark_id: \`contextual-choice-adaptation\`
+- capability_direction: improve stability under incomplete information, conflicting rules, and finite choices
+- desired_score: \`>=95\`
+- candidate_round_limit: \`5\``,
+      },
     },
     sessionList: "Sessions",
     defaultSessionTitle: "New chat",
@@ -944,12 +977,18 @@ When done, open index.html in a browser and self-test once.`,
     emptyAgent: "No Benchmarks for this agent",
     caseCount: (n: number): string => `${n} case${n === 1 ? "" : "s"}`,
     trendTitle: (metric: string): string => `${metric} over time`,
+    cases: "Cases",
+    viewCase: "View task",
+    publicMaterials: "Public materials",
+    statementUnavailable: "The public Statement is unavailable",
+    maxScore: (score: string): string => `Max ${score}`,
     evaluations: "Evaluations",
     noEvaluations: "No evaluations yet",
     summaryLabel: "Summary",
     legendUnlabeled: "unlabeled model",
     colVersion: "Version",
-    colModel: "Model",
+    colModel: "Model ID",
+    colThinkingLevel: "Thinking level",
     colScore: "Score",
     colDuration: "Duration",
     colCase: "Case",

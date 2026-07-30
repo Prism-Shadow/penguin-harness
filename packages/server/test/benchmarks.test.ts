@@ -1,10 +1,9 @@
 /**
  * Benchmark scoreboard read integration tests (read-only display): benchmark_config.toml title/description and runs
  * pass-through (falls back to directory name if missing), scoreboard.yaml v2's
- * evaluations[] (summary pass-through, per-case runs array; per-case metrics trust the
- * file values, falling back to an average over runs when missing), the legacy format
- * (per-case single session_id) parsed as a single run and backfilled, bad entries
- * discarded, case count, empty when unconfigured, permissions (members can read,
+ * evaluations[] (summary pass-through, model-written Case/Evaluation averages and per-case
+ * runs arrays), rejection of legacy Scoreboard entries, case count, empty when
+ * unconfigured, permissions (members can read,
  * outsiders get 404).
  *
  * Tested with a plain Agent (no sample Benchmark pre-installed); default_agent's sample
@@ -14,7 +13,12 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { benchmarksDir } from "@prismshadow/penguin-core";
-import type { BenchmarksResponse, ProjectCreateResponse } from "../src/api/types.js";
+import type {
+  BenchmarkCasesResponse,
+  BenchmarksResponse,
+  ProjectCreateResponse,
+  WorkspaceFilesResponse,
+} from "../src/api/types.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
@@ -59,10 +63,48 @@ describe("benchmarks api", () => {
     });
   });
 
-  it("scoreboard v2: summary/runs pass through; metrics trust file or average runs", async () => {
+  it("current scoreboard: model-written averages, runtime, and runs pass through", async () => {
     const dir = path.join(benchmarksDir(t.root, projectId, AGENT), "swe-bench-v2");
     await fs.mkdir(path.join(dir, "CASE-001-excel-task", "statement"), { recursive: true });
+    await fs.mkdir(path.join(dir, "CASE-001-excel-task", "statement", "assets"), {
+      recursive: true,
+    });
+    await fs.mkdir(path.join(dir, "CASE-002-web-task", "statement"), { recursive: true });
     await fs.mkdir(path.join(dir, "CASE-002-web-task", "rubric"), { recursive: true });
+    await fs.writeFile(
+      path.join(dir, "CASE-001-excel-task", "statement", "README.md"),
+      "# Case 001: Excel cleanup\n\nClean the workbook.",
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(dir, "CASE-001-excel-task", "statement", "data.csv"),
+      "id,value\n1,alpha\n",
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(dir, "CASE-001-excel-task", "statement", "assets", "notes.txt"),
+      "public notes",
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(dir, "CASE-001-excel-task", "statement", "large.txt"),
+      "x".repeat(300 * 1024),
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(dir, "CASE-002-web-task", "statement", "README.md"),
+      "# Web task\n\nBuild the page.",
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(dir, "CASE-002-web-task", "rubric", "README.md"),
+      "PRIVATE GOLD: never return this text",
+      "utf8",
+    );
+    await fs.symlink(
+      path.join(dir, "CASE-002-web-task", "rubric", "README.md"),
+      path.join(dir, "CASE-001-excel-task", "statement", "private-link.md"),
+    );
     await fs.writeFile(
       path.join(dir, "benchmark_config.toml"),
       `title = "SWE Bench v2"\ndescription = "Example"\nruns = 2\n`,
@@ -76,35 +118,39 @@ describe("benchmarks api", () => {
         "    version: 3",
         '    provider: "deepseek"',
         '    model_id: "deepseek-v4-pro"',
+        '    thinking_level: "medium"',
         '    summary_title: "Added planning steps to the system Prompt"',
         '    summary: "Each case run twice and averaged; added planning steps."',
-        "    score: 8.0",
-        "    cost: 0.05",
-        "    duration_ms: 120000",
+        "    score: 72.35",
+        "    cost: 0.04",
+        "    duration_ms: 42500",
         "    cases:",
-        // Per-case metrics are all present: trust the file values (no recomputation even if inconsistent with the runs average).
+        // Stored averages are authoritative even when inconsistent with the raw Runs.
         '      - case: "CASE-001-excel-task"',
-        "        score: 4.2",
-        "        cost: 0.02",
+        "        score: 80.2",
+        "        cost: 0.04",
         "        duration_ms: 50000",
         "        runs:",
-        "          - score: 4.0",
-        "            cost: 0.018",
+        "          - score: 80",
+        "            cost: null",
         "            duration_ms: 48000",
         '            session_id: "session-run-1"',
-        "          - score: 4.5",
-        "            cost: 0.022",
+        "          - score: 82",
+        "            cost: 0.04",
         "            duration_ms: 52000",
         '            session_id: "session-run-2"',
-        // Per-case metrics are missing: computed as the average over runs.
+        // All unknown Run costs produce a model-written null Case cost; the Evaluation ignores it.
         '      - case: "CASE-002-web-task"',
+        "        score: 64.5",
+        "        cost: null",
+        "        duration_ms: 35000",
         "        runs:",
-        "          - score: 3.0",
-        "            cost: 0.01",
+        "          - score: 60",
+        "            cost: null",
         "            duration_ms: 30000",
         '            session_id: "session-run-3"',
-        "          - score: 4.0",
-        "            cost: 0.03",
+        "          - score: 70",
+        "            cost: null",
         "            duration_ms: 40000",
         '            session_id: "session-run-4"',
       ].join("\n"),
@@ -127,28 +173,100 @@ describe("benchmarks api", () => {
     // The evaluation entry carries this run's model (as a pair) and a summary title (curve series / title-body are displayed separately).
     expect(evaluation.provider).toBe("deepseek");
     expect(evaluation.modelId).toBe("deepseek-v4-pro");
+    expect(evaluation.thinkingLevel).toBe("medium");
     expect(evaluation.summaryTitle).toBe("Added planning steps to the system Prompt");
     expect(evaluation.summary).toBe("Each case run twice and averaged; added planning steps.");
-    expect(evaluation.score).toBe(8.0);
-    // Per-case metrics are all present: trust the file (4.2, not the runs average of 4.25).
+    expect(evaluation.score).toBe(72.35);
+    expect(evaluation.cost).toBe(0.04);
+    expect(evaluation.durationMs).toBe(42500);
+    expect("maxScore" in evaluation).toBe(false);
+    // Per-case metrics trust the file (80.2, not the Runs' arithmetic mean of 81).
     const full = evaluation.cases.find((c) => c.case === "CASE-001-excel-task")!;
-    expect(full.score).toBe(4.2);
-    expect(full.cost).toBe(0.02);
+    expect(full.score).toBe(80.2);
+    expect(full.cost).toBe(0.04);
     expect(full.durationMs).toBe(50000);
     expect(full.runs).toEqual([
-      { score: 4.0, cost: 0.018, durationMs: 48000, sessionId: "session-run-1" },
-      { score: 4.5, cost: 0.022, durationMs: 52000, sessionId: "session-run-2" },
+      { score: 80, cost: null, durationMs: 48000, sessionId: "session-run-1" },
+      { score: 82, cost: 0.04, durationMs: 52000, sessionId: "session-run-2" },
     ]);
-    // Per-case metrics are missing: computed as the average over runs.
-    const derived = evaluation.cases.find((c) => c.case === "CASE-002-web-task")!;
-    expect(derived.score).toBe(3.5);
-    expect(derived.cost).toBeCloseTo(0.02, 10);
-    expect(derived.durationMs).toBe(35000);
-    expect(derived.runs).toHaveLength(2);
-    expect(derived.sessionId).toBeUndefined();
+    const partialCost = evaluation.cases.find((c) => c.case === "CASE-002-web-task")!;
+    expect(partialCost.score).toBe(64.5);
+    expect(partialCost.cost).toBeNull();
+    expect(partialCost.durationMs).toBe(35000);
+    expect(partialCost.runs).toEqual([
+      { score: 60, cost: null, durationMs: 30000, sessionId: "session-run-3" },
+      { score: 70, cost: null, durationMs: 40000, sessionId: "session-run-4" },
+    ]);
+
+    const caseResponse = (await (
+      await member.get(`${base}/swe-bench-v2/cases`)
+    ).json()) as BenchmarkCasesResponse;
+    expect(caseResponse).toEqual({
+      cases: [
+        {
+          id: "CASE-001-excel-task",
+          title: "Excel cleanup",
+        },
+        {
+          id: "CASE-002-web-task",
+          title: "Web task",
+        },
+      ],
+    });
+    expect(JSON.stringify(caseResponse)).not.toContain("PRIVATE GOLD");
+
+    const filesBase = `${base}/swe-bench-v2/cases/CASE-001-excel-task/files`;
+    const files = (await (await member.get(filesBase)).json()) as WorkspaceFilesResponse;
+    expect(files.path).toBe("");
+    expect(files.entries.map((entry) => `${entry.kind}:${entry.name}`)).toEqual([
+      "dir:assets",
+      "file:data.csv",
+      "file:large.txt",
+      "file:README.md",
+    ]);
+    expect(JSON.stringify(files)).not.toContain("private-link.md");
+    expect(
+      (
+        await member.get(
+          `${filesBase}/content?path=${encodeURIComponent("private-link.md")}&preview=1`,
+        )
+      ).status,
+    ).toBe(400);
+
+    const nested = (await (
+      await member.get(`${filesBase}?path=${encodeURIComponent("assets")}`)
+    ).json()) as WorkspaceFilesResponse;
+    expect(nested.entries.map((entry) => entry.name)).toEqual(["notes.txt"]);
+
+    const statement = await member.get(
+      `${filesBase}/content?path=${encodeURIComponent("README.md")}&preview=1`,
+    );
+    expect(statement.status).toBe(200);
+    expect(statement.headers.get("content-type")).toContain("markdown");
+    expect(await statement.text()).toBe("# Case 001: Excel cleanup\n\nClean the workbook.");
+
+    const large = await member.get(
+      `${filesBase}/content?path=${encodeURIComponent("large.txt")}&preview=1`,
+    );
+    expect(large.status).toBe(200);
+    expect(large.headers.get("x-content-truncated")).toBe("1");
+    expect((await large.text()).length).toBe(256 * 1024);
+
+    const download = await member.get(
+      `${filesBase}/content?path=${encodeURIComponent("data.csv")}&download=1`,
+    );
+    expect(download.headers.get("content-disposition")).toContain("attachment");
+    expect(await download.text()).toBe("id,value\n1,alpha\n");
+
+    expect(
+      (await member.get(`${filesBase}/content?path=${encodeURIComponent("../rubric/README.md")}`))
+        .status,
+    ).toBe(400);
+    expect((await outsider.get(`${base}/swe-bench-v2/cases`)).status).toBe(404);
+    expect((await outsider.get(filesBase)).status).toBe(404);
   });
 
-  it("legacy per-case session_id parsed as one backfilled run; bad entries dropped", async () => {
+  it("does not migrate or backfill legacy Scoreboard entries", async () => {
     const dir = path.join(benchmarksDir(t.root, projectId, AGENT), "swe-bench-v1");
     await fs.mkdir(path.join(dir, "CASE-001-excel-task", "statement"), { recursive: true });
     await fs.writeFile(path.join(dir, "benchmark_config.toml"), `title = "SWE Bench v1"\n`, "utf8");
@@ -184,26 +302,7 @@ describe("benchmarks api", () => {
     const bench = res.benchmarks[1]!;
     expect(bench).toMatchObject({ title: "SWE Bench v1", caseCount: 1 });
     expect("runs" in bench).toBe(false);
-    expect(bench.evaluations).toHaveLength(1);
-    expect(bench.evaluations[0]).toMatchObject({
-      time: "2026-07-16T10:00:00Z",
-      version: 1,
-      score: 62.5,
-      cost: 1.25,
-      durationMs: 60000,
-    });
-    expect("summary" in bench.evaluations[0]!).toBe(false);
-    // Legacy per-case format: fields unchanged, plus one backfilled run matching the case-level values (the frontend uniformly expands via runs).
-    expect(bench.evaluations[0]?.cases).toEqual([
-      {
-        case: "CASE-001-excel-task",
-        score: 30,
-        cost: 0.5,
-        durationMs: 20000,
-        sessionId: "session-abc",
-        runs: [{ score: 30, cost: 0.5, durationMs: 20000, sessionId: "session-abc" }],
-      },
-    ]);
+    expect(bench.evaluations).toEqual([]);
     expect(res.benchmarks[0]).toMatchObject({
       title: "empty-bench",
       caseCount: 0,

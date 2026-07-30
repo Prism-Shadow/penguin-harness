@@ -12,11 +12,20 @@ import {
   formatPercent,
   formatRelativeDate,
   formatRelativeDays,
+  formatScore,
   formatTps,
   humanizeDuration,
   humanizeTokens,
   signedDelta,
 } from "../src/lib/format";
+
+describe("formatScore", () => {
+  it("keeps up to the stored two decimal places", () => {
+    expect(formatScore(72)).toBe("72");
+    expect(formatScore(72.5)).toBe("72.5");
+    expect(formatScore(72.35)).toBe("72.35");
+  });
+});
 
 describe("humanizeTokens", () => {
   it("below 1000 unchanged", () => {
