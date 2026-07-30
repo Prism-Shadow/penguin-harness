@@ -45,6 +45,28 @@ async function collect(gen: AsyncGenerator<OmniMessage>): Promise<OmniMessage[]>
   return out;
 }
 
+/**
+ * Reads a file the shell just wrote, retrying briefly until it holds `expected`.
+ *
+ * The tool completes when the shell process exits, which does not promise the write is visible
+ * to this process yet — on Windows CI it intermittently is not. Retrying asserts the same exact
+ * content, it just stops the assertion from racing the filesystem; a genuinely wrong write
+ * still fails, one timeout later, with the last value read.
+ */
+async function readFileEventually(
+  file: string,
+  expected: string,
+  timeoutMs = 2000,
+): Promise<string> {
+  const deadline = Date.now() + timeoutMs;
+  let last = "";
+  for (;;) {
+    last = await readFile(file, "utf8").catch(() => "");
+    if (last === expected || Date.now() >= deadline) return last;
+    await new Promise((r) => setTimeout(r, 25));
+  }
+}
+
 function payloadTypes(messages: OmniMessage[]): string[] {
   return messages.map((m) => (m.payload as { type?: string }).type ?? "");
 }
@@ -152,7 +174,7 @@ describe("Environment.executeTool — basic file write", () => {
     expect(outPayload.tool_call_id).toBe("call_write");
     expect(outPayload.stop_reason).toBe("completed");
 
-    const written = await readFile(path.join(tmp, "note.txt"), "utf8");
+    const written = await readFileEventually(path.join(tmp, "note.txt"), "Hello, Penguin");
     expect(written).toBe("Hello, Penguin");
   });
 });
@@ -224,8 +246,7 @@ describe("Environment.executeTool — edit file", () => {
       }),
     );
 
-    const written = await readFile(path.join(tmp, "note.txt"), "utf8");
-    expect(written).toBe("Hello!");
+    expect(await readFileEventually(path.join(tmp, "note.txt"), "Hello!")).toBe("Hello!");
   });
 });
 

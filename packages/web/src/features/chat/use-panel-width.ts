@@ -25,9 +25,12 @@ const WIDTH_STORAGE_KEY = "penguin.panelWidth";
  * merge instead of silently snapping back to the default. The WIDER of the two wins: the two
  * panels were sized independently, so picking either one arbitrarily could hand the merged
  * panel the narrower of the user's two choices — visibly a regression on the panel that used
- * to be wide. The migration deletes the keys as it reads, so this block can be dropped in a
- * later release with no visible effect for anyone who has opened the app since — nothing else
- * reads these keys.
+ * to be wide. The migration deletes the keys as it reads, so it is already dead code for anyone
+ * who has opened the app once since this shipped.
+ *
+ * REMOVAL: delete this constant and storedWidth()'s legacy branch in the release AFTER the one
+ * shipping this change, as part of preparing that release. Nothing else in the repo reads these
+ * keys, so it is a pure deletion. See changelog/unreleased/2026-07-30-backward-compatibility.md.
  */
 const LEGACY_WIDTH_KEYS = ["penguin.filesPanelWidth", "penguin.subagentsPanelWidth"] as const;
 

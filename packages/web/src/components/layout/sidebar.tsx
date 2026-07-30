@@ -1156,6 +1156,12 @@ export function Sidebar({
         latestVersion={newVersion}
         releaseUrl={update?.releaseUrl ?? null}
         canUpdate={user?.isAdmin === true}
+        /* A finished self-update makes the reminder stale, and the row stops offering the
+           manual check while a newer release is known — so re-check here, or the row would
+           still read "New version vX available" after updating to exactly that version, with
+           no way back short of reloading the page. Silent: the row's own change is the
+           feedback, and a toast would fire while the user is closing the dialog. */
+        onRunFinished={() => void forceUpdateCheck().catch(() => undefined)}
       />
 
       <CreateProjectDialog

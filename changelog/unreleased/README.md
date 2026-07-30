@@ -2,6 +2,8 @@
 
 Changes since v0.1.4. The version number is assigned at release, when this folder is renamed.
 
+- [2026-07-30] Backward compatibility: the batch's compat decisions in one place — the two per-panel localStorage width keys adopted into one shared key (widest wins, self-cleaning, with its removal release named), plus the changes checked and found to need no handling. ([details](2026-07-30-backward-compatibility.md))
+
 - [2026-07-30] Web App: navigation entries settle on one name each across the sidebar, the collapsed rail and page titles; the user menu's three update rows collapse into one; the Workspace and Agents panels share a single (wider) width and a single open/closed lifetime, closing only on a new chat; the Agents panel says what each subagent was sent to do; Project display names become editable; and the draft page's examples become a fixed-height, always-one-open folder shelf with a multi-agent game-center example added. ([details](2026-07-30-web-app-refinements.md))
 
 - [2026-07-30] CLI: pasting CJK or emoji into `penguin chat` no longer corrupts a character wherever the terminal split its stdin blocks — each chunk was decoded on its own, so a character torn across two reads became three replacement characters instead of one, and about 1400 Chinese characters was enough to trigger it. ([details](2026-07-30-paste-filter-utf8.md))

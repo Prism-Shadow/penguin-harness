@@ -537,16 +537,16 @@ export const zh = {
     tempWorkspaces: "临时工作区",
     newSessionInWorkspace: "在此工作区新建对话",
     draftSubtitle: "最擅长 AI 开发任务的自进化 Agent",
-    /**
-     * Example task cards on the draft screen: one click auto-submits the canned prompt. These
-     * are the FULL working prompts — descriptions stay short, but the submitted instructions
-     * remain detailed because execution quality depends on them.
-     */
     /** 首页示例的折叠分组名（书签式，同时只展开一个）。 */
     exampleFolders: {
       webapps: "搭建网页应用",
       agents: "搭建和优化智能体",
     },
+    /**
+     * Example task cards on the draft screen: one click auto-submits the canned prompt. These
+     * are the FULL working prompts — descriptions stay short, but the submitted instructions
+     * remain detailed because execution quality depends on them.
+     */
     exampleTasks: {
       game: {
         label: "2D 企鹅雪橇越野小游戏",

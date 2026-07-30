@@ -26,6 +26,7 @@ export function UpdateDialog({
   latestVersion,
   releaseUrl = null,
   canUpdate,
+  onRunFinished,
 }: {
   open: boolean;
   onClose: () => void;
@@ -34,6 +35,14 @@ export function UpdateDialog({
   releaseUrl?: string | null;
   /** Admin: the self-update action is offered. Otherwise the dialog is read-only. */
   canUpdate: boolean;
+  /**
+   * Fired once a self-update run has finished (whatever its outcome), when the dialog closes.
+   * The menu's single update row is the ONLY caller of the update check, and it stops offering
+   * that check once a newer release is known — so without this the reminder would survive its
+   * own update: the shared version-info cache never expires within a browser session, leaving
+   * the row stuck on "New version vX available" with no way back short of a page reload.
+   */
+  onRunFinished?: () => void;
 }) {
   const [phase, setPhase] = useState<Phase>("confirm");
   const [result, setResult] = useState<UpdateRunResponse | null>(null);
@@ -43,6 +52,12 @@ export function UpdateDialog({
     setPhase("confirm");
     setResult(null);
   }, [open]);
+
+  /** Closing: a finished run invalidates what the reminder row believes, so re-check on the way out. */
+  const close = () => {
+    if (phase === "done") onRunFinished?.();
+    onClose();
+  };
 
   const run = async () => {
     setPhase("running");
@@ -68,14 +83,23 @@ export function UpdateDialog({
   return (
     <Modal
       open={open}
-      title={S.update.updateNow}
-      onClose={phase === "running" ? () => undefined : onClose}
+      /* The title follows the audience: only an admin is here to run an update, and to
+         everyone else this dialog is the release announcement, so titling it "Update now"
+         would promise an action its own body then says they cannot take. */
+      title={
+        canUpdate
+          ? S.update.updateNow
+          : latestVersion !== null
+            ? S.update.newVersion(latestVersion)
+            : S.update.releaseNotes
+      }
+      onClose={phase === "running" ? () => undefined : close}
       footer={
         phase === "done" || !canUpdate ? (
-          <Button onClick={onClose}>{S.common.close}</Button>
+          <Button onClick={close}>{S.common.close}</Button>
         ) : (
           <>
-            <Button onClick={onClose} disabled={phase === "running"}>
+            <Button onClick={close} disabled={phase === "running"}>
               {S.common.cancel}
             </Button>
             <Button variant="primary" disabled={phase === "running"} onClick={() => void run()}>
