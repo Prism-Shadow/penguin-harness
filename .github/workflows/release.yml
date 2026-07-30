@@ -82,7 +82,7 @@ jobs:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || '' }}
 
       # pnpm version comes from package.json's packageManager field.
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
       - uses: actions/setup-node@v5
         with:
@@ -271,7 +271,7 @@ jobs:
       # An empty body_path is falsy for the action and simply ignored (it never tries to read it), so the
       # fallback branch cleanly leaves generate_release_notes to compose the body on its own.
       - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
           body_path: ${{ steps.notes.outputs.body_path }}
@@ -300,7 +300,7 @@ jobs:
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || '' }}
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
       - uses: actions/setup-node@v5
         with:
