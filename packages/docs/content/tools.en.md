@@ -160,7 +160,8 @@ On POSIX, Ctrl-C sends `SIGINT` to the session's process group, interrupting the
 {
   prompt: string;          // required: the complete subtask (all context + the exact final output expected)
   agent_id?: string;       // the child Agent; defaults to the current Agent
-  model_id?: string;       // the child Session's model; inherits the parent Session's model when omitted
+  model_id?: string;       // the child Session's model, paired with provider; omit both to inherit the parent Session's model
+  provider?: string;       // the provider group model_id belongs to; required whenever model_id is given
   yield_time_ms?: number;  // foreground wait; default 300000
   description: string;     // required while call_description is on
 }

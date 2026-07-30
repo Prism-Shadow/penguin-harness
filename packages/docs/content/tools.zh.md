@@ -158,7 +158,8 @@ POSIX 上 Ctrl-C 向会话进程组发送 `SIGINT`，中断前台命令。Window
 {
   prompt: string;          // 必填:完整的子任务(含全部上下文与期望的最终产出)
   agent_id?: string;       // 子 Agent;缺省复用当前 Agent
-  model_id?: string;       // 子 Session 模型;缺省继承父 Session 的模型
+  model_id?: string;       // 子 Session 模型,须与 provider 成对给出;两者都缺省时继承父 Session 的模型
+  provider?: string;       // model_id 所属的 provider 组;给出 model_id 时必填
   yield_time_ms?: number;  // 前台等待时长;默认 300000
   description: string;     // 开关开启时必填
 }
