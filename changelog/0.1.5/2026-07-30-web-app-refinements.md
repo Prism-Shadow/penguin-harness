@@ -47,6 +47,10 @@ Three example cards took a fixed slice of the page and left nowhere to add a fou
 
 Each example is a single-line title now, with its one-sentence description moved into the row tooltip and its icon moved onto the folder row, which is what you actually scan to pick a category.
 
+## File summaries wait for the Task to finish
+
+The main conversation's file summary no longer appears after an intermediate assistant message while tools and later model turns are still running. It now appears once at the completed Task boundary and scans all assistant text from that Task, so paths mentioned before a tool call are still available in the final summary. Nested agent conversations keep their existing per-message summaries because their embedded stream does not expose the parent view's Task footer. File-existence caching also stops retaining negative results, allowing a later Task to create and surface a path that was previously absent.
+
 Two additions to the catalogue:
 
 - **A mini-game center built by multiple agents** — ten games with no two sharing a mechanic, each a single-file `games/<slug>/index.html`, built in parallel by subagents behind one index page.

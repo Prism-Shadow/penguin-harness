@@ -451,10 +451,10 @@ export function ChatPage() {
     }
   }, [stream.taskState, reloadSessions, reloadAgents]);
 
-  // Existence cache for message file cards (session-level): normalized relative path -> whether
-  // it exists; while a lookup is in flight, the cache shares a single Promise, so a batch of
-  // concurrent mounts only issues one files/stat call.
-  const statCacheRef = useRef(new Map<string, boolean | Promise<boolean>>());
+  // Positive-only existence cache for file summary cards (session-level): normalized relative
+  // path -> true, or the shared in-flight lookup. Missing files aren't retained — a later Task may
+  // create the same path, so its summary must re-check instead of inheriting stale false state.
+  const statCacheRef = useRef(new Map<string, true | Promise<boolean>>());
 
   // Session switch: resets the cost, the file-card existence cache, and the per-turn thinking
   // level (it's per-session UI state), avoiding stale data from the previous Session (Files
@@ -466,11 +466,9 @@ export function ChatPage() {
     statCacheRef.current = new Map();
   }, [routeSessionId]);
 
-  // Batched existence check (message file cards): merges only the cache-miss paths into a single
-  // files/stat call, and the result lands in the session-level cache — during streaming, the
-  // candidate set is re-checked on every change, and the cache ensures only new paths trigger a
-  // request. On request failure, the placeholder is cleared (don't permanently cache a "couldn't
-  // find" as "doesn't exist"), returned as not-existing this time, and re-checked on the next mount.
+  // Batched existence check for file summaries: cache stable positive results and share in-flight
+  // requests, but never retain a negative result. Each pending lookup mutates the cache only while
+  // it is still the current entry, so an old request can't delete or overwrite a newer one.
   const statFiles = useCallback(
     async (paths: string[]): Promise<ReadonlySet<string>> => {
       const sessionId = selected?.sessionId ?? null;
@@ -482,18 +480,13 @@ export function ChatPage() {
           .then((res) => new Set(res.existing))
           .catch(() => null);
         for (const p of misses) {
-          cache.set(
-            p,
-            batch.then((existing) => {
-              if (existing === null) {
-                cache.delete(p);
-                return false;
-              }
-              const exists = existing.has(p);
-              cache.set(p, exists);
-              return exists;
-            }),
-          );
+          const pending = batch.then((existing) => existing?.has(p) ?? false);
+          cache.set(p, pending);
+          void pending.then((exists) => {
+            if (cache.get(p) !== pending) return;
+            if (exists) cache.set(p, true);
+            else cache.delete(p);
+          });
         }
       }
       const result = new Set<string>();
