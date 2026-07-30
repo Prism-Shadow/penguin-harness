@@ -88,7 +88,7 @@ A wrong answer, missing artifact, malformed output, or task failure attributable
 
 Set `duration_ms` from the root Test Session. Compute cost only from reliable final cumulative usage or cost already recorded in that Session and directly referenced child Traces found in the same bounded pass. Never browse, query a pricing service, or infer cost from external model prices. If the required data is unavailable, return `cost: null`. Missing cost data must not invalidate a score.
 
-Round `score` and a non-null `cost` to two decimal places. Write `duration_ms` as a non-negative integer rounded to the nearest millisecond.
+Round `score` to two decimal places. Preserve a non-null `cost` at the precision recorded in the Trace; do not round it. Write `duration_ms` as a non-negative integer rounded to the nearest millisecond.
 
 ## Return
 

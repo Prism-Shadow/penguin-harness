@@ -57,7 +57,7 @@ benchmarks/<id>/
 
 - 本轮 Runtime：用户显式指定的 `(provider, model_id)` 成对值优先，否则继承 Builder Session；`thinking_level` 从 Target Agent 配置读取，不依赖 Trace 元数据；
 - `summary_title` 与 `summary`（本轮结论与下一轮假设）；
-- 由模型写入的 Score、成本与耗时平均值——Case 级对 Runs 求平均，Evaluation 级对 Cases 求平均；成本忽略 `null`，全部未知时才为 `null`；Score 与成本保留两位小数，`duration_ms` 取整；
+- 由模型写入的 Score、成本与耗时平均值——Case 级对 Runs 求平均，Evaluation 级对 Cases 求平均；单次 Run 成本保留记录中的原始精度，成本平均值忽略 `null`，全部未知时才为 `null`；Score 保留两位小数，成本平均值保留六位小数，`duration_ms` 取整；
 - 每个 Case 的逐次运行明细，每次运行含 `score`、`cost`、`duration_ms` 与 `session_id`。
 
 每个 Run 和每个 Case 都固定满分 100，因此 Scoreboard 不再记录 `max_score`。服务端与 Web UI 直接信任已写入的聚合值，不重算、不交叉校验；旧 Scoreboard 不迁移、不回填。

@@ -10,8 +10,9 @@
  *
  * Scoring numbers follow the current Scoreboard contract: every Case is scored out of 100;
  * Case metrics are model-written Run averages and Evaluation metrics are model-written Case
- * averages. Cost ignores unknown values, Scores and costs keep two decimals, and durations
- * are rounded to integer milliseconds.
+ * averages. Cost ignores unknown values; Run cost preserves its recorded precision, Score
+ * averages keep two decimals, cost averages keep six, and durations are rounded to integer
+ * milliseconds.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -110,13 +111,13 @@ const EXAMPLE_EVALUATIONS: Array<{
         runs: [
           {
             score: 50,
-            cost: 0.01,
+            cost: 0.012,
             duration_ms: 42000,
             session_id: "session-2026-07-14-09-05-11-1a2b3c01",
           },
           {
             score: 70,
-            cost: 0.01,
+            cost: 0.014,
             duration_ms: 48000,
             session_id: "session-2026-07-14-09-13-27-1a2b3c02",
           },
@@ -158,13 +159,13 @@ const EXAMPLE_EVALUATIONS: Array<{
         runs: [
           {
             score: 70,
-            cost: 0.01,
+            cost: 0.011,
             duration_ms: 39000,
             session_id: "session-2026-07-15-09-04-33-2b3c4d01",
           },
           {
             score: 80,
-            cost: 0.01,
+            cost: 0.013,
             duration_ms: 45000,
             session_id: "session-2026-07-15-09-12-08-2b3c4d02",
           },
@@ -175,7 +176,7 @@ const EXAMPLE_EVALUATIONS: Array<{
         runs: [
           {
             score: 70,
-            cost: 0.02,
+            cost: 0.016,
             duration_ms: 60000,
             session_id: "session-2026-07-15-09-19-40-2b3c4d03",
           },
@@ -213,7 +214,7 @@ const EXAMPLE_EVALUATIONS: Array<{
           },
           {
             score: 90,
-            cost: 0.01,
+            cost: 0.012,
             duration_ms: 40000,
             session_id: "session-2026-07-16-09-10-46-3c4d5e02",
           },
@@ -224,13 +225,13 @@ const EXAMPLE_EVALUATIONS: Array<{
         runs: [
           {
             score: 90,
-            cost: 0.02,
+            cost: 0.015,
             duration_ms: 55000,
             session_id: "session-2026-07-16-09-18-02-3c4d5e03",
           },
           {
             score: 80,
-            cost: 0.02,
+            cost: 0.017,
             duration_ms: 61000,
             session_id: "session-2026-07-16-09-25-30-3c4d5e04",
           },
@@ -248,13 +249,17 @@ function averageTwo(values: number[]): number {
   return roundTwo(values.reduce((a, b) => a + b, 0) / values.length);
 }
 
+function averageSix(values: number[]): number {
+  return Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 1_000_000) / 1_000_000;
+}
+
 function averageDuration(values: number[]): number {
   return Math.round(values.reduce((a, b) => a + b, 0) / values.length);
 }
 
 function averageKnownCost(values: Array<number | null>): number | null {
   const known = values.filter((value): value is number => value !== null);
-  return known.length > 0 ? averageTwo(known) : null;
+  return known.length > 0 ? averageSix(known) : null;
 }
 
 /**

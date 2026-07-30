@@ -57,7 +57,7 @@ Each evaluation record in `scoreboard.yaml` is timestamped and carries:
 
 - the evaluation runtime: a user-specified `(provider, model_id)` pair takes priority, otherwise the pair is inherited from the Builder Session; `thinking_level` is read from the Target Agent config and does not depend on Trace metadata;
 - `summary_title` and `summary` (the round's conclusion and the hypothesis for the next one);
-- Score, cost, and duration averages written by the model — Case-level values average Runs and Evaluation-level values average Cases; cost ignores `null` inputs and remains `null` only when every contributing cost is unknown; Score and cost use two decimals and `duration_ms` is an integer;
+- Score, cost, and duration averages written by the model — Case-level values average Runs and Evaluation-level values average Cases; Run cost preserves its recorded precision, cost averages ignore `null` inputs and remain `null` only when every contributing cost is unknown; Score uses two decimals, cost averages use six decimals, and `duration_ms` is an integer;
 - per-Case run details, each run recording `score`, `cost`, `duration_ms`, and `session_id`.
 
 Every Run and every Case has a fixed maximum Score of 100, so Scoreboard entries do not carry `max_score`. The server and Web UI trust the stored aggregate values and do not recompute or cross-check them. Old Scoreboard formats are not migrated or backfilled.

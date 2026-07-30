@@ -128,8 +128,9 @@ describe("example benchmark provisioning", () => {
     }
   });
 
-  it("scoreboard numbers use fixed-100 scores and model-written averages", async () => {
+  it("scoreboard numbers preserve Run cost precision and use model-written averages", async () => {
     const { evaluations } = buildExampleScoreboard();
+    expect(evaluations[0]?.cases[0]?.runs.map((run) => run.cost)).toEqual([0.012, 0.014]);
     const avg = (vals: number[]): number => vals.reduce((a, b) => a + b, 0) / vals.length;
     const knownCostAvg = (vals: Array<number | null>): number | null => {
       const known = vals.filter((value): value is number => value !== null);
@@ -140,12 +141,16 @@ describe("example benchmark provisioning", () => {
         expect(c.runs.every((run) => run.score >= 0 && run.score <= 100)).toBe(true);
         expect(c.score).toBe(Math.round(avg(c.runs.map((r) => r.score)) * 100) / 100);
         const expectedCost = knownCostAvg(c.runs.map((r) => r.cost));
-        expect(c.cost).toBe(expectedCost === null ? null : Math.round(expectedCost * 100) / 100);
+        expect(c.cost).toBe(
+          expectedCost === null ? null : Math.round(expectedCost * 1_000_000) / 1_000_000,
+        );
         expect(c.duration_ms).toBe(Math.round(avg(c.runs.map((r) => r.duration_ms))));
       }
       expect(e.score).toBe(Math.round(avg(e.cases.map((c) => c.score)) * 100) / 100);
       const expectedCost = knownCostAvg(e.cases.map((c) => c.cost));
-      expect(e.cost).toBe(expectedCost === null ? null : Math.round(expectedCost * 100) / 100);
+      expect(e.cost).toBe(
+        expectedCost === null ? null : Math.round(expectedCost * 1_000_000) / 1_000_000,
+      );
       expect(e.duration_ms).toBe(Math.round(avg(e.cases.map((c) => c.duration_ms))));
     }
   });
