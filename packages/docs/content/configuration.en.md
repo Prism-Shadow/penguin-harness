@@ -32,12 +32,12 @@ When a model entry has no inline `api_key`, the AgentHub gateway falls back to t
 | --- | --- | --- |
 | deepseek | `DEEPSEEK_API_KEY` | `DEEPSEEK_BASE_URL` |
 | anthropic | `ANTHROPIC_API_KEY` | `ANTHROPIC_BASE_URL` |
-| openai, openrouter, siliconflow, custom | `OPENAI_API_KEY` | `OPENAI_BASE_URL` |
+| openai, openrouter, fireworks, siliconflow, qwen-token-plan, qwen-pay-as-you-go, custom | `OPENAI_API_KEY` | `OPENAI_BASE_URL` |
 | google | `GEMINI_API_KEY` | `GEMINI_BASE_URL` |
 | zhipu | `ZAI_API_KEY` | `ZAI_BASE_URL` |
 | moonshot | `MOONSHOT_API_KEY` | `MOONSHOT_BASE_URL` |
 
-The openrouter, siliconflow, and custom groups speak the OpenAI-compatible protocol, hence the shared `OPENAI_*` variables. Provider groups and the built-in model catalog are covered in [Models & Providers](/models).
+The openrouter, fireworks, siliconflow, qwen-token-plan, qwen-pay-as-you-go, and custom groups speak the OpenAI-compatible protocol, hence the shared `OPENAI_*` variables. Provider groups and the built-in model catalog are covered in [Models & Providers](/models).
 
 ## Project config
 
@@ -60,6 +60,7 @@ Model entry (`[[models]]`) fields:
 | `client_type` | AgentHub client protocol; inferred from `model_id` by default — third-party OpenAI-compatible models should set `openai` |
 | `display_name` | Display name; persisted only when it differs from the built-in catalog |
 | `vision` | Whether image input is supported; defaults to supported |
+| `max_tokens` | Per-model max output tokens; overrides the Agent's `model.max_tokens` when set, omitted = inherit it |
 | `pricing` | Three price buckets `cache_read` / `cache_write` / `output`, in USD per million Tokens (`unit = "usd_per_mtok"`) |
 | `api_key` | Inline credential; when empty, falls back to the provider environment variable |
 | `base_url` | Custom base URL; preset for gateway models |
