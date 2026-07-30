@@ -275,8 +275,12 @@ export function modelAtOrigin(model: StreamModel, origin: readonly string[]): St
 // ---------------------------------------------------------------------------
 
 /** Fixed node box (avatar + truncated name + elapsed time + status glyph) — no text measurement, so the layout stays pure. */
-export const NODE_W = 168;
-export const NODE_H = 34;
+// Node box: two stacked lines — the Agent name (with elapsed + status) over the spawning
+// call's description. Sized uniformly rather than per-node: variable heights would have to be
+// threaded through row placement and edge geometry below, for the sake of a few nodes that
+// carry no description (the root never does) and simply center their single line instead.
+export const NODE_W = 200;
+export const NODE_H = 46;
 export const GAP_X = 32;
 export const GAP_Y = 10;
 export const PAD = 6;

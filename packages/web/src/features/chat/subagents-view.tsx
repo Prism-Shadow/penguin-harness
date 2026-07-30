@@ -129,26 +129,9 @@ export function SubagentsView({
     <div className="flex h-full min-h-0 flex-col">
       {/* Call graph of the displayed Task — latest by default, a chip's Task when pinned (capped height; scrolls both ways for deep/wide trees). */}
       <div className="shrink-0 border-b border-gray-200 px-3 pb-2 pt-1.5 dark:border-gray-800">
-        {/* Section title, with the selected child's spawning `description` trailing it on the
-            same line — the agent name says who is running, this says what it was asked to do.
-            Single-line and truncated on purpose: the model writes a free-form sentence and the
-            graph below is what this section is for, so it never wraps to a second line and
-            never pushes the graph down; the full text stays in the tooltip. Absent for the
-            root, a standalone child, a node outside the displayed Task, and whenever the model
-            omitted it (or `call_description: false` removed the property). */}
-        <div className="mb-1.5 flex items-baseline gap-2">
-          <p className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-            {S.subagentPanel.topologyLabel}
-          </p>
-          {activeNode?.description != null && (
-            <span
-              title={activeNode.description}
-              className="min-w-0 flex-1 truncate text-[11px] text-gray-400 dark:text-gray-500"
-            >
-              {activeNode.description}
-            </span>
-          )}
-        </div>
+        <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+          {S.subagentPanel.topologyLabel}
+        </p>
         {nodes.length > 1 ? (
           <div className="max-h-48 overflow-y-auto">
             <AgentTopologyView

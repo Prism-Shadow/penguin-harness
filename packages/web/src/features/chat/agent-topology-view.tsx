@@ -68,32 +68,44 @@ export function AgentTopologyView({
               title={tooltip}
               onClick={() => onSelect(node)}
               style={{ left: x, top: y, width: NODE_W, height: NODE_H }}
-              className={`absolute flex items-center gap-1.5 rounded-md border bg-white px-2 text-left transition-colors duration-150 dark:bg-gray-900 ${
+              className={`absolute flex flex-col justify-center gap-0.5 rounded-md border bg-white px-2 text-left transition-colors duration-150 dark:bg-gray-900 ${
                 selected
                   ? "border-brand-500 ring-1 ring-brand-500"
                   : "border-gray-200 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:hover:border-gray-600 dark:hover:bg-gray-800/60"
               }`}
             >
-              <AgentAvatar id={node.agentId ?? node.sessionId} name={label} size={18} />
-              <span className="min-w-0 flex-1 truncate text-xs font-medium text-gray-700 dark:text-gray-300">
-                {label}
+              <span className="flex w-full min-w-0 items-center gap-1.5">
+                <AgentAvatar id={node.agentId ?? node.sessionId} name={label} size={18} />
+                <span className="min-w-0 flex-1 truncate text-xs font-medium text-gray-700 dark:text-gray-300">
+                  {label}
+                </span>
+                {/* Elapsed: ticking from first appearance while running, frozen at the settled
+                    span when done; omitted when the stamps are unknown (always for the root).
+                    Decorative next to the label — the aria-label pins the accessible name. */}
+                {node.running
+                  ? node.startedMs !== undefined && (
+                      <span className="shrink-0 font-mono text-[10px] text-gray-400 dark:text-gray-500">
+                        <LiveDuration sinceMs={node.startedMs} />
+                      </span>
+                    )
+                  : node.elapsedMs !== undefined && (
+                      <span className="shrink-0 font-mono text-[10px] text-gray-400 dark:text-gray-500">
+                        {humanizeDuration(node.elapsedMs)}
+                      </span>
+                    )}
+                {/* Status is already part of the button's accessible name: keep the glyph decorative. */}
+                <StatusIcon state={node.running ? "running" : "done"} size={10} />
               </span>
-              {/* Elapsed: ticking from first appearance while running, frozen at the settled
-                  span when done; omitted when the stamps are unknown (always for the root).
-                  Decorative next to the label — the aria-label pins the accessible name. */}
-              {node.running
-                ? node.startedMs !== undefined && (
-                    <span className="shrink-0 font-mono text-[10px] text-gray-400 dark:text-gray-500">
-                      <LiveDuration sinceMs={node.startedMs} />
-                    </span>
-                  )
-                : node.elapsedMs !== undefined && (
-                    <span className="shrink-0 font-mono text-[10px] text-gray-400 dark:text-gray-500">
-                      {humanizeDuration(node.elapsedMs)}
-                    </span>
-                  )}
-              {/* Status is already part of the button's accessible name: keep the glyph decorative. */}
-              <StatusIcon state={node.running ? "running" : "done"} size={10} />
+              {/* Second line: what this child was spawned to do. Indented to the label's own
+                  left edge (avatar width + gap) and truncated to one line — the model writes a
+                  free-form sentence into a fixed-size box, and the full text is in the tooltip.
+                  Nodes without one (the root, a standalone child, an omitted description) drop
+                  the line and the single row centers itself in the box instead. */}
+              {node.description !== null && (
+                <span className="w-full truncate pl-[24px] text-[10px] leading-tight text-gray-400 dark:text-gray-500">
+                  {node.description}
+                </span>
+              )}
             </button>
           );
         })}

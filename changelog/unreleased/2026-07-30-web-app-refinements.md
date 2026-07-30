@@ -35,7 +35,7 @@ The Workspace files panel and the Agents panel are mutually exclusive — openin
 
 ## The Agents panel says what a subagent was sent to do
 
-The call graph named each child's Agent but never its assignment, so a child transcript opened with no account of its own purpose. The spawning `run_subagent` call's model-written `description` now trails the graph's section title, truncated to one line with the full text in the tooltip, and is appended to each node's tooltip. It is absent — rather than blank — for the root, for a child with no spawning card in the stream, and when the model omits it or the tool has `call_description: false`.
+The call graph named each child's Agent but never its assignment, so a child transcript opened with no account of its own purpose. Each node in the graph is now two lines: the Agent name with its elapsed time and status, and beneath it the spawning `run_subagent` call's model-written `description`. The sentence is free-form and the box is a fixed size, so it is truncated to a single line with the full text in the node's tooltip. Node height stays uniform — a node without a description (the root, a standalone child, an omitted one) drops the second line and centers the first rather than shrinking, which would drag row placement and edge geometry along with it.
 
 ## Project display names are editable
 
