@@ -31,7 +31,7 @@ Reading, writing and deduplicating are the model's own work through the ordinary
 
 ## Managing it in the Web App
 
-Agent settings gain a **Memory** tab between Prompt and Runtime. It reads top-down as a narrowing scope, matching how Memory is stored: the agent-level switch and the shared index come first, then a Workspace selector, then that Workspace's topic files and a Markdown editor with create / rename / delete. The index is one file covering every Workspace, so it belongs above the selector rather than repeated at the head of each Workspace's list; opening it parks the caret on the selected Workspace's group heading, and it says so — flagging a Workspace that has no group in the index yet.
+Agent settings gain a **Memory** tab between Prompt and Runtime: the agent-level switch, a Workspace selector, the shared index pinned above that Workspace's topic files, and a Markdown editor, plus create / rename / delete. Opening the index parks the caret on the selected Workspace's group heading, since one index covers them all.
 
 Renaming or deleting a topic file also repoints or removes the index links that named it, so the index never lists a file that is gone. The link form is exact (`](<workspace_key>/<file>)`), keeping this a mechanical edit that never rewrites prose the model wrote.
 
