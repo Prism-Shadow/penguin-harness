@@ -21,7 +21,7 @@ import type { MessagesLiveTail, ServerEvent, SessionStatus } from "@prismshadow/
 import { createStreamController } from "../src/lib/omni/stream-controller";
 import type { StreamController } from "../src/lib/omni/stream-controller";
 import { approvalKey, findToolCard } from "../src/lib/omni/stream-model";
-import type { AssistantTextItem, ToolCallItem } from "../src/lib/omni/stream-model";
+import type { AssistantTextItem, TaskStatsItem, ToolCallItem } from "../src/lib/omni/stream-model";
 
 /** Override a message timestamp (constructor defaults to the current time). */
 function at<M extends OmniMessage>(msg: M, ts: string): M {
@@ -171,6 +171,28 @@ describe("in-stream task_state is the authoritative running state (history-closi
     h.controller.handleServer({ type: "task_state", state: "running" });
     // History hasn't returned yet, but state is already reported.
     expect(h.states).toEqual(["running"]);
+  });
+
+  it("closes the current Task before an auto-started queued follow-up begins", async () => {
+    const h = createHarness();
+    const p = h.controller.load();
+    h.controller.handleServer({ type: "task_state", state: "running", queued: 1 });
+    h.resolveLoad(HISTORY_TASK);
+    await p;
+
+    // Server ordering for a queued follow-up: current run flips idle, then launchTask publishes
+    // the queued user input before its running state. The first idle must seal Task 1 before that.
+    h.controller.handleServer({ type: "task_state", state: "idle", queued: 1 });
+    h.controller.handleOmni(at(userText("follow-up"), "2026-07-05T00:01:00.000Z"));
+    h.controller.handleServer({ type: "task_state", state: "running", queued: 0 });
+    h.controller.handleOmni(at(assistantText("follow-up answer"), "2026-07-05T00:01:03.000Z"));
+    h.controller.handleOmni(at(tokenUsage(counts(1400), counts(400)), "2026-07-05T00:01:05.000Z"));
+    h.controller.handleServer({ type: "task_state", state: "idle", queued: 0 });
+
+    const stats = h.controller.model.items.filter(
+      (item) => item.kind === "task_stats",
+    ) as TaskStatsItem[];
+    expect(stats.map((item) => item.assistantText)).toEqual(["answer", "follow-up answer"]);
   });
 });
 

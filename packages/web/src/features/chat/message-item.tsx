@@ -328,8 +328,8 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
           {item.stopReason && item.stopReason !== "completed" && (
             <span className="ml-1 font-mono text-xs text-gray-400">[{item.stopReason}]</span>
           )}
-          {/* File summary card (Codex-style): aggregates file references in the text once streaming ends (lists only ones confirmed to exist). */}
-          {!item.streaming && ctx.onOpenFile && ctx.statFiles && (
+          {/* Nested models don't produce task_stats, so preserve their existing message-level file summaries. The root conversation renders one aggregated card from task_stats instead. */}
+          {ctx.origin.length > 0 && !item.streaming && ctx.onOpenFile && ctx.statFiles && (
             <MessageFilesCard
               text={item.text}
               workspace={ctx.workspace ?? null}
@@ -363,12 +363,26 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
       return <CompactionBanner item={item} />;
     case "task_stats":
       return (
-        <TaskStatsLine
-          stats={item.stats}
-          assistantText={item.assistantText}
-          cost={item.stats ? (ctx.taskCost?.(item.stats) ?? null) : null}
-          {...(item.atMs !== undefined ? { atMs: item.atMs } : {})}
-        />
+        <>
+          {/* Root-session file references are a Task-level summary: task_stats is emitted only after the Task closes, and assistantText aggregates every assistant segment in that Task. */}
+          {ctx.origin.length === 0 &&
+            ctx.onOpenFile &&
+            ctx.statFiles &&
+            item.assistantText.trim() !== "" && (
+              <MessageFilesCard
+                text={item.assistantText}
+                workspace={ctx.workspace ?? null}
+                statFiles={ctx.statFiles}
+                onOpenFile={ctx.onOpenFile}
+              />
+            )}
+          <TaskStatsLine
+            stats={item.stats}
+            assistantText={item.assistantText}
+            cost={item.stats ? (ctx.taskCost?.(item.stats) ?? null) : null}
+            {...(item.atMs !== undefined ? { atMs: item.atMs } : {})}
+          />
+        </>
       );
   }
 }
