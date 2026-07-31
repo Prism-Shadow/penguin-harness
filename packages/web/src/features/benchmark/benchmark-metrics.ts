@@ -24,20 +24,7 @@ export interface ScoreScale {
 const SCORE_MIN = 0;
 const SCORE_MAX = 100;
 const SCORE_PADDING = 10;
-const TARGET_TICK_INTERVALS = 5;
-
-function niceStep(raw: number): number {
-  if (!(raw > 0)) return 1;
-  const magnitude = 10 ** Math.floor(Math.log10(raw));
-  const fraction = raw / magnitude;
-  const niceFraction =
-    fraction <= 1 ? 1 : fraction <= 2 ? 2 : fraction <= 2.5 ? 2.5 : fraction <= 5 ? 5 : 10;
-  return niceFraction * magnitude;
-}
-
-function cleanTick(value: number): number {
-  return Number(value.toPrecision(12));
-}
+const SCORE_TICK_STEPS = [1, 2, 2.5, 5, 10, 20];
 
 /**
  * Dynamic Score domain: pad the observed min/max by 10, clamp to the valid
@@ -56,15 +43,13 @@ export function scoreScale(values: readonly (number | null)[]): ScoreScale {
   const observedMax = Math.max(...present);
   const paddedMin = Math.max(SCORE_MIN, observedMin - SCORE_PADDING);
   const paddedMax = Math.min(SCORE_MAX, observedMax + SCORE_PADDING);
-  const step = niceStep((paddedMax - paddedMin) / TARGET_TICK_INTERVALS);
-  const min = Math.max(SCORE_MIN, cleanTick(Math.floor(paddedMin / step) * step));
-  const max = Math.min(SCORE_MAX, cleanTick(Math.ceil(paddedMax / step) * step));
-
-  const ticks: number[] = [];
-  for (let value = min; value <= max + step * 1e-9; value += step) {
-    ticks.push(cleanTick(value));
-  }
-  if (ticks[ticks.length - 1] !== max) ticks.push(max);
+  const step = SCORE_TICK_STEPS.find((candidate) => (paddedMax - paddedMin) / candidate <= 5) ?? 20;
+  const min = Math.max(SCORE_MIN, Math.floor(paddedMin / step) * step);
+  const max = Math.min(SCORE_MAX, Math.ceil(paddedMax / step) * step);
+  const ticks = Array.from(
+    { length: Math.round((max - min) / step) + 1 },
+    (_, index) => min + index * step,
+  );
   return { min, max, ticks };
 }
 
