@@ -50,6 +50,18 @@ export const en: Strings = {
     backHome: "Back to docs home",
   },
 
+  search: {
+    open: "Search docs",
+    label: "Search docs",
+    placeholder: "Search titles, sections, and content",
+    start: "Enter a keyword to search all docs in the current language",
+    noResults: "No matching documentation",
+    noResultsHint: "Try a shorter or different search term",
+    results: "Search results",
+    close: "Close search",
+    keyboardHint: "Use the arrow keys to select, then press Enter to open",
+  },
+
   footer: {
     repo: "GitHub repository",
     license: "Apache-2.0 License",
