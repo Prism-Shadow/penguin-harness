@@ -282,7 +282,7 @@ export async function installSkill(
   root: string,
   projectId: string,
   agentId: string,
-  skill: { name: string; content: string; icon?: string },
+  skill: { name: string; content: string; icon?: string; files?: Record<string, string> },
 ): Promise<void> {
   assertValidId("project_id", projectId);
   assertValidId("agent_id", agentId);
@@ -291,12 +291,24 @@ export async function installSkill(
   await fs.mkdir(dir, { recursive: true });
   const content = skill.content.endsWith("\n") ? skill.content : `${skill.content}\n`;
   const iconPath = path.join(dir, "icon.svg");
-  await Promise.all([
+  const writes: Promise<void>[] = [
     fs.writeFile(path.join(dir, "SKILL.md"), content, "utf8"),
     skill.icon !== undefined
       ? fs.writeFile(iconPath, skill.icon, "utf8")
       : fs.rm(iconPath, { force: true }),
-  ]);
+  ];
+  // Write supplementary files (references/, scripts/, etc.) under the skill directory.
+  if (skill.files) {
+    for (const [relativePath, fileContent] of Object.entries(skill.files)) {
+      const target = path.join(dir, relativePath);
+      writes.push(
+        fs
+          .mkdir(path.dirname(target), { recursive: true })
+          .then(() => fs.writeFile(target, fileContent, "utf8")),
+      );
+    }
+  }
+  await Promise.all(writes);
 }
 
 /** Uninstalls a Skill: deletes the entire `skills/<name>/` directory; idempotent, no error if it doesn't exist. */

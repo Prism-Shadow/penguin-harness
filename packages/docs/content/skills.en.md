@@ -73,6 +73,7 @@ The built-in Skills, by group (the group manifest is `SKILL_GROUPS` in `packages
 | | `benchmark-design` | Design and calibrate a multi-Case capability Benchmark for a specified Agent and establish a traceable Formal Baseline |
 | | `agent-evaluation` | Internal leaf worker that executes and privately scores exactly one Case run from a complete evaluation protocol |
 | | `agent-optimization` | Improve a specified Agent from a complete current baseline on a frozen Benchmark |
+| | `benchmark-difficulty-escalation` | Auto-escalate Benchmark Case difficulty with deterministic ceiling scans, trace-based root-cause diagnosis and guarded upgrades |
 
 ## Writing and optimizing Skills
 

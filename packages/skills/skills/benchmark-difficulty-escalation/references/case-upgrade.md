@@ -1,17 +1,6 @@
----
-name: benchmark-case-upgrade
-description: Apply one difficulty-upgrade technique to a Benchmark Case under guardrail checks derived from benchmark-design principles.
-short_description: Upgrade one Benchmark Case's difficulty with guardrail-protected edits.
-short_description_zh: 在护栏保护下，对单个 Benchmark Case 执行一项难度升级编辑。
-version: 1
-updated: 2026-07-29T00:00:00Z
----
-
-<!-- Author: ZhiJin Nan <cinderelladoyle@icloud.com> | SPDX-License-Identifier: Apache-2.0 -->
-
 # Benchmark Case Upgrade
 
-Apply exactly one upgrade technique to a single Benchmark Case. Run four guardrail checks before and after every edit. This Skill edits Case files; it does not re-evaluate or write the Scoreboard.
+Apply exactly one upgrade technique to a single Benchmark Case. Run four guardrail checks before and after every edit. This operation edits Case files; it does not re-evaluate or write the Scoreboard.
 
 ## Before you start
 

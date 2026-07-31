@@ -1,21 +1,23 @@
 ---
 name: benchmark-difficulty-escalation
-description: Automatically upgrade Benchmark Case difficulty over multiple rounds when the Test Agent hits the scoring ceiling, using an orchestrator-workers pattern with structured output protocols.
+description: Automatically upgrade Benchmark Case difficulty over multiple rounds when the Test Agent hits the scoring ceiling, using an orchestrator-workers pattern with structured output protocols. Detailed protocols live in references/ — read them on demand, not all at once.
 short_description: Auto-escalate Benchmark difficulty when the Test Agent hits the ceiling.
 short_description_zh: 当 Test Agent 触及 Benchmark 分数天花板时，自动爬升 Case 难度。
 version: 1
-updated: 2026-07-29T00:00:00Z
+updated: 2026-07-30T00:00:00Z
 ---
 
 <!-- Author: ZhiJin Nan <cinderelladoyle@icloud.com> | SPDX-License-Identifier: Apache-2.0 -->
 
 # Benchmark Difficulty Escalation
 
-Orchestrate a multi-round difficulty-escalation loop for a Benchmark whose Cases show a ceiling effect. Delegate all analysis to Worker Skills, all evaluation to `agent-evaluation`, and act purely as a data transporter and flow controller.
+Orchestrate a multi-round difficulty-escalation loop for a Benchmark whose Cases show a ceiling effect. Delegate all detailed analysis to reference protocols and `agent-evaluation`; act purely as a data transporter and flow controller.
+
+Each phase below references a sub-file under `references/` for the full protocol — read it when entering that phase, not upfront.
 
 ## Before you start
 
-Require a Test Agent id, a Benchmark directory, and a positive integer `max_rounds` (default 1). The caller may override. Require a top-level Session with `run_subagent`. Require these Skills to be installed on the current Agent: `benchmark-ceiling-check`, `benchmark-trace-diagnosis`, `benchmark-case-upgrade`, and `agent-evaluation`. If any is missing, stop and ask the user to install it.
+Require a Test Agent id, a Benchmark directory, and a positive integer `max_rounds` (default 1). The caller may override. Require a top-level Session with `run_subagent`. Require the `agent-evaluation` Skill to be installed on the current Agent. If missing, stop and ask the user to install it.
 
 ## Resolve paths
 
@@ -39,9 +41,9 @@ For `round` from 1 to `max_rounds`:
 
 ### Phase A — Analyze
 
-1. **Ceiling scan**: `run_subagent` → `benchmark-ceiling-check` with `benchmark_dir`. Parse the report. Collect every Case whose `category` ends in "Ceiling" (Absolute / Stable / Probable) as `target_cases[]`. If none, exit the loop — all Cases are healthy.
+1. **Ceiling scan**: Read `references/ceiling-check.md` for the full protocol. Run the deterministic calculator at `scripts/calculate.py`. Parse the report. Collect every Case whose `category` ends in "Ceiling" (Absolute / Stable / Probable) as `target_cases[]`. If none, exit the loop — all Cases are healthy.
 
-2. **Trace diagnosis** (per target Case): For each `target_case`, `run_subagent` → `benchmark-trace-diagnosis` with the Case id and its `session_id` list (from the latest scoreboard evaluation). Parse the returned `diagnosis_result` YAML. Collect all results.
+2. **Trace diagnosis** (per target Case): For each `target_case`, read `references/trace-diagnosis.md` for the signal matrix and decision tree. Diagnose each target Case using its `session_id` list from the latest scoreboard evaluation. Parse the returned `diagnosis_result` YAML. Collect all results.
 
 ### Phase B — Upgrade
 
@@ -51,7 +53,7 @@ For each `target_case` whose `diagnosis_result.recommended_techniques` contains 
 
 For all other `target_cases`:
 
-- `run_subagent` → `benchmark-case-upgrade` with `{case_path, root_cause, recommended_techniques, original_file_bytes}`. Parse the returned `upgrade_result` YAML.
+- Read `references/case-upgrade.md` for the guardrail checklist and technique catalog. Apply one technique via `run_subagent` with `{case_path, root_cause, recommended_techniques, original_file_bytes}`. Parse the returned `upgrade_result` YAML.
 
 ### Phase C — Re-evaluate
 
@@ -73,7 +75,7 @@ For all other `target_cases`:
 
 ### Phase D — Check
 
-1. **Re-run ceiling check**: `run_subagent` → `benchmark-ceiling-check` with the updated `benchmark_dir`. Extract each target Case's new `utilization`.
+1. **Re-run ceiling check**: Read `references/ceiling-check.md` and run `scripts/calculate.py` with the updated `benchmark_dir`. Extract each target Case's new `utilization`.
 2. **Decide per Case**:
    - `new_utilization < 0.80` → `verdict: resolved`
    - `new_utilization >= 0.85` → `verdict: continuing` (next round, different technique)
@@ -92,7 +94,7 @@ For all other `target_cases`:
      verdict: resolved | continuing | rolled_back
      timestamp: "<ISO 8601>"
    ```
-   Escalation produces zero analysis — every field is sourced from Worker outputs or the deterministic ceiling-check.
+   Escalation produces zero analysis — every field is sourced from Worker outputs or the deterministic calculator.
 
 ## Stop conditions
 
@@ -123,8 +125,15 @@ All fields come from Worker outputs. Never reveal Rubric content, scoring items,
 
 ## Boundaries
 
-- Escalation is a pure data transporter — it delegates all analysis to Workers and all evaluation to `agent-evaluation`.
+- Escalation is a pure data transporter — it delegates all analysis to reference protocols and all evaluation to `agent-evaluation`.
 - Never modify the Test Agent State. Edit only Benchmark Case files.
 - Never write the Scoreboard directly. Clear it per `benchmark-design` rules, then let `agent-evaluation` write the new baseline.
 - Per-round rollback only — restore the files changed in the current round, not all rounds.
 - Never inspect another Agent's traces or Project configuration.
+
+## Reference map
+
+- `references/ceiling-check.md` — deterministic variance scan: calculator invocation, classification matrix, recommendation rules.
+- `references/trace-diagnosis.md` — root-cause diagnosis: three-group signal matrix, decision tree, technique recommendation table.
+- `references/case-upgrade.md` — guarded case edit: four pre-edit guardrails, technique catalog (S/R/F), post-edit verification, return protocol.
+- `scripts/calculate.py` — deterministic Python calculator for utilization and volatility. Invoked by the ceiling-check protocol.

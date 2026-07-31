@@ -119,6 +119,7 @@ describe("loadSkillGroups / groupSkills", () => {
       "benchmark-design",
       "agent-evaluation",
       "agent-optimization",
+      "benchmark-difficulty-escalation",
     ]);
     expect(groups[3]!.title).toBe("Agent Tuning");
     expect(groups[3]!.titleZh).toBe("Agent 调优");
@@ -170,7 +171,13 @@ describe("loadSkillGroups / groupSkills", () => {
       },
       {
         id: "agent-tuning",
-        skills: ["agent-creation", "benchmark-design", "agent-evaluation", "agent-optimization"],
+        skills: [
+          "agent-creation",
+          "benchmark-design",
+          "agent-evaluation",
+          "agent-optimization",
+          "benchmark-difficulty-escalation",
+        ],
       },
     ]);
   });

@@ -1,17 +1,6 @@
----
-name: benchmark-ceiling-check
-description: Run a deterministic variance scan on a Benchmark scoreboard to detect ceiling effects and surface upgrade recommendations.
-short_description: Detect Benchmark ceiling effects with a deterministic variance scan.
-short_description_zh: 确定性方差扫描，检测 Benchmark 天花板效应。
-version: 1
-updated: 2026-07-29T00:00:00Z
----
-
-<!-- Author: ZhiJin Nan <cinderelladoyle@icloud.com> | SPDX-License-Identifier: Apache-2.0 -->
-
 # Benchmark Ceiling Check
 
-Run a deterministic variance scan on the most recent Benchmark evaluation. Detect Cases where the Test Agent hits the scoring ceiling and recommend action. This Skill is read-only — it never modifies files or clears the Scoreboard.
+Run a deterministic variance scan on the most recent Benchmark evaluation. Detect Cases where the Test Agent hits the scoring ceiling and recommend action. This operation is read-only — it never modifies files or clears the Scoreboard.
 
 ## Before you start
 
@@ -23,10 +12,10 @@ Read the complete file tree under the Benchmark directory. Collect every Case's 
 
 ## Run the calculator
 
-Invoke the deterministic Python calculator. The Skill orchestrates; the script does the math:
+Invoke the deterministic Python calculator. The orchestrator runs the script; the script does the math:
 
 ```bash
-python3 <skill_dir>/calculate.py <scoreboard.yaml> <rubric_dir_1> [rubric_dir_2 ...]
+python3 <skill_dir>/scripts/calculate.py <scoreboard.yaml> <rubric_dir_1> [rubric_dir_2 ...]
 ```
 
 `rubric_dir` arguments may be either the `rubric/` directory itself or the Case directory that contains it — the script resolves both. Pass every Case discovered in the Benchmark.
@@ -59,10 +48,6 @@ For each Case whose `category` ends in "Ceiling" (Absolute / Stable / Probable):
 For **Unstable High** (≥85%, >30% vol): Do not recommend upgrade. High scores may be noise — suggest increasing `runs` in `benchmark_config.toml` instead.
 
 For **Approaching** (75–85%) and **Healthy** (<75%): No action needed. The Benchmark has useful headroom.
-
-When ceiling Cases are found, end with:
-
-> To diagnose why these Cases are at ceiling and automatically upgrade difficulty, use the `benchmark-difficulty-escalation` skill.
 
 ## Boundaries
 

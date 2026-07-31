@@ -35,6 +35,8 @@ export interface LibrarySkill extends SkillMetadata {
   content: string;
   /** Optional raw `icon.svg` content in the directory (custom icon, the file is the sole source, copied alongside SKILL.md on install); absent means none (frontend falls back to the default book icon). */
   icon?: string;
+  /** Optional supplementary files (relative path → UTF-8 content) from the skill directory tree, excluding SKILL.md and icon.svg. Written verbatim under the install directory (e.g. `references/guide.md`, `scripts/run.py`). */
+  files?: Record<string, string>;
 }
 
 /** Skill group manifest entry: group id, title (optionally with a Chinese title, displayed per UI language), and member Skill names. */
@@ -93,6 +95,28 @@ const SKILLS_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 const SKILL_NAME_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 /**
+ * Collects all files under `dir` (recursive), returning a relative-path → content map.
+ * Skips SKILL.md and icon.svg (already handled by the caller) and hidden entries (names starting with ".").
+ */
+function collectSkillFiles(dir: string): Record<string, string> | undefined {
+  const result: Record<string, string> = {};
+  const walk = (current: string): void => {
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      if (entry.name.startsWith(".")) continue;
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+      } else if (entry.isFile()) {
+        if (entry.name === "SKILL.md" || entry.name === "icon.svg") continue;
+        result[path.relative(dir, full)] = fs.readFileSync(full, "utf8");
+      }
+    }
+  };
+  walk(dir);
+  return Object.keys(result).length > 0 ? result : undefined;
+}
+
+/**
  * Reads a single library directory to construct a LibrarySkill; returns undefined if SKILL.md
  * doesn't exist. name is taken from the directory name (overriding frontmatter); falls back to
  * empty metadata if frontmatter parsing fails.
@@ -119,7 +143,14 @@ function readSkillDir(name: string): LibrarySkill | undefined {
     version: 1,
     updated: "",
   };
-  return { ...meta, name, content, ...(icon !== undefined ? { icon } : {}) };
+  const files = collectSkillFiles(dir);
+  return {
+    ...meta,
+    name,
+    content,
+    ...(icon !== undefined ? { icon } : {}),
+    ...(files !== undefined ? { files } : {}),
+  };
 }
 
 /** Reads all Skills in the library (one per subdirectory under `skills/`), sorted by name. */
@@ -160,7 +191,13 @@ export const SKILL_GROUPS: SkillGroupInfo[] = [
     id: "agent-tuning",
     title: "Agent Tuning",
     titleZh: "Agent 调优",
-    skills: ["agent-creation", "benchmark-design", "agent-evaluation", "agent-optimization"],
+    skills: [
+      "agent-creation",
+      "benchmark-design",
+      "agent-evaluation",
+      "agent-optimization",
+      "benchmark-difficulty-escalation",
+    ],
   },
 ];
 

@@ -73,6 +73,7 @@ Skill 库以 npm 包 `@prismshadow/penguin-skills` 发布，tarball 直接携带
 | | `benchmark-design` | 为指定 Agent 设计并校准多 Case Benchmark，建立可追溯的 Formal Baseline |
 | | `agent-evaluation` | 内部叶子执行器：根据完整评测协议隔离执行并私密评分一个 Case Run |
 | | `agent-optimization` | 基于冻结 Benchmark 的完整当前基线改进指定 Agent |
+| | `benchmark-difficulty-escalation` | 自动爬升 Benchmark Case 难度：确定性天花板扫描、基于 Trace 的根因诊断、带护栏的难度升级 |
 
 ## 编写与优化
 

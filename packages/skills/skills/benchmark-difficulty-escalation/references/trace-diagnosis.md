@@ -1,17 +1,6 @@
----
-name: benchmark-trace-diagnosis
-description: Diagnose why a Benchmark Case hits the scoring ceiling by analysing Test Agent trace signals across three dimensions (Agent strength, Case weakness, Rubric looseness).
-short_description: Diagnose Benchmark ceiling root causes from Test Agent traces.
-short_description_zh: 从 Test Agent 的 Trace 诊断 Benchmark 天花板根因。
-version: 1
-updated: 2026-07-29T00:00:00Z
----
-
-<!-- Author: ZhiJin Nan <cinderelladoyle@icloud.com> | SPDX-License-Identifier: Apache-2.0 -->
-
 # Benchmark Trace Diagnosis
 
-Diagnose why a single Benchmark Case reaches the scoring ceiling. Read the Case's evaluation traces, score three groups of observable signals, run a decision tree, and return a structured `diagnosis_result`. This Skill is read-only — it never modifies files.
+Diagnose why a single Benchmark Case reaches the scoring ceiling. Read the Case's evaluation traces, score three groups of observable signals, run a decision tree, and return a structured `diagnosis_result`. This operation is read-only — it never modifies files.
 
 ## Before you start
 

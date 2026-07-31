@@ -92,6 +92,7 @@ describe("skills api", () => {
       "benchmark-design",
       "agent-evaluation",
       "agent-optimization",
+      "benchmark-difficulty-escalation",
     ]);
     const skills = body.groups.flatMap((g) => g.skills);
     for (const skill of skills) {
