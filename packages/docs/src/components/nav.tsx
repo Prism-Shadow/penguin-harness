@@ -12,7 +12,7 @@
  * site-prefs.ts); keep the two files aligned so the navbars render identically.
  */
 import { useRef } from "react";
-import type { MouseEvent } from "react";
+import type { MouseEvent, RefObject } from "react";
 import { Link } from "react-router";
 import { S } from "../lib/strings";
 import { REPO_URL, SITE_URL } from "../lib/links";
@@ -30,7 +30,15 @@ const SECTION_IDS = [
   "features",
 ] as const;
 
-export function Nav({ menuOpen, onToggleMenu }: { menuOpen: boolean; onToggleMenu: () => void }) {
+export function Nav({
+  menuOpen,
+  onToggleMenu,
+  menuButtonRef,
+}: {
+  menuOpen: boolean;
+  onToggleMenu: () => void;
+  menuButtonRef?: RefObject<HTMLButtonElement | null>;
+}) {
   const pillRef = useRef<HTMLSpanElement | null>(null);
   const pillVisible = useRef(false);
 
@@ -142,6 +150,7 @@ export function Nav({ menuOpen, onToggleMenu }: { menuOpen: boolean; onToggleMen
           {/* Sidebar toggle: same slot and styling as the landing nav's menu button, but it
               opens the docs sidebar and hides at lg (the sidebar's own breakpoint). */}
           <button
+            ref={menuButtonRef}
             type="button"
             onClick={onToggleMenu}
             aria-label={menuOpen ? S.nav.closeMenu : S.nav.openMenu}

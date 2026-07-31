@@ -56,6 +56,18 @@ export const zh = {
     backHome: "返回文档首页",
   },
 
+  search: {
+    open: "搜索文档",
+    label: "搜索文档",
+    placeholder: "搜索标题、章节和正文",
+    start: "输入关键词搜索当前语言的全部文档",
+    noResults: "没有找到相关文档",
+    noResultsHint: "请尝试更短或不同的关键词",
+    results: "搜索结果",
+    close: "关闭搜索",
+    keyboardHint: "使用上下方向键选择，按回车打开",
+  },
+
   footer: {
     repo: "GitHub 仓库",
     license: "Apache-2.0 License",
