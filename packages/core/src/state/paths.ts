@@ -124,9 +124,28 @@ export function toolsDir(root: string, projectId: string, agentId: string): stri
   return path.join(agentStateDir(root, projectId, agentId), "tools");
 }
 
-/** `<agentStateDir>/memory`. */
+/** `<agentStateDir>/memory`, the Workspace Memory root (one subdirectory per Workspace, see state/memory.ts). */
 export function memoryDir(root: string, projectId: string, agentId: string): string {
   return path.join(agentStateDir(root, projectId, agentId), "memory");
+}
+
+/**
+ * `<agentStateDir>/memory/AGENTS.md`, the single Memory index shared by every Workspace
+ * (grouped by workspace key). Distinct from `agent_state/AGENTS.md`, which holds the
+ * human-edited Agent instructions.
+ */
+export function memoryIndexPath(root: string, projectId: string, agentId: string): string {
+  return path.join(memoryDir(root, projectId, agentId), "AGENTS.md");
+}
+
+/** `<agentStateDir>/memory/<workspaceKey>`, one Workspace's topic-file directory. */
+export function workspaceMemoryDir(
+  root: string,
+  projectId: string,
+  agentId: string,
+  workspaceKey: string,
+): string {
+  return path.join(memoryDir(root, projectId, agentId), workspaceKey);
 }
 
 /** `<agentStateDir>/skills`. */

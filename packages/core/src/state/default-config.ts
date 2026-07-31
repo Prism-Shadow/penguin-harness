@@ -36,6 +36,12 @@ export const OS_VERSION_PLACEHOLDER = "{{OS_VERSION}}";
 /** The shell exec_command runs (`bash` on POSIX; on Windows whatever shell.ts resolved), so the model knows which command syntax to write. */
 export const SHELL_PLACEHOLDER = "{{SHELL}}";
 export const DATE_PLACEHOLDER = "{{DATE}}";
+/** Expands to the whole rendered `memory.prompt` block, or to nothing when Memory is off or the Session has no persistent Workspace. */
+export const MEMORY_PLACEHOLDER = "{{MEMORY}}";
+/** Inside `memory.prompt` only: the current Workspace's Memory directory. */
+export const MEMORY_DIR_PLACEHOLDER = "{{MEMORY_DIR}}";
+/** Inside `memory.prompt` only: the full content of the shared Memory index (`memory/AGENTS.md`). */
+export const MEMORY_AGENTS_MD_PLACEHOLDER = "{{MEMORY_AGENTS_MD}}";
 
 /**
  * Context compaction config (the `compaction` section of `system_config.yaml`).
@@ -49,6 +55,17 @@ export interface CompactionConfig {
   /** Compaction mode; defaults to summarize. */
   mode?: CompactionMode;
   /** Prompt template for summarize compaction; defaults to the built-in value (editable config, not hardcoded). */
+  prompt?: string;
+}
+
+/**
+ * Workspace Memory config (the `memory` section of `system_config.yaml`).
+ * Docs: /docs/configuration § "Workspace Memory".
+ */
+export interface MemoryConfig {
+  /** Whether Memory enters the model context and Workspace Memory directories are prepared; defaults to true. */
+  enabled?: boolean;
+  /** The `{{MEMORY}}` block: how the model should use Memory, plus the `{{MEMORY_DIR}}` / `{{MEMORY_AGENTS_MD}}` injection points; defaults to the built-in value (editable config, not hardcoded). */
   prompt?: string;
 }
 
@@ -74,6 +91,8 @@ export interface SystemConfig {
   };
   /** Context compaction (enabled by default, max_context_length 128k, mode summarize). */
   compaction?: CompactionConfig;
+  /** Workspace Memory (enabled by default; only reaches the prompt through the template's `{{MEMORY}}` placeholder). */
+  memory?: MemoryConfig;
   tools?: {
     /** Built-in system tool configuration (per-entry fields incl. the `call_description` toggle live on ToolDefinitionConfig). */
     builtin?: ToolDefinitionConfig[];
@@ -143,6 +162,8 @@ The vault holds this agent's per-agent secrets (agent_state/.vault.toml). Each e
 Skills are reusable instruction packages at <app_data_dir>/agents/<agent_id>/agent_state/skills/<skill_name>/SKILL.md. When a task matches one below, or the user asks for one (the message may start with a [use_skills] block naming them), read that SKILL.md in full with read_file, then follow it. If a request names a skill without a concrete task, ask the user what they need first.
 {{SKILL_METADATA}}
 
+{{MEMORY}}
+
 # Environment
 - Platform: {{PLATFORM}}
 - OS Version: {{OS_VERSION}}
@@ -154,6 +175,29 @@ Skills are reusable instruction packages at <app_data_dir>/agents/<agent_id>/age
 - Provider: {{PROVIDER}}
 - Model ID: {{MODEL_ID}}
 - Session ID: {{SESSION_ID}}`;
+
+/**
+ * Built-in default Memory Prompt: the body of the `{{MEMORY}}` block. It states what Memory is
+ * for, what must never be written to it, and the mechanics of one save (read the index, prefer
+ * updating an existing topic, create a topic file with frontmatter, refresh the index entry);
+ * the two placeholders inside it are the only Memory content the Harness injects.
+ *
+ * Rendered only when Memory is enabled and the Session has a persistent Workspace, so the model
+ * is never told about a Memory directory it has no reason to write to.
+ */
+export const DEFAULT_MEMORY_PROMPT = `# Memory
+Memory is your long-term record across sessions in this workspace: Markdown files you maintain yourself with the file tools. Keep in it what you could not re-derive from the workspace later — the user's standing feedback and preferences, project decisions and constraints together with their reasons, and stable entry points into external systems.
+
+Save only what is specific, durable, and worth having in a later session. Before writing, read the index below and any topic file it lists for this workspace; then update an existing topic instead of opening a near-duplicate. A genuinely new subject becomes \`<topic>.md\` in the directory below, with frontmatter \`name\`, \`description\`, \`type\` (feedback | project | reference) and \`updated_at\`, plus a one-line entry in the index under this workspace's heading. Update the index in the same round as the file, so the two never disagree.
+
+Never save what the code, config or git history already states; short-lived task progress or debugging notes; credentials, tokens or other secrets; guesses you have not confirmed; or long stretches of transcript. Memory is shared with everyone who can reach this agent, so personal data about one person does not belong in it. Entries under another workspace's heading are that workspace's facts, not this one's.
+
+Current workspace memory directory: {{MEMORY_DIR}}
+The shared index is \`AGENTS.md\` in that directory's parent, and its links are relative to that parent; this workspace's heading is the directory name above.
+{{MEMORY_AGENTS_MD}}`;
+
+/** Stands in for `{{MEMORY_AGENTS_MD}}` when the index file does not exist yet or is blank — the model is told the store is empty rather than being handed nothing. */
+export const MEMORY_INDEX_EMPTY_NOTE = "(the index is empty — nothing has been saved yet)";
 
 /**
  * Built-in default compaction Prompt (summarize mode): tells the model the summary will
@@ -503,6 +547,10 @@ export function defaultSystemConfig(): SystemConfig {
       max_session_turns: -1,
       mode: "summarize",
       prompt: DEFAULT_COMPACTION_PROMPT,
+    },
+    memory: {
+      enabled: true,
+      prompt: DEFAULT_MEMORY_PROMPT,
     },
     tools: {
       builtin: defaultBuiltinTools(),

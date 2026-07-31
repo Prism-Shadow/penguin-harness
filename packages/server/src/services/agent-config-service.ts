@@ -30,6 +30,7 @@ import type {
   AgentConfigUpdateRequest,
   AgentModelConfigDto,
   AgentCompactionConfigDto,
+  AgentMemoryConfigDto,
   VaultEntryInfo,
   VaultResponse,
   VaultUpdateRequest,
@@ -112,6 +113,7 @@ export class AgentConfigService {
     const parsed = asRecord(parseYaml(systemConfigYaml));
     const model = asRecord(parsed.model);
     const compaction = asRecord(parsed.compaction);
+    const memory = asRecord(parsed.memory);
     const tools = asRecord(parsed.tools);
 
     let agentsMd = "";
@@ -140,6 +142,11 @@ export class AgentConfigService {
         : {}),
       ...(typeof compaction.prompt === "string" ? { prompt: compaction.prompt } : {}),
     };
+    // Memory's effective state, not the literal YAML: core treats anything but an explicit
+    // `false` as on, so a config predating the section reports enabled — matching what its
+    // Sessions actually do (whether anything reaches the prompt still depends on the
+    // template carrying {{MEMORY}}, which the Memory tab reports separately).
+    const memoryDto: AgentMemoryConfigDto = { enabled: memory.enabled !== false };
     const config: AgentConfigDto = {
       ...(typeof parsed.name === "string" ? { name: parsed.name } : {}),
       ...(typeof parsed.description === "string" ? { description: parsed.description } : {}),
@@ -148,6 +155,7 @@ export class AgentConfigService {
       ...(typeof parsed.max_turns === "number" ? { maxTurns: parsed.max_turns } : {}),
       ...(Object.keys(modelDto).length > 0 ? { model: modelDto } : {}),
       ...(Object.keys(compactionDto).length > 0 ? { compaction: compactionDto } : {}),
+      memory: memoryDto,
       toolsBuiltin: Array.isArray(tools.builtin) ? (tools.builtin as ToolDefinitionConfig[]) : [],
       mcpServers: Array.isArray(tools.mcpServers) ? (tools.mcpServers as MCPServerConfig[]) : [],
     };
@@ -247,6 +255,11 @@ export class AgentConfigService {
       );
       setIfProvided(["compaction", "mode"], optionalEnum(compaction, "mode", COMPACTION_MODES));
       setIfProvided(["compaction", "prompt"], optionalString(compaction, "prompt"));
+    }
+    if (cfg.memory !== undefined) {
+      // The toggle only decides whether Memory reaches the context and whether Workspace
+      // directories are prepared; existing Memory files are never touched by it.
+      setIfProvided(["memory", "enabled"], optionalBoolean(asRecord(cfg.memory), "enabled"));
     }
     if (cfg.toolsBuiltin !== undefined) {
       doc.setIn(["tools", "builtin"], validateToolsBuiltin(cfg.toolsBuiltin));

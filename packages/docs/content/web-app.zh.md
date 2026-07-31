@@ -67,10 +67,13 @@ penguin web
 | --- | --- |
 | Overview | 基本信息、Agent State 快照的导出 / 导入，以及还原为默认配置（覆盖自定义内容，仅保留名称与描述） |
 | Prompt | AGENTS.md 与 system_prompt |
+| Memory | Workspace 记忆：Agent 级开关、Workspace 选择器、置顶的统一索引 `memory/AGENTS.md` 与该 Workspace 的主题文件列表，以及 Markdown 编辑器 |
 | Runtime | max_turns、model.*、compaction.* 等运行参数 |
 | Tools | 内置工具表格（含条目级 call_description 开关）与 MCP Server 的 JSON 配置 |
 | Vault | 环境变量条目，值以掩码显示 |
 | Schedule | 定时任务（TOML 定义）：创建、编辑、启停、删除 |
+
+Memory 标签页写入的就是 Agent 自己维护的那批文件。重命名或删除主题文件时，索引中指向它的链接会一并改写或清除，索引不会列出已不存在的文件。关闭记忆不会删除任何文件，该页仍可正常管理——只是记忆不再进入 Agent 上下文，也不再为新 Session 准备目录。
 
 定时任务按固定周期触发（最短 5 分钟），且仅在服务运行期间执行。
 

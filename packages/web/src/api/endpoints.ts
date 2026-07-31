@@ -35,6 +35,12 @@ import type {
   MemberAddRequest,
   MemberAddResponse,
   MembersResponse,
+  MemoryFileRenameRequest,
+  MemoryFileResponse,
+  MemoryFilesResponse,
+  MemoryFileUpdateRequest,
+  MemoryIndexResponse,
+  MemoryOverviewResponse,
   MessagesResponse,
   ModelsResponse,
   ModelsUpdateRequest,
@@ -202,6 +208,72 @@ export const putVault = (projectId: string, agentId: string, body: VaultUpdateRe
   apiFetch<VaultResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/vault`,
     { method: "PUT", body },
+  );
+
+// Workspace Memory (Agent-level, agent_state/memory/) ---------------------------------------
+
+/** Base path of an Agent's Memory API; the workspace key and file name are single path segments (never a path). */
+const memoryBase = (projectId: string, agentId: string) =>
+  `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/memory`;
+
+const memoryFilesBase = (projectId: string, agentId: string, workspaceKey: string) =>
+  `${memoryBase(projectId, agentId)}/workspaces/${encodeURIComponent(workspaceKey)}/files`;
+
+export const getMemoryOverview = (projectId: string, agentId: string) =>
+  apiFetch<MemoryOverviewResponse>(memoryBase(projectId, agentId));
+
+export const putMemoryIndex = (projectId: string, agentId: string, content: string) =>
+  apiFetch<MemoryIndexResponse>(`${memoryBase(projectId, agentId)}/index`, {
+    method: "PUT",
+    body: { content } satisfies MemoryFileUpdateRequest,
+  });
+
+export const getMemoryFiles = (projectId: string, agentId: string, workspaceKey: string) =>
+  apiFetch<MemoryFilesResponse>(memoryFilesBase(projectId, agentId, workspaceKey));
+
+export const getMemoryFile = (
+  projectId: string,
+  agentId: string,
+  workspaceKey: string,
+  name: string,
+) =>
+  apiFetch<MemoryFileResponse>(
+    `${memoryFilesBase(projectId, agentId, workspaceKey)}/${encodeURIComponent(name)}`,
+  );
+
+export const putMemoryFile = (
+  projectId: string,
+  agentId: string,
+  workspaceKey: string,
+  name: string,
+  content: string,
+) =>
+  apiFetch<MemoryFileResponse>(
+    `${memoryFilesBase(projectId, agentId, workspaceKey)}/${encodeURIComponent(name)}`,
+    { method: "PUT", body: { content } satisfies MemoryFileUpdateRequest },
+  );
+
+export const renameMemoryFile = (
+  projectId: string,
+  agentId: string,
+  workspaceKey: string,
+  name: string,
+  nextName: string,
+) =>
+  apiFetch<MemoryFileResponse>(
+    `${memoryFilesBase(projectId, agentId, workspaceKey)}/${encodeURIComponent(name)}/rename`,
+    { method: "POST", body: { name: nextName } satisfies MemoryFileRenameRequest },
+  );
+
+export const deleteMemoryFile = (
+  projectId: string,
+  agentId: string,
+  workspaceKey: string,
+  name: string,
+) =>
+  apiFetch<void>(
+    `${memoryFilesBase(projectId, agentId, workspaceKey)}/${encodeURIComponent(name)}`,
+    { method: "DELETE" },
   );
 
 // Agent & its configuration ----------------------------------------------------------------

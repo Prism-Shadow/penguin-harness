@@ -106,6 +106,8 @@ output = 0.857143
 | `compaction.max_session_turns` | `-1` | Session 累计轮数阈值（`-1` 不限制） |
 | `compaction.mode` | `summarize` | `summarize` / `discard` |
 | `compaction.prompt` | 内置模板 | summarize 压缩使用的 Prompt |
+| `memory.enabled` | `true` | Workspace 记忆是否进入上下文、是否为持久 Workspace 准备记忆目录 |
+| `memory.prompt` | 内置模板 | `{{MEMORY}}` 区块：记忆使用说明，含 `{{MEMORY_DIR}}` / `{{MEMORY_AGENTS_MD}}` |
 | `tools.builtin` | 缺省时为完整默认工具集 | 工具条目：`name` / `description` / `parameters` / `permission`（`r` 或 `rw`）/ `forModel` / `timeoutMs` / `maxOutputLength` / `call_description`（条目级开关：控制 `description` 调用参数，开启时为必填，缺省保留）；一旦写出即整体替换默认列表 |
 | `tools.mcpServers` | `[]` | MCP Server 配置（`name` + `config`），预留给 MCP 适配层 |
 
@@ -150,6 +152,7 @@ compaction:
 | `{{AGENTS_MD}}` | `AGENTS.md` 的全文 |
 | `{{VAULT_KEYS}}` | Vault 的键名列表（仅键名） |
 | `{{SKILL_METADATA}}` | 已安装 Skill 的元数据 |
+| `{{MEMORY}}` | 渲染后的 `memory.prompt` 区块；关闭记忆或使用临时 Workspace 时为空 |
 | `{{PLATFORM}}` | 运行平台 |
 | `{{OS_VERSION}}` | 操作系统版本 |
 | `{{DATE}}` | 当前日期 |
@@ -165,6 +168,42 @@ compaction:
 Windows 上注入的 `{{PROJECT_DIR}}` 与 `{{CWD}}` 统一使用正斜杠——与 core 产出的其他模型可见路径（附件行、Goal file 行、截断输出 recovery 路径）同一拼写。模型会把这些拼写原样带入 JSON 工具参数和 Shell 命令；正斜杠被 Node 的 fs API 与包内 (Git) Bash 工具 Shell 接受，也避免 JSON 反斜杠转义出错。
 
 `agent_state/AGENTS.md` 是开发者可编辑的指令文件，经 `{{AGENTS_MD}}` 注入系统提示词，缺省为空——它也是优化器最常改动的文件（见[自我进化](/self-improvement)）。
+
+## Workspace 记忆
+
+`agent_state/memory/` 保存 Agent 跨 Session 的长期记忆：用户反馈、项目决策、协作约定与外部系统入口——这些无法从 Workspace 或代码历史可靠重新推导。它不是上下文压缩：压缩保存单个 Session 的短期工作状态。
+
+记忆的作用域是 **Project + Agent + Workspace**。同一 Agent、同一 Workspace 的多个 Session 共享一份记忆；不同 Workspace 的主题文件相互隔离，但共用一份索引；不同 Agent 即使使用同一 Workspace 也各自维护。记忆位于 Agent State，因此随导出、导入与快照一同流转，Project 内有权访问该 Agent 的成员都能读到——所以只属于某个成员的隐私信息不应写入（也因此不提供 `user` 类型）。
+
+```text
+agent_state/memory/
+├── AGENTS.md                     # 统一索引，按 workspace key 分组
+└── my-app-a81f32c4/              # 单个 Workspace
+    ├── .workspace                # 该 key 对应的 Workspace 路径
+    ├── feedback_testing.md
+    └── project_release.md
+```
+
+workspace key 为 `<安全 basename>-<真实路径 sha256 的 8 位十六进制>`。身份只由实际目录决定，与 Git 无关：指向同一目录的两个软链接得到同一 key；目录移动或重命名后视为新的 Workspace（旧记忆仍以旧 key 留在磁盘上）。PenguinHarness 自动创建的临时 Workspace（位于 `agents/<agent_id>/workspaces/` 下）不创建记忆目录，子 Agent 继承该临时 Workspace 时同样不创建。
+
+主题文件按语义划分，不按 Task、Session 或日期划分，并带 frontmatter：
+
+```markdown
+---
+name: Testing conventions
+description: 项目的测试环境和验证规则
+type: feedback
+updated_at: 2026-07-30
+---
+
+- 集成测试必须连接真实数据库，不使用 mock repository。
+```
+
+`type` 取 `feedback`（用户明确给出、未来应持续遵守的反馈与偏好）、`project`（无法仅从代码推导的决策、约束与计划及其理由）或 `reference`（外部系统、文档与服务的稳定入口）。不应保存：可从代码、配置或 Git 历史直接获得的事实；短期任务进度与调试流水；凭据、Token 等敏感值；未经确认的推测；大段对话原文。
+
+进入上下文的只有索引。创建 Session 时，Harness 确保当前 Workspace 的记忆目录存在、读取 `memory/AGENTS.md`，并把 Agent 的 `memory.prompt` 渲染进 `{{MEMORY}}`，其中 `{{MEMORY_DIR}}` 替换为该 Workspace 的目录、`{{MEMORY_AGENTS_MD}}` 替换为完整索引；主题正文由模型按需读取。Harness 只负责确定记忆位置并限制写入边界，判断什么值得保存、如何划分主题、如何维护索引都由模型用现有文件工具完成。
+
+存量 Agent 不会自动迁移：其 `system_config.yaml` 既无 `memory` 段也无 `{{MEMORY}}` 占位符，因此不会注入任何内容。需要时可在设置页 Prompt 标签插入该占位符，或还原为默认配置。
 
 ## Vault
 

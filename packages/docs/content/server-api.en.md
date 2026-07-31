@@ -123,6 +123,11 @@ The paths below omit the `/api/projects/:projectId` prefix.
 | DELETE | /agents/:agentId | Delete an Agent |
 | GET / PUT | /agents/:agentId/config | Read / write config (AGENTS.md + system_config.yaml; PUT preserves YAML comments) |
 | GET / PUT | /agents/:agentId/vault | Vault environment variables (values masked; PUT is a full replace) |
+| GET | /agents/:agentId/memory | Workspace Memory overview: the switch, the shared index, one entry per Workspace |
+| GET / PUT | /agents/:agentId/memory/index | Read / write the shared index `memory/AGENTS.md` |
+| GET | /agents/:agentId/memory/workspaces/:key/files | List one Workspace's topic files (frontmatter + stats) |
+| GET / PUT / DELETE | /agents/:agentId/memory/workspaces/:key/files/:name | Read / write / delete one topic file |
+| POST | /agents/:agentId/memory/workspaces/:key/files/:name/rename | Rename a topic file within its Workspace |
 | GET | /agents/:agentId/export | Export the Agent State snapshot (tar.gz download) |
 | POST | /agents/:agentId/import | Import a snapshot: `{dataBase64, confirm?}`; 409 on version conflict without confirm |
 | GET / POST | /agents/:agentId/skills | List / install installed Skills |

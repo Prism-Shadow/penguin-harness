@@ -236,6 +236,7 @@ export const en: Strings = {
     backToList: "Back to Agents",
     tabOverview: "Overview",
     tabPrompt: "Prompt",
+    tabMemory: "Memory",
     tabRuntime: "Runtime",
     tabTools: "Tools",
     tabSkills: "Skills",
@@ -251,6 +252,10 @@ export const en: Strings = {
       ["{{AGENTS_MD}}", "Injects the AGENTS.md content"],
       ["{{VAULT_KEYS}}", "Injects the vault key-name section (empty when no keys)"],
       ["{{SKILL_METADATA}}", "Injects the installed skills' metadata lines (empty when none)"],
+      [
+        "{{MEMORY}}",
+        "Injects the memory.prompt block (empty when memory is off or the Session runs in a temporary Workspace)",
+      ],
       ["{{PLATFORM}}", "Runtime platform"],
       ["{{OS_VERSION}}", "Operating system version"],
       ["{{DATE}}", "Current date"],
@@ -465,6 +470,48 @@ export const en: Strings = {
     pricingAllOrNone: "Fill all three prices",
     pricingInvalid: "Must be a number",
     contextWindowInvalid: "Must be a number",
+  },
+
+  memory: {
+    desc: "Long-term memory across Sessions (stored in agent_state/memory/): topic files kept per Workspace, with one index, memory/AGENTS.md, shared by all of them. The index enters the model context; topic bodies are read on demand. The agent maintains memory with its file tools — you can also edit it here.",
+    enable: "Enable memory",
+    enabledHint:
+      "The memory index enters the agent's context, and a new Session with a persistent Workspace gets its memory directory prepared.",
+    disabledHint:
+      "Memory does not enter the agent's context right now; existing files are kept and stay editable here.",
+    templateMissingHint:
+      "This system_prompt carries no {{MEMORY}} placeholder (the agent predates memory), so nothing is injected. Insert the placeholder on the Prompt tab, or restore the default configuration from Overview.",
+    workspace: "Workspace",
+    noWorkspaces:
+      "No Workspace memory directory yet — one is created when a Session runs in a persistent Workspace.",
+    fileCount: (n: number): string => `${n} topic file${n === 1 ? "" : "s"}`,
+    indexFile: "Memory index memory/AGENTS.md",
+    indexHint:
+      "Shared by every Workspace, grouped by workspace key; opens at the selected Workspace's group",
+    noFiles: "This Workspace has no topic file yet",
+    newFile: "New topic",
+    newFileTitle: "New topic file",
+    rename: "Rename",
+    renameTitle: "Rename topic file",
+    delete: "Delete",
+    deleteTitle: "Delete topic file",
+    deleteConfirm: (name: string): string =>
+      `Delete topic file "${name}"? The file cannot be recovered, and index entries pointing at it are removed too.`,
+    deleteDone: "Deleted",
+    fileName: "File name",
+    fileNameHint: "Letters, digits, dots, underscores and hyphens, ending in .md",
+    fileNameInvalid:
+      "Invalid file name: only letters, digits, dots, underscores and hyphens, ending in .md",
+    fileNameTaken: "That file name already exists",
+    frontmatterMissing:
+      "A topic file must open with frontmatter: name, description, type and updated_at wrapped in `---`",
+    frontmatterNameRequired: "Frontmatter is missing name",
+    frontmatterTypeInvalid: "Frontmatter type must be feedback, project or reference",
+    types: {
+      feedback: "Feedback",
+      project: "Project",
+      reference: "Reference",
+    },
   },
 
   vault: {

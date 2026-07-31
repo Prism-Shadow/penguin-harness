@@ -225,6 +225,7 @@ export const zh = {
     backToList: "返回 Agents",
     tabOverview: "概览",
     tabPrompt: "Prompt",
+    tabMemory: "记忆",
     tabRuntime: "运行参数",
     tabTools: "工具",
     tabSkills: "技能",
@@ -240,6 +241,10 @@ export const zh = {
       ["{{AGENTS_MD}}", "注入 AGENTS.md 内容"],
       ["{{VAULT_KEYS}}", "注入密钥保险柜的键名小节（无键时为空）"],
       ["{{SKILL_METADATA}}", "注入已安装 Skill 的元数据行（无 Skill 时为空）"],
+      [
+        "{{MEMORY}}",
+        "注入 memory.prompt 记忆区块（关闭记忆或本次 Session 使用临时 Workspace 时为空）",
+      ],
       ["{{PLATFORM}}", "运行平台"],
       ["{{OS_VERSION}}", "操作系统版本"],
       ["{{DATE}}", "当前日期"],
@@ -445,6 +450,44 @@ export const zh = {
     pricingAllOrNone: "三项价格需一并填写",
     pricingInvalid: "必须为数字",
     contextWindowInvalid: "必须为数字",
+  },
+
+  memory: {
+    desc: "跨 Session 的长期记忆（存于 agent_state/memory/）：按 Workspace 分目录保存主题文件，全部 Workspace 共用一份索引 memory/AGENTS.md。索引进入模型上下文，主题正文由模型按需读取。记忆由模型用文件工具维护，也可在此手工编辑。",
+    enable: "启用记忆",
+    enabledHint:
+      "记忆索引会进入 Agent 上下文；使用持久 Workspace 的新 Session 会准备对应的记忆目录。",
+    disabledHint: "记忆当前不会进入 Agent 上下文；已有文件保留，仍可在此管理。",
+    templateMissingHint:
+      "当前 system_prompt 不含 {{MEMORY}} 占位符（Agent 创建于记忆功能之前），因此记忆不会注入。可在 Prompt 页插入该占位符，或在概览页恢复默认配置。",
+    workspace: "Workspace",
+    noWorkspaces: "尚无 Workspace 记忆目录：使用持久 Workspace 创建 Session 后会自动生成。",
+    fileCount: (n: number): string => `${n} 个主题文件`,
+    indexFile: "记忆索引 memory/AGENTS.md",
+    indexHint: "全部 Workspace 共用；按 workspace key 分组，打开时定位到当前分组",
+    noFiles: "该 Workspace 尚无主题文件",
+    newFile: "新建主题",
+    newFileTitle: "新建主题文件",
+    rename: "重命名",
+    renameTitle: "重命名主题文件",
+    delete: "删除",
+    deleteTitle: "删除主题文件",
+    deleteConfirm: (name: string): string =>
+      `确认删除主题文件「${name}」？文件不可恢复，索引中指向它的条目会一并清理。`,
+    deleteDone: "已删除",
+    fileName: "文件名",
+    fileNameHint: "字母、数字、点、下划线与连字符，且以 .md 结尾",
+    fileNameInvalid: "文件名不合法：仅字母、数字、点、下划线与连字符，且需以 .md 结尾",
+    fileNameTaken: "该文件名已存在",
+    frontmatterMissing:
+      "主题文件需要以 frontmatter 开头：`---` 包裹的 name、description、type、updated_at",
+    frontmatterNameRequired: "frontmatter 缺少 name",
+    frontmatterTypeInvalid: "frontmatter 的 type 必须是 feedback、project 或 reference",
+    types: {
+      feedback: "反馈",
+      project: "项目",
+      reference: "参考",
+    },
   },
 
   vault: {

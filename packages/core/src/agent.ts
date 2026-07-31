@@ -22,6 +22,7 @@ import {
   loadProjectConfig,
   projectDir,
   goalFilePath,
+  resolveSessionMemory,
   resolveModelRef,
   sessionScratchpadDir,
   systemConfigPath,
@@ -269,12 +270,23 @@ export class Agent {
       this.state.projectId,
       this.state.agentId,
     );
+    // Workspace Memory for this Session: null when the Agent has Memory off or the Workspace is a
+    // temporary one (nothing worth remembering outlives it), which also means no directory is
+    // created for it. Reads the current index every time, like the vault and Skills above.
+    const memory = await resolveSessionMemory({
+      root: this.state.root,
+      projectId: this.state.projectId,
+      agentId: this.state.agentId,
+      workspaceDir,
+      enabled: this.state.systemConfig.memory?.enabled !== false,
+    });
 
     // The assembled system prompt goes both to the LLM and into session_meta (so the
     // Trace can audit the actual effective value). The vault only injects **key names**
     // into the prompt (so the model knows which API keys are available); values only
     // go into the subprocess environment. Skills only inject metadata (name and
-    // description); the model reads the body on demand via shell.
+    // description); the model reads the body on demand via shell. Memory likewise injects
+    // only its index; topic bodies are read on demand.
     const systemPrompt = assembleSystemPrompt(
       this.state,
       sessionEnvironment(workspaceDir, sessionId, {
@@ -285,6 +297,7 @@ export class Agent {
       }),
       Object.keys(vault),
       installedSkills,
+      memory,
     );
 
     const rt = await this.buildRuntime({

@@ -510,6 +510,11 @@ export interface AgentCompactionConfigDto {
   prompt?: string;
 }
 
+/** Workspace Memory switch. Reported as the effective value (a config with no `memory` section reads as enabled, matching core). */
+export interface AgentMemoryConfigDto {
+  enabled: boolean;
+}
+
 /** Structured view of system_config.yaml (for the edit form). */
 export interface AgentConfigDto {
   name?: string;
@@ -520,6 +525,7 @@ export interface AgentConfigDto {
   maxTurns?: number;
   model?: AgentModelConfigDto;
   compaction?: AgentCompactionConfigDto;
+  memory: AgentMemoryConfigDto;
   toolsBuiltin: ToolDefinitionConfig[];
   mcpServers: MCPServerConfig[];
 }
@@ -544,9 +550,85 @@ export interface AgentConfigUpdateRequest {
     maxTurns?: number;
     model?: AgentModelConfigDto;
     compaction?: AgentCompactionConfigDto;
+    memory?: Partial<AgentMemoryConfigDto>;
     toolsBuiltin?: ToolDefinitionConfig[];
     mcpServers?: MCPServerConfig[];
   };
+}
+
+// ---------------------------------------------------------------------------
+// Workspace Memory
+// ---------------------------------------------------------------------------
+
+/** One Workspace's Memory directory (`agent_state/memory/<workspaceKey>/`). */
+export interface MemoryWorkspaceInfo {
+  /** Directory name under `memory/`, and the group heading used in the index. */
+  workspaceKey: string;
+  /** Workspace path the key was derived from, read from the directory's `.workspace` marker; unset for a directory written before the marker existed or edited by hand. */
+  workspacePath?: string;
+  /** Number of Markdown topic files in the directory. */
+  fileCount: number;
+  /** Most recent topic-file mtime in the directory (ISO 8601); unset when the directory holds no topic file. */
+  updatedAt?: string;
+}
+
+/** One Memory topic file, as listed (frontmatter only — the body is fetched per file). */
+export interface MemoryFileInfo {
+  /** File name inside the Workspace Memory directory, e.g. `feedback_testing.md`. */
+  name: string;
+  /** Frontmatter `name`; falls back to the file name. */
+  title: string;
+  /** Frontmatter `description`; empty when the file declares none. */
+  description: string;
+  /** Frontmatter `type`; unset when missing or not one of feedback / project / reference. */
+  type?: "feedback" | "project" | "reference";
+  /** Frontmatter `updated_at`, verbatim. */
+  updatedAt?: string;
+  /** File size in bytes. */
+  size: number;
+  /** File mtime (ISO 8601). */
+  modifiedAt: string;
+}
+
+/** GET …/memory — the tab's landing payload: the switch, the shared index, and every Workspace group. */
+export interface MemoryOverviewResponse {
+  /** Whether Memory reaches the model context (the Agent-level switch). */
+  enabled: boolean;
+  /** Whether this Agent's prompt template still carries the `{{MEMORY}}` placeholder — an Agent created before Memory shipped has none, so nothing is injected even while enabled. */
+  templateInjects: boolean;
+  /** Absolute path of `agent_state/memory/`. */
+  memoryDir: string;
+  /** Content of the shared index `memory/AGENTS.md` (empty string when it does not exist yet). */
+  index: string;
+  workspaces: MemoryWorkspaceInfo[];
+}
+
+/** GET …/memory/workspaces/:key/files */
+export interface MemoryFilesResponse {
+  workspaceKey: string;
+  files: MemoryFileInfo[];
+}
+
+/** GET …/memory/workspaces/:key/files/:name */
+export interface MemoryFileResponse {
+  workspaceKey: string;
+  file: MemoryFileInfo;
+  content: string;
+}
+
+/** PUT bodies for a topic file and for the shared index. */
+export interface MemoryFileUpdateRequest {
+  content: string;
+}
+
+/** POST …/memory/workspaces/:key/files/:name/rename */
+export interface MemoryFileRenameRequest {
+  name: string;
+}
+
+/** GET|PUT …/memory/index */
+export interface MemoryIndexResponse {
+  content: string;
 }
 
 // ---------------------------------------------------------------------------

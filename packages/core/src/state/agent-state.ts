@@ -29,6 +29,10 @@ import {
   PROVIDER_PLACEHOLDER,
   MODEL_ID_PLACEHOLDER,
   DATE_PLACEHOLDER,
+  MEMORY_PLACEHOLDER,
+  MEMORY_DIR_PLACEHOLDER,
+  MEMORY_AGENTS_MD_PLACEHOLDER,
+  MEMORY_INDEX_EMPTY_NOTE,
   agentStateVersion,
   defaultAgentsMd,
   defaultSystemConfig,
@@ -40,6 +44,7 @@ import {
   type SystemConfig,
 } from "./default-config.js";
 import { builtinProjectAgentPresets, type AgentPreset } from "./builtin-agents.js";
+import type { SessionMemory } from "./memory.js";
 import { provisionExampleBenchmark } from "./example-benchmark.js";
 import {
   agentsMdPath,
@@ -270,6 +275,30 @@ function vaultKeysList(keys: string[]): string {
 }
 
 /**
+ * The `{{MEMORY}}` replacement value: the Agent's own `memory.prompt` with its Workspace
+ * directory and the shared index substituted in, or an empty string when this Session has no
+ * Memory (disabled, or a temporary Workspace) or the config carries no Memory prompt.
+ *
+ * Every word of the block comes from `system_config.yaml`; the only text this function can add
+ * is `MEMORY_INDEX_EMPTY_NOTE`, standing in for an index that does not exist yet so the model
+ * reads "nothing saved" instead of a blank line. Topic bodies are never injected — the index
+ * says what exists, and the model opens what it needs.
+ */
+function memorySection(
+  prompt: string | undefined,
+  memory: SessionMemory | null | undefined,
+): string {
+  if (!prompt || !memory) return "";
+  const index = memory.index.trim();
+  return prompt
+    .split(MEMORY_DIR_PLACEHOLDER)
+    .join(memory.dir)
+    .split(MEMORY_AGENTS_MD_PLACEHOLDER)
+    .join(index.length > 0 ? index : MEMORY_INDEX_EMPTY_NOTE)
+    .trim();
+}
+
+/**
  * Installs a Skill into the target Agent: writes `skills/<name>/SKILL.md` verbatim (the full
  * SKILL.md content including frontmatter, ensuring a trailing newline); if the directory
  * already exists, it's overwritten (reinstalling = updating to the latest content). An optional
@@ -436,9 +465,12 @@ function withShellLineFallback(
  * `{{VAULT_KEYS}}` is replaced with the vault key-name list (an empty string if empty/not
  * provided): this lets the model know which APIs requiring a key it can call; values are never
  * injected. `{{SKILL_METADATA}}` is replaced with the installed Skills' metadata lines (an empty
- * string if empty/not provided). A custom template that removes a placeholder gets no
- * corresponding content injected. `{{PROJECT_DIR}}` resolves to the Project directory —
- * the app data root the default prompt labels "App Data Dir".
+ * string if empty/not provided). `{{MEMORY}}` expands to the rendered `memory.prompt` block when
+ * this Session has Memory (enabled + a persistent Workspace), and to an empty string otherwise —
+ * only that block's own `{{MEMORY_DIR}}` / `{{MEMORY_AGENTS_MD}}` carry Memory content, and topic
+ * bodies are always read on demand rather than injected. A custom template that removes a
+ * placeholder gets no corresponding content injected. `{{PROJECT_DIR}}` resolves to the Project
+ * directory — the app data root the default prompt labels "App Data Dir".
  * Docs: /docs/configuration § "System prompt placeholders".
  */
 export function assembleSystemPrompt(
@@ -446,11 +478,14 @@ export function assembleSystemPrompt(
   sessionEnvironment?: SessionEnvironmentValues,
   vaultKeys?: string[],
   skillMetadata?: SkillMetadata[],
+  memory?: SessionMemory | null,
 ): string {
   const template = state.systemConfig.system_prompt;
   const assembled = template
     .split(AGENTS_MD_PLACEHOLDER)
     .join(state.agentsMd.trim())
+    .split(MEMORY_PLACEHOLDER)
+    .join(memorySection(state.systemConfig.memory?.prompt, memory))
     .split(VAULT_KEYS_PLACEHOLDER)
     .join(vaultKeysList(vaultKeys ?? []))
     .split(SKILL_METADATA_PLACEHOLDER)

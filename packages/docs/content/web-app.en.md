@@ -68,10 +68,13 @@ The list page creates and deletes Agents; clicking through opens the `/agents/:a
 | --- | --- |
 | Overview | Basic info, export / import of Agent State snapshots, and restoring the default configuration (overwrites customizations, keeping only name/description) |
 | Prompt | AGENTS.md and system_prompt |
+| Memory | Workspace Memory: the Agent-level switch, a Workspace selector, the shared `memory/AGENTS.md` index pinned above that Workspace's topic files, and a Markdown editor |
 | Runtime | Runtime parameters such as max_turns, model.*, compaction.* |
 | Tools | Built-in tool table (incl. per-tool call_description switches) and MCP server JSON configuration |
 | Vault | Environment-variable entries with masked values |
 | Schedule | Scheduled tasks (TOML-defined): create, edit, toggle, delete |
+
+The Memory tab writes the same files the agent maintains itself. Renaming or deleting a topic file also repoints or removes the index links that named it, so the index never lists a file that is gone. Turning Memory off keeps every file and leaves the tab usable — it only stops Memory from entering the agent's context and from preparing directories for new Sessions.
 
 Scheduled tasks fire on a fixed period (minimum 5 minutes) and run only while the service is running.
 

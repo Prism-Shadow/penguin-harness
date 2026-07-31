@@ -106,6 +106,8 @@ Edit this file via the CLI (`penguin config model …`) or the Web Models page �
 | `compaction.max_session_turns` | `-1` | Cumulative Session turn threshold (`-1` = unlimited) |
 | `compaction.mode` | `summarize` | `summarize` / `discard` |
 | `compaction.prompt` | built-in template | Prompt used for summarize compaction |
+| `memory.enabled` | `true` | Whether Workspace Memory enters the context and Memory directories are prepared |
+| `memory.prompt` | built-in template | The `{{MEMORY}}` block: how to use Memory, plus `{{MEMORY_DIR}}` / `{{MEMORY_AGENTS_MD}}` |
 | `tools.builtin` | full default toolset when omitted | Tool entries: `name` / `description` / `parameters` / `permission` (`r` or `rw`) / `forModel` / `timeoutMs` / `maxOutputLength` / `call_description` (per-tool toggle for the `description` call argument, required while on; missing = kept); once written it replaces the default list wholesale |
 | `tools.mcpServers` | `[]` | MCP Server configuration (`name` + `config`); reserved for the MCP adapter layer |
 
@@ -150,6 +152,7 @@ An existing Agent always runs with its on-disk config verbatim — newer code de
 | `{{AGENTS_MD}}` | Full text of `AGENTS.md` |
 | `{{VAULT_KEYS}}` | List of Vault key names (names only) |
 | `{{SKILL_METADATA}}` | Metadata of installed Skills |
+| `{{MEMORY}}` | The rendered `memory.prompt` block; empty when Memory is off or the Session has a temporary Workspace |
 | `{{PLATFORM}}` | Runtime platform |
 | `{{OS_VERSION}}` | Operating system version |
 | `{{DATE}}` | Current date |
@@ -165,6 +168,42 @@ An existing Agent always runs with its on-disk config verbatim — newer code de
 On Windows, `{{PROJECT_DIR}}` and `{{CWD}}` are injected with forward slashes — like every other path core composes for the model (attachment lines, the goal-file line, truncated-output recovery paths). The model re-emits these spellings into JSON tool arguments and shell commands; forward slashes are accepted by Node's fs APIs and the package's (Git) Bash tool shell, and avoid JSON backslash-escaping mistakes.
 
 `agent_state/AGENTS.md` is the developer-editable instruction file, injected via `{{AGENTS_MD}}` and empty by default — it is also the file an optimizer edits most (see [Self-Improvement](/self-improvement)).
+
+## Workspace Memory
+
+`agent_state/memory/` is what the Agent remembers between Sessions: user feedback, project decisions, working conventions and entry points into external systems — the things that cannot be re-derived from the Workspace or its code history. It is not context compaction, which preserves one Session's short-term state.
+
+Memory is scoped to **Project + Agent + Workspace**. Sessions of one Agent in one Workspace share a Memory; different Workspaces keep their topic files apart but share one index; different Agents never share Memory even in the same Workspace. Because Memory lives in Agent State it travels with export / import and snapshots, and every Project member who can reach the Agent can read it — so personal data about one person does not belong in it (there is no `user` topic type).
+
+```text
+agent_state/memory/
+├── AGENTS.md                     # the shared index, grouped by workspace key
+└── my-app-a81f32c4/              # one Workspace
+    ├── .workspace                # the Workspace path this key stands for
+    ├── feedback_testing.md
+    └── project_release.md
+```
+
+The workspace key is `<safe-basename>-<8 hex of the real path's sha256>`. Identity is the directory itself and has nothing to do with Git: two symlinks to one directory resolve to one key, while moving or renaming a directory makes it a new Workspace (the old Memory stays on disk under the old key). A temporary Workspace — one PenguinHarness allocated under `agents/<agent_id>/workspaces/` — gets no Memory directory at all, including when a subagent inherits it.
+
+A topic file is a semantic subject, not one per Task, Session or date, and carries frontmatter:
+
+```markdown
+---
+name: Testing conventions
+description: the project's test environment and verification rules
+type: feedback
+updated_at: 2026-07-30
+---
+
+- Integration tests connect to a real database; no mock repositories.
+```
+
+`type` is `feedback` (standing user feedback and preferences), `project` (decisions, constraints and plans with their reasons) or `reference` (stable entry points into external systems, documents and services). What must never be saved: facts the code, config or Git history already states; short-lived task progress and debugging notes; credentials, tokens or secrets; unconfirmed guesses; long transcript excerpts.
+
+Only the index reaches the context. At Session creation the Harness ensures the Workspace's directory exists, reads `memory/AGENTS.md`, and renders the Agent's `memory.prompt` into `{{MEMORY}}` with `{{MEMORY_DIR}}` (this Workspace's directory) and `{{MEMORY_AGENTS_MD}}` (the whole index) substituted; topic bodies are read on demand by the model. The Harness only decides where Memory lives and keeps writes inside it — deciding what is worth keeping, splitting topics and maintaining the index is the model's job, done with the ordinary file tools.
+
+Existing Agents are not migrated: their `system_config.yaml` carries no `memory` section and no `{{MEMORY}}` placeholder, so nothing is injected. Add the placeholder on the settings page's Prompt tab, or restore the default configuration.
 
 ## Vault
 
