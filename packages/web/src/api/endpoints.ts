@@ -23,6 +23,7 @@ import type {
   AuthResponse,
   BenchmarkCasesResponse,
   BenchmarksResponse,
+  CaseMaterial,
   DirListResponse,
   FilesStatRequest,
   FilesStatResponse,
@@ -543,7 +544,7 @@ const benchmarkCaseFilesPath = (
   agentId: string,
   benchmarkId: string,
   caseId: string,
-  material: "statement" | "rubric",
+  material: CaseMaterial,
 ) =>
   `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
   `/benchmarks/${encodeURIComponent(benchmarkId)}/cases/${encodeURIComponent(caseId)}` +
@@ -555,7 +556,7 @@ export const listBenchmarkCaseFiles = (
   benchmarkId: string,
   caseId: string,
   path: string,
-  material: "statement" | "rubric",
+  material: CaseMaterial,
 ) =>
   apiFetch<WorkspaceFilesResponse>(
     benchmarkCaseFilesPath(projectId, agentId, benchmarkId, caseId, material),
@@ -568,7 +569,7 @@ export const benchmarkCaseFileUrl = (
   benchmarkId: string,
   caseId: string,
   path: string,
-  material: "statement" | "rubric",
+  material: CaseMaterial,
   options?: { download?: boolean; preview?: boolean },
 ): string => {
   const base = `${benchmarkCaseFilesPath(

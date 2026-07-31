@@ -32,8 +32,7 @@ const SCORE_TICK_STEPS = [1, 2, 2.5, 5, 10, 20];
  */
 export function scoreScale(values: readonly (number | null)[]): ScoreScale {
   const present = values.filter(
-    (value): value is number =>
-      value !== null && Number.isFinite(value) && value >= SCORE_MIN && value <= SCORE_MAX,
+    (value): value is number => value !== null && value >= SCORE_MIN && value <= SCORE_MAX,
   );
   if (present.length === 0) {
     return { min: SCORE_MIN, max: SCORE_MAX, ticks: [0, 20, 40, 60, 80, 100] };
@@ -43,7 +42,7 @@ export function scoreScale(values: readonly (number | null)[]): ScoreScale {
   const observedMax = Math.max(...present);
   const paddedMin = Math.max(SCORE_MIN, observedMin - SCORE_PADDING);
   const paddedMax = Math.min(SCORE_MAX, observedMax + SCORE_PADDING);
-  const step = SCORE_TICK_STEPS.find((candidate) => (paddedMax - paddedMin) / candidate <= 5) ?? 20;
+  const step = SCORE_TICK_STEPS.find((candidate) => (paddedMax - paddedMin) / candidate <= 5)!;
   const min = Math.max(SCORE_MIN, Math.floor(paddedMin / step) * step);
   const max = Math.min(SCORE_MAX, Math.ceil(paddedMax / step) * step);
   const ticks = Array.from(

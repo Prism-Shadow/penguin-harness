@@ -25,6 +25,7 @@ import type {
   BenchmarkRunScore,
   BenchmarkSummary,
   BenchmarksResponse,
+  CaseMaterial,
   WorkspaceFilesResponse,
 } from "../api/types.js";
 import type {
@@ -235,7 +236,7 @@ export class BenchmarkService {
       .sort((a, b) => a.name.localeCompare(b.name))) {
       const fallback: BenchmarkCaseSummary = { id: entry.name, title: entry.name };
       try {
-        const statementDir = await this.caseDirectoryRoot(
+        const statementDir = await this.caseMaterialRoot(
           projectId,
           agentId,
           benchmarkId,
@@ -261,16 +262,16 @@ export class BenchmarkService {
     benchmarkId: string,
     caseId: string,
     rel: string,
-    directory: string,
+    material: CaseMaterial,
   ): Promise<WorkspaceFilesResponse> {
-    const directoryRoot = await this.caseDirectoryRoot(
+    const materialRoot = await this.caseMaterialRoot(
       projectId,
       agentId,
       benchmarkId,
       caseId,
-      directory,
+      material,
     );
-    return this.workspaceFiles.list(directoryRoot, rel);
+    return this.workspaceFiles.list(materialRoot, rel);
   }
 
   async readCaseFile(
@@ -279,45 +280,45 @@ export class BenchmarkService {
     benchmarkId: string,
     caseId: string,
     rel: string,
-    directory: string,
+    material: CaseMaterial,
     options?: WorkspaceFileReadOptions,
   ): Promise<WorkspaceFileContent> {
-    const directoryRoot = await this.caseDirectoryRoot(
+    const materialRoot = await this.caseMaterialRoot(
       projectId,
       agentId,
       benchmarkId,
       caseId,
-      directory,
+      material,
     );
-    return this.workspaceFiles.read(directoryRoot, rel, options);
+    return this.workspaceFiles.read(materialRoot, rel, options);
   }
 
-  private async caseDirectoryRoot(
+  private async caseMaterialRoot(
     projectId: string,
     agentId: string,
     benchmarkId: string,
     caseId: string,
-    directory: string,
+    material: CaseMaterial,
   ): Promise<string> {
     const benchDir = path.join(benchmarksDir(this.root, projectId, agentId), benchmarkId);
     const caseDir = path.join(benchDir, caseId);
-    const directoryRoot = path.join(caseDir, directory);
+    const materialRoot = path.join(caseDir, material);
     try {
-      const [realBenchDir, realCaseDir, realDirectoryRoot] = await Promise.all([
+      const [realBenchDir, realCaseDir, realMaterialRoot] = await Promise.all([
         fs.realpath(benchDir),
         fs.realpath(caseDir),
-        fs.realpath(directoryRoot),
+        fs.realpath(materialRoot),
       ]);
       if (
         !isWithin(realBenchDir, realCaseDir) ||
-        path.dirname(realDirectoryRoot) !== realCaseDir ||
-        path.basename(realDirectoryRoot) !== directory
+        path.dirname(realMaterialRoot) !== realCaseDir ||
+        path.basename(realMaterialRoot) !== material
       ) {
-        throw new Error("Case directory is not canonical");
+        throw new Error("Case material is not canonical");
       }
-      return realDirectoryRoot;
+      return realMaterialRoot;
     } catch {
-      throw new HttpError(404, "not_found", "Case directory does not exist.");
+      throw new HttpError(404, "not_found", `Case ${material} does not exist.`);
     }
   }
 

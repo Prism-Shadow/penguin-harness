@@ -1292,6 +1292,8 @@ export interface BenchmarksResponse {
   benchmarks: BenchmarkSummary[];
 }
 
+export type CaseMaterial = "statement" | "rubric";
+
 /** Public Benchmark Case metadata. Rubric and Gold content are never included. */
 export interface BenchmarkCaseSummary {
   id: string;

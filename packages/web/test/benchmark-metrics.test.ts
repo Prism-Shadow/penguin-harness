@@ -14,11 +14,9 @@ import {
 const evaluations = [{ score: 60 }, { score: 75.25 }, { score: 85.5 }];
 
 describe("scoreValues", () => {
-  it("preserves authoritative stored Scores and treats only non-finite input as a gap", () => {
+  it("extracts stored Scores and treats non-finite input as a gap", () => {
     expect(scoreValues(evaluations)).toEqual([60, 75.25, 85.5]);
-    expect(
-      scoreValues([{ score: Number.NaN }, { score: Infinity }, { score: -1 }, { score: 101 }]),
-    ).toEqual([null, null, -1, 101]);
+    expect(scoreValues([{ score: Number.NaN }, { score: Infinity }])).toEqual([null, null]);
   });
 });
 

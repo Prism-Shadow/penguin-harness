@@ -12,11 +12,12 @@
 import { Hono, type Context } from "hono";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { AppDeps } from "../../app.js";
+import type { CaseMaterial } from "../../api/types.js";
 import { requireValidId } from "../validate.js";
 
 const TEXT_PREVIEW_BYTES = 256 * 1024;
 
-function listCaseFiles(deps: AppDeps, directory: string) {
+function listCaseFiles(deps: AppDeps, material: CaseMaterial) {
   return async (c: Context<AppEnv>) => {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
@@ -31,13 +32,13 @@ function listCaseFiles(deps: AppDeps, directory: string) {
         benchmarkId,
         caseId,
         c.req.query("path") ?? "",
-        directory,
+        material,
       ),
     );
   };
 }
 
-function readCaseFile(deps: AppDeps, directory: string) {
+function readCaseFile(deps: AppDeps, material: CaseMaterial) {
   return async (c: Context<AppEnv>) => {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
@@ -54,7 +55,7 @@ function readCaseFile(deps: AppDeps, directory: string) {
         benchmarkId,
         caseId,
         c.req.query("path") ?? "",
-        directory,
+        material,
         boundedPreview ? { maxBytes: TEXT_PREVIEW_BYTES } : undefined,
       );
     return new Response(new Uint8Array(data), {

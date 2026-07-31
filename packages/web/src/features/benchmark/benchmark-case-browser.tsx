@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   BenchmarkCaseSummary,
+  CaseMaterial,
   WorkspaceFileEntry,
   WorkspaceFilesResponse,
 } from "@prismshadow/penguin-server/api";
@@ -44,8 +45,6 @@ const TEXT_EXTS = new Set([
 const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp"]);
 const EXTERNAL_REF_RE = /^[a-z][a-z0-9+.-]*:/i;
 const HIGHLIGHT_LIMIT = 64 * 1024;
-
-type CaseMaterial = "statement" | "rubric";
 
 interface Preview {
   material: CaseMaterial;
