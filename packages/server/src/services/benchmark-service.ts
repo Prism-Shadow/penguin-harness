@@ -35,7 +35,6 @@ import type {
 import { HttpError } from "../http/errors.js";
 
 const STATEMENT_TITLE_READ_BYTES = 64 * 1024;
-export type BenchmarkCaseMaterial = "statement" | "rubric";
 
 function asRecord(v: unknown): Record<string, unknown> {
   return v !== null && typeof v === "object" && !Array.isArray(v)
@@ -236,7 +235,7 @@ export class BenchmarkService {
       .sort((a, b) => a.name.localeCompare(b.name))) {
       const fallback: BenchmarkCaseSummary = { id: entry.name, title: entry.name };
       try {
-        const statementDir = await this.caseMaterialRoot(
+        const statementDir = await this.caseDirectoryRoot(
           projectId,
           agentId,
           benchmarkId,
@@ -262,16 +261,16 @@ export class BenchmarkService {
     benchmarkId: string,
     caseId: string,
     rel: string,
-    material: BenchmarkCaseMaterial = "statement",
+    directory: string,
   ): Promise<WorkspaceFilesResponse> {
-    const materialDir = await this.caseMaterialRoot(
+    const directoryRoot = await this.caseDirectoryRoot(
       projectId,
       agentId,
       benchmarkId,
       caseId,
-      material,
+      directory,
     );
-    return this.workspaceFiles.list(materialDir, rel);
+    return this.workspaceFiles.list(directoryRoot, rel);
   }
 
   async readCaseFile(
@@ -280,45 +279,45 @@ export class BenchmarkService {
     benchmarkId: string,
     caseId: string,
     rel: string,
+    directory: string,
     options?: WorkspaceFileReadOptions,
-    material: BenchmarkCaseMaterial = "statement",
   ): Promise<WorkspaceFileContent> {
-    const materialDir = await this.caseMaterialRoot(
+    const directoryRoot = await this.caseDirectoryRoot(
       projectId,
       agentId,
       benchmarkId,
       caseId,
-      material,
+      directory,
     );
-    return this.workspaceFiles.read(materialDir, rel, options);
+    return this.workspaceFiles.read(directoryRoot, rel, options);
   }
 
-  private async caseMaterialRoot(
+  private async caseDirectoryRoot(
     projectId: string,
     agentId: string,
     benchmarkId: string,
     caseId: string,
-    material: BenchmarkCaseMaterial,
+    directory: string,
   ): Promise<string> {
     const benchDir = path.join(benchmarksDir(this.root, projectId, agentId), benchmarkId);
     const caseDir = path.join(benchDir, caseId);
-    const materialDir = path.join(caseDir, material);
+    const directoryRoot = path.join(caseDir, directory);
     try {
-      const [realBenchDir, realCaseDir, realMaterialDir] = await Promise.all([
+      const [realBenchDir, realCaseDir, realDirectoryRoot] = await Promise.all([
         fs.realpath(benchDir),
         fs.realpath(caseDir),
-        fs.realpath(materialDir),
+        fs.realpath(directoryRoot),
       ]);
       if (
         !isWithin(realBenchDir, realCaseDir) ||
-        path.dirname(realMaterialDir) !== realCaseDir ||
-        path.basename(realMaterialDir) !== material
+        path.dirname(realDirectoryRoot) !== realCaseDir ||
+        path.basename(realDirectoryRoot) !== directory
       ) {
-        throw new Error("Case material path is not canonical");
+        throw new Error("Case directory is not canonical");
       }
-      return realMaterialDir;
+      return realDirectoryRoot;
     } catch {
-      throw new HttpError(404, "not_found", `Case ${material} does not exist.`);
+      throw new HttpError(404, "not_found", "Case directory does not exist.");
     }
   }
 

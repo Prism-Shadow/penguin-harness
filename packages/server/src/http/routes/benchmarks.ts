@@ -12,26 +12,11 @@
 import { Hono, type Context } from "hono";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { AppDeps } from "../../app.js";
-import type { BenchmarkCaseMaterial } from "../../services/benchmark-service.js";
-import type { WorkspaceFileContent } from "../../services/workspace-files-service.js";
 import { requireValidId } from "../validate.js";
 
 const TEXT_PREVIEW_BYTES = 256 * 1024;
 
-function fileResponse(content: WorkspaceFileContent, download: boolean): Response {
-  const { data, fileName, contentType, scriptable, truncated } = content;
-  return new Response(new Uint8Array(data), {
-    status: 200,
-    headers: {
-      "Content-Type": !download && scriptable ? "text/plain; charset=utf-8" : contentType,
-      "Content-Disposition": `${download ? "attachment" : "inline"}; filename*=UTF-8''${encodeURIComponent(fileName)}`,
-      "X-Content-Type-Options": "nosniff",
-      ...(truncated ? { "X-Content-Truncated": "1" } : {}),
-    },
-  });
-}
-
-function listCaseFiles(deps: AppDeps, material: BenchmarkCaseMaterial) {
+function listCaseFiles(deps: AppDeps, directory: string) {
   return async (c: Context<AppEnv>) => {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
@@ -46,13 +31,13 @@ function listCaseFiles(deps: AppDeps, material: BenchmarkCaseMaterial) {
         benchmarkId,
         caseId,
         c.req.query("path") ?? "",
-        material,
+        directory,
       ),
     );
   };
 }
 
-function readCaseFile(deps: AppDeps, material: BenchmarkCaseMaterial) {
+function readCaseFile(deps: AppDeps, directory: string) {
   return async (c: Context<AppEnv>) => {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
@@ -62,16 +47,25 @@ function readCaseFile(deps: AppDeps, material: BenchmarkCaseMaterial) {
     await deps.agentConfigService.requireExists(projectId, agentId);
     const download = c.req.query("download") === "1";
     const boundedPreview = !download && c.req.query("preview") === "1";
-    const content = await deps.benchmarks.readCaseFile(
-      projectId,
-      agentId,
-      benchmarkId,
-      caseId,
-      c.req.query("path") ?? "",
-      boundedPreview ? { maxBytes: TEXT_PREVIEW_BYTES } : undefined,
-      material,
-    );
-    return fileResponse(content, download);
+    const { data, fileName, contentType, scriptable, truncated } =
+      await deps.benchmarks.readCaseFile(
+        projectId,
+        agentId,
+        benchmarkId,
+        caseId,
+        c.req.query("path") ?? "",
+        directory,
+        boundedPreview ? { maxBytes: TEXT_PREVIEW_BYTES } : undefined,
+      );
+    return new Response(new Uint8Array(data), {
+      status: 200,
+      headers: {
+        "Content-Type": !download && scriptable ? "text/plain; charset=utf-8" : contentType,
+        "Content-Disposition": `${download ? "attachment" : "inline"}; filename*=UTF-8''${encodeURIComponent(fileName)}`,
+        "X-Content-Type-Options": "nosniff",
+        ...(truncated ? { "X-Content-Truncated": "1" } : {}),
+      },
+    });
   };
 }
 
