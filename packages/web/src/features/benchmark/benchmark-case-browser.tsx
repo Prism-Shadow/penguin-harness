@@ -255,10 +255,15 @@ export function BenchmarkCaseBrowser({ projectId, agentId, benchmarkId, caseSumm
       filePath: string,
       options?: { download?: boolean; preview?: boolean },
     ) =>
-      api.benchmarkCaseFileUrl(projectId, agentId, benchmarkId, caseSummary.id, filePath, {
-        ...options,
+      api.benchmarkCaseFileUrl(
+        projectId,
+        agentId,
+        benchmarkId,
+        caseSummary.id,
+        filePath,
         material,
-      }),
+        options,
+      ),
     [projectId, agentId, benchmarkId, caseSummary.id],
   );
 

@@ -555,7 +555,7 @@ export const listBenchmarkCaseFiles = (
   benchmarkId: string,
   caseId: string,
   path: string,
-  material: "statement" | "rubric" = "statement",
+  material: "statement" | "rubric",
 ) =>
   apiFetch<WorkspaceFilesResponse>(
     benchmarkCaseFilesPath(projectId, agentId, benchmarkId, caseId, material),
@@ -568,18 +568,15 @@ export const benchmarkCaseFileUrl = (
   benchmarkId: string,
   caseId: string,
   path: string,
-  options?: {
-    download?: boolean;
-    preview?: boolean;
-    material?: "statement" | "rubric";
-  },
+  material: "statement" | "rubric",
+  options?: { download?: boolean; preview?: boolean },
 ): string => {
   const base = `${benchmarkCaseFilesPath(
     projectId,
     agentId,
     benchmarkId,
     caseId,
-    options?.material ?? "statement",
+    material,
   )}/content?path=${encodeURIComponent(path)}`;
   return (
     base +
