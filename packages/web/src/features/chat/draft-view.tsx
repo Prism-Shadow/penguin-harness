@@ -12,12 +12,14 @@
  * session-mode input area).
  *
  * Draft auto-cache (storage and validation in draft-cache.ts; keys are isolated by
- * "user × Project", #68): the four selections are saved as soon as they change;
+ * "user × Project", #68): Agent / Workspace / Model are saved as soon as they change;
  * body text is keystroke-frequent and deferred/coalesced (if there's an unsaved
  * change before unmount, one final write is flushed) — closing and returning to
  * the page resumes where you left off; on successful send the cache clears, except
  * the model selection, which carries over as the next conversation's default
  * (switch-becomes-default, mirroring the thinking level persisting on the Agent).
+ * Approval mode is not part of the draft: it is one system-wide value shared by every
+ * existing, running, and future Session.
  * The sidebar group header "+" / menu "New conversation" explicitly specify an
  * Agent via route state (overriding the cached selection); the workspace-mode
  * group header "+" additionally carries a Workspace path pre-filling the
@@ -119,7 +121,12 @@ export function DraftView({
   const navigate = useNavigate();
   const location = useLocation();
   const { agents, currentAgent, setCurrentAgentId } = useProject();
-  const { add } = useSessions();
+  const {
+    add,
+    approvalMode,
+    approvalModeLoading,
+    setApprovalMode: setGlobalApprovalMode,
+  } = useSessions();
   // The draft key includes a user dimension (#68 cross-account leakage). RequireAuth
   // guarantees the user is logged in here; on the off chance there's no user (the
   // type allows null), it's better to disable caching entirely than to read/write a
@@ -138,9 +145,7 @@ export function DraftView({
     cached.agentId ?? currentAgent?.agentId ?? null,
   );
   const [workspace, setWorkspace] = useState(cached.workspace ?? "");
-  const [approvalMode, setApprovalMode] = useState<ApprovalMode>(
-    cached.approvalMode ?? "allow-all",
-  );
+  const [approvalModeSaving, setApprovalModeSaving] = useState(false);
   const [modelRef, setModelRef] = useState<ModelRefDto | null>(cached.modelRef ?? null);
   const textRef = useRef(cached.text ?? "");
   /**
@@ -287,7 +292,7 @@ export function DraftView({
   }, [projectId, agentId]);
 
   // —— Auto-cache ——
-  // Options (Agent / Workspace / approval mode / Model) are discrete clicks: written
+  // Options (Agent / Workspace / Model) are discrete clicks: written
   // immediately on change; body text is keystroke-frequent: debounced trailing write,
   // with a final flush on unmount if there's an unsaved change.
   const saveTimer = useRef<number | null>(null);
@@ -301,12 +306,12 @@ export function DraftView({
   const persistNow = useCallback(() => {
     cancelPendingSave();
     if (!userId) return;
-    const data: DraftCache = { text: textRef.current, workspace, approvalMode };
+    const data: DraftCache = { text: textRef.current, workspace };
     if (agentId) data.agentId = agentId;
     if (modelRef) data.modelRef = modelRef;
     if (skillsRef.current.length > 0) data.skills = skillsRef.current;
     saveDraft(draftKey(userId, projectId), data);
-  }, [cancelPendingSave, userId, projectId, agentId, workspace, approvalMode, modelRef]);
+  }, [cancelPendingSave, userId, projectId, agentId, workspace, modelRef]);
 
   // The timer and unmount cleanup read persistNow via a ref to always get the **latest version**: a stale closure would write back outdated options.
   const persistRef = useRef(persistNow);
@@ -333,6 +338,19 @@ export function DraftView({
     skillsRef.current = names;
     persistRef.current();
   }, []);
+
+  const onChangeApprovalMode = useCallback(
+    (mode: ApprovalMode) => {
+      if (approvalModeSaving) return;
+      setApprovalModeSaving(true);
+      void setGlobalApprovalMode(mode)
+        .catch((e: unknown) => {
+          toastError(apiErrorText(e));
+        })
+        .finally(() => setApprovalModeSaving(false));
+    },
+    [approvalModeSaving, setGlobalApprovalMode],
+  );
 
   // Unmount: if there's still unsaved body text, flush it (so a route change/page switch doesn't lose the last few keystrokes).
   useEffect(
@@ -374,8 +392,8 @@ export function DraftView({
   const sendingRef = useRef(false);
   const [sending, setSending] = useState(false);
 
-  // First message sent: only now is the Session created (Agent / Workspace / Model / approval
-  // mode are all locked in together), then the route jumps once sent; returns false on any
+  // First message sent: only now is the Session created (Agent / Workspace / Model are
+  // locked in together; approval remains system-wide), then the route jumps once sent; returns false on any
   // failure, so the input area keeps the draft and can resend. `keepDraft` is set by sends
   // that did not consume the composer text (the example task), so a typed-but-unsent draft
   // survives the navigation instead of being silently discarded.
@@ -390,7 +408,7 @@ export function DraftView({
       setSending(true);
       let createdId: string | null = null;
       try {
-        const body: SessionCreateRequest = { approvalMode };
+        const body: SessionCreateRequest = {};
         // Model reference is submitted as a pair (provider + modelId; falls back to the Project default when not set).
         if (modelRef) {
           body.modelId = modelRef.modelId;
@@ -416,7 +434,7 @@ export function DraftView({
         setSending(false);
       }
     },
-    [projectId, agentId, approvalMode, modelRef, workspace, add, discardDraft, navigate],
+    [projectId, agentId, modelRef, workspace, add, discardDraft, navigate],
   );
 
   // Example tasks: one click submits the canned prompt exactly like a hand-typed send (the
@@ -500,8 +518,8 @@ export function DraftView({
           contextNow={0}
           vision={vision}
           approvalMode={approvalMode}
-          onChangeApprovalMode={setApprovalMode}
-          modeSaving={false}
+          onChangeApprovalMode={onChangeApprovalMode}
+          modeSaving={approvalModeLoading || approvalModeSaving}
           autoFocus
           agents={agents}
           {...(agentId ? { currentAgentId: agentId } : {})}

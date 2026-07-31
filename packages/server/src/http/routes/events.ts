@@ -1,6 +1,7 @@
 /**
  * User-level server event stream: GET /api/events (SSE user channel).
- * Carries cross-Session notifications (reserved for automated tasks); sends a `hello` handshake event on connect.
+ * Carries cross-Session notifications and system-setting updates; sends a `hello`
+ * handshake event on connect.
  */
 import { Hono } from "hono";
 import type { AppEnv } from "../../auth/middleware.js";

@@ -19,6 +19,8 @@ import type {
   AgentsResponse,
   AgentTracesResponse,
   ApprovalDecisionRequest,
+  ApprovalMode,
+  ApprovalModeResponse,
   AuthLoginRequest,
   AuthResponse,
   BenchmarkCasesResponse,
@@ -92,6 +94,14 @@ export const getPrefs = () => apiFetch<PrefsResponse>("/api/me/prefs");
 
 export const putPrefs = (prefs: UiPrefs) =>
   apiFetch<PrefsResponse>("/api/me/prefs", { method: "PUT", body: prefs });
+
+export const getApprovalMode = () => apiFetch<ApprovalModeResponse>("/api/settings/approval-mode");
+
+export const putApprovalMode = (approvalMode: ApprovalMode) =>
+  apiFetch<ApprovalModeResponse>("/api/settings/approval-mode", {
+    method: "PUT",
+    body: { approvalMode },
+  });
 
 // Admin user management (admin only) -----------------------------------------------------
 

@@ -44,9 +44,12 @@ test("compaction mid-turn: the reply's stats line is still reachable by hovering
       ],
     },
   });
+  await page.request.put(`${BASE}/api/settings/approval-mode`, {
+    data: { approvalMode: "allow-all" },
+  });
   const sess = await (
     await page.request.post(`${BASE}/api/projects/${projectId}/agents/default_agent/sessions`, {
-      data: { provider: "custom", modelId: "claude-4-8", approvalMode: "allow-all" },
+      data: { provider: "custom", modelId: "claude-4-8" },
     })
   ).json();
 
@@ -182,9 +185,12 @@ test("manual /compact between turns: reloading must not fold the compaction into
       ],
     },
   });
+  await page.request.put(`${BASE}/api/settings/approval-mode`, {
+    data: { approvalMode: "allow-all" },
+  });
   const sess = await (
     await page.request.post(`${BASE}/api/projects/${projectId}/agents/default_agent/sessions`, {
-      data: { provider: "custom", modelId: "claude-4-8", approvalMode: "allow-all" },
+      data: { provider: "custom", modelId: "claude-4-8" },
     })
   ).json();
 

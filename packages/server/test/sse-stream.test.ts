@@ -84,6 +84,7 @@ describe("sse-stream", () => {
   beforeEach(async () => {
     t = await createTestApp();
     ({ cookie } = await provisionUser(t.app, "streamer"));
+    t.deps.approvalModes.set("always-ask");
     row = {
       sessionId: SID,
       // streamer's own initial Project (default_project belongs to admin; others

@@ -68,6 +68,7 @@ describe("messages live tail", () => {
   beforeEach(async () => {
     t = await createTestApp();
     ({ cookie } = await provisionUser(t.app, "livetailer"));
+    t.deps.approvalModes.set("always-ask");
     row = {
       sessionId: SID,
       projectId: "livetailer-default_project",

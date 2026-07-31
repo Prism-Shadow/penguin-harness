@@ -10,15 +10,10 @@
  * succession and the key only contains the Project/Session ID, the later user would recover the
  * previous user's text, Workspace, model selection, and handoff target — a cross-account information leak.
  */
-import type { ApprovalMode } from "@prismshadow/penguin-server/api";
-
-const APPROVAL_MODES: ApprovalMode[] = ["always-ask", "read-only", "allow-all", "deny-all"];
-
 export interface DraftCache {
   text?: string;
   agentId?: string;
   workspace?: string;
-  approvalMode?: ApprovalMode;
   /**
    * The model selected in the draft (a paired reference; (provider, modelId) is the unique key):
    * load validates the object shape; the old string-typed modelId field is simply dropped
@@ -92,12 +87,6 @@ export function parseDraft(raw: string | null): DraftCache {
       // filtering, the whole field is omitted.
       const skills = o.skills.filter((s): s is string => typeof s === "string");
       if (skills.length > 0) out.skills = skills;
-    }
-    if (
-      typeof o.approvalMode === "string" &&
-      APPROVAL_MODES.includes(o.approvalMode as ApprovalMode)
-    ) {
-      out.approvalMode = o.approvalMode as ApprovalMode;
     }
     return out;
   } catch {

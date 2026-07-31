@@ -185,6 +185,7 @@ describe("SessionManager.startGoal", () => {
       channels,
       sources: new SessionSources(),
       loader: { load: async () => session },
+      approvalModes: { get: () => "allow-all" },
       recorder: { record: async () => {} },
       log: () => {},
       ...(withRepo ? { goals } : {}),

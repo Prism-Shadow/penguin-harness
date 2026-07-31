@@ -56,6 +56,7 @@ describe("steer route", () => {
     t = await createTestApp();
     const { cookie } = await provisionUser(t.app, "steerer");
     api = apiClient(t.app, cookie);
+    t.deps.approvalModes.set("always-ask");
     const row: SessionRow = {
       sessionId: SID,
       projectId: "steerer-default_project",

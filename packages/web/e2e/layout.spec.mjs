@@ -482,9 +482,12 @@ test("layout: mobile chat dropdowns stay inside the viewport", async ({ page }) 
   // horizontally at phone widths, so every picker in it must escape that clipping ancestor —
   // checked idle **and** while a Task runs (an always-ask session parks on a pending
   // approval), at the narrowest widths we support.
+  await page.request.put(`${BASE}/api/settings/approval-mode`, {
+    data: { approvalMode: "always-ask" },
+  });
   const sess = await (
     await page.request.post(`${BASE}/api/projects/${projectId}/agents/default_agent/sessions`, {
-      data: { provider: "custom", modelId: "claude-4-8", approvalMode: "always-ask" },
+      data: { provider: "custom", modelId: "claude-4-8" },
     })
   ).json();
   const sessionPickers = ["Approval mode", "Skills", "More input options", "Thinking level"];
@@ -631,7 +634,7 @@ test("layout: mobile chat dropdowns stay inside the viewport", async ({ page }) 
   // answers with plain text once any tool_result exists in the history.
   const sess2 = await (
     await page.request.post(`${BASE}/api/projects/${projectId}/agents/default_agent/sessions`, {
-      data: { provider: "custom", modelId: "claude-4-8", approvalMode: "always-ask" },
+      data: { provider: "custom", modelId: "claude-4-8" },
     })
   ).json();
   await page.goto(`${BASE}/chat/${sess2.session.sessionId}`);

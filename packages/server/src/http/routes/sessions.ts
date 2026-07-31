@@ -267,7 +267,6 @@ export function agentSessionsRoutes(deps: AppDeps): Hono<AppEnv> {
         "modelId and provider must be given together as a model reference pair: specify both, or neither to use the Project's default model.",
       );
     }
-    const approvalMode = optionalEnum(body, "approvalMode", APPROVAL_MODES);
     let workspace = optionalString(body, "workspace", { minLen: 1, label: "workspace" });
     if (workspace !== undefined) {
       // An explicitly specified Workspace must be an existing directory (never auto-created); reachability is determined by file permissions.
@@ -279,7 +278,6 @@ export function agentSessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       ...(modelId !== undefined ? { modelId } : {}),
       ...(provider !== undefined ? { provider } : {}),
       ...(workspace !== undefined ? { workspace } : {}),
-      ...(approvalMode !== undefined ? { approvalMode } : {}),
     });
     return c.json({ session } satisfies SessionCreateResponse, 201);
   });
@@ -362,8 +360,9 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       updated = { ...updated, title };
     }
     if (approvalMode !== undefined) {
-      // Takes effect immediately: a running approve callback re-reads the DB on every decision.
-      deps.sessionsRepo.updateApprovalMode(row.sessionId, approvalMode);
+      // Approval mode is system-wide: this updates every Session snapshot, notifies every
+      // open client, and running approve callbacks read the new value on their next decision.
+      deps.approvalModes.set(approvalMode);
       updated = { ...updated, approvalMode };
     }
     if (archived !== undefined) {

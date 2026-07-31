@@ -489,21 +489,39 @@ describe("session-index", () => {
     expect(list.sessions[list.sessions.length - 1]!.sessionId).toBe(older);
   });
 
-  it("PATCH approval mode persists and reads back", async () => {
+  it("PATCH approval mode updates the system setting and every existing Session", async () => {
     await configureModels();
-    const { session } = (await (await api.post(base(), {})).json()) as SessionCreateResponse;
-    // Change from the default allow-all to a different mode, to confirm it's actually persisted.
-    const patched = await api.patch(`/api/sessions/${session.sessionId}`, {
+    const first = (await (await api.post(base(), {})).json()) as SessionCreateResponse;
+    const second = (await (await api.post(base(), {})).json()) as SessionCreateResponse;
+    const patched = await api.patch(`/api/sessions/${first.session.sessionId}`, {
       approvalMode: "always-ask",
     });
     expect(patched.status).toBe(200);
-    const got = (await (
-      await api.get(`/api/sessions/${session.sessionId}`)
+    const firstGot = (await (
+      await api.get(`/api/sessions/${first.session.sessionId}`)
     ).json()) as SessionResponse;
-    expect(got.session.approvalMode).toBe("always-ask");
+    const secondGot = (await (
+      await api.get(`/api/sessions/${second.session.sessionId}`)
+    ).json()) as SessionResponse;
+    expect(firstGot.session.approvalMode).toBe("always-ask");
+    expect(secondGot.session.approvalMode).toBe("always-ask");
+    expect(t.deps.sessionsRepo.findById(second.session.sessionId)?.approvalMode).toBe("always-ask");
+    const future = (await (await api.post(base(), {})).json()) as SessionCreateResponse;
+    expect(future.session.approvalMode).toBe("always-ask");
+    expect(
+      (
+        (await (await api.get("/api/settings/approval-mode")).json()) as {
+          approvalMode: string;
+        }
+      ).approvalMode,
+    ).toBe("always-ask");
     // An invalid mode returns 400.
     expect(
-      (await api.patch(`/api/sessions/${session.sessionId}`, { approvalMode: "sometimes" })).status,
+      (
+        await api.patch(`/api/sessions/${first.session.sessionId}`, {
+          approvalMode: "sometimes",
+        })
+      ).status,
     ).toBe(400);
   });
 

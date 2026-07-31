@@ -84,6 +84,7 @@ describe("session-manager", () => {
   let sources: SessionSources;
   let recorded: OmniMessage[];
   let recordedCtx: UsageContext[];
+  let approvalMode: SessionRow["approvalMode"];
 
   const makeManager = (loader: SessionLoader, errors?: ErrorSink): SessionManager =>
     new SessionManager({
@@ -91,6 +92,7 @@ describe("session-manager", () => {
       channels,
       sources,
       loader,
+      approvalModes: { get: () => approvalMode },
       recorder: {
         record: async (ctx, msg) => {
           recordedCtx.push(ctx);
@@ -122,6 +124,7 @@ describe("session-manager", () => {
     sources = new SessionSources();
     recorded = [];
     recordedCtx = [];
+    approvalMode = "always-ask";
   });
   afterEach(() => {
     channels.dispose();
@@ -135,7 +138,7 @@ describe("session-manager", () => {
   });
 
   it("startTask: publishes the input first; when driving ends it returns to idle and pushes task_state", async () => {
-    sessions.updateApprovalMode("session-1", "allow-all");
+    approvalMode = "allow-all";
     const manager = makeManager(loaderOf(approvalFakeSession("session-1")));
     const events = capture("session-1");
     const { sessionId } = await manager.startTask("session-1", [userText("hello")]);
@@ -158,7 +161,7 @@ describe("session-manager", () => {
   });
 
   it("startTask forwards thinkingLevel into session.run options (per-turn, this Task only)", async () => {
-    sessions.updateApprovalMode("session-1", "allow-all");
+    approvalMode = "allow-all";
     const seen: (string | undefined)[] = [];
     const fake: RuntimeSession = {
       sessionId: "session-1",
@@ -183,7 +186,7 @@ describe("session-manager", () => {
   });
 
   it("LLM / tool failures in the message stream are persisted via drive (source=llm / environment, with the current Session context)", async () => {
-    sessions.updateApprovalMode("session-1", "allow-all");
+    approvalMode = "allow-all";
     const captured: ErrorRecordArgs[] = [];
     // core folds LLM / tool failures into the message stream (no throw): a tool
     // failure produces one tool_call_output(failed), an LLM failure produces one
@@ -276,7 +279,7 @@ describe("session-manager", () => {
   });
 
   it("queueIfBusy: enqueues while running, auto-starts in order after each finish; abort keeps the queue", async () => {
-    sessions.updateApprovalMode("session-1", "always-ask");
+    approvalMode = "always-ask";
     const runInputs: string[][] = [];
     const fake = approvalFakeSession("session-1");
     const origRun = fake.run.bind(fake);
@@ -391,7 +394,7 @@ describe("session-manager", () => {
   });
 
   it("deny-all / read-only decide automatically (no human handoff)", async () => {
-    sessions.updateApprovalMode("session-1", "deny-all");
+    approvalMode = "deny-all";
     const manager = makeManager(loaderOf(approvalFakeSession("session-1")));
     await manager.startTask("session-1", [userText("go")]);
     await waitFor(() => manager.statusOf("session-1") === "idle");
@@ -405,7 +408,7 @@ describe("session-manager", () => {
 
     // read-only: read-only tools are auto-approved.
     recorded = [];
-    sessions.updateApprovalMode("session-1", "read-only");
+    approvalMode = "read-only";
     const manager2 = makeManager(loaderOf(approvalFakeSession("session-1", "read_tool")));
     await manager2.startTask("session-1", [userText("go")]);
     await waitFor(() => manager2.statusOf("session-1") === "idle");
@@ -454,6 +457,7 @@ describe("session-manager", () => {
       channels,
       sources,
       loader: loaderOf(fake),
+      approvalModes: { get: () => approvalMode },
       recorder: { record: async () => {} },
       titles: {
         maybeGenerate: (ctx, _session, req) => notified.push({ ctx, req }),
@@ -513,7 +517,7 @@ describe("session-manager", () => {
     await manager.startTask("session-1", [userText("go")]);
     await waitFor(() => manager.pendingApprovalCount("session-1") === 1);
     // Switch to allow-all while the first request is pending human review: the second no longer needs one.
-    sessions.updateApprovalMode("session-1", "allow-all");
+    approvalMode = "allow-all";
     manager.decideApproval("session-1", "tc-1", "deny");
     await waitFor(() => manager.statusOf("session-1") === "idle");
     const decisions = recorded
@@ -555,7 +559,7 @@ describe("session-manager", () => {
   });
 
   it("self-heal: when the loader returns a new session_id, the index primary key is updated and the actual current id returned", async () => {
-    sessions.updateApprovalMode("session-1", "allow-all");
+    approvalMode = "allow-all";
     const manager = makeManager(loaderOf(approvalFakeSession("session-2-healed")));
     const { sessionId } = await manager.startTask("session-1", [userText("go")]);
     expect(sessionId).toBe("session-2-healed");
@@ -637,7 +641,7 @@ describe("session-manager", () => {
     manager.adopt(ROW, approvalFakeSession("session-1"));
     // Not evicted before timeout: startTask reuses the active-table entry, bypassing the loader.
     manager.sweepIdle(Date.now() + 1000, 30 * 60 * 1000);
-    sessions.updateApprovalMode("session-1", "allow-all");
+    approvalMode = "allow-all";
     await manager.startTask("session-1", [userText("a")]);
     await waitFor(() => manager.statusOf("session-1") === "idle");
     expect(loads).toBe(0);
@@ -658,7 +662,7 @@ describe("session-manager", () => {
       },
     };
     const manager = makeManager(loader);
-    sessions.updateApprovalMode("session-1", "allow-all");
+    approvalMode = "allow-all";
     // Adopted after creation: records the current generation, so Tasks reuse it without loading.
     manager.adopt(ROW, approvalFakeSession("session-1"));
 
@@ -699,7 +703,7 @@ describe("session-manager", () => {
     expect(loads).toBe(1);
 
     // First Task after it finished: the stale entry is discarded and re-resumed with current values.
-    sessions.updateApprovalMode("session-1", "allow-all");
+    approvalMode = "allow-all";
     await manager.startTask("session-1", [userText("next")]);
     await waitFor(() => manager.statusOf("session-1") === "idle");
     expect(loads).toBe(2);
@@ -720,9 +724,7 @@ describe("session-manager", () => {
       },
     };
     const manager = makeManager(loader);
-    for (const sid of ["session-1", "session-2", "session-3"]) {
-      sessions.updateApprovalMode(sid, "allow-all");
-    }
+    approvalMode = "allow-all";
     manager.adopt(ROW, approvalFakeSession("session-1"));
     manager.adopt(rowA2, approvalFakeSession("session-2"));
     manager.adopt(rowP2, approvalFakeSession("session-3"));
@@ -789,6 +791,7 @@ describe("session-manager", () => {
       channels,
       sources,
       loader: loaderOf(plainSession),
+      approvalModes: { get: () => approvalMode },
       recorder: { record: async () => {} },
       titles: {
         maybeGenerate: (ctx, session, req) => notified.push({ ctx, session, req }),
@@ -844,6 +847,7 @@ describe("session-manager", () => {
       channels,
       sources,
       loader: loaderOf(longSession),
+      approvalModes: { get: () => approvalMode },
       recorder: { record: async () => {} },
       titles: {
         maybeGenerate: (ctx, _session, req) => notified.push({ ctx, req }),
@@ -912,6 +916,7 @@ describe("session-manager", () => {
       channels,
       sources,
       loader: loaderOf(delegating),
+      approvalModes: { get: () => approvalMode },
       recorder: {
         record: async (_ctx, msg) => {
           driven.push(msg);

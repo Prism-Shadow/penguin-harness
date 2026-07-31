@@ -49,6 +49,7 @@ import type {
 import type { ServerEvent, SessionStatus } from "../api/types.js";
 import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/errors.js";
 import type { GoalsRepo } from "../db/repos/goals.js";
+import type { ApprovalModeService } from "../services/approval-mode-service.js";
 import type { SessionRow, SessionsRepo } from "../db/repos/sessions.js";
 import { ApprovalRegistry, makeApprove } from "./approvals.js";
 import type { PendingApproval } from "./approvals.js";
@@ -193,6 +194,7 @@ export interface UsageRecorderLike {
 
 export interface SessionManagerDeps {
   sessions: SessionsRepo;
+  approvalModes: Pick<ApprovalModeService, "get">;
   channels: ChannelHub;
   loader: SessionLoader;
   /** Session-origin registry (session_meta is the single source of truth; subagent registration records the forwarded meta's source here). */
@@ -541,7 +543,7 @@ export class SessionManager {
       entry.lastActivityMs = Date.now();
       this.publishState(entry, "running");
       const approve = makeApprove({
-        getMode: () => this.deps.sessions.findById(entry.sessionId)?.approvalMode ?? "always-ask",
+        getMode: () => this.deps.approvalModes.get(),
         toolPermission: (name) => entry.session.toolPermission(name),
         registry: entry.approvals,
         publishRequest: (pending) =>
@@ -690,8 +692,8 @@ export class SessionManager {
     this.publishState(entry, "running");
 
     const approve = makeApprove({
-      // Re-reads approval_mode from the DB on every decision (a PATCH takes effect immediately).
-      getMode: () => this.deps.sessions.findById(entry.sessionId)?.approvalMode ?? "always-ask",
+      // Re-reads the system-wide mode on every decision, so a change takes effect mid-run.
+      getMode: () => this.deps.approvalModes.get(),
       toolPermission: (name) => entry.session.toolPermission(name),
       registry: entry.approvals,
       publishRequest: (pending) =>
@@ -1272,9 +1274,7 @@ export class SessionManager {
       provider: p.provider,
       modelId: p.model_id,
       workspace: p.workspace,
-      // A subagent's approvals are inherited from the parent Session; the index row is
-      // inserted with defaults (matches the convention for Sessions discovered by the CLI).
-      approvalMode: "allow-all",
+      approvalMode: this.deps.approvalModes.get(),
       title: null,
       createdAt: new Date().toISOString(),
     });

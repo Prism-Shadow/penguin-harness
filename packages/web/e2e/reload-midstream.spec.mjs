@@ -39,9 +39,13 @@ async function createSession(page, approvalMode) {
     },
   });
   expect(put.ok(), "put models").toBeTruthy();
+  const approval = await page.request.put(`${BASE}/api/settings/approval-mode`, {
+    data: { approvalMode },
+  });
+  expect(approval.ok(), "set approval mode").toBeTruthy();
   const res = await page.request.post(
     `${BASE}/api/projects/${projectId}/agents/default_agent/sessions`,
-    { data: { provider: "custom", modelId: "claude-4-8", approvalMode } },
+    { data: { provider: "custom", modelId: "claude-4-8" } },
   );
   expect(res.ok(), `create session: ${await res.text()}`).toBeTruthy();
   return (await res.json()).session.sessionId;

@@ -23,6 +23,7 @@ import { ProjectsRepo } from "./db/repos/projects.js";
 import { GoalsRepo } from "./db/repos/goals.js";
 import { SchedulesRepo } from "./db/repos/schedules.js";
 import { SessionsRepo } from "./db/repos/sessions.js";
+import { SystemSettingsRepo } from "./db/repos/system-settings.js";
 import { UiPrefsRepo } from "./db/repos/ui-prefs.js";
 import { UsageRepo } from "./db/repos/usage.js";
 import { UsersRepo } from "./db/repos/users.js";
@@ -35,6 +36,7 @@ import { adminUsersRoutes } from "./http/routes/admin.js";
 import { authRoutes } from "./http/routes/auth.js";
 import { meRoutes } from "./http/routes/me.js";
 import { eventsRoutes, userChannelKey } from "./http/routes/events.js";
+import { approvalModeRoutes } from "./http/routes/approval-mode.js";
 import { projectsRoutes } from "./http/routes/projects.js";
 import { membersRoutes } from "./http/routes/members.js";
 import { modelsRoutes } from "./http/routes/models.js";
@@ -60,6 +62,7 @@ import { TitleGenerator } from "./runtime/title-generator.js";
 import type { TitleNotifier } from "./runtime/title-generator.js";
 import { UsageRecorder } from "./runtime/usage-recorder.js";
 import { AdminService } from "./services/admin-service.js";
+import { ApprovalModeService } from "./services/approval-mode-service.js";
 import { AgentConfigService } from "./services/agent-config-service.js";
 import { AgentService } from "./services/agent-service.js";
 import { BenchmarkService } from "./services/benchmark-service.js";
@@ -88,6 +91,7 @@ export interface AppDeps {
   db: DatabaseSync;
   sessionsRepo: SessionsRepo;
   prefsRepo: UiPrefsRepo;
+  approvalModes: ApprovalModeService;
   authService: AuthService;
   adminService: AdminService;
   projectService: ProjectService;
@@ -140,6 +144,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
   const membersRepo = new MembersRepo(db);
   const agentsRepo = new AgentsRepo(db);
   const sessionsRepo = new SessionsRepo(db);
+  const systemSettingsRepo = new SystemSettingsRepo(db);
   const usageRepo = new UsageRepo(db);
   const errorsRepo = new ErrorsRepo(db);
   const prefsRepo = new UiPrefsRepo(db);
@@ -173,6 +178,17 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
   const channels = new ChannelHub({
     isActive: (key) => managerRef !== undefined && managerRef.statusOf(key) !== "idle",
   });
+  const approvalModes = new ApprovalModeService({
+    settings: systemSettingsRepo,
+    sessions: sessionsRepo,
+    notify: (approvalMode) => {
+      const event = { type: "approval_mode_updated", approvalMode } as const;
+      for (const user of usersRepo.list()) {
+        channels.peek(userChannelKey(user.userId))?.publish(event, "server_event");
+      }
+    },
+  });
+  approvalModes.synchronizeSessions();
   const recorder = new UsageRecorder(usageRepo, overrides.now ?? (() => new Date()));
   const errors = new ErrorRecorder(errorsRepo, overrides.now ?? (() => new Date()));
   const titles =
@@ -184,6 +200,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
   const sessionSources = new SessionSources();
   const manager = new SessionManager({
     sessions: sessionsRepo,
+    approvalModes,
     channels,
     loader: overrides.loader ?? createCoreSessionLoader(config.root, sessionSources),
     sources: sessionSources,
@@ -229,6 +246,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     root: config.root,
     sessions: sessionsRepo,
     manager,
+    approvalModes,
     projectConfig: projectConfigService,
     sources: sessionSources,
   });
@@ -253,6 +271,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     db,
     sessionsRepo,
     prefsRepo,
+    approvalModes,
     authService,
     adminService,
     projectService,
@@ -362,6 +381,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   app.route("/api/version", versionRoutes(deps));
   app.route("/api/admin/users", adminUsersRoutes(deps));
   app.route("/api/events", eventsRoutes(deps));
+  app.route("/api/settings/approval-mode", approvalModeRoutes(deps));
   // Skill library listing: readable once logged in, not nested under a Project prefix.
   app.route("/api/skills", skillLibraryRoutes());
   app.route("/api/projects", projectsRoutes(deps));

@@ -98,10 +98,9 @@ export class SessionsRepo {
     return rows.map(mapRow);
   }
 
-  updateApprovalMode(sessionId: string, mode: ApprovalMode): void {
-    this.db
-      .prepare("UPDATE sessions SET approval_mode = ? WHERE session_id = ?")
-      .run(mode, sessionId);
+  /** Keep the denormalized Session snapshots aligned with the system-wide approval mode. */
+  updateAllApprovalModes(mode: ApprovalMode): void {
+    this.db.prepare("UPDATE sessions SET approval_mode = ?").run(mode);
   }
 
   updateTitle(sessionId: string, title: string): void {

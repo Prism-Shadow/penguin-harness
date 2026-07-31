@@ -5,12 +5,15 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type {
+  ApprovalModeResponse,
   MembersResponse,
   ModelsResponse,
   ProjectCreateResponse,
   ProjectsResponse,
   SessionCreateResponse,
 } from "../src/api/types.js";
+import { userChannelKey } from "../src/http/routes/events.js";
+import type { ChannelEvent } from "../src/runtime/channel.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
@@ -96,6 +99,52 @@ describe("authz", () => {
     // After removing authorization, the member loses access.
     expect((await owner.delete(`/api/projects/${projectId}/members/member_b`)).status).toBe(204);
     expect((await member.get(`/api/projects/${projectId}/models`)).status).toBe(404);
+  });
+
+  it("approval mode is system-global for every authenticated user", async () => {
+    const ownerEvents: ChannelEvent[] = [];
+    const outsiderEvents: ChannelEvent[] = [];
+    t.deps.channels.get(userChannelKey("owner_a")).subscribe((event) => ownerEvents.push(event));
+    t.deps.channels
+      .get(userChannelKey("outsider_c"))
+      .subscribe((event) => outsiderEvents.push(event));
+
+    const initial = (await (
+      await owner.get("/api/settings/approval-mode")
+    ).json()) as ApprovalModeResponse;
+    expect(initial.approvalMode).toBe("allow-all");
+
+    expect(
+      (
+        await member.put("/api/settings/approval-mode", {
+          approvalMode: "always-ask",
+        })
+      ).status,
+    ).toBe(200);
+
+    const seenByOwner = (await (
+      await owner.get("/api/settings/approval-mode")
+    ).json()) as ApprovalModeResponse;
+    const seenByOutsider = (await (
+      await outsider.get("/api/settings/approval-mode")
+    ).json()) as ApprovalModeResponse;
+    expect(seenByOwner.approvalMode).toBe("always-ask");
+    expect(seenByOutsider.approvalMode).toBe("always-ask");
+    for (const events of [ownerEvents, outsiderEvents]) {
+      expect(events).toHaveLength(1);
+      expect(JSON.parse(events[0]!.data)).toEqual({
+        type: "approval_mode_updated",
+        approvalMode: "always-ask",
+      });
+    }
+
+    expect(
+      (
+        await owner.put("/api/settings/approval-mode", {
+          approvalMode: "sometimes",
+        })
+      ).status,
+    ).toBe(400);
   });
 
   it("Session-level routes authorize via index lookup: member can see, outsider 404", async () => {

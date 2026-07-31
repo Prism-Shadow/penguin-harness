@@ -89,6 +89,15 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 
 Member writes are owner-only.
 
+### System-wide Approval Mode
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | /api/settings/approval-mode | Read the system-wide mode: `{approvalMode}` |
+| PUT | /api/settings/approval-mode | Change the system-wide mode: `{approvalMode}` |
+
+There is one approval mode for the whole server installation. Changing it applies to every user, Project, existing Session, running Session, and future Session. A running Task reads the current value at each tool decision, so the new mode affects its next tool call; an approval request that is already waiting still requires its existing allow/deny decision.
+
 ### Models
 
 | Method | Path | Description |
@@ -131,10 +140,10 @@ Schedule writes are owner-only. A task in new-Session mode carries `modelId` and
 | Method | Path | Description |
 | --- | --- | --- |
 | GET | /agents/:agentId/sessions | List Sessions (including run state) |
-| POST | /agents/:agentId/sessions | Create a Session: `{modelId?, provider?, workspace?, approvalMode?}` → 201 |
+| POST | /agents/:agentId/sessions | Create a Session: `{modelId?, provider?, workspace?}` → 201 |
 | GET | /dirs?path= | Server-side directory browser (backs the Workspace picker) |
 
-On Session creation, `modelId` and `provider` are both-or-neither: send the complete pair to pick a model, or omit both to take the Project's default model — one without the other is a 400. The Workspace defaults to an auto-created temporary directory, and the approval mode defaults to `allow-all`.
+On Session creation, `modelId` and `provider` are both-or-neither: send the complete pair to pick a model, or omit both to take the Project's default model — one without the other is a 400. The Workspace defaults to an auto-created temporary directory, and the Session observes the current system-wide approval mode.
 
 ### Usage and Traces (Agent Level)
 
@@ -157,7 +166,7 @@ The paths below omit the `/api/sessions/:sessionId` prefix. For the storage mode
 | Method | Path | Description |
 | --- | --- | --- |
 | GET | / | Session info (the single-session GET additionally carries `tracePath`, the absolute path of the latest Trace file; list rows omit it) |
-| PATCH | / | Update: `{approvalMode?, archived?, title?}` |
+| PATCH | / | Update: `{approvalMode?, archived?, title?}`; `approvalMode` is a backward-compatible way to change the system-wide setting, not only this Session |
 | DELETE | / | Delete the Session (along with its Traces and scratch files) |
 | GET | /messages | Full OmniMessage history; while a Task runs the response also carries `live` (the in-progress stream tail, see below) |
 | GET | /stream | SSE event stream (next section) |
@@ -268,7 +277,7 @@ Real-time delivery uses Server-Sent Events, not WebSocket, on two channels (the 
 | Channel | Path | Contents |
 | --- | --- | --- |
 | Per Session | GET /api/sessions/:sessionId/stream | The Session's message stream and run events |
-| Per user | GET /api/events | `hello` handshake and cross-Session notifications (schedule_fired / schedule_queued / session_created) |
+| Per user | GET /api/events | `hello` handshake, system-setting updates, and cross-Session notifications |
 
 ### Wire Format
 
@@ -281,6 +290,7 @@ export type ServerEvent =
   | { type: "session_title"; sessionId: string; title: string }
   | { type: "resync_required" }
   | { type: "credentials_updated" }
+  | { type: "approval_mode_updated"; approvalMode: ApprovalMode }
   | { type: "hello" }
   | { type: "session_created"; projectId: string; agentId: string; sessionId: string; source: SessionSource }
   | { type: "schedule_fired"; projectId: string; agentId: string; name: string; sessionId: string }
@@ -294,6 +304,7 @@ export type ServerEvent =
 | session_title | The model-generated title after the first turn has been persisted |
 | resync_required | The Last-Event-ID was evicted from the buffer; the client must refetch history |
 | credentials_updated | The Project's model credentials changed (`PUT /models`): cached runtimes were invalidated, so the client clears any auth-dead composer state |
+| approval_mode_updated | The system-wide approval mode changed; every open client updates its picker and loaded Session rows |
 | hello | Handshake on the user channel |
 | session_created | A new Session was registered (e.g. a subagent session) |
 | schedule_fired | A scheduled task fired and was delivered |

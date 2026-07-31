@@ -29,6 +29,7 @@ import {
 } from "react";
 import type { ReactNode } from "react";
 import type {
+  ApprovalMode,
   SessionCategory,
   SessionCategoryCounts,
   SessionInfo,
@@ -45,6 +46,10 @@ import {
 import { useProject } from "./project";
 
 interface SessionsContextValue {
+  /** One system-wide approval mode shared by every existing, running, and future Session. */
+  approvalMode: ApprovalMode;
+  approvalModeLoading: boolean;
+  setApprovalMode: (approvalMode: ApprovalMode) => Promise<void>;
   /** Loaded list (paged per Agent and category; each Agent's entries newest first). */
   sessions: SessionInfo[];
   /** agentId → that Agent's loaded Session list, newest first (empty array if none). */
@@ -99,6 +104,8 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
   const agentIdsKey = agents.map((a) => a.agentId).join(",");
 
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
+  const [approvalMode, setApprovalModeState] = useState<ApprovalMode>("allow-all");
+  const [approvalModeLoading, setApprovalModeLoading] = useState(true);
   /** pageKey → that pair's paging cursor; a key is present iff its first page has been fetched. */
   const [pageState, setPageState] = useState<ReadonlyMap<string, PagePosition>>(new Map());
   const [countsByAgent, setCountsByAgent] = useState<ReadonlyMap<string, SessionCategoryCounts>>(
@@ -118,6 +125,39 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
   pageStateRef.current = pageState;
   const countsRef = useRef<ReadonlyMap<string, SessionCategoryCounts>>(countsByAgent);
   countsRef.current = countsByAgent;
+
+  const applyApprovalMode = useCallback((next: ApprovalMode) => {
+    setApprovalModeState(next);
+    setSessions((prev) =>
+      prev.every((session) => session.approvalMode === next)
+        ? prev
+        : prev.map((session) => ({ ...session, approvalMode: next })),
+    );
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .getApprovalMode()
+      .then((res) => {
+        if (!cancelled) applyApprovalMode(res.approvalMode);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) setApprovalModeLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [applyApprovalMode]);
+
+  const setApprovalMode = useCallback(
+    async (next: ApprovalMode) => {
+      const res = await api.putApprovalMode(next);
+      applyApprovalMode(res.approvalMode);
+    },
+    [applyApprovalMode],
+  );
 
   const reload = useCallback(async () => {
     const agentIds = agentIdsKey === "" ? [] : agentIdsKey.split(",");
@@ -305,9 +345,10 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  // User-level event stream (/api/events): a scheduled task firing may have created a new
-  // Session (new-session mode); reload the list so it appears immediately. schedule_queued
-  // doesn't change the list (the target Session already exists), so it's ignored.
+  // User-level event stream (/api/events): system settings fan out to every open client.
+  // A scheduled task firing may also have created a new Session (new-session mode); reload
+  // the list so it appears immediately. schedule_queued doesn't change the list (the target
+  // Session already exists), so it's ignored.
   // refs hold the current values: the connection stays a single one for the whole login
   // session and doesn't reconnect on Project switches.
   const reloadRef = useRef(reload);
@@ -318,13 +359,18 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
     const conn = openUserEvents({
       onOmniMessage: () => undefined,
       onServerEvent: (ev) => {
-        if (ev.type !== "schedule_fired") return;
-        // The event carries projectId: a trigger from another Project is unrelated to the current list.
-        if (ev.projectId === projectIdRef.current) void reloadRef.current();
+        if (ev.type === "approval_mode_updated") {
+          applyApprovalMode(ev.approvalMode);
+          return;
+        }
+        if (ev.type === "schedule_fired") {
+          // The event carries projectId: a trigger from another Project is unrelated to the current list.
+          if (ev.projectId === projectIdRef.current) void reloadRef.current();
+        }
       },
     });
     return () => conn.close();
-  }, []);
+  }, [applyApprovalMode]);
 
   const add = useCallback(
     (session: SessionInfo) => {
@@ -399,6 +445,9 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       );
     }
     return {
+      approvalMode,
+      approvalModeLoading,
+      setApprovalMode,
       sessions,
       byAgent,
       countsByAgent,
@@ -415,6 +464,9 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       setTitle,
     };
   }, [
+    approvalMode,
+    approvalModeLoading,
+    setApprovalMode,
     sessions,
     countsByAgent,
     workspaceCountsByAgent,

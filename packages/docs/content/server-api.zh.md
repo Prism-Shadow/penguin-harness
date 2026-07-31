@@ -89,6 +89,15 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 
 成员写操作仅限 Owner。
 
+### 系统全局审批模式
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | /api/settings/approval-mode | 读取系统全局模式：`{approvalMode}` |
+| PUT | /api/settings/approval-mode | 修改系统全局模式：`{approvalMode}` |
+
+整个 Server 实例只有一个审批模式。修改后会同时作用于所有用户、Project、已有 Session、正在运行的 Session 与以后创建的 Session。运行中的 Task 会在每次工具决策时读取当前值，因此下一次工具调用立即采用新模式；已经处于等待状态的审批请求仍需按原请求执行一次允许或拒绝。
+
 ### 模型
 
 | 方法 | 路径 | 说明 |
@@ -131,10 +140,10 @@ Schedule 写操作仅限 Owner。新建 Session 模式的任务，`modelId` 与 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | /agents/:agentId/sessions | Session 列表（含运行状态） |
-| POST | /agents/:agentId/sessions | 创建 Session：`{modelId?, provider?, workspace?, approvalMode?}` → 201 |
+| POST | /agents/:agentId/sessions | 创建 Session：`{modelId?, provider?, workspace?}` → 201 |
 | GET | /dirs?path= | 服务器端目录浏览（Workspace 选择器数据源） |
 
-创建 Session 时，`modelId` 与 `provider` 要么成对给出、要么都不给：给出完整二元组即指定模型，两个都省略则取 Project 默认模型，只给一个返回 400。Workspace 默认自动创建临时目录，审批模式默认 `allow-all`。
+创建 Session 时，`modelId` 与 `provider` 要么成对给出、要么都不给：给出完整二元组即指定模型，两个都省略则取 Project 默认模型，只给一个返回 400。Workspace 默认自动创建临时目录，Session 使用当前系统全局审批模式。
 
 ### 用量与 Trace（Agent 级）
 
@@ -157,7 +166,7 @@ Trace 下载对任意成员开放；导入仅限 owner（同 Agent 快照导入�
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | / | Session 信息（单会话 GET 额外携带 `tracePath`：最新 Trace 文件的绝对路径；列表行不含） |
-| PATCH | / | 更新：`{approvalMode?, archived?, title?}` |
+| PATCH | / | 更新：`{approvalMode?, archived?, title?}`；其中 `approvalMode` 为兼容旧客户端而保留，修改的是系统全局设置，而非仅当前 Session |
 | DELETE | / | 删除 Session（连同 Trace 与暂存文件） |
 | GET | /messages | 完整 OmniMessage 历史；Task 运行期间响应额外携带 `live`（进行中的流式尾部，见下） |
 | GET | /stream | SSE 事件流（见下节） |
@@ -265,7 +274,7 @@ Web 的 `/model` 模型切换没有专用接口：它按 `/agent` 交接的方�
 | 通道 | 路径 | 内容 |
 | --- | --- | --- |
 | Session 级 | GET /api/sessions/:sessionId/stream | 该 Session 的消息流与运行事件 |
-| 用户级 | GET /api/events | `hello` 握手与跨 Session 通知（schedule_fired / schedule_queued / session_created） |
+| 用户级 | GET /api/events | `hello` 握手、系统设置更新与跨 Session 通知 |
 
 ### 传输格式
 
@@ -278,6 +287,7 @@ export type ServerEvent =
   | { type: "session_title"; sessionId: string; title: string }
   | { type: "resync_required" }
   | { type: "credentials_updated" }
+  | { type: "approval_mode_updated"; approvalMode: ApprovalMode }
   | { type: "hello" }
   | { type: "session_created"; projectId: string; agentId: string; sessionId: string; source: SessionSource }
   | { type: "schedule_fired"; projectId: string; agentId: string; name: string; sessionId: string }
@@ -291,6 +301,7 @@ export type ServerEvent =
 | session_title | 首轮后模型生成的标题已持久化 |
 | resync_required | Last-Event-ID 已被缓冲区淘汰，客户端须重新拉取历史 |
 | credentials_updated | Project 模型凭据已变更（`PUT /models`）：缓存运行时已失效，客户端应清除鉴权失败的输入框禁用态 |
+| approval_mode_updated | 系统全局审批模式已变更；所有已打开客户端同步更新拾取器与已加载的 Session 行 |
 | hello | 用户通道连接握手 |
 | session_created | 新 Session 注册（如子 Agent 会话） |
 | schedule_fired | 定时任务已触发并发送 |

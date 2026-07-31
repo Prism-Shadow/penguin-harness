@@ -24,7 +24,6 @@ import {
 } from "@prismshadow/penguin-core";
 import type { SessionMetaMessage } from "@prismshadow/penguin-core";
 import type {
-  ApprovalMode,
   SessionCategory,
   SessionCategoryCounts,
   SessionInfo,
@@ -36,6 +35,7 @@ import type { SessionRow, SessionsRepo } from "../db/repos/sessions.js";
 import type { SessionManager } from "../runtime/session-manager.js";
 import { asSessionSource } from "../runtime/session-sources.js";
 import type { SessionSources } from "../runtime/session-sources.js";
+import type { ApprovalModeService } from "./approval-mode-service.js";
 import type { ProjectConfigService } from "./project-config-service.js";
 
 const TRACE_FILE_RE = /^(.+)_(\d{3})\.jsonl$/;
@@ -87,6 +87,7 @@ export interface SessionServiceDeps {
   root: string;
   sessions: SessionsRepo;
   manager: SessionManager;
+  approvalModes: Pick<ApprovalModeService, "get">;
   projectConfig: ProjectConfigService;
   /** In-process origin registry derived from session_meta (the DB stores no source column). */
   sources: SessionSources;
@@ -114,7 +115,7 @@ export class SessionService {
       provider: row.provider,
       modelId: row.modelId,
       workspace: row.workspace,
-      approvalMode: row.approvalMode,
+      approvalMode: this.deps.approvalModes.get(),
       ...(row.title !== null ? { title: row.title } : {}),
       ...(source !== undefined ? { source } : {}),
       createdAt: row.createdAt,
@@ -315,7 +316,6 @@ export class SessionService {
     /** The provider group for `modelId`; always paired with modelId, never inferred. */
     provider?: string;
     workspace?: string;
-    approvalMode?: ApprovalMode;
     /** Session source marker (schedule when triggered by a scheduled task; defaults to user-created). */
     source?: "schedule";
   }): Promise<SessionInfo> {
@@ -382,7 +382,7 @@ export class SessionService {
       provider: session.provider,
       modelId: session.modelId,
       workspace: session.workspaceDir,
-      approvalMode: args.approvalMode ?? "allow-all",
+      approvalMode: this.deps.approvalModes.get(),
       title: null,
       createdAt: new Date().toISOString(),
     };
@@ -471,8 +471,7 @@ export class SessionService {
       provider: meta.payload.provider,
       modelId: meta.payload.model_id,
       workspace: meta.payload.workspace,
-      // The approval mode for an unmanaged Session (started via the CLI) isn't in the Trace, so it's backfilled with the default value.
-      approvalMode: "allow-all",
+      approvalMode: this.deps.approvalModes.get(),
       title: null,
       createdAt: sessionIdCreatedAt(sessionId) ?? meta.timestamp,
     };

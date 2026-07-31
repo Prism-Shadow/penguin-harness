@@ -227,9 +227,11 @@ export function ChatPage() {
     loading: sessionsLoading,
     reload: reloadSessions,
     add: addSession,
-    replace,
     setStatus,
     setTitle,
+    approvalMode,
+    approvalModeLoading,
+    setApprovalMode: setGlobalApprovalMode,
   } = useSessions();
 
   const [sessionCost, setSessionCost] = useState<number | null>(null);
@@ -630,7 +632,6 @@ export function ChatPage() {
           provider: ref.provider,
           modelId: ref.modelId,
           workspace: selected.workspace,
-          approvalMode: selected.approvalMode,
         });
         createdId = created.session.sessionId;
         const res = await api.postTask(createdId, { input: [origin, ...input] });
@@ -649,8 +650,8 @@ export function ChatPage() {
   );
 
   // /agent handoff: doesn't use the current Session — creates a new chat for the picked agent
-  // (approval mode carries over from the input area's current value; model/Workspace use the
-  // creation defaults). The first input = a [handoff_from] source block (current agent / Session
+  // (the system-wide approval mode already applies; model/Workspace use the creation
+  // defaults). The first input = a [handoff_from] source block (current agent / Session
   // / Workspace info) + the user's input and images; jumps to the new
   // chat once sent.
   // Returns false on failure, keeping the draft so it can be resent (deletes the empty Session that never got its first message sent).
@@ -669,9 +670,7 @@ export function ChatPage() {
       };
       let createdId: string | null = null;
       try {
-        const created = await api.createSession(projectId, target.agentId, {
-          approvalMode: selected.approvalMode,
-        });
+        const created = await api.createSession(projectId, target.agentId, {});
         createdId = created.session.sessionId;
         const res = await api.postTask(createdId, { input: [origin, ...input] });
         addSession(created.session);
@@ -756,15 +755,13 @@ export function ChatPage() {
     (mode: ApprovalMode) => {
       if (!selected || modeSaving) return;
       setModeSaving(true);
-      void api
-        .patchSession(selected.sessionId, { approvalMode: mode })
-        .then((res) => replace(res.session))
+      void setGlobalApprovalMode(mode)
         .catch((e: unknown) => {
           toastError(apiErrorText(e));
         })
         .finally(() => setModeSaving(false));
     },
-    [selected, modeSaving, replace],
+    [selected, modeSaving, setGlobalApprovalMode],
   );
 
   const onCompact = useCallback(async () => {
@@ -894,9 +891,9 @@ export function ChatPage() {
       contextNow={stream.model.stats.contextNow}
       contextStale={stream.model.stats.contextStale}
       vision={vision}
-      approvalMode={selected.approvalMode}
+      approvalMode={approvalMode}
       onChangeApprovalMode={onChangeApprovalMode}
-      modeSaving={modeSaving}
+      modeSaving={approvalModeLoading || modeSaving}
       autoFocus
       agents={agents}
       currentAgentId={selected.agentId}

@@ -1,7 +1,7 @@
 /**
  * End-to-end test for the draft-state new-conversation flow:
- * - /chat/new lets you pick Model / approval mode up front; the Session is only created when
- *   the first message is sent, and all four selections land faithfully in its meta;
+ * - /chat/new lets you pick Model and the system-wide approval mode up front; the Session is
+ *   only created when the first message is sent, and the model lands faithfully in its meta;
  * - the draft auto-caches (body persisted via debounce): after a page reload, both the body and
  *   the selections are restored, and the cache clears once sending succeeds;
  * - the sidebar defaults to grouping by Workspace: auto temp directories merge into one
@@ -118,7 +118,8 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
     })
     .toBe("high");
 
-  // Reload only after the body is persisted via debounce: both the body and the two selections should restore from the cache.
+  // Reload only after the body is persisted via debounce: the body/model restore from the
+  // cache, while approval mode reloads from the system setting.
   const draftKey = `penguin.chatDraft.${userId}.${projectId}`;
   await expect
     .poll(() => page.evaluate((k) => localStorage.getItem(k), draftKey))
@@ -139,7 +140,7 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   await expect(page.getByRole("button", { name: "审批模式" })).toContainText("放行只读");
   // The thinking level is NOT draft state: it restores from the Agent config (written through above), not the cache.
   await expect(page.getByRole("button", { name: "思考等级" })).toContainText("高");
-  // Send: the Session is only created now, and the selections land faithfully in its meta.
+  // Send: the Session is only created now, and it observes the current system-wide mode.
   await page.getByRole("button", { name: "发送" }).click();
   await page.waitForURL(/\/chat\/session-/);
   const firstSessionId = page.url().split("/chat/")[1];
@@ -161,8 +162,8 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   expect(meta?.payload?.thinking_level).toBeUndefined();
   await expect(page.getByTitle("思考等级：高")).toBeVisible();
 
-  // On a successful send the cache clears — except the model selection, which carries over as
-  // the next conversation's default (switch-becomes-default, like the thinking level above).
+  // On a successful send the cache clears — except the model selection. Approval mode never
+  // lives in the draft cache; it remains in the system setting.
   await expect
     .poll(() => page.evaluate((k) => localStorage.getItem(k), draftKey))
     .toContain("claude-4-8-mini");
@@ -273,13 +274,33 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   const second = await (await page.request.get(`${BASE}/api/sessions/${secondSessionId}`)).json();
   expect(second.session.agentId).toBe("agent_helper");
   // The previously picked model carries over as the new default (switch-becomes-default);
-  // approval mode falls back to allow-all (the rest of the draft was cleared, so read-only doesn't linger).
+  // approval mode comes from the system-wide setting.
   expect(second.session.modelId).toBe("claude-4-8-mini");
   expect(second.session.provider).toBe("custom");
-  expect(second.session.approvalMode).toBe("allow-all");
+  expect(second.session.approvalMode).toBe("read-only");
 
-  // Under allow-all, the mock's exec_command is auto-approved, so the round runs to completion (turn 2 text lands).
+  // read-only escalates the mock's exec_command. Approve this call, then change the picker to
+  // allow-all: the system setting and every existing Session update together, keeping the
+  // remaining flow auto-approved.
+  await page.getByRole("button", { name: "允许" }).click();
   await expect(page.getByText("Command finished; the result looks as expected.")).toBeVisible();
+  await page.getByRole("button", { name: "审批模式" }).click();
+  await page.getByRole("button", { name: /全部放行/ }).click();
+  await expect(page.getByRole("button", { name: "审批模式" })).toContainText("全部放行");
+  await expect
+    .poll(async () => {
+      const setting = await (await page.request.get(`${BASE}/api/settings/approval-mode`)).json();
+      return setting.approvalMode;
+    })
+    .toBe("allow-all");
+  await expect
+    .poll(async () => {
+      const current = await (
+        await page.request.get(`${BASE}/api/sessions/${firstSessionId}`)
+      ).json();
+      return current.session.approvalMode;
+    })
+    .toBe("allow-all");
 
   // —— Input draft for an existing session: cached by user x Session, restored on reload, cleared once sending succeeds ——
   await ta.fill("Draft inside the session");

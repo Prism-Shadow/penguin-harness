@@ -52,6 +52,7 @@ describe("retry-now route", () => {
     const other = await provisionUser(t.app, "outsider_r");
     api = apiClient(t.app, cookie);
     outsider = apiClient(t.app, other.cookie);
+    t.deps.approvalModes.set("always-ask");
     const row: SessionRow = {
       sessionId: SID,
       projectId: "retrier-default_project",

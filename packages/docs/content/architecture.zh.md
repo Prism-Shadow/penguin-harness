@@ -56,7 +56,7 @@ PenguinHarness 是一个 pnpm monorepo，核心是 `@prismshadow/penguin-core` �
 | 多用户认证与 Project 授权 | Server | `server/src/auth/`、`server/src/services/project-service.ts` |
 | Session 索引、并发互斥、SSE 转发 | Server | `server/src/runtime/`，见 [Server API](/server-api) |
 | 定时任务(Schedule 执行) | Server | `server/src/runtime/scheduler.ts`；任务定义在文件层 `agent_state/schedule/*.toml` |
-| 审批模式持久化与人工决策 | Server | `server/src/runtime/approvals.ts` + SQLite |
+| 系统全局审批模式持久化与人工决策 | Server | `server/src/services/approval-mode-service.ts`、`server/src/runtime/approvals.ts` + SQLite |
 | 用量落库与成本统计 | Server | `server/src/runtime/usage-recorder.ts`、`services/usage-service.ts` |
 | Agent 行为定义(Prompt、运行参数) | 文件层 | `agent_state/system_config.yaml`、`AGENTS.md`，见[配置参考](/configuration) |
 | Skill | 文件层 | `agent_state/skills/<name>/SKILL.md`，见[技能系统](/skills) |

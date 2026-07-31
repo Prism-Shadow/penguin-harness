@@ -46,7 +46,6 @@ describe("parseDraft (field-by-field validation)", () => {
       text: "Write me a script",
       agentId: "default_agent",
       workspace: "/srv/repo",
-      approvalMode: "read-only",
       modelRef: { provider: "anthropic", modelId: "claude-opus-4-8" },
       handoffAgentId: "agent_helper",
       switchModelRef: { provider: "openai", modelId: "gpt-5" },
@@ -56,7 +55,6 @@ describe("parseDraft (field-by-field validation)", () => {
       text: "Write me a script",
       agentId: "default_agent",
       workspace: "/srv/repo",
-      approvalMode: "read-only",
       modelRef: { provider: "anthropic", modelId: "claude-opus-4-8" },
       handoffAgentId: "agent_helper",
       switchModelRef: { provider: "openai", modelId: "gpt-5" },
@@ -74,7 +72,7 @@ describe("parseDraft (field-by-field validation)", () => {
       handoffAgentId: 7,
       switchModelRef: "custom:claude-4-8",
     });
-    expect(parseDraft(raw)).toEqual({ approvalMode: "read-only" });
+    expect(parseDraft(raw)).toEqual({});
   });
 
   it("legacy string modelId and half references are always dropped (never released, no migration)", () => {
@@ -105,10 +103,10 @@ describe("parseDraft (field-by-field validation)", () => {
     ).toEqual({ modelRef: { provider: "anthropic", modelId: "claude-opus-4-8" } });
   });
 
-  it("approvalMode accepts only the four valid values", () => {
+  it("legacy approvalMode fields are ignored because the setting is system-wide", () => {
     expect(parseDraft(JSON.stringify({ approvalMode: "yolo" }))).toEqual({});
     for (const m of ["always-ask", "read-only", "allow-all", "deny-all"]) {
-      expect(parseDraft(JSON.stringify({ approvalMode: m }))).toEqual({ approvalMode: m });
+      expect(parseDraft(JSON.stringify({ approvalMode: m }))).toEqual({});
     }
   });
 

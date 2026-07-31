@@ -36,10 +36,18 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   expect(agentIds).toEqual(["default_agent"]);
   const agentId = "default_agent";
 
-  // Approval defaults to allow-all; this test verifies the manual approval flow, so specify always-ask explicitly.
+  // This test verifies the manual approval flow, so switch the system-wide mode first.
+  expect(
+    (
+      await page.request.put(`${BASE}/api/settings/approval-mode`, {
+        data: { approvalMode: "always-ask" },
+      })
+    ).ok(),
+    "set approval mode",
+  ).toBeTruthy();
   const sess = await (
     await page.request.post(`${BASE}/api/projects/${projectId}/agents/${agentId}/sessions`, {
-      data: { provider: "custom", modelId: "claude-4-8", approvalMode: "always-ask" },
+      data: { provider: "custom", modelId: "claude-4-8" },
     })
   ).json();
   const sessionId = sess.session.sessionId;
