@@ -300,6 +300,11 @@ describe("librarySkill", () => {
     expect(benchmarkDesign).toContain("ignore `null` values when averaging cost");
     expect(benchmarkDesign).toContain("stored values are authoritative");
     expect(benchmarkDesign).toContain("obtain the current UTC timestamp from the environment");
+    expect(benchmarkDesignRaw).toMatch(/summary_title:\s*>-\n\s+<public title>/);
+    expect(benchmarkDesignRaw).toMatch(/summary:\s*>-\n\s+<public summary>/);
+    expect(benchmarkDesign).toContain(
+      "parse the complete `scoreboard.yaml` and verify the appended Evaluation",
+    );
     expect(benchmarkDesignRaw).not.toMatch(/\n\s+max_score:/);
     expect(benchmarkDesign).toContain(
       "Before reading `status`, `score`, or any other protocol field",
@@ -308,6 +313,11 @@ describe("librarySkill", () => {
     expect(optimization).toContain("Delegate every evaluation to an `agent-evaluation` subagent");
     expect(optimization).toContain("Before reading `status`, `score`, or any other protocol field");
     expect(optimization).toContain("Ask the same Evaluator to resend only the clean YAML");
+    expect(optimizationRaw).toMatch(/summary_title:\s*>-\n\s+<public title>/);
+    expect(optimizationRaw).toMatch(/summary:\s*>-\n\s+<public summary>/);
+    expect(optimization).toContain(
+      "parse the complete `scoreboard.yaml` and verify the appended Evaluation",
+    );
     expect(optimization).toContain(
       "A round counts only after one Candidate has a complete valid Evaluation",
     );

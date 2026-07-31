@@ -69,6 +69,7 @@ describe("benchmarks api", () => {
     await fs.mkdir(path.join(dir, "CASE-001-excel-task", "statement", "assets"), {
       recursive: true,
     });
+    await fs.mkdir(path.join(dir, "CASE-001-excel-task", "rubric"), { recursive: true });
     await fs.mkdir(path.join(dir, "CASE-002-web-task", "statement"), { recursive: true });
     await fs.mkdir(path.join(dir, "CASE-002-web-task", "rubric"), { recursive: true });
     await fs.writeFile(
@@ -89,6 +90,16 @@ describe("benchmarks api", () => {
     await fs.writeFile(
       path.join(dir, "CASE-001-excel-task", "statement", "large.txt"),
       "x".repeat(300 * 1024),
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(dir, "CASE-001-excel-task", "rubric", "README.md"),
+      "# Scoring rubric\n\n- Correct workbook: 100 points",
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(dir, "CASE-001-excel-task", "rubric", "expected.json"),
+      '{"rows": 1}\n',
       "utf8",
     );
     await fs.writeFile(
@@ -245,6 +256,22 @@ describe("benchmarks api", () => {
     expect(statement.headers.get("content-type")).toContain("markdown");
     expect(await statement.text()).toBe("# Case 001: Excel cleanup\n\nClean the workbook.");
 
+    const rubricFilesBase = `${base}/swe-bench-v2/cases/CASE-001-excel-task/rubric/files`;
+    const rubricFiles = (await (
+      await member.get(rubricFilesBase)
+    ).json()) as WorkspaceFilesResponse;
+    expect(rubricFiles.entries.map((entry) => `${entry.kind}:${entry.name}`)).toEqual([
+      "file:expected.json",
+      "file:README.md",
+    ]);
+
+    const rubric = await member.get(
+      `${rubricFilesBase}/content?path=${encodeURIComponent("README.md")}&preview=1`,
+    );
+    expect(rubric.status).toBe(200);
+    expect(rubric.headers.get("content-type")).toContain("markdown");
+    expect(await rubric.text()).toContain("Correct workbook: 100 points");
+
     const large = await member.get(
       `${filesBase}/content?path=${encodeURIComponent("large.txt")}&preview=1`,
     );
@@ -261,6 +288,13 @@ describe("benchmarks api", () => {
     expect(
       (await member.get(`${filesBase}/content?path=${encodeURIComponent("../rubric/README.md")}`))
         .status,
+    ).toBe(400);
+    expect(
+      (
+        await member.get(
+          `${rubricFilesBase}/content?path=${encodeURIComponent("../statement/README.md")}`,
+        )
+      ).status,
     ).toBe(400);
     expect((await outsider.get(`${base}/swe-bench-v2/cases`)).status).toBe(404);
     expect((await outsider.get(filesBase)).status).toBe(404);

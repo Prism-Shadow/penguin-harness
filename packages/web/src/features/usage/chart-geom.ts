@@ -28,9 +28,10 @@ export const PAD_B = 22;
 /** The daily Token chart's three buckets (bottom-to-top stacking order is output → cacheWrite → cacheRead). */
 export type TokenBucketKey = "cacheRead" | "cacheWrite" | "output";
 
-/** A chart's coordinate system: canvas width w, data point count n, y-axis upper bound max, and x()/y() mapping "index / value" to canvas coordinates. */
+/** A chart's coordinate system: canvas width w, data point count n, y-axis bounds, and x()/y() mapping "index / value" to canvas coordinates. */
 export interface ChartGeom {
   n: number;
+  min: number;
   max: number;
   /** Total canvas width (= viewBox width = CSS pixel width). */
   w: number;
@@ -42,25 +43,35 @@ export interface ChartGeom {
 }
 
 /**
- * Build the coordinate system: x takes each cell's midpoint, y runs
- * top-to-bottom with max as the full height. w is the canvas width (pixels).
- * When `max <= 0` (no data / all zero), y always takes the baseline —
- * callers already guarantee max > 0, but this is an exported public pure
- * function, and without this guard a single 0 would turn the entire chart's coordinates into NaN / Infinity.
+ * Build the zero-baseline coordinate system: x takes each cell's midpoint,
+ * y runs top-to-bottom with max as the full height, and w is the canvas width
+ * in pixels. Invalid or zero-height ranges map values to the baseline rather
+ * than producing NaN / Infinity.
  */
 export function makeGeom(n: number, max: number, w: number): ChartGeom {
+  return makeRangeGeom(n, 0, max, w);
+}
+
+/**
+ * Build a coordinate system with an explicit y-axis range. Score charts use
+ * this to zoom into the observed values; zero-baseline usage charts keep
+ * calling makeGeom above.
+ */
+export function makeRangeGeom(n: number, min: number, max: number, w: number): ChartGeom {
   const innerW = Math.max(0, w - PAD_L - PAD_R);
   const innerH = CHART_H - PAD_T - PAD_B;
   const step = n > 0 ? innerW / n : innerW;
+  const range = max - min;
   return {
     n,
+    min,
     max,
     w,
     innerW,
     innerH,
     step,
     x: (i) => PAD_L + step * i + step / 2,
-    y: (v) => PAD_T + innerH * (1 - (max > 0 ? v / max : 0)),
+    y: (v) => PAD_T + innerH * (1 - (range > 0 ? (v - min) / range : 0)),
   };
 }
 

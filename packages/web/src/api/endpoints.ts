@@ -23,6 +23,7 @@ import type {
   AuthResponse,
   BenchmarkCasesResponse,
   BenchmarksResponse,
+  CaseMaterial,
   DirListResponse,
   FilesStatRequest,
   FilesStatResponse,
@@ -538,16 +539,27 @@ export const listBenchmarkCases = (projectId: string, agentId: string, benchmark
       `/benchmarks/${encodeURIComponent(benchmarkId)}/cases`,
   );
 
+const benchmarkCaseFilesPath = (
+  projectId: string,
+  agentId: string,
+  benchmarkId: string,
+  caseId: string,
+  material: CaseMaterial,
+) =>
+  `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
+  `/benchmarks/${encodeURIComponent(benchmarkId)}/cases/${encodeURIComponent(caseId)}` +
+  `${material === "rubric" ? "/rubric" : ""}/files`;
+
 export const listBenchmarkCaseFiles = (
   projectId: string,
   agentId: string,
   benchmarkId: string,
   caseId: string,
   path: string,
+  material: CaseMaterial,
 ) =>
   apiFetch<WorkspaceFilesResponse>(
-    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
-      `/benchmarks/${encodeURIComponent(benchmarkId)}/cases/${encodeURIComponent(caseId)}/files`,
+    benchmarkCaseFilesPath(projectId, agentId, benchmarkId, caseId, material),
     { query: { path } },
   );
 
@@ -557,12 +569,16 @@ export const benchmarkCaseFileUrl = (
   benchmarkId: string,
   caseId: string,
   path: string,
+  material: CaseMaterial,
   options?: { download?: boolean; preview?: boolean },
 ): string => {
-  const base =
-    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
-    `/benchmarks/${encodeURIComponent(benchmarkId)}/cases/${encodeURIComponent(caseId)}` +
-    `/files/content?path=${encodeURIComponent(path)}`;
+  const base = `${benchmarkCaseFilesPath(
+    projectId,
+    agentId,
+    benchmarkId,
+    caseId,
+    material,
+  )}/content?path=${encodeURIComponent(path)}`;
   return (
     base +
     (options?.download ? "&download=1" : "") +

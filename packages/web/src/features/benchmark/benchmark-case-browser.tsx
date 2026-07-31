@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   BenchmarkCaseSummary,
+  CaseMaterial,
   WorkspaceFileEntry,
   WorkspaceFilesResponse,
 } from "@prismshadow/penguin-server/api";
@@ -46,6 +47,7 @@ const EXTERNAL_REF_RE = /^[a-z][a-z0-9+.-]*:/i;
 const HIGHLIGHT_LIMIT = 64 * 1024;
 
 interface Preview {
+  material: CaseMaterial;
   path: string;
   name: string;
   kind: "text" | "md" | "image" | "pdf" | "unsupported";
@@ -60,6 +62,14 @@ interface Props {
   agentId: string;
   benchmarkId: string;
   caseSummary: BenchmarkCaseSummary;
+}
+
+interface MaterialGroupProps extends Props {
+  material: CaseMaterial;
+  label: string;
+  hiddenLabel?: string;
+  defaultOpen?: boolean;
+  onPreview: (material: CaseMaterial, path: string) => void;
 }
 
 function extOf(name: string): string {
@@ -113,49 +123,185 @@ function languageFor(name: string): string {
   );
 }
 
-export function BenchmarkStatementBrowser({ projectId, agentId, benchmarkId, caseSummary }: Props) {
+function MaterialGroup({
+  projectId,
+  agentId,
+  benchmarkId,
+  caseSummary,
+  material,
+  label,
+  hiddenLabel,
+  defaultOpen = false,
+  onPreview,
+}: MaterialGroupProps) {
+  const [open, setOpen] = useState(defaultOpen);
   const [path, setPath] = useState("");
   const [listing, setListing] = useState<WorkspaceFilesResponse | null>(null);
   const [listError, setListError] = useState<string | null>(null);
-  const [preview, setPreview] = useState<Preview | null>(null);
   const initialReadmeOpened = useRef(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setListing(null);
+    setListError(null);
+    let cancelled = false;
+    api
+      .listBenchmarkCaseFiles(projectId, agentId, benchmarkId, caseSummary.id, path, material)
+      .then((data) => {
+        if (cancelled) return;
+        setListing(data);
+        if (path === "" && !initialReadmeOpened.current) {
+          initialReadmeOpened.current = true;
+          const readme = data.entries.find(
+            (entry) => entry.kind === "file" && entry.name.toLowerCase() === "readme.md",
+          );
+          if (readme) onPreview(material, readme.name);
+        }
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) setListError(apiErrorText(error));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, agentId, benchmarkId, caseSummary.id, material, onPreview, open, path]);
+
+  const crumbs = path === "" ? [] : path.split("/");
+
+  const openEntry = (entry: WorkspaceFileEntry) => {
+    if (entry.kind === "dir") {
+      setPath(joinPath(path, entry.name));
+      return;
+    }
+    onPreview(material, joinPath(path, entry.name));
+  };
+
+  return (
+    <div className="border-b border-gray-200 last:border-b-0 dark:border-gray-800">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+        className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-800/60"
+      >
+        <span className="text-xs text-gray-400">{open ? "▾" : "▸"}</span>
+        <span className="min-w-0 flex-1 text-sm font-medium">{label}</span>
+        {hiddenLabel && (
+          <span className="shrink-0 rounded bg-gray-200/70 px-1.5 py-0.5 text-[10px] text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+            {hiddenLabel}
+          </span>
+        )}
+      </button>
+      {open && (
+        <div>
+          {crumbs.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1 border-t border-gray-100 px-5 py-1.5 dark:border-gray-800/70">
+              <button
+                type="button"
+                onClick={() => setPath("")}
+                className="rounded px-1 py-0.5 text-xs text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
+              >
+                {label}
+              </button>
+              {crumbs.map((segment, index) => (
+                <span key={`${segment}-${index}`} className="flex min-w-0 items-center gap-1">
+                  <span className="text-gray-300 dark:text-gray-700">/</span>
+                  <button
+                    type="button"
+                    onClick={() => setPath(crumbs.slice(0, index + 1).join("/"))}
+                    className="max-w-24 truncate rounded px-1 py-0.5 text-xs text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
+                  >
+                    {segment}
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          {listError && <p className="px-6 py-2 text-xs text-red-500">{listError}</p>}
+          {!listing && !listError && <SkeletonList rows={3} />}
+          {listing?.entries.length === 0 && (
+            <p className="px-6 py-2 text-xs text-gray-400">{S.files.empty}</p>
+          )}
+          {listing?.entries.map((entry) => (
+            <button
+              key={`${entry.kind}/${entry.name}`}
+              type="button"
+              onClick={() => openEntry(entry)}
+              className="flex w-full items-center gap-2 border-t border-gray-100 px-6 py-2 text-left hover:bg-gray-100 dark:border-gray-800/70 dark:hover:bg-gray-800/60"
+            >
+              <span className="text-sm text-gray-400">{entry.kind === "dir" ? "▸" : "·"}</span>
+              <span className="min-w-0 flex-1 truncate text-sm">{entry.name}</span>
+              {entry.kind === "file" && (
+                <span className="shrink-0 text-[11px] text-gray-400">
+                  {formatBytes(entry.sizeBytes)}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function BenchmarkCaseBrowser({ projectId, agentId, benchmarkId, caseSummary }: Props) {
+  const [preview, setPreview] = useState<Preview | null>(null);
   const previewRequest = useRef(0);
 
   const fileUrl = useCallback(
-    (filePath: string, options?: { download?: boolean; preview?: boolean }) =>
-      api.benchmarkCaseFileUrl(projectId, agentId, benchmarkId, caseSummary.id, filePath, options),
+    (
+      material: CaseMaterial,
+      filePath: string,
+      options?: { download?: boolean; preview?: boolean },
+    ) =>
+      api.benchmarkCaseFileUrl(
+        projectId,
+        agentId,
+        benchmarkId,
+        caseSummary.id,
+        filePath,
+        material,
+        options,
+      ),
     [projectId, agentId, benchmarkId, caseSummary.id],
   );
 
   const previewPath = useCallback(
-    async (filePath: string) => {
+    async (material: CaseMaterial, filePath: string) => {
       const request = ++previewRequest.current;
       const name = filePath.includes("/")
         ? filePath.slice(filePath.lastIndexOf("/") + 1)
         : filePath;
       const ext = extOf(name);
       if (IMAGE_EXTS.has(ext)) {
-        setPreview({ path: filePath, name, kind: "image" });
+        setPreview({ material, path: filePath, name, kind: "image" });
         return;
       }
       if (ext === "pdf") {
-        setPreview({ path: filePath, name, kind: "pdf" });
+        setPreview({ material, path: filePath, name, kind: "pdf" });
         return;
       }
       const isMarkdown = ext === "md";
       if (!TEXT_EXTS.has(ext)) {
-        setPreview({ path: filePath, name, kind: "unsupported" });
+        setPreview({ material, path: filePath, name, kind: "unsupported" });
         return;
       }
-      setPreview({ path: filePath, name, kind: isMarkdown ? "md" : "text", loading: true });
+      setPreview({
+        material,
+        path: filePath,
+        name,
+        kind: isMarkdown ? "md" : "text",
+        loading: true,
+      });
       try {
-        const response = await fetch(fileUrl(filePath, { preview: true }), {
+        const response = await fetch(fileUrl(material, filePath, { preview: true }), {
           credentials: "same-origin",
         });
         if (!response.ok) throw new Error(String(response.status));
         const content = await response.text();
         if (request !== previewRequest.current) return;
         setPreview({
+          material,
           path: filePath,
           name,
           kind: isMarkdown ? "md" : "text",
@@ -165,6 +311,7 @@ export function BenchmarkStatementBrowser({ projectId, agentId, benchmarkId, cas
       } catch (error) {
         if (request !== previewRequest.current) return;
         setPreview({
+          material,
           path: filePath,
           name,
           kind: isMarkdown ? "md" : "text",
@@ -175,48 +322,19 @@ export function BenchmarkStatementBrowser({ projectId, agentId, benchmarkId, cas
     [fileUrl],
   );
 
-  useEffect(() => {
-    setListing(null);
-    setListError(null);
-    let cancelled = false;
-    api
-      .listBenchmarkCaseFiles(projectId, agentId, benchmarkId, caseSummary.id, path)
-      .then((data) => {
-        if (cancelled) return;
-        setListing(data);
-        if (path === "" && !initialReadmeOpened.current) {
-          initialReadmeOpened.current = true;
-          const readme = data.entries.find(
-            (entry) => entry.kind === "file" && entry.name.toLowerCase() === "readme.md",
-          );
-          if (readme) void previewPath(readme.name);
-        }
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) setListError(apiErrorText(error));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [projectId, agentId, benchmarkId, caseSummary.id, path, previewPath]);
-
-  const crumbs = path === "" ? [] : path.split("/");
-  const downloadUrl = preview ? fileUrl(preview.path, { download: true }) : null;
-
-  const openEntry = (entry: WorkspaceFileEntry) => {
-    if (entry.kind === "dir") {
-      setPath(joinPath(path, entry.name));
-      return;
-    }
-    void previewPath(joinPath(path, entry.name));
-  };
+  const downloadUrl = preview ? fileUrl(preview.material, preview.path, { download: true }) : null;
+  const previewMaterialLabel =
+    preview?.material === "rubric" ? S.benchmark.rubric : S.benchmark.taskMaterials;
 
   const markdownComponents: Components = {
     img: ({ src, alt }) => (
       <img
         src={
           typeof src === "string" && !EXTERNAL_REF_RE.test(src)
-            ? fileUrl(resolveRelative(dirOf(preview?.path ?? ""), src))
+            ? fileUrl(
+                preview?.material ?? "statement",
+                resolveRelative(dirOf(preview?.path ?? ""), src),
+              )
             : src
         }
         alt={alt ?? ""}
@@ -234,12 +352,13 @@ export function BenchmarkStatementBrowser({ projectId, agentId, benchmarkId, cas
         );
       }
       const target = resolveRelative(dirOf(preview?.path ?? ""), href);
+      const material = preview?.material ?? "statement";
       return (
         <a
-          href={fileUrl(target)}
+          href={fileUrl(material, target)}
           onClick={(event) => {
             event.preventDefault();
-            void previewPath(target);
+            void previewPath(material, target);
           }}
         >
           {children}
@@ -251,49 +370,27 @@ export function BenchmarkStatementBrowser({ projectId, agentId, benchmarkId, cas
   return (
     <div className="grid min-h-[58vh] overflow-hidden rounded-md border border-gray-200 md:grid-cols-[240px_minmax(0,1fr)] dark:border-gray-800">
       <aside className="border-b border-gray-200 bg-gray-50/60 md:border-b-0 md:border-r dark:border-gray-800 dark:bg-gray-950/30">
-        <div className="flex flex-wrap items-center gap-1 border-b border-gray-200 px-2 py-2 dark:border-gray-800">
-          <button
-            type="button"
-            onClick={() => setPath("")}
-            className="rounded px-1.5 py-0.5 text-xs text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
-          >
-            {S.benchmark.publicMaterials}
-          </button>
-          {crumbs.map((segment, index) => (
-            <span key={`${segment}-${index}`} className="flex min-w-0 items-center gap-1">
-              <span className="text-gray-300 dark:text-gray-700">/</span>
-              <button
-                type="button"
-                onClick={() => setPath(crumbs.slice(0, index + 1).join("/"))}
-                className="max-w-24 truncate rounded px-1 py-0.5 text-xs text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
-              >
-                {segment}
-              </button>
-            </span>
-          ))}
-        </div>
         <div className="max-h-44 overflow-y-auto md:max-h-[53vh]">
-          {listError && <p className="px-3 py-2 text-xs text-red-500">{listError}</p>}
-          {!listing && !listError && <SkeletonList rows={4} />}
-          {listing?.entries.length === 0 && (
-            <p className="px-3 py-2 text-xs text-gray-400">{S.files.empty}</p>
-          )}
-          {listing?.entries.map((entry) => (
-            <button
-              key={`${entry.kind}/${entry.name}`}
-              type="button"
-              onClick={() => openEntry(entry)}
-              className="flex w-full items-center gap-2 border-b border-gray-100 px-3 py-2 text-left hover:bg-gray-100 dark:border-gray-800/70 dark:hover:bg-gray-800/60"
-            >
-              <span className="text-sm text-gray-400">{entry.kind === "dir" ? "▸" : "·"}</span>
-              <span className="min-w-0 flex-1 truncate text-sm">{entry.name}</span>
-              {entry.kind === "file" && (
-                <span className="shrink-0 text-[11px] text-gray-400">
-                  {formatBytes(entry.sizeBytes)}
-                </span>
-              )}
-            </button>
-          ))}
+          <MaterialGroup
+            projectId={projectId}
+            agentId={agentId}
+            benchmarkId={benchmarkId}
+            caseSummary={caseSummary}
+            material="statement"
+            label={S.benchmark.taskMaterials}
+            defaultOpen
+            onPreview={previewPath}
+          />
+          <MaterialGroup
+            projectId={projectId}
+            agentId={agentId}
+            benchmarkId={benchmarkId}
+            caseSummary={caseSummary}
+            material="rubric"
+            label={S.benchmark.rubric}
+            hiddenLabel={S.benchmark.agentHidden}
+            onPreview={previewPath}
+          />
         </div>
       </aside>
 
@@ -301,7 +398,7 @@ export function BenchmarkStatementBrowser({ projectId, agentId, benchmarkId, cas
         <div className="flex min-h-11 flex-wrap items-center gap-2 border-b border-gray-200 px-3 py-2 dark:border-gray-800">
           <div className="min-w-0 flex-1">
             <p className="truncate font-mono text-xs text-gray-500">
-              {preview?.path ?? caseSummary.id}
+              {preview ? `${previewMaterialLabel} / ${preview.path}` : caseSummary.id}
             </p>
           </div>
           {downloadUrl && preview && (
@@ -316,21 +413,21 @@ export function BenchmarkStatementBrowser({ projectId, agentId, benchmarkId, cas
         </div>
         <div className="max-h-[52vh] min-h-[52vh] overflow-auto p-3">
           {!preview ? (
-            <p className="text-sm text-gray-400">{S.benchmark.statementUnavailable}</p>
+            <p className="text-sm text-gray-400">{S.benchmark.caseFileUnavailable}</p>
           ) : preview.loading ? (
             <SkeletonList rows={8} />
           ) : preview.error ? (
             <p className="text-sm text-red-500">{preview.error}</p>
           ) : preview.kind === "image" ? (
             <img
-              src={fileUrl(preview.path)}
+              src={fileUrl(preview.material, preview.path)}
               alt={preview.name}
               loading="lazy"
               className="max-w-full rounded-md border border-gray-200 dark:border-gray-800"
             />
           ) : preview.kind === "pdf" ? (
             <iframe
-              src={fileUrl(preview.path)}
+              src={fileUrl(preview.material, preview.path)}
               title={preview.name}
               className="h-[50vh] w-full rounded-md border border-gray-200 dark:border-gray-800"
             />

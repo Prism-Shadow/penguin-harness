@@ -1,12 +1,12 @@
 /**
  * Unit tests for the Evaluation center's Score-only chart helpers: Score extraction,
- * gap segmentation across runtime series, y-axis max, and runtime grouping.
+ * dynamic y-axis range, gap segmentation across runtime series, and runtime grouping.
  */
 import { describe, expect, it } from "vitest";
 import {
   lineSegments,
-  metricMax,
   modelSeries,
+  scoreScale,
   scoreValues,
   seriesValues,
 } from "../src/features/benchmark/benchmark-metrics";
@@ -14,9 +14,50 @@ import {
 const evaluations = [{ score: 60 }, { score: 75.25 }, { score: 85.5 }];
 
 describe("scoreValues", () => {
-  it("extracts stored Scores and treats non-finite malformed input as a gap", () => {
+  it("extracts stored Scores and treats non-finite input as a gap", () => {
     expect(scoreValues(evaluations)).toEqual([60, 75.25, 85.5]);
     expect(scoreValues([{ score: Number.NaN }, { score: Infinity }])).toEqual([null, null]);
+  });
+});
+
+describe("scoreScale (dynamic padded Score axis)", () => {
+  it("pads observed scores, clamps to 0..100, and rounds outward to friendly ticks", () => {
+    expect(scoreScale([71, 83.67, 88.33])).toEqual({
+      min: 60,
+      max: 100,
+      ticks: [60, 70, 80, 90, 100],
+    });
+  });
+
+  it("keeps a dynamic range for a single or repeated score", () => {
+    expect(scoreScale([88])).toEqual({
+      min: 75,
+      max: 100,
+      ticks: [75, 80, 85, 90, 95, 100],
+    });
+    expect(scoreScale([50, 50])).toEqual({
+      min: 40,
+      max: 60,
+      ticks: [40, 45, 50, 55, 60],
+    });
+  });
+
+  it("clamps boundary scores and falls back safely when every value is missing", () => {
+    expect(scoreScale([100])).toEqual({
+      min: 90,
+      max: 100,
+      ticks: [90, 92, 94, 96, 98, 100],
+    });
+    expect(scoreScale([0])).toEqual({
+      min: 0,
+      max: 10,
+      ticks: [0, 2, 4, 6, 8, 10],
+    });
+    expect(scoreScale([null, null])).toEqual({
+      min: 0,
+      max: 100,
+      ticks: [0, 20, 40, 60, 80, 100],
+    });
   });
 });
 
@@ -48,17 +89,6 @@ describe("lineSegments (gap segmentation)", () => {
   it("all missing / empty list: no segments", () => {
     expect(lineSegments([null, null])).toEqual([]);
     expect(lineSegments([])).toEqual([]);
-  });
-});
-
-describe("metricMax (y-axis upper bound)", () => {
-  it("takes the maximum of present points (ignoring null)", () => {
-    expect(metricMax([0.12, null, 0.2])).toBe(0.2);
-  });
-
-  it("all missing / all zero yields a tiny positive number (no division by zero in the coordinate system)", () => {
-    expect(metricMax([null, null])).toBe(1e-9);
-    expect(metricMax([0, 0])).toBe(1e-9);
   });
 });
 

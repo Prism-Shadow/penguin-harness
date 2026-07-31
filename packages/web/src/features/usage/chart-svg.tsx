@@ -76,6 +76,7 @@ export function ChartFrame({
   bubble,
   hitLayer,
   labels,
+  yTicks,
   hoverLine = true,
   scrollToEnd = false,
   children,
@@ -95,6 +96,8 @@ export function ChartFrame({
   hitLayer?: ReactNode;
   /** Indices for x-axis labels (omit for the default first/middle/last sparse labeling): the bar chart's cells are each wide, so it can label more via autoLabelIdx. */
   labels?: number[];
+  /** Explicit y-axis ticks. Omit to divide the geom's min..max range into four equal intervals. */
+  yTicks?: number[];
   /** Hover vertical indicator line (drawn by default): the bar chart turns it off — the bar itself already indicates the x position, so an extra line is just noise. */
   hoverLine?: boolean;
   /** Scroll to the far right by default when the canvas is wider than the container: the daily chart shows the most recent days first (scroll left for earlier ones). */
@@ -102,8 +105,9 @@ export function ChartFrame({
   /** Data marks: bars / line / area, drawn between the grid and the hit area. */
   children?: ReactNode;
 }) {
-  const { x, y, w, innerH, step, max } = geom;
-  const gridLevels = [0, 0.25, 0.5, 0.75, 1].map((f) => max * f);
+  const { x, y, w, innerH, step, min, max } = geom;
+  const gridLevels =
+    yTicks ?? [0, 0.25, 0.5, 0.75, 1].map((fraction) => min + (max - min) * fraction);
   const labelIdx = labels ?? sparseLabelIdx(dates.length);
   const scrollRef = useRef<HTMLDivElement>(null);
 

@@ -31,17 +31,17 @@ import { EmptyState } from "../../components/ui/empty-state";
 import { Modal } from "../../components/ui/modal";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { seriesColor } from "../../lib/category-colors";
-import { makeGeom } from "../usage/chart-geom";
+import { makeRangeGeom } from "../usage/chart-geom";
 import { ChartFrame, useChartWidth } from "../usage/chart-svg";
 import {
   lineSegments,
-  metricMax,
   modelSeries,
+  scoreScale,
   scoreValues,
   seriesValues,
 } from "./benchmark-metrics";
 import type { EvaluationSeries } from "./benchmark-metrics";
-import { BenchmarkStatementBrowser } from "./benchmark-statement-browser";
+import { BenchmarkCaseBrowser } from "./benchmark-case-browser";
 
 interface Selection {
   agentId: string;
@@ -142,9 +142,9 @@ function AgentNode({
 }
 
 /**
- * Score-over-time line chart. Every Run, Case, and Evaluation uses the fixed 0..100 scale.
- * Evaluations remain grouped by model ID and thinking level so a runtime change stays visible
- * without adding other metric modes.
+ * Score-over-time line chart. Scores remain valid on 0..100, while the visible y-axis is padded
+ * around the observed range and clamped to those limits. Evaluations remain grouped by model ID
+ * and thinking level so a runtime change stays visible without adding other metric modes.
  */
 function ScoreTrendChart({
   evaluations,
@@ -157,7 +157,8 @@ function ScoreTrendChart({
   const [ref, width] = useChartWidth();
 
   const values = scoreValues(evaluations);
-  const geom = makeGeom(evaluations.length, Math.max(metricMax(values), 100), width);
+  const scale = scoreScale(values);
+  const geom = makeRangeGeom(evaluations.length, scale.min, scale.max, width);
   const dates = evaluations.map((e) => formatDateTime(e.time));
 
   return (
@@ -169,6 +170,7 @@ function ScoreTrendChart({
           dates={dates}
           hover={hover}
           onHover={setHover}
+          yTicks={scale.ticks}
           bubble={(i) => {
             const e = evaluations[i]!;
             const v = values[i] ?? null;
@@ -650,7 +652,7 @@ export function BenchmarkPage() {
                 widthClass="sm:max-w-6xl"
                 onClose={() => setOpenCaseId(null)}
               >
-                <BenchmarkStatementBrowser
+                <BenchmarkCaseBrowser
                   projectId={projectId}
                   agentId={selection.agentId}
                   benchmarkId={bm.id}

@@ -3,8 +3,8 @@ name: agent-optimization
 description: Improve an Agent State through versioned scores and score-linked Traces from a frozen Benchmark.
 short_description: Improve an Agent from measured Benchmark results.
 short_description_zh: 根据 Benchmark 结果改进 Agent。
-version: 7
-updated: 2026-07-30T02:51:10Z
+version: 8
+updated: 2026-07-31T04:10:53Z
 ---
 
 # Agent Optimization
@@ -106,8 +106,10 @@ Append each complete accepted Candidate Evaluation to `scoreboard.yaml` immediat
   provider: <provider>
   model_id: <model_id>
   thinking_level: <thinking_level>
-  summary_title: <public title>
-  summary: <public summary>
+  summary_title: >-
+    <public title>
+  summary: >-
+    <public summary>
   score: <average of the Case scores>
   cost: <average of known Case costs, or null when every Case cost is null>
   duration_ms: <average of the Case durations>
@@ -122,6 +124,8 @@ Append each complete accepted Candidate Evaluation to `scoreboard.yaml` immediat
           duration_ms: <Run duration>
           session_id: <Test Session id>
 ```
+
+After writing, parse the complete `scoreboard.yaml` and verify the appended Evaluation before reporting success or continuing.
 
 Every Run and Case score is on the fixed `0..100` scale. Do not write `max_score`. Calculate and write every Case and Evaluation average directly in the Scoreboard: ignore `null` values when averaging cost and write `null` only when all contributing costs are unknown; round `score` averages to two decimal places, `cost` averages to six decimal places, and `duration_ms` averages to the nearest integer. These stored values are authoritative—do not add a server, frontend, script, or consistency check that recomputes or validates them. Do not add an `aggregate` object or use `case_id`, `mean_score`, `mean_cost`, or `mean_duration_ms`. Do not record rejected Candidates in the Scoreboard.
 
