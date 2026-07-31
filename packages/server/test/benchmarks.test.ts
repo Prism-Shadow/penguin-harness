@@ -256,8 +256,9 @@ describe("benchmarks api", () => {
     expect(statement.headers.get("content-type")).toContain("markdown");
     expect(await statement.text()).toBe("# Case 001: Excel cleanup\n\nClean the workbook.");
 
+    const rubricFilesBase = `${base}/swe-bench-v2/cases/CASE-001-excel-task/rubric/files`;
     const rubricFiles = (await (
-      await member.get(`${filesBase}?material=rubric`)
+      await member.get(rubricFilesBase)
     ).json()) as WorkspaceFilesResponse;
     expect(rubricFiles.entries.map((entry) => `${entry.kind}:${entry.name}`)).toEqual([
       "file:expected.json",
@@ -265,7 +266,7 @@ describe("benchmarks api", () => {
     ]);
 
     const rubric = await member.get(
-      `${filesBase}/content?material=rubric&path=${encodeURIComponent("README.md")}&preview=1`,
+      `${rubricFilesBase}/content?path=${encodeURIComponent("README.md")}&preview=1`,
     );
     expect(rubric.status).toBe(200);
     expect(rubric.headers.get("content-type")).toContain("markdown");
@@ -288,11 +289,10 @@ describe("benchmarks api", () => {
       (await member.get(`${filesBase}/content?path=${encodeURIComponent("../rubric/README.md")}`))
         .status,
     ).toBe(400);
-    expect((await member.get(`${filesBase}?material=gold`)).status).toBe(400);
     expect(
       (
         await member.get(
-          `${filesBase}/content?material=rubric&path=${encodeURIComponent("../statement/README.md")}`,
+          `${rubricFilesBase}/content?path=${encodeURIComponent("../statement/README.md")}`,
         )
       ).status,
     ).toBe(400);
