@@ -1,9 +1,14 @@
 /**
  * Agent settings page "Memory" tab: Workspace Memory (agent_state/memory/) — the Agent-level
- * switch, a Workspace selector, that Workspace's topic files, and a Markdown editor.
+ * switch, the shared index, a Workspace selector, that Workspace's topic files, and a Markdown
+ * editor.
  *
- * The shared index (`memory/AGENTS.md`) is pinned above the topic files and opens with the
- * caret parked on the selected Workspace's heading, since one index covers every Workspace.
+ * The page reads top-down as a narrowing scope, matching how Memory is stored: the switch and
+ * the shared index (`memory/AGENTS.md`) are Agent-level and sit above the selector; everything
+ * below it belongs to one Workspace. The index opens with the caret parked on the selected
+ * Workspace's group heading — the one place the two levels meet, which is why the index says so
+ * and flags a Workspace that has no group in it yet.
+ *
  * Renaming or deleting a topic file also rewrites the index links that pointed at it — the
  * link form is exact (`](<workspaceKey>/<file>)`), so this stays a mechanical edit and never
  * rewrites prose the model wrote.
@@ -373,77 +378,93 @@ export function MemoryTab({ agentId }: { agentId: string }) {
 
       <p className="font-mono text-xs text-gray-400 dark:text-gray-500">{overview.memoryDir}</p>
 
+      {/* The shared index is Agent-level, so it sits above the Workspace selector rather than
+          inside a Workspace's list — one index covers every Workspace. */}
+      <button
+        type="button"
+        onClick={() => openIndex(overview.index)}
+        className={`flex w-full items-center justify-between gap-3 rounded-md border px-3 py-2 text-left transition-colors duration-150 ${
+          selection.kind === "index"
+            ? "border-gray-300 bg-gray-100 dark:border-gray-700 dark:bg-gray-800/60"
+            : "border-gray-200 bg-white hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:hover:bg-gray-800/40"
+        }`}
+      >
+        {/* The hints wrap rather than truncate: they carry the one rule that is not obvious from
+            the layout (which Workspace group the index opens at), so cutting them off would
+            defeat the purpose of showing them. */}
+        <span className="min-w-0">
+          <span className="block truncate text-sm font-medium">{S.memory.indexFile}</span>
+          <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
+            {S.memory.indexHint}
+          </span>
+          {/* Makes the coupling with the selector below visible: this Workspace has no group in
+              the index yet, so opening it lands at the top instead of on a heading. */}
+          {workspaceKey !== null && headingOffset(overview.index, workspaceKey) < 0 && (
+            <span className="block text-xs text-gray-400 dark:text-gray-500">
+              {S.memory.indexNoGroup}
+            </span>
+          )}
+        </span>
+        <span className="shrink-0 font-mono text-[11px] text-gray-400">AGENTS.md</span>
+      </button>
+
       {overview.workspaces.length === 0 ? (
         <p className="py-2 text-xs text-gray-400 dark:text-gray-500">{S.memory.noWorkspaces}</p>
       ) : (
-        <Select
-          size="sm"
-          label={S.memory.workspace}
-          value={workspaceKey ?? ""}
-          onChange={(e) => setWorkspaceKey(e.target.value)}
-        >
-          {overview.workspaces.map((w) => (
-            <option key={w.workspaceKey} value={w.workspaceKey}>
-              {workspaceLabel(w)}
-            </option>
-          ))}
-        </Select>
-      )}
+        <>
+          <Select
+            size="sm"
+            label={S.memory.workspace}
+            value={workspaceKey ?? ""}
+            onChange={(e) => setWorkspaceKey(e.target.value)}
+          >
+            {overview.workspaces.map((w) => (
+              <option key={w.workspaceKey} value={w.workspaceKey}>
+                {workspaceLabel(w)}
+              </option>
+            ))}
+          </Select>
 
-      {/* File list: the shared index pinned on top, then this Workspace's topic files. */}
-      <div className="overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-        <button
-          type="button"
-          onClick={() => openIndex(overview.index)}
-          className={`flex w-full items-center justify-between gap-3 border-b border-gray-100 px-3 py-2 text-left transition-colors duration-150 dark:border-gray-800/60 ${
-            selection.kind === "index"
-              ? "bg-gray-100 dark:bg-gray-800/60"
-              : "hover:bg-gray-50 dark:hover:bg-gray-800/40"
-          }`}
-        >
-          <span className="min-w-0">
-            <span className="block truncate text-sm font-medium">{S.memory.indexFile}</span>
-            <span className="block truncate text-xs text-gray-500 dark:text-gray-400">
-              {S.memory.indexHint}
-            </span>
-          </span>
-          <span className="shrink-0 font-mono text-[11px] text-gray-400">AGENTS.md</span>
-        </button>
-
-        {files === null ? (
-          <div className="p-3">
-            <SkeletonList rows={3} />
+          {/* This Workspace's topic files only — nothing Agent-level in the list. */}
+          <div className="overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+            {files === null ? (
+              <div className="p-3">
+                <SkeletonList rows={3} />
+              </div>
+            ) : files.length === 0 ? (
+              <p className="px-3 py-3 text-xs text-gray-400 dark:text-gray-500">
+                {S.memory.noFiles}
+              </p>
+            ) : (
+              files.map((file) => (
+                <button
+                  key={file.name}
+                  type="button"
+                  onClick={() => void openFile(file.name)}
+                  className={`flex w-full items-center justify-between gap-3 border-b border-gray-100 px-3 py-2 text-left transition-colors duration-150 last:border-b-0 dark:border-gray-800/60 ${
+                    selection.kind === "file" && selection.name === file.name
+                      ? "bg-gray-100 dark:bg-gray-800/60"
+                      : "hover:bg-gray-50 dark:hover:bg-gray-800/40"
+                  }`}
+                >
+                  <span className="min-w-0">
+                    <span className="flex items-center gap-2">
+                      <span className="truncate text-sm font-medium">{file.title}</span>
+                      {file.type && <Badge tone="gray">{S.memory.types[file.type]}</Badge>}
+                    </span>
+                    <span className="block truncate text-xs text-gray-500 dark:text-gray-400">
+                      {file.description || file.name}
+                    </span>
+                  </span>
+                  <span className="shrink-0 font-mono text-[11px] text-gray-400">
+                    {file.updatedAt ?? file.modifiedAt.slice(0, 10)}
+                  </span>
+                </button>
+              ))
+            )}
           </div>
-        ) : files.length === 0 ? (
-          <p className="px-3 py-3 text-xs text-gray-400 dark:text-gray-500">{S.memory.noFiles}</p>
-        ) : (
-          files.map((file) => (
-            <button
-              key={file.name}
-              type="button"
-              onClick={() => void openFile(file.name)}
-              className={`flex w-full items-center justify-between gap-3 border-b border-gray-100 px-3 py-2 text-left transition-colors duration-150 last:border-b-0 dark:border-gray-800/60 ${
-                selection.kind === "file" && selection.name === file.name
-                  ? "bg-gray-100 dark:bg-gray-800/60"
-                  : "hover:bg-gray-50 dark:hover:bg-gray-800/40"
-              }`}
-            >
-              <span className="min-w-0">
-                <span className="flex items-center gap-2">
-                  <span className="truncate text-sm font-medium">{file.title}</span>
-                  {file.type && <Badge tone="gray">{S.memory.types[file.type]}</Badge>}
-                </span>
-                <span className="block truncate text-xs text-gray-500 dark:text-gray-400">
-                  {file.description || file.name}
-                </span>
-              </span>
-              <span className="shrink-0 font-mono text-[11px] text-gray-400">
-                {file.updatedAt ?? file.modifiedAt.slice(0, 10)}
-              </span>
-            </button>
-          ))
-        )}
-      </div>
+        </>
+      )}
 
       {workspace && (
         <div className="flex flex-wrap items-center gap-2">

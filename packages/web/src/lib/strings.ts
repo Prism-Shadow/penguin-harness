@@ -464,7 +464,9 @@ export const zh = {
     noWorkspaces: "尚无 Workspace 记忆目录：使用持久 Workspace 创建 Session 后会自动生成。",
     fileCount: (n: number): string => `${n} 个主题文件`,
     indexFile: "记忆索引 memory/AGENTS.md",
-    indexHint: "全部 Workspace 共用；按 workspace key 分组，打开时定位到当前分组",
+    indexHint:
+      "Agent 级：全部 Workspace 共用，按 workspace key 分组；打开时定位到下方选中的 Workspace 分组",
+    indexNoGroup: "索引中尚无该 Workspace 的分组",
     noFiles: "该 Workspace 尚无主题文件",
     newFile: "新建主题",
     newFileTitle: "新建主题文件",

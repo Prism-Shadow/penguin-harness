@@ -487,7 +487,8 @@ export const en: Strings = {
     fileCount: (n: number): string => `${n} topic file${n === 1 ? "" : "s"}`,
     indexFile: "Memory index memory/AGENTS.md",
     indexHint:
-      "Shared by every Workspace, grouped by workspace key; opens at the selected Workspace's group",
+      "Agent-level: shared by every Workspace and grouped by workspace key; opens at the Workspace selected below",
+    indexNoGroup: "The index has no group for this Workspace yet",
     noFiles: "This Workspace has no topic file yet",
     newFile: "New topic",
     newFileTitle: "New topic file",
