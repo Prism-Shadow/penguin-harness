@@ -139,31 +139,31 @@ penguin web        # 启动服务并打开 http://127.0.0.1:7364
 ```
 
 <details>
-<summary><b>📴 离线安装包（无网环境）</b></summary>
+<summary><b>📴 离线安装（无网环境）</b></summary>
 
-每个 <a href="https://github.com/Prism-Shadow/penguin-harness/releases">GitHub Release</a> 附带五个自包含的离线安装包——Linux 与 macOS 各有 x64 / arm64 两种架构，Windows 为 x64。包内自带程序压缩包、SHA256 校验文件与对应平台的安装器，在有网机器下载后拷贝到目标机器即可安装，全程无需联网（离线安装强制校验 SHA256）。
+每个 <a href="https://github.com/Prism-Shadow/penguin-harness/releases">GitHub Release</a> 每个目标只附带一个安装包——Linux 与 macOS 各有 x64 / arm64 两种架构，Windows 为 x64，另有不带运行时的 universal 包——同一个文件同时服务在线与离线安装。包内封入程序负载、其 SHA256 校验文件与对应平台的安装器：在有网机器下载这一个文件，拷贝到目标机器，解压一次并运行包内安装器即可——全程无需联网，也不必另外携带校验文件（包内封入的 SHA256 始终强制校验）。
 
-**Linux（arm64 机器换用 `penguin-linux-arm64-offline.tar.gz`）：**
+**Linux（arm64 机器换用 `penguin-linux-arm64.tar.gz`）：**
 
 ```bash
-mkdir penguin-offline
-tar -xzf penguin-linux-x64-offline.tar.gz -C penguin-offline
-./penguin-offline/install.sh
+mkdir penguin-install
+tar -xzf penguin-linux-x64.tar.gz -C penguin-install
+./penguin-install/install.sh
 ```
 
-**macOS（Apple 芯片用 arm64 包，Intel 芯片换用 `penguin-darwin-x64-offline.tar.gz`）：**
+**macOS（Apple 芯片用 arm64 包，Intel 芯片换用 `penguin-darwin-x64.tar.gz`）：**
 
 ```bash
-mkdir penguin-offline
-tar -xzf penguin-darwin-arm64-offline.tar.gz -C penguin-offline
-./penguin-offline/install.sh
+mkdir penguin-install
+tar -xzf penguin-darwin-arm64.tar.gz -C penguin-install
+./penguin-install/install.sh
 ```
 
 **Windows（解压后双击 `install.cmd`，或在 PowerShell 中运行）：**
 
 ```powershell
-Expand-Archive penguin-win32-x64-offline.zip -DestinationPath penguin-offline
-cd penguin-offline
+Expand-Archive penguin-win32-x64.zip -DestinationPath penguin-install
+cd penguin-install
 .\install.cmd
 ```
 

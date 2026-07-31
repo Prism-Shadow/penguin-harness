@@ -17,7 +17,7 @@ description: 通过安装脚本、npm 或源码安装 PenguinHarness。
 curl -fsSL https://penguin.ooo/install.sh | sh
 ```
 
-脚本按平台下载 `penguin-{linux,darwin}-{x64,arm64}.tar.gz`，其中捆绑了官方 Node.js 运行时。其他 POSIX 平台**不会自动回退**：脚本会退出并提示先安装 Node.js >= 24、再携带 `--universal` 重新执行，改用不含运行时的 `penguin-universal.tar.gz`（Windows 使用下方专属安装器，而不是 `--universal`）。
+脚本按平台下载 `penguin-{linux,darwin}-{x64,arm64}.tar.gz`——即标准安装包：包内封入程序负载（捆绑官方 Node.js 运行时）、负载的 SHA256 校验文件与同一个安装器。下载后先对照 Release 发布的 `.sha256` 校验外层，再校验包内封入的负载 checksum，然后才进入暂存安装。其他 POSIX 平台**不会自动回退**：脚本会退出并提示先安装 Node.js >= 24、再携带 `--universal` 重新执行，改用不含运行时的 `penguin-universal.tar.gz` 安装包（Windows 使用下方专属安装器，而不是 `--universal`）。
 
 在 Windows（PowerShell）上执行：
 
@@ -37,14 +37,14 @@ $env:PENGUIN_VERSION = "vX.Y.Z"; irm https://penguin.ooo/install.ps1 | iex
 penguin -v
 ```
 
-### 离线安装包
+### 离线安装
 
-每个 Release 还会分别提供 Windows x64、Linux x64/arm64 与 macOS x64/arm64 的完整离线包。先在可联网电脑上下载与目标电脑匹配的离线包，传输到目标电脑后解压一次。
+离线安装使用与在线安装相同的 Release 制品——不再有单独的离线包。先在可联网电脑上下载与目标电脑匹配的那一个文件（`penguin-<target>.tar.gz`，Windows 为 `penguin-win32-x64.zip`），传输后解压一次。
 
 Windows 上双击 `install.cmd`，或执行：
 
 ```powershell
-.\install.ps1 -ArchivePath .\penguin-win32-x64.zip
+.\install.ps1
 ```
 
 Linux / macOS 上执行：
@@ -53,7 +53,7 @@ Linux / macOS 上执行：
 ./install.sh
 ```
 
-解压后的目录同时包含对应平台的程序压缩包、`.sha256` 文件和离线安装入口。离线包内的 `install.sh` 会将同包内的程序压缩包显式传给实际安装器，强制完成 checksum 校验，并且不会发起任何网络请求。也可以使用 Release 中单独发布的安装器显式指定本地文件：`install.sh --archive <file>`、`PENGUIN_ARCHIVE=<file>`、`install.ps1 -ArchivePath <file>` 或 `$env:PENGUIN_ARCHIVE`。
+解压后的目录同时包含安装器、程序负载（`payload.tar.gz` / `payload.zip`）与负载的 `.sha256`；安装器会自行找到同目录负载，始终校验包内封入的 checksum，且不发起任何网络请求——无需另外传输校验文件。也可以显式指定本地文件：`install.sh --archive <file>`、`PENGUIN_ARCHIVE=<file>`、`install.ps1 -ArchivePath <file>` 或 `$env:PENGUIN_ARCHIVE`——Release 安装包、其内部负载或 0.1.6 之前的旧版程序压缩包均可。
 
 ### 安装位置与选项
 
@@ -62,8 +62,8 @@ Linux / macOS 上执行：
 | 安装目录 | 默认 `~/.penguin`，可用环境变量 `PENGUIN_INSTALL_DIR` 覆盖 |
 | 命令入口 | 创建符号链接 `~/.local/bin/penguin`（若 `~/.local/bin` 不在 PATH 上，脚本会给出提示） |
 | 版本固定 | 环境变量 `PENGUIN_VERSION=vX.Y.Z`，或脚本参数 `--version vX.Y.Z`；默认安装最新 Release |
-| 本地压缩包 | `PENGUIN_ARCHIVE=<file>` 或 `--archive <file>`；允许重命名，要求旁边存在 `<file>.sha256` 或平台标准名称的 `.sha256` |
-| 完整性校验 | Release 提供 checksum 资产时自动进行 sha256 校验 |
+| 本地压缩包 | `PENGUIN_ARCHIVE=<file>` 或 `--archive <file>`；接受 Release 安装包（凭包内封入的负载 checksum 自校验），或旁边带 `<file>.sha256` 的负载 / 旧版程序压缩包（重命名的旧版文件可用平台标准名称的 `.sha256`） |
+| 完整性校验 | 始终进行：在线下载对照发布的 `.sha256` 校验，安装包负载对照包内封入的 checksum 校验 |
 | 升级 | 重新执行安装脚本即可，文件原子替换 |
 
 脚本参数写在 `sh -s --` 之后，例如 `curl -fsSL https://penguin.ooo/install.sh | sh -s -- --universal`。
@@ -73,17 +73,17 @@ Linux / macOS 上执行：
 | 项目 | 说明 |
 | --- | --- |
 | 安装目录 | 默认 `%USERPROFILE%\.penguin`，可用环境变量 `PENGUIN_INSTALL_DIR` 覆盖 |
-| 命令入口 | `bin\penguin.cmd` 与 `bin\penguin.ps1` 启动器；安装器会把 `%USERPROFILE%\.penguin\bin` 加入**用户** Path（重启终端后生效） |
+| 命令入口 | `bin\penguin.cmd` 启动器（特意不带 `.ps1` 启动器——批处理不受 PowerShell 执行策略限制，默认 Restricted 策略下 `penguin` 也能直接运行）；安装器会把 `%USERPROFILE%\.penguin\bin` 加入**用户** Path 并广播变更——请**新开一个终端窗口**（已开终端的新标签页仍沿用旧 Path） |
 | 版本固定 | 运行安装器前设置 `$env:PENGUIN_VERSION = "vX.Y.Z"` |
-| 本地压缩包 | `$env:PENGUIN_ARCHIVE = "<file>"` 或 `-ArchivePath <file>`；允许重命名，要求旁边存在 `<file>.sha256` 或 `penguin-win32-x64.zip.sha256` |
-| 完整性校验 | Release 提供 checksum 资产时自动进行 sha256 校验 |
+| 本地压缩包 | `$env:PENGUIN_ARCHIVE = "<file>"` 或 `-ArchivePath <file>`；接受 Release 安装包（凭包内封入的负载 checksum 自校验），或旁边带 `<file>.sha256` 的负载 / 旧版 zip（重命名的旧版文件可用 `penguin-win32-x64.zip.sha256`） |
+| 完整性校验 | 始终进行：在线下载对照发布的 `.sha256` 校验，安装包负载对照包内封入的 checksum 校验 |
 | 升级 | 重新运行安装器；只替换 `bin`/`lib`/`web`/`node`，绝不触碰 `data` |
 
 - **Agent shell**：Windows 上 `exec_command` 在 POSIX shell 中执行，以兼容面向 POSIX 编写的技能生态。选择顺序为：PATH 上的 `bash`（你自己安装的 [Git for Windows](https://gitforwindows.org/)，优先，因为它带完整的 MSYS 工具集）；其次是**内置 bash**——Windows zip 在 `git\` 下自带 MinGit，因此未安装 Git for Windows 的机器同样有 POSIX shell、约六十个核心工具和 `git.exe`；最后才是 PowerShell（先 `pwsh` 后 `powershell`）。只有经 npm 安装（不含内置包）才会走到 PowerShell。环境变量 `PENGUIN_SHELL` 可强制指定；会话的系统提示词会告知模型当前 shell。内置 shell 的许可信息见 [THIRD-PARTY-NOTICES.md](https://github.com/Prism-Shadow/penguin-harness/blob/main/THIRD-PARTY-NOTICES.md)。
 - **Ctrl-C 语义**：Windows 上向运行中的命令会话发送 Ctrl-C（`input_command` 传 `"\u0003"`）会终止整棵命令会话进程树，而不是中断前台命令——Windows 无法向管道子进程投递控制台 Ctrl-C，中断因此退化为整树强杀。
 - **就地更新**：`penguin update` 暂不支持 Windows——升级请重新运行上面的安装器。
 - **配置文件权限**：POSIX 上配置/凭据文件以 `0600`（仅属主可读写）写入；Windows 没有对应的权限位，文件遵循你用户目录的默认 NTFS ACL。
-- 如果 PowerShell 提示 "running scripts is disabled" 而无法运行 `penguin`，是执行策略拦住了 `penguin.ps1`：可以显式调用 `penguin.cmd`，或用 `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` 允许本地脚本。
+- 如果 PowerShell 提示 "running scripts is disabled" 而无法运行 `penguin`，被拦下的是某个 `penguin.ps1` 启动器——来自 0.1.6 之前的旧安装（重新运行安装器即可：升级会整体替换 `bin\` 并移除它），或来自 npm 全局安装生成的 shim（可显式调用 `penguin.cmd`，或用 `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` 允许本地脚本）。安装包本身只带 `penguin.cmd`，任何执行策略下都能运行。
 
 ### 数据目录
 

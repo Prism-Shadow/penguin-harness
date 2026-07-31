@@ -25,20 +25,21 @@ export const INSTALL_CMD = "curl -fsSL https://penguin.ooo/install.sh | sh";
 export const INSTALL_CMD_WINDOWS = "irm https://penguin.ooo/install.ps1 | iex";
 
 /**
- * Offline-bundle install commands, per OS tab of the install switcher. Each Release
- * attaches five self-contained bundles (see scripts/package-offline-bundles.sh); the
- * commands show the most common architecture — the localized hint strings name the
- * alternative archive. Language-neutral, like the one-liners above.
+ * Offline install commands, per OS tab of the install switcher. Each Release attaches one
+ * installer bundle per target (see scripts/package-release-bundles.sh) and the same file
+ * serves online and offline installation; the commands show the most common architecture —
+ * the localized hint strings name the alternative archive. Language-neutral, like the
+ * one-liners above.
  */
 export const OFFLINE_INSTALL_CMDS: Record<"linux" | "macos" | "windows", string> = {
-  linux: `mkdir penguin-offline
-tar -xzf penguin-linux-x64-offline.tar.gz -C penguin-offline
-./penguin-offline/install.sh`,
-  macos: `mkdir penguin-offline
-tar -xzf penguin-darwin-arm64-offline.tar.gz -C penguin-offline
-./penguin-offline/install.sh`,
-  windows: `Expand-Archive penguin-win32-x64-offline.zip -DestinationPath penguin-offline
-cd penguin-offline
+  linux: `mkdir penguin-install
+tar -xzf penguin-linux-x64.tar.gz -C penguin-install
+./penguin-install/install.sh`,
+  macos: `mkdir penguin-install
+tar -xzf penguin-darwin-arm64.tar.gz -C penguin-install
+./penguin-install/install.sh`,
+  windows: `Expand-Archive penguin-win32-x64.zip -DestinationPath penguin-install
+cd penguin-install
 .\\install.cmd`,
 };
 

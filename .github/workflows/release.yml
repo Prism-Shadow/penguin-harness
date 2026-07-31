@@ -4,9 +4,15 @@
 # already-released tag skips the build/upload entirely and only re-runs npm publishing.
 # Two parallel jobs (the release job is gated on the existence check):
 # - release: build the monorepo -> pnpm deploy a production CLI dir -> assemble penguin/ (bin + lib + web)
-#   -> five platform packages each bundling the official Node runtime + a universal package -> SHA256 files -> upload to the Release.
-#   Artifacts: penguin-{linux,darwin}-{x64,arm64}.tar.gz, penguin-win32-x64.zip, penguin-universal.tar.gz,
-#   their .sha256 files, SHA256SUMS, install.sh, and install.ps1; one version per tag, multiple versions coexist.
+#   -> one program payload per target (four platform payloads bundling the official Node runtime,
+#   a win-x64 payload with runtime + MinGit, and a runtime-less universal payload) -> wrap each
+#   payload, its checksum and the native installer into the canonical installer bundle -> validate
+#   the real bundles -> upload to the Release.
+#   Artifacts (one shape per target, serving online and offline installs alike):
+#   penguin-{linux,darwin}-{x64,arm64}.tar.gz, penguin-universal.tar.gz, penguin-win32-x64.zip,
+#   their .sha256 files, SHA256SUMS, install.sh, and install.ps1; one version per tag, multiple
+#   versions coexist. Releases up to v0.1.5 shipped raw program archives under the same names
+#   plus *-offline wrappers; the installers keep accepting that legacy layout for pinned versions.
 # - publish-npm: publish the whole chain (@prismshadow/penguin-skills -> @prismshadow/penguin-core
 #   -> @prismshadow/penguin-server -> @prismshadow/penguin-cli) to npm at the tag version.
 #   skills/core serve the penguin-sdk Skill's `npm install`; server ships the built web assets inside
@@ -136,11 +142,13 @@ jobs:
           EOF
           chmod +x out/penguin/bin/penguin
 
-      # Platform packages: linux uses .tar.xz, darwin uses .tar.gz (nodejs.org naming);
-      # node/ is only lightly trimmed (drop share/doc and share/man, keep the rest).
-      - name: Package platform + universal tarballs
+      # Program payloads: linux runtimes use .tar.xz, darwin .tar.gz (nodejs.org naming);
+      # node/ is only lightly trimmed (drop share/doc and share/man, keep the rest). Payloads
+      # are intermediate files named <target>.tar.gz / win32-x64.zip: the packaging script
+      # below seals each one into the canonical installer bundle that gets published.
+      - name: Package platform + universal payloads
         run: |
-          mkdir -p dist-artifacts
+          mkdir -p payloads
           for target in linux-x64 linux-arm64 darwin-x64 darwin-arm64; do
             os="${target%%-*}"
             arch="${target#*-}"
@@ -157,19 +165,22 @@ jobs:
             mv "/tmp/node-runtime/$name" out/penguin/node
             rm -rf out/penguin/node/share/doc out/penguin/node/share/man
             printf '{"schemaVersion":1,"target":"%s"}\n' "$os-$arch" > out/penguin/package-manifest.json
-            tar -czf "dist-artifacts/penguin-$os-$arch.tar.gz" -C out penguin
+            tar -czf "payloads/$os-$arch.tar.gz" -C out penguin
           done
-          # Universal package: no bundled runtime, requires system Node >= 24.
+          # Universal payload: no bundled runtime, requires system Node >= 24.
           rm -rf out/penguin/node
           printf '{"schemaVersion":1,"target":"universal"}\n' > out/penguin/package-manifest.json
-          tar -czf dist-artifacts/penguin-universal.tar.gz -C out penguin
+          tar -czf payloads/universal.tar.gz -C out penguin
 
-      # Windows package: same lib/ + web/ layout, but a .zip (the native format), the official
-      # win-x64 Node runtime — whose zip has node.exe at the ARCHIVE ROOT, not bin/ — and
-      # cmd/ps1 launchers replacing the sh one (resolve their own dir, default PENGUIN_WEB_DIST
-      # to the sibling web\, prefer the bundled node\node.exe, fall back to system node).
-      # install.ps1 verifies and unpacks this zip; in PowerShell the .ps1 shim wins over .cmd,
-      # in cmd.exe only the .cmd is found — both forward all args and the exit code.
+      # Windows payload: same lib/ + web/ layout, but a .zip (the native format), the official
+      # win-x64 Node runtime — whose zip has node.exe at the ARCHIVE ROOT, not bin/ — and a
+      # cmd launcher replacing the sh one (resolves its own dir, defaults PENGUIN_WEB_DIST to
+      # the sibling web\, prefers the bundled node\node.exe, falls back to system node).
+      # Deliberately NO penguin.ps1 launcher: PowerShell prefers .ps1 over .cmd on PATH, and
+      # client Windows defaults to the Restricted execution policy, so shipping one makes the
+      # plain `penguin` command fail with "running scripts is disabled" out of the box. Batch
+      # files are exempt from the policy and both PowerShell and cmd.exe resolve penguin.cmd,
+      # which forwards all args and the exit code.
       #
       # It also bundles MinGit under git\, so exec_command has a POSIX shell even on a machine
       # with no Git for Windows: the shims advertise git\usr\bin\sh.exe as PENGUIN_BUNDLED_SHELL
@@ -177,7 +188,7 @@ jobs:
       # MinGit is unpacked with its tree intact — MSYS binaries locate /etc relative to the
       # directory holding msys-2.0.dll, so `sh -lc` finds git\etc\profile and gets the usual
       # /mingw64/bin:/usr/bin:<inherited Windows PATH>, keeping System32's curl/tar reachable.
-      - name: Package win-x64 zip
+      - name: Package win-x64 payload
         run: |
           name="node-$NODE_RUNTIME_VERSION-win-x64"
           curl -fsSL "https://nodejs.org/dist/$NODE_RUNTIME_VERSION/$name.zip" -o "/tmp/$name.zip"
@@ -211,35 +222,59 @@ jobs:
           EOF
           # cmd.exe is only fully reliable with CRLF batch files.
           sed -i 's/$/\r/' out/penguin/bin/penguin.cmd
-          cat > out/penguin/bin/penguin.ps1 <<'EOF'
-          $dir = Split-Path -Parent $PSScriptRoot
-          if (-not $env:PENGUIN_WEB_DIST) { $env:PENGUIN_WEB_DIST = Join-Path $dir "web" }
-          $sh = Join-Path $dir "git\usr\bin\sh.exe"
-          if (Test-Path $sh) { $env:PENGUIN_BUNDLED_SHELL = $sh }
-          $node = Join-Path $dir "node\node.exe"
-          if (-not (Test-Path $node)) { $node = "node" }
-          & $node (Join-Path $dir "lib\dist\index.js") @args
-          exit $LASTEXITCODE
-          EOF
-          # PowerShell accepts LF, but ship CRLF like the .cmd (and the repo's *.ps1 eol=crlf attribute).
-          sed -i 's/$/\r/' out/penguin/bin/penguin.ps1
-          (cd out && zip -qr ../dist-artifacts/penguin-win32-x64.zip penguin)
+          (cd out && zip -qr ../payloads/win32-x64.zip penguin)
 
-      # Per-payload checksums are included inside the offline bundles and are also consumed by
-      # the online install.sh / install.ps1 downloads.
-      - name: Generate payload SHA256 checksums
+      # The canonical artifacts: each payload is sealed with its checksum and the native
+      # installer into one flat bundle per target (see scripts/package-release-bundles.sh).
+      - name: Package canonical installer bundles
+        run: sh scripts/package-release-bundles.sh payloads dist-artifacts
+
+      # Validate the real release outputs, not only the small fixtures used by the script tests.
+      # Every bundle must pass its outer checksum, stay flat with exactly the documented member
+      # set, carry a byte-identical installer and payload, and pass its sealed payload checksum.
+      - name: Validate canonical installer bundles
         run: |
-          cd dist-artifacts
-          for f in *.tar.gz *.zip; do
-            sha256sum "$f" > "$f.sha256"
+          set -eu
+          ARTIFACT_DIR="$PWD/dist-artifacts"
+          PAYLOAD_DIR="$PWD/payloads"
+          WORK_DIR="$(mktemp -d)"
+          trap 'rm -rf "$WORK_DIR"' EXIT
+
+          validate_layout() {
+            dir="$1"
+            expected="$2"
+            actual="$(find "$dir" -mindepth 1 -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort)"
+            [ -z "$(find "$dir" -mindepth 2 -print -quit)" ]
+            [ "$actual" = "$expected" ]
+          }
+
+          for target in linux-x64 linux-arm64 darwin-x64 darwin-arm64 universal; do
+            bundle="penguin-$target.tar.gz"
+            (cd "$ARTIFACT_DIR" && sha256sum -c "$bundle.sha256")
+            extracted="$WORK_DIR/$target"
+            mkdir -p "$extracted"
+            tar -xzf "$ARTIFACT_DIR/$bundle" -C "$extracted"
+            expected="$(printf '%s\n' install.sh payload.tar.gz payload.tar.gz.sha256 | LC_ALL=C sort)"
+            validate_layout "$extracted" "$expected"
+            [ -x "$extracted/install.sh" ]
+            (cd "$extracted" && sha256sum -c payload.tar.gz.sha256)
+            cmp "$PWD/install.sh" "$extracted/install.sh"
+            cmp "$PAYLOAD_DIR/$target.tar.gz" "$extracted/payload.tar.gz"
           done
 
-      # Each offline bundle contains exactly one platform payload, its checksum and the native installer.
-      # Users extract once, then run install.sh (Linux/macOS) or double-click install.cmd (Windows).
-      - name: Package offline installer bundles
-        run: sh scripts/package-offline-bundles.sh dist-artifacts
+          bundle="penguin-win32-x64.zip"
+          (cd "$ARTIFACT_DIR" && sha256sum -c "$bundle.sha256")
+          extracted="$WORK_DIR/win32-x64"
+          mkdir -p "$extracted"
+          unzip -q "$ARTIFACT_DIR/$bundle" -d "$extracted"
+          expected="$(printf '%s\n' install.cmd install.ps1 payload.zip payload.zip.sha256 | LC_ALL=C sort)"
+          validate_layout "$extracted" "$expected"
+          (cd "$extracted" && sha256sum -c payload.zip.sha256)
+          cmp "$PWD/install.cmd" "$extracted/install.cmd"
+          cmp "$PWD/install.ps1" "$extracted/install.ps1"
+          cmp "$PAYLOAD_DIR/win32-x64.zip" "$extracted/payload.zip"
 
-      # Summary covers both raw program archives and their offline installer wrappers.
+      # Summary covers the six canonical bundles.
       - name: Generate SHA256SUMS
         run: |
           cd dist-artifacts
