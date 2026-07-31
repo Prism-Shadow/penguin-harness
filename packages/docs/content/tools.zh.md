@@ -45,6 +45,16 @@ interface ToolResult {
 
 工具与 Environment 从不向引擎抛异常：错误一律折叠为 `tool_call_output` 消息，交给模型阅读并调整下一步。消息结构见 [OmniMessage 协议](/omni-message)。
 
+### 过长输出恢复
+
+Agent Session 中的工具文本超过 `maxOutputLength` 时，模型与 Web/CLI 仍只收到相同的头部窗口、截断提示与终止标记，「用户所见 = 模型所见」的流式契约也保持不变。Environment 还会在该可见输出上限之外追加一条简短的归档状态/路径 note，并保存归该 Session 所有的 recovery 文件：单次归档预算内保存完整文本，超出预算则保存有界头尾。这里的「完整」特指 **Environment 实际收到的文本**：命令或子 Agent Session 等生产者可能已在自身的有界未读缓冲区中用 `[..., N chars of earlier output dropped ...]` 标记替换溢出内容，下游归档无法恢复在此之前已经丢失的原文。
+
+普通多行归档可用现有 `read_file`（`offset` / `limit`）查看；若要读取字节级尾部或超长单行，Agent 必须自行构造定向的 `rg` / `tail` 等 Shell 命令，不新增专用读取工具。note 中的路径是普通绝对路径，恒为括号内最后一个元素。Windows 上统一写成正斜杠：`exec_command` 经 (Git) Bash 执行、Node 的 fs API 也接受正斜杠，同一拼写在 JSON 工具参数与 Shell 命令中通用；POSIX 路径原样透传，且 Session 路径都是普通绝对路径（不会带 `\\?\` 前缀），分隔符替换无损。含空格的路径在 Shell 命令中照常引用即可。同一拼写规则覆盖 core 产出给模型的全部路径——系统提示词的 App Data Dir / CWD 行、`[attached image/file: …]` 行与 Goal file 行（SDK 中的 `modelVisiblePath`）。
+
+Recovery 文件位于该 Session 的 `scratchpad/<session-id>/truncated-tool-output/`，仅在确实发生截断时创建；平台支持时使用仅当前用户可读写的私有权限。单次调用最多保存 8 MiB（生产字节上限少 1 byte，以保持低于 `read_file` 的 8 MiB 扫描上限）；更大的输出在文件中保留有界头尾并写明中间被截。该限制仅针对单次调用：一个 Session 没有归档总字节数或文件数配额，并发捕获也各自最多保留一份单调用预算。文件跨 Task、运行时释放和 Session 恢复保持可读，直到用户明确删除 Session 时由现有路径连同整个 scratchpad 一起移除；不新增单独的归档清理生命周期。
+
+Recovery 文件保存 Environment 收到的未经脱敏的工具文本。误读凭据或其他敏感数据会使本地静态留存量从可见头部扩大到归档预算。Trace 不重复保存这些正文，但会记录模型与 Web/CLI 看到的同一个绝对 Session 路径，因此会暴露宿主的数据根目录布局。归档写入失败不改变原工具的 `stop_reason`；双方可见的 note 与 stderr 警告只携带简短错误码（stderr 另含工具名），不携带路径或原始错误消息。
+
 ## 配置字段
 
 每个工具由一条 `ToolDefinitionConfig` 描述：

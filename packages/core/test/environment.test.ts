@@ -1,8 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { access, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Environment } from "../src/environment/index.js";
+import { TruncatedToolOutputCapture } from "../src/environment/truncated-tool-output-archive.js";
 import {
   partialToolCallOutput,
   toolCall,
@@ -69,6 +70,11 @@ async function readFileEventually(
 
 function payloadTypes(messages: OmniMessage[]): string[] {
   return messages.map((m) => (m.payload as { type?: string }).type ?? "");
+}
+
+/** Extracts the plain archive path from the note (the path is always last before `]`). */
+function recoveryPath(output: string): string | undefined {
+  return output.match(/\[output archived[^:]*: ([^\]]+)\]/)?.[1];
 }
 
 let tmp: string;
@@ -251,11 +257,31 @@ describe("Environment.executeTool — edit file", () => {
 });
 
 describe("Environment.executeTool — maxOutputLength truncation", () => {
-  it("truncates front-to-back at the limit with a trailing marker; stream == complete", async () => {
+  it("keeps standalone Environment's legacy truncation behavior without archive config", async () => {
+    const env = new Environment({
+      workspaceDir: tmp,
+      toolConfig: makeToolConfig(execTool({ maxOutputLength: 5 })),
+    });
+    const messages = await collect(
+      env.executeTool({
+        toolCall: toolCall({
+          name: "exec_command",
+          arguments: JSON.stringify({ cmd: "printf 'abcdefghijklmnopqrstuvwxyz'" }),
+          toolCallId: "call_standalone_truncation",
+        }),
+      }),
+    );
+    const output = (messages[messages.length - 1]!.payload as { output: string }).output;
+    expect(output).toContain("[output truncated: exceeded 5 chars]");
+    expect(output).not.toContain("[output archived:");
+  });
+
+  it("truncates front-to-back, archives the received output, and keeps stream == complete", async () => {
     const maxOutputLength = 50;
     const env = new Environment({
       workspaceDir: tmp,
       toolConfig: makeToolConfig(execTool({ maxOutputLength })),
+      sessionScratchpadDir: path.join(tmp, "scratch"),
     });
 
     const messages = await collect(
@@ -276,7 +302,10 @@ describe("Environment.executeTool — maxOutputLength truncation", () => {
     expect(output.startsWith("1\n2\n3\n")).toBe(true);
     const marker = `[output truncated: exceeded ${maxOutputLength} chars]`;
     expect(output).toContain(marker);
-    expect(output.length).toBeLessThanOrEqual(maxOutputLength + marker.length + 1);
+    expect(output.indexOf(marker)).toBe(maxOutputLength + 1);
+    const savedPath = recoveryPath(output);
+    expect(savedPath).toBeDefined();
+    expect(await readFile(savedPath!, "utf8")).toMatch(/100000\r?\n$/);
     // Even when truncated, concatenating the streamed deltas == the complete content (the
     // excess part is never forwarded).
     const streamed = messages
@@ -291,9 +320,12 @@ describe("Environment.executeTool — maxOutputLength truncation", () => {
   });
 
   it("maxOutputLength <= 0 disables truncation", async () => {
+    const sessionScratchpadDir = path.join(tmp, "scratch");
+    const truncatedToolOutputRoot = path.join(sessionScratchpadDir, "truncated-tool-output");
     const env = new Environment({
       workspaceDir: tmp,
       toolConfig: makeToolConfig(execTool({ maxOutputLength: 0 })),
+      sessionScratchpadDir,
     });
     const messages = await collect(
       env.executeTool({
@@ -307,6 +339,330 @@ describe("Environment.executeTool — maxOutputLength truncation", () => {
     const output = (messages[messages.length - 1]!.payload as { output: string }).output;
     expect(output).toContain("100");
     expect(output).not.toContain("[output truncated");
+    await expect(access(truncatedToolOutputRoot)).rejects.toThrow();
+  });
+
+  it("saves exact overflow for the Session without changing stream == complete", async () => {
+    const maxOutputLength = 50;
+    const workspaceDir = path.join(tmp, "workspace");
+    await mkdir(workspaceDir);
+    const sessionScratchpadDir = path.join(tmp, "session-scratchpad");
+    const truncatedToolOutputRoot = path.join(sessionScratchpadDir, "truncated-tool-output");
+    const toolConfig: ToolConfig = {
+      customTools: [
+        execTool({ maxOutputLength }),
+        {
+          name: "read_file",
+          description: "Read a text file.",
+          permission: "r",
+          maxOutputLength: 64_000,
+        },
+      ],
+      mcpServers: [],
+    };
+    const env = new Environment({
+      workspaceDir,
+      toolConfig,
+      sessionScratchpadDir,
+    });
+    const expected = `BEGIN\n${"x".repeat(200)}\nEND\n`;
+    const messages = await collect(
+      env.executeTool({
+        toolCall: toolCall({
+          name: "exec_command",
+          arguments: JSON.stringify({
+            cmd: `node -e ${JSON.stringify(`process.stdout.write(${JSON.stringify(expected)})`)}`,
+          }),
+          toolCallId: "call_recoverable",
+        }),
+      }),
+    );
+
+    const complete = messages[messages.length - 1]!.payload as {
+      output: string;
+      stop_reason?: string;
+    };
+    expect(complete.stop_reason).toBe("completed");
+    expect(complete.output.startsWith(expected.slice(0, maxOutputLength))).toBe(true);
+    const savedPath = recoveryPath(complete.output);
+    expect(savedPath).toBeDefined();
+    if (process.platform === "win32") {
+      expect(savedPath).not.toContain("\\");
+    }
+    expect(await readFile(savedPath!, "utf8")).toBe(expected);
+    if (process.platform !== "win32") {
+      expect((await stat(savedPath!)).mode & 0o777).toBe(0o600);
+    }
+
+    const streamed = messages
+      .filter(
+        (m) =>
+          (m.payload as { type?: string }).type === "partial_tool_call_output" &&
+          (m.payload as { event_type?: string }).event_type === "delta",
+      )
+      .map((m) => (m.payload as { output?: string }).output ?? "")
+      .join("");
+    // Core product invariant: Web/CLI consume this stream, while the Agent receives the
+    // complete result. The archive path is present identically on both sides.
+    expect(streamed).toBe(complete.output);
+
+    // The production recovery directory is outside the Workspace. Pin that the existing
+    // read_file tool accepts the absolute path, so no dedicated recovery tool is needed.
+    const readMessages = await collect(
+      env.executeTool({
+        toolCall: toolCall({
+          name: "read_file",
+          arguments: JSON.stringify({ file_path: savedPath }),
+          toolCallId: "read_recovery",
+        }),
+      }),
+    );
+    const readOutput = (readMessages[readMessages.length - 1]!.payload as { output: string })
+      .output;
+    expect(readOutput).toContain("BEGIN");
+    expect(readOutput).toContain("END");
+
+    env.dispose();
+    expect(await readFile(savedPath!, "utf8")).toBe(expected);
+    await expect(access(truncatedToolOutputRoot)).resolves.toBeUndefined();
+
+    // Resuming the Session creates a fresh Environment over the same scratchpad. The path
+    // recorded in Trace must still work with the ordinary read_file tool.
+    const resumedEnv = new Environment({
+      workspaceDir,
+      toolConfig,
+      sessionScratchpadDir,
+    });
+    const resumedRead = await collect(
+      resumedEnv.executeTool({
+        toolCall: toolCall({
+          name: "read_file",
+          arguments: JSON.stringify({ file_path: savedPath }),
+          toolCallId: "read_after_resume",
+        }),
+      }),
+    );
+    expect((resumedRead[resumedRead.length - 1]!.payload as { output: string }).output).toContain(
+      "END",
+    );
+    resumedEnv.dispose();
+  });
+
+  it("does not create a Session output directory for a result that fits the visible limit", async () => {
+    const sessionScratchpadDir = path.join(tmp, "scratch");
+    const truncatedToolOutputRoot = path.join(sessionScratchpadDir, "truncated-tool-output");
+    const env = new Environment({
+      workspaceDir: tmp,
+      toolConfig: makeToolConfig(execTool({ maxOutputLength: 100 })),
+      sessionScratchpadDir,
+    });
+    const messages = await collect(
+      env.executeTool({
+        toolCall: toolCall({
+          name: "exec_command",
+          arguments: JSON.stringify({ cmd: "printf short" }),
+          toolCallId: "call_short",
+        }),
+      }),
+    );
+    const output = (messages[messages.length - 1]!.payload as { output: string }).output;
+    expect(output).not.toContain("[output archived:");
+    await expect(access(truncatedToolOutputRoot)).rejects.toThrow();
+  });
+
+  it("keeps the original tool outcome when the recovery file cannot be written", async () => {
+    const sessionScratchpadDir = path.join(tmp, "scratchpad-is-a-file");
+    await writeFile(sessionScratchpadDir, "occupied", "utf8");
+    const env = new Environment({
+      workspaceDir: tmp,
+      toolConfig: makeToolConfig(execTool({ maxOutputLength: 20 })),
+      sessionScratchpadDir,
+    });
+    const stderr: string[] = [];
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
+      stderr.push(String(chunk));
+      return true;
+    });
+    let messages: OmniMessage[];
+    try {
+      messages = await collect(
+        env.executeTool({
+          toolCall: toolCall({
+            name: "exec_command",
+            arguments: JSON.stringify({ cmd: "printf 'abcdefghijklmnopqrstuvwxyz'" }),
+            toolCallId: "call_archive_failure",
+          }),
+        }),
+      );
+    } finally {
+      stderrSpy.mockRestore();
+    }
+    const complete = messages[messages.length - 1]!.payload as {
+      output: string;
+      stop_reason?: string;
+    };
+    expect(complete.output).toMatch(/\[output archive failed: [^\]]+\]/);
+    expect(complete.stop_reason).toBe("completed");
+    expect(stderr.join("")).toMatch(
+      /\[penguin\] tool "exec_command" truncated output archive write failed \([^)]+\)\./,
+    );
+    const streamed = messages
+      .filter(
+        (m) =>
+          (m.payload as { type?: string }).type === "partial_tool_call_output" &&
+          (m.payload as { event_type?: string }).event_type === "delta",
+      )
+      .map((m) => (m.payload as { output?: string }).output ?? "")
+      .join("");
+    expect(streamed).toBe(complete.output);
+  });
+
+  it("freezes the completed outcome before auxiliary archive I/O", async () => {
+    const controller = new AbortController();
+    const originalSave = TruncatedToolOutputCapture.prototype.save;
+    const saveSpy = vi
+      .spyOn(TruncatedToolOutputCapture.prototype, "save")
+      .mockImplementation(function (this: TruncatedToolOutputCapture, toolName, toolCallId) {
+        // The tool has already reached its terminal state when save() starts. This late abort
+        // must not retroactively turn a completed tool into an aborted one.
+        controller.abort();
+        return originalSave.call(this, toolName, toolCallId);
+      });
+    const env = new Environment({
+      workspaceDir: tmp,
+      toolConfig: makeToolConfig(execTool({ maxOutputLength: 5 })),
+      sessionScratchpadDir: path.join(tmp, "scratch"),
+    });
+    try {
+      const messages = await collect(
+        env.executeTool({
+          toolCall: toolCall({
+            name: "exec_command",
+            arguments: JSON.stringify({ cmd: "printf 'abcdefghijklmnopqrstuvwxyz'" }),
+            toolCallId: "call_late_abort",
+          }),
+          signal: controller.signal,
+        }),
+      );
+      const complete = messages[messages.length - 1]!.payload as {
+        output: string;
+        stop_reason?: string;
+      };
+      expect(saveSpy).toHaveBeenCalledOnce();
+      expect(controller.signal.aborted).toBe(true);
+      expect(complete.stop_reason).toBe("completed");
+      expect(complete.output).toContain("[output archived:");
+      expect(complete.output).not.toContain("[interrupted: tool aborted by user]");
+    } finally {
+      saveSpy.mockRestore();
+    }
+  });
+
+  it("bounds a very large archive and preserves its UTF-8 head and tail", async () => {
+    const NAME = "__large_text_tool__";
+    BUILTIN_TOOL_FACTORIES[NAME] = (definition) => ({
+      name: NAME,
+      definition,
+      async *execute(_args, ctx) {
+        yield partialToolCallOutput({
+          eventType: "delta",
+          output: "BEGIN-企鹅\n",
+          toolCallId: ctx.toolCallId,
+        });
+        yield partialToolCallOutput({
+          eventType: "delta",
+          output: "x".repeat(8 * 1024 * 1024 + 100_000),
+          toolCallId: ctx.toolCallId,
+        });
+        yield partialToolCallOutput({
+          eventType: "delta",
+          output: "\n-END-🐧",
+          toolCallId: ctx.toolCallId,
+        });
+      },
+    });
+    try {
+      const env = new Environment({
+        workspaceDir: tmp,
+        toolConfig: {
+          customTools: [{ name: NAME, description: "large", permission: "r", maxOutputLength: 50 }],
+          mcpServers: [],
+        },
+        sessionScratchpadDir: path.join(tmp, "scratch"),
+      });
+      const messages = await collect(
+        env.executeTool({
+          toolCall: toolCall({ name: NAME, arguments: "{}", toolCallId: "call_huge" }),
+        }),
+      );
+      const complete = messages[messages.length - 1]!.payload as { output: string };
+      expect(complete.output).toContain("head and tail kept");
+      const savedPath = recoveryPath(complete.output);
+      expect(savedPath).toBeDefined();
+      const archived = await readFile(savedPath!, "utf8");
+      expect(Buffer.byteLength(archived, "utf8")).toBeLessThanOrEqual(8 * 1024 * 1024);
+      expect(archived).toContain("BEGIN-企鹅");
+      expect(archived).toContain("-END-🐧");
+      expect(archived).toContain("[archive middle truncated]");
+      expect(archived).not.toContain("\uFFFD");
+    } finally {
+      delete BUILTIN_TOOL_FACTORIES[NAME];
+    }
+  });
+
+  it("recovers a compatibility tool that returns only a complete message", async () => {
+    const NAME = "__complete_message_tool__";
+    const source = `COMPLETE-ONLY-${"z".repeat(100)}-END`;
+    BUILTIN_TOOL_FACTORIES[NAME] = (definition) => ({
+      name: NAME,
+      definition,
+      async *execute(_args, ctx) {
+        yield toolCallOutput({
+          output: source,
+          toolCallId: ctx.toolCallId,
+          stopReason: "completed",
+        });
+      },
+    });
+    try {
+      const env = new Environment({
+        workspaceDir: tmp,
+        toolConfig: {
+          customTools: [
+            { name: NAME, description: "complete", permission: "r", maxOutputLength: 20 },
+          ],
+          mcpServers: [],
+        },
+        sessionScratchpadDir: path.join(tmp, "scratch"),
+      });
+      const messages = await collect(
+        env.executeTool({
+          toolCall: toolCall({ name: NAME, arguments: "{}", toolCallId: "complete-only" }),
+        }),
+      );
+      const complete = messages[messages.length - 1]!.payload as {
+        output: string;
+        stop_reason?: string;
+      };
+      const savedPath = recoveryPath(complete.output);
+      expect(savedPath).toBeDefined();
+      expect(await readFile(savedPath!, "utf8")).toBe(source);
+      expect(complete.output.startsWith(source.slice(0, 20))).toBe(true);
+      expect(complete.stop_reason).toBe("completed");
+      const streamed = messages
+        .filter(
+          (m) =>
+            (m.payload as { type?: string }).type === "partial_tool_call_output" &&
+            (m.payload as { event_type?: string }).event_type === "delta",
+        )
+        .map((m) => (m.payload as { output?: string }).output ?? "")
+        .join("");
+      expect(streamed).toBe(complete.output);
+      env.dispose();
+      expect(await readFile(savedPath!, "utf8")).toBe(source);
+    } finally {
+      delete BUILTIN_TOOL_FACTORIES[NAME];
+    }
   });
 });
 
@@ -461,13 +817,14 @@ describe("Environment.executeTool — relaxed tool contract", () => {
   it("passes origin-tagged nested messages through verbatim, excluded from the tool output", async () => {
     const NAME = "__forwarding_tool__";
     const hop = "sess_child";
+    const childOutput = "child result ".repeat(100);
     BUILTIN_TOOL_FACTORIES[NAME] = (definition) => ({
       name: NAME,
       definition,
       async *execute(_args, ctx) {
         // Nested forwarding: origin-tagged messages pass through verbatim (a child session's
         // complete tool_call_output is not folded into the finish either).
-        yield withOrigin(toolCallOutput({ output: "child result", toolCallId: "child_call" }), hop);
+        yield withOrigin(toolCallOutput({ output: childOutput, toolCallId: "child_call" }), hop);
         yield partialToolCallOutput({
           eventType: "delta",
           output: "own output",
@@ -476,12 +833,15 @@ describe("Environment.executeTool — relaxed tool contract", () => {
       },
     });
     try {
+      const sessionScratchpadDir = path.join(tmp, "scratch");
+      const truncatedToolOutputRoot = path.join(sessionScratchpadDir, "truncated-tool-output");
       const env = new Environment({
         workspaceDir: tmp,
         toolConfig: {
-          customTools: [{ name: NAME, description: "fwd", permission: "rw" }],
+          customTools: [{ name: NAME, description: "fwd", permission: "rw", maxOutputLength: 10 }],
           mcpServers: [],
         },
+        sessionScratchpadDir,
       });
       const out = await collect(
         env.executeTool({
@@ -491,7 +851,7 @@ describe("Environment.executeTool — relaxed tool contract", () => {
       // The forwarded nested message keeps its origin and original payload.
       const forwarded = out.find((m) => m.origin?.length);
       expect(forwarded).toBeDefined();
-      expect((forwarded!.payload as { output?: string }).output).toBe("child result");
+      expect((forwarded!.payload as { output?: string }).output).toBe(childOutput);
       // This tool's own complete output contains only its own deltas, not mixed with the
       // child session's content.
       const completes = out.filter(
@@ -500,6 +860,9 @@ describe("Environment.executeTool — relaxed tool contract", () => {
       expect(completes).toHaveLength(1);
       expect((completes[0]!.payload as { output?: string }).output).toBe("own output");
       expect((completes[0]!.payload as { stop_reason?: string }).stop_reason).toBe("completed");
+      // The oversized child result belongs to the child's Session. The parent's own
+      // output fits exactly, so the parent must not create a duplicate recovery archive.
+      await expect(access(truncatedToolOutputRoot)).rejects.toThrow();
     } finally {
       delete BUILTIN_TOOL_FACTORIES[NAME];
     }

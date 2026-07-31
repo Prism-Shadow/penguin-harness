@@ -11,6 +11,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { formatLocalDate } from "./dates.js";
 import { sessionShell } from "../environment/tools/command/shell.js";
 import type { SessionEnvironmentValues } from "../state/agent-state.js";
+import { modelVisiblePath } from "./model-visible-path.js";
 import { workspacesDir } from "../state/index.js";
 import { attachedImageLine, isWholeOriginBlock, userText } from "../omnimessage/index.js";
 import type { OmniMessage } from "../omnimessage/index.js";
@@ -41,9 +42,11 @@ export function sessionEnvironment(
 ): SessionEnvironment {
   return {
     sessionId,
-    cwd: workspaceDir,
+    // Model-visible spelling (forward slashes on Windows): the model composes tool arguments
+    // and shell commands from these two lines, so they must be safe in both contexts.
+    cwd: modelVisiblePath(workspaceDir),
     agentId: ids.agentId,
-    projectDir: ids.projectDir,
+    projectDir: modelVisiblePath(ids.projectDir),
     provider: ids.provider,
     modelId: ids.modelId,
     platform: process.platform,
@@ -167,7 +170,7 @@ export async function imagesToScratchpadPaths(
         if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
       }
     }
-    lines.push(attachedImageLine(file));
+    lines.push(attachedImageLine(modelVisiblePath(file)));
   }
 
   return appendAttachmentLines(

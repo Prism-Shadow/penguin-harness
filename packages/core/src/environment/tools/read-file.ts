@@ -27,6 +27,7 @@
  * only reports `aborted` — the interruption note is appended by Environment.
  * Docs: /docs/tools § "File tools".
  */
+import { modelVisiblePath } from "../../internal/model-visible-path.js";
 import path from "node:path";
 import { open, realpath, stat } from "node:fs/promises";
 import { partialToolCallOutput } from "../../omnimessage/index.js";
@@ -300,7 +301,7 @@ export function createReadFileTool(definition: ToolDefinitionConfig): BuiltinToo
         const code = (err as NodeJS.ErrnoException).code;
         if (code === "ENOENT") {
           yield delta(
-            `File not found: "${filePath}". Check the path — relative paths resolve against the workspace (${ctx.workspaceDir}).`,
+            `File not found: "${filePath}". Check the path — relative paths resolve against the workspace (${modelVisiblePath(ctx.workspaceDir)}).`,
           );
         } else {
           const message = err instanceof Error ? err.message : String(err);

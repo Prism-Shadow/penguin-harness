@@ -152,6 +152,11 @@ async function readFileEventually(
   }
 }
 
+/** Extracts the plain archive path from the note (the path is always last before `]`). */
+function recoveryPath(output: string): string | undefined {
+  return output.match(/\[output archived[^:]*: ([^\]]+)\]/)?.[1];
+}
+
 describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
   let workspace: string;
   let traces: string;
@@ -208,6 +213,112 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
     expect(recordedTypes).toContain("tool_call");
     expect(recordedTypes).toContain("tool_call_output");
     expect(recordedTypes.some((t) => t?.startsWith("partial_"))).toBe(false);
+  });
+
+  it("lets the next Agent turn recover truncated text, keeps UI == Agent output, and preserves it after Task end", async () => {
+    const NAME = "__recoverable_text_tool__";
+    const source = `BEGIN\n${"detail\n".repeat(100)}FINAL ANSWER\n`;
+    BUILTIN_TOOL_FACTORIES[NAME] = (definition) => ({
+      name: NAME,
+      definition,
+      async *execute(_args, ctx) {
+        yield partialToolCallOutput({
+          eventType: "delta",
+          output: source.slice(0, 200),
+          toolCallId: ctx.toolCallId,
+        });
+        yield partialToolCallOutput({
+          eventType: "delta",
+          output: source.slice(200),
+          toolCallId: ctx.toolCallId,
+        });
+      },
+    });
+    try {
+      let calls = 0;
+      let agentVisibleOutput = "";
+      let recoveredPath = "";
+      let recoveredDuringTask = "";
+      const llm: LLMInterface = {
+        async *streamGenerate(params): AsyncGenerator<OmniMessage, LLMOutcome> {
+          calls += 1;
+          if (calls === 1) {
+            yield toolCall({
+              name: NAME,
+              arguments: "{}",
+              toolCallId: "recover-call",
+              stopReason: "completed",
+            });
+            yield tokenUsage(emptyTokenCounts(), {
+              cache_read: 0,
+              cache_write: 0,
+              output: 1,
+              total: 1,
+            });
+            return { status: "completed" };
+          }
+          const toolResult = params.newMessages.find(
+            (m) => (m.payload as { type?: string }).type === "tool_call_output",
+          );
+          agentVisibleOutput = (toolResult?.payload as { output?: string }).output ?? "";
+          recoveredPath = recoveryPath(agentVisibleOutput) ?? "";
+          recoveredDuringTask = await readFile(recoveredPath, "utf8");
+          yield assistantText("Recovered the final answer.");
+          yield tokenUsage(emptyTokenCounts(), {
+            cache_read: 0,
+            cache_write: 0,
+            output: 1,
+            total: 2,
+          });
+          return { status: "completed" };
+        },
+      };
+      const environment = new Environment({
+        workspaceDir: workspace,
+        toolConfig: {
+          customTools: [
+            { name: NAME, description: "recover", permission: "r", maxOutputLength: 40 },
+          ],
+          mcpServers: [],
+        },
+        sessionScratchpadDir: join(workspace, "session-scratchpad"),
+      });
+      const trace = new Writer({ tracesDir: traces, sessionId: "sess_truncated_output" });
+      const engine = new ContextEngine({ llm, environment, trace });
+      const all = await collectRun(engine, [userText("recover it")], allowAll);
+
+      expect(recoveredDuringTask).toBe(source);
+      const frontendComplete = all.find(
+        (m) =>
+          (m.payload as { type?: string }).type === "tool_call_output" &&
+          (m.payload as { tool_call_id?: string }).tool_call_id === "recover-call",
+      );
+      expect((frontendComplete!.payload as { output: string }).output).toBe(agentVisibleOutput);
+      const frontendStream = all
+        .filter(
+          (m) =>
+            (m.payload as { type?: string }).type === "partial_tool_call_output" &&
+            (m.payload as { tool_call_id?: string }).tool_call_id === "recover-call" &&
+            (m.payload as { event_type?: string }).event_type === "delta",
+        )
+        .map((m) => (m.payload as { output?: string }).output ?? "")
+        .join("");
+      expect(frontendStream).toBe(agentVisibleOutput);
+
+      const recorded = await readTrace(trace.currentPath());
+      const tracedOutput = recorded.find(
+        (m) =>
+          (m.payload as { type?: string }).type === "tool_call_output" &&
+          (m.payload as { tool_call_id?: string }).tool_call_id === "recover-call",
+      );
+      expect((tracedOutput!.payload as { output: string }).output).toBe(agentVisibleOutput);
+
+      expect(await readFile(recoveredPath, "utf8")).toBe(source);
+      environment.dispose();
+      expect(await readFile(recoveredPath, "utf8")).toBe(source);
+    } finally {
+      delete BUILTIN_TOOL_FACTORIES[NAME];
+    }
   });
 
   it("a slow tool delays the run only by its own latency: the loop adds no waits, timers, or dropped wakes", async () => {

@@ -275,6 +275,14 @@ export interface EnvironmentServices {
 export interface EnvironmentConfig {
   workspaceDir: string;
   toolConfig: ToolConfig;
+  /**
+   * This Session's private scratchpad directory (`scratchpad/<sessionId>`), the generic
+   * Session-scoped storage root for Environment by-products. Currently it backs
+   * truncated-tool-output recovery: output beyond an entry's `maxOutputLength` is saved under
+   * `<sessionScratchpadDir>/truncated-tool-output/`. Agent Sessions always pass it; standalone
+   * embedders without a stable Session directory omit it and keep truncation-only behavior.
+   */
+  sessionScratchpadDir?: string;
   /** Runtime services (optional); Environment forwards these to each tool factory to use as needed. */
   services?: EnvironmentServices;
   /**
