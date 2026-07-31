@@ -788,6 +788,22 @@ describe("Task segmentation and stats triggering", () => {
     expect(stats.stats!.elapsedDeltaMs).toBe(5000); // time span from the first to the last message
   });
 
+  it("aggregates every assistant text segment in a Task into the footer copy target", () => {
+    const m = createStreamModel();
+    pushMessages(m, [
+      at(userText("build it"), "2026-07-05T00:00:00.000Z"),
+      at(assistantText("Creating `package.json`."), "2026-07-05T00:00:01.000Z"),
+      at(tokenUsage(counts(400), counts(400)), "2026-07-05T00:00:02.000Z"),
+      at(assistantText("Installation finished."), "2026-07-05T00:00:03.000Z"),
+      at(tokenUsage(counts(700), counts(300)), "2026-07-05T00:00:04.000Z"),
+    ]);
+
+    finalizeHistory(m);
+
+    const stats = items(m).find((i) => i.kind === "task_stats") as TaskStatsItem;
+    expect(stats.assistantText).toBe("Creating `package.json`.\n\nInstallation finished.");
+  });
+
   it("stream end (finalizeHistory) closes the last Task; rounds without usage get no stats figures but still get a footer", () => {
     const m = createStreamModel();
     pushMessages(m, [

@@ -1,19 +1,16 @@
 /**
- * Message-level file summary card (visual reference: Codex's "files changed" card): extracts
- * file paths from inline code in the assistant's text (heuristic via isFilePathLike), normalizes
- * them to Workspace-relative paths, confirms they actually exist via files/stat, and aggregates
- * them into a unified card at the end of the message — a light-background single-line header bar
- * ("N files") + a list of file rows inside the card; each row's path is split into a "faded
- * directory / bold filename" pair, with a "Preview" label at the end of the row making the action
- * explicit, and clicking the whole row navigates to the Files panel preview for that relative
- * path via onOpenFile. Collapses when there are more than 3 rows.
- * The whole card doesn't render until the stat result comes back (to avoid a flash-then-disappear);
- * it also doesn't render if none of the candidates exist — the heuristic extraction inevitably
- * matches error message examples, external paths, and other strings that can't actually be
- * opened, so this card is only responsible for "if you click it, it really opens".
- * Doesn't include diff stats — file writes may happen inside opaque exec_command shells, so
- * the protocol has no reliable structured edit signal; this is just an aggregated view of
- * text references, hence the neutral "N files" title.
+ * File summary card for a supplied assistant-text scope (visual reference: Codex's "files
+ * changed" card): the root conversation passes a completed Task's aggregated assistant text,
+ * while nested conversations — which don't produce task_stats — pass one settled assistant
+ * message to preserve their existing behavior. Extracts inline-code paths heuristically via
+ * isFilePathLike, normalizes them to Workspace-relative paths, confirms they actually exist via
+ * files/stat, and renders a light-background "N files" card whose rows open the Files panel.
+ * Collapses when there are more than 3 rows.
+ *
+ * The card waits for stat results and doesn't render when no candidate exists. It intentionally
+ * does not claim these files were changed: opaque exec_command shells provide no reliable
+ * structured edit signal, so this is only an aggregated view of text references that are
+ * currently openable.
  */
 import { useEffect, useMemo, useState } from "react";
 import { S } from "../../lib/strings";
@@ -61,7 +58,7 @@ export function MessageFilesCard({
   statFiles,
   onOpenFile,
 }: {
-  /** Raw Markdown text of the assistant message. */
+  /** Raw Markdown from the assistant scope being summarized (a root Task or one nested message). */
   text: string;
   /** Absolute Workspace path of the current Session (used to normalize absolute paths found in the text). */
   workspace: string | null;
