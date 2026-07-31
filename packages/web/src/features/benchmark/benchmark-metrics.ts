@@ -11,8 +11,63 @@ export interface MetricSourceLike {
 /** Each Evaluation's Score; non-finite malformed values become chart gaps defensively. */
 export function scoreValues(evaluations: readonly MetricSourceLike[]): (number | null)[] {
   return evaluations.map((e) => {
-    return typeof e.score === "number" && Number.isFinite(e.score) ? e.score : null;
+    return typeof e.score === "number" && Number.isFinite(e.score) && e.score >= 0 && e.score <= 100
+      ? e.score
+      : null;
   });
+}
+
+export interface ScoreScale {
+  min: number;
+  max: number;
+  ticks: number[];
+}
+
+const SCORE_MIN = 0;
+const SCORE_MAX = 100;
+const SCORE_PADDING = 10;
+const TARGET_TICK_INTERVALS = 5;
+
+function niceStep(raw: number): number {
+  if (!(raw > 0)) return 1;
+  const magnitude = 10 ** Math.floor(Math.log10(raw));
+  const fraction = raw / magnitude;
+  const niceFraction =
+    fraction <= 1 ? 1 : fraction <= 2 ? 2 : fraction <= 2.5 ? 2.5 : fraction <= 5 ? 5 : 10;
+  return niceFraction * magnitude;
+}
+
+function cleanTick(value: number): number {
+  return Number(value.toPrecision(12));
+}
+
+/**
+ * Dynamic Score domain: pad the observed min/max by 10, clamp to the valid
+ * 0..100 Score interval, then round outward to human-friendly ticks.
+ */
+export function scoreScale(values: readonly (number | null)[]): ScoreScale {
+  const present = values.filter(
+    (value): value is number =>
+      value !== null && Number.isFinite(value) && value >= SCORE_MIN && value <= SCORE_MAX,
+  );
+  if (present.length === 0) {
+    return { min: SCORE_MIN, max: SCORE_MAX, ticks: [0, 20, 40, 60, 80, 100] };
+  }
+
+  const observedMin = Math.min(...present);
+  const observedMax = Math.max(...present);
+  const paddedMin = Math.max(SCORE_MIN, observedMin - SCORE_PADDING);
+  const paddedMax = Math.min(SCORE_MAX, observedMax + SCORE_PADDING);
+  const step = niceStep((paddedMax - paddedMin) / TARGET_TICK_INTERVALS);
+  const min = Math.max(SCORE_MIN, cleanTick(Math.floor(paddedMin / step) * step));
+  const max = Math.min(SCORE_MAX, cleanTick(Math.ceil(paddedMax / step) * step));
+
+  const ticks: number[] = [];
+  for (let value = min; value <= max + step * 1e-9; value += step) {
+    ticks.push(cleanTick(value));
+  }
+  if (ticks[ticks.length - 1] !== max) ticks.push(max);
+  return { min, max, ticks };
 }
 
 /** A single data point on the chart: original index (x-axis position) + value. */
@@ -39,11 +94,6 @@ export function lineSegments(values: readonly (number | null)[]): MetricPoint[][
   });
   if (current.length > 0) segments.push(current);
   return segments;
-}
-
-/** Y-axis upper bound: the max of value-bearing points (falls back to a tiny positive number when all values are missing / zero, to avoid dividing by zero in the coordinate system). */
-export function metricMax(values: readonly (number | null)[]): number {
-  return Math.max(1e-9, ...values.filter((v): v is number => v !== null));
 }
 
 /** Minimal evaluation shape needed for series grouping (BenchmarkEvaluation is a superset). */

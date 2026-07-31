@@ -1292,7 +1292,7 @@ export interface BenchmarksResponse {
   benchmarks: BenchmarkSummary[];
 }
 
-/** Public Benchmark Case metadata. Rubric and Gold content are never included. */
+/** Benchmark Case metadata only; Statement and Rubric contents are fetched separately. */
 export interface BenchmarkCaseSummary {
   id: string;
   /** First Markdown heading with an optional leading "Case N:" removed; falls back to id. */

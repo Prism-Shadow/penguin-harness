@@ -15,6 +15,7 @@
 import { describe, expect, it } from "vitest";
 import {
   makeGeom,
+  makeRangeGeom,
   linePath,
   areaPath,
   sparseLabelIdx,
@@ -55,6 +56,15 @@ describe("makeGeom", () => {
 
   it("step falls back to the whole inner width when n=0 (no division by zero)", () => {
     expect(makeGeom(0, 1, 640).step).toBe(586);
+  });
+
+  it("an explicit non-zero range maps its min to the baseline and max to the top", () => {
+    const g = makeRangeGeom(2, 60, 100, 640);
+    expect(g.min).toBe(60);
+    expect(g.max).toBe(100);
+    expect(g.y(60)).toBe(178);
+    expect(g.y(100)).toBe(10);
+    expect(g.y(80)).toBe(94);
   });
 });
 

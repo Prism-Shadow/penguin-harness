@@ -544,11 +544,12 @@ export const listBenchmarkCaseFiles = (
   benchmarkId: string,
   caseId: string,
   path: string,
+  material: "statement" | "rubric" = "statement",
 ) =>
   apiFetch<WorkspaceFilesResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
       `/benchmarks/${encodeURIComponent(benchmarkId)}/cases/${encodeURIComponent(caseId)}/files`,
-    { query: { path } },
+    { query: { path, material } },
   );
 
 export const benchmarkCaseFileUrl = (
@@ -557,12 +558,17 @@ export const benchmarkCaseFileUrl = (
   benchmarkId: string,
   caseId: string,
   path: string,
-  options?: { download?: boolean; preview?: boolean },
+  options?: {
+    download?: boolean;
+    preview?: boolean;
+    material?: "statement" | "rubric";
+  },
 ): string => {
   const base =
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
     `/benchmarks/${encodeURIComponent(benchmarkId)}/cases/${encodeURIComponent(caseId)}` +
-    `/files/content?path=${encodeURIComponent(path)}`;
+    `/files/content?path=${encodeURIComponent(path)}` +
+    `&material=${encodeURIComponent(options?.material ?? "statement")}`;
   return (
     base +
     (options?.download ? "&download=1" : "") +

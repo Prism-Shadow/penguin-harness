@@ -993,9 +993,11 @@ Benchmark：
     /** Score-only chart title. */
     trendTitle: (metric: string): string => `${metric}随时间变化`,
     cases: "题目",
-    viewCase: "查看题目",
-    publicMaterials: "公开材料",
-    statementUnavailable: "题面暂时无法读取",
+    viewCase: "查看详情",
+    taskMaterials: "任务材料",
+    rubric: "评分标准",
+    agentHidden: "Agent 不可见",
+    caseFileUnavailable: "案例文件暂时无法读取",
     evaluations: "评估明细",
     noEvaluations: "暂无评估记录",
     /** Evaluation notes (scoreboard's summary: score source and notes on this round's changes). */

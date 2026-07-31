@@ -35,6 +35,7 @@ import type {
 import { HttpError } from "../http/errors.js";
 
 const STATEMENT_TITLE_READ_BYTES = 64 * 1024;
+export type BenchmarkCaseMaterial = "statement" | "rubric";
 
 function asRecord(v: unknown): Record<string, unknown> {
   return v !== null && typeof v === "object" && !Array.isArray(v)
@@ -235,7 +236,13 @@ export class BenchmarkService {
       .sort((a, b) => a.name.localeCompare(b.name))) {
       const fallback: BenchmarkCaseSummary = { id: entry.name, title: entry.name };
       try {
-        const statementDir = await this.statementRoot(projectId, agentId, benchmarkId, entry.name);
+        const statementDir = await this.caseMaterialRoot(
+          projectId,
+          agentId,
+          benchmarkId,
+          entry.name,
+          "statement",
+        );
         const realReadme = await fs.realpath(path.join(statementDir, "README.md"));
         if (!isWithin(statementDir, realReadme)) throw new Error("README escapes Statement");
         cases.push({
@@ -255,9 +262,16 @@ export class BenchmarkService {
     benchmarkId: string,
     caseId: string,
     rel: string,
+    material: BenchmarkCaseMaterial = "statement",
   ): Promise<WorkspaceFilesResponse> {
-    const statementDir = await this.statementRoot(projectId, agentId, benchmarkId, caseId);
-    return this.workspaceFiles.list(statementDir, rel);
+    const materialDir = await this.caseMaterialRoot(
+      projectId,
+      agentId,
+      benchmarkId,
+      caseId,
+      material,
+    );
+    return this.workspaceFiles.list(materialDir, rel);
   }
 
   async readCaseFile(
@@ -267,36 +281,44 @@ export class BenchmarkService {
     caseId: string,
     rel: string,
     options?: WorkspaceFileReadOptions,
+    material: BenchmarkCaseMaterial = "statement",
   ): Promise<WorkspaceFileContent> {
-    const statementDir = await this.statementRoot(projectId, agentId, benchmarkId, caseId);
-    return this.workspaceFiles.read(statementDir, rel, options);
+    const materialDir = await this.caseMaterialRoot(
+      projectId,
+      agentId,
+      benchmarkId,
+      caseId,
+      material,
+    );
+    return this.workspaceFiles.read(materialDir, rel, options);
   }
 
-  private async statementRoot(
+  private async caseMaterialRoot(
     projectId: string,
     agentId: string,
     benchmarkId: string,
     caseId: string,
+    material: BenchmarkCaseMaterial,
   ): Promise<string> {
     const benchDir = path.join(benchmarksDir(this.root, projectId, agentId), benchmarkId);
     const caseDir = path.join(benchDir, caseId);
-    const statementDir = path.join(caseDir, "statement");
+    const materialDir = path.join(caseDir, material);
     try {
-      const [realBenchDir, realCaseDir, realStatementDir] = await Promise.all([
+      const [realBenchDir, realCaseDir, realMaterialDir] = await Promise.all([
         fs.realpath(benchDir),
         fs.realpath(caseDir),
-        fs.realpath(statementDir),
+        fs.realpath(materialDir),
       ]);
       if (
         !isWithin(realBenchDir, realCaseDir) ||
-        path.dirname(realStatementDir) !== realCaseDir ||
-        path.basename(realStatementDir) !== "statement"
+        path.dirname(realMaterialDir) !== realCaseDir ||
+        path.basename(realMaterialDir) !== material
       ) {
-        throw new Error("Statement path is not canonical");
+        throw new Error("Case material path is not canonical");
       }
-      return realStatementDir;
+      return realMaterialDir;
     } catch {
-      throw new HttpError(404, "not_found", "Public Case Statement does not exist.");
+      throw new HttpError(404, "not_found", `Case ${material} does not exist.`);
     }
   }
 

@@ -3,8 +3,8 @@ name: benchmark-design
 description: Design and calibrate a multi-Case capability Benchmark and establish a traceable Formal Baseline.
 short_description: Design and calibrate an Agent capability Benchmark.
 short_description_zh: 设计并校准 Agent 能力评测 Benchmark。
-version: 5
-updated: 2026-07-29T17:20:58Z
+version: 6
+updated: 2026-07-31T04:10:53Z
 ---
 
 # Benchmark Design
@@ -175,8 +175,10 @@ evaluations:
     provider: <provider>
     model_id: <model_id>
     thinking_level: <thinking_level>
-    summary_title: <public title>
-    summary: <public summary>
+    summary_title: >-
+      <public title>
+    summary: >-
+      <public summary>
     score: <average of the Case scores>
     cost: <average of known Case costs, or null when every Case cost is null>
     duration_ms: <average of the Case durations>
@@ -191,6 +193,8 @@ evaluations:
             duration_ms: <Run duration>
             session_id: <Test Session id>
 ```
+
+After writing, parse the complete `scoreboard.yaml` and verify the appended Evaluation before reporting success or continuing.
 
 Every Run and Case score is on the fixed `0..100` scale. Do not write `max_score`. Calculate and write every Case and Evaluation average directly in the Scoreboard: ignore `null` values when averaging cost and write `null` only when all contributing costs are unknown; round `score` averages to two decimal places, `cost` averages to six decimal places, and `duration_ms` averages to the nearest integer. These stored values are authoritative—do not add a server, frontend, script, or consistency check that recomputes or validates them. Do not add an `aggregate` object or use `case_id`, `mean_score`, `mean_cost`, or `mean_duration_ms`.
 

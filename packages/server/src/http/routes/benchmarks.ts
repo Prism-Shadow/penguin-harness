@@ -10,9 +10,18 @@
 import { Hono } from "hono";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { AppDeps } from "../../app.js";
-import { requireValidId } from "../validate.js";
+import type { BenchmarkCaseMaterial } from "../../services/benchmark-service.js";
+import { badRequest, requireValidId } from "../validate.js";
 
 const TEXT_PREVIEW_BYTES = 256 * 1024;
+
+function caseMaterial(raw: string | undefined): BenchmarkCaseMaterial {
+  const material = raw ?? "statement";
+  if (material !== "statement" && material !== "rubric") {
+    throw badRequest("material must be statement or rubric.");
+  }
+  return material;
+}
 
 export function benchmarksRoutes(deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
@@ -48,6 +57,7 @@ export function benchmarksRoutes(deps: AppDeps): Hono<AppEnv> {
         benchmarkId,
         caseId,
         c.req.query("path") ?? "",
+        caseMaterial(c.req.query("material")),
       ),
     );
   });
@@ -69,6 +79,7 @@ export function benchmarksRoutes(deps: AppDeps): Hono<AppEnv> {
         caseId,
         c.req.query("path") ?? "",
         boundedPreview ? { maxBytes: TEXT_PREVIEW_BYTES } : undefined,
+        caseMaterial(c.req.query("material")),
       );
     return new Response(new Uint8Array(data), {
       status: 200,
