@@ -1019,7 +1019,7 @@ Scenarios:
     viewCase: "View details",
     taskMaterials: "Task materials",
     rubric: "Scoring rubric",
-    agentHidden: "Hidden from Agent",
+    agentHidden: "Hidden from Target Agent",
     caseFileUnavailable: "Case files are unavailable",
     evaluations: "Evaluations",
     noEvaluations: "No evaluations yet",

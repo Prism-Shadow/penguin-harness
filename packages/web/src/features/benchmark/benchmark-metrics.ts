@@ -8,12 +8,10 @@ export interface MetricSourceLike {
   score: number;
 }
 
-/** Each Evaluation's Score; non-finite malformed values become chart gaps defensively. */
+/** Each Evaluation's authoritative stored Score; non-finite malformed values become chart gaps. */
 export function scoreValues(evaluations: readonly MetricSourceLike[]): (number | null)[] {
   return evaluations.map((e) => {
-    return typeof e.score === "number" && Number.isFinite(e.score) && e.score >= 0 && e.score <= 100
-      ? e.score
-      : null;
+    return typeof e.score === "number" && Number.isFinite(e.score) ? e.score : null;
   });
 }
 

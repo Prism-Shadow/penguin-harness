@@ -996,7 +996,7 @@ Benchmark：
     viewCase: "查看详情",
     taskMaterials: "任务材料",
     rubric: "评分标准",
-    agentHidden: "Agent 不可见",
+    agentHidden: "被测 Agent 不可见",
     caseFileUnavailable: "案例文件暂时无法读取",
     evaluations: "评估明细",
     noEvaluations: "暂无评估记录",
