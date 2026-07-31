@@ -35,6 +35,7 @@ export interface ScheduleTaskRunner {
   startTask(
     sessionId: string,
     input: ReturnType<typeof userText>[],
+    opts: { approvalUserId: string },
   ): Promise<{ sessionId: string }>;
 }
 
@@ -43,6 +44,7 @@ export interface ScheduleSessionCreator {
   createSession(args: {
     projectId: string;
     agentId: string;
+    approvalUserId: string;
     workspace?: string;
     modelId?: string;
     provider?: string;
@@ -338,9 +340,11 @@ export class Scheduler {
     }
     // New-Session mode: each fire opens a new session (optional workspace and paired model ref; same semantics as opening a session manually).
     try {
+      const approvalUserId = this.approvalUserId(projectId, state);
       const info = await this.deps.sessionCreator.createSession({
         projectId,
         agentId,
+        approvalUserId,
         ...(def.workspace !== undefined ? { workspace: def.workspace } : {}),
         ...(def.modelId !== undefined ? { modelId: def.modelId } : {}),
         ...(def.provider !== undefined ? { provider: def.provider } : {}),
@@ -366,9 +370,11 @@ export class Scheduler {
   ): Promise<void> {
     const firedAt = new Date(this.now()).toISOString();
     try {
-      await this.deps.runner.startTask(sessionId, [
-        userText(scheduledMessage(def.name, firedAt, def.prompt)),
-      ]);
+      await this.deps.runner.startTask(
+        sessionId,
+        [userText(scheduledMessage(def.name, firedAt, def.prompt))],
+        { approvalUserId: this.approvalUserId(projectId, state) },
+      );
     } catch (err) {
       this.deps.errors.record({
         source: "schedule",
@@ -417,5 +423,12 @@ export class Scheduler {
   private notifyFor(state: ScheduleStateRow, event: ScheduleServerEvent): void {
     const userId = state.creatorUserId;
     if (userId) this.deps.notify(userId, event);
+  }
+
+  /** A schedule has no request-time user; use its persisted creator, with Project owner fallback. */
+  private approvalUserId(projectId: string, state: ScheduleStateRow): string {
+    const userId = state.creatorUserId ?? this.deps.projects.findById(projectId)?.ownerUserId;
+    if (!userId) throw new Error(`No approval user is available for Project ${projectId}.`);
+    return userId;
   }
 }

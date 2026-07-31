@@ -56,7 +56,7 @@ Item by item (design → owner → carrying file or module):
 | Multi-user auth and Project authorization | Server | `server/src/auth/`, `server/src/services/project-service.ts` |
 | Session indexing, per-Session mutex, SSE forwarding | Server | `server/src/runtime/` — see [Server API](/server-api) |
 | Scheduled tasks (execution) | Server | `server/src/runtime/scheduler.ts`; the task definitions live in the file layer at `agent_state/schedule/*.toml` |
-| System-wide approval-mode persistence and manual decisions | Server | `server/src/services/approval-mode-service.ts`, `server/src/runtime/approvals.ts` + SQLite |
+| Per-user approval-mode persistence and manual decisions | Server | `server/src/services/approval-mode-service.ts`, `server/src/runtime/approvals.ts` + SQLite |
 | Usage persistence and cost statistics | Server | `server/src/runtime/usage-recorder.ts`, `services/usage-service.ts` |
 | Agent behavior definition (prompts, runtime params) | File layer | `agent_state/system_config.yaml`, `AGENTS.md` — see the [Configuration Reference](/configuration) |
 | Skills | File layer | `agent_state/skills/<name>/SKILL.md` — see [Skills](/skills) |

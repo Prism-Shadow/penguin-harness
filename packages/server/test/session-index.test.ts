@@ -103,12 +103,30 @@ describe("session-index", () => {
     expect(list.sessions.map((s) => s.sessionId)).toContain(session.sessionId);
   });
 
+  it("legacy Session creation approvalMode updates the current user's persisted setting", async () => {
+    await configureModels();
+    const res = await api.post(base(), { approvalMode: "deny-all" });
+    expect(res.status).toBe(201);
+    const { session } = (await res.json()) as SessionCreateResponse;
+    expect(session.approvalMode).toBe("deny-all");
+    expect(
+      (
+        (await (await api.get("/api/settings/approval-mode")).json()) as {
+          approvalMode: string;
+        }
+      ).approvalMode,
+    ).toBe("deny-all");
+
+    expect((await api.post(base(), { approvalMode: "sometimes" })).status).toBe(400);
+  });
+
   it("schedule-created Session: source derives from session_meta (registry), never from the DB row; user sessions carry none", async () => {
     await configureModels();
     // The scheduler goes through SessionService.createSession directly (no HTTP route exposes source).
     const info = await t.deps.sessionService.createSession({
       projectId,
       agentId: "default_agent",
+      approvalUserId: "alice",
       source: "schedule",
     });
     expect(info.source).toBe("schedule");
@@ -251,6 +269,7 @@ describe("session-index", () => {
         await t.deps.sessionService.createSession({
           projectId,
           agentId: "default_agent",
+          approvalUserId: "alice",
           source: "schedule",
         })
       ).sessionId;
@@ -489,7 +508,7 @@ describe("session-index", () => {
     expect(list.sessions[list.sessions.length - 1]!.sessionId).toBe(older);
   });
 
-  it("PATCH approval mode updates the system setting and every existing Session", async () => {
+  it("PATCH approval mode updates the current user's setting across existing and future Session views", async () => {
     await configureModels();
     const first = (await (await api.post(base(), {})).json()) as SessionCreateResponse;
     const second = (await (await api.post(base(), {})).json()) as SessionCreateResponse;
@@ -505,7 +524,8 @@ describe("session-index", () => {
     ).json()) as SessionResponse;
     expect(firstGot.session.approvalMode).toBe("always-ask");
     expect(secondGot.session.approvalMode).toBe("always-ask");
-    expect(t.deps.sessionsRepo.findById(second.session.sessionId)?.approvalMode).toBe("always-ask");
+    // Session rows are no longer authoritative and are not batch-updated.
+    expect(t.deps.sessionsRepo.findById(second.session.sessionId)?.approvalMode).toBe("allow-all");
     const future = (await (await api.post(base(), {})).json()) as SessionCreateResponse;
     expect(future.session.approvalMode).toBe("always-ask");
     expect(

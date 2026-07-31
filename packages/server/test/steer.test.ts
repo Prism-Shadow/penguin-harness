@@ -56,7 +56,7 @@ describe("steer route", () => {
     t = await createTestApp();
     const { cookie } = await provisionUser(t.app, "steerer");
     api = apiClient(t.app, cookie);
-    t.deps.approvalModes.set("always-ask");
+    t.deps.approvalModes.set("steerer", "always-ask");
     const row: SessionRow = {
       sessionId: SID,
       projectId: "steerer-default_project",
@@ -85,7 +85,9 @@ describe("steer route", () => {
   });
 
   it("running → 202, the trimmed text reaches the core session; a message with nothing in it → 400", async () => {
-    await t.deps.manager.startTask(SID, [userText("go")]);
+    await t.deps.manager.startTask(SID, [userText("go")], {
+      approvalUserId: "steerer",
+    });
     await waitFor(() => t.deps.manager.pendingApprovalCount(SID) === 1);
 
     expect((await api.post(`/api/sessions/${SID}/steer`, { text: "  " })).status).toBe(400);
@@ -104,7 +106,9 @@ describe("steer route", () => {
   });
 
   it("images ride along with the steering text — and carry it alone when there is none", async () => {
-    await t.deps.manager.startTask(SID, [userText("go")]);
+    await t.deps.manager.startTask(SID, [userText("go")], {
+      approvalUserId: "steerer",
+    });
     await waitFor(() => t.deps.manager.pendingApprovalCount(SID) === 1);
 
     const png = "data:image/png;base64,AAAA";

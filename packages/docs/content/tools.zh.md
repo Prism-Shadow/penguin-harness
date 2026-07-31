@@ -175,7 +175,7 @@ POSIX 上 Ctrl-C 向会话进程组发送 `SIGINT`，中断前台命令。Window
 
 - 深度上限为 1:Subagent 不能再派生 Subagent。
 - 子 Session 跟随父 Session:模型(除非以 `model_id`/`provider` 显式指定)、thinking level 与 Workspace 均继承父级，而非 Project 默认值。
-- 子 Session 与其他 Session 一样使用系统全局审批回调。
+- 子 Agent 继承父 Task 发起用户的审批回调。
 - 子 Session 拥有独立 Trace，父 Trace 以 `subagent` 指针事件链接；子消息带 `origin` 标记回流到父级消息流。见 [Session 与 Trace](/sessions-and-traces)。
 
 ### 图像工具

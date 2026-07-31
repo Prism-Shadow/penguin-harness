@@ -36,7 +36,7 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   expect(agentIds).toEqual(["default_agent"]);
   const agentId = "default_agent";
 
-  // This test verifies the manual approval flow, so switch the system-wide mode first.
+  // This test verifies the manual approval flow, so switch this user's mode first.
   expect(
     (
       await page.request.put(`${BASE}/api/settings/approval-mode`, {

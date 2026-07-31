@@ -650,7 +650,7 @@ export function ChatPage() {
   );
 
   // /agent handoff: doesn't use the current Session — creates a new chat for the picked agent
-  // (the system-wide approval mode already applies; model/Workspace use the creation
+  // (the current user's approval mode already applies; model/Workspace use the creation
   // defaults). The first input = a [handoff_from] source block (current agent / Session
   // / Workspace info) + the user's input and images; jumps to the new
   // chat once sent.

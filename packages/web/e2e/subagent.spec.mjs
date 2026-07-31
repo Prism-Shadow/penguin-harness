@@ -312,7 +312,7 @@ test("an approval inside the subagent stays discoverable via the chip badge and 
   page,
 }) => {
   // always-ask: the parent's run_subagent needs a manual allow, and the child's own
-  // exec_command then parks on a NESTED approval (the child uses the same system-wide mode).
+  // exec_command then parks on a NESTED approval (the child inherits the parent Task user's mode).
   const { sessionId } = await provisionSession(page, "subuser2", { approvalMode: "always-ask" });
 
   await page.goto(`${BASE}/chat/${sessionId}`);

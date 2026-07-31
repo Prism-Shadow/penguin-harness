@@ -23,7 +23,7 @@ import { ProjectsRepo } from "./db/repos/projects.js";
 import { GoalsRepo } from "./db/repos/goals.js";
 import { SchedulesRepo } from "./db/repos/schedules.js";
 import { SessionsRepo } from "./db/repos/sessions.js";
-import { SystemSettingsRepo } from "./db/repos/system-settings.js";
+import { UserSettingsRepo } from "./db/repos/user-settings.js";
 import { UiPrefsRepo } from "./db/repos/ui-prefs.js";
 import { UsageRepo } from "./db/repos/usage.js";
 import { UsersRepo } from "./db/repos/users.js";
@@ -144,7 +144,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
   const membersRepo = new MembersRepo(db);
   const agentsRepo = new AgentsRepo(db);
   const sessionsRepo = new SessionsRepo(db);
-  const systemSettingsRepo = new SystemSettingsRepo(db);
+  const userSettingsRepo = new UserSettingsRepo(db);
   const usageRepo = new UsageRepo(db);
   const errorsRepo = new ErrorsRepo(db);
   const prefsRepo = new UiPrefsRepo(db);
@@ -179,16 +179,12 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     isActive: (key) => managerRef !== undefined && managerRef.statusOf(key) !== "idle",
   });
   const approvalModes = new ApprovalModeService({
-    settings: systemSettingsRepo,
-    sessions: sessionsRepo,
-    notify: (approvalMode) => {
+    settings: userSettingsRepo,
+    notify: (userId, approvalMode) => {
       const event = { type: "approval_mode_updated", approvalMode } as const;
-      for (const user of usersRepo.list()) {
-        channels.peek(userChannelKey(user.userId))?.publish(event, "server_event");
-      }
+      channels.peek(userChannelKey(userId))?.publish(event, "server_event");
     },
   });
-  approvalModes.synchronizeSessions();
   const recorder = new UsageRecorder(usageRepo, overrides.now ?? (() => new Date()));
   const errors = new ErrorRecorder(errorsRepo, overrides.now ?? (() => new Date()));
   const titles =

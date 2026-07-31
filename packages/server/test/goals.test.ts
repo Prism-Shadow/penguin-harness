@@ -210,6 +210,7 @@ describe("SessionManager.startGoal", () => {
     await manager.startGoal(ROW.sessionId, {
       input: [userText(text)],
       budget: -1,
+      approvalUserId: "goal-user",
       thinkingLevel: "high",
     });
     await waitFor(() => manager.statusOf(ROW.sessionId) === "idle");
@@ -267,6 +268,7 @@ describe("SessionManager.startGoal", () => {
     await manager.startGoal(ROW.sessionId, {
       input: [userText("Match this mockup"), imageUrlMessage("data:image/png;base64,aGk=")],
       budget: -1,
+      approvalUserId: "goal-user",
     });
     await waitFor(() => manager.statusOf(ROW.sessionId) === "idle");
 
@@ -292,8 +294,16 @@ describe("SessionManager.startGoal", () => {
       await gate;
     };
     const manager = makeManager(session, false);
-    await manager.startGoal(ROW.sessionId, { input: [userText("obj")], budget: -1 });
-    await expect(manager.startTask(ROW.sessionId, [userText("x")])).rejects.toMatchObject({
+    await manager.startGoal(ROW.sessionId, {
+      input: [userText("obj")],
+      budget: -1,
+      approvalUserId: "goal-user",
+    });
+    await expect(
+      manager.startTask(ROW.sessionId, [userText("x")], {
+        approvalUserId: "goal-user",
+      }),
+    ).rejects.toMatchObject({
       status: 409,
     });
     release();
@@ -315,7 +325,11 @@ describe("SessionManager.startGoal", () => {
     const events: ChannelEvent[] = [];
     channels.get(ROW.sessionId).subscribe((e) => events.push(e));
 
-    await manager.startGoal(ROW.sessionId, { input: [userText("obj")], budget: -1 });
+    await manager.startGoal(ROW.sessionId, {
+      input: [userText("obj")],
+      budget: -1,
+      approvalUserId: "goal-user",
+    });
     await waitFor(() => manager.statusOf(ROW.sessionId) === "idle");
 
     expect(goals.latestForSession(ROW.sessionId)).toMatchObject({
@@ -341,7 +355,11 @@ describe("SessionManager.startGoal", () => {
     const events: ChannelEvent[] = [];
     channels.get(ROW.sessionId).subscribe((e) => events.push(e));
 
-    await manager.startGoal(ROW.sessionId, { input: [userText("obj")], budget: 1000 });
+    await manager.startGoal(ROW.sessionId, {
+      input: [userText("obj")],
+      budget: 1000,
+      approvalUserId: "goal-user",
+    });
     await waitFor(() => manager.statusOf(ROW.sessionId) === "idle");
 
     expect(goals.latestForSession(ROW.sessionId)).toMatchObject({

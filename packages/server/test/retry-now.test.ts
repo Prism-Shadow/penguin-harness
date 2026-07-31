@@ -52,7 +52,7 @@ describe("retry-now route", () => {
     const other = await provisionUser(t.app, "outsider_r");
     api = apiClient(t.app, cookie);
     outsider = apiClient(t.app, other.cookie);
-    t.deps.approvalModes.set("always-ask");
+    t.deps.approvalModes.set("retrier", "always-ask");
     const row: SessionRow = {
       sessionId: SID,
       projectId: "retrier-default_project",
@@ -80,7 +80,9 @@ describe("retry-now route", () => {
   });
 
   it("running (parked in a wait) → 200 {skipped:true}, the skip reaches the runtime", async () => {
-    await t.deps.manager.startTask(SID, [userText("go")]);
+    await t.deps.manager.startTask(SID, [userText("go")], {
+      approvalUserId: "retrier",
+    });
     await waitFor(() => t.deps.manager.pendingApprovalCount(SID) === 1);
 
     const res = await api.post(`/api/sessions/${SID}/retry-now`, {});

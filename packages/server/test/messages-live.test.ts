@@ -68,7 +68,7 @@ describe("messages live tail", () => {
   beforeEach(async () => {
     t = await createTestApp();
     ({ cookie } = await provisionUser(t.app, "livetailer"));
-    t.deps.approvalModes.set("always-ask");
+    t.deps.approvalModes.set("livetailer", "always-ask");
     row = {
       sessionId: SID,
       projectId: "livetailer-default_project",
@@ -100,7 +100,9 @@ describe("messages live tail", () => {
 
   it("while running: `live` carries the cursor and one synthetic start per open fragment (origin preserved); it disappears once the run ends", async () => {
     t.deps.manager.adopt(row, midStreamFakeSession(SID));
-    await t.deps.manager.startTask(SID, [userText("go")]);
+    await t.deps.manager.startTask(SID, [userText("go")], {
+      approvalUserId: "livetailer",
+    });
     await waitFor(() => t.deps.manager.pendingApprovalCount(SID) === 1);
 
     const body = await getMessages();

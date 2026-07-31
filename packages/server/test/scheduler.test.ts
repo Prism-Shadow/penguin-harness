@@ -33,10 +33,11 @@ describe("scheduler", () => {
   let sessions: SessionsRepo;
   let nowMs: number;
   let busy: Set<string>;
-  let started: Array<{ sessionId: string; text: string }>;
+  let started: Array<{ sessionId: string; text: string; approvalUserId: string }>;
   let created: Array<{
     projectId: string;
     agentId: string;
+    approvalUserId: string;
     workspace?: string;
     provider?: string;
     modelId?: string;
@@ -82,8 +83,12 @@ describe("scheduler", () => {
       sessions,
       runner: {
         statusOf: (id) => (busy.has(id) ? "running" : "idle"),
-        startTask: async (sessionId, input) => {
-          started.push({ sessionId, text: JSON.stringify(input[0]?.payload ?? "") });
+        startTask: async (sessionId, input, opts) => {
+          started.push({
+            sessionId,
+            text: JSON.stringify(input[0]?.payload ?? ""),
+            approvalUserId: opts.approvalUserId,
+          });
           return { sessionId };
         },
       },
@@ -148,6 +153,7 @@ describe("scheduler", () => {
     await scheduler.tickOnce();
     expect(started).toHaveLength(1);
     expect(started[0]?.sessionId).toBe("session-1");
+    expect(started[0]?.approvalUserId).toBe("owner_a");
     // Trigger input = [scheduled_task] source block + the prompt body (tells the model this is a scheduled task).
     expect(started[0]?.text).toContain("[scheduled_task]");
     expect(started[0]?.text).toContain("schedule: report");
@@ -294,6 +300,7 @@ describe("scheduler", () => {
     expect(created[0]).toMatchObject({
       projectId: P,
       agentId: A,
+      approvalUserId: "owner_a",
       workspace: "/tmp/ws",
       provider: "custom",
       modelId: "m-bench",

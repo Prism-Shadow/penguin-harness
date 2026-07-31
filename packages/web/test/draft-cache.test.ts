@@ -103,7 +103,7 @@ describe("parseDraft (field-by-field validation)", () => {
     ).toEqual({ modelRef: { provider: "anthropic", modelId: "claude-opus-4-8" } });
   });
 
-  it("legacy approvalMode fields are ignored because the setting is system-wide", () => {
+  it("legacy approvalMode fields are ignored because the setting is persisted per user", () => {
     expect(parseDraft(JSON.stringify({ approvalMode: "yolo" }))).toEqual({});
     for (const m of ["always-ask", "read-only", "allow-all", "deny-all"]) {
       expect(parseDraft(JSON.stringify({ approvalMode: m }))).toEqual({});

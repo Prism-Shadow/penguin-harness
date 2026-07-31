@@ -101,10 +101,12 @@ describe("authz", () => {
     expect((await member.get(`/api/projects/${projectId}/models`)).status).toBe(404);
   });
 
-  it("approval mode is system-global for every authenticated user", async () => {
+  it("approval mode is isolated per authenticated user", async () => {
     const ownerEvents: ChannelEvent[] = [];
+    const memberEvents: ChannelEvent[] = [];
     const outsiderEvents: ChannelEvent[] = [];
     t.deps.channels.get(userChannelKey("owner_a")).subscribe((event) => ownerEvents.push(event));
+    t.deps.channels.get(userChannelKey("member_b")).subscribe((event) => memberEvents.push(event));
     t.deps.channels
       .get(userChannelKey("outsider_c"))
       .subscribe((event) => outsiderEvents.push(event));
@@ -122,21 +124,25 @@ describe("authz", () => {
       ).status,
     ).toBe(200);
 
+    const seenByMember = (await (
+      await member.get("/api/settings/approval-mode")
+    ).json()) as ApprovalModeResponse;
     const seenByOwner = (await (
       await owner.get("/api/settings/approval-mode")
     ).json()) as ApprovalModeResponse;
     const seenByOutsider = (await (
       await outsider.get("/api/settings/approval-mode")
     ).json()) as ApprovalModeResponse;
-    expect(seenByOwner.approvalMode).toBe("always-ask");
-    expect(seenByOutsider.approvalMode).toBe("always-ask");
-    for (const events of [ownerEvents, outsiderEvents]) {
-      expect(events).toHaveLength(1);
-      expect(JSON.parse(events[0]!.data)).toEqual({
-        type: "approval_mode_updated",
-        approvalMode: "always-ask",
-      });
-    }
+    expect(seenByMember.approvalMode).toBe("always-ask");
+    expect(seenByOwner.approvalMode).toBe("allow-all");
+    expect(seenByOutsider.approvalMode).toBe("allow-all");
+    expect(ownerEvents).toHaveLength(0);
+    expect(outsiderEvents).toHaveLength(0);
+    expect(memberEvents).toHaveLength(1);
+    expect(JSON.parse(memberEvents[0]!.data)).toEqual({
+      type: "approval_mode_updated",
+      approvalMode: "always-ask",
+    });
 
     expect(
       (

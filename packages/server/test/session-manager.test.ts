@@ -49,6 +49,7 @@ const ROW: SessionRow = {
   title: null,
   createdAt: "2026-07-06T00:00:00.000Z",
 };
+const APPROVAL_USER_ID = "test-user";
 
 /** A simple, scriptable fake Session: run yields one tool_call and requests approval for it. */
 function approvalFakeSession(sessionId: string, toolName = "write_file"): RuntimeSession {
@@ -85,6 +86,7 @@ describe("session-manager", () => {
   let recorded: OmniMessage[];
   let recordedCtx: UsageContext[];
   let approvalMode: SessionRow["approvalMode"];
+  let approvalModesByUser: Map<string, SessionRow["approvalMode"]>;
 
   const makeManager = (loader: SessionLoader, errors?: ErrorSink): SessionManager =>
     new SessionManager({
@@ -92,7 +94,9 @@ describe("session-manager", () => {
       channels,
       sources,
       loader,
-      approvalModes: { get: () => approvalMode },
+      approvalModes: {
+        get: (userId) => approvalModesByUser.get(userId) ?? approvalMode,
+      },
       recorder: {
         record: async (ctx, msg) => {
           recordedCtx.push(ctx);
@@ -125,6 +129,7 @@ describe("session-manager", () => {
     recorded = [];
     recordedCtx = [];
     approvalMode = "always-ask";
+    approvalModesByUser = new Map();
   });
   afterEach(() => {
     channels.dispose();
@@ -133,7 +138,9 @@ describe("session-manager", () => {
 
   it("unknown Session → 404", async () => {
     const manager = makeManager(loaderOf(approvalFakeSession("session-1")));
-    const err = await manager.startTask("session-ghost", [userText("x")]).catch((e: unknown) => e);
+    const err = await manager
+      .startTask("session-ghost", [userText("x")], { approvalUserId: APPROVAL_USER_ID })
+      .catch((e: unknown) => e);
     expect((err as { status: number }).status).toBe(404);
   });
 
@@ -141,7 +148,9 @@ describe("session-manager", () => {
     approvalMode = "allow-all";
     const manager = makeManager(loaderOf(approvalFakeSession("session-1")));
     const events = capture("session-1");
-    const { sessionId } = await manager.startTask("session-1", [userText("hello")]);
+    const { sessionId } = await manager.startTask("session-1", [userText("hello")], {
+      approvalUserId: APPROVAL_USER_ID,
+    });
     expect(sessionId).toBe("session-1");
     await waitFor(() => manager.statusOf("session-1") === "idle" && recorded.length >= 3);
 
@@ -177,10 +186,15 @@ describe("session-manager", () => {
       async *compact(): AsyncGenerator<OmniMessage> {},
     };
     const manager = makeManager(loaderOf(fake));
-    await manager.startTask("session-1", [userText("a")], { thinkingLevel: "high" });
+    await manager.startTask("session-1", [userText("a")], {
+      approvalUserId: APPROVAL_USER_ID,
+      thinkingLevel: "high",
+    });
     await waitFor(() => manager.statusOf("session-1") === "idle" && seen.length === 1);
     // Omitted on the next Task: the session falls back to its default (nothing forwarded).
-    await manager.startTask("session-1", [userText("b")]);
+    await manager.startTask("session-1", [userText("b")], {
+      approvalUserId: APPROVAL_USER_ID,
+    });
     await waitFor(() => manager.statusOf("session-1") === "idle" && seen.length === 2);
     expect(seen).toEqual(["high", undefined]);
   });
@@ -212,7 +226,9 @@ describe("session-manager", () => {
       async *compact(): AsyncGenerator<OmniMessage> {},
     };
     const manager = makeManager(loaderOf(failing), { record: (args) => captured.push(args) });
-    await manager.startTask("session-1", [userText("run")]);
+    await manager.startTask("session-1", [userText("run")], {
+      approvalUserId: APPROVAL_USER_ID,
+    });
     await waitFor(() => manager.statusOf("session-1") === "idle" && captured.length >= 2);
 
     expect(captured.map((a) => [a.source, a.code, a.kind])).toEqual([
@@ -226,10 +242,14 @@ describe("session-manager", () => {
 
   it("mutual exclusion: startTask again while running → 409 task_in_progress; compact → 409", async () => {
     const manager = makeManager(loaderOf(approvalFakeSession("session-1")));
-    await manager.startTask("session-1", [userText("go")]);
+    await manager.startTask("session-1", [userText("go")], {
+      approvalUserId: APPROVAL_USER_ID,
+    });
     await waitFor(() => manager.pendingApprovalCount("session-1") === 1);
 
-    const again = await manager.startTask("session-1", [userText("x")]).catch((e: unknown) => e);
+    const again = await manager
+      .startTask("session-1", [userText("x")], { approvalUserId: APPROVAL_USER_ID })
+      .catch((e: unknown) => e);
     expect((again as { status: number; code: string }).status).toBe(409);
     expect((again as { code: string }).code).toBe("task_in_progress");
     const compact = await manager.startCompact("session-1").catch((e: unknown) => e);
@@ -261,7 +281,9 @@ describe("session-manager", () => {
     expect(before.status).toBe(409);
     expect(before.code).toBe("not_running");
 
-    await manager.startTask("session-1", [userText("go")]);
+    await manager.startTask("session-1", [userText("go")], {
+      approvalUserId: APPROVAL_USER_ID,
+    });
     await waitFor(() => manager.pendingApprovalCount("session-1") === 1);
     // Running: forwarded to the core session (no SSE event of its own).
     expect(steerErr("focus on tests")).toBeNull();
@@ -290,21 +312,27 @@ describe("session-manager", () => {
     const manager = makeManager(loaderOf(fake));
     const events = capture("session-1");
 
-    const first = await manager.startTask("session-1", [userText("task 1")]);
+    const first = await manager.startTask("session-1", [userText("task 1")], {
+      approvalUserId: APPROVAL_USER_ID,
+    });
     expect(first.queued).toBe(false);
     await waitFor(() => manager.pendingApprovalCount("session-1") === 1);
 
     // Busy + queueIfBusy: held server-side instead of 409 (order preserved); without the
     // flag the 409 mutual exclusion is unchanged.
     const q1 = await manager.startTask("session-1", [userText("follow-up 1")], {
+      approvalUserId: APPROVAL_USER_ID,
       queueIfBusy: true,
     });
     const q2 = await manager.startTask("session-1", [userText("follow-up 2")], {
+      approvalUserId: APPROVAL_USER_ID,
       queueIfBusy: true,
     });
     expect([q1.queued, q2.queued]).toEqual([true, true]);
     expect(manager.pendingFollowUpCount("session-1")).toBe(2);
-    const conflict = await manager.startTask("session-1", [userText("x")]).catch((e: unknown) => e);
+    const conflict = await manager
+      .startTask("session-1", [userText("x")], { approvalUserId: APPROVAL_USER_ID })
+      .catch((e: unknown) => e);
     expect((conflict as HttpError).code).toBe("task_in_progress");
 
     // Abort the running task: queued follow-ups are future tasks — NOT discarded; the next
@@ -359,6 +387,7 @@ describe("session-manager", () => {
     await waitFor(() => releaseCompact !== null);
 
     const q = await manager.startTask("session-1", [userText("after compact")], {
+      approvalUserId: APPROVAL_USER_ID,
       queueIfBusy: true,
     });
     expect(q.queued).toBe(true);
@@ -373,7 +402,9 @@ describe("session-manager", () => {
   it("always-ask: registers a pending approval and pushes approval_request; continues after the decision", async () => {
     const manager = makeManager(loaderOf(approvalFakeSession("session-1")));
     const events = capture("session-1");
-    await manager.startTask("session-1", [userText("go")]);
+    await manager.startTask("session-1", [userText("go")], {
+      approvalUserId: APPROVAL_USER_ID,
+    });
     await waitFor(() => manager.pendingApprovalCount("session-1") === 1);
 
     const requests = serverEvents(events).filter((e) => e.type === "approval_request");
@@ -396,7 +427,9 @@ describe("session-manager", () => {
   it("deny-all / read-only decide automatically (no human handoff)", async () => {
     approvalMode = "deny-all";
     const manager = makeManager(loaderOf(approvalFakeSession("session-1")));
-    await manager.startTask("session-1", [userText("go")]);
+    await manager.startTask("session-1", [userText("go")], {
+      approvalUserId: APPROVAL_USER_ID,
+    });
     await waitFor(() => manager.statusOf("session-1") === "idle");
     expect(
       recorded.some(
@@ -410,11 +443,59 @@ describe("session-manager", () => {
     recorded = [];
     approvalMode = "read-only";
     const manager2 = makeManager(loaderOf(approvalFakeSession("session-1", "read_tool")));
-    await manager2.startTask("session-1", [userText("go")]);
+    await manager2.startTask("session-1", [userText("go")], {
+      approvalUserId: APPROVAL_USER_ID,
+    });
     await waitFor(() => manager2.statusOf("session-1") === "idle");
     expect(recorded.some((m) => (m.payload as { text?: string }).text === "decision=allow")).toBe(
       true,
     );
+  });
+
+  it("the same Session uses the approval mode of the user who starts each Task", async () => {
+    approvalModesByUser.set("alice", "deny-all");
+    approvalModesByUser.set("bob", "allow-all");
+    const manager = makeManager(loaderOf(approvalFakeSession("session-1")));
+
+    await manager.startTask("session-1", [userText("from alice")], {
+      approvalUserId: "alice",
+    });
+    await waitFor(() => manager.statusOf("session-1") === "idle");
+    await manager.startTask("session-1", [userText("from bob")], {
+      approvalUserId: "bob",
+    });
+    await waitFor(() => manager.statusOf("session-1") === "idle");
+
+    const decisions = recorded
+      .filter((m) => (m.payload as { type?: string }).type === "approval_decision")
+      .map((m) => (m.payload as { decision: string }).decision);
+    expect(decisions).toEqual(["deny", "allow"]);
+  });
+
+  it("a queued follow-up keeps the submitting user's approval scope", async () => {
+    approvalModesByUser.set("alice", "always-ask");
+    approvalModesByUser.set("bob", "deny-all");
+    const manager = makeManager(loaderOf(approvalFakeSession("session-1")));
+
+    await manager.startTask("session-1", [userText("from alice")], {
+      approvalUserId: "alice",
+    });
+    await waitFor(() => manager.pendingApprovalCount("session-1") === 1);
+    await manager.startTask("session-1", [userText("from bob")], {
+      approvalUserId: "bob",
+      queueIfBusy: true,
+    });
+
+    manager.decideApproval("session-1", "tc-1", "allow");
+    await waitFor(
+      () =>
+        recorded.filter((m) => (m.payload as { type?: string }).type === "approval_decision")
+          .length === 2 && manager.statusOf("session-1") === "idle",
+    );
+    const decisions = recorded
+      .filter((m) => (m.payload as { type?: string }).type === "approval_decision")
+      .map((m) => (m.payload as { decision: string }).decision);
+    expect(decisions).toEqual(["allow", "deny"]);
   });
 
   it("sub-session (origin) registration: session_meta persists; the title is left to the model using the sub-session's own conversation", async () => {
@@ -464,7 +545,9 @@ describe("session-manager", () => {
       },
       log: () => {},
     });
-    await manager.startTask("session-1", [userText("go")]);
+    await manager.startTask("session-1", [userText("go")], {
+      approvalUserId: APPROVAL_USER_ID,
+    });
     await waitFor(() => manager.statusOf("session-1") === "idle");
     const child = sessions.findById("child-1");
     expect(child).not.toBeNull();
@@ -514,7 +597,9 @@ describe("session-manager", () => {
       async *compact() {},
     };
     const manager = makeManager(loaderOf(fake));
-    await manager.startTask("session-1", [userText("go")]);
+    await manager.startTask("session-1", [userText("go")], {
+      approvalUserId: APPROVAL_USER_ID,
+    });
     await waitFor(() => manager.pendingApprovalCount("session-1") === 1);
     // Switch to allow-all while the first request is pending human review: the second no longer needs one.
     approvalMode = "allow-all";
@@ -530,7 +615,9 @@ describe("session-manager", () => {
   it("abort: pending approvals collapse to deny before the AbortSignal fires", async () => {
     const manager = makeManager(loaderOf(approvalFakeSession("session-1")));
     expect(manager.abortTask("session-1")).toBe(false); // no Task in progress → no-op
-    await manager.startTask("session-1", [userText("go")]);
+    await manager.startTask("session-1", [userText("go")], {
+      approvalUserId: APPROVAL_USER_ID,
+    });
     await waitFor(() => manager.pendingApprovalCount("session-1") === 1);
     expect(manager.abortTask("session-1")).toBe(true);
     await waitFor(() => manager.statusOf("session-1") === "idle");
@@ -545,11 +632,15 @@ describe("session-manager", () => {
     const manager = makeManager(loaderOf(approvalFakeSession("session-1")));
     expect(manager.beginSessionDeletion("session-1")).toEqual([]); // no active entry
     // While deletion is in progress: a new Task is rejected with 409 (prevents resurrection).
-    const rejected = await manager.startTask("session-1", [userText("x")]).catch((e: unknown) => e);
+    const rejected = await manager
+      .startTask("session-1", [userText("x")], { approvalUserId: APPROVAL_USER_ID })
+      .catch((e: unknown) => e);
     expect((rejected as { status?: number }).status).toBe(409);
     manager.endSessionDeletion("session-1");
     // Runs normally once the deletion flag is cleared.
-    await manager.startTask("session-1", [userText("go")]);
+    await manager.startTask("session-1", [userText("go")], {
+      approvalUserId: APPROVAL_USER_ID,
+    });
     await waitFor(() => manager.pendingApprovalCount("session-1") === 1);
     const runnings = manager.beginSessionDeletion("session-1");
     expect(runnings.length).toBe(1);
@@ -561,7 +652,9 @@ describe("session-manager", () => {
   it("self-heal: when the loader returns a new session_id, the index primary key is updated and the actual current id returned", async () => {
     approvalMode = "allow-all";
     const manager = makeManager(loaderOf(approvalFakeSession("session-2-healed")));
-    const { sessionId } = await manager.startTask("session-1", [userText("go")]);
+    const { sessionId } = await manager.startTask("session-1", [userText("go")], {
+      approvalUserId: APPROVAL_USER_ID,
+    });
     expect(sessionId).toBe("session-2-healed");
     expect(sessions.findById("session-1")).toBeNull();
     expect(sessions.findById("session-2-healed")).not.toBeNull();
@@ -572,7 +665,9 @@ describe("session-manager", () => {
 
   it("after the channel is swept and rebuilt, drive still sends to the current channel (re-get before every publish)", async () => {
     const manager = makeManager(loaderOf(approvalFakeSession("session-1")));
-    await manager.startTask("session-1", [userText("go")]);
+    await manager.startTask("session-1", [userText("go")], {
+      approvalUserId: APPROVAL_USER_ID,
+    });
     await waitFor(() => manager.pendingApprovalCount("session-1") === 1);
 
     // No subscribers, no publish while waiting for approval: simulate idle sweeping removing the old channel.
@@ -596,7 +691,9 @@ describe("session-manager", () => {
   it("abortProject: returns the in-flight drive Promises; wrap-up completes after awaiting them", async () => {
     const manager = makeManager(loaderOf(approvalFakeSession("session-1")));
     expect(manager.abortProject("p1")).toEqual([]); // no active runs → empty array
-    await manager.startTask("session-1", [userText("go")]);
+    await manager.startTask("session-1", [userText("go")], {
+      approvalUserId: APPROVAL_USER_ID,
+    });
     await waitFor(() => manager.pendingApprovalCount("session-1") === 1);
 
     const runnings = manager.abortProject("p1");
@@ -614,7 +711,9 @@ describe("session-manager", () => {
       },
     };
     const manager = makeManager(loader);
-    const err = await manager.startTask("session-1", [userText("x")]).catch((e: unknown) => e);
+    const err = await manager
+      .startTask("session-1", [userText("x")], { approvalUserId: APPROVAL_USER_ID })
+      .catch((e: unknown) => e);
     expect((err as { status: number; code: string }).status).toBe(409);
     expect((err as { code: string }).code).toBe("workspace_missing");
   });
@@ -622,7 +721,9 @@ describe("session-manager", () => {
   it("rejects new Tasks once shutdown is set (503 shutting_down)", async () => {
     const manager = makeManager(loaderOf(approvalFakeSession("session-1")));
     await manager.shutdown();
-    const err = await manager.startTask("session-1", [userText("x")]).catch((e: unknown) => e);
+    const err = await manager
+      .startTask("session-1", [userText("x")], { approvalUserId: APPROVAL_USER_ID })
+      .catch((e: unknown) => e);
     expect((err as { status: number; code: string }).status).toBe(503);
     expect((err as { code: string }).code).toBe("shutting_down");
     const compactErr = await manager.startCompact("session-1").catch((e: unknown) => e);
@@ -642,13 +743,17 @@ describe("session-manager", () => {
     // Not evicted before timeout: startTask reuses the active-table entry, bypassing the loader.
     manager.sweepIdle(Date.now() + 1000, 30 * 60 * 1000);
     approvalMode = "allow-all";
-    await manager.startTask("session-1", [userText("a")]);
+    await manager.startTask("session-1", [userText("a")], {
+      approvalUserId: APPROVAL_USER_ID,
+    });
     await waitFor(() => manager.statusOf("session-1") === "idle");
     expect(loads).toBe(0);
 
     // Evicted after timeout: once the entry is released, the next startTask reloads it.
     manager.sweepIdle(Date.now() + 31 * 60 * 1000, 30 * 60 * 1000);
-    await manager.startTask("session-1", [userText("b")]);
+    await manager.startTask("session-1", [userText("b")], {
+      approvalUserId: APPROVAL_USER_ID,
+    });
     await waitFor(() => manager.statusOf("session-1") === "idle");
     expect(loads).toBe(1);
   });
@@ -668,18 +773,24 @@ describe("session-manager", () => {
 
     // Another Agent's vault update leaves this entry alone.
     manager.invalidateAgentRuntimes("p1", "other_agent");
-    await manager.startTask("session-1", [userText("a")]);
+    await manager.startTask("session-1", [userText("a")], {
+      approvalUserId: APPROVAL_USER_ID,
+    });
     await waitFor(() => manager.statusOf("session-1") === "idle");
     expect(loads).toBe(0);
 
     // This Agent's vault update: the next Task rebuilds the runtime via the loader.
     manager.invalidateAgentRuntimes("p1", "a1");
-    await manager.startTask("session-1", [userText("b")]);
+    await manager.startTask("session-1", [userText("b")], {
+      approvalUserId: APPROVAL_USER_ID,
+    });
     await waitFor(() => manager.statusOf("session-1") === "idle");
     expect(loads).toBe(1);
 
     // Rebuilt once only: the fresh entry is current again.
-    await manager.startTask("session-1", [userText("c")]);
+    await manager.startTask("session-1", [userText("c")], {
+      approvalUserId: APPROVAL_USER_ID,
+    });
     await waitFor(() => manager.statusOf("session-1") === "idle");
     expect(loads).toBe(1);
   });
@@ -693,7 +804,9 @@ describe("session-manager", () => {
       },
     };
     const manager = makeManager(loader);
-    await manager.startTask("session-1", [userText("go")]); // built here: load #1
+    await manager.startTask("session-1", [userText("go")], {
+      approvalUserId: APPROVAL_USER_ID,
+    }); // built here: load #1
     await waitFor(() => manager.pendingApprovalCount("session-1") === 1);
 
     manager.invalidateAgentRuntimes("p1", "a1"); // vault updated while the Task waits on approval
@@ -704,7 +817,9 @@ describe("session-manager", () => {
 
     // First Task after it finished: the stale entry is discarded and re-resumed with current values.
     approvalMode = "allow-all";
-    await manager.startTask("session-1", [userText("next")]);
+    await manager.startTask("session-1", [userText("next")], {
+      approvalUserId: APPROVAL_USER_ID,
+    });
     await waitFor(() => manager.statusOf("session-1") === "idle");
     expect(loads).toBe(2);
   });
@@ -731,20 +846,28 @@ describe("session-manager", () => {
 
     manager.invalidateProjectRuntimes("p1");
     // Both p1 entries are stale and rebuild through the loader on their next Task.
-    await manager.startTask("session-1", [userText("a")]);
+    await manager.startTask("session-1", [userText("a")], {
+      approvalUserId: APPROVAL_USER_ID,
+    });
     await waitFor(() => manager.statusOf("session-1") === "idle");
-    await manager.startTask("session-2", [userText("b")]);
+    await manager.startTask("session-2", [userText("b")], {
+      approvalUserId: APPROVAL_USER_ID,
+    });
     await waitFor(() => manager.statusOf("session-2") === "idle");
     expect(loads).toBe(2);
     // The p2 entry keeps its cached runtime.
-    await manager.startTask("session-3", [userText("c")]);
+    await manager.startTask("session-3", [userText("c")], {
+      approvalUserId: APPROVAL_USER_ID,
+    });
     await waitFor(() => manager.statusOf("session-3") === "idle");
     expect(loads).toBe(2);
   });
 
   it("sweepIdle: entries that are running / have pending approvals are not evicted", async () => {
     const manager = makeManager(loaderOf(approvalFakeSession("session-1")));
-    await manager.startTask("session-1", [userText("go")]);
+    await manager.startTask("session-1", [userText("go")], {
+      approvalUserId: APPROVAL_USER_ID,
+    });
     await waitFor(() => manager.pendingApprovalCount("session-1") === 1);
     manager.sweepIdle(Date.now() + 24 * 60 * 60 * 1000, 30 * 60 * 1000);
     // The entry is still there: the approval can be decided and wraps up normally.
@@ -799,7 +922,9 @@ describe("session-manager", () => {
       log: () => {},
     });
 
-    await manager.startTask("session-1", [userText("question 1"), userText("question 2")]);
+    await manager.startTask("session-1", [userText("question 1"), userText("question 2")], {
+      approvalUserId: APPROVAL_USER_ID,
+    });
     await waitFor(() => notified.length === 1);
     expect(notified[0]!.req.fallbackText).toBe("question 1\nquestion 2");
     // No material override for the main session: material is gathered by the core Session during run.
@@ -855,7 +980,9 @@ describe("session-manager", () => {
       log: () => {},
     });
 
-    await manager.startTask("session-1", [userText("long question")]);
+    await manager.startTask("session-1", [userText("long question")], {
+      approvalUserId: APPROVAL_USER_ID,
+    });
     // The early trigger fires while the run is still in flight (gated before completion).
     await waitFor(() => notified.length === 1);
     expect(manager.statusOf("session-1")).toBe("running");
@@ -928,7 +1055,9 @@ describe("session-manager", () => {
       log: () => {},
     });
 
-    await manager.startTask("session-1", [userText("delegate this")]);
+    await manager.startTask("session-1", [userText("delegate this")], {
+      approvalUserId: APPROVAL_USER_ID,
+    });
     // Recording happens after the early-title check, so once the sub-session's 3000 chars
     // have been driven through the parent's counter has already seen everything it will
     // ever see from the child — and it must still be at zero.

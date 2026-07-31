@@ -654,22 +654,30 @@ describe("models update reaches loaded sessions (invalidation + live unlock)", (
     const idle = () => t.deps.manager.statusOf("models-sess-1") === "idle";
 
     // First Task builds the runtime (load #1); the second reuses the active-table entry.
-    await t.deps.manager.startTask("models-sess-1", [userText("a")]);
+    await t.deps.manager.startTask("models-sess-1", [userText("a")], {
+      approvalUserId: "inv_owner",
+    });
     await waitFor(idle);
-    await t.deps.manager.startTask("models-sess-1", [userText("b")]);
+    await t.deps.manager.startTask("models-sess-1", [userText("b")], {
+      approvalUserId: "inv_owner",
+    });
     await waitFor(idle);
     expect(loads).toBe(1);
 
     // Key update via the API: the cached runtime is stale, so the next Task re-resumes
     // (the loader re-reads the Project config — the new api_key reaches the next Task).
     expect((await putModels("sk-fresh-key-000111")).status).toBe(200);
-    await t.deps.manager.startTask("models-sess-1", [userText("c")]);
+    await t.deps.manager.startTask("models-sess-1", [userText("c")], {
+      approvalUserId: "inv_owner",
+    });
     await waitFor(idle);
     expect(loads).toBe(2);
 
     // Reads don't invalidate: the rebuilt runtime is reused.
     expect((await api.get(`/api/projects/${projectId}/models`)).status).toBe(200);
-    await t.deps.manager.startTask("models-sess-1", [userText("d")]);
+    await t.deps.manager.startTask("models-sess-1", [userText("d")], {
+      approvalUserId: "inv_owner",
+    });
     await waitFor(idle);
     expect(loads).toBe(2);
   });

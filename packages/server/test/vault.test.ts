@@ -154,9 +154,13 @@ describe("vault api", () => {
     const idle = () => t.deps.manager.statusOf("vault-sess-1") === "idle";
 
     // First Task builds the runtime (load #1); the second reuses the active-table entry.
-    await t.deps.manager.startTask("vault-sess-1", [userText("a")]);
+    await t.deps.manager.startTask("vault-sess-1", [userText("a")], {
+      approvalUserId: "owner_a",
+    });
     await waitFor(idle);
-    await t.deps.manager.startTask("vault-sess-1", [userText("b")]);
+    await t.deps.manager.startTask("vault-sess-1", [userText("b")], {
+      approvalUserId: "owner_a",
+    });
     await waitFor(idle);
     expect(loads).toBe(1);
 
@@ -164,13 +168,17 @@ describe("vault api", () => {
     // (the loader re-reads .vault.toml — the new value reaches the next Task's environment).
     const put = await owner.put(vaultPath, { entries: [{ key: "NEW_KEY", value: "v-secret-1" }] });
     expect(put.status).toBe(200);
-    await t.deps.manager.startTask("vault-sess-1", [userText("c")]);
+    await t.deps.manager.startTask("vault-sess-1", [userText("c")], {
+      approvalUserId: "owner_a",
+    });
     await waitFor(idle);
     expect(loads).toBe(2);
 
     // Reads don't invalidate: the rebuilt runtime is reused.
     expect((await owner.get(vaultPath)).status).toBe(200);
-    await t.deps.manager.startTask("vault-sess-1", [userText("d")]);
+    await t.deps.manager.startTask("vault-sess-1", [userText("d")], {
+      approvalUserId: "owner_a",
+    });
     await waitFor(idle);
     expect(loads).toBe(2);
   });

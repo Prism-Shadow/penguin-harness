@@ -1,6 +1,6 @@
 /**
  * End-to-end test for the draft-state new-conversation flow:
- * - /chat/new lets you pick Model and the system-wide approval mode up front; the Session is
+ * - /chat/new lets you pick Model and the current user's approval mode up front; the Session is
  *   only created when the first message is sent, and the model lands faithfully in its meta;
  * - the draft auto-caches (body persisted via debounce): after a page reload, both the body and
  *   the selections are restored, and the cache clears once sending succeeds;
@@ -140,7 +140,7 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   await expect(page.getByRole("button", { name: "审批模式" })).toContainText("放行只读");
   // The thinking level is NOT draft state: it restores from the Agent config (written through above), not the cache.
   await expect(page.getByRole("button", { name: "思考等级" })).toContainText("高");
-  // Send: the Session is only created now, and it observes the current system-wide mode.
+  // Send: the Session is only created now, and its Task observes the current user's mode.
   await page.getByRole("button", { name: "发送" }).click();
   await page.waitForURL(/\/chat\/session-/);
   const firstSessionId = page.url().split("/chat/")[1];
@@ -274,7 +274,7 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   const second = await (await page.request.get(`${BASE}/api/sessions/${secondSessionId}`)).json();
   expect(second.session.agentId).toBe("agent_helper");
   // The previously picked model carries over as the new default (switch-becomes-default);
-  // approval mode comes from the system-wide setting.
+  // approval mode comes from the current user's setting.
   expect(second.session.modelId).toBe("claude-4-8-mini");
   expect(second.session.provider).toBe("custom");
   expect(second.session.approvalMode).toBe("read-only");

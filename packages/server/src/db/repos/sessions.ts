@@ -1,6 +1,7 @@
 /**
  * sessions table repo:
- * Session index, approval mode, and auto-generated title; Session-level routes use this to look up project ownership.
+ * Session index, legacy approval-mode snapshot, and auto-generated title; Session-level
+ * routes use this to look up Project access. Runtime approvals come from user_settings.
  */
 import type { DatabaseSync } from "node:sqlite";
 import type { ApprovalMode } from "../../api/types.js";
@@ -96,11 +97,6 @@ export class SessionsRepo {
   listByProject(projectId: string): SessionRow[] {
     const rows = this.db.prepare("SELECT * FROM sessions WHERE project_id = ?").all(projectId);
     return rows.map(mapRow);
-  }
-
-  /** Keep the denormalized Session snapshots aligned with the system-wide approval mode. */
-  updateAllApprovalModes(mode: ApprovalMode): void {
-    this.db.prepare("UPDATE sessions SET approval_mode = ?").run(mode);
   }
 
   updateTitle(sessionId: string, title: string): void {

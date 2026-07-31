@@ -10,8 +10,8 @@
  *   `POST /approvals/:toolCallId`; no timeout — pending approvals are resolved to deny
  *   when the Task is interrupted (then proceeds through the abort flow).
  *
- * Every approval decision re-reads the system-wide approval mode, so changes take effect
- * immediately across existing and running Sessions.
+ * Every approval decision re-reads the current Task user's approval mode, so that user's
+ * setting changes take effect immediately across their existing and running Tasks.
  * Docs: /docs/tools § "Approval".
  */
 import type { ApprovalMode } from "../api/types.js";

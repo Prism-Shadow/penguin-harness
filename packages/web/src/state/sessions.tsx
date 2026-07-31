@@ -43,10 +43,11 @@ import {
   sessionCategory,
   splitPage,
 } from "../lib/session-grouping";
+import { ApprovalModeSyncGuard } from "./approval-mode-sync";
 import { useProject } from "./project";
 
 interface SessionsContextValue {
-  /** One system-wide approval mode shared by every existing, running, and future Session. */
+  /** Current user's approval mode, shared by all Tasks they start across Sessions. */
   approvalMode: ApprovalMode;
   approvalModeLoading: boolean;
   setApprovalMode: (approvalMode: ApprovalMode) => Promise<void>;
@@ -106,6 +107,9 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [approvalMode, setApprovalModeState] = useState<ApprovalMode>("allow-all");
   const [approvalModeLoading, setApprovalModeLoading] = useState(true);
+  const approvalModeSyncRef = useRef<ApprovalModeSyncGuard | null>(null);
+  const approvalModeSync =
+    approvalModeSyncRef.current ?? (approvalModeSyncRef.current = new ApprovalModeSyncGuard());
   /** pageKey → that pair's paging cursor; a key is present iff its first page has been fetched. */
   const [pageState, setPageState] = useState<ReadonlyMap<string, PagePosition>>(new Map());
   const [countsByAgent, setCountsByAgent] = useState<ReadonlyMap<string, SessionCategoryCounts>>(
@@ -135,12 +139,21 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
     );
   }, []);
 
+  const refreshApprovalMode = useCallback(async () => {
+    const revision = approvalModeSync.snapshot();
+    const res = await api.getApprovalMode();
+    if (approvalModeSync.isCurrent(revision)) applyApprovalMode(res.approvalMode);
+  }, [applyApprovalMode, approvalModeSync]);
+
   useEffect(() => {
     let cancelled = false;
+    const revision = approvalModeSync.snapshot();
     api
       .getApprovalMode()
       .then((res) => {
-        if (!cancelled) applyApprovalMode(res.approvalMode);
+        if (!cancelled && approvalModeSync.isCurrent(revision)) {
+          applyApprovalMode(res.approvalMode);
+        }
       })
       .catch(() => undefined)
       .finally(() => {
@@ -149,14 +162,15 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [applyApprovalMode]);
+  }, [applyApprovalMode, approvalModeSync]);
 
   const setApprovalMode = useCallback(
     async (next: ApprovalMode) => {
+      const revision = approvalModeSync.beginWrite();
       const res = await api.putApprovalMode(next);
-      applyApprovalMode(res.approvalMode);
+      if (approvalModeSync.isCurrent(revision)) applyApprovalMode(res.approvalMode);
     },
-    [applyApprovalMode],
+    [applyApprovalMode, approvalModeSync],
   );
 
   const reload = useCallback(async () => {
@@ -345,7 +359,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  // User-level event stream (/api/events): system settings fan out to every open client.
+  // User-level event stream (/api/events): this user's settings fan out to their open clients.
   // A scheduled task firing may also have created a new Session (new-session mode); reload
   // the list so it appears immediately. schedule_queued doesn't change the list (the target
   // Session already exists), so it's ignored.
@@ -360,7 +374,15 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       onOmniMessage: () => undefined,
       onServerEvent: (ev) => {
         if (ev.type === "approval_mode_updated") {
+          approvalModeSync.noteServerEvent();
           applyApprovalMode(ev.approvalMode);
+          return;
+        }
+        if (ev.type === "resync_required") {
+          // Invalidate older GET/PUT responses before fetching the authoritative value;
+          // the server cannot replay the missing user-channel events.
+          approvalModeSync.noteServerEvent();
+          void refreshApprovalMode().catch(() => undefined);
           return;
         }
         if (ev.type === "schedule_fired") {
@@ -370,7 +392,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       },
     });
     return () => conn.close();
-  }, [applyApprovalMode]);
+  }, [applyApprovalMode, approvalModeSync, refreshApprovalMode]);
 
   const add = useCallback(
     (session: SessionInfo) => {

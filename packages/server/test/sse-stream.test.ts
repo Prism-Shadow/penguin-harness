@@ -84,7 +84,7 @@ describe("sse-stream", () => {
   beforeEach(async () => {
     t = await createTestApp();
     ({ cookie } = await provisionUser(t.app, "streamer"));
-    t.deps.approvalModes.set("always-ask");
+    t.deps.approvalModes.set("streamer", "always-ask");
     row = {
       sessionId: SID,
       // streamer's own initial Project (default_project belongs to admin; others
@@ -116,7 +116,9 @@ describe("sse-stream", () => {
 
   it("FD-1: subscribing while running receives task_state: running, then pending approvals are replayed", async () => {
     t.deps.manager.adopt(row, approvalFakeSession(SID));
-    await t.deps.manager.startTask(SID, [userText("go")]);
+    await t.deps.manager.startTask(SID, [userText("go")], {
+      approvalUserId: "streamer",
+    });
     await waitFor(() => t.deps.manager.pendingApprovalCount(SID) === 1);
 
     const frames = await readSseFrames(await getStream(), 2);

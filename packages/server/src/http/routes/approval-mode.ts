@@ -1,4 +1,4 @@
-/** System-wide approval mode: one value shared by all users, Projects, Agents, and Sessions. */
+/** Current user's approval mode. */
 import { Hono } from "hono";
 import type { ApprovalMode, ApprovalModeResponse } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
@@ -16,13 +16,15 @@ export function approvalModeRoutes(deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   app.get("/", (c) =>
-    c.json({ approvalMode: deps.approvalModes.get() } satisfies ApprovalModeResponse),
+    c.json({
+      approvalMode: deps.approvalModes.get(c.var.user.userId),
+    } satisfies ApprovalModeResponse),
   );
 
   app.put("/", async (c) => {
     const body = await readJson(c);
     const approvalMode = requireEnum(body, "approvalMode", APPROVAL_MODES);
-    deps.approvalModes.set(approvalMode);
+    deps.approvalModes.set(c.var.user.userId, approvalMode);
     return c.json({ approvalMode } satisfies ApprovalModeResponse);
   });
 

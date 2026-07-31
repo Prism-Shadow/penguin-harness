@@ -212,6 +212,8 @@ export interface SessionManagerDeps {
 /** One queued follow-up task (`queueIfBusy`): the task input plus the per-turn thinking level it was posted with. */
 interface QueuedFollowUp {
   input: OmniMessage[];
+  /** User whose approval setting governs this future Task when it auto-starts. */
+  approvalUserId: string;
   thinkingLevel?: ThinkingLevelName;
 }
 
@@ -476,7 +478,11 @@ export class SessionManager {
   async startTask(
     sessionId: string,
     input: OmniMessage[],
-    opts?: { thinkingLevel?: ThinkingLevelName; queueIfBusy?: boolean },
+    opts: {
+      approvalUserId: string;
+      thinkingLevel?: ThinkingLevelName;
+      queueIfBusy?: boolean;
+    },
   ): Promise<{ sessionId: string; queued: boolean }> {
     return this.withLock(sessionId, async () => {
       this.assertOpen();
@@ -486,6 +492,7 @@ export class SessionManager {
       if (entry.status !== "idle" && opts?.queueIfBusy) {
         entry.followUps.push({
           input,
+          approvalUserId: opts.approvalUserId,
           ...(opts.thinkingLevel !== undefined ? { thinkingLevel: opts.thinkingLevel } : {}),
         });
         entry.lastActivityMs = Date.now();
@@ -495,7 +502,7 @@ export class SessionManager {
         return { sessionId: entry.sessionId, queued: true };
       }
       this.assertIdle(entry);
-      this.launchTask(entry, input, opts?.thinkingLevel);
+      this.launchTask(entry, input, opts.approvalUserId, opts.thinkingLevel);
       return { sessionId: entry.sessionId, queued: false };
     });
   }
@@ -515,6 +522,8 @@ export class SessionManager {
       /** Round-1 input (route-validated to carry text; images may ride along); its marker-stripped text is the objective. */
       input: OmniMessage[];
       budget: number;
+      /** User whose current approval mode governs every tool decision in this Goal run. */
+      approvalUserId: string;
       /** Optional per-goal thinking level: rides every round's Task (route-validated). */
       thinkingLevel?: ThinkingLevelName;
     },
@@ -543,7 +552,7 @@ export class SessionManager {
       entry.lastActivityMs = Date.now();
       this.publishState(entry, "running");
       const approve = makeApprove({
-        getMode: () => this.deps.approvalModes.get(),
+        getMode: () => this.deps.approvalModes.get(args.approvalUserId),
         toolPermission: (name) => entry.session.toolPermission(name),
         registry: entry.approvals,
         publishRequest: (pending) =>
@@ -679,6 +688,7 @@ export class SessionManager {
   private launchTask(
     entry: RuntimeEntry,
     input: OmniMessage[],
+    approvalUserId: string,
     thinkingLevel?: ThinkingLevelName,
   ): void {
     const channel = this.deps.channels.get(entry.sessionId);
@@ -692,8 +702,8 @@ export class SessionManager {
     this.publishState(entry, "running");
 
     const approve = makeApprove({
-      // Re-reads the system-wide mode on every decision, so a change takes effect mid-run.
-      getMode: () => this.deps.approvalModes.get(),
+      // Re-read this Task user's mode on every decision so a settings change takes effect mid-run.
+      getMode: () => this.deps.approvalModes.get(approvalUserId),
       toolPermission: (name) => entry.session.toolPermission(name),
       registry: entry.approvals,
       publishRequest: (pending) =>
@@ -735,7 +745,7 @@ export class SessionManager {
         const entry = this.entries.get(sessionId);
         if (!entry || entry.status !== "idle" || entry.followUps.length === 0) return;
         const next = entry.followUps.shift()!;
-        this.launchTask(entry, next.input, next.thinkingLevel);
+        this.launchTask(entry, next.input, next.approvalUserId, next.thinkingLevel);
       });
     } catch (err) {
       this.log(`[followup] auto-start failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -1274,7 +1284,9 @@ export class SessionManager {
       provider: p.provider,
       modelId: p.model_id,
       workspace: p.workspace,
-      approvalMode: this.deps.approvalModes.get(),
+      // Session rows keep this legacy field for API compatibility only. A future standalone
+      // Task binds the authenticated user and reads user_settings at tool-decision time.
+      approvalMode: "allow-all",
       title: null,
       createdAt: new Date().toISOString(),
     });

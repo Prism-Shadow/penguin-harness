@@ -95,6 +95,6 @@ export class AdminService {
     for (const project of this.deps.projects.listByOwner(userId)) {
       await this.deps.projectService.destroyProject(project.projectId);
     }
-    this.deps.users.delete(userId); // auth_sessions / project_members / ui_prefs cascade-deleted
+    this.deps.users.delete(userId); // auth_sessions / project_members / ui_prefs / user_settings cascade-deleted
   }
 }

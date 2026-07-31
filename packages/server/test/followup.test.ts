@@ -47,7 +47,7 @@ describe("follow-up queue route", () => {
     t = await createTestApp();
     const { cookie } = await provisionUser(t.app, "queuer");
     api = apiClient(t.app, cookie);
-    t.deps.approvalModes.set("always-ask");
+    t.deps.approvalModes.set("queuer", "always-ask");
     const row: SessionRow = {
       sessionId: SID,
       projectId: "queuer-default_project",

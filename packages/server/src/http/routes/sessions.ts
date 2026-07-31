@@ -237,6 +237,7 @@ export function agentSessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     const { sessions, counts, workspaceCounts } = await deps.sessionService.listSessions(
       projectId,
       agentId,
+      c.var.user.userId,
       {
         ...(paging ? { paging } : {}),
         ...(rawCategory !== undefined ? { category: rawCategory as SessionCategory } : {}),
@@ -256,6 +257,7 @@ export function agentSessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
     await deps.agentConfigService.requireExists(projectId, agentId);
     const body = await readJson(c);
+    const approvalMode = optionalEnum(body, "approvalMode", APPROVAL_MODES);
     const modelId = optionalString(body, "modelId", { minLen: 1, label: "modelId" });
     const provider = optionalString(body, "provider", { minLen: 1, label: "provider" });
     // Model reference is submitted as a pair — both or neither. Neither half is ever
@@ -272,9 +274,15 @@ export function agentSessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       // An explicitly specified Workspace must be an existing directory (never auto-created); reachability is determined by file permissions.
       workspace = await assertWorkspaceAllowed({ workspace });
     }
+    // Old web bundles submitted the draft's approval mode while creating a Session.
+    // Preserve that contract, but apply it to the authenticated user's setting.
+    if (approvalMode !== undefined) {
+      deps.approvalModes.set(c.var.user.userId, approvalMode);
+    }
     const session = await deps.sessionService.createSession({
       projectId,
       agentId,
+      approvalUserId: c.var.user.userId,
       ...(modelId !== undefined ? { modelId } : {}),
       ...(provider !== undefined ? { provider } : {}),
       ...(workspace !== undefined ? { workspace } : {}),
@@ -315,7 +323,7 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
   app.get("/:sessionId", async (c) => {
     const row = resolveSession(c);
     const hasTrace = await deps.sessionService.hasTrace(row);
-    const info = await deps.sessionService.toInfo(row, hasTrace);
+    const info = await deps.sessionService.toInfo(row, hasTrace, c.var.user.userId);
     // Single-session GET only: the latest Trace file's absolute path (a directory walk per
     // call — too costly for list rows). The web's /model switch hands it to the new session's
     // [model_switch_from] block so the model can read the source history itself.
@@ -360,9 +368,9 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       updated = { ...updated, title };
     }
     if (approvalMode !== undefined) {
-      // Approval mode is system-wide: this updates every Session snapshot, notifies every
-      // open client, and running approve callbacks read the new value on their next decision.
-      deps.approvalModes.set(approvalMode);
+      // Backward-compatible Session endpoint: approval mode is per user. Running Tasks
+      // bound to this user read the new value on their next tool decision.
+      deps.approvalModes.set(c.var.user.userId, approvalMode);
       updated = { ...updated, approvalMode };
     }
     if (archived !== undefined) {
@@ -372,7 +380,7 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     }
     const hasTrace = await deps.sessionService.hasTrace(updated);
     return c.json({
-      session: await deps.sessionService.toInfo(updated, hasTrace),
+      session: await deps.sessionService.toInfo(updated, hasTrace, c.var.user.userId),
     } satisfies SessionResponse);
   });
 
@@ -545,6 +553,7 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       const { sessionId } = await deps.manager.startGoal(row.sessionId, {
         input: messages,
         budget: goal.budget,
+        approvalUserId: c.var.user.userId,
         ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
       });
       return c.json({ sessionId } satisfies TaskCreateResponse, 202);
@@ -573,6 +582,7 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     try {
       // 202: the Task executes on the server, decoupled from the SSE connection; sessionId is the current actual id (the new id after self-heal).
       const { sessionId, queued } = await deps.manager.startTask(row.sessionId, input, {
+        approvalUserId: c.var.user.userId,
         ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
         queueIfBusy,
       });

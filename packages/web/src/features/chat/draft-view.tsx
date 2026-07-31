@@ -18,8 +18,8 @@
  * the page resumes where you left off; on successful send the cache clears, except
  * the model selection, which carries over as the next conversation's default
  * (switch-becomes-default, mirroring the thinking level persisting on the Agent).
- * Approval mode is not part of the draft: it is one system-wide value shared by every
- * existing, running, and future Session.
+ * Approval mode is not part of the draft: it is the current user's persisted setting,
+ * shared by all Tasks that user starts across Sessions.
  * The sidebar group header "+" / menu "New conversation" explicitly specify an
  * Agent via route state (overriding the cached selection); the workspace-mode
  * group header "+" additionally carries a Workspace path pre-filling the
@@ -393,7 +393,7 @@ export function DraftView({
   const [sending, setSending] = useState(false);
 
   // First message sent: only now is the Session created (Agent / Workspace / Model are
-  // locked in together; approval remains system-wide), then the route jumps once sent; returns false on any
+  // locked in together; approval remains user-wide), then the route jumps once sent; returns false on any
   // failure, so the input area keeps the draft and can resend. `keepDraft` is set by sends
   // that did not consume the composer text (the example task), so a typed-but-unsent draft
   // survives the navigation instead of being silently discarded.

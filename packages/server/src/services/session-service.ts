@@ -105,6 +105,7 @@ export class SessionService {
   async toInfo(
     row: SessionRow,
     hasTrace: boolean,
+    approvalUserId: string,
     traces?: ReadonlyMap<string, TraceLocation>,
   ): Promise<SessionInfo> {
     const source = await this.sourceOf(row, hasTrace, traces);
@@ -115,7 +116,7 @@ export class SessionService {
       provider: row.provider,
       modelId: row.modelId,
       workspace: row.workspace,
-      approvalMode: this.deps.approvalModes.get(),
+      approvalMode: this.deps.approvalModes.get(approvalUserId),
       ...(row.title !== null ? { title: row.title } : {}),
       ...(source !== undefined ? { source } : {}),
       createdAt: row.createdAt,
@@ -193,6 +194,7 @@ export class SessionService {
   async listSessions(
     projectId: string,
     agentId: string,
+    approvalUserId: string,
     opts: {
       paging?: { offset: number; limit: number };
       category?: SessionCategory;
@@ -212,7 +214,13 @@ export class SessionService {
     // Unmanaged Trace Sessions: backfill an index row by reading the first line's session_meta.
     for (const [sessionId, location] of traces) {
       if (rows.has(sessionId)) continue;
-      const discovered = await this.adoptTraceSession(projectId, agentId, sessionId, location);
+      const discovered = await this.adoptTraceSession(
+        projectId,
+        agentId,
+        sessionId,
+        location,
+        approvalUserId,
+      );
       if (discovered) rows.set(sessionId, discovered);
     }
 
@@ -220,7 +228,9 @@ export class SessionService {
       (a, b) => b.createdAt.localeCompare(a.createdAt) || b.sessionId.localeCompare(a.sessionId),
     );
     const toPage = (page: SessionRow[]) =>
-      Promise.all(page.map((row) => this.toInfo(row, traces.has(row.sessionId), traces)));
+      Promise.all(
+        page.map((row) => this.toInfo(row, traces.has(row.sessionId), approvalUserId, traces)),
+      );
 
     // No classification asked for: slice straight away (the pre-category behavior).
     if (category === undefined && !withCounts) {
@@ -311,6 +321,8 @@ export class SessionService {
   async createSession(args: {
     projectId: string;
     agentId: string;
+    /** User whose approval setting is returned for this Session and governs its first Task. */
+    approvalUserId: string;
     /** Upstream id of the session's model; always paired with provider. Omit both for the Project's default reference. */
     modelId?: string;
     /** The provider group for `modelId`; always paired with modelId, never inferred. */
@@ -382,13 +394,14 @@ export class SessionService {
       provider: session.provider,
       modelId: session.modelId,
       workspace: session.workspaceDir,
-      approvalMode: this.deps.approvalModes.get(),
+      // Legacy Session-row snapshot for compatibility; runtime decisions read user_settings.
+      approvalMode: this.deps.approvalModes.get(args.approvalUserId),
       title: null,
       createdAt: new Date().toISOString(),
     };
     this.deps.sessions.insert(row);
     this.deps.manager.adopt(row, session);
-    return this.toInfo(row, false);
+    return this.toInfo(row, false, args.approvalUserId);
   }
 
   /**
@@ -453,6 +466,7 @@ export class SessionService {
     agentId: string,
     sessionId: string,
     location: TraceLocation,
+    approvalUserId: string,
   ): Promise<SessionRow | null> {
     const meta = await this.readTraceMeta(location);
     if (!meta) return null;
@@ -471,7 +485,8 @@ export class SessionService {
       provider: meta.payload.provider,
       modelId: meta.payload.model_id,
       workspace: meta.payload.workspace,
-      approvalMode: this.deps.approvalModes.get(),
+      // Legacy Session-row snapshot for compatibility; runtime decisions read user_settings.
+      approvalMode: this.deps.approvalModes.get(approvalUserId),
       title: null,
       createdAt: sessionIdCreatedAt(sessionId) ?? meta.timestamp,
     };
