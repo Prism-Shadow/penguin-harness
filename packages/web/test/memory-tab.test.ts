@@ -8,7 +8,9 @@
  * belonging to another Workspace, must survive both operations untouched.
  */
 import { describe, expect, it } from "vitest";
+import type { MemoryFileInfo } from "@prismshadow/penguin-server/api";
 import {
+  fileListState,
   frontmatterProblem,
   headingOffset,
   indexWithRenamedFile,
@@ -69,6 +71,28 @@ describe("headingOffset", () => {
 
   it("does not match a heading that merely mentions the key", () => {
     expect(headingOffset(`## notes about ${KEY} here\n`, KEY)).toBe(-1);
+  });
+});
+
+describe("fileListState", () => {
+  const file = { name: "feedback_testing.md" } as MemoryFileInfo;
+
+  it("renders nothing below the index when no Workspace is selected", () => {
+    // Regression: `files` is null here and stays null — no request is in flight and none will
+    // be — so treating null as "loading" left an agent with no Workspace Memory directory
+    // staring at a skeleton that never resolved.
+    expect(fileListState(null, null)).toBe("none");
+    expect(fileListState(null, [])).toBe("none");
+    expect(fileListState(null, [file])).toBe("none");
+  });
+
+  it("distinguishes a Workspace still loading from one with no topic file", () => {
+    expect(fileListState("my-app-a81f32c4", null)).toBe("loading");
+    expect(fileListState("my-app-a81f32c4", [])).toBe("empty");
+  });
+
+  it("lists the files once they arrive", () => {
+    expect(fileListState("my-app-a81f32c4", [file])).toBe("files");
   });
 });
 

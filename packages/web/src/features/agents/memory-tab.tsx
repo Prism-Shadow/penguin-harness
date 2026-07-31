@@ -102,6 +102,26 @@ export function headingOffset(index: string, workspaceKey: string): number {
   return match ? match.index : -1;
 }
 
+/**
+ * What the file list shows below the pinned index (exported for unit tests).
+ *
+ * `none` is the case the loading state cannot cover: with no Workspace selected there is no
+ * request in flight and never will be, so `files` stays null forever — rendering the skeleton
+ * on a null `files` alone would spin indefinitely for an agent that has no Workspace Memory
+ * directory yet. Topic files belong to a Workspace, so with none selected the list holds the
+ * Agent-level index and nothing else.
+ */
+export type FileListState = "none" | "loading" | "empty" | "files";
+
+export function fileListState(
+  workspaceKey: string | null,
+  files: MemoryFileInfo[] | null,
+): FileListState {
+  if (workspaceKey === null) return "none";
+  if (files === null) return "loading";
+  return files.length === 0 ? "empty" : "files";
+}
+
 export function MemoryTab({ agentId }: { agentId: string }) {
   const { currentProject } = useProject();
   const projectId = currentProject?.projectId ?? null;
@@ -345,6 +365,7 @@ export function MemoryTab({ agentId }: { agentId: string }) {
   if (!overview) return <SkeletonList rows={5} />;
 
   const workspace = overview.workspaces.find((w) => w.workspaceKey === workspaceKey) ?? null;
+  const listState = fileListState(workspaceKey, files);
 
   return (
     <div className="space-y-4">
@@ -390,12 +411,13 @@ export function MemoryTab({ agentId }: { agentId: string }) {
         </Select>
       )}
 
-      {/* File list: the shared index pinned on top, then this Workspace's topic files. */}
+      {/* File list: the shared index pinned on top, then the selected Workspace's topic files
+          (the index stands alone when there is no Workspace — see fileListState). */}
       <div className="overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
         <button
           type="button"
           onClick={() => openIndex(overview.index)}
-          className={`flex w-full items-center justify-between gap-3 border-b border-gray-100 px-3 py-2 text-left transition-colors duration-150 dark:border-gray-800/60 ${
+          className={`flex w-full items-center justify-between gap-3 border-b border-gray-100 px-3 py-2 text-left transition-colors duration-150 last:border-b-0 dark:border-gray-800/60 ${
             selection.kind === "index"
               ? "bg-gray-100 dark:bg-gray-800/60"
               : "hover:bg-gray-50 dark:hover:bg-gray-800/40"
@@ -410,14 +432,14 @@ export function MemoryTab({ agentId }: { agentId: string }) {
           <span className="shrink-0 font-mono text-[11px] text-gray-400">AGENTS.md</span>
         </button>
 
-        {files === null ? (
+        {listState === "none" ? null : listState === "loading" ? (
           <div className="p-3">
             <SkeletonList rows={3} />
           </div>
-        ) : files.length === 0 ? (
+        ) : listState === "empty" ? (
           <p className="px-3 py-3 text-xs text-gray-400 dark:text-gray-500">{S.memory.noFiles}</p>
         ) : (
-          files.map((file) => (
+          (files ?? []).map((file) => (
             <button
               key={file.name}
               type="button"
