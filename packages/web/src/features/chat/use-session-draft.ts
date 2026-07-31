@@ -3,9 +3,9 @@
  * (`/agent` handoff target, `/model` switch target) + selected skills are cached to
  * localStorage keyed by "user x Session" (see draft-cache's sessionDraftKey; the user
  * dimension prevents cross-account leakage on the same browser, #68), restored after
- * navigating away/reloading. The Session's OWN model / Workspace / approval mode are locked
- * and need no caching — the cached model reference here is the pending switch target, not the
- * session's model.
+ * navigating away/reloading. The Session's own model / Workspace are locked, while approval
+ * mode is persisted separately per user; none of them belongs in this cache. The cached model
+ * reference here is the pending switch target, not the session's model.
  *
  * Write strategy matches the draft page: text is debounced and merge-written (an unflushed
  * edit gets one extra flush before switching sessions/unmounting); the switch chips and the

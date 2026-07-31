@@ -6,7 +6,8 @@
 export class ApprovalModeSyncGuard {
   private revision = 0;
 
-  snapshot(): number {
+  beginRead(): number {
+    this.revision += 1;
     return this.revision;
   }
 

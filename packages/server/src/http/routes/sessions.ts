@@ -274,12 +274,7 @@ export function agentSessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       // An explicitly specified Workspace must be an existing directory (never auto-created); reachability is determined by file permissions.
       workspace = await assertWorkspaceAllowed({ workspace });
     }
-    // Old web bundles submitted the draft's approval mode while creating a Session.
-    // Preserve that contract, but apply it to the authenticated user's setting.
-    if (approvalMode !== undefined) {
-      deps.approvalModes.set(c.var.user.userId, approvalMode);
-    }
-    const session = await deps.sessionService.createSession({
+    let session = await deps.sessionService.createSession({
       projectId,
       agentId,
       approvalUserId: c.var.user.userId,
@@ -287,6 +282,13 @@ export function agentSessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       ...(provider !== undefined ? { provider } : {}),
       ...(workspace !== undefined ? { workspace } : {}),
     });
+    // Old web bundles submitted the draft's approval mode while creating a Session.
+    // Apply it only after creation succeeds: a failed request must not affect this
+    // user's other running Tasks.
+    if (approvalMode !== undefined) {
+      deps.approvalModes.set(c.var.user.userId, approvalMode);
+      session = { ...session, approvalMode };
+    }
     return c.json({ session } satisfies SessionCreateResponse, 201);
   });
 
@@ -323,7 +325,8 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
   app.get("/:sessionId", async (c) => {
     const row = resolveSession(c);
     const hasTrace = await deps.sessionService.hasTrace(row);
-    const info = await deps.sessionService.toInfo(row, hasTrace, c.var.user.userId);
+    const approvalMode = deps.approvalModes.get(c.var.user.userId);
+    const info = await deps.sessionService.toInfo(row, hasTrace, approvalMode);
     // Single-session GET only: the latest Trace file's absolute path (a directory walk per
     // call — too costly for list rows). The web's /model switch hands it to the new session's
     // [model_switch_from] block so the model can read the source history itself.
@@ -379,8 +382,9 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       updated = { ...updated, archivedAt: at };
     }
     const hasTrace = await deps.sessionService.hasTrace(updated);
+    const currentApprovalMode = deps.approvalModes.get(c.var.user.userId);
     return c.json({
-      session: await deps.sessionService.toInfo(updated, hasTrace, c.var.user.userId),
+      session: await deps.sessionService.toInfo(updated, hasTrace, currentApprovalMode),
     } satisfies SessionResponse);
   });
 

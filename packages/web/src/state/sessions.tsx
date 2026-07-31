@@ -140,25 +140,26 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const refreshApprovalMode = useCallback(async () => {
-    const revision = approvalModeSync.snapshot();
+    const revision = approvalModeSync.beginRead();
     const res = await api.getApprovalMode();
-    if (approvalModeSync.isCurrent(revision)) applyApprovalMode(res.approvalMode);
+    if (approvalModeSync.isCurrent(revision)) {
+      applyApprovalMode(res.approvalMode);
+      setApprovalModeLoading(false);
+    }
   }, [applyApprovalMode, approvalModeSync]);
 
   useEffect(() => {
     let cancelled = false;
-    const revision = approvalModeSync.snapshot();
+    const revision = approvalModeSync.beginRead();
     api
       .getApprovalMode()
       .then((res) => {
         if (!cancelled && approvalModeSync.isCurrent(revision)) {
           applyApprovalMode(res.approvalMode);
+          setApprovalModeLoading(false);
         }
       })
-      .catch(() => undefined)
-      .finally(() => {
-        if (!cancelled) setApprovalModeLoading(false);
-      });
+      .catch(() => undefined);
     return () => {
       cancelled = true;
     };
@@ -168,7 +169,10 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
     async (next: ApprovalMode) => {
       const revision = approvalModeSync.beginWrite();
       const res = await api.putApprovalMode(next);
-      if (approvalModeSync.isCurrent(revision)) applyApprovalMode(res.approvalMode);
+      if (approvalModeSync.isCurrent(revision)) {
+        applyApprovalMode(res.approvalMode);
+        setApprovalModeLoading(false);
+      }
     },
     [applyApprovalMode, approvalModeSync],
   );
@@ -376,12 +380,18 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
         if (ev.type === "approval_mode_updated") {
           approvalModeSync.noteServerEvent();
           applyApprovalMode(ev.approvalMode);
+          setApprovalModeLoading(false);
           return;
         }
         if (ev.type === "resync_required") {
-          // Invalidate older GET/PUT responses before fetching the authoritative value;
-          // the server cannot replay the missing user-channel events.
+          // Invalidate older GET/PUT responses. The following `hello` performs the
+          // authoritative refresh; until it succeeds, don't present the default mode
+          // as if it came from the server.
           approvalModeSync.noteServerEvent();
+          setApprovalModeLoading(true);
+          return;
+        }
+        if (ev.type === "hello") {
           void refreshApprovalMode().catch(() => undefined);
           return;
         }

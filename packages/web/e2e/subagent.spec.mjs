@@ -51,17 +51,10 @@ async function provisionSession(page, username, sessionOverrides = {}) {
   });
   expect(put.ok(), "put models").toBeTruthy();
 
-  const { approvalMode, ...sessionData } = sessionOverrides;
-  if (approvalMode !== undefined) {
-    const approval = await page.request.put(`${BASE}/api/settings/approval-mode`, {
-      data: { approvalMode },
-    });
-    expect(approval.ok(), "set approval mode").toBeTruthy();
-  }
   const agentId = "default_agent";
   const sessRes = await page.request.post(
     `${BASE}/api/projects/${projectId}/agents/${agentId}/sessions`,
-    { data: { provider: "custom", modelId: "claude-4-8", ...sessionData } },
+    { data: { provider: "custom", modelId: "claude-4-8", ...sessionOverrides } },
   );
   expect(sessRes.ok(), `create session: ${await sessRes.text()}`).toBeTruthy();
   const sess = await sessRes.json();
@@ -312,7 +305,7 @@ test("an approval inside the subagent stays discoverable via the chip badge and 
   page,
 }) => {
   // always-ask: the parent's run_subagent needs a manual allow, and the child's own
-  // exec_command then parks on a NESTED approval (the child inherits the parent Task user's mode).
+  // exec_command then parks on a NESTED approval (the child inherits the approval mode).
   const { sessionId } = await provisionSession(page, "subuser2", { approvalMode: "always-ask" });
 
   await page.goto(`${BASE}/chat/${sessionId}`);

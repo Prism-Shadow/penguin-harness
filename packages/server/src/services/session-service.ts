@@ -24,6 +24,7 @@ import {
 } from "@prismshadow/penguin-core";
 import type { SessionMetaMessage } from "@prismshadow/penguin-core";
 import type {
+  ApprovalMode,
   SessionCategory,
   SessionCategoryCounts,
   SessionInfo,
@@ -105,7 +106,7 @@ export class SessionService {
   async toInfo(
     row: SessionRow,
     hasTrace: boolean,
-    approvalUserId: string,
+    approvalMode: ApprovalMode,
     traces?: ReadonlyMap<string, TraceLocation>,
   ): Promise<SessionInfo> {
     const source = await this.sourceOf(row, hasTrace, traces);
@@ -116,7 +117,7 @@ export class SessionService {
       provider: row.provider,
       modelId: row.modelId,
       workspace: row.workspace,
-      approvalMode: this.deps.approvalModes.get(approvalUserId),
+      approvalMode,
       ...(row.title !== null ? { title: row.title } : {}),
       ...(source !== undefined ? { source } : {}),
       createdAt: row.createdAt,
@@ -206,6 +207,7 @@ export class SessionService {
     workspaceCounts?: Record<string, SessionCategoryCounts>;
   }> {
     const { paging, category, withCounts } = opts;
+    const approvalMode = this.deps.approvalModes.get(approvalUserId);
     const traces = await this.discoverTraces(projectId, agentId);
     const rows = new Map(
       this.deps.sessions.listByAgent(projectId, agentId).map((r) => [r.sessionId, r]),
@@ -219,7 +221,7 @@ export class SessionService {
         agentId,
         sessionId,
         location,
-        approvalUserId,
+        approvalMode,
       );
       if (discovered) rows.set(sessionId, discovered);
     }
@@ -229,7 +231,7 @@ export class SessionService {
     );
     const toPage = (page: SessionRow[]) =>
       Promise.all(
-        page.map((row) => this.toInfo(row, traces.has(row.sessionId), approvalUserId, traces)),
+        page.map((row) => this.toInfo(row, traces.has(row.sessionId), approvalMode, traces)),
       );
 
     // No classification asked for: slice straight away (the pre-category behavior).
@@ -387,6 +389,7 @@ export class SessionService {
       session.sessionId,
       isSessionMeta(metaMsg) ? (asSessionSource(metaMsg.payload.source) ?? null) : null,
     );
+    const approvalMode = this.deps.approvalModes.get(args.approvalUserId);
     const row: SessionRow = {
       sessionId: session.sessionId,
       projectId: args.projectId,
@@ -395,13 +398,13 @@ export class SessionService {
       modelId: session.modelId,
       workspace: session.workspaceDir,
       // Legacy Session-row snapshot for compatibility; runtime decisions read user_settings.
-      approvalMode: this.deps.approvalModes.get(args.approvalUserId),
+      approvalMode,
       title: null,
       createdAt: new Date().toISOString(),
     };
     this.deps.sessions.insert(row);
     this.deps.manager.adopt(row, session);
-    return this.toInfo(row, false, args.approvalUserId);
+    return this.toInfo(row, false, approvalMode);
   }
 
   /**
@@ -466,7 +469,7 @@ export class SessionService {
     agentId: string,
     sessionId: string,
     location: TraceLocation,
-    approvalUserId: string,
+    approvalMode: ApprovalMode,
   ): Promise<SessionRow | null> {
     const meta = await this.readTraceMeta(location);
     if (!meta) return null;
@@ -486,7 +489,7 @@ export class SessionService {
       modelId: meta.payload.model_id,
       workspace: meta.payload.workspace,
       // Legacy Session-row snapshot for compatibility; runtime decisions read user_settings.
-      approvalMode: this.deps.approvalModes.get(approvalUserId),
+      approvalMode,
       title: null,
       createdAt: sessionIdCreatedAt(sessionId) ?? meta.timestamp,
     };

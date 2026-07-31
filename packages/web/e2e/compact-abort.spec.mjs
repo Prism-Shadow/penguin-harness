@@ -46,12 +46,9 @@ test("aborting before any turn completes: /compact says so instead of doing noth
     },
   });
   // always-ask: while approval is pending the request hasn't closed yet; aborting now means token_usage was never produced.
-  await page.request.put(`${BASE}/api/settings/approval-mode`, {
-    data: { approvalMode: "always-ask" },
-  });
   const sess = await (
     await page.request.post(`${BASE}/api/projects/${projectId}/agents/default_agent/sessions`, {
-      data: { provider: "custom", modelId: "claude-4-8" },
+      data: { provider: "custom", modelId: "claude-4-8", approvalMode: "always-ask" },
     })
   ).json();
   const sessionId = sess.session.sessionId;
@@ -117,12 +114,9 @@ test("compacting twice in a row: says the context was just compacted, not that n
       ],
     },
   });
-  await page.request.put(`${BASE}/api/settings/approval-mode`, {
-    data: { approvalMode: "allow-all" },
-  });
   const sess = await (
     await page.request.post(`${BASE}/api/projects/${projectId}/agents/default_agent/sessions`, {
-      data: { provider: "custom", modelId: "claude-4-8" },
+      data: { provider: "custom", modelId: "claude-4-8", approvalMode: "allow-all" },
     })
   ).json();
 

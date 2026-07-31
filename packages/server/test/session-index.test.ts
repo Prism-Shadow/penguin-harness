@@ -5,7 +5,7 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { sessionMeta, userText } from "@prismshadow/penguin-core";
 import type { OmniMessage, SessionMetaPayload } from "@prismshadow/penguin-core";
 import type {
@@ -54,10 +54,18 @@ describe("session-index", () => {
       models: [{ provider: "custom", modelId: "m-no-default" }],
     });
     expect(cleared.status).toBe(200);
-    const res = await api.post(base(), {});
+    await api.put("/api/settings/approval-mode", { approvalMode: "deny-all" });
+    const res = await api.post(base(), { approvalMode: "allow-all" });
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: { code: string } };
     expect(body.error.code).toBe("no_default_model");
+    expect(
+      (
+        (await (await api.get("/api/settings/approval-mode")).json()) as {
+          approvalMode: string;
+        }
+      ).approvalMode,
+    ).toBe("deny-all");
   });
 
   it("creating a Session when the model has no usable credential → 400 model_credential_missing", async () => {
@@ -118,6 +126,16 @@ describe("session-index", () => {
     ).toBe("deny-all");
 
     expect((await api.post(base(), { approvalMode: "sometimes" })).status).toBe(400);
+  });
+
+  it("reads the user's approval mode once for a Session list", async () => {
+    await configureModels();
+    expect((await api.post(base(), {})).status).toBe(201);
+    expect((await api.post(base(), {})).status).toBe(201);
+    const getMode = vi.spyOn(t.deps.approvalModes, "get");
+
+    expect((await api.get(base())).status).toBe(200);
+    expect(getMode).toHaveBeenCalledTimes(1);
   });
 
   it("schedule-created Session: source derives from session_meta (registry), never from the DB row; user sessions carry none", async () => {
