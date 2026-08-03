@@ -14,7 +14,7 @@
  * chosen before sending, and everything except approval mode is locked once the Session is
  * created. The Session list and the new-chat entry point live in the global sidebar.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useNavigate, useParams } from "react-router";
 import type {
@@ -57,7 +57,10 @@ import { MessageStream } from "./message-stream";
 import type { StreamRenderContext } from "./message-stream";
 import { latestTaskHasSubagent, taskStartCount } from "./agent-topology";
 import { ChatInput } from "./chat-input";
+import { ConversationOutline } from "./conversation-outline";
 import { DraftView } from "./draft-view";
+import { buildInputHistory } from "./input-history";
+import { buildOutline } from "./outline-model";
 import { GoalStatusBanner } from "./goal-banner";
 import { handoffMessage, modelSwitchMessage } from "./agent-handoff";
 import { sameModelRef } from "../models/model-grouping";
@@ -222,6 +225,9 @@ export const DRAFT_SESSION_ID = "new";
  */
 const STAT_PATHS_PER_REQUEST = 100;
 
+/** localStorage key for the conversation outline's open/collapsed preference. */
+const OUTLINE_OPEN_KEY = "penguin.chatOutline";
+
 export function ChatPage() {
   const navigate = useNavigate();
   const params = useParams<{ sessionId?: string }>();
@@ -305,6 +311,31 @@ export function ChatPage() {
     onSkillsChange: onDraftSkillsChange,
     discard: discardSessionDraft,
   } = useSessionDraft(selected?.sessionId ?? null);
+
+  // Derivations over the stream items (the model mutates in place, so `version` — its own
+  // repaint signal — keys the memos; the session id covers a switch racing a same-valued
+  // version): the composer's ↑/↓ recall list and the left outline's entries.
+  const inputHistory = useMemo(
+    () => buildInputHistory(stream.model.items),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [stream.version, routeSessionId],
+  );
+  const outline = useMemo(
+    () => buildOutline(stream.model.items),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [stream.version, routeSessionId],
+  );
+  // The message stream's scroll container, exposed by MessageStream for the outline's
+  // jump/scrollspy (anchors are queried inside it, never document-wide).
+  const streamScrollRef = useRef<HTMLDivElement | null>(null);
+  // Outline visibility is a device-level preference like the panel width: persisted, not per session.
+  const [outlineOpen, setOutlineOpenRaw] = useState(
+    () => localStorage.getItem(OUTLINE_OPEN_KEY) !== "closed",
+  );
+  const setOutlineOpen = useCallback((next: boolean) => {
+    setOutlineOpenRaw(next);
+    localStorage.setItem(OUTLINE_OPEN_KEY, next ? "open" : "closed");
+  }, []);
 
   // Current Agent follows the Session in the route (keeps the sidebar and stats aligned on deep
   // links / refresh). Only aligns when **the selected Session changes** — never put agentId in
@@ -925,6 +956,7 @@ export function ChatPage() {
       onHandoff={onHandoff}
       initialText={sessionDraft.text ?? ""}
       onTextChange={onDraftTextChange}
+      history={inputHistory}
       {...(sessionDraft.handoffAgentId
         ? { initialHandoffTargetId: sessionDraft.handoffAgentId }
         : {})}
@@ -1111,8 +1143,19 @@ export function ChatPage() {
         </div>
       )}
 
-      {/* Body: chat column + the docked Files panel on the right (message file cards jump to and locate a file in the tree via onOpenFile). */}
+      {/* Body: conversation outline on the left, chat column, then the docked panels on the right (message file cards jump to and locate a file in the tree via onOpenFile). */}
       <div className="flex min-h-0 flex-1">
+        {/* Left quick-jump index (session state only; renders nothing until the conversation has entries). */}
+        {selected && !stream.loading && !stream.error && (
+          <ConversationOutline
+            entries={outline}
+            version={stream.version}
+            scrollRef={streamScrollRef}
+            running={stream.taskState !== "idle"}
+            open={outlineOpen}
+            setOpen={setOutlineOpen}
+          />
+        )}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           {draft ? (
             // Draft state: DraftView's vertically centered input card + Agent / Workspace
@@ -1159,6 +1202,7 @@ export function ChatPage() {
                           items={stream.model.items}
                           version={stream.version}
                           ctx={ctx}
+                          scrollElRef={streamScrollRef}
                         />
                       )}
                     </div>

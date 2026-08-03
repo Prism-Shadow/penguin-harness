@@ -6,7 +6,7 @@
  * cards at any nesting depth.
  */
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import type { ReactNode, RefObject } from "react";
 import { S } from "../../lib/strings";
 import type { ChatItem } from "../../lib/omni/stream-model";
 import type { TaskStats } from "../../lib/omni/task-stats";
@@ -129,7 +129,21 @@ export function MessageItems({ items, ctx }: { items: ChatItem[]; ctx: StreamRen
       seg.type === "single" && (seg.item.kind === "user_text" || seg.item.kind === "user_image");
     if (isUserMsg) {
       flushTurn();
-      nodes.push(renderSeg(seg, i));
+      // Outline jump anchor, top level only (ctx.origin is empty just for the main
+      // conversation): item ids restart per model, so stamping nested renders — subagent
+      // conversations in the panel — would duplicate anchor values; the outline queries
+      // them scoped to the main stream's scroll container. The wrapper stays classless:
+      // margins collapse straight through it, and the outline's transient flash class
+      // lives outside React's managed props (className would wipe it on re-render).
+      nodes.push(
+        ctx.origin.length === 0 ? (
+          <div key={`anchor-${seg.item.id}`} data-outline-anchor={seg.item.id}>
+            {renderSeg(seg, i)}
+          </div>
+        ) : (
+          renderSeg(seg, i)
+        ),
+      );
       continue;
     }
     turn.push({ seg, i });
@@ -145,11 +159,14 @@ export function MessageStream({
   items,
   version,
   ctx,
+  scrollElRef,
 }: {
   items: ChatItem[];
   /** View-model version number (a repaint signal for in-place updates that also drives auto-scroll). */
   version: number;
   ctx: StreamRenderContext;
+  /** Mirrors the scroll container element out to the owner (the conversation outline's jump/scrollspy target). */
+  scrollElRef?: RefObject<HTMLDivElement | null>;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   // An upward-swipe intent immediately exits auto-follow; scrolling back near the bottom resumes it — see stream-follow.ts (#75) for the exact rule.
@@ -268,7 +285,10 @@ export function MessageStream({
   return (
     <div className="relative h-full min-h-0">
       <div
-        ref={scrollRef}
+        ref={(el) => {
+          scrollRef.current = el;
+          if (scrollElRef) scrollElRef.current = el;
+        }}
         onScroll={onScroll}
         onWheel={(e) => {
           follow.wheel(e.deltaY);

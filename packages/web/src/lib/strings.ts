@@ -683,6 +683,14 @@ Benchmark：
     statusCompacting: "压缩中",
     pendingApprovals: (n: number) => `${n} 个待审批`,
     jumpToLatest: "回到最新消息",
+    /** Left conversation outline (quick-jump index): panel title and toggles. */
+    outlineTitle: "对话索引",
+    outlineShow: "展开对话索引",
+    outlineHide: "收起对话索引",
+    /** Entry label when the prompt had no text body (image / attachment-only message). */
+    outlineNoText: "（图片或附件）",
+    /** Answer-preview placeholder while the latest turn is still running with no reply text yet. */
+    outlineAnswering: "回答生成中…",
     inputPlaceholder: "输入消息，Enter 发送，Shift+Enter 换行，可粘贴图片",
     inputPlaceholderShort: "输入消息…",
     /** Placeholder while a Task is running (mid-run steering): the message is delivered between turns with the next request. */

@@ -105,6 +105,13 @@ import {
   skillSlashItems,
 } from "./skill-use";
 import { GOAL_ICON, UNLIMITED_BUDGET, parseBudgetInput } from "./goal-use";
+import {
+  caretOnFirstLine,
+  caretOnLastLine,
+  historyStepBack,
+  historyStepForward,
+} from "./input-history";
+import type { HistoryStep } from "./input-history";
 import { midRunAction } from "./composer-send";
 import { PAPERCLIP_ICON } from "./attached-files-banner";
 
@@ -1173,6 +1180,7 @@ export function ChatInput({
   onHandoff,
   initialText,
   onTextChange,
+  history = [],
   initialHandoffTargetId,
   onHandoffTargetChange,
   initialPendingModelRef,
@@ -1319,6 +1327,12 @@ export function ChatInput({
    * resurrect it.
    */
   onTextChange?: (text: string) => void;
+  /**
+   * This session's previous composer inputs (oldest → newest) for shell-style ↑/↓ recall
+   * (see input-history.ts for what qualifies). Omitted in draft state — a draft has no
+   * history to recall yet, and the arrows then keep their native meaning.
+   */
+  history?: string[];
   /** Draft restore: the agentId of the staged handoff target (resolved once agents are ready; discarded if stale). */
   initialHandoffTargetId?: string;
   /** Callback when the staged handoff target changes (picked/removed; the clear after a successful send does not call back, same as onTextChange). */
@@ -1391,6 +1405,8 @@ export function ChatInput({
   // Cursor position (tracked via onChange/onSelect): the slash menu matches the token at the caret.
   const [caret, setCaret] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Shell-style ↑/↓ history recall state (null = not navigating); ended by the text-mismatch effect below.
+  const historyNavRef = useRef<HistoryStep["nav"]>(null);
   // Short placeholder on narrow screens: a long hint would wrap and get clipped in a single-line textarea.
   const [narrow] = useState(() => window.matchMedia("(max-width: 767px)").matches);
 
@@ -1822,6 +1838,15 @@ export function ChatInput({
    */
   useLayoutEffect(autoGrow, [text]);
 
+  // History navigation ends the moment the composer text no longer matches the recalled
+  // entry — one rule covering user edits, slash-command rewrites and the post-send clear
+  // alike (applyHistory updates the text and `recalled` in the same commit, so stepping
+  // itself never trips this).
+  useEffect(() => {
+    const nav = historyNavRef.current;
+    if (nav && text !== nav.recalled) historyNavRef.current = null;
+  }, [text]);
+
   // Cursor placement on mount: move it to the end of a restored draft (by default the browser
   // places the cursor at the start when focusing a textarea that already has content), so typing
   // continues the text naturally, and sync the caret state to match (the slash menu matches the
@@ -2036,6 +2061,24 @@ export function ChatInput({
     await sendNormal();
   };
 
+  /**
+   * Applies a history step: the recalled text goes through the normal draft path
+   * (onTextChange keeps the draft cache in step) with the caret parked at the end — set
+   * after React commits the new value (setSelectionRange now would act on the old text).
+   */
+  const applyHistory = (step: HistoryStep) => {
+    historyNavRef.current = step.nav;
+    setText(step.text);
+    onTextChange?.(step.text);
+    setCaret(step.text.length);
+    requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (!el) return;
+      el.setSelectionRange(el.value.length, el.value.length);
+      el.scrollTop = el.scrollHeight;
+    });
+  };
+
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (slashOpen) {
       if (e.key === "ArrowDown") {
@@ -2058,6 +2101,28 @@ export function ChatInput({
         // is part of the text body like any other word, and wiping a controlled textarea is not
         // undoable with Ctrl+Z. Reopens if the user keeps typing on another token.
         setSlashDismissed(slashTok?.start ?? null);
+        return;
+      }
+    }
+    // Shell-style history recall on the arrows (the slash-menu navigation above wins while
+    // that menu is open; IME composition keeps the arrows for candidate-list navigation).
+    // ↑ steps back only from the first line — from an empty draft, or within an unedited
+    // recalled entry once the caret has walked up to line 1 — and ↓ mirrors that on the
+    // last line, so caret movement inside a multi-line text is never hijacked.
+    if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !e.nativeEvent.isComposing) {
+      const caretStart = e.currentTarget.selectionStart ?? 0;
+      const caretEnd = e.currentTarget.selectionEnd ?? caretStart;
+      const step =
+        e.key === "ArrowUp"
+          ? caretOnFirstLine(text, caretStart)
+            ? historyStepBack(history, historyNavRef.current, text)
+            : null
+          : caretOnLastLine(text, caretEnd)
+            ? historyStepForward(history, historyNavRef.current, text)
+            : null;
+      if (step) {
+        e.preventDefault();
+        applyHistory(step);
         return;
       }
     }

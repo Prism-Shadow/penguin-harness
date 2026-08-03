@@ -71,6 +71,7 @@ export function WorkGroup({
   const pending = hasPendingApproval(items, ctx);
   const [open, setOpen] = useState(isLast);
   const userToggled = useRef(false);
+  const rootRef = useRef<HTMLDivElement>(null);
 
   // Before any manual toggle, follow "is last segment": expanded while in progress (last
   // segment), collapsed once pushed away from the end by later messages (turn finished).
@@ -86,16 +87,44 @@ export function WorkGroup({
   const { steps, durationMs, startMs } = summarizeWork(items);
 
   return (
-    <div className="anim-msg my-2 overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-      {/* Group header: a distinct title bar (solid background), on a separate layer from the step rows below it */}
+    // overflow-clip (not overflow-hidden): the header below is position:sticky, and an
+    // overflow-hidden ancestor is a scroll container — the header would then stick to this
+    // card instead of the message list's scrollport, i.e. not stick at all. `clip` keeps
+    // the exact same clipping (rounded corners included) without creating a scroll
+    // container, and a sticky element never leaves its containing block, so the stuck
+    // header itself is never clipped.
+    <div
+      ref={rootRef}
+      className="anim-msg my-2 overflow-clip rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900"
+    >
+      {/* Group header: a distinct title bar (solid background), on a separate layer from the
+          step rows below it. Sticky against the message list's scrollport so a long expanded
+          group can be collapsed from anywhere inside it — without this, finding the start of
+          a long thinking/tool run means scrolling all the way back up. The background must
+          stay fully opaque (the old dark 900/60 read identically over the solid-900 card,
+          but stuck over scrolling rows it would let them bleed through); z below the
+          stream's own overlays (back-to-bottom uses z-10). -top-4, not top-0: sticky
+          offsets resolve against the scrollport INSIDE the scroll container's padding, so
+          top-0 pins a py-4 strip lower than the visible top and content scrolls through
+          that gap; -top-4 is the same rem unit as the container's py-4, cancelling exactly
+          at every font scale. */}
       <button
         type="button"
         aria-expanded={shown}
         onClick={() => {
           userToggled.current = true;
+          // Collapsing while the header is stuck: the group's real top edge sits above the
+          // fold, so after the body vanishes the viewport would land on unrelated content —
+          // bring the (now header-only) group back into view once React commits. `nearest`
+          // makes expanding and in-view collapsing a no-op. A forced-open pending approval
+          // keeps the body (shown stays true), so that click moves nothing either.
+          const willClose = open && !pending;
           setOpen((v) => !v);
+          if (willClose) {
+            requestAnimationFrame(() => rootRef.current?.scrollIntoView({ block: "nearest" }));
+          }
         }}
-        className="flex w-full items-center gap-2 bg-gray-50 px-3 py-2 text-left transition-colors duration-150 hover:bg-gray-100 dark:bg-gray-900/60 dark:hover:bg-gray-800/60"
+        className="sticky -top-4 z-[5] flex w-full items-center gap-2 bg-gray-50 px-3 py-2 text-left transition-colors duration-150 hover:bg-gray-100 dark:bg-gray-900 dark:hover:bg-gray-800"
       >
         <StatusIcon state={active ? "running" : "done"} size={12} />
         {/* The title doubles as status: "Running" while in progress, "Done" when finished. */}
