@@ -2,6 +2,10 @@
 
 Changes since v0.1.5. The version number is assigned at release, when this folder is renamed.
 
+- [2026-08-02] Web App: steering messages survive reloads with their content visible and can carry file attachments, tool-card subtitles render once fully formed instead of jittering, and the session list is DB-served by default with an opt-in CLI-session toggle and paged sidebar groups. ([details](2026-08-02-web-app-steering-and-session-list.md))
+
+- [2026-08-02] File tools: `read_file` / `edit_file` diagnose a missing path — deepest existing ancestor, first missing segment, nearest-named entries — instead of a bare "File not found" that read as absolute paths being rejected; the agent-creation Skill spells out `agent_state/AGENTS.md`. ([details](2026-08-02-file-tool-missing-path-diagnostics.md))
+
 - [2026-08-02] Web App: the manual "Check for updates" row reports every outcome — busy spinner while checking, success toasts for both up-to-date and update-found (naming the release, with the row itself becoming the update entry), and the existing failure/disabled notices — via a unit-tested outcome classifier. ([details](2026-08-02-update-check-feedback.md))
 
 - [2026-07-31] Tooling: each Release now attaches exactly one artifact per target — a flat installer bundle sealing the native installer, the program payload and its checksum — serving online and offline installation from the same file, with mandatory checksums at both layers, no more raw archives or `*-offline` wrappers, and hermetic installer tests in CI; in-place upgrades survive filesystems that pin in-use directories (the `penguin update` overlayfs `Device or resource busy` failure), the Windows payload drops its policy-blocked `penguin.ps1` launcher, and the installer broadcasts the user-Path change so new terminal windows find `penguin`. ([details](2026-07-31-unified-installer-artifact.md))
