@@ -7,12 +7,18 @@
 # Required environment:
 #   OSS_BUCKET, OSS_REGION, OSS_ENDPOINT, OSS_PUBLIC_BASE_URL,
 #   OSS_ACCELERATE_BASE_URL and temporary OSS_* credentials.
+# Optional environment (production-compatible defaults):
+#   OSS_RELEASE_ROOT=releases, OSS_LATEST_KEY=latest.json,
+#   OSS_ENFORCE_GITHUB_LATEST=true.
 set -eu
 
 RELEASE_DIR="${1:?usage: publish-release-to-oss.sh <release-dir> <tag> [update-latest]}"
 TAG="${2:?usage: publish-release-to-oss.sh <release-dir> <tag> [update-latest]}"
 UPDATE_LATEST="${3:-false}"
 OSSUTIL_BIN="${OSSUTIL_BIN:-ossutil}"
+OSS_RELEASE_ROOT="${OSS_RELEASE_ROOT:-releases}"
+OSS_LATEST_KEY="${OSS_LATEST_KEY:-latest.json}"
+OSS_ENFORCE_GITHUB_LATEST="${OSS_ENFORCE_GITHUB_LATEST:-true}"
 
 require_env() {
   eval "value=\${$1:-}"
@@ -25,6 +31,20 @@ require_env() {
 for name in OSS_BUCKET OSS_REGION OSS_ENDPOINT OSS_PUBLIC_BASE_URL OSS_ACCELERATE_BASE_URL; do
   require_env "$name"
 done
+
+validate_object_path() {
+  label="$1"
+  value="$2"
+  case "$value" in
+    ''|/*|*/|*//*|*..*|*[!A-Za-z0-9._+/-]*)
+      echo "error: $label is not a safe OSS object path: $value" >&2
+      exit 1
+      ;;
+  esac
+}
+
+validate_object_path OSS_RELEASE_ROOT "$OSS_RELEASE_ROOT"
+validate_object_path OSS_LATEST_KEY "$OSS_LATEST_KEY"
 
 [ -d "$RELEASE_DIR" ] || {
   echo "error: release directory not found: $RELEASE_DIR" >&2
@@ -47,6 +67,13 @@ case "$UPDATE_LATEST" in
   true|false) ;;
   *)
     echo "error: update-latest must be true or false" >&2
+    exit 1
+    ;;
+esac
+case "$OSS_ENFORCE_GITHUB_LATEST" in
+  true|false) ;;
+  *)
+    echo "error: OSS_ENFORCE_GITHUB_LATEST must be true or false" >&2
     exit 1
     ;;
 esac
@@ -159,12 +186,12 @@ upload_immutable_file() {
   verify_remote_file "$local_file" "$remote_uri"
 }
 
-RELEASE_PREFIX="releases/$TAG"
+RELEASE_PREFIX="$OSS_RELEASE_ROOT/$TAG"
 for file in $FILES; do
   upload_immutable_file "$RELEASE_DIR/$file" "oss://$OSS_BUCKET/$RELEASE_PREFIX/$file"
 done
 
-if [ "$UPDATE_LATEST" = "true" ]; then
+if [ "$UPDATE_LATEST" = "true" ] && [ "$OSS_ENFORCE_GITHUB_LATEST" = "true" ]; then
   # Re-check at the last possible moment. Another Release can finish while this job is
   # transferring large assets; an older retry must never roll latest.json backwards.
   require_env GH_TOKEN
@@ -229,12 +256,12 @@ if [ "$UPDATE_LATEST" = "true" ]; then
       sha256Sums: "SHA256SUMS"
     }' > "$WORK_DIR/latest.json"
 
-  LATEST_URI="oss://$OSS_BUCKET/latest.json"
+  LATEST_URI="oss://$OSS_BUCKET/$OSS_LATEST_KEY"
   echo "Updating latest release pointer: $LATEST_URI"
   oss_cp "$WORK_DIR/latest.json" "$LATEST_URI" "Cache-Control:no-cache"
   verify_remote_file "$WORK_DIR/latest.json" "$LATEST_URI"
 else
-  echo "Skipping latest.json because $TAG is not GitHub's current latest Release."
+  echo "Skipping $OSS_LATEST_KEY because update-latest is false."
 fi
 
 echo "OSS mirror verified for $TAG."

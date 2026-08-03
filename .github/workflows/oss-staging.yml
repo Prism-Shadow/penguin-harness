@@ -1,11 +1,207 @@
-name: Test Alibaba Cloud OSS publishing
+name: Test full Alibaba Cloud OSS release pipeline
 
 on:
   workflow_dispatch:
 
+concurrency:
+  group: penguin-oss-staging-release
+  cancel-in-progress: false
+
+env:
+  NODE_RUNTIME_VERSION: v24.18.0
+  MINGIT_VERSION: 2.55.0.3
+  MINGIT_TAG: v2.55.0.windows.3
+
 jobs:
-  staging:
-    name: Verify GitHub OIDC staging access
+  build:
+    name: Build all release bundles
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.metadata.outputs.tag }}
+      version: ${{ steps.metadata.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Define isolated staging version
+        id: metadata
+        run: |
+          TAG="v0.0.0-staging.${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Stamp staging version
+        env:
+          TAG: ${{ steps.metadata.outputs.tag }}
+        run: |
+          V="${TAG#v}"
+          grep -q 'export const VERSION = "' packages/core/src/index.ts
+          sed -i "s/export const VERSION = \"[^\"]*\"/export const VERSION = \"$V\"/" packages/core/src/index.ts
+          D="$(date -u +%Y-%m-%d)"
+          grep -q 'export const BUILD_DATE: string | null = ' packages/core/src/index.ts
+          sed -i "s/export const BUILD_DATE: string | null = [^;]*/export const BUILD_DATE: string | null = \"$D\"/" packages/core/src/index.ts
+
+      - name: Build (tsup + vite)
+        run: pnpm build
+
+      # Keep this assembly and packaging block aligned with release.yml. The staging workflow
+      # deliberately builds every target so it exercises the same artifacts before OSS publishing.
+      - name: Assemble penguin/ (lib + web + bin)
+        run: |
+          pnpm --config.node-linker=hoisted --filter @prismshadow/penguin-cli --prod deploy "$PWD/out/penguin/lib"
+          cp -r packages/web/dist out/penguin/web
+          mkdir -p out/penguin/bin
+          cat > out/penguin/bin/penguin <<'EOF'
+          #!/bin/sh
+          SELF="$0"
+          while [ -h "$SELF" ]; do
+            DIR="$(cd "$(dirname "$SELF")" && pwd)"
+            SELF="$(readlink "$SELF")"
+            case "$SELF" in /*) ;; *) SELF="$DIR/$SELF" ;; esac
+          done
+          DIR="$(cd "$(dirname "$SELF")/.." && pwd)"
+          export PENGUIN_WEB_DIST="${PENGUIN_WEB_DIST:-$DIR/web}"
+          if [ -x "$DIR/node/bin/node" ]; then
+            exec "$DIR/node/bin/node" "$DIR/lib/dist/index.js" "$@"
+          fi
+          exec node "$DIR/lib/dist/index.js" "$@"
+          EOF
+          chmod +x out/penguin/bin/penguin
+
+      - name: Package platform + universal payloads
+        run: |
+          mkdir -p payloads
+          for target in linux-x64 linux-arm64 darwin-x64 darwin-arm64; do
+            os="${target%%-*}"
+            arch="${target#*-}"
+            name="node-$NODE_RUNTIME_VERSION-$os-$arch"
+            if [ "$os" = "linux" ]; then ext="tar.xz"; else ext="tar.gz"; fi
+            curl -fsSL "https://nodejs.org/dist/$NODE_RUNTIME_VERSION/$name.$ext" -o "/tmp/$name.$ext"
+            rm -rf /tmp/node-runtime out/penguin/node
+            mkdir -p /tmp/node-runtime
+            if [ "$ext" = "tar.xz" ]; then
+              tar -xJf "/tmp/$name.$ext" -C /tmp/node-runtime
+            else
+              tar -xzf "/tmp/$name.$ext" -C /tmp/node-runtime
+            fi
+            mv "/tmp/node-runtime/$name" out/penguin/node
+            rm -rf out/penguin/node/share/doc out/penguin/node/share/man
+            printf '{"schemaVersion":1,"target":"%s"}\n' "$os-$arch" > out/penguin/package-manifest.json
+            tar -czf "payloads/$os-$arch.tar.gz" -C out penguin
+          done
+          rm -rf out/penguin/node
+          printf '{"schemaVersion":1,"target":"universal"}\n' > out/penguin/package-manifest.json
+          tar -czf payloads/universal.tar.gz -C out penguin
+
+      - name: Package win-x64 payload
+        run: |
+          name="node-$NODE_RUNTIME_VERSION-win-x64"
+          curl -fsSL "https://nodejs.org/dist/$NODE_RUNTIME_VERSION/$name.zip" -o "/tmp/$name.zip"
+          rm -rf /tmp/node-runtime out/penguin/node
+          mkdir -p /tmp/node-runtime
+          unzip -q "/tmp/$name.zip" -d /tmp/node-runtime
+          mv "/tmp/node-runtime/$name" out/penguin/node
+          mingit="MinGit-$MINGIT_VERSION-64-bit.zip"
+          curl -fsSL "https://github.com/git-for-windows/git/releases/download/$MINGIT_TAG/$mingit" -o "/tmp/$mingit"
+          rm -rf out/penguin/git
+          mkdir -p out/penguin/git
+          unzip -q "/tmp/$mingit" -d out/penguin/git
+          test -f out/penguin/git/usr/bin/sh.exe
+          test -f out/penguin/git/etc/profile
+          rm -f out/penguin/bin/penguin
+          printf '{"schemaVersion":1,"target":"win32-x64"}\n' > out/penguin/package-manifest.json
+          cat > out/penguin/bin/penguin.cmd <<'EOF'
+          @echo off
+          setlocal
+          set "DIR=%~dp0.."
+          if not defined PENGUIN_WEB_DIST set "PENGUIN_WEB_DIST=%DIR%\web"
+          if exist "%DIR%\git\usr\bin\sh.exe" set "PENGUIN_BUNDLED_SHELL=%DIR%\git\usr\bin\sh.exe"
+          if exist "%DIR%\node\node.exe" (
+            "%DIR%\node\node.exe" "%DIR%\lib\dist\index.js" %*
+          ) else (
+            node "%DIR%\lib\dist\index.js" %*
+          )
+          exit /b %ERRORLEVEL%
+          EOF
+          sed -i 's/$/\r/' out/penguin/bin/penguin.cmd
+          (cd out && zip -qr ../payloads/win32-x64.zip penguin)
+
+      - name: Package canonical installer bundles
+        run: sh scripts/package-release-bundles.sh payloads dist-artifacts
+
+      - name: Validate canonical installer bundles
+        run: |
+          set -eu
+          ARTIFACT_DIR="$PWD/dist-artifacts"
+          PAYLOAD_DIR="$PWD/payloads"
+          WORK_DIR="$(mktemp -d)"
+          trap 'rm -rf "$WORK_DIR"' EXIT
+
+          validate_layout() {
+            dir="$1"
+            expected="$2"
+            actual="$(find "$dir" -mindepth 1 -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort)"
+            [ -z "$(find "$dir" -mindepth 2 -print -quit)" ]
+            [ "$actual" = "$expected" ]
+          }
+
+          for target in linux-x64 linux-arm64 darwin-x64 darwin-arm64 universal; do
+            bundle="penguin-$target.tar.gz"
+            (cd "$ARTIFACT_DIR" && sha256sum -c "$bundle.sha256")
+            extracted="$WORK_DIR/$target"
+            mkdir -p "$extracted"
+            tar -xzf "$ARTIFACT_DIR/$bundle" -C "$extracted"
+            expected="$(printf '%s\n' install.sh payload.tar.gz payload.tar.gz.sha256 | LC_ALL=C sort)"
+            validate_layout "$extracted" "$expected"
+            [ -x "$extracted/install.sh" ]
+            (cd "$extracted" && sha256sum -c payload.tar.gz.sha256)
+            cmp "$PWD/install.sh" "$extracted/install.sh"
+            cmp "$PAYLOAD_DIR/$target.tar.gz" "$extracted/payload.tar.gz"
+          done
+
+          bundle="penguin-win32-x64.zip"
+          (cd "$ARTIFACT_DIR" && sha256sum -c "$bundle.sha256")
+          extracted="$WORK_DIR/win32-x64"
+          mkdir -p "$extracted"
+          unzip -q "$ARTIFACT_DIR/$bundle" -d "$extracted"
+          expected="$(printf '%s\n' install.cmd install.ps1 payload.zip payload.zip.sha256 | LC_ALL=C sort)"
+          validate_layout "$extracted" "$expected"
+          (cd "$extracted" && sha256sum -c payload.zip.sha256)
+          cmp "$PWD/install.cmd" "$extracted/install.cmd"
+          cmp "$PWD/install.ps1" "$extracted/install.ps1"
+          cmp "$PAYLOAD_DIR/win32-x64.zip" "$extracted/payload.zip"
+
+      - name: Collect release assets
+        run: |
+          cd dist-artifacts
+          sha256sum -- *.tar.gz *.zip > SHA256SUMS
+          cd ..
+          mkdir -p release-assets
+          cp dist-artifacts/* release-assets/
+          cp install.sh install.ps1 release-assets/
+
+      - name: Preserve release assets between jobs
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-release-assets-${{ github.run_id }}-${{ github.run_attempt }}
+          path: release-assets/
+          compression-level: 0
+          retention-days: 1
+
+  publish-staging:
+    name: Upload and verify all OSS assets
+    needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -15,6 +211,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Restore release assets
+        uses: actions/download-artifact@v5
+        with:
+          name: staging-release-assets-${{ github.run_id }}-${{ github.run_attempt }}
+          path: release-assets
+
       - name: Validate OSS environment configuration
         env:
           ALIYUN_OIDC_PROVIDER_ARN: ${{ vars.ALIYUN_OIDC_PROVIDER_ARN }}
@@ -22,9 +224,11 @@ jobs:
           OSS_BUCKET: ${{ vars.OSS_BUCKET }}
           OSS_REGION: ${{ vars.OSS_REGION }}
           OSS_ENDPOINT: ${{ vars.OSS_ENDPOINT }}
+          OSS_PUBLIC_BASE_URL: ${{ vars.OSS_PUBLIC_BASE_URL }}
+          OSS_ACCELERATE_BASE_URL: ${{ vars.OSS_ACCELERATE_BASE_URL }}
         run: |
           set -eu
-          for name in ALIYUN_OIDC_PROVIDER_ARN ALIYUN_ROLE_ARN OSS_BUCKET OSS_REGION OSS_ENDPOINT; do
+          for name in ALIYUN_OIDC_PROVIDER_ARN ALIYUN_ROLE_ARN OSS_BUCKET OSS_REGION OSS_ENDPOINT OSS_PUBLIC_BASE_URL OSS_ACCELERATE_BASE_URL; do
             eval "value=\${$name:-}"
             if [ -z "$value" ]; then
               echo "error: $name is not configured in the oss-staging environment" >&2
@@ -44,7 +248,7 @@ jobs:
           oidc-provider-arn: ${{ vars.ALIYUN_OIDC_PROVIDER_ARN }}
           role-to-assume: ${{ vars.ALIYUN_ROLE_ARN }}
           role-session-name: penguin-oss-staging-${{ github.run_id }}
-          role-session-expiration: 1800
+          role-session-expiration: 3600
           audience: github-actions
 
       - name: Verify staging access boundaries
@@ -56,3 +260,123 @@ jobs:
           OSS_REGION: ${{ vars.OSS_REGION }}
           OSS_ENDPOINT: ${{ vars.OSS_ENDPOINT }}
         run: sh scripts/test-oss-staging.sh
+
+      - name: Upload and verify every staging object
+        env:
+          TAG: ${{ needs.build.outputs.tag }}
+          OSS_ACCESS_KEY_ID: ${{ steps.aliyun.outputs['aliyun-access-key-id'] }}
+          OSS_ACCESS_KEY_SECRET: ${{ steps.aliyun.outputs['aliyun-access-key-secret'] }}
+          OSS_SESSION_TOKEN: ${{ steps.aliyun.outputs['aliyun-security-token'] }}
+          OSS_BUCKET: ${{ vars.OSS_BUCKET }}
+          OSS_REGION: ${{ vars.OSS_REGION }}
+          OSS_ENDPOINT: ${{ vars.OSS_ENDPOINT }}
+          OSS_PUBLIC_BASE_URL: ${{ vars.OSS_PUBLIC_BASE_URL }}
+          OSS_ACCELERATE_BASE_URL: ${{ vars.OSS_ACCELERATE_BASE_URL }}
+          OSS_RELEASE_ROOT: staging/releases
+          OSS_LATEST_KEY: staging/latest.json
+          OSS_ENFORCE_GITHUB_LATEST: "false"
+        run: sh scripts/publish-release-to-oss.sh release-assets "$TAG" true
+
+  install-windows:
+    name: Download from OSS and install Windows bundle
+    needs: [build, publish-staging]
+    runs-on: windows-latest
+    permissions:
+      contents: read
+      id-token: write
+    environment:
+      name: oss-staging
+    steps:
+      - name: Download and verify ossutil for Windows
+        id: ossutil
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $ProgressPreference = "SilentlyContinue"
+          $version = "2.3.0"
+          $archive = "ossutil-$version-windows-amd64.zip"
+          $archivePath = Join-Path $env:RUNNER_TEMP $archive
+          Invoke-WebRequest "https://gosspublic.alicdn.com/ossutil/v2/$version/$archive" -OutFile $archivePath
+          $expectedHash = "98209156987667B39FD12A0C7B940342900DAEF61A9306EA7F34ACF17F287DA2"
+          $actualHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $archivePath).Hash
+          if ($actualHash -ne $expectedHash) {
+            throw "ossutil SHA256 mismatch: expected $expectedHash, got $actualHash"
+          }
+          $extractDir = Join-Path $env:RUNNER_TEMP "ossutil-windows"
+          Expand-Archive -LiteralPath $archivePath -DestinationPath $extractDir -Force
+          $ossutil = (Get-ChildItem -LiteralPath $extractDir -Filter ossutil.exe -Recurse | Select-Object -First 1).FullName
+          if (-not $ossutil) { throw "ossutil.exe was not found in $archive" }
+          & $ossutil version
+          if ($LASTEXITCODE -ne 0) { throw "ossutil version exited with code $LASTEXITCODE" }
+          "path=$ossutil" >> $env:GITHUB_OUTPUT
+
+      - name: Exchange GitHub OIDC token for Alibaba Cloud credentials
+        id: aliyun
+        uses: aliyun/configure-aliyun-credentials-action@1e5248c8d5d93a8781ac344a68e19a43341e79e6
+        with:
+          oidc-provider-arn: ${{ vars.ALIYUN_OIDC_PROVIDER_ARN }}
+          role-to-assume: ${{ vars.ALIYUN_ROLE_ARN }}
+          role-session-name: penguin-oss-staging-win-${{ github.run_id }}
+          role-session-expiration: 1800
+          audience: github-actions
+
+      - name: Download, verify, install, and run PenguinHarness
+        shell: powershell
+        env:
+          EXPECTED_VERSION: ${{ needs.build.outputs.version }}
+          TAG: ${{ needs.build.outputs.tag }}
+          OSS_ACCESS_KEY_ID: ${{ steps.aliyun.outputs['aliyun-access-key-id'] }}
+          OSS_ACCESS_KEY_SECRET: ${{ steps.aliyun.outputs['aliyun-access-key-secret'] }}
+          OSS_SESSION_TOKEN: ${{ steps.aliyun.outputs['aliyun-security-token'] }}
+          OSS_BUCKET: ${{ vars.OSS_BUCKET }}
+          OSS_REGION: ${{ vars.OSS_REGION }}
+          OSS_ENDPOINT: ${{ vars.OSS_ENDPOINT }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $ProgressPreference = "SilentlyContinue"
+
+          $testRoot = Join-Path $env:RUNNER_TEMP "penguin-staging-install"
+          $bundlePath = Join-Path $testRoot "penguin-win32-x64.zip"
+          $checksumPath = "$bundlePath.sha256"
+          $bundleDir = Join-Path $testRoot "bundle"
+          $installDir = Join-Path $testRoot "installed"
+          New-Item -ItemType Directory -Force -Path $bundleDir | Out-Null
+
+          $releaseUri = "oss://$env:OSS_BUCKET/staging/releases/$env:TAG"
+          $ossutil = "${{ steps.ossutil.outputs.path }}"
+          & $ossutil cp "$releaseUri/penguin-win32-x64.zip" $bundlePath `
+            --endpoint $env:OSS_ENDPOINT --region $env:OSS_REGION --force --no-progress
+          if ($LASTEXITCODE -ne 0) { throw "failed to download the Windows bundle from OSS" }
+          & $ossutil cp "$releaseUri/penguin-win32-x64.zip.sha256" $checksumPath `
+            --endpoint $env:OSS_ENDPOINT --region $env:OSS_REGION --force --no-progress
+          if ($LASTEXITCODE -ne 0) { throw "failed to download the Windows checksum from OSS" }
+
+          $expectedHash = ((Get-Content -Raw -LiteralPath $checksumPath).Trim() -split "\s+")[0]
+          $actualHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $bundlePath).Hash
+          if ($actualHash -ne $expectedHash) {
+            throw "Outer bundle SHA256 mismatch: expected $expectedHash, got $actualHash"
+          }
+
+          Expand-Archive -LiteralPath $bundlePath -DestinationPath $bundleDir -Force
+          $installer = Join-Path $bundleDir "install.ps1"
+          $payload = Join-Path $bundleDir "payload.zip"
+          & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
+            -File $installer -InstallDir $installDir -ArchivePath $payload
+          if ($LASTEXITCODE -ne 0) {
+            throw "install.ps1 exited with code $LASTEXITCODE"
+          }
+
+          $penguin = Join-Path $installDir "bin\penguin.cmd"
+          $actualVersion = (& $penguin --version | Out-String).Trim()
+          if ($LASTEXITCODE -ne 0) {
+            throw "penguin --version exited with code $LASTEXITCODE"
+          }
+          if ($actualVersion -ne $env:EXPECTED_VERSION) {
+            throw "Installed version mismatch: expected $env:EXPECTED_VERSION, got $actualVersion"
+          }
+
+          & $penguin --help | Out-Null
+          if ($LASTEXITCODE -ne 0) {
+            throw "penguin --help exited with code $LASTEXITCODE"
+          }
+          "Windows staging installation verified: PenguinHarness $actualVersion"
