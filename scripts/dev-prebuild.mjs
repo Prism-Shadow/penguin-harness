@@ -31,7 +31,15 @@
  */
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -48,6 +56,8 @@ const INSTALL_STAMP = path.join(os.tmpdir(), `penguin-dev-${KEY}.install-stamp`)
 const BUILD_STAMP = path.join(os.tmpdir(), `penguin-dev-${KEY}.build-stamp`);
 const STALE_LOCK_MS = 10 * 60 * 1000; // no install+build takes 10 minutes; older locks are leftovers
 const SKIP_WINDOW_MS = 5_000;
+const VITE_STAMP = path.join(os.tmpdir(), `penguin-dev-${KEY}.vite-stamp`);
+const WEB_VITE_CACHE = path.join(ROOT, "packages", "web", "node_modules", ".vite");
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -95,6 +105,51 @@ function readText(file) {
   } catch {
     return null;
   }
+}
+
+/**
+ * Content fingerprint of the injected workspace deps' build output (skills + core dist):
+ * every file's bytes are hashed — chunk renames alone would not do, because tsup's entry
+ * outputs keep stable filenames and hold entry-resident code, so an equal-length change
+ * there would slip past a path+size check. mtimes are deliberately excluded (tsup runs
+ * with clean:true, so every rebuild rewrites them even when nothing changed). The two
+ * dist trees are a few MB, so this stays well under the cost of anything else here.
+ */
+function injectedDistFingerprint() {
+  const parts = [];
+  for (const rel of ["packages/skills/dist", "packages/core/dist"]) {
+    const base = path.join(ROOT, rel);
+    try {
+      for (const entry of readdirSync(base, { recursive: true, withFileTypes: true })) {
+        if (!entry.isFile()) continue;
+        const abs = path.join(entry.parentPath, entry.name);
+        const digest = createHash("sha256").update(readFileSync(abs)).digest("hex");
+        parts.push(`${rel}/${path.relative(base, abs)}:${digest}`);
+      }
+    } catch {
+      parts.push(`${rel}:missing`);
+    }
+  }
+  return createHash("sha256").update(parts.sort().join("\n")).digest("hex");
+}
+
+/**
+ * Drop Vite's dependency-prebundle cache when the injected deps' output changed.
+ *
+ * The workspace runs with injectWorkspacePackages, so the web app consumes skills/core as
+ * snapshot copies inside node_modules/.pnpm (kept current by syncInjectedDepsAfterScripts
+ * when the build above runs). Vite then prebundles those copies into
+ * packages/web/node_modules/.vite/deps — and that cache is keyed by lockfile/config only,
+ * never by dependency content, so a rebuilt core would keep serving the browser the OLD
+ * code (e.g. a stale model catalog) until the cache is deleted. Purging only on a real
+ * output change keeps the usual dev start free of Vite's re-optimize cost.
+ */
+function refreshViteCache() {
+  const fingerprint = injectedDistFingerprint();
+  if (readText(VITE_STAMP) === fingerprint) return;
+  rmSync(WEB_VITE_CACHE, { recursive: true, force: true });
+  writeFileSync(VITE_STAMP, fingerprint);
+  console.log("[dev-prebuild] skills/core output changed; cleared the web Vite dep cache.");
 }
 
 /**
@@ -149,6 +204,11 @@ try {
     }
     if (stampAge < SKIP_WINDOW_MS) {
       console.log("[dev-prebuild] deps were just built by a concurrent invocation; skipping.");
+      // The concurrent builder normally refreshed the cache too, but verify against the
+      // current output anyway — the check is two directory walks and a hash, and it keeps
+      // the invariant unconditional: after any successful prestep, the Vite dep cache
+      // matches the injected deps actually on disk.
+      refreshViteCache();
       exitCode = 0;
     } else {
       console.log("[dev-prebuild] building skills + core...");
@@ -164,7 +224,10 @@ try {
         // shell on Windows: pnpm is a .cmd shim there (see ensureInstalled).
         { cwd: ROOT, stdio: "inherit", shell: process.platform === "win32" },
       );
-      if (res.status === 0) writeFileSync(BUILD_STAMP, String(Date.now()));
+      if (res.status === 0) {
+        writeFileSync(BUILD_STAMP, String(Date.now()));
+        refreshViteCache();
+      }
       exitCode = res.status ?? 1;
     }
   }
