@@ -191,6 +191,22 @@ function parseSteerImages(body: Record<string, unknown>): string[] {
   return images.map((url, i) => requireImageUrl(url, `images[${i}]`));
 }
 
+/** Validate steering file attachments with the same shape and budgets as Task file parts. */
+function parseSteerFiles(body: Record<string, unknown>): TaskAttachment[] {
+  const files = body.files;
+  if (files === undefined) return [];
+  if (!Array.isArray(files)) throw badRequest("files must be an array.");
+  const parsed: TaskAttachment[] = [];
+  files.forEach((item, i) => {
+    if (item === null || typeof item !== "object" || Array.isArray(item)) {
+      throw badRequest(`files[${i}] must be an object.`);
+    }
+    parsed.push(parseAttachmentPart(item as Record<string, unknown>, i, "files"));
+    assertAttachmentBudget(parsed);
+  });
+  return parsed;
+}
+
 /**
  * Validate the optional `goal` field of a task request: absent = a regular task (null);
  * present = goal mode with a token budget (a positive integer, or -1/omitted = unlimited).
@@ -589,7 +605,8 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
 
   // Mid-run steering: queue a user message for the running Task; core delivers it between
   // turns as a standalone `[user_steering]` user message, with any images following it as
-  // user image messages (the model sees the whole thing without the loop being interrupted).
+  // user image messages and file attachment paths inside the text block (the model sees the
+  // whole thing without the loop being interrupted).
   // 409 not_running when no Task is in progress — the frontend then falls back to a normal
   // task POST.
   app.post("/:sessionId/steer", async (c) => {
@@ -597,18 +614,35 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     const body = await readJson(c);
     const text = typeof body.text === "string" ? body.text.trim() : "";
     const images = parseSteerImages(body);
-    // Either half can carry the message on its own: an image with no caption is a complete
-    // steering message, and so is plain text.
-    if (!text && images.length === 0) {
-      throw badRequest("text or images must carry the steering message.");
+    const files = parseSteerFiles(body);
+    // Any part can carry the message on its own: an image or file with no caption is a complete
+    // steering message, as is plain text.
+    if (!text && images.length === 0 && files.length === 0) {
+      throw badRequest("text, images, or files must carry the steering message.");
     }
     // The wire shape becomes core's: a user text message (omitted when the images are the
     // whole message, so the fold's path lines aren't preceded by a blank one) plus one image
     // message each — the same input a normal task would carry.
-    deps.manager.steer(row.sessionId, [
+    const messages: OmniMessage[] = [
       ...(text ? [userText(text)] : []),
       ...images.map((url) => imageUrlMessage(url)),
-    ]);
+    ];
+    // Avoid the ordinary idle rejection writing bytes only to remove them immediately. This is
+    // advisory: the Task may still finish during the awaited writes, so the catch below owns
+    // the race cleanup.
+    deps.manager.assertCanSteer(row.sessionId);
+    const { input, written } = await attachFilesToInput(
+      messages,
+      files,
+      scratchpadDir(deps.config.root, row.projectId, row.agentId),
+      row.sessionId,
+    );
+    try {
+      deps.manager.steer(row.sessionId, input);
+    } catch (err) {
+      await removeAttachments(written);
+      throw err;
+    }
     return c.body(null, 202);
   });
 

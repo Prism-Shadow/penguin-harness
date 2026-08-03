@@ -16,7 +16,7 @@
 export type MidRunAction =
   /** Abort the running Task — the button's face whenever this draft has no send channel. */
   | "stop"
-  /** Deliver text and images to the running agent as a `[user_steering]` message. */
+  /** Deliver text, images, and files to the running agent as a `[user_steering]` message. */
   | "steer"
   /** Hold the whole draft server-side and auto-send it as the next ordinary message. */
   | "queue"
@@ -46,6 +46,8 @@ export interface MidRunComposerState {
   hasText: boolean;
   /** At least one image is attached. */
   hasImages: boolean;
+  /** At least one file is attached. */
+  hasFiles: boolean;
   /**
    * The draft carries anything at all — text, images, file attachments, a staged switch chip
    * or selected skills. The queue takes a whole message, so this is its content rule.
@@ -58,8 +60,8 @@ export interface MidRunComposerState {
  * the button is always Send there, gated by the ordinary `canSend`.
  *
  * Steering is preferred over the queue when both could carry the draft, since it reaches the
- * turn already under way; the queue picks up what steering cannot — a skills-only draft, file
- * attachments, a staged chip — so that "unsendable here" never costs the user Stop.
+ * turn already under way; the queue picks up what steering cannot — a skills-only draft or a
+ * staged chip — so that "unsendable here" never costs the user Stop.
  */
 export function midRunAction(s: MidRunComposerState): MidRunAction {
   if (s.sending) return "disabled";
@@ -71,7 +73,7 @@ export function midRunAction(s: MidRunComposerState): MidRunAction {
     s.canSteerChannel &&
     !s.hasHandoffTarget &&
     !s.hasPendingModel &&
-    (s.hasText || s.hasImages);
+    (s.hasText || s.hasImages || s.hasFiles);
   if (canSteer && !s.followUpMode) return "steer";
   const canQueue = open && s.canQueueChannel && s.stagedRoute !== "blocked" && s.hasContent;
   if (canQueue) return "queue";

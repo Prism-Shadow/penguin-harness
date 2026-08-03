@@ -257,9 +257,13 @@ describe("session-manager", () => {
     const before = steerErr("early") as HttpError;
     expect(before.status).toBe(409);
     expect(before.code).toBe("not_running");
+    expect(() => manager.assertCanSteer("session-1")).toThrowError(
+      expect.objectContaining({ status: 409, code: "not_running" }),
+    );
 
     await manager.startTask("session-1", [userText("go")]);
     await waitFor(() => manager.pendingApprovalCount("session-1") === 1);
+    expect(() => manager.assertCanSteer("session-1")).not.toThrow();
     // Running: forwarded to the core session (no SSE event of its own).
     expect(steerErr("focus on tests")).toBeNull();
     expect(steered).toEqual(["focus on tests"]);
@@ -273,6 +277,9 @@ describe("session-manager", () => {
     await waitFor(() => manager.statusOf("session-1") === "idle");
     // Idle again after the run: 409.
     expect((steerErr("post") as HttpError).code).toBe("not_running");
+    expect(() => manager.assertCanSteer("session-1")).toThrowError(
+      expect.objectContaining({ status: 409, code: "not_running" }),
+    );
   });
 
   it("queueIfBusy: enqueues while running, auto-starts in order after each finish; abort keeps the queue", async () => {

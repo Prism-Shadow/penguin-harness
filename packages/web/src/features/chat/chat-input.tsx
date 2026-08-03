@@ -1179,13 +1179,17 @@ export function ChatInput({
   onSend: (input: TaskInputPart[], goal: { budget: number } | null) => Promise<boolean>;
   /**
    * Mid-run steering (session state only): while a Task is running, Enter/send queues the
-   * trimmed text **and any attached images** for the running agent — delivered between turns
-   * as a standalone `[user_steering]` user message followed by its images. `"queued"` clears
-   * the text and images and shows the queued hint; `"not_running"` (409 race with completion)
+   * trimmed text and any attached images/files for the running agent — delivered between turns
+   * as a standalone `[user_steering]` user message. `"queued"` clears the text and attachments
+   * and shows the queued hint; `"not_running"` (409 race with completion)
    * makes the input fall back to its full normal send path; `"failed"` keeps the draft. When
    * absent (draft state), the input stays send-disabled while running, as before.
    */
-  onSteer?: (text: string, images: string[]) => Promise<"queued" | "not_running" | "failed">;
+  onSteer?: (
+    text: string,
+    images: string[],
+    files: Array<{ fileName: string; dataUrl: string }>,
+  ) => Promise<"queued" | "not_running" | "failed">;
   /**
    * Count of steering messages already visible in the message stream: the queued hint stays
    * up until this increases past its value at queue time (i.e. the message was delivered).
@@ -1498,11 +1502,11 @@ export function ChatInput({
     [onHandoffTargetChange, onPendingModelChange],
   );
 
-  // Mid-run steering: while running, Enter/send queues the text **and the attached images**
+  // Mid-run steering: while running, Enter/send queues the text and attached images/files
   // for the running agent (delivered between turns as a [user_steering] user message followed
   // by its images) — so an image with no caption is a complete steering message on its own.
-  // File attachments and selected skills stay in the draft for a later normal send: a
-  // [use_skills] block is task-level setup, not something to hand a turn already under way. A
+  // Selected skills stay in the draft for a later normal send: a [use_skills] block is
+  // task-level setup, not something to hand a turn already under way. A
   // staged /agent or /model chip also blocks steering: the text belongs to the conversation
   // that switch is about to open, not to the agent running here.
   // `!goalOn`: with the goal chip engaged the text is an OBJECTIVE — steering it into a run
@@ -1535,6 +1539,7 @@ export function ChatInput({
     hasPendingModel: pendingModel !== null,
     hasText: text.trim().length > 0,
     hasImages: images.length > 0,
+    hasFiles: attachments.length > 0,
     hasContent: draftHasContent,
   });
   const steerAction = running && midRun === "steer";
@@ -1976,16 +1981,20 @@ export function ChatInput({
         await sendNormal(onQueueFollowUp!);
         return;
       }
-      // Steering branch: queue the trimmed text and the attached images for the running agent;
-      // both are sent and cleared together — file attachments and selected skills stay for a
-      // normal send (a staged switch chip blocks this branch outright, see midRunAction).
+      // Steering branch: queue the trimmed text and all attachments for the running agent;
+      // they are sent and cleared together. Selected skills stay for a later normal send (a
+      // staged switch chip blocks this branch outright, see midRunAction).
       if (!steerAction) return;
       const steerText = text.trim();
       const steerImages = images;
+      const steerFiles = attachments.map((file) => ({
+        fileName: file.name,
+        dataUrl: file.dataUrl,
+      }));
       setBusy(true);
       let res: "queued" | "not_running" | "failed" = "failed";
       try {
-        res = await onSteer!(steerText, steerImages);
+        res = await onSteer!(steerText, steerImages, steerFiles);
         if (res === "queued") {
           // Show the "queued" hint until the steering message shows up in the stream
           // (steeringDeliveredCount increases) — see the effect below.
@@ -1993,6 +2002,7 @@ export function ChatInput({
           setSteerPending(true);
           setText("");
           setImages([]);
+          setAttachments([]);
         }
       } finally {
         setBusy(false);

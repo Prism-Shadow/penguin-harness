@@ -797,6 +797,22 @@ export class SessionManager {
   }
 
   /**
+   * Advisory steering preflight used before a route writes file attachments. The authoritative
+   * check remains `steer`: a Task can finish while the files are being written, in which case
+   * the route removes them and returns the same 409.
+   */
+  assertCanSteer(sessionId: string): void {
+    const entry = this.entries.get(sessionId);
+    if (!entry || entry.status !== "running") {
+      throw new HttpError(
+        409,
+        "not_running",
+        "This Session has no Task in progress; send the message as a new task instead.",
+      );
+    }
+  }
+
+  /**
    * "Retry now" on the reconnect countdown: skip the in-progress backoff wait and fire
    * the next retry immediately (the attempt counter is unchanged — the skipped wait does
    * not consume an extra attempt). Returns false as a benign no-op when the session has

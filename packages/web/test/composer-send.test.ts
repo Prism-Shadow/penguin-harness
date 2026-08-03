@@ -24,6 +24,7 @@ const BASE: MidRunComposerState = {
   hasPendingModel: false,
   hasText: true,
   hasImages: false,
+  hasFiles: false,
   hasContent: true,
 };
 
@@ -33,14 +34,16 @@ const act = (over: Partial<MidRunComposerState> = {}) => midRunAction({ ...BASE,
 const EMPTY = { hasText: false, hasImages: false, hasContent: false } as const;
 
 describe("midRunAction — steering, the preferred channel", () => {
-  it("takes text, images, or an image with no caption at all", () => {
+  it("takes text, images, files, or an attachment with no caption at all", () => {
     expect(act()).toBe("steer");
     expect(act({ hasText: false, hasImages: true })).toBe("steer");
     expect(act({ hasText: true, hasImages: true })).toBe("steer");
+    expect(act({ hasText: false, hasFiles: true })).toBe("steer");
+    expect(act({ hasText: true, hasFiles: true })).toBe("steer");
   });
 
   it("is skipped for a draft it cannot carry, which the queue then takes", () => {
-    // Skills or file attachments only: hasContent without text or images of its own.
+    // Skills only: hasContent without text, images, or files of its own.
     expect(act({ ...EMPTY, hasContent: true })).toBe("queue");
     // A staged switch chip: the text belongs to the conversation that switch is about to open.
     expect(act({ hasHandoffTarget: true, stagedRoute: "handoff" })).toBe("queue");

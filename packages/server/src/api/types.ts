@@ -683,7 +683,7 @@ export interface TaskCreateResponse {
  * task POST).
  */
 export interface SteerRequest {
-  /** Message text (trimmed server-side); may be empty when `images` carries the message. */
+  /** Message text (trimmed server-side); may be empty when `images` or `files` carries the message. */
   text: string;
   /**
    * Images sent with the steering message (`data:` or http(s) URLs, same rule as
@@ -693,6 +693,12 @@ export interface SteerRequest {
    * be non-empty.
    */
   images?: string[];
+  /**
+   * Files attached to this steering message. The shape and limits match a Task's `file`
+   * input part: the server writes each file into the Session scratchpad and places its
+   * `[attached file: <path>]` line inside the delivered `[user_steering]` message.
+   */
+  files?: Array<{ fileName: string; dataUrl: string }>;
 }
 
 export interface ApprovalDecisionRequest {
