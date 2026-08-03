@@ -1998,10 +1998,13 @@ export function ChatInput({
         setBusy(false);
         textareaRef.current?.focus();
       }
-      // Completion race (server: no Task running anymore): deliver the whole draft — skills
-      // and all — through the full normal send path. The draft is untouched in this branch
-      // (nothing was cleared), so the images go out with it.
-      if (res === "not_running") await sendNormal();
+      // Completion race: the SSE snapshot can still say running after /steer reports that the
+      // core run has ended. Deliver the untouched whole draft — skills and all — through the
+      // queue-if-busy path. That endpoint is atomic across both sides of the server's own
+      // completion seam: it starts immediately when idle, or queues behind the last sliver of
+      // the old run. A plain Task POST could race the manager's idle flip and return 409,
+      // stranding the draft on a reloaded page (#89).
+      if (res === "not_running") await sendNormal(onQueueFollowUp ?? onSend);
       return;
     }
     if (!canSend) return;
