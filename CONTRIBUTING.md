@@ -29,8 +29,20 @@ serializes concurrent invocations) **keeps `pnpm install` current automatically*
 fresh clone or a pulled lockfile change installs before starting, and an up-to-date tree
 pays nothing (the lockfile hash is stamped) — then prebuilds the workspace deps (skills,
 core) with back-to-back builds deduped: starting `dev:server` and `dev:web` at the same
-time (or just `pnpm dev`) installs and builds exactly once. `dev:docs` / `dev:landing`
+time (or just `pnpm dev`) installs and builds exactly once. When that build changes
+skills/core output, the prestep also clears the web app's Vite dep cache
+(`packages/web/node_modules/.vite`), which is keyed by lockfile/config only and would
+otherwise keep serving the browser the previous core. `dev:docs` / `dev:landing`
 run the install check only (`--install-only`).
+
+One rule when bypassing the dev commands: **rebuild skills/core through pnpm, in that
+order** (`pnpm build`, or restart `pnpm dev`) — the workspace uses injected dependencies
+(`injectWorkspacePackages` in pnpm-workspace.yaml), so web/server consume snapshot copies
+that only re-sync when the package's `build` script runs via pnpm
+(`syncInjectedDepsAfterScripts`). A bare `npx tsup` in packages/core updates
+`packages/core/dist` but leaves those snapshots — and any already-populated Vite dep
+cache — on the old build; if a running dev web app still serves stale core after a manual
+rebuild, delete `packages/web/node_modules/.vite` and restart.
 
 Dev entry points that touch data (`pnpm dev`, `pnpm dev:server`, `pnpm penguin`) default
 to a separate data root, `~/.penguin/dev-data`, kept apart from the installed CLI/server's
