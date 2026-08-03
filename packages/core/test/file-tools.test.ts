@@ -31,6 +31,7 @@ import { WRITE_FILE_NAME, createWriteFileTool } from "../src/environment/tools/w
 import type { BuiltinTool, ToolResult } from "../src/environment/tools/types.js";
 import type { OmniMessage } from "../src/omnimessage/index.js";
 import type { ToolDefinitionConfig } from "../src/interfaces.js";
+import { modelVisiblePath } from "../src/internal/model-visible-path.js";
 
 function def(name: string, permission: "r" | "rw"): ToolDefinitionConfig {
   return { name, description: "test", permission };
@@ -129,7 +130,9 @@ describe("read_file", () => {
     expect(text).toContain("missing.txt");
     expect(text).toContain("workspace");
     expect(text).toContain("Absolute paths are supported");
-    expect(text).toContain(`The directory "${tmp}" exists but has no entry "missing.txt".`);
+    expect(text).toContain(
+      `The directory "${modelVisiblePath(tmp)}" exists but has no entry "missing.txt".`,
+    );
     expect(text).toContain("It is empty.");
   });
 
@@ -139,7 +142,9 @@ describe("read_file", () => {
     await writeFile(path.join(tmp, "notes.txt"), "n\n");
     const { result, text } = await run(tool(), { file_path: path.join(tmp, "AGENTS.md") }, tmp);
     expect(result?.stopReason).toBe("failed");
-    expect(text).toContain(`The directory "${tmp}" exists but has no entry "AGENTS.md".`);
+    expect(text).toContain(
+      `The directory "${modelVisiblePath(tmp)}" exists but has no entry "AGENTS.md".`,
+    );
     // Ranked by shared prefix with the missing name: agent_state/ first, dirs marked with "/".
     expect(text).toContain("It contains: agent_state/, notes.txt");
   });
@@ -148,7 +153,9 @@ describe("read_file", () => {
     const missing = path.join(tmp, "nope", "deep", "file.txt");
     const { result, text } = await run(tool(), { file_path: missing }, tmp);
     expect(result?.stopReason).toBe("failed");
-    expect(text).toContain(`The directory "${tmp}" exists but has no entry "nope".`);
+    expect(text).toContain(
+      `The directory "${modelVisiblePath(tmp)}" exists but has no entry "nope".`,
+    );
   });
 
   it("says so when a path segment is a file, not a directory", async () => {
@@ -158,7 +165,7 @@ describe("read_file", () => {
     expect(result?.stopReason).toBe("failed");
     expect(text).toContain("File not found");
     expect(text).toContain(
-      `Note: "${path.join(tmp, "a.txt")}" exists but is a file, not a directory.`,
+      `Note: "${modelVisiblePath(path.join(tmp, "a.txt"))}" exists but is a file, not a directory.`,
     );
   });
 
@@ -289,7 +296,9 @@ describe("edit_file", () => {
     expect(result?.stopReason).toBe("failed");
     expect(text).toContain("File not found");
     expect(text).toContain("write_file");
-    expect(text).toContain(`The directory "${tmp}" exists but has no entry "nope.txt".`);
+    expect(text).toContain(
+      `The directory "${modelVisiblePath(tmp)}" exists but has no entry "nope.txt".`,
+    );
   });
 
   it("fails when the path is a directory", async () => {
