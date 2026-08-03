@@ -1,7 +1,7 @@
 @echo off
 setlocal
 
-powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0install.ps1" -ArchivePath "%~dp0penguin-win32-x64.zip"
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0install.ps1" -ArchivePath "%~dp0payload.zip"
 set "INSTALL_EXIT_CODE=%ERRORLEVEL%"
 
 echo.

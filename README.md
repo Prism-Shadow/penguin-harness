@@ -139,31 +139,31 @@ penguin web        # start the service and open http://127.0.0.1:7364
 ```
 
 <details>
-<summary><b>📴 Offline install packages (air-gapped machines)</b></summary>
+<summary><b>📴 Offline install (air-gapped machines)</b></summary>
 
-Every <a href="https://github.com/Prism-Shadow/penguin-harness/releases">GitHub Release</a> attaches five self-contained offline bundles — Linux and macOS in x64 / arm64, Windows in x64. Each bundle carries the program archive, its SHA256 checksum and the platform's installer: download on a networked machine, copy to the target, and install with no network at all (offline installs verify the SHA256 unconditionally).
+Every <a href="https://github.com/Prism-Shadow/penguin-harness/releases">GitHub Release</a> attaches exactly one package per target — Linux and macOS in x64 / arm64, Windows in x64, plus a runtime-less universal package — and the same file serves online and offline installation. Each package seals the program payload, its SHA256 checksum and the platform's installer: download the one file on a networked machine, copy it to the target, extract once and run the bundled installer — no network, no separate checksum file to carry (the sealed SHA256 is always verified).
 
-**Linux (on arm64, use `penguin-linux-arm64-offline.tar.gz`):**
+**Linux (on arm64, use `penguin-linux-arm64.tar.gz`):**
 
 ```bash
-mkdir penguin-offline
-tar -xzf penguin-linux-x64-offline.tar.gz -C penguin-offline
-./penguin-offline/install.sh
+mkdir penguin-install
+tar -xzf penguin-linux-x64.tar.gz -C penguin-install
+./penguin-install/install.sh
 ```
 
-**macOS (Apple silicon shown; on Intel, use `penguin-darwin-x64-offline.tar.gz`):**
+**macOS (Apple silicon shown; on Intel, use `penguin-darwin-x64.tar.gz`):**
 
 ```bash
-mkdir penguin-offline
-tar -xzf penguin-darwin-arm64-offline.tar.gz -C penguin-offline
-./penguin-offline/install.sh
+mkdir penguin-install
+tar -xzf penguin-darwin-arm64.tar.gz -C penguin-install
+./penguin-install/install.sh
 ```
 
 **Windows (unzip, then double-click `install.cmd` — or run it in PowerShell):**
 
 ```powershell
-Expand-Archive penguin-win32-x64-offline.zip -DestinationPath penguin-offline
-cd penguin-offline
+Expand-Archive penguin-win32-x64.zip -DestinationPath penguin-install
+cd penguin-install
 .\install.cmd
 ```
 

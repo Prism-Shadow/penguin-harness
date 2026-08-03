@@ -67,6 +67,8 @@ export const zh = {
      */
     checkNow: "检查更新",
     checking: "检查中…",
+    /** 手动检查发现新版本时的成功提示；下方同一行即变为更新入口。 */
+    foundNew: (v: string) => `发现新版本 v${v}，点击下方更新入口即可安装`,
     upToDate: "已是最新版本",
     checkFailed: "检查更新失败，请稍后重试",
     checkDisabled: "更新检查已关闭（PENGUIN_UPDATE_CHECK=off）",

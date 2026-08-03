@@ -63,7 +63,7 @@ import { clearDraft, sessionDraftKey } from "../../features/chat/draft-cache";
 import { CreateProjectDialog, ProjectSettingsDialog } from "./project-dialogs";
 import { ChangePasswordDialog } from "../account/change-password-dialog";
 import { UpdateDialog } from "../account/update-dialog";
-import { forceUpdateCheck, useVersionInfo } from "../../lib/use-version-info";
+import { forceUpdateCheck, updateCheckOutcome, useVersionInfo } from "../../lib/use-version-info";
 
 function Icon({ d, size = 16 }: { d: string; size?: number }) {
   return (
@@ -244,20 +244,20 @@ export function Sidebar({
   /**
    * Manual update check (owner request): forces a lookup past the server's TTL cache and
    * pushes the result into the shared version-info store, so the reminder rows, badge,
-   * and dot appear immediately when a newer release is found — that visible change is
-   * the notification then. A toast fires only when nothing changes visibly (#54, one
-   * notification per action): up to date, checks disabled, or a failed lookup (the
-   * check is fail-soft — failure arrives as the `error` field, not an exception; the
-   * catch handles our own server being unreachable).
+   * and dot appear immediately when a newer release is found. Every outcome also toasts —
+   * up to date, found (naming the release; the row below turns into the update entry),
+   * checks disabled, and a failed lookup (the check is fail-soft — failure arrives as the
+   * `error` field, not an exception; the catch handles our own server being unreachable).
    */
   const runUpdateCheck = async () => {
     if (updateChecking) return;
     setUpdateChecking(true);
     try {
-      const res = await forceUpdateCheck();
-      if (res.disabled === true) toastInfo(S.update.checkDisabled);
-      else if (res.error !== undefined) toastError(S.update.checkFailed);
-      else if (!res.updateAvailable) toastSuccess(S.update.upToDate);
+      const outcome = updateCheckOutcome(await forceUpdateCheck());
+      if (outcome.kind === "disabled") toastInfo(S.update.checkDisabled);
+      else if (outcome.kind === "failed") toastError(S.update.checkFailed);
+      else if (outcome.kind === "found") toastSuccess(S.update.foundNew(outcome.latestVersion));
+      else toastSuccess(S.update.upToDate);
     } catch (e) {
       toastError(apiErrorText(e));
     } finally {
@@ -1099,7 +1099,13 @@ export function Sidebar({
               className={`${menuItemClass} flex items-center justify-between gap-2 disabled:cursor-default disabled:opacity-60`}
             >
               <span className="flex min-w-0 items-center gap-2">
-                {newVersion !== null && (
+                {updateChecking && (
+                  <span
+                    aria-hidden
+                    className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent opacity-70"
+                  />
+                )}
+                {!updateChecking && newVersion !== null && (
                   <span
                     aria-hidden
                     className="h-2 w-2 shrink-0 rounded-full bg-[var(--accent-bg)]"
