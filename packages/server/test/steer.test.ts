@@ -12,7 +12,7 @@
  *   - 404 for foreign/unknown sessions (via the shared resolveSession lookup).
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { readFile, readdir } from "node:fs/promises";
+import { readFile, readdir, realpath } from "node:fs/promises";
 import path from "node:path";
 import {
   approvalDecision,
@@ -193,13 +193,16 @@ describe("steer route", () => {
     const second = shape(steered[1]!);
     expect(second).toHaveLength(1);
     expect(second[0]).toMatch(/^text:\[attached file: .*solo\.txt\]$/);
-    // The bytes really landed in this Session's scratchpad.
+    // The bytes really landed in this Session's scratchpad. Directories are compared via
+    // realpath, not string prefixes: on the Windows CI runner the temp root mixes 8.3
+    // short and long name forms, so two spellings of the same directory are expected.
     const written = /\[attached file: (.*)\]/.exec(first[0]!)![1]!;
-    expect(
-      written.startsWith(
-        path.join(scratchpadDir(t.root, "steerer-default_project", "default_agent"), SID),
-      ),
-    ).toBe(true);
+    const expectedDir = path.join(
+      scratchpadDir(t.root, "steerer-default_project", "default_agent"),
+      SID,
+    );
+    expect(await realpath(path.dirname(written))).toBe(await realpath(expectedDir));
+    expect(path.basename(written)).toBe("notes.txt");
     expect(await readFile(written, "utf8")).toBe("hello notes");
 
     // Same validation as a task input's file parts, under the steer request's own field name.
