@@ -23,6 +23,7 @@
  *   never empty under any circumstance**.
  * Docs: /docs/tools § "Execution contract".
  */
+import path from "node:path";
 import { partialToolCallOutput, toolCallOutput } from "../omnimessage/index.js";
 import type { OmniMessage, StopReason } from "../omnimessage/index.js";
 import type {
@@ -37,6 +38,13 @@ import type { BuiltinTool, ToolResult } from "./tools/types.js";
 import { BUILTIN_TOOL_FACTORIES } from "./tools/registry.js";
 import { CommandSessionManager } from "./tools/command/index.js";
 import { SubagentSessionManager } from "./tools/subagent/index.js";
+import {
+  TRUNCATED_TOOL_OUTPUT_FILE_LIMIT_BYTES,
+  TruncatedToolOutputArchive,
+  type TruncatedToolOutputArchiveSaveResult,
+  type TruncatedToolOutputCapture,
+} from "./truncated-tool-output-archive.js";
+import { modelVisiblePath } from "../internal/model-visible-path.js";
 
 /** Default cap on tool output truncation (characters). */
 const DEFAULT_MAX_OUTPUT_LENGTH = 16000;
@@ -78,6 +86,11 @@ function noteSuffix(base: string, note: string): string {
 export class Environment implements EnvironmentInterface {
   private readonly workspaceDir: string;
   private readonly toolConfig: ToolConfig;
+  /**
+   * Truncated-output recovery, derived from the generic `sessionScratchpadDir` config; null for
+   * standalone embedders without a Session directory (legacy truncation-only behavior).
+   */
+  private readonly truncatedToolOutputArchive: TruncatedToolOutputArchive | null;
   /** Assembled built-in tools: tool name -> BuiltinTool. Only tools supported by the registry and present in config. */
   private readonly tools: Map<string, BuiltinTool>;
   /** Long-running command session registry: constructed within this Environment and shared between exec_command / input_command. */
@@ -88,6 +101,11 @@ export class Environment implements EnvironmentInterface {
   constructor(config: EnvironmentConfig) {
     this.workspaceDir = config.workspaceDir;
     this.toolConfig = config.toolConfig;
+    this.truncatedToolOutputArchive = config.sessionScratchpadDir
+      ? new TruncatedToolOutputArchive({
+          rootDir: path.join(config.sessionScratchpadDir, "truncated-tool-output"),
+        })
+      : null;
     this.tools = new Map();
     // The background session registry is created alongside Environment (one per Session) and
     // injected into whichever tools need it; all sessions are finalized together on dispose.
@@ -216,6 +234,10 @@ export class Environment implements EnvironmentInterface {
     let selfNote: string | null = null; // Tool's self-reported end marker (e.g. exit code), appended outside truncation
     let selfImages: string[] | undefined; // Tool's self-reported images (data URL), carried via a single streamed delta and the full message
     let thrown: unknown = null;
+    // Created lazily on the first over-limit text delta when this Environment has a Session
+    // scratchpad. It captures the tool's complete text before Environment drops the overflow,
+    // but does not alter the model/frontend stream.
+    let archiveCapture: TruncatedToolOutputCapture | null = null;
     const gen = tool.execute(args, {
       workspaceDir: this.workspaceDir,
       toolCallId,
@@ -249,6 +271,17 @@ export class Environment implements EnvironmentInterface {
           // Only takes delta content; start/stop are ignored (framing is uniformly handled by Environment).
           if (p.event_type !== "delta" || !p.output) continue;
           contentLen += p.output.length;
+          const exceedsVisibleLimit = maxOutputLength > 0 && contentLen > maxOutputLength;
+          if (exceedsVisibleLimit && this.truncatedToolOutputArchive) {
+            if (!archiveCapture) {
+              archiveCapture = this.truncatedToolOutputArchive.startCapture();
+              // `streamed` is the exact prefix already accepted before this delta. Appending it
+              // once, then every complete current/future delta, reconstructs the pre-truncation
+              // tool text without changing what is forwarded.
+              archiveCapture.append(streamed);
+            }
+            archiveCapture.append(p.output);
+          }
           // maxOutputLength <= 0 means truncation is disabled (same semantics as timeoutMs).
           const room =
             maxOutputLength > 0 ? maxOutputLength - streamed.length : Number.POSITIVE_INFINITY;
@@ -265,6 +298,18 @@ export class Environment implements EnvironmentInterface {
         } else if (p.type === "tool_call_output") {
           // Fallback: if the tool still produces a full message, use it as the basis for content and stop reason (not needed under the new contract).
           toolOutput = p.output ?? "";
+          if (
+            maxOutputLength > 0 &&
+            toolOutput.length > maxOutputLength &&
+            this.truncatedToolOutputArchive
+          ) {
+            if (!archiveCapture) {
+              archiveCapture = this.truncatedToolOutputArchive.startCapture();
+            }
+            // A compatibility tool's complete message is Environment's content basis, so it
+            // also becomes the recovery basis instead of any deltas it happened to emit.
+            archiveCapture.replace(toolOutput);
+          }
           if (selfReported === undefined && p.stop_reason) {
             selfReported = p.stop_reason as StopReason;
           }
@@ -293,16 +338,40 @@ export class Environment implements EnvironmentInterface {
         ? contentBase.slice(0, maxOutputLength)
         : contentBase;
     const truncated = capped.length < contentBase.length || contentLen > streamed.length;
-
+    // Freeze the tool's terminal facts before auxiliary archive I/O. A user abort arriving
+    // while the file is being written must not reclassify an already-finished tool.
     const aborted =
       signal?.aborted === true ||
       (!timedOut &&
         (selfReported === "aborted" ||
           (thrown as { name?: string } | null)?.name === "AbortError"));
+    let archiveResult: TruncatedToolOutputArchiveSaveResult | null = null;
+    if (truncated && archiveCapture) {
+      // Both truncation paths initialize this capture at the exact point they first exceed the
+      // visible cap, so a truncated call with a Session scratchpad always has one to save. A
+      // standalone Environment has no capture and retains truncation-only behavior.
+      archiveResult = await archiveCapture.save(name, toolCallId);
+    } else {
+      archiveCapture?.cancel();
+    }
+
     let stopReason: StopReason;
     const notes: string[] = [];
     if (truncated) {
       notes.push(`[output truncated: exceeded ${maxOutputLength} chars]`);
+      if (archiveResult?.status === "saved") {
+        const archivePath = modelVisiblePath(archiveResult.path);
+        if (archiveResult.archiveTruncated) {
+          const limitMiB = Math.ceil(TRUNCATED_TOOL_OUTPUT_FILE_LIMIT_BYTES / (1024 * 1024));
+          notes.push(
+            `[output archived (${limitMiB} MiB limit; head and tail kept): ${archivePath}]`,
+          );
+        } else {
+          notes.push(`[output archived: ${archivePath}]`);
+        }
+      } else if (archiveResult?.status === "failed") {
+        notes.push(`[output archive failed: ${archiveResult.code}]`);
+      }
     }
     // The tool's self-reported end marker (e.g. exit code): appended outside the truncation —
     // if treated as a content delta it would get cut off once long output hits the cap, and the

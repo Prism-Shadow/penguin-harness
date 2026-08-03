@@ -18,6 +18,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   assistantText,
   buildHandoffMessage,
+  modelVisiblePath,
   parseHandoffMessage,
   scratchpadDir,
 } from "@prismshadow/penguin-core";
@@ -121,7 +122,8 @@ describe("task input file attachments", () => {
     const marker = /\[attached file: (.+)\]/.exec(text);
     expect(marker).not.toBeNull();
     const filePath = marker![1]!;
-    expect(filePath).toBe(path.join(dir, "report.pdf"));
+    // Marker lines carry the model-visible spelling (forward slashes on Windows).
+    expect(filePath).toBe(modelVisiblePath(path.join(dir, "report.pdf")));
     expect(await fs.readFile(filePath, "utf8")).toBe("PDF-BYTES");
     // The line trails the user's own text — it must not replace or reframe the message.
     expect(text.startsWith("look at this")).toBe(true);
@@ -141,7 +143,7 @@ describe("task input file attachments", () => {
 
     const paths = [...promptText(runs[0]!).matchAll(/\[attached file: (.+)\]/g)].map((m) => m[1]!);
     expect(paths).toHaveLength(2);
-    expect(paths[0]).toBe(path.join(dir, "notes.txt"));
+    expect(paths[0]).toBe(modelVisiblePath(path.join(dir, "notes.txt")));
     // The second upload gets a random suffix rather than clobbering the first.
     expect(paths[1]).not.toBe(paths[0]);
     expect(path.basename(paths[1]!)).toMatch(/^notes-[0-9a-f]{6}\.txt$/);
@@ -287,7 +289,7 @@ describe("task input file attachments", () => {
     expect(texts).toHaveLength(2);
     expect(texts[0]).toBe(block);
     expect(parseHandoffMessage(texts[0]!)?.agentId).toBe("alpha");
-    expect(texts[1]).toBe(`[attached file: ${path.join(dir, "notes.txt")}]`);
+    expect(texts[1]).toBe(`[attached file: ${modelVisiblePath(path.join(dir, "notes.txt"))}]`);
   });
 
   it("more than the per-request file count is a 413 and writes nothing", async () => {

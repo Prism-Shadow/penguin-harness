@@ -161,6 +161,8 @@ An existing Agent always runs with its on-disk config verbatim — newer code de
 
 `{{PROJECT_DIR}}` is surfaced to the model as the **App Data Dir**: PenguinHarness's application data root, holding every Agent's data files (`agents/<agent_id>/…`) and the project-level data — deliberately not described as a project or task directory, so the model does not mistake it for the task's working directory (`CWD`).
 
+On Windows, `{{PROJECT_DIR}}` and `{{CWD}}` are injected with forward slashes — like every other path core composes for the model (attachment lines, the goal-file line, truncated-output recovery paths). The model re-emits these spellings into JSON tool arguments and shell commands; forward slashes are accepted by Node's fs APIs and the package's (Git) Bash tool shell, and avoid JSON backslash-escaping mistakes.
+
 `agent_state/AGENTS.md` is the developer-editable instruction file, injected via `{{AGENTS_MD}}` and empty by default — it is also the file an optimizer edits most (see [Self-Improvement](/self-improvement)).
 
 ## Vault

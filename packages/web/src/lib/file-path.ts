@@ -87,15 +87,17 @@ const MAX_PATH_LEN = 512;
  * the Workspace root (used for file-card display and stat lookups). Returns
  * null (no card rendered) for anything that can't be resolved into the
  * current Workspace:
- *   - An absolute path is stripped only when prefixed with
- *     `${workspace}${sep}` (assistants commonly report absolute paths); if it
- *     equals the workspace itself or the prefix doesn't match → null. A
- *     Windows deployment's Workspace (core supports win32) uses backslash
- *     paths: the prefix is joined with its own separator, and the stripped
- *     relative segment is normalized to "/" (the browser-side directory
- *     navigation splits on "/"). Conversion only happens on a matched Windows
- *     prefix — backslash is a legal character in POSIX filenames, so no
- *     global replacement is done;
+ *   - An absolute path is stripped only when prefixed with the Workspace
+ *     (assistants commonly report absolute paths); if it equals the workspace
+ *     itself or the prefix doesn't match → null. A Windows deployment's
+ *     Workspace (core supports win32) may be reported with backslashes
+ *     (path.join) while the assistant spells the same path with forward
+ *     slashes (core's model-visible spelling) or mixes both — so when the
+ *     Workspace itself looks like a Windows path, both sides are compared on
+ *     "/" with a case-insensitive drive letter, and the stripped relative
+ *     segment uses "/" (the browser-side directory navigation splits on
+ *     "/"). A POSIX Workspace never converts anything — backslash is a legal
+ *     character in POSIX filenames, so no global replacement is done;
  *   - A path starting with `~` (home directory) can't be resolved → null;
  *   - A relative path is lexically normalized by splitting on "/": drop "."
  *     and empty segments, pop the stack on "..", and return null if popping
@@ -106,14 +108,19 @@ export function toWorkspaceRelative(path: string, workspace: string | null): str
   if (s.length === 0 || s.length > MAX_PATH_LEN) return null;
   if (s.startsWith("~")) return null;
   const ws = workspace !== null && workspace.length > 0 ? workspace : null;
-  const winWs = ws?.includes("\\") ?? false;
-  const sep = winWs ? "\\" : "/";
-  const absolute = s.startsWith("/") || (winWs && (/^[A-Za-z]:/.test(s) || s.startsWith("\\")));
-  let rel = s;
+  const winWs = ws !== null && (ws.includes("\\") || /^[A-Za-z]:/.test(ws));
+  const normalize = (p: string): string => {
+    if (!winWs) return p;
+    const slashed = p.replaceAll("\\", "/");
+    return /^[A-Za-z]:/.test(slashed) ? slashed[0]!.toLowerCase() + slashed.slice(1) : slashed;
+  };
+  const normalizedInput = normalize(s);
+  const normalizedWs = ws === null ? null : normalize(ws);
+  const absolute = normalizedInput.startsWith("/") || (winWs && /^[a-z]:/.test(normalizedInput));
+  let rel = normalizedInput;
   if (absolute) {
-    if (ws === null || !s.startsWith(`${ws}${sep}`)) return null;
-    rel = s.slice(ws.length + sep.length);
-    if (sep === "\\") rel = rel.replaceAll("\\", "/");
+    if (normalizedWs === null || !normalizedInput.startsWith(`${normalizedWs}/`)) return null;
+    rel = normalizedInput.slice(normalizedWs.length + 1);
   }
   const stack: string[] = [];
   for (const seg of rel.split("/")) {

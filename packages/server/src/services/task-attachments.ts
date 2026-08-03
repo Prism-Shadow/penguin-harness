@@ -16,7 +16,11 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { randomBytes } from "node:crypto";
-import { appendAttachmentLines, attachedFileLine } from "@prismshadow/penguin-core";
+import {
+  appendAttachmentLines,
+  attachedFileLine,
+  modelVisiblePath,
+} from "@prismshadow/penguin-core";
 import type { OmniMessage } from "@prismshadow/penguin-core";
 import { HttpError } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
@@ -293,5 +297,11 @@ export async function attachFilesToInput(
     await removeAttachments(written);
     throw err;
   }
-  return { input: appendAttachmentLines(messages, written.map(attachedFileLine)), written };
+  return {
+    input: appendAttachmentLines(
+      messages,
+      written.map((filePath) => attachedFileLine(modelVisiblePath(filePath))),
+    ),
+    written,
+  };
 }

@@ -68,6 +68,21 @@ export function workspacesDir(root: string, projectId: string, agentId: string):
 }
 
 /**
+ * `<agentDir>/scratchpad/<sessionId>`, one Session's private scratchpad directory. The single
+ * Session-scoped storage root shared by every by-product bound to that Session: input images
+ * saved as path lines, the goal-mode control file, and Environment's truncated-tool-output
+ * recovery files. Deleted together with the Session by the existing scratchpad cleanup path.
+ */
+export function sessionScratchpadDir(
+  root: string,
+  projectId: string,
+  agentId: string,
+  sessionId: string,
+): string {
+  return path.join(scratchpadDir(root, projectId, agentId), sessionId);
+}
+
+/**
  * `<agentDir>/scratchpad/<sessionId>/GOAL.yaml`, the goal-mode control file of one Session
  * (sibling of the model's PLAN.md convention; see goal/goal-file.ts for field ownership).
  */
@@ -77,7 +92,7 @@ export function goalFilePath(
   agentId: string,
   sessionId: string,
 ): string {
-  return path.join(scratchpadDir(root, projectId, agentId), sessionId, "GOAL.yaml");
+  return path.join(sessionScratchpadDir(root, projectId, agentId, sessionId), "GOAL.yaml");
 }
 
 /**

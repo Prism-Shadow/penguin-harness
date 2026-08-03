@@ -70,6 +70,8 @@ The head of a Trace (illustrative; one OmniMessage envelope per line):
 {"timestamp":"…","type":"event_msg","payload":{"type":"token_usage","session":{…},"request":{…}}}
 ```
 
+When tool output exceeds `maxOutputLength`, Trace records the same bounded head, truncation marker, and absolute Session recovery path seen by Web/CLI and the model; it does not separately duplicate the archived text. The path exposes the host data-root layout but remains valid across Tasks and Session resume because the unredacted recovery file lives in that Session's scratchpad. The existing explicit Session-deletion path removes the scratchpad and recovery file together. Trace replay therefore faithfully restores both what the model saw and a usable pointer for later follow-up.
+
 ## Session recovery
 
 The Trace is the single source of truth for recovery — there is no separate session database to keep in sync. `resumeSession` works as follows:

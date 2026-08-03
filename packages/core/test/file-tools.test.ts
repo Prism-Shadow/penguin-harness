@@ -451,6 +451,43 @@ describe("read_file — bounded scan and output budget", () => {
     expect(text).toContain("sed -n");
   });
 
+  it.skipIf(process.platform !== "win32")(
+    "accepts the same absolute path in Windows and POSIX spellings",
+    async () => {
+      await writeFile(path.join(tmp, "spellings.txt"), "both spellings work\n");
+      const windowsSpelling = path.join(tmp, "spellings.txt");
+      const posixSpelling = windowsSpelling.replaceAll("\\", "/");
+      const tool = () => createReadFileTool(def(READ_FILE_NAME, "r"));
+      for (const spelling of [windowsSpelling, posixSpelling]) {
+        const { text } = await run(tool(), { file_path: spelling }, tmp);
+        expect(text).toContain("both spellings work");
+      }
+    },
+  );
+
+  it.skipIf(process.platform !== "win32")(
+    "names the workspace with forward slashes when a file is missing",
+    async () => {
+      const tool = () => createReadFileTool(def(READ_FILE_NAME, "r"));
+      const { text } = await run(tool(), { file_path: "no-such-file.txt" }, tmp);
+      expect(text).toContain("File not found");
+      expect(text).not.toContain("\\");
+    },
+  );
+
+  it("confirms EOF for an unterminated line one byte below the scan cap", async () => {
+    await writeFile(
+      path.join(tmp, "scan-cap-minus-one.txt"),
+      "x".repeat(READ_FILE_SCAN_CAP_BYTES - 1),
+    );
+    const tool = () => createReadFileTool(def(READ_FILE_NAME, "r"));
+    const { result, text } = await run(tool(), { file_path: "scan-cap-minus-one.txt" }, tmp);
+    expect(result?.stopReason).toBeUndefined();
+    expect(text).toContain("[line truncated]");
+    expect(text).not.toContain("file has more than");
+    expect(text).not.toContain("Stopped after scanning");
+  });
+
   it("reports a lower-bound total when the file outruns the scan cap after the window", async () => {
     // > 8MB of two-byte lines: the window (1-2000) completes early, counting stops at the cap.
     await writeFile(path.join(tmp, "long.txt"), "x\n".repeat(READ_FILE_SCAN_CAP_BYTES / 2 + 4096));
