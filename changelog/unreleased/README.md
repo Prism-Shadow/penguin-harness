@@ -2,6 +2,8 @@
 
 Changes since v0.1.5. The version number is assigned at release, when this folder is renamed.
 
+- [2026-08-03] Core & Web App: built-in MiniMax provider group — `MiniMax-M3` (1M context, vision) plus `MiniMax-M2.7` / `MiniMax-M2.7-highspeed` presets pinning the shared `minimax-m3` protocol and direct endpoint, `MINIMAX_*` env fallback mirroring AgentHub's exact-match routing, a MiniMax provider glyph, and bilingual docs (M2.7 maps thinking `none` to `low`; requires agenthub >= 0.4.2). ([details](2026-08-03-minimax-m-series-presets.md))
+
 - [2026-08-02] Web App: the manual "Check for updates" row reports every outcome — busy spinner while checking, success toasts for both up-to-date and update-found (naming the release, with the row itself becoming the update entry), and the existing failure/disabled notices — via a unit-tested outcome classifier. ([details](2026-08-02-update-check-feedback.md))
 
 - [2026-07-31] Tooling: each Release now attaches exactly one artifact per target — a flat installer bundle sealing the native installer, the program payload and its checksum — serving online and offline installation from the same file, with mandatory checksums at both layers, no more raw archives or `*-offline` wrappers, and hermetic installer tests in CI; in-place upgrades survive filesystems that pin in-use directories (the `penguin update` overlayfs `Device or resource busy` failure), the Windows payload drops its policy-blocked `penguin.ps1` launcher, and the installer broadcasts the user-Path change so new terminal windows find `penguin`. ([details](2026-07-31-unified-installer-artifact.md))
