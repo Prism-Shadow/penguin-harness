@@ -29,17 +29,17 @@ description: 经 AgentHub 单一网关接入模型，以 (provider, model_id) �
 | `pricing` | 三档价格(单位 `usd_per_mtok`,USD 每百万 Token):`cache_read` / `cache_write` / `output` |
 | `api_key` / `base_url` | 内联凭证，可留空；留空时 AgentHub 回退读环境变量 |
 
-新建 Project 的默认模型是 deepseek-v4-pro。另可配置一条 `vision_model`，作为 text-only 模型使用 `describe_image` 时的代读模型(见 [工具与审批](/tools))；默认不配置。
+新建 Project 的默认模型是 deepseek-v4-flash。另可配置一条 `vision_model`，作为 text-only 模型使用 `describe_image` 时的代读模型(见 [工具与审批](/tools))；默认不配置。
 
 文件形态(示意):
 
 ```toml
-default_model = { provider = "deepseek", model_id = "deepseek-v4-pro" }
+default_model = { provider = "deepseek", model_id = "deepseek-v4-flash" }
 vision_model = { provider = "google", model_id = "gemini-3.1-pro-preview" }
 
 [[models]]
 provider = "deepseek"
-model_id = "deepseek-v4-pro"
+model_id = "deepseek-v4-flash"
 context_window = 1000000
 
 [[models]]
@@ -73,9 +73,9 @@ api_key = "sk-..."
 
 网关分组(openrouter / fireworks / siliconflow / qwen-token-plan / qwen-pay-as-you-go)经 AgentHub 的 OpenAI 客户端请求，因此凭证留空时读取的是 `OPENAI_API_KEY`，而非网关自己的变量名。
 
-预置目录还收录了 OpenRouter 的免费档：`:free` 模型变体(如 `inclusionai/ling-3.0-flash:free`、`poolside/laguna-m.1:free`)与统一路由 `openrouter/free`(Free Models Router)，零成本可用，但受 OpenRouter 免费档速率限制与数据政策约束。
+预置目录还收录了 OpenRouter 的免费档：`:free` 模型变体(如 `inclusionai/ling-3.0-flash:free`、`nvidia/nemotron-3-ultra-550b-a55b:free`)与统一路由 `openrouter/free`(Free Models Router)，零成本可用，但受 OpenRouter 免费档速率限制与数据政策约束。
 
-预置目录中的部分模型：deepseek-v4-pro / deepseek-v4-flash、gemini-3.1-pro-preview、claude-opus-4-8 / claude-sonnet-4-6、gpt-5.5、glm-5.2、kimi-k2.6、qwen3.8-max-preview 等(非完整清单)。
+预置目录中的部分模型：deepseek-v4-pro / deepseek-v4-flash、gemini-3.1-pro-preview、claude-opus-4-8 / claude-sonnet-4-6、gpt-5.5、glm-5.2、kimi-k2.6、qwen3.8-max 等(非完整清单)。
 
 ## 思考等级
 

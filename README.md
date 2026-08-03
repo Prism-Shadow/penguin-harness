@@ -86,11 +86,11 @@ Four Skill groups ship in the box ([docs](https://penguin.ooo/docs/skills)); age
 
 | Model            | Providers                                                                        |
 | ---------------- | -------------------------------------------------------------------------------- |
-| DeepSeek V4      | DeepSeek, OpenRouter, Fireworks AI, SiliconFlow, Qwen Token Plan                 |
+| DeepSeek V4      | DeepSeek, OpenRouter, Fireworks AI, SiliconFlow, Qwen Token Plan, Qwen Pay-As-You-Go |
 | Kimi K3          | Moonshot AI, OpenRouter, Qwen Pay-As-You-Go                                      |
 | GLM 5.2          | Z.AI, OpenRouter, Fireworks AI, SiliconFlow, Qwen Token Plan, Qwen Pay-As-You-Go |
 | Hunyuan 3        | OpenRouter                                                                       |
-| Qwen 3.8 Max     | Qwen Token Plan (preview)                                                        |
+| Qwen 3.8 Max     | Qwen Token Plan, Qwen Pay-As-You-Go                                              |
 | GPT 5.6          | OpenRouter                                                                       |
 | Gemini 3.6 Flash | Google Gemini, OpenRouter                                                        |
 | Claude 5         | Anthropic, OpenRouter                                                            |
@@ -174,7 +174,7 @@ cd penguin-install
 The same engine, scriptable — made to be driven by agents (and agents building agents):
 
 ```bash
-penguin config model add --provider deepseek --model-id deepseek-v4-pro --api-key sk-... --set-default
+penguin config model add --provider deepseek --model-id deepseek-v4-flash --api-key sk-... --set-default
 penguin run -m "Create hello.txt containing Hello, Penguin"   # one-shot task
 penguin chat       # interactive REPL (/compact, /exit, Ctrl-C to interrupt)
 penguin server     # headless service (same API the Web App uses)

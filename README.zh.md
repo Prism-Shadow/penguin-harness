@@ -86,11 +86,11 @@ https://github.com/user-attachments/assets/aec49ae9-b743-467b-b247-37bedfeaa36e
 
 | 模型             | 可用供应商                                                                       |
 | ---------------- | -------------------------------------------------------------------------------- |
-| DeepSeek V4      | DeepSeek, OpenRouter, Fireworks AI, SiliconFlow, Qwen Token Plan                 |
+| DeepSeek V4      | DeepSeek, OpenRouter, Fireworks AI, SiliconFlow, Qwen Token Plan, Qwen Pay-As-You-Go |
 | Kimi K3          | Moonshot AI, OpenRouter, Qwen Pay-As-You-Go                                      |
 | GLM 5.2          | Z.AI, OpenRouter, Fireworks AI, SiliconFlow, Qwen Token Plan, Qwen Pay-As-You-Go |
 | Hunyuan 3        | OpenRouter                                                                       |
-| Qwen 3.8 Max     | Qwen Token Plan（预览）                                                          |
+| Qwen 3.8 Max     | Qwen Token Plan, Qwen Pay-As-You-Go                                              |
 | GPT 5.6          | OpenRouter                                                                       |
 | Gemini 3.6 Flash | Google Gemini, OpenRouter                                                        |
 | Claude 5         | Anthropic, OpenRouter                                                            |
@@ -174,7 +174,7 @@ cd penguin-install
 同一引擎、可脚本化——为被 Agent 驱动而生（以及让 Agent 构建 Agent）：
 
 ```bash
-penguin config model add --provider deepseek --model-id deepseek-v4-pro --api-key sk-... --set-default
+penguin config model add --provider deepseek --model-id deepseek-v4-flash --api-key sk-... --set-default
 penguin run -m "Create hello.txt containing Hello, Penguin"   # 单次任务
 penguin chat       # 交互式 REPL（/compact、/exit、Ctrl-C 中断）
 penguin server     # 无界面服务（与 Web 应用同一套 API）

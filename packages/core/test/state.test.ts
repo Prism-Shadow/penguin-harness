@@ -1143,9 +1143,9 @@ describe("project-config round trip", () => {
     expect(entry?.vision).toBeUndefined();
   });
 
-  it("default config presets the full model catalog (default = deepseek deepseek-v4-pro)", () => {
+  it("default config presets the full model catalog (default = deepseek deepseek-v4-flash)", () => {
     const cfg = defaultProjectConfig();
-    expect(cfg.default_model).toEqual({ provider: "deepseek", model_id: "deepseek-v4-pro" });
+    expect(cfg.default_model).toEqual({ provider: "deepseek", model_id: "deepseek-v4-flash" });
     // The catalog is presented in full: provider and model_id are separate columns, model_id
     // being the plain upstream id (vision is only persisted as false for models that don't
     // support images).
@@ -1157,8 +1157,8 @@ describe("project-config round trip", () => {
         (c) => c.provider === entry.provider && c.modelId === entry.model_id,
       )!;
       expect(entry.vision).toBe(cat.supportsVision ? undefined : false);
-      // A catalog entry without a list price (the Token Plan preview model) presets no
-      // pricing; every other catalog entry stores USD pricing.
+      // A catalog entry without a list price would preset no pricing (none currently);
+      // every priced catalog entry stores USD pricing.
       if (cat.pricing === undefined) expect(entry.pricing).toBeUndefined();
       else expect(entry.pricing?.unit).toBe("usd_per_mtok");
       // A model that auto-routes leaves client_type unset; a gateway model (OpenRouter)
