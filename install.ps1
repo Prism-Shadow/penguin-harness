@@ -6,6 +6,8 @@
 #   $env:PENGUIN_VERSION = "vX.Y.Z"     pin a version (same as -Version vX.Y.Z); default is the latest Release
 #   $env:PENGUIN_INSTALL_DIR = "<dir>"  install dir; default $env:USERPROFILE\.penguin
 #   $env:PENGUIN_ARCHIVE = "<file>"     install a local Release zip without network access (same as -ArchivePath)
+#   $env:PENGUIN_DOWNLOAD_BASE_URL = "https://..." exact online asset directory selected by the stable forwarder
+#   $env:PENGUIN_DOWNLOAD_FALLBACK_BASE_URL = "https://..." same-version fallback asset directory
 #
 # Each Release attaches exactly one Windows artifact: penguin-win32-x64.zip, a shallow installer
 # bundle holding install.cmd, this script, the program payload (payload.zip) and the payload's
@@ -67,6 +69,38 @@ function Assert-Sha256([string]$FilePath, [string]$ShaPath, [string]$Label) {
   Write-Host "$Label checksum OK."
 }
 
+function Assert-HttpsUrl([string]$Name, [string]$Value) {
+  try { $Uri = [Uri]$Value } catch { Fail "$Name is not a valid URL" }
+  if (-not $Uri.IsAbsoluteUri -or $Uri.Scheme -ne "https") {
+    Fail "$Name must be an absolute HTTPS URL"
+  }
+}
+
+function Get-DownloadSourceLabel([string]$BaseUrl) {
+  try { $HostName = ([Uri]$BaseUrl).Host } catch { return "configured mirror" }
+  if ($HostName -like "*.aliyuncs.com") { return "OSS mirror" }
+  if ($HostName -eq "github.com") { return "GitHub" }
+  return "configured mirror"
+}
+
+function Get-ReleasePair(
+  [string]$BaseUrl,
+  [string]$ZipPath,
+  [string]$ShaPath
+) {
+  $Label = Get-DownloadSourceLabel $BaseUrl
+  Write-Host "Downloading $Asset from $Label ..."
+  Remove-Item -LiteralPath $ZipPath, $ShaPath -Force -ErrorAction SilentlyContinue
+  try {
+    Invoke-WebRequest -Uri "$BaseUrl/$Asset" -OutFile $ZipPath -UseBasicParsing
+    Invoke-WebRequest -Uri "$BaseUrl/$Asset.sha256" -OutFile $ShaPath -UseBasicParsing
+    return $true
+  } catch {
+    Remove-Item -LiteralPath $ZipPath, $ShaPath -Force -ErrorAction SilentlyContinue
+    return $false
+  }
+}
+
 function Restore-PreviousInstall(
   [string]$InstallDir,
   [string]$OldDir,
@@ -97,6 +131,16 @@ if (-not $InstallDir) {
 if (-not $ArchivePath) {
   $ArchivePath = if ($env:PENGUIN_ARCHIVE) { $env:PENGUIN_ARCHIVE } else { "" }
 }
+$DownloadBaseUrl = if ($env:PENGUIN_DOWNLOAD_BASE_URL) {
+  $env:PENGUIN_DOWNLOAD_BASE_URL.TrimEnd('/')
+} else {
+  ""
+}
+$DownloadFallbackBaseUrl = if ($env:PENGUIN_DOWNLOAD_FALLBACK_BASE_URL) {
+  $env:PENGUIN_DOWNLOAD_FALLBACK_BASE_URL.TrimEnd('/')
+} else {
+  ""
+}
 # An extracted installer bundle keeps install.cmd, this script, payload.zip and its checksum
 # together. `$PSScriptRoot` is empty for the documented `irm ... | iex` path, so online installs
 # do not accidentally pick up an unrelated archive from the caller's current directory.
@@ -106,6 +150,15 @@ if (-not $ArchivePath -and $PSScriptRoot) {
 }
 if ($ArchivePath -and $Version) {
   Fail "-ArchivePath/PENGUIN_ARCHIVE cannot be combined with -Version/PENGUIN_VERSION"
+}
+if ($Version -and $Version -notmatch '^v[0-9A-Za-z][0-9A-Za-z._-]*$') {
+  Fail "invalid release version: $Version"
+}
+if ($DownloadBaseUrl) {
+  Assert-HttpsUrl "PENGUIN_DOWNLOAD_BASE_URL" $DownloadBaseUrl
+}
+if ($DownloadFallbackBaseUrl) {
+  Assert-HttpsUrl "PENGUIN_DOWNLOAD_FALLBACK_BASE_URL" $DownloadFallbackBaseUrl
 }
 
 # --- Platform preconditions: 64-bit Windows; the only Windows package is x64 (ARM64 runs it emulated) ---
@@ -123,8 +176,10 @@ try {
   # .NET builds where the enum is immutable already default to TLS 1.2+.
 }
 
-# --- Download (latest Release by default; PENGUIN_VERSION pins a version) ---
-if ($Version) {
+# --- Download (latest GitHub Release by default; the stable forwarder may select exact mirrors) ---
+if ($DownloadBaseUrl) {
+  $BaseUrl = $DownloadBaseUrl
+} elseif ($Version) {
   $BaseUrl = "$Repo/releases/download/$Version"
 } else {
   $BaseUrl = "$Repo/releases/latest/download"
@@ -149,19 +204,18 @@ try {
     Write-Host "Using local archive $ZipPath ..."
   } else {
     # Online: download the canonical bundle; the published checksum is mandatory.
-    Write-Host "Downloading $BaseUrl/$Asset ..."
     $ZipPath = Join-Path $Tmp $Asset
-    try {
-      Invoke-WebRequest -Uri "$BaseUrl/$Asset" -OutFile $ZipPath -UseBasicParsing
-    } catch {
-      Fail "download failed. Check the version tag and your network, then retry. ($($_.Exception.Message))"
-    }
     $ArchiveName = $Asset
     $ShaPath = Join-Path $Tmp "$Asset.sha256"
-    try {
-      Invoke-WebRequest -Uri "$BaseUrl/$Asset.sha256" -OutFile $ShaPath -UseBasicParsing
-    } catch {
-      Fail "checksum download failed. Check the version tag and your network, then retry. ($($_.Exception.Message))"
+    if (-not (Get-ReleasePair $BaseUrl $ZipPath $ShaPath)) {
+      if ($DownloadFallbackBaseUrl -and $DownloadFallbackBaseUrl -ne $BaseUrl) {
+        Write-Host "Primary download source unavailable; trying $(Get-DownloadSourceLabel $DownloadFallbackBaseUrl) ..."
+        if (-not (Get-ReleasePair $DownloadFallbackBaseUrl $ZipPath $ShaPath)) {
+          Fail "download failed from both the primary source and its fallback. Check your network, then retry."
+        }
+      } else {
+        Fail "download failed from $(Get-DownloadSourceLabel $BaseUrl). Check the version tag and your network, then retry."
+      }
     }
     Assert-Sha256 $ZipPath $ShaPath "Bundle"
   }

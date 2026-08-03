@@ -352,10 +352,9 @@ jobs:
           OSS_REGION: ${{ vars.OSS_REGION }}
           OSS_ENDPOINT: ${{ vars.OSS_ENDPOINT }}
           OSS_PUBLIC_BASE_URL: ${{ vars.OSS_PUBLIC_BASE_URL }}
-          OSS_ACCELERATE_BASE_URL: ${{ vars.OSS_ACCELERATE_BASE_URL }}
         run: |
           set -eu
-          for name in ALIYUN_OIDC_PROVIDER_ARN ALIYUN_ROLE_ARN OSS_BUCKET OSS_REGION OSS_ENDPOINT OSS_PUBLIC_BASE_URL OSS_ACCELERATE_BASE_URL; do
+          for name in ALIYUN_OIDC_PROVIDER_ARN ALIYUN_ROLE_ARN OSS_BUCKET OSS_REGION OSS_ENDPOINT OSS_PUBLIC_BASE_URL; do
             eval "value=\${$name:-}"
             if [ -z "$value" ]; then
               echo "error: $name is not configured in the oss-production environment" >&2
@@ -414,7 +413,6 @@ jobs:
           OSS_REGION: ${{ vars.OSS_REGION }}
           OSS_ENDPOINT: ${{ vars.OSS_ENDPOINT }}
           OSS_PUBLIC_BASE_URL: ${{ vars.OSS_PUBLIC_BASE_URL }}
-          OSS_ACCELERATE_BASE_URL: ${{ vars.OSS_ACCELERATE_BASE_URL }}
         run: sh scripts/publish-release-to-oss.sh release-assets "$TAG" "${{ steps.latest.outputs.update }}"
 
   publish-npm:

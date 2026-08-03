@@ -19,6 +19,8 @@ curl -fsSL https://penguin.ooo/install.sh | sh
 
 脚本按平台下载 `penguin-{linux,darwin}-{x64,arm64}.tar.gz`——即标准安装包：包内封入程序负载（捆绑官方 Node.js 运行时）、负载的 SHA256 校验文件与同一个安装器。下载后先对照 Release 发布的 `.sha256` 校验外层，再校验包内封入的负载 checksum，然后才进入暂存安装。其他 POSIX 平台**不会自动回退**：脚本会退出并提示先安装 Node.js >= 24、再携带 `--universal` 重新执行，改用不含运行时的 `penguin-universal.tar.gz` 安装包（Windows 使用下方专属安装器，而不是 `--universal`）。
 
+稳定入口默认使用 `PENGUIN_DOWNLOAD_SOURCE=auto`：优先选择已完整上传并验证的 OSS 不可变版本目录；元数据或下载不可用时，回退到同一版本的 GitHub Release。也可以将该变量设为 `oss` 或 `github` 来强制指定来源。安装器只显示来源名称，不在常规输出中打印镜像的完整 URL。
+
 在 Windows（PowerShell）上执行：
 
 ```powershell
@@ -62,6 +64,7 @@ Linux / macOS 上执行：
 | 安装目录 | 默认 `~/.penguin`，可用环境变量 `PENGUIN_INSTALL_DIR` 覆盖 |
 | 命令入口 | 创建符号链接 `~/.local/bin/penguin`（若 `~/.local/bin` 不在 PATH 上，脚本会给出提示） |
 | 版本固定 | 环境变量 `PENGUIN_VERSION=vX.Y.Z`，或脚本参数 `--version vX.Y.Z`；默认安装最新 Release |
+| 下载来源 | `PENGUIN_DOWNLOAD_SOURCE=auto`（默认）、`oss` 或 `github`；自动模式优先 OSS，并按同一版本回退到 GitHub |
 | 本地压缩包 | `PENGUIN_ARCHIVE=<file>` 或 `--archive <file>`；接受 Release 安装包（凭包内封入的负载 checksum 自校验），或旁边带 `<file>.sha256` 的负载 / 旧版程序压缩包（重命名的旧版文件可用平台标准名称的 `.sha256`） |
 | 完整性校验 | 始终进行：在线下载对照发布的 `.sha256` 校验，安装包负载对照包内封入的 checksum 校验 |
 | 升级 | 重新执行安装脚本即可，文件原子替换 |

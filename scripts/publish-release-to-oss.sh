@@ -5,20 +5,14 @@
 #   update-latest: true only when <tag> is GitHub's current latest Release.
 #
 # Required environment:
-#   OSS_BUCKET, OSS_REGION, OSS_ENDPOINT, OSS_PUBLIC_BASE_URL,
-#   OSS_ACCELERATE_BASE_URL and temporary OSS_* credentials.
-# Optional environment (production-compatible defaults):
-#   OSS_RELEASE_ROOT=releases, OSS_LATEST_KEY=latest.json,
-#   OSS_ENFORCE_GITHUB_LATEST=true.
+#   OSS_BUCKET, OSS_REGION, OSS_ENDPOINT, OSS_PUBLIC_BASE_URL and temporary
+#   OSS_* credentials.
 set -eu
 
 RELEASE_DIR="${1:?usage: publish-release-to-oss.sh <release-dir> <tag> [update-latest]}"
 TAG="${2:?usage: publish-release-to-oss.sh <release-dir> <tag> [update-latest]}"
 UPDATE_LATEST="${3:-false}"
 OSSUTIL_BIN="${OSSUTIL_BIN:-ossutil}"
-OSS_RELEASE_ROOT="${OSS_RELEASE_ROOT:-releases}"
-OSS_LATEST_KEY="${OSS_LATEST_KEY:-latest.json}"
-OSS_ENFORCE_GITHUB_LATEST="${OSS_ENFORCE_GITHUB_LATEST:-true}"
 
 require_env() {
   eval "value=\${$1:-}"
@@ -28,23 +22,9 @@ require_env() {
   }
 }
 
-for name in OSS_BUCKET OSS_REGION OSS_ENDPOINT OSS_PUBLIC_BASE_URL OSS_ACCELERATE_BASE_URL; do
+for name in OSS_BUCKET OSS_REGION OSS_ENDPOINT OSS_PUBLIC_BASE_URL; do
   require_env "$name"
 done
-
-validate_object_path() {
-  label="$1"
-  value="$2"
-  case "$value" in
-    ''|/*|*/|*//*|*..*|*[!A-Za-z0-9._+/-]*)
-      echo "error: $label is not a safe OSS object path: $value" >&2
-      exit 1
-      ;;
-  esac
-}
-
-validate_object_path OSS_RELEASE_ROOT "$OSS_RELEASE_ROOT"
-validate_object_path OSS_LATEST_KEY "$OSS_LATEST_KEY"
 
 [ -d "$RELEASE_DIR" ] || {
   echo "error: release directory not found: $RELEASE_DIR" >&2
@@ -70,14 +50,6 @@ case "$UPDATE_LATEST" in
     exit 1
     ;;
 esac
-case "$OSS_ENFORCE_GITHUB_LATEST" in
-  true|false) ;;
-  *)
-    echo "error: OSS_ENFORCE_GITHUB_LATEST must be true or false" >&2
-    exit 1
-    ;;
-esac
-
 command -v "$OSSUTIL_BIN" >/dev/null 2>&1 || {
   echo "error: ossutil not found: $OSSUTIL_BIN" >&2
   exit 1
@@ -143,6 +115,21 @@ oss_cp() {
   fi
 }
 
+oss_put_if_absent() {
+  local_file="$1"
+  object_key="$2"
+  cache_control="$3"
+
+  "$OSSUTIL_BIN" api put-object \
+    --bucket "$OSS_BUCKET" \
+    --key "$object_key" \
+    --body "file://$local_file" \
+    --forbid-overwrite \
+    --cache-control "$cache_control" \
+    --endpoint "$OSS_ENDPOINT" \
+    --region "$OSS_REGION"
+}
+
 file_sha256() {
   sha256sum "$1" | awk '{print $1}'
 }
@@ -163,7 +150,8 @@ verify_remote_file() {
 
 upload_immutable_file() {
   local_file="$1"
-  remote_uri="$2"
+  object_key="$2"
+  remote_uri="oss://$OSS_BUCKET/$object_key"
   existing_file="$WORK_DIR/existing-$(basename "$local_file")"
   rm -f "$existing_file"
 
@@ -179,19 +167,19 @@ upload_immutable_file() {
   fi
 
   echo "Uploading: $remote_uri"
-  if ! oss_cp "$local_file" "$remote_uri" "Cache-Control:public,max-age=31536000,immutable"; then
+  if ! oss_put_if_absent "$local_file" "$object_key" "public,max-age=31536000,immutable"; then
     # A concurrent retry may have won the create race. It is safe only if the resulting bytes match.
     echo "Upload did not create $remote_uri; checking whether an identical object now exists."
   fi
   verify_remote_file "$local_file" "$remote_uri"
 }
 
-RELEASE_PREFIX="$OSS_RELEASE_ROOT/$TAG"
+RELEASE_PREFIX="releases/$TAG"
 for file in $FILES; do
-  upload_immutable_file "$RELEASE_DIR/$file" "oss://$OSS_BUCKET/$RELEASE_PREFIX/$file"
+  upload_immutable_file "$RELEASE_DIR/$file" "$RELEASE_PREFIX/$file"
 done
 
-if [ "$UPDATE_LATEST" = "true" ] && [ "$OSS_ENFORCE_GITHUB_LATEST" = "true" ]; then
+if [ "$UPDATE_LATEST" = "true" ]; then
   # Re-check at the last possible moment. Another Release can finish while this job is
   # transferring large assets; an older retry must never roll latest.json backwards.
   require_env GH_TOKEN
@@ -209,59 +197,24 @@ fi
 
 if [ "$UPDATE_LATEST" = "true" ]; then
   PUBLIC_BASE="${OSS_PUBLIC_BASE_URL%/}/$RELEASE_PREFIX"
-  ACCELERATE_BASE="${OSS_ACCELERATE_BASE_URL%/}/$RELEASE_PREFIX"
-
-  bundle_hash() {
-    file="$1"
-    hash="$(awk 'NR == 1 {print $1}' "$RELEASE_DIR/$file.sha256" | tr 'A-F' 'a-f')"
-    case "$hash" in
-      *[!0-9a-f]*|'')
-        echo "error: invalid SHA256 in $file.sha256" >&2
-        exit 1
-        ;;
-    esac
-    [ "${#hash}" -eq 64 ] || {
-      echo "error: invalid SHA256 length in $file.sha256" >&2
-      exit 1
-    }
-    printf '%s\n' "$hash"
-  }
 
   jq -n \
     --arg tag "$TAG" \
     --arg version "$VERSION" \
     --arg releaseBaseUrl "$PUBLIC_BASE" \
-    --arg acceleratedReleaseBaseUrl "$ACCELERATE_BASE" \
-    --arg linuxX64Sha "$(bundle_hash penguin-linux-x64.tar.gz)" \
-    --arg linuxArm64Sha "$(bundle_hash penguin-linux-arm64.tar.gz)" \
-    --arg darwinX64Sha "$(bundle_hash penguin-darwin-x64.tar.gz)" \
-    --arg darwinArm64Sha "$(bundle_hash penguin-darwin-arm64.tar.gz)" \
-    --arg universalSha "$(bundle_hash penguin-universal.tar.gz)" \
-    --arg win32X64Sha "$(bundle_hash penguin-win32-x64.zip)" \
     '{
       schemaVersion: 1,
       tag: $tag,
       version: $version,
-      releaseBaseUrl: $releaseBaseUrl,
-      acceleratedReleaseBaseUrl: $acceleratedReleaseBaseUrl,
-      assets: {
-        "linux-x64": {file: "penguin-linux-x64.tar.gz", sha256: $linuxX64Sha},
-        "linux-arm64": {file: "penguin-linux-arm64.tar.gz", sha256: $linuxArm64Sha},
-        "darwin-x64": {file: "penguin-darwin-x64.tar.gz", sha256: $darwinX64Sha},
-        "darwin-arm64": {file: "penguin-darwin-arm64.tar.gz", sha256: $darwinArm64Sha},
-        universal: {file: "penguin-universal.tar.gz", sha256: $universalSha},
-        "win32-x64": {file: "penguin-win32-x64.zip", sha256: $win32X64Sha}
-      },
-      installers: {posix: "install.sh", windows: "install.ps1"},
-      sha256Sums: "SHA256SUMS"
+      releaseBaseUrl: $releaseBaseUrl
     }' > "$WORK_DIR/latest.json"
 
-  LATEST_URI="oss://$OSS_BUCKET/$OSS_LATEST_KEY"
+  LATEST_URI="oss://$OSS_BUCKET/latest.json"
   echo "Updating latest release pointer: $LATEST_URI"
-  oss_cp "$WORK_DIR/latest.json" "$LATEST_URI" "Cache-Control:no-cache"
+  oss_cp "$WORK_DIR/latest.json" "$LATEST_URI" "no-cache"
   verify_remote_file "$WORK_DIR/latest.json" "$LATEST_URI"
 else
-  echo "Skipping $OSS_LATEST_KEY because update-latest is false."
+  echo "Skipping latest.json because update-latest is false."
 fi
 
 echo "OSS mirror verified for $TAG."
