@@ -57,7 +57,7 @@ import { MessageStream } from "./message-stream";
 import type { StreamRenderContext } from "./message-stream";
 import { latestTaskHasSubagent, taskStartCount } from "./agent-topology";
 import { ChatInput } from "./chat-input";
-import { ConversationOutline } from "./conversation-outline";
+import { ConversationOutline, OutlineMenuButton, useOutlineRailFit } from "./conversation-outline";
 import { DraftView } from "./draft-view";
 import { buildInputHistory } from "./input-history";
 import { buildOutline } from "./outline-model";
@@ -325,6 +325,10 @@ export function ChatPage() {
   // The message stream's scroll container, exposed by MessageStream for the outline's
   // jump/scrollspy (anchors are queried inside it, never document-wide).
   const streamScrollRef = useRef<HTMLDivElement | null>(null);
+  // Which outline shape fits: the gutter tick rail, or (exactly when it can't show —
+  // phones without hover, and any window whose gutter a docked panel ate) the toolbar's
+  // dropdown index button.
+  const railFit = useOutlineRailFit(streamScrollRef, stream.version);
 
   // Current Agent follows the Session in the route (keeps the sidebar and stats aligned on deep
   // links / refresh). Only aligns when **the selected Session changes** — never put agentId in
@@ -1005,6 +1009,7 @@ export function ChatPage() {
             aria-expanded={subagentsPanel.open}
             onClick={() => subagentsPanel.setOpen(!subagentsPanel.open)}
             title={S.chat.openAgents}
+            aria-label={S.chat.openAgents}
             className={`flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors duration-150 ${
               subagentsPanel.open
                 ? "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200"
@@ -1026,7 +1031,9 @@ export function ChatPage() {
               <circle cx="19" cy="18.5" r="2.5" />
               <path d="M7.4 11 16.7 6.6M7.4 13l9.3 4.4" />
             </svg>
-            {S.chat.openAgents}
+            {/* Below sm the button is icon-only (title/aria keep the name), same rule as the
+                workspace button next to it: the label ate the title's room on phones. */}
+            <span className="hidden sm:inline">{S.chat.openAgents}</span>
             {/* A pending approval inside a subagent: amber dot (the chip in the stream carries the accessible announcement). */}
             {anySubagentPending && (
               <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-amber-500" />
@@ -1061,6 +1068,17 @@ export function ChatPage() {
                 running indicator squeezed the session title to nothing on phones. */}
             <span className="hidden sm:inline">{S.chat.openWorkspace}</span>
           </button>
+
+          {/* Conversation index fallback: exactly when the gutter tick rail can't show
+              (phones without a hover pointer; a desktop window whose gutter a docked panel
+              ate) the index moves up here as a dropdown — navigation stays reachable. */}
+          {!railFit.shown && (
+            <OutlineMenuButton
+              entries={outline}
+              scrollRef={streamScrollRef}
+              running={stream.taskState !== "idle"}
+            />
+          )}
 
           {/* Details popup: Model / Workspace / created time / stats */}
           <Dropdown
@@ -1190,6 +1208,7 @@ export function ChatPage() {
                               version={stream.version}
                               scrollRef={streamScrollRef}
                               running={stream.taskState !== "idle"}
+                              fit={railFit}
                             />
                           }
                         />

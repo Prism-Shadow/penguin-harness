@@ -109,11 +109,29 @@ test("minimap ticks + hover preview + jump, sticky group header, ArrowUp history
   });
   expect(Math.abs(jumpDelta)).toBeLessThan(40);
 
-  // The rail lives in the free gutter: a docked panel that eats the slack hides it, and
-  // closing the panel brings it back (live measurement, not a breakpoint).
+  // The rail lives in the free gutter: a docked panel that eats the slack hides it and
+  // the index moves to the toolbar dropdown (navigation stays reachable); closing the
+  // panel restores the rail (live measurement, not a breakpoint).
   await page.getByRole("button", { name: "打开工作区" }).click();
   await expect(ticks).toHaveCount(0);
+  const menuButton = page.getByRole("button", { name: "对话索引" });
+  await menuButton.click();
+  const menuEntries = page.locator("[data-outline-menu-entry]");
+  await expect(menuEntries).toHaveCount(3);
+  await expect(menuEntries.first()).toContainText("第一问：项目结构");
+  await menuEntries.nth(2).click(); // jump and close
+  await expect(menuEntries).toHaveCount(0);
   await page.getByRole("button", { name: "打开工作区" }).click();
+  await expect(ticks).toHaveCount(3);
+  await expect(menuButton).toHaveCount(0);
+
+  // Phone-narrow: no rail either, the toolbar index instead; the agents-panel button
+  // drops to icon-only below sm (same rule as the workspace button).
+  await page.setViewportSize({ width: 420, height: 820 });
+  await expect(ticks).toHaveCount(0);
+  await expect(menuButton).toBeVisible();
+  await expect(page.getByText("智能体面板")).toBeHidden();
+  await page.setViewportSize({ width: 1440, height: 860 });
   await expect(ticks).toHaveCount(3);
 
   // ↑ walks back through this session's inputs, newest first; a second ↑ goes older.

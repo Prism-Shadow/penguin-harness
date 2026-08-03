@@ -1,27 +1,43 @@
 /**
- * Conversation minimap: a tick rail overlaying the left gutter of the message stream — one
- * tick per exchange, the one at the reading position emphasized; hovering (or focusing) a
- * tick pops a floating preview card (the user's question in bold over a truncated
- * plain-text reply preview), clicking jumps to that turn. It deliberately costs the
- * conversation no width: instead of a docked panel it lives in the slack the centered
- * column leaves free, appears only while that slack is actually wide enough (measured
- * live, so a side panel eating the room hides it) on hover-capable pointers, and the
- * preview card mounts only for the hovered tick — at rest the rail duplicates no message
- * text into the DOM (which would pollute text lookup for assistive tech and tests alike).
+ * Conversation minimap, in two shapes sharing one data model (outline-model.ts):
  *
- * The rail overlay is hit-transparent (pointer events only on the tick buttons), so wheel
- * scrolling anywhere in the gutter keeps scrolling the stream. Entries come from
- * outline-model.ts; jump targets are the [data-outline-anchor] wrappers MessageItems
- * stamps at the top level only, queried scoped to the stream's scroll container (item ids
- * repeat across nested subagent models, so document-wide lookups would be ambiguous).
- * Rendered into MessageStream's relative wrapper via its `outline` slot, so the rail spans
- * exactly the stream area — never the composer.
+ * - `ConversationOutline` — a tick rail overlaying the left gutter of the message stream:
+ *   one tick per exchange, the reading position emphasized; hovering (or focusing) a tick
+ *   pops a floating preview card (question bold over a truncated reply preview), clicking
+ *   jumps. It costs the conversation no width, and the preview card mounts only for the
+ *   hovered tick — at rest the rail duplicates no message text into the DOM (which would
+ *   pollute text lookup for assistive tech and tests alike). The overlay is
+ *   hit-transparent (pointer events only on the ticks), so wheel scrolling anywhere in
+ *   the gutter keeps scrolling the stream. Rendered into MessageStream's relative wrapper
+ *   via its `outline` slot, so the rail spans exactly the stream area — never the composer.
+ *
+ * - `OutlineMenuButton` — the fallback for when the rail cannot show: a toolbar icon
+ *   button (top right) opening a dropdown index of the same entries, tap to jump. Phones
+ *   are the primary case (no hover pointer, no gutter), but it also covers a desktop
+ *   window whose gutter a docked panel has eaten — navigation stays reachable either way.
+ *
+ * Which shape shows is the owner's call via `useOutlineRailFit`: the rail needs a
+ * hover-capable pointer and a live-measured gutter (ResizeObserver — window resizes and
+ * panel drags both count), and the menu button renders exactly when the rail cannot.
+ *
+ * Jump targets are the [data-outline-anchor] wrappers MessageItems stamps at the top
+ * level only, queried scoped to the stream's scroll container (item ids repeat across
+ * nested subagent models, so document-wide lookups would be ambiguous). The active-entry
+ * computation considers only anchors that ARE entries: banner-only messages, merged image
+ * fragments and later goal rounds carry anchors too, and crossing one of those must
+ * highlight the entry that covers it rather than nothing.
  */
 import { useEffect, useRef, useState } from "react";
 import type { FocusEvent, MouseEvent, RefObject } from "react";
 import { S } from "../../lib/strings";
+import { Dropdown } from "../../components/ui/dropdown";
+import { GlyphIcon } from "../../components/ui/glyph-icon";
 import type { OutlineEntry } from "./outline-model";
 import { previewText } from "./outline-model";
+
+/** Panel-with-list glyph (24×24 line path) for the toolbar menu button. */
+const OUTLINE_ICON =
+  "M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zm4 0v16M12 9h5m-5 4h5";
 
 /** Distance of the scrollspy "reading line" below the scrollport top: the entry whose anchor last crossed it counts as active. */
 const READING_LINE_PX = 96;
@@ -32,42 +48,42 @@ const FLASH_MS = 1000;
 /**
  * Minimum free gutter (stream-container width minus the max-w-3xl column, halved) for the
  * rail to show: below this the ticks would sit on top of assistant text instead of blank
- * margin. Measured live via ResizeObserver — window resizes and panel drags both count.
+ * margin.
  */
 const GUTTER_MIN_PX = 56;
 
 /** The stream column cap the gutter derives from (Tailwind max-w-3xl). */
 const COLUMN_MAX_PX = 768;
 
-/** Hover-preview interaction needs a pointer that can hover: on touch the rail never renders. */
+/** The rail's hover-preview interaction needs a pointer that can hover. */
 const HOVER_QUERY = "(hover: hover) and (pointer: fine)";
 
 /** Tick pitch bounds (px): compress toward MIN as turns outgrow the rail, never past hoverability. */
 const TICK_PITCH_MAX = 12;
 const TICK_PITCH_MIN = 5;
 
-export function ConversationOutline({
-  entries,
-  version,
-  scrollRef,
-  running,
-}: {
-  entries: OutlineEntry[];
-  /** Stream repaint signal: re-runs the scrollspy and measurements as content grows or the stream remounts. */
-  version: number;
-  /** MessageStream's scroll container (null while the stream isn't mounted, e.g. the empty greeting). */
-  scrollRef: RefObject<HTMLDivElement | null>;
-  /** Whether a Task is running: the newest entry's card then previews "answering" while its reply text hasn't started. */
-  running: boolean;
-}) {
-  const [activeId, setActiveId] = useState<number | null>(null);
-  /** Hovered/focused tick: which entry to preview, and the tick's center Y within the overlay (the card anchors there). */
-  const [hover, setHover] = useState<{ id: number; top: number } | null>(null);
-  const navRef = useRef<HTMLElement>(null);
-  const flashTimerRef = useRef<number | null>(null);
+export interface OutlineRailFit {
+  /** Whether the rail can show: hover-capable pointer AND a wide-enough measured gutter. */
+  shown: boolean;
+  /** Stream container height (the tick pitch divides it; the preview card clamps against it). */
+  height: number;
+}
+
+/**
+ * Live rail-fit measurement, owned by the page so the toolbar fallback can render exactly
+ * when the rail cannot. Keyed on `version` besides the ref: the scroll container remounts
+ * on a session switch (keyed subtree) without the page remounting, and the observer must
+ * re-attach to the new element.
+ */
+export function useOutlineRailFit(
+  scrollRef: RefObject<HTMLDivElement | null>,
+  version: number,
+): OutlineRailFit {
   const [pointerFine, setPointerFine] = useState(() => window.matchMedia(HOVER_QUERY).matches);
-  /** Live stream-container metrics: whether the gutter has room, and the height the tick pitch divides. */
-  const [fit, setFit] = useState<{ shown: boolean; height: number }>({ shown: false, height: 0 });
+  const [fit, setFit] = useState<{ gutterOk: boolean; height: number }>({
+    gutterOk: false,
+    height: 0,
+  });
 
   useEffect(() => {
     const mq = window.matchMedia(HOVER_QUERY);
@@ -76,15 +92,12 @@ export function ConversationOutline({
     return () => mq.removeEventListener("change", onChange);
   }, []);
 
-  // Gutter measurement. Keyed on `version` besides the ref: the scroll container remounts
-  // on a session switch (keyed subtree) without this component unmounting, and the
-  // observer must re-attach to the new element.
   useEffect(() => {
     const el = scrollRef.current;
-    if (!pointerFine || !el) return;
+    if (!el) return;
     const measure = () => {
       const gutter = (el.clientWidth - COLUMN_MAX_PX) / 2;
-      setFit({ shown: gutter >= GUTTER_MIN_PX, height: el.clientHeight });
+      setFit({ gutterOk: gutter >= GUTTER_MIN_PX, height: el.clientHeight });
     };
     measure();
     const ro = new ResizeObserver(measure);
@@ -92,37 +105,102 @@ export function ConversationOutline({
     return () => ro.disconnect();
     // The element is read from the ref per run; `version` is the remount signal.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pointerFine, scrollRef, version]);
+  }, [scrollRef, version]);
 
-  // Scrollspy: the active turn is the last anchor above the reading line. Recomputed on
-  // scroll (rAF-throttled) and on every version bump — streaming growth moves anchors
-  // without firing a scroll event. Listener re-attachment per bump is cheap, and keying on
-  // version also re-binds after the stream remounts on a session switch.
+  return { shown: pointerFine && fit.gutterOk, height: fit.height };
+}
+
+/**
+ * The entry whose exchange the reading position is inside: the last ENTRY anchor above the
+ * reading line — anchors that aren't entries (banner-only messages, image fragments merged
+ * into their entry, goal rounds past 1) resolve to the entry covering them by simply being
+ * skipped. At (or near) the bottom the newest entry wins outright: a short last turn never
+ * crosses the reading line on its own.
+ */
+function computeActiveAnchor(container: HTMLElement, entryIds: ReadonlySet<number>): number | null {
+  const anchors = container.querySelectorAll<HTMLElement>("[data-outline-anchor]");
+  if (anchors.length === 0) return null;
+  let last: number | null = null;
+  let active: number | null = null;
+  const line = container.scrollTop + READING_LINE_PX;
+  for (const anchor of anchors) {
+    const id = Number(anchor.dataset["outlineAnchor"]);
+    if (!entryIds.has(id)) continue;
+    last = id;
+    if (anchor.offsetTop <= line) active = id;
+  }
+  const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 2;
+  return atBottom ? last : active;
+}
+
+/** Flash bookkeeping for jumps: one wash at a time; a timer firing on a detached node is a no-op, so no unmount cleanup is needed. */
+let flashedAnchor: HTMLElement | null = null;
+let flashTimer: number | undefined;
+
+/** Scrolls the stream to an entry's anchor and flashes the landed-on message. */
+function jumpToAnchor(container: HTMLElement | null, id: number): void {
+  const anchor = container?.querySelector<HTMLElement>(`[data-outline-anchor="${id}"]`);
+  if (!container || !anchor) return;
+  // Instant jump (the glide is for returning to the live bottom, not for navigation);
+  // the resulting scroll event lets stream-follow exit/resume by its own rules.
+  container.scrollTo({ top: Math.max(0, anchor.offsetTop - 8) });
+  // Landing feedback: a brief background wash on the message. Applied via classList — the
+  // anchor wrapper renders without className, so React re-renders during streaming won't
+  // strip the class mid-animation.
+  window.clearTimeout(flashTimer);
+  flashedAnchor?.classList.remove("outline-flash");
+  flashedAnchor = anchor;
+  anchor.classList.remove("outline-flash");
+  void anchor.offsetWidth; // restart the animation when re-jumping to the same entry
+  anchor.classList.add("outline-flash");
+  flashTimer = window.setTimeout(() => anchor.classList.remove("outline-flash"), FLASH_MS);
+}
+
+/** The turn's reply preview for a card/menu row: text, an "answering" pulse for the newest running turn, or "". */
+function answerPreview(
+  entry: OutlineEntry,
+  entries: readonly OutlineEntry[],
+  running: boolean,
+  max: number,
+): string {
+  if (entry.answer) return previewText(entry.answer, max);
+  return running && entry === entries[entries.length - 1] ? S.chat.outlineAnswering : "";
+}
+
+export function ConversationOutline({
+  entries,
+  version,
+  scrollRef,
+  running,
+  fit,
+}: {
+  entries: OutlineEntry[];
+  /** Stream repaint signal: re-runs the scrollspy as content grows or the stream remounts. */
+  version: number;
+  /** MessageStream's scroll container (null while the stream isn't mounted, e.g. the empty greeting). */
+  scrollRef: RefObject<HTMLDivElement | null>;
+  /** Whether a Task is running: the newest entry's card then previews "answering" while its reply text hasn't started. */
+  running: boolean;
+  /** The page-owned rail-fit measurement (shared with the toolbar fallback's visibility). */
+  fit: OutlineRailFit;
+}) {
+  const [activeId, setActiveId] = useState<number | null>(null);
+  /** Hovered/focused tick: which entry to preview, and the tick's center Y within the overlay (the card anchors there). */
+  const [hover, setHover] = useState<{ id: number; top: number } | null>(null);
+  const navRef = useRef<HTMLElement>(null);
+
+  // Scrollspy: recomputed on scroll (rAF-throttled) and on every version bump — streaming
+  // growth moves anchors without firing a scroll event. Listener re-attachment per bump is
+  // cheap, and keying on version also re-binds after the stream remounts on a session switch.
   useEffect(() => {
     const el = scrollRef.current;
     if (!fit.shown || !el || entries.length === 0) return;
+    const ids = new Set(entries.map((entry) => entry.anchorId));
     let raf: number | null = null;
     const compute = () => {
       raf = null;
       const container = scrollRef.current;
-      if (!container) return;
-      const anchors = container.querySelectorAll<HTMLElement>("[data-outline-anchor]");
-      if (anchors.length === 0) return;
-      // At (or near) the bottom the user is reading the newest exchange, even though a short
-      // last turn never crosses the reading line — without this the last entry could only
-      // become active by having enough content below it.
-      const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 2;
-      let active: number | null = null;
-      if (atBottom) {
-        active = Number(anchors[anchors.length - 1]!.dataset["outlineAnchor"]);
-      } else {
-        const line = container.scrollTop + READING_LINE_PX;
-        for (const anchor of anchors) {
-          if (anchor.offsetTop > line) break;
-          active = Number(anchor.dataset["outlineAnchor"]);
-        }
-      }
-      setActiveId(active);
+      if (container) setActiveId(computeActiveAnchor(container, ids));
     };
     const onScroll = () => {
       raf ??= requestAnimationFrame(compute);
@@ -133,37 +211,11 @@ export function ConversationOutline({
       el.removeEventListener("scroll", onScroll);
       if (raf !== null) cancelAnimationFrame(raf);
     };
+    // `entries` is rebuilt per version; length + version cover it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fit.shown, scrollRef, entries.length, version]);
 
-  useEffect(
-    () => () => {
-      if (flashTimerRef.current !== null) window.clearTimeout(flashTimerRef.current);
-    },
-    [],
-  );
-
-  if (!pointerFine || !fit.shown || entries.length === 0) return null;
-
-  const jump = (id: number) => {
-    const container = scrollRef.current;
-    const anchor = container?.querySelector<HTMLElement>(`[data-outline-anchor="${id}"]`);
-    if (!container || !anchor) return;
-    // Instant jump (the glide is for returning to the live bottom, not for navigation);
-    // the resulting scroll event lets stream-follow exit/resume by its own rules.
-    container.scrollTo({ top: Math.max(0, anchor.offsetTop - 8) });
-    setActiveId(id);
-    // Landing feedback: a brief background wash on the message. Applied via classList —
-    // the anchor wrapper renders without className, so React re-renders during streaming
-    // won't strip the class mid-animation.
-    if (flashTimerRef.current !== null) window.clearTimeout(flashTimerRef.current);
-    anchor.classList.remove("outline-flash");
-    void anchor.offsetWidth; // restart the animation when re-clicking the same entry
-    anchor.classList.add("outline-flash");
-    flashTimerRef.current = window.setTimeout(
-      () => anchor.classList.remove("outline-flash"),
-      FLASH_MS,
-    );
-  };
+  if (!fit.shown || entries.length === 0) return null;
 
   /** Tick center Y relative to the rail overlay (the preview card anchors to it, clamped in render). */
   const tickTop = (e: MouseEvent<HTMLElement> | FocusEvent<HTMLElement>) => {
@@ -179,15 +231,7 @@ export function ConversationOutline({
     Math.min(TICK_PITCH_MAX, Math.floor((fit.height - 32) / entries.length)),
   );
   const hovered = hover === null ? null : (entries.find((en) => en.anchorId === hover.id) ?? null);
-  const last = entries[entries.length - 1]!;
-  const cardAnswer =
-    hovered === null
-      ? ""
-      : hovered.answer
-        ? previewText(hovered.answer, 160)
-        : hovered === last && running
-          ? S.chat.outlineAnswering
-          : "";
+  const cardAnswer = hovered === null ? "" : answerPreview(hovered, entries, running, 160);
 
   return (
     // Hit-transparent overlay (pointer events only on the tick buttons): the wheel keeps
@@ -213,7 +257,10 @@ export function ConversationOutline({
               onMouseLeave={() => setHover(null)}
               onFocus={(e) => setHover({ id: entry.anchorId, top: tickTop(e) })}
               onBlur={() => setHover(null)}
-              onClick={() => jump(entry.anchorId)}
+              onClick={() => {
+                jumpToAnchor(scrollRef.current, entry.anchorId);
+                setActiveId(entry.anchorId);
+              }}
               className="group/tick pointer-events-auto flex w-10 items-center pl-2.5"
             >
               {/* The visible tick: a short bar, longer and darker at the reading position
@@ -260,5 +307,96 @@ export function ConversationOutline({
         </div>
       )}
     </nav>
+  );
+}
+
+/**
+ * Toolbar fallback (rendered by the page exactly when the rail cannot show): an icon
+ * button opening a dropdown index of the exchanges — question bold, truncated reply
+ * preview under it, the exchange at the reading position highlighted (computed once per
+ * open; the list isn't live while a dropdown covers the stream) — tap to jump and close.
+ */
+export function OutlineMenuButton({
+  entries,
+  scrollRef,
+  running,
+}: {
+  entries: OutlineEntry[];
+  scrollRef: RefObject<HTMLDivElement | null>;
+  running: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [activeId, setActiveId] = useState<number | null>(null);
+  if (entries.length === 0) return null;
+
+  const setOpenComputing = (next: boolean) => {
+    if (next && scrollRef.current) {
+      setActiveId(
+        computeActiveAnchor(scrollRef.current, new Set(entries.map((entry) => entry.anchorId))),
+      );
+    }
+    setOpen(next);
+  };
+
+  return (
+    <Dropdown
+      open={open}
+      setOpen={setOpenComputing}
+      menuClass="right-0 top-full mt-1 w-72 max-w-[calc(100vw-1.5rem)] origin-top-right"
+      button={
+        <button
+          type="button"
+          title={S.chat.outlineTitle}
+          aria-label={S.chat.outlineTitle}
+          onClick={() => setOpenComputing(!open)}
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+        >
+          <GlyphIcon d={OUTLINE_ICON} size={15} />
+        </button>
+      }
+    >
+      <div className="max-h-[60vh] overflow-y-auto py-1">
+        {entries.map((entry) => {
+          const answer = answerPreview(entry, entries, running, 80);
+          const active = entry.anchorId === activeId;
+          return (
+            <button
+              key={entry.anchorId}
+              type="button"
+              data-outline-menu-entry={entry.anchorId}
+              aria-current={active || undefined}
+              onClick={() => {
+                jumpToAnchor(scrollRef.current, entry.anchorId);
+                setOpen(false);
+              }}
+              className={`block w-full px-3 py-1.5 text-left transition-colors duration-150 ${
+                active
+                  ? "bg-gray-100 dark:bg-gray-800"
+                  : "hover:bg-gray-50 dark:hover:bg-gray-800/60"
+              }`}
+            >
+              <span
+                className={`block truncate text-sm ${
+                  entry.question === ""
+                    ? "italic text-gray-500 dark:text-gray-400"
+                    : "font-medium text-gray-800 dark:text-gray-200"
+                }`}
+              >
+                {entry.question || S.chat.outlineNoText}
+              </span>
+              {answer !== "" && (
+                <span
+                  className={`mt-0.5 block truncate text-xs text-gray-500 dark:text-gray-400 ${
+                    entry.answer === "" ? "animate-pulse" : ""
+                  }`}
+                >
+                  {answer}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </Dropdown>
   );
 }
