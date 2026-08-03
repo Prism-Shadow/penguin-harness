@@ -683,6 +683,14 @@ Benchmark：
     statusCompacting: "压缩中",
     pendingApprovals: (n: number) => `${n} 个待审批`,
     jumpToLatest: "回到最新消息",
+    /** Conversation minimap (tick rail over the stream's left gutter): rail aria-label. */
+    outlineTitle: "对话索引",
+    /** Tick accessible name: turn number + the question (or the no-text placeholder). */
+    outlineTickLabel: (n: number, question: string) => `第 ${n} 轮：${question}`,
+    /** Entry label when the prompt had no text body (image / attachment-only message). */
+    outlineNoText: "（图片或附件）",
+    /** Answer-preview placeholder while the latest turn is still running with no reply text yet. */
+    outlineAnswering: "回答生成中…",
     inputPlaceholder: "输入消息，Enter 发送，Shift+Enter 换行，可粘贴图片",
     inputPlaceholderShort: "输入消息…",
     /** Placeholder while a Task is running (mid-run steering): the message is delivered between turns with the next request. */

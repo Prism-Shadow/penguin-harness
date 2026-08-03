@@ -700,6 +700,14 @@ Scenarios:
     statusCompacting: "Compacting",
     pendingApprovals: (n: number) => `${n} pending approval${n > 1 ? "s" : ""}`,
     jumpToLatest: "Jump to latest",
+    /** Conversation minimap (tick rail over the stream's left gutter): rail aria-label. */
+    outlineTitle: "Outline",
+    /** Tick accessible name: turn number + the question (or the no-text placeholder). */
+    outlineTickLabel: (n: number, question: string) => `Turn ${n}: ${question}`,
+    /** Entry label when the prompt had no text body (image / attachment-only message). */
+    outlineNoText: "(image or attachment)",
+    /** Answer-preview placeholder while the latest turn is still running with no reply text yet. */
+    outlineAnswering: "Answering…",
     inputPlaceholder: "Type a message. Enter to send, Shift+Enter for newline, paste images",
     inputPlaceholderShort: "Type a message…",
     /** Placeholder while a Task is running (mid-run steering): the message is delivered between turns with the next request. */
