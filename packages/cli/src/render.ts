@@ -71,8 +71,22 @@ const CYAN = "\x1b[36m";
 const MAGENTA = "\x1b[35m";
 const RESET = "\x1b[0m";
 
-export function dim(text: string): string {
-  return `${DIM}${text}${RESET}`;
+/** Terminal color policy: explicit NO_COLOR/TERM=dumb wins; otherwise only a TTY is colored. */
+export function colorsEnabled(
+  out: NodeJS.WritableStream = process.stdout,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  if (env.NO_COLOR !== undefined || env.TERM === "dumb") return false;
+  if (env.FORCE_COLOR !== undefined) return env.FORCE_COLOR !== "0";
+  return (out as NodeJS.WritableStream & { isTTY?: boolean }).isTTY === true;
+}
+
+function paint(code: string, text: string, out: NodeJS.WritableStream): string {
+  return colorsEnabled(out) ? `${code}${text}${RESET}` : text;
+}
+
+export function dim(text: string, out: NodeJS.WritableStream = process.stdout): string {
+  return paint(DIM, text, out);
 }
 
 /** The two file tools whose outputs carry git-style diffs; their `+`/`-`/`@@` lines get colored. */
@@ -87,8 +101,8 @@ function diffLineColor(firstChar: string | undefined): string | null {
 }
 
 /** Colors a tool call line cyan, distinguishing it from body text/thinking (review comment #5). */
-function cyan(text: string): string {
-  return `${CYAN}${text}${RESET}`;
+function cyan(text: string, out: NodeJS.WritableStream): string {
+  return paint(CYAN, text, out);
 }
 
 /** Takes the last 3 characters of an id as the on-screen pairing number. */
@@ -140,8 +154,12 @@ function humanizeDuration(ms: number): string {
   return `${Math.floor(whole / 60)}m${whole % 60}s`;
 }
 
-export function formatAbort(p: AbortPayload, t: Messages): string {
-  return dim(t.abortLabel(p.reason ?? undefined));
+export function formatAbort(
+  p: AbortPayload,
+  t: Messages,
+  out: NodeJS.WritableStream = process.stdout,
+): string {
+  return dim(t.abortLabel(p.reason ?? undefined), out);
 }
 
 /**
@@ -172,7 +190,7 @@ export function renderHistory(
   for (const msg of messages) {
     if (isEventMessage(msg)) {
       const p = msg.payload as { type?: string } & AbortPayload;
-      if (p.type === "abort") out.write(`${formatAbort(p, t)}\n`);
+      if (p.type === "abort") out.write(`${formatAbort(p, t, out)}\n`);
       continue;
     }
     if (!isModelMessage(msg)) continue;
@@ -188,7 +206,8 @@ export function renderHistory(
       tool_call_id?: string;
       stop_reason?: string;
     };
-    const marker = p.stop_reason && p.stop_reason !== "completed" ? dim(` [${p.stop_reason}]`) : "";
+    const marker =
+      p.stop_reason && p.stop_reason !== "completed" ? dim(` [${p.stop_reason}]`, out) : "";
     switch (p.type) {
       case "text":
         if (p.role === "user") {
@@ -205,17 +224,17 @@ export function renderHistory(
         }
         break;
       case "image_url":
-        out.write(`\n> ${dim("[image]")}\n`);
+        out.write(`\n> ${dim("[image]", out)}\n`);
         break;
       case "thinking":
-        out.write(`${dim(p.thinking ?? "")}${marker}\n`);
+        out.write(`${dim(p.thinking ?? "", out)}${marker}\n`);
         break;
       case "tool_call": {
         if (p.name) toolNames.set(nameKey(msg, p.tool_call_id ?? ""), p.name);
         const preview =
           renderPartialToolCall(p.name ?? "", p.arguments ?? "", { final: true }) ??
           `${p.name} ${p.arguments}`;
-        out.write(`${cyan(`[${callTag(p.tool_call_id ?? "")}] ${preview}`)}${marker}\n`);
+        out.write(`${cyan(`[${callTag(p.tool_call_id ?? "")}] ${preview}`, out)}${marker}\n`);
         break;
       }
       case "tool_call_output": {
@@ -227,15 +246,12 @@ export function renderHistory(
         const colorDiff = name !== undefined && DIFF_OUTPUT_TOOLS.has(name);
         for (const line of (p.output ?? "").split("\n")) {
           const color = colorDiff ? diffLineColor(line[0]) : null;
-          out.write(
-            color
-              ? `${DIM}${label} -> ${RESET}${color}${line}${RESET}\n`
-              : `${DIM}${label} -> ${RESET}${line}\n`,
-          );
+          const prefix = dim(`${label} -> `, out);
+          out.write(`${prefix}${color ? paint(color, line, out) : line}\n`);
         }
         // Attached images aren't rendered by the terminal; print one placeholder line per image.
         for (const _ of p.images ?? []) {
-          out.write(`${DIM}${label} -> [image]${RESET}\n`);
+          out.write(`${dim(`${label} -> [image]`, out)}\n`);
         }
         break;
       }
@@ -248,7 +264,7 @@ export function renderHistory(
 /** Writes a steering message's lines with the colored user prefix (shared by history rendering and the streaming renderer). */
 function writeSteeringLines(out: NodeJS.WritableStream, text: string, t: Messages): void {
   for (const line of text.split("\n")) {
-    out.write(`${MAGENTA}${t.steerLinePrefix()}${line}${RESET}\n`);
+    out.write(`${paint(MAGENTA, `${t.steerLinePrefix()}${line}`, out)}\n`);
   }
 }
 
@@ -260,6 +276,7 @@ function writeSteeringLines(out: NodeJS.WritableStream, text: string, t: Message
 export class StreamRenderer {
   private readonly out: NodeJS.WritableStream;
   private readonly t: Messages;
+  private readonly color: boolean;
 
   /** Pending render queue: while the screen is held (a streaming segment is in progress / awaiting user input), messages queue up here. */
   private pending: OmniMessage[] = [];
@@ -383,9 +400,26 @@ export class StreamRenderer {
   /** Number of retries already initiated (increments on consecutive failures, reset once a request completes normally). */
   private reconnectRun = 0;
 
-  constructor(out: NodeJS.WritableStream = process.stdout, t: Messages = defaultMessages()) {
+  constructor(
+    out: NodeJS.WritableStream = process.stdout,
+    t: Messages = defaultMessages(),
+    color: boolean = colorsEnabled(out),
+  ) {
     this.out = out;
     this.t = t;
+    this.color = color;
+  }
+
+  private paint(code: string, text: string): string {
+    return this.color ? `${code}${text}${RESET}` : text;
+  }
+
+  private dim(text: string): string {
+    return this.paint(DIM, text);
+  }
+
+  private cyan(text: string): string {
+    return this.paint(CYAN, text);
   }
 
   handle(msg: OmniMessage): void {
@@ -414,7 +448,7 @@ export class StreamRenderer {
         toolCall.payload.arguments,
       );
       if (payload !== null) {
-        for (const line of payload.split("\n")) this.out.write(`${dim(line)}\n`);
+        for (const line of payload.split("\n")) this.out.write(`${this.dim(line)}\n`);
         // lastLineKey stays on the call's key: the payload lines belong to this call, so
         // the later noteApprovalDecision must not re-render the call line as "not adjacent".
       }
@@ -449,7 +483,7 @@ export class StreamRenderer {
     this.renderedDecisions.add(key);
     this.ensureAdjacentCallLine(toolCall);
     this.finishLine();
-    this.out.write(`${dim(this.t.approvalDecision(decision))}\n`);
+    this.out.write(`${this.dim(this.t.approvalDecision(decision))}\n`);
     this.lastLineKey = null;
   }
 
@@ -491,7 +525,7 @@ export class StreamRenderer {
     const preview =
       renderPartialToolCall(p.name, p.arguments, { final: true }) ?? `${p.name} ${p.arguments}`;
     this.finishLine();
-    this.out.write(`${cyan(`[${callTag(p.tool_call_id, origin)}] ${preview}`)}\n`);
+    this.out.write(`${this.cyan(`[${callTag(p.tool_call_id, origin)}] ${preview}`)}\n`);
     this.lastLineKey = key;
   }
 
@@ -683,14 +717,16 @@ export class StreamRenderer {
         const p = payload as ApprovalDecisionPayload;
         if (this.renderedDecisions.delete(this.callLineKey(p.tool_call_id))) return;
         this.finishLine();
-        this.out.write(`${dim(this.t.approvalDecision(p.decision))}\n`);
+        this.out.write(`${this.dim(this.t.approvalDecision(p.decision))}\n`);
         this.lastLineKey = null;
       } else if (payload.type === "abort") {
         // Run ended (user interrupt / retries exhausted): clear any pending retry state so the next run doesn't mistakenly print a retry line.
         this.pendingRetry = null;
         this.reconnectRun = 0;
         this.finishLine();
-        this.out.write(`${formatAbort(payload as AbortPayload, this.t)}\n`);
+        this.out.write(
+          `${this.dim(this.t.abortLabel((payload as AbortPayload).reason ?? undefined))}\n`,
+        );
         this.lastLineKey = null;
       } else if (payload.type === "request_begin") {
         // The previous request ended in a retryable status -> this request is a retry
@@ -700,7 +736,9 @@ export class StreamRenderer {
         if (this.pendingRetry) {
           this.reconnectRun += 1;
           this.finishLine();
-          this.out.write(`${dim(this.t.reconnectLabel(this.pendingRetry, this.reconnectRun))}\n`);
+          this.out.write(
+            `${this.dim(this.t.reconnectLabel(this.pendingRetry, this.reconnectRun))}\n`,
+          );
           this.lastLineKey = null;
           this.pendingRetry = null;
         }
@@ -735,7 +773,7 @@ export class StreamRenderer {
         this.finishLine();
         this.compactionActive = true;
         this.compactionTokens = 0;
-        this.out.write(`${dim(this.t.compactionStart(p.mode, p.reason))}\n`);
+        this.out.write(`${this.dim(this.t.compactionStart(p.mode, p.reason))}\n`);
         this.lastLineKey = null;
       } else if (payload.type === "compaction_end") {
         // end signals the result and shows the tokens consumed by the compaction request (if any).
@@ -751,7 +789,7 @@ export class StreamRenderer {
               }
             : undefined;
         this.compactionTokens = 0;
-        this.out.write(`${dim(this.t.compactionStop(p.mode, p.status, tokens))}\n`);
+        this.out.write(`${this.dim(this.t.compactionStop(p.mode, p.status, tokens))}\n`);
         this.lastLineKey = null;
       }
       return;
@@ -807,7 +845,7 @@ export class StreamRenderer {
           return;
         }
         this.finishLine();
-        this.out.write(`${dim(this.t.approvalDecision(p.decision))}\n`);
+        this.out.write(`${this.dim(this.t.approvalDecision(p.decision))}\n`);
         this.lastLineKey = null;
       } else if (msg.payload.type === "token_usage") {
         // Child-session usage counts toward this task's Token delta and the Session total (parent and child use the same accounting); context still follows parent-session accounting.
@@ -839,7 +877,7 @@ export class StreamRenderer {
       return;
     }
     if (!this.inDim) {
-      this.out.write(DIM);
+      if (this.color) this.out.write(DIM);
       this.inDim = true;
     }
     if (p.thinking) {
@@ -864,7 +902,7 @@ export class StreamRenderer {
     const preview = renderPartialToolCall(partial.name, partial.arguments, { final: true });
     if (preview === null) return;
     this.finishLine();
-    this.out.write(`${cyan(`[${callTag(toolCallId)}] ${preview}`)}\n`);
+    this.out.write(`${this.cyan(`[${callTag(toolCallId)}] ${preview}`)}\n`);
     this.lastLineKey = key;
   }
 
@@ -909,14 +947,14 @@ export class StreamRenderer {
     if (this.partialToolCallLineId !== p.tool_call_id) {
       this.finishLine();
       this.partialToolCallLineId = p.tool_call_id;
-      this.out.write(cyan(`[${callTag(p.tool_call_id)}] ${preview}`));
+      this.out.write(this.cyan(`[${callTag(p.tool_call_id)}] ${preview}`));
     } else if (preview.startsWith(partial.lastPreview)) {
-      this.out.write(cyan(preview.slice(partial.lastPreview.length)));
+      this.out.write(this.cyan(preview.slice(partial.lastPreview.length)));
     } else {
       // The preview usually grows monotonically with the arguments; if escaping/folding makes it non-appendable, start a new line with the current readable state.
       this.finishLine();
       this.partialToolCallLineId = p.tool_call_id;
-      this.out.write(cyan(`[${callTag(p.tool_call_id)}] ${preview}`));
+      this.out.write(this.cyan(`[${callTag(p.tool_call_id)}] ${preview}`));
     }
     partial.lastPreview = preview;
     this.inLine = true;
@@ -939,7 +977,7 @@ export class StreamRenderer {
     if (p.images && p.images.length > 0) {
       this.finishLine();
       for (const _ of p.images) {
-        this.out.write(`${DIM}${label} -> [image]${RESET}\n`);
+        this.out.write(`${this.dim(`${label} -> [image]`)}\n`);
       }
       this.lastLineKey = null;
     }
@@ -964,7 +1002,7 @@ export class StreamRenderer {
     while (i < chunk.length) {
       let lineColor: string | null = null;
       if (this.toolOutLineStart) {
-        this.out.write(`${DIM}${label} -> ${RESET}`);
+        this.out.write(this.dim(`${label} -> `));
         this.toolOutLineStart = false;
         this.inLine = true;
         // Diff coloring keys off the line's first character. File-tool outputs arrive as
@@ -976,7 +1014,7 @@ export class StreamRenderer {
       const end = nl === -1 ? chunk.length : nl;
       const segment = chunk.slice(i, end);
       if (segment) {
-        this.out.write(lineColor ? `${lineColor}${segment}${RESET}` : segment);
+        this.out.write(lineColor ? this.paint(lineColor, segment) : segment);
       }
       if (nl === -1) {
         i = chunk.length;
@@ -1023,7 +1061,7 @@ export class StreamRenderer {
     if (this.hasUsage) {
       const contextDelta = this.contextNow - this.contextAtTaskStart;
       this.out.write(
-        `${dim(
+        `${this.dim(
           this.t.taskStats({
             context: humanizeTokens(this.contextNow),
             contextDelta: signedDelta(humanizeTokens(contextDelta)),
@@ -1075,7 +1113,7 @@ export class StreamRenderer {
 
   private closeDim(): void {
     if (this.inDim) {
-      this.out.write(RESET);
+      if (this.color) this.out.write(RESET);
       this.inDim = false;
     }
   }

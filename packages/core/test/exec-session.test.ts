@@ -247,6 +247,16 @@ describe("exec_command — long-running command sessions", () => {
     expect(res.stopReason).toBe("completed");
   });
 
+  it("removes terminal control sequences before they reach tool output", async () => {
+    const res = await runTool(env, "exec_command", {
+      cmd: `node -e "process.stdout.write('plain\\x1b[36mcyan\\x1b[0m\\x1b]0;title\\x07 end')"`,
+      yield_time_ms: 3000,
+    });
+    expect(res.output).toContain("plaincyan end");
+    expect(res.output).not.toContain("\u001b");
+    expect(res.output).not.toContain("[36m");
+  });
+
   it("hardens the child env against interactive hangs (editor/credentials/pager)", async () => {
     const res = await runTool(env, "exec_command", {
       cmd: 'echo "$GIT_EDITOR|$GIT_TERMINAL_PROMPT|$PAGER|$TERM"',
@@ -367,6 +377,26 @@ describe("harness environment variables never reach a spawned command", () => {
       expect(res.output).toContain("PORT=[3000]");
     } finally {
       vaultEnv.dispose();
+    }
+  });
+
+  it("FORCE_COLOR is removed from both host and vault while NO_COLOR stays enforced", async () => {
+    const previous = process.env.FORCE_COLOR;
+    process.env.FORCE_COLOR = "3";
+    const hardened = new Environment({
+      workspaceDir: tmp,
+      toolConfig: sessionConfig(),
+      vault: { FORCE_COLORS: "true" },
+    });
+    try {
+      const res = await runTool(hardened, "exec_command", {
+        cmd: `node -e "console.log(JSON.stringify({ force: process.env.FORCE_COLOR, forces: process.env.FORCE_COLORS, no: process.env.NO_COLOR }))"`,
+      });
+      expect(res.output).toContain('{"no":"1"}');
+    } finally {
+      hardened.dispose();
+      if (previous === undefined) delete process.env.FORCE_COLOR;
+      else process.env.FORCE_COLOR = previous;
     }
   });
 });

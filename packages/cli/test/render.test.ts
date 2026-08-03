@@ -21,12 +21,18 @@ import {
   withOrigin,
 } from "@prismshadow/penguin-core";
 import type { MessageOrigin } from "@prismshadow/penguin-core";
-import { StreamRenderer, formatAbort, humanizeTokens, renderHistory } from "../src/render.js";
+import {
+  StreamRenderer,
+  colorsEnabled,
+  formatAbort,
+  humanizeTokens,
+  renderHistory,
+} from "../src/render.js";
 import { getMessages } from "../src/i18n.js";
 
 const t = getMessages("en");
 
-function collector(): { stream: Writable; text: () => string } {
+function collector(isTTY = false): { stream: Writable; text: () => string } {
   let buf = "";
   const stream = new Writable({
     write(chunk, _enc, cb) {
@@ -34,6 +40,7 @@ function collector(): { stream: Writable; text: () => string } {
       cb();
     },
   });
+  (stream as Writable & { isTTY?: boolean }).isTTY = isTTY;
   return { stream, text: () => buf };
 }
 
@@ -67,6 +74,16 @@ describe("humanizeTokens", () => {
 });
 
 describe("pure formatters", () => {
+  it("enables colors only for terminals, with NO_COLOR taking precedence", () => {
+    const tty = collector(true).stream;
+    const pipe = collector(false).stream;
+    expect(colorsEnabled(tty, { TERM: "xterm-256color" })).toBe(true);
+    expect(colorsEnabled(pipe, { TERM: "xterm-256color" })).toBe(false);
+    expect(colorsEnabled(pipe, { FORCE_COLOR: "1" })).toBe(true);
+    expect(colorsEnabled(tty, { FORCE_COLOR: "1", NO_COLOR: "1" })).toBe(false);
+    expect(colorsEnabled(tty, { TERM: "dumb" })).toBe(false);
+  });
+
   it("formatAbort includes the reason", () => {
     expect(stripAnsi(formatAbort({ type: "abort", reason: "ctrl-c" }, t))).toContain("ctrl-c");
   });
@@ -226,8 +243,8 @@ describe("StreamRenderer", () => {
   });
 
   it("colors edit_file diff output lines green/red and dims hunk headers", () => {
-    const { stream, text } = collector();
-    const r = new StreamRenderer(stream, t);
+    const { stream, text } = collector(true);
+    const r = new StreamRenderer(stream, t, true);
     r.handle(partialToolCall({ eventType: "start", name: "edit_file", toolCallId: "d1" }));
     r.handle(
       partialToolCall({

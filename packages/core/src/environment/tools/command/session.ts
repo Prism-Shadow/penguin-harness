@@ -28,6 +28,7 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import type { ToolResult } from "../types.js";
 import { CappedTextBuffer, WakeSignal } from "../background/index.js";
+import { AnsiStripper } from "./ansi.js";
 import { sessionShell } from "./shell.js";
 
 /** Process-group semantics are available on POSIX; Windows falls back to signaling the child process directly. */
@@ -77,6 +78,8 @@ export class ManagedSession {
 
   private readonly child: ChildProcess;
   private readonly buffer = new CappedTextBuffer(OUTPUT_BUFFER_CAP, "earlier output");
+  /** Stateful because an escape sequence may be split across stdout/stderr pipe chunks or polls. */
+  private readonly ansi = new AnsiStripper();
   private exited = false;
   private exitInfo: ProcessExit | null = null;
   private spawnError: Error | null = null;
@@ -158,8 +161,11 @@ export class ManagedSession {
   }
 
   private handleData(chunk: string): void {
-    this.buffer.append(chunk);
-    this.wakeSignal.notify();
+    const text = this.ansi.strip(chunk);
+    if (text) {
+      this.buffer.append(text);
+      this.wakeSignal.notify();
+    }
   }
   private handleExit(exit: ProcessExit): void {
     if (this.exited) return;

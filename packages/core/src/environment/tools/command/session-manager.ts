@@ -61,7 +61,16 @@ const HARDENED_ENV: NodeJS.ProcessEnv = {
  * self-development case may legitimately want the same data root — sharing state is a config
  * decision, whereas serving a deployment's code from a workspace checkout never is.
  */
-const STRIPPED_ENV_KEYS = new Set(["PORT", "HOST", "PENGUIN_CLI_ENTRY", "PENGUIN_WEB_DIST"]);
+const STRIPPED_ENV_KEYS = new Set([
+  "PORT",
+  "HOST",
+  "PENGUIN_CLI_ENTRY",
+  "PENGUIN_WEB_DIST",
+  // `FORCE_COLOR` wins over NO_COLOR in Node and several popular color libraries. A host or
+  // vault value must not force terminal escapes into these deliberately piped sessions.
+  "FORCE_COLOR",
+  "FORCE_COLORS",
+]);
 
 /** The host environment minus {@link STRIPPED_ENV_KEYS}. */
 function hostEnvForChild(): NodeJS.ProcessEnv {
@@ -94,6 +103,13 @@ export class CommandSessionManager {
     if (this.registry.isDisposed) {
       throw new Error("command session manager disposed");
     }
+    const env = { ...hostEnvForChild(), ...this.vault, ...HARDENED_ENV };
+    // Vault entries normally override the host, but terminal hardening is non-overridable.
+    // Delete case-insensitively for Windows, where environment names are case-insensitive.
+    for (const key of Object.keys(env)) {
+      const normalized = key.toUpperCase();
+      if (normalized === "FORCE_COLOR" || normalized === "FORCE_COLORS") delete env[key];
+    }
     return new ManagedSession({
       cmd: opts.cmd,
       cwd: opts.cwd,
@@ -102,7 +118,7 @@ export class CommandSessionManager {
       // interactive hangs) must never be overridable by vault. The host side is stripped of
       // the harness's own variables first (see STRIPPED_ENV_KEYS); the vault still wins, so a
       // user who genuinely wants PORT in commands can set it there.
-      env: { ...hostEnvForChild(), ...this.vault, ...HARDENED_ENV },
+      env,
     });
   }
 
