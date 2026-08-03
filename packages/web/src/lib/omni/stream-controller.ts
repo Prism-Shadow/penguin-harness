@@ -34,6 +34,7 @@ import type { OmniMessage, ToolCallPayload } from "@prismshadow/penguin-core/omn
 import type {
   GoalServerEvent,
   MessagesLiveTail,
+  PendingSteeringInfo,
   ServerEvent,
   SessionStatus,
 } from "@prismshadow/penguin-server/api";
@@ -88,6 +89,8 @@ export interface StreamControllerDeps {
   onTaskState: (state: SessionStatus) => void;
   /** Queued follow-up count carried on task_state events (absent on old servers -> 0). */
   onQueuedFollowUps?: (count: number) => void;
+  /** Undelivered steering messages carried on task_state events (absent = none): keeps the composer's "steering queued" hint alive across reloads. */
+  onPendingSteering?: (items: PendingSteeringInfo[]) => void;
   onLoading: (loading: boolean) => void;
   /** History load failure message (null = clear). */
   onError: (message: string | null) => void;
@@ -190,6 +193,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
         streamStatus = ev.state;
         deps.onTaskState(ev.state);
         deps.onQueuedFollowUps?.(ev.queued ?? 0);
+        deps.onPendingSteering?.(ev.pendingSteering ?? []);
         if (ev.state === "idle") {
           // Task ended (or the snapshot confirms idle): finalize the current Task's stats; pending approvals have already converged server-side.
           notifyTaskIdle(model);
@@ -379,6 +383,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
           streamStatus = ev.state;
           deps.onTaskState(ev.state);
           deps.onQueuedFollowUps?.(ev.queued ?? 0);
+          deps.onPendingSteering?.(ev.pendingSteering ?? []);
         }
         buffer.push({ kind: "server", ev, id: eventId });
         return;

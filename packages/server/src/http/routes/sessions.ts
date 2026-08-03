@@ -192,6 +192,26 @@ function parseSteerImages(body: Record<string, unknown>): string[] {
 }
 
 /**
+ * Validate the optional `files` field of a steer request: the same shape and caps as a task
+ * input's `{type:"file"}` parts (parseAttachmentPart, budget re-checked per item), absent or
+ * empty = no attachments.
+ */
+function parseSteerFiles(body: Record<string, unknown>): TaskAttachment[] {
+  const files = body.files;
+  if (files === undefined) return [];
+  if (!Array.isArray(files)) throw badRequest("files must be an array.");
+  const attachments: TaskAttachment[] = [];
+  files.forEach((item, i) => {
+    if (item === null || typeof item !== "object" || Array.isArray(item)) {
+      throw badRequest(`files[${i}] must be an object.`);
+    }
+    attachments.push(parseAttachmentPart(item as Record<string, unknown>, i, "files"));
+    assertAttachmentBudget(attachments);
+  });
+  return attachments;
+}
+
+/**
  * Validate the optional `goal` field of a task request: absent = a regular task (null);
  * present = goal mode with a token budget (a positive integer, or -1/omitted = unlimited).
  * The input text is the objective — skills ride the text itself as a `[use_skills]` block,
@@ -506,11 +526,15 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     // this as authoritative, eliminating input-area lockup or premature Task closure
     // caused by a stale running/idle in the list; followed by replaying all still-pending
     // approval requests.
+    const pendingSteering = deps.manager.pendingSteeringOf(row.sessionId);
     const initialEvents: ServerEvent[] = [
       {
         type: "task_state",
         state: deps.manager.statusOf(row.sessionId),
         queued: deps.manager.pendingFollowUpCount(row.sessionId),
+        // Undelivered steering rides the snapshot too, so the composer's "steering queued"
+        // hint (and what it says) survives a reload.
+        ...(pendingSteering.length > 0 ? { pendingSteering } : {}),
       },
       ...deps.manager.pendingApprovals(row.sessionId).map((p) => ({
         type: "approval_request" as const,
@@ -602,18 +626,35 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     const body = await readJson(c);
     const text = typeof body.text === "string" ? body.text.trim() : "";
     const images = parseSteerImages(body);
-    // Either half can carry the message on its own: an image with no caption is a complete
-    // steering message, and so is plain text.
-    if (!text && images.length === 0) {
-      throw badRequest("text or images must carry the steering message.");
+    const files = parseSteerFiles(body);
+    // Any part can carry the message on its own: an image or a file with no caption is a
+    // complete steering message, and so is plain text.
+    if (!text && images.length === 0 && files.length === 0) {
+      throw badRequest("text, images or files must carry the steering message.");
     }
     // The wire shape becomes core's: a user text message (omitted when the images are the
     // whole message, so the fold's path lines aren't preceded by a blank one) plus one image
-    // message each — the same input a normal task would carry.
-    deps.manager.steer(row.sessionId, [
-      ...(text ? [userText(text)] : []),
-      ...images.map((url) => imageUrlMessage(url)),
-    ]);
+    // message each — the same input a normal task would carry. File attachments land in the
+    // Session scratchpad exactly as a task's do and ride as `[attached file: <path>]` lines
+    // on the steering text (a files-only input becomes a line-only text message).
+    const { input, written } = await attachFilesToInput(
+      [...(text ? [userText(text)] : []), ...images.map((url) => imageUrlMessage(url))],
+      files,
+      scratchpadDir(deps.config.root, row.projectId, row.agentId),
+      row.sessionId,
+    );
+    try {
+      deps.manager.steer(row.sessionId, input, {
+        text,
+        images: images.length,
+        files: files.length,
+      });
+    } catch (err) {
+      // 409 (not running) or any other refusal: the files must not stay behind — the
+      // frontend falls back to a normal task POST, which writes its own copies.
+      await removeAttachments(written);
+      throw err;
+    }
     return c.body(null, 202);
   });
 

@@ -689,16 +689,39 @@ export interface TaskCreateResponse {
  * task POST).
  */
 export interface SteerRequest {
-  /** Message text (trimmed server-side); may be empty when `images` carries the message. */
+  /** Message text (trimmed server-side); may be empty when `images` or `files` carries the message. */
   text: string;
   /**
    * Images sent with the steering message (`data:` or http(s) URLs, same rule as
    * `TaskInputPart.image_url`): delivered as user image messages right behind the
    * `[user_steering]` text. A model without vision receives them as scratchpad path lines
-   * instead, exactly as it would a Prompt's images. At least one of `text` / `images` must
-   * be non-empty.
+   * instead, exactly as it would a Prompt's images. At least one of `text` / `images` /
+   * `files` must be non-empty.
    */
   images?: string[];
+  /**
+   * File attachments riding the steering message — the same shape, caps and handling as a
+   * task input's `{type:"file"}` parts: written into the Session scratchpad and delivered
+   * as `[attached file: <path>]` lines on the `[user_steering]` text, so a file-only draft
+   * steers exactly like an image-only one instead of falling back to the follow-up queue.
+   */
+  files?: { fileName: string; dataUrl: string }[];
+}
+
+/**
+ * One steering message queued on the server but not yet delivered to the model (delivery
+ * happens at the next input assembly between turns). Carried on `task_state` events and the
+ * SSE subscribe snapshot so the composer's "steering queued" hint — including what was sent —
+ * survives reloads; entries leave the list as their `[user_steering]` message appears on the
+ * stream, and the whole list drops when the run exits (core discards undelivered steering).
+ */
+export interface PendingSteeringInfo {
+  /** The message text as accepted (trimmed); may be empty when images/files carry the message. */
+  text: string;
+  /** Number of images that rode along. */
+  images: number;
+  /** Number of file attachments that rode along. */
+  files: number;
 }
 
 export interface ApprovalDecisionRequest {
@@ -727,7 +750,13 @@ export type ServerEvent =
    */
   | { type: "approval_request"; toolCall: OmniMessage<ToolCallPayload>; origin?: string[] }
   /** Session run status flip (for toggling the input area and list); `queued` = queued follow-up count (see TaskCreateRequest.queueIfBusy). */
-  | { type: "task_state"; state: SessionStatus; queued?: number }
+  | {
+      type: "task_state";
+      state: SessionStatus;
+      queued?: number;
+      /** Steering messages queued but not yet delivered (absent = none): lets the composer's hint and its content survive reloads. */
+      pendingSteering?: PendingSteeringInfo[];
+    }
   /** The model-generated title after the first turn has been persisted (for in-place list updates). */
   | { type: "session_title"; sessionId: string; title: string }
   /** Last-Event-ID has been evicted from the buffer: the frontend should re-fetch the history endpoint before continuing to consume this connection. */

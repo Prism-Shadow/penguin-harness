@@ -69,6 +69,7 @@ import type {
   ApprovalMode,
   ModelInfo,
   ModelRefDto,
+  PendingSteeringInfo,
   SessionStatus,
   SkillMetadataItem,
   TaskInputPart,
@@ -1116,6 +1117,16 @@ function readDataUrl(file: File): Promise<string | null> {
  * One place, because every send path submits the same draft: the normal send, the follow-up
  * queue, the @ handoff and the `/model` switch.
  */
+/** One-line summary of a queued steering message: its text, then image/file counts for what the text cannot show. */
+function steeringSummary(p: PendingSteeringInfo): string {
+  const parts: string[] = [];
+  const line = p.text.replace(/\s+/g, " ").trim();
+  if (line) parts.push(line);
+  if (p.images > 0) parts.push(S.chat.imagesInMessage(p.images));
+  if (p.files > 0) parts.push(S.chat.filesInMessage(p.files));
+  return parts.join(" \u00b7 ");
+}
+
 function appendAttachmentParts(
   input: TaskInputPart[],
   images: string[],
@@ -1132,6 +1143,7 @@ export function ChatInput({
   onSend,
   onSteer,
   steeringDeliveredCount,
+  pendingSteering = [],
   onQueueFollowUp,
   queuedFollowUps = 0,
   onStop,
@@ -1179,18 +1191,30 @@ export function ChatInput({
   onSend: (input: TaskInputPart[], goal: { budget: number } | null) => Promise<boolean>;
   /**
    * Mid-run steering (session state only): while a Task is running, Enter/send queues the
-   * trimmed text **and any attached images** for the running agent — delivered between turns
-   * as a standalone `[user_steering]` user message followed by its images. `"queued"` clears
-   * the text and images and shows the queued hint; `"not_running"` (409 race with completion)
-   * makes the input fall back to its full normal send path; `"failed"` keeps the draft. When
-   * absent (draft state), the input stays send-disabled while running, as before.
+   * trimmed text **and any attached images and files** for the running agent — delivered
+   * between turns as a standalone `[user_steering]` user message followed by its images,
+   * with the files riding the text as `[attached file: <path>]` lines (#140: a file-only
+   * draft steers exactly like an image-only one). `"queued"` clears the text, images and
+   * files and shows the queued hint; `"not_running"` (409 race with completion) makes the
+   * input fall back to its full normal send path; `"failed"` keeps the draft. When absent
+   * (draft state), the input stays send-disabled while running, as before.
    */
-  onSteer?: (text: string, images: string[]) => Promise<"queued" | "not_running" | "failed">;
+  onSteer?: (
+    text: string,
+    images: string[],
+    files: { fileName: string; dataUrl: string }[],
+  ) => Promise<"queued" | "not_running" | "failed">;
   /**
    * Count of steering messages already visible in the message stream: the queued hint stays
    * up until this increases past its value at queue time (i.e. the message was delivered).
    */
   steeringDeliveredCount?: number;
+  /**
+   * The server's undelivered-steering mirror (from task_state events): each entry renders as
+   * a "steering queued" line with its content, so the hint — and what was sent — survives
+   * reloads (#136). The local post-202 flag only bridges until the first event arrives.
+   */
+  pendingSteering?: PendingSteeringInfo[];
   /**
    * Follow-up queue (session state only): posts the full input with `queueIfBusy` — a busy
    * session holds it server-side and auto-sends it as an ordinary next task once the current
@@ -1498,13 +1522,14 @@ export function ChatInput({
     [onHandoffTargetChange, onPendingModelChange],
   );
 
-  // Mid-run steering: while running, Enter/send queues the text **and the attached images**
-  // for the running agent (delivered between turns as a [user_steering] user message followed
-  // by its images) — so an image with no caption is a complete steering message on its own.
-  // File attachments and selected skills stay in the draft for a later normal send: a
-  // [use_skills] block is task-level setup, not something to hand a turn already under way. A
-  // staged /agent or /model chip also blocks steering: the text belongs to the conversation
-  // that switch is about to open, not to the agent running here.
+  // Mid-run steering: while running, Enter/send queues the text **and the attached images
+  // and files** for the running agent (delivered between turns as a [user_steering] user
+  // message followed by its images; files ride the text as [attached file: <path>] lines) —
+  // so an image or a file with no caption is a complete steering message on its own (#140).
+  // Selected skills stay in the draft for a later normal send: a [use_skills] block is
+  // task-level setup, not something to hand a turn already under way. A staged /agent or
+  // /model chip also blocks steering: the text belongs to the conversation that switch is
+  // about to open, not to the agent running here.
   // `!goalOn`: with the goal chip engaged the text is an OBJECTIVE — steering it into a run
   // that happens to be active (e.g. a schedule fired) would silently repurpose it.
   //
@@ -1535,6 +1560,7 @@ export function ChatInput({
     hasPendingModel: pendingModel !== null,
     hasText: text.trim().length > 0,
     hasImages: images.length > 0,
+    hasFiles: attachments.length > 0,
     hasContent: draftHasContent,
   });
   const steerAction = running && midRun === "steer";
@@ -1976,16 +2002,17 @@ export function ChatInput({
         await sendNormal(onQueueFollowUp!);
         return;
       }
-      // Steering branch: queue the trimmed text and the attached images for the running agent;
-      // both are sent and cleared together — file attachments and selected skills stay for a
-      // normal send (a staged switch chip blocks this branch outright, see midRunAction).
+      // Steering branch: queue the trimmed text, the attached images and the attached files
+      // for the running agent; all are sent and cleared together — selected skills stay for
+      // a normal send (a staged switch chip blocks this branch outright, see midRunAction).
       if (!steerAction) return;
       const steerText = text.trim();
       const steerImages = images;
+      const steerFiles = attachments.map((f) => ({ fileName: f.name, dataUrl: f.dataUrl }));
       setBusy(true);
       let res: "queued" | "not_running" | "failed" = "failed";
       try {
-        res = await onSteer!(steerText, steerImages);
+        res = await onSteer!(steerText, steerImages, steerFiles);
         if (res === "queued") {
           // Show the "queued" hint until the steering message shows up in the stream
           // (steeringDeliveredCount increases) — see the effect below.
@@ -1993,6 +2020,7 @@ export function ChatInput({
           setSteerPending(true);
           setText("");
           setImages([]);
+          setAttachments([]);
         }
       } finally {
         setBusy(false);
@@ -2275,12 +2303,24 @@ export function ChatInput({
         </p>
       )}
 
-      {/* Mid-run steering queued: lightweight hint until the steering message appears in the
-          stream (or the run ends). */}
-      {steerPending && (
-        <p className="anim-fade mb-1 text-xs text-gray-400 dark:text-gray-500">
-          {S.chat.steerQueuedIndicator}
-        </p>
+      {/* Mid-run steering queued: the server's undelivered-steering mirror, one line per
+          queued message with its content — task_state-fed, so it survives reloads (#136,
+          #140). The local steerPending flag only bridges the gap between the 202 and the
+          first task_state that carries the mirror. */}
+      {pendingSteering.length > 0 ? (
+        <div className="anim-fade mb-1">
+          {pendingSteering.map((p, i) => (
+            <p key={i} className="truncate text-xs text-gray-400 dark:text-gray-500">
+              {S.chat.steerQueuedItem(steeringSummary(p))}
+            </p>
+          ))}
+        </div>
+      ) : (
+        steerPending && (
+          <p className="anim-fade mb-1 text-xs text-gray-400 dark:text-gray-500">
+            {S.chat.steerQueuedIndicator}
+          </p>
+        )
       )}
 
       {/* Queued follow-ups (server-side, auto-sent once this run finishes): count from
