@@ -2,7 +2,7 @@
 
 Changes since v0.1.5. The version number is assigned at release, when this folder is renamed.
 
-- [2026-08-03] Web App: three chat-navigation aids — ↑ recalls the session's previous inputs shell-style in the composer, the "Reasoning & Tools" header sticks to the top of the stream so long runs collapse from anywhere inside them, and a collapsible left outline lists every exchange as a question bubble with a truncated answer preview for one-click jumps. ([details](2026-08-03-web-chat-navigation.md))
+- [2026-08-03] Web App: three chat-navigation aids — ↑ recalls the session's previous inputs shell-style in the composer, the "Reasoning & Tools" header and the current thinking/tool row stick to the top of the stream stacked by level so long runs collapse from anywhere inside them, and a zero-width tick-rail minimap over the stream's left gutter previews every exchange on hover (question + truncated answer) for one-click jumps. ([details](2026-08-03-web-chat-navigation.md))
 
 - [2026-08-03] Models: the qianwenai groups move to the current lineup (qwen3.8-max and deepseek-v4-flash-0731 in, qwen3.7-max and qwen3.8-max-preview out), OpenRouter gains deepseek/deepseek-v4-flash-0731 and openai/gpt-5.6-luna, drops the delisted poolside/laguna-m.1:free and has every row's cache/input/output prices re-read from the models API, the last unpriced SiliconFlow rows get list prices, and new Projects default to deepseek-v4-flash — existing Projects keep their stored models and default. ([details](2026-08-03-model-catalog-qianwenai-flash.md))
 

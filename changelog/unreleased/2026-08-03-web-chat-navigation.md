@@ -1,4 +1,4 @@
-# Web App: chat navigation — input history, sticky work-group header, conversation outline
+# Web App: chat navigation — input history, stacked sticky headers, minimap tick rail
 
 Long conversations were hard to move through: recalling a previous request meant retyping it, collapsing a long thinking/tool run meant scrolling all the way back to its header, and reaching a specific exchange meant scrolling past everything in between. Three navigation aids on the chat page address this (#164).
 
@@ -8,17 +8,17 @@ Long conversations were hard to move through: recalling a previous request meant
 - Editing a recalled entry ends navigation immediately; inside a multi-line entry the arrows move the caret line by line first (only ↑ on the first line / ↓ on the last line step the history, zsh-style), and IME candidate navigation is untouched.
 - Only text the user actually typed qualifies: handoff / model-switch source blocks, scheduled-trigger prompts, and goal re-sends past round 1 stay out; steering messages are included; consecutive duplicates collapse. Draft chats have no history and keep native arrow behavior.
 
-## Sticky "Reasoning & Tools" header
+## Sticky "Reasoning & Tools" headers, stacked by level
 
-- The group header now sticks to the top of the message list while its group body is in view, so a long thinking/tool run can be collapsed from anywhere inside it instead of scrolling back to the start.
-- Collapsing from the stuck header scrolls the view back onto the group (expanding, and collapsing an in-view group, move nothing). The card clips with `overflow: clip` instead of `overflow: hidden` — a hidden ancestor is a scroll container, which is exactly what disabled `position: sticky`; the sticky offset cancels the stream container's own top padding in the same rem unit, and the dark-mode header background is now opaque so scrolled rows can't bleed through it.
+- The group header sticks to the top of the message list while its group body is in view, and the currently scrolled thinking/tool row pins right below it — rows push each other out at their section boundaries, so the bar directly above the content is always the section being read, never a skipped level. A long run can be collapsed from anywhere inside it, per section or as a whole.
+- Collapsing from a stuck header scrolls the view back onto that group/row (expanding, and collapsing in view, move nothing). The card clips with `overflow: clip` instead of `overflow: hidden` — a hidden ancestor is a scroll container, which is exactly what disabled `position: sticky`; the group offset cancels the stream container's own top padding in the same rem unit (the rows' offset adds the header's height on top), and the stuck bars' backgrounds are opaque so scrolled content can't bleed through.
 
-## Conversation outline
+## Conversation minimap (tick rail)
 
-- A collapsible quick-jump index docks left of the message stream (≥1280px, conditionally mounted — below the breakpoint no DOM is rendered, keeping hidden copies of message text out of text lookup and assistive tech).
-- One entry per exchange: the user's question as a right-aligned mini bubble plus a truncated plain-text preview of the reply (markdown flattened; the newest turn shows a pulsing "answering" note while its reply hasn't started). Protocol banners open no entry, goal rounds merge into the round-1 entry, scheduled turns are listed.
-- A scrollspy highlights the exchange at the reading line (the stream bottom counts as the newest turn), the active entry expands accordion-style, and clicking jumps straight to the turn with a brief flash on the landed-on message. The open/collapsed preference persists per device; jump anchors are stamped only on the main conversation and queried scoped to its scroll container, so nested subagent renders can't collide.
+- The quick-jump index costs the conversation no width: a tick rail overlays the left gutter the centered column leaves free — one tick per exchange (pitch compresses as turns grow), the reading position longer and darker, tracked by a scrollspy (the stream bottom counts as the newest turn).
+- Hovering or focusing a tick pops a floating preview card — the user's question in bold over a truncated plain-text reply preview (markdown flattened; the newest turn shows a pulsing "answering" note while its reply hasn't started) — and clicking jumps straight to the turn with a brief flash on the landed-on message. The card is a pure tooltip: hit-transparent and mounted only while hovering, so message text is never duplicated into the DOM at rest.
+- The rail renders only while the measured gutter actually has the room (live measurement — opening a docked side panel hides it, closing brings it back) on hover-capable pointers; the overlay itself takes no pointer events, so the wheel keeps scrolling the stream anywhere in the gutter. Protocol banners open no entry, goal rounds merge into the round-1 entry, scheduled turns are listed; jump anchors are stamped only on the main conversation and queried scoped to its scroll container, so nested subagent renders can't collide.
 
-## e2e viewport pin
+## e2e
 
-The Playwright suite now runs at 1200×720: the previous default (1280×720) sits exactly on the xl breakpoint where the outline docks, and the outline's previews would have doubled every unscoped text lookup across the historical specs. The new `outline.spec.mjs` opts into 1440×860 and covers the outline, the sticky header, and history recall end to end.
+The new `outline.spec.mjs` covers the tick rail (hover card, jump, panel-eats-gutter auto-hide), the stacked sticky headers, and history recall end to end at 1440×860; the suite keeps Playwright's default viewport — the rail duplicates no text at rest, so the historical specs needed no changes.
