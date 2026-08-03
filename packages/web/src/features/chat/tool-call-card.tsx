@@ -75,35 +75,49 @@ export function shortenPath(p: string): string {
 export function previewArguments(name: string, argsJson: string): string {
   if (name === "exec_command") {
     const cmd = extractStringField(argsJson, "cmd");
-    if (cmd !== null) return `$ ${cmd.replace(/\s+/g, " ").trim()}`;
+    if (cmd !== null) return `$ ${cmd.value.replace(/\s+/g, " ").trim()}`;
   }
   if (FILE_TOOLS.has(name)) {
     const filePath = extractStringField(argsJson, "file_path");
-    if (filePath !== null) return shortenPath(filePath.replace(/\s+/g, " ").trim());
+    if (filePath !== null) return shortenPath(filePath.value.replace(/\s+/g, " ").trim());
   }
   return argsJson.replace(/\s+/g, " ").trim();
 }
 
 /**
  * Collapsed-header subtitle: the human-readable line next to the tool name — the
- * model-written `description` argument for the command/subagent tools (declared in their
+ * model-written `description` argument when the call carries one (declared in the tool's
  * config schema; per-tool `call_description: false` removes it, in which case the model
  * never sends it), or the shortened file path for the file tools. Null when there is
  * nothing beyond the raw arguments.
+ *
+ * The subtitle appears once, fully formed, never mid-stream (#137): a growing description
+ * re-solves the header's flex line every frame, and `shortenPath` on a still-growing path
+ * rewrites non-monotonically (`/ho` → `…/cc/dev` → `…/dev/x`) — so a field renders only
+ * after its closing quote. `settled` (arguments finished streaming) lifts that gate: the
+ * text cannot change anymore, which also covers a call that never closed the string
+ * (aborted / malformed). Same rule as the CLI's tool-render. The wait is short by
+ * construction — `description` is required first in schema order, and `file_path` is the
+ * first file-tool argument — while `write_file`'s `content` may stream long after.
  */
-export function headerSubtitle(name: string, argsJson: string): string | null {
-  if (DESCRIBED_TOOLS.has(name)) {
+export function headerSubtitle(name: string, argsJson: string, settled = true): string | null {
+  // The description wins whenever the call carries one: schemas are user-editable, so a
+  // file tool may have `description` enabled even though the default schema leaves it out
+  // (the CLI derives the same rule from the session's schemas).
+  if (DESCRIBED_TOOLS.has(name) || FILE_TOOLS.has(name)) {
     const desc = extractStringField(argsJson, "description");
     if (desc !== null) {
-      const line = desc.replace(/\s+/g, " ").trim();
+      if (!desc.complete && !settled) return null;
+      const line = desc.value.replace(/\s+/g, " ").trim();
       if (line) return line;
     }
-    return null;
+    if (DESCRIBED_TOOLS.has(name)) return null;
   }
   if (FILE_TOOLS.has(name)) {
     const filePath = extractStringField(argsJson, "file_path");
     if (filePath !== null) {
-      const line = filePath.replace(/\s+/g, " ").trim();
+      if (!filePath.complete && !settled) return null;
+      const line = filePath.value.replace(/\s+/g, " ").trim();
       if (line) return shortenPath(line);
     }
   }
@@ -149,8 +163,14 @@ export function pendingFilePayload(name: string, argsJson: string): string | nul
   return sections.join("\n");
 }
 
+/** A string field read from possibly-incomplete JSON: the value seen so far, and whether its closing quote has arrived (mirrors the CLI's PartialField). */
+interface PartialField {
+  value: string;
+  complete: boolean;
+}
+
 /** Extracts the current value of a string field from a possibly-incomplete JSON object string (a simplified version, good enough for preview purposes). */
-function extractStringField(argsJson: string, field: string): string | null {
+function extractStringField(argsJson: string, field: string): PartialField | null {
   const key = `"${field}"`;
   const keyIndex = argsJson.indexOf(key);
   if (keyIndex === -1) return null;
@@ -174,10 +194,10 @@ function extractStringField(argsJson: string, field: string): string | null {
       escaped = true;
       continue;
     }
-    if (ch === '"') return out;
+    if (ch === '"') return { value: out, complete: true };
     out += ch;
   }
-  return out;
+  return { value: out, complete: false };
 }
 
 export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRenderContext }) {
@@ -187,7 +207,9 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
   const pending = ctx.pendingApprovals.get(approvalKey(ctx.origin, item.toolCallId));
 
   const preview = previewArguments(item.name, item.argumentsText);
-  const subtitle = headerSubtitle(item.name, item.argumentsText);
+  // Settled once argument streaming stopped (or the complete call arrived): the subtitle's
+  // completeness gate is lifted — whatever is there is final.
+  const subtitle = headerSubtitle(item.name, item.argumentsText, !item.callStreaming);
   // Executing = the call has finished streaming, output hasn't arrived yet, and it's not waiting on approval (approval wait time doesn't count toward execution).
   const executing = item.callComplete && !item.outputComplete && !pending;
   // Argument-generation segment (settled): the live execution timer accumulates on top of this as a baseline, so the displayed duration doesn't shrink back once output arrives.
