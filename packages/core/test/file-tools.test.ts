@@ -128,6 +128,45 @@ describe("read_file", () => {
     expect(text).toContain("File not found");
     expect(text).toContain("missing.txt");
     expect(text).toContain("workspace");
+    expect(text).toContain("Absolute paths are supported");
+    expect(text).toContain(`The directory "${tmp}" exists but has no entry "missing.txt".`);
+    expect(text).toContain("It is empty.");
+  });
+
+  it("points at the nearest existing directory and its closest-named entries", async () => {
+    await mkdir(path.join(tmp, "agent_state"));
+    await writeFile(path.join(tmp, "agent_state", "AGENTS.md"), "persona\n");
+    await writeFile(path.join(tmp, "notes.txt"), "n\n");
+    const { result, text } = await run(tool(), { file_path: path.join(tmp, "AGENTS.md") }, tmp);
+    expect(result?.stopReason).toBe("failed");
+    expect(text).toContain(`The directory "${tmp}" exists but has no entry "AGENTS.md".`);
+    // Ranked by shared prefix with the missing name: agent_state/ first, dirs marked with "/".
+    expect(text).toContain("It contains: agent_state/, notes.txt");
+  });
+
+  it("reports the first missing segment of a deeper path", async () => {
+    const missing = path.join(tmp, "nope", "deep", "file.txt");
+    const { result, text } = await run(tool(), { file_path: missing }, tmp);
+    expect(result?.stopReason).toBe("failed");
+    expect(text).toContain(`The directory "${tmp}" exists but has no entry "nope".`);
+  });
+
+  it("says so when a path segment is a file, not a directory", async () => {
+    await writeFile(path.join(tmp, "a.txt"), "x\n");
+    const inner = path.join(tmp, "a.txt", "inner.txt");
+    const { result, text } = await run(tool(), { file_path: inner }, tmp);
+    expect(result?.stopReason).toBe("failed");
+    expect(text).toContain("File not found");
+    expect(text).toContain(
+      `Note: "${path.join(tmp, "a.txt")}" exists but is a file, not a directory.`,
+    );
+  });
+
+  it("caps the entry listing and counts the rest", async () => {
+    for (let i = 0; i < 10; i += 1) await writeFile(path.join(tmp, `e${i}.txt`), "x\n");
+    const { text } = await run(tool(), { file_path: "zz.txt" }, tmp);
+    expect(text).toContain("(+2 more)");
+    expect(text).not.toContain("e8.txt");
   });
 
   it("fails when the path is a directory", async () => {
@@ -250,6 +289,7 @@ describe("edit_file", () => {
     expect(result?.stopReason).toBe("failed");
     expect(text).toContain("File not found");
     expect(text).toContain("write_file");
+    expect(text).toContain(`The directory "${tmp}" exists but has no entry "nope.txt".`);
   });
 
   it("fails when the path is a directory", async () => {

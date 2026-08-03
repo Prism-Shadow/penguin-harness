@@ -3,8 +3,8 @@ name: agent-creation
 description: Create or configure an Agent State from a user requirement by writing AGENTS.md, setting identity metadata, and installing only needed Skills.
 short_description: Turn a requirement into a working agent.
 short_description_zh: 把需求变成可用的 Agent。
-version: 6
-updated: 2026-07-29T17:20:58Z
+version: 7
+updated: 2026-08-03T04:03:59Z
 ---
 
 # Agent Creation
@@ -89,7 +89,7 @@ mkdir -p "$TARGET/agent_state/skills" "$TARGET/agent_state/memory" "$TARGET/agen
 cp "$APP_DATA_DIR/agents/default_agent/agent_state/system_config.yaml" "$TARGET/agent_state/"
 ```
 
-Then set the top-level `name`, `description`, and `version: 1`, set `model.thinking_level` to the resolved value, write `AGENTS.md`, and install only the Skills required by the user's requirement. Do not persist the resolved provider/model pair in the Agent State.
+Then set the top-level `name`, `description`, and `version: 1`, set `model.thinking_level` to the resolved value, write `agent_state/AGENTS.md` (it lives under `agent_state/`, not at the agent directory root), and install only the Skills required by the user's requirement. Do not persist the resolved provider/model pair in the Agent State.
 
 ## Validate and report
 
