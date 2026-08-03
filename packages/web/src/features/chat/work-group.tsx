@@ -100,16 +100,21 @@ export function WorkGroup({
       {/* Group header: a distinct title bar (solid background), on a separate layer from the
           step rows below it. Sticky against the message list's scrollport so a long expanded
           group can be collapsed from anywhere inside it — without this, finding the start of
-          a long thinking/tool run means scrolling all the way back up. The background must
-          stay fully opaque (the old dark 900/60 read identically over the solid-900 card,
-          but stuck over scrolling rows it would let them bleed through); z below the
-          stream's own overlays (back-to-bottom uses z-10). -top-4, not top-0: sticky
-          offsets resolve against the scrollport INSIDE the scroll container's padding, so
-          top-0 pins a py-4 strip lower than the visible top and content scrolls through
-          that gap; -top-4 is the same rem unit as the container's py-4, cancelling exactly
-          at every font scale. */}
+          a long thinking/tool run means scrolling all the way back up. This is the FIRST of
+          two stacked sticky levels: the currently scrolled thinking/tool row pins right
+          below it at top-4 (see thinking-block.tsx / tool-call-card.tsx), so the bar
+          directly above the content is always the section being read — the group header
+          alone would skip a level. The background must stay fully opaque (the old dark
+          900/60 read identically over the solid-900 card, but stuck over scrolling rows it
+          would let them bleed through); z above the row level (z-[4]), below the stream's
+          own overlays (back-to-bottom uses z-10). -top-4, not top-0: sticky offsets resolve
+          against the scrollport INSIDE the scroll container's padding, so top-0 pins a py-4
+          strip lower than the visible top and content scrolls through that gap; -top-4 is
+          the same rem unit as the container's py-4, cancelling exactly at every font scale
+          (the rows' top-4 = this offset plus the header's 2rem height, same reasoning). */}
       <button
         type="button"
+        data-group-header
         aria-expanded={shown}
         onClick={() => {
           userToggled.current = true;

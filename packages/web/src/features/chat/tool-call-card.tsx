@@ -203,6 +203,7 @@ function extractStringField(argsJson: string, field: string): PartialField | nul
 export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRenderContext }) {
   const [open, setOpen] = useState(false);
   const userToggled = useRef(false);
+  const rootRef = useRef<HTMLDivElement>(null);
   // Matched by the current origin chain + toolCallId: prevents parent/child session tool_call_id collisions from lighting each other up.
   const pending = ctx.pendingApprovals.get(approvalKey(ctx.origin, item.toolCallId));
 
@@ -262,10 +263,16 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
   ];
 
   return (
-    <div>
+    <div ref={rootRef}>
       {/* Collapsed row: status icon + tool name + total duration (generation + execution,
           excluding approval wait) + the stop reason when the step did not finish cleanly.
           Expand chevron on the right.
+
+          Stacked sticky, second level (same as the thinking row): while this card's expanded
+          output scrolls, the row pins right BELOW the stuck group header (top-4 = the
+          header's -top-4 offset + its 2rem height) — the bar directly above the content is
+          always the section the reader is in, never a skipped level. Opaque background for
+          the stuck state; collapsing from stuck lands the view back on the row.
 
           The stop reason used to render as a padded Badge pill, which competed for width on a
           phone. It is now the same plain `[reason]` marker the thinking row directly above it
@@ -286,9 +293,13 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
         aria-expanded={open}
         onClick={() => {
           userToggled.current = true;
+          const willClose = open;
           setOpen((v) => !v);
+          if (willClose) {
+            requestAnimationFrame(() => rootRef.current?.scrollIntoView({ block: "nearest" }));
+          }
         }}
-        className="flex w-full items-center gap-2 px-3 py-1.5 text-left transition-colors duration-150 hover:bg-gray-50 dark:hover:bg-gray-800/50"
+        className="sticky top-4 z-[4] flex w-full items-center gap-2 bg-white px-3 py-1.5 text-left transition-colors duration-150 hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-800"
       >
         <StatusIcon state={state} label={stateLabel} />
         <span className="shrink-0 truncate font-mono text-xs font-semibold text-gray-700 dark:text-gray-300">

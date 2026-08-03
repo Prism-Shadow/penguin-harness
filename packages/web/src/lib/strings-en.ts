@@ -700,10 +700,10 @@ Scenarios:
     statusCompacting: "Compacting",
     pendingApprovals: (n: number) => `${n} pending approval${n > 1 ? "s" : ""}`,
     jumpToLatest: "Jump to latest",
-    /** Left conversation outline (quick-jump index): panel title and toggles. */
+    /** Conversation minimap (tick rail over the stream's left gutter): rail aria-label. */
     outlineTitle: "Outline",
-    outlineShow: "Show outline",
-    outlineHide: "Hide outline",
+    /** Tick accessible name: turn number + the question (or the no-text placeholder). */
+    outlineTickLabel: (n: number, question: string) => `Turn ${n}: ${question}`,
     /** Entry label when the prompt had no text body (image / attachment-only message). */
     outlineNoText: "(image or attachment)",
     /** Answer-preview placeholder while the latest turn is still running with no reply text yet. */

@@ -225,9 +225,6 @@ export const DRAFT_SESSION_ID = "new";
  */
 const STAT_PATHS_PER_REQUEST = 100;
 
-/** localStorage key for the conversation outline's open/collapsed preference. */
-const OUTLINE_OPEN_KEY = "penguin.chatOutline";
-
 export function ChatPage() {
   const navigate = useNavigate();
   const params = useParams<{ sessionId?: string }>();
@@ -328,14 +325,6 @@ export function ChatPage() {
   // The message stream's scroll container, exposed by MessageStream for the outline's
   // jump/scrollspy (anchors are queried inside it, never document-wide).
   const streamScrollRef = useRef<HTMLDivElement | null>(null);
-  // Outline visibility is a device-level preference like the panel width: persisted, not per session.
-  const [outlineOpen, setOutlineOpenRaw] = useState(
-    () => localStorage.getItem(OUTLINE_OPEN_KEY) !== "closed",
-  );
-  const setOutlineOpen = useCallback((next: boolean) => {
-    setOutlineOpenRaw(next);
-    localStorage.setItem(OUTLINE_OPEN_KEY, next ? "open" : "closed");
-  }, []);
 
   // Current Agent follows the Session in the route (keeps the sidebar and stats aligned on deep
   // links / refresh). Only aligns when **the selected Session changes** — never put agentId in
@@ -1143,19 +1132,8 @@ export function ChatPage() {
         </div>
       )}
 
-      {/* Body: conversation outline on the left, chat column, then the docked panels on the right (message file cards jump to and locate a file in the tree via onOpenFile). */}
+      {/* Body: chat column + the docked panels on the right (message file cards jump to and locate a file in the tree via onOpenFile). */}
       <div className="flex min-h-0 flex-1">
-        {/* Left quick-jump index (session state only; renders nothing until the conversation has entries). */}
-        {selected && !stream.loading && !stream.error && (
-          <ConversationOutline
-            entries={outline}
-            version={stream.version}
-            scrollRef={streamScrollRef}
-            running={stream.taskState !== "idle"}
-            open={outlineOpen}
-            setOpen={setOutlineOpen}
-          />
-        )}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           {draft ? (
             // Draft state: DraftView's vertically centered input card + Agent / Workspace
@@ -1203,6 +1181,17 @@ export function ChatPage() {
                           version={stream.version}
                           ctx={ctx}
                           scrollElRef={streamScrollRef}
+                          // Tick-rail minimap over the stream's left gutter (zero layout
+                          // width; hides itself when the gutter is too narrow or the
+                          // pointer can't hover).
+                          outline={
+                            <ConversationOutline
+                              entries={outline}
+                              version={stream.version}
+                              scrollRef={streamScrollRef}
+                              running={stream.taskState !== "idle"}
+                            />
+                          }
                         />
                       )}
                     </div>

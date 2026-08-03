@@ -683,10 +683,10 @@ Benchmark：
     statusCompacting: "压缩中",
     pendingApprovals: (n: number) => `${n} 个待审批`,
     jumpToLatest: "回到最新消息",
-    /** Left conversation outline (quick-jump index): panel title and toggles. */
+    /** Conversation minimap (tick rail over the stream's left gutter): rail aria-label. */
     outlineTitle: "对话索引",
-    outlineShow: "展开对话索引",
-    outlineHide: "收起对话索引",
+    /** Tick accessible name: turn number + the question (or the no-text placeholder). */
+    outlineTickLabel: (n: number, question: string) => `第 ${n} 轮：${question}`,
     /** Entry label when the prompt had no text body (image / attachment-only message). */
     outlineNoText: "（图片或附件）",
     /** Answer-preview placeholder while the latest turn is still running with no reply text yet. */

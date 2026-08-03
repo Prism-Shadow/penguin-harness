@@ -160,6 +160,7 @@ export function MessageStream({
   version,
   ctx,
   scrollElRef,
+  outline,
 }: {
   items: ChatItem[];
   /** View-model version number (a repaint signal for in-place updates that also drives auto-scroll). */
@@ -167,6 +168,12 @@ export function MessageStream({
   ctx: StreamRenderContext;
   /** Mirrors the scroll container element out to the owner (the conversation outline's jump/scrollspy target). */
   scrollElRef?: RefObject<HTMLDivElement | null>;
+  /**
+   * Overlay slot rendered inside the stream's positioning wrapper (the conversation
+   * outline's tick rail): the rail must span exactly the stream area — not the composer —
+   * and anchor its absolute positioning to this wrapper, which only this component owns.
+   */
+  outline?: ReactNode;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   // An upward-swipe intent immediately exits auto-follow; scrolling back near the bottom resumes it — see stream-follow.ts (#75) for the exact rule.
@@ -316,6 +323,7 @@ export function MessageStream({
           )}
         </div>
       </div>
+      {outline}
       {/* Back-to-bottom (shows once the user scrolls away from content below the fold): floats
           just above the composer; clicking returns to the bottom and re-enters follow, so the
           view keeps tracking the live stream. */}

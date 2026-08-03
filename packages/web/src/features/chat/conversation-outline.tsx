@@ -1,38 +1,27 @@
 /**
- * Conversation outline: a collapsible quick-jump index docked left of the message stream.
- * One entry per exchange — the user's question as a miniature bubble with a truncated
- * plain-text preview of the reply under it (built by outline-model.ts) — because long
- * thinking/tool output makes locating a turn by scrolling painful. Clicking an entry jumps
- * the stream to that turn (with a brief flash on the landed-on message); a scrollspy tracks
- * which turn is at the reading line and highlights it, accordion-style: the active entry
- * expands to more preview lines while the others fold to one line each.
+ * Conversation minimap: a tick rail overlaying the left gutter of the message stream — one
+ * tick per exchange, the one at the reading position emphasized; hovering (or focusing) a
+ * tick pops a floating preview card (the user's question in bold over a truncated
+ * plain-text reply preview), clicking jumps to that turn. It deliberately costs the
+ * conversation no width: instead of a docked panel it lives in the slack the centered
+ * column leaves free, appears only while that slack is actually wide enough (measured
+ * live, so a side panel eating the room hides it) on hover-capable pointers, and the
+ * preview card mounts only for the hovered tick — at rest the rail duplicates no message
+ * text into the DOM (which would pollute text lookup for assistive tech and tests alike).
  *
- * The panel owns no data: chat-page passes the entries plus a ref to MessageStream's
- * scroll container, and all anchor queries ([data-outline-anchor], stamped by MessageItems
- * at the top level only) are scoped to that container — item ids repeat across nested
- * subagent models, so document-wide lookups would be ambiguous. Desktop-only (≥ xl): below
- * that the chat column needs the room, and touch scrolling has momentum to cover distance.
- * The open/collapsed preference persists like the panel width (a device preference, not
- * per-session state); the collapsed form is a slim rail so the way back stays visible.
+ * The rail overlay is hit-transparent (pointer events only on the tick buttons), so wheel
+ * scrolling anywhere in the gutter keeps scrolling the stream. Entries come from
+ * outline-model.ts; jump targets are the [data-outline-anchor] wrappers MessageItems
+ * stamps at the top level only, queried scoped to the stream's scroll container (item ids
+ * repeat across nested subagent models, so document-wide lookups would be ambiguous).
+ * Rendered into MessageStream's relative wrapper via its `outline` slot, so the rail spans
+ * exactly the stream area — never the composer.
  */
 import { useEffect, useRef, useState } from "react";
-import type { RefObject } from "react";
+import type { FocusEvent, MouseEvent, RefObject } from "react";
 import { S } from "../../lib/strings";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
 import type { OutlineEntry } from "./outline-model";
 import { previewText } from "./outline-model";
-
-/** Panel-with-list glyph (24×24 line path) for the show/hide toggles. */
-const OUTLINE_ICON =
-  "M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zm4 0v16M12 9h5m-5 4h5";
-
-/**
- * Desktop-only, mounted conditionally rather than CSS-hidden: below xl the chat column
- * needs the room (and touch scrolling covers distance anyway), and an invisible copy of
- * every message text would keep polluting text lookup — for assistive tech and tests alike
- * — while the scrollspy kept computing for nobody.
- */
-const DOCK_QUERY = "(min-width: 1280px)";
 
 /** Distance of the scrollspy "reading line" below the scrollport top: the entry whose anchor last crossed it counts as active. */
 const READING_LINE_PX = 96;
@@ -40,34 +29,70 @@ const READING_LINE_PX = 96;
 /** Flash animation length on the landed-on message; must outlast the CSS animation (900ms). */
 const FLASH_MS = 1000;
 
+/**
+ * Minimum free gutter (stream-container width minus the max-w-3xl column, halved) for the
+ * rail to show: below this the ticks would sit on top of assistant text instead of blank
+ * margin. Measured live via ResizeObserver — window resizes and panel drags both count.
+ */
+const GUTTER_MIN_PX = 56;
+
+/** The stream column cap the gutter derives from (Tailwind max-w-3xl). */
+const COLUMN_MAX_PX = 768;
+
+/** Hover-preview interaction needs a pointer that can hover: on touch the rail never renders. */
+const HOVER_QUERY = "(hover: hover) and (pointer: fine)";
+
+/** Tick pitch bounds (px): compress toward MIN as turns outgrow the rail, never past hoverability. */
+const TICK_PITCH_MAX = 12;
+const TICK_PITCH_MIN = 5;
+
 export function ConversationOutline({
   entries,
   version,
   scrollRef,
   running,
-  open,
-  setOpen,
 }: {
   entries: OutlineEntry[];
-  /** Stream repaint signal: re-runs the scrollspy as content grows (growth fires no scroll event). */
+  /** Stream repaint signal: re-runs the scrollspy and measurements as content grows or the stream remounts. */
   version: number;
   /** MessageStream's scroll container (null while the stream isn't mounted, e.g. the empty greeting). */
   scrollRef: RefObject<HTMLDivElement | null>;
-  /** Whether a Task is running: the last entry then previews "answering" while its reply text hasn't started. */
+  /** Whether a Task is running: the newest entry's card then previews "answering" while its reply text hasn't started. */
   running: boolean;
-  open: boolean;
-  setOpen: (open: boolean) => void;
 }) {
   const [activeId, setActiveId] = useState<number | null>(null);
-  const listRef = useRef<HTMLDivElement>(null);
+  /** Hovered/focused tick: which entry to preview, and the tick's center Y within the overlay (the card anchors there). */
+  const [hover, setHover] = useState<{ id: number; top: number } | null>(null);
+  const navRef = useRef<HTMLElement>(null);
   const flashTimerRef = useRef<number | null>(null);
-  const [docked, setDocked] = useState(() => window.matchMedia(DOCK_QUERY).matches);
+  const [pointerFine, setPointerFine] = useState(() => window.matchMedia(HOVER_QUERY).matches);
+  /** Live stream-container metrics: whether the gutter has room, and the height the tick pitch divides. */
+  const [fit, setFit] = useState<{ shown: boolean; height: number }>({ shown: false, height: 0 });
+
   useEffect(() => {
-    const mq = window.matchMedia(DOCK_QUERY);
-    const onChange = (e: MediaQueryListEvent) => setDocked(e.matches);
+    const mq = window.matchMedia(HOVER_QUERY);
+    const onChange = (e: MediaQueryListEvent) => setPointerFine(e.matches);
     mq.addEventListener("change", onChange);
     return () => mq.removeEventListener("change", onChange);
   }, []);
+
+  // Gutter measurement. Keyed on `version` besides the ref: the scroll container remounts
+  // on a session switch (keyed subtree) without this component unmounting, and the
+  // observer must re-attach to the new element.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!pointerFine || !el) return;
+    const measure = () => {
+      const gutter = (el.clientWidth - COLUMN_MAX_PX) / 2;
+      setFit({ shown: gutter >= GUTTER_MIN_PX, height: el.clientHeight });
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+    // The element is read from the ref per run; `version` is the remount signal.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pointerFine, scrollRef, version]);
 
   // Scrollspy: the active turn is the last anchor above the reading line. Recomputed on
   // scroll (rAF-throttled) and on every version bump — streaming growth moves anchors
@@ -75,7 +100,7 @@ export function ConversationOutline({
   // version also re-binds after the stream remounts on a session switch.
   useEffect(() => {
     const el = scrollRef.current;
-    if (!docked || !el || entries.length === 0) return;
+    if (!fit.shown || !el || entries.length === 0) return;
     let raf: number | null = null;
     const compute = () => {
       raf = null;
@@ -108,15 +133,7 @@ export function ConversationOutline({
       el.removeEventListener("scroll", onScroll);
       if (raf !== null) cancelAnimationFrame(raf);
     };
-  }, [docked, scrollRef, entries.length, version]);
-
-  // Keep the active entry visible inside the outline's own list while reading/streaming.
-  useEffect(() => {
-    if (activeId === null) return;
-    listRef.current
-      ?.querySelector(`[data-outline-entry="${activeId}"]`)
-      ?.scrollIntoView({ block: "nearest" });
-  }, [activeId]);
+  }, [fit.shown, scrollRef, entries.length, version]);
 
   useEffect(
     () => () => {
@@ -125,7 +142,7 @@ export function ConversationOutline({
     [],
   );
 
-  if (!docked || entries.length === 0) return null;
+  if (!pointerFine || !fit.shown || entries.length === 0) return null;
 
   const jump = (id: number) => {
     const container = scrollRef.current;
@@ -148,90 +165,100 @@ export function ConversationOutline({
     );
   };
 
-  if (!open) {
-    return (
-      <div className="flex shrink-0 flex-col border-r border-gray-200 dark:border-gray-800">
-        <button
-          type="button"
-          title={S.chat.outlineShow}
-          aria-label={S.chat.outlineShow}
-          aria-expanded={false}
-          onClick={() => setOpen(true)}
-          className="m-1.5 flex h-7 w-7 items-center justify-center rounded-md text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-        >
-          <GlyphIcon d={OUTLINE_ICON} size={15} />
-        </button>
-      </div>
-    );
-  }
+  /** Tick center Y relative to the rail overlay (the preview card anchors to it, clamped in render). */
+  const tickTop = (e: MouseEvent<HTMLElement> | FocusEvent<HTMLElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    return rect.top + rect.height / 2 - (navRef.current?.getBoundingClientRect().top ?? 0);
+  };
 
+  // Compress the pitch as turns outgrow the rail (~32px breathing room); past ~140 turns
+  // at minimum pitch the stack simply clips — a conversation that long stopped being
+  // scannable by any other means well before the map does.
+  const pitch = Math.max(
+    TICK_PITCH_MIN,
+    Math.min(TICK_PITCH_MAX, Math.floor((fit.height - 32) / entries.length)),
+  );
+  const hovered = hover === null ? null : (entries.find((en) => en.anchorId === hover.id) ?? null);
   const last = entries[entries.length - 1]!;
+  const cardAnswer =
+    hovered === null
+      ? ""
+      : hovered.answer
+        ? previewText(hovered.answer, 160)
+        : hovered === last && running
+          ? S.chat.outlineAnswering
+          : "";
+
   return (
-    <div className="flex w-60 shrink-0 flex-col border-r border-gray-200 dark:border-gray-800">
-      <div className="flex shrink-0 items-center justify-between border-b border-gray-200 py-1.5 pr-1.5 pl-3 dark:border-gray-800">
-        <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
-          {S.chat.outlineTitle}
-        </span>
-        <button
-          type="button"
-          title={S.chat.outlineHide}
-          aria-label={S.chat.outlineHide}
-          aria-expanded
-          onClick={() => setOpen(false)}
-          className="flex h-6 w-6 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-300"
-        >
-          <GlyphIcon d={OUTLINE_ICON} size={14} />
-        </button>
-      </div>
-      <div ref={listRef} className="min-h-0 flex-1 space-y-0.5 overflow-y-auto p-2">
-        {entries.map((entry) => {
+    // Hit-transparent overlay (pointer events only on the tick buttons): the wheel keeps
+    // scrolling the stream everywhere in the gutter. z level with the back-to-bottom
+    // overlay (z-10), below dropdowns (z-40).
+    <nav
+      ref={navRef}
+      aria-label={S.chat.outlineTitle}
+      className="pointer-events-none absolute inset-y-0 left-0 z-10 flex flex-col items-start justify-center"
+    >
+      <div>
+        {entries.map((entry, i) => {
           const active = entry.anchorId === activeId;
-          // Preview: the reply text, or a pulsing "answering" note while the newest turn
-          // runs with nothing streamed yet; settled turns without text (e.g. aborted) show
-          // the question alone.
-          const answer = entry.answer
-            ? previewText(entry.answer, active ? 160 : 80)
-            : entry === last && running
-              ? S.chat.outlineAnswering
-              : "";
           return (
             <button
               key={entry.anchorId}
               type="button"
-              data-outline-entry={entry.anchorId}
+              data-outline-tick={entry.anchorId}
               aria-current={active || undefined}
-              title={entry.question.slice(0, 400) || S.chat.outlineNoText}
+              aria-label={S.chat.outlineTickLabel(i + 1, entry.question || S.chat.outlineNoText)}
+              style={{ height: pitch }}
+              onMouseEnter={(e) => setHover({ id: entry.anchorId, top: tickTop(e) })}
+              onMouseLeave={() => setHover(null)}
+              onFocus={(e) => setHover({ id: entry.anchorId, top: tickTop(e) })}
+              onBlur={() => setHover(null)}
               onClick={() => jump(entry.anchorId)}
-              className={`block w-full rounded-md px-2 py-1.5 text-left transition-colors duration-150 ${
-                active
-                  ? "bg-gray-100 dark:bg-gray-800/70"
-                  : "hover:bg-gray-50 dark:hover:bg-gray-900"
-              }`}
+              className="group/tick pointer-events-auto flex w-10 items-center pl-2.5"
             >
-              {/* Miniature of the conversation: the question as a right-aligned user bubble… */}
-              <span className="flex justify-end">
-                <span
-                  className={`${active ? "line-clamp-2" : "line-clamp-1"} max-w-[92%] rounded-md rounded-tr-sm bg-gray-200/60 px-2 py-1 text-xs leading-snug text-gray-800 dark:bg-gray-700/50 dark:text-gray-200 ${
-                    entry.question === "" ? "italic text-gray-500 dark:text-gray-400" : ""
-                  }`}
-                >
-                  {entry.question || S.chat.outlineNoText}
-                </span>
-              </span>
-              {/* …and the reply preview under it, left-aligned like the assistant's column. */}
-              {answer !== "" && (
-                <span
-                  className={`${active ? "line-clamp-3" : "line-clamp-1"} mt-1 block text-[11px] leading-snug text-gray-500 dark:text-gray-400 ${
-                    entry.answer === "" ? "animate-pulse" : ""
-                  }`}
-                >
-                  {answer}
-                </span>
-              )}
+              {/* The visible tick: a short bar, longer and darker at the reading position
+                  (the button is the real hit target — pitch-tall and wider than the bar). */}
+              <span
+                className={`h-[2px] rounded-full transition-all duration-150 ${
+                  active
+                    ? "w-5 bg-gray-800 dark:bg-gray-200"
+                    : "w-3.5 bg-gray-300 group-hover/tick:bg-gray-500 dark:bg-gray-700 dark:group-hover/tick:bg-gray-400"
+                }`}
+              />
             </button>
           );
         })}
       </div>
-    </div>
+      {/* Preview card for the hovered/focused tick only — never mounted at rest. Purely a
+          tooltip: hit-transparent (moving the mouse toward it can't trap hover) and hidden
+          from assistive tech (the tick's aria-label already names the turn). */}
+      {hovered && (
+        <div
+          data-outline-card
+          aria-hidden
+          className="anim-pop pointer-events-none absolute left-10 w-80 -translate-y-1/2 rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-lg dark:border-gray-700 dark:bg-gray-900"
+          style={{ top: Math.min(Math.max(hover!.top, 56), Math.max(56, fit.height - 56)) }}
+        >
+          <p
+            className={`truncate text-sm ${
+              hovered.question === ""
+                ? "italic text-gray-500 dark:text-gray-400"
+                : "font-semibold text-gray-900 dark:text-gray-100"
+            }`}
+          >
+            {hovered.question || S.chat.outlineNoText}
+          </p>
+          {cardAnswer !== "" && (
+            <p
+              className={`mt-1 line-clamp-3 text-sm leading-snug text-gray-500 dark:text-gray-400 ${
+                hovered.answer === "" ? "animate-pulse" : ""
+              }`}
+            >
+              {cardAnswer}
+            </p>
+          )}
+        </div>
+      )}
+    </nav>
   );
 }

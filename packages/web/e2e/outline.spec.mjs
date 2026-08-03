@@ -1,7 +1,8 @@
 /**
- * Conversation outline + sticky work-group header + composer input history (the three
- * chat-navigation features), on a viewport wide enough for the outline (it docks at xl;
- * the suite-wide config pins 1200×720, below that breakpoint, for the historical specs).
+ * Conversation minimap + sticky work-group header + composer input history (the three
+ * chat-navigation features), on a viewport whose stream gutter is wide enough for the
+ * tick rail (it measures the free margin live and hides itself when a docked panel eats
+ * the room — also asserted here).
  *
  * Flow: three exchanges in one session (the mock answers the first with
  * thinking + exec_command and later ones with plain text — hasToolResult is history-wide),
@@ -21,7 +22,9 @@ test.use({ viewport: { width: 1440, height: 860 } });
 /** Reply completion marker: every mock turn-2 ends with this exact sentence. */
 const REPLY = "Command finished";
 
-test("outline entries + jump, sticky group header, ArrowUp history recall", async ({ page }) => {
+test("minimap ticks + hover preview + jump, sticky group header, ArrowUp history recall", async ({
+  page,
+}) => {
   await provisionAndLogin(page.request, U, P);
   const projects = await (await page.request.get(`${BASE}/api/projects`)).json();
   const projectId = projects.projects[0].projectId;
@@ -68,24 +71,50 @@ test("outline entries + jump, sticky group header, ArrowUp history recall", asyn
   await send("第二问：运行检查", 2);
   await send("第三问：总结结果", 3);
 
-  // One entry per exchange, question bubble plus truncated answer preview.
-  const entries = page.locator("[data-outline-entry]");
-  await expect(entries).toHaveCount(3);
-  await expect(entries.first()).toContainText("第一问：项目结构");
-  await expect(entries.first()).toContainText(REPLY);
+  // One tick per exchange in the gutter minimap; auto-follow parked the stream at the
+  // bottom, so the newest exchange is the active tick. Message text is NOT duplicated
+  // into the DOM at rest — the preview card exists only while hovering.
+  const ticks = page.locator("[data-outline-tick]");
+  const card = page.locator("[data-outline-card]");
+  await expect(ticks).toHaveCount(3);
+  // Park at the live bottom explicitly before asserting "bottom → newest tick active":
+  // that mapping is the semantic under test, not auto-follow's timing under load.
+  await page.evaluate(() => {
+    const c = document.querySelector("[data-outline-anchor]").closest(".overflow-y-auto");
+    c.scrollTop = c.scrollHeight;
+  });
+  await expect(page.locator("[data-outline-tick][aria-current]")).toHaveAttribute(
+    "aria-label",
+    /第 3 轮/,
+  );
+  await expect(card).toHaveCount(0);
 
-  // Auto-follow parked the stream at the bottom, so the newest exchange is the active one.
-  await expect(page.locator("[data-outline-entry][aria-current]")).toContainText("第三问");
+  // Hovering a tick pops the preview card (question bold + truncated reply); leaving unmounts it.
+  await ticks.first().hover();
+  await expect(card).toContainText("第一问：项目结构");
+  await expect(card).toContainText(REPLY);
+  await ta.hover();
+  await expect(card).toHaveCount(0);
 
-  // Clicking an entry jumps the stream to that turn and moves the active highlight.
-  await entries.first().click();
-  await expect(page.locator("[data-outline-entry][aria-current]")).toContainText("第一问");
+  // Clicking a tick jumps the stream to that turn and moves the active tick.
+  await ticks.first().click();
+  await expect(page.locator("[data-outline-tick][aria-current]")).toHaveAttribute(
+    "aria-label",
+    /第 1 轮/,
+  );
   const jumpDelta = await page.evaluate(() => {
     const container = document.querySelector("[data-outline-anchor]").closest(".overflow-y-auto");
     const first = document.querySelector("[data-outline-anchor]");
     return first.getBoundingClientRect().top - container.getBoundingClientRect().top;
   });
   expect(Math.abs(jumpDelta)).toBeLessThan(40);
+
+  // The rail lives in the free gutter: a docked panel that eats the slack hides it, and
+  // closing the panel brings it back (live measurement, not a breakpoint).
+  await page.getByRole("button", { name: "打开工作区" }).click();
+  await expect(ticks).toHaveCount(0);
+  await page.getByRole("button", { name: "打开工作区" }).click();
+  await expect(ticks).toHaveCount(3);
 
   // ↑ walks back through this session's inputs, newest first; a second ↑ goes older.
   await ta.click();
@@ -105,44 +134,47 @@ test("outline entries + jump, sticky group header, ArrowUp history recall", asyn
   await expect(ta).toHaveValue("第三问：总结结果，补充");
   await ta.fill("");
 
-  // Collapses to a slim rail; the reopen affordance stays visible.
-  await page.getByRole("button", { name: "收起对话索引" }).click();
-  await expect(entries).toHaveCount(0);
-  await page.getByRole("button", { name: "展开对话索引" }).click();
-  await expect(entries).toHaveCount(3);
-
   // --- session 2: long tool output -> sticky header ---
   await page.goto(`${BASE}/chat/${await newSession()}`);
   await ta.waitFor();
   await send("slow stream test", 1);
 
   // Expand the settled group, then the tool card with the 40-line output.
-  const header = page.locator("button.sticky");
+  const header = page.locator("[data-group-header]");
   await expect(header).toHaveCount(1);
   await header.click();
   await page.locator("button[aria-expanded]").filter({ hasText: "exec_command" }).first().click();
   await expect(page.getByText("line 40")).toBeVisible();
 
-  // Scrolled into the middle of the group, the header pins to the scrollport top
-  // (-top-4 cancels the container's own py-4, so it sits flush at the visible top).
+  // Scrolled into the middle of the tool output, the two sticky levels stack: the group
+  // header flush at the scrollport top (-top-4 cancels the container's own py-4), and the
+  // tool row pinned right below it (top-4 = the header's offset plus its height) — the bar
+  // directly above the content is the section being read, never a skipped level.
   const stuck = await page.evaluate(() => {
     const container = document.querySelector("[data-outline-anchor]").closest(".overflow-y-auto");
-    const head = document.querySelector("button.sticky");
+    const head = document.querySelector("[data-group-header]");
     const card = head.parentElement;
     container.scrollTop = card.offsetTop + 400;
+    const ct = container.getBoundingClientRect().top;
+    const row = [...document.querySelectorAll("button[aria-expanded]")].find((b) =>
+      b.textContent.includes("exec_command"),
+    );
     return {
-      delta: Math.abs(head.getBoundingClientRect().top - container.getBoundingClientRect().top),
-      cardAboveFold: card.getBoundingClientRect().top < container.getBoundingClientRect().top,
+      delta: Math.abs(head.getBoundingClientRect().top - ct),
+      rowDelta: row.getBoundingClientRect().top - ct,
+      headerHeight: head.getBoundingClientRect().height,
+      cardAboveFold: card.getBoundingClientRect().top < ct,
     };
   });
   expect(stuck.delta).toBeLessThan(2);
+  expect(Math.abs(stuck.rowDelta - stuck.headerHeight)).toBeLessThan(2); // stacked right below
   expect(stuck.cardAboveFold).toBeTruthy();
 
   // Collapsing from the stuck header lands the view back on the group, not on unrelated content.
   await header.click();
   const landed = await page.evaluate(() => {
     const container = document.querySelector("[data-outline-anchor]").closest(".overflow-y-auto");
-    const card = document.querySelector("button.sticky").parentElement;
+    const card = document.querySelector("[data-group-header]").parentElement;
     return card.getBoundingClientRect().top - container.getBoundingClientRect().top;
   });
   expect(landed).toBeGreaterThan(-5);
