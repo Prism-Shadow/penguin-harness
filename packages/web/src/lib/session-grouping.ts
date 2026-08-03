@@ -55,6 +55,13 @@ export function workspaceLabel(workspace: string): string {
 export const SIDEBAR_PAGE_SIZE = 10;
 
 /**
+ * Groups (Agents / Workspace groups) rendered per sidebar "page": the initial render cap,
+ * raised by one page per "more groups" click. A pure display cap — with dozens of groups the
+ * full list renders too tall to scan (#139); the groups' data loading is unchanged.
+ */
+export const SIDEBAR_GROUP_PAGE_SIZE = 10;
+
+/**
  * Applies the limit+1 fetch trick: `fetched` came from a request with `limit = pageSize + 1`;
  * the visible page is the first `pageSize` items, and an overflow item (never shown) proves
  * the server has more.

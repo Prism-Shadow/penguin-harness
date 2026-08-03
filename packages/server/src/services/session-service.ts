@@ -1,12 +1,14 @@
 /**
  * Session index service.
  *
- * The list is DB index ∪ Trace directory discovery: scans
- * `<agent>/traces/<date>/<session_id>_<index3>.jsonl`; an unmanaged Session (e.g.
- * one started via the CLI) has its first line's session_meta read for
- * (provider, model_id) / workspace, which is backfilled into a DB row
- * (approval_mode defaults, createdAt is taken from the timestamp embedded in
- * session_id).
+ * The default list is served from the DB index alone (web rows: `client` web/NULL) — no
+ * Trace directory scanning in steady state (#139). `includeCli` widens it to DB ∪ Trace
+ * directory discovery: scans `<agent>/traces/<date>/<session_id>_<index3>.jsonl`; an
+ * unmanaged Session (one started via the CLI) has its first line's session_meta read for
+ * (provider, model_id) / workspace, which is backfilled into a DB row marked
+ * `client: "cli"` (approval_mode defaults, createdAt is taken from the timestamp embedded
+ * in session_id) — the default list keeps excluding it, but it becomes individually
+ * reachable (deep links).
  * Create: via core's `agent.createSession` (the model reference is always a complete
  * (provider, modelId) pair — both or neither; omitting both falls back to the
  * Project's default reference, 400 if there is none); the new Session is
@@ -175,11 +177,19 @@ export class SessionService {
   }
 
   /**
-   * List: DB ∪ Trace directory discovery, sorted by createdAt descending. Optional
-   * `paging` returns just that slice (the sidebar pages with limit+1 to detect "has
-   * more"); slicing happens before toInfo, so per-request source derivation (lazy
-   * Trace-head reads) stays bounded by the page size. Discovery/adoption still scans
-   * the whole directory — the union and global ordering need every id.
+   * List, sorted by createdAt descending. The default serves **web sessions straight from
+   * the DB** (`client` web/NULL rows) with no Trace directory scanning — the answer to
+   * many-session sidebar reloads re-walking the filesystem on every request (#139). One
+   * lazy discovery walk still runs for a list call that contains rows this process has not
+   * classified yet (no in-process source entry): it supplies the Trace locations for the
+   * one-time head reads and backfills the `has_trace` cache; once every row is classified,
+   * list calls touch only the DB. `includeCli` widens the list to DB ∪ Trace directory
+   * discovery (adopting unmanaged CLI Traces as `client: "cli"` rows), which inherently
+   * scans — that path is opt-in via the "show CLI sessions" preference.
+   *
+   * Optional `paging` returns just that slice (the sidebar pages with limit+1 to detect
+   * "has more"); slicing happens before toInfo, so per-request source derivation (lazy
+   * Trace-head reads) stays bounded by the page size.
    *
    * `category` filters to one sidebar bucket **before** paging, so offset/limit page
    * within the category. Filtering needs each walked row's category (a possible
@@ -196,30 +206,50 @@ export class SessionService {
       paging?: { offset: number; limit: number };
       category?: SessionCategory;
       withCounts?: boolean;
+      includeCli?: boolean;
     } = {},
   ): Promise<{
     sessions: SessionInfo[];
     counts?: SessionCategoryCounts;
     workspaceCounts?: Record<string, SessionCategoryCounts>;
   }> {
-    const { paging, category, withCounts } = opts;
-    const traces = await this.discoverTraces(projectId, agentId);
+    const { paging, category, withCounts, includeCli } = opts;
     const rows = new Map(
-      this.deps.sessions.listByAgent(projectId, agentId).map((r) => [r.sessionId, r]),
+      this.deps.sessions
+        .listByAgent(projectId, agentId, { webOnly: !includeCli })
+        .map((r) => [r.sessionId, r]),
     );
 
-    // Unmanaged Trace Sessions: backfill an index row by reading the first line's session_meta.
-    for (const [sessionId, location] of traces) {
-      if (rows.has(sessionId)) continue;
-      const discovered = await this.adoptTraceSession(projectId, agentId, sessionId, location);
-      if (discovered) rows.set(sessionId, discovered);
+    let traces: ReadonlyMap<string, TraceLocation> | undefined;
+    if (includeCli) {
+      traces = await this.discoverTraces(projectId, agentId);
+      // Unmanaged Trace Sessions (the CLI's): backfill an index row by reading the first
+      // line's session_meta, marked client "cli" so the default list can exclude them.
+      for (const [sessionId, location] of traces) {
+        if (rows.has(sessionId)) continue;
+        const discovered = await this.adoptTraceSession(projectId, agentId, sessionId, location);
+        if (discovered) rows.set(sessionId, discovered);
+      }
+    } else if ([...rows.values()].some((r) => this.deps.sources.get(r.sessionId) === undefined)) {
+      // Hydration walk: some rows predate this process and are unclassified — locate their
+      // Traces once so sourceOf's head reads (cached afterwards) and the has_trace cache
+      // don't have to walk per row. Steady state (everything classified) skips this.
+      traces = await this.discoverTraces(projectId, agentId);
+      for (const row of rows.values()) {
+        if (!row.hasTrace && traces.has(row.sessionId)) {
+          row.hasTrace = true;
+          this.deps.sessions.markHasTrace(row.sessionId);
+        }
+      }
     }
 
     const sorted = [...rows.values()].sort(
       (a, b) => b.createdAt.localeCompare(a.createdAt) || b.sessionId.localeCompare(a.sessionId),
     );
+    const rowHasTrace = (row: SessionRow): boolean =>
+      traces ? traces.has(row.sessionId) : row.hasTrace === true;
     const toPage = (page: SessionRow[]) =>
-      Promise.all(page.map((row) => this.toInfo(row, traces.has(row.sessionId), traces)));
+      Promise.all(page.map((row) => this.toInfo(row, rowHasTrace(row), traces)));
 
     // No classification asked for: slice straight away (the pre-category behavior).
     if (category === undefined && !withCounts) {
@@ -236,7 +266,7 @@ export class SessionService {
     const matched: SessionRow[] = [];
     for (const row of sorted) {
       if (!withCounts && matched.length >= want) break;
-      const cat = await this.categoryOf(row, traces.has(row.sessionId), traces);
+      const cat = await this.categoryOf(row, rowHasTrace(row), traces);
       counts[cat] += 1;
       if (withCounts) {
         const ws = (workspaceCounts[row.workspace] ??= {
@@ -384,6 +414,9 @@ export class SessionService {
       workspace: session.workspaceDir,
       approvalMode: args.approvalMode ?? "allow-all",
       title: null,
+      // Everything created through this service is the Web App's (schedule runs included);
+      // "cli" is stamped only by Trace adoption. NULL means a legacy row, treated as web.
+      client: "web",
       createdAt: new Date().toISOString(),
     };
     this.deps.sessions.insert(row);
@@ -474,6 +507,10 @@ export class SessionService {
       // The approval mode for an unmanaged Session (started via the CLI) isn't in the Trace, so it's backfilled with the default value.
       approvalMode: "allow-all",
       title: null,
+      // Adopted = a Trace this server never created, i.e. the CLI's: the default list
+      // (web-only) excludes these rows; the "show CLI sessions" preference includes them.
+      client: "cli",
+      hasTrace: true,
       createdAt: sessionIdCreatedAt(sessionId) ?? meta.timestamp,
     };
     // Idempotent backfill: concurrent list calls may discover the same Session for the first time simultaneously (consistent with AgentsRepo's convention).

@@ -147,6 +147,8 @@ describe("session-manager", () => {
     expect(first.payload.text).toBe("hello");
     const states = serverEvents(events).filter((e) => e.type === "task_state");
     expect(states.map((s) => s.state)).toEqual(["running", "idle"]);
+    // Driving a run flips the row's has_trace cache (listing then never walks for it).
+    expect(sessions.findById("session-1")!.hasTrace).toBe(true);
     // Outputs and events are forwarded one by one and handed to the recorder.
     expect(recordedCtx[0]).toEqual({
       projectId: "p1",

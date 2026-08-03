@@ -110,6 +110,12 @@ export interface UiPrefs {
   lastProjectId?: string;
   /** Whether the "no API key configured" guide has already been shown: once ever (on first visit to the chat page). */
   credentialGuideSeen?: boolean;
+  /**
+   * Also list CLI-created Sessions in the sidebar (`cli=1` on the sessions list). Default
+   * off: the list then serves web rows straight from the DB, with no Trace-directory
+   * scanning (#139).
+   */
+  showCliSessions?: boolean;
   [key: string]: unknown;
 }
 
