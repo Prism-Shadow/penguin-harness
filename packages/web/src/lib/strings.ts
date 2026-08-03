@@ -691,6 +691,8 @@ Benchmark：
     steerSend: "发送给运行中的 Agent",
     /** Queued hint shown after a successful steer, until the steering message appears in the stream. */
     steerQueuedIndicator: "插话已排队，将随下一轮送达",
+    /** Same hint, with the queued message's content (from the server's undelivered-steering mirror; survives reloads). */
+    steerQueuedItem: (content: string) => `插话已排队，将随下一轮送达：${content}`,
     /** Label of the [user_steering] chip (a mid-run user message delivered between turns). */
     userSteering: "用户插话",
     /** Mid-run send-mode setting: steer (delivered mid-run) vs follow-up (queued until the run ends). */
@@ -778,6 +780,7 @@ Benchmark：
     openAgents: "智能体面板",
     /** File summary card at the end of a message (Codex-style): title, inline preview action, and collapsed row. */
     filesInMessage: (n: number) => `${n} 个文件`,
+    imagesInMessage: (n: number) => `${n} 张图片`,
     openPreview: "点击预览",
     showMoreFiles: (n: number) => `显示其余 ${n} 个文件`,
     showLess: "收起",

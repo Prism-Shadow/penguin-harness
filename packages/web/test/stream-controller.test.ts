@@ -17,7 +17,12 @@ import {
   withOrigin,
 } from "@prismshadow/penguin-core/omnimessage";
 import type { OmniMessage, TokenCounts } from "@prismshadow/penguin-core/omnimessage";
-import type { MessagesLiveTail, ServerEvent, SessionStatus } from "@prismshadow/penguin-server/api";
+import type {
+  MessagesLiveTail,
+  PendingSteeringInfo,
+  ServerEvent,
+  SessionStatus,
+} from "@prismshadow/penguin-server/api";
 import { createStreamController } from "../src/lib/omni/stream-controller";
 import type { StreamController } from "../src/lib/omni/stream-controller";
 import { approvalKey, findToolCard } from "../src/lib/omni/stream-model";
@@ -38,6 +43,7 @@ const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 interface Harness {
   controller: StreamController;
   states: SessionStatus[];
+  pendingSteering: PendingSteeringInfo[][];
   errors: Array<string | null>;
   loadings: boolean[];
   loadCalls: () => number;
@@ -59,6 +65,7 @@ function createHarness(): Harness {
     reject: (e: unknown) => void;
   }> = [];
   const states: SessionStatus[] = [];
+  const pendingSteering: PendingSteeringInfo[][] = [];
   const errors: Array<string | null> = [];
   const loadings: boolean[] = [];
   let calls = 0;
@@ -73,6 +80,7 @@ function createHarness(): Harness {
         pendingLoads.push({ resolve, reject });
       }),
     onTaskState: (s) => states.push(s),
+    onPendingSteering: (items) => pendingSteering.push(items),
     onLoading: (l) => loadings.push(l),
     onError: (e) => errors.push(e),
     onModelChange: () => {},
@@ -82,6 +90,7 @@ function createHarness(): Harness {
   return {
     controller,
     states,
+    pendingSteering,
     errors,
     loadings,
     loadCalls: () => calls,
@@ -171,6 +180,19 @@ describe("in-stream task_state is the authoritative running state (history-closi
     h.controller.handleServer({ type: "task_state", state: "running" });
     // History hasn't returned yet, but state is already reported.
     expect(h.states).toEqual(["running"]);
+  });
+
+  it("reports the pending-steering mirror from task_state, and its absence as empty", async () => {
+    const h = createHarness();
+    void h.controller.load();
+    h.controller.handleServer({
+      type: "task_state",
+      state: "running",
+      pendingSteering: [{ text: "hold on", images: 0, files: 1 }],
+    });
+    // A later event without the field means "none left" — reported as empty, not skipped.
+    h.controller.handleServer({ type: "task_state", state: "running" });
+    expect(h.pendingSteering).toEqual([[{ text: "hold on", images: 0, files: 1 }], []]);
   });
 
   it("closes the current Task before an auto-started queued follow-up begins", async () => {

@@ -721,14 +721,27 @@ export function ChatPage() {
 
   // Mid-run steering: the message is queued on the server and delivered between turns as a
   // standalone `[user_steering]` user message followed by its images (visible once they
-  // arrive over SSE / from the Trace). "not_running" (409) means no Task is in progress
-  // anymore (race with completion): the input area then falls back to its **full** normal
-  // send path — skills and the whole draft included — rather than a text+images task.
+  // arrive over SSE / from the Trace); file attachments land in the Session scratchpad and
+  // ride the steering text as `[attached file: <path>]` lines, exactly as a task's do. On
+  // "queued" the localStorage draft is discarded, like a successful send — without this a
+  // reload resurrects the already-sent text as a draft, and re-sending it duplicates the
+  // steering message (#136). "not_running" (409) means no Task is in progress anymore (race
+  // with completion): the input area then falls back to its **full** normal send path —
+  // skills and the whole draft included — rather than a text+images task.
   const onSteer = useCallback(
-    async (text: string, images: string[] = []): Promise<"queued" | "not_running" | "failed"> => {
+    async (
+      text: string,
+      images: string[] = [],
+      files: { fileName: string; dataUrl: string }[] = [],
+    ): Promise<"queued" | "not_running" | "failed"> => {
       if (!selected) return "failed";
       try {
-        await api.postSteer(selected.sessionId, { text, ...(images.length > 0 ? { images } : {}) });
+        await api.postSteer(selected.sessionId, {
+          text,
+          ...(images.length > 0 ? { images } : {}),
+          ...(files.length > 0 ? { files } : {}),
+        });
+        discardSessionDraft();
         return "queued";
       } catch (e) {
         if (e instanceof ApiError && e.status === 409) return "not_running";
@@ -736,7 +749,7 @@ export function ChatPage() {
         return "failed";
       }
     },
-    [selected],
+    [selected, discardSessionDraft],
   );
 
   const onApprove = useCallback(
@@ -881,6 +894,7 @@ export function ChatPage() {
       // Count of steering messages already visible in the stream: the input area keeps its
       // "queued" indicator up until this count increases (i.e. the steering message arrived).
       steeringDeliveredCount={stream.model.items.filter((i) => i.kind === "user_steering").length}
+      pendingSteering={stream.pendingSteering}
       onQueueFollowUp={onQueueFollowUp}
       queuedFollowUps={stream.queuedFollowUps}
       onStop={onStop}

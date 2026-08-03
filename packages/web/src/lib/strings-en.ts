@@ -708,6 +708,9 @@ Scenarios:
     steerSend: "Send to the running agent",
     /** Queued hint shown after a successful steer, until the steering message appears in the stream. */
     steerQueuedIndicator: "Steering queued — delivered with the next turn",
+    /** Same hint, with the queued message's content (from the server's undelivered-steering mirror; survives reloads). */
+    steerQueuedItem: (content: string) =>
+      `Steering queued — delivered with the next turn: ${content}`,
     /** Label of the [user_steering] chip (a mid-run user message delivered between turns). */
     userSteering: "User steering",
     /** Mid-run send-mode setting: steer (delivered mid-run) vs follow-up (queued until the run ends). */
@@ -797,6 +800,7 @@ Scenarios:
     openWorkspace: "Open workspace",
     openAgents: "Agents panel",
     filesInMessage: (n: number) => `${n} ${n === 1 ? "file" : "files"}`,
+    imagesInMessage: (n: number) => `${n} ${n === 1 ? "image" : "images"}`,
     openPreview: "Click to preview",
     showMoreFiles: (n: number) => `Show ${n} more ${n === 1 ? "file" : "files"}`,
     showLess: "Show less",
