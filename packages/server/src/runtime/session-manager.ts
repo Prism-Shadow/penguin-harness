@@ -1056,6 +1056,10 @@ export class SessionManager {
     gen: AsyncGenerator<OmniMessage>,
     titleSource?: { userExcerpt: string },
   ): Promise<void> {
+    // Every driven run (task, goal round, compaction) writes Trace lines: flip the row's
+    // has_trace cache here, the single choke point, so listing can serve it from the DB
+    // without a directory walk (see SessionService.listSessions).
+    this.deps.sessions.markHasTrace(entry.sessionId);
     let earlyTitleFired = false;
     let mainBodyChars = 0;
     const ctx: UsageContext = {
@@ -1276,6 +1280,8 @@ export class SessionManager {
       // inserted with defaults (matches the convention for Sessions discovered by the CLI).
       approvalMode: "allow-all",
       title: null,
+      // Spawned by this server's run (client NULL = web); its Trace exists by construction.
+      hasTrace: true,
       createdAt: new Date().toISOString(),
     });
     // Make the subagent appear immediately in the sidebar: notify via the parent

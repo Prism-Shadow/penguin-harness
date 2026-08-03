@@ -33,6 +33,8 @@ export const zh = {
 
   settings: {
     language: "语言",
+    /** Sidebar Session list: also show CLI-created Sessions (default off — the list then never scans the Trace directories). */
+    showCliSessions: "显示 CLI 会话",
     theme: "主题",
     themeLight: "浅色",
     themeDark: "深色",
@@ -777,6 +779,8 @@ Benchmark：
     openPreview: "点击预览",
     showMoreFiles: (n: number) => `显示其余 ${n} 个文件`,
     showLess: "收起",
+    /** Reveal the next page of sidebar groups (#139); n = groups still hidden. */
+    moreGroups: (n: number) => `更多分组（${n}）`,
     contextUsage: "上下文占用",
     contextUnknown: "上下文占用：压缩后待下次请求回报",
     slashHint: "输入 / 使用命令",

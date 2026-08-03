@@ -217,6 +217,8 @@ function parseGoalField(body: Record<string, unknown>): { budget: number } | nul
 export function agentSessionsRoutes(deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
+  // `cli=1` widens the list to CLI-created Sessions (Trace-directory discovery + adoption);
+  // the default serves web rows straight from the DB (see SessionService.listSessions).
   app.get("/", async (c) => {
     // Id validity is checked before any path is constructed (FD-4: guards against agentId path traversal across Projects).
     const projectId = requireValidId(c, "projectId");
@@ -234,6 +236,8 @@ export function agentSessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     }
     const rawCounts = c.req.query("counts");
     if (rawCounts !== undefined && rawCounts !== "1") throw badRequest("counts only accepts 1.");
+    const rawCli = c.req.query("cli");
+    if (rawCli !== undefined && rawCli !== "1") throw badRequest("cli only accepts 1.");
     const { sessions, counts, workspaceCounts } = await deps.sessionService.listSessions(
       projectId,
       agentId,
@@ -241,6 +245,7 @@ export function agentSessionsRoutes(deps: AppDeps): Hono<AppEnv> {
         ...(paging ? { paging } : {}),
         ...(rawCategory !== undefined ? { category: rawCategory as SessionCategory } : {}),
         ...(rawCounts !== undefined ? { withCounts: true } : {}),
+        ...(rawCli !== undefined ? { includeCli: true } : {}),
       },
     );
     return c.json({

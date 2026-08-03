@@ -31,6 +31,8 @@ export const en: Strings = {
 
   settings: {
     language: "Language",
+    /** Sidebar Session list: also show CLI-created Sessions (default off — the list then never scans the Trace directories). */
+    showCliSessions: "Show CLI sessions",
     theme: "Theme",
     themeLight: "Light",
     themeDark: "Dark",
@@ -796,6 +798,8 @@ Scenarios:
     openPreview: "Click to preview",
     showMoreFiles: (n: number) => `Show ${n} more ${n === 1 ? "file" : "files"}`,
     showLess: "Show less",
+    /** Reveal the next page of sidebar groups (#139); n = groups still hidden. */
+    moreGroups: (n: number) => `More groups (${n})`,
     contextUsage: "Context usage",
     contextUnknown: "Context usage: unknown until the next request reports it",
     slashHint: "Type / for commands",

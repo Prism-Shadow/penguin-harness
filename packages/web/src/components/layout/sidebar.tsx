@@ -36,6 +36,7 @@ import { agentDisplayName, projectDisplayName, useProject } from "../../state/pr
 import { useSessions } from "../../state/sessions";
 import {
   FOLDER_CATEGORIES,
+  SIDEBAR_GROUP_PAGE_SIZE,
   SIDEBAR_PAGE_SIZE,
   aggregateWorkspaceCounts,
   groupSessionsByWorkspace,
@@ -45,6 +46,7 @@ import {
   workspaceGroupKey,
 } from "../../lib/session-grouping";
 import type { FolderCategory, SessionPartition } from "../../lib/session-grouping";
+import { Switch } from "../ui/switch";
 import { Dropdown } from "../ui/dropdown";
 import { AgentAvatar } from "../ui/agent-avatar";
 import { Chevron } from "../ui/chevron";
@@ -214,6 +216,8 @@ export function Sidebar({
     loading,
     remove,
     replace,
+    showCliSessions,
+    setShowCliSessions,
   } = useSessions();
   const chatMatch = useMatch("/chat/:sessionId");
   const activeSessionId = chatMatch?.params.sessionId ?? null;
@@ -281,6 +285,7 @@ export function Sidebar({
   useEffect(() => {
     setCollapsedGroups(loadGroupSet(collapseStoreKey));
     setPinnedGroups(loadGroupSet(pinStoreKey));
+    setGroupCap(SIDEBAR_GROUP_PAGE_SIZE);
   }, [collapseStoreKey, pinStoreKey]);
   /** Expanded folders (subagent / scheduled / archived; collapsed by default), keyed by folderKey — each folder has its own open state. */
   const [openFolders, setOpenFolders] = useState<ReadonlySet<string>>(new Set());
@@ -288,6 +293,8 @@ export function Sidebar({
   const [pendingLoads, setPendingLoads] = useState<ReadonlySet<string>>(new Set());
   /** Per-group display cap for active rows (keyed by group key; absent = SIDEBAR_PAGE_SIZE). "More" raises it a page at a time. */
   const [groupCaps, setGroupCaps] = useState<ReadonlyMap<string, number>>(new Map());
+  /** How many GROUPS render (#139: dozens of Agents/Workspaces made the list too tall to scan); "more groups" raises it a page at a time, reset per Project and on a mode switch. */
+  const [groupCap, setGroupCap] = useState(SIDEBAR_GROUP_PAGE_SIZE);
   /** Session pending delete confirmation (null = none). */
   const [deletingSession, setDeletingSession] = useState<SessionInfo | null>(null);
   const [deletingBusy, setDeletingBusy] = useState(false);
@@ -300,6 +307,8 @@ export function Sidebar({
   const setGroupMode = (mode: GroupMode) => {
     localStorage.setItem(GROUP_MODE_KEY, mode);
     setGroupModeState(mode);
+    // The two modes have unrelated group lists: restart the reveal window.
+    setGroupCap(SIDEBAR_GROUP_PAGE_SIZE);
   };
 
   /** Workspace groups (workspace mode): computed from the flat list, temp directories merged last. */
@@ -665,6 +674,18 @@ export function Sidebar({
     );
   };
 
+  /** Reveal-next-page-of-groups row (render cap only — data loading is untouched). */
+  const moreGroupsRow = (total: number) => (
+    <button
+      type="button"
+      onClick={() => setGroupCap((c) => c + SIDEBAR_GROUP_PAGE_SIZE)}
+      className={`${folderClass} mt-1`}
+    >
+      <span className="w-3" aria-hidden />
+      {S.chat.moreGroups(total - groupCap)}
+    </button>
+  );
+
   const navItems: Array<{ to: string; label: string; icon: string }> = [
     { to: "/agents", label: S.nav.agents, icon: NAV_ICONS.agents },
     { to: "/skills", label: S.nav.skills, icon: NAV_ICONS.skills },
@@ -869,7 +890,7 @@ export function Sidebar({
           loading && agents.length === 0 ? (
             <SkeletonList rows={5} />
           ) : (
-            orderedAgents.map((agent) => {
+            orderedAgents.slice(0, groupCap).map((agent) => {
               const parts = partitionSessions(byAgent.get(agent.agentId) ?? []);
               const collapsed = collapsedGroups.has(agent.agentId);
               const pinned = pinnedGroups.has(agent.agentId);
@@ -933,14 +954,18 @@ export function Sidebar({
               );
             })
           )
-        ) : loading && sessions.length === 0 ? (
+        ) : null}
+        {groupMode === "agent" && orderedAgents.length > groupCap
+          ? moreGroupsRow(orderedAgents.length)
+          : null}
+        {groupMode === "agent" ? null : loading && sessions.length === 0 ? (
           <SkeletonList rows={5} />
         ) : orderedWorkspaceGroups.length === 0 ? (
           <p className="px-2.5 pt-3 text-xs text-gray-400 dark:text-gray-600">
             {S.chat.noSessions}
           </p>
         ) : (
-          orderedWorkspaceGroups.map((group) => {
+          orderedWorkspaceGroups.slice(0, groupCap).map((group) => {
             const parts = partitionSessions(group.sessions);
             const collapsed = collapsedGroups.has(group.key);
             const pinned = pinnedGroups.has(group.key);
@@ -1004,6 +1029,9 @@ export function Sidebar({
             );
           })
         )}
+        {groupMode === "workspace" && orderedWorkspaceGroups.length > groupCap
+          ? moreGroupsRow(orderedWorkspaceGroups.length)
+          : null}
       </div>
 
       {/* Bottom user config */}
@@ -1057,6 +1085,11 @@ export function Sidebar({
             </SettingRow>
             <SettingRow label={S.settings.language}>
               <Segmented options={langOptions} value={lang} onChange={setLang} />
+            </SettingRow>
+            {/* Off (default) = the sidebar lists only web-created Sessions, served straight
+                from the DB; on = CLI Sessions are discovered from the Trace directory too. */}
+            <SettingRow label={S.settings.showCliSessions}>
+              <Switch checked={showCliSessions} onChange={setShowCliSessions} />
             </SettingRow>
           </div>
           <div className="mt-1 border-t border-gray-100 pt-1 dark:border-gray-800">

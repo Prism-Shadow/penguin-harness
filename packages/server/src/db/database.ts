@@ -24,5 +24,17 @@ export function openDatabase(dbPath: string): DatabaseSync {
   db.exec("PRAGMA journal_mode = WAL;");
   db.exec("PRAGMA foreign_keys = ON;");
   db.exec(SCHEMA_SQL);
+  // Columns added to the schema after a web.db was formed: CREATE TABLE IF NOT EXISTS never
+  // touches an existing table, so they are ALTERed in here. Keep the list in sync with
+  // schema.ts; drop entries only in a release allowed to break existing web.db files.
+  ensureColumn(db, "sessions", "client", "TEXT");
+  ensureColumn(db, "sessions", "has_trace", "INTEGER NOT NULL DEFAULT 0");
   return db;
+}
+
+/** Idempotent per-column upgrade for databases formed before the column existed. */
+function ensureColumn(db: DatabaseSync, table: string, column: string, ddl: string): void {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+  if (cols.some((c) => c.name === column)) return;
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
 }
