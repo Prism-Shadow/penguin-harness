@@ -5,10 +5,10 @@
  * Anthropic / OpenAI / Google Gemini / DeepSeek / Moonshot AI / OpenRouter /
  * SiliconFlow / Qwen Token Plan / Qwen Pay-As-You-Go / Fireworks AI use each
  * vendor's brand mark (for recognition purposes, not under trademark license;
- * Qwen's official gradient wordmark is flattened to currentColor monochrome);
- * Z.AI uses a simplified geometric approximation of its branded glyph (not an
- * exact reproduction of the trademark); custom models use a generic cube. All
- * are pure paths, no external image assets.
+ * Qwen's official gradient wordmark is flattened to currentColor monochrome).
+ * MiniMax uses an original M letter treatment, and Z.AI uses a simplified geometric
+ * approximation of its branded glyph (neither is an exact trademark reproduction);
+ * custom models use a generic cube. All are pure paths, no external image assets.
  *
  * Vendor ids outside the preset table are user-defined groups: instead of all
  * sharing the cube (which made same-named models across groups
@@ -92,6 +92,10 @@ const GLYPHS: Record<string, Glyph> = {
   },
   "qwen-token-plan": QWEN_GLYPH,
   "qwen-pay-as-you-go": QWEN_GLYPH,
+  "minimax-token-plan": {
+    // Original letterform: intentionally not derived from MiniMax's trademark artwork.
+    path: <path d="M3 19V5h3.4L12 13l5.6-8H21v14h-3v-8.9l-5.1 7.1h-1.8L6 10.1V19H3Z" />,
+  },
   fireworks: {
     // The official Fireworks AI burst mark (three strokes of the wordmark's icon).
     viewBox: "0 0 638 315",
