@@ -1,6 +1,8 @@
-# Unreleased
+# Version 0.2.0
 
-Changes since v0.1.5. The version number is assigned at release, when this folder is renamed.
+Released on 2026-08-03.
+
+- [2026-08-03] Tooling: Release assets are mirrored to Alibaba Cloud OSS — the mirror-oss release job re-uploads the exact checksum-verified GitHub Release artifacts (`latest.json` last, only after every asset landed), and the installers gain a download-source switch (`PENGUIN_DOWNLOAD_SOURCE=auto|oss|github`, auto preferring OSS with a same-version GitHub fallback) plus validated `PENGUIN_DOWNLOAD_BASE_URL` overrides, with a staging workflow and installer tests covering the mirror path. ([details](2026-08-03-oss-distribution.md))
 
 - [2026-08-03] Web App: three chat-navigation aids — ↑ recalls the session's previous inputs shell-style in the composer, the "Reasoning & Tools" header and the current thinking/tool row stick to the top of the stream stacked by level so long runs collapse from anywhere inside them, and a zero-width tick-rail minimap over the stream's left gutter previews every exchange on hover (question + truncated answer) for one-click jumps. ([details](2026-08-03-web-chat-navigation.md))
 
