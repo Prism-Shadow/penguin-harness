@@ -3,7 +3,7 @@ name: agenthub-models
 description: Call model APIs through @prismshadow/agenthub — streaming text generation, image generation, speech synthesis, embeddings and the supported-model registry with one client.
 short_description: Call model APIs with one AgentHub client.
 short_description_zh: 用一个 AgentHub 客户端调用模型 API。
-version: 8
+version: 9
 updated: 2026-07-22T00:00:00Z
 ---
 
@@ -60,7 +60,7 @@ Use exact model ids. If an id is not in the table below and the user has not giv
 | OpenAI embedding | `text-embedding-3-small`, `text-embedding-3-large`                    | —                                                                                                                                               |
 | Kimi K3          | `kimi-k3`                                                             | OpenRouter `moonshotai/kimi-k3`                                                                                                                 |
 | Kimi K2.6        | `kimi-k2.6`                                                           | OpenRouter `moonshotai/kimi-k2.6`; SiliconFlow `Pro/moonshotai/Kimi-K2.6`                                                                       |
-| DeepSeek V4      | `deepseek-v4-pro`, `deepseek-v4-flash`                                | OpenRouter `deepseek/deepseek-v4-pro`, `deepseek/deepseek-v4-flash`; SiliconFlow `deepseek-ai/DeepSeek-V4-Pro`, `deepseek-ai/DeepSeek-V4-Flash` |
+| DeepSeek V4      | `deepseek-v4-pro`, `deepseek-v4-flash`                                | OpenRouter `deepseek/deepseek-v4-pro`, `deepseek/deepseek-v4-flash`, `deepseek/deepseek-v4-flash-0731`; SiliconFlow `deepseek-ai/DeepSeek-V4-Pro`, `deepseek-ai/DeepSeek-V4-Flash` |
 | GLM 5.2          | `glm-5.2`                                                             | OpenRouter `z-ai/glm-5.2`; SiliconFlow `zai-org/GLM-5.2`                                                                                        |
 | GLM 5.1          | `glm-5.1`                                                             | OpenRouter `z-ai/glm-5.1`; SiliconFlow `Pro/zai-org/GLM-5.1`                                                                                    |
 | Qwen 3.6         | —                                                                     | OpenRouter `qwen/qwen3.6-35b-a3b`; SiliconFlow `Qwen/Qwen3.6-35B-A3B`                                                                           |
