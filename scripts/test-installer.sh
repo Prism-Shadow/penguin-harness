@@ -242,19 +242,36 @@ url=""
 while [ $# -gt 0 ]; do
   case "$1" in
     -o) output="$2"; shift 2 ;;
+    --connect-timeout | --max-time) shift 2 ;;
     -*) shift ;;
     *) url="$1"; shift ;;
   esac
 done
 printf '%s\n' "$url" >> "$REQUEST_LOG"
 base="${url##*/}"
+case "$MODE:$url" in
+  primary-network:https://penguin-harness-releases.oss-cn-beijing.aliyuncs.com/*) exit 7 ;;
+  forced-oss-payload:https://penguin-harness-releases.oss-cn-beijing.aliyuncs.com/*/penguin-*) exit 7 ;;
+esac
 case "$MODE:$base" in
+  forwarder-auto-github:latest.json) exit 7 ;;
+  forwarder-invalid-metadata:latest.json)
+    printf '%s\n' '{"schemaVersion":1,"tag":"../invalid","releaseBaseUrl":"https://example.invalid"}' > "$output"
+    ;;
+  forwarder-oss:latest.json | forced-oss-payload:latest.json)
+    printf '%s\n' '{"schemaVersion":1,"tag":"v0.0.0-test","releaseBaseUrl":"https://penguin-harness-releases.oss-cn-beijing.aliyuncs.com/releases/v0.0.0-test"}' > "$output"
+    ;;
+  forwarder-oss:install.sh | forced-oss-payload:install.sh | forwarder-auto-github:install.sh | forwarder-invalid-metadata:install.sh | canonical:install.sh) cp "$ROOT_DIR/install.sh" "$output" ;;
   404:penguin-*) exit 22 ;;
   network:penguin-*) exit 7 ;;
   outer-sha-mismatch:penguin-*.sha256) printf '%064d  %s\n' 0 "${base%.sha256}" > "$output" ;;
   outer-sha-mismatch:penguin-*) cp "$ARTIFACT_DIR/$base" "$output" ;;
   inner-sha-mismatch:penguin-*.sha256) cp "$BAD_BUNDLE.sha256" "$output" ;;
   inner-sha-mismatch:penguin-*) cp "$BAD_BUNDLE" "$output" ;;
+  primary-network:penguin-*.sha256) cp "$ARTIFACT_DIR/$base" "$output" ;;
+  primary-network:penguin-*) cp "$ARTIFACT_DIR/$base" "$output" ;;
+  forced-oss-payload:penguin-*.sha256) cp "$ARTIFACT_DIR/$base" "$output" ;;
+  forced-oss-payload:penguin-*) cp "$ARTIFACT_DIR/$base" "$output" ;;
   legacy:penguin-*.sha256) cp "$LEGACY_ARCHIVE.sha256" "$output" ;;
   legacy:penguin-*) cp "$LEGACY_ARCHIVE" "$output" ;;
   canonical:penguin-*.sha256) cp "$ARTIFACT_DIR/$base" "$output" ;;
@@ -263,7 +280,7 @@ case "$MODE:$base" in
 esac
 EOF
 chmod +x "$STUB_BIN/curl"
-export ARTIFACT_DIR BAD_BUNDLE LEGACY_ARCHIVE
+export ARTIFACT_DIR BAD_BUNDLE LEGACY_ARCHIVE ROOT_DIR
 
 run_online_case() {
   name="$1"
@@ -271,13 +288,18 @@ run_online_case() {
   version="$3"
   expected="$4"
   expected_requests="$5"
+  download_base_url="${6:-}"
+  download_fallback_base_url="${7:-}"
   CASE_LOG="$WORK_DIR/$name.log"
+  CASE_OUTPUT="$WORK_DIR/$name.output"
   CASE_INSTALL="$WORK_DIR/$name-install"
   : > "$CASE_LOG"
   set +e
   REQUEST_LOG="$CASE_LOG" MODE="$mode" PATH="$STUB_BIN:$PATH" \
     HOME="$WORK_DIR/$name-home" PENGUIN_INSTALL_DIR="$CASE_INSTALL" \
-    PENGUIN_VERSION="$version" sh "$ROOT_DIR/install.sh" >/dev/null 2>&1
+    PENGUIN_VERSION="$version" PENGUIN_DOWNLOAD_BASE_URL="$download_base_url" \
+    PENGUIN_DOWNLOAD_FALLBACK_BASE_URL="$download_fallback_base_url" \
+    sh "$ROOT_DIR/install.sh" >"$CASE_OUTPUT" 2>&1
   status=$?
   set -e
   if [ "$expected" = "success" ]; then
@@ -294,6 +316,22 @@ run_online_case canonical canonical "" success 2
   || fail_test "canonical online install did not produce a working command"
 grep -q "/releases/latest/download/$HOST_ASSET\$" "$WORK_DIR/canonical.log" \
   || fail_test "canonical did not request the canonical bundle"
+run_online_case download-base-override canonical "" success 2 \
+  "https://penguin-harness-releases.oss-cn-beijing.aliyuncs.com/releases/v0.0.0-test" ""
+grep -q "OSS mirror" "$WORK_DIR/download-base-override.output" \
+  || fail_test "download base override did not identify the OSS mirror"
+! grep -q "aliyuncs.com" "$WORK_DIR/download-base-override.output" \
+  || fail_test "download base override exposed the OSS URL in normal output"
+run_online_case download-fallback primary-network "" success 3 \
+  "https://penguin-harness-releases.oss-cn-beijing.aliyuncs.com/releases/v0.0.0-test" \
+  "https://github.com/Prism-Shadow/penguin-harness/releases/download/v0.0.0-test"
+[ "$(sed -n '1p' "$WORK_DIR/download-fallback.log")" = \
+  "https://penguin-harness-releases.oss-cn-beijing.aliyuncs.com/releases/v0.0.0-test/$HOST_ASSET" ] \
+  || fail_test "download fallback did not try the primary source first"
+grep -q "github.com/.*/releases/download/v0.0.0-test/$HOST_ASSET\$" "$WORK_DIR/download-fallback.log" \
+  || fail_test "download fallback did not use the same-version GitHub source"
+! grep -q "aliyuncs.com" "$WORK_DIR/download-fallback.output" \
+  || fail_test "download fallback exposed the OSS URL in normal output"
 run_online_case outer-mismatch outer-sha-mismatch "" failure 2
 run_online_case inner-mismatch inner-sha-mismatch "" failure 2
 run_online_case latest-404 404 "" failure 1
@@ -301,5 +339,74 @@ run_online_case pinned-network network v0.1.4 failure 1
 run_online_case pinned-legacy legacy v0.1.4 success 2
 grep -q "/releases/download/v0.1.4/$HOST_ASSET\$" "$WORK_DIR/pinned-legacy.log" \
   || fail_test "pinned legacy did not request the pinned asset"
+
+# --- Stable penguin.ooo forwarder: prefer a validated immutable OSS release, but fall back to
+#     GitHub when the metadata probe fails. The real installer uses a local fixture here so the
+#     test isolates bootstrap routing from bundle download behavior above. ---
+run_forwarder_case() {
+  name="$1"
+  mode="$2"
+  expected_requests="$3"
+  source="${4:-auto}"
+  version="${5:-}"
+  expected="${6:-success}"
+  CASE_LOG="$WORK_DIR/$name.log"
+  CASE_OUTPUT="$WORK_DIR/$name.output"
+  CASE_INSTALL="$WORK_DIR/$name-install"
+  : > "$CASE_LOG"
+  if [ -n "$version" ]; then
+    archive=""
+  else
+    archive="$ARTIFACT_DIR/$HOST_ASSET"
+  fi
+  set +e
+  REQUEST_LOG="$CASE_LOG" MODE="$mode" PATH="$STUB_BIN:$PATH" \
+    HOME="$WORK_DIR/$name-home" PENGUIN_INSTALL_DIR="$CASE_INSTALL" \
+    PENGUIN_ARCHIVE="$archive" PENGUIN_VERSION="$version" \
+    PENGUIN_DOWNLOAD_SOURCE="$source" PENGUIN_DOWNLOAD_BASE_URL="" \
+    PENGUIN_DOWNLOAD_FALLBACK_BASE_URL="" \
+    sh "$ROOT_DIR/packages/landing/public/install.sh" >"$CASE_OUTPUT" 2>&1
+  status=$?
+  set -e
+  if [ "$expected" = "success" ]; then
+    [ "$status" -eq 0 ] || fail_test "$name unexpectedly failed"
+  else
+    [ "$status" -ne 0 ] || fail_test "$name unexpectedly succeeded"
+  fi
+  [ "$(wc -l < "$CASE_LOG" | tr -d ' ')" -eq "$expected_requests" ] \
+    || fail_test "$name made an unexpected number of requests"
+  ! grep -q "aliyuncs.com" "$CASE_OUTPUT" \
+    || fail_test "$name exposed the OSS URL in normal output"
+}
+
+run_forwarder_case forwarder-oss forwarder-oss 2
+grep -q "/latest.json\$" "$WORK_DIR/forwarder-oss.log" \
+  || fail_test "OSS forwarder did not request release metadata first"
+grep -q "/releases/v0.0.0-test/install.sh\$" "$WORK_DIR/forwarder-oss.log" \
+  || fail_test "OSS forwarder did not request the versioned installer"
+
+run_forwarder_case forwarder-auto-github forwarder-auto-github 2
+grep -q "github.com/.*/releases/latest/download/install.sh\$" "$WORK_DIR/forwarder-auto-github.log" \
+  || fail_test "forwarder did not fall back to the GitHub installer"
+
+run_forwarder_case forwarder-invalid-metadata forwarder-invalid-metadata 2
+grep -q "github.com/.*/releases/latest/download/install.sh\$" "$WORK_DIR/forwarder-invalid-metadata.log" \
+  || fail_test "invalid OSS metadata did not fall back to the GitHub installer"
+
+run_forwarder_case forwarder-github canonical 1 github
+grep -q "github.com/.*/releases/latest/download/install.sh\$" "$WORK_DIR/forwarder-github.log" \
+  || fail_test "forced GitHub mode did not request the GitHub installer"
+
+run_forwarder_case forwarder-forced-oss-no-fallback forced-oss-payload 2 oss v0.0.0-test failure
+! grep -q "github.com" "$WORK_DIR/forwarder-forced-oss-no-fallback.log" \
+  || fail_test "forced OSS mode unexpectedly fell back to GitHub"
+
+run_forwarder_case forwarder-pinned canonical 3 auto v0.0.0-test
+[ "$(sed -n '1p' "$WORK_DIR/forwarder-pinned.log")" = \
+  "https://penguin-harness-releases.oss-cn-beijing.aliyuncs.com/releases/v0.0.0-test/install.sh" ] \
+  || fail_test "pinned forwarder did not request the versioned installer"
+[ "$(sed -n '2p' "$WORK_DIR/forwarder-pinned.log")" = \
+  "https://penguin-harness-releases.oss-cn-beijing.aliyuncs.com/releases/v0.0.0-test/$HOST_ASSET" ] \
+  || fail_test "pinned installer did not keep the selected release version"
 
 echo "Installer bundle, offline, rollback and online tests passed."

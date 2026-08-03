@@ -7,6 +7,8 @@
 #   PENGUIN_VERSION=vX.Y.Z    pin a version (same as --version vX.Y.Z); default is the latest Release
 #   PENGUIN_INSTALL_DIR=<dir> install dir; default ~/.penguin
 #   PENGUIN_ARCHIVE=<file>    install a local Release archive without network access (same as --archive <file>)
+#   PENGUIN_DOWNLOAD_BASE_URL=<url> exact online asset directory selected by the stable forwarder
+#   PENGUIN_DOWNLOAD_FALLBACK_BASE_URL=<url> same-version fallback asset directory
 #   --universal               install the universal package (no bundled Node runtime; needs system Node >= 24)
 #
 # Each Release attaches exactly one artifact per target: penguin-<target>.tar.gz, a shallow
@@ -29,11 +31,38 @@ INSTALL_DIR="${PENGUIN_INSTALL_DIR:-$HOME/.penguin}"
 BIN_DIR="$HOME/.local/bin"
 UNIVERSAL=0
 ARCHIVE="${PENGUIN_ARCHIVE:-}"
+DOWNLOAD_BASE_URL="${PENGUIN_DOWNLOAD_BASE_URL:-}"
+DOWNLOAD_FALLBACK_BASE_URL="${PENGUIN_DOWNLOAD_FALLBACK_BASE_URL:-}"
 PAYLOAD_NAME="payload.tar.gz"
 
 fail() {
   echo "error: $1" >&2
   exit 1
+}
+
+validate_https_url() {
+  case "$2" in
+    https://*) ;;
+    *) fail "$1 must be an absolute HTTPS URL" ;;
+  esac
+}
+
+validate_release_tag() {
+  case "$1" in
+    v[0-9A-Za-z]* ) ;;
+    *) fail "invalid release version: $1" ;;
+  esac
+  case "$1" in
+    *[!0-9A-Za-z._-]*) fail "invalid release version: $1" ;;
+  esac
+}
+
+download_source_label() {
+  case "$1" in
+    https://*.aliyuncs.com/*) printf '%s\n' "OSS mirror" ;;
+    https://github.com/*) printf '%s\n' "GitHub" ;;
+    *) printf '%s\n' "configured mirror" ;;
+  esac
 }
 
 # --- Parse args (also passable via curl | sh -s -- --universal) ---
@@ -78,6 +107,17 @@ ASSET="penguin-$TARGET.tar.gz"
 
 if [ -n "$ARCHIVE" ] && [ -n "$VERSION" ]; then
   fail "--archive/PENGUIN_ARCHIVE cannot be combined with --version/PENGUIN_VERSION"
+fi
+if [ -n "$VERSION" ]; then
+  validate_release_tag "$VERSION"
+fi
+if [ -n "$DOWNLOAD_BASE_URL" ]; then
+  DOWNLOAD_BASE_URL="${DOWNLOAD_BASE_URL%/}"
+  validate_https_url PENGUIN_DOWNLOAD_BASE_URL "$DOWNLOAD_BASE_URL"
+fi
+if [ -n "$DOWNLOAD_FALLBACK_BASE_URL" ]; then
+  DOWNLOAD_FALLBACK_BASE_URL="${DOWNLOAD_FALLBACK_BASE_URL%/}"
+  validate_https_url PENGUIN_DOWNLOAD_FALLBACK_BASE_URL "$DOWNLOAD_FALLBACK_BASE_URL"
 fi
 
 # --- Universal package precheck: system Node >= 24 (platform packages bundle the runtime, so exempt) ---
@@ -184,6 +224,21 @@ verify_sha256() {
   echo "$3 checksum OK."
 }
 
+# Downloads the bundle and its checksum as a pair. Transport failures may try a same-version
+# fallback; checksum failures are handled afterwards and always abort rather than being hidden
+# by a different source.
+download_release_pair() {
+  drp_base="$1"
+  drp_label="$(download_source_label "$drp_base")"
+  echo "Downloading $ASSET from $drp_label ..."
+  rm -f "$ARCHIVE_PATH" "$TMP/$ASSET.sha256"
+  curl -fSL --progress-bar "$drp_base/$ASSET" -o "$ARCHIVE_PATH" \
+    || return 1
+  curl -fsSL "$drp_base/$ASSET.sha256" -o "$TMP/$ASSET.sha256" \
+    || return 1
+  return 0
+}
+
 # --- Resolve the program payload. Three entries converge on PAYLOAD_PATH:
 #     (a) bundled offline: this script sits next to payload.tar.gz in an extracted bundle;
 #     (b) --archive <file>: a local installer bundle, or a payload/legacy program archive;
@@ -231,18 +286,24 @@ elif [ -n "$ARCHIVE" ]; then
   echo "Using local archive $ARCHIVE_PATH ..."
 else
   # (c) Online: download the canonical bundle; the published checksum is mandatory.
-  if [ -n "$VERSION" ]; then
+  if [ -n "$DOWNLOAD_BASE_URL" ]; then
+    BASE_URL="$DOWNLOAD_BASE_URL"
+  elif [ -n "$VERSION" ]; then
     BASE_URL="$REPO/releases/download/$VERSION"
   else
     BASE_URL="$REPO/releases/latest/download"
   fi
   ARCHIVE_PATH="$TMP/$ASSET"
   ARCHIVE_NAME="$ASSET"
-  echo "Downloading $BASE_URL/$ASSET ..."
-  curl -fSL --progress-bar "$BASE_URL/$ASSET" -o "$ARCHIVE_PATH" \
-    || fail "download failed. Check the version tag and your network, then retry."
-  curl -fsSL "$BASE_URL/$ASSET.sha256" -o "$TMP/$ASSET.sha256" \
-    || fail "checksum download failed. Check the version tag and your network, then retry."
+  if ! download_release_pair "$BASE_URL"; then
+    if [ -n "$DOWNLOAD_FALLBACK_BASE_URL" ] && [ "$DOWNLOAD_FALLBACK_BASE_URL" != "$BASE_URL" ]; then
+      echo "Primary download source unavailable; trying $(download_source_label "$DOWNLOAD_FALLBACK_BASE_URL") ..."
+      download_release_pair "$DOWNLOAD_FALLBACK_BASE_URL" \
+        || fail "download failed from both the primary source and its fallback. Check your network, then retry."
+    else
+      fail "download failed from $(download_source_label "$BASE_URL"). Check the version tag and your network, then retry."
+    fi
+  fi
   verify_sha256 "$ARCHIVE_PATH" "$TMP/$ASSET.sha256" "Bundle"
 fi
 
