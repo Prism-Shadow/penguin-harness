@@ -2,6 +2,8 @@
 
 Changes since v0.1.5. The version number is assigned at release, when this folder is renamed.
 
+- [2026-08-03] Models: the qianwenai groups move to the current lineup (qwen3.8-max and deepseek-v4-flash-0731 in, qwen3.7-max and qwen3.8-max-preview out), OpenRouter gains deepseek/deepseek-v4-flash-0731 and openai/gpt-5.6-luna, drops the delisted poolside/laguna-m.1:free and has every row's cache/input/output prices re-read from the models API, the last unpriced SiliconFlow rows get list prices, and new Projects default to deepseek-v4-flash — existing Projects keep their stored models and default. ([details](2026-08-03-model-catalog-qianwenai-flash.md))
+
 - [2026-08-02] Web App: steering messages survive reloads with their content visible and can carry file attachments, tool-card subtitles render once fully formed instead of jittering, and the session list is DB-served by default with an opt-in CLI-session toggle and paged sidebar groups. ([details](2026-08-02-web-app-steering-and-session-list.md))
 
 - [2026-08-02] File tools: `read_file` / `edit_file` diagnose a missing path — deepest existing ancestor, first missing segment, nearest-named entries — instead of a bare "File not found" that read as absolute paths being rejected; the agent-creation Skill spells out `agent_state/AGENTS.md`. ([details](2026-08-02-file-tool-missing-path-diagnostics.md))
