@@ -12,7 +12,7 @@ Requires `@prismshadow/agenthub` >= 0.4.2, the first release that ships the `min
 
 ## Web App
 
-The provider logo set gains a MiniMax glyph — an original M letterform, intentionally not derived from MiniMax's trademark artwork, consistent with the Z.AI approximation approach.
+The provider logo set gains MiniMax's official stream-lines mark, flattened to currentColor monochrome — the same recognition-purposes treatment as the other vendor brand marks.
 
 ## Docs
 
