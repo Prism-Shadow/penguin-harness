@@ -6,8 +6,17 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { MeResponse, ProjectsResponse } from "../src/api/types.js";
+import { buildAppDeps } from "../src/app.js";
 import { generateInitialAdminPassword } from "../src/auth/service.js";
-import { apiClient, createTestApp, loginAdmin, loginUser, provisionUser } from "./helpers.js";
+import {
+  apiClient,
+  createTestApp,
+  loginAdmin,
+  loginUser,
+  makeTempRoot,
+  provisionUser,
+  testConfig,
+} from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
 describe("auth", () => {
@@ -181,6 +190,20 @@ describe("auth", () => {
       await loginUser(fresh.app, "admin", "penguin-7777");
     } finally {
       await fresh.cleanup();
+    }
+  });
+
+  it("seedAdmin rejects an override below the password policy before creating the account", async () => {
+    const root = await makeTempRoot();
+    const deps = buildAppDeps({ ...testConfig(root), seedAdminPassword: "x" }, { log: () => {} });
+    try {
+      await expect(deps.authService.seedAdmin()).rejects.toThrow(/at least 8 characters/);
+      // Rejected before any insert: no half-created privileged account to retry around.
+      expect(deps.db.prepare("SELECT COUNT(*) AS n FROM users").get()?.n).toBe(0);
+    } finally {
+      deps.channels.dispose();
+      deps.db.close();
+      await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     }
   });
 

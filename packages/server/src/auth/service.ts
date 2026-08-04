@@ -76,6 +76,15 @@ export class AuthService {
   async seedAdmin(): Promise<string | null> {
     if (this.deps.users.count() > 0) return null;
     const password = this.deps.seedAdminPassword ?? generateInitialAdminPassword();
+    // The override (PENGUIN_SEED_ADMIN_PASSWORD) must meet the same policy as every
+    // other initial/reset password; rejecting it here, before any insert, keeps a
+    // configuration typo from creating a trivially weak privileged account. Generated
+    // passwords are always 12 characters and never trip this.
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      throw new Error(
+        `PENGUIN_SEED_ADMIN_PASSWORD must be at least ${MIN_PASSWORD_LENGTH} characters.`,
+      );
+    }
     const user: UserRow = {
       userId: ADMIN_USER_ID,
       passwordHash: await hashPassword(password),
