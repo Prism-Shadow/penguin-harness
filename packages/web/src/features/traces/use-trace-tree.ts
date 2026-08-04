@@ -58,7 +58,12 @@ export interface TraceTree {
   refreshAgent: (agentId: string) => Promise<void>;
 }
 
-export function useTraceTree(projectId: string | null): TraceTree {
+/**
+ * @param includeCli Mirror of the user's "show CLI sessions" preference: appended to
+ * every paged fetch (`cli=1`); flipping it resets and refetches the whole tree under
+ * the new filter, like the sessions store does.
+ */
+export function useTraceTree(projectId: string | null, includeCli = false): TraceTree {
   /** sessionId → pooled row (the newest fetch wins — see module doc). */
   const [rows, setRows] = useState<ReadonlyMap<string, TraceSessionRow>>(new Map());
   const [pageState, setPageState] = useState<ReadonlyMap<string, PagePosition>>(new Map());
@@ -80,7 +85,8 @@ export function useTraceTree(projectId: string | null): TraceTree {
   const countsRef = useRef(countsByAgent);
   countsRef.current = countsByAgent;
 
-  // Project switch: drop everything (rows / cursors / counts are Project-scoped).
+  // Project switch / CLI-preference flip: drop everything (rows / cursors / counts are
+  // Project- and filter-scoped) — consumers' ensure effects then refetch under the new state.
   useEffect(() => {
     gen.current += 1;
     inflight.current.clear();
@@ -92,7 +98,7 @@ export function useTraceTree(projectId: string | null): TraceTree {
     setWorkspaceCountsByAgent(new Map());
     setErrorByAgent(new Map());
     setPending(new Set());
-  }, [projectId]);
+  }, [projectId, includeCli]);
 
   const fetchPage = useCallback(
     async (
@@ -105,6 +111,7 @@ export function useTraceTree(projectId: string | null): TraceTree {
         offset,
         limit: TRACES_PAGE_SIZE + 1,
         category,
+        ...(includeCli ? { cli: true } : {}),
       });
       const page = splitPage(toSessionGroups(res), TRACES_PAGE_SIZE);
       return {
@@ -116,7 +123,7 @@ export function useTraceTree(projectId: string | null): TraceTree {
         ...(res.workspaceCounts !== undefined ? { workspaceCounts: res.workspaceCounts } : {}),
       };
     },
-    [],
+    [includeCli],
   );
 
   /** Merges fetched pages: rows overwrite by sessionId, cursors advance, counts refresh to the newest response. */

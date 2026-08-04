@@ -5,7 +5,8 @@
  * by Agent), group bodies split into the active list plus the collapsed lazy
  * subagent / scheduled / archived folders, and the same "More" paging rows. Data comes
  * from the paginated traces endpoint (paged per (Agent, category), see use-trace-tree),
- * so CLI/subagent Sessions stay visible — this page is the observability surface.
+ * honoring the same "show CLI sessions" preference as the sidebar (default off;
+ * subagent/schedule Sessions stay in their folders regardless of origin).
  * Titles are server-resolved (DB title or first-prompt fallback) with the Sessions
  * store overriding when it has a fresher one; raw session ids never render. The right
  * side shows the selected Session's Trace files (paged, most recent first by default) +
@@ -85,9 +86,15 @@ interface Selection {
 export function TracesPage() {
   useDocumentTitle(S.traces.title);
   const { currentProject, agents, agentsLoading } = useProject();
-  const { byAgent } = useSessions();
+  // showCliSessions: the traces tree follows the same per-user "show CLI sessions"
+  // preference as the sidebar (default off) — CLI-origin Sessions are excluded
+  // server-side from the listing, counts and workspace groups until it is enabled.
+  // A deep link to a CLI Session still resolves while the preference is off: the
+  // selection fallback (selectFromFull) uses the unfiltered legacy endpoint, so the
+  // Session opens in the right pane without appearing in the tree.
+  const { byAgent, showCliSessions } = useSessions();
   const projectId = currentProject?.projectId ?? null;
-  const tree = useTraceTree(projectId);
+  const tree = useTraceTree(projectId, showCliSessions);
   // ?agentId= deep link (from the Agents page's "traces" entry point): forces agent
   // grouping for this visit (the target must be a visible, expanded group) WITHOUT
   // overwriting the stored preference; only the target Agent defaults to expanded.
