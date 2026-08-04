@@ -61,7 +61,20 @@ const HARDENED_ENV: NodeJS.ProcessEnv = {
  * self-development case may legitimately want the same data root — sharing state is a config
  * decision, whereas serving a deployment's code from a workspace checkout never is.
  */
-const STRIPPED_ENV_KEYS = new Set(["PORT", "HOST", "PENGUIN_CLI_ENTRY", "PENGUIN_WEB_DIST"]);
+const STRIPPED_ENV_KEYS = new Set([
+  "PORT",
+  "HOST",
+  "PENGUIN_CLI_ENTRY",
+  "PENGUIN_WEB_DIST",
+  // Desktop-mode process credentials and wiring: the shell's token authorizes the
+  // server shutdown endpoint (and desktop-login until redeemed), and the port file is
+  // the shell's private channel — neither is a user-facing setting, and leaking them
+  // into Agent-run commands would let a prompt-injected command stop the server.
+  "PENGUIN_DESKTOP_TOKEN",
+  "PENGUIN_PORT_FILE",
+  // Pinned seed password (tests/e2e): a credential, not a data-selection setting.
+  "PENGUIN_SEED_ADMIN_PASSWORD",
+]);
 
 /** The host environment minus {@link STRIPPED_ENV_KEYS}. */
 function hostEnvForChild(): NodeJS.ProcessEnv {
