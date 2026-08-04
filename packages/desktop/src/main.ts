@@ -18,6 +18,8 @@ import path from "node:path";
 import { app, BrowserWindow, dialog, shell } from "electron";
 import { resolveRoot } from "@prismshadow/penguin-core";
 import { liveServerLock } from "@prismshadow/penguin-server/lock";
+import { installApplicationMenu } from "./menu.js";
+import { initUpdater } from "./updater.js";
 import { startEmbeddedServer, stopEmbeddedServer } from "./server-process.js";
 import type { EmbeddedServer } from "./server-process.js";
 import {
@@ -200,9 +202,12 @@ if (!app.requestSingleInstanceLock()) {
     }
   });
 
-  void app
-    .whenReady()
-    .then(() => boot().catch((err) => fatal("PenguinHarness failed to start.", err)));
+  void app.whenReady().then(() => {
+    installApplicationMenu();
+    // Updates are surfaced natively (menu + dialogs); the window gets no IPC channel.
+    initUpdater(() => win);
+    return boot().catch((err) => fatal("PenguinHarness failed to start.", err));
+  });
 }
 
 // --- smoke hook ------------------------------------------------------------
