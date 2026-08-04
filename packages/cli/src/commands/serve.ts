@@ -20,13 +20,13 @@ import { DEFAULT_SERVER_PORT } from "@prismshadow/penguin-core";
 import type { Command } from "commander";
 import type { Messages, WebProbeFailureKind } from "../i18n.js";
 
-export type ReadinessFailureKind = WebProbeFailureKind;
-
+/** Why the readiness poll gave up: failure class plus a one-line diagnostic from the last probe. */
 export interface ReadinessFailure {
-  kind: ReadinessFailureKind;
+  kind: WebProbeFailureKind;
   detail: string;
 }
 
+/** Result of `waitForReady`: ready, or timed out with the retained last probe failure. */
 export type ReadinessResult = { ready: true } | { ready: false; failure: ReadinessFailure };
 
 /** Default service port — core's DEFAULT_SERVER_PORT (7364), the single source of truth. */
@@ -105,7 +105,10 @@ async function startServer(opts: {
   return { host, port };
 }
 
-function errorProperty(value: unknown, property: "cause" | "code" | "message" | "name"): unknown {
+function errorProperty(
+  value: unknown,
+  property: "cause" | "code" | "errors" | "message" | "name",
+): unknown {
   if ((typeof value !== "object" && typeof value !== "function") || value === null) {
     return undefined;
   }
@@ -115,6 +118,7 @@ function errorProperty(value: unknown, property: "cause" | "code" | "message" | 
 /**
  * Turns Node/undici's nested `fetch failed` errors into a stable one-line diagnostic.
  * The useful code usually lives on `error.cause` rather than the top-level TypeError.
+ * Exported for unit tests.
  */
 export function describeReadinessFailure(error: unknown): ReadinessFailure {
   const chain: unknown[] = [];
@@ -123,15 +127,25 @@ export function describeReadinessFailure(error: unknown): ReadinessFailure {
   while (current !== undefined && current !== null && !seen.has(current)) {
     chain.push(current);
     seen.add(current);
-    current = errorProperty(current, "cause");
+    // Follow `cause` first; an AggregateError (e.g. localhost resolving to several
+    // addresses, all refused) keeps the real connect errors in `errors` instead.
+    const cause = errorProperty(current, "cause");
+    if (cause !== undefined && cause !== null) {
+      current = cause;
+      continue;
+    }
+    const errors = errorProperty(current, "errors");
+    current = Array.isArray(errors) ? errors[0] : undefined;
   }
 
   const code = chain
     .map((item) => errorProperty(item, "code"))
     .find((value): value is string => typeof value === "string" && value.length > 0);
-  const selected = [...chain]
-    .reverse()
-    .find((item) => typeof errorProperty(item, "message") === "string");
+  const selected = [...chain].reverse().find((item) => {
+    const value = errorProperty(item, "message");
+    // Skip empty messages: an AggregateError's own message is "" and would mask real text.
+    return typeof value === "string" && value.length > 0;
+  });
   const messageValue = selected === undefined ? undefined : errorProperty(selected, "message");
   const nameValue = selected === undefined ? undefined : errorProperty(selected, "name");
   const message =
@@ -157,7 +171,7 @@ export function describeReadinessFailure(error: unknown): ReadinessFailure {
     .join(" ")
     .toUpperCase();
 
-  let kind: ReadinessFailureKind = "unknown";
+  let kind: WebProbeFailureKind = "unknown";
   if (signature.includes("ECONNREFUSED")) kind = "refused";
   else if (
     signature.includes("ETIMEDOUT") ||
@@ -180,7 +194,7 @@ export function describeReadinessFailure(error: unknown): ReadinessFailure {
   return { kind, detail };
 }
 
-/** Polls the service root path until it responds (any HTTP response counts as ready); retains the last connection failure for diagnostics on timeout. */
+/** Polls the service root path until it responds (any HTTP response counts as ready); retains the last connection failure for diagnostics on timeout. Exported for unit tests. */
 export async function waitForReady(
   url: string,
   timeoutMs = 15_000,

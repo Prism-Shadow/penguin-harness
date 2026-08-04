@@ -9,6 +9,7 @@
 /** UI language. */
 export type Language = "en" | "zh";
 
+/** Readiness probe failure classes; selects which hint `webProbeFailed` appends. */
 export type WebProbeFailureKind =
   "timeout" | "refused" | "reset" | "permission" | "dns" | "unknown";
 

@@ -109,6 +109,16 @@ describe("readiness probe diagnostics", () => {
     });
   });
 
+  it("keeps polling after failed probes and reports ready once a response arrives", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockRejectedValueOnce(new TypeError("fetch failed"))
+      .mockResolvedValue(new Response(null, { status: 200 }));
+
+    await expect(waitForReady("http://127.0.0.1:7364/", 5_000, 0)).resolves.toEqual({
+      ready: true,
+    });
+  });
+
   it("retains the nested undici error from the last failed probe", async () => {
     const cause = Object.assign(new Error("Connect Timeout Error"), {
       code: "UND_ERR_CONNECT_TIMEOUT",
@@ -135,6 +145,33 @@ describe("readiness probe diagnostics", () => {
     expect(describeReadinessFailure(Object.assign(new Error("probe failed"), { code }))).toEqual({
       kind,
       detail: `${code}: probe failed`,
+    });
+  });
+
+  it("classifies the probe's own 1s abort (DOMException TimeoutError) as a timeout", () => {
+    expect(
+      describeReadinessFailure(
+        new DOMException("The operation was aborted due to timeout", "TimeoutError"),
+      ),
+    ).toEqual({
+      kind: "timeout",
+      detail: "TimeoutError: The operation was aborted due to timeout",
+    });
+  });
+
+  it("digs the connect error out of an empty-message AggregateError (multi-address host)", () => {
+    const aggregate = Object.assign(
+      new AggregateError([
+        Object.assign(new Error("connect ECONNREFUSED ::1:7364"), { code: "ECONNREFUSED" }),
+        Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:7364"), { code: "ECONNREFUSED" }),
+      ]),
+      { code: "ECONNREFUSED" },
+    );
+    const error = Object.assign(new TypeError("fetch failed"), { cause: aggregate });
+
+    expect(describeReadinessFailure(error)).toEqual({
+      kind: "refused",
+      detail: "ECONNREFUSED: connect ECONNREFUSED ::1:7364",
     });
   });
 
