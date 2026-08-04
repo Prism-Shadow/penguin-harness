@@ -7,6 +7,10 @@
 <p align="center"><b>全自动 Agent 构建平台，运行在你的桌面 / 服务器上</b><br />一键创建自进化 Agent</p>
 
 <p align="center">
+  <a href="https://penguin.ooo/download/"><img src="https://img.shields.io/badge/%E2%AC%87%EF%B8%8F_%E7%82%B9%E5%87%BB%E4%B8%8B%E8%BD%BD-macOS_%C2%B7_Windows_%C2%B7_Linux-2ea44f?style=for-the-badge" alt="点击下载 — macOS · Windows · Linux" /></a>
+</p>
+
+<p align="center">
   <a href="https://www.producthunt.com/products/penguinharness?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-penguinharness" target="_blank" rel="noopener noreferrer"><img alt="PenguinHarness - Let Agents Autonomously Build Better Agents for $0.02 | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1202577&amp;theme=light&amp;t=1784804711946" /></a>
 </p>
 
