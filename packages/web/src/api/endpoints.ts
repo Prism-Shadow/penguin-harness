@@ -24,6 +24,9 @@ import type {
   BenchmarkCasesResponse,
   BenchmarksResponse,
   CaseMaterial,
+  ChatDefaultsDto,
+  DefaultModelResponse,
+  DefaultModelUpdateRequest,
   DirListResponse,
   FilesStatRequest,
   FilesStatResponse,
@@ -143,6 +146,17 @@ export const removeMember = (projectId: string, username: string) =>
     { method: "DELETE" },
   );
 
+/** New-chat defaults ([default_chat]): member-readable prefill for the draft page. */
+export const getChatDefaults = (projectId: string) =>
+  apiFetch<ChatDefaultsDto>(`/api/projects/${encodeURIComponent(projectId)}/chat-defaults`);
+
+/** Whole-block replace (owner): an omitted key clears it; returns the stored block. */
+export const putChatDefaults = (projectId: string, body: ChatDefaultsDto) =>
+  apiFetch<ChatDefaultsDto>(`/api/projects/${encodeURIComponent(projectId)}/chat-defaults`, {
+    method: "PUT",
+    body,
+  });
+
 // Model configuration -------------------------------------------------------------------
 
 export const getModels = (projectId: string) =>
@@ -150,6 +164,13 @@ export const getModels = (projectId: string) =>
 
 export const putModels = (projectId: string, body: ModelsUpdateRequest) =>
   apiFetch<ModelsResponse>(`/api/projects/${encodeURIComponent(projectId)}/models`, {
+    method: "PUT",
+    body,
+  });
+
+/** Narrow default-model switch (owner): flips the same default_model the models page maintains, without resending the table. */
+export const putDefaultModel = (projectId: string, body: DefaultModelUpdateRequest) =>
+  apiFetch<DefaultModelResponse>(`/api/projects/${encodeURIComponent(projectId)}/models/default`, {
     method: "PUT",
     body,
   });

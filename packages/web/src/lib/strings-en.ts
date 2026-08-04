@@ -179,6 +179,17 @@ export const en: Strings = {
     members: "Members",
     addMember: "Add member",
     removeMember: "Remove",
+    /** New-chat defaults section (Project settings): prefill for every new chat. */
+    chatDefaultsTitle: "New chat defaults",
+    chatDefaultsHint:
+      "Prefilled defaults for every new chat: agent, working directory, approval mode, thinking level and default model.",
+    chatDefaultsAgent: "Agent",
+    chatDefaultsNotSet: "Not set",
+    chatDefaultsApprovalNotSet: "Not set (defaults to allow all)",
+    chatDefaultsThinkingNotSet: "Not set (follow the agent's config)",
+    chatDefaultsWorkspaceHint: "Empty = auto temp directory",
+    /** The model default is single-sourced with the Models page (the same default_model); this is just another entry point. */
+    chatDefaultsModelHint: "Same default model as the Models page",
     deleteProject: "Delete Project",
     deleteConfirm:
       "Delete this Project? Its directory will be removed recursively and cannot be recovered.",
@@ -1118,6 +1129,7 @@ Scenarios:
       admin_required: "Only an admin can perform this operation.",
       not_found: "This resource does not exist, or you do not have access.",
       agent_not_found: "This agent no longer exists.",
+      unknown_agent: "That agent does not exist in this Project.",
       agent_exists: "This agent id is already taken.",
       project_exists: "This Project id is already taken.",
       user_exists: "This username is already taken.",
