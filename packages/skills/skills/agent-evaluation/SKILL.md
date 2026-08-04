@@ -3,8 +3,8 @@ name: agent-evaluation
 description: Run one specified Test Agent on one specified Benchmark Case exactly once, privately score that execution, and return one protocol result.
 short_description: Run and score one isolated Benchmark Case.
 short_description_zh: 隔离执行并评分一个 Benchmark Case。
-version: 5
-updated: 2026-07-29T17:20:58Z
+version: 6
+updated: 2026-08-04T00:00:00Z
 ---
 
 # Agent Evaluation
@@ -85,6 +85,8 @@ Inspect only new or changed Traces. Bind exactly one root Test Trace whose Works
 Inspect only the isolated Workspace, the bound root Trace, its directly referenced child Traces, and the private Rubric. Apply every scoring item and allowed equivalent. Keep Rubric contents, Gold answers, per-item scoring, and scoring rationale private.
 
 A wrong answer, missing artifact, malformed output, or task failure attributable to the Test Agent is scored behavior and returns `status: ok`. A launcher, Trace-binding, or Evaluator failure is not scored. Return `benchmark_invalid` when the Rubric cannot be applied and `evaluation_failed` when the score is non-finite or outside `0..100`.
+
+The caller (`agent-optimization`) records a content-derived Agent fingerprint alongside each scoreboard evaluation via `penguin provenance`; the fingerprint's `version` must equal the `expected_version` you validate here. This leaf worker's return protocol is unchanged — do not compute or emit a fingerprint yourself.
 
 Set `duration_ms` from the root Test Session. Compute cost only from reliable final cumulative usage or cost already recorded in that Session and directly referenced child Traces found in the same bounded pass. Never browse, query a pricing service, or infer cost from external model prices. If the required data is unavailable, return `cost: null`. Missing cost data must not invalidate a score.
 

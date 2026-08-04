@@ -80,6 +80,46 @@ interface ExampleRun {
 }
 
 /**
+ * Example provenance fingerprints (illustrative only — not computed from a real Agent). The
+ * three rounds share the same tools/skills hashes (nothing was installed or uninstalled) while
+ * the system prompt hash and the top-level agent hash change each round: this is exactly the
+ * localization story provenance is meant to tell — "the prompt changed, the skills didn't". Real
+ * fingerprints come from `penguin provenance`.
+ */
+const EXAMPLE_TOOLS_SHA = "08910c743d74efbbe547657603461d72c8fea7361e3bbc88e6a9cac896374ef3";
+const EXAMPLE_SKILLS_SHA = "69bf7c0181bb8cc80044504c9681ff87b34b706811f1bb6a5f17eb642ceb497e";
+const EXAMPLE_AGENTS_MD_SHA =
+  "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+
+/** A shape-valid 64-char hex string seeded by `tag` + `v` (illustrative, not a real digest). */
+function fakeHex(tag: string, v: number): string {
+  const seed = `${tag}${v}`;
+  let hex = "";
+  for (let i = 0; hex.length < 64; i += 1) {
+    hex += (((seed.charCodeAt(i % seed.length) * 7 + i * 31 + v) % 16) & 0xf).toString(16);
+  }
+  return hex.slice(0, 64);
+}
+
+/** Builds an illustrative provenance block for example version `v` (fake but shape-valid hashes). */
+function exampleProvenance(v: number): Record<string, unknown> {
+  return {
+    provenance_version: 1,
+    version: v,
+    // Changes each round (the prompt was edited every version).
+    system_prompt_sha256: fakeHex("sysprompt", v),
+    agents_md_sha256: EXAMPLE_AGENTS_MD_SHA,
+    // Constant across rounds (no tool/skill install or uninstall).
+    tools_sha256: EXAMPLE_TOOLS_SHA,
+    skills_sha256: EXAMPLE_SKILLS_SHA,
+    model: { provider: "deepseek", model_id: "deepseek-v4-pro" },
+    thinking_level: "medium",
+    // Top-level fingerprint changes each round because the prompt hash feeds into it.
+    agent_sha256: fakeHex("agent", v),
+  };
+}
+
+/**
  * Raw runs for the three sample evaluations (case-level and evaluation-level metrics are
  * computed from these, keeping the numbers self-consistent). Each carries the model actually
  * used for that round; the examples all use deepseek-v4-pro at medium thinking.
@@ -279,6 +319,7 @@ export function buildExampleScoreboard(): {
     score: number;
     cost: number | null;
     duration_ms: number;
+    provenance: Record<string, unknown>;
     cases: Array<{
       case: string;
       score: number;
@@ -308,6 +349,7 @@ export function buildExampleScoreboard(): {
         score: averageTwo(cases.map((c) => c.score)),
         cost: averageKnownCost(cases.map((c) => c.cost)),
         duration_ms: averageDuration(cases.map((c) => c.duration_ms)),
+        provenance: exampleProvenance(e.version),
         cases,
       };
     }),
