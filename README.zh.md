@@ -138,6 +138,10 @@ npm install -g @prismshadow/penguin-cli
 penguin web        # 启动服务并打开 http://127.0.0.1:7364
 ```
 
+### 🖥️ 桌面端应用
+
+完整的 Web 体验打包为独立应用：内嵌服务端，打开即已登录——无需终端、无登录页、也不用抄初始密码——并与 CLI 安装共用同一个 `~/.penguin/data` 数据目录，两者可以混用（一个数据目录同一时刻只运行一个服务端；CLI 已启动实例时，应用会直接接入它）。macOS（dmg，Apple 芯片 / Intel）、Windows 与 Linux（AppImage / deb）的安装包附于每个 [GitHub Release](https://github.com/Prism-Shadow/penguin-harness/releases)。当前构建暂未签名：macOS 首次启动请右键 →「打开」，Windows 在 SmartScreen 提示中选「仍要运行」。
+
 <details>
 <summary><b>📴 离线安装（无网环境）</b></summary>
 
@@ -198,7 +202,7 @@ for await (const output of session.run([userText("Create hello.txt containing hi
 ## 路线图
 
 - [ ] Benchmark 套件正式发布
-- [ ] 桌面端应用
+- [x] 桌面端应用
 - [x] Windows 系统支持
 - [ ] Agent 公司与模板
 - [ ] 公司级自进化能力

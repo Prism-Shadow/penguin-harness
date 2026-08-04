@@ -138,6 +138,10 @@ npm install -g @prismshadow/penguin-cli
 penguin web        # start the service and open http://127.0.0.1:7364
 ```
 
+### 🖥️ Desktop app
+
+The full Web experience as a standalone application: it embeds the server and opens already signed in — no terminal, no login page, no initial password to copy — and it works on the same `~/.penguin/data` root as a CLI install, so the two can be used interchangeably (a data root only ever runs one server; if a CLI-started instance is already up, the app attaches to it). Installers for macOS (dmg, Apple silicon / Intel), Windows and Linux (AppImage / deb) are attached to each [GitHub Release](https://github.com/Prism-Shadow/penguin-harness/releases). Current builds are unsigned: on first launch use right-click → Open on macOS, and "More info → Run anyway" past Windows SmartScreen.
+
 <details>
 <summary><b>📴 Offline install (air-gapped machines)</b></summary>
 
@@ -198,7 +202,7 @@ for await (const output of session.run([userText("Create hello.txt containing hi
 ## Roadmap
 
 - [ ] Public release of the benchmark suite
-- [ ] Desktop app
+- [x] Desktop app
 - [x] Windows support
 - [ ] Agent company and templates
 - [ ] Company-level self evolving

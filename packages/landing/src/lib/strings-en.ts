@@ -78,6 +78,9 @@ export const en: Strings = {
       windows: "After unzipping you can also just double-click install.cmd.",
     },
     offlineRelease: "Download offline packages from GitHub Releases",
+    desktopNote:
+      "Prefer a standalone app? The desktop app packages the Web interface and the server into a terminal-free installer (macOS / Windows / Linux), sharing the same local data as a CLI install.",
+    desktopRelease: "Download the desktop app from GitHub Releases",
   },
 
   copy: {

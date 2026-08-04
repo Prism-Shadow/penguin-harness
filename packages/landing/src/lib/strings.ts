@@ -84,6 +84,9 @@ export const zh = {
       windows: "解压后也可直接双击 install.cmd 完成安装。",
     },
     offlineRelease: "前往 GitHub Releases 下载离线安装包",
+    desktopNote:
+      "更喜欢独立应用？桌面端把 Web 界面与服务端打包成免终端的安装程序（macOS / Windows / Linux），与 CLI 安装共用同一份本地数据。",
+    desktopRelease: "前往 GitHub Releases 下载桌面端",
   },
 
   copy: {
