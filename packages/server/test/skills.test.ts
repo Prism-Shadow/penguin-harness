@@ -4,12 +4,12 @@
  * files matching the library content, idempotent update on reinstall, the
  * directory disappearing after uninstall, default_agent starting with all
  * skills installed while a newly created plain Agent has none, and the zip
- * archive install (layouts, zip-slip and limit rejections, 409 skill_exists +
- * overwrite replace).
+ * archive install/export (layouts, zip-slip and limit rejections, 409
+ * skill_exists + overwrite replace, byte-identical export round-trip).
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { strToU8, zipSync } from "fflate";
+import { strToU8, unzipSync, zipSync } from "fflate";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { skillsDir } from "@prismshadow/penguin-core";
 import { librarySkill, loadLibrarySkills } from "@prismshadow/penguin-skills";
@@ -194,6 +194,7 @@ describe("skills api", () => {
     expect((await outsider.get(url)).status).toBe(404);
     expect((await outsider.post(url, { names: ["penguin-sdk"] })).status).toBe(404);
     expect((await outsider.post(`${url}/archive`, { dataBase64: "AAAA" })).status).toBe(404);
+    expect((await outsider.get(`${url}/penguin-sdk/archive`)).status).toBe(404);
     expect((await outsider.delete(`${url}/penguin-sdk`)).status).toBe(404);
     // The library catalog isn't scoped under a Project prefix: any logged-in user can read it.
     expect((await outsider.get("/api/skills")).status).toBe(200);
@@ -389,5 +390,36 @@ describe("skills api", () => {
     expect(await fs.readFile(path.join(dir, "SKILL.md"), "utf8")).toBe(updatedMd);
     expect(await fs.readFile(path.join(dir, "new.txt"), "utf8")).toBe("new\n");
     await expect(fs.access(path.join(dir, "old.txt"))).rejects.toThrow();
+  });
+
+  it("archive export: single-top-dir zip round-trips byte-identically; a non-installed name is 404", async () => {
+    await createPlainAgent("zip_export_agent");
+    const url = base("zip_export_agent");
+    // Install a multi-file skill through the archive route (nested subdir + icon.svg).
+    const files: Record<string, Uint8Array> = {
+      "zip-skill/SKILL.md": strToU8(ZIP_SKILL_MD),
+      "zip-skill/icon.svg": strToU8('<svg viewBox="0 0 24 24"><path d="M2 2h20"/></svg>\n'),
+      "zip-skill/ref/notes.md": strToU8("notes\n"),
+    };
+    expect((await member.post(`${url}/archive`, { dataBase64: zipB64(files) })).status).toBe(201);
+
+    // Export it: a direct binary attachment (application/zip), like the snapshot export.
+    const res = await member.get(`${url}/zip-skill/archive`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("application/zip");
+    expect(res.headers.get("content-disposition")).toBe(
+      "attachment; filename*=UTF-8''zip-skill.zip",
+    );
+    const entries = unzipSync(new Uint8Array(await res.arrayBuffer()));
+    // Single-top-dir layout with every installed file, byte-identical to the upload — the
+    // export feeds back into the POST archive route unchanged.
+    const fileNames = Object.keys(entries).filter((n) => !n.endsWith("/"));
+    expect(fileNames.sort()).toEqual(Object.keys(files).sort());
+    for (const [name, data] of Object.entries(files)) {
+      expect(Buffer.from(entries[name]!)).toEqual(Buffer.from(data));
+    }
+
+    // Exporting a skill that isn't installed → 404 (same criterion as uninstall).
+    expect((await member.get(`${url}/no-such-skill/archive`)).status).toBe(404);
   });
 });

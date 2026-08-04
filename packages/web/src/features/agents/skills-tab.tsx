@@ -6,8 +6,9 @@
  * confirms first (deletes the whole directory, local edits included). The "Import skill"
  * modal offers two paths: the recommended chat install (copy a review-then-install prompt
  * embedding a URL / open a new chat with this Agent) and a zip upload posted base64 to the
- * archive endpoint (409 skill_exists asks before overwriting). Read and mutate are both
- * member-level, matching the skills routes — no owner gating here.
+ * archive endpoint (409 skill_exists asks before overwriting). Each row can also export
+ * the installed directory as a zip that round-trips through that same endpoint. Read and
+ * mutate are both member-level, matching the skills routes — no owner gating here.
  */
 import { useCallback, useEffect, useState } from "react";
 import type { ChangeEvent } from "react";
@@ -24,6 +25,7 @@ import { Button } from "../../components/ui/button";
 import { Input, Textarea } from "../../components/ui/input";
 import { Modal } from "../../components/ui/modal";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
+import { DownloadIcon } from "../../components/ui/icons";
 import { HiddenFileInput } from "../../components/ui/hidden-file-input";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { toastError, toastSuccess } from "../../components/ui/toast";
@@ -83,6 +85,41 @@ export function SkillsTab({ agentId }: { agentId: string }) {
   /** Display name of this Agent for toasts / confirm copy (falls back to the raw id). */
   const agent = agents.find((a) => a.agentId === agentId);
   const agentName = agent ? agentDisplayName(agent) : agentId;
+
+  /**
+   * "Export as zip": fetch the archive and save it via a temporary object-URL anchor.
+   * The codebase's other downloads are bare `<a href download>` anchors (snapshot export,
+   * trace download), but a bare anchor would save the error JSON as a file when the
+   * request fails — fetching first lets failures surface as a toast instead. The JSON-only
+   * api client can't carry binary, hence the raw fetch (errors re-wrapped as ApiError so
+   * apiErrorText localizes by code as usual).
+   */
+  const exportSkill = async (name: string) => {
+    if (!projectId) return;
+    try {
+      const res = await fetch(api.agentSkillArchiveUrl(projectId, agentId, name));
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as {
+          error?: { code?: string; message?: string };
+        } | null;
+        throw new ApiError(
+          res.status,
+          body?.error?.code ?? "unknown",
+          body?.error?.message ?? S.common.unknownError,
+        );
+      }
+      const url = URL.createObjectURL(await res.blob());
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `${name}.zip`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      toastError(apiErrorText(e));
+    }
+  };
 
   /** Confirm modal's "Confirm": uninstall, then always re-fetch the list from disk. */
   const confirmRemove = async () => {
@@ -232,6 +269,16 @@ export function SkillsTab({ agentId }: { agentId: string }) {
               >
                 {metaLine(skill)}
               </span>
+              <Button
+                size="icon"
+                variant="ghost"
+                title={S.skills.exportSkill}
+                aria-label={`${S.skills.exportSkill} ${skill.name}`}
+                disabled={busy}
+                onClick={() => void exportSkill(skill.name)}
+              >
+                <DownloadIcon size={14} />
+              </Button>
               <Button
                 size="sm"
                 variant="ghost"

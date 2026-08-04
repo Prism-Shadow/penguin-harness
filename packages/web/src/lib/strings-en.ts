@@ -539,6 +539,7 @@ export const en: Strings = {
     agentTabDesc:
       "Skills installed on this agent (agent_state/skills/ — the files are the source of truth): metadata is injected into the system prompt and the body is read by the model on demand; uninstalling deletes the whole skill directory.",
     agentTabEmpty: "No skills installed yet",
+    exportSkill: "Export",
     importSkill: "Import skill",
     importChatTitle: "Recommended: install by chatting with the agent",
     importChatWhy:

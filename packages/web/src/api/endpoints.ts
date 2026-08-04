@@ -540,6 +540,11 @@ export const installAgentSkillArchive = (
     { method: "POST", body },
   );
 
+/** Zip download URL for one installed skill (server sets Content-Disposition attachment); the export round-trips through installAgentSkillArchive. */
+export const agentSkillArchiveUrl = (projectId: string, agentId: string, name: string): string =>
+  `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
+  `/skills/${encodeURIComponent(name)}/archive`;
+
 export const removeAgentSkill = (projectId: string, agentId: string, name: string) =>
   apiFetch<void>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +

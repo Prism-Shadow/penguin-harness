@@ -3,16 +3,18 @@
  *   GET /api/skills                                       # library groups & metadata (any logged-in user)
  *   GET|POST /api/projects/:p/agents/:a/skills            # installed list / install from library (any member)
  *   POST     /api/projects/:p/agents/:a/skills/archive    # install one skill from an uploaded zip (any member)
+ *   GET      /api/projects/:p/agents/:a/skills/:name/archive  # export one installed skill as a zip (any member)
  *   DELETE   /api/projects/:p/agents/:a/skills/:name      # uninstall (any member)
  * Installing writes the library's SKILL.md verbatim to agent_state/skills/<name>/;
- * reinstalling overwrites with the library content (i.e. an update). The archive route
- * writes every zip file under skills/<name>/ (replace semantics with `overwrite`). The
- * scope is small enough to skip a service layer — routes call core's disk-writing
- * functions directly.
+ * reinstalling overwrites with the library content (i.e. an update). The archive routes
+ * are symmetric: POST writes every zip file under skills/<name>/ (replace semantics with
+ * `overwrite`), GET packs the whole directory back under a single top-level <name>/ so
+ * the download round-trips through the POST unchanged. The scope is small enough to skip
+ * a service layer — routes call core's disk-writing functions directly.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { unzipSync, strFromU8 } from "fflate";
+import { unzipSync, strFromU8, zipSync } from "fflate";
 import { Hono } from "hono";
 import {
   installSkill,
@@ -156,6 +158,47 @@ function parseSkillArchive(archive: Buffer): ArchiveSkill {
   return { name, files: new Map(files.map(([n, data]) => [n.slice(prefix.length), data])) };
 }
 
+/**
+ * Recursively collects an installed skill directory as zip entries under a single
+ * top-level `<name>/` directory (subpaths preserved, "/" separators), so the export
+ * round-trips through the POST archive route unchanged. Symlinks and other non-regular
+ * entries are skipped (nothing outside the directory can leak). The import caps apply
+ * on the way out too — a directory exceeding them couldn't be re-imported anyway.
+ */
+async function collectSkillArchive(dir: string, name: string): Promise<Record<string, Uint8Array>> {
+  const out: Record<string, Uint8Array> = {};
+  let count = 0;
+  let total = 0;
+  const walk = async (abs: string, rel: string): Promise<void> => {
+    for (const entry of await fs.readdir(abs, { withFileTypes: true })) {
+      const absChild = path.join(abs, entry.name);
+      const relChild = `${rel}/${entry.name}`;
+      if (entry.isDirectory()) {
+        await walk(absChild, relChild);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      count += 1;
+      const data = new Uint8Array(await fs.readFile(absChild));
+      total += data.byteLength;
+      if (
+        count > MAX_ARCHIVE_FILES ||
+        data.byteLength > MAX_FILE_BYTES ||
+        total > MAX_TOTAL_BYTES
+      ) {
+        throw new HttpError(
+          413,
+          "skill_too_large",
+          `Skill directory exceeds the archive limits (${MAX_ARCHIVE_FILES} files, 5MB per file, 20MB total).`,
+        );
+      }
+      out[relChild] = data;
+    }
+  };
+  await walk(dir, name);
+  return out;
+}
+
 /** Validate the POST request body: names must be a non-empty array of strings. */
 function parseInstallNames(body: Record<string, unknown>): string[] {
   if (!Array.isArray(body.names) || body.names.length === 0) {
@@ -256,6 +299,32 @@ export function agentSkillsRoutes(deps: AppDeps): Hono<AppEnv> {
       await fs.writeFile(file, data);
     }
     return c.json(await listResponse(projectId, agentId), 201);
+  });
+
+  // Export one installed skill as a zip: served verbatim as an attachment (same shape as
+  // the snapshot export / trace download — a direct binary body, not a JSON envelope), so
+  // what's downloaded can be re-imported byte-compatibly via the POST archive route.
+  app.get("/:name/archive", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const agentId = requireValidId(c, "agentId");
+    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    const name = requireValidId(c, "name");
+    const dir = path.join(skillsDir(deps.config.root, projectId, agentId), name);
+    // Installed-check uses the same criterion as listInstalledSkills: skills/<name>/SKILL.md exists.
+    try {
+      await fs.access(path.join(dir, "SKILL.md"));
+    } catch {
+      throw new HttpError(404, "not_found", `Skill is not installed: ${name}`);
+    }
+    const zip = zipSync(await collectSkillArchive(dir, name));
+    return new Response(new Uint8Array(zip), {
+      headers: {
+        "Content-Type": "application/zip",
+        // The name is id-validated ([A-Za-z0-9_-]+), so the encoded filename is the name itself.
+        "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(`${name}.zip`)}`,
+        "X-Content-Type-Options": "nosniff",
+      },
+    });
   });
 
   app.delete("/:name", async (c) => {
