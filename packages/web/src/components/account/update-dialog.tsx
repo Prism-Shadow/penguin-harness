@@ -15,6 +15,7 @@ import type { UpdateRunResponse } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
+import { stripAnsi } from "../../lib/strip-ansi";
 import { Button } from "../ui/button";
 import { Modal } from "../ui/modal";
 
@@ -117,7 +118,8 @@ export function UpdateDialog({
           )}
           {result.output !== "" && (
             <pre className="max-h-56 overflow-auto rounded-md bg-gray-100 p-3 text-xs leading-relaxed whitespace-pre-wrap text-gray-700 dark:bg-gray-800 dark:text-gray-300">
-              {result.output}
+              {/* The update runs a package manager whose output may carry ANSI color when the server env forces it. */}
+              {stripAnsi(result.output)}
             </pre>
           )}
         </div>

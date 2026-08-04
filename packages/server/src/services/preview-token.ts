@@ -189,6 +189,12 @@ export function resolvePreviewTarget(
   const counterpart = loopbackCounterpart(requestHost);
   if (!counterpart) return null;
   if (!loopbackHostRoles(serverBind.host)) return null;
+  // Port 0 means "the listener has not reported its actual port yet" (PORT=0 picks an
+  // ephemeral one; index.ts writes it back once bound). Emitting `:0` would produce a URL
+  // no browser will load — Chromium rejects it outright with ERR_UNSAFE_PORT — so degrade
+  // to "no isolated preview" instead, which the UI already handles by falling back to the
+  // sandboxed same-origin preview.
+  if (serverBind.port === 0) return null;
 
   let protocol: string;
   try {

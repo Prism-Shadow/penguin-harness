@@ -24,11 +24,11 @@ Before the first dispatch of every new or changed Case, the Builder checks that 
 
 Before each calibration dispatch, the Builder predicts the result produced by the observed Trace strategy, the different result produced by the desired behavior, and the score range affected. Adding another public rule, exception, source, or check that the model can directly execute does not automatically increase difficulty. If both strategies still reach the same scored result, the Builder chooses another refinement.
 
-The Pilot score is a desired target: meeting it permits an early Freeze; otherwise the Builder completes the configured number of valid Pilot iterations and freezes the lowest-scoring valid revision. The Builder temporarily retains only the current lowest valid revision, then removes that copy and other calibration scaffolding after recording the Formal Baseline. Freeze is followed by a fresh complete Formal matrix. Every valid Formal Baseline is recorded even when its score misses the desired target.
+Every Pilot iteration runs each Case exactly once. The Pilot score is a desired target: meeting it permits an early Freeze; otherwise the Builder completes the configured number of valid Pilot iterations and freezes the lowest-scoring valid revision. The Builder temporarily retains only the current lowest valid revision and its complete result. After the final consistency review, it records that selected Pilot's one-Run result directly as the Formal Baseline without rerunning or backfilling more Runs, then removes the temporary copy and other calibration scaffolding. A Formal score that misses the desired target does not invalidate the Benchmark.
 
-After the user confirms that step is complete, they start the second top-level Session in a new conversation. The Optimizer checks the Benchmark and its first complete Formal Baseline before following `agent-optimization`:
+After the user confirms that step is complete, they start the second top-level Session in a new conversation and specify `runs` per Case for every Candidate. The Optimizer checks the Benchmark and its first complete Formal Baseline before following `agent-optimization`:
 
-1. orchestrate Evaluators in parallel through `run_subagent`, covering the Case × runs matrix;
+1. orchestrate Evaluators in parallel through `run_subagent`, covering the Case × user-specified `runs` matrix;
 2. use scores and linked Traces to propose one bounded Candidate;
 3. edit the Target Agent's editable state — `AGENTS.md`, Skills, config — to produce version N+1;
 4. keep the Candidate only when its Evaluation score strictly improves; otherwise roll it back;
@@ -36,7 +36,7 @@ After the user confirms that step is complete, they start the second top-level S
 
 Invalid evaluations and correction reruns do not count toward the round limit. On an execution failure, the Optimizer keeps the same Candidate and repairs only the missing cell; it keeps trying while each attempt follows a new diagnosis and applies a distinct safe repair. Both Builder and Optimizer validate that the complete Evaluator response is plain protocol YAML before reading status or score; if formatting is invalid, that same Evaluator resends from its existing result without rerunning the Target Agent.
 
-Every accepted Candidate is appended to and verified in the Scoreboard immediately. A strictly higher Evaluation score decides acceptance; whether the predicted Case behavior changed is reported separately so unrelated single-run variation is not presented as causal evidence. Agent optimization requires a complete Formal Baseline in the Scoreboard — without one there is no improvement to compare against.
+Every accepted Candidate is appended to and verified in the Scoreboard immediately. A strictly higher Evaluation score decides acceptance; the first comparison directly compares the Candidate's multi-Run average with the Formal Baseline's one-Run score without backfilling the Baseline. Whether the predicted Case behavior changed is reported separately so unrelated single-run variation is not presented as causal evidence. Agent optimization requires a complete Formal Baseline in the Scoreboard — without one there is no improvement to compare against.
 
 ## Benchmark storage
 
@@ -44,7 +44,7 @@ Benchmarks are stored per Agent under `benchmarks/<id>/`:
 
 ```text
 benchmarks/<id>/
-├── benchmark_config.toml       # Benchmark configuration (e.g. runs per Case)
+├── benchmark_config.toml       # Benchmark configuration (Builder runs is fixed at 1)
 ├── <case-id>/
 │   ├── statement/              # the task given to the Target Agent
 │   └── rubric/                 # private scoring rubric, isolated from the Target Agent
