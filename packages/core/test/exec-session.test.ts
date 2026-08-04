@@ -294,7 +294,15 @@ describe("exec_command — long-running command sessions", () => {
 });
 
 describe("harness environment variables never reach a spawned command", () => {
-  const KEYS = ["PORT", "HOST", "PENGUIN_CLI_ENTRY", "PENGUIN_WEB_DIST"] as const;
+  const KEYS = [
+    "PORT",
+    "HOST",
+    "PENGUIN_CLI_ENTRY",
+    "PENGUIN_WEB_DIST",
+    "PENGUIN_DESKTOP_TOKEN",
+    "PENGUIN_PORT_FILE",
+    "PENGUIN_SEED_ADMIN_PASSWORD",
+  ] as const;
   const saved: Partial<Record<(typeof KEYS)[number], string | undefined>> = {};
 
   beforeEach(() => {
@@ -305,6 +313,11 @@ describe("harness environment variables never reach a spawned command", () => {
     process.env.HOST = "127.0.0.1";
     process.env.PENGUIN_CLI_ENTRY = "/opt/penguin/lib/dist/index.js";
     process.env.PENGUIN_WEB_DIST = "/opt/penguin/web";
+    // The desktop shell's process credentials (see design § "桌面端原型"): a leaked token
+    // would let an Agent-run command call the server's shutdown endpoint.
+    process.env.PENGUIN_DESKTOP_TOKEN = "secret-desktop-token";
+    process.env.PENGUIN_PORT_FILE = "/tmp/port-file";
+    process.env.PENGUIN_SEED_ADMIN_PASSWORD = "penguin-0000";
   });
   afterEach(() => {
     for (const k of KEYS) {
