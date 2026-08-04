@@ -77,8 +77,16 @@ jobs:
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
-  release:
+  # Desktop installers (Electron shell, three-OS matrix). Runs BEFORE the release job:
+  # Release assets are immutable once published, so the installers must exist when the
+  # Release is created. See design § "桌面端原型 · 打包与更新" (M3).
+  desktop:
     needs: check-release
+    if: needs.check-release.outputs.exists != 'true'
+    uses: ./.github/workflows/desktop-build.yml
+
+  release:
+    needs: [check-release, desktop]
     if: needs.check-release.outputs.exists != 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -284,6 +292,22 @@ jobs:
           cd dist-artifacts
           sha256sum -- *.tar.gz *.zip > SHA256SUMS
 
+      # Desktop installers built by the desktop job (three-OS matrix): collected here so
+      # they are part of the Release's initial (immutable) asset set. Their checksums go
+      # in a separate SHA256SUMS.desktop — the OSS mirror script's canonical file list
+      # stays untouched (desktop installers are not mirrored yet).
+      - name: Collect desktop artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-*
+          merge-multiple: true
+          path: desktop-artifacts
+
+      - name: Generate desktop checksums
+        run: |
+          cd desktop-artifacts
+          sha256sum -- * > SHA256SUMS.desktop
+
       # Release notes come from changelog/<version>/RELEASE.md, written during release preparation and
       # committed BEFORE the tag (the release job runs on the tag's checkout, so a file added afterwards
       # is invisible here). Present and non-empty -> published verbatim as the body; absent -> GitHub
@@ -320,6 +344,7 @@ jobs:
             dist-artifacts/*.zip
             dist-artifacts/*.sha256
             dist-artifacts/SHA256SUMS
+            desktop-artifacts/*
             install.sh
             install.ps1
 
