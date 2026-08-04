@@ -11,8 +11,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SessionCategory, SessionCategoryCounts } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
-import { FOLDER_CATEGORIES, SIDEBAR_PAGE_SIZE, splitPage } from "../../lib/session-grouping";
-import { toSessionGroups } from "./trace-sessions";
+import { FOLDER_CATEGORIES, splitPage } from "../../lib/session-grouping";
+import { TRACES_PAGE_SIZE, toSessionGroups } from "./trace-sessions";
 import type { TraceSessionRow } from "./trace-sessions";
 
 /** Page-state key of one (Agent, category) pair ("\0" never appears in Agent ids). */
@@ -103,10 +103,10 @@ export function useTraceTree(projectId: string | null): TraceTree {
     ): Promise<FetchedPage> => {
       const res = await api.getAgentTraces(pid, agentId, {
         offset,
-        limit: SIDEBAR_PAGE_SIZE + 1,
+        limit: TRACES_PAGE_SIZE + 1,
         category,
       });
-      const page = splitPage(toSessionGroups(res), SIDEBAR_PAGE_SIZE);
+      const page = splitPage(toSessionGroups(res), TRACES_PAGE_SIZE);
       return {
         agentId,
         category,

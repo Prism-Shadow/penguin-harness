@@ -4,8 +4,23 @@
  */
 import { describe, expect, it } from "vitest";
 import type { AgentTracesResponse } from "@prismshadow/penguin-server/api";
-import { partitionTraceRows, toSessionGroups } from "../src/features/traces/trace-sessions";
+import { SIDEBAR_GROUP_PAGE_SIZE, SIDEBAR_PAGE_SIZE } from "../src/lib/session-grouping";
+import {
+  TRACES_GROUP_PAGE_SIZE,
+  TRACES_PAGE_SIZE,
+  partitionTraceRows,
+  toSessionGroups,
+} from "../src/features/traces/trace-sessions";
 import type { TraceSessionRow } from "../src/features/traces/trace-sessions";
+
+describe("trace page thresholds", () => {
+  it("stay larger than the sidebar's (full-height page column vs narrow sidebar), and bounded", () => {
+    expect(TRACES_PAGE_SIZE).toBeGreaterThan(SIDEBAR_PAGE_SIZE);
+    expect(TRACES_GROUP_PAGE_SIZE).toBeGreaterThan(SIDEBAR_GROUP_PAGE_SIZE);
+    // The fetch limit is TRACES_PAGE_SIZE + 1; the server caps limit at 1000.
+    expect(TRACES_PAGE_SIZE + 1).toBeLessThanOrEqual(1000);
+  });
+});
 
 const S1 = "session-2026-07-05-10-00-00-aabbccdd";
 const S2 = "session-2026-07-06-09-00-00-11112222";

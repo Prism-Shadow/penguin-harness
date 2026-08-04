@@ -5,6 +5,23 @@
  */
 import type { AgentTracesResponse, SessionCategory } from "@prismshadow/penguin-server/api";
 
+/**
+ * Trace page sessions fetched per (group, category) page, and the per-group display cap
+ * step for active rows — the Trace-tree counterpart of the sidebar's SIDEBAR_PAGE_SIZE,
+ * deliberately larger: the sidebar is a narrow column, while the Trace tree is a
+ * full-height page column, so 10-row pages felt stingy there. Fetches use
+ * limit = TRACES_PAGE_SIZE + 1 (splitPage) exactly like the sidebar; folder pages use
+ * the same size, so every "More" on this page steps uniformly.
+ */
+export const TRACES_PAGE_SIZE = 20;
+
+/**
+ * Groups (Agents / Workspace groups) rendered per Trace page "page" (the sidebar's
+ * SIDEBAR_GROUP_PAGE_SIZE counterpart, modestly larger for the same reason as above);
+ * "more groups" raises it by one page — a pure display cap, data loading untouched.
+ */
+export const TRACES_GROUP_PAGE_SIZE = 15;
+
 export interface TraceFileRef {
   index: number;
   date: string;

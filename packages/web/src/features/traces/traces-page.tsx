@@ -22,8 +22,6 @@ import { useDocumentTitle } from "../../lib/use-document-title";
 import { formatBytes } from "../../lib/format";
 import {
   FOLDER_CATEGORIES,
-  SIDEBAR_GROUP_PAGE_SIZE,
-  SIDEBAR_PAGE_SIZE,
   aggregateWorkspaceCounts,
   groupSessionsByWorkspace,
   pinnedFirst,
@@ -52,7 +50,12 @@ import { EmptyState } from "../../components/ui/empty-state";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { TraceFileView } from "./trace-file-view";
 import type { TraceHighlight } from "./timeline-chart";
-import { partitionTraceRows, toSessionGroups } from "./trace-sessions";
+import {
+  TRACES_GROUP_PAGE_SIZE,
+  TRACES_PAGE_SIZE,
+  partitionTraceRows,
+  toSessionGroups,
+} from "./trace-sessions";
 import type { TraceFileRef, TraceSessionRow } from "./trace-sessions";
 import { useTraceTree } from "./use-trace-tree";
 
@@ -100,8 +103,8 @@ export function TracesPage() {
   const [selection, setSelection] = useState<Selection | null>(null);
   const [fileIndex, setFileIndex] = useState<number | null>(null);
   /** Rendered groups cap (the sidebar's group paging pattern: raised a page per "more groups" click; reset per Project and on a mode switch). */
-  const [groupCap, setGroupCap] = useState(SIDEBAR_GROUP_PAGE_SIZE);
-  /** Per-group display cap for active rows (keyed by group key; absent = SIDEBAR_PAGE_SIZE). "More" raises it a page at a time. */
+  const [groupCap, setGroupCap] = useState(TRACES_GROUP_PAGE_SIZE);
+  /** Per-group display cap for active rows (keyed by group key; absent = TRACES_PAGE_SIZE). "More" raises it a page at a time. */
   const [groupCaps, setGroupCaps] = useState<ReadonlyMap<string, number>>(new Map());
   /**
    * Agent-mode open groups; null = the default (only the deep-link target / first
@@ -128,14 +131,14 @@ export function TracesPage() {
     storeGroupMode(mode);
     setModePref(mode);
     // The two modes have unrelated group lists: restart the reveal window.
-    setGroupCap(SIDEBAR_GROUP_PAGE_SIZE);
+    setGroupCap(TRACES_GROUP_PAGE_SIZE);
   };
 
   // Clear the selection and per-Project view state when switching Project.
   useEffect(() => {
     setSelection(null);
     setFileIndex(null);
-    setGroupCap(SIDEBAR_GROUP_PAGE_SIZE);
+    setGroupCap(TRACES_GROUP_PAGE_SIZE);
     setGroupCaps(new Map());
     setOpenAgentGroups(null);
     setCollapsedWsGroups(new Set());
@@ -448,7 +451,7 @@ export function TracesPage() {
   const showMore = (groupKey: string, agentIds: string[]) => {
     setGroupCaps((prev) => {
       const next = new Map(prev);
-      next.set(groupKey, (prev.get(groupKey) ?? SIDEBAR_PAGE_SIZE) + SIDEBAR_PAGE_SIZE);
+      next.set(groupKey, (prev.get(groupKey) ?? TRACES_PAGE_SIZE) + TRACES_PAGE_SIZE);
       return next;
     });
     if (agentIds.length > 0) trackedLoadMore(groupKey, "active", agentIds);
@@ -470,7 +473,7 @@ export function TracesPage() {
     emptyText: string,
   ) => {
     const parts = partitionTraceRows(rows);
-    const cap = groupCaps.get(groupKey) ?? SIDEBAR_PAGE_SIZE;
+    const cap = groupCaps.get(groupKey) ?? TRACES_PAGE_SIZE;
     const shownActive = parts.active.slice(0, cap);
     const activeAgents = agentsFor("active");
     const activeTotal = Math.max(totals?.active ?? 0, parts.active.length);
@@ -603,7 +606,7 @@ export function TracesPage() {
             {orderedAgents.length > groupCap && (
               <MoreRow
                 label={S.chat.moreGroups(orderedAgents.length - groupCap)}
-                onClick={() => setGroupCap((c) => c + SIDEBAR_GROUP_PAGE_SIZE)}
+                onClick={() => setGroupCap((c) => c + TRACES_GROUP_PAGE_SIZE)}
                 className="mt-1"
               />
             )}
@@ -657,7 +660,7 @@ export function TracesPage() {
             {workspaceGroups.length > groupCap && (
               <MoreRow
                 label={S.chat.moreGroups(workspaceGroups.length - groupCap)}
-                onClick={() => setGroupCap((c) => c + SIDEBAR_GROUP_PAGE_SIZE)}
+                onClick={() => setGroupCap((c) => c + TRACES_GROUP_PAGE_SIZE)}
                 className="mt-1"
               />
             )}
