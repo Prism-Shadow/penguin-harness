@@ -161,12 +161,14 @@ penguin update             # upgrade to the latest release, after confirming
 
 The target flag is `--release`, not `--version`, because `-v, --version` is the CLI's own version flag and would take precedence.
 
+Release discovery and tarball downloads honor `PENGUIN_DOWNLOAD_SOURCE=auto|oss|github`, using the same policy as the stable installer entry point. The default `auto` mode reads the OSS `latest.json`, prefers that immutable release, and falls back to the matching GitHub tag. Forced `oss` and `github` modes are strict; `--release <tag>` skips latest-version discovery while retaining the selected source policy. An explicit HTTPS `PENGUIN_DOWNLOAD_BASE_URL` has highest priority for installer and payload downloads, with an optional `PENGUIN_DOWNLOAD_FALLBACK_BASE_URL` for the payload.
+
 | Install kind | How it upgrades |
 | --- | --- |
 | Tarball (`install.sh`, default `~/.penguin`) | Re-runs the official installer, preserving the install dir and whether the package bundles a Node runtime |
 | Global npm/pnpm/yarn/bun install | Runs that manager's global install of `@prismshadow/penguin-cli@<target>`; if the manager cannot be identified, prints the command instead of guessing |
 | Source checkout | Refused — update it with `git pull` and a rebuild |
 
-Without `-y` the command prints exactly what it will do — mechanism, target version and install dir — and asks for confirmation; when stdin is not a terminal it requires `--yes` rather than waiting on a prompt nobody can answer. The latest version comes from the GitHub Releases API. **The data root is never touched**: an upgrade only replaces `bin`, `lib`, `web` and `node`. Neither path upgrades in place on Windows: the installer is a POSIX shell script, and a global install cannot be driven from here because Node will not execute an `npm`/`pnpm` `.cmd` shim without a shell — so the command prints the exact command to run yourself instead.
+Without `-y` the command prints exactly what it will do — mechanism, target version and install dir — and asks for confirmation; when stdin is not a terminal it requires `--yes` rather than waiting on a prompt nobody can answer. **The data root is never touched**: an upgrade only replaces `bin`, `lib`, `web` and `node`. Neither path upgrades in place on Windows: the installer is a POSIX shell script, and a global install cannot be driven from here because Node will not execute an `npm`/`pnpm` `.cmd` shim without a shell — so the command prints the exact command to run yourself instead.
 
 See also: [Configuration Reference](/configuration), [Models & Providers](/models).
