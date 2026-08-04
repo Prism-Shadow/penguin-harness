@@ -54,6 +54,7 @@ import type {
   SessionResponse,
   SessionsResponse,
   SessionTracesResponse,
+  SkillArchiveInstallRequest,
   SkillInstallRequest,
   SkillLibraryResponse,
   RetryNowResponse,
@@ -526,6 +527,23 @@ export const installAgentSkills = (projectId: string, agentId: string, names: st
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/skills`,
     { method: "POST", body: { names } satisfies SkillInstallRequest },
   );
+
+/** Installs one skill from an uploaded zip (base64); 409 skill_exists unless overwrite; 201 returns the latest installed list. */
+export const installAgentSkillArchive = (
+  projectId: string,
+  agentId: string,
+  body: SkillArchiveInstallRequest,
+) =>
+  apiFetch<AgentSkillsResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
+      `/skills/archive`,
+    { method: "POST", body },
+  );
+
+/** Zip download URL for one installed skill (server sets Content-Disposition attachment); the export round-trips through installAgentSkillArchive. */
+export const agentSkillArchiveUrl = (projectId: string, agentId: string, name: string): string =>
+  `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
+  `/skills/${encodeURIComponent(name)}/archive`;
 
 export const removeAgentSkill = (projectId: string, agentId: string, name: string) =>
   apiFetch<void>(

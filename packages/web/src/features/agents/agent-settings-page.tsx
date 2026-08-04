@@ -1,10 +1,10 @@
 /**
- * Agent settings page: six tabs —
+ * Agent settings page: seven tabs —
  * Overview (name/description/State path/active count/State version + snapshot
  * export-import + restore default configuration), Prompt (AGENTS.md and system_prompt editors + placeholder
  * reference), Runtime (max_turns, model.*, compaction.*), Tools (editable built-in
- * tools table, MCP Server read-only JSON), Vault (vault-tab.tsx), Schedule
- * (schedules-tab.tsx).
+ * tools table, MCP Server read-only JSON), Skills (skills-tab.tsx), Vault
+ * (vault-tab.tsx), Schedule (schedules-tab.tsx).
  * Save = PUT config (sends only the changed keys; YAML comments are preserved
  * server-side).
  */
@@ -33,11 +33,12 @@ import { OptionMenu, type OptionMenuChoice } from "../../components/ui/option-me
 import { Switch } from "../../components/ui/switch";
 import { ConfirmModal, useSaveConfirm } from "../../components/ui/confirm-modal";
 import { Skeleton } from "../../components/ui/skeleton";
+import { SkillsTab } from "./skills-tab";
 import { VaultTab } from "./vault-tab";
 import { SchedulesTab } from "./schedules-tab";
 import { thinkingLevelOptionsFor } from "../chat/thinking-level";
 
-type TabKey = "overview" | "prompt" | "runtime" | "tools" | "vault" | "schedules";
+type TabKey = "overview" | "prompt" | "runtime" | "tools" | "skills" | "vault" | "schedules";
 
 /**
  * Dropdown rows from a dictionary's [value, description] pairs (exported for unit tests).
@@ -92,6 +93,7 @@ export function AgentSettingsPage() {
     { key: "prompt", label: S.agent.tabPrompt },
     { key: "runtime", label: S.agent.tabRuntime },
     { key: "tools", label: S.agent.tabTools },
+    { key: "skills", label: S.agent.tabSkills },
     { key: "vault", label: S.agent.tabVault },
     { key: "schedules", label: S.agent.tabSchedules },
   ] as const;
@@ -232,6 +234,7 @@ export function AgentSettingsPage() {
           {tab === "prompt" && <PromptTab data={data} onSave={save} />}
           {tab === "runtime" && <RuntimeTab data={data} onSave={save} />}
           {tab === "tools" && <ToolsTab data={data} onSave={save} />}
+          {tab === "skills" && <SkillsTab agentId={agentId} />}
           {tab === "vault" && <VaultTab agentId={agentId} />}
           {tab === "schedules" && <SchedulesTab agentId={agentId} />}
         </div>
