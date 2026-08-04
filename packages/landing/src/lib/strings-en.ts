@@ -25,6 +25,7 @@ export const en: Strings = {
     contract: "CONTRACT.md",
     features: "Features",
     blog: "Blog",
+    download: "Download",
     docs: "Docs",
     github: "GitHub",
     openMenu: "Open menu",
@@ -78,6 +79,36 @@ export const en: Strings = {
       windows: "After unzipping you can also just double-click install.cmd.",
     },
     offlineRelease: "Download offline packages from GitHub Releases",
+    desktopNote:
+      "Prefer a standalone app? The desktop app packages the Web interface and the server into a terminal-free installer (macOS / Windows / Linux), sharing the same local data as a CLI install.",
+    desktopPage: "Go to the desktop download page",
+  },
+
+  download: {
+    eyebrow: "Download",
+    title: "Download the desktop app",
+    subtitle:
+      "The full Web experience as a standalone application: it embeds the server and opens already signed in — no terminal, no login page; data lives in the same ~/.penguin/data root as a CLI install.",
+    recommended: "Your system",
+    platforms: {
+      mac: { name: "macOS", require: "macOS 11 or later, dmg disk image (pick your chip)" },
+      windows: { name: "Windows", require: "Windows 10 or later (x64), NSIS installer" },
+      linux: {
+        name: "Linux",
+        require: "x64 — AppImage runs in place, deb goes to your package manager",
+      },
+    },
+    statusOss: (version: string) =>
+      `Connected to the OSS mirror (${version}) — downloads are served from the mirror.`,
+    statusGithub: "Downloads point at the latest GitHub Release.",
+    altGithub: "Download from GitHub instead",
+    altOss: "Use the OSS mirror instead",
+    checksums: "Checksums (SHA256SUMS.desktop)",
+    allReleases: "All releases",
+    unsignedNote:
+      'Current builds are unsigned: on first launch use right-click → Open on macOS, and "More info → Run anyway" past Windows SmartScreen.',
+    cliHint: "Just need the CLI, or the Web UI in a browser?",
+    cliHintLink: "See the quick start",
   },
 
   copy: {

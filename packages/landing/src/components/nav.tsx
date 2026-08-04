@@ -108,6 +108,14 @@ export function Nav() {
       >
         {S.nav.blog}
       </Link>
+      <Link
+        to="/download"
+        className={deskLinkCls(activeItem === "download")}
+        onMouseEnter={slideTo}
+        aria-current={activeItem === "download" ? "page" : undefined}
+      >
+        {S.nav.download}
+      </Link>
       {/* Docs is a sibling SPA under /docs/ — a plain anchor, not a router Link. */}
       <a href={DOCS_URL} className={deskLinkCls(false)} onMouseEnter={slideTo}>
         {S.nav.docs}
@@ -138,6 +146,14 @@ export function Nav() {
         aria-current={activeItem === "blog" ? "page" : undefined}
       >
         {S.nav.blog}
+      </Link>
+      <Link
+        to="/download"
+        className={mobileLinkCls(activeItem === "download")}
+        onClick={() => setOpen(false)}
+        aria-current={activeItem === "download" ? "page" : undefined}
+      >
+        {S.nav.download}
       </Link>
       <a href={DOCS_URL} className={mobileLinkCls(false)} onClick={() => setOpen(false)}>
         {S.nav.docs}

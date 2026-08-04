@@ -75,8 +75,8 @@ jobs:
           name: desktop-${{ runner.os }}
           if-no-files-found: error
           path: |
-            packages/desktop/stage/out/*.AppImage
-            packages/desktop/stage/out/*.deb
-            packages/desktop/stage/out/*.dmg
-            packages/desktop/stage/out/*-mac.zip
-            packages/desktop/stage/out/*.exe
+            packages/desktop/stage/out/penguin-desktop-*.AppImage
+            packages/desktop/stage/out/penguin-desktop-*.deb
+            packages/desktop/stage/out/penguin-desktop-*.dmg
+            packages/desktop/stage/out/penguin-desktop-*.zip
+            packages/desktop/stage/out/penguin-desktop-*.exe

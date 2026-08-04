@@ -37,6 +37,11 @@ export function Footer() {
                     {S.footer.blog}
                   </Link>
                 </li>
+                <li>
+                  <Link to="/download" className="hover:text-gray-900 dark:hover:text-gray-100">
+                    {S.nav.download}
+                  </Link>
+                </li>
               </ul>
             </div>
             <div>

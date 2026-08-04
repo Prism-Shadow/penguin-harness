@@ -19,6 +19,7 @@ export const zh = {
     contract: "CONTRACT.md",
     features: "功能",
     blog: "博客",
+    download: "下载",
     docs: "文档",
     github: "GitHub",
     openMenu: "打开目录",

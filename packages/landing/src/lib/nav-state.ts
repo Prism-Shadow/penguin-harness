@@ -13,7 +13,7 @@ export const SECTION_IDS = [
 ] as const;
 
 export type SectionId = (typeof SECTION_IDS)[number];
-export type ActiveNavItem = SectionId | "blog" | null;
+export type ActiveNavItem = SectionId | "blog" | "download" | null;
 
 function isSectionId(value: string): value is SectionId {
   return SECTION_IDS.some((id) => id === value);
@@ -21,6 +21,7 @@ function isSectionId(value: string): value is SectionId {
 
 export function getActiveNavItem(pathname: string, hash: string): ActiveNavItem {
   if (pathname === "/blog" || pathname.startsWith("/blog/")) return "blog";
+  if (pathname === "/download") return "download";
   if (pathname !== "/") return null;
 
   const id = hash.startsWith("#") ? hash.slice(1) : hash;
