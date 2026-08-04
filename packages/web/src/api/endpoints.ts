@@ -24,6 +24,9 @@ import type {
   BenchmarkCasesResponse,
   BenchmarksResponse,
   CaseMaterial,
+  ChatDefaultsDto,
+  DefaultModelResponse,
+  DefaultModelUpdateRequest,
   DirListResponse,
   FilesStatRequest,
   FilesStatResponse,
@@ -54,6 +57,7 @@ import type {
   SessionResponse,
   SessionsResponse,
   SessionTracesResponse,
+  SkillArchiveInstallRequest,
   SkillInstallRequest,
   SkillLibraryResponse,
   RetryNowResponse,
@@ -142,6 +146,17 @@ export const removeMember = (projectId: string, username: string) =>
     { method: "DELETE" },
   );
 
+/** New-chat defaults ([default_chat]): member-readable prefill for the draft page. */
+export const getChatDefaults = (projectId: string) =>
+  apiFetch<ChatDefaultsDto>(`/api/projects/${encodeURIComponent(projectId)}/chat-defaults`);
+
+/** Whole-block replace (owner): an omitted key clears it; returns the stored block. */
+export const putChatDefaults = (projectId: string, body: ChatDefaultsDto) =>
+  apiFetch<ChatDefaultsDto>(`/api/projects/${encodeURIComponent(projectId)}/chat-defaults`, {
+    method: "PUT",
+    body,
+  });
+
 // Model configuration -------------------------------------------------------------------
 
 export const getModels = (projectId: string) =>
@@ -149,6 +164,13 @@ export const getModels = (projectId: string) =>
 
 export const putModels = (projectId: string, body: ModelsUpdateRequest) =>
   apiFetch<ModelsResponse>(`/api/projects/${encodeURIComponent(projectId)}/models`, {
+    method: "PUT",
+    body,
+  });
+
+/** Narrow default-model switch (owner): flips the same default_model the models page maintains, without resending the table. */
+export const putDefaultModel = (projectId: string, body: DefaultModelUpdateRequest) =>
+  apiFetch<DefaultModelResponse>(`/api/projects/${encodeURIComponent(projectId)}/models/default`, {
     method: "PUT",
     body,
   });
@@ -526,6 +548,23 @@ export const installAgentSkills = (projectId: string, agentId: string, names: st
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/skills`,
     { method: "POST", body: { names } satisfies SkillInstallRequest },
   );
+
+/** Installs one skill from an uploaded zip (base64); 409 skill_exists unless overwrite; 201 returns the latest installed list. */
+export const installAgentSkillArchive = (
+  projectId: string,
+  agentId: string,
+  body: SkillArchiveInstallRequest,
+) =>
+  apiFetch<AgentSkillsResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
+      `/skills/archive`,
+    { method: "POST", body },
+  );
+
+/** Zip download URL for one installed skill (server sets Content-Disposition attachment); the export round-trips through installAgentSkillArchive. */
+export const agentSkillArchiveUrl = (projectId: string, agentId: string, name: string): string =>
+  `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
+  `/skills/${encodeURIComponent(name)}/archive`;
 
 export const removeAgentSkill = (projectId: string, agentId: string, name: string) =>
   apiFetch<void>(

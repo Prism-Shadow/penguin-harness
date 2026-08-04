@@ -1,39 +1,86 @@
 ---
 name: data-analysis
-description: Complete data-analysis tasks with bounded evidence inspection, explicit answer-changing decisions, native artifact handling, and final output verification.
-short_description: Complete data analysis with a bounded, verified method.
-short_description_zh: 以有界、可验证的方法完成数据分析任务。
-version: 1
-updated: 2026-07-18T00:00:00Z
+description: Complete data-analysis tasks with bounded inspection, correct data semantics, native artifact handling, complete delivery, and risk-based verification.
+short_description: Deliver correct data-analysis artifacts with bounded verification.
+short_description_zh: 以正确数据语义完成产物并进行有界核查。
+version: 2
+updated: 2026-08-03T00:00:00Z
 ---
 
 # Data Analysis
 
+Deliver the requested result and artifacts. Do not turn the task into a proof
+exercise or add evidence, reports, explanations, or intermediate files that
+were not requested.
+
 ## Before you start
 
-Require a concrete data-analysis task, its available inputs, and the requested deliverable, location, and format. If the task or required materials are missing or ambiguous in an answer-changing way, ask before calculating or creating outputs. Otherwise proceed without forcing a fixed analysis template.
+Require a concrete data-analysis task, its available inputs, and the requested
+deliverable, location, and format. Ask only when missing information prevents a
+defensible result and would materially change the deliverable; otherwise proceed.
 
-## Success criteria
+## Contract
 
-- Derive the final result from one committed method: the selected evidence, answer-changing decisions, transformations, calculations, and judgments.
-- Produce every output the task asks for, in the requested location and format, and ensure it reflects the committed method.
-- Ground each answer-changing choice in the task materials rather than in a merely plausible nearby match.
-- Prefer a complete, simple, defensible deliverable over an elaborate or exhaustive analysis that risks not being delivered.
+Read the task, supplied inputs, and relevant data documentation. Identify every
+required output path and format, plus only the definitions that can change the
+result: scope, observation grain, keys, units, operators, ordering, coverage,
+and explicit formatting rules. Treat examples as illustrative unless the task
+makes them normative.
 
-## Constraints
+If information is incomplete or ambiguous, first resolve it from the supplied
+materials. Ask only when the missing choice prevents a defensible result and
+would materially change the deliverable. Otherwise choose the best-supported
+interpretation and proceed.
 
-- Use bounded probes first for large, unfamiliar, or expensive-to-read inputs. Narrow the scope, cap output, or use a timeout before expanding.
-- Before calculating or producing final outputs, identify the few decisions that can change the answer, such as inclusion or exclusion, matching, boundary choices, transformations, formulas, and ranking criteria. Adapt this check to the task; do not force a fixed analysis template.
-- Compare materially plausible alternatives only when they would change the final output. Use the smallest comparison needed to resolve the choice from the task materials, then commit to a method.
-- Once the evidence supports a defensible answer, create the requested output files promptly. Do not continue open-ended thinking, searching, or polishing over alternatives that would not change the delivered answer.
-- Use intermediate files only when they help compute or verify the result. Preserve the requested output format and structure unless the task asks for a change.
-- Satisfy the requested deliverable with the simplest sufficient artifact and implementation. Avoid optional structure, styling, helper code, or reimplementation that is not required by the task.
-- Keep final delivery steps short and robust. Avoid putting a long report, large dataset, or large script into one fragile streamed command when the deliverable can be created by shorter steps. Create the required artifact first, then refine only if the required outputs already exist.
-- For spreadsheet or Office deliverables, prefer the tool path that preserves the native artifact contract. If a task depends on Excel formula recalculation, data tables, workbook formatting, or Office export, first check whether native Excel automation such as `xlwings` is available before falling back to LibreOffice or a hand-rolled model. Record formulas or inputs that will be temporarily overwritten, restore them before finalizing, and verify that the requested workbook, deck, document, or PDF can be opened and contains the expected tables, sheets, slides, or sections. Do not dump or reimplement an entire workbook when bounded input changes and output reads can answer the task.
-- When creating spreadsheet tables, keep each table as one contiguous rectangle: title or caption, row-axis labels, column-axis labels, and data cells should be adjacent and inspectable together. Do not place row labels or key headers outside the visible table bounds or to the left of the title anchor. If you add decorative axis labels, keep the actual machine-readable row and column values inside the same table rectangle.
+## Bounded inspection
 
-## Stop rules
+For large or unfamiliar inputs, begin with a bounded inventory, schema check,
+targeted sample, or narrow query. Expand inspection only when it can change a
+selection, transformation, calculation, or output. Do not exhaustively read or
+render data merely to increase confidence.
 
-- Before finalizing, inspect the requested outputs and check their location, format, shape, and content against the committed method and the task.
-- If a later finding changes the method, assumptions, selections, transformations, calculations, decisions, or coverage, regenerate the affected outputs before finalizing.
-- Once the requested outputs exist and the relevant checks pass, stop instead of continuing open-ended exploration.
+## Data semantics
+
+Compute at the correct row or entity grain. Evaluate conjunctive conditions on
+the same record or entity; do not replace row-level matching with unions of
+separate field values. Preserve nulls, exclusions, and explicit prohibitions.
+Enumerated outputs must cover the complete requested universe.
+
+Ground answer-changing choices in the task and supplied data. Preserve
+documented source semantics, units, mappings, and native workflow behavior when
+they define the requested result. Do not reproduce an apparent source or tool
+defect merely for consistency. When plausible methods disagree, compare only
+the smallest answer-changing difference, choose the best-supported method, and
+use it consistently.
+
+## Native artifacts
+
+Preserve the requested artifact type and structure. When correctness depends on
+spreadsheet formulas, recalculation, formatting, database semantics, document
+layout, or export behavior, prefer a tool path that preserves and can verify
+those native properties. Restore temporarily changed inputs or formulas before
+finalizing. Use intermediate files only when they help produce or verify the
+requested deliverable.
+
+## Delivery
+
+As soon as a complete best-supported result exists, write every requested
+artifact at its exact path. For a multi-artifact task, establish a valid version
+of every artifact before refining any one of them. Do not leave a required
+artifact missing while pursuing additional certainty, polish, or diagnostics.
+If later evidence changes the result, update the artifact.
+
+## Verification
+
+Choose checks in proportion to answer-changing risk. Use the smallest
+independent check that can falsify each load-bearing assumption or computation.
+If a check disagrees, isolate and resolve the concrete difference. Do not repeat
+equivalent searches, calculations, renders, or inspections once remaining
+uncertainty cannot change the deliverable.
+
+## Final check
+
+Reopen the actual deliverables and verify their path, format, schema or
+structure, values, coverage, and openability as applicable. Confirm that every
+requested artifact exists and reflects the chosen method. Report the output
+paths concisely and stop.

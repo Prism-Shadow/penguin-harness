@@ -355,6 +355,29 @@ describe("harness environment variables never reach a spawned command", () => {
     }
   });
 
+  it("inherited FORCE_COLOR is removed, so the NO_COLOR=1 hardening actually wins", async () => {
+    // Node deliberately lets FORCE_COLOR defeat NO_COLOR, so a nested `penguin run` under a
+    // color-forcing parent (issue #102 observed FORCE_COLOR=3, NO_COLOR=1, TERM=dumb at once)
+    // would keep emitting ANSI escapes unless the inherited override is removed outright.
+    const saved = {
+      FORCE_COLOR: process.env.FORCE_COLOR,
+      CLICOLOR_FORCE: process.env.CLICOLOR_FORCE,
+    };
+    process.env.FORCE_COLOR = "3";
+    process.env.CLICOLOR_FORCE = "1";
+    try {
+      const res = await runTool(env, "exec_command", {
+        cmd: `node -e "console.log('F=[' + (process.env.FORCE_COLOR ?? '') + '] C=[' + (process.env.CLICOLOR_FORCE ?? '') + '] N=[' + (process.env.NO_COLOR ?? '') + ']')"`,
+      });
+      expect(res.output).toContain("F=[] C=[] N=[1]");
+    } finally {
+      for (const [k, v] of Object.entries(saved)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
+  });
+
   it("the rest of the host environment still passes through", async () => {
     process.env.PENGUIN_TEST_PASSTHROUGH = "kept";
     try {

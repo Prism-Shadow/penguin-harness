@@ -1,16 +1,16 @@
 /**
- * Agent settings page: six tabs —
+ * Agent settings page: seven tabs —
  * Overview (name/description/State path/active count/State version + snapshot
  * export-import + restore default configuration), Prompt (AGENTS.md and system_prompt editors + placeholder
  * reference), Runtime (max_turns, model.*, compaction.*), Tools (editable built-in
- * tools table, MCP Server read-only JSON), Vault (vault-tab.tsx), Schedule
- * (schedules-tab.tsx).
+ * tools table, MCP Server read-only JSON), Skills (skills-tab.tsx), Vault
+ * (vault-tab.tsx), Schedule (schedules-tab.tsx).
  * Save = PUT config (sends only the changed keys; YAML comments are preserved
  * server-side).
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
-import { useNavigate, useParams } from "react-router";
+import { useNavigate, useParams, useSearchParams } from "react-router";
 import type {
   AgentConfigResponse,
   AgentConfigUpdateRequest,
@@ -33,11 +33,12 @@ import { OptionMenu, type OptionMenuChoice } from "../../components/ui/option-me
 import { Switch } from "../../components/ui/switch";
 import { ConfirmModal, useSaveConfirm } from "../../components/ui/confirm-modal";
 import { Skeleton } from "../../components/ui/skeleton";
+import { SkillsTab } from "./skills-tab";
 import { VaultTab } from "./vault-tab";
 import { SchedulesTab } from "./schedules-tab";
 import { thinkingLevelOptionsFor } from "../chat/thinking-level";
 
-type TabKey = "overview" | "prompt" | "runtime" | "tools" | "vault" | "schedules";
+type TabKey = "overview" | "prompt" | "runtime" | "tools" | "skills" | "vault" | "schedules";
 
 /**
  * Dropdown rows from a dictionary's [value, description] pairs (exported for unit tests).
@@ -72,6 +73,19 @@ function numToStr(n: number | undefined): string {
   return n === undefined ? "" : String(n);
 }
 
+/**
+ * Narrow an untrusted `?tab=` query value to a known tab key (exported for unit tests):
+ * validated against the live TABS keys — not a hardcoded list — so newly added tabs
+ * deep-link without touching this helper; missing/unknown values fall back to the default.
+ */
+export function resolveTabKey<K extends string>(
+  raw: string | null,
+  tabs: ReadonlyArray<{ key: K }>,
+  fallback: K,
+): K {
+  return tabs.some((t) => t.key === raw) ? (raw as K) : fallback;
+}
+
 export function AgentSettingsPage() {
   // Read inside the component: after a language switch remount, this picks up the current dictionary.
   const TABS = [
@@ -79,6 +93,7 @@ export function AgentSettingsPage() {
     { key: "prompt", label: S.agent.tabPrompt },
     { key: "runtime", label: S.agent.tabRuntime },
     { key: "tools", label: S.agent.tabTools },
+    { key: "skills", label: S.agent.tabSkills },
     { key: "vault", label: S.agent.tabVault },
     { key: "schedules", label: S.agent.tabSchedules },
   ] as const;
@@ -90,7 +105,27 @@ export function AgentSettingsPage() {
   const projectId = currentProject?.projectId ?? null;
 
   const [data, setData] = useState<AgentConfigResponse | null>(null);
-  const [tab, setTab] = useState<TabKey>("overview");
+  // ?tab= deep link (from the Agents page's stat icons): a valid key lands the page on that
+  // tab; missing/unknown values fall back to "overview", exactly the previous behavior.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [tab, setTab] = useState<TabKey>(() =>
+    resolveTabKey(searchParams.get("tab"), TABS, "overview"),
+  );
+  /** Switch tab and mirror it into `?tab=` (replace history entry, keep other params) so the address stays shareable. */
+  const switchTab = useCallback(
+    (next: TabKey) => {
+      setTab(next);
+      setSearchParams(
+        (prev) => {
+          const p = new URLSearchParams(prev);
+          p.set("tab", next);
+          return p;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
   // Only the initial config load failure renders inline (the page can't show without it); saves/imports report via toast.
   const [error, setError] = useState<string | null>(null);
 
@@ -185,7 +220,7 @@ export function AgentSettingsPage() {
         </Button>
         <h1 className="mb-1 text-xl font-semibold">{data.config.name ?? agentId}</h1>
         <p className="mb-4 font-mono text-xs text-gray-400">{agentId}</p>
-        <Tabs items={TABS} active={tab} onChange={setTab} />
+        <Tabs items={TABS} active={tab} onChange={switchTab} />
         <div className="py-4">
           {tab === "overview" && (
             <OverviewTab
@@ -199,6 +234,7 @@ export function AgentSettingsPage() {
           {tab === "prompt" && <PromptTab data={data} onSave={save} />}
           {tab === "runtime" && <RuntimeTab data={data} onSave={save} />}
           {tab === "tools" && <ToolsTab data={data} onSave={save} />}
+          {tab === "skills" && <SkillsTab agentId={agentId} />}
           {tab === "vault" && <VaultTab agentId={agentId} />}
           {tab === "schedules" && <SchedulesTab agentId={agentId} />}
         </div>

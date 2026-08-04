@@ -33,8 +33,8 @@ const HARDENED_ENV: NodeJS.ProcessEnv = {
 };
 
 /**
- * Harness-owned variables **removed** from the child environment (removed, not blanked: a
- * program that checks `PORT` for presence rather than value must see nothing at all).
+ * Variables **removed** from the child environment (removed, not blanked: a program that
+ * checks `PORT` for presence rather than value must see nothing at all).
  *
  * `PORT` / `HOST` are stripped because they are never about the command being run. On the
  * serving paths they are the harness's own listener: `penguin web` / `penguin server` write both
@@ -56,6 +56,13 @@ const HARDENED_ENV: NodeJS.ProcessEnv = {
  * PenguinHarness server would otherwise serve the deployment's assets instead of the ones it just
  * built in the workspace, silently and with no error to read.
  *
+ * `FORCE_COLOR` / `CLICOLOR_FORCE` are color-forcing overrides that Node (and the chalk-family
+ * libraries) deliberately let defeat `NO_COLOR`, so an inherited value would cancel the
+ * `NO_COLOR=1` + `TERM=dumb` hardening above and leak ANSI escapes into tool output (#102).
+ * Removal, not blanking, matters here too: Node reads an *empty* `FORCE_COLOR` as "force 16
+ * colors on". The vault still wins, so a user who genuinely wants forced color in commands can
+ * set it there.
+ *
  * Deliberately **not** stripped: `PENGUIN_HOME`, `PENGUIN_WEB_DB` and the rest of the user-facing
  * `PENGUIN_*` settings. Those select the *data* an Agent-started harness works against, and the
  * self-development case may legitimately want the same data root — sharing state is a config
@@ -66,6 +73,8 @@ const STRIPPED_ENV_KEYS = new Set([
   "HOST",
   "PENGUIN_CLI_ENTRY",
   "PENGUIN_WEB_DIST",
+  "FORCE_COLOR",
+  "CLICOLOR_FORCE",
   // Desktop-mode process credentials and wiring: the shell's token authorizes the
   // server shutdown endpoint (and desktop-login until redeemed), and the port file is
   // the shell's private channel — neither is a user-facing setting, and leaking them

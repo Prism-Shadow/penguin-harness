@@ -223,7 +223,8 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // one pass on 2026-08-03 from the models API (/api/v1/models): cache_read stores the
   // published input_cache_read (falling back to the input price for the few rows without
   // one — qwen3.6-35b-a3b and the :free rows); cache_write stores input_cache_write only
-  // when it is a genuine per-token write premium (the Anthropic and GPT rows, 1.25x input) —
+  // when it is a genuine per-token write premium (the Anthropic, GPT and qwen3.8-max rows,
+  // 1.25x input) —
   // Gemini's field is an hourly cache-STORAGE rate, not a per-token price, so those rows
   // keep the input price — and otherwise also carries the input price. The :free tier and
   // the openrouter/free Free Models Router store a genuine $0 price (not "unknown"), so
@@ -456,6 +457,16 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 128000,
     pricing: usd(0, 0, 0),
     supportsVision: false,
+    clientType: "openai",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
+    modelId: "qwen/qwen3.8-max",
+    displayName: "Qwen 3.8 Max",
+    provider: "openrouter",
+    contextWindow: 1000000,
+    pricing: usd(0.25, 2.5, 6),
+    supportsVision: true,
     clientType: "openai",
     baseUrl: OPENROUTER_BASE_URL,
   },

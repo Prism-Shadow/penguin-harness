@@ -1,7 +1,8 @@
 /**
  * Conversation outline data (pure logic, unit-testable): reduces the stream items to one
  * entry per exchange — the user's question plus a truncated plain-text preview of the
- * assistant's reply — for the left quick-jump index.
+ * assistant's reply — for the left quick-jump index. Also owns the outline's display
+ * math: the minimum-turns gate both shapes share and the tick rail's sliding window.
  *
  * Entry boundaries: a turn opens at a user prompt (user_text / user_image) and collects
  * every assistant_text that follows until the next prompt. Consecutive user items merge
@@ -27,6 +28,67 @@ export interface OutlineEntry {
 
 /** Answer accumulation cap: enough for any preview length while keeping rebuilds O(entries) cheap. */
 const ANSWER_CAP = 500;
+
+/**
+ * Visibility gate shared by both outline shapes (tick rail and toolbar dropdown): below
+ * this many turns the whole conversation is a flick of the wheel away, and an index would
+ * be chrome without navigation value.
+ */
+export const OUTLINE_MIN_TURNS = 5;
+
+/** Rail window half-widths: at most this many ticks render before/after the active one. */
+export const OUTLINE_WINDOW_BEFORE = 20;
+export const OUTLINE_WINDOW_AFTER = 20;
+
+/**
+ * The slice of entries the tick rail renders: a sliding window of at most
+ * `before + 1 + after` ticks kept centered on the active entry, shifted — never shrunk —
+ * at the edges (at the bottom of a long conversation the window is simply the last
+ * `before + 1 + after` turns). No active entry yet (null / -1) parks the window at the
+ * END, where a conversation opens and where new turns appear. Bounds are indices into the
+ * full entries array (`end` exclusive): callers slice with them and must keep labeling
+ * ticks by GLOBAL index — the window moves which ticks exist, never what they are.
+ */
+export function windowOutline(
+  entryCount: number,
+  activeIndex: number | null,
+  before: number = OUTLINE_WINDOW_BEFORE,
+  after: number = OUTLINE_WINDOW_AFTER,
+): { start: number; end: number } {
+  const size = before + 1 + after;
+  if (entryCount <= size) return { start: 0, end: entryCount };
+  if (activeIndex === null || activeIndex < 0 || activeIndex >= entryCount) {
+    return { start: entryCount - size, end: entryCount };
+  }
+  const start = Math.min(Math.max(0, activeIndex - before), entryCount - size);
+  return { start, end: start + size };
+}
+
+/** Tick pitch bounds (px): compress toward MIN as the window outgrows the rail, never past hoverability. */
+export const TICK_PITCH_MAX = 12;
+export const TICK_PITCH_MIN = 5;
+
+/** Vertical allowance (px) the tick stack keeps free inside the rail: the edge dots plus breathing room. */
+const RAIL_STACK_ALLOWANCE = 48;
+
+/** Tick pitch (px) for `count` ticks in a `height`-px rail: MAX, compressed toward MIN as the stack outgrows it. */
+export function railTickPitch(height: number, count: number): number {
+  return Math.max(
+    TICK_PITCH_MIN,
+    Math.min(TICK_PITCH_MAX, Math.floor((height - RAIL_STACK_ALLOWANCE) / Math.max(1, count))),
+  );
+}
+
+/**
+ * Height-adaptive window half-width: at most OUTLINE_WINDOW_BEFORE/AFTER, shrunk until
+ * the whole window fits the measured rail at minimum pitch. A short rail (small window,
+ * split screen) thus shows fewer turns instead of letting the tick stack spill over the
+ * toolbar and composer. One symmetric value, since the default half-widths are equal.
+ */
+export function railWindowHalf(height: number): number {
+  const fits = Math.floor((height - RAIL_STACK_ALLOWANCE) / TICK_PITCH_MIN);
+  return Math.min(OUTLINE_WINDOW_BEFORE, Math.max(0, Math.floor((fits - 1) / 2)));
+}
 
 export function buildOutline(items: readonly ChatItem[]): OutlineEntry[] {
   const out: OutlineEntry[] = [];
