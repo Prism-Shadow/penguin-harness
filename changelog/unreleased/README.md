@@ -1,5 +1,7 @@
 # Unreleased
 
+- [2026-08-04] Skills: new `skill-porting` library skill — verified, schema-accurate flows for bringing skills in from Claude Code plugin marketplaces, Codex plugins, `npx skills add`/skills.sh, GitHub repos and local folders, normalizing them into penguin's skill format with a read-everything-first safety gate. ([details](2026-08-04-skill-porting-library-skill.md))
+
 - [2026-08-04] Web App: skills become manageable from Agent settings — a Skills tab after Tools listing the installed set straight from disk, uninstall with confirmation, an Import dialog that leads with chat-driven install (URL + generated review-first prompt) and also accepts a skill zip through a new validated archive endpoint, and per-skill zip export that round-trips through that import; the agent list's tools/vault/schedules/skills icons deep-link to the matching settings tab via a new `?tab=` param, and the list rows drop the active-session badge. ([details](2026-08-04-agent-skills-and-list.md))
 
 - [2026-08-04] Web App: Project settings gains a "New chat defaults" section — default Agent, working directory, approval mode and thinking level stored as an additive `[default_chat]` block in `.project_config.toml`, seeded into new drafts beneath route overrides and unsent drafts; the model row reads and writes the same `default_model` the models page owns through a narrow set-default endpoint, and thinking level resolves Agent-explicit → project default → `medium`. ([details](2026-08-04-project-chat-defaults.md))
