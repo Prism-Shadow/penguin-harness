@@ -39,6 +39,27 @@ export function isAppUrl(url: string, origin: string | null): boolean {
   }
 }
 
+/**
+ * Whether a URL belongs to this instance's local surface: the app origin itself or its
+ * loopback counterpart on the same port, which is where Workspace previews are served
+ * (see design § "Workspace 文件预览"). Preview windows navigate freely within it; anything
+ * else is external and belongs in the system browser.
+ */
+export function isLocalSurfaceUrl(url: string, origin: string | null): boolean {
+  if (origin === null) return false;
+  let target: URL;
+  let app: URL;
+  try {
+    target = new URL(url);
+    app = new URL(origin);
+  } catch {
+    return false;
+  }
+  if (target.protocol !== app.protocol || target.port !== app.port) return false;
+  const loopback = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
+  return loopback.has(target.hostname) && loopback.has(app.hostname);
+}
+
 /** Max automatic server restarts before giving up with an error dialog. */
 export const MAX_SERVER_RESTARTS = 3;
 

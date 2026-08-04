@@ -119,16 +119,18 @@ function Invoke-OnlineCase(
   [string]$Mode,
   [string]$Version,
   [bool]$ShouldSucceed,
-  [int]$ExpectedRequests
+  [int]$ExpectedRequests,
+  [string]$InstallerPath = ""
 ) {
   $Fixture.Mode = $Mode
   $Fixture.Requests.Clear()
   $InstallDir = Join-Path $WorkDir "$Name-install"
   $Arguments = @{ InstallDir = $InstallDir }
   if ($Version) { $Arguments.Version = $Version }
+  if (-not $InstallerPath) { $InstallerPath = $Installer }
   $Succeeded = $true
   $Output = @()
-  try { $Output = @(& $Installer @Arguments *>&1) } catch { $Succeeded = $false }
+  try { $Output = @(& $InstallerPath @Arguments *>&1) } catch { $Succeeded = $false }
   Assert-True ($Succeeded -eq $ShouldSucceed) "$Name returned an unexpected result"
   Assert-True ($Fixture.Requests.Count -eq $ExpectedRequests) `
     "$Name made $($Fixture.Requests.Count) requests, expected $ExpectedRequests"
@@ -218,6 +220,14 @@ try {
 
   $Fixture.LegacyArchive = $GoodArchive
 
+  # Model the release workflow's installer stamping without changing the source installer.
+  $StampedInstaller = Join-Path $WorkDir "install-v0.0.0-test.ps1"
+  $InstallerText = [IO.File]::ReadAllText($Installer, [Text.UTF8Encoding]::new($false))
+  Assert-True ($InstallerText.Contains('__PENGUIN_RELEASE_VERSION__')) `
+    "Windows installer release-version token is missing"
+  $InstallerText = $InstallerText.Replace('__PENGUIN_RELEASE_VERSION__', 'v0.0.0-test')
+  [IO.File]::WriteAllText($StampedInstaller, $InstallerText, [Text.UTF8Encoding]::new($false))
+
   # --- Local bundle via -ArchivePath: opened flat, sealed payload checksum verified. ---
   $BundleInstall = Join-Path $WorkDir "bundle-install"
   & $Installer -InstallDir $BundleInstall -ArchivePath $Fixture.GoodBundle *>&1 | Out-Null
@@ -236,11 +246,31 @@ try {
   Assert-True ($Version -eq "fixture-old") "sibling install did not produce a working command"
 
   # --- Online cases. ---
-  $canonical = Invoke-OnlineCase "canonical" "canonical" "" $true 2
-  Assert-True ($canonical.Requests[0] -like "*/releases/latest/download/penguin-win32-x64.zip") `
-    "canonical did not request the canonical bundle"
+  $canonical = Invoke-OnlineCase "canonical" "canonical" "" $true 3
+  Assert-True ($canonical.Requests[0] -like "*/latest.json") `
+    "unstamped installer did not resolve the OSS latest metadata"
+  Assert-True ($canonical.Requests[1] -like "*/releases/v0.0.0-test/penguin-win32-x64.zip") `
+    "unstamped installer did not lock the resolved OSS release"
   $Version = & (Join-Path $canonical.InstallDir "bin\penguin.cmd") --version
   Assert-True ($Version -eq "fixture-old") "canonical bundle was not installed"
+
+  $stamped = Invoke-OnlineCase "stamped" "canonical" "" $true 2 $StampedInstaller
+  Assert-True ($stamped.Requests[0] -eq "https://penguin-harness-releases.oss-cn-beijing.aliyuncs.com/releases/v0.0.0-test/penguin-win32-x64.zip") `
+    "stamped installer did not select its own immutable OSS release"
+  Assert-True (-not (($stamped.Requests | Out-String) -match 'latest\.json')) `
+    "stamped installer unexpectedly resolved latest metadata"
+
+  $stampedFallback = Invoke-OnlineCase "stamped-fallback" "primary-network" "" $true 3 $StampedInstaller
+  Assert-True ($stampedFallback.Requests[0] -like "https://penguin-harness-releases.oss-cn-beijing.aliyuncs.com/releases/v0.0.0-test/*") `
+    "stamped installer did not try its own OSS release first"
+  Assert-True ($stampedFallback.Requests[1] -like "https://github.com/*/releases/download/v0.0.0-test/penguin-win32-x64.zip") `
+    "stamped installer did not fall back to the same GitHub version"
+
+  $env:PENGUIN_DOWNLOAD_SOURCE = "github"
+  $stampedGitHub = Invoke-OnlineCase "stamped-github" "canonical" "" $true 2 $StampedInstaller
+  Assert-True ($stampedGitHub.Requests[0] -like "https://github.com/*/releases/download/v0.0.0-test/penguin-win32-x64.zip") `
+    "stamped installer did not honor forced GitHub mode"
+  Remove-Item Env:\PENGUIN_DOWNLOAD_SOURCE
 
   $env:PENGUIN_DOWNLOAD_BASE_URL = "https://penguin-harness-releases.oss-cn-beijing.aliyuncs.com/releases/v0.0.0-test"
   $override = Invoke-OnlineCase "download-base-override" "canonical" "" $true 2
@@ -292,13 +322,13 @@ try {
     "pinned installer did not keep the selected release version"
   Remove-Item Env:\PENGUIN_ARCHIVE, Env:\PENGUIN_INSTALL_DIR, Env:\PENGUIN_DOWNLOAD_SOURCE, Env:\PENGUIN_VERSION -ErrorAction SilentlyContinue
 
-  Invoke-OnlineCase "outer-mismatch" "outer-sha-mismatch" "" $false 2 | Out-Null
-  Invoke-OnlineCase "inner-mismatch" "inner-sha-mismatch" "" $false 2 | Out-Null
-  Invoke-OnlineCase "latest-404" "404" "" $false 1 | Out-Null
-  Invoke-OnlineCase "pinned-network" "network" "v0.1.4" $false 1 | Out-Null
+  Invoke-OnlineCase "outer-mismatch" "outer-sha-mismatch" "" $false 3 | Out-Null
+  Invoke-OnlineCase "inner-mismatch" "inner-sha-mismatch" "" $false 3 | Out-Null
+  Invoke-OnlineCase "latest-404" "404" "" $false 2 | Out-Null
+  Invoke-OnlineCase "pinned-network" "network" "v0.1.4" $false 2 | Out-Null
   $pinned = Invoke-OnlineCase "pinned-legacy" "legacy" "v0.1.4" $true 2
-  Assert-True ($pinned.Requests[0] -like "*/releases/download/v0.1.4/penguin-win32-x64.zip") `
-    "pinned legacy did not request the pinned asset"
+  Assert-True ($pinned.Requests[0] -like "*/releases/v0.1.4/penguin-win32-x64.zip") `
+    "pinned legacy did not prefer the pinned OSS asset"
 
   Write-Host "Windows installer bundle, offline, rollback and online tests passed."
 } finally {

@@ -75,6 +75,14 @@ const STRIPPED_ENV_KEYS = new Set([
   "PENGUIN_WEB_DIST",
   "FORCE_COLOR",
   "CLICOLOR_FORCE",
+  // Desktop-mode process credentials and wiring: the shell's token authorizes the
+  // server shutdown endpoint (and desktop-login until redeemed), and the port file is
+  // the shell's private channel — neither is a user-facing setting, and leaking them
+  // into Agent-run commands would let a prompt-injected command stop the server.
+  "PENGUIN_DESKTOP_TOKEN",
+  "PENGUIN_PORT_FILE",
+  // Pinned seed password (tests/e2e): a credential, not a data-selection setting.
+  "PENGUIN_SEED_ADMIN_PASSWORD",
 ]);
 
 /** The host environment minus {@link STRIPPED_ENV_KEYS}. */
