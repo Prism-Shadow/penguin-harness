@@ -380,10 +380,8 @@ export class StreamRenderer {
   private taskLastReqEndMs: number | null = null;
   /** Retryable terminal state (failed/timeout/malformed) of the previous request: the next request_begin is a retry, at which point a notice is printed. */
   private pendingRetry: "failed" | "timeout" | "malformed" | null = null;
-  /** The pending failure's authoritative attempt ordinal (request_end.attempt), when the core stamped it. */
+  /** The pending failure's attempt ordinal (request_end.attempt — the core's authoritative count, printed on the retry line). */
   private pendingRetryAttempt: number | undefined;
-  /** Retry counter for the printed label: request_end.attempt when available, else a local count of consecutive failures (reset once a request completes normally). */
-  private reconnectRun = 0;
 
   constructor(out: NodeJS.WritableStream = process.stdout, t: Messages = defaultMessages()) {
     this.out = out;
@@ -690,7 +688,7 @@ export class StreamRenderer {
       } else if (payload.type === "abort") {
         // Run ended (user interrupt / retries exhausted): clear any pending retry state so the next run doesn't mistakenly print a retry line.
         this.pendingRetry = null;
-        this.reconnectRun = 0;
+        this.pendingRetryAttempt = undefined;
         this.finishLine();
         this.out.write(`${formatAbort(payload as AbortPayload, this.t)}\n`);
         this.lastLineKey = null;
@@ -700,12 +698,12 @@ export class StreamRenderer {
         // retries are exhausted, there's no retry after the last failure, only an abort
         // explaining why).
         if (this.pendingRetry) {
-          // Prefer the failed request_end's authoritative attempt ordinal (new cores stamp
-          // it) and resync the local counter; old streams keep the local count.
-          this.reconnectRun = this.pendingRetryAttempt ?? this.reconnectRun + 1;
+          // The failed request_end stamped its authoritative attempt ordinal — print it
+          // (the CLI renders live streams only, which always come from a stamping core).
+          const attempt = this.pendingRetryAttempt ?? 1;
           this.pendingRetryAttempt = undefined;
           this.finishLine();
-          this.out.write(`${dim(this.t.reconnectLabel(this.pendingRetry, this.reconnectRun))}\n`);
+          this.out.write(`${dim(this.t.reconnectLabel(this.pendingRetry, attempt))}\n`);
           this.lastLineKey = null;
           this.pendingRetry = null;
         }
@@ -734,7 +732,6 @@ export class StreamRenderer {
         } else {
           this.pendingRetry = null;
           this.pendingRetryAttempt = undefined;
-          this.reconnectRun = 0;
         }
       } else if (payload.type === "compaction_begin") {
         // Paired compaction events: begin signals compaction is in progress.
@@ -758,7 +755,7 @@ export class StreamRenderer {
               }
             : undefined;
         this.compactionTokens = 0;
-        this.out.write(`${dim(this.t.compactionStop(p.mode, p.status, tokens))}\n`);
+        this.out.write(`${dim(this.t.compactionStop(p.mode, p.status, tokens, p.error))}\n`);
         this.lastLineKey = null;
       }
       return;

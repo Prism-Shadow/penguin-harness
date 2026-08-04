@@ -419,7 +419,7 @@ describe("context compaction", () => {
     expect(events[1]).toMatchObject({
       type: "compaction_end",
       status: "failed",
-      attempts: 2,
+      attempt: 2,
     });
     // The retry resends the original input (tool results + prompt; here there are no tool results, just the prompt).
     expect(llm1.calls).toHaveLength(3);
@@ -459,7 +459,7 @@ describe("context compaction", () => {
     expect(compactionEvents(out)[1]).toMatchObject({
       type: "compaction_end",
       status: "completed",
-      attempts: 5,
+      attempt: 5,
     });
     expect(llm1.calls).toHaveLength(6);
   });
@@ -562,7 +562,7 @@ describe("context compaction", () => {
     const llm1 = new ScriptedLLM(
       [
         { messages: [assistantText("answer one"), usage(150, 150)] },
-        // Five completed-but-empty compaction attempts: 4 retries of budget allow exactly 5.
+        // Five completed-but-empty compaction attempt: 4 retries of budget allow exactly 5.
         empty(1),
         empty(2),
         empty(3),
@@ -599,7 +599,10 @@ describe("context compaction", () => {
     expect(
       events.map((e) => `${e.type}:${(e as Partial<CompactionEndPayload>).status ?? ""}`),
     ).toEqual(["compaction_begin:", "compaction_end:failed"]);
-    expect(events[1]).toMatchObject({ attempts: 5 });
+    expect(events[1]).toMatchObject({
+      attempt: 5,
+      error: "the response contained no usable summary",
+    });
     // These scripted attempts carry no token_usage of their own, so none appears between the
     // paired events (attempts that do carry usage surface it — see the 5th-attempt test).
     const types1 = payloadTypes(out1);
@@ -687,8 +690,12 @@ describe("context compaction", () => {
     expect(payloadTypes(out)).not.toContain("tool_call_output");
     expect(created).toBe(0);
 
-    // The end event reports the attempts spent (issue #170's cost-center row message).
-    expect(events[1]).toMatchObject({ attempts: 5 });
+    // The end event reports the attempts spent and the last failure (issue #170's
+    // cost-center row message and the frontend banner detail).
+    expect(events[1]).toMatchObject({
+      attempt: 5,
+      error: "the response called tools instead of writing a summary",
+    });
     // Five attempts; from the second on, the input leads with the repair answering the
     // previous attempt's call, then the corrective note, then the prompt.
     expect(llm1.calls).toHaveLength(6);
@@ -773,7 +780,7 @@ describe("context compaction", () => {
     // Every attempt's token_usage is surfaced between the paired events — rejected attempts
     // burn real tokens, and hiding them understated the cost center (issue #170). Here the
     // 1st (rejected) and 5th (adopted) attempts carry usage.
-    expect(events[1]).toMatchObject({ attempts: 5 });
+    expect(events[1]).toMatchObject({ attempt: 5 });
     const types = payloadTypes(out);
     const between = out.slice(
       types.indexOf("compaction_begin") + 1,
@@ -1348,7 +1355,7 @@ describe("context compaction", () => {
     expect(compactionEvents(out)[1]).toMatchObject({
       type: "compaction_end",
       status: "completed",
-      attempts: 1,
+      attempt: 1,
     });
     // No rejection retry: the turn request plus a single compaction attempt.
     expect(llm1.calls).toHaveLength(2);

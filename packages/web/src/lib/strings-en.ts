@@ -851,8 +851,12 @@ Scenarios:
       mode === "discard"
         ? "[Compaction] done, old context discarded"
         : "[Compaction] done, switched to the summarized context",
-    compactionFailed: (status: string) =>
-      `[Compaction] ${status === "aborted" ? "aborted" : "failed"}, keeping current context`,
+    compactionFailed: (status: string, error?: string): string => {
+      if (status === "aborted") return "[Compaction] aborted, keeping current context";
+      return error !== undefined
+        ? `[Compaction] failed (${error}), keeping current context`
+        : "[Compaction] failed, keeping current context";
+    },
     unknownTool: "(unknown tool)",
     workRunning: "Running",
     workDone: "Done",

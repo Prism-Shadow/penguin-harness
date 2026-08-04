@@ -982,7 +982,7 @@ export class ContextEngine {
               RETRY_STATUSES,
             );
             const stopEvt = requestEnd(outcome.status, {
-              ...(outcome.message !== undefined ? { message: outcome.message } : {}),
+              ...(outcome.message !== undefined ? { error: outcome.message } : {}),
               // The authoritative attempt ordinal (1-based, within this retry run); a clean
               // first-try completion stays unstamped so the common case adds no noise.
               ...(outcome.status !== "completed" || reconnectsSoFar > 0
@@ -1294,15 +1294,19 @@ export class ContextEngine {
     // tool calls) counts exactly like a transport failure (issue #170) — same counter, same
     // exponential ladder — and only `auth` stops without retrying.
     let reconnects = 0;
-    // Accounting reported on compaction_end (and used by the server's error records):
-    // requests issued (failed attempts and retries included) and the output tokens they
-    // burned — the compaction's true spend.
+    // The compaction_end event's share of the RetryDetail block (also what the server's
+    // error record carries): the final attempt ordinal, and the last failure's detail.
     let attempts = 0;
-    let outputTokens = 0;
+    let lastError: string | undefined;
     for (;;) {
       if (signal?.aborted) {
         this.stashRepairs(pendingRepairs);
-        yield* this.emitCompactionEnd(reason, "summarize", "aborted", { attempts, outputTokens });
+        yield* this.emitCompactionEnd(
+          reason,
+          "summarize",
+          "aborted",
+          attempts > 0 ? { attempt: attempts } : undefined,
+        );
         return { status: "aborted", committed };
       }
       const attempt = await this.runCompactionRequest(input, signal, reconnects);
@@ -1312,10 +1316,7 @@ export class ContextEngine {
       // stats and the server's usage records then carry the compaction's true spend — failed
       // attempts burn real tokens (issue #170), and surfacing only the adopted attempt's usage
       // understated the cost center.
-      if (attempt.usage) {
-        outputTokens += (attempt.usage.payload as TokenUsagePayload).request.output;
-        yield attempt.usage;
-      }
+      if (attempt.usage) yield attempt.usage;
       // A committed-but-unusable response (empty summary or tool calls): its retry input must
       // be rebuilt below — repairs + corrective note + Prompt — instead of resent unchanged.
       let unusable = false;
@@ -1337,10 +1338,7 @@ export class ContextEngine {
         const summaryText = extractSummary(attempt.text);
         if (summaryText !== "" && attempt.toolCalls.length === 0) {
           const summary = userText(buildContextSummaryText(summaryText));
-          yield* this.emitCompactionEnd(reason, "summarize", "completed", {
-            attempts,
-            outputTokens,
-          });
+          yield* this.emitCompactionEnd(reason, "summarize", "completed", { attempt: attempts });
           await this.startNewContext();
           return { status: "completed", summary, committed };
         }
@@ -1355,6 +1353,10 @@ export class ContextEngine {
         // that committed turn is plain assistant text/thinking, and re-sending the compaction
         // Prompt on top of it is structurally sound.
         unusable = true;
+        lastError =
+          attempt.toolCalls.length > 0
+            ? "the response called tools instead of writing a summary"
+            : "the response contained no usable summary";
         pendingRepairs = attempt.toolCalls.map((tc) =>
           toolCallOutput({
             output: "[tool error] the compaction request expects a summary, not tool calls",
@@ -1365,7 +1367,7 @@ export class ContextEngine {
         for (const repair of pendingRepairs) await this.write(repair);
       } else if (attempt.status === "aborted") {
         this.stashRepairs(pendingRepairs);
-        yield* this.emitCompactionEnd(reason, "summarize", "aborted", { attempts, outputTokens });
+        yield* this.emitCompactionEnd(reason, "summarize", "aborted", { attempt: attempts });
         return { status: "aborted", committed };
       } else if (attempt.status === "auth") {
         // `auth` is the one status that never retries: credentials don't heal on a ladder.
@@ -1374,8 +1376,14 @@ export class ContextEngine {
         // about the credential problem from the request's own terminal status (a turn-loop
         // request will surface it; the compaction request_end is Trace-only).
         this.stashRepairs(pendingRepairs);
-        yield* this.emitCompactionEnd(reason, "summarize", "failed", { attempts, outputTokens });
+        yield* this.emitCompactionEnd(reason, "summarize", "failed", {
+          attempt: attempts,
+          ...(attempt.error !== undefined ? { error: attempt.error } : {}),
+        });
         return { status: "failed", committed };
+      } else {
+        // Transport failure: keep its detail as the last error of record.
+        lastError = attempt.error;
       }
       // One failure path for everything else — unusable summaries and the transport statuses
       // (failed / timeout / malformed, never committed by AgentHub) — treated like an
@@ -1385,14 +1393,17 @@ export class ContextEngine {
       // backoff wait still happens.
       if (reconnects >= this.compactionMaxReconnects) {
         this.stashRepairs(pendingRepairs);
-        yield* this.emitCompactionEnd(reason, "summarize", "failed", { attempts, outputTokens });
+        yield* this.emitCompactionEnd(reason, "summarize", "failed", {
+          attempt: attempts,
+          ...(lastError !== undefined ? { error: lastError } : {}),
+        });
         return { status: "failed", committed };
       }
       reconnects += 1;
       const ok = await this.backoff(reconnects, signal);
       if (!ok) {
         this.stashRepairs(pendingRepairs);
-        yield* this.emitCompactionEnd(reason, "summarize", "aborted", { attempts, outputTokens });
+        yield* this.emitCompactionEnd(reason, "summarize", "aborted", { attempt: attempts });
         return { status: "aborted", committed };
       }
       if (unusable) {
@@ -1450,6 +1461,8 @@ export class ContextEngine {
     text: string;
     toolCalls: OmniMessage<ToolCallPayload>[];
     usage: OmniMessage | null;
+    /** Failure detail (LLMOutcome.message) on non-completed statuses — becomes compaction_end.error when this failure ends the compaction. */
+    error?: string;
   }> {
     // The compaction request is itself an ordinary Request, emitting paired request events —
     // written to the (old) Trace only, not pushed to the stream, keeping the compaction process
@@ -1480,7 +1493,7 @@ export class ContextEngine {
         );
         await this.write(
           requestEnd(res.value.status, {
-            ...(res.value.message !== undefined ? { message: res.value.message } : {}),
+            ...(res.value.message !== undefined ? { error: res.value.message } : {}),
             // Same stamping rule as the turn loop; for compaction the ordinal counts every
             // retry kind (transport and unusable-summary alike share one budget).
             ...(res.value.status !== "completed" || reconnectsSoFar > 0
@@ -1489,7 +1502,13 @@ export class ContextEngine {
             ...(retryInMs !== undefined ? { retryInMs } : {}),
           }),
         );
-        return { status: res.value.status, text, toolCalls, usage };
+        return {
+          status: res.value.status,
+          text,
+          toolCalls,
+          usage,
+          ...(res.value.message !== undefined ? { error: res.value.message } : {}),
+        };
       }
       const msg = res.value;
       await this.write(msg);
@@ -1541,12 +1560,12 @@ export class ContextEngine {
     await this.write(msg);
   }
 
-  /** Yields and records a compaction stop event (carrying the result status — non-completed means compaction was abandoned — plus summarize-mode accounting: attempts, output tokens). */
+  /** Yields and records a compaction stop event (carrying the result status — non-completed means compaction was abandoned — plus its share of the RetryDetail block: final attempt ordinal, and the last error detail on failures). */
   private async *emitCompactionEnd(
     reason: CompactionReason,
     mode: CompactionMode,
     status: StopReason,
-    detail?: { attempts?: number; outputTokens?: number },
+    detail?: { attempt?: number; error?: string },
   ): AsyncGenerator<OmniMessage> {
     const msg = compactionEnd({ reason, mode, status, ...detail });
     yield msg;

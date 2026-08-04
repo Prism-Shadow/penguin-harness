@@ -274,18 +274,18 @@ export function requestBegin(): OmniMessage<RequestBeginPayload> {
 /**
  * request end event: carries the terminal state (`completed` means this turn was already
  * committed to AgentHub), plus the unified retry detail block (see RequestRetryDetail):
- * the failure detail (from LLMOutcome.message), the 1-based attempt ordinal, and — when the
+ * the error detail (from LLMOutcome.message), the 1-based attempt ordinal, and — when the
  * engine will retry in-run — the planned backoff wait (`retry_in_ms`, rendered by the Web
  * App as a live countdown). This builder is the one place the block is stamped.
  */
 export function requestEnd(
   status: StopReason,
-  retry: { message?: string; attempt?: number; retryInMs?: number } = {},
+  retry: { error?: string; attempt?: number; retryInMs?: number } = {},
 ): OmniMessage<RequestEndPayload> {
   return event({
     type: "request_end",
     status,
-    ...(retry.message !== undefined ? { message: retry.message } : {}),
+    ...(retry.error !== undefined ? { error: retry.error } : {}),
     ...(retry.attempt !== undefined ? { attempt: retry.attempt } : {}),
     ...(retry.retryInMs !== undefined ? { retry_in_ms: retry.retryInMs } : {}),
   });
@@ -307,21 +307,21 @@ export function compactionBegin(args: {
   });
 }
 
-/** compaction end event: carries the compaction result (non-`completed` means compaction was abandoned and the original context is kept), plus summarize-mode accounting (attempts / output tokens). */
+/** compaction end event: carries the compaction result (non-`completed` means compaction was abandoned and the original context is kept), plus its share of the RetryDetail block (final attempt ordinal; last error detail on failures). */
 export function compactionEnd(args: {
   reason: CompactionReason;
   mode: CompactionMode;
   status: StopReason;
-  attempts?: number;
-  outputTokens?: number;
+  attempt?: number;
+  error?: string;
 }): OmniMessage<CompactionEndPayload> {
   return event({
     type: "compaction_end",
     reason: args.reason,
     mode: args.mode,
     status: args.status,
-    ...(args.attempts !== undefined ? { attempts: args.attempts } : {}),
-    ...(args.outputTokens !== undefined ? { output_tokens: args.outputTokens } : {}),
+    ...(args.attempt !== undefined ? { attempt: args.attempt } : {}),
+    ...(args.error !== undefined ? { error: args.error } : {}),
   });
 }
 

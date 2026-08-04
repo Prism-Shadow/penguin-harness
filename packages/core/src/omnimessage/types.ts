@@ -281,26 +281,27 @@ export interface RequestBeginPayload {
 }
 
 /**
- * The unified retry/failure detail block of `request_end` — one standard group of fields,
- * stamped in one place by the `requestEnd` builder (the way `withOrigin` stamps `origin`)
- * rather than accreting as scattered ad-hoc parameters. Every field is optional and
- * additive: old Traces replay unchanged, and readers fall back to counting streamed events
- * when `attempt` is absent.
+ * The unified retry/failure detail block shared by `request_end` and `compaction_end` —
+ * one standard group of fields, stamped by the builders (the way `withOrigin` stamps
+ * `origin`) rather than accreting as scattered ad-hoc parameters. Every field is optional
+ * and additive: old Traces replay unchanged.
  */
-export interface RequestRetryDetail {
+export interface RetryDetail {
   /**
-   * Failure detail from `LLMOutcome.message`, present only on non-completed statuses: the
+   * Error detail from `LLMOutcome.message`, present only on non-completed statuses: the
    * real reason behind a retried/failed Request (e.g. `403 … (insufficient_user_quota)`),
    * for observability — the server's error records / Cost center read it here because a
-   * retried request never produces an abort event.
+   * retried request never produces an abort event. Named `error` rather than `message`:
+   * in this protocol "message" means an OmniMessage / model output, and this field is
+   * neither. (Traces written before the rename carry it as `message`; nothing reads that
+   * field semantically after the fact, so no dual-read is kept.)
    */
-  message?: string;
+  error?: string;
   /**
    * 1-based ordinal of this Request within its retry run — the authoritative retry count
-   * (the CLI/Web previously could only count streamed request_ends themselves, which a
-   * mid-stream join undercounts). Stamped on every non-completed request_end and on a
+   * the CLI/Web display verbatim. Stamped on every non-completed request_end and on a
    * completed one that needed retries; absent on a clean first-try completion (the common
-   * case stays noise-free) and in old Traces (readers keep their local count as fallback).
+   * case stays noise-free) and in old Traces.
    */
   attempt?: number;
   /**
@@ -314,7 +315,7 @@ export interface RequestRetryDetail {
   retry_in_ms?: number;
 }
 
-export interface RequestEndPayload extends RequestRetryDetail {
+export interface RequestEndPayload extends RetryDetail {
   type: "request_end";
   /** Terminal state of this Request (reuses the six StopReason values, sharing its source with this turn's complete message's stop_reason / LLMOutcome; `auth` is the credentials-failure signal hosts key on). */
   status: StopReason;
@@ -345,16 +346,19 @@ export interface CompactionBeginPayload {
   turns: number;
 }
 
-export interface CompactionEndPayload {
+/**
+ * Inherits the shared RetryDetail block: `attempt` is the final attempt's 1-based ordinal
+ * (failed attempts and retries included — stamped by summarize mode), `error` is the last
+ * failure's detail (present only when `status` is `failed`), and `retry_in_ms` is never
+ * stamped here (compaction retries are announced on the compaction request's own
+ * request_end, which is Trace-only).
+ */
+export interface CompactionEndPayload extends RetryDetail {
   type: "compaction_end";
   reason: CompactionReason;
   mode: CompactionMode;
   /** Compaction result; non-`completed` means compaction was abandoned and the original context was kept. */
   status: StopReason;
-  /** LLM requests this compaction issued, failed attempts and retries included. Additive; absent in discard mode and in old Traces. */
-  attempts?: number;
-  /** Output tokens across all attempts (failed ones included) — the compaction's true spend. Additive. */
-  output_tokens?: number;
 }
 
 /** How a goal ended: the goal file's terminal status, or `aborted` when a round was cut off. */

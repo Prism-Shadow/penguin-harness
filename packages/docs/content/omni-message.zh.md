@@ -189,7 +189,8 @@ interface RequestBeginPayload {
 interface RequestEndPayload {
   type: "request_end";
   status: StopReason;         // completed 是回放判定「该轮已提交」的机械标准
-  // 以下为统一的重试详情块(由 requestEnd builder 一处盖章;均为增量字段,旧 Trace 回放不受影响)
+  // 以下为统一的重试详情块 RetryDetail(由 builder 一处盖章;均为增量字段,旧 Trace 回放
+  // 不受影响;compaction_end 复用同一块——attempt 为最终尝试序号,error 为失败详情)
   message?: string;           // 失败详情(LLMOutcome.message),仅非 completed 携带:
                               // 被重试/失败的 Request 背后的真实原因(如供应商额度码),
                               // 供成本中心错误面板读取

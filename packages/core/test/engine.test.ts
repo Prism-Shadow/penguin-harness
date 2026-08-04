@@ -1898,7 +1898,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     // The request's own terminal status is the host signal (streams to the web).
     const end = all.find((m) => (m.payload as { type?: string }).type === "request_end");
     expect((end!.payload as { status?: string }).status).toBe("auth");
-    expect((end!.payload as { message?: string }).message).toBe("401 invalid x-api-key");
+    expect((end!.payload as { error?: string }).error).toBe("401 invalid x-api-key");
     // No planned retry is announced for a terminal failure.
     expect((end!.payload as { retry_in_ms?: number }).retry_in_ms).toBeUndefined();
     const abort = all.find((m) => (m.payload as { type?: string }).type === "abort");
@@ -2057,17 +2057,17 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
 
     const all = await collectRun(engine, [userText("go")], allowAll);
     const ends = all.filter((m) => (m.payload as { type?: string }).type === "request_end") as {
-      payload: { status?: string; message?: string; attempt?: number; retry_in_ms?: number };
+      payload: { status?: string; error?: string; attempt?: number; retry_in_ms?: number };
     }[];
     expect(ends).toHaveLength(2);
     expect(ends[0]!.payload.status).toBe("timeout");
-    expect(ends[0]!.payload.message).toBe("403 quota exceeded (insufficient_user_quota)");
+    expect(ends[0]!.payload.error).toBe("403 quota exceeded (insufficient_user_quota)");
     // The engine will retry: the planned backoff is announced (base 0 here -> 0ms), and the
     // authoritative attempt ordinal is stamped (this was the run's 1st request).
     expect(ends[0]!.payload.retry_in_ms).toBe(0);
     expect(ends[0]!.payload.attempt).toBe(1);
     expect(ends[1]!.payload.status).toBe("completed");
-    expect(ends[1]!.payload.message).toBeUndefined();
+    expect(ends[1]!.payload.error).toBeUndefined();
     expect(ends[1]!.payload.retry_in_ms).toBeUndefined();
     // A completion that needed retries still carries its ordinal ("recovered on attempt 2");
     // only a clean first-try completion stays unstamped.

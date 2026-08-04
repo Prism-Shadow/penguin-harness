@@ -28,14 +28,14 @@
  * - `aborted` / `completed` are not recorded (the former is a user-initiated interrupt,
  *   not an error).
  *
- * The message uses the real reason: `request_end` carries the failure detail on
- * non-completed statuses (`message`, from LLMOutcome), and the `abort` event's reason is
+ * The message uses the real reason: `request_end` carries the error detail on
+ * non-completed statuses (`error`, from LLMOutcome), and the `abort` event's reason is
  * core's failure-reason prose (e.g. `llm request error: 401 …` / `malformed response
  * failed after N retries`). A `request_end` failure is first held pending (status + its
  * own detail), not persisted immediately, and is resolved at the next request boundary:
  * - Immediately followed by `abort` → use its reason as the message (the real reason);
  * - Immediately followed by `request_begin` (the engine is retrying — no abort will ever
- *   arrive) → use the staged request_end's own `message` (the real detail, e.g. a quota
+ *   arrive) → use the staged request_end's own `error` detail (e.g. a quota
  *   code), falling back to the generic status text when it carried none. This boundary is
  *   also what tells a survived `failed` from an exhausted one (see the classification above);
  * - Still unresolved when the run ends → close persists it the same way.
@@ -296,7 +296,7 @@ export class StreamErrorWatcher {
       type?: string;
       status?: StopReason;
       reason?: string | null;
-      message?: string;
+      error?: string;
     };
     const key = originKey(msg);
     if (p.type === "compaction_end") {
@@ -308,9 +308,9 @@ export class StreamErrorWatcher {
       if (isLlmFailure(p.status)) {
         this.pending.set(key, {
           status: p.status,
-          // The event's own failure detail (LLMOutcome.message): the message of record when
-          // no abort follows (the retry path).
-          ...(typeof p.message === "string" && p.message.trim() ? { message: p.message } : {}),
+          // The event's own error detail (request_end.error, from LLMOutcome): the message
+          // of record when no abort follows (the retry path).
+          ...(typeof p.error === "string" && p.error.trim() ? { message: p.error } : {}),
         });
       }
       return;
@@ -371,29 +371,26 @@ export class StreamErrorWatcher {
    * an error and `aborted` is a user interrupt — neither is recorded. kind is unexpected for
    * the same reason `llm_failed` is: the budget is exhausted, and while the original context
    * is kept, the trigger still holds — the session keeps re-entering compaction until a
-   * human changes something. The message carries the attempts and burned output tokens so
-   * the cost center shows what the failure cost.
+   * human changes something. The message carries the attempts and the last error detail
+   * (compaction_end's share of the RetryDetail block) so the cost center shows what failed.
    */
   private observeCompactionEnd(msg: OmniMessage, key: string): void {
     const p = msg.payload as {
       mode?: string;
       reason?: string;
       status?: StopReason;
-      attempts?: number;
-      output_tokens?: number;
+      attempt?: number;
+      error?: string;
     };
     if (p.status !== "failed") return;
     const attempts =
-      typeof p.attempts === "number" && p.attempts > 0
-        ? ` after ${p.attempts} attempt${p.attempts === 1 ? "" : "s"}`
+      typeof p.attempt === "number" && p.attempt > 0
+        ? ` after ${p.attempt} attempt${p.attempt === 1 ? "" : "s"}`
         : "";
-    const tokens =
-      typeof p.output_tokens === "number" && p.output_tokens > 0
-        ? ` (${p.output_tokens} output tokens spent)`
-        : "";
+    const detail = typeof p.error === "string" && p.error ? `: ${p.error}` : "";
     this.errors.record({
       source: "compaction",
-      err: `${p.mode ?? "summarize"} compaction failed${attempts}${tokens}; trigger ${p.reason ?? "unknown"}, original context kept.`,
+      err: `${p.mode ?? "summarize"} compaction failed${attempts}${detail}; trigger ${p.reason ?? "unknown"}, original context kept.`,
       ctx: this.ctxFor(key),
       code: "compaction_failed",
       kind: "unexpected",
