@@ -6,6 +6,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { MeResponse, ProjectsResponse } from "../src/api/types.js";
+import { generateInitialAdminPassword } from "../src/auth/service.js";
 import { apiClient, createTestApp, loginAdmin, loginUser, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
@@ -55,8 +56,8 @@ describe("auth", () => {
     await expect(
       fs.access(path.join(t.root, "default_project", "agents", "default_agent", "agent_state")),
     ).resolves.toBeUndefined();
-    // Seeding is idempotent: re-seeding does not create a duplicate account.
-    await t.deps.authService.seedAdmin();
+    // Seeding is idempotent: re-seeding returns null and does not create a duplicate account.
+    expect(await t.deps.authService.seedAdmin()).toBeNull();
     expect(t.deps.db.prepare("SELECT COUNT(*) AS n FROM users").get()?.n).toBe(1);
   });
 
@@ -157,6 +158,36 @@ describe("auth", () => {
       prefs: { theme: string };
     };
     expect(got.prefs.theme).toBe("dark");
+  });
+
+  it("seedAdmin without an injected password generates penguin-<4 digits> and returns it", async () => {
+    // Bypass the fixed test password: null matches the production default (random generation).
+    const fresh = await createTestApp({ config: { seedAdminPassword: null } });
+    try {
+      expect(fresh.adminPassword).toMatch(/^penguin-\d{4}$/);
+      // The returned password is the one that actually logs in.
+      await loginUser(fresh.app, "admin", fresh.adminPassword);
+      // Users exist now: re-seeding reports that nothing was seeded.
+      expect(await fresh.deps.authService.seedAdmin()).toBeNull();
+    } finally {
+      await fresh.cleanup();
+    }
+  });
+
+  it("seedAdmin honors the injected seedAdminPassword", async () => {
+    const fresh = await createTestApp({ config: { seedAdminPassword: "penguin-7777" } });
+    try {
+      expect(fresh.adminPassword).toBe("penguin-7777");
+      await loginUser(fresh.app, "admin", "penguin-7777");
+    } finally {
+      await fresh.cleanup();
+    }
+  });
+
+  it("generateInitialAdminPassword matches penguin-<4 digits>", () => {
+    for (let i = 0; i < 32; i++) {
+      expect(generateInitialAdminPassword()).toMatch(/^penguin-\d{4}$/);
+    }
   });
 
   it("PUT prefs shallow-merges without clobbering other writers' fields", async () => {

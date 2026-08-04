@@ -3,15 +3,16 @@
  * login / logout / password change / session validation.
  *
  * - No open registration: on startup, if there are no users at all, the built-in
- *   admin `admin` is seeded (initial password penguin-2026), and it adopts
- *   `default_project`; all other users are created by an admin via the user
- *   backend (admin-service).
+ *   admin `admin` is seeded with a random `penguin-<4 digits>` initial password
+ *   (printed once by the startup entrypoint; PENGUIN_SEED_ADMIN_PASSWORD injects
+ *   a fixed one for tests/e2e), and it adopts `default_project`; all other users
+ *   are created by an admin via the user backend (admin-service).
  * - An initial password (whether seeded or set by an admin) is flagged with
  *   password_is_initial, which the frontend uses to prompt for a password change soon.
  * - Sessions: a 32-byte random token, with only its sha256 hash stored in the DB;
  *   valid for 7 days, with sliding renewal once less than 6 days remain.
  */
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomInt } from "node:crypto";
 import type { UserInfo } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
 import type { AuthSessionsRepo } from "../db/repos/auth-sessions.js";
@@ -20,9 +21,17 @@ import { hashPassword, verifyPassword } from "./password.js";
 
 export const MIN_PASSWORD_LENGTH = 8;
 
-/** Built-in admin: user_id and initial password (matches the README and login-page hint). */
+/** Built-in admin user_id. */
 export const ADMIN_USER_ID = "admin";
-export const ADMIN_INITIAL_PASSWORD = "penguin-2026";
+
+/**
+ * Random initial password for the seeded admin: `penguin-<4 digits>` — brand-related and
+ * easy to type, shown once in the server startup output (the README, docs and login-page
+ * hint all describe this form).
+ */
+export function generateInitialAdminPassword(): string {
+  return "penguin-" + String(randomInt(0, 10000)).padStart(4, "0");
+}
 
 function sha256Hex(value: string): string {
   return createHash("sha256").update(value).digest("hex");
@@ -42,6 +51,8 @@ export interface AuthServiceDeps {
   authSessions: AuthSessionsRepo;
   /** Provisions the initial Project at signup (injected by project-service, to avoid a circular dependency). */
   provisionInitialProject: (user: UserRow, isAdmin: boolean) => Promise<void>;
+  /** Fixed initial password for the seeded admin (config.seedAdminPassword); null generates a random one at seed time. */
+  seedAdminPassword: string | null;
   sessionTtlMs: number;
   sessionRenewMs: number;
   now?: () => Date;
@@ -58,12 +69,16 @@ export class AuthService {
    * Startup seeding (idempotent): creates the built-in admin and adopts
    * default_project when the users table is empty; if the initial Project fails,
    * the user row is rolled back and the server retries on next startup.
+   * Returns the initial password when it actually seeded — the caller prints it,
+   * the only place a generated password is ever shown — and null when users
+   * already exist.
    */
-  async seedAdmin(): Promise<void> {
-    if (this.deps.users.count() > 0) return;
+  async seedAdmin(): Promise<string | null> {
+    if (this.deps.users.count() > 0) return null;
+    const password = this.deps.seedAdminPassword ?? generateInitialAdminPassword();
     const user: UserRow = {
       userId: ADMIN_USER_ID,
-      passwordHash: await hashPassword(ADMIN_INITIAL_PASSWORD),
+      passwordHash: await hashPassword(password),
       isAdmin: true,
       passwordIsInitial: true,
       createdAt: this.now().toISOString(),
@@ -75,6 +90,7 @@ export class AuthService {
       this.deps.users.delete(user.userId);
       throw err;
     }
+    return password;
   }
 
   async login(userId: string, password: string): Promise<{ user: UserInfo; token: string }> {
