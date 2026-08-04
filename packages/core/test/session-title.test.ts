@@ -97,7 +97,7 @@ describe("session-title", () => {
           assistantText("partial"),
           tokenUsage(emptyTokenCounts(), { cache_read: 0, cache_write: 0, output: 1, total: 1 }),
         ],
-        { status: "failed", message: "401" },
+        { status: "failed", errorMessage: "401" },
       ),
       { userText: "u", assistantText: "a" },
     );

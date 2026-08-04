@@ -608,7 +608,8 @@ export function probeVerdict(
 ): { ok: true } | { ok: false; message: string } {
   if (outcome.status === "completed") return { ok: true };
   if (outcome.status === "malformed" && sawContent) return { ok: true };
-  const detail = "message" in outcome && outcome.message ? outcome.message : outcome.status;
+  const detail =
+    "errorMessage" in outcome && outcome.errorMessage ? outcome.errorMessage : outcome.status;
   return { ok: false, message: String(detail).slice(0, 300) };
 }
 

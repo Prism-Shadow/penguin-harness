@@ -15,6 +15,7 @@ import type { DatabaseSync } from "node:sqlite";
 import {
   abortEvent,
   assistantText,
+  compactionEnd,
   partialToolCallOutput,
   requestBegin,
   requestEnd,
@@ -414,7 +415,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
     // a bucket would let a real credential failure be dropped as a duplicate.
     const got = feed([
       requestBegin(),
-      requestEnd("auth", "401 invalid x-api-key (invalid_api_key)"),
+      requestEnd("auth", { errorMessage: "401 invalid x-api-key (invalid_api_key)" }),
       abortEvent("llm request error: 401 invalid x-api-key (invalid_api_key)"),
     ]);
     expect(got).toHaveLength(1);
@@ -432,7 +433,9 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
     // request_begin proves another attempt happened — that one is expected, like a timeout.
     const got = feed([
       requestBegin(),
-      requestEnd("failed", "Upstream HTTP/2 stream failed (upstream_http2_stream_error)"),
+      requestEnd("failed", {
+        errorMessage: "Upstream HTTP/2 stream failed (upstream_http2_stream_error)",
+      }),
       requestBegin(),
       requestEnd("completed"),
     ]);
@@ -453,9 +456,9 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
     // the one that never does.
     const got = feed([
       requestBegin(),
-      requestEnd("failed", "Upstream HTTP/2 stream failed"),
+      requestEnd("failed", { errorMessage: "Upstream HTTP/2 stream failed" }),
       requestBegin(), // The retry: resolves the failure above as recovered.
-      requestEnd("auth", "401 invalid x-api-key"),
+      requestEnd("auth", { errorMessage: "401 invalid x-api-key" }),
       abortEvent("llm request error: 401 invalid x-api-key"),
     ]);
     expect(got.map((r) => [r.code, r.kind])).toEqual([
@@ -471,7 +474,9 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
     // "timed out" status text. This is what the Cost center shows for a retried quota 403.
     const got = feed([
       requestBegin(),
-      requestEnd("timeout", "403 no active subscription (insufficient_user_quota)"),
+      requestEnd("timeout", {
+        errorMessage: "403 no active subscription (insufficient_user_quota)",
+      }),
       requestBegin(),
       requestEnd("completed"),
     ]);
@@ -487,7 +492,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
   it("an abort reason still outranks the staged request_end detail (failed exit path)", () => {
     const got = feed([
       requestBegin(),
-      requestEnd("failed", "401 invalid x-api-key (invalid_api_key)"),
+      requestEnd("failed", { errorMessage: "401 invalid x-api-key (invalid_api_key)" }),
       abortEvent("llm request error: 401 invalid x-api-key (invalid_api_key)"),
     ]);
     expect(got).toHaveLength(1);
@@ -500,7 +505,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
     // request_end detail IS the failure's reason — prefer it over the generic status text.
     const got = feed([
       requestBegin(),
-      requestEnd("timeout", "403 quota exceeded (insufficient_user_quota)"),
+      requestEnd("timeout", { errorMessage: "403 quota exceeded (insufficient_user_quota)" }),
       abortEvent("aborted during reconnect backoff"),
     ]);
     expect(got).toHaveLength(1);
@@ -842,6 +847,64 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
     ]);
     expect(got).toHaveLength(1);
     expect(got[0]).toMatchObject({ code: "llm_failed", agent_id: "a1", session_id: "s1" });
+  });
+
+  // —— Compaction ——
+
+  it("a failed compaction records one error row; the message carries attempts and the error", () => {
+    // Issue #170: a compaction is an ordinary LLM request whose failures core retries under
+    // the standard budget — a failed end means the retries ran out, and the cost center's
+    // row shows how many attempts were spent and what the last failure was.
+    const got = feed([
+      compactionEnd({
+        reason: "context",
+        mode: "summarize",
+        status: "failed",
+        attempt: 5,
+        errorMessage: "the response contained no usable summary",
+      }),
+    ]);
+    expect(got).toHaveLength(1);
+    expect(got[0]).toMatchObject({
+      source: "compaction",
+      kind: "unexpected",
+      code: "compaction_failed",
+      message:
+        "summarize compaction failed after 5 attempts: the response contained no usable summary; trigger context, original context kept.",
+      project_id: "p1",
+      agent_id: "a1",
+      session_id: "s1",
+    });
+  });
+
+  it("compaction completed / aborted are not errors; an old-core failed still records", () => {
+    const got = feed([
+      compactionEnd({ reason: "context", mode: "summarize", status: "completed", attempt: 1 }),
+      compactionEnd({ reason: "manual", mode: "summarize", status: "aborted", attempt: 2 }),
+      // An old core's compaction_end has no attempt/error fields at all.
+      compactionEnd({ reason: "turns", mode: "summarize", status: "failed" }),
+    ]);
+    expect(got).toHaveLength(1);
+    expect(got[0]).toMatchObject({
+      code: "compaction_failed",
+      message: "summarize compaction failed; trigger turns, original context kept.",
+    });
+  });
+
+  it("a child session's failed compaction attributes to the child Agent/Session", () => {
+    const got = feed([
+      childMeta("session-child", "/data/agents/agent-child/agent_state"),
+      withOrigin(
+        compactionEnd({ reason: "context", mode: "summarize", status: "failed", attempt: 6 }),
+        "session-child",
+      ),
+    ]);
+    expect(got).toHaveLength(1);
+    expect(got[0]).toMatchObject({
+      code: "compaction_failed",
+      agent_id: "agent-child",
+      session_id: "session-child",
+    });
   });
 });
 

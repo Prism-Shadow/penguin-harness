@@ -4,7 +4,8 @@
  * converges them into the message stream (LLM and Environment handle errors
  * internally and never throw), so a try/catch can't catch a single one. This watcher
  * hooks onto SessionManager's drive, inspects messages one by one, and fishes them out
- * into error_records (source = `llm` / `environment`), matching usage-recorder's shape:
+ * into error_records (source = `llm` / `environment` / `compaction`), matching
+ * usage-recorder's shape:
  * recognizes only a few payload types, no-op on the rest. **One instance per run/compact**
  * (its state wraps up accordingly, see close).
  *
@@ -27,14 +28,14 @@
  * - `aborted` / `completed` are not recorded (the former is a user-initiated interrupt,
  *   not an error).
  *
- * The message uses the real reason: `request_end` carries the failure detail on
- * non-completed statuses (`message`, from LLMOutcome), and the `abort` event's reason is
+ * The message uses the real reason: `request_end` carries the error detail on
+ * non-completed statuses (`error_message`, from LLMOutcome), and the `abort` event's reason is
  * core's failure-reason prose (e.g. `llm request error: 401 …` / `malformed response
  * failed after N retries`). A `request_end` failure is first held pending (status + its
  * own detail), not persisted immediately, and is resolved at the next request boundary:
  * - Immediately followed by `abort` → use its reason as the message (the real reason);
  * - Immediately followed by `request_begin` (the engine is retrying — no abort will ever
- *   arrive) → use the staged request_end's own `message` (the real detail, e.g. a quota
+ *   arrive) → use the staged request_end's own `error_message` detail (e.g. a quota
  *   code), falling back to the generic status text when it carried none. This boundary is
  *   also what tells a survived `failed` from an exhausted one (see the classification above);
  * - Still unresolved when the run ends → close persists it the same way.
@@ -295,17 +296,23 @@ export class StreamErrorWatcher {
       type?: string;
       status?: StopReason;
       reason?: string | null;
-      message?: string;
+      error_message?: string;
     };
     const key = originKey(msg);
+    if (p.type === "compaction_end") {
+      this.observeCompactionEnd(msg, key);
+      return;
+    }
     if (p.type === "request_end") {
       this.flush(key); // Defensive: if a previous failure is still pending (normally resolved by request_begin), persist it first
       if (isLlmFailure(p.status)) {
         this.pending.set(key, {
           status: p.status,
-          // The event's own failure detail (LLMOutcome.message): the message of record when
-          // no abort follows (the retry path).
-          ...(typeof p.message === "string" && p.message.trim() ? { message: p.message } : {}),
+          // The event's own error detail (request_end.error_message): the message of record
+          // when no abort follows (the retry path).
+          ...(typeof p.error_message === "string" && p.error_message.trim()
+            ? { message: p.error_message }
+            : {}),
         });
       }
       return;
@@ -353,6 +360,43 @@ export class StreamErrorWatcher {
       ctx: this.ctxFor(key),
       code: spec.code,
       kind: spec.kind,
+    });
+  }
+
+  /**
+   * A failed compaction becomes its own error record (source = `compaction`) — a compaction
+   * is an ordinary LLM request whose failures (unusable summary and transport alike) core
+   * retries under the standard budget, so a `failed` end means the retries ran out
+   * (issue #170). This is the single record a failed compaction produces: the compaction
+   * request's own request_begin/request_end pair is written to Trace only and never reaches
+   * this stream, so the llm-source records above cannot double-count it. `completed` is not
+   * an error and `aborted` is a user interrupt — neither is recorded. kind is unexpected for
+   * the same reason `llm_failed` is: the budget is exhausted, and while the original context
+   * is kept, the trigger still holds — the session keeps re-entering compaction until a
+   * human changes something. The message carries the attempts and the last error detail
+   * (compaction_end's share of the RetryDetail block) so the cost center shows what failed.
+   */
+  private observeCompactionEnd(msg: OmniMessage, key: string): void {
+    const p = msg.payload as {
+      mode?: string;
+      reason?: string;
+      status?: StopReason;
+      attempt?: number;
+      error_message?: string;
+    };
+    if (p.status !== "failed") return;
+    const attempts =
+      typeof p.attempt === "number" && p.attempt > 0
+        ? ` after ${p.attempt} attempt${p.attempt === 1 ? "" : "s"}`
+        : "";
+    const detail =
+      typeof p.error_message === "string" && p.error_message ? `: ${p.error_message}` : "";
+    this.errors.record({
+      source: "compaction",
+      err: `${p.mode ?? "summarize"} compaction failed${attempts}${detail}; trigger ${p.reason ?? "unknown"}, original context kept.`,
+      ctx: this.ctxFor(key),
+      code: "compaction_failed",
+      kind: "unexpected",
     });
   }
 

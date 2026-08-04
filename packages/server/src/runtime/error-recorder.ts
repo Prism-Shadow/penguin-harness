@@ -61,6 +61,7 @@ export type ErrorSource =
   | "session"
   | "llm"
   | "environment"
+  | "compaction"
   | "usage"
   | "title"
   | "subagent"
