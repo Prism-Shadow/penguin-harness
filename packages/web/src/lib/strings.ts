@@ -682,7 +682,6 @@ Agent：
 Benchmark：
 - id：\`contextual-choice-adaptation\`
 - capability：从公开规则、历史案例和当前事实中形成并迁移稳定的有限选择决策过程
-- runs：\`1\`
 - desired_baseline_score：\`<75\`
 - pilot_iteration_limit：\`5\`
 
@@ -699,6 +698,7 @@ Benchmark：
 - test_agent_id：\`finite_choice_agent\`
 - benchmark_id：\`contextual-choice-adaptation\`
 - capability_direction：提高信息不完整、规则冲突和有限选项决策中的稳定性
+- runs：\`3\`
 - desired_score：\`>=95\`
 - candidate_round_limit：\`5\``,
       },

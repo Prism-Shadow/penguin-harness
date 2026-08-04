@@ -20,6 +20,12 @@ export interface ServerConfig {
   root: string;
   /** HTTP listen address and port (defaults to 127.0.0.1:7364, deliberately avoiding common ports like 3000/8080). */
   host: string;
+  /**
+   * Listen port. `0` asks the OS for an ephemeral port (the desktop shell always does),
+   * in which case the value is only a request: index.ts writes the ACTUAL bound port back
+   * here once listening, because preview URLs are built from the server's own port rather
+   * than the browser's (dev serves the SPA on a different port; see resolvePreviewTarget).
+   */
   port: number;
   /** SQLite database path; ":memory:" for test injection. */
   dbPath: string;

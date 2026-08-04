@@ -77,8 +77,16 @@ jobs:
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
-  release:
+  # Desktop installers (Electron shell, three-OS matrix). Runs BEFORE the release job:
+  # Release assets are immutable once published, so the installers must exist when the
+  # Release is created. See design § "桌面端原型 · 打包与更新" (M3).
+  desktop:
     needs: check-release
+    if: needs.check-release.outputs.exists != 'true'
+    uses: ./.github/workflows/desktop-build.yml
+
+  release:
+    needs: [check-release, desktop]
     if: needs.check-release.outputs.exists != 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -103,14 +111,36 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       # Inject the release tag into core's VERSION constant (the source for CLI --version and the install-complete
-      # message); otherwise artifacts always carry the in-repo dev version and multiple installs can't be told apart.
-      # BUILD_DATE is stamped alongside it with this run's UTC date (the repo keeps null for dev builds).
+      # message) and both standalone installers. The stamped installers then select the same immutable OSS/GitHub
+      # release when run directly. BUILD_DATE is stamped alongside core with this run's UTC date.
       - name: Stamp release version
         run: |
           TAG="${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
           V="${TAG#v}"
+          printf '%s\n' "$TAG" | grep -Eq '^v[0-9A-Za-z][0-9A-Za-z._-]*$'
           grep -q 'export const VERSION = "' packages/core/src/index.ts
           sed -i "s/export const VERSION = \"[^\"]*\"/export const VERSION = \"$V\"/" packages/core/src/index.ts
+          SH_MARKER='EMBEDDED_RELEASE_VERSION="__PENGUIN_RELEASE_VERSION__"'
+          PS_MARKER='$EmbeddedReleaseVersion = "__PENGUIN_RELEASE_VERSION__"'
+          if grep -Fq "$SH_MARKER" install.sh; then SH_HAS_MARKER=1; else SH_HAS_MARKER=0; fi
+          if grep -Fq "$PS_MARKER" install.ps1; then PS_HAS_MARKER=1; else PS_HAS_MARKER=0; fi
+          case "$SH_HAS_MARKER:$PS_HAS_MARKER" in
+            1:1)
+              sed -i "s/__PENGUIN_RELEASE_VERSION__/$TAG/g" install.sh
+              sed -i "s/__PENGUIN_RELEASE_VERSION__/$TAG/g" install.ps1
+              grep -Fq "EMBEDDED_RELEASE_VERSION=\"$TAG\"" install.sh
+              grep -Fq "\$EmbeddedReleaseVersion = \"$TAG\"" install.ps1
+              ;;
+            0:0)
+              # Tags created before installer version stamping have neither marker. Preserve their
+              # historical installers so a missing Release can still be rebuilt from the tag source.
+              echo "Legacy tag without embedded installer versions; leaving installers unstamped."
+              ;;
+            *)
+              echo "Installer release-version markers are inconsistent." >&2
+              exit 1
+              ;;
+          esac
           D="$(date -u +%Y-%m-%d)"
           # BRE: the unescaped | in these patterns is literal (grep/sed default to POSIX BRE, where | is not alternation).
           grep -q 'export const BUILD_DATE: string | null = ' packages/core/src/index.ts
@@ -284,6 +314,22 @@ jobs:
           cd dist-artifacts
           sha256sum -- *.tar.gz *.zip > SHA256SUMS
 
+      # Desktop installers built by the desktop job (three-OS matrix): collected here so
+      # they are part of the Release's initial (immutable) asset set. Their checksums go
+      # in a separate SHA256SUMS.desktop — the OSS mirror script's canonical file list
+      # stays untouched (desktop installers are not mirrored yet).
+      - name: Collect desktop artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-*
+          merge-multiple: true
+          path: desktop-artifacts
+
+      - name: Generate desktop checksums
+        run: |
+          cd desktop-artifacts
+          sha256sum -- * > SHA256SUMS.desktop
+
       # Release notes come from changelog/<version>/RELEASE.md, written during release preparation and
       # committed BEFORE the tag (the release job runs on the tag's checkout, so a file added afterwards
       # is invisible here). Present and non-empty -> published verbatim as the body; absent -> GitHub
@@ -320,6 +366,7 @@ jobs:
             dist-artifacts/*.zip
             dist-artifacts/*.sha256
             dist-artifacts/SHA256SUMS
+            desktop-artifacts/*
             install.sh
             install.ps1
 

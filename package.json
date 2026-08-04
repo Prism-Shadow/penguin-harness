@@ -3,7 +3,7 @@
   "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "PenguinHarness — TypeScript AI Agent (SDK + CLI).",
+  "description": "PenguinHarness \u2014 TypeScript AI Agent (SDK + CLI).",
   "engines": {
     "node": ">=24"
   },
@@ -21,7 +21,8 @@
     "dev:web": "node scripts/dev-prebuild.mjs && pnpm --filter @prismshadow/penguin-web dev",
     "dev:docs": "node scripts/dev-prebuild.mjs --install-only && pnpm --filter @prismshadow/penguin-docs dev",
     "dev:landing": "node scripts/dev-prebuild.mjs --install-only && pnpm --filter @prismshadow/penguin-landing dev",
-    "build:site": "node scripts/build-site.mjs"
+    "build:site": "node scripts/build-site.mjs",
+    "desktop": "pnpm -r build && node scripts/run-with-env.mjs PENGUIN_HOME=~/.penguin/dev-data -- pnpm --dir packages/desktop start"
   },
   "devDependencies": {
     "@prismshadow/penguin-cli": "workspace:*",

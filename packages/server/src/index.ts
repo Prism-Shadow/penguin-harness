@@ -96,6 +96,12 @@ const server = serve({ fetch: app.fetch, hostname: config.host, port: config.por
   console.log(`Data root: ${config.root}`);
   console.log(`SQLite: ${config.dbPath}`);
   if (config.desktopToken !== null) console.log("Desktop mode: enabled");
+  // PORT=0 asked for an ephemeral port: record the real one so everything derived from
+  // the server's own port is correct — Workspace preview URLs above all, which are built
+  // from the bind port on purpose (see resolvePreviewTarget) and would otherwise point at
+  // port 0 and fail to load. deps.config is this same object, so both route call sites
+  // (me.ts, sessions.ts) observe the update.
+  config.port = info.port;
   // The root exists by now (openDatabase created it), and the pre-start check found no
   // live owner — record ourselves as this root's server.
   acquireServerLock(config.root, {

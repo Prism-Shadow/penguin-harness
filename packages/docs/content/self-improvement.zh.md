@@ -24,11 +24,11 @@ Builder 和 Optimizer 在各自的顶层 Session 中直接遵循对应 Skill。E
 
 每轮校准都要在派发前预测：当前 Trace 中的策略会产生什么结果、期望行为会产生什么不同结果，以及会影响多少分。增加一条模型可以直接执行的公开规则、例外、来源或检查项并不会自动增加难度；如果两种策略仍会得到相同的计分结果，就应选择其他改法。
 
-Pilot 分数是期望目标：达到后可以提前 Freeze；未达到时完成设定数量的有效 Pilot iteration，并选择其中分数最低的有效版本 Freeze。Builder 在临时目录只保留当前最低有效版本，Formal Baseline 记录后清理该副本和校准脚手架。Freeze 后必须运行全新完整的 Formal matrix；只要 Formal 有效就记录 Baseline，分数没有达到期望也不会使 Benchmark 作废。
+每个 Pilot iteration 对每个 Case 固定只运行一次。Pilot 分数是期望目标：达到后可以提前 Freeze；未达到时完成设定数量的有效 Pilot iteration，并选择其中分数最低的有效版本 Freeze。Builder 在临时目录只保留当前最低有效版本及其完整结果。最终一致性检查通过后，直接把被选中 Pilot 的单次运行结果记录为 Formal Baseline，不再重新运行或补齐更多 Runs；记录后清理临时副本和校准脚手架。Formal 分数没有达到期望也不会使 Benchmark 作废。
 
-用户确认第一步完成后，在新对话中启动第二个顶层 Session。Optimizer 先检查 Benchmark 和第一条完整 Formal Baseline，再使用 `agent-optimization`：
+用户确认第一步完成后，在新对话中启动第二个顶层 Session，并指定每个 Candidate、每个 Case 的 `runs`。Optimizer 先检查 Benchmark 和第一条完整 Formal Baseline，再使用 `agent-optimization`：
 
-1. 通过 `run_subagent` 并行编排 Evaluator，覆盖 Case × 运行次数矩阵；
+1. 通过 `run_subagent` 并行编排 Evaluator，覆盖 Case × 用户指定 `runs` 的矩阵；
 2. 根据得分和关联 Trace 提出一个有界 Candidate；
 3. 编辑 Target Agent 的可编辑状态——`AGENTS.md`、Skills、配置——产出版本 N+1；
 4. Evaluation 分数严格提升才保留 Candidate，否则回滚；
@@ -36,7 +36,7 @@ Pilot 分数是期望目标：达到后可以提前 Freeze；未达到时完成�
 
 无效评测和修复重跑不计入轮数。出现执行失败时，Optimizer 保持同一个 Candidate，只补齐失败单元；只要还能根据新诊断提出不同的安全修复，就继续尝试。Builder 和 Optimizer 都先验证 Evaluator 的完整响应是否为纯协议 YAML，再读取状态或分数；格式不合规时，由同一个 Evaluator 基于已有结果重发，不重新运行 Target Agent。
 
-每个 Accepted Candidate 立即写入并校验 Scoreboard。Evaluation 分数严格提高决定是否接受；假设是否在预期 Case 上得到支持单独报告，避免把单次运行中的无关波动解释为改动因果。Agent 优化要求 Scoreboard 中已有完整 Formal Baseline——没有基线，就没有可比较的提升。
+每个 Accepted Candidate 立即写入并校验 Scoreboard。Evaluation 分数严格提高决定是否接受；第一次比较允许直接用 Candidate 的多 Run 平均分比较 Formal Baseline 的单 Run 分数，不为 Baseline 补跑。假设是否在预期 Case 上得到支持单独报告，避免把单次运行中的无关波动解释为改动因果。Agent 优化要求 Scoreboard 中已有完整 Formal Baseline——没有基线，就没有可比较的提升。
 
 ## Benchmark 存储
 
@@ -44,7 +44,7 @@ Benchmark 按 Agent 存放在 `benchmarks/<id>/` 下：
 
 ```text
 benchmarks/<id>/
-├── benchmark_config.toml       # Benchmark 配置（如每个 Case 的运行次数 runs）
+├── benchmark_config.toml       # Benchmark 配置（Builder 的 runs 固定为 1）
 ├── <case-id>/
 │   ├── statement/              # 交给 Target Agent 的任务描述
 │   └── rubric/                 # 私有评分标准，对 Target Agent 隔离

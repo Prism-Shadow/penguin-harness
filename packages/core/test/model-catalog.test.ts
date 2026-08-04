@@ -171,6 +171,7 @@ describe("model-catalog", () => {
       "openai/gpt-5.6-terra",
       "openai/gpt-5.5",
       "openrouter/free",
+      "qwen/qwen3.8-max",
       "qwen/qwen3.6-35b-a3b",
       "stepfun/step-3.7-flash",
       "tencent/hy3",

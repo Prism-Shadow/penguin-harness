@@ -20,7 +20,13 @@ import { resolveRoot } from "@prismshadow/penguin-core";
 import { liveServerLock } from "@prismshadow/penguin-server/lock";
 import { startEmbeddedServer, stopEmbeddedServer } from "./server-process.js";
 import type { EmbeddedServer } from "./server-process.js";
-import { desktopLoginUrl, isAppUrl, MAX_SERVER_RESTARTS, restartDelayMs } from "./util.js";
+import {
+  desktopLoginUrl,
+  isAppUrl,
+  isLocalSurfaceUrl,
+  MAX_SERVER_RESTARTS,
+  restartDelayMs,
+} from "./util.js";
 
 app.setName("PenguinHarness");
 
@@ -55,11 +61,43 @@ function createWindow(url: string): void {
   win.on("closed", () => {
     win = null;
   });
-  // Everything off the app origin (external links, Workspace previews on the 127.0.0.1
-  // counterpart host) opens in the system browser; the window never leaves the app.
+  // "Open in a new tab" (Workspace HTML previews) is an app-origin link that mints a
+  // token and 302s to the preview origin — it needs the session cookie, so it must open
+  // in a window of this app; handing it to the system browser would land on a 401.
+  // Denying it outright (as this did at first) made the entry silently do nothing.
+  // Genuinely external links still go to the system browser.
   win.webContents.setWindowOpenHandler(({ url: target }) => {
-    if (!isAppUrl(target, appOrigin)) void shell.openExternal(target);
+    if (isLocalSurfaceUrl(target, appOrigin)) {
+      return {
+        action: "allow",
+        overrideBrowserWindowOptions: {
+          width: 1100,
+          height: 800,
+          autoHideMenuBar: true,
+          // Same hardening as the main window: the preview is Agent-written, untrusted
+          // HTML and must never get Node.
+          webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+        },
+      };
+    }
+    void shell.openExternal(target);
     return { action: "deny" };
+  });
+  // The child lands on the preview origin after the redirect, so its policy is "stay
+  // within this instance's loopback surface, everything else to the system browser" —
+  // the main window's stricter app-origin-only rule would bounce the preview itself out.
+  win.webContents.on("did-create-window", (child) => {
+    child.webContents.setWindowOpenHandler(({ url: target }) => {
+      if (isLocalSurfaceUrl(target, appOrigin)) return { action: "allow" };
+      void shell.openExternal(target);
+      return { action: "deny" };
+    });
+    child.webContents.on("will-navigate", (event, target) => {
+      if (!isLocalSurfaceUrl(target, appOrigin)) {
+        event.preventDefault();
+        void shell.openExternal(target);
+      }
+    });
   });
   win.webContents.on("will-navigate", (event, target) => {
     if (!isAppUrl(target, appOrigin)) {

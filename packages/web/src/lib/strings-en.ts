@@ -703,7 +703,6 @@ Agent:
 Benchmark:
 - id: \`contextual-choice-adaptation\`
 - capability: form and transfer a stable finite-choice decision process from public rules, historical examples, and current facts
-- runs: \`1\`
 - desired_baseline_score: \`<75\`
 - pilot_iteration_limit: \`5\`
 
@@ -720,6 +719,7 @@ Scenarios:
 - test_agent_id: \`finite_choice_agent\`
 - benchmark_id: \`contextual-choice-adaptation\`
 - capability_direction: improve stability under incomplete information, conflicting rules, and finite choices
+- runs: \`3\`
 - desired_score: \`>=95\`
 - candidate_round_limit: \`5\``,
       },

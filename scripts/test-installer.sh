@@ -77,6 +77,79 @@ printf '%s\n' '{"schemaVersion":1,"target":"win32-x64"}' > "$windows_payload/pac
 
 sh "$ROOT_DIR/scripts/package-release-bundles.sh" "$PAYLOAD_DIR" "$ARTIFACT_DIR"
 
+# Exercise the exact release-workflow stamping block against new, legacy, and inconsistent tag
+# sources. The workflow must keep this logic inline because it checks out the requested tag, which
+# may predate any helper script added to the repository.
+STAMP_SCRIPT="$WORK_DIR/stamp-release-version.sh"
+awk '
+  /- name: Stamp release version/ && !found { found = 1; next }
+  found && /run: \|/ { in_run = 1; next }
+  in_run && /^      - name:/ { exit }
+  in_run { sub(/^          /, ""); print }
+' "$ROOT_DIR/.github/workflows/release.yml" > "$STAMP_SCRIPT"
+sed -i 's/^TAG=.*/TAG="${TEST_RELEASE_TAG:?}"/' "$STAMP_SCRIPT"
+grep -q 'SH_HAS_MARKER' "$STAMP_SCRIPT" \
+  || fail_test "release workflow stamping block could not be extracted"
+
+make_stamp_case() {
+  case_dir="$1"
+  mkdir -p "$case_dir/packages/core/src"
+  printf '%s\n' \
+    'export const VERSION = "0.0.0";' \
+    'export const BUILD_DATE: string | null = null;' \
+    > "$case_dir/packages/core/src/index.ts"
+}
+
+STAMP_NEW_DIR="$WORK_DIR/stamp-new"
+make_stamp_case "$STAMP_NEW_DIR"
+printf '%s\n' 'EMBEDDED_RELEASE_VERSION="__PENGUIN_RELEASE_VERSION__"' \
+  > "$STAMP_NEW_DIR/install.sh"
+printf '%s\n' '$EmbeddedReleaseVersion = "__PENGUIN_RELEASE_VERSION__"' \
+  > "$STAMP_NEW_DIR/install.ps1"
+(cd "$STAMP_NEW_DIR" && TEST_RELEASE_TAG=v9.8.7 sh -e "$STAMP_SCRIPT")
+grep -Fq 'EMBEDDED_RELEASE_VERSION="v9.8.7"' "$STAMP_NEW_DIR/install.sh" \
+  || fail_test "release workflow did not stamp the POSIX installer"
+grep -Fq '$EmbeddedReleaseVersion = "v9.8.7"' "$STAMP_NEW_DIR/install.ps1" \
+  || fail_test "release workflow did not stamp the PowerShell installer"
+
+STAMP_LEGACY_DIR="$WORK_DIR/stamp-legacy"
+make_stamp_case "$STAMP_LEGACY_DIR"
+printf '%s\n' 'legacy POSIX installer' > "$STAMP_LEGACY_DIR/install.sh"
+printf '%s\n' 'legacy PowerShell installer' > "$STAMP_LEGACY_DIR/install.ps1"
+(cd "$STAMP_LEGACY_DIR" && TEST_RELEASE_TAG=v9.8.7 sh -e "$STAMP_SCRIPT") \
+  > "$WORK_DIR/stamp-legacy.output"
+grep -Fq 'leaving installers unstamped' "$WORK_DIR/stamp-legacy.output" \
+  || fail_test "release workflow did not use the legacy installer path"
+grep -Fq 'legacy POSIX installer' "$STAMP_LEGACY_DIR/install.sh" \
+  || fail_test "release workflow changed the legacy POSIX installer"
+grep -Fq 'legacy PowerShell installer' "$STAMP_LEGACY_DIR/install.ps1" \
+  || fail_test "release workflow changed the legacy PowerShell installer"
+
+for inconsistent_side in posix powershell; do
+  STAMP_INCONSISTENT_DIR="$WORK_DIR/stamp-inconsistent-$inconsistent_side"
+  make_stamp_case "$STAMP_INCONSISTENT_DIR"
+  printf '%s\n' 'legacy POSIX installer' > "$STAMP_INCONSISTENT_DIR/install.sh"
+  printf '%s\n' 'legacy PowerShell installer' > "$STAMP_INCONSISTENT_DIR/install.ps1"
+  if [ "$inconsistent_side" = posix ]; then
+    printf '%s\n' 'EMBEDDED_RELEASE_VERSION="__PENGUIN_RELEASE_VERSION__"' \
+      > "$STAMP_INCONSISTENT_DIR/install.sh"
+  else
+    printf '%s\n' '$EmbeddedReleaseVersion = "__PENGUIN_RELEASE_VERSION__"' \
+      > "$STAMP_INCONSISTENT_DIR/install.ps1"
+  fi
+  if (cd "$STAMP_INCONSISTENT_DIR" && TEST_RELEASE_TAG=v9.8.7 sh -e "$STAMP_SCRIPT") \
+    > /dev/null 2>&1; then
+    fail_test "release workflow accepted inconsistent $inconsistent_side installer markers"
+  fi
+done
+
+# Model the release workflow's installer stamping without changing the source installer.
+STAMPED_INSTALLER="$WORK_DIR/install-v0.0.0-test.sh"
+grep -q 'EMBEDDED_RELEASE_VERSION="__PENGUIN_RELEASE_VERSION__"' "$ROOT_DIR/install.sh" \
+  || fail_test "POSIX installer release-version token is missing"
+sed 's/__PENGUIN_RELEASE_VERSION__/v0.0.0-test/' "$ROOT_DIR/install.sh" > "$STAMPED_INSTALLER"
+chmod +x "$STAMPED_INSTALLER"
+
 # --- Canonical layout: flat bundles, exact member set, byte-identical installers, both
 #     checksum layers valid. ---
 for target in linux-x64 linux-arm64 darwin-x64 darwin-arm64 universal; do
@@ -136,6 +209,17 @@ HOME="$TEST_HOME" PENGUIN_INSTALL_DIR="$OFFLINE_INSTALL" PATH="$STUB_BIN:$PATH" 
   || fail_test "offline install from the extracted bundle failed"
 [ "$("$OFFLINE_INSTALL/bin/penguin" --version)" = "fixture-old" ] \
   || fail_test "offline install did not produce a working command"
+
+# The stamped installer inside a released bundle must still prefer its sibling payload and
+# never resolve metadata or download an online asset.
+STAMPED_OFFLINE_DIR="$WORK_DIR/offline-stamped"
+STAMPED_OFFLINE_INSTALL="$WORK_DIR/offline-stamped-install"
+mkdir -p "$STAMPED_OFFLINE_DIR"
+cp "$STAMPED_INSTALLER" "$STAMPED_OFFLINE_DIR/install.sh"
+cp "$OFFLINE_DIR/payload.tar.gz" "$OFFLINE_DIR/payload.tar.gz.sha256" "$STAMPED_OFFLINE_DIR/"
+HOME="$TEST_HOME" PENGUIN_INSTALL_DIR="$STAMPED_OFFLINE_INSTALL" PATH="$STUB_BIN:$PATH" \
+  sh "$STAMPED_OFFLINE_DIR/install.sh" >/dev/null \
+  || fail_test "stamped offline installer unexpectedly touched the network"
 
 # A corrupted extracted payload must be rejected by the sealed checksum.
 CORRUPT_DIR="$WORK_DIR/offline-corrupt"
@@ -258,7 +342,7 @@ case "$MODE:$base" in
   forwarder-invalid-metadata:latest.json)
     printf '%s\n' '{"schemaVersion":1,"tag":"../invalid","releaseBaseUrl":"https://example.invalid"}' > "$output"
     ;;
-  forwarder-oss:latest.json | forced-oss-payload:latest.json)
+  canonical:latest.json | outer-sha-mismatch:latest.json | inner-sha-mismatch:latest.json | forwarder-oss:latest.json | forced-oss-payload:latest.json)
     printf '%s\n' '{"schemaVersion":1,"tag":"v0.0.0-test","releaseBaseUrl":"https://penguin-harness-releases.oss-cn-beijing.aliyuncs.com/releases/v0.0.0-test"}' > "$output"
     ;;
   forwarder-oss:install.sh | forced-oss-payload:install.sh | forwarder-auto-github:install.sh | forwarder-invalid-metadata:install.sh | canonical:install.sh) cp "$ROOT_DIR/install.sh" "$output" ;;
@@ -290,6 +374,8 @@ run_online_case() {
   expected_requests="$5"
   download_base_url="${6:-}"
   download_fallback_base_url="${7:-}"
+  installer_path="${8:-$ROOT_DIR/install.sh}"
+  source_mode="${9:-auto}"
   CASE_LOG="$WORK_DIR/$name.log"
   CASE_OUTPUT="$WORK_DIR/$name.output"
   CASE_INSTALL="$WORK_DIR/$name-install"
@@ -299,7 +385,8 @@ run_online_case() {
     HOME="$WORK_DIR/$name-home" PENGUIN_INSTALL_DIR="$CASE_INSTALL" \
     PENGUIN_VERSION="$version" PENGUIN_DOWNLOAD_BASE_URL="$download_base_url" \
     PENGUIN_DOWNLOAD_FALLBACK_BASE_URL="$download_fallback_base_url" \
-    sh "$ROOT_DIR/install.sh" >"$CASE_OUTPUT" 2>&1
+    PENGUIN_DOWNLOAD_SOURCE="$source_mode" \
+    sh "$installer_path" >"$CASE_OUTPUT" 2>&1
   status=$?
   set -e
   if [ "$expected" = "success" ]; then
@@ -311,11 +398,31 @@ run_online_case() {
     || fail_test "$name made an unexpected number of requests"
 }
 
-run_online_case canonical canonical "" success 2
+run_online_case canonical canonical "" success 3
 [ "$("$WORK_DIR/canonical-install/bin/penguin" --version)" = "fixture-old" ] \
   || fail_test "canonical online install did not produce a working command"
-grep -q "/releases/latest/download/$HOST_ASSET\$" "$WORK_DIR/canonical.log" \
-  || fail_test "canonical did not request the canonical bundle"
+grep -q "/latest.json\$" "$WORK_DIR/canonical.log" \
+  || fail_test "unstamped installer did not resolve the OSS latest metadata"
+grep -q "/releases/v0.0.0-test/$HOST_ASSET\$" "$WORK_DIR/canonical.log" \
+  || fail_test "unstamped installer did not lock the resolved OSS release"
+
+run_online_case stamped canonical "" success 2 "" "" "$STAMPED_INSTALLER"
+[ "$(sed -n '1p' "$WORK_DIR/stamped.log")" = \
+  "https://penguin-harness-releases.oss-cn-beijing.aliyuncs.com/releases/v0.0.0-test/$HOST_ASSET" ] \
+  || fail_test "stamped installer did not select its own immutable OSS release"
+! grep -q "/latest.json\$" "$WORK_DIR/stamped.log" \
+  || fail_test "stamped installer unexpectedly resolved latest metadata"
+
+run_online_case stamped-fallback primary-network "" success 3 "" "" "$STAMPED_INSTALLER"
+[ "$(sed -n '1p' "$WORK_DIR/stamped-fallback.log")" = \
+  "https://penguin-harness-releases.oss-cn-beijing.aliyuncs.com/releases/v0.0.0-test/$HOST_ASSET" ] \
+  || fail_test "stamped installer did not try its own OSS release first"
+grep -q "github.com/.*/releases/download/v0.0.0-test/$HOST_ASSET\$" "$WORK_DIR/stamped-fallback.log" \
+  || fail_test "stamped installer did not fall back to the same GitHub version"
+
+run_online_case stamped-github canonical "" success 2 "" "" "$STAMPED_INSTALLER" github
+grep -q "github.com/.*/releases/download/v0.0.0-test/$HOST_ASSET\$" "$WORK_DIR/stamped-github.log" \
+  || fail_test "stamped installer did not honor forced GitHub mode"
 run_online_case download-base-override canonical "" success 2 \
   "https://penguin-harness-releases.oss-cn-beijing.aliyuncs.com/releases/v0.0.0-test" ""
 grep -q "OSS mirror" "$WORK_DIR/download-base-override.output" \
@@ -332,13 +439,13 @@ grep -q "github.com/.*/releases/download/v0.0.0-test/$HOST_ASSET\$" "$WORK_DIR/d
   || fail_test "download fallback did not use the same-version GitHub source"
 ! grep -q "aliyuncs.com" "$WORK_DIR/download-fallback.output" \
   || fail_test "download fallback exposed the OSS URL in normal output"
-run_online_case outer-mismatch outer-sha-mismatch "" failure 2
-run_online_case inner-mismatch inner-sha-mismatch "" failure 2
-run_online_case latest-404 404 "" failure 1
-run_online_case pinned-network network v0.1.4 failure 1
+run_online_case outer-mismatch outer-sha-mismatch "" failure 3
+run_online_case inner-mismatch inner-sha-mismatch "" failure 3
+run_online_case latest-404 404 "" failure 2
+run_online_case pinned-network network v0.1.4 failure 2
 run_online_case pinned-legacy legacy v0.1.4 success 2
-grep -q "/releases/download/v0.1.4/$HOST_ASSET\$" "$WORK_DIR/pinned-legacy.log" \
-  || fail_test "pinned legacy did not request the pinned asset"
+grep -q "/releases/v0.1.4/$HOST_ASSET\$" "$WORK_DIR/pinned-legacy.log" \
+  || fail_test "pinned legacy did not prefer the pinned OSS asset"
 
 # --- Stable penguin.ooo forwarder: prefer a validated immutable OSS release, but fall back to
 #     GitHub when the metadata probe fails. The real installer uses a local fixture here so the

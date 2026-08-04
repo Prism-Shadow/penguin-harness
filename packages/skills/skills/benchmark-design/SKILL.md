@@ -3,13 +3,13 @@ name: benchmark-design
 description: Design and calibrate a multi-Case capability Benchmark and establish a traceable Formal Baseline.
 short_description: Design and calibrate an Agent capability Benchmark.
 short_description_zh: 设计并校准 Agent 能力评测 Benchmark。
-version: 6
-updated: 2026-07-31T04:10:53Z
+version: 7
+updated: 2026-08-04T00:00:00Z
 ---
 
 # Benchmark Design
 
-Build a multi-Case Benchmark for one Test Agent, calibrate its difficulty, and record a complete Formal Baseline.
+Build a multi-Case Benchmark for one Test Agent, calibrate its difficulty with one Run per Case, and record the selected frozen Pilot as the Formal Baseline.
 
 This Skill changes the Benchmark, never the Test Agent. It does not run or score the Test Agent. Delegate every evaluation with `run_subagent`, and tell each worker to use `agent-evaluation`. Stop after the Baseline; do not begin optimization.
 
@@ -19,9 +19,9 @@ If the request does not identify a Test Agent, target capability, desired baseli
 
 ## Workflow
 
-- A **Pilot** is a provisional evaluation used to improve the Benchmark. Its results never enter the Scoreboard.
+- A **Pilot** is a one-Run-per-Case evaluation used to improve the Benchmark. Unselected Pilot results never enter the Scoreboard; the selected result becomes the Formal Baseline after Freeze.
 - **Freeze** means the Benchmark revision and evaluation settings stop changing.
-- A **Formal Baseline** is the accepted result of a fresh, complete Case × Run evaluation of the frozen Benchmark on one unchanged Agent State version.
+- A **Formal Baseline** is the accepted result of the selected complete valid Pilot revision, recorded after that exact revision is frozen on one unchanged Agent State version.
 
 Follow this order:
 
@@ -31,7 +31,7 @@ Follow this order:
 4. Complete one valid evaluation for every planned Case. Together these results form Pilot iteration 1; finish this complete set before refining any Case.
 5. For later Pilot iterations, use scores and Traces to reconstruct how the Test Agent solved each Case. A single iteration may refine multiple Cases or difficulty dimensions; rerun every affected Case.
 6. Freeze the first valid Pilot revision that meets the desired baseline score. If none does within the requested valid-iteration limit, restore and freeze the lowest-scoring valid Pilot revision.
-7. Run a fresh, complete Case × Run matrix and save it as the Formal Baseline when every cell is valid, the Agent State version remains unchanged, and no known design defect remains. The Formal score does not determine validity.
+7. Freeze the selected revision and record its complete one-Run-per-Case Pilot result as the Formal Baseline when every cell is valid, the Agent State version remains unchanged, and no known design defect remains. Do not rerun or backfill it. The Formal score does not determine validity.
 
 ## Setup and access
 
@@ -72,9 +72,9 @@ Each Case contains:
 
 Both directories require a `README.md` and may contain supporting files. Do not put Gold answers for evaluated instances, hidden mappings, or private scoring conditions in `statement/`.
 
-Create `benchmark_config.toml` with `title`, `description`, and `runs = 3`. Use another positive Run count only when requested. Initialize `scoreboard.yaml` with `evaluations: []`.
+Create `benchmark_config.toml` with `title`, `description`, and `runs = 1`. Benchmark design always uses one Run per Case; do not ask for or accept another Run count. Initialize `scoreboard.yaml` with `evaluations: []`.
 
-Pass the resolved `(provider, model_id)` explicitly in every Pilot and Formal Evaluator request, starting with the first cell. Freeze that pair and the Test Agent's configured `thinking_level` for the complete Benchmark workflow. Every scored Evaluator result must report the requested pair and the same configured thinking level. A mismatch invalidates the matrix.
+Pass the resolved `(provider, model_id)` explicitly in every Pilot Evaluator request, starting with the first cell. Freeze that pair and the Test Agent's configured `thinking_level` for the complete Benchmark workflow. Every scored Evaluator result must report the requested pair and the same configured thinking level. A mismatch invalidates the matrix.
 
 Before planning Cases, state the Capability Contract:
 
@@ -121,9 +121,9 @@ model_id: <model_id>
 
 Inspect the complete streamed and final worker response. Before reading `status`, `score`, or any other protocol field, verify that the worker-authored text is exactly one plain protocol YAML document. Narration, headings, code fences, summaries, or scoring details are not valid protocol. Ask the same Evaluator to resend only the clean YAML from its existing result; do not rerun the Test Agent for a formatting repair and do not extract YAML from the invalid response yourself. Transport metadata added by `run_subagent` is not worker-authored text. A wrong or missing Test Agent artifact is a valid scored result and must not be retried.
 
-For every scored result, require non-empty `provider`, `model_id`, and `thinking_level`. Require the model pair to equal the explicitly resolved pair and the thinking level to equal the Test Agent configuration read before dispatch. Reject a Pilot or Formal matrix whose cells report mixed or mismatched runtimes. The Evaluator verifies provider/model from the root Trace and reports thinking from the unchanged Target Agent configuration; it does not require Trace metadata for thinking.
+For every scored result, require non-empty `provider`, `model_id`, and `thinking_level`. Require the model pair to equal the explicitly resolved pair and the thinking level to equal the Test Agent configuration read before dispatch. Reject a Pilot result whose cells report mixed or mismatched runtimes. The Evaluator verifies provider/model from the root Trace and reports thinking from the unchanged Target Agent configuration; it does not require Trace metadata for thinking.
 
-Correct and resend an `invalid_request`. For `benchmark_invalid`, repair and rerun the affected Case during Pilot; during Formal, abandon the matrix and return to Pilot. For `version_changed`, discard the matrix and restart after the Agent version is stable.
+Correct and resend an `invalid_request`. For `benchmark_invalid`, repair and rerun the affected Case during Pilot. For `version_changed`, discard the current Pilot result and restart after the Agent version is stable.
 
 For `evaluation_failed`, keep the same Benchmark revision and cell. Diagnose the failure and retry only when evidence proves the Test Agent did not start and the retry applies a new, specific repair. Do not set a numeric retry limit or repeat an unchanged launch. Stop when no new safe repair remains, external configuration is required, or it is unclear whether the Test Agent started. Never treat an evaluation failure as score zero.
 
@@ -131,7 +131,7 @@ For `evaluation_failed`, keep the same Benchmark revision and cell. Diagnose the
 
 Treat the first draft as a hypothesis. The first valid result from every planned Case together forms Pilot iteration 1. A later iteration starts after a difficulty refinement and completes when every affected Case has a valid new result. Request corrections, validity repairs, and evaluation reruns stay in the current iteration and do not consume the requested iteration budget. Use the recorded Agent State version and fixed evaluation runtime.
 
-Keep Pilot results out of the Scoreboard. During calibration, retain only one temporary restorable copy: the lowest-scoring complete valid revision seen so far. Store it outside `benchmarks/`, replace it only when a lower valid revision completes, and never retain invalid revisions.
+Keep unselected Pilot results out of the Scoreboard. During calibration, retain only one temporary restorable copy: the lowest-scoring complete valid revision seen so far, including its one-Run-per-Case result. Store it outside `benchmarks/`, replace it only when a lower valid revision completes, and never retain invalid revisions.
 
 Use the Pilot to find the current Test Agent's capability boundary.
 
@@ -156,13 +156,13 @@ More rows, fields, distractors, files, near-duplicate examples, or explicit rule
 
 Freeze immediately when a complete valid Pilot iteration meets the desired baseline score and no known design defect remains. Do not run another difficulty refinement merely to create more score margin. Otherwise continue through the requested valid-iteration limit. If the desired score is still unmet, restore the temporary lowest-scoring valid revision and proceed to Freeze. Report `calibration_failed` only when no valid Pilot revision can be produced or evaluation failures prevent a valid selection; missing the desired score alone is not a failure.
 
-## Freeze and run the Formal Baseline
+## Freeze and record the Formal Baseline
 
-After selecting the Pilot revision, restore that exact revision if needed. Run a complete consistency review and final leak check across every Case, fix any defect, then freeze the Benchmark and record the current Agent State version. Run a fresh, complete Case × Run matrix and never reuse a Pilot result. Once the first Formal cell is dispatched, do not change the Benchmark.
+After selecting the Pilot revision, restore that exact revision and its complete result if needed. Run a complete consistency review and final leak check across every Case. If the review finds a defect, repair it and produce a complete valid one-Run-per-Case Pilot result for the repaired revision before selecting and freezing it. Freeze the Benchmark and record the current Agent State version. Do not launch a fresh Formal matrix, rerun the selected Pilot, or backfill it to another Run count.
 
-Accept the matrix when every cell is valid, every cell reports the frozen evaluation runtime, the Agent State version remains unchanged, the private scoring standard remained fixed, and every score loss reflects the Capability Contract. Record the Formal Baseline even when its score does not meet the desired baseline score.
+Accept the selected Pilot result as the Formal Baseline when every Case has exactly one valid Run, every cell reports the frozen evaluation runtime, the Agent State version remains unchanged, the private scoring standard remained fixed, and every score loss reflects the Capability Contract. Record the Formal Baseline even when its score does not meet the desired baseline score.
 
-If Formal reveals a design defect, abandon the matrix and repair the frozen candidate revision before freezing and rerunning the complete matrix. Report `calibration_failed` only when no valid revision remains or evaluation failures prevent a complete Formal matrix. Never record a partial, abandoned, or invalid Formal matrix.
+Report `calibration_failed` only when no valid revision remains or evaluation failures prevent a complete selected Pilot result. Never record a partial, abandoned, invalid, or non-selected Pilot result as the Formal Baseline.
 
 ## Record and finish
 
@@ -198,7 +198,7 @@ After writing, parse the complete `scoreboard.yaml` and verify the appended Eval
 
 Every Run and Case score is on the fixed `0..100` scale. Do not write `max_score`. Calculate and write every Case and Evaluation average directly in the Scoreboard: ignore `null` values when averaging cost and write `null` only when all contributing costs are unknown; round `score` averages to two decimal places, `cost` averages to six decimal places, and `duration_ms` averages to the nearest integer. These stored values are authoritative—do not add a server, frontend, script, or consistency check that recomputes or validates them. Do not add an `aggregate` object or use `case_id`, `mean_score`, `mean_cost`, or `mean_duration_ms`.
 
-Report the Benchmark path, configuration, Agent State version, Evaluation average and Case Run scores, Test Session ids, and known limitations. Include one compact row per Pilot iteration with its score, diagnosed capability gap, difficulty adjustment, and freeze or stop decision.
+Report the Benchmark path, configuration, Agent State version, Evaluation average and Case Run scores, Test Session ids, and known limitations. Include one compact row per Pilot iteration with its score, diagnosed capability gap, difficulty adjustment, and freeze or stop decision. Identify which one-Run-per-Case Pilot result was recorded as the Formal Baseline.
 
 After the accepted Formal Baseline is recorded, delete the temporary lowest-revision copy and other Builder calibration scaffolding. Keep the frozen Benchmark, Scoreboard, evaluation Workspaces, and score-linked Traces.
 
