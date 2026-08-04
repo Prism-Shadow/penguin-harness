@@ -90,7 +90,7 @@ https://github.com/user-attachments/assets/aec49ae9-b743-467b-b247-37bedfeaa36e
 | Kimi K3          | Moonshot AI, OpenRouter, Qwen Pay-As-You-Go                                      |
 | GLM 5.2          | Z.AI, OpenRouter, Fireworks AI, SiliconFlow, Qwen Token Plan, Qwen Pay-As-You-Go |
 | Hunyuan 3        | OpenRouter                                                                       |
-| Qwen 3.8 Max     | Qwen Token Plan, Qwen Pay-As-You-Go                                              |
+| Qwen 3.8 Max     | Qwen Token Plan, Qwen Pay-As-You-Go, OpenRouter                                  |
 | GPT 5.6          | OpenRouter                                                                       |
 | Gemini 3.6 Flash | Google Gemini, OpenRouter                                                        |
 | Claude 5         | Anthropic, OpenRouter                                                            |
