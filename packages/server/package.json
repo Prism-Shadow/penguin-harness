@@ -17,6 +17,10 @@
     "./api": {
       "types": "./dist/api/types.d.ts",
       "import": "./dist/api/types.js"
+    },
+    "./lock": {
+      "types": "./dist/lock.d.ts",
+      "import": "./dist/lock.js"
     }
   },
   "main": "./dist/index.js",

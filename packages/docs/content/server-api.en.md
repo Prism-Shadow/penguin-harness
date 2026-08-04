@@ -35,12 +35,13 @@ packages/server/src
 
 - Cookie session: `penguin_session` (HttpOnly, SameSite=Lax), valid for 7 days with sliding renewal;
 - Passwords are stored as scrypt hashes; the server keeps only the sha256 of the session token, never the plaintext;
-- No open registration: the built-in admin `admin` / `penguin-2026` is seeded at startup, and all other accounts are created by an admin;
+- No open registration: the built-in admin `admin` is seeded at startup with a random initial password (of the form `penguin-1234`) printed once to the server console — `PENGUIN_SEED_ADMIN_PASSWORD` pins it for automation — and all other accounts are created by an admin;
 - Same-origin only — no CORS middleware is enabled.
 
 ```bash
+# Use the initial password printed at first start (or your changed one).
 curl -c cookies.txt -H "Content-Type: application/json" \
-  -d '{"userId":"admin","password":"penguin-2026"}' \
+  -d '{"userId":"admin","password":"penguin-1234"}' \
   http://127.0.0.1:7364/api/auth/login
 ```
 

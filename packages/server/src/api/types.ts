@@ -72,10 +72,25 @@ export interface MeResponse {
    * request, since it depends on the host the caller is using.
    */
   previewIsolated: boolean;
+  /**
+   * Whether this server runs in desktop mode (spawned by the desktop shell with
+   * PENGUIN_DESKTOP_TOKEN). The web app then hides the logout entry, the
+   * initial-password banner and the self-update entry, and omits the old-password
+   * field when changing the password. See design § "桌面端原型".
+   */
+  desktopMode: boolean;
+  /**
+   * How THIS session was established. Distinct from desktopMode: a browser signed into a
+   * desktop-mode server holds a "password" session and must still provide the old
+   * password when changing it — only "desktop" sessions (opened by the shell's one-shot
+   * token) may omit it.
+   */
+  sessionVia: "password" | "desktop";
 }
 
 export interface PasswordChangeRequest {
-  oldPassword: string;
+  /** Omitted only by desktop-established sessions (desktop mode); required otherwise. */
+  oldPassword?: string;
   /** At least 8 characters. */
   newPassword: string;
 }

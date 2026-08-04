@@ -60,6 +60,8 @@ import { TitleGenerator } from "./runtime/title-generator.js";
 import type { TitleNotifier } from "./runtime/title-generator.js";
 import { UsageRecorder } from "./runtime/usage-recorder.js";
 import { AdminService } from "./services/admin-service.js";
+import { DesktopService } from "./services/desktop-service.js";
+import { desktopRoutes } from "./http/routes/desktop.js";
 import { AgentConfigService } from "./services/agent-config-service.js";
 import { AgentService } from "./services/agent-service.js";
 import { BenchmarkService } from "./services/benchmark-service.js";
@@ -114,6 +116,8 @@ export interface AppDeps {
   sessionSources: SessionSources;
   /** Error persistence (shared by app.onError and various background capture points; the process-level fallback is in index.ts). */
   errors: ErrorRecorder;
+  /** Desktop mode (PENGUIN_DESKTOP_TOKEN): one-shot login + shutdown token holder; null outside desktop mode. */
+  desktop: DesktopService | null;
   /** Request log output (minimal one-liner); tests inject a noop. */
   log: (line: string) => void;
 }
@@ -214,6 +218,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     authSessions: authSessionsRepo,
     provisionInitialProject: (user, isAdmin) =>
       projectService.provisionInitialProject(user, isAdmin),
+    seedAdminPassword: config.seedAdminPassword,
     sessionTtlMs: config.authSessionTtlMs,
     sessionRenewMs: config.authSessionRenewMs,
     ...(overrides.now ? { now: overrides.now } : {}),
@@ -275,6 +280,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     manager,
     sessionSources,
     errors,
+    desktop: config.desktopToken !== null ? new DesktopService(config.desktopToken) : null,
     log,
   };
 }
@@ -354,6 +360,11 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
 
   // Public routes (no login required).
   app.route("/api/auth", authRoutes(deps));
+  // Desktop shutdown authenticates with the shell's Bearer token, not the cookie
+  // session, so it mounts outside authMiddleware (and only in desktop mode).
+  if (deps.desktop) {
+    app.route("/api/desktop", desktopRoutes(deps));
+  }
 
   // Protected routes: cookie -> auth_session -> user.
   const auth = authMiddleware(deps.authService);

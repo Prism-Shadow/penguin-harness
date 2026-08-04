@@ -14,7 +14,12 @@ import { PasswordInput } from "../ui/password-input";
 import { Modal } from "../ui/modal";
 
 export function ChangePasswordDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { refresh } = useAuth();
+  const { refresh, sessionVia } = useAuth();
+  // Desktop-established sessions set the password without the old one: the desktop seed
+  // password is random and never shown, so there is nothing to type. Keyed on the
+  // session's origin, not desktopMode — a browser signed into the same server holds a
+  // password session and must still prove the current password.
+  const desktopSession = sessionVia === "desktop";
   const [oldPassword, setOldPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -32,7 +37,7 @@ export function ChangePasswordDialog({ open, onClose }: { open: boolean; onClose
 
   const submit = async () => {
     const next: { old?: string; new?: string; confirm?: string } = {};
-    if (!oldPassword) next.old = S.common.requiredField;
+    if (!desktopSession && !oldPassword) next.old = S.common.requiredField;
     if (!newPassword) next.new = S.common.requiredField;
     if (!confirmPassword) next.confirm = S.common.requiredField;
     if (!next.confirm && newPassword !== confirmPassword) next.confirm = S.account.passwordMismatch;
@@ -43,7 +48,7 @@ export function ChangePasswordDialog({ open, onClose }: { open: boolean; onClose
     setBusy(true);
     setErrors({});
     try {
-      await api.changePassword({ oldPassword, newPassword });
+      await api.changePassword(desktopSession ? { newPassword } : { oldPassword, newPassword });
       await refresh();
       onClose();
     } catch (e) {
@@ -76,20 +81,22 @@ export function ChangePasswordDialog({ open, onClose }: { open: boolean; onClose
       }
     >
       <div className="space-y-3">
-        <PasswordInput
-          label={S.account.oldPassword}
-          required
-          size="sm"
-          value={oldPassword}
-          onChange={(e) => {
-            setOldPassword(e.target.value);
-            clearErrors();
-          }}
-          error={errors.old}
-          autoComplete="current-password"
-          hint={S.account.oldPasswordHint}
-          autoFocus
-        />
+        {!desktopSession && (
+          <PasswordInput
+            label={S.account.oldPassword}
+            required
+            size="sm"
+            value={oldPassword}
+            onChange={(e) => {
+              setOldPassword(e.target.value);
+              clearErrors();
+            }}
+            error={errors.old}
+            autoComplete="current-password"
+            hint={S.account.oldPasswordHint}
+            autoFocus
+          />
+        )}
         <PasswordInput
           label={S.account.newPassword}
           required
@@ -102,6 +109,7 @@ export function ChangePasswordDialog({ open, onClose }: { open: boolean; onClose
           error={errors.new}
           autoComplete="new-password"
           hint={S.auth.passwordHint}
+          autoFocus={desktopSession}
         />
         <PasswordInput
           label={S.account.confirmPassword}

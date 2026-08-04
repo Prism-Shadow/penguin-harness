@@ -72,7 +72,7 @@ LangChain 自己也把遗留的 chain、retriever 和 hub 模块挪进了独立�
 
 ```bash
 curl -fsSL https://penguin.ooo/install.sh | sh
-penguin web        # http://127.0.0.1:7364 — 首次登录：admin / penguin-2026
+penguin web        # http://127.0.0.1:7364 — 首次登录：admin，初始密码见首次启动输出
 ```
 
 多会话对话、Agent 与技能管理、模型配置、用量与成本统计、**Trace 可观测**、**评测中心**，开箱即有，彼此已经打通，**不用订阅什么，也不用另外自建什么**。每个请求、每次工具调用、每个审批决策都已经记下来了，会话可以从 Trace 完整恢复。**这里没有追踪 SDK 要接，因为根本不存在需要跨越的接缝。**

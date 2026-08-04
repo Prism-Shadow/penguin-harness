@@ -1,0 +1,25 @@
+{
+  "name": "@prismshadow/penguin-desktop",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "PenguinHarness desktop app: Electron shell running @prismshadow/penguin-server as a utilityProcess, window on http://localhost (same-origin HTTP/SSE, no private IPC).",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "start": "electron ."
+  },
+  "dependencies": {
+    "@prismshadow/penguin-core": "workspace:*",
+    "@prismshadow/penguin-server": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "electron": "^43.2.0",
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.0",
+    "vitest": "^3.2.6"
+  }
+}

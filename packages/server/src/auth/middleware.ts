@@ -11,7 +11,7 @@ import type { MiddlewareHandler } from "hono";
 import { getCookie } from "hono/cookie";
 import { HttpError } from "../http/errors.js";
 import type { UserRow } from "../db/repos/users.js";
-import type { AuthService } from "./service.js";
+import type { AuthService, SessionVia } from "./service.js";
 
 /** Session cookie name. */
 export const SESSION_COOKIE = "penguin_session";
@@ -20,6 +20,8 @@ export const SESSION_COOKIE = "penguin_session";
 export type AppEnv = {
   Variables: {
     user: UserRow;
+    /** How the current session was established ("password" | "desktop"); legacy rows read as "password". */
+    sessionVia: SessionVia;
   };
 };
 
@@ -31,11 +33,12 @@ export function currentUser(c: { var: { user: UserRow } }): UserRow {
 export function authMiddleware(auth: AuthService): MiddlewareHandler<AppEnv> {
   return async (c, next) => {
     const token = getCookie(c, SESSION_COOKIE);
-    const user = token ? auth.authenticate(token) : null;
-    if (!user) {
+    const authed = token ? auth.authenticateWithMeta(token) : null;
+    if (!authed) {
       throw new HttpError(401, "unauthorized", "Not signed in or the sign-in has expired.");
     }
-    c.set("user", user);
+    c.set("user", authed.user);
+    c.set("sessionVia", authed.via);
     await next();
   };
 }

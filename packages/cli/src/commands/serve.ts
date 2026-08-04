@@ -16,7 +16,8 @@
  */
 import { spawn } from "node:child_process";
 import path from "node:path";
-import { DEFAULT_SERVER_PORT } from "@prismshadow/penguin-core";
+import { DEFAULT_SERVER_PORT, resolveRoot } from "@prismshadow/penguin-core";
+import { liveServerLock } from "@prismshadow/penguin-server/lock";
 import type { Command } from "commander";
 import type { Messages, WebProbeFailureKind } from "../i18n.js";
 
@@ -84,6 +85,19 @@ export function cliEntryFor(argv1: string | undefined): string | null {
  * so the values written here are the ones that take effect (options take priority over
  * .env and any pre-existing env vars).
  */
+/**
+ * Pre-start lock check: the App URL of a live server already owning the data root this
+ * process would use (same resolution as the server: PENGUIN_HOME or the default root),
+ * or null. The server itself re-checks on startup (the in-process backstop); checking
+ * here keeps the friendly path — `penguin server` refuses with the URL, `penguin web`
+ * simply opens the existing instance. Locks live per data root, so a second server on a
+ * DIFFERENT root is untouched. See @prismshadow/penguin-server/lock.
+ */
+async function existingInstanceUrl(): Promise<string | null> {
+  const lock = await liveServerLock(process.env.PENGUIN_HOME ?? resolveRoot());
+  return lock === null ? null : `http://localhost:${lock.port}/`;
+}
+
 async function startServer(opts: {
   port?: string;
   host?: string;
@@ -243,6 +257,12 @@ export function registerServeCommands(program: Command, t: Messages): void {
     .option("--port <port>", t.serve.port)
     .option("--host <host>", t.serve.host)
     .action(async (opts: { port?: string; host?: string }) => {
+      const existing = await existingInstanceUrl();
+      if (existing !== null) {
+        process.stderr.write(t.serverAlreadyRunning(existing) + "\n");
+        process.exitCode = 1;
+        return;
+      }
       await startServer(opts);
     });
 
@@ -253,6 +273,12 @@ export function registerServeCommands(program: Command, t: Messages): void {
     .option("--host <host>", t.serve.host)
     .option("--no-open", t.serve.noOpen)
     .action(async (opts: { port?: string; host?: string; open: boolean }) => {
+      const existing = await existingInstanceUrl();
+      if (existing !== null) {
+        process.stdout.write(t.webAlreadyRunning(existing) + "\n");
+        if (opts.open) openBrowser(existing);
+        return;
+      }
       const { host, port } = await startServer(opts);
       const url = browserUrl(host, port);
       const readiness = await waitForReady(url);
