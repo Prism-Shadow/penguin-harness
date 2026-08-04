@@ -2,7 +2,8 @@
  * Desktop shell main process (design § "桌面端原型").
  *
  * One window over the embedded server: fork penguin-server as a utilityProcess on the
- * shared data root (PENGUIN_HOME or ~/.penguin/data), learn its ephemeral port, and load
+ * shared data root (PENGUIN_HOME or ~/.penguin/data), learn its port (last launch's when
+ * still free, so origin-scoped localStorage preferences survive restarts), and load
  * `http://localhost:<port>/api/auth/desktop-login?token=…` — the one-shot token lands
  * the window signed in as admin. The window is a plain browser environment (no preload,
  * no node integration); every capability flows through the server's HTTP API.
@@ -115,6 +116,7 @@ async function startServerAndWindow(dataRoot: string): Promise<void> {
   const started = await startEmbeddedServer({
     dataRoot,
     portFile: path.join(app.getPath("userData"), "server-port"),
+    preferredPortFile: path.join(app.getPath("userData"), "preferred-port"),
     log: (chunk) => process.stdout.write(`[server] ${chunk}`),
   });
   server = started;

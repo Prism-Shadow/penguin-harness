@@ -262,6 +262,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     sessions: sessionsRepo,
     runner: manager,
     sessionCreator: sessionService,
+    projectConfig: projectConfigService,
     errors,
     notify: (userId, event) => {
       channels.get(userChannelKey(userId)).publish(event, "server_event");
