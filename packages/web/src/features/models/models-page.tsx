@@ -71,7 +71,7 @@ import {
 } from "@prismshadow/penguin-core/model-catalog";
 import type { ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
 import { groupModelRows, isFreeModel, sameModelRef, userProviderInfo } from "./model-grouping";
-import { draftKey, loadDraft, saveDraft } from "../chat/draft-cache";
+import { clearDraftModelRef } from "../chat/draft-cache";
 import { syncRowsWithCatalog } from "./catalog-sync";
 import { tpsTone, ttftTone } from "./speed-test";
 import type { SpeedResult, SpeedTone } from "./speed-test";
@@ -418,9 +418,7 @@ export function ModelsPage() {
       // Default model changed: drop the stored draft's model selection so the draft chat
       // follows the new default (a stored pick would otherwise pin the old model forever).
       if (userId && res.defaultModel && !sameModelRef(res.defaultModel, defaultModel)) {
-        const key = draftKey(userId, projectId);
-        const draft = loadDraft(key);
-        if (draft.modelRef) saveDraft(key, { ...draft, modelRef: undefined });
+        clearDraftModelRef(userId, projectId);
       }
       toastSuccess(successText ?? S.common.saved);
       return true;

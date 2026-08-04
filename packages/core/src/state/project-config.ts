@@ -27,6 +27,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
+import type { ThinkingLevelName } from "../interfaces.js";
 import { presetModelEntries } from "./model-catalog.js";
 import { projectConfigPath } from "./paths.js";
 
@@ -106,6 +107,41 @@ export interface ModelEntry {
   created_at?: string;
 }
 
+/** Approval modes storable in `[default_chat]` (mirrors the Web/CLI ApprovalMode enum). */
+export const CHAT_APPROVAL_MODES = ["allow-all", "deny-all", "read-only", "always-ask"] as const;
+export type ChatApprovalMode = (typeof CHAT_APPROVAL_MODES)[number];
+
+/**
+ * Thinking levels storable in `[default_chat]`: the four selectable tiers only — never
+ * `"none"` (the project default is a fallback for Agents without an explicit level, and
+ * "no thinking" is not offered as a default; see the web picker's SELECTABLE_THINKING_LEVELS).
+ */
+export type DefaultChatThinkingLevel = Exclude<ThinkingLevelName, "none">;
+export const DEFAULT_CHAT_THINKING_LEVELS: readonly DefaultChatThinkingLevel[] = [
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+];
+
+/**
+ * New-chat defaults (`[default_chat]`): per-Project prefill for newly created chats.
+ * Every key is optional and independent:
+ * - `agent_id`: the Agent preselected on the draft page (must name an existing Agent);
+ * - `workspace`: the prefilled Workspace directory (absent/empty = auto temp directory);
+ * - `approval_mode`: the prefilled approval mode (absent = the built-in "allow-all");
+ * - `thinking_level`: fallback thinking level for Agents whose config has no explicit
+ *   `model.thinking_level` (see Agent's thinking-level resolution chain in agent.ts).
+ * The default Model is deliberately NOT here: it stays the top-level `default_model`
+ * (single-sourced with the models page — never a second key).
+ */
+export interface ProjectChatDefaults {
+  agent_id?: string;
+  workspace?: string;
+  approval_mode?: ChatApprovalMode;
+  thinking_level?: DefaultChatThinkingLevel;
+}
+
 /**
  * Project-level config.
  * Docs: /docs/configuration § "Project config".
@@ -122,6 +158,11 @@ export interface ProjectConfig {
    * default — models that don't support images won't be able to read images.
    */
   vision_model?: ModelRef;
+  /**
+   * New-chat defaults block; absent by default (`defaultProjectConfig` never includes it —
+   * absent = the pre-existing behavior). Loaded tolerantly: invalid values drop per key.
+   */
+  default_chat?: ProjectChatDefaults;
   models: ModelEntry[];
 }
 
@@ -176,10 +217,43 @@ function assertModelEntry(file: string, entry: unknown): ModelEntry {
 }
 
 /**
+ * Leniently parses the `[default_chat]` block (new-chat defaults): each key is validated
+ * independently and an invalid value (wrong type / unknown enum member / `"none"` as a
+ * thinking level) drops that key rather than failing the load — the block only ever
+ * prefills new chats, so bad data must never block reading the model table. Returns
+ * undefined when the value is not a table or nothing valid remains (absent block =
+ * the pre-existing behavior).
+ */
+function parseDefaultChat(value: unknown): ProjectChatDefaults | undefined {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const t = value as Record<string, unknown>;
+  const out: ProjectChatDefaults = {};
+  if (typeof t.agent_id === "string" && t.agent_id !== "") out.agent_id = t.agent_id;
+  if (typeof t.workspace === "string" && t.workspace !== "") out.workspace = t.workspace;
+  if (
+    typeof t.approval_mode === "string" &&
+    (CHAT_APPROVAL_MODES as readonly string[]).includes(t.approval_mode)
+  ) {
+    out.approval_mode = t.approval_mode as ChatApprovalMode;
+  }
+  if (
+    typeof t.thinking_level === "string" &&
+    (DEFAULT_CHAT_THINKING_LEVELS as readonly string[]).includes(t.thinking_level)
+  ) {
+    out.thinking_level = t.thinking_level as DefaultChatThinkingLevel;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/**
  * Loads the Project config; returns the default config (without writing to disk) if
  * `.project_config.toml` doesn't exist. Returns plaintext (masking is applied at the interface
  * layer); reports a clear error when the old format (a string reference / an entry missing
  * provider) is read.
+ *
+ * The return literal below rebuilds the config from **known keys only** — any new top-level
+ * key must be added to `ProjectConfig` AND echoed here, or a load→save round trip (the CLI
+ * path) silently drops it.
  */
 export async function loadProjectConfig(root: string, projectId: string): Promise<ProjectConfig> {
   const file = projectConfigPath(root, projectId);
@@ -194,10 +268,12 @@ export async function loadProjectConfig(root: string, projectId: string): Promis
   const parsed = (parseToml(raw) ?? {}) as Record<string, unknown>;
   const defaultModel = parseRefField(file, "default_model", parsed.default_model);
   const visionModel = parseRefField(file, "vision_model", parsed.vision_model);
+  const defaultChat = parseDefaultChat(parsed.default_chat);
   return {
     ...(parsed.name !== undefined ? { name: parsed.name as string } : {}),
     ...(defaultModel !== undefined ? { default_model: defaultModel } : {}),
     ...(visionModel !== undefined ? { vision_model: visionModel } : {}),
+    ...(defaultChat !== undefined ? { default_chat: defaultChat } : {}),
     models: ((parsed.models as unknown[] | undefined) ?? []).map((m) => assertModelEntry(file, m)),
   };
 }
@@ -224,19 +300,29 @@ function isModelRefShape(v: unknown): v is ModelRef {
  * `{ provider = "...", model_id = "..." }`; `models` is always
  * placed last, since any table header after `[[models]]` would be read as its sub-table. Unknown
  * extension fields are kept as-is.
+ *
+ * Same header rule for every other table-valued key (e.g. `[default_chat]`): once a table
+ * header is emitted, any `key = value` line below it would be parsed back as a member of
+ * that table — so entries whose serialization opens with a header are collected separately
+ * and emitted after all top-level `key = value` lines (and still before `[[models]]`),
+ * regardless of the object's key insertion order.
  */
 export function renderProjectConfigToml(data: Record<string, unknown>): string {
   const head: string[] = [];
+  const tables: string[] = [];
   for (const [key, value] of Object.entries(data)) {
     if (value === undefined || key === "models") continue;
-    head.push(
-      isModelRefShape(value)
-        ? `${key} = ${tomlInlineRef(value)}`
-        : stringifyToml({ [key]: value }).trim(),
-    );
+    if (isModelRefShape(value)) {
+      head.push(`${key} = ${tomlInlineRef(value)}`);
+      continue;
+    }
+    const rendered = stringifyToml({ [key]: value }).trim();
+    // A rendering that opens with "[" is a table header ([key] / [[key]]) — defer it below
+    // every top-level key = value line; plain lines (scalars, inline arrays) stay in place.
+    (rendered.startsWith("[") ? tables : head).push(rendered);
   }
   const models = Array.isArray(data.models) ? data.models : [];
-  return [...head, stringifyToml({ models })].join("\n");
+  return [...head, ...tables, stringifyToml({ models })].join("\n");
 }
 
 /**

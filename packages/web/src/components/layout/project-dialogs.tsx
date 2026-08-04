@@ -3,7 +3,13 @@
  * (member management and deletion, owner only). Invoked from the sidebar's Project switcher.
  */
 import { useEffect, useState } from "react";
-import type { MemberInfo } from "@prismshadow/penguin-server/api";
+import type {
+  ApprovalMode,
+  ChatDefaultsDto,
+  MemberInfo,
+  ModelRefDto,
+  ModelsResponse,
+} from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -12,15 +18,27 @@ import {
   PROJECT_SUFFIX_PATTERN,
   SEMANTIC_ID_PATTERN,
 } from "../../lib/semantic-id";
-import { projectDisplayName, useProject } from "../../state/project";
+import { agentDisplayName, projectDisplayName, useProject } from "../../state/project";
 import { useAuth } from "../../state/auth";
+import { clearDraftModelRef } from "../../features/chat/draft-cache";
+import { SELECTABLE_THINKING_LEVELS } from "../../features/chat/thinking-level";
+import { sameModelRef } from "../../features/models/model-grouping";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
+import { Select } from "../ui/select";
 import { FieldError, FieldHint, FieldLabel } from "../ui/field";
 import { toastError } from "../ui/toast";
 import { Modal } from "../ui/modal";
 import { ConfirmModal } from "../ui/confirm-modal";
 import { Badge } from "../ui/badge";
+
+/** Approval modes offered by the new-chat-defaults select, in the composer menu's order. */
+const APPROVAL_MODES: readonly ApprovalMode[] = [
+  "always-ask",
+  "read-only",
+  "allow-all",
+  "deny-all",
+];
 
 export function CreateProjectDialog({
   open,
@@ -282,6 +300,8 @@ export function ProjectSettingsDialog({ open, onClose }: { open: boolean; onClos
           <p className="mt-1 font-mono text-xs text-gray-400">{projectId}</p>
         </div>
 
+        <ChatDefaultsSection projectId={projectId} isOwner={isOwner} />
+
         <div>
           <p className="mb-2 text-xs font-medium text-gray-500">{S.project.members}</p>
           {loadError ? (
@@ -380,5 +400,249 @@ export function ProjectSettingsDialog({ open, onClose }: { open: boolean; onClos
         <p className="text-sm text-gray-600 dark:text-gray-300">{S.project.deleteConfirm}</p>
       </ConfirmModal>
     </Modal>
+  );
+}
+
+/**
+ * "New chat defaults" section of the Project settings dialog: the `[default_chat]` block
+ * (Agent / Workspace / approval mode / thinking level) plus the Project's default model.
+ * The model default is SINGLE-SOURCED with the models page — the select renders and writes
+ * the same top-level `default_model` (via the narrow PUT /models/default route), never a
+ * second key; changing it also releases the draft-cached model pin exactly as the models
+ * page does (shared clearDraftModelRef helper). Owner edits with ONE explicit Save for the
+ * whole section (dialog convention: failures toast, success is silent — the refreshed
+ * values are the confirmation); members see the values read-only. Mounted per dialog open
+ * (the Modal unmounts its children when closed), so reopening always refetches.
+ */
+function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwner: boolean }) {
+  const { user } = useAuth();
+  const { agents } = useProject();
+  /** Saved block (null while loading); edit buffers below use "" for "not set". */
+  const [saved, setSaved] = useState<ChatDefaultsDto | null>(null);
+  const [models, setModels] = useState<ModelsResponse | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [agentId, setAgentId] = useState("");
+  const [workspace, setWorkspace] = useState("");
+  const [approval, setApproval] = useState("");
+  const [thinking, setThinking] = useState("");
+  /** The default-model pick (paired reference; seeded from the models response's defaultModel). */
+  const [modelRef, setModelRef] = useState<ModelRefDto | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .getChatDefaults(projectId)
+      .then((res) => {
+        if (cancelled) return;
+        setSaved(res);
+        setAgentId(res.agentId ?? "");
+        setWorkspace(res.workspace ?? "");
+        setApproval(res.approvalMode ?? "");
+        setThinking(res.thinkingLevel ?? "");
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setLoadError(apiErrorText(e));
+      });
+    api
+      .getModels(projectId)
+      .then((res) => {
+        if (cancelled) return;
+        setModels(res);
+        setModelRef(res.defaultModel ?? null);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setLoadError(apiErrorText(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+
+  const blockDirty =
+    saved !== null &&
+    (agentId !== (saved.agentId ?? "") ||
+      workspace.trim() !== (saved.workspace ?? "") ||
+      approval !== (saved.approvalMode ?? "") ||
+      thinking !== (saved.thinkingLevel ?? ""));
+  const modelDirty =
+    models !== null && modelRef !== null && !sameModelRef(models.defaultModel, modelRef);
+
+  /**
+   * One Save persists both writes: the `[default_chat]` block (whole-block PUT — a field
+   * left "not set" is simply omitted, which clears it) and, when changed, the default
+   * model via the narrow route. Failures toast and keep the edits for retry.
+   */
+  const save = async () => {
+    if (busy || (!blockDirty && !modelDirty)) return;
+    setBusy(true);
+    try {
+      if (blockDirty) {
+        const body: ChatDefaultsDto = {
+          ...(agentId ? { agentId } : {}),
+          ...(workspace.trim() ? { workspace: workspace.trim() } : {}),
+          ...(approval ? { approvalMode: approval as ApprovalMode } : {}),
+          ...(thinking ? { thinkingLevel: thinking as ChatDefaultsDto["thinkingLevel"] } : {}),
+        };
+        setSaved(await api.putChatDefaults(projectId, body));
+      }
+      if (modelDirty && modelRef) {
+        const res = await api.putDefaultModel(projectId, {
+          provider: modelRef.provider,
+          modelId: modelRef.modelId,
+        });
+        setModels((m) => (m ? { ...m, defaultModel: res.defaultModel } : m));
+        // Same follow-through as the models page: drop the draft-cached model pin so open
+        // drafts pick up the new default.
+        if (user) clearDraftModelRef(user.userId, projectId);
+      }
+    } catch (e) {
+      toastError(apiErrorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** Option label for a model row: display name (falling back to the upstream id) + group + default badge text. */
+  const modelLabel = (m: { provider: string; modelId: string; displayName?: string }): string => {
+    const name = m.displayName ?? m.modelId;
+    const isDefault = sameModelRef(m, models?.defaultModel);
+    return `${name} · ${m.provider}${isDefault ? ` · ${S.models.default}` : ""}`;
+  };
+
+  /** Read-only display values (member view). */
+  const agentText = saved?.agentId
+    ? (() => {
+        const a = agents.find((x) => x.agentId === saved.agentId);
+        return a ? agentDisplayName(a) : saved.agentId;
+      })()
+    : S.project.chatDefaultsNotSet;
+  const defaultModelInfo = models?.models.find((m) => sameModelRef(m, models.defaultModel));
+
+  return (
+    <div className="border-t border-gray-100 pt-3 dark:border-gray-800">
+      <p className="text-xs font-medium text-gray-500">{S.project.chatDefaultsTitle}</p>
+      <p className="mb-2 mt-0.5 text-xs text-gray-400">{S.project.chatDefaultsHint}</p>
+      {loadError ? (
+        <p className="text-xs text-red-600 dark:text-red-400">{loadError}</p>
+      ) : saved === null || models === null ? (
+        <p className="text-xs text-gray-400">{S.common.loading}</p>
+      ) : isOwner ? (
+        <div className="space-y-3">
+          <Select
+            label={S.project.chatDefaultsAgent}
+            size="sm"
+            value={agentId}
+            onChange={(e) => setAgentId(e.target.value)}
+          >
+            <option value="">{S.project.chatDefaultsNotSet}</option>
+            {agents.map((a) => (
+              <option key={a.agentId} value={a.agentId}>
+                {agentDisplayName(a)}
+              </option>
+            ))}
+          </Select>
+          <Input
+            label={S.chat.workspace}
+            size="sm"
+            value={workspace}
+            onChange={(e) => setWorkspace(e.target.value)}
+            hint={S.project.chatDefaultsWorkspaceHint}
+          />
+          <Select
+            label={S.chat.approvalMode}
+            size="sm"
+            value={approval}
+            onChange={(e) => setApproval(e.target.value)}
+          >
+            <option value="">{S.project.chatDefaultsApprovalNotSet}</option>
+            {APPROVAL_MODES.map((m) => (
+              <option key={m} value={m}>
+                {S.chat.approvalModeNames[m] ?? m}
+              </option>
+            ))}
+          </Select>
+          <Select
+            label={S.chat.thinkingLevel}
+            size="sm"
+            value={thinking}
+            onChange={(e) => setThinking(e.target.value)}
+          >
+            <option value="">{S.project.chatDefaultsThinkingNotSet}</option>
+            {SELECTABLE_THINKING_LEVELS.map((l) => (
+              <option key={l} value={l}>
+                {S.chat.thinkingLevelNames[l] ?? l}
+              </option>
+            ))}
+          </Select>
+          {models.models.length > 0 ? (
+            <Select
+              label={S.chat.model}
+              size="sm"
+              // The pick is addressed by list index (a paired reference never becomes a concatenated string, not even as a DOM value).
+              value={String(models.models.findIndex((m) => sameModelRef(m, modelRef)))}
+              onChange={(e) => {
+                const m = models.models[Number(e.target.value)];
+                if (m) setModelRef({ provider: m.provider, modelId: m.modelId });
+              }}
+              hint={S.project.chatDefaultsModelHint}
+            >
+              {/* No default configured yet: an inert placeholder so the trigger doesn't
+                  misleadingly show the first model (findIndex yields -1 then). */}
+              {modelRef === null && <option value="-1">{S.project.chatDefaultsNotSet}</option>}
+              {models.models.map((m, i) => (
+                <option key={`${m.provider} ${m.modelId}`} value={String(i)}>
+                  {modelLabel(m)}
+                </option>
+              ))}
+            </Select>
+          ) : (
+            <p className="text-xs text-gray-400">{S.models.empty}</p>
+          )}
+          <div className="flex justify-end">
+            <Button
+              size="sm"
+              disabled={busy || (!blockDirty && !modelDirty)}
+              onClick={() => void save()}
+            >
+              {S.common.save}
+            </Button>
+          </div>
+        </div>
+      ) : (
+        // Member view: the effective defaults, read-only (same fields, plain text).
+        <div className="space-y-1 text-sm">
+          {(
+            [
+              [S.project.chatDefaultsAgent, agentText],
+              [S.chat.workspace, saved.workspace ?? S.chat.workspaceAuto],
+              [
+                S.chat.approvalMode,
+                saved.approvalMode
+                  ? (S.chat.approvalModeNames[saved.approvalMode] ?? saved.approvalMode)
+                  : S.project.chatDefaultsApprovalNotSet,
+              ],
+              [
+                S.chat.thinkingLevel,
+                saved.thinkingLevel
+                  ? (S.chat.thinkingLevelNames[saved.thinkingLevel] ?? saved.thinkingLevel)
+                  : S.project.chatDefaultsThinkingNotSet,
+              ],
+              [
+                S.chat.model,
+                defaultModelInfo
+                  ? (defaultModelInfo.displayName ?? defaultModelInfo.modelId)
+                  : S.project.chatDefaultsNotSet,
+              ],
+            ] as const
+          ).map(([label, value]) => (
+            <div key={label} className="flex items-baseline gap-2">
+              <span className="w-24 shrink-0 text-xs text-gray-500">{label}</span>
+              <span className="min-w-0 flex-1 break-all">{value}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

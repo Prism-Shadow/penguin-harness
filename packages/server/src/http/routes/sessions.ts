@@ -61,7 +61,8 @@ const SESSION_TITLE_MAX = 120;
 const STAT_MAX_PATHS = 100;
 const STAT_MAX_PATH_LEN = 512;
 
-const APPROVAL_MODES: readonly ApprovalMode[] = [
+/** The four approval modes (shared with the chat-defaults route's validation). */
+export const APPROVAL_MODES: readonly ApprovalMode[] = [
   "allow-all",
   "deny-all",
   "read-only",

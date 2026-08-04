@@ -22,7 +22,10 @@
  * Agent via route state (overriding the cached selection); the workspace-mode
  * group header "+" additionally carries a Workspace path pre-filling the
  * Workspace selection ("" = auto temp directory). A direct visit or refresh
- * falls back to the cache.
+ * falls back to the cache. When neither route state nor the mount-time cache claims a
+ * field, the Project's new-chat defaults ([default_chat]) prefill Agent / Workspace /
+ * approval mode (precedence: route state > draft cache > project default > built-in
+ * fallback); the model default already flows through models.defaultModel.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
@@ -31,6 +34,7 @@ import type {
   AgentModelConfigDto,
   AgentSummary,
   ApprovalMode,
+  ChatDefaultsDto,
   DirListResponse,
   ModelRefDto,
   ModelsResponse,
@@ -59,6 +63,7 @@ import { EXAMPLE_FOLDERS } from "./example-tasks";
 import type { ExampleFolderId, ExampleTask, ExampleTaskId } from "./example-tasks";
 import { clearDraft, draftKey, loadDraft, saveDraft } from "./draft-cache";
 import type { DraftCache } from "./draft-cache";
+import { effectiveThinkingLevel } from "./thinking-level";
 import { sameModelRef } from "../models/model-grouping";
 
 /** Coalescing window for writing body text to the cache: keystrokes are frequent, so a short batch accumulates before persisting (option changes are still written immediately). */
@@ -152,6 +157,35 @@ export function DraftView({
    */
   const skillsRef = useRef<string[]>(cached.skills ?? []);
 
+  // —— Project new-chat defaults ([default_chat]) ——
+  // Fetched once per Project mount (fail-soft: an error reads as "no defaults", so the
+  // draft keeps working). They prefill the seams below with the precedence
+  // route location.state > mount-time draft cache > project default > built-in fallback;
+  // null = still loading (the thinking picker below stays disabled until resolved).
+  const [chatDefaults, setChatDefaults] = useState<ChatDefaultsDto | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .getChatDefaults(projectId)
+      .then((res) => {
+        if (!cancelled) setChatDefaults(res);
+      })
+      .catch(() => {
+        if (!cancelled) setChatDefaults({});
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+
+  /**
+   * Fields the user already touched this mount: the project defaults arrive async (after
+   * mount), and an explicit pick made in the meantime must never be clobbered by them.
+   * The mount-time cache (`cached`) covers everything picked in PREVIOUS visits; these
+   * refs cover the window between mount and the defaults resolving.
+   */
+  const touchedRef = useRef({ agent: false, workspace: false, approval: false });
+
   // Unified resolution of the Agent selection (a single effect, single writer):
   // explicit route state > current valid value (from cache / panel selection) >
   // default_agent > the first one. Explicit intent (sidebar group header "+" / menu
@@ -165,6 +199,8 @@ export function DraftView({
   const routeState = location.state as { agentId?: string; workspace?: string } | null;
   const stateAgentId = routeState?.agentId;
   const appliedStateKey = useRef<string | null>(null);
+  /** One-shot marker for the project-default Agent (seeding precedence, see below). */
+  const appliedDefaultAgent = useRef(false);
   useEffect(() => {
     if (agents.length === 0) return; // list not ready yet, nothing to validate against — wait for the next pass
     const valid = (id: string | null | undefined): id is string =>
@@ -181,9 +217,26 @@ export function DraftView({
         return;
       }
     }
+    // Project default ([default_chat].agent_id), inserted ahead of the fallback chain:
+    // applied at most once per mount, and only when nothing above it claims the field —
+    // no route override consumed this mount, no mount-time cached selection, no panel pick
+    // since mount (precedence: route state > draft cache > project default > the
+    // currentAgent/default_agent/first fallback the initial state and the line below give).
+    if (chatDefaults?.agentId !== undefined && !appliedDefaultAgent.current) {
+      appliedDefaultAgent.current = true;
+      if (
+        appliedStateKey.current === null &&
+        cached.agentId === undefined &&
+        !touchedRef.current.agent &&
+        valid(chatDefaults.agentId)
+      ) {
+        setAgentId(chatDefaults.agentId);
+        return;
+      }
+    }
     if (valid(agentId)) return;
     setAgentId((agents.find((a) => a.agentId === "default_agent") ?? agents[0])?.agentId ?? null);
-  }, [agents, agentId, location.key, stateAgentId]);
+  }, [agents, agentId, location.key, stateAgentId, chatDefaults, cached.agentId]);
 
   // Explicit Workspace from route state (the workspace-mode group header "+"): applied once per
   // location.key, same convention as the Agent above, overriding the cached selection ("" pre-fills
@@ -204,6 +257,33 @@ export function DraftView({
     setWorkspace(stateWorkspace);
   }, [location.key, stateWorkspace]);
 
+  // Project defaults for Workspace / approval mode: the same apply-once discipline as the
+  // route-state effects above, deferred until the defaults resolve. A field is only seeded
+  // when nothing with higher precedence claims it — no route override (workspace only), no
+  // mount-time cached value (a cached "" workspace counts: it is an explicit "auto temp"),
+  // and no user edit since mount. Model is deliberately not here (models.defaultModel
+  // already flows through its own fallback effect below — the single-sourced default).
+  const appliedProjectDefaults = useRef(false);
+  useEffect(() => {
+    if (chatDefaults === null || appliedProjectDefaults.current) return;
+    appliedProjectDefaults.current = true;
+    if (
+      chatDefaults.workspace !== undefined &&
+      stateWorkspace === undefined &&
+      cached.workspace === undefined &&
+      !touchedRef.current.workspace
+    ) {
+      setWorkspace(chatDefaults.workspace);
+    }
+    if (
+      chatDefaults.approvalMode !== undefined &&
+      cached.approvalMode === undefined &&
+      !touchedRef.current.approval
+    ) {
+      setApprovalMode(chatDefaults.approvalMode);
+    }
+  }, [chatDefaults, stateWorkspace, cached.workspace, cached.approvalMode]);
+
   // Model fallback: once config is ready, if nothing is selected or the selection is no longer valid, fall back to the project default → the first model (always as a paired reference).
   useEffect(() => {
     if (!models) return;
@@ -215,42 +295,51 @@ export function DraftView({
   }, [models, modelRef]);
 
   // —— Conversation-time thinking level (backed by the Agent settings) ——
-  // Shows the selected Agent's current `model.thinking_level` ("" = no override); picking a
+  // The picker DISPLAYS the effective level, resolved by the same chain core applies when
+  // the Session is created (core agent.ts `configuredThinkingLevel`): the Agent's explicit
+  // `model.thinking_level` > the Project's `default_chat.thinking_level` > the built-in
+  // "medium" (see effectiveThinkingLevel). `agentThinkingLevel` keeps the raw agent value
+  // ("" = no explicit override); the derived value below waits for BOTH fetches. Picking a
   // level immediately persists it via the agent-config API (the PUT carries only that key —
-  // the server merges per-key into the YAML, so nothing else is clobbered). The session created
-  // on first send reads systemConfig fresh, so it runs with the picked level, which also
-  // becomes the Agent's new default. Refetched whenever the draft's Agent changes; while
-  // loading (or after a failed fetch) the picker stays disabled (null).
-  const [thinkingLevel, setThinkingLevel] = useState<string | null>(null);
+  // the server merges per-key into the YAML, so nothing else is clobbered): the session
+  // created on first send reads systemConfig fresh, so it runs with the picked level, which
+  // also becomes the Agent's new default — the project default is only a fallback and is
+  // never written from here. Refetched whenever the draft's Agent changes; while loading
+  // (or after a failed fetch) the picker stays disabled (null).
+  const [agentThinkingLevel, setAgentThinkingLevel] = useState<string | null>(null);
   useEffect(() => {
-    setThinkingLevel(null);
+    setAgentThinkingLevel(null);
     if (!agentId) return;
     let cancelled = false;
     api
       .getAgentConfig(projectId, agentId)
       .then((res) => {
-        if (!cancelled) setThinkingLevel(res.config.model?.thinkingLevel ?? "");
+        if (!cancelled) setAgentThinkingLevel(res.config.model?.thinkingLevel ?? "");
       })
       .catch(() => undefined);
     return () => {
       cancelled = true;
     };
   }, [projectId, agentId]);
+  const thinkingLevel =
+    agentThinkingLevel === null || chatDefaults === null
+      ? null
+      : effectiveThinkingLevel(agentThinkingLevel, chatDefaults.thinkingLevel);
   /** Live mirror for the rollback value (a stale closure would roll back to an outdated level). */
   const thinkingRef = useRef<string | null>(null);
-  thinkingRef.current = thinkingLevel;
+  thinkingRef.current = agentThinkingLevel;
   const onChangeThinkingLevel = useCallback(
     (level: string) => {
       // "" (no override) is not persistable through the config API — the picker disables that row.
       if (!agentId || !level) return;
       const rollback = thinkingRef.current;
-      setThinkingLevel(level); // Optimistic: the picker reflects the choice immediately.
+      setAgentThinkingLevel(level); // Optimistic: the derived display follows immediately.
       api
         .putAgentConfig(projectId, agentId, {
           config: { model: { thinkingLevel: level as AgentModelConfigDto["thinkingLevel"] } },
         })
         .catch((e: unknown) => {
-          setThinkingLevel(rollback);
+          setAgentThinkingLevel(rollback);
           toastError(apiErrorText(e));
         });
     },
@@ -362,10 +451,21 @@ export function DraftView({
   }, [cancelPendingSave, userId, projectId, modelRef]);
 
   const selectAgent = (a: AgentSummary) => {
+    touchedRef.current.agent = true; // an explicit pick outranks a late-arriving project default
     setAgentId(a.agentId);
     // Follow through to the global current Agent: keeps the sidebar memory and stats convention consistent.
     setCurrentAgentId(a.agentId);
   };
+
+  /** User edits routed through these two so a late-arriving project default cannot clobber them. */
+  const changeWorkspace = useCallback((path: string) => {
+    touchedRef.current.workspace = true;
+    setWorkspace(path);
+  }, []);
+  const changeApprovalMode = useCallback((mode: ApprovalMode) => {
+    touchedRef.current.approval = true;
+    setApprovalMode(mode);
+  }, []);
 
   // One in-flight guard shared by both send entry points (composer send / example task): a
   // second submission while one is running would create a second Session with
@@ -500,7 +600,7 @@ export function DraftView({
           contextNow={0}
           vision={vision}
           approvalMode={approvalMode}
-          onChangeApprovalMode={setApprovalMode}
+          onChangeApprovalMode={changeApprovalMode}
           modeSaving={false}
           autoFocus
           agents={agents}
@@ -515,7 +615,7 @@ export function DraftView({
         {/* Ownership selection right below the card (small pill dropdowns, styled after ChatGPT's project picker button) */}
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <AgentSelect agents={agents} selected={selectedAgent} onSelect={selectAgent} />
-          <WorkspaceSelect projectId={projectId} workspace={workspace} onChange={setWorkspace} />
+          <WorkspaceSelect projectId={projectId} workspace={workspace} onChange={changeWorkspace} />
         </div>
 
         {/* Example tasks: one-click canned builds showing off the one-sentence → app flow.
