@@ -127,13 +127,14 @@ export const zh = {
     login: "登录",
     logout: "登出",
     admin: "管理员",
-    defaultAdminNote: "首次使用请以内置管理员登录：admin / penguin-2026，登录后请尽快修改密码",
+    defaultAdminNote:
+      "首次使用请以内置管理员 admin 登录，初始密码在服务端首次启动时打印（形如 penguin-1234），登录后请尽快修改密码",
   },
 
   account: {
     changePassword: "修改密码",
     oldPassword: "当前密码",
-    oldPasswordHint: "内置管理员的默认初始密码为 penguin-2026",
+    oldPasswordHint: "内置管理员的初始密码在服务端首次启动时打印（形如 penguin-1234）",
     newPassword: "新密码",
     confirmPassword: "确认新密码",
     passwordMismatch: "两次输入的新密码不一致",
@@ -1040,6 +1041,7 @@ Benchmark：
     /** Localized text for the common server error codes (server error messages are English-only); looked up by ApiError.code in apiErrorText, falling back to the raw message for unmapped codes. */
     byCode: {
       invalid_credentials: "用户名或密码错误。",
+      too_many_attempts: "登录失败次数过多，请稍后重试。",
       password_mismatch: "当前密码不正确。",
       invalid_password: "密码至少 8 位。",
       admin_required: "仅管理员可执行此操作。",

@@ -11,7 +11,7 @@ import type { OmniMessage } from "@prismshadow/penguin-core";
 import { buildAppDeps, createApp } from "../src/app.js";
 import type { AppDeps, BuildDepsOverrides } from "../src/app.js";
 import type { AppEnv } from "../src/auth/middleware.js";
-import { ADMIN_INITIAL_PASSWORD, ADMIN_USER_ID } from "../src/auth/service.js";
+import { ADMIN_USER_ID } from "../src/auth/service.js";
 import type { ServerConfig } from "../src/config.js";
 import type { UserInfo } from "../src/api/types.js";
 
@@ -20,6 +20,9 @@ export async function makeTempRoot(): Promise<string> {
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Fixed seeded-admin password injected into every test app (in production the seed generates a random one). */
+export const TEST_ADMIN_PASSWORD = "penguin-0000";
 
 export function testConfig(root: string): ServerConfig {
   return {
@@ -32,6 +35,8 @@ export function testConfig(root: string): ServerConfig {
     previewOrigin: null,
     // Points to a nonexistent directory: static hosting is disabled in tests.
     webDist: path.join(root, "__no_web_dist__"),
+    // Fixed seed password so loginAdmin needs no seed-time capture.
+    seedAdminPassword: TEST_ADMIN_PASSWORD,
     authSessionTtlMs: 7 * DAY_MS,
     authSessionRenewMs: 6 * DAY_MS,
   };
@@ -41,6 +46,8 @@ export interface TestApp {
   app: Hono<AppEnv>;
   deps: AppDeps;
   root: string;
+  /** Initial password of the seeded admin (TEST_ADMIN_PASSWORD unless overridden via `config.seedAdminPassword`). */
+  adminPassword: string;
   cleanup(): Promise<void>;
 }
 
@@ -56,13 +63,15 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
   const root = await makeTempRoot();
   if (beforeSeed) await beforeSeed(root);
   const deps = buildAppDeps({ ...testConfig(root), ...config }, { log: () => {}, ...overrides });
-  // Consistent with the startup entrypoint: seed the built-in admin (owning default_project).
-  await deps.authService.seedAdmin();
+  // Consistent with the startup entrypoint: seed the built-in admin (owning default_project),
+  // keeping the password it returns (only null if a beforeSeed hook ever pre-created users).
+  const adminPassword = (await deps.authService.seedAdmin()) ?? TEST_ADMIN_PASSWORD;
   const app = createApp(deps);
   return {
     app,
     deps,
     root,
+    adminPassword,
     cleanup: async () => {
       deps.channels.dispose();
       deps.db.close();
@@ -95,9 +104,9 @@ export async function loginUser(
   return { cookie: setCookie.split(";")[0]!, user: body.user };
 }
 
-/** Logs in as the seeded admin. */
+/** Logs in as the seeded admin (every test app seeds with TEST_ADMIN_PASSWORD). */
 export function loginAdmin(app: Hono<AppEnv>): Promise<{ cookie: string; user: UserInfo }> {
-  return loginUser(app, ADMIN_USER_ID, ADMIN_INITIAL_PASSWORD);
+  return loginUser(app, ADMIN_USER_ID, TEST_ADMIN_PASSWORD);
 }
 
 /** Admin creates the account and logs in as that user (the only way to create test users while registration is closed). */

@@ -130,13 +130,14 @@ export const en: Strings = {
     logout: "Sign out",
     admin: "Admin",
     defaultAdminNote:
-      "First run: sign in as the built-in admin (admin / penguin-2026), then change the password soon",
+      "First run: sign in as the built-in admin “admin” with the initial password printed in the server startup output (looks like penguin-1234), then change it soon",
   },
 
   account: {
     changePassword: "Change password",
     oldPassword: "Current password",
-    oldPasswordHint: "The built-in admin's default initial password is penguin-2026",
+    oldPasswordHint:
+      "The built-in admin's initial password is printed in the server startup output (looks like penguin-1234)",
     newPassword: "New password",
     confirmPassword: "Confirm new password",
     passwordMismatch: "New passwords do not match",
@@ -1061,6 +1062,7 @@ Scenarios:
     /** Localized text for the common server error codes (server error messages are English-only); looked up by ApiError.code in apiErrorText, falling back to the raw message for unmapped codes. */
     byCode: {
       invalid_credentials: "Incorrect username or password.",
+      too_many_attempts: "Too many failed sign-in attempts. Try again shortly.",
       password_mismatch: "The current password is incorrect.",
       invalid_password: "Password must be at least 8 characters.",
       admin_required: "Only an admin can perform this operation.",
