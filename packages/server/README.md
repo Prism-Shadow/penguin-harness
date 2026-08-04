@@ -36,7 +36,7 @@ pnpm --filter @prismshadow/penguin-server start   # node dist/index.js
 ## Security notes (known MVP limits)
 
 - **CSRF**: session cookie is `SameSite=Lax` and writes accept only `Content-Type: application/json`; no CSRF token yet.
-- **No login rate limiting**: add throttling at a reverse proxy for public deployments.
+- **Login throttling**: per-username exponential backoff after 5 consecutive failures (1s doubling to a 60s cap, `429 too_many_attempts` inside the window, reset on success; in-memory, so a restart clears it). Unknown usernames are throttled identically, so it is not an account-existence oracle. A reverse proxy can still add IP-level limits for public deployments.
 - **Built-in admin `admin` starts with a random initial password** of the form `penguin-1234`, printed once to the server console at seed time (`PENGUIN_SEED_ADMIN_PASSWORD` pins it for tests/e2e): change it immediately (a banner keeps reminding until you do).
 - Passwords use `node:crypto` scrypt (`scrypt$N$r$p$salt$hash`, timingSafeEqual); login sessions renew on a 7-day sliding window; the DB stores only the token's sha256.
 - Model credentials live in the Project's hidden 0600 config file; the API always masks them.

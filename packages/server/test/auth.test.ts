@@ -15,6 +15,7 @@ import {
   loginUser,
   makeTempRoot,
   provisionUser,
+  TEST_ADMIN_PASSWORD,
   testConfig,
 } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
@@ -204,6 +205,54 @@ describe("auth", () => {
       deps.channels.dispose();
       deps.db.close();
       await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    }
+  });
+
+  it("throttles login failures per username with exponential backoff and resets on success", async () => {
+    let clock = Date.parse("2026-08-03T00:00:00Z");
+    const fresh = await createTestApp({ now: () => new Date(clock) });
+    try {
+      const attempt = (password: string) =>
+        fresh.app.request("/api/auth/login", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ userId: "admin", password }),
+        });
+      // Five free failures, and the sixth still reaches verification (backoff starts after it).
+      for (let i = 0; i < 6; i++) expect((await attempt("wrong-password")).status).toBe(401);
+      // Inside the 1s window: rejected without touching credentials — even the CORRECT password.
+      const throttled = await attempt("wrong-password");
+      expect(throttled.status).toBe(429);
+      const body = (await throttled.json()) as { error: { code: string } };
+      expect(body.error.code).toBe("too_many_attempts");
+      expect((await attempt(TEST_ADMIN_PASSWORD)).status).toBe(429);
+      // Past the window, the correct password signs in and clears the counter…
+      clock += 1100;
+      await loginUser(fresh.app, "admin", TEST_ADMIN_PASSWORD);
+      // …so the next failure is an ordinary 401 again, not a 429.
+      expect((await attempt("wrong-password")).status).toBe(401);
+    } finally {
+      await fresh.cleanup();
+    }
+  });
+
+  it("throttles unknown usernames identically (no account-existence oracle)", async () => {
+    let clock = Date.parse("2026-08-03T00:00:00Z");
+    const fresh = await createTestApp({ now: () => new Date(clock) });
+    try {
+      const attempt = () =>
+        fresh.app.request("/api/auth/login", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ userId: "ghost", password: "whatever-123" }),
+        });
+      for (let i = 0; i < 6; i++) expect((await attempt()).status).toBe(401);
+      expect((await attempt()).status).toBe(429);
+      // The window expires on the same schedule as for real accounts.
+      clock += 1100;
+      expect((await attempt()).status).toBe(401);
+    } finally {
+      await fresh.cleanup();
     }
   });
 

@@ -25,6 +25,26 @@ export const MIN_PASSWORD_LENGTH = 8;
 export const ADMIN_USER_ID = "admin";
 
 /**
+ * Login throttling (per userId): the seeded initial password is `penguin-<4 digits>` —
+ * 10,000 combinations — so unthrottled guessing would enumerate it in minutes. After
+ * LOGIN_FREE_ATTEMPTS consecutive failures, the next attempt is admitted only after an
+ * exponentially growing delay from the last failure (1s, 2s, … capped at 60s; attempts
+ * inside the window are 429 `too_many_attempts` and do not extend it). Beyond ~40
+ * failures that is one guess per minute, so the 10k space stops being enumerable, while
+ * a legitimate user who mistyped a few times never waits more than the cap. A successful
+ * login clears the counter. Counters are process memory (a restart clears them —
+ * restarting is slower than waiting out the cap) and are kept for nonexistent userIds
+ * too, so throttling is not an account-existence oracle. Known limit: a concurrent burst
+ * can slip in before its first failure is recorded; the steady-state backoff still
+ * dominates the search space.
+ */
+const LOGIN_FREE_ATTEMPTS = 5;
+const LOGIN_BACKOFF_START_MS = 1000;
+const LOGIN_BACKOFF_CAP_MS = 60_000;
+/** Failure entries idle longer than this are swept (bounds the map; far above the cap). */
+const LOGIN_FAILURE_IDLE_MS = 15 * 60_000;
+
+/**
  * Random initial password for the seeded admin: `penguin-<4 digits>` — brand-related and
  * easy to type, shown once in the server startup output (the README, docs and login-page
  * hint all describe this form).
@@ -102,12 +122,42 @@ export class AuthService {
     return password;
   }
 
+  /** Consecutive login failures per userId (see the throttling comment on the constants). */
+  private readonly loginFailures = new Map<string, { failures: number; lastFailureAt: number }>();
+
+  /** The wait imposed after `failures` consecutive failures (0 while within the free attempts). */
+  private loginDelayMs(failures: number): number {
+    const excess = failures - LOGIN_FREE_ATTEMPTS;
+    if (excess <= 0) return 0;
+    return Math.min(LOGIN_BACKOFF_START_MS * 2 ** (excess - 1), LOGIN_BACKOFF_CAP_MS);
+  }
+
   async login(userId: string, password: string): Promise<{ user: UserInfo; token: string }> {
+    const nowMs = this.now().getTime();
+    for (const [key, entry] of this.loginFailures) {
+      if (nowMs - entry.lastFailureAt > LOGIN_FAILURE_IDLE_MS) this.loginFailures.delete(key);
+    }
+    const failed = this.loginFailures.get(userId);
+    if (failed) {
+      const readyAt = failed.lastFailureAt + this.loginDelayMs(failed.failures);
+      if (nowMs < readyAt) {
+        throw new HttpError(
+          429,
+          "too_many_attempts",
+          `Too many failed sign-in attempts. Try again in ${Math.ceil((readyAt - nowMs) / 1000)}s.`,
+        );
+      }
+    }
     const row = this.deps.users.findById(userId);
     const ok = row !== null && (await verifyPassword(password, row.passwordHash));
     if (!row || !ok) {
+      this.loginFailures.set(userId, {
+        failures: (failed?.failures ?? 0) + 1,
+        lastFailureAt: this.now().getTime(),
+      });
       throw new HttpError(401, "invalid_credentials", "Incorrect username or password.");
     }
+    this.loginFailures.delete(userId);
     this.deps.authSessions.deleteExpired(this.now().toISOString());
     return { user: toUserInfo(row), token: this.issueSession(row.userId) };
   }
