@@ -217,10 +217,6 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
         <>
           {scheduled && <ScheduledBanner origin={scheduled.origin} />}
           {skills && <SkillsBanner names={skills.skills} />}
-          {/* Files uploaded with this message: named above the bubble, like the other
-              message-level notices — the bytes live in the session scratchpad, the model
-              opens them by path (goal mode never gets here: it takes text and images only). */}
-          {files.length > 0 && <AttachedFilesBanner files={files} />}
           {text && (
             <div className="anim-msg group my-4 flex flex-col items-end">
               <div className="max-w-[88%] rounded-lg bg-gray-100 px-4 py-2.5 md:max-w-[75%] dark:bg-gray-800">
@@ -232,6 +228,19 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
               <MessageMeta
                 {...(item.atMs !== undefined ? { atMs: item.atMs } : {})}
                 text={text}
+                align="right"
+              />
+            </div>
+          )}
+          {/* Files uploaded with this message: shown below the text in the same user-side
+              container and with the same timestamp footer as uploaded images. The bytes live in
+              the session scratchpad, where the model opens them by path (goal mode never gets
+              here: it takes text and images only). */}
+          {files.length > 0 && (
+            <div className="anim-msg group my-4 flex flex-col items-end">
+              <AttachedFilesBanner files={files} />
+              <MessageMeta
+                {...(item.atMs !== undefined ? { atMs: item.atMs } : {})}
                 align="right"
               />
             </div>
