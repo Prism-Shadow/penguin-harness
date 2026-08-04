@@ -11,7 +11,13 @@
 name: Desktop packages
 
 on:
-  workflow_call: {}
+  workflow_call:
+    inputs:
+      tag:
+        description: Release tag (vX.Y.Z) stamped into the app; empty keeps dev versions.
+        required: false
+        type: string
+        default: ""
   workflow_dispatch: {}
 
 env:
@@ -45,6 +51,33 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+
+      # Stamp the release version the same way release.yml stamps the CLI artifacts —
+      # core's VERSION/BUILD_DATE constants (what the app and server report) plus the
+      # desktop package.json electron-builder reads its installer metadata from;
+      # otherwise every installer carries the in-repo dev version (v0.2.1 shipped
+      # Windows metadata saying 0.2.0 this way). node instead of sed -i: this matrix
+      # includes macOS, whose BSD sed spells in-place editing differently. Dry runs
+      # (no tag) keep the dev versions.
+      - name: Stamp release version
+        if: inputs.tag != ''
+        shell: bash
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          V="${TAG#v}"
+          D="$(date -u +%Y-%m-%d)"
+          V="$V" D="$D" node -e '
+            const fs = require("fs");
+            const p = "packages/core/src/index.ts";
+            let s = fs.readFileSync(p, "utf8");
+            if (!/export const VERSION = "/.test(s)) throw new Error("VERSION const not found");
+            s = s.replace(/export const VERSION = "[^"]*"/, `export const VERSION = "${process.env.V}"`);
+            if (!/export const BUILD_DATE: string \| null = /.test(s)) throw new Error("BUILD_DATE const not found");
+            s = s.replace(/export const BUILD_DATE: string \| null = [^;]*/, `export const BUILD_DATE: string | null = "${process.env.D}"`);
+            fs.writeFileSync(p, s);
+          '
+          (cd packages/desktop && npm version --no-git-tag-version --allow-same-version "$V")
 
       - run: pnpm install --frozen-lockfile
 
