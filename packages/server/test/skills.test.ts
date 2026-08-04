@@ -86,6 +86,7 @@ describe("skills api", () => {
       "vllm",
       "ollama",
       "llamafactory",
+      "skill-porting",
     ]);
     expect(body.groups[3]!.skills.map((s) => s.name)).toEqual([
       "agent-creation",

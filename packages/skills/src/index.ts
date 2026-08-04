@@ -154,7 +154,15 @@ export const SKILL_GROUPS: SkillGroupInfo[] = [
     id: "ai-app-development",
     title: "AI App Development",
     titleZh: "AI 应用开发",
-    skills: ["penguin-sdk", "penguin-cli", "agenthub-models", "vllm", "ollama", "llamafactory"],
+    skills: [
+      "penguin-sdk",
+      "penguin-cli",
+      "agenthub-models",
+      "vllm",
+      "ollama",
+      "llamafactory",
+      "skill-porting",
+    ],
   },
   {
     id: "agent-tuning",
