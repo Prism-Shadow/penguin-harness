@@ -239,9 +239,9 @@ export type CompactAvailability = "ok" | "unsupported" | "empty" | "just_compact
  * Exported for unit tests.
  */
 export const SUMMARY_RETRY_GUIDANCE =
-  "Your previous reply was not a usable summary. Write the full summary BETWEEN the tags: " +
-  "output `[summary]`, then the summary text, then `[/summary]` — the block must not be " +
-  "empty, nothing may follow `[/summary]`, and no tools may be called.";
+  "Your previous reply was not a usable summary. Reply again with text only, no tool " +
+  "calls, in exactly this format and nothing after it:\n\n" +
+  "[summary]put the summary text here...[/summary]";
 
 /** Result of executing one LLM turn (the return value of runTurn). */
 interface TurnResult {
