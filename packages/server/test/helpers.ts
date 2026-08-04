@@ -164,17 +164,21 @@ export function makeTraceHarness(
   traceIndex: TraceIndexService;
   service: TraceService;
   sources: SessionSources;
+  /** Paths of every Trace shard the service read from disk (windowed-read IO assertions); reset freely between calls. */
+  shardReads: string[];
   close: () => void;
 } {
   const db = openDatabase(":memory:");
   const sources = opts.sources ?? new SessionSources();
   const traceIndex = new TraceIndexService(root, new TraceIndexRepo(db), sources);
+  const shardReads: string[] = [];
   const service = new TraceService(root, {
     index: traceIndex,
     ...(opts.sessions !== undefined ? { sessions: opts.sessions } : {}),
     sources,
+    observeShardRead: (p) => shardReads.push(p),
   });
-  return { traceIndex, service, sources, close: () => db.close() };
+  return { traceIndex, service, sources, shardReads, close: () => db.close() };
 }
 
 /** Writes a Trace JSONL file directly (for building historical / discovery scenarios). */

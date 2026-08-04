@@ -36,6 +36,24 @@ const ANSWER_CAP = 500;
  */
 export const OUTLINE_MIN_TURNS = 5;
 
+/**
+ * With windowed history loading, entries built from the loaded items are only the tail of
+ * the conversation: `turnOffset` (MessagesPageInfo.earlierTurns — the server counts with
+ * the same entry rule buildOutline applies; the two must stay in step) is the number of
+ * turns that exist before them. These two helpers are the ONLY places that combine the
+ * offset with loaded-entry indices, so numbering can never drift between the shapes.
+ */
+
+/** Global 1-based turn number of loaded entry `index` (its position in the loaded entries array). */
+export function globalTurnNumber(turnOffset: number, index: number): number {
+  return turnOffset + index + 1;
+}
+
+/** Whether the outline earns its place: the gate counts the WHOLE conversation — unloaded earlier turns included — never just the loaded window. */
+export function outlineVisible(turnOffset: number, loadedCount: number): boolean {
+  return turnOffset + loadedCount >= OUTLINE_MIN_TURNS;
+}
+
 /** Rail window half-widths: at most this many ticks render before/after the active one. */
 export const OUTLINE_WINDOW_BEFORE = 20;
 export const OUTLINE_WINDOW_AFTER = 20;

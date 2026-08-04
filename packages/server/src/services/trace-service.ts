@@ -40,6 +40,21 @@ import type { TraceFileRow, TraceSessionRow } from "../db/repos/trace-index.js";
 import { HttpError } from "../http/errors.js";
 import { formatLocalDate } from "../internal/dates.js";
 import type { SessionSources } from "../runtime/session-sources.js";
+import {
+  cloneScanState,
+  deserializePrefix,
+  encodeCursor,
+  finalizeScan,
+  initialScanState,
+  scanMessages,
+  serializePrefix,
+} from "./message-window.js";
+import type {
+  ChildAggregate,
+  MessageCursor,
+  ScanState,
+  WindowPriorStats,
+} from "./message-window.js";
 import { TraceIndexService, traceFilePath } from "./trace-index.js";
 
 const TRACE_FILE_RE = /^(.+)_(\d{3})\.jsonl$/;
@@ -58,6 +73,34 @@ interface LocatedFile {
   path: string;
   date: string;
   index: number;
+  /** Last observed size from the index row (the page-stats cache write guard). */
+  sizeBytes: number;
+}
+
+/** A windowed history read's request shape (see readMessagesPage). */
+export type MessagesPageRequest =
+  { kind: "tail"; limit: number } | { kind: "before"; cursor: MessageCursor; limit: number };
+
+/** A windowed history read's result (route maps it onto MessagesResponse.page). */
+export interface MessagesPageResult {
+  messages: OmniMessage[];
+  /** Cursor of the window's first unit; absent = the window reaches the beginning. */
+  before?: string;
+  /** Cumulative stats before the window (earlierTurns = prior.turns). */
+  prior: WindowPriorStats;
+}
+
+/**
+ * Per-request expansion context: `projectScanned` caps the miss-path force reconcile at
+ * one per request; `ancestry` guards cycles; `raw` memoizes each child session's
+ * concatenated shard messages so the window expansion and the subagent-token
+ * aggregation never read the same child twice within one request.
+ */
+interface ExpandCtx {
+  projectScanned: boolean;
+  ancestry: Set<string>;
+  depth: number;
+  raw: Map<string, OmniMessage[] | null>;
 }
 
 /**
@@ -92,6 +135,12 @@ export interface TraceServiceDeps {
   sessions?: TraceSessionIndex;
   /** Optional (narrow tests may omit): the shared in-process Session-origin registry (single source of truth for `source`). */
   sources?: SessionSources;
+  /**
+   * Test observability: called with the path of every Trace shard this service reads
+   * from disk (windowed-read tests assert an old-window request never touches the
+   * newest shard and vice versa). Production wiring omits it.
+   */
+  observeShardRead?: (path: string) => void;
 }
 
 /** One Session's classification result (see classify): its sidebar category + Workspace path ("" = unknown). */
@@ -127,7 +176,14 @@ export class TraceService {
       path: traceFilePath(this.root, r),
       date: r.date,
       index: r.fileIndex,
+      sizeBytes: r.sizeBytes,
     }));
+  }
+
+  /** All shard reads funnel through here (deps.observeShardRead is the windowed-read tests' proof of which files were touched). */
+  private async readShard(path: string): Promise<OmniMessage[]> {
+    this.deps.observeShardRead?.(path);
+    return readTraceTolerant(path);
   }
 
   /** Deletes all of this Session's Trace files (called when the Session is deleted); the index rows go with them. */
@@ -160,11 +216,18 @@ export class TraceService {
     agentId: string,
     sessionId: string,
   ): Promise<OmniMessage[]> {
-    return this.readMessagesExpanded(projectId, agentId, sessionId, {
+    const ctx: ExpandCtx = {
       projectScanned: false,
       ancestry: new Set([sessionId]),
       depth: 0,
-    });
+      raw: new Map(),
+    };
+    const files = await this.locateAll(projectId, agentId, sessionId);
+    const out: OmniMessage[] = [];
+    for (const file of files) {
+      out.push(...(await this.expandMessages(projectId, await this.readShard(file.path), ctx)));
+    }
+    return out;
   }
 
   /**
@@ -186,42 +249,247 @@ export class TraceService {
     return this.deps.index.repo.findAgentBySession(projectId, childSid);
   }
 
-  private async readMessagesExpanded(
+  /** A child session's concatenated raw shard messages, memoized per request; null = no Trace located. */
+  private async readChildRaw(
+    projectId: string,
+    childSid: string,
+    ctx: ExpandCtx,
+  ): Promise<OmniMessage[] | null> {
+    const cached = ctx.raw.get(childSid);
+    if (cached !== undefined) return cached;
+    const childAgent = await this.resolveChildAgent(projectId, childSid, ctx);
+    let raw: OmniMessage[] | null = null;
+    if (childAgent) {
+      const files = await this.locateAll(projectId, childAgent, childSid);
+      if (files.length > 0) {
+        raw = [];
+        for (const file of files) raw.push(...(await this.readShard(file.path)));
+      }
+    }
+    ctx.raw.set(childSid, raw);
+    return raw;
+  }
+
+  /**
+   * Expand subagent pointers within one message span (the whole transcript on the full
+   * path, one window on the paged path — same recursive shape either way).
+   */
+  private async expandMessages(
+    projectId: string,
+    messages: readonly OmniMessage[],
+    ctx: ExpandCtx,
+  ): Promise<OmniMessage[]> {
+    const out: OmniMessage[] = [];
+    for (const msg of messages) {
+      // The depth cap guards against runaway recursion; ancestry guards against a
+      // cyclic pointer (a tampered Trace pointing to itself/an ancestor is not expanded).
+      const childSid = ctx.depth < MAX_SUBAGENT_DEPTH ? subagentPointer(msg) : null;
+      if (!childSid || ctx.ancestry.has(childSid)) {
+        out.push(msg);
+        continue;
+      }
+      const raw = await this.readChildRaw(projectId, childSid, ctx);
+      let nested: OmniMessage[] = [];
+      if (raw !== null) {
+        ctx.ancestry.add(childSid);
+        nested = await this.expandMessages(projectId, raw, { ...ctx, depth: ctx.depth + 1 });
+        ctx.ancestry.delete(childSid);
+      }
+      // Child Trace missing (deleted): keep the pointer event, since the sub-session's content can't be recovered.
+      if (nested.length === 0) {
+        out.push(msg);
+        continue;
+      }
+      for (const m of nested) out.push({ ...m, origin: [childSid, ...(m.origin ?? [])] });
+    }
+    return out;
+  }
+
+  /**
+   * A subagent pointer's subtree aggregate for the window scanner (message-window.ts):
+   * descendant token_usage request totals plus the subtree's max timestamp — the same
+   * contributions the expanded messages make to the Web's parent-level stats tracker.
+   * The recursion mirrors expandMessages' depth/ancestry rules exactly, so an
+   * unexpandable pointer contributes nothing on both paths.
+   */
+  private async aggregateChild(
+    projectId: string,
+    childSid: string,
+    ctx: ExpandCtx,
+  ): Promise<ChildAggregate | null> {
+    if (ctx.depth >= MAX_SUBAGENT_DEPTH || ctx.ancestry.has(childSid)) return null;
+    const raw = await this.readChildRaw(projectId, childSid, ctx);
+    if (raw === null || raw.length === 0) return null;
+    let requestTokens = 0;
+    let maxTsMs: number | null = null;
+    ctx.ancestry.add(childSid);
+    for (const msg of raw) {
+      const ms = Date.parse(msg.timestamp);
+      if (Number.isFinite(ms) && (maxTsMs === null || ms > maxTsMs)) maxTsMs = ms;
+      const p = msg.payload as { type?: string; request?: { total?: number } };
+      if (msg.type === "event_msg" && p.type === "token_usage") {
+        requestTokens += typeof p.request?.total === "number" ? p.request.total : 0;
+        continue;
+      }
+      const grandchild = subagentPointer(msg);
+      if (grandchild !== null) {
+        const agg = await this.aggregateChild(projectId, grandchild, {
+          ...ctx,
+          depth: ctx.depth + 1,
+        });
+        if (agg !== null) {
+          requestTokens += agg.requestTokens;
+          if (agg.maxTsMs !== null && (maxTsMs === null || agg.maxTsMs > maxTsMs)) {
+            maxTsMs = agg.maxTsMs;
+          }
+        }
+      }
+    }
+    ctx.ancestry.delete(childSid);
+    return { requestTokens, maxTsMs };
+  }
+
+  /**
+   * End-of-shard scan states for files[0..upto] (cumulative from the transcript's
+   * beginning), served from the trace_files.page_stats cache. A missing/stale record
+   * costs one read of THAT shard — once ever: every shard here is immutable (rotation
+   * opens a new shard; the newest shard never appears in a prefix, because windows are
+   * suffixes and their first shard is always read anyway). The write-back is guarded on
+   * the indexed size, so an externally rewritten shard can only invalidate, never
+   * poison, the cache.
+   */
+  private async prefixStates(
     projectId: string,
     agentId: string,
     sessionId: string,
-    ctx: { projectScanned: boolean; ancestry: Set<string>; depth: number },
-  ): Promise<OmniMessage[]> {
-    const files = await this.locateAll(projectId, agentId, sessionId);
-    const out: OmniMessage[] = [];
-    for (const file of files) {
-      for (const msg of await readTraceTolerant(file.path)) {
-        // The depth cap guards against runaway recursion; ancestry guards against a
-        // cyclic pointer (a tampered Trace pointing to itself/an ancestor is not expanded).
-        const childSid = ctx.depth < MAX_SUBAGENT_DEPTH ? subagentPointer(msg) : null;
-        if (!childSid || ctx.ancestry.has(childSid)) {
-          out.push(msg);
-          continue;
-        }
-        const childAgent = await this.resolveChildAgent(projectId, childSid, ctx);
-        let nested: OmniMessage[] = [];
-        if (childAgent) {
-          ctx.ancestry.add(childSid);
-          nested = await this.readMessagesExpanded(projectId, childAgent, childSid, {
-            ...ctx,
-            depth: ctx.depth + 1,
-          });
-          ctx.ancestry.delete(childSid);
-        }
-        // Child Trace missing (deleted): keep the pointer event, since the sub-session's content can't be recovered.
-        if (nested.length === 0) {
-          out.push(msg);
-          continue;
-        }
-        for (const m of nested) out.push({ ...m, origin: [childSid, ...(m.origin ?? [])] });
+    files: LocatedFile[],
+    upto: number,
+    ctx: ExpandCtx,
+  ): Promise<ScanState[]> {
+    const states: ScanState[] = [];
+    for (let j = 0; j <= upto; j++) {
+      const file = files[j]!;
+      const cached = deserializePrefix(
+        this.deps.index.repo.getPageStats(projectId, agentId, sessionId, file.index),
+      );
+      if (cached !== null) {
+        states.push(cached);
+        continue;
       }
+      const state = cloneScanState(j === 0 ? initialScanState() : states[j - 1]!);
+      const messages = await this.readShard(file.path);
+      await scanMessages(
+        state,
+        messages,
+        () => {},
+        (sid) => this.aggregateChild(projectId, sid, ctx),
+      );
+      this.deps.index.repo.setPageStats(
+        projectId,
+        agentId,
+        sessionId,
+        file.index,
+        file.sizeBytes,
+        serializePrefix(state),
+      );
+      states.push(state);
     }
-    return out;
+    return states;
+  }
+
+  /**
+   * Windowed history read (the `tailLimit` / `before` forms of GET /messages). The
+   * window is a run of whole units — cut points and unit semantics live in
+   * message-window.ts — assembled by reading ONLY the shards the window overlaps
+   * (plus, once ever per old shard, the prefix-cache backfill above). Subagent
+   * pointers are expanded exactly as the full path expands them, but only within the
+   * window: children referenced by older windows load when those windows do.
+   */
+  async readMessagesPage(
+    projectId: string,
+    agentId: string,
+    sessionId: string,
+    req: MessagesPageRequest,
+  ): Promise<MessagesPageResult> {
+    const files = await this.locateAll(projectId, agentId, sessionId);
+    const empty = (): MessagesPageResult => ({
+      messages: [],
+      prior: initialScanState().totals,
+    });
+    if (files.length === 0) return empty();
+    const ctx: ExpandCtx = {
+      projectScanned: false,
+      ancestry: new Set([sessionId]),
+      depth: 0,
+      raw: new Map(),
+    };
+
+    // The window's exclusive end: the newest shard's end (tail), or the cursor (before).
+    let endPos: number;
+    let endOrdinal: number | null = null; // null = to the shard's end
+    if (req.kind === "tail") {
+      endPos = files.length - 1;
+    } else {
+      endPos = files.findIndex((f) => f.index === req.cursor.fileIndex);
+      // Cursor shard no longer on disk (external deletion — locateAll already
+      // force-retried): the history it pointed into is gone; report end-of-history
+      // rather than a guess at what used to precede it.
+      if (endPos < 0) return empty();
+      endOrdinal = req.cursor.ordinal;
+    }
+
+    const prefixes = await this.prefixStates(projectId, agentId, sessionId, files, endPos - 1, ctx);
+
+    // Walk backward from the end, scanning whole shards (each from its cached carry-in)
+    // until the window has more units than requested or the beginning is reached.
+    const shardMessages = new Map<number, OmniMessage[]>();
+    let boundaries: Array<{ pos: number; ordinal: number; stats: WindowPriorStats }> = [];
+    let startPos = endPos + 1;
+    while (boundaries.length <= req.limit && startPos > 0) {
+      startPos -= 1;
+      const messages = await this.readShard(files[startPos]!.path);
+      shardMessages.set(startPos, messages);
+      const state = cloneScanState(startPos === 0 ? initialScanState() : prefixes[startPos - 1]!);
+      const shardBoundaries: Array<{ pos: number; ordinal: number; stats: WindowPriorStats }> = [];
+      const to = startPos === endPos && endOrdinal !== null ? endOrdinal : messages.length;
+      await scanMessages(
+        state,
+        messages,
+        (ordinal, stats) => shardBoundaries.push({ pos: startPos, ordinal, stats }),
+        (sid) => this.aggregateChild(projectId, sid, ctx),
+        0,
+        Math.min(to, messages.length),
+      );
+      boundaries = [...shardBoundaries, ...boundaries];
+    }
+
+    // Window start: the last `limit` units, or the very beginning (preamble included)
+    // when the whole remaining history fits — then there is no `before` cursor.
+    let start: { pos: number; ordinal: number };
+    let before: string | undefined;
+    let prior: WindowPriorStats;
+    if (boundaries.length > req.limit) {
+      const wb = boundaries[boundaries.length - req.limit]!;
+      start = { pos: wb.pos, ordinal: wb.ordinal };
+      before = encodeCursor({ fileIndex: files[wb.pos]!.index, ordinal: wb.ordinal });
+      prior = wb.stats;
+    } else {
+      start = { pos: 0, ordinal: 0 };
+      prior = initialScanState().totals;
+    }
+
+    const windowRaw: OmniMessage[] = [];
+    for (let pos = start.pos; pos <= endPos; pos++) {
+      const messages = shardMessages.get(pos) ?? (await this.readShard(files[pos]!.path));
+      const from = pos === start.pos ? start.ordinal : 0;
+      const to =
+        pos === endPos && endOrdinal !== null
+          ? Math.min(endOrdinal, messages.length)
+          : messages.length;
+      for (let i = from; i < to; i++) windowRaw.push(messages[i]!);
+    }
+    const expanded = await this.expandMessages(projectId, windowRaw, ctx);
+    return { messages: expanded, ...(before !== undefined ? { before } : {}), prior };
   }
 
   /** List of Trace files (index / date / size / mtime). */

@@ -128,6 +128,7 @@ CREATE TABLE IF NOT EXISTS trace_files (       -- DERIVED CACHE of the on-disk T
   file_index INTEGER NOT NULL,               -- shard index NNN of <session_id>_NNN.jsonl (name/path are reconstructed from the row, never stored: the data root may move)
   date       TEXT NOT NULL,                  -- date directory name (local yyyy-mm-dd)
   size_bytes INTEGER NOT NULL,               -- last observed size (listings stat-refresh the returned page and write back; an actively-appended shard may lag in between)
+  page_stats TEXT,                           -- cached message-window scan state at this shard's END (services/message-window.ts ShardPrefixRecord JSON); immutable shards only, NULL = not yet computed, nulled whenever size_bytes changes
   PRIMARY KEY (project_id, agent_id, session_id, file_index)
 );
 CREATE INDEX IF NOT EXISTS idx_trace_files_agent_date ON trace_files(project_id, agent_id, date);

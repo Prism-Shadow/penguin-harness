@@ -306,17 +306,32 @@ export const patchSession = (sessionId: string, body: SessionPatchRequest) =>
 export const deleteSession = (sessionId: string) =>
   apiFetch<void>(`/api/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
 
+/** Windowed history request: the newest N units (tail), or the N units before a cursor. */
+export type MessagesPageQuery =
+  { kind: "tail"; limit: number } | { kind: "before"; cursor: string; limit: number };
+
 /**
  * History rebuild. Carries the server's clock at read time (see ApiFetchMeta.serverNowMs)
  * alongside the messages: a Task still running has no Trace entry for the event currently in
  * flight, so its elapsed can only be measured by differencing this against the Task's first
  * message timestamp — both server-side values, so no client clock offset enters the result
  * (see pushMessages).
+ *
+ * With `page`, requests a WINDOW instead of the full transcript (tail-first loading /
+ * scroll-up backfill — see stream-controller): the response then carries
+ * `MessagesResponse.page`. Omitted = the legacy full read (the resync fallback path).
  */
-export const getMessages = (sessionId: string) =>
-  apiFetchWithMeta<MessagesResponse>(
-    `/api/sessions/${encodeURIComponent(sessionId)}/messages`,
+export const getMessages = (sessionId: string, page?: MessagesPageQuery) => {
+  const qs =
+    page === undefined
+      ? ""
+      : page.kind === "tail"
+        ? `?tailLimit=${page.limit}`
+        : `?before=${encodeURIComponent(page.cursor)}&limit=${page.limit}`;
+  return apiFetchWithMeta<MessagesResponse>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/messages${qs}`,
   ).then(({ data, serverNowMs }) => ({ ...data, serverNowMs }));
+};
 
 // Task execution, approval, abort, compaction ------------------------------------------------------
 

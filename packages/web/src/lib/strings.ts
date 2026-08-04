@@ -736,6 +736,12 @@ Benchmark：
     statusCompacting: "压缩中",
     pendingApprovals: (n: number) => `${n} 个待审批`,
     jumpToLatest: "回到最新消息",
+    /** Top-of-stream affordance while the previous history window is being fetched (scroll-up backfill). */
+    loadingEarlier: "正在加载更早的对话…",
+    /** Top-of-stream affordance after a backfill failure: click to retry fetching the previous window. */
+    loadEarlierRetry: "更早的对话加载失败，点击重试",
+    /** Top-of-stream marker once the loaded history reaches the very beginning (shown only after a backfill happened). */
+    historyBeginning: "已是对话开头",
     /** Conversation minimap (tick rail over the stream's left gutter): rail aria-label. */
     outlineTitle: "对话索引",
     /** Tick accessible name: turn number + the question (or the no-text placeholder). */

@@ -41,7 +41,8 @@ import { Dropdown } from "../../components/ui/dropdown";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import type { OutlineEntry } from "./outline-model";
 import {
-  OUTLINE_MIN_TURNS,
+  globalTurnNumber,
+  outlineVisible,
   previewText,
   railTickPitch,
   railWindowHalf,
@@ -202,12 +203,20 @@ function answerPreview(
 
 export function ConversationOutline({
   entries,
+  turnOffset = 0,
   version,
   scrollRef,
   running,
   fit,
 }: {
   entries: OutlineEntry[];
+  /**
+   * Turns that exist BEFORE the loaded history window (windowed loading): added to every
+   * tick's global turn number, counted toward the visibility gate, and >0 keeps the
+   * "more above" edge dots on — numbering never lies about unloaded turns, and the rail
+   * signals that scrolling up will reveal them.
+   */
+  turnOffset?: number;
   /** Stream repaint signal: re-runs the scrollspy as content grows or the stream remounts. */
   version: number;
   /** MessageStream's scroll container (null while the stream isn't mounted, e.g. the empty greeting). */
@@ -227,7 +236,7 @@ export function ConversationOutline({
   // cheap, and keying on version also re-binds after the stream remounts on a session switch.
   useEffect(() => {
     const el = scrollRef.current;
-    if (!fit.shown || !el || entries.length < OUTLINE_MIN_TURNS) return;
+    if (!fit.shown || !el || !outlineVisible(turnOffset, entries.length)) return;
     const ids = new Set(entries.map((entry) => entry.anchorId));
     let raf: number | null = null;
     const compute = () => {
@@ -246,9 +255,11 @@ export function ConversationOutline({
     };
     // `entries` is rebuilt per version; length + version cover it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fit.shown, scrollRef, entries.length, version]);
+  }, [fit.shown, scrollRef, entries.length, turnOffset, version]);
 
-  if (!fit.shown || entries.length < OUTLINE_MIN_TURNS) return null;
+  // The gate counts the WHOLE conversation (loaded + unloaded turns): a long session
+  // whose tail window happens to hold few entries still deserves its index.
+  if (!fit.shown || !outlineVisible(turnOffset, entries.length)) return null;
 
   /** Tick center Y relative to the rail overlay (the preview card anchors to it, clamped in render). */
   const tickTop = (e: MouseEvent<HTMLElement> | FocusEvent<HTMLElement>) => {
@@ -291,7 +302,9 @@ export function ConversationOutline({
           inside the rail by construction, and this guarantees a mismeasure still can't
           push ticks (which take pointer events) out over the toolbar or composer. */}
       <div className="max-h-full overflow-hidden">
-        {start > 0 && <RailOverflowMark edge="above" />}
+        {/* "More above" also covers turns not yet LOADED (turnOffset > 0): the dots tell
+            the same story either way — earlier turns exist beyond the rendered ticks. */}
+        {(start > 0 || turnOffset > 0) && <RailOverflowMark edge="above" />}
         {visible.map((entry, i) => {
           const active = entry.anchorId === activeId;
           return (
@@ -300,10 +313,10 @@ export function ConversationOutline({
               type="button"
               data-outline-tick={entry.anchorId}
               aria-current={active || undefined}
-              // Global turn number (start + i): the window changes which ticks render,
-              // never how a turn is numbered.
+              // Global turn number (turnOffset + start + i): neither the sliding window
+              // nor a partially-loaded history changes how a turn is numbered.
               aria-label={S.chat.outlineTickLabel(
-                start + i + 1,
+                globalTurnNumber(turnOffset, start + i),
                 entry.question || S.chat.outlineNoText,
               )}
               style={{ height: pitch }}
@@ -373,17 +386,20 @@ export function ConversationOutline({
  */
 export function OutlineMenuButton({
   entries,
+  turnOffset = 0,
   scrollRef,
   running,
 }: {
   entries: OutlineEntry[];
+  /** Turns before the loaded window (windowed loading): gates visibility on the WHOLE conversation; the list itself shows loaded turns only. */
+  turnOffset?: number;
   scrollRef: RefObject<HTMLDivElement | null>;
   running: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [activeId, setActiveId] = useState<number | null>(null);
   // Same gate as the rail: with this few turns neither shape earns its place.
-  if (entries.length < OUTLINE_MIN_TURNS) return null;
+  if (!outlineVisible(turnOffset, entries.length)) return null;
 
   const setOpenComputing = (next: boolean) => {
     if (next && scrollRef.current) {
