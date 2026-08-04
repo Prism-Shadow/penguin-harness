@@ -13,6 +13,14 @@
 # milestone M4, together with electron-updater.
 appId: com.prismshadow.penguinharness
 productName: PenguinHarness
+# Declaring the publish target is what makes electron-builder emit the update metadata
+# (latest.yml / latest-mac.yml / latest-linux.yml and the .blockmap files) next to the
+# installers; nothing is uploaded from here — the release workflow attaches the artifacts
+# it collected. electron-updater reads the same metadata from the Release.
+publish:
+  provider: github
+  owner: Prism-Shadow
+  repo: penguin-harness
 directories:
   app: stage/app
   output: stage/out
