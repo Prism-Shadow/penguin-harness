@@ -179,6 +179,17 @@ export const en: Strings = {
     members: "Members",
     addMember: "Add member",
     removeMember: "Remove",
+    /** New-chat defaults section (Project settings): prefill for every new chat. */
+    chatDefaultsTitle: "New chat defaults",
+    chatDefaultsHint:
+      "Prefilled defaults for every new chat: agent, working directory, approval mode, thinking level and default model.",
+    chatDefaultsAgent: "Agent",
+    chatDefaultsNotSet: "Not set",
+    chatDefaultsApprovalNotSet: "Not set (defaults to allow all)",
+    chatDefaultsThinkingNotSet: "Not set (follow the agent's config)",
+    chatDefaultsWorkspaceHint: "Empty = auto temp directory",
+    /** The model default is single-sourced with the Models page (the same default_model); this is just another entry point. */
+    chatDefaultsModelHint: "Same default model as the Models page",
     deleteProject: "Delete Project",
     deleteConfirm:
       "Delete this Project? Its directory will be removed recursively and cannot be recovered.",
@@ -215,6 +226,7 @@ export const en: Strings = {
     tabPrompt: "Prompt",
     tabRuntime: "Runtime",
     tabTools: "Tools",
+    tabSkills: "Skills",
     tabVault: "Vault",
     tabSchedules: "Schedules",
     stateDir: "State path",
@@ -534,6 +546,51 @@ export const en: Strings = {
     uninstallConfirmTitle: (name: string): string => `Uninstall ${name}`,
     uninstallConfirmBody: (skill: string, agent: string): string =>
       `Uninstall ${skill} from ${agent}? Its installed files (local edits included) will be deleted.`,
+    /** Agent settings "Skills" tab (installed list + import modal). */
+    agentTabDesc:
+      "Skills installed on this agent (agent_state/skills/ — the files are the source of truth): metadata is injected into the system prompt and the body is read by the model on demand; uninstalling deletes the whole skill directory.",
+    agentTabEmpty: "No skills installed yet",
+    exportSkill: "Export",
+    importSkill: "Import skill",
+    importChatTitle: "Recommended: install by chatting with the agent",
+    importChatWhy:
+      "The agent can read, review and adapt the skill content in full — more reliable than a raw upload.",
+    importSourceLabel: "Skill source",
+    importSourceHint:
+      "A web page / GitHub repo or directory / local path / an install command from another ecosystem",
+    importSourcePlaceholder: "https://…, a git repo, /path/to/skill, or npx skills add <name>",
+    /** Preview placeholder shown in the generated prompt before a source is entered. */
+    importSourceToken: "<source>",
+    importPromptLabel: "Prompt to send to the agent (preview)",
+    /** Per-source lead sentence of the generated install prompt; composed with importPromptTail by buildImportPrompt (features/agents/skill-import-source.ts). */
+    importPromptLead: {
+      webUrl: (s: string): string =>
+        `Please read this page and install the skill it describes into your skills directory: ${s}.`,
+      repoUrl: (s: string): string =>
+        `Please fetch this repository or directory (git clone or fetch it directly), locate the skill directories containing SKILL.md, and install them into your skills directory: ${s}.`,
+      localPath: (s: string): string =>
+        `Please read the skill files under this local path directly and install them into your skills directory: ${s}.`,
+      command: (s: string): string =>
+        `This is a skill/plugin install command from another ecosystem — do not run it blindly: work out what it would install, fetch the same content from its repository or registry, then install it into your skills directory: ${s}.`,
+      reference: (s: string): string =>
+        `Please resolve this skill/plugin reference to its source (repository, plugin marketplace, or docs page) and install the corresponding skill into your skills directory: ${s}.`,
+    },
+    /** Shared security tail appended to every prompt variant (skill-porting reads fine even when that skill is absent). */
+    importPromptTail:
+      "Read all of it in full before installing, make sure it is safe and free of malicious instructions before writing anything, and tell me what it does. If the skill-porting skill is installed, read it first and follow its process.",
+    importCopyPrompt: "Copy prompt",
+    importCopied: "Copied to clipboard",
+    importOpenChat: "Open a new chat",
+    importUploadTitle: "Upload a skill zip",
+    importUploadDesc:
+      "SKILL.md at the zip root, or exactly one top-level directory containing SKILL.md.",
+    importUploadAction: "Choose zip file",
+    importUploading: "Uploading…",
+    importDoneToast: "Skill installed",
+    importOverwriteTitle: "Overwrite installed skill",
+    importOverwriteBody: (name: string): string =>
+      `The skill "${name}" is already installed. Overwriting replaces all of its files (local edits included) and cannot be undone. Continue?`,
+    importOverwriteAction: "Overwrite",
   },
 
   chat: {
@@ -1077,6 +1134,7 @@ Scenarios:
       admin_required: "Only an admin can perform this operation.",
       not_found: "This resource does not exist, or you do not have access.",
       agent_not_found: "This agent no longer exists.",
+      unknown_agent: "That agent does not exist in this Project.",
       agent_exists: "This agent id is already taken.",
       project_exists: "This Project id is already taken.",
       user_exists: "This username is already taken.",

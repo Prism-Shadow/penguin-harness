@@ -360,6 +360,49 @@ export interface ModelTestResponse {
   message?: string;
 }
 
+/**
+ * PUT /api/projects/:p/models/default (owner): narrow default-model switch — flips the same
+ * top-level `default_model` the models page's whole-table PUT writes, without resending the
+ * table (and thus without touching credentials). The pair must name a configured model
+ * entry, exactly like the whole-table route's defaultModel validation.
+ */
+export interface DefaultModelUpdateRequest {
+  provider: string;
+  modelId: string;
+}
+
+/** Response mirrors what GET models reports as `defaultModel`. */
+export interface DefaultModelResponse {
+  defaultModel: ModelRefDto;
+}
+
+// ---------------------------------------------------------------------------
+// New-chat defaults (the `[default_chat]` block of .project_config.toml)
+// ---------------------------------------------------------------------------
+
+/**
+ * Per-Project new-chat defaults: prefill for the chat draft page. Every key is optional —
+ * an absent key means "not set" (the pre-existing behavior). Serves as the GET response,
+ * the PUT request body (whole-block replace: an omitted key clears it) and the PUT
+ * response (the stored block). The default MODEL is deliberately not here: it stays the
+ * top-level `default_model` served/written via the models routes (single-sourced with the
+ * models page).
+ */
+export interface ChatDefaultsDto {
+  /** Preselected Agent; must reference an existing Agent of the Project (400 unknown_agent). */
+  agentId?: string;
+  /** Prefilled Workspace directory; absent/empty = auto temp directory. */
+  workspace?: string;
+  /** Prefilled approval mode; absent = the built-in "allow-all". */
+  approvalMode?: ApprovalMode;
+  /**
+   * Fallback thinking level for Agents whose config has no explicit `model.thinking_level`
+   * (resolution chain: Agent explicit > this project default > built-in "medium"). Never
+   * "none" — only the four selectable tiers.
+   */
+  thinkingLevel?: Exclude<ThinkingLevelName, "none">;
+}
+
 // ---------------------------------------------------------------------------
 // Vault environment variables (Agent-level: agent_state/.vault.toml)
 // ---------------------------------------------------------------------------
@@ -1444,6 +1487,19 @@ export interface AgentSkillsResponse {
 /** POST install request: all names must exist in the library; already-installed ones are overwritten with library content (i.e. updated). */
 export interface SkillInstallRequest {
   names: string[];
+}
+
+/**
+ * POST /api/projects/:p/agents/:a/skills/archive: install one Skill from an uploaded zip.
+ * Layout: SKILL.md at the zip root, or exactly one top-level directory containing SKILL.md
+ * (the directory name is then the Skill name). 201 returns the refreshed installed list
+ * (AgentSkillsResponse); an already-installed name without `overwrite` is 409 `skill_exists`.
+ */
+export interface SkillArchiveInstallRequest {
+  /** Base64-encoded zip archive (decoded size capped at 14MB, same as the Agent snapshot import). */
+  dataBase64: string;
+  /** Replace an already-installed Skill of the same name (deletes its directory first). */
+  overwrite?: boolean;
 }
 
 // ---------------------------------------------------------------------------

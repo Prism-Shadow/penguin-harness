@@ -20,6 +20,8 @@ import {
   DEFAULT_AGENT_ID,
   DEFAULT_PROJECT_ID,
   installSkill,
+  loadProjectConfig,
+  saveProjectConfig,
   setVaultEntry,
 } from "../src/index.js";
 import { effectiveMaxContextLength, metaMaxTokens } from "../src/agent.js";
@@ -298,6 +300,52 @@ describe("Agent.createSession thinking level (explicit option wins over the Agen
       session.dispose();
     }
   });
+
+  // The full resolution chain (the single rule, comment-pinned at Agent.configuredThinkingLevel
+  // and mirrored by the web draft picker's display): Agent explicit `model.thinking_level` >
+  // Project `default_chat.thinking_level` > built-in "medium".
+  it("falls back to the Project's default_chat.thinking_level when the Agent config has none", async () => {
+    const cfg = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    cfg.default_chat = { thinking_level: "high" };
+    await saveProjectConfig(tmpRoot, DEFAULT_PROJECT_ID, cfg);
+    const agent = await createAgent();
+    // A hand-edited config without a level (the seeded default pins "medium").
+    delete agent.state.systemConfig.model?.thinking_level;
+    const ws = path.join(tmpRoot, "ws-thinking-project");
+    await fs.mkdir(ws, { recursive: true });
+    const session = await agent.createSession({ workspaceDir: ws });
+    try {
+      expect(defaultLevelOf(session)).toBe("high");
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("Agent explicit level wins over the project default; built-in medium is the last resort", async () => {
+    const cfg = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    cfg.default_chat = { thinking_level: "low" };
+    await saveProjectConfig(tmpRoot, DEFAULT_PROJECT_ID, cfg);
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-thinking-chain");
+    await fs.mkdir(ws, { recursive: true });
+    // The seeded config's explicit "medium" beats the project's "low".
+    const explicit = await agent.createSession({ workspaceDir: ws });
+    try {
+      expect(defaultLevelOf(explicit)).toBe("medium");
+    } finally {
+      explicit.dispose();
+    }
+    // No explicit level and no project default -> the built-in "medium".
+    const bare = await createAgent();
+    delete bare.projectConfig.default_chat;
+    delete bare.state.systemConfig.model?.thinking_level;
+    const builtin = await bare.createSession({ workspaceDir: ws });
+    try {
+      expect(defaultLevelOf(builtin)).toBe("medium");
+    } finally {
+      builtin.dispose();
+    }
+  });
 });
 
 describe("run_subagent spawning follows the PARENT session (never the Project default)", () => {
@@ -407,15 +455,16 @@ describe("run_subagent spawning follows the PARENT session (never the Project de
   });
 
   it("passes 'no thinking level' down when the parent has none (the child config never applies)", async () => {
-    // helper_agent's own seeded config pins "medium"; the parent's optional key is removed
-    // (hand-edited config). The tri-state null must reach the child: falling back to the
-    // child's own config here was the fallback hole — the child must show no level at all.
+    // helper_agent's own seeded config pins "medium". With the config chain always resolving
+    // (Agent explicit > Project default_chat > built-in "medium"), a parent with NO level can
+    // only come from the explicit tri-state null (an SDK caller suppressing the chain). That
+    // null must reach the child as-is: falling back to the child's own config here was the
+    // fallback hole — the child must show no level at all.
     await createAgent({ agentId: "helper_agent" });
     const agent = await createAgent();
-    delete agent.state.systemConfig.model?.thinking_level;
     const ws = path.join(tmpRoot, "ws-inherit-none");
     await fs.mkdir(ws, { recursive: true });
-    const parent = await agent.createSession({ workspaceDir: ws });
+    const parent = await agent.createSession({ workspaceDir: ws, thinkingLevel: null });
     const parentLLM = capturedLLMConfigs.list.at(-1)!;
     const runner = lastSpawnedRunner();
     try {

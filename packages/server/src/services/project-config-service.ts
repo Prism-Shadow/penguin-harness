@@ -19,6 +19,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { parse as parseToml } from "smol-toml";
 import {
+  CHAT_APPROVAL_MODES,
+  DEFAULT_CHAT_THINKING_LEVELS,
   GenerativeModel,
   catalogEntryFor,
   defaultProjectConfig,
@@ -29,6 +31,7 @@ import {
 } from "@prismshadow/penguin-core";
 import type { LLMOutcome, ModelRef, OmniMessage } from "@prismshadow/penguin-core";
 import type {
+  ChatDefaultsDto,
   ModelInfo,
   ModelPricingDto,
   ModelRefDto,
@@ -222,6 +225,77 @@ export class ProjectConfigService {
   async getDefaultModelRef(projectId: string): Promise<ModelRef | undefined> {
     const raw = await this.readRaw(projectId);
     return optRef(raw.default_model);
+  }
+
+  /**
+   * Sets the default Model to an already-configured entry (the narrow
+   * PUT /models/default route): rewrites only the top-level `default_model` — the SAME key
+   * the models page's whole-table PUT maintains, so the two surfaces stay single-sourced —
+   * preserving every other field via read-modify-write. The pair must name an entry in
+   * `models` (the identical rule updateModels applies to `defaultModel`); a reference
+   * outside the config is a 400, since createSession would error on it immediately. No
+   * runtime invalidation: existing Sessions pin their model at creation, and this route
+   * never touches credentials.
+   */
+  async setDefaultModelRef(projectId: string, ref: ModelRefDto): Promise<ModelRefDto> {
+    const raw = await this.readRaw(projectId);
+    if (!asArray(raw.models).some((m) => entryMatches(m, ref.provider, ref.modelId))) {
+      throw badRequest(
+        `defaultModel must be included in models: ${showRef(ref.provider, ref.modelId)}.`,
+      );
+    }
+    await this.writeRaw(projectId, {
+      ...raw,
+      default_model: { provider: ref.provider, model_id: ref.modelId },
+    });
+    return { provider: ref.provider, modelId: ref.modelId };
+  }
+
+  /**
+   * New-chat defaults (`[default_chat]`): read leniently — same tolerance as core's
+   * loadProjectConfig (an invalid value drops that key; a missing/malformed block reads as
+   * empty). Members may read; only the fields present in the file appear in the DTO.
+   */
+  async getChatDefaults(projectId: string): Promise<ChatDefaultsDto> {
+    const raw = await this.readRaw(projectId);
+    const t = asTable(raw.default_chat);
+    const agentId = optStr(t.agent_id);
+    const workspace = optStr(t.workspace);
+    const approval = optStr(t.approval_mode);
+    const thinking = optStr(t.thinking_level);
+    return {
+      ...(agentId !== undefined ? { agentId } : {}),
+      ...(workspace !== undefined ? { workspace } : {}),
+      ...(approval !== undefined && (CHAT_APPROVAL_MODES as readonly string[]).includes(approval)
+        ? { approvalMode: approval as ChatDefaultsDto["approvalMode"] }
+        : {}),
+      ...(thinking !== undefined &&
+      (DEFAULT_CHAT_THINKING_LEVELS as readonly string[]).includes(thinking)
+        ? { thinkingLevel: thinking as ChatDefaultsDto["thinkingLevel"] }
+        : {}),
+    };
+  }
+
+  /**
+   * Replaces the whole `[default_chat]` block (declarative PUT: an omitted key clears it;
+   * an empty request removes the block entirely, restoring the pre-existing behavior).
+   * Field validation (enums / agent existence) happens at the route; this is a
+   * read-modify-write like setName — every other field (models, credentials, name, the
+   * default model) is preserved. Returns the stored block as re-read from disk.
+   */
+  async setChatDefaults(projectId: string, req: ChatDefaultsDto): Promise<ChatDefaultsDto> {
+    const raw = await this.readRaw(projectId);
+    const block: RawTable = {
+      ...(req.agentId !== undefined ? { agent_id: req.agentId } : {}),
+      ...(req.workspace !== undefined ? { workspace: req.workspace } : {}),
+      ...(req.approvalMode !== undefined ? { approval_mode: req.approvalMode } : {}),
+      ...(req.thinkingLevel !== undefined ? { thinking_level: req.thinkingLevel } : {}),
+    };
+    const next: RawTable = { ...raw };
+    if (Object.keys(block).length > 0) next.default_chat = block;
+    else delete next.default_chat;
+    await this.writeRaw(projectId, next);
+    return this.getChatDefaults(projectId);
   }
 
   /** Pricing lookup for usage-recorder: the current pricing for this paired reference (undefined if none -> cost is NULL). */

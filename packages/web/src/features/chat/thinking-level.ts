@@ -30,6 +30,23 @@ export const THINKING_LEVELS = ["none", "low", "medium", "high", "xhigh"] as con
 export const SELECTABLE_THINKING_LEVELS = ["low", "medium", "high", "xhigh"] as const;
 
 /**
+ * Effective thinking level for the draft picker's DISPLAY — the SAME chain core resolves
+ * when a Session is created (core/src/agent.ts `configuredThinkingLevel`, the single rule):
+ * the Agent's explicit `model.thinking_level` > the Project's `default_chat.thinking_level`
+ * > the built-in "medium". Keep the two sites in sync. `agentLevel` is the raw agent-config
+ * value ("" = no explicit override); `projectDefault` is `default_chat.thinking_level`
+ * (undefined when the Project sets none). The picker shows this effective value; picking
+ * still writes through to the AGENT config only — the project default is a fallback, never
+ * overwritten by the picker.
+ */
+export function effectiveThinkingLevel(
+  agentLevel: string,
+  projectDefault: string | undefined,
+): string {
+  return agentLevel || (projectDefault ?? "medium");
+}
+
+/**
  * Short display label for a level from the localized name table (S.chat.thinkingLevelNames).
  * Covers all five stored levels including "none" (so a legacy value displays sanely instead
  * of being rewritten or hidden). Returns null for anything else — including "" (an Agent

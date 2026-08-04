@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import {
   SELECTABLE_THINKING_LEVELS,
   THINKING_LEVELS,
+  effectiveThinkingLevel,
   thinkingLevelLabel,
   thinkingLevelOptionsFor,
 } from "../src/features/chat/thinking-level";
@@ -52,6 +53,18 @@ describe("thinkingLevelLabel", () => {
 
   it("falls back to the raw value if the name table misses a level (defensive)", () => {
     expect(thinkingLevelLabel({}, "medium")).toBe("medium");
+  });
+});
+
+describe("effectiveThinkingLevel (draft picker display — mirrors core agent.ts)", () => {
+  it("resolves Agent explicit > project default_chat > built-in medium, the same chain core applies", () => {
+    // Agent's explicit level always wins — including over a set project default.
+    expect(effectiveThinkingLevel("high", "low")).toBe("high");
+    expect(effectiveThinkingLevel("none", "low")).toBe("none"); // a stored legacy "none" is explicit too
+    // No explicit agent level ("") -> the project default.
+    expect(effectiveThinkingLevel("", "low")).toBe("low");
+    // Neither -> the built-in "medium" (the documented Agent default).
+    expect(effectiveThinkingLevel("", undefined)).toBe("medium");
   });
 });
 
