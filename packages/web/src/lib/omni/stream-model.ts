@@ -250,6 +250,8 @@ export interface CompactionItem {
   /** True between begin and end (renders a "compaction in progress" banner). */
   running: boolean;
   status?: StopReason;
+  /** Failure classification from compaction_end (new cores set it when status is "failed"; absent on old streams). */
+  failureCause?: string;
 }
 
 export interface TaskStatsItem {
@@ -1333,6 +1335,7 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       if (item) {
         item.running = false;
         item.status = p.status;
+        if (p.failure_cause !== undefined) item.failureCause = p.failure_cause;
       } else {
         // Mid-stream join (missed the begin): append a completed banner directly.
         const created: CompactionItem = {
@@ -1342,6 +1345,7 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
           mode: p.mode,
           running: false,
           status: p.status,
+          ...(p.failure_cause !== undefined ? { failureCause: p.failure_cause } : {}),
         };
         model.items.push(created);
       }

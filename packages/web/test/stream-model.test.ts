@@ -460,6 +460,34 @@ describe("approvals and events", () => {
     expect(banner).not.toHaveProperty("tokens");
   });
 
+  it("compaction_end carries failure_cause onto the banner item (issue #170)", () => {
+    const m = createStreamModel();
+    pushMessage(
+      m,
+      compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 3 }),
+    );
+    const banner = items(m)[0] as CompactionItem;
+    pushMessage(
+      m,
+      compactionEnd({
+        reason: "context",
+        mode: "summarize",
+        status: "failed",
+        failureCause: "empty_summary",
+        attempts: 5,
+        outputTokens: 900,
+      }),
+    );
+    expect(banner.status).toBe("failed");
+    expect(banner.failureCause).toBe("empty_summary");
+    // An old core's compaction_end (no failure_cause) leaves the field unset on a fresh banner.
+    pushMessage(m, compactionBegin({ reason: "turns", mode: "summarize", context: 1, turns: 1 }));
+    const second = items(m)[1] as CompactionItem;
+    pushMessage(m, compactionEnd({ reason: "turns", mode: "summarize", status: "failed" }));
+    expect(second.status).toBe("failed");
+    expect(second.failureCause).toBeUndefined();
+  });
+
   it("request_begin/end (normal final state) and main-session session_meta do not render", () => {
     const m = createStreamModel();
     pushMessage(m, meta("session-x"));

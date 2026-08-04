@@ -851,8 +851,22 @@ Scenarios:
       mode === "discard"
         ? "[Compaction] done, old context discarded"
         : "[Compaction] done, switched to the summarized context",
-    compactionFailed: (status: string) =>
-      `[Compaction] ${status === "aborted" ? "aborted" : "failed"}, keeping current context`,
+    compactionFailed: (status: string, cause?: string): string => {
+      if (status === "aborted") return "[Compaction] aborted, keeping current context";
+      const label =
+        cause === "empty_summary"
+          ? "no usable summary from the model"
+          : cause === "tool_calls"
+            ? "the model kept calling tools"
+            : cause === "transport"
+              ? "request retries exhausted"
+              : cause === "auth"
+                ? "credentials rejected"
+                : cause;
+      return label !== undefined
+        ? `[Compaction] failed (${label}), keeping current context`
+        : "[Compaction] failed, keeping current context";
+    },
     unknownTool: "(unknown tool)",
     workRunning: "Running",
     workDone: "Done",

@@ -61,6 +61,7 @@ import {
 } from "../omnimessage/markers/index.js";
 import type {
   ApprovalDecision,
+  CompactionFailureCause,
   CompactionMode,
   CompactionReason,
   OmniMessage,
@@ -183,10 +184,12 @@ export interface ContextEngineDeps {
   /** Ceiling (ms) for a single reconnect backoff wait. Defaults to 30000. */
   reconnectBackoffMaxMs?: number;
   /**
-   * Maximum retries for a failing compaction request (instead of the shared `maxReconnects`;
-   * same statuses, shorter budget — see RETRY_STATUSES). Compaction failure is already
-   * graceful — the original context is kept and compaction retries at the next trigger — so a
-   * broken request fails fast (~1.75s of backoff). Defaults to 3.
+   * Maximum retries for a failing compaction request (same statuses as the turn loop — see
+   * RETRY_STATUSES). Defaults to the shared `maxReconnects`: a compaction request is an
+   * ordinary LLM request and its transport failures deserve the same patience (issue #170 —
+   * the earlier tighter budget made a struggling provider fail compaction fast, and a session
+   * whose every turn re-triggers compaction is stuck). Failure stays graceful either way: the
+   * original context is kept and compaction retries at the next trigger.
    */
   compactionMaxReconnects?: number;
   /**
@@ -227,7 +230,7 @@ export type CompactAvailability = "ok" | "unsupported" | "empty" | "just_compact
 /**
  * Maximum summarize attempts when the compaction response is rejected as an invalid summary
  * (empty extracted text, or the model answered with tool calls — issue #83/#84). Deliberately
- * separate from (and larger than) `compactionMaxReconnects`: that cap governs the retryable
+ * separate from `compactionMaxReconnects`: that cap governs the retryable
  * attempts that were never committed (failed/timeout/malformed) and back off exponentially, while a
  * rejection is a well-formed committed response — the request itself works, the model just
  * didn't produce a summary, so the repaired input is resent immediately with no backoff. And
@@ -236,6 +239,20 @@ export type CompactAvailability = "ok" | "unsupported" | "empty" | "just_compact
  * Beyond this many rejected attempts the compaction fails (original context kept).
  */
 const MAX_SUMMARY_REJECTIONS = 5;
+
+/**
+ * Corrective note prepended to the re-sent compaction Prompt after a rejection. The rejected
+ * response is committed on the live LLM object and can only be *appended* to (rewriting the
+ * prefix would invalidate the provider's prompt cache at the moment the context is largest —
+ * the same invariant that pins the toolset, issue #84); without an explicit correction the
+ * model sees its own bad output as the freshest example and copies it verbatim on every
+ * retry (issue #170: deepseek-v4-flash kept writing the body after `[/summary]`).
+ * Exported for unit tests.
+ */
+export const SUMMARY_RETRY_GUIDANCE =
+  "Your previous reply was not a usable summary. Write the full summary BETWEEN the tags: " +
+  "output `[summary]`, then the summary text, then `[/summary]` — the block must not be " +
+  "empty, nothing may follow `[/summary]`, and no tools may be called.";
 
 /** Result of executing one LLM turn (the return value of runTurn). */
 interface TurnResult {
@@ -342,9 +359,11 @@ function downgradeCarriedGoalInput(msg: OmniMessage): OmniMessage {
  * own way lands here; retrying a genuinely permanent error costs the ladder and ends the same
  * way, while aborting a transient one destroys the turn.
  *
- * Both loops retry the same set. What differs is the budget: compaction runs on
- * `compactionMaxReconnects` (shorter than the turn loop's), because a compaction that gives
- * up keeps the original context and tries again at the next trigger.
+ * Both loops retry the same set on the same backoff ladder, and by default with the same
+ * budget: compaction runs on `compactionMaxReconnects`, which follows `maxReconnects` unless
+ * set explicitly (issue #170 — compaction transport failures deserve the turn loop's patience;
+ * giving up early keeps the original context but leaves the session re-triggering compaction
+ * on every turn).
  */
 const RETRY_STATUSES: readonly StopReason[] = ["failed", "timeout", "malformed"];
 
@@ -406,7 +425,7 @@ export class ContextEngine {
     this.maxReconnects = deps.maxReconnects ?? 5;
     this.reconnectBackoffMs = deps.reconnectBackoffMs ?? 250;
     this.reconnectBackoffMaxMs = deps.reconnectBackoffMaxMs ?? 30_000;
-    this.compactionMaxReconnects = deps.compactionMaxReconnects ?? 3;
+    this.compactionMaxReconnects = deps.compactionMaxReconnects ?? this.maxReconnects;
     this.llm = deps.llm;
     // Session resumption: apply the initial state derived from replay.
     const init = deps.initialState;
@@ -1230,15 +1249,17 @@ export class ContextEngine {
    * transcript uncached costs tens of times more (issue #84 — this is why tools are *not*
    * omitted and no `tool_choice` override is used). The
    * compaction request's streamed output is not pushed to the Human output stream (it emits
-   * paired compaction events, plus the compaction request's `token_usage` — positioned between
-   * the two events, so the frontend can count compaction cost into its stats), but it is written
+   * paired compaction events, plus every attempt's `token_usage` — positioned between the two
+   * events, so the frontend stats and the server's usage records count the compaction's true
+   * spend, rejected attempts included), but it is written
    * to the old Trace. Compaction succeeds only with a **valid summary** — non-empty extracted
    * text and no tool calls in the response. An invalid summary is rejected: any tool calls the
    * model issued are answered with synthesized failed outputs (pairing repair, see the loop
-   * body) and the repaired input is resent immediately, up to MAX_SUMMARY_REJECTIONS attempts,
-   * then the compaction fails. failed/timeout/malformed reconnect under the compaction-specific
-   * cap (`compactionMaxReconnects` — a shorter budget than the turn loop's, not a narrower
-   * set), collapsing to failed once retries are exhausted; on failure/abort, the original
+   * body) and the repaired input — prefixed with a corrective note (SUMMARY_RETRY_GUIDANCE) —
+   * is resent immediately, up to MAX_SUMMARY_REJECTIONS attempts,
+   * then the compaction fails. failed/timeout/malformed reconnect under
+   * `compactionMaxReconnects` (defaulting to the turn loop's budget and ladder — see
+   * RETRY_STATUSES), collapsing to failed once retries are exhausted; on failure/abort, the original
    * context and Trace index are kept — it does not fall back to discard. The first **committed**
    * attempt absorbs `pendingToolOutputs` into the old context's history (issue #85): later
    * resends carry only the repairs and the Prompt, and the result's `committed` flag tells
@@ -1282,13 +1303,30 @@ export class ContextEngine {
     // MAX_SUMMARY_REJECTIONS and the rejection branch below.
     let reconnects = 0;
     let rejections = 0;
+    // Accounting reported on compaction_end (and keyed on by the server's error records):
+    // requests issued (rejected attempts and transport retries included) and the output tokens
+    // they burned — the compaction's true spend.
+    let attempts = 0;
+    let outputTokens = 0;
+    // The latest rejection's nature — becomes failure_cause when the rejection cap ends the compaction.
+    let lastRejection: CompactionFailureCause = "empty_summary";
     for (;;) {
       if (signal?.aborted) {
         this.stashRepairs(pendingRepairs);
-        yield* this.emitCompactionEnd(reason, "summarize", "aborted");
+        yield* this.emitCompactionEnd(reason, "summarize", "aborted", { attempts, outputTokens });
         return { status: "aborted", committed };
       }
       const attempt = await this.runCompactionRequest(input, signal, reconnects);
+      attempts += 1;
+      // Every attempt's token_usage is pushed to the Human output stream (already written to
+      // Trace in runCompactionRequest, so it's only yielded here, never rewritten): the frontend
+      // stats and the server's usage records then carry the compaction's true spend — rejected
+      // attempts burn real tokens (issue #170), and surfacing only the adopted attempt's usage
+      // understated the cost center.
+      if (attempt.usage) {
+        outputTokens += (attempt.usage.payload as TokenUsagePayload).request.output;
+        yield attempt.usage;
+      }
       if (attempt.status === "completed") {
         // The attempt was committed by AgentHub, so whatever its input carried — including
         // repairs synthesized for a previous rejection — is now in history and must not be
@@ -1306,17 +1344,11 @@ export class ContextEngine {
         // live possibility, not just a hallucination (issue #83).
         const summaryText = extractSummary(attempt.text);
         if (summaryText !== "" && attempt.toolCalls.length === 0) {
-          // The compaction request's token_usage is pushed to the Human output stream (already
-          // written to Trace in runCompactionRequest, so here it's only yielded, not rewritten);
-          // the frontend uses this to count compaction cost into stats and display it on the
-          // compaction-complete line. Only the adopted attempt's usage is surfaced: rejected
-          // attempts still feed observeTokenUsage (Session cumulative cost and context
-          // tracking stay correct), so the displayed compaction cost deliberately understates
-          // the true spend when retries happened — chosen so the line reflects the attempt
-          // that produced the summary.
-          if (attempt.usage) yield attempt.usage;
           const summary = userText(buildContextSummaryText(summaryText));
-          yield* this.emitCompactionEnd(reason, "summarize", "completed");
+          yield* this.emitCompactionEnd(reason, "summarize", "completed", {
+            attempts,
+            outputTokens,
+          });
           await this.startNewContext();
           return { status: "completed", summary, committed };
         }
@@ -1330,6 +1362,7 @@ export class ContextEngine {
         // that committed turn is plain assistant text/thinking, and re-sending the compaction
         // Prompt on top of it is structurally sound.
         rejections += 1;
+        lastRejection = attempt.toolCalls.length > 0 ? "tool_calls" : "empty_summary";
         pendingRepairs = attempt.toolCalls.map((tc) =>
           toolCallOutput({
             output: "[tool error] the compaction request expects a summary, not tool calls",
@@ -1338,15 +1371,25 @@ export class ContextEngine {
           }),
         );
         for (const repair of pendingRepairs) await this.write(repair);
-        // Rebuild from the (shrunken) base rather than appending: everything the rejected
-        // attempt's input carried is committed, so only the fresh repairs and the Prompt go
-        // out again.
-        input = pendingRepairs.length > 0 ? [...pendingRepairs, ...base] : base;
         if (rejections >= MAX_SUMMARY_REJECTIONS) {
           this.stashRepairs(pendingRepairs);
-          yield* this.emitCompactionEnd(reason, "summarize", "failed");
+          yield* this.emitCompactionEnd(reason, "summarize", "failed", {
+            failureCause: lastRejection,
+            attempts,
+            outputTokens,
+          });
           return { status: "failed", committed };
         }
+        // Rebuild from the (shrunken) base rather than appending: everything the rejected
+        // attempt's input carried is committed — the live object's history can only grow, so
+        // the retry appends the fresh repairs, a corrective note, and the Prompt. The note
+        // (written to Trace like the Prompt) is what breaks the copy-my-own-mistake loop:
+        // the model's freshest example is its committed bad output, and rewriting history to
+        // hide it would invalidate the provider's prompt cache (issue #84) — correcting
+        // forward is the one cache-safe option (issue #170).
+        const guidance = userText(SUMMARY_RETRY_GUIDANCE);
+        await this.write(guidance);
+        input = [...pendingRepairs, guidance, ...base];
         // A rejection is model behavior, not a transport failure: the request pipeline is
         // healthy, so the repaired input is resent immediately — no backoff and no
         // retry_in_ms announcement (the rejected attempt's request_end carries status
@@ -1356,7 +1399,7 @@ export class ContextEngine {
       }
       if (attempt.status === "aborted") {
         this.stashRepairs(pendingRepairs);
-        yield* this.emitCompactionEnd(reason, "summarize", "aborted");
+        yield* this.emitCompactionEnd(reason, "summarize", "aborted", { attempts, outputTokens });
         return { status: "aborted", committed };
       }
       if (attempt.status === "auth") {
@@ -1365,24 +1408,31 @@ export class ContextEngine {
         // about the credential problem from the request's own terminal status (a turn-loop
         // request will surface it; the compaction request_end is Trace-only).
         this.stashRepairs(pendingRepairs);
-        yield* this.emitCompactionEnd(reason, "summarize", "failed");
+        yield* this.emitCompactionEnd(reason, "summarize", "failed", {
+          failureCause: "auth",
+          attempts,
+          outputTokens,
+        });
         return { status: "failed", committed };
       }
       // failed / timeout / malformed: retried via reconnect — none of them is committed by
       // AgentHub (case B), so the input (any pending repairs included) is resent unchanged.
-      // Compaction uses its own, tighter cap (not the shared maxReconnects): a compaction
-      // that ends up failing keeps the original context and tries again on the next trigger,
-      // so a short ladder here beats holding the session through the full one.
+      // The cap defaults to the shared maxReconnects (issue #170): a compaction request is an
+      // ordinary LLM request, and its transport failures get the turn loop's full ladder.
       if (reconnects >= this.compactionMaxReconnects) {
         this.stashRepairs(pendingRepairs);
-        yield* this.emitCompactionEnd(reason, "summarize", "failed");
+        yield* this.emitCompactionEnd(reason, "summarize", "failed", {
+          failureCause: "transport",
+          attempts,
+          outputTokens,
+        });
         return { status: "failed", committed };
       }
       reconnects += 1;
       const ok = await this.backoff(reconnects, signal);
       if (!ok) {
         this.stashRepairs(pendingRepairs);
-        yield* this.emitCompactionEnd(reason, "summarize", "aborted");
+        yield* this.emitCompactionEnd(reason, "summarize", "aborted", { attempts, outputTokens });
         return { status: "aborted", committed };
       }
     }
@@ -1512,13 +1562,14 @@ export class ContextEngine {
     await this.write(msg);
   }
 
-  /** Yields and records a compaction stop event (carrying the result status; non-completed means compaction was abandoned). */
+  /** Yields and records a compaction stop event (carrying the result status — non-completed means compaction was abandoned — plus summarize-mode accounting: failure classification, attempts, output tokens). */
   private async *emitCompactionEnd(
     reason: CompactionReason,
     mode: CompactionMode,
     status: StopReason,
+    detail?: { failureCause?: CompactionFailureCause; attempts?: number; outputTokens?: number },
   ): AsyncGenerator<OmniMessage> {
-    const msg = compactionEnd({ reason, mode, status });
+    const msg = compactionEnd({ reason, mode, status, ...detail });
     yield msg;
     await this.write(msg);
   }

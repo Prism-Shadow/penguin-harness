@@ -159,11 +159,17 @@ Skills are reusable instruction packages at <app_data_dir>/agents/<agent_id>/age
  * Built-in default compaction Prompt (summarize mode): tells the model that after
  * compaction the raw transcript is no longer visible and the
  * summary is the only record, so it must include everything needed to continue the task,
- * and no tools may be called while writing the summary.
+ * and no tools may be called while writing the summary. The tag-placement sentence is
+ * explicit because some models treat the tags as a "title" and write the body after the
+ * closing tag (issue #170); extraction salvages that shape, but generating it right beats
+ * repairing it. Persisted per-agent in system_config.yaml — existing agents keep their
+ * stored prompt.
  */
 export const DEFAULT_COMPACTION_PROMPT =
   "You have a partial transcript of the task above. Write a summary of it wrapped in " +
-  "`[summary][/summary]` tags. This summary will replace the transcript: in the next " +
+  "`[summary][/summary]` tags: output `[summary]`, then the summary text, then " +
+  "`[/summary]` — the summary must be between the tags, the block must not be empty, and " +
+  "nothing may follow `[/summary]`. This summary will replace the transcript: in the next " +
   "context window the raw transcript above will no longer be visible and this summary " +
   "will be its only record, so include everything needed to continue the task — the " +
   "original request, current state, next steps, and any learnings. Do not call any " +

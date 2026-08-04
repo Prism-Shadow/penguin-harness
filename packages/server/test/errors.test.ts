@@ -15,6 +15,7 @@ import type { DatabaseSync } from "node:sqlite";
 import {
   abortEvent,
   assistantText,
+  compactionEnd,
   partialToolCallOutput,
   requestBegin,
   requestEnd,
@@ -842,6 +843,71 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
     ]);
     expect(got).toHaveLength(1);
     expect(got[0]).toMatchObject({ code: "llm_failed", agent_id: "a1", session_id: "s1" });
+  });
+
+  // —— Compaction ——
+
+  it("a failed compaction records per-cause: code carries failure_cause, message the spend", () => {
+    // Issue #170: the cost center classifies compaction failures independently — the code
+    // separates "the model writes no usable summary" from transport trouble, and the message
+    // carries the attempts and burned output tokens.
+    const got = feed([
+      compactionEnd({
+        reason: "context",
+        mode: "summarize",
+        status: "failed",
+        failureCause: "empty_summary",
+        attempts: 5,
+        outputTokens: 9450,
+      }),
+    ]);
+    expect(got).toHaveLength(1);
+    expect(got[0]).toMatchObject({
+      source: "compaction",
+      kind: "unexpected",
+      code: "compaction_failed:empty_summary",
+      message:
+        "summarize compaction failed: empty_summary after 5 attempts (9450 output tokens spent); trigger context, original context kept.",
+      project_id: "p1",
+      agent_id: "a1",
+      session_id: "s1",
+    });
+  });
+
+  it("compaction completed / aborted are not errors; an old-core failed defaults to unknown", () => {
+    const got = feed([
+      compactionEnd({ reason: "context", mode: "summarize", status: "completed", attempts: 1 }),
+      compactionEnd({ reason: "manual", mode: "summarize", status: "aborted", attempts: 2 }),
+      // An old core's compaction_end has no failure_cause/attempts fields at all.
+      compactionEnd({ reason: "turns", mode: "summarize", status: "failed" }),
+    ]);
+    expect(got).toHaveLength(1);
+    expect(got[0]).toMatchObject({
+      code: "compaction_failed:unknown",
+      message: "summarize compaction failed: unknown; trigger turns, original context kept.",
+    });
+  });
+
+  it("a child session's failed compaction attributes to the child Agent/Session", () => {
+    const got = feed([
+      childMeta("session-child", "/data/agents/agent-child/agent_state"),
+      withOrigin(
+        compactionEnd({
+          reason: "context",
+          mode: "summarize",
+          status: "failed",
+          failureCause: "transport",
+          attempts: 6,
+        }),
+        "session-child",
+      ),
+    ]);
+    expect(got).toHaveLength(1);
+    expect(got[0]).toMatchObject({
+      code: "compaction_failed:transport",
+      agent_id: "agent-child",
+      session_id: "session-child",
+    });
   });
 });
 

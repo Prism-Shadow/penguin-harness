@@ -23,6 +23,6 @@ export function CompactionBanner({ item }: { item: CompactionItem }) {
   const text =
     item.status === "completed"
       ? S.chat.compactionDone(item.mode)
-      : S.chat.compactionFailed(item.status ?? "failed");
+      : S.chat.compactionFailed(item.status ?? "failed", item.failureCause);
   return <p className="my-1 font-mono text-xs text-gray-500 dark:text-gray-400">{text}</p>;
 }

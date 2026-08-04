@@ -751,7 +751,9 @@ export class StreamRenderer {
               }
             : undefined;
         this.compactionTokens = 0;
-        this.out.write(`${dim(this.t.compactionStop(p.mode, p.status, tokens))}\n`);
+        this.out.write(
+          `${dim(this.t.compactionStop(p.mode, p.status, tokens, p.failure_cause))}\n`,
+        );
         this.lastLineKey = null;
       }
       return;
