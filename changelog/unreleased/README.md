@@ -1,0 +1,13 @@
+# Unreleased
+
+- [2026-08-04] Web App: skills become manageable from Agent settings — a Skills tab after Tools listing the installed set straight from disk, uninstall with confirmation, and an Import dialog that leads with chat-driven install (URL + generated review-first prompt) and also accepts a skill zip through a new validated archive endpoint; the agent list's tools/vault/schedules/skills icons deep-link to the matching settings tab via a new `?tab=` param, and the list rows drop the active-session badge. ([details](2026-08-04-agent-skills-and-list.md))
+
+- [2026-08-04] Web App: Project settings gains a "New chat defaults" section — default Agent, working directory, approval mode and thinking level stored as an additive `[default_chat]` block in `.project_config.toml`, seeded into new drafts beneath route overrides and unsent drafts; the model row reads and writes the same `default_model` the models page owns through a narrow set-default endpoint, and thinking level resolves Agent-explicit → project default → `medium`. ([details](2026-08-04-project-chat-defaults.md))
+
+- [2026-08-04] Web App: the Traces page scales like the session sidebar — server-side session paging with per-page title resolution (DB title, else a bounded head-read deriving one from the first user prompt), sidebar grouping primitives reused for row/group caps and load-more, lazy agent expansion, and raw session ids gone from the page. ([details](2026-08-04-traces-page-scaling.md))
+
+- [2026-08-04] Web App: chat refinements — the conversation outline rail appears from 5 exchanges and windows to ±20 turns around the active one (fixing its overlap onto the composer and, under browser font scaling, onto the prose column), the toolbar cost stat no longer blinks out mid-run, tool rows drop the redundant red `[failed]` marker, and the home update hint sheds its pill for plain superscript text. ([details](2026-08-04-web-chat-refinements.md))
+
+- [2026-08-04] Fix: ANSI color codes no longer leak into tool output — the CLI gates color on TTY/`NO_COLOR`/`TERM` with `FORCE_COLOR` override semantics matching Node, the command tool strips inherited `FORCE_COLOR`/`CLICOLOR_FORCE` from child environments so its `NO_COLOR=1` hardening wins, and the Web renders tool output through a defensive ANSI stripper covering historical Traces. ([details](2026-08-04-ansi-tool-output.md))
+
+- [2026-08-04] Models: OpenRouter gains `qwen/qwen3.8-max` (1M context, vision, published cache-hit and cache-write prices), and the agenthub-models skill (v10) records the OpenRouter spelling — existing Projects pick it up through the models page's explicit "sync presets" action. ([details](2026-08-04-model-catalog-openrouter-qwen38-max.md))

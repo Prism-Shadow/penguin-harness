@@ -1,0 +1,7 @@
+# Web App: the Traces page scales like the session sidebar
+
+The trace list used to fetch everything at once: every agent auto-expanded on load, each expansion walked the agent's entire trace tree server-side with a stat per file, every session row and file pill rendered, and any session the paged sidebar store hadn't loaded fell back to its raw id in mono type — long-lived Projects froze the page.
+
+`GET /api/projects/:p/agents/:a/traces` now takes optional `offset`/`limit`. Without them the response is byte-identical to before; with them the server returns newest-first session groups plus a total, and only the returned page pays for anything: file stats, one batched DB query for session titles, and — for sessions the DB cannot title (CLI, subagent, archived) — a bounded head-read of the earliest shard that derives a title from the first user prompt through the same fallback the title generator already uses.
+
+The page itself reuses the sidebar's grouping primitives rather than forking them: the page-size split for load-more, the group cap with a "more groups" row, and pinned-first ordering for a deep-linked agent. Only the focused (or first) agent expands by default, file pills cap with an expand control, and the title lookup is a memoized map instead of a per-render scan. Session ids no longer render anywhere on the page — an untitled session shows the standard "New chat" label, and the detail subtitle keeps date · size only.
