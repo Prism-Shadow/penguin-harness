@@ -8,7 +8,7 @@
  * Session link.
  * With a ?agentId= deep link, only the target Agent is expanded by default.
  */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import type {
   BenchmarkCaseScore,
@@ -21,6 +21,7 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { formatDateTime, formatMoney, formatScore, humanizeDuration } from "../../lib/format";
+import { useAuth } from "../../state/auth";
 import { agentDisplayName, useProject } from "../../state/project";
 import { useTheme } from "../../state/theme";
 import type { Currency } from "../../state/theme";
@@ -42,6 +43,13 @@ import {
 } from "./benchmark-metrics";
 import type { EvaluationSeries } from "./benchmark-metrics";
 import { BenchmarkCaseBrowser } from "./benchmark-case-browser";
+import {
+  benchmarkSelectionKey,
+  clearBenchmarkSelection,
+  loadBenchmarkSelection,
+  saveBenchmarkSelection,
+} from "./benchmark-selection";
+import type { BenchmarkSelectionRef } from "./benchmark-selection";
 
 interface Selection {
   agentId: string;
@@ -55,7 +63,10 @@ function AgentNode({
   name,
   defaultOpen,
   selection,
+  restoreBenchmarkId,
   onSelect,
+  onRestore,
+  onRestoreMissing,
 }: {
   projectId: string;
   agentId: string;
@@ -63,7 +74,11 @@ function AgentNode({
   /** Whether initially expanded: all expanded when there's no deep link; only the target Agent expanded with a ?agentId= deep link. */
   defaultOpen: boolean;
   selection: Selection | null;
+  /** Remembered Benchmark id for this Agent; resolved against the freshly fetched list. */
+  restoreBenchmarkId: string | null;
   onSelect: (sel: Selection) => void;
+  onRestore: (sel: Selection) => void;
+  onRestoreMissing: (selection: BenchmarkSelectionRef) => void;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const [benchmarks, setBenchmarks] = useState<BenchmarkSummary[] | null>(null);
@@ -76,6 +91,15 @@ function AgentNode({
       .then((data) => setBenchmarks(data.benchmarks))
       .catch((e: unknown) => setError(apiErrorText(e)));
   }, [open, benchmarks, projectId, agentId]);
+
+  // Restore by id only after this Project's live list arrives. Browser storage never supplies
+  // the Benchmark summary itself, so changed scores/titles cannot be resurrected from cache.
+  useEffect(() => {
+    if (selection || !benchmarks || !restoreBenchmarkId) return;
+    const benchmark = benchmarks.find((candidate) => candidate.id === restoreBenchmarkId);
+    if (benchmark) onRestore({ agentId, benchmark });
+    else onRestoreMissing({ agentId, benchmarkId: restoreBenchmarkId });
+  }, [agentId, benchmarks, onRestore, onRestoreMissing, restoreBenchmarkId, selection]);
 
   return (
     <li className="pt-2.5">
@@ -518,21 +542,88 @@ function CasesSection({
 
 export function BenchmarkPage() {
   useDocumentTitle(S.benchmark.title);
+  const { user } = useAuth();
   const { currentProject, agents, agentsLoading } = useProject();
   const { currency } = useTheme();
   const projectId = currentProject?.projectId ?? null;
   // ?agentId= deep link (entered from the "Benchmark" tab on the Agent settings page): only the target Agent is expanded by default.
   const [searchParams] = useSearchParams();
   const focusAgentId = searchParams.get("agentId");
-  const [selection, setSelection] = useState<Selection | null>(null);
+  const storageKey = user && projectId ? benchmarkSelectionKey(user.userId, projectId) : null;
+  // Both state holders carry their storage key. On a Project/account switch, an old value is
+  // therefore invisible immediately (before the synchronization effect runs after paint).
+  const [selectionState, setSelectionState] = useState<{
+    key: string | null;
+    value: Selection | null;
+  }>(() => ({ key: storageKey, value: null }));
+  const [rememberedState, setRememberedState] = useState<{
+    key: string | null;
+    value: BenchmarkSelectionRef | null;
+  }>(() => ({
+    key: storageKey,
+    value: storageKey ? loadBenchmarkSelection(storageKey) : null,
+  }));
+  const selection = selectionState.key === storageKey ? selectionState.value : null;
+  const rememberedSelection = rememberedState.key === storageKey ? rememberedState.value : null;
   const [caseStatements, setCaseStatements] = useState<BenchmarkCaseSummary[] | null>(null);
   const [caseError, setCaseError] = useState<string | null>(null);
   const [openCaseId, setOpenCaseId] = useState<string | null>(null);
 
-  // Clear the selection when the Project changes.
+  // Reload the independently scoped remembered ids when the account or Project changes.
   useEffect(() => {
-    setSelection(null);
-  }, [projectId]);
+    setSelectionState({ key: storageKey, value: null });
+    setRememberedState({
+      key: storageKey,
+      value: storageKey ? loadBenchmarkSelection(storageKey) : null,
+    });
+  }, [storageKey]);
+
+  const selectBenchmark = useCallback(
+    (next: Selection) => {
+      setSelectionState({ key: storageKey, value: next });
+      if (!storageKey) return;
+      const remembered = { agentId: next.agentId, benchmarkId: next.benchmark.id };
+      saveBenchmarkSelection(storageKey, remembered);
+      setRememberedState({ key: storageKey, value: remembered });
+    },
+    [storageKey],
+  );
+
+  const restoreBenchmark = useCallback(
+    (restored: Selection) => {
+      // A late lazy-list response must not override a Benchmark the user selected meanwhile.
+      setSelectionState((current) =>
+        current.key === storageKey && current.value === null
+          ? { key: storageKey, value: restored }
+          : current,
+      );
+    },
+    [storageKey],
+  );
+
+  const forgetMissingBenchmark = useCallback(
+    (missing: BenchmarkSelectionRef) => {
+      if (!storageKey) return;
+      clearBenchmarkSelection(storageKey, missing);
+      setRememberedState((current) =>
+        current.key === storageKey &&
+        current.value?.agentId === missing.agentId &&
+        current.value.benchmarkId === missing.benchmarkId
+          ? { key: storageKey, value: null }
+          : current,
+      );
+    },
+    [storageKey],
+  );
+
+  // An explicit Agent deep link keeps its existing meaning: focus that Agent for this visit.
+  // The remembered selection is restored on the bare sidebar route, or when it belongs to the
+  // same deep-linked Agent; a saved choice from another Agent stays dormant rather than opening
+  // an unrelated group.
+  const restoreSelection =
+    rememberedSelection && (focusAgentId === null || focusAgentId === rememberedSelection.agentId)
+      ? rememberedSelection
+      : null;
 
   useEffect(() => {
     setCaseStatements(null);
@@ -575,13 +666,18 @@ export function BenchmarkPage() {
           <ul>
             {agents.map((a) => (
               <AgentNode
-                key={a.agentId}
+                key={`${projectId}/${a.agentId}`}
                 projectId={projectId}
                 agentId={a.agentId}
                 name={agentDisplayName(a)}
                 defaultOpen={focusAgentId === null || focusAgentId === a.agentId}
                 selection={selection}
-                onSelect={setSelection}
+                restoreBenchmarkId={
+                  restoreSelection?.agentId === a.agentId ? restoreSelection.benchmarkId : null
+                }
+                onSelect={selectBenchmark}
+                onRestore={restoreBenchmark}
+                onRestoreMissing={forgetMissingBenchmark}
               />
             ))}
           </ul>
