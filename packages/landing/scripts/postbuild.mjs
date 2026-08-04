@@ -16,7 +16,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { absoluteUrl, blogRoutes } from "./site-routes.mjs";
+import { absoluteUrl, blogRoutes, pageRoutes } from "./site-routes.mjs";
 
 const dist = join(dirname(fileURLToPath(import.meta.url)), "..", "dist");
 const shell = readFileSync(join(dist, "index.html"), "utf8");
@@ -43,7 +43,7 @@ function shellFor(route) {
     .replace(OG_URL, `<meta property="og:url" content="${url}" />`);
 }
 
-const routes = blogRoutes();
+const routes = [...pageRoutes(), ...blogRoutes()];
 for (const { route } of routes) {
   const dir = join(dist, route);
   mkdirSync(dir, { recursive: true });
@@ -52,6 +52,4 @@ for (const { route } of routes) {
 
 writeFileSync(join(dist, "404.html"), shell.replace(CANONICAL, ""));
 writeFileSync(join(dist, ".nojekyll"), "");
-console.log(
-  `[postbuild] wrote ${routes.length} blog route shells, dist/404.html and dist/.nojekyll`,
-);
+console.log(`[postbuild] wrote ${routes.length} route shells, dist/404.html and dist/.nojekyll`);

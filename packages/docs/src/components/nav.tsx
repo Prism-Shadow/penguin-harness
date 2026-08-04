@@ -104,6 +104,9 @@ export function Nav({
       <a href={`${SITE_URL}blog`} className={deskLinkCls(false)} onMouseEnter={slideTo}>
         {S.nav.blog}
       </a>
+      <a href={`${SITE_URL}download`} className={deskLinkCls(false)} onMouseEnter={slideTo}>
+        {S.nav.download}
+      </a>
       {/* "Docs" is this SPA's own root — a router Link, and always the current page. */}
       <Link to="/" className={deskLinkCls(true)} onMouseEnter={slideTo} aria-current="page">
         {S.nav.docs}

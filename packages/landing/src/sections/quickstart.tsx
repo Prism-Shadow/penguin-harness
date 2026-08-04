@@ -5,6 +5,7 @@
  * the string dictionaries.
  */
 import { useState } from "react";
+import { Link } from "react-router";
 import type { ReactNode } from "react";
 import { S } from "../lib/strings";
 import {
@@ -203,15 +204,12 @@ export function Quickstart() {
                 users who never want a terminal, so it stays visible on every switch. */}
             <p className="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">
               {S.install.desktopNote}{" "}
-              <a
-                href={RELEASES_URL}
-                target="_blank"
-                rel="noreferrer"
+              <Link
+                to="/download"
                 className="inline-flex items-center gap-1 text-brand-700 underline decoration-brand-300 underline-offset-2 transition-colors hover:text-brand-600 dark:text-brand-300 dark:decoration-brand-700"
               >
-                {S.install.desktopRelease}
-                <ExternalLinkIcon className="h-3 w-3" />
-              </a>
+                {S.install.desktopPage}
+              </Link>
             </p>
           </Step>
 

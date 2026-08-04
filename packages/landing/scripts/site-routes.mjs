@@ -59,6 +59,13 @@ function newestDate(dir, slug) {
  * that actually answers 200 — the one canonical tags and the sitemap should name.
  * The home page is excluded; Vite's own index.html already sits at the dist root.
  */
+
+/** Non-blog landing SPA pages (currently the desktop download page). */
+export function pageRoutes() {
+  return [{ route: "/download/" }];
+}
+
+/** Blog routes, one per post plus the list page. */
 export function blogRoutes() {
   return [
     { route: "/blog/" },

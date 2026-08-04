@@ -26,6 +26,7 @@ export const zh = {
     contract: "CONTRACT.md",
     features: "功能",
     blog: "博客",
+    download: "下载",
     docs: "文档",
     github: "GitHub",
     openMenu: "打开菜单",
@@ -86,7 +87,30 @@ export const zh = {
     offlineRelease: "前往 GitHub Releases 下载离线安装包",
     desktopNote:
       "更喜欢独立应用？桌面端把 Web 界面与服务端打包成免终端的安装程序（macOS / Windows / Linux），与 CLI 安装共用同一份本地数据。",
-    desktopRelease: "前往 GitHub Releases 下载桌面端",
+    desktopPage: "前往桌面端下载页",
+  },
+
+  download: {
+    eyebrow: "下载",
+    title: "下载桌面端",
+    subtitle:
+      "完整的 Web 体验打包为独立应用：内嵌服务端，打开即已登录——无需终端、无登录页；数据与 CLI 安装共用同一个 ~/.penguin/data 目录。",
+    recommended: "当前系统",
+    platforms: {
+      mac: { name: "macOS", require: "macOS 11 及以上，dmg 安装镜像（按芯片选择）" },
+      windows: { name: "Windows", require: "Windows 10 及以上（x64），NSIS 安装程序" },
+      linux: { name: "Linux", require: "x64，AppImage 免安装运行，或 deb 交给包管理器" },
+    },
+    statusOss: (version: string) => `已连接 OSS 国内镜像（${version}），点击即从镜像高速下载。`,
+    statusGithub: "下载指向 GitHub Releases 的最新版本。",
+    altGithub: "改从 GitHub 下载",
+    altOss: "改用 OSS 镜像下载",
+    checksums: "校验和（SHA256SUMS.desktop）",
+    allReleases: "全部版本",
+    unsignedNote:
+      "当前构建暂未签名：macOS 首次启动请右键 →「打开」；Windows 在 SmartScreen 提示中选「更多信息 → 仍要运行」。",
+    cliHint: "只需要命令行或浏览器里的 Web 界面？",
+    cliHintLink: "参见快速开始",
   },
 
   copy: {
