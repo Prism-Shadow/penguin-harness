@@ -250,8 +250,8 @@ export interface CompactionItem {
   /** True between begin and end (renders a "compaction in progress" banner). */
   running: boolean;
   status?: StopReason;
-  /** Last failure detail from compaction_end (its share of the RetryDetail block; present on failed ends from new cores). */
-  error?: string;
+  /** Last failure detail from compaction_end.error_message (its share of the RetryDetail block; present on failed ends from new cores). */
+  errorMessage?: string;
 }
 
 export interface TaskStatsItem {
@@ -1329,7 +1329,7 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       if (item) {
         item.running = false;
         item.status = p.status;
-        if (p.error !== undefined) item.error = p.error;
+        if (p.error_message !== undefined) item.errorMessage = p.error_message;
       } else {
         // Mid-stream join (missed the begin): append a completed banner directly.
         const created: CompactionItem = {
@@ -1339,7 +1339,7 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
           mode: p.mode,
           running: false,
           status: p.status,
-          ...(p.error !== undefined ? { error: p.error } : {}),
+          ...(p.error_message !== undefined ? { errorMessage: p.error_message } : {}),
         };
         model.items.push(created);
       }

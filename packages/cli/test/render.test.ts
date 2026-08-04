@@ -313,7 +313,7 @@ describe("StreamRenderer", () => {
     const { stream, text } = collector();
     const r = new StreamRenderer(stream, t);
     r.handle(requestBegin());
-    r.handle(requestEnd("failed", { error: "Upstream HTTP/2 stream failed", attempt: 1 }));
+    r.handle(requestEnd("failed", { errorMessage: "Upstream HTTP/2 stream failed", attempt: 1 }));
     r.handle(requestBegin()); // retry #1 begins
     let lines = stripAnsi(text());
     expect(lines).toContain("the model provider returned an error");
@@ -325,7 +325,7 @@ describe("StreamRenderer", () => {
     expect(lines).toContain("retry #2");
     // `auth` is terminal: the engine never retries it, so the next request_begin (a new run)
     // must not be announced as a retry.
-    r.handle(requestEnd("auth", { error: "401 invalid x-api-key", attempt: 3 }));
+    r.handle(requestEnd("auth", { errorMessage: "401 invalid x-api-key", attempt: 3 }));
     r.handle(requestBegin());
     expect(stripAnsi(text())).not.toContain("retry #3");
   });

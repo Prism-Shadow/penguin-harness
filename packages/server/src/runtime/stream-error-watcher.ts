@@ -29,13 +29,13 @@
  *   not an error).
  *
  * The message uses the real reason: `request_end` carries the error detail on
- * non-completed statuses (`error`, from LLMOutcome), and the `abort` event's reason is
+ * non-completed statuses (`error_message`, from LLMOutcome), and the `abort` event's reason is
  * core's failure-reason prose (e.g. `llm request error: 401 …` / `malformed response
  * failed after N retries`). A `request_end` failure is first held pending (status + its
  * own detail), not persisted immediately, and is resolved at the next request boundary:
  * - Immediately followed by `abort` → use its reason as the message (the real reason);
  * - Immediately followed by `request_begin` (the engine is retrying — no abort will ever
- *   arrive) → use the staged request_end's own `error` detail (e.g. a quota
+ *   arrive) → use the staged request_end's own `error_message` detail (e.g. a quota
  *   code), falling back to the generic status text when it carried none. This boundary is
  *   also what tells a survived `failed` from an exhausted one (see the classification above);
  * - Still unresolved when the run ends → close persists it the same way.
@@ -296,7 +296,7 @@ export class StreamErrorWatcher {
       type?: string;
       status?: StopReason;
       reason?: string | null;
-      error?: string;
+      error_message?: string;
     };
     const key = originKey(msg);
     if (p.type === "compaction_end") {
@@ -308,9 +308,11 @@ export class StreamErrorWatcher {
       if (isLlmFailure(p.status)) {
         this.pending.set(key, {
           status: p.status,
-          // The event's own error detail (request_end.error, from LLMOutcome): the message
-          // of record when no abort follows (the retry path).
-          ...(typeof p.error === "string" && p.error.trim() ? { message: p.error } : {}),
+          // The event's own error detail (request_end.error_message): the message of record
+          // when no abort follows (the retry path).
+          ...(typeof p.error_message === "string" && p.error_message.trim()
+            ? { message: p.error_message }
+            : {}),
         });
       }
       return;
@@ -380,14 +382,15 @@ export class StreamErrorWatcher {
       reason?: string;
       status?: StopReason;
       attempt?: number;
-      error?: string;
+      error_message?: string;
     };
     if (p.status !== "failed") return;
     const attempts =
       typeof p.attempt === "number" && p.attempt > 0
         ? ` after ${p.attempt} attempt${p.attempt === 1 ? "" : "s"}`
         : "";
-    const detail = typeof p.error === "string" && p.error ? `: ${p.error}` : "";
+    const detail =
+      typeof p.error_message === "string" && p.error_message ? `: ${p.error_message}` : "";
     this.errors.record({
       source: "compaction",
       err: `${p.mode ?? "summarize"} compaction failed${attempts}${detail}; trigger ${p.reason ?? "unknown"}, original context kept.`,

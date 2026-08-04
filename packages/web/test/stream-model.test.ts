@@ -355,7 +355,7 @@ describe("approvals and events", () => {
     const m = createStreamModel();
     pushMessage(m, abortEvent("aborted by user"));
     expect(m.lastAuthFailureMs).toBeNull();
-    const end = requestEnd("auth", { error: "401 invalid x-api-key" });
+    const end = requestEnd("auth", { errorMessage: "401 invalid x-api-key" });
     pushMessage(m, end);
     // The recorded time is the event's envelope timestamp (so a reload can compare it
     // against the Project's credentials-updated time).
@@ -375,7 +375,7 @@ describe("approvals and events", () => {
 
   it("a later completed request clears the auth-dead state; a new auth failure re-arms it", () => {
     const m = createStreamModel();
-    pushMessage(m, requestEnd("auth", { error: "401" }));
+    pushMessage(m, requestEnd("auth", { errorMessage: "401" }));
     expect(m.lastAuthFailureMs).not.toBeNull();
     // The key was fixed and a request succeeded: the state must not outlive the success.
     pushMessage(m, userText("again"));
@@ -383,7 +383,7 @@ describe("approvals and events", () => {
     pushMessage(m, requestEnd("completed"));
     expect(m.lastAuthFailureMs).toBeNull();
     // A fresh auth failure re-arms (e.g. the replacement key is wrong too).
-    pushMessage(m, requestEnd("auth", { error: "401" }));
+    pushMessage(m, requestEnd("auth", { errorMessage: "401" }));
     expect(m.lastAuthFailureMs).not.toBeNull();
   });
 
@@ -394,7 +394,7 @@ describe("approvals and events", () => {
     pushMessages(recovered, [
       userText("go"),
       requestBegin(),
-      requestEnd("auth", { error: "401 invalid x-api-key" }),
+      requestEnd("auth", { errorMessage: "401 invalid x-api-key" }),
       abortEvent("llm request error: 401 invalid x-api-key"),
       userText("after fix"),
       requestBegin(),
@@ -411,7 +411,7 @@ describe("approvals and events", () => {
       requestEnd("completed"),
       userText("later"),
       requestBegin(),
-      requestEnd("auth", { error: "401 invalid x-api-key" }),
+      requestEnd("auth", { errorMessage: "401 invalid x-api-key" }),
       abortEvent("llm request error: 401 invalid x-api-key"),
     ]);
     finalizeHistory(dead);
@@ -427,7 +427,7 @@ describe("approvals and events", () => {
 
   it("a subagent-origin auth failure does NOT kill the parent session's input", () => {
     const m = createStreamModel();
-    pushMessage(m, withOrigin(requestEnd("auth", { error: "401" }), "child1"));
+    pushMessage(m, withOrigin(requestEnd("auth", { errorMessage: "401" }), "child1"));
     // The failure belongs to the child session: its nested model carries the state, the
     // parent composer stays usable (the subagent simply surfaces as failed).
     expect(m.lastAuthFailureMs).toBeNull();
@@ -474,12 +474,12 @@ describe("approvals and events", () => {
         mode: "summarize",
         status: "failed",
         attempt: 5,
-        error: "the response contained no usable summary",
+        errorMessage: "the response contained no usable summary",
       }),
     );
     expect(banner.running).toBe(false);
     expect(banner.status).toBe("failed");
-    expect(banner.error).toBe("the response contained no usable summary");
+    expect(banner.errorMessage).toBe("the response contained no usable summary");
   });
 
   it("request_begin/end (normal final state) and main-session session_meta do not render", () => {
@@ -531,7 +531,7 @@ describe("approvals and events", () => {
     pushMessage(
       m,
       requestEnd("failed", {
-        error: "Upstream HTTP/2 stream failed (upstream_http2_stream_error)",
+        errorMessage: "Upstream HTTP/2 stream failed (upstream_http2_stream_error)",
         retryInMs: 4000,
       }),
       111_000,
@@ -558,7 +558,7 @@ describe("approvals and events", () => {
     pushMessage(m, requestBegin());
     pushMessage(m, requestEnd("timeout", { attempt: 1 }));
     pushMessage(m, requestBegin());
-    pushMessage(m, requestEnd("failed", { error: "502 bad gateway", attempt: 2 }));
+    pushMessage(m, requestEnd("failed", { errorMessage: "502 bad gateway", attempt: 2 }));
     pushMessage(m, requestBegin());
     pushMessage(m, requestEnd("timeout", { attempt: 3 }));
     expect((items(m) as ReconnectItem[]).map((i) => [i.status, i.attempt])).toEqual([
@@ -581,7 +581,7 @@ describe("approvals and events", () => {
     pushMessage(m, requestBegin());
     pushMessage(m, requestEnd("timeout", { attempt: 1 }));
     pushMessage(m, requestBegin());
-    pushMessage(m, requestEnd("auth", { error: "401 invalid x-api-key", attempt: 2 }));
+    pushMessage(m, requestEnd("auth", { errorMessage: "401 invalid x-api-key", attempt: 2 }));
     expect((items(m) as ReconnectItem[]).filter((i) => i.kind === "reconnect")).toHaveLength(1);
   });
 
@@ -613,7 +613,10 @@ describe("approvals and events", () => {
     // bend the ticker.
     pushMessage(
       m,
-      requestEnd("timeout", { error: "403 quota (insufficient_user_quota)", retryInMs: 4000 }),
+      requestEnd("timeout", {
+        errorMessage: "403 quota (insufficient_user_quota)",
+        retryInMs: 4000,
+      }),
       111_000,
     );
     const item = items(m)[0] as ReconnectItem;
@@ -641,7 +644,7 @@ describe("approvals and events", () => {
     pushMessages(retried, [
       userText("go"),
       requestBegin(),
-      requestEnd("timeout", { error: "quota", retryInMs: 30_000 }),
+      requestEnd("timeout", { errorMessage: "quota", retryInMs: 30_000 }),
       requestBegin(), // the engine's retry — replayed immediately after
       requestEnd("completed"),
     ]);
@@ -653,7 +656,7 @@ describe("approvals and events", () => {
     pushMessages(aborted, [
       userText("go"),
       requestBegin(),
-      requestEnd("timeout", { error: "quota", retryInMs: 30_000 }),
+      requestEnd("timeout", { errorMessage: "quota", retryInMs: 30_000 }),
       abortEvent("aborted during reconnect backoff"), // the user gave up mid-wait
     ]);
     finalizeHistory(aborted);

@@ -103,7 +103,9 @@ export function createDescribeImageTool(
       if (signal?.aborted) return { stopReason: "aborted" };
       if (!outcome || outcome.status !== "completed") {
         const detail =
-          outcome && "message" in outcome && outcome.message ? `: ${outcome.message}` : "";
+          outcome && "errorMessage" in outcome && outcome.errorMessage
+            ? `: ${outcome.errorMessage}`
+            : "";
         yield delta(
           `${streamedAny ? "\n" : ""}Vision model (${describer.modelId}) request ${outcome?.status ?? "failed"}${detail}`,
         );

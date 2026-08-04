@@ -175,7 +175,7 @@ export interface Messages {
     mode: string,
     status: string,
     tokens?: { total: string; delta: string },
-    error?: string,
+    errorMessage?: string,
   ): string;
   /** Prompt shown when `/compact` has nothing to compact (session just started / two consecutive compactions). */
   compactNothing(): string;
@@ -407,12 +407,12 @@ const en: Messages = {
     mode === "discard"
       ? `[compaction] discarding context (${reason})…`
       : `[compaction] summarizing context (${reason})…`,
-  compactionStop: (mode, status, tokens, error) =>
+  compactionStop: (mode, status, tokens, errorMessage) =>
     (status === "completed"
       ? mode === "discard"
         ? "[compaction] done; old context discarded"
         : "[compaction] done; continuing with the summarized context"
-      : `[compaction] ${status}${error !== undefined ? ` (${error})` : ""}; keeping the current context`) +
+      : `[compaction] ${status}${errorMessage !== undefined ? ` (${errorMessage})` : ""}; keeping the current context`) +
     (tokens ? ` · tokens ${tokens.total} (${tokens.delta})` : ""),
   compactNothing: () => "[compaction] nothing to compact yet",
   goalRound: (round) => `[goal] round ${round}`,
@@ -616,12 +616,12 @@ const zh: Messages = {
     mode === "discard"
       ? `[压缩] 正在丢弃旧上下文（${reason}）……`
       : `[压缩] 正在总结压缩上下文（${reason}）……`,
-  compactionStop: (mode, status, tokens, error) =>
+  compactionStop: (mode, status, tokens, errorMessage) =>
     (status === "completed"
       ? mode === "discard"
         ? "[压缩] 完成，旧上下文已丢弃"
         : "[压缩] 完成，已切换到摘要后的新上下文"
-      : `[压缩] ${status === "aborted" ? "已中断" : `失败${error !== undefined ? `（${error}）` : ""}`}，保留当前上下文`) +
+      : `[压缩] ${status === "aborted" ? "已中断" : `失败${errorMessage !== undefined ? `（${errorMessage}）` : ""}`}，保留当前上下文`) +
     (tokens ? ` · tokens ${tokens.total} (${tokens.delta})` : ""),
   compactNothing: () => "[压缩] 当前上下文为空，无需压缩",
   goalRound: (round) => `[目标] 第 ${round} 轮`,

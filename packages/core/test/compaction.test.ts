@@ -78,7 +78,7 @@ class ScriptedLLM implements LLMInterface {
     this.calls.push(params.newMessages);
     const next = this.responses.shift();
     if (!next) {
-      return { status: "failed", message: `${this.label}: no scripted response` };
+      return { status: "failed", errorMessage: `${this.label}: no scripted response` };
     }
     for (const msg of next.messages) yield msg;
     return next.outcome ?? { status: "completed" };
@@ -308,7 +308,7 @@ describe("context compaction", () => {
           messages: [toolCall({ name: "t", arguments: "{}", toolCallId: "c1" }), usage(150, 150)],
         },
         // Compaction request fails on the one status no ladder can fix (a rejected credential).
-        { messages: [], outcome: { status: "auth", message: "auth error" } },
+        { messages: [], outcome: { status: "auth", errorMessage: "auth error" } },
         // Original context is kept: the task continues, tool outputs feed back into the old instance as usual (context usage keeps growing).
         { messages: [assistantText("finished on old context"), usage(190, 340)] },
         // Second trigger (context still over the limit) -> retries compaction at the boundary, this time succeeding.
@@ -432,7 +432,7 @@ describe("context compaction", () => {
     // this script would have failed before reaching the 5th, succeeding attempt.
     const failing = (n: number): ScriptedResponse => ({
       messages: [],
-      outcome: { status: "failed", message: `blip ${n}` },
+      outcome: { status: "failed", errorMessage: `blip ${n}` },
     });
     const llm1 = new ScriptedLLM(
       [
@@ -472,7 +472,7 @@ describe("context compaction", () => {
     const llm1 = new ScriptedLLM(
       [
         { messages: [assistantText("answer"), usage(150, 150)] },
-        { messages: [], outcome: { status: "failed", message: "502 upstream" } },
+        { messages: [], outcome: { status: "failed", errorMessage: "502 upstream" } },
         { messages: [assistantText("[summary]recovered[/summary]")] },
       ],
       "llm1",
@@ -601,7 +601,7 @@ describe("context compaction", () => {
     ).toEqual(["compaction_begin:", "compaction_end:failed"]);
     expect(events[1]).toMatchObject({
       attempt: 5,
-      error: "the response contained no usable summary",
+      error_message: "the response contained no usable summary",
     });
     // These scripted attempts carry no token_usage of their own, so none appears between the
     // paired events (attempts that do carry usage surface it — see the 5th-attempt test).
@@ -694,7 +694,7 @@ describe("context compaction", () => {
     // cost-center row message and the frontend banner detail).
     expect(events[1]).toMatchObject({
       attempt: 5,
-      error: "the response called tools instead of writing a summary",
+      error_message: "the response called tools instead of writing a summary",
     });
     // Five attempts; from the second on, the input leads with the repair answering the
     // previous attempt's call, then the corrective note, then the prompt.

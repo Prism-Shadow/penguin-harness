@@ -830,10 +830,10 @@ Benchmark：
     compactionRunning: (mode: string) => `压缩进行中（${mode}）…`,
     compactionDone: (mode: string): string =>
       mode === "discard" ? "[压缩] 完成，旧上下文已丢弃" : "[压缩] 完成，已切换到摘要后的新上下文",
-    compactionFailed: (status: string, error?: string): string => {
+    compactionFailed: (status: string, errorMessage?: string): string => {
       if (status === "aborted") return "[压缩] 已中断，保留当前上下文";
-      return error !== undefined
-        ? `[压缩] 失败（${error}），保留当前上下文`
+      return errorMessage !== undefined
+        ? `[压缩] 失败（${errorMessage}），保留当前上下文`
         : "[压缩] 失败，保留当前上下文";
     },
     unknownTool: "（未知工具）",

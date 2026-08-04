@@ -415,7 +415,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
     // a bucket would let a real credential failure be dropped as a duplicate.
     const got = feed([
       requestBegin(),
-      requestEnd("auth", { error: "401 invalid x-api-key (invalid_api_key)" }),
+      requestEnd("auth", { errorMessage: "401 invalid x-api-key (invalid_api_key)" }),
       abortEvent("llm request error: 401 invalid x-api-key (invalid_api_key)"),
     ]);
     expect(got).toHaveLength(1);
@@ -434,7 +434,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
     const got = feed([
       requestBegin(),
       requestEnd("failed", {
-        error: "Upstream HTTP/2 stream failed (upstream_http2_stream_error)",
+        errorMessage: "Upstream HTTP/2 stream failed (upstream_http2_stream_error)",
       }),
       requestBegin(),
       requestEnd("completed"),
@@ -456,9 +456,9 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
     // the one that never does.
     const got = feed([
       requestBegin(),
-      requestEnd("failed", { error: "Upstream HTTP/2 stream failed" }),
+      requestEnd("failed", { errorMessage: "Upstream HTTP/2 stream failed" }),
       requestBegin(), // The retry: resolves the failure above as recovered.
-      requestEnd("auth", { error: "401 invalid x-api-key" }),
+      requestEnd("auth", { errorMessage: "401 invalid x-api-key" }),
       abortEvent("llm request error: 401 invalid x-api-key"),
     ]);
     expect(got.map((r) => [r.code, r.kind])).toEqual([
@@ -474,7 +474,9 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
     // "timed out" status text. This is what the Cost center shows for a retried quota 403.
     const got = feed([
       requestBegin(),
-      requestEnd("timeout", { error: "403 no active subscription (insufficient_user_quota)" }),
+      requestEnd("timeout", {
+        errorMessage: "403 no active subscription (insufficient_user_quota)",
+      }),
       requestBegin(),
       requestEnd("completed"),
     ]);
@@ -490,7 +492,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
   it("an abort reason still outranks the staged request_end detail (failed exit path)", () => {
     const got = feed([
       requestBegin(),
-      requestEnd("failed", { error: "401 invalid x-api-key (invalid_api_key)" }),
+      requestEnd("failed", { errorMessage: "401 invalid x-api-key (invalid_api_key)" }),
       abortEvent("llm request error: 401 invalid x-api-key (invalid_api_key)"),
     ]);
     expect(got).toHaveLength(1);
@@ -503,7 +505,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
     // request_end detail IS the failure's reason — prefer it over the generic status text.
     const got = feed([
       requestBegin(),
-      requestEnd("timeout", { error: "403 quota exceeded (insufficient_user_quota)" }),
+      requestEnd("timeout", { errorMessage: "403 quota exceeded (insufficient_user_quota)" }),
       abortEvent("aborted during reconnect backoff"),
     ]);
     expect(got).toHaveLength(1);
@@ -859,7 +861,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
         mode: "summarize",
         status: "failed",
         attempt: 5,
-        error: "the response contained no usable summary",
+        errorMessage: "the response contained no usable summary",
       }),
     ]);
     expect(got).toHaveLength(1);

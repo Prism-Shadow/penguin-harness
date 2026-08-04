@@ -627,7 +627,7 @@ export class ContextEngine {
         // else — `failed` included — goes to the reconnect loop below.
         if (turn.outcome.status === "auth") {
           this.pendingCarryOver = this.buildCarryOver(attemptInput, turn);
-          yield* this.emitAbort(`llm request error: ${turn.outcome.message ?? "unknown"}`);
+          yield* this.emitAbort(`llm request error: ${turn.outcome.errorMessage ?? "unknown"}`);
           return;
         }
         // Completed normally.
@@ -661,7 +661,7 @@ export class ContextEngine {
             turn.outcome.status === "malformed"
               ? `malformed response failed after ${this.maxReconnects} retries`
               : turn.outcome.status === "failed"
-                ? `llm request failed after ${this.maxReconnects} retries: ${turn.outcome.message ?? "unknown"}`
+                ? `llm request failed after ${this.maxReconnects} retries: ${turn.outcome.errorMessage ?? "unknown"}`
                 : `reconnect failed after ${this.maxReconnects} retries`;
           yield* this.emitAbort(reason);
           return;
@@ -982,7 +982,7 @@ export class ContextEngine {
               RETRY_STATUSES,
             );
             const stopEvt = requestEnd(outcome.status, {
-              ...(outcome.message !== undefined ? { error: outcome.message } : {}),
+              ...(outcome.errorMessage !== undefined ? { errorMessage: outcome.errorMessage } : {}),
               // The authoritative attempt ordinal (1-based, within this retry run); a clean
               // first-try completion stays unstamped so the common case adds no noise.
               ...(outcome.status !== "completed" || reconnectsSoFar > 0
@@ -1378,12 +1378,12 @@ export class ContextEngine {
         this.stashRepairs(pendingRepairs);
         yield* this.emitCompactionEnd(reason, "summarize", "failed", {
           attempt: attempts,
-          ...(attempt.error !== undefined ? { error: attempt.error } : {}),
+          ...(attempt.errorMessage !== undefined ? { errorMessage: attempt.errorMessage } : {}),
         });
         return { status: "failed", committed };
       } else {
         // Transport failure: keep its detail as the last error of record.
-        lastError = attempt.error;
+        lastError = attempt.errorMessage;
       }
       // One failure path for everything else — unusable summaries and the transport statuses
       // (failed / timeout / malformed, never committed by AgentHub) — treated like an
@@ -1395,7 +1395,7 @@ export class ContextEngine {
         this.stashRepairs(pendingRepairs);
         yield* this.emitCompactionEnd(reason, "summarize", "failed", {
           attempt: attempts,
-          ...(lastError !== undefined ? { error: lastError } : {}),
+          ...(lastError !== undefined ? { errorMessage: lastError } : {}),
         });
         return { status: "failed", committed };
       }
@@ -1461,8 +1461,8 @@ export class ContextEngine {
     text: string;
     toolCalls: OmniMessage<ToolCallPayload>[];
     usage: OmniMessage | null;
-    /** Failure detail (LLMOutcome.message) on non-completed statuses — becomes compaction_end.error when this failure ends the compaction. */
-    error?: string;
+    /** Error detail (LLMOutcome.errorMessage) on non-completed statuses — becomes compaction_end.error_message when this failure ends the compaction. */
+    errorMessage?: string;
   }> {
     // The compaction request is itself an ordinary Request, emitting paired request events —
     // written to the (old) Trace only, not pushed to the stream, keeping the compaction process
@@ -1493,7 +1493,9 @@ export class ContextEngine {
         );
         await this.write(
           requestEnd(res.value.status, {
-            ...(res.value.message !== undefined ? { error: res.value.message } : {}),
+            ...(res.value.errorMessage !== undefined
+              ? { errorMessage: res.value.errorMessage }
+              : {}),
             // Same stamping rule as the turn loop; for compaction the ordinal counts every
             // retry kind (transport and unusable-summary alike share one budget).
             ...(res.value.status !== "completed" || reconnectsSoFar > 0
@@ -1507,7 +1509,7 @@ export class ContextEngine {
           text,
           toolCalls,
           usage,
-          ...(res.value.message !== undefined ? { error: res.value.message } : {}),
+          ...(res.value.errorMessage !== undefined ? { errorMessage: res.value.errorMessage } : {}),
         };
       }
       const msg = res.value;
@@ -1565,7 +1567,7 @@ export class ContextEngine {
     reason: CompactionReason,
     mode: CompactionMode,
     status: StopReason,
-    detail?: { attempt?: number; error?: string },
+    detail?: { attempt?: number; errorMessage?: string },
   ): AsyncGenerator<OmniMessage> {
     const msg = compactionEnd({ reason, mode, status, ...detail });
     yield msg;

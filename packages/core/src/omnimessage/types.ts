@@ -288,15 +288,15 @@ export interface RequestBeginPayload {
  */
 export interface RetryDetail {
   /**
-   * Error detail from `LLMOutcome.message`, present only on non-completed statuses: the
-   * real reason behind a retried/failed Request (e.g. `403 … (insufficient_user_quota)`),
-   * for observability — the server's error records / Cost center read it here because a
-   * retried request never produces an abort event. Named `error` rather than `message`:
-   * in this protocol "message" means an OmniMessage / model output, and this field is
-   * neither. (Traces written before the rename carry it as `message`; nothing reads that
-   * field semantically after the fact, so no dual-read is kept.)
+   * Error detail, one name across the stack (`LLMOutcome.errorMessage` internally): present
+   * only on non-completed statuses — the real reason behind a retried/failed Request (e.g.
+   * `403 … (insufficient_user_quota)`), for observability — the server's error records /
+   * Cost center read it here because a retried request never produces an abort event. Not
+   * plain `message`: in this protocol "message" means an OmniMessage / model output, and
+   * this field is neither. (Traces written before the rename carry it as `message`; nothing
+   * reads that field semantically after the fact, so no dual-read is kept.)
    */
-  error?: string;
+  error_message?: string;
   /**
    * 1-based ordinal of this Request within its retry run — the authoritative retry count
    * the CLI/Web display verbatim. Stamped on every non-completed request_end and on a
@@ -348,9 +348,9 @@ export interface CompactionBeginPayload {
 
 /**
  * Inherits the shared RetryDetail block: `attempt` is the final attempt's 1-based ordinal
- * (failed attempts and retries included — stamped by summarize mode), `error` is the last
- * failure's detail (present only when `status` is `failed`), and `retry_in_ms` is never
- * stamped here (compaction retries are announced on the compaction request's own
+ * (failed attempts and retries included — stamped by summarize mode), `error_message` is
+ * the last failure's detail (present only when `status` is `failed`), and `retry_in_ms` is
+ * never stamped here (compaction retries are announced on the compaction request's own
  * request_end, which is Trace-only).
  */
 export interface CompactionEndPayload extends RetryDetail {

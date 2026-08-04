@@ -1107,7 +1107,7 @@ export class GenerativeModel implements LLMInterface {
     try {
       uniMessage = mergeOmniToUniMessage(params.newMessages);
     } catch (err) {
-      return { status: "failed", message: describeError(err) };
+      return { status: "failed", errorMessage: describeError(err) };
     }
 
     const translator = new EventTranslator(this.toolCallIds);
@@ -1214,7 +1214,7 @@ export class GenerativeModel implements LLMInterface {
         // malformed to reconnect and retry — must not be classified as failed.
         outcome = {
           status: "malformed",
-          message: describeError(error),
+          errorMessage: describeError(error),
         };
       } else if (isAuthenticationError(error)) {
         // Credentials failure: its own terminal status so hosts can tell "update this
@@ -1222,17 +1222,17 @@ export class GenerativeModel implements LLMInterface {
         // fixed at Session creation; the credential is read from the current Project
         // config on load) apart from a one-off failure. Checked before the retryable
         // branch as a belt — isRetryableError itself already refuses auth signals.
-        outcome = { status: "auth", message: describeError(error) };
+        outcome = { status: "auth", errorMessage: describeError(error) };
       } else if (isRetryableError(error)) {
         // Network drop / transient provider rejection -> needs reconnection. The detail
         // (e.g. "403 … (insufficient_user_quota)") rides on the outcome so observability
         // (request_end -> the Cost center's errors panel) shows the real reason behind a
         // retried request, not just "timeout".
-        outcome = { status: "timeout", message: describeError(error) };
+        outcome = { status: "timeout", errorMessage: describeError(error) };
       } else if ((error as { name?: string })?.name === "AbortError") {
         outcome = { status: "aborted" }; // Fallback: an unexpected abort (neither timeout nor user)
       } else {
-        outcome = { status: "failed", message: describeError(error) };
+        outcome = { status: "failed", errorMessage: describeError(error) };
       }
     } finally {
       clearTimer();
