@@ -18,7 +18,6 @@ import { useMemo, useRef, useState } from "react";
 import { S } from "../../lib/strings";
 import { humanizeDuration } from "../../lib/format";
 import { stripAnsi } from "../../lib/strip-ansi";
-import type { StopReason } from "@prismshadow/penguin-core/omnimessage";
 import { approvalKey } from "../../lib/omni/stream-model";
 import type { ToolCallItem } from "../../lib/omni/stream-model";
 import { Chevron } from "../../components/ui/chevron";
@@ -41,18 +40,6 @@ const DESCRIBED_TOOLS = new Set([
 
 /** The three file tools: previewed by their `file_path` argument. */
 const FILE_TOOLS = new Set(["read_file", "edit_file", "write_file"]);
-
-/**
- * Colour for the row's `[stop reason]` marker: amber for a user interruption, red for a real
- * failure. StatusIcon has a single failure tone, so the icon alone cannot carry this — without
- * the marker an aborted call reads exactly like a failed one. Mirrors the warning-vs-error
- * split `stopReasonTone` gives the Badge used elsewhere (Trace viewer, composer).
- */
-function stopReasonToneClass(stopReason: string): string {
-  return stopReason === "aborted"
-    ? "text-amber-600 dark:text-amber-400"
-    : "text-red-600 dark:text-red-400";
-}
 
 /**
  * Shortens a path for one-line display: at most one parent directory plus the filename
@@ -243,9 +230,9 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
       }`
     : null;
   // A user denial reports stop_reason "aborted" on the output it feeds back; that abort IS the
-  // decision, not an independent outcome — the icon reads "Denied", and no separate `[aborted]`
-  // marker repeats it. A user-abort of a RUNNING tool carries no deny decision, so the label
-  // falls through to its stop reason below.
+  // decision — the icon reads "Denied" rather than falling through to the raw stop reason. A
+  // user-abort of a RUNNING tool carries no deny decision, so the label falls through to its
+  // stop reason below.
   const deniedByUser = item.decision === "deny" && item.outputStopReason === "aborted";
   const stateLabel = pending
     ? S.chat.approvalWaiting
@@ -256,17 +243,6 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
         : deniedByUser
           ? (decisionText ?? undefined)
           : (item.outputStopReason ?? item.callStopReason);
-  // Stop reasons to spell out on the row. The two segments frequently carry the SAME value —
-  // a call that closed undispatched copies its own reason onto the output it will never
-  // produce (settleUndispatchedCall) — so equal values collapse to one marker instead of the
-  // `[malformed][malformed]` the two old pills rendered side by side.
-  const outcomes = [
-    ...new Set(
-      [item.callStopReason, deniedByUser ? undefined : item.outputStopReason].filter(
-        (r): r is StopReason => r !== undefined && r !== "completed",
-      ),
-    ),
-  ];
 
   return (
     <div ref={rootRef}>
@@ -280,15 +256,16 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
           always the section the reader is in, never a skipped level. Opaque background for
           the stuck state; collapsing from stuck lands the view back on the row.
 
-          The stop reason used to render as a padded Badge pill, which competed for width on a
-          phone. It is now the same plain `[reason]` marker the thinking row directly above it
-          already uses (thinking-block.tsx) — cheap enough for 390px, and the two rows in a
-          work group finally read alike. Dropping it entirely and leaving the icon to carry the
-          outcome does not work: the icon has one failure tone, so an interrupted call would
-          look identical to a hard failure, and a call that never ran — malformed, or closed
-          undispatched — has no output block to expand into, so its title/aria-label would be
-          the only explanation anywhere, out of reach on touch. The Trace viewer still shows
-          the raw stop reason per event, which is where the literal value belongs.
+          The row spells out NO stop reason: it rendered `[reason]` markers (and before that,
+          Badge pills) until per-user-feedback review removed them — the red text read as
+          alarming repetition of what the left StatusIcon already signals. The icon plus its
+          title/aria stateLabel (which still names the raw reason) is the single carrier of
+          the outcome, same rule the decision wording above already follows. The known cost,
+          accepted deliberately: at a glance an aborted, timed-out, malformed or auth-failed
+          call all read as the icon's one failure tone, and on touch the distinction lives
+          only in the expanded output (when one exists) — the tooltip/aria and the Trace
+          viewer, which shows the raw stop reason per event, remain where the literal value
+          belongs.
 
           A pending call gets no "awaiting approval" text either: the approval block below is
           always on screen while one is pending — it names the tool, shows the arguments and
@@ -337,14 +314,6 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
             )
           ) : null}
         </span>
-        {outcomes.map((reason) => (
-          <span
-            key={reason}
-            className={`shrink-0 font-mono text-xs ${stopReasonToneClass(reason)}`}
-          >
-            [{reason}]
-          </span>
-        ))}
         <span className="min-w-0 flex-1" />
         {/* Expand indicator on the right */}
         <Chevron open={open} className="text-gray-400" />
