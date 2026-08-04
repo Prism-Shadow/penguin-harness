@@ -823,6 +823,8 @@ Benchmark：
       "当前模型不支持直接查看图片：发送时图片将保存到会话临时目录，以文件路径转交（模型经 describe_image 查看）",
     infoPanel: "Session 信息",
     sessionStats: "统计",
+    /** Info-dropdown jump to the Trace page, deep-linked to the current Session. */
+    viewTrace: "查看轨迹",
     statTokens: "Token 累计",
     statElapsed: "用时",
     statInput: "输入 tokens",
@@ -1054,6 +1056,9 @@ Benchmark：
     toolDefs: (n: number) => `工具定义（${n}）`,
     exportFile: "导出",
     importTrace: "导入 Trace",
+    /** Import dialog: which Agent receives the file (the endpoint is per-Agent). */
+    importAgent: "导入到 Agent",
+    importPickFile: "选择文件",
     importing: "导入中…",
     /** Client-side pre-check before reading the picked file (same cap as the server's import route). */
     fileTooLarge: "文件超过 14MB 上限。",

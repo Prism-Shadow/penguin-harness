@@ -5,6 +5,7 @@
  */
 import type { ButtonHTMLAttributes } from "react";
 import { S } from "../../lib/strings";
+import { AGENT_GROUP_ICON } from "./group-list";
 
 /** Downward caret on Select / OptionMenu / composer dropdown triggers. Color follows currentColor (callers add text-gray-400). */
 export function ChevronDown({ size = 12, className = "" }: { size?: number; className?: string }) {
@@ -141,3 +142,21 @@ export function CloseButton({
     </button>
   );
 }
+
+/**
+ * Page-nav glyphs (moved from sidebar.tsx: the sidebar nav, the collapsed rail in
+ * app-layout.tsx, and cross-page jump actions — e.g. the chat info dropdown's "view
+ * trace" — share them; living here keeps chat-page free of a sidebar import cycle,
+ * sidebar.tsx importing DRAFT_SESSION_ID from chat-page).
+ */
+export const NAV_ICONS = {
+  agents: AGENT_GROUP_ICON,
+  /** Skill library (an open book: two pages + spine). */
+  skills: "M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2zM22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z",
+  models: "M7 7h10v10H7zM4 10h3m10 0h3M4 14h3m10 0h3M10 4v3m4-3v3m-4 10v3m4-3v3",
+  usage: "M4 20V10m6 10V4m6 16v-7m4 7H2",
+  traces: "M4 6h16M4 12h10M4 18h13",
+  /** Benchmark center (a trophy: cup + two handles + base). */
+  benchmark:
+    "M7 4h10v5a5 5 0 0 1-10 0V4zM7 5H4v1a3 3 0 0 0 3 3m10-4h3v1a3 3 0 0 1-3 3M12 14v4m-4 0h8",
+} as const;

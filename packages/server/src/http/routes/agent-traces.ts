@@ -1,6 +1,18 @@
 /**
  * Agent-level Trace browsing routes:
- *   - GET /api/projects/:p/agents/:a/traces — drills down Agent -> date -> Session -> index (reverse order);
+ *   - GET /api/projects/:p/agents/:a/traces — Agent-level listing, served from the
+ *     trace-file index (mtime-gated reconcile, then pure DB — see services/trace-index.ts).
+ *     Without `limit`: the legacy full drill-down (Agent -> date -> Session -> index,
+ *     reverse order), never filtered. With optional `offset`/`limit` (+ optional
+ *     `category`, `cli`): pages Session groups newest-first (within the category when
+ *     given), stat-ing only the returned page for fresh sizes, and resolves per group a
+ *     display title (sessions DB title, else the registration-time first-prompt
+ *     fallback) plus its sidebar category / Workspace and per-category totals.
+ *     CLI-origin Sessions (no web sessions-table row, not subagent/schedule) are
+ *     excluded unless `cli=1` — the same "show CLI sessions" preference the sessions
+ *     list honors, applied server-side to rows, counts and workspace groups alike.
+ *     The listing consults the sessions table read-only (titles, archived, workspace,
+ *     client); discovery itself still comes from the Trace directory tree via the index.
  *   - GET /api/projects/:p/agents/:a/traces/:sessionId/:index (including /analysis, /download) —
  *     read-only Trace detail endpoints (FD-3): locate the Trace file directly by
  *     (projectId, agentId, sessionId), without depending on the sessions table for
@@ -13,9 +25,10 @@
  */
 import { Hono } from "hono";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { TraceImportResponse } from "../../api/types.js";
+import type { SessionCategory, TraceImportResponse } from "../../api/types.js";
 import {
   badRequest,
+  optionalPagingQuery,
   paginationQuery,
   positiveIntParam,
   readJson,
@@ -27,6 +40,14 @@ import type { AppDeps } from "../../app.js";
 /** Import file size cap: aligned with the snapshot import (stays within the 20MB body limit after base64). */
 const MAX_TRACE_BYTES = 14 * 1024 * 1024;
 
+/** Accepted `category` query values of the paginated listing (SessionCategory, spelled out for validation — same as the sessions list route). */
+const SESSION_CATEGORIES: readonly SessionCategory[] = [
+  "active",
+  "subagent",
+  "schedule",
+  "archived",
+];
+
 export function agentTracesRoutes(deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
@@ -35,7 +56,30 @@ export function agentTracesRoutes(deps: AppDeps): Hono<AppEnv> {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
     deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
-    return c.json(await deps.traceService.agentTraces(projectId, agentId));
+    // Both params absent -> null -> the legacy full response, byte-for-byte as before.
+    const paging = optionalPagingQuery(c);
+    // Optional category filter (paging then applies within the category): only meaningful
+    // on the paginated session-centric shape — the legacy full drill-down has no category
+    // notion, so a filtered-but-unpaged request is a client error, not a silent no-op.
+    const rawCategory = c.req.query("category");
+    if (
+      rawCategory !== undefined &&
+      !(SESSION_CATEGORIES as readonly string[]).includes(rawCategory)
+    ) {
+      throw badRequest(`category must be one of ${SESSION_CATEGORIES.join(" / ")}.`);
+    }
+    if (rawCategory !== undefined && paging === null) throw badRequest("category requires limit.");
+    // `cli=1` widens the paginated listing to CLI-origin Sessions (mirroring the sessions
+    // list's parameter): the default follows the "show CLI sessions" preference's OFF
+    // state. The legacy unpaged shape is never filtered (back-compat).
+    const rawCli = c.req.query("cli");
+    if (rawCli !== undefined && rawCli !== "1") throw badRequest("cli only accepts 1.");
+    return c.json(
+      await deps.traceService.agentTraces(projectId, agentId, paging, {
+        ...(rawCategory !== undefined ? { category: rawCategory as SessionCategory } : {}),
+        ...(rawCli !== undefined ? { includeCli: true } : {}),
+      }),
+    );
   });
 
   app.get("/:sessionId/:index", async (c) => {

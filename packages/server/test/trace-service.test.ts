@@ -23,8 +23,10 @@ import {
   withOrigin,
 } from "@prismshadow/penguin-core";
 import type { OmniMessage, SessionMetaPayload, TokenCounts } from "@prismshadow/penguin-core";
-import { TraceService } from "../src/services/trace-service.js";
-import { makeTempRoot, writeTraceFile } from "./helpers.js";
+import type { TraceService } from "../src/services/trace-service.js";
+import type { SessionRow } from "../src/db/repos/sessions.js";
+import { SessionSources } from "../src/runtime/session-sources.js";
+import { makeTempRoot, makeTraceHarness, writeTraceFile } from "./helpers.js";
 
 const P = "project-t";
 const A = "agent-t";
@@ -48,7 +50,7 @@ function buckets(cacheRead: number, cacheWrite: number, output: number): TokenCo
   };
 }
 
-function metaPayload(): SessionMetaPayload {
+function metaPayload(over: Partial<SessionMetaPayload> = {}): SessionMetaPayload {
   return {
     session_id: S,
     model_id: "m1",
@@ -58,18 +60,37 @@ function metaPayload(): SessionMetaPayload {
     tools: [],
     agent_state: "/tmp/a",
     workspace: "/tmp/w",
+    ...over,
+  };
+}
+
+/** A sessions-table row for the paginated listing's index fake (only the listing-relevant fields vary per test). */
+function dbRow(over: Partial<SessionRow> & { sessionId: string }): SessionRow {
+  return {
+    projectId: P,
+    agentId: A,
+    provider: "custom",
+    modelId: "m1",
+    workspace: "/tmp/w",
+    approvalMode: "allow-all",
+    title: null,
+    createdAt: "2026-07-05T10:00:00.000Z",
+    ...over,
   };
 }
 
 describe("trace-service", () => {
   let root: string;
   let service: TraceService;
+  let harness: ReturnType<typeof makeTraceHarness>;
 
   beforeEach(async () => {
     root = await makeTempRoot();
-    service = new TraceService(root);
+    harness = makeTraceHarness(root);
+    service = harness.service;
   });
   afterEach(async () => {
+    harness.close();
     await fs.rm(root, { recursive: true, force: true });
   });
 
@@ -530,6 +551,175 @@ describe("trace-service", () => {
     expect(res.dates.map((d) => d.date)).toEqual(["2026-07-06", "2026-07-05"]);
     expect(res.dates[1]!.sessions[0]!.sessionId).toBe(S);
     expect(res.dates[1]!.sessions[0]!.files.map((f) => f.index)).toEqual([1, 2]);
+    // No `limit` -> the legacy full shape only: the paging fields must stay absent
+    // (existing consumers see a byte-identical response).
+    expect(res.sessions).toBeUndefined();
+    expect(res.totalSessions).toBeUndefined();
+  });
+
+  it("Agent-level paging: slices Session groups newest-first, merges one Session's files across dates, and carries the total", async () => {
+    const s2 = "session-2026-07-06-09-00-00-11112222";
+    const s3 = "session-2026-07-07-08-00-00-33334444";
+    // S spans two date directories: the paged entry must merge them with a per-file date.
+    await writeTraceFile(root, P, A, "2026-07-05", S, 1, [userText("a")]);
+    await writeTraceFile(root, P, A, "2026-07-06", S, 2, [userText("b")]);
+    await writeTraceFile(root, P, A, "2026-07-06", s2, 1, [userText("c")]);
+    await writeTraceFile(root, P, A, "2026-07-07", s3, 1, [userText("d")]);
+
+    const page1 = await service.agentTraces(P, A, { offset: 0, limit: 2 }, { includeCli: true });
+    expect(page1.totalSessions).toBe(3);
+    expect(page1.dates).toEqual([]); // paged responses are session-centric; per-file stats happen only for the slice
+    expect(page1.sessions!.map((s) => s.sessionId)).toEqual([s3, s2]);
+
+    const page2 = await service.agentTraces(P, A, { offset: 2, limit: 2 }, { includeCli: true });
+    expect(page2.totalSessions).toBe(3);
+    expect(page2.sessions!.map((s) => s.sessionId)).toEqual([S]);
+    expect(page2.sessions![0]!.files.map((f) => ({ index: f.index, date: f.date }))).toEqual([
+      { index: 1, date: "2026-07-05" },
+      { index: 2, date: "2026-07-06" },
+    ]);
+    expect(page2.sessions![0]!.files.every((f) => f.sizeBytes > 0)).toBe(true);
+
+    // Paging an empty Agent stays well-formed.
+    const empty = await service.agentTraces(
+      P,
+      "agent-none",
+      { offset: 0, limit: 2 },
+      { includeCli: true },
+    );
+    expect(empty.sessions).toEqual([]);
+    expect(empty.totalSessions).toBe(0);
+  });
+
+  it("Agent-level paging: the sessions DB title wins over the first-prompt fallback", async () => {
+    const withTitles = makeTraceHarness(root, {
+      sessions: { listByAgent: () => [dbRow({ sessionId: S, title: "已生成的标题" })] },
+    });
+    await writeTraceFile(root, P, A, "2026-07-05", S, 1, [
+      sessionMeta(metaPayload()),
+      userText("raw prompt text"),
+    ]);
+    const res = await withTitles.service.agentTraces(P, A, { offset: 0, limit: 10 });
+    expect(res.sessions![0]!.title).toBe("已生成的标题");
+    withTitles.close();
+  });
+
+  it("Agent-level paging: category/workspace come from the DB row (archived wins; a registry-known origin fills its bucket)", async () => {
+    const s2 = "session-2026-07-06-09-00-00-11112222";
+    const s3 = "session-2026-07-07-08-00-00-33334444";
+    await writeTraceFile(root, P, A, "2026-07-05", S, 1, [userText("a")]);
+    await writeTraceFile(root, P, A, "2026-07-06", s2, 1, [userText("b")]);
+    await writeTraceFile(root, P, A, "2026-07-07", s3, 1, [userText("c")]);
+    const sources = new SessionSources();
+    sources.set(s2, "subagent");
+    sources.set(s3, null); // meta seen, user-created
+    const h = makeTraceHarness(root, {
+      sources,
+      sessions: {
+        listByAgent: () => [
+          dbRow({ sessionId: S, workspace: "/ws/one", archivedAt: "2026-07-08T00:00:00.000Z" }),
+          dbRow({ sessionId: s3, workspace: "/ws/two" }),
+        ],
+      },
+    });
+
+    const res = await h.service.agentTraces(P, A, { offset: 0, limit: 10 }, { includeCli: true });
+    const byId = new Map(res.sessions!.map((x) => [x.sessionId, x]));
+    expect(byId.get(S)!.category).toBe("archived");
+    expect(byId.get(S)!.workspace).toBe("/ws/one");
+    expect(byId.get(s2)!.category).toBe("subagent"); // untracked but registry-known
+    expect(byId.get(s3)!.category).toBe("active");
+    expect(res.counts).toEqual({ active: 1, subagent: 1, schedule: 0, archived: 1 });
+    expect(res.workspaceCounts!["/ws/one"]).toEqual({
+      active: 0,
+      subagent: 0,
+      schedule: 0,
+      archived: 1,
+    });
+    expect(res.workspaceCounts!["/ws/two"]).toEqual({
+      active: 1,
+      subagent: 0,
+      schedule: 0,
+      archived: 0,
+    });
+
+    // The category filter pages within one bucket; totalSessions is the bucket's count.
+    const active = await h.service.agentTraces(
+      P,
+      A,
+      { offset: 0, limit: 10 },
+      { category: "active", includeCli: true },
+    );
+    expect(active.sessions!.map((x) => x.sessionId)).toEqual([s3]);
+    expect(active.totalSessions).toBe(1);
+    expect(active.counts).toEqual({ active: 1, subagent: 1, schedule: 0, archived: 1 });
+    const archived = await h.service.agentTraces(
+      P,
+      A,
+      { offset: 0, limit: 10 },
+      { category: "archived", includeCli: true },
+    );
+    expect(archived.sessions!.map((x) => x.sessionId)).toEqual([S]);
+    h.close();
+  });
+
+  it("Agent-level paging: an untracked Session is classified at registration (head-read once), so the FIRST listing is exact", async () => {
+    // No DB row, nothing pre-registered: the reconciler registers the file and reads the
+    // earliest shard's session_meta ONCE; the listing itself then serves category /
+    // workspace / title from the index with no per-request head-reads.
+    await writeTraceFile(root, P, A, "2026-07-05", S, 1, [
+      sessionMeta(metaPayload({ source: "subagent", workspace: "/ws/child" })),
+      userText("child prompt"),
+    ]);
+
+    const first = await service.agentTraces(P, A, { offset: 0, limit: 10 }, { includeCli: true });
+    expect(first.sessions![0]!.category).toBe("subagent");
+    expect(first.sessions![0]!.workspace).toBe("/ws/child");
+    expect(first.counts).toEqual({ active: 0, subagent: 1, schedule: 0, archived: 0 });
+    // The observation landed in the shared registry (single source of truth) at registration.
+    expect(harness.sources.get(S)).toBe("subagent");
+    const reads = harness.traceIndex.counters.headReads;
+
+    const second = await service.agentTraces(P, A, { offset: 0, limit: 10 }, { includeCli: true });
+    expect(second.sessions![0]!.category).toBe("subagent");
+    expect(harness.traceIndex.counters.headReads).toBe(reads); // classification never re-reads
+  });
+
+  it("Agent-level paging: CLI-origin Sessions are hidden by default and shown with includeCli (subagent/schedule stay visible)", async () => {
+    const cliSid = "session-2026-07-06-09-00-00-11112222"; // untracked, user-created meta -> CLI-origin
+    const childSid = "session-2026-07-07-08-00-00-33334444"; // untracked but subagent-origin -> its folder, regardless
+    await writeTraceFile(root, P, A, "2026-07-06", cliSid, 1, [
+      sessionMeta(metaPayload({ session_id: cliSid })),
+      userText("cli run"),
+    ]);
+    await writeTraceFile(root, P, A, "2026-07-07", childSid, 1, [
+      sessionMeta(metaPayload({ session_id: childSid, source: "subagent" })),
+      userText("child run"),
+    ]);
+    const webSid = S;
+    await writeTraceFile(root, P, A, "2026-07-05", webSid, 1, [
+      sessionMeta(metaPayload()),
+      userText("web run"),
+    ]);
+    const h = makeTraceHarness(root, {
+      sessions: { listByAgent: () => [dbRow({ sessionId: webSid, workspace: "/ws/web" })] },
+    });
+
+    const hidden = await h.service.agentTraces(P, A, { offset: 0, limit: 10 });
+    expect(hidden.sessions!.map((x) => x.sessionId)).toEqual([childSid, webSid]);
+    expect(hidden.totalSessions).toBe(2);
+    expect(hidden.counts).toEqual({ active: 1, subagent: 1, schedule: 0, archived: 0 });
+
+    const shown = await h.service.agentTraces(P, A, { offset: 0, limit: 10 }, { includeCli: true });
+    expect(shown.sessions!.map((x) => x.sessionId)).toEqual([childSid, cliSid, webSid]);
+    expect(shown.counts).toEqual({ active: 2, subagent: 1, schedule: 0, archived: 0 });
+    h.close();
+  });
+
+  it("Agent-level paging: a Session whose head has no user text gets no title (the client falls back to its default)", async () => {
+    await writeTraceFile(root, P, A, "2026-07-05", S, 1, [sessionMeta(metaPayload())]);
+    const res = await service.agentTraces(P, A, { offset: 0, limit: 10 }, { includeCli: true });
+    expect(res.sessions![0]!.title).toBeUndefined();
   });
 
   it("every endpoint returns empty when there is no Trace", async () => {

@@ -1093,9 +1093,58 @@ export interface AgentTraceDateGroup {
   sessions: AgentTraceSessionGroup[];
 }
 
-/** Agent → date → Session → Trace file drill-down browsing structure (reverse chronological). */
+/** One Trace file in the session-centric listing (`date` carried per file: one Session's shards can span date directories). */
+export interface AgentTraceSessionFile {
+  index: number;
+  date: string;
+  sizeBytes: number;
+}
+
+/** One Session's Trace files merged across date directories (the paginated listing's unit). */
+export interface AgentTraceSessionEntry {
+  sessionId: string;
+  /**
+   * Display title, resolved only for the returned page: the sessions DB title when one
+   * exists, else derived from the Session's first user prompt (bounded head-read of the
+   * earliest shard); absent when neither yields one (the client falls back to its
+   * default title — raw session ids are never rendered).
+   */
+  title?: string;
+  /**
+   * Sidebar category of this Session, from the same bounded classification the listing
+   * filters and counts with: archived exactly from the DB row; origin from the shared
+   * in-process registry / previously observed session_meta; a DB-untracked Session this
+   * process has not yet head-read falls into `active` until a page surfaces it (its
+   * head-read then registers the true origin for subsequent requests).
+   */
+  category: SessionCategory;
+  /** Workspace path locked at creation (DB row or observed session_meta); "" when unknown — the client's merged temp-group fallback. */
+  workspace: string;
+  /** Sorted by index ascending (a higher index is newer). */
+  files: AgentTraceSessionFile[];
+}
+
+/**
+ * Agent-level Trace browsing structure. Without `limit` the response is the legacy full
+ * drill-down (`dates`: Agent → date → Session → Trace file, reverse chronological) and the
+ * paging fields are absent. With `offset`/`limit` the response is session-group-centric:
+ * `sessions` carries the requested slice (newest first by sessionId desc — ids embed a
+ * timestamp, so that is reverse chronological) with titles and classification,
+ * `totalSessions` the session-group count (within `category` when one is given, so paging
+ * and the count agree), `counts` / `workspaceCounts` the per-category totals over ALL of
+ * the Agent's session groups (folder labels / workspace-mode group headers), and `dates`
+ * stays empty (per-file stats are only taken for the returned page).
+ */
 export interface AgentTracesResponse {
   dates: AgentTraceDateGroup[];
+  /** Present only when the request paginates: the requested slice of Session groups, newest first. */
+  sessions?: AgentTraceSessionEntry[];
+  /** Present only when the request paginates: session-group count of the paged (category-filtered) set. */
+  totalSessions?: number;
+  /** Present only when the request paginates: per-category totals over all of the Agent's session groups. */
+  counts?: SessionCategoryCounts;
+  /** Present only when the request paginates: `counts` broken down by Workspace path ("" = unknown). */
+  workspaceCounts?: Record<string, SessionCategoryCounts>;
 }
 
 export interface TraceImportRequest {

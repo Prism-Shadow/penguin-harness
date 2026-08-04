@@ -10,6 +10,12 @@ import type { Hono } from "hono";
 import type { OmniMessage } from "@prismshadow/penguin-core";
 import { buildAppDeps, createApp } from "../src/app.js";
 import type { AppDeps, BuildDepsOverrides } from "../src/app.js";
+import { openDatabase } from "../src/db/database.js";
+import { TraceIndexRepo } from "../src/db/repos/trace-index.js";
+import { SessionSources } from "../src/runtime/session-sources.js";
+import { TraceIndexService } from "../src/services/trace-index.js";
+import { TraceService } from "../src/services/trace-service.js";
+import type { TraceSessionIndex } from "../src/services/trace-service.js";
 import type { AppEnv } from "../src/auth/middleware.js";
 import { ADMIN_USER_ID } from "../src/auth/service.js";
 import type { ServerConfig } from "../src/config.js";
@@ -144,6 +150,31 @@ export function apiClient(app: Hono<AppEnv>, cookie: string) {
     patch: call("PATCH"),
     delete: call("DELETE"),
   };
+}
+
+/**
+ * Index-backed TraceService for pure service tests: an in-memory DB with the real
+ * schema, a real reconciler over the temp root, and a shared origin registry — the
+ * same wiring app.ts assembles, minus the HTTP app.
+ */
+export function makeTraceHarness(
+  root: string,
+  opts: { sessions?: TraceSessionIndex; sources?: SessionSources } = {},
+): {
+  traceIndex: TraceIndexService;
+  service: TraceService;
+  sources: SessionSources;
+  close: () => void;
+} {
+  const db = openDatabase(":memory:");
+  const sources = opts.sources ?? new SessionSources();
+  const traceIndex = new TraceIndexService(root, new TraceIndexRepo(db), sources);
+  const service = new TraceService(root, {
+    index: traceIndex,
+    ...(opts.sessions !== undefined ? { sessions: opts.sessions } : {}),
+    sources,
+  });
+  return { traceIndex, service, sources, close: () => db.close() };
 }
 
 /** Writes a Trace JSONL file directly (for building historical / discovery scenarios). */

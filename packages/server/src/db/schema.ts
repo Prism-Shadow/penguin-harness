@@ -121,4 +121,28 @@ CREATE TABLE IF NOT EXISTS ui_prefs (
   user_id    TEXT PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
   prefs_json TEXT NOT NULL                    -- {theme?, lastProjectId?, ...} free-form JSON
 );
+CREATE TABLE IF NOT EXISTS trace_files (       -- DERIVED CACHE of the on-disk Trace tree (services/trace-index.ts): the directories stay the single source of truth, every row is rebuildable from disk, and a row is never authority for absence — consumers reconcile + retry on a miss, so a stale index costs one extra scan, never a false 404
+  project_id TEXT NOT NULL,
+  agent_id   TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  file_index INTEGER NOT NULL,               -- shard index NNN of <session_id>_NNN.jsonl (name/path are reconstructed from the row, never stored: the data root may move)
+  date       TEXT NOT NULL,                  -- date directory name (local yyyy-mm-dd)
+  size_bytes INTEGER NOT NULL,               -- last observed size (listings stat-refresh the returned page and write back; an actively-appended shard may lag in between)
+  PRIMARY KEY (project_id, agent_id, session_id, file_index)
+);
+CREATE INDEX IF NOT EXISTS idx_trace_files_agent_date ON trace_files(project_id, agent_id, date);
+CREATE INDEX IF NOT EXISTS idx_trace_files_session ON trace_files(session_id);
+CREATE TABLE IF NOT EXISTS trace_sessions (    -- per-session facts read ONCE at registration from the earliest shard's head (same derived-cache rules as trace_files; listing needs zero head-reads)
+  session_id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  agent_id   TEXT NOT NULL,
+  source     TEXT,                           -- session_meta origin: 'subagent' | 'schedule' | NULL = user-created (or head not yet readable)
+  workspace  TEXT NOT NULL DEFAULT '',
+  title      TEXT,                           -- first-prompt fallback title (sessions.title always wins when present)
+  provider   TEXT,                           -- model reference from session_meta (CLI adoption reads it from here; NULL = meta unreadable / legacy without provider)
+  model_id   TEXT,
+  first_ts   TEXT,                           -- first record's timestamp (adoption's createdAt fallback when the id embeds no time)
+  meta_read  INTEGER NOT NULL DEFAULT 0      -- 1 once the head parsed; 0 = facts unknown, retried by the next reconcile that touches the session
+);
+CREATE INDEX IF NOT EXISTS idx_trace_sessions_agent ON trace_sessions(project_id, agent_id);
 `;

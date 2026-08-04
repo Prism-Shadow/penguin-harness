@@ -849,6 +849,8 @@ Scenarios:
       "This model cannot view images directly: on send, images are saved to the session scratchpad and passed as file paths (viewed via describe_image)",
     infoPanel: "Session info",
     sessionStats: "Stats",
+    /** Info-dropdown jump to the Trace page, deep-linked to the current Session. */
+    viewTrace: "View trace",
     statTokens: "Total Tokens",
     statElapsed: "Elapsed",
     statInput: "Input tokens",
@@ -1084,6 +1086,9 @@ Scenarios:
     toolDefs: (n: number) => `Tool definitions (${n})`,
     exportFile: "Export",
     importTrace: "Import Trace",
+    /** Import dialog: which Agent receives the file (the endpoint is per-Agent). */
+    importAgent: "Import into Agent",
+    importPickFile: "Choose file",
     importing: "Importing…",
     /** Client-side pre-check before reading the picked file (same cap as the server's import route). */
     fileTooLarge: "The file exceeds the 14MB limit.",

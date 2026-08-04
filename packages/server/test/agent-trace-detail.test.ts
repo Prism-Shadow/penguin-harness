@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { requestBegin, requestEnd, sessionMeta, userText } from "@prismshadow/penguin-core";
 import type { SessionMetaPayload } from "@prismshadow/penguin-core";
 import type {
+  AgentTracesResponse,
   ProjectCreateResponse,
   TraceAnalysisResponse,
   TraceEventsResponse,
@@ -94,6 +95,86 @@ describe("agent-trace-detail", () => {
 
   it("nonexistent index → 404 trace_not_found", async () => {
     expect((await owner.get(`${base()}/${UNMANAGED}/9`)).status).toBe(404);
+  });
+
+  it("listing without limit keeps the legacy full shape; with limit it pages Session groups and resolves titles", async () => {
+    // Legacy request: full date drill-down, no paging fields.
+    const legacy = (await (await owner.get(base())).json()) as AgentTracesResponse;
+    expect(legacy.dates.map((d) => d.date)).toEqual(["2026-07-06"]);
+    expect(legacy.sessions).toBeUndefined();
+    expect(legacy.totalSessions).toBeUndefined();
+
+    // Default paged request: the unmanaged Session is CLI-origin (no web sessions-table
+    // row, not subagent/schedule), so the "show CLI sessions" OFF default excludes it
+    // from the listing AND the counts.
+    const hidden = (await (await owner.get(`${base()}?limit=10`)).json()) as AgentTracesResponse;
+    expect(hidden.sessions).toEqual([]);
+    expect(hidden.totalSessions).toBe(0);
+    expect(hidden.counts).toEqual({ active: 0, subagent: 0, schedule: 0, archived: 0 });
+
+    // cli=1: visible, with title derived from the first user prompt and category /
+    // workspace from the registration-time facts (the index head-read the earliest
+    // shard once when the file was first seen — exact on the FIRST request).
+    const paged = (await (
+      await owner.get(`${base()}?limit=10&cli=1`)
+    ).json()) as AgentTracesResponse;
+    expect(paged.totalSessions).toBe(1);
+    expect(paged.sessions!.map((s) => s.sessionId)).toEqual([UNMANAGED]);
+    expect(paged.sessions![0]!.title).toBe("child session input");
+    expect(paged.sessions![0]!.files.map((f) => ({ index: f.index, date: f.date }))).toEqual([
+      { index: 1, date: "2026-07-06" },
+    ]);
+    expect(paged.sessions![0]!.category).toBe("active");
+    expect(paged.sessions![0]!.workspace).toBe("/tmp/w");
+    expect(paged.counts).toEqual({ active: 1, subagent: 0, schedule: 0, archived: 0 });
+    expect(paged.workspaceCounts!["/tmp/w"]).toEqual({
+      active: 1,
+      subagent: 0,
+      schedule: 0,
+      archived: 0,
+    });
+
+    // A sessions-table title (one batched lookup for the page) wins over the fallback.
+    t.deps.sessionsRepo.insert({
+      sessionId: UNMANAGED,
+      projectId,
+      agentId: "default_agent",
+      provider: "custom",
+      modelId: "sub-model",
+      workspace: "/tmp/w",
+      approvalMode: "allow-all",
+      title: "已生成的标题",
+      client: "cli",
+      createdAt: "2026-07-06T09:00:00.000Z",
+    });
+    const titled = (await (
+      await owner.get(`${base()}?limit=10&cli=1`)
+    ).json()) as AgentTracesResponse;
+    expect(titled.sessions![0]!.title).toBe("已生成的标题");
+    // The adopted row carries client='cli': it stays behind the preference by default.
+    const stillHidden = (await (
+      await owner.get(`${base()}?limit=10`)
+    ).json()) as AgentTracesResponse;
+    expect(stillHidden.sessions).toEqual([]);
+
+    // offset pages past the only group; offset without limit is a client error.
+    const empty = (await (
+      await owner.get(`${base()}?limit=10&offset=10&cli=1`)
+    ).json()) as AgentTracesResponse;
+    expect(empty.sessions).toEqual([]);
+    expect(empty.totalSessions).toBe(1);
+    expect((await owner.get(`${base()}?offset=1`)).status).toBe(400);
+
+    // Category filter: pages within one bucket (totalSessions = the bucket's count);
+    // unknown values, category-without-limit, and a bad cli value are client errors.
+    const filtered = (await (
+      await owner.get(`${base()}?limit=10&category=subagent&cli=1`)
+    ).json()) as AgentTracesResponse;
+    expect(filtered.sessions).toEqual([]);
+    expect(filtered.totalSessions).toBe(0);
+    expect((await owner.get(`${base()}?limit=10&category=bogus`)).status).toBe(400);
+    expect((await owner.get(`${base()}?category=active`)).status).toBe(400);
+    expect((await owner.get(`${base()}?limit=10&cli=2`)).status).toBe(400);
   });
 
   it("user without access → 404 (requireProjectAccess)", async () => {

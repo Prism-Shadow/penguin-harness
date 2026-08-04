@@ -14,17 +14,7 @@
  * Project's default reference, 400 if there is none); the new Session is
  * added to session-manager's active table (state idle).
  */
-import path from "node:path";
-import { open, readdir } from "node:fs/promises";
-import {
-  createAgent,
-  findLatestTraceFile,
-  isSessionMeta,
-  parseTraceLines,
-  readTraceTolerant,
-  tracesDir,
-} from "@prismshadow/penguin-core";
-import type { SessionMetaMessage } from "@prismshadow/penguin-core";
+import { createAgent, isSessionMeta } from "@prismshadow/penguin-core";
 import type {
   ApprovalMode,
   SessionCategory,
@@ -38,43 +28,10 @@ import type { SessionRow, SessionsRepo } from "../db/repos/sessions.js";
 import type { SessionManager } from "../runtime/session-manager.js";
 import { asSessionSource } from "../runtime/session-sources.js";
 import type { SessionSources } from "../runtime/session-sources.js";
+import { TraceIndexService, traceFilePath } from "./trace-index.js";
 import type { ProjectConfigService } from "./project-config-service.js";
 
-const TRACE_FILE_RE = /^(.+)_(\d{3})\.jsonl$/;
 const SESSION_ID_TS_RE = /^session-(\d{4})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-[0-9a-f]{8}$/;
-
-/** Head window for session_meta reads: generous for a long system prompt, far below a whole multi-MB shard. */
-const TRACE_HEAD_BYTES = 256 * 1024;
-
-/**
- * Parse a Trace file's head window only. session_meta is the first line core writes to
- * every shard, so a bounded read finds it without pulling the whole file into memory —
- * category filtering / counts may need every Session's source in a single request.
- * The window is cut at its last newline (the tail fragment is incomplete); a first line
- * larger than the whole window falls back to the full tolerant read.
- */
-async function readTraceHead(filePath: string) {
-  const fh = await open(filePath, "r");
-  let text: string;
-  let truncated: boolean;
-  try {
-    // allocUnsafe: only subarray(0, bytesRead) is ever read, so the uninitialized tail never leaks.
-    const { buffer, bytesRead } = await fh.read(
-      Buffer.allocUnsafe(TRACE_HEAD_BYTES),
-      0,
-      TRACE_HEAD_BYTES,
-      0,
-    );
-    text = buffer.subarray(0, bytesRead).toString("utf8");
-    truncated = bytesRead === TRACE_HEAD_BYTES;
-  } finally {
-    await fh.close();
-  }
-  if (!truncated) return parseTraceLines(text);
-  const nl = text.lastIndexOf("\n");
-  if (nl === -1) return readTraceTolerant(filePath);
-  return parseTraceLines(text.slice(0, nl + 1));
-}
 
 /** Derives creation time from the local timestamp embedded in session_id; returns null if it doesn't match. */
 export function sessionIdCreatedAt(sessionId: string): string | null {
@@ -92,6 +49,8 @@ export interface SessionServiceDeps {
   projectConfig: ProjectConfigService;
   /** In-process origin registry derived from session_meta (the DB stores no source column). */
   sources: SessionSources;
+  /** Trace-file index: discovery / adoption / stats serve from it (mtime-gated reconciler; no per-request walks). */
+  traceIndex: TraceIndexService;
 }
 
 export class SessionService {
@@ -103,12 +62,8 @@ export class SessionService {
    * this process) falls back to reading the Trace head once (see sourceOf). `traces` is the
    * list flow's one-walk discovery result; without it a miss locates the shard itself.
    */
-  async toInfo(
-    row: SessionRow,
-    hasTrace: boolean,
-    traces?: ReadonlyMap<string, TraceLocation>,
-  ): Promise<SessionInfo> {
-    const source = await this.sourceOf(row, hasTrace, traces);
+  async toInfo(row: SessionRow, hasTrace: boolean): Promise<SessionInfo> {
+    const source = await this.sourceOf(row, hasTrace);
     return {
       sessionId: row.sessionId,
       projectId: row.projectId,
@@ -130,33 +85,24 @@ export class SessionService {
 
   /**
    * A Session's origin, with session_meta as the single source of truth: the in-process
-   * registry answers first (populated at creation / subagent registration / adoption);
-   * on a miss (a Session created before this process started) the earliest Trace shard's
-   * session_meta is read once and cached. A Session with no Trace yet stays unknown and
-   * is NOT cached negatively — its meta may appear with the first run.
+   * registry answers first (populated at creation / subagent registration / adoption /
+   * index registration); on a miss (a Session created before this process started) the
+   * trace index's registration-time facts answer — the reconciler head-read the earliest
+   * shard once when the file first appeared, so no file is touched here. A Session with
+   * no Trace yet stays unknown and is NOT cached negatively — its meta may appear with
+   * the first run.
    */
-  private async sourceOf(
-    row: SessionRow,
-    hasTrace: boolean,
-    traces?: ReadonlyMap<string, TraceLocation>,
-  ): Promise<SessionSource | undefined> {
+  private async sourceOf(row: SessionRow, hasTrace: boolean): Promise<SessionSource | undefined> {
     const known = this.deps.sources.get(row.sessionId);
     if (known !== undefined) return known ?? undefined;
     if (!hasTrace) return undefined;
-    // Single-session paths carry no discovery map: locate this Session's earliest shard on demand.
-    const location =
-      traces?.get(row.sessionId) ??
-      (await this.discoverTraces(row.projectId, row.agentId)).get(row.sessionId);
-    if (!location) return undefined;
-    const meta = await this.readTraceMeta(location);
-    if (!meta) return undefined; // Unreadable/corrupt Trace: stay unknown, retry on the next list.
-    // On-disk values are untrusted: only the exact known origins pass, junk = user-created.
-    const source = asSessionSource(meta.payload.source) ?? null;
-    this.deps.sources.set(row.sessionId, source);
-    return source ?? undefined;
+    const facts = this.deps.traceIndex.repo.getSession(row.sessionId);
+    if (!facts?.metaRead) return undefined; // Unreadable/unregistered: stay unknown, retry on the next list.
+    this.deps.sources.set(row.sessionId, facts.source);
+    return facts.source ?? undefined;
   }
 
-  /** Whether this Session already has a Trace record (a Task has been run). */
+  /** Whether this Session already has a Trace record (a Task has been run): answered by the index (reconciled first). */
   async hasTrace(row: SessionRow): Promise<boolean> {
     return (await this.discoverTraces(row.projectId, row.agentId)).has(row.sessionId);
   }
@@ -167,13 +113,9 @@ export class SessionService {
    * sidebar's partition applies to loaded rows, so server filtering and client
    * rendering can never disagree.
    */
-  private async categoryOf(
-    row: SessionRow,
-    hasTrace: boolean,
-    traces?: ReadonlyMap<string, TraceLocation>,
-  ): Promise<SessionCategory> {
+  private async categoryOf(row: SessionRow, hasTrace: boolean): Promise<SessionCategory> {
     if ((row.archivedAt ?? null) !== null) return "archived";
-    return (await this.sourceOf(row, hasTrace, traces)) ?? "active";
+    return (await this.sourceOf(row, hasTrace)) ?? "active";
   }
 
   /**
@@ -220,20 +162,22 @@ export class SessionService {
         .map((r) => [r.sessionId, r]),
     );
 
-    let traces: ReadonlyMap<string, TraceLocation> | undefined;
+    let traces: ReadonlySet<string> | undefined;
     if (includeCli) {
       traces = await this.discoverTraces(projectId, agentId);
-      // Unmanaged Trace Sessions (the CLI's): backfill an index row by reading the first
-      // line's session_meta, marked client "cli" so the default list can exclude them.
-      for (const [sessionId, location] of traces) {
+      // Unmanaged Trace Sessions (the CLI's): backfill an index row from the trace
+      // index's registration-time facts, marked client "cli" so the default list can
+      // exclude them.
+      for (const sessionId of traces) {
         if (rows.has(sessionId)) continue;
-        const discovered = await this.adoptTraceSession(projectId, agentId, sessionId, location);
+        const discovered = this.adoptTraceSession(projectId, agentId, sessionId);
         if (discovered) rows.set(sessionId, discovered);
       }
     } else if ([...rows.values()].some((r) => this.deps.sources.get(r.sessionId) === undefined)) {
-      // Hydration walk: some rows predate this process and are unclassified — locate their
-      // Traces once so sourceOf's head reads (cached afterwards) and the has_trace cache
-      // don't have to walk per row. Steady state (everything classified) skips this.
+      // Hydration pass: some rows predate this process and are unclassified — one
+      // reconciled index read supplies discovery so sourceOf's facts lookups and the
+      // has_trace cache need no per-row work. Steady state (everything classified)
+      // skips this.
       traces = await this.discoverTraces(projectId, agentId);
       for (const row of rows.values()) {
         if (!row.hasTrace && traces.has(row.sessionId)) {
@@ -249,7 +193,7 @@ export class SessionService {
     const rowHasTrace = (row: SessionRow): boolean =>
       traces ? traces.has(row.sessionId) : row.hasTrace === true;
     const toPage = (page: SessionRow[]) =>
-      Promise.all(page.map((row) => this.toInfo(row, rowHasTrace(row), traces)));
+      Promise.all(page.map((row) => this.toInfo(row, rowHasTrace(row))));
 
     // No classification asked for: slice straight away (the pre-category behavior).
     if (category === undefined && !withCounts) {
@@ -266,7 +210,7 @@ export class SessionService {
     const matched: SessionRow[] = [];
     for (const row of sorted) {
       if (!withCounts && matched.length >= want) break;
-      const cat = await this.categoryOf(row, rowHasTrace(row), traces);
+      const cat = await this.categoryOf(row, rowHasTrace(row));
       counts[cat] += 1;
       if (withCounts) {
         const ws = (workspaceCounts[row.workspace] ??= {
@@ -304,13 +248,12 @@ export class SessionService {
       byDate.set(date, set);
     };
 
-    // Trace directory: the date directory name is the local date (yyyy-mm-dd) that core uses when writing to disk.
-    const dir = tracesDir(this.deps.root, projectId, agentId);
-    for (const dateDir of await listDirsSafe(dir)) {
-      for (const file of await listFilesSafe(path.join(dir, dateDir))) {
-        const match = TRACE_FILE_RE.exec(file);
-        if (match) mark(dateDir, match[1]!);
-      }
+    // Trace activity from the index (one mtime-gated reconcile, then a pure DB read —
+    // this used to walk the Agent's ENTIRE trace history on every agents-list request):
+    // the date is the shard's date directory (local yyyy-mm-dd, core's writing convention).
+    await this.deps.traceIndex.reconcileAgent(projectId, agentId);
+    for (const f of this.deps.traceIndex.repo.listFilesByAgent(projectId, agentId)) {
+      mark(f.date, f.sessionId);
     }
     // DB index: the creation day also counts as active (a Session that hasn't run a Task yet produces no Trace).
     for (const row of this.deps.sessions.listByAgent(projectId, agentId)) {
@@ -432,11 +375,24 @@ export class SessionService {
    * source history itself when it needs it.
    */
   async latestTracePath(row: SessionRow): Promise<string | undefined> {
-    const located = await findLatestTraceFile(
-      tracesDir(this.deps.root, row.projectId, row.agentId),
+    await this.deps.traceIndex.reconcileAgent(row.projectId, row.agentId);
+    let files = this.deps.traceIndex.repo.listFilesBySession(
+      row.projectId,
+      row.agentId,
       row.sessionId,
     );
-    return located?.path;
+    if (files.length === 0) {
+      // Index miss with disk possibly ahead: one forced diff, then retry (the consumers'
+      // rule — a stale index costs one extra scan, never a missing resume shard).
+      await this.deps.traceIndex.reconcileAgent(row.projectId, row.agentId, { force: true });
+      files = this.deps.traceIndex.repo.listFilesBySession(
+        row.projectId,
+        row.agentId,
+        row.sessionId,
+      );
+    }
+    const latest = files.at(-1);
+    return latest === undefined ? undefined : traceFilePath(this.deps.root, latest);
   }
 
   /**
@@ -445,65 +401,41 @@ export class SessionService {
    * records) and the meta-read location come out of a single pass, so classifying every
    * row (`counts=1`) costs one directory walk total instead of one per Session.
    */
-  private async discoverTraces(
-    projectId: string,
-    agentId: string,
-  ): Promise<Map<string, TraceLocation>> {
-    const dir = tracesDir(this.deps.root, projectId, agentId);
-    const out = new Map<string, TraceLocation>();
-    for (const dateDir of await listDirsSafe(dir)) {
-      for (const file of await listFilesSafe(path.join(dir, dateDir))) {
-        const match = TRACE_FILE_RE.exec(file);
-        if (!match) continue;
-        const sessionId = match[1]!;
-        const index = Number(match[2]);
-        const cur = out.get(sessionId);
-        if (!cur || index < cur.index) {
-          out.set(sessionId, { path: path.join(dir, dateDir, file), index });
-        }
-      }
+  private async discoverTraces(projectId: string, agentId: string): Promise<Set<string>> {
+    await this.deps.traceIndex.reconcileAgent(projectId, agentId);
+    const out = new Set<string>();
+    for (const f of this.deps.traceIndex.repo.listFilesByAgent(projectId, agentId)) {
+      out.add(f.sessionId);
     }
     return out;
   }
 
   /**
-   * session_meta from a located Trace shard head; null when unreadable or it has no
-   * meta. Shared by adoption backfill and lazy `source` resolution.
+   * Adopts a Session that exists only in the Trace directory, from the index's
+   * registration-time facts (the reconciler head-read the earliest shard's session_meta
+   * once when the file first appeared — adoption itself reads no file).
    */
-  private async readTraceMeta(location: TraceLocation): Promise<SessionMetaMessage | null> {
-    let messages;
-    try {
-      messages = await readTraceHead(location.path);
-    } catch {
-      return null; // Corrupt file: skip (does not block the list)
-    }
-    return messages.find(isSessionMeta) ?? null;
-  }
-
-  /** Adopts a Session that exists only in the Trace directory: reads session_meta from the first line of the earliest index file. */
-  private async adoptTraceSession(
+  private adoptTraceSession(
     projectId: string,
     agentId: string,
     sessionId: string,
-    location: TraceLocation,
-  ): Promise<SessionRow | null> {
-    const meta = await this.readTraceMeta(location);
-    if (!meta) return null;
+  ): SessionRow | null {
+    const facts = this.deps.traceIndex.repo.getSession(sessionId);
+    if (!facts?.metaRead) return null; // Corrupt/unreadable head: skip (does not block the list; retried by a later reconcile)
     // An older Trace version's session_meta lacks provider (the model reference
     // wasn't split into separate fields yet): no backward compat, skip adoption
     // (core will give a clear error on resume; the product hasn't launched yet, so
     // old data can simply be deleted and recreated).
-    if (typeof meta.payload.provider !== "string") return null;
-    // The adoption read already has the meta in hand: record the origin (single source of
-    // truth); on-disk values are narrowed — junk counts as user-created.
-    this.deps.sources.set(sessionId, asSessionSource(meta.payload.source) ?? null);
+    if (facts.provider === null || facts.modelId === null) return null;
+    // Registration already narrowed the origin; record it in the registry (single source of truth).
+    this.deps.sources.set(sessionId, facts.source);
     const row: SessionRow = {
       sessionId,
       projectId,
       agentId,
-      provider: meta.payload.provider,
-      modelId: meta.payload.model_id,
-      workspace: meta.payload.workspace,
+      provider: facts.provider,
+      modelId: facts.modelId,
+      workspace: facts.workspace,
       // The approval mode for an unmanaged Session (started via the CLI) isn't in the Trace, so it's backfilled with the default value.
       approvalMode: "allow-all",
       title: null,
@@ -511,7 +443,7 @@ export class SessionService {
       // (web-only) excludes these rows; the "show CLI sessions" preference includes them.
       client: "cli",
       hasTrace: true,
-      createdAt: sessionIdCreatedAt(sessionId) ?? meta.timestamp,
+      createdAt: sessionIdCreatedAt(sessionId) ?? facts.firstTs ?? new Date().toISOString(),
     };
     // Idempotent backfill: concurrent list calls may discover the same Session for the first time simultaneously (consistent with AgentsRepo's convention).
     this.deps.sessions.insertOrIgnore(row);
@@ -519,32 +451,8 @@ export class SessionService {
   }
 }
 
-/** A located Trace shard of one Session: absolute path plus its shard index. */
-interface TraceLocation {
-  path: string;
-  index: number;
-}
-
 /** Local date as yyyy-mm-dd (matches the Trace date directory convention: core's internal formatLocalDate, not publicly exported). */
 function localDate(d: Date): string {
   const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
-
-async function listDirsSafe(dir: string): Promise<string[]> {
-  try {
-    const entries = await readdir(dir, { withFileTypes: true });
-    return entries.filter((e) => e.isDirectory()).map((e) => e.name);
-  } catch {
-    return [];
-  }
-}
-
-async function listFilesSafe(dir: string): Promise<string[]> {
-  try {
-    const entries = await readdir(dir, { withFileTypes: true });
-    return entries.filter((e) => e.isFile()).map((e) => e.name);
-  } catch {
-    return [];
-  }
 }

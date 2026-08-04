@@ -172,7 +172,7 @@ export function latestConversation(sessions: readonly SessionInfo[]): SessionInf
   return best;
 }
 
-export interface WorkspaceGroup {
+export interface WorkspaceGroup<T = SessionInfo> {
   /** Stable group key: the Workspace path, or TEMP_WORKSPACE_GROUP_KEY for the merged temp group. */
   key: string;
   /** Display label: the path basename; empty for the temp group (the sidebar renders the localized name). */
@@ -182,7 +182,7 @@ export interface WorkspaceGroup {
   /** True for the merged auto-temp group. */
   temp: boolean;
   /** Member Sessions, newest first (createdAt desc). */
-  sessions: SessionInfo[];
+  sessions: T[];
 }
 
 /**
@@ -192,9 +192,14 @@ export interface WorkspaceGroup {
  * concatenates per-Agent server responses, so its order isn't globally chronological.
  * createdAt is a uniform ISO-8601 UTC string (server: `new Date().toISOString()`),
  * so lexicographic comparison equals chronological comparison.
+ * Generic over the row type (defaulting to SessionInfo, the sidebar's rows): the Trace
+ * page groups its own Session rows with the same logic — only `workspace` and the
+ * `createdAt` sort key are touched.
  */
-export function groupSessionsByWorkspace(sessions: SessionInfo[]): WorkspaceGroup[] {
-  const byKey = new Map<string, WorkspaceGroup>();
+export function groupSessionsByWorkspace<T extends { workspace: string; createdAt: string }>(
+  sessions: T[],
+): WorkspaceGroup<T>[] {
+  const byKey = new Map<string, WorkspaceGroup<T>>();
   for (const s of sessions) {
     const key = workspaceGroupKey(s.workspace);
     let group = byKey.get(key);
