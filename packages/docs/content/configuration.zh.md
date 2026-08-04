@@ -17,6 +17,7 @@ CLI 与服务端启动时会自动加载工作目录下的 `.env` 文件。
 | `PENGUIN_WEB_DB` | 服务端 SQLite 数据库路径 | `<root>/web.db` |
 | `PENGUIN_WEB_DIST` | 前端静态资源目录 | npm 安装的服务端包回退到内置 web-dist |
 | `PENGUIN_PREVIEW_ORIGIN` | 提供 Workspace HTML 预览的独立源，如 `https://preview.example.com` | 未设置，按请求推导回环对应名 |
+| `PENGUIN_SEED_ADMIN_PASSWORD` | 固定内置管理员的种子初始密码（自动化测试 / e2e 使用） | 未设置，种子时随机生成 `penguin-<四位数字>` 并打印一次 |
 | `PENGUIN_LANG` | CLI 语言（`en` / `zh`），用 `penguin config lang` 设置 | `en` |
 | `PENGUIN_UPDATE_CHECK` | 设为 `off` 关闭 Web 应用的新版本检查（服务端唯一的对外网络请求） | 开启 |
 
@@ -67,11 +68,11 @@ openrouter、fireworks、siliconflow、qwen-token-plan、qwen-pay-as-you-go 与 
 | `created_at` | `api_key` 写入时间（ISO 8601，界面维护的展示字段） |
 
 ```toml
-default_model = { provider = "deepseek", model_id = "deepseek-v4-pro" }
+default_model = { provider = "deepseek", model_id = "deepseek-v4-flash" }
 
 [[models]]
 provider = "deepseek"
-model_id = "deepseek-v4-pro"
+model_id = "deepseek-v4-flash"
 context_window = 1000000
 vision = false
 api_key = "sk-..."
@@ -160,6 +161,8 @@ compaction:
 | `{{SESSION_ID}}` | Session id |
 
 `{{PROJECT_DIR}}` 在提示词中以 **App Data Dir** 名义暴露给模型：PenguinHarness 的应用数据根目录，存放全部 Agent 的数据文件（`agents/<agent_id>/…`）与 Project 级数据——特意不以 Project/任务目录的口径描述，避免模型将其误认为本次任务的工作目录（`CWD`）。
+
+Windows 上注入的 `{{PROJECT_DIR}}` 与 `{{CWD}}` 统一使用正斜杠——与 core 产出的其他模型可见路径（附件行、Goal file 行、截断输出 recovery 路径）同一拼写。模型会把这些拼写原样带入 JSON 工具参数和 Shell 命令；正斜杠被 Node 的 fs API 与包内 (Git) Bash 工具 Shell 接受，也避免 JSON 反斜杠转义出错。
 
 `agent_state/AGENTS.md` 是开发者可编辑的指令文件，经 `{{AGENTS_MD}}` 注入系统提示词，缺省为空——它也是优化器最常改动的文件（见[自我进化](/self-improvement)）。
 

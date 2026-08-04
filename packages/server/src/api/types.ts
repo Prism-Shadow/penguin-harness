@@ -72,10 +72,25 @@ export interface MeResponse {
    * request, since it depends on the host the caller is using.
    */
   previewIsolated: boolean;
+  /**
+   * Whether this server runs in desktop mode (spawned by the desktop shell with
+   * PENGUIN_DESKTOP_TOKEN). The web app then hides the logout entry, the
+   * initial-password banner and the self-update entry, and omits the old-password
+   * field when changing the password. See design § "桌面端原型".
+   */
+  desktopMode: boolean;
+  /**
+   * How THIS session was established. Distinct from desktopMode: a browser signed into a
+   * desktop-mode server holds a "password" session and must still provide the old
+   * password when changing it — only "desktop" sessions (opened by the shell's one-shot
+   * token) may omit it.
+   */
+  sessionVia: "password" | "desktop";
 }
 
 export interface PasswordChangeRequest {
-  oldPassword: string;
+  /** Omitted only by desktop-established sessions (desktop mode); required otherwise. */
+  oldPassword?: string;
   /** At least 8 characters. */
   newPassword: string;
 }
@@ -110,6 +125,12 @@ export interface UiPrefs {
   lastProjectId?: string;
   /** Whether the "no API key configured" guide has already been shown: once ever (on first visit to the chat page). */
   credentialGuideSeen?: boolean;
+  /**
+   * Also list CLI-created Sessions in the sidebar (`cli=1` on the sessions list). Default
+   * off: the list then serves web rows straight from the DB, with no Trace-directory
+   * scanning (#139).
+   */
+  showCliSessions?: boolean;
   [key: string]: unknown;
 }
 
@@ -683,16 +704,39 @@ export interface TaskCreateResponse {
  * task POST).
  */
 export interface SteerRequest {
-  /** Message text (trimmed server-side); may be empty when `images` carries the message. */
+  /** Message text (trimmed server-side); may be empty when `images` or `files` carries the message. */
   text: string;
   /**
    * Images sent with the steering message (`data:` or http(s) URLs, same rule as
    * `TaskInputPart.image_url`): delivered as user image messages right behind the
    * `[user_steering]` text. A model without vision receives them as scratchpad path lines
-   * instead, exactly as it would a Prompt's images. At least one of `text` / `images` must
-   * be non-empty.
+   * instead, exactly as it would a Prompt's images. At least one of `text` / `images` /
+   * `files` must be non-empty.
    */
   images?: string[];
+  /**
+   * File attachments riding the steering message — the same shape, caps and handling as a
+   * task input's `{type:"file"}` parts: written into the Session scratchpad and delivered
+   * as `[attached file: <path>]` lines on the `[user_steering]` text, so a file-only draft
+   * steers exactly like an image-only one instead of falling back to the follow-up queue.
+   */
+  files?: { fileName: string; dataUrl: string }[];
+}
+
+/**
+ * One steering message queued on the server but not yet delivered to the model (delivery
+ * happens at the next input assembly between turns). Carried on `task_state` events and the
+ * SSE subscribe snapshot so the composer's "steering queued" hint — including what was sent —
+ * survives reloads; entries leave the list as their `[user_steering]` message appears on the
+ * stream, and the whole list drops when the run exits (core discards undelivered steering).
+ */
+export interface PendingSteeringInfo {
+  /** The message text as accepted (trimmed); may be empty when images/files carry the message. */
+  text: string;
+  /** Number of images that rode along. */
+  images: number;
+  /** Number of file attachments that rode along. */
+  files: number;
 }
 
 export interface ApprovalDecisionRequest {
@@ -721,7 +765,13 @@ export type ServerEvent =
    */
   | { type: "approval_request"; toolCall: OmniMessage<ToolCallPayload>; origin?: string[] }
   /** Session run status flip (for toggling the input area and list); `queued` = queued follow-up count (see TaskCreateRequest.queueIfBusy). */
-  | { type: "task_state"; state: SessionStatus; queued?: number }
+  | {
+      type: "task_state";
+      state: SessionStatus;
+      queued?: number;
+      /** Steering messages queued but not yet delivered (absent = none): lets the composer's hint and its content survive reloads. */
+      pendingSteering?: PendingSteeringInfo[];
+    }
   /** The model-generated title after the first turn has been persisted (for in-place list updates). */
   | { type: "session_title"; sessionId: string; title: string }
   /** Last-Event-ID has been evicted from the buffer: the frontend should re-fetch the history endpoint before continuing to consume this connection. */
@@ -1345,6 +1395,19 @@ export interface AgentSkillsResponse {
 /** POST install request: all names must exist in the library; already-installed ones are overwritten with library content (i.e. updated). */
 export interface SkillInstallRequest {
   names: string[];
+}
+
+/**
+ * POST /api/projects/:p/agents/:a/skills/archive: install one Skill from an uploaded zip.
+ * Layout: SKILL.md at the zip root, or exactly one top-level directory containing SKILL.md
+ * (the directory name is then the Skill name). 201 returns the refreshed installed list
+ * (AgentSkillsResponse); an already-installed name without `overwrite` is 409 `skill_exists`.
+ */
+export interface SkillArchiveInstallRequest {
+  /** Base64-encoded zip archive (decoded size capped at 14MB, same as the Agent snapshot import). */
+  dataBase64: string;
+  /** Replace an already-installed Skill of the same name (deletes its directory first). */
+  overwrite?: boolean;
 }
 
 // ---------------------------------------------------------------------------

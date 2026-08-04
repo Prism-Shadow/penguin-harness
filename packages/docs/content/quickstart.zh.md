@@ -18,7 +18,7 @@ curl -fsSL https://penguin.ooo/install.sh | sh
 PenguinHarness 不内置任何模型凭据，使用前需要先配置一个模型。可以在 Web UI 的 Models 页面完成，也可以用 CLI：
 
 ```bash
-penguin config model add --provider deepseek --model-id deepseek-v4-pro --api-key sk-... --set-default
+penguin config model add --provider deepseek --model-id deepseek-v4-flash --api-key sk-... --set-default
 ```
 
 - 模型引用始终是 `(provider, model_id)` 二元组，因此 `--provider` 与 `--model-id` 均为必填——Provider 绝不由模型 id 推断。内置分组见[模型与 Provider](/models)。
@@ -30,7 +30,7 @@ penguin config model add --provider deepseek --model-id deepseek-v4-pro --api-ke
 penguin web
 ```
 
-服务运行在 http://127.0.0.1:7364 并自动打开浏览器（`--no-open` 跳过）。首次登录使用 `admin` / `penguin-2026`，请立即修改密码。`penguin server` 启动同一进程的 headless 版本。
+服务运行在 http://127.0.0.1:7364 并自动打开浏览器（`--no-open` 跳过）。首次登录使用 `admin`，初始密码（形如 `penguin-1234`）在服务端首次启动时打印，请立即修改密码。`penguin server` 启动同一进程的 headless 版本。
 
 ## 单次运行
 

@@ -68,6 +68,8 @@ Trace 是 append-only 的 JSON Lines 文件，每行一个 OmniMessage 信封（
 {"timestamp":"…","type":"event_msg","payload":{"type":"token_usage","session":{…},"request":{…}}}
 ```
 
+工具输出超过 `maxOutputLength` 时，Trace 与 Web/CLI、模型一样只记录有界头部、截断提示和绝对 Session recovery 路径，不重复保存归档正文。该路径会暴露宿主的数据根目录布局；未经脱敏的 recovery 文件位于该 Session 的 scratchpad，因此路径跨 Task 和 Session 恢复保持有效。用户明确删除 Session 时，现有删除路径会连同 scratchpad 和 recovery 文件一起清理。因而 Trace 重放既忠实恢复「模型当时看到了什么」，也为后续追问保留可用指针。
+
 ## Session 恢复
 
 Trace 是恢复的唯一事实来源，没有独立的会话数据库需要与之对齐。`resumeSession` 的流程：

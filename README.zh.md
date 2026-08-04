@@ -86,11 +86,11 @@ https://github.com/user-attachments/assets/aec49ae9-b743-467b-b247-37bedfeaa36e
 
 | 模型             | 可用供应商                                                                       |
 | ---------------- | -------------------------------------------------------------------------------- |
-| DeepSeek V4      | DeepSeek, OpenRouter, Fireworks AI, SiliconFlow, Qwen Token Plan                 |
+| DeepSeek V4      | DeepSeek, OpenRouter, Fireworks AI, SiliconFlow, Qwen Token Plan, Qwen Pay-As-You-Go |
 | Kimi K3          | Moonshot AI, OpenRouter, Qwen Pay-As-You-Go                                      |
 | GLM 5.2          | Z.AI, OpenRouter, Fireworks AI, SiliconFlow, Qwen Token Plan, Qwen Pay-As-You-Go |
 | Hunyuan 3        | OpenRouter                                                                       |
-| Qwen 3.8 Max     | Qwen Token Plan（预览）                                                          |
+| Qwen 3.8 Max     | Qwen Token Plan, Qwen Pay-As-You-Go, OpenRouter                                  |
 | GPT 5.6          | OpenRouter                                                                       |
 | Gemini 3.6 Flash | Google Gemini, OpenRouter                                                        |
 | Claude 5         | Anthropic, OpenRouter                                                            |
@@ -108,7 +108,7 @@ https://github.com/user-attachments/assets/aec49ae9-b743-467b-b247-37bedfeaa36e
 
 ## 安装
 
-每种方式装出的都是同一个 `penguin` 命令：`penguin web` 启动完整 Web 体验（多会话对话、Agent / 技能 / 模型管理、用量统计、轨迹观测、评估中心；首次登录 admin / penguin-2026，登录后请尽快修改密码），在应用内模型页配置模型后即可对话。在线安装器自带 Node 运行时，解压即用，升级与重装不触碰数据。
+每种方式装出的都是同一个 `penguin` 命令：`penguin web` 启动完整 Web 体验（多会话对话、Agent / 技能 / 模型管理、用量统计、轨迹观测、评估中心；首次登录使用 `admin`，初始密码在服务端首次启动时打印，形如 `penguin-1234`，登录后请尽快修改密码），在应用内模型页配置模型后即可对话。在线安装器自带 Node 运行时，解压即用，升级与重装不触碰数据。
 
 ### 🐧 Linux（在线安装）
 
@@ -139,31 +139,31 @@ penguin web        # 启动服务并打开 http://127.0.0.1:7364
 ```
 
 <details>
-<summary><b>📴 离线安装包（无网环境）</b></summary>
+<summary><b>📴 离线安装（无网环境）</b></summary>
 
-每个 <a href="https://github.com/Prism-Shadow/penguin-harness/releases">GitHub Release</a> 附带五个自包含的离线安装包——Linux 与 macOS 各有 x64 / arm64 两种架构，Windows 为 x64。包内自带程序压缩包、SHA256 校验文件与对应平台的安装器，在有网机器下载后拷贝到目标机器即可安装，全程无需联网（离线安装强制校验 SHA256）。
+每个 <a href="https://github.com/Prism-Shadow/penguin-harness/releases">GitHub Release</a> 每个目标只附带一个安装包——Linux 与 macOS 各有 x64 / arm64 两种架构，Windows 为 x64，另有不带运行时的 universal 包——同一个文件同时服务在线与离线安装。包内封入程序负载、其 SHA256 校验文件与对应平台的安装器：在有网机器下载这一个文件，拷贝到目标机器，解压一次并运行包内安装器即可——全程无需联网，也不必另外携带校验文件（包内封入的 SHA256 始终强制校验）。
 
-**Linux（arm64 机器换用 `penguin-linux-arm64-offline.tar.gz`）：**
+**Linux（arm64 机器换用 `penguin-linux-arm64.tar.gz`）：**
 
 ```bash
-mkdir penguin-offline
-tar -xzf penguin-linux-x64-offline.tar.gz -C penguin-offline
-./penguin-offline/install.sh
+mkdir penguin-install
+tar -xzf penguin-linux-x64.tar.gz -C penguin-install
+./penguin-install/install.sh
 ```
 
-**macOS（Apple 芯片用 arm64 包，Intel 芯片换用 `penguin-darwin-x64-offline.tar.gz`）：**
+**macOS（Apple 芯片用 arm64 包，Intel 芯片换用 `penguin-darwin-x64.tar.gz`）：**
 
 ```bash
-mkdir penguin-offline
-tar -xzf penguin-darwin-arm64-offline.tar.gz -C penguin-offline
-./penguin-offline/install.sh
+mkdir penguin-install
+tar -xzf penguin-darwin-arm64.tar.gz -C penguin-install
+./penguin-install/install.sh
 ```
 
 **Windows（解压后双击 `install.cmd`，或在 PowerShell 中运行）：**
 
 ```powershell
-Expand-Archive penguin-win32-x64-offline.zip -DestinationPath penguin-offline
-cd penguin-offline
+Expand-Archive penguin-win32-x64.zip -DestinationPath penguin-install
+cd penguin-install
 .\install.cmd
 ```
 
@@ -174,7 +174,7 @@ cd penguin-offline
 同一引擎、可脚本化——为被 Agent 驱动而生（以及让 Agent 构建 Agent）：
 
 ```bash
-penguin config model add --provider deepseek --model-id deepseek-v4-pro --api-key sk-... --set-default
+penguin config model add --provider deepseek --model-id deepseek-v4-flash --api-key sk-... --set-default
 penguin run -m "Create hello.txt containing Hello, Penguin"   # 单次任务
 penguin chat       # 交互式 REPL（/compact、/exit、Ctrl-C 中断）
 penguin server     # 无界面服务（与 Web 应用同一套 API）

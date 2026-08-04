@@ -148,7 +148,7 @@ export interface GenerativeModelParameters {
  *     `context_engine`;
  *   - `aborted`: user-initiated interruption — stop and hand back to the user;
  *   - `failed`: an error the retry classifier did not judge transient (params, etc.) — still
- *     retried by `context_engine` within the same run (`message` provides the display text).
+ *     retried by `context_engine` within the same run (`errorMessage` provides the display text).
  *     The classification stays honest — this is reported as `failed`, not relabelled a
  *     timeout — while the *policy* retries it, because that classifier is an allowlist and a
  *     gateway phrasing a transient fault its own way lands here;
@@ -162,12 +162,13 @@ export interface GenerativeModelParameters {
 export interface LLMOutcome {
   status: StopReason;
   /**
-   * Failure detail (`describeError` text): present on `failed` / `auth`, and on `timeout` /
+   * Error detail (`describeError` text): present on `failed` / `auth`, and on `timeout` /
    * `malformed` when a concrete transport/provider error was caught (a plain idle timeout
-   * has none). Carried onto the `request_end` event so observability (the Cost center's
-   * errors panel) can show the real reason behind a retried request.
+   * has none). Carried onto the `request_end` event as `error_message` — one name across
+   * the internal outcome and the wire — so observability (the Cost center's errors panel)
+   * can show the real reason behind a retried request.
    */
-  message?: string;
+  errorMessage?: string;
 }
 
 /**
@@ -275,6 +276,14 @@ export interface EnvironmentServices {
 export interface EnvironmentConfig {
   workspaceDir: string;
   toolConfig: ToolConfig;
+  /**
+   * This Session's private scratchpad directory (`scratchpad/<sessionId>`), the generic
+   * Session-scoped storage root for Environment by-products. Currently it backs
+   * truncated-tool-output recovery: output beyond an entry's `maxOutputLength` is saved under
+   * `<sessionScratchpadDir>/truncated-tool-output/`. Agent Sessions always pass it; standalone
+   * embedders without a stable Session directory omit it and keep truncation-only behavior.
+   */
+  sessionScratchpadDir?: string;
   /** Runtime services (optional); Environment forwards these to each tool factory to use as needed. */
   services?: EnvironmentServices;
   /**

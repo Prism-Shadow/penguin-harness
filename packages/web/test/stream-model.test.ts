@@ -355,7 +355,7 @@ describe("approvals and events", () => {
     const m = createStreamModel();
     pushMessage(m, abortEvent("aborted by user"));
     expect(m.lastAuthFailureMs).toBeNull();
-    const end = requestEnd("auth", "401 invalid x-api-key");
+    const end = requestEnd("auth", { errorMessage: "401 invalid x-api-key" });
     pushMessage(m, end);
     // The recorded time is the event's envelope timestamp (so a reload can compare it
     // against the Project's credentials-updated time).
@@ -375,7 +375,7 @@ describe("approvals and events", () => {
 
   it("a later completed request clears the auth-dead state; a new auth failure re-arms it", () => {
     const m = createStreamModel();
-    pushMessage(m, requestEnd("auth", "401"));
+    pushMessage(m, requestEnd("auth", { errorMessage: "401" }));
     expect(m.lastAuthFailureMs).not.toBeNull();
     // The key was fixed and a request succeeded: the state must not outlive the success.
     pushMessage(m, userText("again"));
@@ -383,7 +383,7 @@ describe("approvals and events", () => {
     pushMessage(m, requestEnd("completed"));
     expect(m.lastAuthFailureMs).toBeNull();
     // A fresh auth failure re-arms (e.g. the replacement key is wrong too).
-    pushMessage(m, requestEnd("auth", "401"));
+    pushMessage(m, requestEnd("auth", { errorMessage: "401" }));
     expect(m.lastAuthFailureMs).not.toBeNull();
   });
 
@@ -394,7 +394,7 @@ describe("approvals and events", () => {
     pushMessages(recovered, [
       userText("go"),
       requestBegin(),
-      requestEnd("auth", "401 invalid x-api-key"),
+      requestEnd("auth", { errorMessage: "401 invalid x-api-key" }),
       abortEvent("llm request error: 401 invalid x-api-key"),
       userText("after fix"),
       requestBegin(),
@@ -411,7 +411,7 @@ describe("approvals and events", () => {
       requestEnd("completed"),
       userText("later"),
       requestBegin(),
-      requestEnd("auth", "401 invalid x-api-key"),
+      requestEnd("auth", { errorMessage: "401 invalid x-api-key" }),
       abortEvent("llm request error: 401 invalid x-api-key"),
     ]);
     finalizeHistory(dead);
@@ -427,7 +427,7 @@ describe("approvals and events", () => {
 
   it("a subagent-origin auth failure does NOT kill the parent session's input", () => {
     const m = createStreamModel();
-    pushMessage(m, withOrigin(requestEnd("auth", "401"), "child1"));
+    pushMessage(m, withOrigin(requestEnd("auth", { errorMessage: "401" }), "child1"));
     // The failure belongs to the child session: its nested model carries the state, the
     // parent composer stays usable (the subagent simply surfaces as failed).
     expect(m.lastAuthFailureMs).toBeNull();
@@ -460,6 +460,28 @@ describe("approvals and events", () => {
     expect(banner).not.toHaveProperty("tokens");
   });
 
+  it("compaction_end carries its RetryDetail share onto the banner (error shown on failure)", () => {
+    const m = createStreamModel();
+    pushMessage(
+      m,
+      compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 3 }),
+    );
+    const banner = items(m)[0] as CompactionItem;
+    pushMessage(
+      m,
+      compactionEnd({
+        reason: "context",
+        mode: "summarize",
+        status: "failed",
+        attempt: 5,
+        errorMessage: "the response contained no usable summary",
+      }),
+    );
+    expect(banner.running).toBe(false);
+    expect(banner.status).toBe("failed");
+    expect(banner.errorMessage).toBe("the response contained no usable summary");
+  });
+
   it("request_begin/end (normal final state) and main-session session_meta do not render", () => {
     const m = createStreamModel();
     pushMessage(m, meta("session-x"));
@@ -468,10 +490,11 @@ describe("approvals and events", () => {
     expect(items(m)).toHaveLength(0);
   });
 
-  it("request_end final state timeout/malformed produces a retry notice item (with attempt number); request_begin marks it as resent", () => {
+  it("request_end final state timeout/malformed produces a retry notice item (with the stamped attempt); request_begin marks it as resent", () => {
     const m = createStreamModel();
     pushMessage(m, requestBegin());
-    pushMessage(m, requestEnd("malformed"));
+    // The core stamps the authoritative ordinal on every retryable request_end.
+    pushMessage(m, requestEnd("malformed", { attempt: 1 }));
     const retry = items(m)[0] as ReconnectItem;
     expect(retry).toMatchObject({
       kind: "reconnect",
@@ -482,17 +505,21 @@ describe("approvals and events", () => {
     // Retry request sent: the notice is marked as retrying.
     pushMessage(m, requestBegin());
     expect(retry.retrying).toBe(true);
-    // Retry fails again: a second notice, attempt count increments.
-    pushMessage(m, requestEnd("timeout"));
+    // Retry fails again: a second notice, carrying the next ordinal.
+    pushMessage(m, requestEnd("timeout", { attempt: 2 }));
     const retry2 = items(m)[1] as ReconnectItem;
     expect(retry2).toMatchObject({ kind: "reconnect", status: "timeout", attempt: 2 });
-    // Retry succeeds: no new entry, the consecutive-failure count resets to 0 — the next round's failure starts back at 1.
+    // Retry succeeds: no new entry; the next round's failure carries attempt 1 again.
     pushMessage(m, requestBegin());
     pushMessage(m, requestEnd("completed"));
     expect(items(m)).toHaveLength(2);
     pushMessage(m, requestBegin());
-    pushMessage(m, requestEnd("timeout"));
+    pushMessage(m, requestEnd("timeout", { attempt: 1 }));
     expect((items(m)[2] as ReconnectItem).attempt).toBe(1);
+    // A Trace written before the field existed lacks it: rendered as attempt 1.
+    pushMessage(m, requestBegin());
+    pushMessage(m, requestEnd("timeout"));
+    expect((items(m)[3] as ReconnectItem).attempt).toBe(1);
   });
 
   it("request_end(failed) renders a retry notice too, with its countdown inputs and give-up target", () => {
@@ -503,7 +530,10 @@ describe("approvals and events", () => {
     pushMessage(m, requestBegin());
     pushMessage(
       m,
-      requestEnd("failed", "Upstream HTTP/2 stream failed (upstream_http2_stream_error)", 4000),
+      requestEnd("failed", {
+        errorMessage: "Upstream HTTP/2 stream failed (upstream_http2_stream_error)",
+        retryInMs: 4000,
+      }),
       111_000,
     );
     const retry = items(m)[0] as ReconnectItem;
@@ -521,39 +551,38 @@ describe("approvals and events", () => {
     expect(retry.retrying).toBe(true);
   });
 
-  it("a mixed ladder keeps counting: failed no longer resets the attempt number mid-run", () => {
-    // `failed` used to fall through to the reset branch, so timeout → failed → timeout
-    // renumbered the third attempt back to #1 while the engine was on its third.
+  it("a mixed ladder keeps counting: the stamped ordinal carries across failure kinds", () => {
+    // The engine numbers timeout → failed → timeout as one run (all three draw on the same
+    // budget), and each notice shows the event's own ordinal.
     const m = createStreamModel();
     pushMessage(m, requestBegin());
-    pushMessage(m, requestEnd("timeout"));
+    pushMessage(m, requestEnd("timeout", { attempt: 1 }));
     pushMessage(m, requestBegin());
-    pushMessage(m, requestEnd("failed", "502 bad gateway"));
+    pushMessage(m, requestEnd("failed", { errorMessage: "502 bad gateway", attempt: 2 }));
     pushMessage(m, requestBegin());
-    pushMessage(m, requestEnd("timeout"));
+    pushMessage(m, requestEnd("timeout", { attempt: 3 }));
     expect((items(m) as ReconnectItem[]).map((i) => [i.status, i.attempt])).toEqual([
       ["timeout", 1],
       ["failed", 2],
       ["timeout", 3],
     ]);
-    // A normal finish still resets it: the next run's first failure is #1 again.
+    // After a normal finish the next run's first failure is stamped #1 again.
     pushMessage(m, requestBegin());
     pushMessage(m, requestEnd("completed"));
     pushMessage(m, requestBegin());
-    pushMessage(m, requestEnd("failed"));
+    pushMessage(m, requestEnd("failed", { attempt: 1 }));
     expect((items(m)[3] as ReconnectItem).attempt).toBe(1);
   });
 
-  it("request_end(auth) stays out of the ladder: terminal, so no retry notice and the count resets", () => {
+  it("request_end(auth) stays out of the ladder: terminal, so no retry notice", () => {
     // The one status the engine does not retry — an item would promise a countdown and a
     // "Retry now" that will never happen, on top of the composer already being gated.
     const m = createStreamModel();
     pushMessage(m, requestBegin());
-    pushMessage(m, requestEnd("timeout"));
+    pushMessage(m, requestEnd("timeout", { attempt: 1 }));
     pushMessage(m, requestBegin());
-    pushMessage(m, requestEnd("auth", "401 invalid x-api-key"));
+    pushMessage(m, requestEnd("auth", { errorMessage: "401 invalid x-api-key", attempt: 2 }));
     expect((items(m) as ReconnectItem[]).filter((i) => i.kind === "reconnect")).toHaveLength(1);
-    expect(m.reconnectRun).toBe(0);
   });
 
   it("retries exhausted: an arriving abort marks the waiting retry notice gaveUp and resets the consecutive-failure count", () => {
@@ -582,7 +611,14 @@ describe("approvals and events", () => {
     // The engine announced a 4s backoff before retry #1; nowMs (the injected client clock)
     // is the countdown anchor — NOT the envelope timestamp, so server clock skew cannot
     // bend the ticker.
-    pushMessage(m, requestEnd("timeout", "403 quota (insufficient_user_quota)", 4000), 111_000);
+    pushMessage(
+      m,
+      requestEnd("timeout", {
+        errorMessage: "403 quota (insufficient_user_quota)",
+        retryInMs: 4000,
+      }),
+      111_000,
+    );
     const item = items(m)[0] as ReconnectItem;
     expect(item).toMatchObject({
       kind: "reconnect",
@@ -608,7 +644,7 @@ describe("approvals and events", () => {
     pushMessages(retried, [
       userText("go"),
       requestBegin(),
-      requestEnd("timeout", "quota", 30_000),
+      requestEnd("timeout", { errorMessage: "quota", retryInMs: 30_000 }),
       requestBegin(), // the engine's retry — replayed immediately after
       requestEnd("completed"),
     ]);
@@ -620,7 +656,7 @@ describe("approvals and events", () => {
     pushMessages(aborted, [
       userText("go"),
       requestBegin(),
-      requestEnd("timeout", "quota", 30_000),
+      requestEnd("timeout", { errorMessage: "quota", retryInMs: 30_000 }),
       abortEvent("aborted during reconnect backoff"), // the user gave up mid-wait
     ]);
     finalizeHistory(aborted);

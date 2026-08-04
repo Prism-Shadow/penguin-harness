@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createAgent } from "../src/index.js";
 import { formatSessionId } from "../src/internal/session-support.js";
 import { projectDir } from "../src/state/paths.js";
+import { modelVisiblePath } from "../src/internal/model-visible-path.js";
 import { stubProviderKeys } from "./provider-keys.js";
 
 let tmpRoot: string;
@@ -99,7 +100,11 @@ describe("Agent.createSession session id + no .penguin symlink", () => {
     const session = await agent.createSession({ workspaceDir: ws });
     const prompt = (session.metaMessage.payload as { system_prompt: string }).system_prompt;
     expect(prompt).toContain(`Agent ID: ${agent.state.agentId}`);
-    expect(prompt).toContain(`App Data Dir: ${projectDir(tmpRoot, agent.state.projectId)}`);
+    // The prompt shows the model-visible spelling (forward slashes on Windows), not path.join's.
+    expect(prompt).toContain(
+      `App Data Dir: ${modelVisiblePath(projectDir(tmpRoot, agent.state.projectId))}`,
+    );
+    expect(prompt).toContain(`CWD: ${modelVisiblePath(ws)}`);
     expect(prompt).not.toContain(".penguin");
   });
 });

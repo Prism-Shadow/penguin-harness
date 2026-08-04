@@ -16,9 +16,19 @@
  */
 import { spawn } from "node:child_process";
 import path from "node:path";
-import { DEFAULT_SERVER_PORT } from "@prismshadow/penguin-core";
+import { DEFAULT_SERVER_PORT, resolveRoot } from "@prismshadow/penguin-core";
+import { liveServerLock } from "@prismshadow/penguin-server/lock";
 import type { Command } from "commander";
-import type { Messages } from "../i18n.js";
+import type { Messages, WebProbeFailureKind } from "../i18n.js";
+
+/** Why the readiness poll gave up: failure class plus a one-line diagnostic from the last probe. */
+export interface ReadinessFailure {
+  kind: WebProbeFailureKind;
+  detail: string;
+}
+
+/** Result of `waitForReady`: ready, or timed out with the retained last probe failure. */
+export type ReadinessResult = { ready: true } | { ready: false; failure: ReadinessFailure };
 
 /** Default service port — core's DEFAULT_SERVER_PORT (7364), the single source of truth. */
 export const DEFAULT_PORT = DEFAULT_SERVER_PORT;
@@ -75,6 +85,19 @@ export function cliEntryFor(argv1: string | undefined): string | null {
  * so the values written here are the ones that take effect (options take priority over
  * .env and any pre-existing env vars).
  */
+/**
+ * Pre-start lock check: the App URL of a live server already owning the data root this
+ * process would use (same resolution as the server: PENGUIN_HOME or the default root),
+ * or null. The server itself re-checks on startup (the in-process backstop); checking
+ * here keeps the friendly path — `penguin server` refuses with the URL, `penguin web`
+ * simply opens the existing instance. Locks live per data root, so a second server on a
+ * DIFFERENT root is untouched. See @prismshadow/penguin-server/lock.
+ */
+async function existingInstanceUrl(): Promise<string | null> {
+  const lock = await liveServerLock(process.env.PENGUIN_HOME ?? resolveRoot());
+  return lock === null ? null : `http://localhost:${lock.port}/`;
+}
+
 async function startServer(opts: {
   port?: string;
   host?: string;
@@ -96,9 +119,103 @@ async function startServer(opts: {
   return { host, port };
 }
 
-/** Polls the service root path until it responds (any HTTP response counts as ready); keeps waiting on connection failure, returns false on timeout. */
-async function waitForReady(url: string, timeoutMs = 15_000, intervalMs = 300): Promise<boolean> {
+function errorProperty(
+  value: unknown,
+  property: "cause" | "code" | "errors" | "message" | "name",
+): unknown {
+  if ((typeof value !== "object" && typeof value !== "function") || value === null) {
+    return undefined;
+  }
+  return (value as Record<string, unknown>)[property];
+}
+
+/**
+ * Turns Node/undici's nested `fetch failed` errors into a stable one-line diagnostic.
+ * The useful code usually lives on `error.cause` rather than the top-level TypeError.
+ * Exported for unit tests.
+ */
+export function describeReadinessFailure(error: unknown): ReadinessFailure {
+  const chain: unknown[] = [];
+  const seen = new Set<unknown>();
+  let current: unknown = error;
+  while (current !== undefined && current !== null && !seen.has(current)) {
+    chain.push(current);
+    seen.add(current);
+    // Follow `cause` first; an AggregateError (e.g. localhost resolving to several
+    // addresses, all refused) keeps the real connect errors in `errors` instead.
+    const cause = errorProperty(current, "cause");
+    if (cause !== undefined && cause !== null) {
+      current = cause;
+      continue;
+    }
+    const errors = errorProperty(current, "errors");
+    current = Array.isArray(errors) ? errors[0] : undefined;
+  }
+
+  const code = chain
+    .map((item) => errorProperty(item, "code"))
+    .find((value): value is string => typeof value === "string" && value.length > 0);
+  const selected = [...chain].reverse().find((item) => {
+    const value = errorProperty(item, "message");
+    // Skip empty messages: an AggregateError's own message is "" and would mask real text.
+    return typeof value === "string" && value.length > 0;
+  });
+  const messageValue = selected === undefined ? undefined : errorProperty(selected, "message");
+  const nameValue = selected === undefined ? undefined : errorProperty(selected, "name");
+  const message =
+    typeof messageValue === "string" && messageValue.length > 0
+      ? messageValue
+      : typeof error === "string"
+        ? error
+        : "Unknown readiness probe error";
+  const name = typeof nameValue === "string" && nameValue !== "Error" ? nameValue : undefined;
+  const detail =
+    code !== undefined
+      ? `${code}: ${message}`
+      : name !== undefined
+        ? `${name}: ${message}`
+        : message;
+  const signature = chain
+    .flatMap((item) => [
+      errorProperty(item, "code"),
+      errorProperty(item, "name"),
+      errorProperty(item, "message"),
+    ])
+    .filter((value): value is string => typeof value === "string")
+    .join(" ")
+    .toUpperCase();
+
+  let kind: WebProbeFailureKind = "unknown";
+  if (signature.includes("ECONNREFUSED")) kind = "refused";
+  else if (
+    signature.includes("ETIMEDOUT") ||
+    signature.includes("TIMEOUT") ||
+    signature.includes("ABORTERROR")
+  ) {
+    kind = "timeout";
+  } else if (
+    signature.includes("ECONNRESET") ||
+    signature.includes("UND_ERR_SOCKET") ||
+    signature.includes("EPIPE")
+  ) {
+    kind = "reset";
+  } else if (signature.includes("EACCES") || signature.includes("EPERM")) {
+    kind = "permission";
+  } else if (signature.includes("ENOTFOUND") || signature.includes("EAI_AGAIN")) {
+    kind = "dns";
+  }
+
+  return { kind, detail };
+}
+
+/** Polls the service root path until it responds (any HTTP response counts as ready); retains the last connection failure for diagnostics on timeout. Exported for unit tests. */
+export async function waitForReady(
+  url: string,
+  timeoutMs = 15_000,
+  intervalMs = 300,
+): Promise<ReadinessResult> {
   const deadline = Date.now() + timeoutMs;
+  let lastError: unknown;
   for (;;) {
     try {
       // Each probe is capped at 1s: if the port is held by a non-HTTP program, the
@@ -109,11 +226,14 @@ async function waitForReady(url: string, timeoutMs = 15_000, intervalMs = 300): 
       // so treat that 302 as ready rather than chasing it to a name that may resolve to ::1.
       const res = await fetch(url, { redirect: "manual", signal: AbortSignal.timeout(1000) });
       void res.body?.cancel();
-      return true;
-    } catch {
-      // The service isn't listening yet (or this probe timed out): keep polling.
+      return { ready: true };
+    } catch (error) {
+      // The service isn't listening yet (or this probe timed out): retain the reason and keep polling.
+      lastError = error;
     }
-    if (Date.now() >= deadline) return false;
+    if (Date.now() >= deadline) {
+      return { ready: false, failure: describeReadinessFailure(lastError) };
+    }
     await new Promise((resolve) => setTimeout(resolve, intervalMs));
   }
 }
@@ -137,6 +257,12 @@ export function registerServeCommands(program: Command, t: Messages): void {
     .option("--port <port>", t.serve.port)
     .option("--host <host>", t.serve.host)
     .action(async (opts: { port?: string; host?: string }) => {
+      const existing = await existingInstanceUrl();
+      if (existing !== null) {
+        process.stderr.write(t.serverAlreadyRunning(existing) + "\n");
+        process.exitCode = 1;
+        return;
+      }
       await startServer(opts);
     });
 
@@ -147,11 +273,19 @@ export function registerServeCommands(program: Command, t: Messages): void {
     .option("--host <host>", t.serve.host)
     .option("--no-open", t.serve.noOpen)
     .action(async (opts: { port?: string; host?: string; open: boolean }) => {
+      const existing = await existingInstanceUrl();
+      if (existing !== null) {
+        process.stdout.write(t.webAlreadyRunning(existing) + "\n");
+        if (opts.open) openBrowser(existing);
+        return;
+      }
       const { host, port } = await startServer(opts);
       const url = browserUrl(host, port);
-      const ready = await waitForReady(url);
-      if (!ready) {
-        process.stdout.write(`${t.webTimeout(url)}\n`);
+      const readiness = await waitForReady(url);
+      if (!readiness.ready) {
+        process.stderr.write(
+          `${t.webProbeFailed(url, readiness.failure.detail, readiness.failure.kind, port)}\n`,
+        );
         return;
       }
       process.stdout.write(`${t.webReady(url)}\n`);

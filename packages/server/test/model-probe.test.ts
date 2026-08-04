@@ -48,13 +48,13 @@ describe("probeVerdict", () => {
   });
 
   it("fails a malformed ending with nothing received (broken response, not a working endpoint)", () => {
-    const verdict = probeVerdict({ status: "malformed", message: "unexpected EOF" }, false);
+    const verdict = probeVerdict({ status: "malformed", errorMessage: "unexpected EOF" }, false);
     expect(verdict).toEqual({ ok: false, message: "unexpected EOF" });
   });
 
   it("fails timeouts and errors even when content was streamed (flaky is not ok)", () => {
     expect(probeVerdict({ status: "timeout" }, true)).toEqual({ ok: false, message: "timeout" });
-    expect(probeVerdict({ status: "failed", message: "401 unauthorized" }, true)).toEqual({
+    expect(probeVerdict({ status: "failed", errorMessage: "401 unauthorized" }, true)).toEqual({
       ok: false,
       message: "401 unauthorized",
     });
@@ -62,7 +62,7 @@ describe("probeVerdict", () => {
   });
 
   it("truncates long failure messages to 300 characters", () => {
-    const verdict = probeVerdict({ status: "failed", message: "x".repeat(500) }, false);
+    const verdict = probeVerdict({ status: "failed", errorMessage: "x".repeat(500) }, false);
     expect(verdict.ok).toBe(false);
     if (!verdict.ok) expect(verdict.message).toHaveLength(300);
   });

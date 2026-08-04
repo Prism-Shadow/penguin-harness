@@ -54,6 +54,7 @@ import type {
   SessionResponse,
   SessionsResponse,
   SessionTracesResponse,
+  SkillArchiveInstallRequest,
   SkillInstallRequest,
   SkillLibraryResponse,
   RetryNowResponse,
@@ -221,12 +222,20 @@ export const getAgentTraces = (projectId: string, agentId: string) =>
 export const listSessions = (
   projectId: string,
   agentId: string,
-  opts?: { offset: number; limit: number; category?: SessionCategory; withCounts?: boolean },
+  opts?: {
+    offset: number;
+    limit: number;
+    category?: SessionCategory;
+    withCounts?: boolean;
+    /** Also list CLI-created Sessions (Trace discovery + adoption); default = web rows straight from the DB. */
+    cli?: boolean;
+  },
 ) => {
   const qs = opts
     ? `?limit=${opts.limit}&offset=${opts.offset}` +
       (opts.category ? `&category=${opts.category}` : "") +
-      (opts.withCounts ? "&counts=1" : "")
+      (opts.withCounts ? "&counts=1" : "") +
+      (opts.cli ? "&cli=1" : "")
     : "";
   return apiFetch<SessionsResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/sessions${qs}`,
@@ -518,6 +527,23 @@ export const installAgentSkills = (projectId: string, agentId: string, names: st
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/skills`,
     { method: "POST", body: { names } satisfies SkillInstallRequest },
   );
+
+/** Installs one skill from an uploaded zip (base64); 409 skill_exists unless overwrite; 201 returns the latest installed list. */
+export const installAgentSkillArchive = (
+  projectId: string,
+  agentId: string,
+  body: SkillArchiveInstallRequest,
+) =>
+  apiFetch<AgentSkillsResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
+      `/skills/archive`,
+    { method: "POST", body },
+  );
+
+/** Zip download URL for one installed skill (server sets Content-Disposition attachment); the export round-trips through installAgentSkillArchive. */
+export const agentSkillArchiveUrl = (projectId: string, agentId: string, name: string): string =>
+  `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
+  `/skills/${encodeURIComponent(name)}/archive`;
 
 export const removeAgentSkill = (projectId: string, agentId: string, name: string) =>
   apiFetch<void>(

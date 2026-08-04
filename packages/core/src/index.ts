@@ -52,11 +52,14 @@ export type { SessionTitleResult } from "./internal/session-title.js";
 // re-exported, because the server appends `[attached file: …]` lines for the composer's
 // uploads and both producers must place them identically (see the markers module).
 export { appendAttachmentLines } from "./internal/session-support.js";
+// Model-visible path spelling (forward slashes on Windows); the server uses it for its
+// [attached file: ...] lines so every path the model reads has one spelling per platform.
+export { modelVisiblePath } from "./internal/model-visible-path.js";
 export { Agent, createAgent } from "./agent.js";
 export type { CreateAgentOptions, CreateSessionOptions, ResumeSessionOptions } from "./agent.js";
 
 /** SDK version number. */
-export const VERSION = "0.1.5";
+export const VERSION = "0.2.0";
 /** Release build date (UTC yyyy-mm-dd), stamped by the release workflow next to VERSION; null in a dev/source build. */
 export const BUILD_DATE: string | null = null;
 // Version-string helpers (shared by the CLI's `penguin update` and the server's update check).

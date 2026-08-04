@@ -22,6 +22,7 @@
  * budget numbers. The embedded `objective` value is user data, which is why the closing tag
  * is matched line-anchored (see markers/goal-block.ts).
  */
+import { modelVisiblePath } from "../internal/model-visible-path.js";
 import { markerBlock, MARKER_TAGS } from "../omnimessage/markers/index.js";
 import { serializeGoalFile, UNLIMITED_BUDGET } from "./goal-file.js";
 
@@ -43,7 +44,7 @@ export interface GoalPromptArgs {
 /** The goal-file paragraph shared by both blocks: path, the status protocol, and the file's content. */
 function goalFileLines(args: GoalPromptArgs): string[] {
   return [
-    `Goal file: ${args.goalFilePath}`,
+    `Goal file: ${modelVisiblePath(args.goalFilePath)}`,
     "You may modify ONLY the `status` field of this file, and only to `complete` or",
     "`blocked`; the system reads it after every round. Its content:",
     "",

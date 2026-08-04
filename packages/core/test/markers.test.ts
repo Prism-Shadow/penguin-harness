@@ -132,6 +132,23 @@ describe("engine blocks ([turn_aborted] / [turn_retried] / [context_summary] / [
     expect(extractSummary("[summary]a[/summary] <summary>b</summary>")).toBe("a");
   });
 
+  it("extractSummary rescues content the model wrote outside the tags (issue #170)", () => {
+    // deepseek-v4-flash writes the tags as a "title" and the body after the closing tag.
+    expect(extractSummary("[summary]\n[/summary]\nThe actual summary body.")).toBe(
+      "The actual summary body.",
+    );
+    expect(extractSummary("[summary]\n[summary][/summary]\nBody after a doubled open tag.")).toBe(
+      "Body after a doubled open tag.",
+    );
+    // A stray opening tag inside the pair doesn't hide the text that follows it.
+    expect(extractSummary("[summary]\n[summary]\nBody inside.[/summary]")).toBe("Body inside.");
+    // An empty current-form pair doesn't shadow a non-empty legacy pair.
+    expect(extractSummary("[summary][/summary]<summary>legacy body</summary>")).toBe("legacy body");
+    // Genuinely empty output still extracts to "" — the engine treats that as a failed attempt.
+    expect(extractSummary("[summary][/summary]")).toBe("");
+    expect(extractSummary("[summary]\n[/summary]")).toBe("");
+  });
+
   it("turn blocks round-trip through unwrapSyntheticBlock, both forms, single-level", () => {
     const lines = [transcribeUserInput("go"), transcribeToolCall("read_file", "t1", "{}")];
     const aborted = buildTurnAbortedBlock(lines);

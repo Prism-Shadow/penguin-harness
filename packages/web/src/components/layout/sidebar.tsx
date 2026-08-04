@@ -36,6 +36,7 @@ import { agentDisplayName, projectDisplayName, useProject } from "../../state/pr
 import { useSessions } from "../../state/sessions";
 import {
   FOLDER_CATEGORIES,
+  SIDEBAR_GROUP_PAGE_SIZE,
   SIDEBAR_PAGE_SIZE,
   aggregateWorkspaceCounts,
   groupSessionsByWorkspace,
@@ -45,6 +46,7 @@ import {
   workspaceGroupKey,
 } from "../../lib/session-grouping";
 import type { FolderCategory, SessionPartition } from "../../lib/session-grouping";
+import { Switch } from "../ui/switch";
 import { Dropdown } from "../ui/dropdown";
 import { AgentAvatar } from "../ui/agent-avatar";
 import { Chevron } from "../ui/chevron";
@@ -63,7 +65,7 @@ import { clearDraft, sessionDraftKey } from "../../features/chat/draft-cache";
 import { CreateProjectDialog, ProjectSettingsDialog } from "./project-dialogs";
 import { ChangePasswordDialog } from "../account/change-password-dialog";
 import { UpdateDialog } from "../account/update-dialog";
-import { forceUpdateCheck, useVersionInfo } from "../../lib/use-version-info";
+import { forceUpdateCheck, updateCheckOutcome, useVersionInfo } from "../../lib/use-version-info";
 
 function Icon({ d, size = 16 }: { d: string; size?: number }) {
   return (
@@ -190,7 +192,7 @@ export function Sidebar({
   onCollapse?: () => void;
 }) {
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { user, logout, desktopMode } = useAuth();
   const { mode, setMode, fontScale, setFontScale, accent, setAccent, currency, setCurrency } =
     useTheme();
   const { lang, locale, setLang } = useLocale();
@@ -214,6 +216,8 @@ export function Sidebar({
     loading,
     remove,
     replace,
+    showCliSessions,
+    setShowCliSessions,
   } = useSessions();
   const chatMatch = useMatch("/chat/:sessionId");
   const activeSessionId = chatMatch?.params.sessionId ?? null;
@@ -244,20 +248,20 @@ export function Sidebar({
   /**
    * Manual update check (owner request): forces a lookup past the server's TTL cache and
    * pushes the result into the shared version-info store, so the reminder rows, badge,
-   * and dot appear immediately when a newer release is found — that visible change is
-   * the notification then. A toast fires only when nothing changes visibly (#54, one
-   * notification per action): up to date, checks disabled, or a failed lookup (the
-   * check is fail-soft — failure arrives as the `error` field, not an exception; the
-   * catch handles our own server being unreachable).
+   * and dot appear immediately when a newer release is found. Every outcome also toasts —
+   * up to date, found (naming the release; the row below turns into the update entry),
+   * checks disabled, and a failed lookup (the check is fail-soft — failure arrives as the
+   * `error` field, not an exception; the catch handles our own server being unreachable).
    */
   const runUpdateCheck = async () => {
     if (updateChecking) return;
     setUpdateChecking(true);
     try {
-      const res = await forceUpdateCheck();
-      if (res.disabled === true) toastInfo(S.update.checkDisabled);
-      else if (res.error !== undefined) toastError(S.update.checkFailed);
-      else if (!res.updateAvailable) toastSuccess(S.update.upToDate);
+      const outcome = updateCheckOutcome(await forceUpdateCheck());
+      if (outcome.kind === "disabled") toastInfo(S.update.checkDisabled);
+      else if (outcome.kind === "failed") toastError(S.update.checkFailed);
+      else if (outcome.kind === "found") toastSuccess(S.update.foundNew(outcome.latestVersion));
+      else toastSuccess(S.update.upToDate);
     } catch (e) {
       toastError(apiErrorText(e));
     } finally {
@@ -281,6 +285,7 @@ export function Sidebar({
   useEffect(() => {
     setCollapsedGroups(loadGroupSet(collapseStoreKey));
     setPinnedGroups(loadGroupSet(pinStoreKey));
+    setGroupCap(SIDEBAR_GROUP_PAGE_SIZE);
   }, [collapseStoreKey, pinStoreKey]);
   /** Expanded folders (subagent / scheduled / archived; collapsed by default), keyed by folderKey — each folder has its own open state. */
   const [openFolders, setOpenFolders] = useState<ReadonlySet<string>>(new Set());
@@ -288,6 +293,8 @@ export function Sidebar({
   const [pendingLoads, setPendingLoads] = useState<ReadonlySet<string>>(new Set());
   /** Per-group display cap for active rows (keyed by group key; absent = SIDEBAR_PAGE_SIZE). "More" raises it a page at a time. */
   const [groupCaps, setGroupCaps] = useState<ReadonlyMap<string, number>>(new Map());
+  /** How many GROUPS render (#139: dozens of Agents/Workspaces made the list too tall to scan); "more groups" raises it a page at a time, reset per Project and on a mode switch. */
+  const [groupCap, setGroupCap] = useState(SIDEBAR_GROUP_PAGE_SIZE);
   /** Session pending delete confirmation (null = none). */
   const [deletingSession, setDeletingSession] = useState<SessionInfo | null>(null);
   const [deletingBusy, setDeletingBusy] = useState(false);
@@ -300,6 +307,8 @@ export function Sidebar({
   const setGroupMode = (mode: GroupMode) => {
     localStorage.setItem(GROUP_MODE_KEY, mode);
     setGroupModeState(mode);
+    // The two modes have unrelated group lists: restart the reveal window.
+    setGroupCap(SIDEBAR_GROUP_PAGE_SIZE);
   };
 
   /** Workspace groups (workspace mode): computed from the flat list, temp directories merged last. */
@@ -665,6 +674,18 @@ export function Sidebar({
     );
   };
 
+  /** Reveal-next-page-of-groups row (render cap only — data loading is untouched). */
+  const moreGroupsRow = (total: number) => (
+    <button
+      type="button"
+      onClick={() => setGroupCap((c) => c + SIDEBAR_GROUP_PAGE_SIZE)}
+      className={`${folderClass} mt-1`}
+    >
+      <span className="w-3" aria-hidden />
+      {S.chat.moreGroups(total - groupCap)}
+    </button>
+  );
+
   const navItems: Array<{ to: string; label: string; icon: string }> = [
     { to: "/agents", label: S.nav.agents, icon: NAV_ICONS.agents },
     { to: "/skills", label: S.nav.skills, icon: NAV_ICONS.skills },
@@ -869,7 +890,7 @@ export function Sidebar({
           loading && agents.length === 0 ? (
             <SkeletonList rows={5} />
           ) : (
-            orderedAgents.map((agent) => {
+            orderedAgents.slice(0, groupCap).map((agent) => {
               const parts = partitionSessions(byAgent.get(agent.agentId) ?? []);
               const collapsed = collapsedGroups.has(agent.agentId);
               const pinned = pinnedGroups.has(agent.agentId);
@@ -933,14 +954,18 @@ export function Sidebar({
               );
             })
           )
-        ) : loading && sessions.length === 0 ? (
+        ) : null}
+        {groupMode === "agent" && orderedAgents.length > groupCap
+          ? moreGroupsRow(orderedAgents.length)
+          : null}
+        {groupMode === "agent" ? null : loading && sessions.length === 0 ? (
           <SkeletonList rows={5} />
         ) : orderedWorkspaceGroups.length === 0 ? (
           <p className="px-2.5 pt-3 text-xs text-gray-400 dark:text-gray-600">
             {S.chat.noSessions}
           </p>
         ) : (
-          orderedWorkspaceGroups.map((group) => {
+          orderedWorkspaceGroups.slice(0, groupCap).map((group) => {
             const parts = partitionSessions(group.sessions);
             const collapsed = collapsedGroups.has(group.key);
             const pinned = pinnedGroups.has(group.key);
@@ -1004,6 +1029,9 @@ export function Sidebar({
             );
           })
         )}
+        {groupMode === "workspace" && orderedWorkspaceGroups.length > groupCap
+          ? moreGroupsRow(orderedWorkspaceGroups.length)
+          : null}
       </div>
 
       {/* Bottom user config */}
@@ -1058,6 +1086,11 @@ export function Sidebar({
             <SettingRow label={S.settings.language}>
               <Segmented options={langOptions} value={lang} onChange={setLang} />
             </SettingRow>
+            {/* Off (default) = the sidebar lists only web-created Sessions, served straight
+                from the DB; on = CLI Sessions are discovered from the Trace directory too. */}
+            <SettingRow label={S.settings.showCliSessions}>
+              <Switch checked={showCliSessions} onChange={setShowCliSessions} />
+            </SettingRow>
           </div>
           <div className="mt-1 border-t border-gray-100 pt-1 dark:border-gray-800">
             <button
@@ -1082,43 +1115,54 @@ export function Sidebar({
                 While checking, the label swaps to the busy text and the version stays put.
                 Nothing is fetched until the menu first opens; the version span appears once
                 /api/version resolves. */}
-            <button
-              type="button"
-              disabled={updateChecking}
-              onClick={() => {
-                if (newVersion !== null) {
-                  setUserOpen(false);
-                  setUpdateDialogOpen(true);
-                } else {
-                  void runUpdateCheck();
-                }
-              }}
-              {...(versionDate !== null
-                ? { title: S.update.lastUpdated(formatMonthDay(versionDate, locale)) }
-                : {})}
-              className={`${menuItemClass} flex items-center justify-between gap-2 disabled:cursor-default disabled:opacity-60`}
-            >
-              <span className="flex min-w-0 items-center gap-2">
-                {newVersion !== null && (
-                  <span
-                    aria-hidden
-                    className="h-2 w-2 shrink-0 rounded-full bg-[var(--accent-bg)]"
-                  />
+            {/* Hidden in desktop mode: updates are the desktop app's job (electron-updater),
+                and the dialog's admin self-update re-runs the CLI entry, which does not
+                exist under the desktop shell. */}
+            {!desktopMode && (
+              <button
+                type="button"
+                disabled={updateChecking}
+                onClick={() => {
+                  if (newVersion !== null) {
+                    setUserOpen(false);
+                    setUpdateDialogOpen(true);
+                  } else {
+                    void runUpdateCheck();
+                  }
+                }}
+                {...(versionDate !== null
+                  ? { title: S.update.lastUpdated(formatMonthDay(versionDate, locale)) }
+                  : {})}
+                className={`${menuItemClass} flex items-center justify-between gap-2 disabled:cursor-default disabled:opacity-60`}
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  {updateChecking && (
+                    <span
+                      aria-hidden
+                      className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent opacity-70"
+                    />
+                  )}
+                  {!updateChecking && newVersion !== null && (
+                    <span
+                      aria-hidden
+                      className="h-2 w-2 shrink-0 rounded-full bg-[var(--accent-bg)]"
+                    />
+                  )}
+                  <span className="min-w-0 truncate">
+                    {updateChecking
+                      ? S.update.checking
+                      : newVersion !== null
+                        ? S.update.newVersion(newVersion)
+                        : S.update.checkNow}
+                  </span>
+                </span>
+                {version !== null && (
+                  <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
+                    {`v${version.version}`}
+                  </span>
                 )}
-                <span className="min-w-0 truncate">
-                  {updateChecking
-                    ? S.update.checking
-                    : newVersion !== null
-                      ? S.update.newVersion(newVersion)
-                      : S.update.checkNow}
-                </span>
-              </span>
-              {version !== null && (
-                <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
-                  {`v${version.version}`}
-                </span>
-              )}
-            </button>
+              </button>
+            )}
             {/* User management is visible only to admins (the page route also has its own guard as a fallback). */}
             {user?.isAdmin && (
               <button
@@ -1132,16 +1176,20 @@ export function Sidebar({
                 {S.admin.users}
               </button>
             )}
-            <button
-              type="button"
-              className="block w-full px-3.5 py-2 text-left text-sm text-red-600 transition-colors duration-150 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
-              onClick={() => {
-                setUserOpen(false);
-                void logout().then(() => navigate("/login"));
-              }}
-            >
-              {S.auth.logout}
-            </button>
+            {/* Hidden in desktop mode: the window IS the session — logging out would
+                strand the user on a login page whose password was never shown. */}
+            {!desktopMode && (
+              <button
+                type="button"
+                className="block w-full px-3.5 py-2 text-left text-sm text-red-600 transition-colors duration-150 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
+                onClick={() => {
+                  setUserOpen(false);
+                  void logout().then(() => navigate("/login"));
+                }}
+              >
+                {S.auth.logout}
+              </button>
+            )}
           </div>
         </Dropdown>
       </div>

@@ -28,6 +28,7 @@ import type { ToolDefinitionConfig } from "../../interfaces.js";
 import type { BuiltinTool, ToolExecutionContext, ToolResult } from "./types.js";
 import { atomicWriteFile } from "./file-utils.js";
 import { buildReplacementHunks, renderHunk } from "./diff.js";
+import { missingPathHint } from "./path-hint.js";
 
 /** Tool name constant (used only within this tool module, never exposed to Environment). */
 export const EDIT_FILE_NAME = "edit_file";
@@ -113,9 +114,12 @@ export function createEditFileTool(definition: ToolDefinitionConfig): BuiltinToo
       } catch (err) {
         if (signal?.aborted) return { stopReason: "aborted" };
         const code = (err as NodeJS.ErrnoException).code;
-        if (code === "ENOENT") {
+        // ENOTDIR is the same mistake seen one segment later (a file used as a directory),
+        // so it gets the same diagnosis instead of a raw errno message.
+        if (code === "ENOENT" || code === "ENOTDIR") {
+          const hint = await missingPathHint(resolved);
           yield delta(
-            `File not found: "${filePath}". edit_file only edits existing files — check the path, or use write_file to create it.`,
+            `File not found: "${filePath}". edit_file only edits existing files — check the path (absolute paths are supported), or use write_file to create it.${hint}`,
           );
         } else {
           const message = err instanceof Error ? err.message : String(err);

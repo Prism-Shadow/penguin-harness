@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { modelVisiblePath } from "../src/internal/model-visible-path.js";
 import { appendAttachmentLines, imagesToScratchpadPaths } from "../src/internal/session-support.js";
 import { Session } from "../src/index.js";
 import type {
@@ -69,7 +70,7 @@ describe("imagesToScratchpadPaths", () => {
     const files = await readdir(dir);
     expect(files).toHaveLength(2);
     for (const f of paths) {
-      expect(path.dirname(f)).toBe(dir);
+      expect(path.dirname(f)).toBe(modelVisiblePath(dir));
       expect(path.basename(f)).toMatch(/^upload-[0-9a-f]{8}\.png$/);
       expect(await readFile(f)).toEqual(PNG_1X1);
     }

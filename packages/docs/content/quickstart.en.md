@@ -18,7 +18,7 @@ For other options (npm, from source), see [Installation](/installation).
 PenguinHarness ships with no built-in model credentials, so configure a model first. Use the Models page in the Web UI, or the CLI:
 
 ```bash
-penguin config model add --provider deepseek --model-id deepseek-v4-pro --api-key sk-... --set-default
+penguin config model add --provider deepseek --model-id deepseek-v4-flash --api-key sk-... --set-default
 ```
 
 - A model is always referenced as a `(provider, model_id)` pair, so `--provider` and `--model-id` are both required — the Provider is never inferred from the model id. See [Models & Providers](/models) for the built-in groups.
@@ -30,7 +30,7 @@ penguin config model add --provider deepseek --model-id deepseek-v4-pro --api-ke
 penguin web
 ```
 
-The service runs at http://127.0.0.1:7364 and opens your browser (`--no-open` to skip). First login is `admin` / `penguin-2026` — change it right away. `penguin server` starts the same process headless.
+The service runs at http://127.0.0.1:7364 and opens your browser (`--no-open` to skip). First login is `admin` — the server prints the initial password (of the form `penguin-1234`) on first start; change it right away. `penguin server` starts the same process headless.
 
 ## One-shot run
 

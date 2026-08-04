@@ -1,9 +1,11 @@
 /**
  * e2e auth helper: with signup disabled, test users are always provisioned via
- * the built-in admin account, then logged in. The server seeds an admin
- * (admin / penguin-2026) on startup; a single e2e run shares one data root, and
- * provisioning is idempotent (reuses the user if it already exists) so a
- * single spec can be rerun on its own.
+ * the built-in admin account, then logged in. The seeded admin password is
+ * random in production; run.sh starts the e2e server with
+ * PENGUIN_SEED_ADMIN_PASSWORD=penguin-2026 to pin it to the constant below.
+ * A single e2e run shares one data root, and provisioning is idempotent
+ * (reuses the user if it already exists) so a single spec can be rerun on its
+ * own.
  */
 import { request } from "@playwright/test";
 

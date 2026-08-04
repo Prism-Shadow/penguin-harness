@@ -77,10 +77,10 @@ export const zh = {
     online: "在线安装",
     offline: "离线安装包",
     offlineNote:
-      "每个 GitHub Release 附带五个自包含离线安装包（Linux / macOS 各 x64 与 arm64，Windows 为 x64），内含程序包、SHA256 校验文件与安装器：在有网机器下载，拷贝到目标机器安装，全程无需联网。",
+      "每个 GitHub Release 每个目标只附带一个安装包（Linux / macOS 各 x64 与 arm64，Windows 为 x64），同一个文件同时服务在线与离线安装。包内封入程序负载、SHA256 校验文件与安装器：在有网机器下载这一个文件，拷贝到目标机器解压安装，全程无需联网。",
     offlineHints: {
-      linux: "arm64 机器换用 penguin-linux-arm64-offline.tar.gz。",
-      macos: "Apple 芯片用 arm64 包，Intel 芯片换用 penguin-darwin-x64-offline.tar.gz。",
+      linux: "arm64 机器换用 penguin-linux-arm64.tar.gz。",
+      macos: "Apple 芯片用 arm64 包，Intel 芯片换用 penguin-darwin-x64.tar.gz。",
       windows: "解压后也可直接双击 install.cmd 完成安装。",
     },
     offlineRelease: "前往 GitHub Releases 下载离线安装包",
@@ -176,7 +176,7 @@ export const zh = {
     tabCli: "命令行",
     webStep2: "启动 Web 界面",
     webStep2Desc:
-      "penguin web 启动本地服务并打开浏览器，用内置管理员 admin / penguin-2026 登录（登录后请尽快修改密码）。",
+      "penguin web 启动本地服务并打开浏览器，用内置管理员 admin 登录——初始密码在服务端首次启动时打印到终端（形如 penguin-1234），登录后请尽快修改密码。",
     webCmd: "penguin web   # 打开 http://127.0.0.1:7364",
     webStep3: "在界面里配置模型，开始对话",
     webStep3Desc:

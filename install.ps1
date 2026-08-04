@@ -3,9 +3,22 @@
 #   irm https://penguin.ooo/install.ps1 | iex
 #
 # Options:
-#   $env:PENGUIN_VERSION = "vX.Y.Z"     pin a version (same as -Version vX.Y.Z); default is the latest Release
+#   $env:PENGUIN_VERSION = "vX.Y.Z"     choose a version (same as -Version vX.Y.Z); a published Release
+#                                         installer defaults to its own version, an unstamped source copy to latest
 #   $env:PENGUIN_INSTALL_DIR = "<dir>"  install dir; default $env:USERPROFILE\.penguin
 #   $env:PENGUIN_ARCHIVE = "<file>"     install a local Release zip without network access (same as -ArchivePath)
+#   $env:PENGUIN_DOWNLOAD_SOURCE = "auto|oss|github" choose the online source; default auto (OSS, then same-version GitHub)
+#   $env:PENGUIN_DOWNLOAD_BASE_URL = "https://..." exact online asset directory selected by the stable forwarder
+#   $env:PENGUIN_DOWNLOAD_FALLBACK_BASE_URL = "https://..." same-version fallback asset directory
+#
+# Each Release attaches exactly one Windows artifact: penguin-win32-x64.zip, a shallow installer
+# bundle holding install.cmd, this script, the program payload (payload.zip) and the payload's
+# checksum. Online installs download that bundle and verify it against its published .sha256;
+# offline installs transfer the same single file, extract it once (the outer layer is flat, so
+# no deep paths are created) and double-click install.cmd. Both paths verify the payload
+# checksum sealed inside the bundle, then expand the payload straight into the short staging
+# directory. Releases up to v0.1.5 shipped the program tree directly (top-level penguin\);
+# such zips are still accepted, from -Version pins and -ArchivePath files alike.
 #
 # There is no -Universal on Windows: where the zip is unsuitable, install Node.js >= 24 and run
 # `npm install -g @prismshadow/penguin-cli` instead.
@@ -24,13 +37,103 @@ $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue" # Invoke-WebRequest progress rendering slows downloads massively on PS 5.1
 
 $Repo = "https://github.com/Prism-Shadow/penguin-harness"
+$OssOrigin = "https://penguin-harness-releases.oss-cn-beijing.aliyuncs.com"
+$OssReleaseRoot = "$OssOrigin/releases"
+$GitHubReleaseRoot = "$Repo/releases/download"
+$GitHubLatestBase = "$Repo/releases/latest/download"
 $Asset = "penguin-win32-x64.zip"
+$PayloadName = "payload.zip"
+# The release workflow replaces this token with the immutable tag before publishing both the
+# standalone installer and the copy sealed inside the Windows bundle.
+$EmbeddedReleaseVersion = "__PENGUIN_RELEASE_VERSION__"
 
 function Fail([string]$Message) {
   # `throw` rather than `exit`: the penguin.ooo forwarder runs this installer as an in-memory
   # script block (see packages/landing/public/install.ps1), where `exit` would terminate the
   # user's whole PowerShell session. `throw` aborts cleanly in both file and script-block runs.
   throw "error: $Message"
+}
+
+# Lists a zip's top-level entry names without extracting (PS 5.1-safe; Expand-Archive itself
+# uses the same .NET type). Used to tell an installer bundle (contains payload.zip) from a
+# program archive (payload.zip itself, or a pre-0.1.6 release zip with a top-level penguin\).
+function Get-ZipEntryNames([string]$ZipPath) {
+  Add-Type -AssemblyName System.IO.Compression.FileSystem
+  $Zip = [IO.Compression.ZipFile]::OpenRead($ZipPath)
+  try {
+    return @($Zip.Entries | ForEach-Object { $_.FullName })
+  } finally {
+    $Zip.Dispose()
+  }
+}
+
+# Verifies a file against a sha256sum-format checksum file (`<hex>  <filename>`; the first
+# token is the hash). Checksums are never optional: every install path either downloads the
+# published .sha256 or reads the one sealed inside the bundle.
+function Assert-Sha256([string]$FilePath, [string]$ShaPath, [string]$Label) {
+  $Expected = ((Get-Content -LiteralPath $ShaPath -Raw).Trim() -split "\s+")[0]
+  if (-not $Expected) { Fail "checksum file is empty or malformed: $ShaPath" }
+  $Actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $FilePath).Hash
+  if ($Actual -ine $Expected) { Fail "checksum mismatch for $([IO.Path]::GetFileName($FilePath))." }
+  Write-Host "$Label checksum OK."
+}
+
+function Assert-HttpsUrl([string]$Name, [string]$Value) {
+  try { $Uri = [Uri]$Value } catch { Fail "$Name is not a valid URL" }
+  if (-not $Uri.IsAbsoluteUri -or $Uri.Scheme -ne "https") {
+    Fail "$Name must be an absolute HTTPS URL"
+  }
+}
+
+function Test-ReleaseTag([string]$Value) {
+  return $Value -match '^v[0-9A-Za-z][0-9A-Za-z._-]*$'
+}
+
+function Get-OssLatestTag([string]$ManifestPath) {
+  Remove-Item -LiteralPath $ManifestPath -Force -ErrorAction SilentlyContinue
+  try {
+    Invoke-WebRequest -Uri "$OssOrigin/latest.json" -OutFile $ManifestPath -UseBasicParsing -TimeoutSec 8 | Out-Null
+  } catch {
+    Remove-Item -LiteralPath $ManifestPath -Force -ErrorAction SilentlyContinue
+    return ""
+  }
+  try {
+    $Manifest = [IO.File]::ReadAllText($ManifestPath, [Text.UTF8Encoding]::new($false)) | ConvertFrom-Json
+    $CandidateTag = [string]$Manifest.tag
+    $CandidateBase = ([string]$Manifest.releaseBaseUrl).TrimEnd('/')
+    if ([int]$Manifest.schemaVersion -eq 1 -and
+        (Test-ReleaseTag $CandidateTag) -and
+        $CandidateBase -eq "$OssReleaseRoot/$CandidateTag") {
+      return $CandidateTag
+    }
+  } catch {
+  }
+  return ""
+}
+
+function Get-DownloadSourceLabel([string]$BaseUrl) {
+  try { $HostName = ([Uri]$BaseUrl).Host } catch { return "configured mirror" }
+  if ($HostName -like "*.aliyuncs.com") { return "OSS mirror" }
+  if ($HostName -eq "github.com") { return "GitHub" }
+  return "configured mirror"
+}
+
+function Get-ReleasePair(
+  [string]$BaseUrl,
+  [string]$ZipPath,
+  [string]$ShaPath
+) {
+  $Label = Get-DownloadSourceLabel $BaseUrl
+  Write-Host "Downloading $Asset from $Label ..."
+  Remove-Item -LiteralPath $ZipPath, $ShaPath -Force -ErrorAction SilentlyContinue
+  try {
+    Invoke-WebRequest -Uri "$BaseUrl/$Asset" -OutFile $ZipPath -UseBasicParsing
+    Invoke-WebRequest -Uri "$BaseUrl/$Asset.sha256" -OutFile $ShaPath -UseBasicParsing
+    return $true
+  } catch {
+    Remove-Item -LiteralPath $ZipPath, $ShaPath -Force -ErrorAction SilentlyContinue
+    return $false
+  }
 }
 
 function Restore-PreviousInstall(
@@ -63,15 +166,49 @@ if (-not $InstallDir) {
 if (-not $ArchivePath) {
   $ArchivePath = if ($env:PENGUIN_ARCHIVE) { $env:PENGUIN_ARCHIVE } else { "" }
 }
-# An extracted offline bundle keeps this script, the Windows zip and its checksum together.
-# `$PSScriptRoot` is empty for the documented `irm ... | iex` path, so online installs do not
-# accidentally pick up an unrelated archive from the caller's current directory.
+$DownloadBaseUrl = if ($env:PENGUIN_DOWNLOAD_BASE_URL) {
+  $env:PENGUIN_DOWNLOAD_BASE_URL.TrimEnd('/')
+} else {
+  ""
+}
+$DownloadFallbackBaseUrl = if ($env:PENGUIN_DOWNLOAD_FALLBACK_BASE_URL) {
+  $env:PENGUIN_DOWNLOAD_FALLBACK_BASE_URL.TrimEnd('/')
+} else {
+  ""
+}
+$SourceMode = if ($env:PENGUIN_DOWNLOAD_SOURCE) {
+  $env:PENGUIN_DOWNLOAD_SOURCE.ToLowerInvariant()
+} else {
+  "auto"
+}
+# An extracted installer bundle keeps install.cmd, this script, payload.zip and its checksum
+# together. `$PSScriptRoot` is empty for the documented `irm ... | iex` path, so online installs
+# do not accidentally pick up an unrelated archive from the caller's current directory.
 if (-not $ArchivePath -and $PSScriptRoot) {
-  $SiblingArchive = Join-Path $PSScriptRoot $Asset
+  $SiblingArchive = Join-Path $PSScriptRoot $PayloadName
   if (Test-Path -LiteralPath $SiblingArchive -PathType Leaf) { $ArchivePath = $SiblingArchive }
 }
 if ($ArchivePath -and $Version) {
   Fail "-ArchivePath/PENGUIN_ARCHIVE cannot be combined with -Version/PENGUIN_VERSION"
+}
+if ($Version -and -not (Test-ReleaseTag $Version)) {
+  Fail "invalid release version: $Version"
+}
+if ($SourceMode -notin @("auto", "oss", "github")) {
+  Fail "PENGUIN_DOWNLOAD_SOURCE must be auto, oss, or github"
+}
+$ResolvedReleaseVersion = if ($Version) {
+  $Version
+} elseif (Test-ReleaseTag $EmbeddedReleaseVersion) {
+  $EmbeddedReleaseVersion
+} else {
+  ""
+}
+if ($DownloadBaseUrl) {
+  Assert-HttpsUrl "PENGUIN_DOWNLOAD_BASE_URL" $DownloadBaseUrl
+}
+if ($DownloadFallbackBaseUrl) {
+  Assert-HttpsUrl "PENGUIN_DOWNLOAD_FALLBACK_BASE_URL" $DownloadFallbackBaseUrl
 }
 
 # --- Platform preconditions: 64-bit Windows; the only Windows package is x64 (ARM64 runs it emulated) ---
@@ -89,12 +226,10 @@ try {
   # .NET builds where the enum is immutable already default to TLS 1.2+.
 }
 
-# --- Download (latest Release by default; PENGUIN_VERSION pins a version) ---
-if ($Version) {
-  $BaseUrl = "$Repo/releases/download/$Version"
-} else {
-  $BaseUrl = "$Repo/releases/latest/download"
-}
+# --- Download. Explicit forwarder/configured URLs win. Otherwise a stamped Release installer
+#     uses its own immutable version: auto prefers OSS and falls back only to the same GitHub
+#     tag. An unstamped source-tree installer resolves latest.json first so it also locks one
+#     version before downloading assets. ---
 $Tmp = Join-Path ([IO.Path]::GetTempPath()) "penguin-install-$PID"
 if (Test-Path $Tmp) { Remove-Item -Recurse -Force $Tmp }
 New-Item -ItemType Directory -Path $Tmp | Out-Null
@@ -114,19 +249,77 @@ try {
     $ArchiveName = [IO.Path]::GetFileName($ZipPath)
     Write-Host "Using local archive $ZipPath ..."
   } else {
-    Write-Host "Downloading $BaseUrl/$Asset ..."
-    $ZipPath = Join-Path $Tmp $Asset
-    try {
-      Invoke-WebRequest -Uri "$BaseUrl/$Asset" -OutFile $ZipPath -UseBasicParsing
-    } catch {
-      Fail "download failed. Check the version tag and your network, then retry. ($($_.Exception.Message))"
+    $BaseUrl = ""
+    $FallbackBaseUrl = $DownloadFallbackBaseUrl
+    if ($DownloadBaseUrl) {
+      $BaseUrl = $DownloadBaseUrl
+    } elseif ($SourceMode -eq "github") {
+      $BaseUrl = if ($ResolvedReleaseVersion) {
+        "$GitHubReleaseRoot/$ResolvedReleaseVersion"
+      } else {
+        $GitHubLatestBase
+      }
+    } else {
+      $SelectedTag = $ResolvedReleaseVersion
+      if (-not $SelectedTag) {
+        $SelectedTag = Get-OssLatestTag (Join-Path $Tmp "latest.json")
+      }
+      if ($SelectedTag) {
+        $BaseUrl = "$OssReleaseRoot/$SelectedTag"
+        if ($SourceMode -eq "auto" -and -not $FallbackBaseUrl) {
+          $FallbackBaseUrl = "$GitHubReleaseRoot/$SelectedTag"
+        }
+      } elseif ($SourceMode -eq "oss") {
+        Fail "the OSS mirror is unavailable or its release metadata is invalid."
+      } else {
+        $BaseUrl = $GitHubLatestBase
+      }
     }
+
+    # Online: download the canonical bundle; the published checksum is mandatory.
+    $ZipPath = Join-Path $Tmp $Asset
     $ArchiveName = $Asset
+    $ShaPath = Join-Path $Tmp "$Asset.sha256"
+    if (-not (Get-ReleasePair $BaseUrl $ZipPath $ShaPath)) {
+      if ($FallbackBaseUrl -and $FallbackBaseUrl -ne $BaseUrl) {
+        Write-Host "Primary download source unavailable; trying $(Get-DownloadSourceLabel $FallbackBaseUrl) ..."
+        if (-not (Get-ReleasePair $FallbackBaseUrl $ZipPath $ShaPath)) {
+          Fail "download failed from both the primary source and its fallback. Check your network, then retry."
+        }
+      } else {
+        Fail "download failed from $(Get-DownloadSourceLabel $BaseUrl). Check the version tag and your network, then retry."
+      }
+    }
+    Assert-Sha256 $ZipPath $ShaPath "Bundle"
   }
 
-  # --- SHA256 verify: mandatory offline; online keeps the existing warn-and-skip fallback. ---
-  $HaveSha = $true
-  if ($UsingLocalArchive) {
+  # --- Resolve the program payload. An installer bundle (contains payload.zip) is opened flat
+  #     and its sealed payload checksum verified; a program archive (payload.zip itself, or a
+  #     pre-0.1.6 release zip with a top-level penguin\) is used directly. ---
+  $ArchiveShape = if ((Get-ZipEntryNames $ZipPath) -contains $PayloadName) { "bundle" } else { "program" }
+  if ($ArchiveShape -eq "bundle") {
+    # A local bundle is self-verifying through its sealed payload checksum; when the published
+    # outer .sha256 was transferred alongside it, verify that layer too.
+    if ($UsingLocalArchive -and (Test-Path -LiteralPath "$ZipPath.sha256" -PathType Leaf)) {
+      Assert-Sha256 $ZipPath "$ZipPath.sha256" "Bundle"
+    }
+    $BundleDir = Join-Path $Tmp "bundle"
+    New-Item -ItemType Directory -Path $BundleDir | Out-Null
+    Write-Host "Opening installer bundle ..."
+    # The outer layer is flat (four files), so this extraction never creates deep paths.
+    Expand-Archive -LiteralPath $ZipPath -DestinationPath $BundleDir -Force
+    $ZipPath = Join-Path $BundleDir $PayloadName
+    if (-not (Test-Path -LiteralPath $ZipPath -PathType Leaf)) {
+      Fail "unexpected bundle layout: $PayloadName missing."
+    }
+    if (-not (Test-Path -LiteralPath "$ZipPath.sha256" -PathType Leaf)) {
+      Fail "unexpected bundle layout: $PayloadName.sha256 missing."
+    }
+    Assert-Sha256 $ZipPath "$ZipPath.sha256" "Payload"
+  } elseif ($UsingLocalArchive) {
+    # Program archive from disk: an adjacent checksum is required — its own, or the canonical
+    # asset checksum next to a renamed legacy file. (An online download was already verified
+    # against the published .sha256 above.)
     $ShaPath = "$ZipPath.sha256"
     if (-not (Test-Path -LiteralPath $ShaPath -PathType Leaf) -and
         $ArchiveName -ine $Asset) {
@@ -138,24 +331,7 @@ try {
     if (-not (Test-Path -LiteralPath $ShaPath -PathType Leaf)) {
       Fail "offline checksum file not found: $ShaPath"
     }
-  } else {
-    $ShaPath = Join-Path $Tmp "$Asset.sha256"
-    try {
-      Invoke-WebRequest -Uri "$BaseUrl/$Asset.sha256" -OutFile $ShaPath -UseBasicParsing
-    } catch {
-      $HaveSha = $false
-      Write-Host "warning: checksum file not available; skipping verification."
-    }
-  }
-  if ($HaveSha) {
-    # The .sha256 file is `<hex>  <filename>` (sha256sum format); the first token is the hash.
-    $Expected = ((Get-Content -LiteralPath $ShaPath -Raw).Trim() -split "\s+")[0]
-    $Actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $ZipPath).Hash
-    if ($Expected -and ($Actual -ieq $Expected)) {
-      Write-Host "Checksum OK."
-    } else {
-      Fail "checksum mismatch for $Asset."
-    }
+    Assert-Sha256 $ZipPath $ShaPath "Payload"
   }
 
   # --- Extract into staging, then swap by same-volume renames. Keep the previous dirs in .old.$PID
@@ -187,7 +363,8 @@ try {
     if ([string]$TargetProperty.Value -ine "win32-x64") {
       Fail "package target mismatch: expected win32-x64, found $($TargetProperty.Value)."
     }
-  } elseif ($UsingLocalArchive -and $ArchiveName -ine $Asset) {
+  } elseif ($UsingLocalArchive -and $ArchiveShape -eq "program" -and
+            $ArchiveName -ine $Asset -and $ArchiveName -ine $PayloadName) {
     Fail "a renamed local archive must contain package-manifest.json; use the original filename for legacy packages."
   }
 
@@ -211,7 +388,13 @@ try {
       }
     }
 
-    # --- Launcher shims: shipped in the zip; (re)generate only when missing. ---
+    # --- Launcher shim: shipped in the payload; (re)generated only when missing. There is
+    #     deliberately no penguin.ps1 launcher — PowerShell would prefer it over penguin.cmd on
+    #     PATH, and client Windows defaults to the Restricted execution policy, so a .ps1
+    #     launcher makes the plain `penguin` command fail with "running scripts is disabled".
+    #     Batch files are policy-exempt and both PowerShell and cmd.exe resolve penguin.cmd.
+    #     (bin\ is swapped wholesale above, so upgrading also removes the penguin.ps1 that
+    #     pre-0.1.6 payloads shipped.) ---
     $CmdShim = Join-Path $InstallDir "bin\penguin.cmd"
     if (-not (Test-Path -LiteralPath $CmdShim)) {
       @(
@@ -227,19 +410,6 @@ try {
         ')'
         'exit /b %ERRORLEVEL%'
       ) | Set-Content -LiteralPath $CmdShim -Encoding ascii
-    }
-    $Ps1Shim = Join-Path $InstallDir "bin\penguin.ps1"
-    if (-not (Test-Path -LiteralPath $Ps1Shim)) {
-      @(
-        '$dir = Split-Path -Parent $PSScriptRoot'
-        'if (-not $env:PENGUIN_WEB_DIST) { $env:PENGUIN_WEB_DIST = Join-Path $dir "web" }'
-        '$sh = Join-Path $dir "git\usr\bin\sh.exe"'
-        'if (Test-Path $sh) { $env:PENGUIN_BUNDLED_SHELL = $sh }'
-        '$node = Join-Path $dir "node\node.exe"'
-        'if (-not (Test-Path $node)) { $node = "node" }'
-        '& $node (Join-Path $dir "lib\dist\index.js") @args'
-        'exit $LASTEXITCODE'
-      ) | Set-Content -LiteralPath $Ps1Shim -Encoding ascii
     }
     if (-not (Test-Path -LiteralPath $CmdShim)) { Fail "install incomplete: $CmdShim missing." }
 
@@ -310,7 +480,24 @@ if ($env:OS -eq "Windows_NT") {
     if (-not $OnPath) {
       $NewPath = if ($RawPath -and -not $RawPath.EndsWith(";")) { "$RawPath;$BinDir" } else { "$RawPath$BinDir" }
       $EnvKey.SetValue("Path", $NewPath, $Kind)
-      $PathUpdateMessage = "note: installation succeeded and $BinDir was appended to your user Path. Restart your terminal so 'penguin' is found."
+      # A raw registry write does not broadcast WM_SETTINGCHANGE, so Explorer — and every
+      # terminal window launched from it afterwards — would keep the stale Path until the next
+      # logon. Broadcast it the way [Environment]::SetEnvironmentVariable would; best-effort,
+      # a failure only means new terminals need a fresh logon to see the Path.
+      try {
+        if (-not ("PenguinInstaller.NativeMethods" -as [type])) {
+          Add-Type -Namespace PenguinInstaller -Name NativeMethods -MemberDefinition @'
+[System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true, CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+public static extern System.IntPtr SendMessageTimeout(System.IntPtr hWnd, uint Msg, System.UIntPtr wParam, string lParam, uint fuFlags, uint uTimeout, out System.UIntPtr lpdwResult);
+'@
+        }
+        $BroadcastResult = [UIntPtr]::Zero
+        # HWND_BROADCAST (0xffff), WM_SETTINGCHANGE (0x1a), SMTO_ABORTIFHUNG (0x2), 5s timeout.
+        [PenguinInstaller.NativeMethods]::SendMessageTimeout([IntPtr]0xffff, 0x1a, [UIntPtr]::Zero,
+          "Environment", 2, 5000, [ref]$BroadcastResult) | Out-Null
+      } catch {
+      }
+      $PathUpdateMessage = "note: installation succeeded and $BinDir was appended to your user Path. Open a new terminal window so 'penguin' is found (a new tab of an already-running terminal keeps the old Path)."
     }
   } finally {
     $EnvKey.Close()
@@ -328,5 +515,5 @@ if ($PathUpdateMessage) {
 Write-Host ""
 Write-Host "Get started:"
 Write-Host "  penguin --help    # all commands"
-Write-Host "  penguin web       # start the Web UI at http://127.0.0.1:7364 (initial login: admin / penguin-2026)"
+Write-Host "  penguin web       # start the Web UI at http://127.0.0.1:7364 (login: admin, initial password printed on first start)"
 Write-Host "  penguin server    # headless server (PORT / HOST to override)"

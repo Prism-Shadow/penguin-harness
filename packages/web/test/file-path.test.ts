@@ -80,6 +80,24 @@ describe("toWorkspaceRelative", () => {
     expect(toWorkspaceRelative("C:\\Users\\me\\ws", win)).toBe(null);
   });
 
+  it("Windows Workspace: forward-slash and mixed spellings of the same path also match", () => {
+    const win = "C:\\Users\\me\\ws";
+    // Core's model-visible spelling uses forward slashes on Windows; the card must still strip.
+    expect(toWorkspaceRelative("C:/Users/me/ws/sub/a.txt", win)).toBe("sub/a.txt");
+    expect(toWorkspaceRelative("C:/Users/me/ws\\sub/a.txt", win)).toBe("sub/a.txt");
+    // Drive letters are case-insensitive on Windows; the rest of the path is not.
+    expect(toWorkspaceRelative("c:/Users/me/ws/sub/a.txt", win)).toBe("sub/a.txt");
+    expect(toWorkspaceRelative("C:/Users/ME/ws/sub/a.txt", win)).toBe(null);
+    // A forward-slash Workspace value matches a backslash assistant path too.
+    expect(toWorkspaceRelative("C:\\Users\\me\\ws\\sub\\a.txt", "C:/Users/me/ws")).toBe(
+      "sub/a.txt",
+    );
+  });
+
+  it("Windows Workspace: relative backslash paths split into segments", () => {
+    expect(toWorkspaceRelative("dir\\name.txt", "C:\\Users\\me\\ws")).toBe("dir/name.txt");
+  });
+
   it("backslashes in POSIX filenames are not globally replaced (converted only on a Windows prefix match)", () => {
     expect(toWorkspaceRelative("dir\\name.txt", WS)).toBe("dir\\name.txt");
   });

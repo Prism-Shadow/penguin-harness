@@ -16,7 +16,11 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { randomBytes } from "node:crypto";
-import { appendAttachmentLines, attachedFileLine } from "@prismshadow/penguin-core";
+import {
+  appendAttachmentLines,
+  attachedFileLine,
+  modelVisiblePath,
+} from "@prismshadow/penguin-core";
 import type { OmniMessage } from "@prismshadow/penguin-core";
 import { HttpError } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
@@ -101,10 +105,15 @@ export interface TaskAttachment {
 /**
  * Validate one `{type:"file"}` input part. Shape problems are 400s in the same style as the
  * neighbouring text/image checks; only the size cap answers 413 (`file_too_large`, the code
- * the Web App already has copy for). `index` is the part's position in `input`, so the message
- * points at the offending item like the other input errors do.
+ * the Web App already has copy for). `index` is the part's position in the request array
+ * named by `field` (default `input`; the steer route passes `files`), so the message points
+ * at the offending item like the other input errors do.
  */
-export function parseAttachmentPart(part: Record<string, unknown>, index: number): TaskAttachment {
+export function parseAttachmentPart(
+  part: Record<string, unknown>,
+  index: number,
+  field = "input",
+): TaskAttachment {
   const fileName = part.fileName;
   // Path separators and `..` are rejected rather than sanitized away: the name is the user's,
   // and a name that looks like a path means the caller is confused about the contract (the
@@ -118,7 +127,7 @@ export function parseAttachmentPart(part: Record<string, unknown>, index: number
     fileName.includes("\0")
   ) {
     throw badRequest(
-      `input[${index}].fileName must be a non-empty file name without path separators or "..".`,
+      `${field}[${index}].fileName must be a non-empty file name without path separators or "..".`,
     );
   }
   const dataUrl = part.dataUrl;
@@ -129,11 +138,11 @@ export function parseAttachmentPart(part: Record<string, unknown>, index: number
   const match =
     typeof dataUrl === "string" ? /^data:[^,]*;base64,([A-Za-z0-9+/=\s]+)$/.exec(dataUrl) : null;
   if (!match) {
-    throw badRequest(`input[${index}].dataUrl must be a base64 data: URL of the file's bytes.`);
+    throw badRequest(`${field}[${index}].dataUrl must be a base64 data: URL of the file's bytes.`);
   }
   const bytes = Buffer.from(match[1]!, "base64");
   if (bytes.length === 0) {
-    throw badRequest(`input[${index}].dataUrl decodes to an empty file.`);
+    throw badRequest(`${field}[${index}].dataUrl decodes to an empty file.`);
   }
   if (bytes.length > MAX_ATTACHMENT_BYTES) {
     throw new HttpError(
@@ -293,5 +302,11 @@ export async function attachFilesToInput(
     await removeAttachments(written);
     throw err;
   }
-  return { input: appendAttachmentLines(messages, written.map(attachedFileLine)), written };
+  return {
+    input: appendAttachmentLines(
+      messages,
+      written.map((filePath) => attachedFileLine(modelVisiblePath(filePath))),
+    ),
+    written,
+  };
 }

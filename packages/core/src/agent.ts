@@ -23,7 +23,7 @@ import {
   projectDir,
   goalFilePath,
   resolveModelRef,
-  scratchpadDir,
+  sessionScratchpadDir,
   systemConfigPath,
   tracesDir,
   type AgentState,
@@ -256,6 +256,7 @@ export class Agent {
     );
 
     const rt = await this.buildRuntime({
+      sessionId,
       workspaceDir,
       modelEntry,
       apiKey,
@@ -292,8 +293,10 @@ export class Agent {
       createBareLLM: rt.createBareLLM,
       compaction: rt.compaction,
       // Where an input image lands when it becomes a path line (see SessionConfig.imagesDir).
-      imagesDir: path.join(
-        scratchpadDir(this.state.root, this.state.projectId, this.state.agentId),
+      imagesDir: sessionScratchpadDir(
+        this.state.root,
+        this.state.projectId,
+        this.state.agentId,
         sessionId,
       ),
       modelHasVision: modelEntry.vision !== false,
@@ -388,6 +391,7 @@ export class Agent {
     const thinkingLevel = this.state.systemConfig.model?.thinking_level;
 
     const rt = await this.buildRuntime({
+      sessionId,
       workspaceDir,
       modelEntry,
       apiKey,
@@ -449,8 +453,10 @@ export class Agent {
       createBareLLM: rt.createBareLLM,
       compaction: rt.compaction,
       // Where an input image lands when it becomes a path line (see SessionConfig.imagesDir).
-      imagesDir: path.join(
-        scratchpadDir(this.state.root, this.state.projectId, this.state.agentId),
+      imagesDir: sessionScratchpadDir(
+        this.state.root,
+        this.state.projectId,
+        this.state.agentId,
         sessionId,
       ),
       modelHasVision: modelEntry.vision !== false,
@@ -492,6 +498,7 @@ export class Agent {
    * and its post-compaction rebuild factory, and the compaction config.
    */
   private async buildRuntime(args: {
+    sessionId: string;
     workspaceDir: string;
     /** This Session's Model entry: the caller (createSession / resumeSession) has already validated it exists in the config. */
     modelEntry: ModelEntry;
@@ -511,6 +518,7 @@ export class Agent {
     compaction: CompactionSettings;
   }> {
     const {
+      sessionId,
       workspaceDir,
       modelEntry,
       apiKey,
@@ -685,6 +693,14 @@ export class Agent {
     const environment = new Environment({
       workspaceDir,
       toolConfig,
+      // The Session's generic scratchpad root; Environment derives its truncated-tool-output
+      // recovery directory from it.
+      sessionScratchpadDir: sessionScratchpadDir(
+        this.state.root,
+        this.state.projectId,
+        this.state.agentId,
+        sessionId,
+      ),
       services: { subagentRunner, ...(visionDescriber ? { visionDescriber } : {}) },
       ...(Object.keys(vault).length > 0 ? { vault } : {}),
     });

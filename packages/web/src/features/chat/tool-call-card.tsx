@@ -14,10 +14,10 @@
  * segment is shown; the wait itself is marked by the amber hourglass icon alone, since the
  * approval block below the row is always on screen and names the tool and its arguments.
  */
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { S } from "../../lib/strings";
 import { humanizeDuration } from "../../lib/format";
-import type { StopReason } from "@prismshadow/penguin-core/omnimessage";
+import { stripAnsi } from "../../lib/strip-ansi";
 import { approvalKey } from "../../lib/omni/stream-model";
 import type { ToolCallItem } from "../../lib/omni/stream-model";
 import { Chevron } from "../../components/ui/chevron";
@@ -42,18 +42,6 @@ const DESCRIBED_TOOLS = new Set([
 const FILE_TOOLS = new Set(["read_file", "edit_file", "write_file"]);
 
 /**
- * Colour for the row's `[stop reason]` marker: amber for a user interruption, red for a real
- * failure. StatusIcon has a single failure tone, so the icon alone cannot carry this — without
- * the marker an aborted call reads exactly like a failed one. Mirrors the warning-vs-error
- * split `stopReasonTone` gives the Badge used elsewhere (Trace viewer, composer).
- */
-function stopReasonToneClass(stopReason: string): string {
-  return stopReason === "aborted"
-    ? "text-amber-600 dark:text-amber-400"
-    : "text-red-600 dark:text-red-400";
-}
-
-/**
  * Shortens a path for one-line display: at most one parent directory plus the filename
  * (`…/parent/file.ts`); paths already within that shape are shown as-is (same rule as the
  * CLI's tool-render). The full path stays in the expanded arguments block.
@@ -75,35 +63,49 @@ export function shortenPath(p: string): string {
 export function previewArguments(name: string, argsJson: string): string {
   if (name === "exec_command") {
     const cmd = extractStringField(argsJson, "cmd");
-    if (cmd !== null) return `$ ${cmd.replace(/\s+/g, " ").trim()}`;
+    if (cmd !== null) return `$ ${cmd.value.replace(/\s+/g, " ").trim()}`;
   }
   if (FILE_TOOLS.has(name)) {
     const filePath = extractStringField(argsJson, "file_path");
-    if (filePath !== null) return shortenPath(filePath.replace(/\s+/g, " ").trim());
+    if (filePath !== null) return shortenPath(filePath.value.replace(/\s+/g, " ").trim());
   }
   return argsJson.replace(/\s+/g, " ").trim();
 }
 
 /**
  * Collapsed-header subtitle: the human-readable line next to the tool name — the
- * model-written `description` argument for the command/subagent tools (declared in their
+ * model-written `description` argument when the call carries one (declared in the tool's
  * config schema; per-tool `call_description: false` removes it, in which case the model
  * never sends it), or the shortened file path for the file tools. Null when there is
  * nothing beyond the raw arguments.
+ *
+ * The subtitle appears once, fully formed, never mid-stream (#137): a growing description
+ * re-solves the header's flex line every frame, and `shortenPath` on a still-growing path
+ * rewrites non-monotonically (`/ho` → `…/cc/dev` → `…/dev/x`) — so a field renders only
+ * after its closing quote. `settled` (arguments finished streaming) lifts that gate: the
+ * text cannot change anymore, which also covers a call that never closed the string
+ * (aborted / malformed). Same rule as the CLI's tool-render. The wait is short by
+ * construction — `description` is required first in schema order, and `file_path` is the
+ * first file-tool argument — while `write_file`'s `content` may stream long after.
  */
-export function headerSubtitle(name: string, argsJson: string): string | null {
-  if (DESCRIBED_TOOLS.has(name)) {
+export function headerSubtitle(name: string, argsJson: string, settled = true): string | null {
+  // The description wins whenever the call carries one: schemas are user-editable, so a
+  // file tool may have `description` enabled even though the default schema leaves it out
+  // (the CLI derives the same rule from the session's schemas).
+  if (DESCRIBED_TOOLS.has(name) || FILE_TOOLS.has(name)) {
     const desc = extractStringField(argsJson, "description");
     if (desc !== null) {
-      const line = desc.replace(/\s+/g, " ").trim();
+      if (!desc.complete && !settled) return null;
+      const line = desc.value.replace(/\s+/g, " ").trim();
       if (line) return line;
     }
-    return null;
+    if (DESCRIBED_TOOLS.has(name)) return null;
   }
   if (FILE_TOOLS.has(name)) {
     const filePath = extractStringField(argsJson, "file_path");
     if (filePath !== null) {
-      const line = filePath.replace(/\s+/g, " ").trim();
+      if (!filePath.complete && !settled) return null;
+      const line = filePath.value.replace(/\s+/g, " ").trim();
       if (line) return shortenPath(line);
     }
   }
@@ -149,8 +151,14 @@ export function pendingFilePayload(name: string, argsJson: string): string | nul
   return sections.join("\n");
 }
 
+/** A string field read from possibly-incomplete JSON: the value seen so far, and whether its closing quote has arrived (mirrors the CLI's PartialField). */
+interface PartialField {
+  value: string;
+  complete: boolean;
+}
+
 /** Extracts the current value of a string field from a possibly-incomplete JSON object string (a simplified version, good enough for preview purposes). */
-function extractStringField(argsJson: string, field: string): string | null {
+function extractStringField(argsJson: string, field: string): PartialField | null {
   const key = `"${field}"`;
   const keyIndex = argsJson.indexOf(key);
   if (keyIndex === -1) return null;
@@ -174,20 +182,28 @@ function extractStringField(argsJson: string, field: string): string | null {
       escaped = true;
       continue;
     }
-    if (ch === '"') return out;
+    if (ch === '"') return { value: out, complete: true };
     out += ch;
   }
-  return out;
+  return { value: out, complete: false };
 }
 
 export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRenderContext }) {
   const [open, setOpen] = useState(false);
   const userToggled = useRef(false);
+  const rootRef = useRef<HTMLDivElement>(null);
   // Matched by the current origin chain + toolCallId: prevents parent/child session tool_call_id collisions from lighting each other up.
   const pending = ctx.pendingApprovals.get(approvalKey(ctx.origin, item.toolCallId));
 
   const preview = previewArguments(item.name, item.argumentsText);
-  const subtitle = headerSubtitle(item.name, item.argumentsText);
+  // Escape sequences are stripped at render time only (the stored stream/trace data keeps its
+  // raw bytes): hardened child envs should no longer produce any, but historical traces and
+  // force-color programs still can (#102). Memoized — the aggregated output can be large and
+  // grows on every streamed delta.
+  const output = useMemo(() => stripAnsi(item.output), [item.output]);
+  // Settled once argument streaming stopped (or the complete call arrived): the subtitle's
+  // completeness gate is lifted — whatever is there is final.
+  const subtitle = headerSubtitle(item.name, item.argumentsText, !item.callStreaming);
   // Executing = the call has finished streaming, output hasn't arrived yet, and it's not waiting on approval (approval wait time doesn't count toward execution).
   const executing = item.callComplete && !item.outputComplete && !pending;
   // Argument-generation segment (settled): the live execution timer accumulates on top of this as a baseline, so the displayed duration doesn't shrink back once output arrives.
@@ -214,9 +230,9 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
       }`
     : null;
   // A user denial reports stop_reason "aborted" on the output it feeds back; that abort IS the
-  // decision, not an independent outcome — the icon reads "Denied", and no separate `[aborted]`
-  // marker repeats it. A user-abort of a RUNNING tool carries no deny decision, so the label
-  // falls through to its stop reason below.
+  // decision — the icon reads "Denied" rather than falling through to the raw stop reason. A
+  // user-abort of a RUNNING tool carries no deny decision, so the label falls through to its
+  // stop reason below.
   const deniedByUser = item.decision === "deny" && item.outputStopReason === "aborted";
   const stateLabel = pending
     ? S.chat.approvalWaiting
@@ -227,33 +243,29 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
         : deniedByUser
           ? (decisionText ?? undefined)
           : (item.outputStopReason ?? item.callStopReason);
-  // Stop reasons to spell out on the row. The two segments frequently carry the SAME value —
-  // a call that closed undispatched copies its own reason onto the output it will never
-  // produce (settleUndispatchedCall) — so equal values collapse to one marker instead of the
-  // `[malformed][malformed]` the two old pills rendered side by side.
-  const outcomes = [
-    ...new Set(
-      [item.callStopReason, deniedByUser ? undefined : item.outputStopReason].filter(
-        (r): r is StopReason => r !== undefined && r !== "completed",
-      ),
-    ),
-  ];
 
   return (
-    <div>
+    <div ref={rootRef}>
       {/* Collapsed row: status icon + tool name + total duration (generation + execution,
           excluding approval wait) + the stop reason when the step did not finish cleanly.
           Expand chevron on the right.
 
-          The stop reason used to render as a padded Badge pill, which competed for width on a
-          phone. It is now the same plain `[reason]` marker the thinking row directly above it
-          already uses (thinking-block.tsx) — cheap enough for 390px, and the two rows in a
-          work group finally read alike. Dropping it entirely and leaving the icon to carry the
-          outcome does not work: the icon has one failure tone, so an interrupted call would
-          look identical to a hard failure, and a call that never ran — malformed, or closed
-          undispatched — has no output block to expand into, so its title/aria-label would be
-          the only explanation anywhere, out of reach on touch. The Trace viewer still shows
-          the raw stop reason per event, which is where the literal value belongs.
+          Stacked sticky, second level (same as the thinking row): while this card's expanded
+          output scrolls, the row pins right BELOW the stuck group header (top-4 = the
+          header's -top-4 offset + its 2rem height) — the bar directly above the content is
+          always the section the reader is in, never a skipped level. Opaque background for
+          the stuck state; collapsing from stuck lands the view back on the row.
+
+          The row spells out NO stop reason: it rendered `[reason]` markers (and before that,
+          Badge pills) until per-user-feedback review removed them — the red text read as
+          alarming repetition of what the left StatusIcon already signals. The icon plus its
+          title/aria stateLabel (which still names the raw reason) is the single carrier of
+          the outcome, same rule the decision wording above already follows. The known cost,
+          accepted deliberately: at a glance an aborted, timed-out, malformed or auth-failed
+          call all read as the icon's one failure tone, and on touch the distinction lives
+          only in the expanded output (when one exists) — the tooltip/aria and the Trace
+          viewer, which shows the raw stop reason per event, remain where the literal value
+          belongs.
 
           A pending call gets no "awaiting approval" text either: the approval block below is
           always on screen while one is pending — it names the tool, shows the arguments and
@@ -264,9 +276,13 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
         aria-expanded={open}
         onClick={() => {
           userToggled.current = true;
+          const willClose = open;
           setOpen((v) => !v);
+          if (willClose) {
+            requestAnimationFrame(() => rootRef.current?.scrollIntoView({ block: "nearest" }));
+          }
         }}
-        className="flex w-full items-center gap-2 px-3 py-1.5 text-left transition-colors duration-150 hover:bg-gray-50 dark:hover:bg-gray-800/50"
+        className="sticky top-4 z-[4] flex w-full items-center gap-2 bg-white px-3 py-1.5 text-left transition-colors duration-150 hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-800"
       >
         <StatusIcon state={state} label={stateLabel} />
         <span className="shrink-0 truncate font-mono text-xs font-semibold text-gray-700 dark:text-gray-300">
@@ -298,14 +314,6 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
             )
           ) : null}
         </span>
-        {outcomes.map((reason) => (
-          <span
-            key={reason}
-            className={`shrink-0 font-mono text-xs ${stopReasonToneClass(reason)}`}
-          >
-            [{reason}]
-          </span>
-        ))}
         <span className="min-w-0 flex-1" />
         {/* Expand indicator on the right */}
         <Chevron open={open} className="text-gray-400" />
@@ -357,7 +365,7 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
           )}
           {(item.output || item.outputStreaming) && (
             <pre className="max-h-72 overflow-auto whitespace-pre-wrap border-t border-gray-100 px-3 py-2 text-xs leading-5 text-gray-600 dark:border-gray-800 dark:text-gray-300">
-              {item.output}
+              {output}
               {item.outputStreaming && <span className="animate-pulse">▌</span>}
             </pre>
           )}

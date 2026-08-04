@@ -111,6 +111,7 @@ describe("loadSkillGroups / groupSkills", () => {
       "vllm",
       "ollama",
       "llamafactory",
+      "skill-porting",
     ]);
     expect(groups[2]!.title).toBe("AI App Development");
     expect(groups[2]!.titleZh).toBe("AI 应用开发");
@@ -166,7 +167,15 @@ describe("loadSkillGroups / groupSkills", () => {
       { id: "software-development", skills: ["web-design", "software-engineering"] },
       {
         id: "ai-app-development",
-        skills: ["penguin-sdk", "penguin-cli", "agenthub-models", "vllm", "ollama", "llamafactory"],
+        skills: [
+          "penguin-sdk",
+          "penguin-cli",
+          "agenthub-models",
+          "vllm",
+          "ollama",
+          "llamafactory",
+          "skill-porting",
+        ],
       },
       {
         id: "agent-tuning",
@@ -182,17 +191,17 @@ describe("librarySkill", () => {
     expect(librarySkill("no-such-skill")).toBeUndefined();
   });
 
-  it("benchmark-design selects a valid Pilot revision before the Formal Baseline", () => {
+  it("benchmark-design records the selected one-Run Pilot as the Formal Baseline", () => {
     const content = librarySkill("benchmark-design")?.content;
     expect(content).toBeDefined();
 
     const pilotIndex = content!.indexOf("## Refine the Benchmark");
-    const baselineIndex = content!.indexOf("## Freeze and run the Formal Baseline");
+    const baselineIndex = content!.indexOf("## Freeze and record the Formal Baseline");
     const normalizedContent = content!.replace(/\s+/g, " ");
 
     expect(pilotIndex).toBeGreaterThan(-1);
     expect(baselineIndex).toBeGreaterThan(pilotIndex);
-    expect(normalizedContent).toContain("Keep Pilot results out of the Scoreboard");
+    expect(normalizedContent).toContain("Keep unselected Pilot results out of the Scoreboard");
     expect(normalizedContent).toContain("requested valid-iteration limit");
     expect(normalizedContent).toContain("lowest-scoring valid Pilot revision");
     expect(normalizedContent).toContain("retain only one temporary restorable copy");
@@ -245,7 +254,11 @@ describe("librarySkill", () => {
       "Do not run another difficulty refinement merely to create more score margin",
     );
     expect(normalizedContent).toContain("missing the desired score alone is not a failure");
-    expect(normalizedContent).toContain("never reuse a Pilot result");
+    expect(normalizedContent).toContain("`runs = 1`");
+    expect(normalizedContent).toContain(
+      "Do not launch a fresh Formal matrix, rerun the selected Pilot, or backfill it",
+    );
+    expect(normalizedContent).toContain("Accept the selected Pilot result as the Formal Baseline");
     expect(normalizedContent).toContain(
       "Record the Formal Baseline even when its score does not meet the desired baseline score",
     );
@@ -293,7 +306,7 @@ describe("librarySkill", () => {
       "Read `thinking_level` from the Test Agent's `model.thinking_level`",
     );
     expect(benchmarkDesign).toContain(
-      "Pass the resolved `(provider, model_id)` explicitly in every Pilot and Formal Evaluator request",
+      "Pass the resolved `(provider, model_id)` explicitly in every Pilot Evaluator request",
     );
     expect(benchmarkDesign).toContain("Every Case Rubric has a fixed maximum of 100 points");
     expect(benchmarkDesign).toContain("average of the Case scores");
@@ -311,6 +324,17 @@ describe("librarySkill", () => {
     );
     expect(benchmarkDesign).toContain("Ask the same Evaluator to resend only the clean YAML");
     expect(optimization).toContain("Delegate every evaluation to an `agent-evaluation` subagent");
+    expect(optimization).toContain("a positive `runs` value");
+    expect(optimization).toContain(
+      "do not infer it from `benchmark_config.toml` or the Formal Baseline",
+    );
+    expect(optimization).toContain(
+      "The initial Formal Baseline has one Run per Case; do not rerun or backfill it",
+    );
+    expect(optimization).toContain(
+      "Compare each Candidate's stored top-level average directly with the current Reference score even when their Run counts differ",
+    );
+    expect(optimization).toContain("frozen Case set × requested `runs` matrix");
     expect(optimization).toContain("Before reading `status`, `score`, or any other protocol field");
     expect(optimization).toContain("Ask the same Evaluator to resend only the clean YAML");
     expect(optimizationRaw).toMatch(/summary_title:\s*>-\n\s+<public title>/);

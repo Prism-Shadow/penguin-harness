@@ -28,6 +28,28 @@ let updatePromise: Promise<UpdateCheckResponse> | null = null;
  */
 const listeners = new Set<() => void>();
 
+/** How one manual update check ended, for user feedback — exactly one notice per outcome. */
+export type UpdateCheckOutcome =
+  | { kind: "disabled" }
+  | { kind: "failed" }
+  | { kind: "up-to-date" }
+  | { kind: "found"; latestVersion: string };
+
+/**
+ * Classifies a manual check result. Order matters: `disabled` means no lookup ran, `error`
+ * means the lookup ran and failed (the response is fail-soft, not an exception), and only a
+ * result that names the newer release counts as `found` — updateAvailable without a version
+ * would leave the row and the toast with nothing to show.
+ */
+export function updateCheckOutcome(res: UpdateCheckResponse): UpdateCheckOutcome {
+  if (res.disabled === true) return { kind: "disabled" };
+  if (res.error !== undefined) return { kind: "failed" };
+  if (res.updateAvailable && res.latestVersion !== null) {
+    return { kind: "found", latestVersion: res.latestVersion };
+  }
+  return { kind: "up-to-date" };
+}
+
 export interface VersionInfo {
   version: VersionResponse | null;
   update: UpdateCheckResponse | null;

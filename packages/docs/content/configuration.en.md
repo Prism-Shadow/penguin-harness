@@ -17,6 +17,7 @@ The CLI and the server automatically load a `.env` file from the working directo
 | `PENGUIN_WEB_DB` | Server SQLite database path | `<root>/web.db` |
 | `PENGUIN_WEB_DIST` | Front-end static assets directory | the npm server package falls back to its bundled web-dist |
 | `PENGUIN_PREVIEW_ORIGIN` | Origin that serves Workspace HTML previews, e.g. `https://preview.example.com` | unset — the loopback counterpart is derived per request |
+| `PENGUIN_SEED_ADMIN_PASSWORD` | Fixed initial password for the seeded built-in admin (automated tests / e2e) | unset — a random `penguin-<4 digits>` password is generated and printed once at seed time |
 | `PENGUIN_LANG` | CLI language (`en` / `zh`), set via `penguin config lang` | `en` |
 | `PENGUIN_UPDATE_CHECK` | `off` disables the web app's new-release check (the server's only outbound internet call) | enabled |
 
@@ -67,11 +68,11 @@ Model entry (`[[models]]`) fields:
 | `created_at` | Write timestamp of `api_key` (ISO 8601; a display field maintained by the interface layer) |
 
 ```toml
-default_model = { provider = "deepseek", model_id = "deepseek-v4-pro" }
+default_model = { provider = "deepseek", model_id = "deepseek-v4-flash" }
 
 [[models]]
 provider = "deepseek"
-model_id = "deepseek-v4-pro"
+model_id = "deepseek-v4-flash"
 context_window = 1000000
 vision = false
 api_key = "sk-..."
@@ -160,6 +161,8 @@ An existing Agent always runs with its on-disk config verbatim — newer code de
 | `{{SESSION_ID}}` | Session id |
 
 `{{PROJECT_DIR}}` is surfaced to the model as the **App Data Dir**: PenguinHarness's application data root, holding every Agent's data files (`agents/<agent_id>/…`) and the project-level data — deliberately not described as a project or task directory, so the model does not mistake it for the task's working directory (`CWD`).
+
+On Windows, `{{PROJECT_DIR}}` and `{{CWD}}` are injected with forward slashes — like every other path core composes for the model (attachment lines, the goal-file line, truncated-output recovery paths). The model re-emits these spellings into JSON tool arguments and shell commands; forward slashes are accepted by Node's fs APIs and the package's (Git) Bash tool shell, and avoid JSON backslash-escaping mistakes.
 
 `agent_state/AGENTS.md` is the developer-editable instruction file, injected via `{{AGENTS_MD}}` and empty by default — it is also the file an optimizer edits most (see [Self-Improvement](/self-improvement)).
 

@@ -133,7 +133,7 @@ export interface ProjectConfig {
  */
 export function defaultProjectConfig(): ProjectConfig {
   return {
-    default_model: { provider: "deepseek", model_id: "deepseek-v4-pro" },
+    default_model: { provider: "deepseek", model_id: "deepseek-v4-flash" },
     models: presetModelEntries(),
   };
 }

@@ -110,7 +110,7 @@ interface EnvironmentInterface {
 }
 ```
 
-`executeTool` yields `partial_tool_call_output` fragments and ends with exactly one complete `tool_call_output`; `origin`-tagged nested messages (e.g. forwarded by `run_subagent`) pass through unchanged. Rendering is explicitly not this interface's concern — streaming rendering belongs to the CLI / Web front ends.
+`executeTool` yields `partial_tool_call_output` fragments and ends with exactly one complete `tool_call_output`; `origin`-tagged nested messages (e.g. forwarded by `run_subagent`) pass through unchanged. The built-in Environment can keep truncated text in the Session scratchpad without exposing storage lifecycle hooks through this public interface. Its model-visible recovery path is a plain absolute path; on Windows it is written with forward slashes, which Node's fs APIs and the package's (Git) Bash tool shell both accept, so the same spelling works as a `read_file` argument and inside shell commands. Rendering is explicitly not this interface's concern — streaming rendering belongs to the CLI / Web front ends.
 
 ### ToolExecutionRequest and EnvironmentConfig
 
@@ -124,6 +124,7 @@ interface ToolExecutionRequest {
 interface EnvironmentConfig {
   workspaceDir: string;
   toolConfig: ToolConfig;                   // { customTools: ToolDefinitionConfig[]; mcpServers: MCPServerConfig[] }
+  sessionScratchpadDir?: string;            // this Session's scratchpad (scratchpad/<sessionId>); enables truncated-output recovery
   services?: EnvironmentServices;           // runtime services injected into individual tools
   vault?: Record<string, string>;           // Vault env vars, injected into exec_command / input_command subprocesses
 }
@@ -139,6 +140,18 @@ interface MCPServerConfig {
   name: string;
   config: Record<string, unknown>;
 }
+```
+
+`Agent.createSession()` and `resumeSession()` pass the Session scratchpad directory
+automatically. A standalone embedder that owns a stable per-Session directory opts in by
+supplying it — no archive-specific type is exposed:
+
+```ts
+const environment = new Environment({
+  workspaceDir,
+  toolConfig,
+  sessionScratchpadDir, // e.g. <dataRoot>/<project>/agents/<agent>/scratchpad/<sessionId>
+});
 ```
 
 ### The inner tool contract: BuiltinTool

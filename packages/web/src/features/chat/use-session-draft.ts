@@ -132,9 +132,11 @@ export function useSessionDraft(sessionId: string | null): {
 
   const discard = useCallback(() => {
     cancelPending();
-    // Also clear the selected skills and both staged switch chips: ChatInput's clear after a
-    // successful send doesn't fire a callback (same convention as onTextChange); without this,
-    // a later text flush would resurrect the already-sent selection.
+    // Also clear the text, the selected skills and both staged switch chips: ChatInput's
+    // clear after a successful send doesn't fire a callback (same convention as
+    // onTextChange); without this, a later flush triggered by any discrete action (a skill
+    // toggle, a staged chip) would resurrect the already-sent text or selection.
+    textRef.current = "";
     skillsRef.current = [];
     handoffRef.current = null;
     switchModelRef.current = null;

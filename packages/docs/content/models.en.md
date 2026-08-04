@@ -29,17 +29,17 @@ Each Project's available models are recorded in the hidden `.project_config.toml
 | `pricing` | Three price buckets (unit `usd_per_mtok`, USD per million tokens): `cache_read` / `cache_write` / `output` |
 | `api_key` / `base_url` | Inlined credentials, both optional; when blank, AgentHub falls back to environment variables |
 
-A fresh Project defaults to deepseek-v4-pro. A `vision_model` entry can additionally designate the proxy model that `describe_image` uses for text-only session models (see [Tools & Approval](/tools)); it is unset by default.
+A fresh Project defaults to deepseek-v4-flash. A `vision_model` entry can additionally designate the proxy model that `describe_image` uses for text-only session models (see [Tools & Approval](/tools)); it is unset by default.
 
 File shape (illustrative):
 
 ```toml
-default_model = { provider = "deepseek", model_id = "deepseek-v4-pro" }
+default_model = { provider = "deepseek", model_id = "deepseek-v4-flash" }
 vision_model = { provider = "google", model_id = "gemini-3.1-pro-preview" }
 
 [[models]]
 provider = "deepseek"
-model_id = "deepseek-v4-pro"
+model_id = "deepseek-v4-flash"
 context_window = 1000000
 
 [[models]]
@@ -73,9 +73,9 @@ Built-in groups and their env-var fallbacks (catalog source: `packages/core/src/
 
 The gateway groups (openrouter / fireworks / siliconflow / qwen-token-plan / qwen-pay-as-you-go) go through AgentHub's OpenAI client, so with blank credentials they read `OPENAI_API_KEY` — not a gateway-specific variable.
 
-The preset catalog also carries OpenRouter's free tier: `:free` model variants (e.g. `inclusionai/ling-3.0-flash:free`, `poolside/laguna-m.1:free`) and the `openrouter/free` unified Free Models Router. They cost nothing, but are subject to OpenRouter's free-tier rate limits and data policy.
+The preset catalog also carries OpenRouter's free tier: `:free` model variants (e.g. `inclusionai/ling-3.0-flash:free`, `nvidia/nemotron-3-ultra-550b-a55b:free`) and the `openrouter/free` unified Free Models Router. They cost nothing, but are subject to OpenRouter's free-tier rate limits and data policy.
 
-Some models in the preset catalog: deepseek-v4-pro / deepseek-v4-flash, gemini-3.1-pro-preview, claude-opus-4-8 / claude-sonnet-4-6, gpt-5.5, glm-5.2, kimi-k2.6, qwen3.8-max-preview (not exhaustive).
+Some models in the preset catalog: deepseek-v4-pro / deepseek-v4-flash, gemini-3.1-pro-preview, claude-opus-4-8 / claude-sonnet-4-6, gpt-5.5, glm-5.2, kimi-k2.6, qwen3.8-max (not exhaustive).
 
 ## Thinking levels
 

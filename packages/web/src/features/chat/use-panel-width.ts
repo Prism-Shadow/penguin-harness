@@ -28,9 +28,11 @@ const WIDTH_STORAGE_KEY = "penguin.panelWidth";
  * to be wide. The migration deletes the keys as it reads, so it is already dead code for anyone
  * who has opened the app once since this shipped.
  *
- * REMOVAL: delete this constant and storedWidth()'s legacy branch in the release AFTER the one
- * shipping this change, as part of preparing that release. Nothing else in the repo reads these
- * keys, so it is a pure deletion. See changelog/0.1.5/2026-07-30-backward-compatibility.md.
+ * REMOVAL: delete this constant and storedWidth()'s legacy branch while preparing the release
+ * AFTER 0.2.0 — the 0.1.5 backward-compatibility entry schedules it for the second release
+ * after the one shipping this change (0.2.0 was the first and deliberately kept it). Nothing
+ * else in the repo reads these keys, so it is a pure deletion.
+ * See changelog/0.1.5/2026-07-30-backward-compatibility.md.
  */
 const LEGACY_WIDTH_KEYS = ["penguin.filesPanelWidth", "penguin.subagentsPanelWidth"] as const;
 

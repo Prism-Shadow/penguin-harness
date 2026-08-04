@@ -86,11 +86,11 @@ Four Skill groups ship in the box ([docs](https://penguin.ooo/docs/skills)); age
 
 | Model            | Providers                                                                        |
 | ---------------- | -------------------------------------------------------------------------------- |
-| DeepSeek V4      | DeepSeek, OpenRouter, Fireworks AI, SiliconFlow, Qwen Token Plan                 |
+| DeepSeek V4      | DeepSeek, OpenRouter, Fireworks AI, SiliconFlow, Qwen Token Plan, Qwen Pay-As-You-Go |
 | Kimi K3          | Moonshot AI, OpenRouter, Qwen Pay-As-You-Go                                      |
 | GLM 5.2          | Z.AI, OpenRouter, Fireworks AI, SiliconFlow, Qwen Token Plan, Qwen Pay-As-You-Go |
 | Hunyuan 3        | OpenRouter                                                                       |
-| Qwen 3.8 Max     | Qwen Token Plan (preview)                                                        |
+| Qwen 3.8 Max     | Qwen Token Plan, Qwen Pay-As-You-Go, OpenRouter                                  |
 | GPT 5.6          | OpenRouter                                                                       |
 | Gemini 3.6 Flash | Google Gemini, OpenRouter                                                        |
 | Claude 5         | Anthropic, OpenRouter                                                            |
@@ -108,7 +108,7 @@ Each family's latest generation only — the app's **Models** page lists every b
 
 ## Installation
 
-Every route installs the same `penguin` command: `penguin web` launches the full Web experience (multi-session chat, agent/skill/model management, usage stats, Trace observability, evaluation center; first login admin / penguin-2026 — change the password right after), and models are configured on the in-app Models page. The online installers bundle their own Node runtime — unpack and run; upgrades and reinstalls never touch your data.
+Every route installs the same `penguin` command: `penguin web` launches the full Web experience (multi-session chat, agent/skill/model management, usage stats, Trace observability, evaluation center; first login is `admin` with the initial password printed on the server's first start, of the form `penguin-1234` — change it right after), and models are configured on the in-app Models page. The online installers bundle their own Node runtime — unpack and run; upgrades and reinstalls never touch your data.
 
 ### 🐧 Linux (online install)
 
@@ -139,31 +139,31 @@ penguin web        # start the service and open http://127.0.0.1:7364
 ```
 
 <details>
-<summary><b>📴 Offline install packages (air-gapped machines)</b></summary>
+<summary><b>📴 Offline install (air-gapped machines)</b></summary>
 
-Every <a href="https://github.com/Prism-Shadow/penguin-harness/releases">GitHub Release</a> attaches five self-contained offline bundles — Linux and macOS in x64 / arm64, Windows in x64. Each bundle carries the program archive, its SHA256 checksum and the platform's installer: download on a networked machine, copy to the target, and install with no network at all (offline installs verify the SHA256 unconditionally).
+Every <a href="https://github.com/Prism-Shadow/penguin-harness/releases">GitHub Release</a> attaches exactly one package per target — Linux and macOS in x64 / arm64, Windows in x64, plus a runtime-less universal package — and the same file serves online and offline installation. Each package seals the program payload, its SHA256 checksum and the platform's installer: download the one file on a networked machine, copy it to the target, extract once and run the bundled installer — no network, no separate checksum file to carry (the sealed SHA256 is always verified).
 
-**Linux (on arm64, use `penguin-linux-arm64-offline.tar.gz`):**
+**Linux (on arm64, use `penguin-linux-arm64.tar.gz`):**
 
 ```bash
-mkdir penguin-offline
-tar -xzf penguin-linux-x64-offline.tar.gz -C penguin-offline
-./penguin-offline/install.sh
+mkdir penguin-install
+tar -xzf penguin-linux-x64.tar.gz -C penguin-install
+./penguin-install/install.sh
 ```
 
-**macOS (Apple silicon shown; on Intel, use `penguin-darwin-x64-offline.tar.gz`):**
+**macOS (Apple silicon shown; on Intel, use `penguin-darwin-x64.tar.gz`):**
 
 ```bash
-mkdir penguin-offline
-tar -xzf penguin-darwin-arm64-offline.tar.gz -C penguin-offline
-./penguin-offline/install.sh
+mkdir penguin-install
+tar -xzf penguin-darwin-arm64.tar.gz -C penguin-install
+./penguin-install/install.sh
 ```
 
 **Windows (unzip, then double-click `install.cmd` — or run it in PowerShell):**
 
 ```powershell
-Expand-Archive penguin-win32-x64-offline.zip -DestinationPath penguin-offline
-cd penguin-offline
+Expand-Archive penguin-win32-x64.zip -DestinationPath penguin-install
+cd penguin-install
 .\install.cmd
 ```
 
@@ -174,7 +174,7 @@ cd penguin-offline
 The same engine, scriptable — made to be driven by agents (and agents building agents):
 
 ```bash
-penguin config model add --provider deepseek --model-id deepseek-v4-pro --api-key sk-... --set-default
+penguin config model add --provider deepseek --model-id deepseek-v4-flash --api-key sk-... --set-default
 penguin run -m "Create hello.txt containing Hello, Penguin"   # one-shot task
 penguin chat       # interactive REPL (/compact, /exit, Ctrl-C to interrupt)
 penguin server     # headless service (same API the Web App uses)

@@ -15,7 +15,9 @@ import {
   goalFinishedOf,
   imageUrlMessage,
   isGoalRoundInput,
+  modelVisiblePath,
   parseGoalMessage,
+  sessionScratchpadDir,
   stripConversationMarkers,
   tokenUsage,
   userText,
@@ -211,8 +213,14 @@ describe("[goal] marker parsing", () => {
   });
 });
 
-describe("goal paths", () => {
-  it("derives the goal file path from the scratchpad session directory", () => {
+describe("session scratchpad paths", () => {
+  it("derives one Session's scratchpad directory", () => {
+    expect(sessionScratchpadDir("/root", "p", "a", "s1")).toBe(
+      path.join("/root", "p", "agents", "a", "scratchpad", "s1"),
+    );
+  });
+
+  it("derives the goal file path from the same Session scratchpad", () => {
     expect(goalFilePath("/root", "p", "a", "s1")).toBe(
       path.join("/root", "p", "agents", "a", "scratchpad", "s1", "GOAL.yaml"),
     );
@@ -474,7 +482,7 @@ describe("Session.runGoal input", () => {
     // The picture is on disk, and both rounds point at that same file.
     const saved = await fs.readdir(path.join(dir, "scratchpad", "session-1"));
     expect(saved).toHaveLength(1);
-    const line = `[attached image: ${path.join(dir, "scratchpad", "session-1", saved[0]!)}]`;
+    const line = `[attached image: ${modelVisiblePath(path.join(dir, "scratchpad", "session-1", saved[0]!))}]`;
     for (const text of rounds) expect(text).toContain(line);
     // Round 2 re-injects the objective alone, which is where the line matters most: it
     // survives because stripLeadingMarkerBlocks only removes leading blocks, and the fold

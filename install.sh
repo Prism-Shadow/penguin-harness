@@ -4,10 +4,23 @@
 #   curl -fsSL https://github.com/Prism-Shadow/penguin-harness/releases/latest/download/install.sh | sh
 #
 # Options:
-#   PENGUIN_VERSION=vX.Y.Z    pin a version (same as --version vX.Y.Z); default is the latest Release
+#   PENGUIN_VERSION=vX.Y.Z    choose a version (same as --version vX.Y.Z); a published Release
+#                              installer defaults to its own version, an unstamped source copy to latest
 #   PENGUIN_INSTALL_DIR=<dir> install dir; default ~/.penguin
 #   PENGUIN_ARCHIVE=<file>    install a local Release archive without network access (same as --archive <file>)
+#   PENGUIN_DOWNLOAD_SOURCE=auto|oss|github choose the online source; default auto (OSS, then same-version GitHub)
+#   PENGUIN_DOWNLOAD_BASE_URL=<url> exact online asset directory selected by the stable forwarder
+#   PENGUIN_DOWNLOAD_FALLBACK_BASE_URL=<url> same-version fallback asset directory
 #   --universal               install the universal package (no bundled Node runtime; needs system Node >= 24)
+#
+# Each Release attaches exactly one artifact per target: penguin-<target>.tar.gz, a shallow
+# installer bundle holding this script, the program payload (payload.tar.gz) and the payload's
+# checksum. Online installs download that bundle and verify it against its published .sha256;
+# offline installs transfer the same single file, extract it once and run the bundled
+# ./install.sh, which installs the sibling payload with no network access. Both paths verify
+# the payload checksum sealed inside the bundle before anything is staged. Releases up to
+# v0.1.5 shipped the program tree directly (top-level penguin/); such archives are still
+# accepted, from --version pins and --archive files alike.
 #
 # The data dir (~/.penguin/data) sits under the install home but is never touched by reinstall/upgrade (which only replace bin/lib/web/node).
 #
@@ -15,15 +28,56 @@
 set -eu
 
 REPO="https://github.com/Prism-Shadow/penguin-harness"
+OSS_ORIGIN="https://penguin-harness-releases.oss-cn-beijing.aliyuncs.com"
+OSS_RELEASE_ROOT="$OSS_ORIGIN/releases"
+GITHUB_RELEASE_ROOT="$REPO/releases/download"
+GITHUB_LATEST_BASE="$REPO/releases/latest/download"
 VERSION="${PENGUIN_VERSION:-}"
 INSTALL_DIR="${PENGUIN_INSTALL_DIR:-$HOME/.penguin}"
 BIN_DIR="$HOME/.local/bin"
 UNIVERSAL=0
 ARCHIVE="${PENGUIN_ARCHIVE:-}"
+SOURCE_MODE="${PENGUIN_DOWNLOAD_SOURCE:-auto}"
+DOWNLOAD_BASE_URL="${PENGUIN_DOWNLOAD_BASE_URL:-}"
+DOWNLOAD_FALLBACK_BASE_URL="${PENGUIN_DOWNLOAD_FALLBACK_BASE_URL:-}"
+PAYLOAD_NAME="payload.tar.gz"
+# The release workflow replaces this token with the immutable tag before publishing both the
+# standalone installer and the copies sealed inside the Linux, macOS and universal bundles.
+EMBEDDED_RELEASE_VERSION="__PENGUIN_RELEASE_VERSION__"
 
 fail() {
   echo "error: $1" >&2
   exit 1
+}
+
+validate_https_url() {
+  case "$2" in
+    https://*) ;;
+    *) fail "$1 must be an absolute HTTPS URL" ;;
+  esac
+}
+
+is_release_tag() {
+  case "$1" in
+    v[0-9A-Za-z]* ) ;;
+    *) return 1 ;;
+  esac
+  case "$1" in
+    *[!0-9A-Za-z._-]*) return 1 ;;
+  esac
+  return 0
+}
+
+validate_release_tag() {
+  is_release_tag "$1" || fail "invalid release version: $1"
+}
+
+download_source_label() {
+  case "$1" in
+    https://*.aliyuncs.com/*) printf '%s\n' "OSS mirror" ;;
+    https://github.com/*) printf '%s\n' "GitHub" ;;
+    *) printf '%s\n' "configured mirror" ;;
+  esac
 }
 
 # --- Parse args (also passable via curl | sh -s -- --universal) ---
@@ -51,7 +105,6 @@ done
 
 # --- Detect platform: Linux/Darwin x64/arm64; other platforms should use the universal package ---
 TARGET="universal"
-ASSET="penguin-universal.tar.gz"
 if [ "$UNIVERSAL" -eq 0 ]; then
   case "$(uname -s)" in
     Linux) os="linux" ;;
@@ -64,11 +117,30 @@ if [ "$UNIVERSAL" -eq 0 ]; then
     *) fail "unsupported architecture: $(uname -m). Install Node.js >= 24, then re-run with --universal." ;;
   esac
   TARGET="$os-$arch"
-  ASSET="penguin-$TARGET.tar.gz"
 fi
+ASSET="penguin-$TARGET.tar.gz"
 
 if [ -n "$ARCHIVE" ] && [ -n "$VERSION" ]; then
   fail "--archive/PENGUIN_ARCHIVE cannot be combined with --version/PENGUIN_VERSION"
+fi
+if [ -n "$VERSION" ]; then
+  validate_release_tag "$VERSION"
+fi
+case "$SOURCE_MODE" in
+  auto | oss | github) ;;
+  *) fail "PENGUIN_DOWNLOAD_SOURCE must be auto, oss, or github" ;;
+esac
+RESOLVED_RELEASE_VERSION="$VERSION"
+if [ -z "$RESOLVED_RELEASE_VERSION" ] && is_release_tag "$EMBEDDED_RELEASE_VERSION"; then
+  RESOLVED_RELEASE_VERSION="$EMBEDDED_RELEASE_VERSION"
+fi
+if [ -n "$DOWNLOAD_BASE_URL" ]; then
+  DOWNLOAD_BASE_URL="${DOWNLOAD_BASE_URL%/}"
+  validate_https_url PENGUIN_DOWNLOAD_BASE_URL "$DOWNLOAD_BASE_URL"
+fi
+if [ -n "$DOWNLOAD_FALLBACK_BASE_URL" ]; then
+  DOWNLOAD_FALLBACK_BASE_URL="${DOWNLOAD_FALLBACK_BASE_URL%/}"
+  validate_https_url PENGUIN_DOWNLOAD_FALLBACK_BASE_URL "$DOWNLOAD_FALLBACK_BASE_URL"
 fi
 
 # --- Universal package precheck: system Node >= 24 (platform packages bundle the runtime, so exempt) ---
@@ -90,14 +162,47 @@ SWAP_ACTIVE=0
 MOVED_OLD=""
 MOVED_NEW=""
 
+# Moves one directory to a new location even when the directory inode itself cannot be renamed
+# — a mount point, a process's CWD, or a filesystem that pins in-use directories (overlayfs
+# under Docker reports EBUSY when `penguin update` replaces the very lib/ its own process runs
+# from). Strategies, in order: plain rename; per-entry renames into a fresh or existing
+# destination; per-entry copy with the source entry removed (POSIX keeps an unlinked-but-open
+# file valid for the process using it). A pinned, now-empty source directory is left in place
+# and reused by the incoming move.
+relocate_dir() {
+  rl_src="$1"
+  rl_dst="$2"
+  if [ ! -e "$rl_dst" ] && mv "$rl_src" "$rl_dst" 2>/dev/null; then
+    return 0
+  fi
+  [ -d "$rl_src" ] || return 1
+  mkdir -p "$rl_dst" || return 1
+  rl_failed=0
+  for rl_entry in "$rl_src"/* "$rl_src"/.[!.]* "$rl_src"/..?*; do
+    [ -e "$rl_entry" ] || [ -L "$rl_entry" ] || continue
+    if ! mv "$rl_entry" "$rl_dst/" 2>/dev/null; then
+      cp -Rp "$rl_entry" "$rl_dst/" || rl_failed=1
+      rm -rf "$rl_entry" || rl_failed=1
+    fi
+  done
+  [ "$rl_failed" -eq 0 ] || return 1
+  [ -z "$(ls -A "$rl_src" 2>/dev/null)" ] || return 1
+  rmdir "$rl_src" 2>/dev/null || :
+  return 0
+}
+
 rollback_install() {
   rollback_failed=0
   for d in $MOVED_NEW; do
-    rm -rf "$INSTALL_DIR/$d" || rollback_failed=1
+    # Clearing may leave a pinned-but-empty directory husk; the restore below reuses it.
+    rm -rf "$INSTALL_DIR/$d" 2>/dev/null || :
+    if [ -e "$INSTALL_DIR/$d" ] && [ -n "$(ls -A "$INSTALL_DIR/$d" 2>/dev/null)" ]; then
+      rollback_failed=1
+    fi
   done
   for d in $MOVED_OLD; do
     if [ -e "$OLD_DIR/$d" ]; then
-      mv "$OLD_DIR/$d" "$INSTALL_DIR/$d" || rollback_failed=1
+      relocate_dir "$OLD_DIR/$d" "$INSTALL_DIR/$d" || rollback_failed=1
     fi
   done
   if [ "$rollback_failed" -ne 0 ]; then
@@ -125,67 +230,183 @@ trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-# --- Resolve local/offline archive or download from GitHub. ---
+# Verifies file $1 against the sha256sum-format file $2 ($3 names the layer in messages).
+# Checksums are never optional: every install path either downloads the published .sha256 or
+# reads the one sealed inside the bundle.
+verify_sha256() {
+  vs_expected="$(awk 'NR == 1 { print $1 }' "$2" | tr 'A-F' 'a-f')"
+  [ -n "$vs_expected" ] || fail "checksum file is empty or malformed: $2"
+  if command -v sha256sum >/dev/null 2>&1; then
+    vs_actual="$(sha256sum "$1" | awk '{ print $1 }')"
+  elif command -v shasum >/dev/null 2>&1; then
+    vs_actual="$(shasum -a 256 "$1" | awk '{ print $1 }')"
+  else
+    fail "sha256sum or shasum is required for checksum verification"
+  fi
+  [ "$vs_actual" = "$vs_expected" ] || fail "checksum mismatch for $3."
+  echo "$3 checksum OK."
+}
+
+# Downloads the bundle and its checksum as a pair. Transport failures may try a same-version
+# fallback; checksum failures are handled afterwards and always abort rather than being hidden
+# by a different source.
+download_release_pair() {
+  drp_base="$1"
+  drp_label="$(download_source_label "$drp_base")"
+  echo "Downloading $ASSET from $drp_label ..."
+  rm -f "$ARCHIVE_PATH" "$TMP/$ASSET.sha256"
+  curl -fSL --progress-bar "$drp_base/$ASSET" -o "$ARCHIVE_PATH" \
+    || return 1
+  curl -fsSL "$drp_base/$ASSET.sha256" -o "$TMP/$ASSET.sha256" \
+    || return 1
+  return 0
+}
+
+# Resolves the OSS mirror's latest immutable tag. The advertised base URL must exactly match
+# the expected bucket path so metadata cannot redirect downloads to an arbitrary host.
+get_oss_latest_tag() {
+  gol_manifest="$1"
+  rm -f "$gol_manifest"
+  curl -fsSL --connect-timeout 3 --max-time 8 "$OSS_ORIGIN/latest.json" -o "$gol_manifest" 2>/dev/null \
+    || return 1
+  gol_schema_version="$(sed -n 's/.*"schemaVersion":[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$gol_manifest" | head -n 1)"
+  gol_candidate_tag="$(sed -n 's/.*"tag":[[:space:]]*"\([^"]*\)".*/\1/p' "$gol_manifest" | head -n 1)"
+  gol_candidate_base="$(sed -n 's/.*"releaseBaseUrl":[[:space:]]*"\([^"]*\)".*/\1/p' "$gol_manifest" | head -n 1)"
+  [ "$gol_schema_version" = "1" ] \
+    && is_release_tag "$gol_candidate_tag" \
+    && [ "$gol_candidate_base" = "$OSS_RELEASE_ROOT/$gol_candidate_tag" ] \
+    || return 1
+  printf '%s\n' "$gol_candidate_tag"
+}
+
+# --- Resolve the program payload. Three entries converge on PAYLOAD_PATH:
+#     (a) bundled offline: this script sits next to payload.tar.gz in an extracted bundle;
+#     (b) --archive <file>: a local installer bundle, or a payload/legacy program archive;
+#     (c) online: download penguin-<target>.tar.gz and verify it, then open it.
+#     A bundle is recognized by containing payload.tar.gz at its top level; anything else is a
+#     program archive (payload.tar.gz itself, or a pre-0.1.6 release archive) whose top level
+#     is penguin/. ---
 LOCAL_ARCHIVE=0
-HAVE_SHA=0
-if [ -n "$ARCHIVE" ]; then
+ARCHIVE_SHAPE=""
+ARCHIVE_PATH=""
+ARCHIVE_NAME=""
+PAYLOAD_PATH=""
+
+# Sibling pickup engages only for a real file actually named install.sh — the name it carries
+# inside a bundle. A forwarder or `curl | sh` run never satisfies that (no file, or a random
+# temp name), so an online installer cannot be steered by archives someone planted next to a
+# temporary script in a shared directory.
+SIBLING_PAYLOAD=""
+if [ -z "$ARCHIVE" ] && [ -f "$0" ] && [ "$(basename "$0")" = "install.sh" ]; then
+  script_dir="$(CDPATH= cd "$(dirname "$0")" && pwd)"
+  if [ -f "$script_dir/$PAYLOAD_NAME" ]; then
+    SIBLING_PAYLOAD="$script_dir/$PAYLOAD_NAME"
+  fi
+fi
+
+if [ -n "$SIBLING_PAYLOAD" ]; then
+  # (a) Extracted bundle: install the sibling payload; no network access at all.
+  [ -z "$VERSION" ] \
+    || fail "--version/PENGUIN_VERSION cannot be combined with the bundled offline installer"
+  echo "Using bundled payload $SIBLING_PAYLOAD ..."
+  [ -f "$SIBLING_PAYLOAD.sha256" ] \
+    || fail "offline checksum file not found: $SIBLING_PAYLOAD.sha256"
+  verify_sha256 "$SIBLING_PAYLOAD" "$SIBLING_PAYLOAD.sha256" "Payload"
+  PAYLOAD_PATH="$SIBLING_PAYLOAD"
+  ARCHIVE_NAME="$PAYLOAD_NAME"
+  LOCAL_ARCHIVE=1
+elif [ -n "$ARCHIVE" ]; then
+  # (b) Explicit local archive; its shape is probed below.
   [ -f "$ARCHIVE" ] || fail "local archive not found: $ARCHIVE"
   archive_name="${ARCHIVE##*/}"
   archive_dir="$(CDPATH= cd "$(dirname "$ARCHIVE")" && pwd)"
   ARCHIVE_PATH="$archive_dir/$archive_name"
-  SHA_PATH="$ARCHIVE_PATH.sha256"
-  if [ ! -f "$SHA_PATH" ] && [ "$archive_name" != "$ASSET" ] && [ -f "$archive_dir/$ASSET.sha256" ]; then
-    SHA_PATH="$archive_dir/$ASSET.sha256"
-  fi
-  [ -f "$SHA_PATH" ] || fail "offline checksum file not found: $SHA_PATH"
   ARCHIVE_NAME="$archive_name"
   LOCAL_ARCHIVE=1
-  HAVE_SHA=1
   echo "Using local archive $ARCHIVE_PATH ..."
 else
-  if [ -n "$VERSION" ]; then
-    BASE_URL="$REPO/releases/download/$VERSION"
+  # (c) Online: explicit forwarder/configured URLs win. Otherwise a stamped Release installer
+  #     uses its own immutable version: auto prefers OSS and falls back only to the same GitHub
+  #     tag. An unstamped source-tree installer resolves latest.json first so it also locks one
+  #     version before downloading assets.
+  FALLBACK_BASE_URL="$DOWNLOAD_FALLBACK_BASE_URL"
+  if [ -n "$DOWNLOAD_BASE_URL" ]; then
+    BASE_URL="$DOWNLOAD_BASE_URL"
+  elif [ "$SOURCE_MODE" = "github" ]; then
+    if [ -n "$RESOLVED_RELEASE_VERSION" ]; then
+      BASE_URL="$GITHUB_RELEASE_ROOT/$RESOLVED_RELEASE_VERSION"
+    else
+      BASE_URL="$GITHUB_LATEST_BASE"
+    fi
   else
-    BASE_URL="$REPO/releases/latest/download"
+    SELECTED_TAG="$RESOLVED_RELEASE_VERSION"
+    if [ -z "$SELECTED_TAG" ]; then
+      SELECTED_TAG="$(get_oss_latest_tag "$TMP/latest.json" || :)"
+    fi
+    if [ -n "$SELECTED_TAG" ]; then
+      BASE_URL="$OSS_RELEASE_ROOT/$SELECTED_TAG"
+      if [ "$SOURCE_MODE" = "auto" ] && [ -z "$FALLBACK_BASE_URL" ]; then
+        FALLBACK_BASE_URL="$GITHUB_RELEASE_ROOT/$SELECTED_TAG"
+      fi
+    elif [ "$SOURCE_MODE" = "oss" ]; then
+      fail "the OSS mirror is unavailable or its release metadata is invalid."
+    else
+      BASE_URL="$GITHUB_LATEST_BASE"
+    fi
   fi
   ARCHIVE_PATH="$TMP/$ASSET"
-  SHA_PATH="$TMP/$ASSET.sha256"
   ARCHIVE_NAME="$ASSET"
-  echo "Downloading $BASE_URL/$ASSET ..."
-  curl -fSL --progress-bar "$BASE_URL/$ASSET" -o "$ARCHIVE_PATH" \
-    || fail "download failed. Check the version tag and your network, then retry."
-  if curl -fsSL "$BASE_URL/$ASSET.sha256" -o "$SHA_PATH" 2>/dev/null; then
-    HAVE_SHA=1
+  if ! download_release_pair "$BASE_URL"; then
+    if [ -n "$FALLBACK_BASE_URL" ] && [ "$FALLBACK_BASE_URL" != "$BASE_URL" ]; then
+      echo "Primary download source unavailable; trying $(download_source_label "$FALLBACK_BASE_URL") ..."
+      download_release_pair "$FALLBACK_BASE_URL" \
+        || fail "download failed from both the primary source and its fallback. Check your network, then retry."
+    else
+      fail "download failed from $(download_source_label "$BASE_URL"). Check the version tag and your network, then retry."
+    fi
   fi
+  verify_sha256 "$ARCHIVE_PATH" "$TMP/$ASSET.sha256" "Bundle"
 fi
 
-# --- SHA256 verify: mandatory offline; online keeps the existing warn-and-skip fallback. ---
-if [ "$HAVE_SHA" -eq 1 ]; then
-  expected="$(awk 'NR == 1 { print $1 }' "$SHA_PATH" | tr 'A-F' 'a-f')"
-  [ -n "$expected" ] || fail "checksum file is empty or malformed: $SHA_PATH"
-  if command -v sha256sum >/dev/null 2>&1; then
-    actual="$(sha256sum "$ARCHIVE_PATH" | awk '{ print $1 }')"
-  elif command -v shasum >/dev/null 2>&1; then
-    actual="$(shasum -a 256 "$ARCHIVE_PATH" | awk '{ print $1 }')"
+if [ -z "$PAYLOAD_PATH" ]; then
+  if tar -tzf "$ARCHIVE_PATH" 2>/dev/null | head -50 | grep -qE "^(\./)?$PAYLOAD_NAME\$"; then
+    ARCHIVE_SHAPE="bundle"
   else
-    if [ "$LOCAL_ARCHIVE" -eq 1 ]; then
-      fail "offline installation requires sha256sum or shasum for checksum verification"
+    ARCHIVE_SHAPE="program"
+  fi
+  if [ "$ARCHIVE_SHAPE" = "bundle" ]; then
+    # A local bundle is self-verifying through its sealed payload checksum; when the published
+    # outer .sha256 was transferred alongside it, verify that layer too.
+    if [ "$LOCAL_ARCHIVE" -eq 1 ] && [ -f "$ARCHIVE_PATH.sha256" ]; then
+      verify_sha256 "$ARCHIVE_PATH" "$ARCHIVE_PATH.sha256" "Bundle"
     fi
-    actual=""
-    echo "warning: sha256sum/shasum not found; skipping checksum verification." >&2
+    BUNDLE_DIR="$TMP/bundle"
+    mkdir -p "$BUNDLE_DIR"
+    tar -xzf "$ARCHIVE_PATH" -C "$BUNDLE_DIR"
+    PAYLOAD_PATH="$BUNDLE_DIR/$PAYLOAD_NAME"
+    [ -f "$PAYLOAD_PATH" ] || fail "unexpected bundle layout: $PAYLOAD_NAME missing."
+    [ -f "$PAYLOAD_PATH.sha256" ] || fail "unexpected bundle layout: $PAYLOAD_NAME.sha256 missing."
+    verify_sha256 "$PAYLOAD_PATH" "$PAYLOAD_PATH.sha256" "Payload"
+  else
+    # Program archive (payload.tar.gz, or a pre-0.1.6 release archive). A local file needs an
+    # adjacent checksum — its own, or the canonical asset checksum next to a renamed legacy
+    # file; an online download was already verified against the published .sha256 above.
+    if [ "$LOCAL_ARCHIVE" -eq 1 ]; then
+      SHA_PATH="$ARCHIVE_PATH.sha256"
+      if [ ! -f "$SHA_PATH" ] && [ "$ARCHIVE_NAME" != "$ASSET" ] && [ -f "$archive_dir/$ASSET.sha256" ]; then
+        SHA_PATH="$archive_dir/$ASSET.sha256"
+      fi
+      [ -f "$SHA_PATH" ] || fail "offline checksum file not found: $SHA_PATH"
+      verify_sha256 "$ARCHIVE_PATH" "$SHA_PATH" "Payload"
+    fi
+    PAYLOAD_PATH="$ARCHIVE_PATH"
   fi
-  if [ -n "$actual" ]; then
-    [ "$actual" = "$expected" ] || fail "checksum mismatch for $ASSET."
-    echo "Checksum OK."
-  fi
-else
-  echo "warning: checksum file not available; skipping verification." >&2
 fi
 
 # --- Extract and validate in staging before touching the current install. The final same-filesystem
 #    swap keeps the previous dirs in .old.$$ until the installed command runs successfully; any
 #    move or launch failure restores them automatically. The data dir is never part of the swap. ---
-tar -xzf "$ARCHIVE_PATH" -C "$TMP"
+tar -xzf "$PAYLOAD_PATH" -C "$TMP"
 [ -d "$TMP/penguin" ] || fail "unexpected archive layout: top-level penguin/ missing."
 MANIFEST_PATH="$TMP/penguin/package-manifest.json"
 if [ -f "$MANIFEST_PATH" ]; then
@@ -193,7 +414,7 @@ if [ -f "$MANIFEST_PATH" ]; then
   [ -n "$manifest_target" ] || fail "package manifest is malformed: target missing."
   [ "$manifest_target" = "$TARGET" ] \
     || fail "package target mismatch: expected $TARGET, found $manifest_target."
-elif [ "$LOCAL_ARCHIVE" -eq 1 ] && [ "$ARCHIVE_NAME" != "$ASSET" ]; then
+elif [ "$LOCAL_ARCHIVE" -eq 1 ] && [ "$ARCHIVE_SHAPE" = "program" ] && [ "$ARCHIVE_NAME" != "$ASSET" ]; then
   fail "a renamed local archive must contain package-manifest.json; use the original filename for legacy packages."
 fi
 mkdir -p "$INSTALL_DIR"
@@ -222,16 +443,16 @@ mkdir -p "$OLD_DIR"
 SWAP_ACTIVE=1
 for d in bin lib web node; do
   if [ -e "$INSTALL_DIR/$d" ]; then
-    if mv "$INSTALL_DIR/$d" "$OLD_DIR/$d"; then
+    if relocate_dir "$INSTALL_DIR/$d" "$OLD_DIR/$d"; then
       MOVED_OLD="$MOVED_OLD $d"
     else
-      fail "could not move the existing $d directory aside; the previous installation will be restored."
+      fail "could not move the existing $d directory aside (stop running penguin processes and retry); the previous installation will be restored."
     fi
   fi
 done
 for d in bin lib web node; do
   if [ -e "$STAGING/$d" ]; then
-    if mv "$STAGING/$d" "$INSTALL_DIR/$d"; then
+    if relocate_dir "$STAGING/$d" "$INSTALL_DIR/$d"; then
       MOVED_NEW="$MOVED_NEW $d"
     else
       fail "could not install the new $d directory; the previous installation will be restored."
@@ -281,5 +502,5 @@ fi
 echo ""
 echo "Get started:"
 echo "  penguin --help    # all commands"
-echo "  penguin web       # start the Web UI at http://127.0.0.1:7364 (initial login: admin / penguin-2026)"
+echo "  penguin web       # start the Web UI at http://127.0.0.1:7364 (login: admin, initial password printed on first start)"
 echo "  penguin server    # headless server (PORT / HOST to override)"

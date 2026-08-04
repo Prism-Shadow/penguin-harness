@@ -71,11 +71,10 @@ export const en: Strings = {
     online: "Online install",
     offline: "Offline package",
     offlineNote:
-      "Every GitHub Release attaches five self-contained offline bundles (Linux / macOS in x64 and arm64, Windows in x64), each carrying the program archive, its SHA256 checksum and the installer: download on a networked machine, copy to the target, and install with no network at all.",
+      "Every GitHub Release attaches one package per target (Linux / macOS in x64 and arm64, Windows in x64) and the same file serves online and offline installation. Each package seals the program payload, its SHA256 checksum and the installer: download that one file on a networked machine, copy it to the target, extract once and install with no network at all.",
     offlineHints: {
-      linux: "On arm64 machines, use penguin-linux-arm64-offline.tar.gz.",
-      macos:
-        "Apple silicon uses the arm64 bundle; on Intel, use penguin-darwin-x64-offline.tar.gz.",
+      linux: "On arm64 machines, use penguin-linux-arm64.tar.gz.",
+      macos: "Apple silicon uses the arm64 package; on Intel, use penguin-darwin-x64.tar.gz.",
       windows: "After unzipping you can also just double-click install.cmd.",
     },
     offlineRelease: "Download offline packages from GitHub Releases",
@@ -173,7 +172,7 @@ export const en: Strings = {
     tabCli: "CLI",
     webStep2: "Open the web interface",
     webStep2Desc:
-      "penguin web starts the local service and opens your browser; sign in with the built-in admin account admin / penguin-2026 (change the password right after).",
+      "penguin web starts the local service and opens your browser; sign in as the built-in admin “admin” with the initial password printed in the terminal on first start (looks like penguin-1234; change it right after).",
     webCmd: "penguin web   # opens http://127.0.0.1:7364",
     webStep3: "Configure a model in the UI and start chatting",
     webStep3Desc:

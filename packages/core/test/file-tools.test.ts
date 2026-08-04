@@ -31,6 +31,7 @@ import { WRITE_FILE_NAME, createWriteFileTool } from "../src/environment/tools/w
 import type { BuiltinTool, ToolResult } from "../src/environment/tools/types.js";
 import type { OmniMessage } from "../src/omnimessage/index.js";
 import type { ToolDefinitionConfig } from "../src/interfaces.js";
+import { modelVisiblePath } from "../src/internal/model-visible-path.js";
 
 function def(name: string, permission: "r" | "rw"): ToolDefinitionConfig {
   return { name, description: "test", permission };
@@ -128,6 +129,51 @@ describe("read_file", () => {
     expect(text).toContain("File not found");
     expect(text).toContain("missing.txt");
     expect(text).toContain("workspace");
+    expect(text).toContain("Absolute paths are supported");
+    expect(text).toContain(
+      `The directory "${modelVisiblePath(tmp)}" exists but has no entry "missing.txt".`,
+    );
+    expect(text).toContain("It is empty.");
+  });
+
+  it("points at the nearest existing directory and its closest-named entries", async () => {
+    await mkdir(path.join(tmp, "agent_state"));
+    await writeFile(path.join(tmp, "agent_state", "AGENTS.md"), "persona\n");
+    await writeFile(path.join(tmp, "notes.txt"), "n\n");
+    const { result, text } = await run(tool(), { file_path: path.join(tmp, "AGENTS.md") }, tmp);
+    expect(result?.stopReason).toBe("failed");
+    expect(text).toContain(
+      `The directory "${modelVisiblePath(tmp)}" exists but has no entry "AGENTS.md".`,
+    );
+    // Ranked by shared prefix with the missing name: agent_state/ first, dirs marked with "/".
+    expect(text).toContain("It contains: agent_state/, notes.txt");
+  });
+
+  it("reports the first missing segment of a deeper path", async () => {
+    const missing = path.join(tmp, "nope", "deep", "file.txt");
+    const { result, text } = await run(tool(), { file_path: missing }, tmp);
+    expect(result?.stopReason).toBe("failed");
+    expect(text).toContain(
+      `The directory "${modelVisiblePath(tmp)}" exists but has no entry "nope".`,
+    );
+  });
+
+  it("says so when a path segment is a file, not a directory", async () => {
+    await writeFile(path.join(tmp, "a.txt"), "x\n");
+    const inner = path.join(tmp, "a.txt", "inner.txt");
+    const { result, text } = await run(tool(), { file_path: inner }, tmp);
+    expect(result?.stopReason).toBe("failed");
+    expect(text).toContain("File not found");
+    expect(text).toContain(
+      `Note: "${modelVisiblePath(path.join(tmp, "a.txt"))}" exists but is a file, not a directory.`,
+    );
+  });
+
+  it("caps the entry listing and counts the rest", async () => {
+    for (let i = 0; i < 10; i += 1) await writeFile(path.join(tmp, `e${i}.txt`), "x\n");
+    const { text } = await run(tool(), { file_path: "zz.txt" }, tmp);
+    expect(text).toContain("(+2 more)");
+    expect(text).not.toContain("e8.txt");
   });
 
   it("fails when the path is a directory", async () => {
@@ -250,6 +296,9 @@ describe("edit_file", () => {
     expect(result?.stopReason).toBe("failed");
     expect(text).toContain("File not found");
     expect(text).toContain("write_file");
+    expect(text).toContain(
+      `The directory "${modelVisiblePath(tmp)}" exists but has no entry "nope.txt".`,
+    );
   });
 
   it("fails when the path is a directory", async () => {
@@ -449,6 +498,43 @@ describe("read_file — bounded scan and output budget", () => {
     expect(result?.stopReason).toBe("failed");
     expect(text).toContain("Stopped after scanning 8 MB");
     expect(text).toContain("sed -n");
+  });
+
+  it.skipIf(process.platform !== "win32")(
+    "accepts the same absolute path in Windows and POSIX spellings",
+    async () => {
+      await writeFile(path.join(tmp, "spellings.txt"), "both spellings work\n");
+      const windowsSpelling = path.join(tmp, "spellings.txt");
+      const posixSpelling = windowsSpelling.replaceAll("\\", "/");
+      const tool = () => createReadFileTool(def(READ_FILE_NAME, "r"));
+      for (const spelling of [windowsSpelling, posixSpelling]) {
+        const { text } = await run(tool(), { file_path: spelling }, tmp);
+        expect(text).toContain("both spellings work");
+      }
+    },
+  );
+
+  it.skipIf(process.platform !== "win32")(
+    "names the workspace with forward slashes when a file is missing",
+    async () => {
+      const tool = () => createReadFileTool(def(READ_FILE_NAME, "r"));
+      const { text } = await run(tool(), { file_path: "no-such-file.txt" }, tmp);
+      expect(text).toContain("File not found");
+      expect(text).not.toContain("\\");
+    },
+  );
+
+  it("confirms EOF for an unterminated line one byte below the scan cap", async () => {
+    await writeFile(
+      path.join(tmp, "scan-cap-minus-one.txt"),
+      "x".repeat(READ_FILE_SCAN_CAP_BYTES - 1),
+    );
+    const tool = () => createReadFileTool(def(READ_FILE_NAME, "r"));
+    const { result, text } = await run(tool(), { file_path: "scan-cap-minus-one.txt" }, tmp);
+    expect(result?.stopReason).toBeUndefined();
+    expect(text).toContain("[line truncated]");
+    expect(text).not.toContain("file has more than");
+    expect(text).not.toContain("Stopped after scanning");
   });
 
   it("reports a lower-bound total when the file outruns the scan cap after the window", async () => {

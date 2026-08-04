@@ -1573,7 +1573,7 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
       model.streamGenerate({ newMessages: [userText("go")] }),
     );
     expect(outcome.status).toBe("malformed");
-    expect(outcome.message).toContain("Unexpected token");
+    expect(outcome.errorMessage).toContain("Unexpected token");
     const complete = messages.find((m) => typeOf(m) === "text");
     expect((complete!.payload as TextPayload).text).toBe("hi");
     expect((complete!.payload as TextPayload).stop_reason).toBe("malformed");
@@ -1634,7 +1634,7 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
     // 401 = credentials failure: its own stop reason so hosts can gate input until the
     // model's API key is updated (same engine behavior as failed).
     expect(outcome.status).toBe("auth");
-    expect(outcome.message).toContain("invalid api key");
+    expect(outcome.errorMessage).toContain("invalid api key");
     expect(messages.map(typeOf)).not.toContain("token_usage");
 
     // A genuinely non-retryable parameter error stays a plain failure.
@@ -1663,7 +1663,7 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
       model.streamGenerate({ newMessages: [userText("go")] }),
     );
     expect(outcome.status).toBe("auth");
-    expect(outcome.message).toContain("subscription key invalid");
+    expect(outcome.errorMessage).toContain("subscription key invalid");
     expect(messages.map(typeOf)).not.toContain("token_usage");
   });
 
@@ -1681,7 +1681,7 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
     expect(outcome.status).toBe("timeout");
     // The real reason rides on the outcome (request_end -> the Cost center's errors panel
     // shows it): a retried quota rejection must not surface as a bare "timeout".
-    expect(outcome.message).toContain("insufficient_user_quota");
+    expect(outcome.errorMessage).toContain("insufficient_user_quota");
     expect(messages.map(typeOf)).not.toContain("token_usage");
   });
 
