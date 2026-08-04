@@ -106,24 +106,6 @@ export class SessionsRepo {
   }
 
   /**
-   * Batched title lookup (the Trace listing resolves one page of Sessions per request):
-   * a single IN query instead of per-session findById round trips; rows with a NULL
-   * title (or no row at all — unmanaged CLI/subagent Sessions) are simply absent from
-   * the map. Bounded by the pagination limit cap (1000), far below SQLite's variable cap.
-   */
-  titlesByIds(sessionIds: readonly string[]): Map<string, string> {
-    if (sessionIds.length === 0) return new Map();
-    const placeholders = sessionIds.map(() => "?").join(", ");
-    const rows = this.db
-      .prepare(
-        `SELECT session_id, title FROM sessions
-         WHERE session_id IN (${placeholders}) AND title IS NOT NULL`,
-      )
-      .all(...sessionIds);
-    return new Map(rows.map((r) => [r.session_id as string, r.title as string]));
-  }
-
-  /**
    * An Agent's rows, newest first (the list order the sidebar shows; served by
    * idx_sessions_agent_created). `webOnly` keeps only web-created rows — NULL counts as
    * web (legacy rows predate the column and the user chose to grandfather them as visible).

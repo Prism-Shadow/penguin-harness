@@ -24,6 +24,9 @@ import type {
   AgentTraceSessionEntry,
   AgentTracesResponse,
   RequestSpan,
+  SessionCategory,
+  SessionCategoryCounts,
+  SessionSource,
   ToolCallSpan,
   TraceAnalysisResponse,
   TraceEventsResponse,
@@ -34,9 +37,12 @@ import type {
   TraceToolSpan,
   UsageTrendPointInTrace,
 } from "../api/types.js";
+import type { SessionRow } from "../db/repos/sessions.js";
 import { HttpError } from "../http/errors.js";
 import { formatLocalDate } from "../internal/dates.js";
 import { readTraceHead } from "../internal/trace-head.js";
+import { asSessionSource } from "../runtime/session-sources.js";
+import type { SessionSources } from "../runtime/session-sources.js";
 import { fallbackTitle } from "../runtime/title-generator.js";
 
 const TRACE_FILE_RE = /^(.+)_(\d{3})\.jsonl$/;
@@ -91,18 +97,39 @@ async function listFiles(dir: string): Promise<string[]> {
 }
 
 /**
- * Read-only source of DB session titles for the paginated listing (a narrow slice of
- * SessionsRepo, injected so service tests need no database).
+ * Read-only slice of the Session index the paginated listing consults (SessionsRepo
+ * structurally satisfies it; injected so service tests need no database): one indexed
+ * query answers title / archived / workspace for every DB-tracked Session of the Agent.
  */
-export interface TraceTitleSource {
-  titlesByIds(sessionIds: readonly string[]): Map<string, string>;
+export interface TraceSessionIndex {
+  listByAgent(projectId: string, agentId: string): SessionRow[];
+}
+
+/** One Session's bounded classification result (see classify): its sidebar category + Workspace path ("" = unknown). */
+interface TraceSessionFacts {
+  category: SessionCategory;
+  workspace: string;
 }
 
 export class TraceService {
+  /**
+   * session_meta facts observed by this process's page head-reads, keyed by sessionId:
+   * origin + Workspace of Sessions the DB does not track. Fed by titleFromHead and
+   * consulted by classify — classification itself never touches the filesystem, so a
+   * DB-untracked Session no page has surfaced yet counts as active / "" workspace until
+   * first observed (the bounded-counts design; see agentTracesPage).
+   */
+  private readonly headFacts = new Map<
+    string,
+    { source: SessionSource | null; workspace: string }
+  >();
+
   constructor(
     private readonly root: string,
-    /** Optional: without it the paginated listing skips DB titles and goes straight to the first-prompt fallback. */
-    private readonly titles?: TraceTitleSource,
+    /** Optional (tests may omit): DB rows supplying titles / archived / workspace for the paginated listing. */
+    private readonly index?: TraceSessionIndex,
+    /** Optional (tests may omit): the shared in-process Session-origin registry (single source of truth for `source`). */
+    private readonly sources?: SessionSources,
   ) {}
 
   /** All of this Session's Trace files (sorted by index ascending). */
@@ -706,18 +733,20 @@ export class TraceService {
    * existing callers. With `paging`: session-group-centric — one stat-free directory
    * walk collects every Session's file refs (readdir only), Sessions are ordered by id
    * descending (ids embed a timestamp, so that is reverse chronological — the same
-   * ordering the web's flatten applied), and only the requested slice gets per-file
-   * `fs.stat` plus title resolution (DB title in one batched query, else a bounded
-   * head-read of the earliest shard deriving from the first user prompt).
+   * ordering the web's flatten applied), optionally filtered to one sidebar `category`
+   * (paging applies within it), and only the requested slice gets per-file `fs.stat`
+   * plus title resolution (DB title from one indexed query, else a bounded head-read of
+   * the earliest shard deriving from the first user prompt).
    */
   async agentTraces(
     projectId: string,
     agentId: string,
     paging?: { offset: number; limit: number } | null,
+    category?: SessionCategory,
   ): Promise<AgentTracesResponse> {
     const dir = tracesDir(this.root, projectId, agentId);
     const dates = (await listDirs(dir)).sort().reverse();
-    if (paging) return this.agentTracesPage(dir, dates, paging);
+    if (paging) return this.agentTracesPage(projectId, agentId, dir, dates, paging, category);
     const out: AgentTracesResponse = { dates: [] };
     for (const date of dates) {
       const bySession = new Map<string, { index: number; sizeBytes: number }[]>();
@@ -745,11 +774,42 @@ export class TraceService {
     return out;
   }
 
-  /** The paginated listing behind agentTraces: stats and titles only for the returned slice. */
+  /**
+   * Bounded classification (no IO): `archived` comes exactly from the DB row; the origin
+   * comes from the shared sources registry, else from a head-read this process already
+   * performed (headFacts); a DB-untracked Session neither has observed falls into the
+   * `active` bucket with workspace "" (the client's merged temp group) — mirroring the
+   * client sessionCategory's unknown-source fall-through. Deliberately NOT a head-read
+   * fan-out: classifying every untracked Session exactly would re-read a file head per
+   * Session per request (the unbounded cost session-service's counts path also avoids
+   * via its caches).
+   */
+  private classify(sessionId: string, row: SessionRow | undefined): TraceSessionFacts {
+    const facts = this.headFacts.get(sessionId);
+    const known = this.sources?.get(sessionId);
+    // Registry answer (including null = known user-created) wins; else fall back to this
+    // process's own observation; undefined = never observed.
+    const source = known !== undefined ? known : (facts?.source ?? undefined);
+    const category: SessionCategory =
+      (row?.archivedAt ?? null) !== null
+        ? "archived"
+        : source === "subagent" || source === "schedule"
+          ? source
+          : "active";
+    return { category, workspace: row?.workspace ?? facts?.workspace ?? "" };
+  }
+
+  /**
+   * The paginated listing behind agentTraces: stats and title head-reads only for the
+   * returned slice; classification / counts over all groups stay IO-free (classify).
+   */
   private async agentTracesPage(
+    projectId: string,
+    agentId: string,
     dir: string,
     dates: string[],
     paging: { offset: number; limit: number },
+    category?: SessionCategory,
   ): Promise<AgentTracesResponse> {
     // Stat-free discovery walk: every Session's file refs (index/date/path) from readdir alone.
     const bySession = new Map<string, LocatedFile[]>();
@@ -762,9 +822,34 @@ export class TraceService {
         bySession.set(match[1]!, files);
       }
     }
+    // One indexed query for the Agent's tracked rows (title / archived / workspace) — the
+    // CLI-created rows too: this page is the observability surface, nothing is filtered
+    // by creating client.
+    const rows = new Map(
+      (this.index?.listByAgent(projectId, agentId) ?? []).map((r) => [r.sessionId, r]),
+    );
     const ids = [...bySession.keys()].sort((a, b) => b.localeCompare(a));
-    const page = ids.slice(paging.offset, paging.offset + paging.limit);
-    const dbTitles = this.titles?.titlesByIds(page) ?? new Map<string, string>();
+    // Classify every group once; the same result drives the filter, the counts AND the
+    // returned fields, so a row can never appear in a bucket its own `category` denies.
+    // Page head-reads below refine the registries for FUTURE requests only.
+    const counts: SessionCategoryCounts = { active: 0, subagent: 0, schedule: 0, archived: 0 };
+    const workspaceCounts: Record<string, SessionCategoryCounts> = {};
+    const factsById = new Map<string, TraceSessionFacts>();
+    for (const id of ids) {
+      const facts = this.classify(id, rows.get(id));
+      factsById.set(id, facts);
+      counts[facts.category] += 1;
+      const ws = (workspaceCounts[facts.workspace] ??= {
+        active: 0,
+        subagent: 0,
+        schedule: 0,
+        archived: 0,
+      });
+      ws[facts.category] += 1;
+    }
+    const filtered =
+      category === undefined ? ids : ids.filter((id) => factsById.get(id)!.category === category);
+    const page = filtered.slice(paging.offset, paging.offset + paging.limit);
     const sessions: AgentTraceSessionEntry[] = [];
     for (const sessionId of page) {
       const files = bySession.get(sessionId)!.sort((a, b) => a.index - b.index);
@@ -775,30 +860,47 @@ export class TraceService {
           sizeBytes: (await fs.stat(f.path)).size,
         })),
       );
-      // The earliest shard's head holds the original first user prompt (later shards are
-      // compaction splits whose first user text is the compaction prompt, not the user's).
-      const title = dbTitles.get(sessionId) ?? (await this.firstPromptTitle(files[0]!.path));
+      // Title: DB row first; else derived from the earliest shard's head — the earliest
+      // shard holds the original first user prompt (later shards are compaction splits
+      // whose first user text is the compaction prompt, not the user's).
+      const facts = factsById.get(sessionId)!;
+      // ?? sends both "no row" and "row with NULL title" to the head-read fallback.
+      const title =
+        rows.get(sessionId)?.title ?? (await this.titleFromHead(sessionId, files[0]!.path));
       sessions.push({
         sessionId,
         ...(title !== undefined ? { title } : {}),
+        category: facts.category,
+        workspace: facts.workspace,
         files: withSize,
       });
     }
-    return { dates: [], sessions, totalSessions: ids.length };
+    return { dates: [], sessions, totalSessions: filtered.length, counts, workspaceCounts };
   }
 
   /**
    * Title derived from the Session's first user prompt: bounded head-read of the given
    * shard, first complete user text message, cleaned by the same fallbackTitle algorithm
    * the title generator uses. undefined when unreadable or the head has no user text
-   * (title stays absent — the client shows its default title).
+   * (title stays absent — the client shows its default title). The same bytes carry the
+   * shard's session_meta: its origin/Workspace are registered (headFacts + the shared
+   * sources registry) so subsequent requests classify this DB-untracked Session exactly
+   * — this request's already-computed classification is deliberately left alone (filter
+   * / counts / fields consistency).
    */
-  private async firstPromptTitle(filePath: string): Promise<string | undefined> {
+  private async titleFromHead(sessionId: string, filePath: string): Promise<string | undefined> {
     let messages: OmniMessage[];
     try {
       messages = await readTraceHead(filePath);
     } catch {
       return undefined;
+    }
+    const meta = messages.find(isSessionMeta);
+    if (meta) {
+      const source = asSessionSource(meta.payload.source) ?? null;
+      const workspace = typeof meta.payload.workspace === "string" ? meta.payload.workspace : "";
+      this.headFacts.set(sessionId, { source, workspace });
+      this.sources?.set(sessionId, source);
     }
     for (const msg of messages) {
       if (msg.type !== "model_msg") continue;

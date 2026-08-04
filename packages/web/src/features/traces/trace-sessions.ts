@@ -1,9 +1,9 @@
 /**
- * Pure Session-list logic for the Trace page (kept out of the component so it is unit
+ * Pure Session-list logic for the Trace page (kept out of the components so it is unit
  * testable): mapping either server response shape to the page's Session groups, and
- * appending a fetched page onto the loaded list.
+ * partitioning rows by their server-classified category.
  */
-import type { AgentTracesResponse } from "@prismshadow/penguin-server/api";
+import type { AgentTracesResponse, SessionCategory } from "@prismshadow/penguin-server/api";
 
 export interface TraceFileRef {
   index: number;
@@ -15,8 +15,21 @@ export interface TraceSessionGroup {
   sessionId: string;
   /** Server-resolved display title (DB title or first-prompt fallback); absent for legacy responses / untitled Sessions. */
   title?: string;
+  /**
+   * Server-classified sidebar category (the paged endpoint's bounded classification —
+   * the same value its filter and counts used, so rows and buckets can't disagree).
+   * Legacy responses carry no classification; the mapper defaults to "active".
+   */
+  category: SessionCategory;
+  /** Workspace path ("" = unknown → the merged temp group, same defensive rule as the sidebar's isTempWorkspace). */
+  workspace: string;
   /** Sorted newest first (a higher index is newer) — the page's display order. */
   files: TraceFileRef[];
+}
+
+/** A pooled row of the Trace tree: the group plus its owning Agent (the fetch that produced it). */
+export interface TraceSessionRow extends TraceSessionGroup {
+  agentId: string;
 }
 
 /**
@@ -31,6 +44,8 @@ export function toSessionGroups(data: AgentTracesResponse): TraceSessionGroup[] 
     return data.sessions.map((s) => ({
       sessionId: s.sessionId,
       ...(s.title !== undefined ? { title: s.title } : {}),
+      category: s.category,
+      workspace: s.workspace,
       files: [...s.files].sort((a, b) => b.index - a.index),
     }));
   }
@@ -46,19 +61,27 @@ export function toSessionGroups(data: AgentTracesResponse): TraceSessionGroup[] 
     .sort((a, b) => b[0].localeCompare(a[0]))
     .map(([sessionId, files]) => ({
       sessionId,
+      category: "active" as const,
+      workspace: "",
       files: files.sort((a, b) => b.index - a.index),
     }));
 }
 
 /**
- * Appends a fetched page onto the loaded list, deduplicating by sessionId (a Session
- * created between two fetches shifts the server's offsets, so a page can re-serve an
- * already-loaded group — the loaded copy wins, keeping list positions stable).
+ * Partition of one group's rows by their server-classified category — the Trace-side
+ * twin of session-grouping's partitionSessions (which derives the category client-side
+ * from SessionInfo; here the server field is authoritative, because it is what the
+ * per-category fetches and counts were computed from).
  */
-export function appendSessionGroups(
-  loaded: readonly TraceSessionGroup[],
-  fetched: readonly TraceSessionGroup[],
-): TraceSessionGroup[] {
-  const seen = new Set(loaded.map((g) => g.sessionId));
-  return [...loaded, ...fetched.filter((g) => !seen.has(g.sessionId))];
+export function partitionTraceRows<T extends { category: SessionCategory }>(
+  rows: readonly T[],
+): Record<SessionCategory, T[]> {
+  const parts: Record<SessionCategory, T[]> = {
+    active: [],
+    subagent: [],
+    schedule: [],
+    archived: [],
+  };
+  for (const r of rows) parts[r.category].push(r);
+  return parts;
 }

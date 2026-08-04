@@ -2,12 +2,15 @@
  * Agent-level Trace browsing routes:
  *   - GET /api/projects/:p/agents/:a/traces — Agent-level listing. Without `limit`: the
  *     legacy full drill-down (Agent -> date -> Session -> index, reverse order). With
- *     optional `offset`/`limit`: pages Session groups newest-first, stat-ing only the
- *     returned page, and resolves a display title per group (sessions DB title, else
- *     derived from the first user prompt). The **listing** therefore consults the
- *     sessions table — read-only, titles only; visibility still comes from the
- *     directory scan alone (a Session missing from the table is listed all the same,
- *     its title simply falling back or staying absent).
+ *     optional `offset`/`limit` (+ optional `category`): pages Session groups
+ *     newest-first (within the category when given), stat-ing only the returned page,
+ *     and resolves per group a display title (sessions DB title, else derived from the
+ *     first user prompt) plus its sidebar category / Workspace and per-category totals.
+ *     The **listing** therefore consults the sessions table — read-only (titles,
+ *     archived, workspace); visibility still comes from the directory scan alone (a
+ *     Session missing from the table is listed all the same — CLI/subagent Sessions
+ *     stay visible here regardless of the sidebar's CLI preference, this being the
+ *     observability surface — its title simply falling back or staying absent).
  *   - GET /api/projects/:p/agents/:a/traces/:sessionId/:index (including /analysis, /download) —
  *     read-only Trace detail endpoints (FD-3): locate the Trace file directly by
  *     (projectId, agentId, sessionId), without depending on the sessions table for
@@ -20,7 +23,7 @@
  */
 import { Hono } from "hono";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { TraceImportResponse } from "../../api/types.js";
+import type { SessionCategory, TraceImportResponse } from "../../api/types.js";
 import {
   badRequest,
   optionalPagingQuery,
@@ -35,6 +38,14 @@ import type { AppDeps } from "../../app.js";
 /** Import file size cap: aligned with the snapshot import (stays within the 20MB body limit after base64). */
 const MAX_TRACE_BYTES = 14 * 1024 * 1024;
 
+/** Accepted `category` query values of the paginated listing (SessionCategory, spelled out for validation — same as the sessions list route). */
+const SESSION_CATEGORIES: readonly SessionCategory[] = [
+  "active",
+  "subagent",
+  "schedule",
+  "archived",
+];
+
 export function agentTracesRoutes(deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
@@ -45,7 +56,25 @@ export function agentTracesRoutes(deps: AppDeps): Hono<AppEnv> {
     deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
     // Both params absent -> null -> the legacy full response, byte-for-byte as before.
     const paging = optionalPagingQuery(c);
-    return c.json(await deps.traceService.agentTraces(projectId, agentId, paging));
+    // Optional category filter (paging then applies within the category): only meaningful
+    // on the paginated session-centric shape — the legacy full drill-down has no category
+    // notion, so a filtered-but-unpaged request is a client error, not a silent no-op.
+    const rawCategory = c.req.query("category");
+    if (
+      rawCategory !== undefined &&
+      !(SESSION_CATEGORIES as readonly string[]).includes(rawCategory)
+    ) {
+      throw badRequest(`category must be one of ${SESSION_CATEGORIES.join(" / ")}.`);
+    }
+    if (rawCategory !== undefined && paging === null) throw badRequest("category requires limit.");
+    return c.json(
+      await deps.traceService.agentTraces(
+        projectId,
+        agentId,
+        paging,
+        rawCategory as SessionCategory | undefined,
+      ),
+    );
   });
 
   app.get("/:sessionId/:index", async (c) => {

@@ -113,6 +113,20 @@ describe("agent-trace-detail", () => {
     expect(paged.sessions![0]!.files.map((f) => ({ index: f.index, date: f.date }))).toEqual([
       { index: 1, date: "2026-07-06" },
     ]);
+    // Untracked + unobserved on the first request: active bucket, unknown workspace (the
+    // bounded classification), with the per-category totals riding along.
+    expect(paged.sessions![0]!.category).toBe("active");
+    expect(paged.sessions![0]!.workspace).toBe("");
+    expect(paged.counts).toEqual({ active: 1, subagent: 0, schedule: 0, archived: 0 });
+    // That page's head-read observed session_meta: the next request knows the workspace.
+    const observed = (await (await owner.get(`${base()}?limit=10`)).json()) as AgentTracesResponse;
+    expect(observed.sessions![0]!.workspace).toBe("/tmp/w");
+    expect(observed.workspaceCounts!["/tmp/w"]).toEqual({
+      active: 1,
+      subagent: 0,
+      schedule: 0,
+      archived: 0,
+    });
 
     // A sessions-table title (one batched lookup for the page) wins over the fallback.
     t.deps.sessionsRepo.insert({
@@ -137,6 +151,16 @@ describe("agent-trace-detail", () => {
     expect(empty.sessions).toEqual([]);
     expect(empty.totalSessions).toBe(1);
     expect((await owner.get(`${base()}?offset=1`)).status).toBe(400);
+
+    // Category filter: pages within one bucket (totalSessions = the bucket's count);
+    // unknown values and category-without-limit are client errors.
+    const filtered = (await (
+      await owner.get(`${base()}?limit=10&category=subagent`)
+    ).json()) as AgentTracesResponse;
+    expect(filtered.sessions).toEqual([]);
+    expect(filtered.totalSessions).toBe(0);
+    expect((await owner.get(`${base()}?limit=10&category=bogus`)).status).toBe(400);
+    expect((await owner.get(`${base()}?category=active`)).status).toBe(400);
   });
 
   it("user without access → 404 (requireProjectAccess)", async () => {

@@ -153,8 +153,14 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
   const projectConfigService = new ProjectConfigService(config.root);
   const agentConfigService = new AgentConfigService(config.root);
   const agentService = new AgentService(config.root, agentsRepo, agentConfigService);
-  // sessionsRepo: read-only title source for the paginated Trace listing (listing visibility itself stays directory-scan-only).
-  const traceService = new TraceService(config.root, sessionsRepo);
+  // Session-origin registry: session_meta is the single source of truth (no DB column);
+  // shared by the manager (subagent registration), the loader (self-heal rebuild),
+  // SessionService (creation / adoption / lazy list resolution) and TraceService (the
+  // paginated listing's bounded classification).
+  const sessionSources = new SessionSources();
+  // sessionsRepo + sessionSources: read-only title/category/workspace sources for the
+  // paginated Trace listing (listing visibility itself stays directory-scan-only).
+  const traceService = new TraceService(config.root, sessionsRepo, sessionSources);
   const workspaceFiles = new WorkspaceFilesService();
   // Per-process secret: preview tokens are short-lived, so losing them on restart is
   // harmless and there is nothing to persist or rotate.
@@ -183,10 +189,6 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
   const titles =
     overrides.titles ??
     new TitleGenerator({ sessions: sessionsRepo, channels, recorder, errors, log });
-  // Session-origin registry: session_meta is the single source of truth (no DB column);
-  // shared by the manager (subagent registration), the loader (self-heal rebuild) and
-  // SessionService (creation / adoption / lazy list resolution).
-  const sessionSources = new SessionSources();
   const manager = new SessionManager({
     sessions: sessionsRepo,
     channels,
