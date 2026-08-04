@@ -280,27 +280,44 @@ export interface RequestBeginPayload {
   type: "request_begin";
 }
 
-export interface RequestEndPayload {
-  type: "request_end";
-  /** Terminal state of this Request (reuses the six StopReason values, sharing its source with this turn's complete message's stop_reason / LLMOutcome; `auth` is the credentials-failure signal hosts key on). */
-  status: StopReason;
+/**
+ * The unified retry/failure detail block of `request_end` — one standard group of fields,
+ * stamped in one place by the `requestEnd` builder (the way `withOrigin` stamps `origin`)
+ * rather than accreting as scattered ad-hoc parameters. Every field is optional and
+ * additive: old Traces replay unchanged, and readers fall back to counting streamed events
+ * when `attempt` is absent.
+ */
+export interface RequestRetryDetail {
   /**
    * Failure detail from `LLMOutcome.message`, present only on non-completed statuses: the
    * real reason behind a retried/failed Request (e.g. `403 … (insufficient_user_quota)`),
    * for observability — the server's error records / Cost center read it here because a
-   * retried request never produces an abort event. Additive: old Traces without it replay
-   * unchanged.
+   * retried request never produces an abort event.
    */
   message?: string;
+  /**
+   * 1-based ordinal of this Request within its retry run — the authoritative retry count
+   * (the CLI/Web previously could only count streamed request_ends themselves, which a
+   * mid-stream join undercounts). Stamped on every non-completed request_end and on a
+   * completed one that needed retries; absent on a clean first-try completion (the common
+   * case stays noise-free) and in old Traces (readers keep their local count as fallback).
+   */
+  attempt?: number;
   /**
    * Planned in-run retry wait (ms) — present ONLY when the engine will retry this failure
    * within the same run (status `timeout`/`malformed` with attempts remaining under the
    * applicable cap). Computed by the same formula as the actual backoff sleep
    * (`reconnectDelayMs`), so the announced wait and the real one cannot drift; the Web App
    * renders it as a live countdown to the next attempt. Absent on final failures (an abort
-   * follows instead) and on completed requests. Additive: old Traces replay unchanged.
+   * follows instead) and on completed requests.
    */
   retry_in_ms?: number;
+}
+
+export interface RequestEndPayload extends RequestRetryDetail {
+  type: "request_end";
+  /** Terminal state of this Request (reuses the six StopReason values, sharing its source with this turn's complete message's stop_reason / LLMOutcome; `auth` is the credentials-failure signal hosts key on). */
+  status: StopReason;
 }
 
 /** Compaction trigger reason: context threshold / turn-count threshold / user-initiated request. */

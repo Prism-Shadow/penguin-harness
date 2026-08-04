@@ -975,16 +975,21 @@ export class ContextEngine {
             // (the errors panel) can learn the real reason (e.g. a quota code). When the
             // engine will retry in-run, the planned backoff rides along as retry_in_ms
             // (the frontend's live countdown); absent on final failures and completions.
-            const stopEvt = requestEnd(
-              outcome.status,
-              outcome.message,
-              this.plannedRetryDelayMs(
-                outcome,
-                reconnectsSoFar,
-                this.maxReconnects,
-                RETRY_STATUSES,
-              ),
+            const retryInMs = this.plannedRetryDelayMs(
+              outcome,
+              reconnectsSoFar,
+              this.maxReconnects,
+              RETRY_STATUSES,
             );
+            const stopEvt = requestEnd(outcome.status, {
+              ...(outcome.message !== undefined ? { message: outcome.message } : {}),
+              // The authoritative attempt ordinal (1-based, within this retry run); a clean
+              // first-try completion stays unstamped so the common case adds no noise.
+              ...(outcome.status !== "completed" || reconnectsSoFar > 0
+                ? { attempt: reconnectsSoFar + 1 }
+                : {}),
+              ...(retryInMs !== undefined ? { retryInMs } : {}),
+            });
             queue.push(stopEvt);
             await this.write(stopEvt);
             break;
@@ -1467,17 +1472,22 @@ export class ContextEngine {
         // compaction event pair. A rejected summary ends `completed`, for which
         // plannedRetryDelayMs yields nothing — rejection resends are immediate (see
         // summarizeContext), so no wait is ever announced for them.
+        const retryInMs = this.plannedRetryDelayMs(
+          res.value,
+          reconnectsSoFar,
+          this.compactionMaxReconnects,
+          RETRY_STATUSES,
+        );
         await this.write(
-          requestEnd(
-            res.value.status,
-            res.value.message,
-            this.plannedRetryDelayMs(
-              res.value,
-              reconnectsSoFar,
-              this.compactionMaxReconnects,
-              RETRY_STATUSES,
-            ),
-          ),
+          requestEnd(res.value.status, {
+            ...(res.value.message !== undefined ? { message: res.value.message } : {}),
+            // Same stamping rule as the turn loop; for compaction the ordinal counts every
+            // retry kind (transport and unusable-summary alike share one budget).
+            ...(res.value.status !== "completed" || reconnectsSoFar > 0
+              ? { attempt: reconnectsSoFar + 1 }
+              : {}),
+            ...(retryInMs !== undefined ? { retryInMs } : {}),
+          }),
         );
         return { status: res.value.status, text, toolCalls, usage };
       }

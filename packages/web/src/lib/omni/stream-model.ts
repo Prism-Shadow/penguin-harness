@@ -220,7 +220,7 @@ export interface ReconnectItem {
   id: number;
   /** Trigger reason: timeout (timed out / disconnected), malformed (an incomplete or unparseable response), or failed (the provider returned an error). */
   status: ReconnectStatus;
-  /** Which retry attempt this is (increments on consecutive failures within the same round; resets to 1 after a request finishes normally). */
+  /** Which retry attempt this is: request_end.attempt when the core stamps it (authoritative), else a local count of consecutive failures within the round (resets after a request finishes normally). */
   attempt: number;
   /** The retry request has been sent (set true by the next request_begin). */
   retrying: boolean;
@@ -1404,7 +1404,10 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       // ladder with nothing on screen and no give-up control. It would also reset the counter
       // mid-ladder, renumbering a mixed timeout → failed → timeout run back to retry #1.
       if (isReconnectStatus(p.status)) {
-        model.reconnectRun += 1;
+        // Prefer the event's authoritative attempt ordinal (new cores stamp it) and resync
+        // the local counter to it — a mid-stream join misses earlier request_ends, so the
+        // local count alone would renumber from 1. Old streams keep the local count.
+        model.reconnectRun = p.attempt ?? model.reconnectRun + 1;
         const item: ReconnectItem = {
           kind: "reconnect",
           id: nextId(model),

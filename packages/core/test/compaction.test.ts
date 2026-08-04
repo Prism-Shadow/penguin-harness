@@ -538,10 +538,17 @@ describe("context compaction", () => {
     // The Trace-written compaction request_ends announce the planned backoff under the
     // COMPACTION cap (base 1ms: 1, then 2), with none on the final failure — these events
     // are never streamed, so the value lands in the Trace record only.
-    const retryPlans = recorded
-      .filter((m) => (m.payload as { type?: string }).type === "request_end")
-      .map((m) => (m.payload as { retry_in_ms?: number }).retry_in_ms);
+    const compactionEnds = recorded.filter(
+      (m) => (m.payload as { type?: string }).type === "request_end",
+    );
+    const retryPlans = compactionEnds.map(
+      (m) => (m.payload as { retry_in_ms?: number }).retry_in_ms,
+    );
     expect(retryPlans).toEqual([undefined, 1, 2, undefined]);
+    // The attempt ordinal rides the same events: the turn's clean completion stays
+    // unstamped, the three compaction failures count 1..3.
+    const attempts = compactionEnds.map((m) => (m.payload as { attempt?: number }).attempt);
+    expect(attempts).toEqual([undefined, 1, 2, 3]);
   });
 
   it("an empty compaction response (thinking only, no text) is retried like any failure: 5 attempts, then failed with the context kept", async () => {

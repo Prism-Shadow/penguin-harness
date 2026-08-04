@@ -380,7 +380,9 @@ export class StreamRenderer {
   private taskLastReqEndMs: number | null = null;
   /** Retryable terminal state (failed/timeout/malformed) of the previous request: the next request_begin is a retry, at which point a notice is printed. */
   private pendingRetry: "failed" | "timeout" | "malformed" | null = null;
-  /** Number of retries already initiated (increments on consecutive failures, reset once a request completes normally). */
+  /** The pending failure's authoritative attempt ordinal (request_end.attempt), when the core stamped it. */
+  private pendingRetryAttempt: number | undefined;
+  /** Retry counter for the printed label: request_end.attempt when available, else a local count of consecutive failures (reset once a request completes normally). */
   private reconnectRun = 0;
 
   constructor(out: NodeJS.WritableStream = process.stdout, t: Messages = defaultMessages()) {
@@ -698,7 +700,10 @@ export class StreamRenderer {
         // retries are exhausted, there's no retry after the last failure, only an abort
         // explaining why).
         if (this.pendingRetry) {
-          this.reconnectRun += 1;
+          // Prefer the failed request_end's authoritative attempt ordinal (new cores stamp
+          // it) and resync the local counter; old streams keep the local count.
+          this.reconnectRun = this.pendingRetryAttempt ?? this.reconnectRun + 1;
+          this.pendingRetryAttempt = undefined;
           this.finishLine();
           this.out.write(`${dim(this.t.reconnectLabel(this.pendingRetry, this.reconnectRun))}\n`);
           this.lastLineKey = null;
@@ -725,8 +730,10 @@ export class StreamRenderer {
         // reset the counter mid-ladder so a mixed run renumbers back to retry #1.
         if (p.status === "failed" || p.status === "timeout" || p.status === "malformed") {
           this.pendingRetry = p.status;
+          this.pendingRetryAttempt = p.attempt;
         } else {
           this.pendingRetry = null;
+          this.pendingRetryAttempt = undefined;
           this.reconnectRun = 0;
         }
       } else if (payload.type === "compaction_begin") {

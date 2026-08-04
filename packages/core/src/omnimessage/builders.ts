@@ -273,20 +273,21 @@ export function requestBegin(): OmniMessage<RequestBeginPayload> {
 
 /**
  * request end event: carries the terminal state (`completed` means this turn was already
- * committed to AgentHub), plus — on non-completed statuses — the failure detail (from
- * LLMOutcome.message) and, when the engine will retry in-run, the planned backoff wait
- * (`retry_in_ms`, rendered by the Web App as a live countdown).
+ * committed to AgentHub), plus the unified retry detail block (see RequestRetryDetail):
+ * the failure detail (from LLMOutcome.message), the 1-based attempt ordinal, and — when the
+ * engine will retry in-run — the planned backoff wait (`retry_in_ms`, rendered by the Web
+ * App as a live countdown). This builder is the one place the block is stamped.
  */
 export function requestEnd(
   status: StopReason,
-  message?: string,
-  retryInMs?: number,
+  retry: { message?: string; attempt?: number; retryInMs?: number } = {},
 ): OmniMessage<RequestEndPayload> {
   return event({
     type: "request_end",
     status,
-    ...(message !== undefined ? { message } : {}),
-    ...(retryInMs !== undefined ? { retry_in_ms: retryInMs } : {}),
+    ...(retry.message !== undefined ? { message: retry.message } : {}),
+    ...(retry.attempt !== undefined ? { attempt: retry.attempt } : {}),
+    ...(retry.retryInMs !== undefined ? { retry_in_ms: retry.retryInMs } : {}),
   });
 }
 
