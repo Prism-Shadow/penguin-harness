@@ -404,11 +404,12 @@ describe("skills api", () => {
     expect((await member.post(`${url}/archive`, { dataBase64: zipB64(files) })).status).toBe(201);
 
     // Export it: a direct binary attachment (application/zip), like the snapshot export.
+    // The frontmatter declares version: 2 explicitly, so the filename carries -v2.
     const res = await member.get(`${url}/zip-skill/archive`);
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("application/zip");
     expect(res.headers.get("content-disposition")).toBe(
-      "attachment; filename*=UTF-8''zip-skill.zip",
+      "attachment; filename*=UTF-8''zip-skill-v2.zip",
     );
     const entries = unzipSync(new Uint8Array(await res.arrayBuffer()));
     // Single-top-dir layout with every installed file, byte-identical to the upload — the
@@ -421,5 +422,21 @@ describe("skills api", () => {
 
     // Exporting a skill that isn't installed → 404 (same criterion as uninstall).
     expect((await member.get(`${url}/no-such-skill/archive`)).status).toBe(404);
+
+    // Without an explicit frontmatter version: field the filename stays <name>.zip —
+    // parseSkillFrontmatter's defaulted 1 must not be presented as a declared version.
+    const noVersion = "---\nname: nover-skill\ndescription: No version field\n---\nbody\n";
+    expect(
+      (
+        await member.post(`${url}/archive`, {
+          dataBase64: zipB64({ "SKILL.md": strToU8(noVersion) }),
+        })
+      ).status,
+    ).toBe(201);
+    const plain = await member.get(`${url}/nover-skill/archive`);
+    expect(plain.status).toBe(200);
+    expect(plain.headers.get("content-disposition")).toBe(
+      "attachment; filename*=UTF-8''nover-skill.zip",
+    );
   });
 });

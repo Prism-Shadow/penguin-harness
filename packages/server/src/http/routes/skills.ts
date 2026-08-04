@@ -199,6 +199,25 @@ async function collectSkillArchive(dir: string, name: string): Promise<Record<st
   return out;
 }
 
+/**
+ * Version for the export filename: only an explicit frontmatter `version:` field that
+ * parses as a natural number yields a `-v<version>` filename suffix — parseSkillFrontmatter
+ * defaults a missing field to 1, which must not be baked into a filename as if declared.
+ * Mirrors the parser's frontmatter rules (first `---` block, `key: value` split on the
+ * first colon, BOM/CRLF tolerated).
+ */
+function explicitSkillVersion(skillMd: string): number | null {
+  const block = /^---\r?\n([\s\S]*?)\r?\n---/.exec(skillMd.replace(/^\uFEFF/, ""))?.[1];
+  if (block === undefined) return null;
+  for (const line of block.split(/\r?\n/)) {
+    const idx = line.indexOf(":");
+    if (idx <= 0 || line.slice(0, idx).trim() !== "version") continue;
+    const version = Number.parseInt(line.slice(idx + 1).trim(), 10);
+    return Number.isInteger(version) && version >= 1 ? version : null;
+  }
+  return null;
+}
+
 /** Validate the POST request body: names must be a non-empty array of strings. */
 function parseInstallNames(body: Record<string, unknown>): string[] {
   if (!Array.isArray(body.names) || body.names.length === 0) {
@@ -316,12 +335,17 @@ export function agentSkillsRoutes(deps: AppDeps): Hono<AppEnv> {
     } catch {
       throw new HttpError(404, "not_found", `Skill is not installed: ${name}`);
     }
-    const zip = zipSync(await collectSkillArchive(dir, name));
+    const archiveFiles = await collectSkillArchive(dir, name);
+    // A -v<version> suffix only when the frontmatter declares one explicitly (the header
+    // is the authority on the filename — the web tab reads it from Content-Disposition).
+    const version = explicitSkillVersion(strFromU8(archiveFiles[`${name}/SKILL.md`]!));
+    const fileName = version === null ? `${name}.zip` : `${name}-v${version}.zip`;
+    const zip = zipSync(archiveFiles);
     return new Response(new Uint8Array(zip), {
       headers: {
         "Content-Type": "application/zip",
-        // The name is id-validated ([A-Za-z0-9_-]+), so the encoded filename is the name itself.
-        "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(`${name}.zip`)}`,
+        // The name is id-validated ([A-Za-z0-9_-]+), so the encoded filename is itself.
+        "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`,
         "X-Content-Type-Options": "nosniff",
       },
     });

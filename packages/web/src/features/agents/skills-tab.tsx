@@ -4,11 +4,13 @@
  * re-fetched from the API after every mutation instead of trusting client state). Rows show
  * the skill icon, name, localized short description and version/updated metadata; uninstall
  * confirms first (deletes the whole directory, local edits included). The "Import skill"
- * modal offers two paths: the recommended chat install (copy a review-then-install prompt
- * embedding a URL / open a new chat with this Agent) and a zip upload posted base64 to the
- * archive endpoint (409 skill_exists asks before overwriting). Each row can also export
- * the installed directory as a zip that round-trips through that same endpoint. Read and
- * mutate are both member-level, matching the skills routes — no owner gating here.
+ * modal offers two paths: the recommended chat install (a source field accepting a web
+ * page / repo URL / local path / foreign install command — see skill-import-source.ts —
+ * whose generated review-then-install prompt can be copied or prefilled into a new chat
+ * with this Agent) and a zip upload posted base64 to the archive endpoint (409
+ * skill_exists asks before overwriting). Each row can also export the installed directory
+ * as a zip that round-trips through that same endpoint. Read and mutate are both
+ * member-level, matching the skills routes — no owner gating here.
  */
 import { useCallback, useEffect, useState } from "react";
 import type { ChangeEvent } from "react";
@@ -19,9 +21,11 @@ import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatRelativeDate } from "../../lib/format";
+import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
 import { Button } from "../../components/ui/button";
+import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { Input, Textarea } from "../../components/ui/input";
 import { Modal } from "../../components/ui/modal";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
@@ -32,6 +36,8 @@ import { toastError, toastSuccess } from "../../components/ui/toast";
 import { SkillIcon, skillTileColor } from "../skills/skill-icon-view";
 import { localizedShortText } from "../chat/skill-use";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
+import { draftKey, loadDraft, saveDraft } from "../chat/draft-cache";
+import { buildImportPrompt } from "./skill-import-source";
 
 /** <label> version of the button look (matches Button secondary sm; the Button component only renders <button>) — same as the Overview tab's snapshot-import label. */
 const UPLOAD_LABEL_CLASS =
@@ -39,6 +45,10 @@ const UPLOAD_LABEL_CLASS =
   "bg-white px-2.5 py-1 text-xs font-medium text-gray-800 transition-colors duration-150 " +
   "hover:bg-gray-50 focus-within:ring-2 focus-within:ring-gray-400/30 " +
   "dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800";
+
+/** Delete (trash can) icon path — the same glyph as the agents page card delete. */
+const TRASH_ICON =
+  "M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m3 0l-1 13a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L6 7m4 4v6m4-6v6";
 
 /** Zip pending an overwrite confirmation: the payload to resend with overwrite: true plus the skill name for the confirm copy. */
 interface PendingOverwrite {
@@ -49,6 +59,7 @@ interface PendingOverwrite {
 export function SkillsTab({ agentId }: { agentId: string }) {
   const navigate = useNavigate();
   const { locale } = useLocale();
+  const userId = useAuth().user?.userId ?? null;
   const { currentProject, agents, setCurrentAgentId } = useProject();
   const projectId = currentProject?.projectId ?? null;
 
@@ -58,9 +69,9 @@ export function SkillsTab({ agentId }: { agentId: string }) {
   const [busy, setBusy] = useState(false);
   // Skill name pending uninstall confirmation (non-null shows the confirm modal).
   const [removing, setRemoving] = useState<string | null>(null);
-  // Import modal: URL for the chat-install prompt + upload state travel with the modal.
+  // Import modal: the source for the chat-install prompt + upload state travel with the modal.
   const [importOpen, setImportOpen] = useState(false);
-  const [url, setUrl] = useState("");
+  const [source, setSource] = useState("");
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   // Non-null shows the overwrite confirm (the archive POST answered 409 skill_exists).
@@ -108,10 +119,16 @@ export function SkillsTab({ agentId }: { agentId: string }) {
           body?.error?.message ?? S.common.unknownError,
         );
       }
+      // The server's Content-Disposition is the authority on the filename (it appends
+      // -v<version> when the frontmatter declares one explicitly); <name>.zip is only
+      // the fallback for a missing/unparseable header.
+      const encoded = /filename\*=UTF-8''([^;]+)/i.exec(
+        res.headers.get("content-disposition") ?? "",
+      )?.[1];
       const url = URL.createObjectURL(await res.blob());
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = `${name}.zip`;
+      anchor.download = encoded ? decodeURIComponent(encoded) : `${name}.zip`;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
@@ -139,24 +156,44 @@ export function SkillsTab({ agentId }: { agentId: string }) {
 
   /** Open the import modal (reset the form and upload state). */
   const openImport = () => {
-    setUrl("");
+    setSource("");
     setUploadError(null);
     setOverwriting(null);
     setImportOpen(true);
   };
 
-  const trimmedUrl = url.trim();
-  const chatPrompt = S.skills.importPrompt(trimmedUrl || "<URL>");
+  // The prompt tailors its lead sentence to the source kind (URL / repo / path / command /
+  // reference — see skill-import-source.ts); the preview substitutes a placeholder token
+  // until something is entered.
+  const trimmedSource = source.trim();
+  const chatPrompt = buildImportPrompt(trimmedSource || S.skills.importSourceToken);
 
   const copyPrompt = () => {
     void navigator.clipboard
-      .writeText(S.skills.importPrompt(trimmedUrl))
+      .writeText(buildImportPrompt(trimmedSource))
       .then(() => toastSuccess(S.skills.importCopied))
       .catch(() => toastError(S.common.unknownError));
   };
 
-  /** "Open a new chat" with this Agent: same draft-state entry as the agents page "New Chat" button. */
+  /**
+   * "Open a new chat" with this Agent: the same draft-state entry as the agents page
+   * "New Chat" button. A non-empty source also prefills the composer with the generated
+   * install prompt through the draft cache — the mechanism the skill library's quick
+   * invoke already uses, so draft-view itself needs no changes. handoffAgentId is
+   * cleared (a leftover handoff target would forward the install prompt to a different
+   * Agent) and the skill pre-selection reset alongside the overwritten text.
+   */
   const openChat = () => {
+    if (userId && projectId && trimmedSource) {
+      const key = draftKey(userId, projectId);
+      saveDraft(key, {
+        ...loadDraft(key),
+        agentId,
+        text: buildImportPrompt(trimmedSource),
+        skills: [],
+        handoffAgentId: undefined,
+      });
+    }
     setCurrentAgentId(agentId);
     navigate(`/chat/${DRAFT_SESSION_ID}`, { state: { agentId } });
   };
@@ -269,23 +306,27 @@ export function SkillsTab({ agentId }: { agentId: string }) {
               >
                 {metaLine(skill)}
               </span>
+              {/* Icon-only row actions (same affordance as the agents page cards: neutral
+                  bordered icon for export, danger variant with red text/hover for delete);
+                  the tooltip + aria-label carry the wording. */}
               <Button
                 size="icon"
-                variant="ghost"
                 title={S.skills.exportSkill}
                 aria-label={`${S.skills.exportSkill} ${skill.name}`}
                 disabled={busy}
                 onClick={() => void exportSkill(skill.name)}
               >
-                <DownloadIcon size={14} />
+                <DownloadIcon size={14} className="text-gray-600 dark:text-gray-300" />
               </Button>
               <Button
-                size="sm"
-                variant="ghost"
+                size="icon"
+                variant="danger"
+                title={S.skills.uninstall}
+                aria-label={`${S.skills.uninstall} ${skill.name}`}
                 disabled={busy}
                 onClick={() => setRemoving(skill.name)}
               >
-                {S.skills.uninstall}
+                <GlyphIcon d={TRASH_ICON} size={14} />
               </Button>
             </div>
           ))}
@@ -308,22 +349,23 @@ export function SkillsTab({ agentId }: { agentId: string }) {
             <div className="mt-2.5 space-y-2.5">
               <Input
                 size="sm"
-                label={S.skills.importUrlLabel}
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder={S.skills.importUrlPlaceholder}
+                label={S.skills.importSourceLabel}
+                hint={S.skills.importSourceHint}
+                value={source}
+                onChange={(e) => setSource(e.target.value)}
+                placeholder={S.skills.importSourcePlaceholder}
                 autoComplete="off"
               />
               <Textarea
                 label={S.skills.importPromptLabel}
                 size="sm"
-                rows={4}
+                rows={5}
                 readOnly
                 value={chatPrompt}
                 className="text-gray-600 dark:text-gray-300"
               />
               <div className="flex gap-2">
-                <Button size="sm" disabled={trimmedUrl === ""} onClick={copyPrompt}>
+                <Button size="sm" disabled={trimmedSource === ""} onClick={copyPrompt}>
                   {S.skills.importCopyPrompt}
                 </Button>
                 <Button size="sm" variant="primary" onClick={openChat}>
