@@ -23,6 +23,7 @@ import { ProjectsRepo } from "./db/repos/projects.js";
 import { GoalsRepo } from "./db/repos/goals.js";
 import { SchedulesRepo } from "./db/repos/schedules.js";
 import { SessionsRepo } from "./db/repos/sessions.js";
+import { TraceIndexRepo } from "./db/repos/trace-index.js";
 import { UiPrefsRepo } from "./db/repos/ui-prefs.js";
 import { UsageRepo } from "./db/repos/usage.js";
 import { UsersRepo } from "./db/repos/users.js";
@@ -69,6 +70,7 @@ import { SnapshotService } from "./services/snapshot-service.js";
 import { ProjectConfigService } from "./services/project-config-service.js";
 import { ProjectService } from "./services/project-service.js";
 import { SessionService } from "./services/session-service.js";
+import { TraceIndexService } from "./services/trace-index.js";
 import { TraceService } from "./services/trace-service.js";
 import { UpdateCheckService } from "./services/update-check-service.js";
 import { UsageService } from "./services/usage-service.js";
@@ -98,6 +100,8 @@ export interface AppDeps {
   agentConfigService: AgentConfigService;
   sessionService: SessionService;
   traceService: TraceService;
+  /** Trace-file index (derived cache + reconciler); routes use it for delete-time coherence. */
+  traceIndex: TraceIndexService;
   usageService: UsageService;
   /** GitHub latest-release lookup for the web UI's update reminder (cached, fail-soft). */
   updateCheck: UpdateCheckService;
@@ -155,12 +159,18 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
   const agentService = new AgentService(config.root, agentsRepo, agentConfigService);
   // Session-origin registry: session_meta is the single source of truth (no DB column);
   // shared by the manager (subagent registration), the loader (self-heal rebuild),
-  // SessionService (creation / adoption / lazy list resolution) and TraceService (the
-  // paginated listing's bounded classification).
+  // SessionService (creation / adoption / lazy list resolution), and the Trace index /
+  // listing classification.
   const sessionSources = new SessionSources();
-  // sessionsRepo + sessionSources: read-only title/category/workspace sources for the
-  // paginated Trace listing (listing visibility itself stays directory-scan-only).
-  const traceService = new TraceService(config.root, sessionsRepo, sessionSources);
+  // Trace-file index: the derived cache every trace listing/locating path serves from
+  // (mtime-gated reconciler keeps it in step with the on-disk tree; see trace-index.ts).
+  const traceIndexRepo = new TraceIndexRepo(db);
+  const traceIndex = new TraceIndexService(config.root, traceIndexRepo, sessionSources);
+  const traceService = new TraceService(config.root, {
+    index: traceIndex,
+    sessions: sessionsRepo,
+    sources: sessionSources,
+  });
   const workspaceFiles = new WorkspaceFilesService();
   // Per-process secret: preview tokens are short-lived, so losing them on restart is
   // harmless and there is nothing to persist or rotate.
@@ -215,6 +225,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     goals: goalsRepo,
     projectConfig: projectConfigService,
     manager,
+    traceIndex,
   });
   const authService = new AuthService({
     users: usersRepo,
@@ -239,6 +250,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     manager,
     projectConfig: projectConfigService,
     sources: sessionSources,
+    traceIndex,
   });
   // Schedule scheduler: active only while the server is running. Only
   // assembled here; start() is called in index.ts (tests drive it via tickOnce, no real timer).
@@ -269,6 +281,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     agentConfigService,
     sessionService,
     traceService,
+    traceIndex,
     usageService,
     updateCheck,
     workspaceFiles,

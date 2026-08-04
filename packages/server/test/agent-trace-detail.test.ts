@@ -104,24 +104,30 @@ describe("agent-trace-detail", () => {
     expect(legacy.sessions).toBeUndefined();
     expect(legacy.totalSessions).toBeUndefined();
 
-    // Paged request: the unmanaged Session has no sessions-table row, so its title
-    // derives from the first user prompt (bounded head-read of the earliest shard).
-    const paged = (await (await owner.get(`${base()}?limit=10`)).json()) as AgentTracesResponse;
+    // Default paged request: the unmanaged Session is CLI-origin (no web sessions-table
+    // row, not subagent/schedule), so the "show CLI sessions" OFF default excludes it
+    // from the listing AND the counts.
+    const hidden = (await (await owner.get(`${base()}?limit=10`)).json()) as AgentTracesResponse;
+    expect(hidden.sessions).toEqual([]);
+    expect(hidden.totalSessions).toBe(0);
+    expect(hidden.counts).toEqual({ active: 0, subagent: 0, schedule: 0, archived: 0 });
+
+    // cli=1: visible, with title derived from the first user prompt and category /
+    // workspace from the registration-time facts (the index head-read the earliest
+    // shard once when the file was first seen — exact on the FIRST request).
+    const paged = (await (
+      await owner.get(`${base()}?limit=10&cli=1`)
+    ).json()) as AgentTracesResponse;
     expect(paged.totalSessions).toBe(1);
     expect(paged.sessions!.map((s) => s.sessionId)).toEqual([UNMANAGED]);
     expect(paged.sessions![0]!.title).toBe("child session input");
     expect(paged.sessions![0]!.files.map((f) => ({ index: f.index, date: f.date }))).toEqual([
       { index: 1, date: "2026-07-06" },
     ]);
-    // Untracked + unobserved on the first request: active bucket, unknown workspace (the
-    // bounded classification), with the per-category totals riding along.
     expect(paged.sessions![0]!.category).toBe("active");
-    expect(paged.sessions![0]!.workspace).toBe("");
+    expect(paged.sessions![0]!.workspace).toBe("/tmp/w");
     expect(paged.counts).toEqual({ active: 1, subagent: 0, schedule: 0, archived: 0 });
-    // That page's head-read observed session_meta: the next request knows the workspace.
-    const observed = (await (await owner.get(`${base()}?limit=10`)).json()) as AgentTracesResponse;
-    expect(observed.sessions![0]!.workspace).toBe("/tmp/w");
-    expect(observed.workspaceCounts!["/tmp/w"]).toEqual({
+    expect(paged.workspaceCounts!["/tmp/w"]).toEqual({
       active: 1,
       subagent: 0,
       schedule: 0,
@@ -141,26 +147,34 @@ describe("agent-trace-detail", () => {
       client: "cli",
       createdAt: "2026-07-06T09:00:00.000Z",
     });
-    const titled = (await (await owner.get(`${base()}?limit=10`)).json()) as AgentTracesResponse;
+    const titled = (await (
+      await owner.get(`${base()}?limit=10&cli=1`)
+    ).json()) as AgentTracesResponse;
     expect(titled.sessions![0]!.title).toBe("已生成的标题");
+    // The adopted row carries client='cli': it stays behind the preference by default.
+    const stillHidden = (await (
+      await owner.get(`${base()}?limit=10`)
+    ).json()) as AgentTracesResponse;
+    expect(stillHidden.sessions).toEqual([]);
 
     // offset pages past the only group; offset without limit is a client error.
     const empty = (await (
-      await owner.get(`${base()}?limit=10&offset=10`)
+      await owner.get(`${base()}?limit=10&offset=10&cli=1`)
     ).json()) as AgentTracesResponse;
     expect(empty.sessions).toEqual([]);
     expect(empty.totalSessions).toBe(1);
     expect((await owner.get(`${base()}?offset=1`)).status).toBe(400);
 
     // Category filter: pages within one bucket (totalSessions = the bucket's count);
-    // unknown values and category-without-limit are client errors.
+    // unknown values, category-without-limit, and a bad cli value are client errors.
     const filtered = (await (
-      await owner.get(`${base()}?limit=10&category=subagent`)
+      await owner.get(`${base()}?limit=10&category=subagent&cli=1`)
     ).json()) as AgentTracesResponse;
     expect(filtered.sessions).toEqual([]);
     expect(filtered.totalSessions).toBe(0);
     expect((await owner.get(`${base()}?limit=10&category=bogus`)).status).toBe(400);
     expect((await owner.get(`${base()}?category=active`)).status).toBe(400);
+    expect((await owner.get(`${base()}?limit=10&cli=2`)).status).toBe(400);
   });
 
   it("user without access → 404 (requireProjectAccess)", async () => {

@@ -12,7 +12,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
-  agentsDir,
   isSessionMeta,
   parseTraceLines,
   parseUserSteeringText,
@@ -26,7 +25,6 @@ import type {
   RequestSpan,
   SessionCategory,
   SessionCategoryCounts,
-  SessionSource,
   ToolCallSpan,
   TraceAnalysisResponse,
   TraceEventsResponse,
@@ -38,12 +36,11 @@ import type {
   UsageTrendPointInTrace,
 } from "../api/types.js";
 import type { SessionRow } from "../db/repos/sessions.js";
+import type { TraceFileRow, TraceSessionRow } from "../db/repos/trace-index.js";
 import { HttpError } from "../http/errors.js";
 import { formatLocalDate } from "../internal/dates.js";
-import { readTraceHead } from "../internal/trace-head.js";
-import { asSessionSource } from "../runtime/session-sources.js";
 import type { SessionSources } from "../runtime/session-sources.js";
-import { fallbackTitle } from "../runtime/title-generator.js";
+import { TraceIndexService, traceFilePath } from "./trace-index.js";
 
 const TRACE_FILE_RE = /^(.+)_(\d{3})\.jsonl$/;
 
@@ -78,84 +75,68 @@ function subagentPointer(msg: OmniMessage): string | null {
   return p.session_id;
 }
 
-async function listDirs(dir: string): Promise<string[]> {
-  try {
-    const entries = await fs.readdir(dir, { withFileTypes: true });
-    return entries.filter((e) => e.isDirectory()).map((e) => e.name);
-  } catch {
-    return [];
-  }
-}
-
-async function listFiles(dir: string): Promise<string[]> {
-  try {
-    const entries = await fs.readdir(dir, { withFileTypes: true });
-    return entries.filter((e) => e.isFile()).map((e) => e.name);
-  } catch {
-    return [];
-  }
-}
-
 /**
  * Read-only slice of the Session index the paginated listing consults (SessionsRepo
- * structurally satisfies it; injected so service tests need no database): one indexed
- * query answers title / archived / workspace for every DB-tracked Session of the Agent.
+ * structurally satisfies it; injected so service tests need no full app): one indexed
+ * query answers title / archived / workspace / client for every DB-tracked Session of
+ * the Agent.
  */
 export interface TraceSessionIndex {
   listByAgent(projectId: string, agentId: string): SessionRow[];
 }
 
-/** One Session's bounded classification result (see classify): its sidebar category + Workspace path ("" = unknown). */
+/** TraceService wiring (the trace-file index is required: every listing/locating path serves from it — no directory walks). */
+export interface TraceServiceDeps {
+  index: TraceIndexService;
+  /** Optional (narrow tests may omit): DB rows supplying titles / archived / workspace / client. */
+  sessions?: TraceSessionIndex;
+  /** Optional (narrow tests may omit): the shared in-process Session-origin registry (single source of truth for `source`). */
+  sources?: SessionSources;
+}
+
+/** One Session's classification result (see classify): its sidebar category + Workspace path ("" = unknown). */
 interface TraceSessionFacts {
   category: SessionCategory;
   workspace: string;
 }
 
 export class TraceService {
-  /**
-   * session_meta facts observed by this process's page head-reads, keyed by sessionId:
-   * origin + Workspace of Sessions the DB does not track. Fed by titleFromHead and
-   * consulted by classify — classification itself never touches the filesystem, so a
-   * DB-untracked Session no page has surfaced yet counts as active / "" workspace until
-   * first observed (the bounded-counts design; see agentTracesPage).
-   */
-  private readonly headFacts = new Map<
-    string,
-    { source: SessionSource | null; workspace: string }
-  >();
-
   constructor(
     private readonly root: string,
-    /** Optional (tests may omit): DB rows supplying titles / archived / workspace for the paginated listing. */
-    private readonly index?: TraceSessionIndex,
-    /** Optional (tests may omit): the shared in-process Session-origin registry (single source of truth for `source`). */
-    private readonly sources?: SessionSources,
+    private readonly deps: TraceServiceDeps,
   ) {}
 
-  /** All of this Session's Trace files (sorted by index ascending). */
+  /**
+   * All of this Session's Trace files (sorted by index ascending), served from the
+   * index. An empty answer force-reconciles once and retries before being believed:
+   * disk is the source of truth, and a gate blind spot (an external write into an old
+   * date dir) must cost one extra scan, never a false 404.
+   */
   private async locateAll(
     projectId: string,
     agentId: string,
     sessionId: string,
   ): Promise<LocatedFile[]> {
-    const dir = tracesDir(this.root, projectId, agentId);
-    const out: LocatedFile[] = [];
-    for (const dateDir of await listDirs(dir)) {
-      for (const file of await listFiles(path.join(dir, dateDir))) {
-        const match = TRACE_FILE_RE.exec(file);
-        if (!match || match[1] !== sessionId) continue;
-        out.push({ path: path.join(dir, dateDir, file), date: dateDir, index: Number(match[2]) });
-      }
+    await this.deps.index.reconcileAgent(projectId, agentId);
+    let rows = this.deps.index.repo.listFilesBySession(projectId, agentId, sessionId);
+    if (rows.length === 0) {
+      await this.deps.index.reconcileAgent(projectId, agentId, { force: true });
+      rows = this.deps.index.repo.listFilesBySession(projectId, agentId, sessionId);
     }
-    return out.sort((a, b) => a.index - b.index);
+    return rows.map((r) => ({
+      path: traceFilePath(this.root, r),
+      date: r.date,
+      index: r.fileIndex,
+    }));
   }
 
-  /** Deletes all of this Session's Trace files (called when the Session is deleted). */
+  /** Deletes all of this Session's Trace files (called when the Session is deleted); the index rows go with them. */
   async deleteSessionTraces(projectId: string, agentId: string, sessionId: string): Promise<void> {
     const files = await this.locateAll(projectId, agentId, sessionId);
     for (const file of files) {
       await fs.rm(file.path, { force: true });
     }
+    this.deps.index.removeSession(projectId, agentId, sessionId);
   }
 
   /**
@@ -180,38 +161,36 @@ export class TraceService {
     sessionId: string,
   ): Promise<OmniMessage[]> {
     return this.readMessagesExpanded(projectId, agentId, sessionId, {
-      index: null,
+      projectScanned: false,
       ancestry: new Set([sessionId]),
       depth: 0,
     });
   }
 
   /**
-   * A Project-wide session location index (sessionId -> agentId): built by
-   * scanning every Agent's traces directory. Built lazily the first time a
-   * subagent pointer is encountered, then reused across the whole readMessages
-   * call — rescanning per pointer would blow up into tens of thousands of readdir
-   * calls under multiple sub-sessions plus recursive expansion.
+   * Locates a subagent pointer's owning Agent within the Project: a single index
+   * lookup (the old implementation walked EVERY Agent's whole traces tree to build a
+   * sessionId → agentId map per readMessages call). On a miss, the whole Project is
+   * force-reconciled ONCE per readMessages call and the lookup retried — a child
+   * Trace written by an external process is one scan away, never invisible.
    */
-  private async buildSessionIndex(projectId: string): Promise<Map<string, string>> {
-    const index = new Map<string, string>();
-    for (const agentId of await listDirs(agentsDir(this.root, projectId))) {
-      const dir = tracesDir(this.root, projectId, agentId);
-      for (const dateDir of await listDirs(dir)) {
-        for (const file of await listFiles(path.join(dir, dateDir))) {
-          const match = TRACE_FILE_RE.exec(file);
-          if (match && !index.has(match[1]!)) index.set(match[1]!, agentId);
-        }
-      }
-    }
-    return index;
+  private async resolveChildAgent(
+    projectId: string,
+    childSid: string,
+    ctx: { projectScanned: boolean },
+  ): Promise<string | null> {
+    const hit = this.deps.index.repo.findAgentBySession(projectId, childSid);
+    if (hit !== null || ctx.projectScanned) return hit;
+    ctx.projectScanned = true;
+    await this.deps.index.reconcileProject(projectId, { force: true });
+    return this.deps.index.repo.findAgentBySession(projectId, childSid);
   }
 
   private async readMessagesExpanded(
     projectId: string,
     agentId: string,
     sessionId: string,
-    ctx: { index: Map<string, string> | null; ancestry: Set<string>; depth: number },
+    ctx: { projectScanned: boolean; ancestry: Set<string>; depth: number },
   ): Promise<OmniMessage[]> {
     const files = await this.locateAll(projectId, agentId, sessionId);
     const out: OmniMessage[] = [];
@@ -224,8 +203,7 @@ export class TraceService {
           out.push(msg);
           continue;
         }
-        ctx.index ??= await this.buildSessionIndex(projectId);
-        const childAgent = ctx.index.get(childSid);
+        const childAgent = await this.resolveChildAgent(projectId, childSid, ctx);
         let nested: OmniMessage[] = [];
         if (childAgent) {
           ctx.ancestry.add(childSid);
@@ -728,67 +706,65 @@ export class TraceService {
   }
 
   /**
-   * Agent-level browsing. Without `paging`: the legacy full drill-down (newest first:
-   * Agent -> date -> Session -> Trace files), stat-ing every file — unchanged for
-   * existing callers. With `paging`: session-group-centric — one stat-free directory
-   * walk collects every Session's file refs (readdir only), Sessions are ordered by id
-   * descending (ids embed a timestamp, so that is reverse chronological — the same
-   * ordering the web's flatten applied), optionally filtered to one sidebar `category`
-   * (paging applies within it), and only the requested slice gets per-file `fs.stat`
-   * plus title resolution (DB title from one indexed query, else a bounded head-read of
-   * the earliest shard deriving from the first user prompt).
+   * Agent-level browsing, served from the trace-file index (one mtime-gated reconcile,
+   * then pure DB — no directory walks, no head-reads). Without `paging`: the legacy full
+   * drill-down (newest first: Agent -> date -> Session -> Trace files; sizes are the
+   * index's last observed values). With `paging`: session-group-centric — Sessions
+   * ordered by id descending (ids embed a timestamp, so that is reverse chronological),
+   * optionally filtered to one sidebar `category`, CLI-origin Sessions excluded unless
+   * `includeCli` (the "show CLI sessions" preference; the legacy shape is never
+   * filtered — back-compat), and only the returned slice gets per-file `fs.stat` for
+   * fresh sizes (written back to the index).
    */
   async agentTraces(
     projectId: string,
     agentId: string,
     paging?: { offset: number; limit: number } | null,
-    category?: SessionCategory,
+    opts: { category?: SessionCategory; includeCli?: boolean } = {},
   ): Promise<AgentTracesResponse> {
-    const dir = tracesDir(this.root, projectId, agentId);
-    const dates = (await listDirs(dir)).sort().reverse();
-    if (paging) return this.agentTracesPage(projectId, agentId, dir, dates, paging, category);
-    const out: AgentTracesResponse = { dates: [] };
-    for (const date of dates) {
-      const bySession = new Map<string, { index: number; sizeBytes: number }[]>();
-      for (const file of await listFiles(path.join(dir, date))) {
-        const match = TRACE_FILE_RE.exec(file);
-        if (!match) continue;
-        const sessionId = match[1]!;
-        const stat = await fs.stat(path.join(dir, date, file));
-        const files = bySession.get(sessionId) ?? [];
-        files.push({ index: Number(match[2]), sizeBytes: stat.size });
-        bySession.set(sessionId, files);
-      }
-      if (bySession.size === 0) continue;
-      out.dates.push({
-        date,
-        // session_id embeds a timestamp, so reverse lexicographic order is reverse chronological order.
-        sessions: [...bySession.entries()]
-          .sort((a, b) => b[0].localeCompare(a[0]))
-          .map(([sessionId, files]) => ({
-            sessionId,
-            files: files.sort((a, b) => a.index - b.index),
-          })),
-      });
+    await this.deps.index.reconcileAgent(projectId, agentId);
+    const files = this.deps.index.repo.listFilesByAgent(projectId, agentId);
+    if (paging) return this.agentTracesPage(projectId, agentId, files, paging, opts);
+    const byDate = new Map<string, Map<string, { index: number; sizeBytes: number }[]>>();
+    for (const f of files) {
+      const sessions =
+        byDate.get(f.date) ?? new Map<string, { index: number; sizeBytes: number }[]>();
+      const list = sessions.get(f.sessionId) ?? [];
+      list.push({ index: f.fileIndex, sizeBytes: f.sizeBytes });
+      sessions.set(f.sessionId, list);
+      byDate.set(f.date, sessions);
     }
-    return out;
+    return {
+      dates: [...byDate.keys()]
+        .sort()
+        .reverse()
+        .map((date) => ({
+          date,
+          // session_id embeds a timestamp, so reverse lexicographic order is reverse chronological order.
+          sessions: [...byDate.get(date)!.entries()]
+            .sort((a, b) => b[0].localeCompare(a[0]))
+            .map(([sessionId, list]) => ({
+              sessionId,
+              files: list.sort((a, b) => a.index - b.index),
+            })),
+        })),
+    };
   }
 
   /**
-   * Bounded classification (no IO): `archived` comes exactly from the DB row; the origin
-   * comes from the shared sources registry, else from a head-read this process already
-   * performed (headFacts); a DB-untracked Session neither has observed falls into the
-   * `active` bucket with workspace "" (the client's merged temp group) — mirroring the
-   * client sessionCategory's unknown-source fall-through. Deliberately NOT a head-read
-   * fan-out: classifying every untracked Session exactly would re-read a file head per
-   * Session per request (the unbounded cost session-service's counts path also avoids
-   * via its caches).
+   * Classification (no IO): `archived` comes exactly from the DB row; the origin comes
+   * from the shared sources registry, else from the Session's registration-time facts
+   * (trace_sessions — the reconciler head-read its earliest shard once when the file
+   * first appeared, so by listing time every indexed Session is classified exactly).
    */
-  private classify(sessionId: string, row: SessionRow | undefined): TraceSessionFacts {
-    const facts = this.headFacts.get(sessionId);
-    const known = this.sources?.get(sessionId);
-    // Registry answer (including null = known user-created) wins; else fall back to this
-    // process's own observation; undefined = never observed.
+  private classify(
+    sessionId: string,
+    row: SessionRow | undefined,
+    facts: TraceSessionRow | undefined,
+  ): TraceSessionFacts {
+    const known = this.deps.sources?.get(sessionId);
+    // Registry answer (including null = known user-created) wins — it can be fresher
+    // (subagent registration happens at spawn, before any reconcile); else the stored facts.
     const source = known !== undefined ? known : (facts?.source ?? undefined);
     const category: SessionCategory =
       (row?.archivedAt ?? null) !== null
@@ -799,45 +775,56 @@ export class TraceService {
     return { category, workspace: row?.workspace ?? facts?.workspace ?? "" };
   }
 
-  /**
-   * The paginated listing behind agentTraces: stats and title head-reads only for the
-   * returned slice; classification / counts over all groups stay IO-free (classify).
-   */
+  /** The paginated listing behind agentTraces: pure index reads; per-file stat only for the returned slice (sizes written back). */
   private async agentTracesPage(
     projectId: string,
     agentId: string,
-    dir: string,
-    dates: string[],
+    files: TraceFileRow[],
     paging: { offset: number; limit: number },
-    category?: SessionCategory,
+    opts: { category?: SessionCategory; includeCli?: boolean },
   ): Promise<AgentTracesResponse> {
-    // Stat-free discovery walk: every Session's file refs (index/date/path) from readdir alone.
-    const bySession = new Map<string, LocatedFile[]>();
-    for (const date of dates) {
-      for (const file of await listFiles(path.join(dir, date))) {
-        const match = TRACE_FILE_RE.exec(file);
-        if (!match) continue;
-        const files = bySession.get(match[1]!) ?? [];
-        files.push({ path: path.join(dir, date, file), date, index: Number(match[2]) });
-        bySession.set(match[1]!, files);
-      }
+    const bySession = new Map<string, TraceFileRow[]>();
+    for (const f of files) {
+      const list = bySession.get(f.sessionId) ?? [];
+      list.push(f);
+      bySession.set(f.sessionId, list);
     }
-    // One indexed query for the Agent's tracked rows (title / archived / workspace) — the
-    // CLI-created rows too: this page is the observability surface, nothing is filtered
-    // by creating client.
+    // One indexed query per source: the Agent's DB rows (title / archived / workspace /
+    // client — CLI rows included) and the registration-time facts.
     const rows = new Map(
-      (this.index?.listByAgent(projectId, agentId) ?? []).map((r) => [r.sessionId, r]),
+      (this.deps.sessions?.listByAgent(projectId, agentId) ?? []).map((r) => [r.sessionId, r]),
     );
+    const factsBySession = new Map(
+      this.deps.index.repo.listSessionsByAgent(projectId, agentId).map((r) => [r.sessionId, r]),
+    );
+    /**
+     * CLI-origin = no web-created DB row AND not a subagent/schedule Session. Server-created
+     * Sessions always have a row (creation / subagent registration insert one), so rowless =
+     * external CLI; adopted CLI rows carry client='cli'. The default listing excludes these —
+     * the same "show CLI sessions" preference the sidebar applies — while subagent/schedule
+     * Sessions stay in their folders regardless of which process ran them.
+     */
+    const cliOrigin = (sessionId: string, facts: TraceSessionFacts): boolean => {
+      if (facts.category === "subagent" || facts.category === "schedule") return false;
+      const row = rows.get(sessionId);
+      return !(
+        row !== undefined &&
+        (row.client === null || row.client === undefined || row.client === "web")
+      );
+    };
     const ids = [...bySession.keys()].sort((a, b) => b.localeCompare(a));
-    // Classify every group once; the same result drives the filter, the counts AND the
-    // returned fields, so a row can never appear in a bucket its own `category` denies.
-    // Page head-reads below refine the registries for FUTURE requests only.
+    // Classify every group once; the same result drives the CLI/category filters, the
+    // counts AND the returned fields, so a row can never appear in a bucket its own
+    // `category` denies. Hidden CLI-origin groups are excluded from counts too.
     const counts: SessionCategoryCounts = { active: 0, subagent: 0, schedule: 0, archived: 0 };
     const workspaceCounts: Record<string, SessionCategoryCounts> = {};
     const factsById = new Map<string, TraceSessionFacts>();
+    const visible: string[] = [];
     for (const id of ids) {
-      const facts = this.classify(id, rows.get(id));
+      const facts = this.classify(id, rows.get(id), factsBySession.get(id));
+      if (opts.includeCli !== true && cliOrigin(id, facts)) continue;
       factsById.set(id, facts);
+      visible.push(id);
       counts[facts.category] += 1;
       const ws = (workspaceCounts[facts.workspace] ??= {
         active: 0,
@@ -848,25 +835,39 @@ export class TraceService {
       ws[facts.category] += 1;
     }
     const filtered =
-      category === undefined ? ids : ids.filter((id) => factsById.get(id)!.category === category);
+      opts.category === undefined
+        ? visible
+        : visible.filter((id) => factsById.get(id)!.category === opts.category);
     const page = filtered.slice(paging.offset, paging.offset + paging.limit);
     const sessions: AgentTraceSessionEntry[] = [];
     for (const sessionId of page) {
-      const files = bySession.get(sessionId)!.sort((a, b) => a.index - b.index);
+      const shard = bySession.get(sessionId)!.sort((a, b) => a.fileIndex - b.fileIndex);
+      // Fresh sizes for the returned page only (an actively-appended shard grows without
+      // moving any directory mtime): bounded metadata stats, written back to the index.
       const withSize = await Promise.all(
-        files.map(async (f) => ({
-          index: f.index,
-          date: f.date,
-          sizeBytes: (await fs.stat(f.path)).size,
-        })),
+        shard.map(async (f) => {
+          let sizeBytes = f.sizeBytes;
+          try {
+            sizeBytes = (await fs.stat(traceFilePath(this.root, f))).size;
+            if (sizeBytes !== f.sizeBytes) {
+              this.deps.index.repo.updateFileSize(
+                projectId,
+                agentId,
+                sessionId,
+                f.fileIndex,
+                sizeBytes,
+              );
+            }
+          } catch {
+            /* Vanished mid-request: serve the last observed size; the next reconcile settles the rows. */
+          }
+          return { index: f.fileIndex, date: f.date, sizeBytes };
+        }),
       );
-      // Title: DB row first; else derived from the earliest shard's head — the earliest
-      // shard holds the original first user prompt (later shards are compaction splits
-      // whose first user text is the compaction prompt, not the user's).
       const facts = factsById.get(sessionId)!;
-      // ?? sends both "no row" and "row with NULL title" to the head-read fallback.
-      const title =
-        rows.get(sessionId)?.title ?? (await this.titleFromHead(sessionId, files[0]!.path));
+      // Title: DB row first (?? sends both "no row" and "row with NULL title" onward);
+      // else the registration-time first-prompt fallback stored in trace_sessions.
+      const title = rows.get(sessionId)?.title ?? factsBySession.get(sessionId)?.title ?? undefined;
       sessions.push({
         sessionId,
         ...(title !== undefined ? { title } : {}),
@@ -876,40 +877,6 @@ export class TraceService {
       });
     }
     return { dates: [], sessions, totalSessions: filtered.length, counts, workspaceCounts };
-  }
-
-  /**
-   * Title derived from the Session's first user prompt: bounded head-read of the given
-   * shard, first complete user text message, cleaned by the same fallbackTitle algorithm
-   * the title generator uses. undefined when unreadable or the head has no user text
-   * (title stays absent — the client shows its default title). The same bytes carry the
-   * shard's session_meta: its origin/Workspace are registered (headFacts + the shared
-   * sources registry) so subsequent requests classify this DB-untracked Session exactly
-   * — this request's already-computed classification is deliberately left alone (filter
-   * / counts / fields consistency).
-   */
-  private async titleFromHead(sessionId: string, filePath: string): Promise<string | undefined> {
-    let messages: OmniMessage[];
-    try {
-      messages = await readTraceHead(filePath);
-    } catch {
-      return undefined;
-    }
-    const meta = messages.find(isSessionMeta);
-    if (meta) {
-      const source = asSessionSource(meta.payload.source) ?? null;
-      const workspace = typeof meta.payload.workspace === "string" ? meta.payload.workspace : "";
-      this.headFacts.set(sessionId, { source, workspace });
-      this.sources?.set(sessionId, source);
-    }
-    for (const msg of messages) {
-      if (msg.type !== "model_msg") continue;
-      const p = msg.payload as { type?: string; role?: string; text?: string };
-      if (p.type === "text" && p.role === "user" && typeof p.text === "string") {
-        return fallbackTitle(p.text) ?? undefined;
-      }
-    }
-    return undefined;
   }
 
   private async readFileByIndex(
@@ -998,19 +965,28 @@ export class TraceService {
     const dir = path.join(tracesDir(this.root, projectId, agentId), date);
     await fs.mkdir(dir, { recursive: true });
     const file = path.join(dir, `${sessionId}_${String(index).padStart(3, "0")}.jsonl`);
+    const body = content.replace(/\n+$/, "") + "\n";
     try {
       // Normalize to exactly one trailing newline (the JSONL convention the writer
       // follows). `wx` closes the check-then-write race: two concurrent imports of the
       // same new session id both pass the locateAll check, but only one can create the
       // file — the loser's EEXIST maps to the same 409 as the pre-check.
-      await fs.writeFile(file, content.replace(/\n+$/, "") + "\n", {
-        encoding: "utf8",
-        flag: "wx",
-      });
+      await fs.writeFile(file, body, { encoding: "utf8", flag: "wx" });
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === "EEXIST") throw duplicate();
       throw err;
     }
+    // Write-time registration: this path knows the file's identity and already holds the
+    // parsed records, so the index row + session facts land synchronously (no re-read).
+    this.deps.index.registerImportedFile({
+      projectId,
+      agentId,
+      sessionId,
+      fileIndex: index,
+      date,
+      sizeBytes: Buffer.byteLength(body, "utf8"),
+      records,
+    });
     return { sessionId, index, date };
   }
 }

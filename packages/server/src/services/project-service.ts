@@ -31,6 +31,7 @@ import {
   SEMANTIC_ID_RULE,
 } from "./ids.js";
 import type { ProjectConfigService } from "./project-config-service.js";
+import type { TraceIndexService } from "./trace-index.js";
 
 /** Fallback timeout for waiting on runs to settle before deleting a Project. */
 const ABORT_SETTLE_TIMEOUT_MS = 5000;
@@ -57,6 +58,8 @@ export interface ProjectServiceDeps {
   goals: GoalsRepo;
   projectConfig: ProjectConfigService;
   manager: SessionManager;
+  /** Trace-index cleanup on Project destruction (rows describe files removed with the Project dir). */
+  traceIndex: TraceIndexService;
 }
 
 export class ProjectService {
@@ -312,6 +315,7 @@ export class ProjectService {
     this.deps.errors.deleteByProject(projectId);
     this.deps.schedules.deleteByProject(projectId);
     this.deps.goals.deleteByProject(projectId);
+    this.deps.traceIndex.removeProject(projectId);
     await fs.rm(projectDir(this.deps.root, projectId), { recursive: true, force: true });
   }
 

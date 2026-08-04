@@ -1,16 +1,18 @@
 /**
  * Agent-level Trace browsing routes:
- *   - GET /api/projects/:p/agents/:a/traces — Agent-level listing. Without `limit`: the
- *     legacy full drill-down (Agent -> date -> Session -> index, reverse order). With
- *     optional `offset`/`limit` (+ optional `category`): pages Session groups
- *     newest-first (within the category when given), stat-ing only the returned page,
- *     and resolves per group a display title (sessions DB title, else derived from the
- *     first user prompt) plus its sidebar category / Workspace and per-category totals.
- *     The **listing** therefore consults the sessions table — read-only (titles,
- *     archived, workspace); visibility still comes from the directory scan alone (a
- *     Session missing from the table is listed all the same — CLI/subagent Sessions
- *     stay visible here regardless of the sidebar's CLI preference, this being the
- *     observability surface — its title simply falling back or staying absent).
+ *   - GET /api/projects/:p/agents/:a/traces — Agent-level listing, served from the
+ *     trace-file index (mtime-gated reconcile, then pure DB — see services/trace-index.ts).
+ *     Without `limit`: the legacy full drill-down (Agent -> date -> Session -> index,
+ *     reverse order), never filtered. With optional `offset`/`limit` (+ optional
+ *     `category`, `cli`): pages Session groups newest-first (within the category when
+ *     given), stat-ing only the returned page for fresh sizes, and resolves per group a
+ *     display title (sessions DB title, else the registration-time first-prompt
+ *     fallback) plus its sidebar category / Workspace and per-category totals.
+ *     CLI-origin Sessions (no web sessions-table row, not subagent/schedule) are
+ *     excluded unless `cli=1` — the same "show CLI sessions" preference the sessions
+ *     list honors, applied server-side to rows, counts and workspace groups alike.
+ *     The listing consults the sessions table read-only (titles, archived, workspace,
+ *     client); discovery itself still comes from the Trace directory tree via the index.
  *   - GET /api/projects/:p/agents/:a/traces/:sessionId/:index (including /analysis, /download) —
  *     read-only Trace detail endpoints (FD-3): locate the Trace file directly by
  *     (projectId, agentId, sessionId), without depending on the sessions table for
@@ -67,13 +69,16 @@ export function agentTracesRoutes(deps: AppDeps): Hono<AppEnv> {
       throw badRequest(`category must be one of ${SESSION_CATEGORIES.join(" / ")}.`);
     }
     if (rawCategory !== undefined && paging === null) throw badRequest("category requires limit.");
+    // `cli=1` widens the paginated listing to CLI-origin Sessions (mirroring the sessions
+    // list's parameter): the default follows the "show CLI sessions" preference's OFF
+    // state. The legacy unpaged shape is never filtered (back-compat).
+    const rawCli = c.req.query("cli");
+    if (rawCli !== undefined && rawCli !== "1") throw badRequest("cli only accepts 1.");
     return c.json(
-      await deps.traceService.agentTraces(
-        projectId,
-        agentId,
-        paging,
-        rawCategory as SessionCategory | undefined,
-      ),
+      await deps.traceService.agentTraces(projectId, agentId, paging, {
+        ...(rawCategory !== undefined ? { category: rawCategory as SessionCategory } : {}),
+        ...(rawCli !== undefined ? { includeCli: true } : {}),
+      }),
     );
   });
 
