@@ -13,17 +13,24 @@
  *   the wait only advance, they don't stack), and send once it becomes idle.
  * - Bound Session deleted: record an error and mark invalid; editing the file re-activates it via reconcile.
  * - Deleting the file removes the task; reconcile also cleans up its SQLite run state and queue entry.
+ *
+ * The periodic scan is mtime-gated (trace-index house pattern): the agents-dir
+ * listing and each Agent's parsed schedule files are cached and revalidated by stat,
+ * so an unchanged tree ticks with zero readdir/readFile — manual edits are still
+ * picked up next tick because every edit variant moves an mtime the gate stats.
  */
 import { createHash } from "node:crypto";
-import { readdir } from "node:fs/promises";
+import fs from "node:fs/promises";
 import { agentsDir, buildScheduledMessage, userText } from "@prismshadow/penguin-core";
 import type { ProjectsRepo } from "../db/repos/projects.js";
 import type { SchedulesRepo, ScheduleStateRow } from "../db/repos/schedules.js";
 import type { SessionsRepo } from "../db/repos/sessions.js";
+import { cacheable, statMtime } from "../internal/mtime-gate.js";
 import type { ErrorSink } from "./error-recorder.js";
 import type { ScheduleDefinition } from "./schedule-file.js";
 import { latestSlotAt, slotInWindow } from "./schedule-file.js";
-import { listScheduleFiles, readScheduleFile, validateScheduleModelRef } from "./schedule-store.js";
+import { ScheduleFileCache, readScheduleFile, validateScheduleModelRef } from "./schedule-store.js";
+import type { ScheduleConfigSource } from "./schedule-store.js";
 import type { ScheduleServerEvent } from "../api/types.js";
 
 /** Reconcile and fire-check interval (min period is 5m, so 30s granularity is plenty). */
@@ -65,6 +72,8 @@ export interface SchedulerDeps {
   sessions: SessionsRepo;
   runner: ScheduleTaskRunner;
   sessionCreator: ScheduleSessionCreator;
+  /** Project-config source for model-ref validation (ProjectConfigService's mtime-cached reads). */
+  projectConfig: ScheduleConfigSource;
   errors: ErrorSink;
   /** Fire and send are notified over the user-level event stream (app layer binds userChannelKey). */
   notify: (userId: string, event: ScheduleServerEvent) => void;
@@ -94,10 +103,15 @@ export class Scheduler {
   /** key = `${projectId}\0${agentId}\0${name}` */
   private readonly pending = new Map<string, PendingFire>();
   private ticking = false;
+  /** mtime-gated schedule-file scans (public for test observability of its counters). */
+  readonly files: ScheduleFileCache;
+  /** Per-Project agents-dir listing gate: dir mtime → Agent ids (creating/removing an Agent dir moves it). */
+  private readonly agentDirs = new Map<string, { mtimeMs: number; ids: string[] }>();
 
   constructor(private readonly deps: SchedulerDeps) {
     this.now = deps.now ?? (() => Date.now());
     this.intervalMs = deps.intervalMs ?? TICK_INTERVAL_MS;
+    this.files = new ScheduleFileCache(deps.root);
   }
 
   /** Start: run one reconcile immediately (startup semantics: no backfill), then enter the periodic tick. */
@@ -119,8 +133,16 @@ export class Scheduler {
     if (this.ticking) return;
     this.ticking = true;
     try {
-      for (const project of this.deps.projects.listAll()) {
+      const projects = this.deps.projects.listAll();
+      for (const project of projects) {
         await this.reconcileProject(project.projectId, project.ownerUserId);
+      }
+      // A deleted Project simply stops being listed, so its cache entries are swept
+      // here (removed Agents inside a live Project are dropped by listAgentIds).
+      const live = new Set(projects.map((p) => p.projectId));
+      this.files.retainProjects(live);
+      for (const projectId of this.agentDirs.keys()) {
+        if (!live.has(projectId)) this.agentDirs.delete(projectId);
       }
       await this.drainQueue();
     } catch (err) {
@@ -130,11 +152,11 @@ export class Scheduler {
     }
   }
 
-  /** Immediate-effect entry after a route write: reconcile just one Agent and drain its queue. */
+  /** Immediate-effect entry after a route write: reconcile just one Agent (bypassing the mtime gate) and drain its queue. */
   async reconcileAgent(projectId: string, agentId: string): Promise<void> {
     const project = this.deps.projects.findById(projectId);
     if (!project) return;
-    await this.reconcileOneAgent(projectId, agentId, project.ownerUserId);
+    await this.reconcileOneAgent(projectId, agentId, project.ownerUserId, { force: true });
     await this.drainQueue();
   }
 
@@ -145,7 +167,7 @@ export class Scheduler {
   ): Promise<{ entries: ScheduleEntryView[]; invalid: Array<{ name: string; error: string }> }> {
     const project = this.deps.projects.findById(projectId);
     const owner = project?.ownerUserId ?? null;
-    const files = await listScheduleFiles(this.deps.root, projectId, agentId);
+    const files = await this.files.list(projectId, agentId);
     const entries: ScheduleEntryView[] = [];
     const invalid: Array<{ name: string; error: string }> = [];
     for (const file of files) {
@@ -154,7 +176,11 @@ export class Scheduler {
         continue;
       }
       // A model ref whose (provider, model_id) pair isn't in the config is treated like a parse failure: goes to invalidFiles, not scheduled.
-      const refError = await validateScheduleModelRef(this.deps.root, projectId, file.parsed.def);
+      const refError = await validateScheduleModelRef(
+        this.deps.projectConfig,
+        projectId,
+        file.parsed.def,
+      );
       if (refError !== null) {
         invalid.push({ name: file.name, error: refError });
         continue;
@@ -174,10 +200,11 @@ export class Scheduler {
     return { entries, invalid };
   }
 
-  /** For routes: state cleanup after a task is deleted. */
+  /** For routes: state cleanup after a task is deleted (the unlink moved the dir mtime, but invalidate for immediate effect anyway). */
   dropEntry(projectId: string, agentId: string, name: string): void {
     this.pending.delete(this.keyOf(projectId, agentId, name));
     this.deps.repo.delete(projectId, agentId, name);
+    this.files.invalidate(projectId, agentId);
   }
 
   // -------------------------------------------------------------------------
@@ -192,22 +219,44 @@ export class Scheduler {
     }
   }
 
-  /** Enumerate Agents under a Project: scheduling only cares about Agent dirs that exist on disk (no dir → no tasks). */
+  /**
+   * Enumerate Agents under a Project: scheduling only cares about Agent dirs that exist on
+   * disk (no dir → no tasks). mtime-gated: an unchanged agents dir serves the cached ids
+   * with one stat and no readdir (creating/removing an Agent dir moves the dir's mtime);
+   * removed Agents also drop their schedule-file cache entries here.
+   */
   private async listAgentIds(projectId: string): Promise<string[]> {
-    try {
-      const items = await readdir(agentsDir(this.deps.root, projectId), { withFileTypes: true });
-      return items.filter((d) => d.isDirectory()).map((d) => d.name);
-    } catch {
+    const cached = this.agentDirs.get(projectId);
+    const mtimeMs = await statMtime(agentsDir(this.deps.root, projectId));
+    if (mtimeMs === null) {
+      this.agentDirs.delete(projectId);
       return [];
     }
+    if (cached && cached.mtimeMs === mtimeMs) return cached.ids;
+    let ids: string[];
+    try {
+      const items = await fs.readdir(agentsDir(this.deps.root, projectId), {
+        withFileTypes: true,
+      });
+      ids = items.filter((d) => d.isDirectory()).map((d) => d.name);
+    } catch {
+      this.agentDirs.delete(projectId);
+      return [];
+    }
+    for (const gone of cached?.ids.filter((id) => !ids.includes(id)) ?? []) {
+      this.files.invalidate(projectId, gone);
+    }
+    this.agentDirs.set(projectId, { mtimeMs: cacheable(mtimeMs), ids });
+    return ids;
   }
 
   private async reconcileOneAgent(
     projectId: string,
     agentId: string,
     ownerUserId: string,
+    opts: { force?: boolean } = {},
   ): Promise<void> {
-    const files = await listScheduleFiles(this.deps.root, projectId, agentId);
+    const files = await this.files.list(projectId, agentId, opts);
     for (const file of files) {
       if (!file.parsed.ok) {
         // Skip invalid files and record an error (the recorder dedups within a short window, so storms don't spam).
@@ -223,7 +272,7 @@ export class Scheduler {
       // At reconcile time, check the (provider, model_id) pair names a configured model: a
       // reference that doesn't is treated like an invalid file — skip scheduling and record an
       // error (recorder dedups in a short window); it recovers once the file/config is fixed.
-      const refError = await validateScheduleModelRef(this.deps.root, projectId, def);
+      const refError = await validateScheduleModelRef(this.deps.projectConfig, projectId, def);
       if (refError !== null) {
         this.deps.errors.record({
           source: "schedule",

@@ -14,6 +14,14 @@
  * sent to AgentHub verbatim — string concatenation like `<provider>/<id>` is
  * forbidden everywhere in the pipeline. `default_model` / `vision_model` are `{
  * provider, model_id }` paired references (TOML tables).
+ *
+ * Reads are memoized on the file's mtime (see readTable): every consumer of this
+ * service — scheduler model-ref validation, the models/schedules routes, usage
+ * pricing — shares one parsed table per on-disk version instead of re-reading and
+ * re-parsing the TOML per call. The service's own writes all funnel through
+ * `writeRaw`, which invalidates synchronously; external edits (CLI, hand edits) are
+ * caught by the stat. The cached table is shared between callers and must be treated
+ * as immutable — every mutating method here copies before changing.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -24,12 +32,13 @@ import {
   GenerativeModel,
   catalogEntryFor,
   defaultProjectConfig,
+  projectConfigFromTable,
   projectConfigPath,
   renderProjectConfigToml,
   resolveModelEnv,
   userText,
 } from "@prismshadow/penguin-core";
-import type { LLMOutcome, ModelRef, OmniMessage } from "@prismshadow/penguin-core";
+import type { LLMOutcome, ModelRef, OmniMessage, ProjectConfig } from "@prismshadow/penguin-core";
 import type {
   ChatDefaultsDto,
   ModelInfo,
@@ -41,6 +50,7 @@ import type {
   ModelTestResponse,
 } from "../api/types.js";
 import { badRequest } from "../http/validate.js";
+import { cacheable } from "../internal/mtime-gate.js";
 import type { PricingRates } from "./usage-service.js";
 
 type RawTable = Record<string, unknown>;
@@ -118,6 +128,15 @@ const SPEED_PROBE_PROMPT =
   "Count from 1 to 50 as a comma-separated list, and nothing else. Do not think or explain.\n<think></think>";
 
 export class ProjectConfigService {
+  /**
+   * Parsed-table cache, one entry per Project, keyed by the config file's mtime as
+   * recorded at read time (a fresh mtime is stored as a never-matching sentinel, see
+   * mtime-gate). A repeat read while the stat still matches costs one stat and zero
+   * parses; a mismatch (external edit) or a service write (writeRaw deletes the
+   * entry) falls back to a full read.
+   */
+  private readonly cache = new Map<string, { mtimeMs: number; table: RawTable }>();
+
   constructor(private readonly root: string) {}
 
   private filePath(projectId: string): string {
@@ -140,14 +159,50 @@ export class ProjectConfigService {
 
   /** Reads the raw TOML object; returns an empty object if the file doesn't exist (does not write to disk). */
   async readRaw(projectId: string): Promise<RawTable> {
+    return (await this.readTable(projectId)) ?? {};
+  }
+
+  /**
+   * mtime-gated read of the parsed table; null when the file doesn't exist (readRaw
+   * flattens that to `{}`, loadConfig to the preset default config — the two
+   * pre-existing missing-file behaviors). Serving the shared cached object is safe
+   * because no consumer mutates it (see the class header).
+   */
+  private async readTable(projectId: string): Promise<RawTable | null> {
+    const file = this.filePath(projectId);
+    let mtimeMs: number;
+    try {
+      mtimeMs = (await fs.stat(file)).mtimeMs;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+      this.cache.delete(projectId); // Config deleted (or the whole Project): drop the stale entry.
+      return null;
+    }
+    const cached = this.cache.get(projectId);
+    if (cached && cached.mtimeMs === mtimeMs) return cached.table;
     let raw: string;
     try {
-      raw = await fs.readFile(this.filePath(projectId), "utf8");
+      raw = await fs.readFile(file, "utf8");
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === "ENOENT") return {};
-      throw err;
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+      this.cache.delete(projectId); // Vanished between stat and read: same as never existing.
+      return null;
     }
-    return asTable(parseToml(raw));
+    const table = asTable(parseToml(raw));
+    this.cache.set(projectId, { mtimeMs: cacheable(mtimeMs), table });
+    return table;
+  }
+
+  /**
+   * Typed view of the same cached table — byte-for-byte the semantics of core's
+   * `loadProjectConfig` (missing file → preset default config; legacy format → the
+   * same error, via core's shared narrowing) without its per-call readFile + parse.
+   * Serves the scheduler's model-ref validation (see schedule-store).
+   */
+  async loadConfig(projectId: string): Promise<ProjectConfig> {
+    const table = await this.readTable(projectId);
+    if (table === null) return defaultProjectConfig();
+    return projectConfigFromTable(this.filePath(projectId), table);
   }
 
   /**
@@ -164,6 +219,9 @@ export class ProjectConfigService {
     // (the same file should never have two formats).
     await fs.writeFile(file, renderProjectConfigToml(data), { encoding: "utf8", mode: 0o600 });
     await fs.chmod(file, 0o600);
+    // Every service write funnels through here: invalidate synchronously so the next
+    // read re-parses (external writers are caught by readTable's stat instead).
+    this.cache.delete(projectId);
   }
 
   /**

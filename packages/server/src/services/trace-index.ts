@@ -34,6 +34,7 @@ import { agentsDir, isSessionMeta, tracesDir } from "@prismshadow/penguin-core";
 import type { OmniMessage } from "@prismshadow/penguin-core";
 import type { TraceFileRow, TraceSessionRow } from "../db/repos/trace-index.js";
 import { TraceIndexRepo } from "../db/repos/trace-index.js";
+import { cacheable, statMtime } from "../internal/mtime-gate.js";
 import { readTraceHead } from "../internal/trace-head.js";
 import { asSessionSource } from "../runtime/session-sources.js";
 import type { SessionSources } from "../runtime/session-sources.js";
@@ -41,33 +42,10 @@ import { fallbackTitle } from "../runtime/title-generator.js";
 
 const TRACE_FILE_RE = /^(.+)_(\d{3})\.jsonl$/;
 
-/**
- * mtimes younger than this are treated as UNSTABLE and never cached as clean:
- * filesystem timestamps are coarse (a write and a later change can land on the same
- * tick), so a fresh directory keeps being re-diffed until it has been quiet for this
- * long — an active Agent costs one small readdir per request while writing, and the
- * gate can never wedge on a same-tick change.
- */
-const FRESH_MS = 2000;
-
-/** A gate-cacheable mtime: the real value once stable, else a sentinel that never matches. */
-function cacheable(mtimeMs: number): number {
-  return Date.now() - mtimeMs > FRESH_MS ? mtimeMs : -1;
-}
-
 /** Absolute path of an indexed shard (reconstructed — rows never store paths; the data root may move). */
 export function traceFilePath(root: string, row: TraceFileRow): string {
   const name = `${row.sessionId}_${String(row.fileIndex).padStart(3, "0")}.jsonl`;
   return path.join(tracesDir(root, row.projectId, row.agentId), row.date, name);
-}
-
-/** mtimeMs of a path; null when it does not exist. */
-async function statMtime(p: string): Promise<number | null> {
-  try {
-    return (await fs.stat(p)).mtimeMs;
-  } catch {
-    return null;
-  }
 }
 
 async function listDirs(dir: string): Promise<string[]> {
@@ -192,7 +170,7 @@ export class TraceIndexService {
       // a new file inside an EXISTING date dir — in practice always the newest one (the
       // Writer names dirs by current local date) — so gate on that single dir's mtime too.
       // Cached sentinels (-1: the dir was fresh when last seen) never match, forcing a
-      // re-diff until the tree has been quiet (see FRESH_MS).
+      // re-diff until the tree has been quiet (see mtime-gate's FRESH_MS).
       const newest = [...cached.dates.keys()].sort().at(-1);
       if (newest === undefined) return;
       this.counters.gateStats += 1;
