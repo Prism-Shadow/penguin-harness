@@ -273,20 +273,21 @@ export function requestBegin(): OmniMessage<RequestBeginPayload> {
 
 /**
  * request end event: carries the terminal state (`completed` means this turn was already
- * committed to AgentHub), plus — on non-completed statuses — the failure detail (from
- * LLMOutcome.message) and, when the engine will retry in-run, the planned backoff wait
- * (`retry_in_ms`, rendered by the Web App as a live countdown).
+ * committed to AgentHub), plus the unified retry detail block (see RequestRetryDetail):
+ * the error detail (from LLMOutcome.errorMessage), the 1-based attempt ordinal, and — when the
+ * engine will retry in-run — the planned backoff wait (`retry_in_ms`, rendered by the Web
+ * App as a live countdown). This builder is the one place the block is stamped.
  */
 export function requestEnd(
   status: StopReason,
-  message?: string,
-  retryInMs?: number,
+  retry: { errorMessage?: string; attempt?: number; retryInMs?: number } = {},
 ): OmniMessage<RequestEndPayload> {
   return event({
     type: "request_end",
     status,
-    ...(message !== undefined ? { message } : {}),
-    ...(retryInMs !== undefined ? { retry_in_ms: retryInMs } : {}),
+    ...(retry.errorMessage !== undefined ? { error_message: retry.errorMessage } : {}),
+    ...(retry.attempt !== undefined ? { attempt: retry.attempt } : {}),
+    ...(retry.retryInMs !== undefined ? { retry_in_ms: retry.retryInMs } : {}),
   });
 }
 
@@ -306,17 +307,21 @@ export function compactionBegin(args: {
   });
 }
 
-/** compaction end event: carries the compaction result (non-`completed` means compaction was abandoned and the original context is kept). */
+/** compaction end event: carries the compaction result (non-`completed` means compaction was abandoned and the original context is kept), plus its share of the RetryDetail block (final attempt ordinal; last error_message detail on failures). */
 export function compactionEnd(args: {
   reason: CompactionReason;
   mode: CompactionMode;
   status: StopReason;
+  attempt?: number;
+  errorMessage?: string;
 }): OmniMessage<CompactionEndPayload> {
   return event({
     type: "compaction_end",
     reason: args.reason,
     mode: args.mode,
     status: args.status,
+    ...(args.attempt !== undefined ? { attempt: args.attempt } : {}),
+    ...(args.errorMessage !== undefined ? { error_message: args.errorMessage } : {}),
   });
 }
 

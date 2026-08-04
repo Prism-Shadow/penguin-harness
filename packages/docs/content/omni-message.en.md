@@ -190,10 +190,18 @@ interface RequestBeginPayload {
 interface RequestEndPayload {
   type: "request_end";
   status: StopReason;         // "completed" is the mechanical commit criterion for replay
-  message?: string;           // failure detail (LLMOutcome.message), non-completed only:
-                              // the real reason behind a retried/failed Request (e.g. a
-                              // provider quota code) — read by the Cost center's errors
-                              // panel; additive, old Traces replay unchanged
+  // The unified RetryDetail block below is stamped in one place by the builders; every
+  // field is additive — old Traces replay unchanged. compaction_end reuses the same
+  // block (attempt = final attempt ordinal, error_message = the last failure's detail).
+  error_message?: string;     // error detail (LLMOutcome.errorMessage internally — one
+                              // name across the stack), non-completed only: the real
+                              // reason behind a retried/failed Request (e.g. a provider
+                              // quota code) — read by the Cost center's errors panel
+  attempt?: number;           // 1-based ordinal of this request within its retry run (the
+                              // authoritative retry count): stamped on failures and on a
+                              // completion that needed retries; absent on a clean first try
+  retry_in_ms?: number;       // planned reconnect wait (ms), present only when the engine
+                              // will retry in-run — the Web App renders it as a countdown
 }
 
 interface ApprovalDecisionPayload {

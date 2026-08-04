@@ -220,7 +220,7 @@ export interface ReconnectItem {
   id: number;
   /** Trigger reason: timeout (timed out / disconnected), malformed (an incomplete or unparseable response), or failed (the provider returned an error). */
   status: ReconnectStatus;
-  /** Which retry attempt this is (increments on consecutive failures within the same round; resets to 1 after a request finishes normally). */
+  /** Which retry attempt this is — request_end.attempt, the core's authoritative 1-based ordinal (1 for Traces written before the field existed). */
   attempt: number;
   /** The retry request has been sent (set true by the next request_begin). */
   retrying: boolean;
@@ -250,6 +250,8 @@ export interface CompactionItem {
   /** True between begin and end (renders a "compaction in progress" banner). */
   running: boolean;
   status?: StopReason;
+  /** Last failure detail from compaction_end.error_message (its share of the RetryDetail block; present on failed ends from new cores). */
+  errorMessage?: string;
 }
 
 export interface TaskStatsItem {
@@ -375,8 +377,6 @@ export interface StreamModel {
    * dispatches it via `void executeOne`, which doesn't block the streaming loop — execution happens between two Requests).
    */
   openApprovalWaitMs: number;
-  /** Consecutive reconnect-failure count (incremented when request_end carries a status the engine reconnects on, reset to zero on any other terminal status). */
-  reconnectRun: number;
   /**
    * Timestamp (ms) of the most recent auth failure: a main-session `request_end` with
    * status "auth" arrived on THIS model (a subagent's request events route to the nested
@@ -459,7 +459,6 @@ function newModel(nested: boolean, localDecisions: Set<string>): StreamModel {
     lastTsMs: 0,
     openRequestBeginMs: null,
     openApprovalWaitMs: 0,
-    reconnectRun: 0,
     lastAuthFailureMs: null,
     taskOpen: false,
     taskStartLocalMs: 0,
@@ -723,10 +722,9 @@ function startTask(model: StreamModel, timestamp: string, nowMs: number): void {
   // server dies during a backoff window, the Trace's tail is
   // request_end(timeout) with no abort, and history rebuild would leave a
   // dangling "retrying…" — the new Task's first request_begin isn't its
-  // retry, so mark it gaveUp and reset the consecutive-failure count (the new Task's failures count from 1 again).
+  // retry, so mark it gaveUp.
   const waiting = findLastWaitingReconnect(model);
   if (waiting) waiting.gaveUp = true;
-  model.reconnectRun = 0;
   // Any unclosed Request start / approval wait left over from the previous Task isn't carried into this Task's LLM timing.
   model.openRequestBeginMs = null;
   model.openApprovalWaitMs = 0;
@@ -1302,11 +1300,9 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       // placeholder resend goes only to the model, never written to Trace): finalize the executing cards.
       closeExecutingToolCards(model);
       // A reconnect hint waiting to retry: an interruption means retries are
-      // exhausted/abandoned, so mark it gaveUp (this interruption marker item gives the reason);
-      // the run has ended, so reset the consecutive-failure count.
+      // exhausted/abandoned, so mark it gaveUp (this interruption marker item gives the reason).
       const waiting = findLastWaitingReconnect(model);
       if (waiting) waiting.gaveUp = true;
-      model.reconnectRun = 0;
       const item: AbortItem = { kind: "abort", id: nextId(model) };
       if (p.reason != null) item.reason = p.reason;
       model.items.push(item);
@@ -1333,6 +1329,7 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       if (item) {
         item.running = false;
         item.status = p.status;
+        if (p.error_message !== undefined) item.errorMessage = p.error_message;
       } else {
         // Mid-stream join (missed the begin): append a completed banner directly.
         const created: CompactionItem = {
@@ -1342,6 +1339,7 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
           mode: p.mode,
           running: false,
           status: p.status,
+          ...(p.error_message !== undefined ? { errorMessage: p.error_message } : {}),
         };
         model.items.push(created);
       }
@@ -1404,12 +1402,13 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       // ladder with nothing on screen and no give-up control. It would also reset the counter
       // mid-ladder, renumbering a mixed timeout → failed → timeout run back to retry #1.
       if (isReconnectStatus(p.status)) {
-        model.reconnectRun += 1;
         const item: ReconnectItem = {
           kind: "reconnect",
           id: nextId(model),
           status: p.status,
-          attempt: model.reconnectRun,
+          // The core stamps the authoritative ordinal on every retryable request_end; only
+          // Traces written before the field existed lack it (rendered as attempt 1).
+          attempt: p.attempt ?? 1,
           retrying: false,
         };
         // The engine announced its planned backoff: keep it with the CLIENT arrival time
@@ -1419,8 +1418,6 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
           item.arrivedAtMs = nowMs ?? Date.now();
         }
         model.items.push(item);
-      } else {
-        model.reconnectRun = 0;
       }
       return;
     }

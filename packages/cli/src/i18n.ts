@@ -171,7 +171,12 @@ export interface Messages {
    * line: total = Session cumulative, delta = consumed by this compaction, carrying its own
    * sign); when present it is appended at the end of the line, e.g. ` · tokens 14k (+6k)`.
    */
-  compactionStop(mode: string, status: string, tokens?: { total: string; delta: string }): string;
+  compactionStop(
+    mode: string,
+    status: string,
+    tokens?: { total: string; delta: string },
+    errorMessage?: string,
+  ): string;
   /** Prompt shown when `/compact` has nothing to compact (session just started / two consecutive compactions). */
   compactNothing(): string;
   /** Dim line announcing one goal round (printed before the round runs). */
@@ -406,12 +411,12 @@ const en: Messages = {
     mode === "discard"
       ? `[compaction] discarding context (${reason})…`
       : `[compaction] summarizing context (${reason})…`,
-  compactionStop: (mode, status, tokens) =>
+  compactionStop: (mode, status, tokens, errorMessage) =>
     (status === "completed"
       ? mode === "discard"
         ? "[compaction] done; old context discarded"
         : "[compaction] done; continuing with the summarized context"
-      : `[compaction] ${status}; keeping the current context`) +
+      : `[compaction] ${status}${errorMessage !== undefined ? ` (${errorMessage})` : ""}; keeping the current context`) +
     (tokens ? ` · tokens ${tokens.total} (${tokens.delta})` : ""),
   compactNothing: () => "[compaction] nothing to compact yet",
   goalRound: (round) => `[goal] round ${round}`,
@@ -620,12 +625,12 @@ const zh: Messages = {
     mode === "discard"
       ? `[压缩] 正在丢弃旧上下文（${reason}）……`
       : `[压缩] 正在总结压缩上下文（${reason}）……`,
-  compactionStop: (mode, status, tokens) =>
+  compactionStop: (mode, status, tokens, errorMessage) =>
     (status === "completed"
       ? mode === "discard"
         ? "[压缩] 完成，旧上下文已丢弃"
         : "[压缩] 完成，已切换到摘要后的新上下文"
-      : `[压缩] ${status === "aborted" ? "已中断" : "失败"}，保留当前上下文`) +
+      : `[压缩] ${status === "aborted" ? "已中断" : `失败${errorMessage !== undefined ? `（${errorMessage}）` : ""}`}，保留当前上下文`) +
     (tokens ? ` · tokens ${tokens.total} (${tokens.delta})` : ""),
   compactNothing: () => "[压缩] 当前上下文为空，无需压缩",
   goalRound: (round) => `[目标] 第 ${round} 轮`,
