@@ -1,4 +1,4 @@
-# Web App: outline windowing, a cost stat that stays put, quieter failure and update chrome
+# Web App: outline windowing, a cost stat that stays put, attachments as user content, quieter failure and update chrome
 
 ## Conversation outline
 
@@ -7,6 +7,10 @@ The tick-rail minimap over the stream's left gutter now appears only once a conv
 ## Cost stat
 
 The toolbar cost chip could vanish mid-run: goal rounds reset the live task buckets while the running state blocked the session-total refetch, a page opened during an active run never fetched the accrued total at all, and the idle blip between queued follow-ups could clobber a known total with an empty response. The displayed figure is now sticky and monotone while a session runs — the last fetched total plus each finished Task's settled increment plus the open Task's live estimate, reconciled verbatim once the session is idle. The usage fetch fires on session open regardless of run state, and an empty response can no longer erase a known value.
+
+## Attachments as user content
+
+Uploaded file attachments belong to the user's message and now render like it: below the user text in the same right-aligned container and hover-timestamp footer as uploaded images, instead of a left-aligned system-notice banner above the bubble (`AttachedFilesBanner` becomes presentation-only; its caller owns alignment, animation and the timestamp). A files-only steering message also shows its attached-files banner inside the steering chip — previously the filenames were dropped entirely and the chip rendered empty.
 
 ## Quieter chrome
 
