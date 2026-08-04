@@ -271,8 +271,15 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
       // Images sent with the message live inside the same chip: `item.images` on a vision
       // model (delivered as image messages right behind the text), or restored from the
       // [attached image: …] path lines without one — the same two shapes a user_text bubble
-      // handles, so both render identically here.
-      const { text: steerText, images: steerImages } = splitAttachments(item.text);
+      // handles, so both render identically here. Files ride steering only as
+      // [attached file: …] rows (there is no item.files channel) and collapse into the same
+      // banner a full prompt uses, kept inside the chip — a files-only steering would
+      // otherwise render as an empty chip with the filenames lost.
+      const {
+        text: steerText,
+        images: steerImages,
+        files: steerFiles,
+      } = splitAttachments(item.text);
       const shown = [...steerImages, ...(item.images ?? [])];
       return (
         <div className="anim-msg group my-2 flex flex-col items-end">
@@ -299,6 +306,11 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
                     className="max-h-28 max-w-full rounded-md"
                   />
                 ))}
+              </div>
+            )}
+            {steerFiles.length > 0 && (
+              <div className="flex justify-end">
+                <AttachedFilesBanner files={steerFiles} />
               </div>
             )}
           </div>
