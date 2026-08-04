@@ -6,6 +6,10 @@
 
 <p align="center"><b>Your Automated Agent Builder, Right on Your Desktop / Server</b><br />Create Self-Evolving Agents in One Click</p>
 
+<h3 align="center"><a href="https://penguin.ooo/download/">⬇️ Click to Download</a></h3>
+
+<p align="center">macOS · Windows · Linux</p>
+
 <p align="center">
   <a href="https://www.producthunt.com/products/penguinharness?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-penguinharness" target="_blank" rel="noopener noreferrer"><img alt="PenguinHarness - Let Agents Autonomously Build Better Agents for $0.02 | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1202577&amp;theme=light&amp;t=1784804711946" /></a>
 </p>
