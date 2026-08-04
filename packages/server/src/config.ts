@@ -36,6 +36,19 @@ export interface ServerConfig {
   authSessionTtlMs: number;
   /** Sliding renewal threshold: if the remaining validity is below this value when validation succeeds, it's renewed to the full TTL (renews under 6 days). */
   authSessionRenewMs: number;
+  /**
+   * Desktop mode (PENGUIN_DESKTOP_TOKEN): the per-launch token minted by the desktop
+   * shell. Non-null enables the one-shot desktop-login and Bearer-token shutdown
+   * endpoints and requires a loopback HOST — desktop mode passes the token through a
+   * URL, which must never leave the machine. See design § "桌面端原型".
+   */
+  desktopToken: string | null;
+  /**
+   * Port announcement file (PENGUIN_PORT_FILE): after the listener is up, the actual
+   * bound port is written here — the supervising process's way to learn the port when
+   * it starts the server with PORT=0.
+   */
+  portFile: string | null;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -73,7 +86,7 @@ function normalizePreviewOrigin(raw: string | undefined): string | null {
   return url.origin;
 }
 
-/** Parses server config from environment variables (PORT / HOST / PENGUIN_HOME / PENGUIN_WEB_DIST / PENGUIN_WEB_DB / PENGUIN_PREVIEW_ORIGIN). */
+/** Parses server config from environment variables (PORT / HOST / PENGUIN_HOME / PENGUIN_WEB_DIST / PENGUIN_WEB_DB / PENGUIN_PREVIEW_ORIGIN / PENGUIN_DESKTOP_TOKEN / PENGUIN_PORT_FILE). */
 export function resolveServerConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
   const root = env.PENGUIN_HOME ?? resolveRoot();
   // An empty PORT string is treated as unset (the common `.env` case of an empty
@@ -83,14 +96,22 @@ export function resolveServerConfig(env: NodeJS.ProcessEnv = process.env): Serve
   if (!Number.isInteger(port) || port < 0 || port > 65535) {
     throw new Error(`Invalid port configuration PORT=${env.PORT}`);
   }
+  const host = env.HOST ?? "127.0.0.1";
+  const desktopToken = env.PENGUIN_DESKTOP_TOKEN?.trim() || null;
+  // Desktop mode redeems its token through a URL: never allow it off loopback.
+  if (desktopToken !== null && host !== "127.0.0.1" && host !== "localhost") {
+    throw new Error(`Desktop mode requires a loopback HOST (got HOST=${host})`);
+  }
   return {
     root,
-    host: env.HOST ?? "127.0.0.1",
+    host,
     port,
     dbPath: env.PENGUIN_WEB_DB ?? path.join(root, "web.db"),
     webDist: env.PENGUIN_WEB_DIST ?? defaultWebDist(),
     previewOrigin: normalizePreviewOrigin(env.PENGUIN_PREVIEW_ORIGIN),
     authSessionTtlMs: 7 * DAY_MS,
     authSessionRenewMs: 6 * DAY_MS,
+    desktopToken,
+    portFile: env.PENGUIN_PORT_FILE?.trim() || null,
   };
 }

@@ -141,7 +141,7 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
 }
 
 export function AppLayout() {
-  const { user } = useAuth();
+  const { user, desktopMode } = useAuth();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   // Desktop sidebar collapse (persisted): collapsed state leaves a narrow rail to expand from.
@@ -195,8 +195,9 @@ export function AppLayout() {
           <span className="text-sm font-semibold">{S.appName}</span>
         </header>
 
-        {/* Initial-password notice banner (seed/admin-set password): disappears once passwordIsInitial clears after a successful change */}
-        {user?.passwordIsInitial && (
+        {/* Initial-password notice banner (seed/admin-set password): disappears once passwordIsInitial clears after a successful change.
+            Hidden in desktop mode — the seed password there is random and never shown, so "change it" is meaningless nagging. */}
+        {user?.passwordIsInitial && !desktopMode && (
           <div className="flex shrink-0 items-center justify-center gap-3 border-b border-amber-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300">
             <span>{S.account.initialPasswordBanner}</span>
             <button

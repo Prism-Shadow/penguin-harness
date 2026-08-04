@@ -192,7 +192,7 @@ export function Sidebar({
   onCollapse?: () => void;
 }) {
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { user, logout, desktopMode } = useAuth();
   const { mode, setMode, fontScale, setFontScale, accent, setAccent, currency, setCurrency } =
     useTheme();
   const { lang, locale, setLang } = useLocale();
@@ -1115,49 +1115,54 @@ export function Sidebar({
                 While checking, the label swaps to the busy text and the version stays put.
                 Nothing is fetched until the menu first opens; the version span appears once
                 /api/version resolves. */}
-            <button
-              type="button"
-              disabled={updateChecking}
-              onClick={() => {
-                if (newVersion !== null) {
-                  setUserOpen(false);
-                  setUpdateDialogOpen(true);
-                } else {
-                  void runUpdateCheck();
-                }
-              }}
-              {...(versionDate !== null
-                ? { title: S.update.lastUpdated(formatMonthDay(versionDate, locale)) }
-                : {})}
-              className={`${menuItemClass} flex items-center justify-between gap-2 disabled:cursor-default disabled:opacity-60`}
-            >
-              <span className="flex min-w-0 items-center gap-2">
-                {updateChecking && (
-                  <span
-                    aria-hidden
-                    className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent opacity-70"
-                  />
-                )}
-                {!updateChecking && newVersion !== null && (
-                  <span
-                    aria-hidden
-                    className="h-2 w-2 shrink-0 rounded-full bg-[var(--accent-bg)]"
-                  />
-                )}
-                <span className="min-w-0 truncate">
-                  {updateChecking
-                    ? S.update.checking
-                    : newVersion !== null
-                      ? S.update.newVersion(newVersion)
-                      : S.update.checkNow}
+            {/* Hidden in desktop mode: updates are the desktop app's job (electron-updater),
+                and the dialog's admin self-update re-runs the CLI entry, which does not
+                exist under the desktop shell. */}
+            {!desktopMode && (
+              <button
+                type="button"
+                disabled={updateChecking}
+                onClick={() => {
+                  if (newVersion !== null) {
+                    setUserOpen(false);
+                    setUpdateDialogOpen(true);
+                  } else {
+                    void runUpdateCheck();
+                  }
+                }}
+                {...(versionDate !== null
+                  ? { title: S.update.lastUpdated(formatMonthDay(versionDate, locale)) }
+                  : {})}
+                className={`${menuItemClass} flex items-center justify-between gap-2 disabled:cursor-default disabled:opacity-60`}
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  {updateChecking && (
+                    <span
+                      aria-hidden
+                      className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent opacity-70"
+                    />
+                  )}
+                  {!updateChecking && newVersion !== null && (
+                    <span
+                      aria-hidden
+                      className="h-2 w-2 shrink-0 rounded-full bg-[var(--accent-bg)]"
+                    />
+                  )}
+                  <span className="min-w-0 truncate">
+                    {updateChecking
+                      ? S.update.checking
+                      : newVersion !== null
+                        ? S.update.newVersion(newVersion)
+                        : S.update.checkNow}
+                  </span>
                 </span>
-              </span>
-              {version !== null && (
-                <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
-                  {`v${version.version}`}
-                </span>
-              )}
-            </button>
+                {version !== null && (
+                  <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
+                    {`v${version.version}`}
+                  </span>
+                )}
+              </button>
+            )}
             {/* User management is visible only to admins (the page route also has its own guard as a fallback). */}
             {user?.isAdmin && (
               <button
@@ -1171,16 +1176,20 @@ export function Sidebar({
                 {S.admin.users}
               </button>
             )}
-            <button
-              type="button"
-              className="block w-full px-3.5 py-2 text-left text-sm text-red-600 transition-colors duration-150 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
-              onClick={() => {
-                setUserOpen(false);
-                void logout().then(() => navigate("/login"));
-              }}
-            >
-              {S.auth.logout}
-            </button>
+            {/* Hidden in desktop mode: the window IS the session — logging out would
+                strand the user on a login page whose password was never shown. */}
+            {!desktopMode && (
+              <button
+                type="button"
+                className="block w-full px-3.5 py-2 text-left text-sm text-red-600 transition-colors duration-150 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
+                onClick={() => {
+                  setUserOpen(false);
+                  void logout().then(() => navigate("/login"));
+                }}
+              >
+                {S.auth.logout}
+              </button>
+            )}
           </div>
         </Dropdown>
       </div>

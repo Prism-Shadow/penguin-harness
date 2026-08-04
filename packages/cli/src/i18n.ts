@@ -223,6 +223,10 @@ export interface Messages {
   vaultListEmpty(): string;
   /** URL prompt once the `penguin web` service is ready. */
   webReady(url: string): string;
+  /** Refusal when `penguin server` finds a live server on the same data root. */
+  serverAlreadyRunning(url: string): string;
+  /** Notice when `penguin web` finds a live server on the same data root (it opens that instance instead). */
+  webAlreadyRunning(url: string): string;
   /** Diagnostic shown after the `penguin web` ready-poll times out (15s). */
   webProbeFailed(url: string, detail: string, kind: WebProbeFailureKind, port: number): string;
 }
@@ -455,6 +459,11 @@ const en: Messages = {
   vaultListTitle: () => "Vault environment variables (values masked):",
   vaultListEmpty: () => "The vault is empty. Add one with `penguin config vault set`.",
   webReady: (url) => `Web UI ready: ${url}`,
+  serverAlreadyRunning: (url) =>
+    `A PenguinHarness server is already running on this data root: ${url}\n` +
+    `Stop it first, or point PENGUIN_HOME at a separate data root.`,
+  webAlreadyRunning: (url) =>
+    `Already running on this data root — opening the existing instance: ${url}`,
   webProbeFailed: (url, detail, kind, port) => {
     const hint = {
       timeout:
@@ -664,6 +673,9 @@ const zh: Messages = {
   vaultListTitle: () => "vault 环境变量（值已掩码）：",
   vaultListEmpty: () => "vault 为空。用 `penguin config vault set` 添加。",
   webReady: (url) => `Web 界面已就绪：${url}`,
+  serverAlreadyRunning: (url) =>
+    `该数据根目录已有 PenguinHarness 服务在运行：${url}\n请先停止它，或用 PENGUIN_HOME 指定另一个数据根目录。`,
+  webAlreadyRunning: (url) => `该数据根目录已有服务在运行，打开既有实例：${url}`,
   webProbeFailed: (url, detail, kind, port) => {
     const hint = {
       timeout: `连接超时。请检查防火墙或安全软件是否拦截。请允许 PenguinHarness 在本机端口 ${port} 上通信。`,

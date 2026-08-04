@@ -20,6 +20,18 @@ interface AuthContextValue {
    * /api/me because it depends on the host the browser is using.
    */
   previewIsolated: boolean;
+  /**
+   * Whether the server runs in desktop mode (spawned by the desktop shell). The UI then
+   * hides the logout entry, the initial-password banner and the self-update entry — the
+   * desktop app manages sign-in and updates itself.
+   */
+  desktopMode: boolean;
+  /**
+   * How THIS session was established. A browser signed into a desktop-mode server holds
+   * a "password" session; only "desktop" sessions (the shell's window) may change the
+   * password without the old one.
+   */
+  sessionVia: "password" | "desktop";
   login: (userId: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   /** Refetch /api/me (e.g. to refresh the passwordIsInitial flag after a password change). */
@@ -33,6 +45,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Assume isolated until told otherwise: the warning is the exceptional state, and
   // flashing it during initialization would be noise.
   const [previewIsolated, setPreviewIsolated] = useState(true);
+  const [desktopMode, setDesktopMode] = useState(false);
+  const [sessionVia, setSessionVia] = useState<"password" | "desktop">("password");
 
   // Any API returning 401 (session expired / database rebuilt) clears the current user, and
   // RequireAuth redirects back to the login page.
@@ -51,6 +65,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (cancelled) return;
         setUser(res.user);
         setPreviewIsolated(res.previewIsolated);
+        setDesktopMode(res.desktopMode);
+        setSessionVia(res.sessionVia);
       })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -76,6 +92,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const me = await api.getMe();
       setUser(me.user);
       setPreviewIsolated(me.previewIsolated);
+      setDesktopMode(me.desktopMode);
+      setSessionVia(me.sessionVia);
     } catch {
       // Login itself succeeded; keep the optimistic default.
     }
@@ -93,10 +111,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const res = await api.getMe();
     setUser(res.user);
     setPreviewIsolated(res.previewIsolated);
+    setDesktopMode(res.desktopMode);
+    setSessionVia(res.sessionVia);
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, previewIsolated, login, logout, refresh }}>
+    <AuthContext.Provider
+      value={{ user, previewIsolated, desktopMode, sessionVia, login, logout, refresh }}
+    >
       {children}
     </AuthContext.Provider>
   );

@@ -29,6 +29,7 @@ export function openDatabase(dbPath: string): DatabaseSync {
   // schema.ts; drop entries only in a release allowed to break existing web.db files.
   ensureColumn(db, "sessions", "client", "TEXT");
   ensureColumn(db, "sessions", "has_trace", "INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(db, "auth_sessions", "via", "TEXT");
   return db;
 }
 

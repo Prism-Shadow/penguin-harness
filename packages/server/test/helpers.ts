@@ -34,6 +34,8 @@ export function testConfig(root: string): ServerConfig {
     webDist: path.join(root, "__no_web_dist__"),
     authSessionTtlMs: 7 * DAY_MS,
     authSessionRenewMs: 6 * DAY_MS,
+    desktopToken: null,
+    portFile: null,
   };
 }
 
