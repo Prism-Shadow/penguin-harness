@@ -4,7 +4,8 @@
 #   curl -fsSL https://github.com/Prism-Shadow/penguin-harness/releases/latest/download/install.sh | sh
 #
 # Options:
-#   PENGUIN_VERSION=vX.Y.Z    pin a version (same as --version vX.Y.Z); default is the latest Release
+#   PENGUIN_VERSION=vX.Y.Z    choose a version (same as --version vX.Y.Z); a published Release
+#                              installer defaults to its own version, an unstamped source copy to latest
 #   PENGUIN_INSTALL_DIR=<dir> install dir; default ~/.penguin
 #   PENGUIN_ARCHIVE=<file>    install a local Release archive without network access (same as --archive <file>)
 #   PENGUIN_DOWNLOAD_SOURCE=auto|oss|github choose the online source; default auto (OSS, then same-version GitHub)

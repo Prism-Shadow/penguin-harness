@@ -3,7 +3,8 @@
 #   irm https://penguin.ooo/install.ps1 | iex
 #
 # Options:
-#   $env:PENGUIN_VERSION = "vX.Y.Z"     pin a version (same as -Version vX.Y.Z); default is the latest Release
+#   $env:PENGUIN_VERSION = "vX.Y.Z"     choose a version (same as -Version vX.Y.Z); a published Release
+#                                         installer defaults to its own version, an unstamped source copy to latest
 #   $env:PENGUIN_INSTALL_DIR = "<dir>"  install dir; default $env:USERPROFILE\.penguin
 #   $env:PENGUIN_ARCHIVE = "<file>"     install a local Release zip without network access (same as -ArchivePath)
 #   $env:PENGUIN_DOWNLOAD_SOURCE = "auto|oss|github" choose the online source; default auto (OSS, then same-version GitHub)
