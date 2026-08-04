@@ -246,14 +246,36 @@ function parseDefaultChat(value: unknown): ProjectChatDefaults | undefined {
 }
 
 /**
- * Loads the Project config; returns the default config (without writing to disk) if
- * `.project_config.toml` doesn't exist. Returns plaintext (masking is applied at the interface
- * layer); reports a clear error when the old format (a string reference / an entry missing
- * provider) is read.
+ * Narrows an already-parsed `.project_config.toml` table into a typed `ProjectConfig`
+ * (`file` is used in error messages only). Shared by `loadProjectConfig` and callers that
+ * hold a cached parse of the same file (the server's ProjectConfigService), so the two
+ * paths can never validate differently.
  *
  * The return literal below rebuilds the config from **known keys only** — any new top-level
  * key must be added to `ProjectConfig` AND echoed here, or a load→save round trip (the CLI
  * path) silently drops it.
+ */
+export function projectConfigFromTable(
+  file: string,
+  parsed: Record<string, unknown>,
+): ProjectConfig {
+  const defaultModel = parseRefField(file, "default_model", parsed.default_model);
+  const visionModel = parseRefField(file, "vision_model", parsed.vision_model);
+  const defaultChat = parseDefaultChat(parsed.default_chat);
+  return {
+    ...(parsed.name !== undefined ? { name: parsed.name as string } : {}),
+    ...(defaultModel !== undefined ? { default_model: defaultModel } : {}),
+    ...(visionModel !== undefined ? { vision_model: visionModel } : {}),
+    ...(defaultChat !== undefined ? { default_chat: defaultChat } : {}),
+    models: ((parsed.models as unknown[] | undefined) ?? []).map((m) => assertModelEntry(file, m)),
+  };
+}
+
+/**
+ * Loads the Project config; returns the default config (without writing to disk) if
+ * `.project_config.toml` doesn't exist. Returns plaintext (masking is applied at the interface
+ * layer); reports a clear error when the old format (a string reference / an entry missing
+ * provider) is read.
  */
 export async function loadProjectConfig(root: string, projectId: string): Promise<ProjectConfig> {
   const file = projectConfigPath(root, projectId);
@@ -265,17 +287,7 @@ export async function loadProjectConfig(root: string, projectId: string): Promis
     throw err;
   }
   // Defensive: parseToml may return null/undefined for an empty file, and destructuring it would throw a TypeError.
-  const parsed = (parseToml(raw) ?? {}) as Record<string, unknown>;
-  const defaultModel = parseRefField(file, "default_model", parsed.default_model);
-  const visionModel = parseRefField(file, "vision_model", parsed.vision_model);
-  const defaultChat = parseDefaultChat(parsed.default_chat);
-  return {
-    ...(parsed.name !== undefined ? { name: parsed.name as string } : {}),
-    ...(defaultModel !== undefined ? { default_model: defaultModel } : {}),
-    ...(visionModel !== undefined ? { vision_model: visionModel } : {}),
-    ...(defaultChat !== undefined ? { default_chat: defaultChat } : {}),
-    models: ((parsed.models as unknown[] | undefined) ?? []).map((m) => assertModelEntry(file, m)),
-  };
+  return projectConfigFromTable(file, (parseToml(raw) ?? {}) as Record<string, unknown>);
 }
 
 /** A TOML inline table for a paired reference (reuses smol-toml's string serialization, guaranteeing correct escaping). */

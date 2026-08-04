@@ -215,7 +215,7 @@ async function upsert(
   if (!parsed.ok) throw badRequest(`Invalid schedule configuration: ${parsed.error}`);
   // At save time, verify the (provider, modelId) pair names a configured model (same rules as reconciliation) so we never persist a broken file.
   // The pairing rule itself is enforced by parseScheduleFile above, which rejects half a reference.
-  const refError = await validateScheduleModelRef(deps.config.root, projectId, parsed.def);
+  const refError = await validateScheduleModelRef(deps.projectConfigService, projectId, parsed.def);
   if (refError !== null) throw badRequest(`Invalid schedule configuration: ${refError}`);
   await writeScheduleFile(deps.config.root, projectId, agentId, name, raw);
   // Creator attribution: the API writer is the creator (falls back to the Project owner only for hand-edited files).
