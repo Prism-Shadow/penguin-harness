@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Writable } from "node:stream";
 import {
   approvalDecision,
@@ -21,10 +21,22 @@ import {
   withOrigin,
 } from "@prismshadow/penguin-core";
 import type { MessageOrigin } from "@prismshadow/penguin-core";
-import { StreamRenderer, formatAbort, humanizeTokens, renderHistory } from "../src/render.js";
+import {
+  StreamRenderer,
+  formatAbort,
+  humanizeTokens,
+  renderHistory,
+  supportsColor,
+} from "../src/render.js";
 import { getMessages } from "../src/i18n.js";
 
 const t = getMessages("en");
+
+// Several tests stub FORCE_COLOR/NO_COLOR to pin the palette decision (the collector streams
+// below are not TTYs); make sure no stub leaks into the next test.
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 function collector(): { stream: Writable; text: () => string } {
   let buf = "";
@@ -226,6 +238,9 @@ describe("StreamRenderer", () => {
   });
 
   it("colors edit_file diff output lines green/red and dims hunk headers", () => {
+    // The collector stream is not a TTY, so color must be forced on for this test (and the
+    // renderer captures the decision at construction, so the stub must precede it).
+    vi.stubEnv("FORCE_COLOR", "1");
     const { stream, text } = collector();
     const r = new StreamRenderer(stream, t);
     r.handle(partialToolCall({ eventType: "start", name: "edit_file", toolCallId: "d1" }));
@@ -259,6 +274,8 @@ describe("StreamRenderer", () => {
   });
 
   it("does not diff-color non-file-tool output", () => {
+    // Forced color, as above: with a colorless palette this assertion would pass vacuously.
+    vi.stubEnv("FORCE_COLOR", "1");
     const { stream, text } = collector();
     const r = new StreamRenderer(stream, t);
     r.handle(partialToolCall({ eventType: "start", name: "exec_command", toolCallId: "d2" }));
@@ -983,5 +1000,97 @@ describe("mid-run steering rendering ([user_steering] user messages)", () => {
     r.handle(partialText("stop"));
     r.endTask(10);
     expect(stripAnsi(text())).toContain("tail output");
+  });
+});
+
+describe("supportsColor (color gating, issue #102)", () => {
+  it("requires a TTY when no color variables are set", () => {
+    expect(supportsColor({ isTTY: true }, {})).toBe(true);
+    expect(supportsColor({ isTTY: false }, {})).toBe(false);
+    expect(supportsColor({}, {})).toBe(false);
+  });
+
+  it("NO_COLOR (non-empty) and TERM=dumb turn color off even on a TTY", () => {
+    expect(supportsColor({ isTTY: true }, { NO_COLOR: "1" })).toBe(false);
+    expect(supportsColor({ isTTY: true }, { TERM: "dumb" })).toBe(false);
+    // An empty NO_COLOR counts as unset (no-color.org).
+    expect(supportsColor({ isTTY: true }, { NO_COLOR: "" })).toBe(true);
+  });
+
+  it("FORCE_COLOR overrides everything, NO_COLOR and pipes included (Node semantics)", () => {
+    expect(supportsColor({ isTTY: false }, { FORCE_COLOR: "1" })).toBe(true);
+    // The exact environment #102 observed in the nested CLI: FORCE_COLOR=3 + NO_COLOR=1 + TERM=dumb.
+    expect(supportsColor({ isTTY: false }, { FORCE_COLOR: "3", NO_COLOR: "1", TERM: "dumb" })).toBe(
+      true,
+    );
+    expect(supportsColor({ isTTY: true }, { FORCE_COLOR: "0" })).toBe(false);
+    // An empty FORCE_COLOR is not an override; the normal gate applies.
+    expect(supportsColor({ isTTY: false }, { FORCE_COLOR: "" })).toBe(false);
+  });
+});
+
+describe("StreamRenderer color wiring (issue #102)", () => {
+  it("a piped (non-TTY) stream gets no ANSI escapes at all", () => {
+    // Neutralize any ambient override; the collector stream is not a TTY, so the palette is plain.
+    vi.stubEnv("FORCE_COLOR", "");
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t);
+    r.handle(partialToolCall({ eventType: "start", name: "exec_command", toolCallId: "p1" }));
+    r.handle(
+      partialToolCall({
+        eventType: "delta",
+        name: "",
+        arguments: '{"cmd":"cat todo.md"}',
+        toolCallId: "p1",
+      }),
+    );
+    r.handle(partialToolCall({ eventType: "stop", name: "", toolCallId: "p1" }));
+    r.handle(partialToolCallOutput({ eventType: "start", toolCallId: "p1" }));
+    r.handle(partialToolCallOutput({ eventType: "delta", output: "hello\n", toolCallId: "p1" }));
+    r.handle(partialToolCallOutput({ eventType: "stop", toolCallId: "p1" }));
+    r.handle(thinkingMessage("hmm"));
+    r.handle(partialThinking("start", ""));
+    r.handle(partialThinking("delta", "pondering"));
+    r.handle(partialThinking("stop"));
+    const raw = text();
+    expect(raw).not.toContain("\x1b");
+    expect(raw).toContain("[tool-p1] exec_command <- $ cat todo.md");
+    expect(raw).toContain("[tool-p1] exec_command -> hello");
+  });
+
+  it("renderHistory on a piped stream is escape-free too", () => {
+    vi.stubEnv("FORCE_COLOR", "");
+    const { stream, text } = collector();
+    renderHistory(
+      [
+        userText("hi"),
+        thinkingMessage("t"),
+        toolCall({ name: "exec_command", arguments: '{"cmd":"ls"}', toolCallId: "h1" }),
+        toolCallOutput({ output: "a.txt\n", toolCallId: "h1" }),
+      ],
+      stream,
+      t,
+    );
+    const raw = text();
+    expect(raw).not.toContain("\x1b");
+    expect(raw).toContain("[tool-h1] exec_command <- $ ls");
+  });
+
+  it("FORCE_COLOR=1 re-enables color on a pipe and defeats NO_COLOR", () => {
+    vi.stubEnv("FORCE_COLOR", "1");
+    vi.stubEnv("NO_COLOR", "1");
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t);
+    r.handle(partialToolCall({ eventType: "start", name: "exec_command", toolCallId: "f1" }));
+    r.handle(
+      partialToolCall({
+        eventType: "delta",
+        name: "",
+        arguments: '{"cmd":"ls"}',
+        toolCallId: "f1",
+      }),
+    );
+    r.handle(partialToolCall({ eventType: "stop", name: "", toolCallId: "f1" }));
+    expect(text()).toContain("\x1b[36m");
   });
 });

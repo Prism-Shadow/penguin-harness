@@ -14,9 +14,10 @@
  * segment is shown; the wait itself is marked by the amber hourglass icon alone, since the
  * approval block below the row is always on screen and names the tool and its arguments.
  */
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { S } from "../../lib/strings";
 import { humanizeDuration } from "../../lib/format";
+import { stripAnsi } from "../../lib/strip-ansi";
 import type { StopReason } from "@prismshadow/penguin-core/omnimessage";
 import { approvalKey } from "../../lib/omni/stream-model";
 import type { ToolCallItem } from "../../lib/omni/stream-model";
@@ -208,6 +209,11 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
   const pending = ctx.pendingApprovals.get(approvalKey(ctx.origin, item.toolCallId));
 
   const preview = previewArguments(item.name, item.argumentsText);
+  // Escape sequences are stripped at render time only (the stored stream/trace data keeps its
+  // raw bytes): hardened child envs should no longer produce any, but historical traces and
+  // force-color programs still can (#102). Memoized — the aggregated output can be large and
+  // grows on every streamed delta.
+  const output = useMemo(() => stripAnsi(item.output), [item.output]);
   // Settled once argument streaming stopped (or the complete call arrived): the subtitle's
   // completeness gate is lifted — whatever is there is final.
   const subtitle = headerSubtitle(item.name, item.argumentsText, !item.callStreaming);
@@ -390,7 +396,7 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
           )}
           {(item.output || item.outputStreaming) && (
             <pre className="max-h-72 overflow-auto whitespace-pre-wrap border-t border-gray-100 px-3 py-2 text-xs leading-5 text-gray-600 dark:border-gray-800 dark:text-gray-300">
-              {item.output}
+              {output}
               {item.outputStreaming && <span className="animate-pulse">▌</span>}
             </pre>
           )}
