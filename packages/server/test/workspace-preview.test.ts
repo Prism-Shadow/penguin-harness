@@ -96,6 +96,15 @@ describe("preview origin derivation", () => {
     });
   });
 
+  it("gives up while the bind port is still 0, rather than emitting an unloadable :0 URL", () => {
+    // PORT=0 (the desktop shell) before index.ts writes the actual port back: a `:0` URL
+    // is rejected by Chromium as ERR_UNSAFE_PORT, so previewIsolated reports false and the
+    // UI falls back to the sandboxed same-origin preview.
+    expect(
+      resolvePreviewTarget("http://localhost:0/x", "localhost:0", null, { ...bind, port: 0 }),
+    ).toBeNull();
+  });
+
   it("gives up when the loopback counterpart is not reachable from the bind address", () => {
     expect(
       resolvePreviewTarget("http://localhost:7364/x", "localhost:7364", null, {
