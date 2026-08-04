@@ -110,8 +110,8 @@ export const DESKTOP_INSTALLERS: Record<"mac" | "windows" | "linux", DesktopInst
   ],
   windows: [{ file: "penguin-desktop-win32-x64.exe", variant: "x64" }],
   linux: [
-    { file: "penguin-desktop-linux-x64.AppImage", variant: "AppImage" },
-    { file: "penguin-desktop-linux-x64.deb", variant: "deb" },
+    { file: "penguin-desktop-linux-x86_64.AppImage", variant: "AppImage" },
+    { file: "penguin-desktop-linux-amd64.deb", variant: "deb" },
   ],
 };
 

@@ -56,6 +56,10 @@ nsis:
 linux:
   # The scoped package name is not a valid executable file name.
   executableName: penguin-harness
+  # ${arch} expands to each Linux target's own convention — x86_64 for AppImage, amd64
+  # for deb — so the published names are penguin-desktop-linux-x86_64.AppImage and
+  # penguin-desktop-linux-amd64.deb; the OSS mirror manifest and the landing download
+  # page name them accordingly.
   artifactName: penguin-desktop-linux-${arch}.${ext}
   category: Development
   maintainer: Prism Shadow <zheng@prismshadow.com>

@@ -78,8 +78,8 @@ penguin-desktop-darwin-arm64.dmg
 penguin-desktop-darwin-arm64.zip
 penguin-desktop-darwin-x64.dmg
 penguin-desktop-darwin-x64.zip
-penguin-desktop-linux-x64.AppImage
-penguin-desktop-linux-x64.deb
+penguin-desktop-linux-x86_64.AppImage
+penguin-desktop-linux-amd64.deb
 penguin-desktop-win32-x64.exe
 "
 FILES="$BUNDLES
