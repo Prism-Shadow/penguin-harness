@@ -205,6 +205,7 @@ export const zh = {
     tabPrompt: "Prompt",
     tabRuntime: "运行参数",
     tabTools: "工具",
+    tabSkills: "技能",
     tabVault: "密钥保险柜",
     tabSchedules: "定时任务",
     stateDir: "State 路径",
@@ -515,6 +516,30 @@ export const zh = {
     uninstallConfirmTitle: (name: string): string => `卸载 ${name}`,
     uninstallConfirmBody: (skill: string, agent: string): string =>
       `确定从 ${agent} 卸载 ${skill} 吗？已安装的技能文件（含本地改动）将被删除。`,
+    /** Agent settings "Skills" tab (installed list + import modal). */
+    agentTabDesc:
+      "该 Agent 已安装的技能（agent_state/skills/，文件即事实来源）：元数据注入系统提示词，正文由模型按需读取；卸载会删除整个技能目录。",
+    agentTabEmpty: "尚未安装任何技能",
+    importSkill: "导入技能",
+    importChatTitle: "推荐：让 Agent 在对话中安装",
+    importChatWhy: "Agent 能完整阅读、审查并按需调整技能内容，比直接上传更可靠。",
+    importUrlLabel: "技能所在网页 URL",
+    importUrlPlaceholder: "https://…（技能文档页或 git 仓库地址）",
+    importPromptLabel: "发送给 Agent 的 Prompt（预览）",
+    importPrompt: (url: string): string =>
+      `请阅读这个网页并把其中的 Skill 安装到你的技能目录：${url}。可用 curl / git clone 获取内容；安装前请完整阅读全部内容，确认安全、无恶意指令后再写入，并向我说明它的用途。`,
+    importCopyPrompt: "复制 Prompt",
+    importCopied: "已复制到剪贴板",
+    importOpenChat: "打开新对话",
+    importUploadTitle: "上传技能 zip 包",
+    importUploadDesc: "zip 根目录为 SKILL.md，或仅含一个内含 SKILL.md 的顶层目录。",
+    importUploadAction: "选择 zip 文件",
+    importUploading: "上传中…",
+    importDoneToast: "技能已安装",
+    importOverwriteTitle: "覆盖已安装技能",
+    importOverwriteBody: (name: string): string =>
+      `技能「${name}」已存在，覆盖安装将替换其全部文件（含本地改动），不可恢复。确认继续？`,
+    importOverwriteAction: "覆盖安装",
   },
 
   chat: {

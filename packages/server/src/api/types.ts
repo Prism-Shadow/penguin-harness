@@ -1397,6 +1397,19 @@ export interface SkillInstallRequest {
   names: string[];
 }
 
+/**
+ * POST /api/projects/:p/agents/:a/skills/archive: install one Skill from an uploaded zip.
+ * Layout: SKILL.md at the zip root, or exactly one top-level directory containing SKILL.md
+ * (the directory name is then the Skill name). 201 returns the refreshed installed list
+ * (AgentSkillsResponse); an already-installed name without `overwrite` is 409 `skill_exists`.
+ */
+export interface SkillArchiveInstallRequest {
+  /** Base64-encoded zip archive (decoded size capped at 14MB, same as the Agent snapshot import). */
+  dataBase64: string;
+  /** Replace an already-installed Skill of the same name (deletes its directory first). */
+  overwrite?: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // Version and self-update
 // ---------------------------------------------------------------------------

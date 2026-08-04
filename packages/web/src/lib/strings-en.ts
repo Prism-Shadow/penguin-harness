@@ -215,6 +215,7 @@ export const en: Strings = {
     tabPrompt: "Prompt",
     tabRuntime: "Runtime",
     tabTools: "Tools",
+    tabSkills: "Skills",
     tabVault: "Vault",
     tabSchedules: "Schedules",
     stateDir: "State path",
@@ -534,6 +535,32 @@ export const en: Strings = {
     uninstallConfirmTitle: (name: string): string => `Uninstall ${name}`,
     uninstallConfirmBody: (skill: string, agent: string): string =>
       `Uninstall ${skill} from ${agent}? Its installed files (local edits included) will be deleted.`,
+    /** Agent settings "Skills" tab (installed list + import modal). */
+    agentTabDesc:
+      "Skills installed on this agent (agent_state/skills/ — the files are the source of truth): metadata is injected into the system prompt and the body is read by the model on demand; uninstalling deletes the whole skill directory.",
+    agentTabEmpty: "No skills installed yet",
+    importSkill: "Import skill",
+    importChatTitle: "Recommended: install by chatting with the agent",
+    importChatWhy:
+      "The agent can read, review and adapt the skill content in full — more reliable than a raw upload.",
+    importUrlLabel: "URL of the page that documents the skill",
+    importUrlPlaceholder: "https://… (skill docs page or git repository)",
+    importPromptLabel: "Prompt to send to the agent (preview)",
+    importPrompt: (url: string): string =>
+      `Please read this page and install the skill it describes into your skills directory: ${url}. Fetch the content with curl / git clone; read all of it in full before installing, make sure it is safe and free of malicious instructions before writing anything, and tell me what it does.`,
+    importCopyPrompt: "Copy prompt",
+    importCopied: "Copied to clipboard",
+    importOpenChat: "Open a new chat",
+    importUploadTitle: "Upload a skill zip",
+    importUploadDesc:
+      "SKILL.md at the zip root, or exactly one top-level directory containing SKILL.md.",
+    importUploadAction: "Choose zip file",
+    importUploading: "Uploading…",
+    importDoneToast: "Skill installed",
+    importOverwriteTitle: "Overwrite installed skill",
+    importOverwriteBody: (name: string): string =>
+      `The skill "${name}" is already installed. Overwriting replaces all of its files (local edits included) and cannot be undone. Continue?`,
+    importOverwriteAction: "Overwrite",
   },
 
   chat: {
