@@ -82,7 +82,7 @@ CREATE TABLE IF NOT EXISTS error_records (     -- server-side error capture (the
   project_id TEXT,                     -- nullable: sign-in/registration and process-level errors have no Project context
   agent_id   TEXT,
   session_id TEXT,
-  source     TEXT NOT NULL,            -- http | session | usage | title | subagent | process | llm | environment | schedule
+  source     TEXT NOT NULL,            -- http | session | usage | title | subagent | process | llm | environment | compaction | schedule
   kind       TEXT NOT NULL,            -- expected (HttpError, business 4xx) | unexpected (500/runtime)
   code       TEXT NOT NULL,            -- HttpError.code / internal / session_run_failed / ...
   status     INTEGER,                  -- HTTP status code; NULL for non-HTTP sources

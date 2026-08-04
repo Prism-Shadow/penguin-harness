@@ -3,6 +3,7 @@ import {
   appOriginFor,
   desktopLoginUrl,
   isAppUrl,
+  isLocalSurfaceUrl,
   parsePortFile,
   restartDelayMs,
 } from "../src/util.js";
@@ -39,6 +40,23 @@ describe("isAppUrl", () => {
     expect(isAppUrl("https://example.com", origin)).toBe(false);
     expect(isAppUrl("not a url", origin)).toBe(false);
     expect(isAppUrl("http://localhost:7364/", null)).toBe(false);
+  });
+});
+
+describe("isLocalSurfaceUrl", () => {
+  const origin = "http://localhost:7364";
+  it("accepts the app origin and its loopback counterpart on the same port", () => {
+    // The counterpart is where Workspace previews are served: a preview window must be
+    // able to reach it, which the stricter app-origin rule would deny.
+    expect(isLocalSurfaceUrl("http://localhost:7364/chat", origin)).toBe(true);
+    expect(isLocalSurfaceUrl("http://127.0.0.1:7364/preview/tok/x.html", origin)).toBe(true);
+  });
+  it("rejects other ports, other hosts, other schemes, and junk", () => {
+    expect(isLocalSurfaceUrl("http://127.0.0.1:7365/preview/x", origin)).toBe(false);
+    expect(isLocalSurfaceUrl("http://example.com:7364/", origin)).toBe(false);
+    expect(isLocalSurfaceUrl("https://localhost:7364/", origin)).toBe(false);
+    expect(isLocalSurfaceUrl("not a url", origin)).toBe(false);
+    expect(isLocalSurfaceUrl("http://localhost:7364/", null)).toBe(false);
   });
 });
 
