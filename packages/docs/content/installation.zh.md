@@ -21,6 +21,8 @@ curl -fsSL https://penguin.ooo/install.sh | sh
 
 稳定入口默认使用 `PENGUIN_DOWNLOAD_SOURCE=auto`：优先选择已完整上传并验证的 OSS 不可变版本目录；元数据或下载不可用时，回退到同一版本的 GitHub Release。也可以将该变量设为 `oss` 或 `github` 来强制指定来源。安装器只显示来源名称，不在常规输出中打印镜像的完整 URL。
 
+`penguin.ooo` 稳定入口每次执行时都会解析当前稳定版本。从 GitHub 或 OSS 的版本化 Release 中直接下载的独立安装脚本会写入该 Release tag，并默认安装同一版本，确保安装器与安装包格式匹配；如需覆盖，可显式设置 `PENGUIN_VERSION`（POSIX 也可使用 `--version`）。
+
 在 Windows（PowerShell）上执行：
 
 ```powershell
@@ -63,7 +65,7 @@ Linux / macOS 上执行：
 | --- | --- |
 | 安装目录 | 默认 `~/.penguin`，可用环境变量 `PENGUIN_INSTALL_DIR` 覆盖 |
 | 命令入口 | 创建符号链接 `~/.local/bin/penguin`（若 `~/.local/bin` 不在 PATH 上，脚本会给出提示） |
-| 版本固定 | 环境变量 `PENGUIN_VERSION=vX.Y.Z`，或脚本参数 `--version vX.Y.Z`；默认安装最新 Release |
+| 版本选择 | 环境变量 `PENGUIN_VERSION=vX.Y.Z`，或脚本参数 `--version vX.Y.Z`；稳定入口默认安装最新 Release，版本化 Release 安装器默认安装自身 tag |
 | 下载来源 | `PENGUIN_DOWNLOAD_SOURCE=auto`（默认）、`oss` 或 `github`；自动模式优先 OSS，并按同一版本回退到 GitHub |
 | 本地压缩包 | `PENGUIN_ARCHIVE=<file>` 或 `--archive <file>`；接受 Release 安装包（凭包内封入的负载 checksum 自校验），或旁边带 `<file>.sha256` 的负载 / 旧版程序压缩包（重命名的旧版文件可用平台标准名称的 `.sha256`） |
 | 完整性校验 | 始终进行：在线下载对照发布的 `.sha256` 校验，安装包负载对照包内封入的 checksum 校验 |
