@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import path from "node:path";
 import { Command } from "commander";
 import { DEFAULT_SERVER_PORT } from "@prismshadow/penguin-core";
@@ -8,8 +8,10 @@ import {
   browserCommand,
   browserUrl,
   cliEntryFor,
+  describeReadinessFailure,
   registerServeCommands,
   resolvePort,
+  waitForReady,
 } from "../src/commands/serve.js";
 import { getMessages } from "../src/i18n.js";
 
@@ -91,5 +93,58 @@ describe("cliEntryFor (the entry advertised for the web self-update)", () => {
     expect(cliEntryFor("/repo/packages/cli/src/index.ts")).toBeNull();
     expect(cliEntryFor(undefined)).toBeNull();
     expect(cliEntryFor("")).toBeNull();
+  });
+});
+
+describe("readiness probe diagnostics", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("reports a successful HTTP response as ready regardless of its status", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 503 }));
+
+    await expect(waitForReady("http://127.0.0.1:7364/", 0, 0)).resolves.toEqual({
+      ready: true,
+    });
+  });
+
+  it("retains the nested undici error from the last failed probe", async () => {
+    const cause = Object.assign(new Error("Connect Timeout Error"), {
+      code: "UND_ERR_CONNECT_TIMEOUT",
+    });
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(
+      Object.assign(new TypeError("fetch failed"), { cause }),
+    );
+
+    await expect(waitForReady("http://127.0.0.1:7364/", 0, 0)).resolves.toEqual({
+      ready: false,
+      failure: {
+        kind: "timeout",
+        detail: "UND_ERR_CONNECT_TIMEOUT: Connect Timeout Error",
+      },
+    });
+  });
+
+  it.each([
+    ["ECONNREFUSED", "refused"],
+    ["ECONNRESET", "reset"],
+    ["EACCES", "permission"],
+    ["ENOTFOUND", "dns"],
+  ] as const)("classifies %s failures as %s", (code, kind) => {
+    expect(describeReadinessFailure(Object.assign(new Error("probe failed"), { code }))).toEqual({
+      kind,
+      detail: `${code}: probe failed`,
+    });
+  });
+
+  it("includes actionable localized firewall guidance for connection timeouts", () => {
+    const detail = "UND_ERR_CONNECT_TIMEOUT: Connect Timeout Error";
+    expect(
+      getMessages("en").webProbeFailed("http://127.0.0.1:7364/", detail, "timeout", 7364),
+    ).toContain("Allow PenguinHarness to communicate on local port 7364");
+    expect(
+      getMessages("zh").webProbeFailed("http://127.0.0.1:7364/", detail, "timeout", 7364),
+    ).toContain("请允许 PenguinHarness 在本机端口 7364 上通信");
   });
 });
