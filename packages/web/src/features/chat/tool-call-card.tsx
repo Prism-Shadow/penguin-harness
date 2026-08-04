@@ -250,14 +250,15 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
         : deniedByUser
           ? (decisionText ?? undefined)
           : (item.outputStopReason ?? item.callStopReason);
-  // Stop reasons to spell out on the row. The two segments frequently carry the SAME value —
-  // a call that closed undispatched copies its own reason onto the output it will never
-  // produce (settleUndispatchedCall) — so equal values collapse to one marker instead of the
-  // `[malformed][malformed]` the two old pills rendered side by side.
+  // Stop reasons to spell out on the row — minus generic `failed`, which the StatusIcon
+  // already carries (see the row comment below). The two segments frequently carry the SAME
+  // value — a call that closed undispatched copies its own reason onto the output it will
+  // never produce (settleUndispatchedCall) — so equal values collapse to one marker instead
+  // of the `[malformed][malformed]` the two old pills rendered side by side.
   const outcomes = [
     ...new Set(
       [item.callStopReason, deniedByUser ? undefined : item.outputStopReason].filter(
-        (r): r is StopReason => r !== undefined && r !== "completed",
+        (r): r is StopReason => r !== undefined && r !== "completed" && r !== "failed",
       ),
     ),
   ];
@@ -277,12 +278,15 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
           The stop reason used to render as a padded Badge pill, which competed for width on a
           phone. It is now the same plain `[reason]` marker the thinking row directly above it
           already uses (thinking-block.tsx) — cheap enough for 390px, and the two rows in a
-          work group finally read alike. Dropping it entirely and leaving the icon to carry the
-          outcome does not work: the icon has one failure tone, so an interrupted call would
-          look identical to a hard failure, and a call that never ran — malformed, or closed
-          undispatched — has no output block to expand into, so its title/aria-label would be
-          the only explanation anywhere, out of reach on touch. The Trace viewer still shows
-          the raw stop reason per event, which is where the literal value belongs.
+          work group finally read alike. Generic `failed` gets no marker at all: the icon's
+          failure tone plus its title/aria stateLabel (which still names the raw reason)
+          already say exactly that, and per user feedback the extra red `[failed]` text read
+          as alarming repetition. Dropping the other reasons too does not work: the icon has
+          one failure tone, so an interrupted call would look identical to a hard failure, and
+          a call that never ran — malformed, or closed undispatched — has no output block to
+          expand into, so its title/aria-label would be the only explanation anywhere, out of
+          reach on touch. The Trace viewer still shows the raw stop reason per event, which is
+          where the literal value belongs.
 
           A pending call gets no "awaiting approval" text either: the approval block below is
           always on screen while one is pending — it names the tool, shows the arguments and
