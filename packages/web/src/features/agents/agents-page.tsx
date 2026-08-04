@@ -217,7 +217,7 @@ export function AgentsPage() {
                       (same line as the name); description/stats share the same left edge as the
                       avatar (the column's left edge) */}
                   <div className="min-w-[14rem] flex-1">
-                    {/* Title line: small avatar + name + agentId + active badge */}
+                    {/* Title line: small avatar + name + agentId + version badge */}
                     <div className="flex items-center gap-2">
                       <AgentAvatar
                         id={a.agentId}
@@ -233,11 +233,6 @@ export function AgentsPage() {
                         {a.agentId}
                       </span>
                       <Badge tone="gray">v{a.version}</Badge>
-                      {a.activeSessionCount > 0 && (
-                        <Badge tone="brand">
-                          {S.agent.activeSessions} {a.activeSessionCount}
-                        </Badge>
-                      )}
                     </div>
                     {/* Description truncated to one line (an empty description still takes up a line, keeping card heights equal) */}
                     <p className="mt-1.5 min-h-4 truncate text-xs text-gray-500 dark:text-gray-400">
