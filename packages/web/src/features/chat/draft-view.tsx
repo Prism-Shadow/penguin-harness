@@ -713,12 +713,15 @@ export function DraftView({
 }
 
 /**
- * Superscript "new version" pill on the version line (accent-colored, raised via
- * align-super). The only remaining copy: the sidebar's version row dropped its badge when
- * the three update rows collapsed into one whose label already names the new version.
+ * Superscript "new version" hint on the version line: plain small text raised via
+ * align-super, in the version line's own muted color and weight. Deliberately not a pill —
+ * user feedback was that the earlier accent-colored pill read as a button; the link case
+ * only adds a hover underline. The only remaining copy: the sidebar's version row dropped
+ * its badge when the three update rows collapsed into one whose label already names the
+ * new version.
  */
 const versionBadgeClass =
-  "ml-1.5 inline-block rounded-full bg-[var(--accent-bg)] px-1.5 align-super text-[10px] font-medium leading-4 text-[var(--accent-fg)] transition-opacity duration-150 hover:opacity-80";
+  "ml-1.5 inline-block align-super text-[10px] leading-4 text-gray-400 dark:text-gray-500";
 
 /**
  * Quiet version line under the brand subtitle: `vX.Y.Z · Last updated Jul 26`
@@ -754,7 +757,7 @@ function VersionLine() {
             rel="noopener noreferrer"
             title={S.update.newVersion(update.latestVersion)}
             aria-label={S.update.newVersion(update.latestVersion)}
-            className={versionBadgeClass}
+            className={`${versionBadgeClass} hover:underline`}
           >
             {S.update.newVersionBadge}
           </a>

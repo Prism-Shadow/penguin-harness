@@ -1,13 +1,23 @@
 /**
  * outline-model.ts unit tests: turn segmentation into outline entries (merge of adjacent
- * user items, banner/goal-round handling, answer accumulation) and the plain-text preview
- * reduction.
+ * user items, banner/goal-round handling, answer accumulation), the plain-text preview
+ * reduction, and the tick rail's sliding-window bounds.
  */
 import { describe, expect, it } from "vitest";
 import type { ChatItem } from "../src/lib/omni/stream-model";
 import { handoffMessage } from "../src/features/chat/agent-handoff";
 import { buildScheduledMessage } from "@prismshadow/penguin-core/markers";
-import { buildOutline, previewText } from "../src/features/chat/outline-model";
+import {
+  OUTLINE_WINDOW_AFTER,
+  OUTLINE_WINDOW_BEFORE,
+  TICK_PITCH_MAX,
+  TICK_PITCH_MIN,
+  buildOutline,
+  previewText,
+  railTickPitch,
+  railWindowHalf,
+  windowOutline,
+} from "../src/features/chat/outline-model";
 
 let nextId = 0;
 const user = (text: string): ChatItem => ({ kind: "user_text", id: nextId++, text });
@@ -87,6 +97,68 @@ describe("buildOutline", () => {
     const items: ChatItem[] = [user("q"), assistant("x".repeat(400)), assistant("y".repeat(400))];
     const outline = buildOutline(items);
     expect(outline[0]!.answer.length).toBeLessThanOrEqual(500);
+  });
+});
+
+describe("windowOutline", () => {
+  /** The default window size the components render at most (20 + active + 20). */
+  const SIZE = OUTLINE_WINDOW_BEFORE + 1 + OUTLINE_WINDOW_AFTER;
+
+  it("covers everything while the window isn't outgrown", () => {
+    expect(windowOutline(SIZE, 3)).toEqual({ start: 0, end: SIZE });
+    expect(windowOutline(5, null)).toEqual({ start: 0, end: 5 });
+    expect(windowOutline(0, null)).toEqual({ start: 0, end: 0 });
+  });
+
+  it("parks at the end without an active entry (null or -1): the newest turns show first", () => {
+    expect(windowOutline(100, null)).toEqual({ start: 100 - SIZE, end: 100 });
+    expect(windowOutline(100, -1)).toEqual({ start: 100 - SIZE, end: 100 });
+  });
+
+  it("centers on the active entry and recenters as it moves", () => {
+    expect(windowOutline(100, 50)).toEqual({ start: 30, end: 71 });
+    expect(windowOutline(100, 51)).toEqual({ start: 31, end: 72 });
+  });
+
+  it("shifts (never shrinks) at both edges, keeping the full window", () => {
+    // Near the start: still SIZE entries from index 0.
+    expect(windowOutline(100, 0)).toEqual({ start: 0, end: SIZE });
+    expect(windowOutline(100, OUTLINE_WINDOW_BEFORE)).toEqual({ start: 0, end: SIZE });
+    expect(windowOutline(100, OUTLINE_WINDOW_BEFORE + 1)).toEqual({ start: 1, end: SIZE + 1 });
+    // Near the end: the last SIZE entries (the active one included).
+    expect(windowOutline(100, 99)).toEqual({ start: 100 - SIZE, end: 100 });
+    expect(windowOutline(100, 99 - OUTLINE_WINDOW_AFTER)).toEqual({ start: 100 - SIZE, end: 100 });
+    expect(windowOutline(100, 98 - OUTLINE_WINDOW_AFTER)).toEqual({ start: 99 - SIZE, end: 99 });
+  });
+
+  it("honors custom half-widths", () => {
+    expect(windowOutline(10, 5, 1, 2)).toEqual({ start: 4, end: 8 });
+    expect(windowOutline(10, 0, 1, 2)).toEqual({ start: 0, end: 4 });
+    expect(windowOutline(10, 9, 1, 2)).toEqual({ start: 6, end: 10 });
+  });
+});
+
+describe("rail fit (pitch and height-adaptive window half-width)", () => {
+  it("keeps the full half-width on a normal-height rail and shrinks it on short ones", () => {
+    expect(railWindowHalf(800)).toBe(OUTLINE_WINDOW_BEFORE);
+    expect(railWindowHalf(200)).toBe(14); // floor(((200-48)/5 - 1) / 2)
+    expect(railWindowHalf(60)).toBe(0);
+    expect(railWindowHalf(0)).toBe(0);
+  });
+
+  it("compresses the pitch toward MIN as ticks outgrow the rail, never past it", () => {
+    expect(railTickPitch(860, 41)).toBe(TICK_PITCH_MAX);
+    expect(railTickPitch(500, 5)).toBe(TICK_PITCH_MAX);
+    expect(railTickPitch(253, 41)).toBe(TICK_PITCH_MIN);
+    expect(railTickPitch(100, 41)).toBe(TICK_PITCH_MIN); // clamped, not floor's 1
+  });
+
+  it("the windowed stack always fits inside the rail (the overlap-with-composer guard)", () => {
+    for (let height = 60; height <= 1200; height += 7) {
+      const count = 2 * railWindowHalf(height) + 1;
+      // Ticks plus the two edge-dot marks (~36px worst case) stay within the rail.
+      expect(count * railTickPitch(height, count) + 36).toBeLessThanOrEqual(height);
+    }
   });
 });
 

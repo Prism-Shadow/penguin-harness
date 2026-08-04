@@ -33,7 +33,6 @@ import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import {
   formatDateTime,
-  formatMoney,
   humanizeDuration,
   humanizeDurationLive,
   humanizeTokens,
@@ -42,7 +41,7 @@ import { latestConversation } from "../../lib/session-grouping";
 import { approvalKey, isModelAuthDead } from "../../lib/omni/stream-model";
 import type { StreamModel } from "../../lib/omni/stream-model";
 import { bucketCostUsd, liveSessionElapsedMs } from "../../lib/omni/task-stats";
-import type { BucketPricing, TaskStatsTracker } from "../../lib/omni/task-stats";
+import type { TaskStatsTracker } from "../../lib/omni/task-stats";
 import { useTheme } from "../../state/theme";
 import { useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
@@ -59,6 +58,8 @@ import { latestTaskHasSubagent, taskStartCount } from "./agent-topology";
 import { ChatInput } from "./chat-input";
 import { ConversationOutline, OutlineMenuButton, useOutlineRailFit } from "./conversation-outline";
 import { DraftView } from "./draft-view";
+import { advanceCostStat, applyUsageFetch, createCostStatHold } from "./header-stats";
+import type { CostStatDisplay } from "./header-stats";
 import { buildInputHistory } from "./input-history";
 import { buildOutline } from "./outline-model";
 import { GoalStatusBanner } from "./goal-banner";
@@ -149,9 +150,9 @@ function SessionElapsed({
 /** The header's three statistics — the chip row and the info dropdown render these verbatim. */
 interface HeaderStats {
   tokensText: string;
-  /** Formatted session cost; null = nothing to show (no recorded figure and no live estimate). */
+  /** Formatted session cost; null = nothing to show yet for this session (see header-stats.ts). */
   costText: string | null;
-  /** Server-reported "some usage had no pricing" flag from the last idle refetch (the chip's `*`). */
+  /** Server-reported "some usage had no pricing" flag riding the shown figure (the chip's `*`). */
   costUncosted: boolean;
   elapsedNode: ReactNode;
 }
@@ -159,47 +160,19 @@ interface HeaderStats {
 /**
  * Computes the header statistics, live while a Task runs:
  *   - Tokens: session cumulative (main + subagents), already advancing per completed request;
- *   - Cost: the last idle-refetched session cost, plus — while a Task is open and the session
- *     Model has pricing — a live estimate converted from this Task's usage buckets. Subagents
- *     may run on different models, but the estimate applies the main Model's pricing to all
- *     live buckets: the estimate may be slightly off mid-task, and the idle getUsage refetch
- *     reconciles to the server-recorded value (kept deliberately simple). Without pricing the
- *     live addition is skipped (bucketCostUsd returns null, mirroring taskCost's uncosted
- *     signal) and the value stays exactly as when idle. costText stays null until there is an
- *     actual figure — no recorded cost plus a still-zero estimate renders nothing, not $0.00;
+ *   - Cost: advanceCostStat's display value — the fetched session cost plus a client-settled
+ *     live estimate that carries across Task boundaries, sticky once shown (semantics
+ *     documented in header-stats.ts). The live estimate applies the main Model's pricing to
+ *     all of the open Task's buckets (subagents may run on different models), so it can be
+ *     slightly off mid-task; usage fetches reconcile it to the server-recorded value;
  *   - Elapsed: ticking cumulative while running, settled cumulative when idle (SessionElapsed).
  */
-function headerStats(
-  model: StreamModel,
-  sessionCost: number | null,
-  costUncosted: boolean,
-  pricing: BucketPricing | undefined,
-  currency: "USD" | "CNY",
-): HeaderStats {
+function headerStats(model: StreamModel, cost: CostStatDisplay): HeaderStats {
   const stats = model.stats;
-  const liveCost = model.taskOpen
-    ? bucketCostUsd(
-        {
-          cacheRead: stats.taskCacheRead,
-          cacheWrite: stats.taskCacheWrite,
-          output: stats.taskOutput,
-        },
-        pricing,
-      )
-    : null;
-  // Only take the live path once it has something to say — a positive estimate, or a recorded
-  // session cost to keep showing from the Task's first instant. On a brand-new session,
-  // sessionCost is still null and liveCost is 0 until the first token_usage lands; blindly
-  // summing would flash a formatted $0.00 the moment the Task starts — exactly the "cost is
-  // zero or something's broken" reading the chip's render conditional exists to avoid.
-  const costUsd =
-    liveCost != null && (liveCost > 0 || sessionCost != null)
-      ? (sessionCost ?? 0) + liveCost
-      : sessionCost;
   return {
     tokensText: humanizeTokens(stats.sessionTotal + stats.subagentTotal),
-    costText: costUsd != null ? formatMoney(costUsd, currency) : null,
-    costUncosted,
+    costText: cost.costText,
+    costUncosted: cost.costUncosted,
     elapsedNode: (
       <SessionElapsed
         stats={stats}
@@ -242,8 +215,14 @@ export function ChatPage() {
     setTitle,
   } = useSessions();
 
-  const [sessionCost, setSessionCost] = useState<number | null>(null);
-  const [costUncosted, setCostUncosted] = useState(false);
+  // Cost chip state lives in a mutable per-session hold (header-stats.ts, pure/unit-tested):
+  // the fetched session cost + a client-settled live base + the last shown value, advanced once
+  // per render by advanceCostStat (which also resets it on session switch). usageAppliedRef
+  // marks the session whose usage fetch has applied ("initial fetch done"); usageStamp only
+  // forces a repaint when a fetch resolves outside the stream's own version bumps.
+  const costHoldRef = useRef(createCostStatHold());
+  const usageAppliedRef = useRef<string | null>(null);
+  const [, bumpUsageStamp] = useState(0);
   const [credentialGuide, setCredentialGuide] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const [modeSaving, setModeSaving] = useState(false);
@@ -487,12 +466,12 @@ export function ChatPage() {
   // create the same path, so its summary must re-check instead of inheriting stale false state.
   const statCacheRef = useRef(new Map<string, true | Promise<boolean>>());
 
-  // Session switch: resets the cost, the file-card existence cache, and the per-turn thinking
-  // level (it's per-session UI state), avoiding stale data from the previous Session (Files
-  // panel state resets itself keyed on sessionId inside use-files-panel).
+  // Session switch: resets the usage-fetch marker, the file-card existence cache, and the
+  // per-turn thinking level (it's per-session UI state), avoiding stale data from the previous
+  // Session (Files panel state resets itself keyed on sessionId inside use-files-panel, and the
+  // cost hold re-keys itself on sessionId inside advanceCostStat).
   useEffect(() => {
-    setSessionCost(null);
-    setCostUncosted(false);
+    usageAppliedRef.current = null;
     setTurnThinkingLevel("");
     statCacheRef.current = new Map();
   }, [routeSessionId]);
@@ -535,17 +514,27 @@ export function ChatPage() {
     [selected?.sessionId],
   );
 
-  // Session's cumulative cost: refreshed on entry and every time it returns to idle (cost is computed by the server in real time based on current pricing).
+  // Session's cumulative cost (priced by the server in real time from its usage rows): fetched
+  // once when the session becomes selected — even mid-run, so a page load during an active run
+  // recovers the already-accrued total instead of waiting for idle — then refreshed on every
+  // return to idle (the authoritative reconcile, as before). usageAppliedRef marks the initial
+  // fetch done only when a response applies, so a cancelled/failed attempt retries on the next
+  // transition rather than polling. The cancelled flag doubles as a staleness guard: any
+  // task-state change re-runs the effect and discards an in-flight response fetched under the
+  // previous run state (whose total would misalign with the live buckets it is snapshotted
+  // against — see applyUsageFetch).
   useEffect(() => {
-    if (!projectId || !selected || stream.taskState !== "idle") return;
+    if (!projectId || !selected) return;
+    if (usageAppliedRef.current === selected.sessionId && stream.taskState !== "idle") return;
     let cancelled = false;
     api
       .getUsage(projectId, { groupBy: "session", agentId: selected.agentId })
       .then((res) => {
         if (cancelled) return;
+        usageAppliedRef.current = selected.sessionId;
         const row = res.groups.find((g) => g.key === selected.sessionId);
-        setSessionCost(row?.cost ?? null);
-        setCostUncosted(row?.hasUncosted ?? false);
+        applyUsageFetch(costHoldRef.current, selected.sessionId, row ?? null);
+        bumpUsageStamp((n) => n + 1);
       })
       .catch(() => undefined);
     return () => {
@@ -882,8 +871,30 @@ export function ChatPage() {
   }
 
   // Header statistics (chip row + info dropdown), live while a Task runs; recomputed every
-  // stream version bump, so the in-place-mutated model stats always read fresh.
-  const hs = headerStats(stream.model, sessionCost, costUncosted, modelPricing, currency);
+  // stream version bump, so the in-place-mutated model stats always read fresh. The cost chip
+  // advances its per-session hold with this render's observation (idempotent per observation,
+  // so a replayed render converges — see header-stats.ts).
+  const liveTaskUsd = stream.model.taskOpen
+    ? bucketCostUsd(
+        {
+          cacheRead: stream.model.stats.taskCacheRead,
+          cacheWrite: stream.model.stats.taskCacheWrite,
+          output: stream.model.stats.taskOutput,
+        },
+        modelPricing,
+      )
+    : null;
+  const hs = headerStats(
+    stream.model,
+    advanceCostStat(costHoldRef.current, {
+      sessionId: selected?.sessionId ?? null,
+      taskCount,
+      taskOpen: stream.model.taskOpen,
+      loading: stream.loading,
+      liveUsd: liveTaskUsd,
+      currency,
+    }),
+  );
   const modelInfo = models?.models.find((m) => sameModelRef(m, activeModelRef));
   const contextWindow = modelInfo?.contextWindow;
   // Assumed supported by default: only models explicitly marked vision=false show a blocking hint when adding images.
