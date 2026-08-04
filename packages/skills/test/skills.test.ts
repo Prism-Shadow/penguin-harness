@@ -111,12 +111,12 @@ describe("loadSkillGroups / groupSkills", () => {
       "vllm",
       "ollama",
       "llamafactory",
+      "skill-porting",
     ]);
     expect(groups[2]!.title).toBe("AI App Development");
     expect(groups[2]!.titleZh).toBe("AI 应用开发");
     expect(groups[3]!.skills.map((s) => s.name)).toEqual([
       "agent-creation",
-      "skill-porting",
       "benchmark-design",
       "agent-evaluation",
       "agent-optimization",
@@ -167,17 +167,19 @@ describe("loadSkillGroups / groupSkills", () => {
       { id: "software-development", skills: ["web-design", "software-engineering"] },
       {
         id: "ai-app-development",
-        skills: ["penguin-sdk", "penguin-cli", "agenthub-models", "vllm", "ollama", "llamafactory"],
+        skills: [
+          "penguin-sdk",
+          "penguin-cli",
+          "agenthub-models",
+          "vllm",
+          "ollama",
+          "llamafactory",
+          "skill-porting",
+        ],
       },
       {
         id: "agent-tuning",
-        skills: [
-          "agent-creation",
-          "skill-porting",
-          "benchmark-design",
-          "agent-evaluation",
-          "agent-optimization",
-        ],
+        skills: ["agent-creation", "benchmark-design", "agent-evaluation", "agent-optimization"],
       },
     ]);
   });
