@@ -31,11 +31,16 @@ console.log("[stage] pnpm deploy --prod → stage/app");
 const env = Object.fromEntries(
   Object.entries(process.env).filter(([k]) => !k.toLowerCase().startsWith("npm_config_")),
 );
-execFileSync("pnpm", ["--filter", "@prismshadow/penguin-desktop", "deploy", "--prod", appDir], {
-  cwd: repoRoot,
-  stdio: "inherit",
-  env,
-});
+// Windows: pnpm is pnpm.cmd, which Node only spawns through a shell (and .cmd spawning
+// without one is blocked since the CVE-2024-27980 hardening). With a shell, args are
+// joined verbatim, so quote them — appDir may contain spaces.
+const isWindows = process.platform === "win32";
+const deployArgs = ["--filter", "@prismshadow/penguin-desktop", "deploy", "--prod", appDir];
+execFileSync(
+  isWindows ? "pnpm.cmd" : "pnpm",
+  isWindows ? deployArgs.map((a) => `"${a}"`) : deployArgs,
+  { cwd: repoRoot, stdio: "inherit", env, shell: isWindows },
+);
 
 // Keep only what the packaged app runs.
 const keep = new Set(["dist", "node_modules", "package.json"]);
