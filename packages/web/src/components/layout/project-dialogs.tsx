@@ -21,7 +21,9 @@ import {
 import { agentDisplayName, projectDisplayName, useProject } from "../../state/project";
 import { useAuth } from "../../state/auth";
 import { clearDraftModelRef } from "../../features/chat/draft-cache";
+import { ModelSelect } from "../../features/chat/model-select";
 import { SELECTABLE_THINKING_LEVELS } from "../../features/chat/thinking-level";
+import { WorkspaceSelect } from "../../features/chat/workspace-select";
 import { sameModelRef } from "../../features/models/model-grouping";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -300,8 +302,6 @@ export function ProjectSettingsDialog({ open, onClose }: { open: boolean; onClos
           <p className="mt-1 font-mono text-xs text-gray-400">{projectId}</p>
         </div>
 
-        <ChatDefaultsSection projectId={projectId} isOwner={isOwner} />
-
         <div>
           <p className="mb-2 text-xs font-medium text-gray-500">{S.project.members}</p>
           {loadError ? (
@@ -373,6 +373,8 @@ export function ProjectSettingsDialog({ open, onClose }: { open: boolean; onClos
           )}
         </div>
 
+        <ChatDefaultsSection projectId={projectId} isOwner={isOwner} />
+
         {isOwner && (
           <div className="border-t border-gray-100 pt-3 dark:border-gray-800">
             {projectId === "default_project" ? (
@@ -404,9 +406,13 @@ export function ProjectSettingsDialog({ open, onClose }: { open: boolean; onClos
 }
 
 /**
- * "New chat defaults" section of the Project settings dialog: the `[default_chat]` block
- * (Agent / Workspace / approval mode / thinking level) plus the Project's default model.
- * The model default is SINGLE-SOURCED with the models page — the select renders and writes
+ * "New chat defaults" section of the Project settings dialog (below Members, above the
+ * delete zone): the `[default_chat]` block (Agent / Workspace / approval mode / thinking
+ * level) plus the Project's default model, laid out as a compact responsive two-column
+ * grid. Workspace and model reuse the chat draft's own pickers — WorkspaceSelect (the
+ * dir-browser pill) and ModelSelect (the composer's model dropdown) — so the controls
+ * look and behave exactly like the new-chat page.
+ * The model default is SINGLE-SOURCED with the models page — the picker renders and writes
  * the same top-level `default_model` (via the narrow PUT /models/default route), never a
  * second key; changing it also releases the draft-cached model pin exactly as the models
  * page does (shared clearDraftModelRef helper). Owner edits with ONE explicit Save for the
@@ -503,13 +509,6 @@ function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwne
     }
   };
 
-  /** Option label for a model row: display name (falling back to the upstream id) + group + default badge text. */
-  const modelLabel = (m: { provider: string; modelId: string; displayName?: string }): string => {
-    const name = m.displayName ?? m.modelId;
-    const isDefault = sameModelRef(m, models?.defaultModel);
-    return `${name} · ${m.provider}${isDefault ? ` · ${S.models.default}` : ""}`;
-  };
-
   /** Read-only display values (member view). */
   const agentText = saved?.agentId
     ? (() => {
@@ -528,78 +527,83 @@ function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwne
       ) : saved === null || models === null ? (
         <p className="text-xs text-gray-400">{S.common.loading}</p>
       ) : isOwner ? (
-        <div className="space-y-3">
-          <Select
-            label={S.project.chatDefaultsAgent}
-            size="sm"
-            value={agentId}
-            onChange={(e) => setAgentId(e.target.value)}
-          >
-            <option value="">{S.project.chatDefaultsNotSet}</option>
-            {agents.map((a) => (
-              <option key={a.agentId} value={a.agentId}>
-                {agentDisplayName(a)}
-              </option>
-            ))}
-          </Select>
-          <Input
-            label={S.chat.workspace}
-            size="sm"
-            value={workspace}
-            onChange={(e) => setWorkspace(e.target.value)}
-            hint={S.project.chatDefaultsWorkspaceHint}
-          />
-          <Select
-            label={S.chat.approvalMode}
-            size="sm"
-            value={approval}
-            onChange={(e) => setApproval(e.target.value)}
-          >
-            <option value="">{S.project.chatDefaultsApprovalNotSet}</option>
-            {APPROVAL_MODES.map((m) => (
-              <option key={m} value={m}>
-                {S.chat.approvalModeNames[m] ?? m}
-              </option>
-            ))}
-          </Select>
-          <Select
-            label={S.chat.thinkingLevel}
-            size="sm"
-            value={thinking}
-            onChange={(e) => setThinking(e.target.value)}
-          >
-            <option value="">{S.project.chatDefaultsThinkingNotSet}</option>
-            {SELECTABLE_THINKING_LEVELS.map((l) => (
-              <option key={l} value={l}>
-                {S.chat.thinkingLevelNames[l] ?? l}
-              </option>
-            ))}
-          </Select>
-          {models.models.length > 0 ? (
+        <>
+          {/* Compact responsive grid: label + control stacked per cell, two columns from sm
+              up; the workspace picker spans the full row for path width. Workspace and model
+              are the chat draft's own pickers, not plain form controls. */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Select
-              label={S.chat.model}
+              label={S.project.chatDefaultsAgent}
               size="sm"
-              // The pick is addressed by list index (a paired reference never becomes a concatenated string, not even as a DOM value).
-              value={String(models.models.findIndex((m) => sameModelRef(m, modelRef)))}
-              onChange={(e) => {
-                const m = models.models[Number(e.target.value)];
-                if (m) setModelRef({ provider: m.provider, modelId: m.modelId });
-              }}
-              hint={S.project.chatDefaultsModelHint}
+              value={agentId}
+              onChange={(e) => setAgentId(e.target.value)}
             >
-              {/* No default configured yet: an inert placeholder so the trigger doesn't
-                  misleadingly show the first model (findIndex yields -1 then). */}
-              {modelRef === null && <option value="-1">{S.project.chatDefaultsNotSet}</option>}
-              {models.models.map((m, i) => (
-                <option key={`${m.provider} ${m.modelId}`} value={String(i)}>
-                  {modelLabel(m)}
+              <option value="">{S.project.chatDefaultsNotSet}</option>
+              {agents.map((a) => (
+                <option key={a.agentId} value={a.agentId}>
+                  {agentDisplayName(a)}
                 </option>
               ))}
             </Select>
-          ) : (
-            <p className="text-xs text-gray-400">{S.models.empty}</p>
-          )}
-          <div className="flex justify-end">
+            <Select
+              label={S.chat.approvalMode}
+              size="sm"
+              value={approval}
+              onChange={(e) => setApproval(e.target.value)}
+            >
+              <option value="">{S.project.chatDefaultsApprovalNotSet}</option>
+              {APPROVAL_MODES.map((m) => (
+                <option key={m} value={m}>
+                  {S.chat.approvalModeNames[m] ?? m}
+                </option>
+              ))}
+            </Select>
+            <Select
+              label={S.chat.thinkingLevel}
+              size="sm"
+              value={thinking}
+              onChange={(e) => setThinking(e.target.value)}
+            >
+              <option value="">{S.project.chatDefaultsThinkingNotSet}</option>
+              {SELECTABLE_THINKING_LEVELS.map((l) => (
+                <option key={l} value={l}>
+                  {S.chat.thinkingLevelNames[l] ?? l}
+                </option>
+              ))}
+            </Select>
+            <div>
+              <FieldLabel>{S.chat.model}</FieldLabel>
+              {models.models.length > 0 ? (
+                <>
+                  {/* The composer's model dropdown (provider logo + name + searchable grouped
+                      panel); the default row carries the S.models.default marker. */}
+                  <ModelSelect
+                    models={models.models}
+                    value={modelRef}
+                    defaultModel={models.defaultModel}
+                    onChange={setModelRef}
+                    disabled={busy}
+                    alwaysShowLabel
+                  />
+                  <FieldHint>{S.project.chatDefaultsModelHint}</FieldHint>
+                </>
+              ) : (
+                <p className="text-xs text-gray-400">{S.models.empty}</p>
+              )}
+            </div>
+            <div className="sm:col-span-2">
+              <FieldLabel>{S.chat.workspace}</FieldLabel>
+              {/* The draft page's dir-browser pill: browse server directories, edit the path
+                  inline, or clear back to the auto temp directory. */}
+              <WorkspaceSelect
+                projectId={projectId}
+                workspace={workspace}
+                onChange={setWorkspace}
+              />
+              <FieldHint>{S.project.chatDefaultsWorkspaceHint}</FieldHint>
+            </div>
+          </div>
+          <div className="mt-3 flex justify-end">
             <Button
               size="sm"
               disabled={busy || (!blockDirty && !modelDirty)}
@@ -608,7 +612,7 @@ function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwne
               {S.common.save}
             </Button>
           </div>
-        </div>
+        </>
       ) : (
         // Member view: the effective defaults, read-only (same fields, plain text).
         <div className="space-y-1 text-sm">
