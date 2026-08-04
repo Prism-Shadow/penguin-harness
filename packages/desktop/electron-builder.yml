@@ -1,0 +1,59 @@
+# electron-builder config (design § "桌面端原型 · 打包与更新", milestone M3).
+#
+# The app directory is the pnpm-deploy staging tree assembled by scripts/stage.mjs —
+# a portable, self-contained node_modules (workspace packages materialized) plus the
+# shell bundle and the server's web-dist.
+#
+# asar is off on purpose: the shell forks the server as a child process, the skill
+# library reads its .md files from disk, and agent commands spawn real shells — plain
+# files sidestep every asar edge (fork-from-archive, unpacked-tree resolution splits)
+# at the cost of some inodes.
+#
+# M3 ships unsigned artifacts: macOS signing/notarization and Windows code signing are
+# milestone M4, together with electron-updater.
+appId: com.prismshadow.penguinharness
+productName: PenguinHarness
+directories:
+  app: stage/app
+  output: stage/out
+asar: false
+# The staged tree is complete and has no native modules; a rebuild would only fail
+# against the pruned package.json.
+npmRebuild: false
+nodeGypRebuild: false
+
+mac:
+  category: public.app-category.developer-tools
+  # No Developer ID yet (M4): identity null skips codesign instead of failing.
+  identity: null
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  # MinGit, downloaded by the CI job into stage/minigit (empty for local non-Windows
+  # builds): lands under resources/git, and the shell advertises git/usr/bin/sh.exe as
+  # PENGUIN_BUNDLED_SHELL so the agent shell behaves like the npm-installed package.
+  extraResources:
+    - from: stage/minigit
+      to: git
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+
+linux:
+  # The scoped package name is not a valid executable file name.
+  executableName: penguin-harness
+  category: Development
+  maintainer: Prism Shadow <zheng@prismshadow.com>
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]
