@@ -89,6 +89,7 @@ describe("skills api", () => {
     ]);
     expect(body.groups[3]!.skills.map((s) => s.name)).toEqual([
       "agent-creation",
+      "skill-porting",
       "benchmark-design",
       "agent-evaluation",
       "agent-optimization",
