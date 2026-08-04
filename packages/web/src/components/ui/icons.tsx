@@ -155,6 +155,8 @@ export const NAV_ICONS = {
   skills: "M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2zM22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z",
   models: "M7 7h10v10H7zM4 10h3m10 0h3M4 14h3m10 0h3M10 4v3m4-3v3m-4 10v3m4-3v3",
   usage: "M4 20V10m6 10V4m6 16v-7m4 7H2",
+  /** Workspace Memory (an archive box: lid + body + label slot) — long-term notes filed away, distinct from the trace lines below. */
+  memory: "M3 7h18v3.5H3zM5 10.5V19a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-8.5M10 14h4",
   traces: "M4 6h16M4 12h10M4 18h13",
   /** Benchmark center (a trophy: cup + two handles + base). */
   benchmark:

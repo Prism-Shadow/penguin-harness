@@ -17,6 +17,7 @@ export const en: Strings = {
     skills: "Skills",
     models: "Models",
     usage: "Cost Center",
+    memory: "Memory",
     traces: "Trajectories",
     benchmark: "Evaluation Center",
     // Collapsed-rail tooltip (product-specified wording; new chat reuses chat.newSessionMenu, the other pages reuse the page names above).
@@ -236,7 +237,6 @@ export const en: Strings = {
     backToList: "Back to Agents",
     tabOverview: "Overview",
     tabPrompt: "Prompt",
-    tabMemory: "Memory",
     tabRuntime: "Runtime",
     tabTools: "Tools",
     tabSkills: "Skills",
@@ -480,12 +480,18 @@ export const en: Strings = {
     disabledHint:
       "Memory does not enter the agent's context right now; existing files are kept and stay editable here.",
     templateMissingHint:
-      "This system_prompt carries no {{MEMORY}} placeholder (the agent predates memory), so nothing is injected. Insert the placeholder on the Prompt tab, or restore the default configuration from Overview.",
-    workspace: "Workspace",
+      "This system_prompt carries no {{MEMORY}} placeholder (the agent predates memory), so nothing is injected. Insert the placeholder below, or restore the default configuration from Overview.",
+    /** Tree badges on an Agent whose memory never reaches the model. */
+    offBadge: "Off",
+    noPlaceholderBadge: "No placeholder",
+    openSettings: "Open Agent settings",
+    manageLink: "Manage this agent's memories in Memory →",
+    selectFile: "Pick the memory index or a topic file",
     noWorkspaces:
       "No Workspace memory directory yet — one is created when a Session runs in a persistent Workspace.",
     fileCount: (n: number): string => `${n} topic file${n === 1 ? "" : "s"}`,
     indexFile: "Memory index memory/AGENTS.md",
+    indexRow: "Memory index",
     indexHint:
       "Shared by every Workspace, grouped by workspace key; opens at the selected Workspace's group",
     noFiles: "This Workspace has no topic file yet",

@@ -662,6 +662,7 @@ export function Sidebar({
     { to: "/skills", label: S.nav.skills, icon: NAV_ICONS.skills },
     { to: "/models", label: S.nav.models, icon: NAV_ICONS.models },
     { to: "/usage", label: S.nav.usage, icon: NAV_ICONS.usage },
+    { to: "/memory", label: S.nav.memory, icon: NAV_ICONS.memory },
     { to: "/traces", label: S.nav.traces, icon: NAV_ICONS.traces },
     { to: "/benchmark", label: S.nav.benchmark, icon: NAV_ICONS.benchmark },
   ];

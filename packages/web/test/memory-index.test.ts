@@ -1,21 +1,21 @@
 /**
- * memory-tab.tsx pure helpers: the index rewrites that follow a topic file's rename or delete,
- * the group-heading lookup that decides where the index opens, and the frontmatter check run
- * before a topic file is saved.
+ * memory-index.ts pure helpers: the index rewrites that follow a topic file's rename or delete,
+ * the group-heading lookup that decides where the index opens, the Workspace tree label, and
+ * the frontmatter check run before a topic file is saved.
  *
  * The index is prose the model wrote, so the rewrites are pinned to the exact Markdown link
  * form `](<workspaceKey>/<file>)` — a mention of the file name in ordinary text, or an entry
  * belonging to another Workspace, must survive both operations untouched.
  */
 import { describe, expect, it } from "vitest";
-import type { MemoryFileInfo } from "@prismshadow/penguin-server/api";
+import type { MemoryWorkspaceInfo } from "@prismshadow/penguin-server/api";
 import {
-  fileListState,
   frontmatterProblem,
   headingOffset,
   indexWithRenamedFile,
   indexWithoutFile,
-} from "../src/features/agents/memory-tab";
+  workspaceLabel,
+} from "../src/features/memory/memory-index";
 
 const KEY = "my-app-a81f32c4";
 const OTHER = "site-c29b110e";
@@ -74,25 +74,26 @@ describe("headingOffset", () => {
   });
 });
 
-describe("fileListState", () => {
-  const file = { name: "feedback_testing.md" } as MemoryFileInfo;
-
-  it("renders nothing below the index when no Workspace is selected", () => {
-    // Regression: `files` is null here and stays null — no request is in flight and none will
-    // be — so treating null as "loading" left an agent with no Workspace Memory directory
-    // staring at a skeleton that never resolved.
-    expect(fileListState(null, null)).toBe("none");
-    expect(fileListState(null, [])).toBe("none");
-    expect(fileListState(null, [file])).toBe("none");
+describe("workspaceLabel", () => {
+  const info = (extra: Partial<MemoryWorkspaceInfo>): MemoryWorkspaceInfo => ({
+    workspaceKey: KEY,
+    fileCount: 0,
+    ...extra,
   });
 
-  it("distinguishes a Workspace still loading from one with no topic file", () => {
-    expect(fileListState("my-app-a81f32c4", null)).toBe("loading");
-    expect(fileListState("my-app-a81f32c4", [])).toBe("empty");
+  it("names the Workspace after its directory, not the key it hashes to", () => {
+    expect(workspaceLabel(info({ workspacePath: "/home/dev/code/my-app" }))).toBe("my-app");
+    // A trailing slash must not turn the label into an empty string.
+    expect(workspaceLabel(info({ workspacePath: "/home/dev/code/my-app/" }))).toBe("my-app");
   });
 
-  it("lists the files once they arrive", () => {
-    expect(fileListState("my-app-a81f32c4", [file])).toBe("files");
+  it("falls back to the key for a directory with no .workspace marker", () => {
+    // Written before the marker existed, or created by hand: the path is all we would have had.
+    expect(workspaceLabel(info({}))).toBe(KEY);
+  });
+
+  it("keeps the root path itself rather than collapsing to nothing", () => {
+    expect(workspaceLabel(info({ workspacePath: "/" }))).toBe("/");
   });
 });
 

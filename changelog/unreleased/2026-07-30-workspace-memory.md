@@ -31,11 +31,13 @@ Reading, writing and deduplicating are the model's own work through the ordinary
 
 ## Managing it in the Web App
 
-Agent settings gain a **Memory** tab between Prompt and Runtime: the agent-level switch, a Workspace selector, the shared index pinned above that Workspace's topic files, and a Markdown editor, plus create / rename / delete. Opening the index parks the caret on the selected Workspace's group heading, since one index covers them all.
+Memory gets its own page at `/memory`, alongside trace observability and the evaluation center and built the same way: a directory tree on the left, the detail on the right. The tree is three levels — Agent → Workspace → topic file — and the shared index `memory/AGENTS.md` is the Agent's own first child, above every Workspace, because one index covers them all. The right side is a full-height Markdown editor for whatever is selected. A topic file is created from the `+` on a Workspace row; rename and delete act on the selected file. Opening the index parks the caret on the group heading of the Workspace you came from.
 
 Renaming or deleting a topic file also repoints or removes the index links that named it, so the index never lists a file that is gone. The link form is exact (`](<workspace_key>/<file>)`), keeping this a mechanical edit that never rewrites prose the model wrote.
 
-Turning Memory off keeps every file and leaves the tab fully usable; it only stops Memory from entering the context and from preparing directories for new Sessions. The tab also warns when an agent is enabled but its prompt template carries no `{{MEMORY}}` placeholder — enabled, yet injecting nothing.
+The agent-level switch is *not* on that page. It is agent configuration, so it sits on the settings page's Prompt tab, directly under the placeholder reference — what it governs is whether `{{MEMORY}}` in the template above it resolves to anything. The same tab warns when an agent is enabled but its template carries no `{{MEMORY}}` placeholder: enabled, yet injecting nothing. Both conditions are also marked on the Agent's node in the memory tree (**Off** / **No placeholder**), so memory that cannot reach the model is visible before you open it, with a link back to the setting.
+
+Turning Memory off keeps every file and leaves the Memory page fully usable; it only stops Memory from entering the context and from preparing directories for new Sessions.
 
 The API is under `/api/projects/:p/agents/:a/memory` and never accepts a path: a file is addressed by agent, workspace key and a name inside that Workspace, each validated and then re-checked for containment after resolution.
 

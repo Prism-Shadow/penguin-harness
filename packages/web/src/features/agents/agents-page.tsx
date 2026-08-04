@@ -63,6 +63,8 @@ const CARD_ICONS = {
   usage: "M4 20V10m6 10V4m6 16v-7m4 7H2",
   /** Traces (eye line icon: observability; follows text color, no fill) */
   traces: "M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z",
+  /** Workspace Memory (archive box, same as the sidebar "Memory") */
+  memory: "M3 7h18v3.5H3zM5 10.5V19a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-8.5M10 14h4",
 } as const;
 
 /**
@@ -336,6 +338,18 @@ export function AgentsPage() {
                     >
                       <GlyphIcon
                         d={CARD_ICONS.usage}
+                        size={15}
+                        className="text-gray-600 dark:text-gray-300"
+                      />
+                    </Button>
+                    <Button
+                      size="icon"
+                      title={S.nav.memory}
+                      aria-label={S.nav.memory}
+                      onClick={() => navigate(`/memory?agentId=${encodeURIComponent(a.agentId)}`)}
+                    >
+                      <GlyphIcon
+                        d={CARD_ICONS.memory}
                         size={15}
                         className="text-gray-600 dark:text-gray-300"
                       />
