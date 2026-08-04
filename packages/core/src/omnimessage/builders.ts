@@ -10,7 +10,6 @@ import type {
   ApprovalDecisionPayload,
   CompactionBeginPayload,
   CompactionEndPayload,
-  CompactionFailureCause,
   CompactionMode,
   CompactionReason,
   EventMessage,
@@ -307,12 +306,11 @@ export function compactionBegin(args: {
   });
 }
 
-/** compaction end event: carries the compaction result (non-`completed` means compaction was abandoned and the original context is kept), plus summarize-mode accounting (attempts / output tokens / failure classification). */
+/** compaction end event: carries the compaction result (non-`completed` means compaction was abandoned and the original context is kept), plus summarize-mode accounting (attempts / output tokens). */
 export function compactionEnd(args: {
   reason: CompactionReason;
   mode: CompactionMode;
   status: StopReason;
-  failureCause?: CompactionFailureCause;
   attempts?: number;
   outputTokens?: number;
 }): OmniMessage<CompactionEndPayload> {
@@ -321,7 +319,6 @@ export function compactionEnd(args: {
     reason: args.reason,
     mode: args.mode,
     status: args.status,
-    ...(args.failureCause !== undefined ? { failure_cause: args.failureCause } : {}),
     ...(args.attempts !== undefined ? { attempts: args.attempts } : {}),
     ...(args.outputTokens !== undefined ? { output_tokens: args.outputTokens } : {}),
   });

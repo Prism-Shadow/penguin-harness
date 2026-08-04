@@ -97,7 +97,7 @@ export function summarizeEvent(msg: OmniMessage): string {
       return `${String(p["decision"])} · ${String(p["tool_call_id"])}`;
     case "compaction_begin":
     case "compaction_end":
-      return `${String(p["mode"])} (${String(p["reason"])})${p["status"] ? ` · ${String(p["status"])}` : ""}${p["failure_cause"] ? ` · ${String(p["failure_cause"])}` : ""}`;
+      return `${String(p["mode"])} (${String(p["reason"])})${p["status"] ? ` · ${String(p["status"])}` : ""}`;
     case "abort":
       return p["reason"] != null ? String(p["reason"]) : "";
     case "goal_finished":

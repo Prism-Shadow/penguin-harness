@@ -830,22 +830,8 @@ Benchmark：
     compactionRunning: (mode: string) => `压缩进行中（${mode}）…`,
     compactionDone: (mode: string): string =>
       mode === "discard" ? "[压缩] 完成，旧上下文已丢弃" : "[压缩] 完成，已切换到摘要后的新上下文",
-    compactionFailed: (status: string, cause?: string): string => {
-      if (status === "aborted") return "[压缩] 已中断，保留当前上下文";
-      const label =
-        cause === "empty_summary"
-          ? "模型未产出可用摘要"
-          : cause === "tool_calls"
-            ? "模型持续调用工具"
-            : cause === "transport"
-              ? "请求重试耗尽"
-              : cause === "auth"
-                ? "凭证被拒绝"
-                : cause;
-      return label !== undefined
-        ? `[压缩] 失败（${label}），保留当前上下文`
-        : "[压缩] 失败，保留当前上下文";
-    },
+    compactionFailed: (status: string) =>
+      `[压缩] ${status === "aborted" ? "已中断" : "失败"}，保留当前上下文`,
     unknownTool: "（未知工具）",
     workRunning: "运行中",
     workDone: "运行完毕",

@@ -328,26 +328,15 @@ export interface CompactionBeginPayload {
   turns: number;
 }
 
-/**
- * Why a summarize compaction failed: the last rejection's nature (`empty_summary` — no usable
- * text anywhere in the response even after lenient extraction; `tool_calls` — the model kept
- * answering with tool requests), or the request pipeline (`transport` — failed/timeout/malformed
- * exhausted the retry budget; `auth` — credentials failure, never retried). The server's error
- * records key on this so the cost center can classify compaction failures independently.
- */
-export type CompactionFailureCause = "empty_summary" | "tool_calls" | "transport" | "auth";
-
 export interface CompactionEndPayload {
   type: "compaction_end";
   reason: CompactionReason;
   mode: CompactionMode;
   /** Compaction result; non-`completed` means compaction was abandoned and the original context was kept. */
   status: StopReason;
-  /** Failure classification, present only when `status` is `failed` (summarize mode). Additive: old Traces replay unchanged. */
-  failure_cause?: CompactionFailureCause;
-  /** LLM requests this compaction issued, rejected attempts and transport retries included. Additive; absent in discard mode and in old Traces. */
+  /** LLM requests this compaction issued, failed attempts and retries included. Additive; absent in discard mode and in old Traces. */
   attempts?: number;
-  /** Output tokens across all attempts (rejected ones included) — the compaction's true spend. Additive. */
+  /** Output tokens across all attempts (failed ones included) — the compaction's true spend. Additive. */
   output_tokens?: number;
 }
 

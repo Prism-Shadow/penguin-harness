@@ -415,11 +415,10 @@ describe("context compaction", () => {
 
     const out = await collect(engine.run([userText("go")], { approve: allowAll }));
     const events = compactionEvents(out);
-    // Transport exhaustion is classified for the cost center's error records (issue #170).
+    // The end event reports the attempts spent (issue #170's cost-center row message).
     expect(events[1]).toMatchObject({
       type: "compaction_end",
       status: "failed",
-      failure_cause: "transport",
       attempts: 2,
     });
     // The retry resends the original input (tool results + prompt; here there are no tool results, just the prompt).
@@ -545,20 +544,18 @@ describe("context compaction", () => {
     expect(retryPlans).toEqual([undefined, 1, 2, undefined]);
   });
 
-  it("an empty compaction response (thinking only, no text) is rejected: 5 attempts, then failed with the context kept", async () => {
-    // Issue #83: the compaction request completes but yields no text. Committing the empty
-    // summary would discard the whole context and lose the task state — the response is
-    // rejected and retried under the dedicated rejection cap (5 attempts, #84), then the
-    // compaction fails while the original context and Trace file stay current.
+  it("an empty compaction response (thinking only, no text) is retried like any failure: 5 attempts, then failed with the context kept", async () => {
+    // Issue #83/#170: the compaction request completes but yields no text. Committing the
+    // empty summary would discard the whole context and lose the task state — the response
+    // counts as one more failed attempt on the unified reconnect budget, and once the budget
+    // is exhausted the compaction fails while the original context and Trace file stay current.
     const empty = (n: number): ScriptedResponse => ({
       messages: [thinkingMessage(`pondering, attempt ${n}, no text`)],
     });
     const llm1 = new ScriptedLLM(
       [
         { messages: [assistantText("answer one"), usage(150, 150)] },
-        // Five completed-but-empty compaction attempts: the dedicated cap allows exactly 5
-        // rejections. compactionMaxReconnects is 1 here on purpose — rejections must NOT
-        // consume the transport reconnect budget, or the loop would stop after 2 attempts.
+        // Five completed-but-empty compaction attempts: 4 retries of budget allow exactly 5.
         empty(1),
         empty(2),
         empty(3),
@@ -582,7 +579,7 @@ describe("context compaction", () => {
         created += 1;
         return new ScriptedLLM([], "llm2");
       },
-      compactionMaxReconnects: 1,
+      compactionMaxReconnects: 4,
       reconnectBackoffMs: 1,
     });
     const oldPath = trace.currentPath();
@@ -590,12 +587,12 @@ describe("context compaction", () => {
     const out1 = await collect(engine.run([userText("task one")], { approve: allowAll }));
 
     // Exactly one event pair, ending failed — an empty summary is never a completed compaction.
-    // The end event classifies the failure and reports the attempts spent (issue #170).
+    // The end event reports the attempts spent (issue #170).
     const events = compactionEvents(out1);
     expect(
       events.map((e) => `${e.type}:${(e as Partial<CompactionEndPayload>).status ?? ""}`),
     ).toEqual(["compaction_begin:", "compaction_end:failed"]);
-    expect(events[1]).toMatchObject({ failure_cause: "empty_summary", attempts: 5 });
+    expect(events[1]).toMatchObject({ attempts: 5 });
     // These scripted attempts carry no token_usage of their own, so none appears between the
     // paired events (attempts that do carry usage surface it — see the 5th-attempt test).
     const types1 = payloadTypes(out1);
@@ -606,16 +603,16 @@ describe("context compaction", () => {
     expect(between.filter((m) => (m.payload as { type?: string }).type === "token_usage")).toEqual(
       [],
     );
-    // Turn + exactly five compaction attempts (the 5th rejection exhausts the cap, no 6th
+    // Turn + exactly five compaction attempts (the 5th exhausts the budget, no 6th
     // request); each retry leads with the corrective note, then the prompt — an empty
-    // rejection needs no repair.
+    // response needs no repair.
     expect(llm1.calls).toHaveLength(6);
     expect(llm1.calls[1]!.map(textOf)).toEqual(["COMPACT NOW"]);
     for (let i = 2; i <= 5; i += 1) {
       expect(llm1.calls[i]!.map(textOf)).toEqual([SUMMARY_RETRY_GUIDANCE, "COMPACT NOW"]);
     }
-    // Rejection resends are immediate, never announced: no compaction request_end carries a
-    // retry_in_ms (they all end `completed`, unlike the transport ladder's timeout ends).
+    // An unusable attempt's request_end carries status `completed`, for which no retry_in_ms
+    // is ever announced (the backoff wait still ran between attempts).
     const rejectionPlans = (await readTrace(oldPath))
       .filter((m) => (m.payload as { type?: string }).type === "request_end")
       .map((m) => (m.payload as { retry_in_ms?: number }).retry_in_ms);
@@ -633,9 +630,9 @@ describe("context compaction", () => {
     expect(await readdir(dirname(oldPath))).toEqual(["sess_empty_001.jsonl"]);
   });
 
-  it("tool-calling rejections exhaust the 5-attempt cap: every call is paired, and the next ordinary turn stays clean", async () => {
+  it("tool-calling responses exhaust the retry budget: every call is paired, and the next ordinary turn stays clean", async () => {
     // A tool-calling response is not a summary — even when it also carries plausible summary
-    // text — but its assistant turn IS committed on the live LLM object. Each rejection's
+    // text — but its assistant turn IS committed on the live LLM object. Each such attempt's
     // calls are answered with synthesized failed outputs (written to Trace, prepended to the
     // retried input), so no tool_use ever dangles: after the compaction fails, the same
     // object must still serve ordinary turns with a well-formed history (#84 review).
@@ -669,7 +666,7 @@ describe("context compaction", () => {
         created += 1;
         return new ScriptedLLM([], "llm2");
       },
-      compactionMaxReconnects: 1,
+      compactionMaxReconnects: 4,
       reconnectBackoffMs: 1,
     });
     const oldPath = trace.currentPath();
@@ -683,10 +680,10 @@ describe("context compaction", () => {
     expect(payloadTypes(out)).not.toContain("tool_call_output");
     expect(created).toBe(0);
 
-    // The end event pins the tool-calling classification (issue #170's cost-center rows).
-    expect(events[1]).toMatchObject({ failure_cause: "tool_calls", attempts: 5 });
+    // The end event reports the attempts spent (issue #170's cost-center row message).
+    expect(events[1]).toMatchObject({ attempts: 5 });
     // Five attempts; from the second on, the input leads with the repair answering the
-    // previous rejection's call, then the corrective note, then the prompt.
+    // previous attempt's call, then the corrective note, then the prompt.
     expect(llm1.calls).toHaveLength(6);
     for (let attempt = 2; attempt <= 5; attempt += 1) {
       const retry = llm1.calls[attempt]!;
@@ -732,8 +729,9 @@ describe("context compaction", () => {
   });
 
   it("a valid summary on the 5th and final allowed attempt completes the compaction", async () => {
-    // Counting pin for the rejection cap: four rejected attempts spend the budget but the 5th
-    // attempt still gets its chance — a valid summary there succeeds (5 rejections would fail).
+    // Counting pin for the unified budget: four failed attempts spend the 4 retries, but the
+    // 5th (last allowed) attempt still gets its chance — a valid summary there succeeds
+    // (a 5th failure would exhaust the budget instead).
     const llm1 = new ScriptedLLM(
       [
         { messages: [assistantText("answer"), usage(150, 150)] },
@@ -757,7 +755,7 @@ describe("context compaction", () => {
         factoryTokens = tokens;
         return llm2;
       },
-      maxReconnects: 1,
+      compactionMaxReconnects: 4,
       reconnectBackoffMs: 1,
     });
 
@@ -953,6 +951,7 @@ describe("context compaction", () => {
         created += 1;
         return new ScriptedLLM([], "llm2");
       },
+      compactionMaxReconnects: 4,
       reconnectBackoffMs: 1,
     });
     const oldPath = trace.currentPath();
@@ -1012,6 +1011,7 @@ describe("context compaction", () => {
       environment: fakeEnvironment,
       compaction: settings(),
       createLLM: () => new ScriptedLLM([], "llm2"),
+      compactionMaxReconnects: 4,
       reconnectBackoffMs: 1,
     });
 
@@ -1453,6 +1453,7 @@ describe("context compaction", () => {
       environment: fakeEnvironment,
       compaction: settings(),
       createLLM: () => new ScriptedLLM([], "llm2"),
+      compactionMaxReconnects: 4,
       reconnectBackoffMs: 1,
     });
     await collect(engine.run([userText("start")], { approve: allowAll }));

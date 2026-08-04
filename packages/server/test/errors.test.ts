@@ -847,16 +847,15 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
 
   // —— Compaction ——
 
-  it("a failed compaction records per-cause: code carries failure_cause, message the spend", () => {
-    // Issue #170: the cost center classifies compaction failures independently — the code
-    // separates "the model writes no usable summary" from transport trouble, and the message
-    // carries the attempts and burned output tokens.
+  it("a failed compaction records one error row; the message carries attempts and spend", () => {
+    // Issue #170: a compaction is an ordinary LLM request whose failures core retries under
+    // the standard budget — a failed end means the retries ran out, and the cost center's
+    // row shows what that cost (attempts, burned output tokens).
     const got = feed([
       compactionEnd({
         reason: "context",
         mode: "summarize",
         status: "failed",
-        failureCause: "empty_summary",
         attempts: 5,
         outputTokens: 9450,
       }),
@@ -865,26 +864,26 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
     expect(got[0]).toMatchObject({
       source: "compaction",
       kind: "unexpected",
-      code: "compaction_failed:empty_summary",
+      code: "compaction_failed",
       message:
-        "summarize compaction failed: empty_summary after 5 attempts (9450 output tokens spent); trigger context, original context kept.",
+        "summarize compaction failed after 5 attempts (9450 output tokens spent); trigger context, original context kept.",
       project_id: "p1",
       agent_id: "a1",
       session_id: "s1",
     });
   });
 
-  it("compaction completed / aborted are not errors; an old-core failed defaults to unknown", () => {
+  it("compaction completed / aborted are not errors; an old-core failed still records", () => {
     const got = feed([
       compactionEnd({ reason: "context", mode: "summarize", status: "completed", attempts: 1 }),
       compactionEnd({ reason: "manual", mode: "summarize", status: "aborted", attempts: 2 }),
-      // An old core's compaction_end has no failure_cause/attempts fields at all.
+      // An old core's compaction_end has no attempts/output_tokens fields at all.
       compactionEnd({ reason: "turns", mode: "summarize", status: "failed" }),
     ]);
     expect(got).toHaveLength(1);
     expect(got[0]).toMatchObject({
-      code: "compaction_failed:unknown",
-      message: "summarize compaction failed: unknown; trigger turns, original context kept.",
+      code: "compaction_failed",
+      message: "summarize compaction failed; trigger turns, original context kept.",
     });
   });
 
@@ -892,19 +891,13 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
     const got = feed([
       childMeta("session-child", "/data/agents/agent-child/agent_state"),
       withOrigin(
-        compactionEnd({
-          reason: "context",
-          mode: "summarize",
-          status: "failed",
-          failureCause: "transport",
-          attempts: 6,
-        }),
+        compactionEnd({ reason: "context", mode: "summarize", status: "failed", attempts: 6 }),
         "session-child",
       ),
     ]);
     expect(got).toHaveLength(1);
     expect(got[0]).toMatchObject({
-      code: "compaction_failed:transport",
+      code: "compaction_failed",
       agent_id: "agent-child",
       session_id: "session-child",
     });

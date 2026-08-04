@@ -362,29 +362,27 @@ export class StreamErrorWatcher {
   }
 
   /**
-   * A failed compaction becomes its own error record (source = `compaction`), classified by
-   * the event's failure_cause so the cost center's error panel separates "the model writes no
-   * usable summary" from transport/credential trouble (issue #170). This is the single record
-   * a failed compaction produces: the compaction request's own request_begin/request_end pair
-   * is written to Trace only and never reaches this stream, so the llm-source records above
-   * cannot double-count it. `completed` is not an error and `aborted` is a user interrupt —
-   * neither is recorded. kind is unexpected for the same reason `llm_failed` is: the
-   * retry/rejection budget is exhausted, and while the original context is kept, the trigger
-   * still holds — the session keeps re-entering compaction until a human changes something.
+   * A failed compaction becomes its own error record (source = `compaction`) — a compaction
+   * is an ordinary LLM request whose failures (unusable summary and transport alike) core
+   * retries under the standard budget, so a `failed` end means the retries ran out
+   * (issue #170). This is the single record a failed compaction produces: the compaction
+   * request's own request_begin/request_end pair is written to Trace only and never reaches
+   * this stream, so the llm-source records above cannot double-count it. `completed` is not
+   * an error and `aborted` is a user interrupt — neither is recorded. kind is unexpected for
+   * the same reason `llm_failed` is: the budget is exhausted, and while the original context
+   * is kept, the trigger still holds — the session keeps re-entering compaction until a
+   * human changes something. The message carries the attempts and burned output tokens so
+   * the cost center shows what the failure cost.
    */
   private observeCompactionEnd(msg: OmniMessage, key: string): void {
     const p = msg.payload as {
       mode?: string;
       reason?: string;
       status?: StopReason;
-      failure_cause?: string;
       attempts?: number;
       output_tokens?: number;
     };
     if (p.status !== "failed") return;
-    // An old core without the field (or an unexpected shape) still records, under `unknown`.
-    const cause =
-      typeof p.failure_cause === "string" && p.failure_cause ? p.failure_cause : "unknown";
     const attempts =
       typeof p.attempts === "number" && p.attempts > 0
         ? ` after ${p.attempts} attempt${p.attempts === 1 ? "" : "s"}`
@@ -395,9 +393,9 @@ export class StreamErrorWatcher {
         : "";
     this.errors.record({
       source: "compaction",
-      err: `${p.mode ?? "summarize"} compaction failed: ${cause}${attempts}${tokens}; trigger ${p.reason ?? "unknown"}, original context kept.`,
+      err: `${p.mode ?? "summarize"} compaction failed${attempts}${tokens}; trigger ${p.reason ?? "unknown"}, original context kept.`,
       ctx: this.ctxFor(key),
-      code: `compaction_failed:${cause}`,
+      code: "compaction_failed",
       kind: "unexpected",
     });
   }
