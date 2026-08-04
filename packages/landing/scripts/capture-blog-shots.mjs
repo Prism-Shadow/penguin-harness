@@ -36,6 +36,8 @@ const ROOT = path.resolve(HERE, "../../..");
 // Gitignored staging dir: these images are hosted in the community repo, not committed here.
 const OUT_DIR = path.resolve(HERE, "../.blog-assets");
 const SRV_PORT = 8944; // Distinct from capture-shots.mjs (8940/8941) so both can run.
+// Pins the otherwise-random seeded admin password (PENGUIN_SEED_ADMIN_PASSWORD below).
+const ADMIN_PASSWORD = "penguin-0000";
 // On loopback binds the App is canonically served on `localhost`; the 127.0.0.1
 // counterpart is the Workspace-preview host, where /api deliberately answers 401
 // (see server app.ts's canonical-host guard).
@@ -113,6 +115,7 @@ const srv = spawn("node", [path.join(ROOT, "packages/server/dist/index.js")], {
     PENGUIN_WEB_DIST: path.join(ROOT, "packages/web/dist"),
     PORT: String(SRV_PORT),
     HOST: "127.0.0.1",
+    PENGUIN_SEED_ADMIN_PASSWORD: ADMIN_PASSWORD,
   },
   stdio: ["ignore", "pipe", "pipe"],
 });
@@ -127,7 +130,7 @@ try {
   await waitFor(`${BASE}/`);
   console.log(`[blog-shots] server ready on ${BASE}`);
 
-  const adminCookie = await login("admin", "penguin-2026");
+  const adminCookie = await login("admin", ADMIN_PASSWORD);
   const browser = await chromium.launch();
 
   // WebP encoder: Chromium re-encodes the PNG screenshot buffer via canvas (same

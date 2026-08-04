@@ -108,7 +108,7 @@ Each family's latest generation only — the app's **Models** page lists every b
 
 ## Installation
 
-Every route installs the same `penguin` command: `penguin web` launches the full Web experience (multi-session chat, agent/skill/model management, usage stats, Trace observability, evaluation center; first login admin / penguin-2026 — change the password right after), and models are configured on the in-app Models page. The online installers bundle their own Node runtime — unpack and run; upgrades and reinstalls never touch your data.
+Every route installs the same `penguin` command: `penguin web` launches the full Web experience (multi-session chat, agent/skill/model management, usage stats, Trace observability, evaluation center; first login is `admin` with the initial password printed on the server's first start, of the form `penguin-1234` — change it right after), and models are configured on the in-app Models page. The online installers bundle their own Node runtime — unpack and run; upgrades and reinstalls never touch your data.
 
 ### 🐧 Linux (online install)
 

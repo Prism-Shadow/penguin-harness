@@ -92,7 +92,7 @@ Token 与成本均为全套题目合计，不是单次均值。数据分析套�
 
 ```bash
 curl -fsSL https://penguin.ooo/install.sh | sh
-penguin web        # 打开 http://127.0.0.1:7364（首次登录：admin / penguin-2026）
+penguin web        # 打开 http://127.0.0.1:7364（首次登录：admin，初始密码见首次启动输出）
 ```
 
 进入「模型仓库」页，在 DeepSeek 或 OpenRouter 分组里粘贴 API key 并设为默认；回到对话页，把第一个任务交给 Agent——例如「分析 data.csv，输出各季度销售额汇总」。

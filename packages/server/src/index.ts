@@ -41,8 +41,15 @@ if (existingLock) {
 const deps = buildAppDeps(config);
 const app = createApp(deps);
 
-// Built-in admin seed (idempotent): creates admin (initial password penguin-2026) and adopts default_project when the users table is empty.
-await deps.authService.seedAdmin();
+// Built-in admin seed (idempotent): creates admin and adopts default_project when the
+// users table is empty. The returned initial password (random unless pinned via
+// PENGUIN_SEED_ADMIN_PASSWORD) is printed here once — the only place it is ever shown.
+const seededAdminPassword = await deps.authService.seedAdmin();
+if (seededAdminPassword !== null) {
+  console.log(
+    `Seeded built-in admin "admin" — initial password: ${seededAdminPassword} (change it after first sign-in)`,
+  );
+}
 
 // Schedule scheduler: startup reconciliation (missed, don't backfill) + periodic scan; only active while the server is running.
 await deps.scheduler.start();

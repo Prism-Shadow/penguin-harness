@@ -65,7 +65,7 @@ AMD 会验证账户与申请资料，通常需要 **2–3 个工作日**；实�
 
 ```bash
 curl -fsSL https://penguin.ooo/install.sh | sh
-penguin web        # 打开 http://127.0.0.1:7364（首次登录：admin / penguin-2026）
+penguin web        # 打开 http://127.0.0.1:7364（首次登录：admin，初始密码见首次启动输出）
 ```
 
 **2. 配置 Fireworks 模型**

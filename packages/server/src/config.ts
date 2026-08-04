@@ -32,6 +32,12 @@ export interface ServerConfig {
    * derived per request instead. See design § "Workspace 文件预览".
    */
   previewOrigin: string | null;
+  /**
+   * Fixed initial password for the seeded built-in admin (PENGUIN_SEED_ADMIN_PASSWORD),
+   * used by automated tests and e2e; null (the norm) makes the seed generate a random
+   * `penguin-<4 digits>` password, printed once to the server console.
+   */
+  seedAdminPassword: string | null;
   /** Login session validity period (7 days). */
   authSessionTtlMs: number;
   /** Sliding renewal threshold: if the remaining validity is below this value when validation succeeds, it's renewed to the full TTL (renews under 6 days). */
@@ -86,7 +92,7 @@ function normalizePreviewOrigin(raw: string | undefined): string | null {
   return url.origin;
 }
 
-/** Parses server config from environment variables (PORT / HOST / PENGUIN_HOME / PENGUIN_WEB_DIST / PENGUIN_WEB_DB / PENGUIN_PREVIEW_ORIGIN / PENGUIN_DESKTOP_TOKEN / PENGUIN_PORT_FILE). */
+/** Parses server config from environment variables (PORT / HOST / PENGUIN_HOME / PENGUIN_WEB_DIST / PENGUIN_WEB_DB / PENGUIN_PREVIEW_ORIGIN / PENGUIN_SEED_ADMIN_PASSWORD / PENGUIN_DESKTOP_TOKEN / PENGUIN_PORT_FILE). */
 export function resolveServerConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
   const root = env.PENGUIN_HOME ?? resolveRoot();
   // An empty PORT string is treated as unset (the common `.env` case of an empty
@@ -109,6 +115,8 @@ export function resolveServerConfig(env: NodeJS.ProcessEnv = process.env): Serve
     dbPath: env.PENGUIN_WEB_DB ?? path.join(root, "web.db"),
     webDist: env.PENGUIN_WEB_DIST ?? defaultWebDist(),
     previewOrigin: normalizePreviewOrigin(env.PENGUIN_PREVIEW_ORIGIN),
+    // An empty/whitespace value is treated as unset (→ random seed password).
+    seedAdminPassword: env.PENGUIN_SEED_ADMIN_PASSWORD?.trim() || null,
     authSessionTtlMs: 7 * DAY_MS,
     authSessionRenewMs: 6 * DAY_MS,
     desktopToken,
