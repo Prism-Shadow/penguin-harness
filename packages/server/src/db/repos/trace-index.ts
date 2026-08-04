@@ -62,17 +62,22 @@ export class TraceIndexRepo {
   constructor(private readonly db: DatabaseSync) {}
 
   upsertFile(row: TraceFileRow): void {
+    // page_stats is a derivation of the shard's CONTENT: any observed size change voids
+    // it (an unchanged size keeps the cached scan — reconcile passes re-upsert rows).
     this.db
       .prepare(
         `INSERT INTO trace_files (project_id, agent_id, session_id, file_index, date, size_bytes)
          VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT(project_id, agent_id, session_id, file_index)
-         DO UPDATE SET date = excluded.date, size_bytes = excluded.size_bytes`,
+         DO UPDATE SET date = excluded.date,
+           page_stats = CASE WHEN excluded.size_bytes = trace_files.size_bytes
+             THEN trace_files.page_stats ELSE NULL END,
+           size_bytes = excluded.size_bytes`,
       )
       .run(row.projectId, row.agentId, row.sessionId, row.fileIndex, row.date, row.sizeBytes);
   }
 
-  /** Refreshes one shard's last-observed size (listings write back their page stats). */
+  /** Refreshes one shard's last-observed size (listings write back their page stats); a changed size voids the cached window scan. */
   updateFileSize(
     projectId: string,
     agentId: string,
@@ -82,10 +87,45 @@ export class TraceIndexRepo {
   ): void {
     this.db
       .prepare(
-        `UPDATE trace_files SET size_bytes = ?
+        `UPDATE trace_files SET
+           page_stats = CASE WHEN size_bytes = ? THEN page_stats ELSE NULL END,
+           size_bytes = ?
          WHERE project_id = ? AND agent_id = ? AND session_id = ? AND file_index = ?`,
       )
-      .run(sizeBytes, projectId, agentId, sessionId, fileIndex);
+      .run(sizeBytes, sizeBytes, projectId, agentId, sessionId, fileIndex);
+  }
+
+  /** Cached message-window prefix record of one shard (see services/message-window.ts); null = none. */
+  getPageStats(
+    projectId: string,
+    agentId: string,
+    sessionId: string,
+    fileIndex: number,
+  ): string | null {
+    const r = this.db
+      .prepare(
+        `SELECT page_stats FROM trace_files
+         WHERE project_id = ? AND agent_id = ? AND session_id = ? AND file_index = ?`,
+      )
+      .get(projectId, agentId, sessionId, fileIndex);
+    return r ? ((r.page_stats as string | null) ?? null) : null;
+  }
+
+  /** Stores a shard's message-window prefix record, guarded on the size it was computed for (a concurrent append voids the write). */
+  setPageStats(
+    projectId: string,
+    agentId: string,
+    sessionId: string,
+    fileIndex: number,
+    sizeBytes: number,
+    pageStats: string,
+  ): void {
+    this.db
+      .prepare(
+        `UPDATE trace_files SET page_stats = ?
+         WHERE project_id = ? AND agent_id = ? AND session_id = ? AND file_index = ? AND size_bytes = ?`,
+      )
+      .run(pageStats, projectId, agentId, sessionId, fileIndex, sizeBytes);
   }
 
   deleteFile(projectId: string, agentId: string, sessionId: string, fileIndex: number): void {

@@ -661,15 +661,58 @@ export interface MessagesLiveTail {
   fragments: OmniMessage[];
 }
 
+/**
+ * Pagination envelope of a windowed `GET /messages` (`tailLimit` / `before` requests
+ * only; the parameterless full read never carries it). A window is a run of whole
+ * message-bearing units — one unit = one Task in the Web reducer's sense, opened by a
+ * main-session user prompt — cut so that no pairing (tool_call/output), compaction span
+ * or steering group ever splits across windows.
+ */
+export interface MessagesPageInfo {
+  /**
+   * Cursor of this window's first unit (`<shardIndex>:<ordinal>`): pass it back as
+   * `before=` to fetch the previous window. Stable across requests and compaction —
+   * rotation opens a NEW shard and closed shards are immutable. Absent = this window
+   * reaches the very beginning of the transcript (no older history).
+   */
+  before?: string;
+  /**
+   * Outline turns (the Web conversation outline's entry rule) opened BEFORE this
+   * window: the client offsets its global `第 N 轮` numbering by this, so a partial
+   * window never mis-numbers. 0 when the window starts at the beginning.
+   */
+  earlierTurns: number;
+  /**
+   * Cumulative stats accrued before this window, seeded into the client's stats
+   * tracker so header chips and per-turn cumulative rows equal a full load:
+   * finished-Task elapsed, subagent token totals, and the last main-session
+   * session/context token readings.
+   */
+  prior: {
+    subagentTokens: number;
+    elapsedMs: number;
+    sessionTokens: number;
+    contextTokens: number;
+  };
+}
+
 /** Message history: the full messages and events from concatenating all of this Session's Trace files in order (excludes partial_*). */
 export interface MessagesResponse {
   messages: OmniMessage[];
   /**
    * Present only while the Session is running/compacting: the in-progress stream tail
    * (open streaming fragments + the channel cursor they cover), so a client joining
-   * mid-stream can render the currently streaming message. Omitted when idle.
+   * mid-stream can render the currently streaming message. Omitted when idle. On
+   * windowed requests it rides TAIL pages only — a `before` page is immutable history
+   * and never carries it.
    */
   live?: MessagesLiveTail;
+  /**
+   * Present exactly on windowed requests (`tailLimit` / `before`): `messages` is then
+   * the requested window (subagent pointers inside it expanded as usual) rather than
+   * the full transcript. See MessagesPageInfo.
+   */
+  page?: MessagesPageInfo;
 }
 
 // ---------------------------------------------------------------------------

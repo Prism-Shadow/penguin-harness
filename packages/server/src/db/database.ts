@@ -30,6 +30,7 @@ export function openDatabase(dbPath: string): DatabaseSync {
   ensureColumn(db, "sessions", "client", "TEXT");
   ensureColumn(db, "sessions", "has_trace", "INTEGER NOT NULL DEFAULT 0");
   ensureColumn(db, "auth_sessions", "via", "TEXT");
+  ensureColumn(db, "trace_files", "page_stats", "TEXT");
   return db;
 }
 
