@@ -84,6 +84,12 @@ function AgentNode({
   const [benchmarks, setBenchmarks] = useState<BenchmarkSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // A query-only navigation keeps this component mounted, so `defaultOpen` is not applied again.
+  // Open the remembered Agent explicitly when the bare route makes it eligible for restoration.
+  useEffect(() => {
+    if (restoreBenchmarkId) setOpen(true);
+  }, [restoreBenchmarkId]);
+
   useEffect(() => {
     if (!open || benchmarks) return;
     api
