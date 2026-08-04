@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { requestBegin, requestEnd, sessionMeta, userText } from "@prismshadow/penguin-core";
 import type { SessionMetaPayload } from "@prismshadow/penguin-core";
 import type {
+  AgentTracesResponse,
   ProjectCreateResponse,
   TraceAnalysisResponse,
   TraceEventsResponse,
@@ -94,6 +95,48 @@ describe("agent-trace-detail", () => {
 
   it("nonexistent index → 404 trace_not_found", async () => {
     expect((await owner.get(`${base()}/${UNMANAGED}/9`)).status).toBe(404);
+  });
+
+  it("listing without limit keeps the legacy full shape; with limit it pages Session groups and resolves titles", async () => {
+    // Legacy request: full date drill-down, no paging fields.
+    const legacy = (await (await owner.get(base())).json()) as AgentTracesResponse;
+    expect(legacy.dates.map((d) => d.date)).toEqual(["2026-07-06"]);
+    expect(legacy.sessions).toBeUndefined();
+    expect(legacy.totalSessions).toBeUndefined();
+
+    // Paged request: the unmanaged Session has no sessions-table row, so its title
+    // derives from the first user prompt (bounded head-read of the earliest shard).
+    const paged = (await (await owner.get(`${base()}?limit=10`)).json()) as AgentTracesResponse;
+    expect(paged.totalSessions).toBe(1);
+    expect(paged.sessions!.map((s) => s.sessionId)).toEqual([UNMANAGED]);
+    expect(paged.sessions![0]!.title).toBe("child session input");
+    expect(paged.sessions![0]!.files.map((f) => ({ index: f.index, date: f.date }))).toEqual([
+      { index: 1, date: "2026-07-06" },
+    ]);
+
+    // A sessions-table title (one batched lookup for the page) wins over the fallback.
+    t.deps.sessionsRepo.insert({
+      sessionId: UNMANAGED,
+      projectId,
+      agentId: "default_agent",
+      provider: "custom",
+      modelId: "sub-model",
+      workspace: "/tmp/w",
+      approvalMode: "allow-all",
+      title: "已生成的标题",
+      client: "cli",
+      createdAt: "2026-07-06T09:00:00.000Z",
+    });
+    const titled = (await (await owner.get(`${base()}?limit=10`)).json()) as AgentTracesResponse;
+    expect(titled.sessions![0]!.title).toBe("已生成的标题");
+
+    // offset pages past the only group; offset without limit is a client error.
+    const empty = (await (
+      await owner.get(`${base()}?limit=10&offset=10`)
+    ).json()) as AgentTracesResponse;
+    expect(empty.sessions).toEqual([]);
+    expect(empty.totalSessions).toBe(1);
+    expect((await owner.get(`${base()}?offset=1`)).status).toBe(400);
   });
 
   it("user without access → 404 (requireProjectAccess)", async () => {

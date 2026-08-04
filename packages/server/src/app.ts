@@ -153,7 +153,8 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
   const projectConfigService = new ProjectConfigService(config.root);
   const agentConfigService = new AgentConfigService(config.root);
   const agentService = new AgentService(config.root, agentsRepo, agentConfigService);
-  const traceService = new TraceService(config.root);
+  // sessionsRepo: read-only title source for the paginated Trace listing (listing visibility itself stays directory-scan-only).
+  const traceService = new TraceService(config.root, sessionsRepo);
   const workspaceFiles = new WorkspaceFilesService();
   // Per-process secret: preview tokens are short-lived, so losing them on restart is
   // harmless and there is nothing to persist or rotate.

@@ -15,13 +15,11 @@
  * added to session-manager's active table (state idle).
  */
 import path from "node:path";
-import { open, readdir } from "node:fs/promises";
+import { readdir } from "node:fs/promises";
 import {
   createAgent,
   findLatestTraceFile,
   isSessionMeta,
-  parseTraceLines,
-  readTraceTolerant,
   tracesDir,
 } from "@prismshadow/penguin-core";
 import type { SessionMetaMessage } from "@prismshadow/penguin-core";
@@ -38,43 +36,11 @@ import type { SessionRow, SessionsRepo } from "../db/repos/sessions.js";
 import type { SessionManager } from "../runtime/session-manager.js";
 import { asSessionSource } from "../runtime/session-sources.js";
 import type { SessionSources } from "../runtime/session-sources.js";
+import { readTraceHead } from "../internal/trace-head.js";
 import type { ProjectConfigService } from "./project-config-service.js";
 
 const TRACE_FILE_RE = /^(.+)_(\d{3})\.jsonl$/;
 const SESSION_ID_TS_RE = /^session-(\d{4})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-[0-9a-f]{8}$/;
-
-/** Head window for session_meta reads: generous for a long system prompt, far below a whole multi-MB shard. */
-const TRACE_HEAD_BYTES = 256 * 1024;
-
-/**
- * Parse a Trace file's head window only. session_meta is the first line core writes to
- * every shard, so a bounded read finds it without pulling the whole file into memory —
- * category filtering / counts may need every Session's source in a single request.
- * The window is cut at its last newline (the tail fragment is incomplete); a first line
- * larger than the whole window falls back to the full tolerant read.
- */
-async function readTraceHead(filePath: string) {
-  const fh = await open(filePath, "r");
-  let text: string;
-  let truncated: boolean;
-  try {
-    // allocUnsafe: only subarray(0, bytesRead) is ever read, so the uninitialized tail never leaks.
-    const { buffer, bytesRead } = await fh.read(
-      Buffer.allocUnsafe(TRACE_HEAD_BYTES),
-      0,
-      TRACE_HEAD_BYTES,
-      0,
-    );
-    text = buffer.subarray(0, bytesRead).toString("utf8");
-    truncated = bytesRead === TRACE_HEAD_BYTES;
-  } finally {
-    await fh.close();
-  }
-  if (!truncated) return parseTraceLines(text);
-  const nl = text.lastIndexOf("\n");
-  if (nl === -1) return readTraceTolerant(filePath);
-  return parseTraceLines(text.slice(0, nl + 1));
-}
 
 /** Derives creation time from the local timestamp embedded in session_id; returns null if it doesn't match. */
 export function sessionIdCreatedAt(sessionId: string): string | null {

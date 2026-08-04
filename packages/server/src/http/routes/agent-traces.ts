@@ -1,6 +1,13 @@
 /**
  * Agent-level Trace browsing routes:
- *   - GET /api/projects/:p/agents/:a/traces — drills down Agent -> date -> Session -> index (reverse order);
+ *   - GET /api/projects/:p/agents/:a/traces — Agent-level listing. Without `limit`: the
+ *     legacy full drill-down (Agent -> date -> Session -> index, reverse order). With
+ *     optional `offset`/`limit`: pages Session groups newest-first, stat-ing only the
+ *     returned page, and resolves a display title per group (sessions DB title, else
+ *     derived from the first user prompt). The **listing** therefore consults the
+ *     sessions table — read-only, titles only; visibility still comes from the
+ *     directory scan alone (a Session missing from the table is listed all the same,
+ *     its title simply falling back or staying absent).
  *   - GET /api/projects/:p/agents/:a/traces/:sessionId/:index (including /analysis, /download) —
  *     read-only Trace detail endpoints (FD-3): locate the Trace file directly by
  *     (projectId, agentId, sessionId), without depending on the sessions table for
@@ -16,6 +23,7 @@ import type { AppEnv } from "../../auth/middleware.js";
 import type { TraceImportResponse } from "../../api/types.js";
 import {
   badRequest,
+  optionalPagingQuery,
   paginationQuery,
   positiveIntParam,
   readJson,
@@ -35,7 +43,9 @@ export function agentTracesRoutes(deps: AppDeps): Hono<AppEnv> {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
     deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
-    return c.json(await deps.traceService.agentTraces(projectId, agentId));
+    // Both params absent -> null -> the legacy full response, byte-for-byte as before.
+    const paging = optionalPagingQuery(c);
+    return c.json(await deps.traceService.agentTraces(projectId, agentId, paging));
   });
 
   app.get("/:sessionId/:index", async (c) => {

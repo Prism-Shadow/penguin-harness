@@ -206,9 +206,20 @@ export const resetAgentConfig = (projectId: string, agentId: string) =>
     { method: "POST" },
   );
 
-export const getAgentTraces = (projectId: string, agentId: string) =>
+/**
+ * Optional paging (absent = the legacy full date-grouped response): pages Session groups
+ * newest-first; a paged response answers with `sessions` (titles included) + `totalSessions`.
+ * The Trace page requests `limit+1` per page to detect "has more" (splitPage).
+ */
+export const getAgentTraces = (
+  projectId: string,
+  agentId: string,
+  paging?: { offset: number; limit: number },
+) =>
   apiFetch<AgentTracesResponse>(
-    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/traces`,
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/traces${
+      paging ? `?limit=${paging.limit}&offset=${paging.offset}` : ""
+    }`,
   );
 
 // Session ---------------------------------------------------------------------

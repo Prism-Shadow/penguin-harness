@@ -530,6 +530,73 @@ describe("trace-service", () => {
     expect(res.dates.map((d) => d.date)).toEqual(["2026-07-06", "2026-07-05"]);
     expect(res.dates[1]!.sessions[0]!.sessionId).toBe(S);
     expect(res.dates[1]!.sessions[0]!.files.map((f) => f.index)).toEqual([1, 2]);
+    // No `limit` -> the legacy full shape only: the paging fields must stay absent
+    // (existing consumers see a byte-identical response).
+    expect(res.sessions).toBeUndefined();
+    expect(res.totalSessions).toBeUndefined();
+  });
+
+  it("Agent-level paging: slices Session groups newest-first, merges one Session's files across dates, and carries the total", async () => {
+    const s2 = "session-2026-07-06-09-00-00-11112222";
+    const s3 = "session-2026-07-07-08-00-00-33334444";
+    // S spans two date directories: the paged entry must merge them with a per-file date.
+    await writeTraceFile(root, P, A, "2026-07-05", S, 1, [userText("a")]);
+    await writeTraceFile(root, P, A, "2026-07-06", S, 2, [userText("b")]);
+    await writeTraceFile(root, P, A, "2026-07-06", s2, 1, [userText("c")]);
+    await writeTraceFile(root, P, A, "2026-07-07", s3, 1, [userText("d")]);
+
+    const page1 = await service.agentTraces(P, A, { offset: 0, limit: 2 });
+    expect(page1.totalSessions).toBe(3);
+    expect(page1.dates).toEqual([]); // paged responses are session-centric; per-file stats happen only for the slice
+    expect(page1.sessions!.map((s) => s.sessionId)).toEqual([s3, s2]);
+
+    const page2 = await service.agentTraces(P, A, { offset: 2, limit: 2 });
+    expect(page2.totalSessions).toBe(3);
+    expect(page2.sessions!.map((s) => s.sessionId)).toEqual([S]);
+    expect(page2.sessions![0]!.files.map((f) => ({ index: f.index, date: f.date }))).toEqual([
+      { index: 1, date: "2026-07-05" },
+      { index: 2, date: "2026-07-06" },
+    ]);
+    expect(page2.sessions![0]!.files.every((f) => f.sizeBytes > 0)).toBe(true);
+
+    // Paging an empty Agent stays well-formed.
+    const empty = await service.agentTraces(P, "agent-none", { offset: 0, limit: 2 });
+    expect(empty.sessions).toEqual([]);
+    expect(empty.totalSessions).toBe(0);
+  });
+
+  it("Agent-level paging: the sessions DB title wins over the first-prompt fallback", async () => {
+    const withTitles = new TraceService(root, {
+      titlesByIds: (ids) => new Map<string, string>(ids.includes(S) ? [[S, "已生成的标题"]] : []),
+    });
+    await writeTraceFile(root, P, A, "2026-07-05", S, 1, [
+      sessionMeta(metaPayload()),
+      userText("raw prompt text"),
+    ]);
+    const res = await withTitles.agentTraces(P, A, { offset: 0, limit: 10 });
+    expect(res.sessions![0]!.title).toBe("已生成的标题");
+  });
+
+  it("Agent-level paging: without a DB title, the title derives from the first user prompt of the EARLIEST shard", async () => {
+    await writeTraceFile(root, P, A, "2026-07-05", S, 1, [
+      sessionMeta(metaPayload()),
+      userText("“修复登录问题！”\n后续详情不应进入标题"),
+    ]);
+    // The later shard is a compaction split whose first user text is the compaction
+    // prompt — using it would title the Session after machine text.
+    await writeTraceFile(root, P, A, "2026-07-06", S, 2, [
+      sessionMeta(metaPayload()),
+      userText("You have a partial transcript…"),
+    ]);
+    const res = await service.agentTraces(P, A, { offset: 0, limit: 10 });
+    // First non-empty line, sanitized (fallbackTitle): surrounding quotes and trailing punctuation stripped.
+    expect(res.sessions![0]!.title).toBe("修复登录问题");
+  });
+
+  it("Agent-level paging: a Session whose head has no user text gets no title (the client falls back to its default)", async () => {
+    await writeTraceFile(root, P, A, "2026-07-05", S, 1, [sessionMeta(metaPayload())]);
+    const res = await service.agentTraces(P, A, { offset: 0, limit: 10 });
+    expect(res.sessions![0]!.title).toBeUndefined();
   });
 
   it("every endpoint returns empty when there is no Trace", async () => {

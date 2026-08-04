@@ -1050,9 +1050,42 @@ export interface AgentTraceDateGroup {
   sessions: AgentTraceSessionGroup[];
 }
 
-/** Agent → date → Session → Trace file drill-down browsing structure (reverse chronological). */
+/** One Trace file in the session-centric listing (`date` carried per file: one Session's shards can span date directories). */
+export interface AgentTraceSessionFile {
+  index: number;
+  date: string;
+  sizeBytes: number;
+}
+
+/** One Session's Trace files merged across date directories (the paginated listing's unit). */
+export interface AgentTraceSessionEntry {
+  sessionId: string;
+  /**
+   * Display title, resolved only for the returned page: the sessions DB title when one
+   * exists, else derived from the Session's first user prompt (bounded head-read of the
+   * earliest shard); absent when neither yields one (the client falls back to its
+   * default title — raw session ids are never rendered).
+   */
+  title?: string;
+  /** Sorted by index ascending (a higher index is newer). */
+  files: AgentTraceSessionFile[];
+}
+
+/**
+ * Agent-level Trace browsing structure. Without `limit` the response is the legacy full
+ * drill-down (`dates`: Agent → date → Session → Trace file, reverse chronological) and the
+ * paging fields are absent. With `offset`/`limit` the response is session-group-centric:
+ * `sessions` carries the requested slice (newest first by sessionId desc — ids embed a
+ * timestamp, so that is reverse chronological) with titles, `totalSessions` the overall
+ * session-group count, and `dates` stays empty (per-file stats are only taken for the
+ * returned page).
+ */
 export interface AgentTracesResponse {
   dates: AgentTraceDateGroup[];
+  /** Present only when the request paginates: the requested slice of Session groups, newest first. */
+  sessions?: AgentTraceSessionEntry[];
+  /** Present only when the request paginates: total number of Session groups under this Agent. */
+  totalSessions?: number;
 }
 
 export interface TraceImportRequest {

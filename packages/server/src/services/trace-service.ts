@@ -21,6 +21,7 @@ import {
 } from "@prismshadow/penguin-core";
 import type { OmniMessage } from "@prismshadow/penguin-core";
 import type {
+  AgentTraceSessionEntry,
   AgentTracesResponse,
   RequestSpan,
   ToolCallSpan,
@@ -35,6 +36,8 @@ import type {
 } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
 import { formatLocalDate } from "../internal/dates.js";
+import { readTraceHead } from "../internal/trace-head.js";
+import { fallbackTitle } from "../runtime/title-generator.js";
 
 const TRACE_FILE_RE = /^(.+)_(\d{3})\.jsonl$/;
 
@@ -87,8 +90,20 @@ async function listFiles(dir: string): Promise<string[]> {
   }
 }
 
+/**
+ * Read-only source of DB session titles for the paginated listing (a narrow slice of
+ * SessionsRepo, injected so service tests need no database).
+ */
+export interface TraceTitleSource {
+  titlesByIds(sessionIds: readonly string[]): Map<string, string>;
+}
+
 export class TraceService {
-  constructor(private readonly root: string) {}
+  constructor(
+    private readonly root: string,
+    /** Optional: without it the paginated listing skips DB titles and goes straight to the first-prompt fallback. */
+    private readonly titles?: TraceTitleSource,
+  ) {}
 
   /** All of this Session's Trace files (sorted by index ascending). */
   private async locateAll(
@@ -685,10 +700,24 @@ export class TraceService {
     };
   }
 
-  /** Level-by-level browsing (newest first): Agent -> date -> Session -> Trace files. */
-  async agentTraces(projectId: string, agentId: string): Promise<AgentTracesResponse> {
+  /**
+   * Agent-level browsing. Without `paging`: the legacy full drill-down (newest first:
+   * Agent -> date -> Session -> Trace files), stat-ing every file — unchanged for
+   * existing callers. With `paging`: session-group-centric — one stat-free directory
+   * walk collects every Session's file refs (readdir only), Sessions are ordered by id
+   * descending (ids embed a timestamp, so that is reverse chronological — the same
+   * ordering the web's flatten applied), and only the requested slice gets per-file
+   * `fs.stat` plus title resolution (DB title in one batched query, else a bounded
+   * head-read of the earliest shard deriving from the first user prompt).
+   */
+  async agentTraces(
+    projectId: string,
+    agentId: string,
+    paging?: { offset: number; limit: number } | null,
+  ): Promise<AgentTracesResponse> {
     const dir = tracesDir(this.root, projectId, agentId);
     const dates = (await listDirs(dir)).sort().reverse();
+    if (paging) return this.agentTracesPage(dir, dates, paging);
     const out: AgentTracesResponse = { dates: [] };
     for (const date of dates) {
       const bySession = new Map<string, { index: number; sizeBytes: number }[]>();
@@ -714,6 +743,71 @@ export class TraceService {
       });
     }
     return out;
+  }
+
+  /** The paginated listing behind agentTraces: stats and titles only for the returned slice. */
+  private async agentTracesPage(
+    dir: string,
+    dates: string[],
+    paging: { offset: number; limit: number },
+  ): Promise<AgentTracesResponse> {
+    // Stat-free discovery walk: every Session's file refs (index/date/path) from readdir alone.
+    const bySession = new Map<string, LocatedFile[]>();
+    for (const date of dates) {
+      for (const file of await listFiles(path.join(dir, date))) {
+        const match = TRACE_FILE_RE.exec(file);
+        if (!match) continue;
+        const files = bySession.get(match[1]!) ?? [];
+        files.push({ path: path.join(dir, date, file), date, index: Number(match[2]) });
+        bySession.set(match[1]!, files);
+      }
+    }
+    const ids = [...bySession.keys()].sort((a, b) => b.localeCompare(a));
+    const page = ids.slice(paging.offset, paging.offset + paging.limit);
+    const dbTitles = this.titles?.titlesByIds(page) ?? new Map<string, string>();
+    const sessions: AgentTraceSessionEntry[] = [];
+    for (const sessionId of page) {
+      const files = bySession.get(sessionId)!.sort((a, b) => a.index - b.index);
+      const withSize = await Promise.all(
+        files.map(async (f) => ({
+          index: f.index,
+          date: f.date,
+          sizeBytes: (await fs.stat(f.path)).size,
+        })),
+      );
+      // The earliest shard's head holds the original first user prompt (later shards are
+      // compaction splits whose first user text is the compaction prompt, not the user's).
+      const title = dbTitles.get(sessionId) ?? (await this.firstPromptTitle(files[0]!.path));
+      sessions.push({
+        sessionId,
+        ...(title !== undefined ? { title } : {}),
+        files: withSize,
+      });
+    }
+    return { dates: [], sessions, totalSessions: ids.length };
+  }
+
+  /**
+   * Title derived from the Session's first user prompt: bounded head-read of the given
+   * shard, first complete user text message, cleaned by the same fallbackTitle algorithm
+   * the title generator uses. undefined when unreadable or the head has no user text
+   * (title stays absent — the client shows its default title).
+   */
+  private async firstPromptTitle(filePath: string): Promise<string | undefined> {
+    let messages: OmniMessage[];
+    try {
+      messages = await readTraceHead(filePath);
+    } catch {
+      return undefined;
+    }
+    for (const msg of messages) {
+      if (msg.type !== "model_msg") continue;
+      const p = msg.payload as { type?: string; role?: string; text?: string };
+      if (p.type === "text" && p.role === "user" && typeof p.text === "string") {
+        return fallbackTitle(p.text) ?? undefined;
+      }
+    }
+    return undefined;
   }
 
   private async readFileByIndex(
