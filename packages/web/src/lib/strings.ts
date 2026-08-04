@@ -771,6 +771,8 @@ Benchmark：
       "当前模型不支持直接查看图片：发送时图片将保存到会话临时目录，以文件路径转交（模型经 describe_image 查看）",
     infoPanel: "Session 信息",
     sessionStats: "统计",
+    /** Info-dropdown jump to the Trace page, deep-linked to the current Session. */
+    viewTrace: "查看轨迹",
     statTokens: "Token 累计",
     statElapsed: "用时",
     statInput: "输入 tokens",

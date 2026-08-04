@@ -13,7 +13,8 @@ import { useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import { Drawer } from "../ui/drawer";
 import { GlyphIcon } from "../ui/glyph-icon";
-import { NAV_ICONS, NEW_CHAT_ICON, Sidebar } from "./sidebar";
+import { NAV_ICONS } from "../ui/icons";
+import { NEW_CHAT_ICON, Sidebar } from "./sidebar";
 import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
 import { ChangePasswordDialog } from "../account/change-password-dialog";
 

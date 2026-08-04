@@ -51,6 +51,7 @@ import { Skeleton } from "../../components/ui/skeleton";
 import { Truncated } from "../../components/ui/truncated";
 import { Dropdown } from "../../components/ui/dropdown";
 import { EmptyState } from "../../components/ui/empty-state";
+import { NAV_ICONS } from "../../components/ui/icons";
 import { toastError } from "../../components/ui/toast";
 import { MessageStream } from "./message-stream";
 import type { StreamRenderContext } from "./message-stream";
@@ -1156,6 +1157,39 @@ export function ChatPage() {
                   {S.chat.statElapsed} {hs.elapsedNode}
                 </p>
               </div>
+            </div>
+            {/* Jump to this Session's Trace: SPA-navigates to the Trace page deep-linked to
+                the owning Agent AND this Session (?agentId= focuses/expands the Agent group,
+                ?sessionId= auto-selects — a Session beyond the first loaded page resolves via
+                the Trace page's full-fetch fallback). Only reachable for a real Session: this
+                whole header renders behind the `selected` guard, so a draft never shows it. */}
+            <div className="border-t border-gray-100 py-1 dark:border-gray-800">
+              <button
+                type="button"
+                onClick={() => {
+                  setInfoOpen(false);
+                  navigate(
+                    `/traces?agentId=${encodeURIComponent(selected.agentId)}&sessionId=${encodeURIComponent(selected.sessionId)}`,
+                  );
+                }}
+                className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800"
+              >
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.7"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden
+                  className="shrink-0 text-gray-400 dark:text-gray-500"
+                >
+                  <path d={NAV_ICONS.traces} />
+                </svg>
+                {S.chat.viewTrace}
+              </button>
             </div>
           </Dropdown>
         </div>

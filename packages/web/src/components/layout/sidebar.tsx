@@ -49,9 +49,8 @@ import type { FolderCategory, SessionPartition } from "../../lib/session-groupin
 import { Switch } from "../ui/switch";
 import { Dropdown } from "../ui/dropdown";
 import { AgentAvatar } from "../ui/agent-avatar";
-import { ChevronDown } from "../ui/icons";
+import { ChevronDown, NAV_ICONS } from "../ui/icons";
 import {
-  AGENT_GROUP_ICON,
   FOLDER_ICON,
   FOLDER_OPEN_ICON,
   FolderSection,
@@ -78,19 +77,6 @@ import { CreateProjectDialog, ProjectSettingsDialog } from "./project-dialogs";
 import { ChangePasswordDialog } from "../account/change-password-dialog";
 import { UpdateDialog } from "../account/update-dialog";
 import { forceUpdateCheck, updateCheckOutcome, useVersionInfo } from "../../lib/use-version-info";
-
-/** Page-nav glyphs (shared with the collapsed rail in app-layout.tsx; Icon itself moved to ui/group-list.tsx). */
-export const NAV_ICONS = {
-  agents: AGENT_GROUP_ICON,
-  /** Skill library (an open book: two pages + spine). */
-  skills: "M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2zM22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z",
-  models: "M7 7h10v10H7zM4 10h3m10 0h3M4 14h3m10 0h3M10 4v3m4-3v3m-4 10v3m4-3v3",
-  usage: "M4 20V10m6 10V4m6 16v-7m4 7H2",
-  traces: "M4 6h16M4 12h10M4 18h13",
-  /** Benchmark center (a trophy: cup + two handles + base). */
-  benchmark:
-    "M7 4h10v5a5 5 0 0 1-10 0V4zM7 5H4v1a3 3 0 0 0 3 3m10-4h3v1a3 3 0 0 1-3 3M12 14v4m-4 0h8",
-} as const;
 
 /** New-chat pencil (the pinned "New chat" button and the collapsed rail share it). */
 export const NEW_CHAT_ICON = "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z";

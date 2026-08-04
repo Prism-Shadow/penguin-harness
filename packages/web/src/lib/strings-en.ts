@@ -792,6 +792,8 @@ Scenarios:
       "This model cannot view images directly: on send, images are saved to the session scratchpad and passed as file paths (viewed via describe_image)",
     infoPanel: "Session info",
     sessionStats: "Stats",
+    /** Info-dropdown jump to the Trace page, deep-linked to the current Session. */
+    viewTrace: "View trace",
     statTokens: "Total Tokens",
     statElapsed: "Elapsed",
     statInput: "Input tokens",
