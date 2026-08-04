@@ -10,4 +10,4 @@ The toolbar cost chip could vanish mid-run: goal rounds reset the live task buck
 
 ## Quieter chrome
 
-Tool rows no longer print the generic red `[failed]` marker — the status icon already carries the failure, with the full reason still in its tooltip and aria-label — while the informative `[aborted]`/`[timeout]`/`[malformed]` markers stay, since the icon's single failure tone cannot distinguish them. The home page's "new version" hint sheds its accent pill for plain superscript text set in the version line's own type; only the link affordance remains.
+Tool rows no longer print stop-reason markers at all — `[failed]`, `[aborted]`, `[timeout]`, `[malformed]` and `[auth]` are gone; the status icon is the single carrier of the outcome, with the raw reason still in its tooltip and aria-label, and the Trace viewer keeping the literal per-event values. The home page's "new version" hint sheds its accent pill for plain superscript text set in the version line's own type; only the link affordance remains.

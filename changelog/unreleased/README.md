@@ -6,7 +6,7 @@
 
 - [2026-08-04] Web App: the Traces page scales like the session sidebar — server-side session paging with per-page title resolution (DB title, else a bounded head-read deriving one from the first user prompt), sidebar grouping primitives reused for row/group caps and load-more, lazy agent expansion, and raw session ids gone from the page. ([details](2026-08-04-traces-page-scaling.md))
 
-- [2026-08-04] Web App: chat refinements — the conversation outline rail appears from 5 exchanges and windows to ±20 turns around the active one (fixing its overlap onto the composer and, under browser font scaling, onto the prose column), the toolbar cost stat no longer blinks out mid-run, tool rows drop the redundant red `[failed]` marker, and the home update hint sheds its pill for plain superscript text. ([details](2026-08-04-web-chat-refinements.md))
+- [2026-08-04] Web App: chat refinements — the conversation outline rail appears from 5 exchanges and windows to ±20 turns around the active one (fixing its overlap onto the composer and, under browser font scaling, onto the prose column), the toolbar cost stat no longer blinks out mid-run, tool rows drop the stop-reason text markers entirely in favor of the status icon, and the home update hint sheds its pill for plain superscript text. ([details](2026-08-04-web-chat-refinements.md))
 
 - [2026-08-04] Fix: ANSI color codes no longer leak into tool output — the CLI gates color on TTY/`NO_COLOR`/`TERM` with `FORCE_COLOR` override semantics matching Node, the command tool strips inherited `FORCE_COLOR`/`CLICOLOR_FORCE` from child environments so its `NO_COLOR=1` hardening wins, and the Web renders tool output through a defensive ANSI stripper covering historical Traces. ([details](2026-08-04-ansi-tool-output.md))
 
