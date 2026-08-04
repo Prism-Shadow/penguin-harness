@@ -7,8 +7,9 @@
  */
 import { randomBytes } from "node:crypto";
 import fs from "node:fs";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { utilityProcess } from "electron";
+import { app, utilityProcess } from "electron";
 import type { UtilityProcess } from "electron";
 import { appOriginFor, parsePortFile } from "./util.js";
 
@@ -30,9 +31,37 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** The server package's entry file — forked by path, resolved through node_modules. */
+/**
+ * The server package's entry file — forked by path. Packaged builds ship the staged
+ * pnpm-deploy tree inside the app directory (asar is off, see electron-builder.yml),
+ * so the path is a plain file; dev runs resolve through this package's node_modules.
+ */
 function serverEntryPath(): string {
+  if (app.isPackaged) {
+    return path.join(
+      app.getAppPath(),
+      "node_modules",
+      "@prismshadow",
+      "penguin-server",
+      "dist",
+      "index.js",
+    );
+  }
   return fileURLToPath(import.meta.resolve("@prismshadow/penguin-server"));
+}
+
+/**
+ * Extra environment for the forked server. Windows packages carry MinGit under
+ * resources/git (electron-builder extraResources): advertising its sh.exe as
+ * PENGUIN_BUNDLED_SHELL gives the agent shell the same deterministic POSIX behavior as
+ * the npm-installed package (core's shell resolver prefers a user-installed Git for
+ * Windows from PATH, then this bundle, before falling back to PowerShell). An existing
+ * value is respected.
+ */
+function bundledShellEnv(): Record<string, string> {
+  if (process.platform !== "win32" || process.env.PENGUIN_BUNDLED_SHELL) return {};
+  const sh = path.join(process.resourcesPath, "git", "usr", "bin", "sh.exe");
+  return fs.existsSync(sh) ? { PENGUIN_BUNDLED_SHELL: sh } : {};
 }
 
 async function waitForPortFile(file: string, exited: () => boolean): Promise<number> {
@@ -90,6 +119,7 @@ export async function startEmbeddedServer(opts: {
     stdio: "pipe",
     env: {
       ...process.env,
+      ...bundledShellEnv(),
       PENGUIN_HOME: opts.dataRoot,
       HOST: "127.0.0.1",
       PORT: "0",
