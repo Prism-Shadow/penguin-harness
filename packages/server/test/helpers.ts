@@ -39,6 +39,8 @@ export function testConfig(root: string): ServerConfig {
     seedAdminPassword: TEST_ADMIN_PASSWORD,
     authSessionTtlMs: 7 * DAY_MS,
     authSessionRenewMs: 6 * DAY_MS,
+    desktopToken: null,
+    portFile: null,
   };
 }
 

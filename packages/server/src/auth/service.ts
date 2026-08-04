@@ -57,6 +57,14 @@ function sha256Hex(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
+/**
+ * How a session was established: "password" via the login form, "desktop" via the
+ * desktop shell's one-shot token (see design § "桌面端原型 · 桌面登录"). Persisted per
+ * session so desktop-specific allowances (password change without the old password)
+ * apply only to sessions the shell itself opened. Legacy rows (NULL) read as "password".
+ */
+export type SessionVia = "password" | "desktop";
+
 export function toUserInfo(row: UserRow): UserInfo {
   return {
     userId: row.userId,
@@ -159,7 +167,22 @@ export class AuthService {
     }
     this.loginFailures.delete(userId);
     this.deps.authSessions.deleteExpired(this.now().toISOString());
-    return { user: toUserInfo(row), token: this.issueSession(row.userId) };
+    return { user: toUserInfo(row), token: this.issueSession(row.userId, "password") };
+  }
+
+  /**
+   * Desktop-mode sign-in: issues an admin session WITHOUT a password check — the caller
+   * (the desktop-login route) has already redeemed the shell's one-shot token, which is
+   * the credential here. Throws if the admin has not been seeded yet (desktop-login runs
+   * after startup seeding, so this only trips on a broken deployment).
+   */
+  loginDesktop(): { user: UserInfo; token: string } {
+    const row = this.deps.users.findById(ADMIN_USER_ID);
+    if (!row) {
+      throw new HttpError(500, "internal", "Built-in admin has not been seeded.");
+    }
+    this.deps.authSessions.deleteExpired(this.now().toISOString());
+    return { user: toUserInfo(row), token: this.issueSession(row.userId, "desktop") };
   }
 
   /** Self password change (user settings): validates the old password, and on success clears the initial-password flag; the current session remains valid. */
@@ -174,12 +197,25 @@ export class AuthService {
     this.deps.users.updatePassword(userId, await hashPassword(newPassword), false);
   }
 
+  /**
+   * Desktop-session password set: no old-password check. Only reachable for sessions
+   * established via desktop-login (the me route gates on sessionVia) — the seed password
+   * of a desktop-created root is random and never shown, so its holder has nothing to
+   * type into an old-password field; the shell's token already proved machine ownership.
+   */
+  async setPasswordDesktop(userId: string, newPassword: string): Promise<void> {
+    if (newPassword.length < MIN_PASSWORD_LENGTH) {
+      throw new HttpError(400, "invalid_password", "Password must be at least 8 characters.");
+    }
+    this.deps.users.updatePassword(userId, await hashPassword(newPassword), false);
+  }
+
   logout(token: string): void {
     this.deps.authSessions.delete(sha256Hex(token));
   }
 
   /** Validates the cookie token: returns null if expired/unknown; sliding renewal once less than 6 days remain. */
-  authenticate(token: string): UserRow | null {
+  authenticateWithMeta(token: string): { user: UserRow; via: SessionVia } | null {
     const tokenHash = sha256Hex(token);
     const session = this.deps.authSessions.findByTokenHash(tokenHash);
     if (!session) return null;
@@ -195,10 +231,12 @@ export class AuthService {
         new Date(now.getTime() + this.deps.sessionTtlMs).toISOString(),
       );
     }
-    return this.deps.users.findById(session.userId);
+    const user = this.deps.users.findById(session.userId);
+    if (!user) return null;
+    return { user, via: session.via === "desktop" ? "desktop" : "password" };
   }
 
-  private issueSession(userId: string): string {
+  private issueSession(userId: string, via: SessionVia): string {
     const token = randomBytes(32).toString("base64url");
     const now = this.now();
     this.deps.authSessions.insert({
@@ -206,6 +244,7 @@ export class AuthService {
       userId,
       createdAt: now.toISOString(),
       expiresAt: new Date(now.getTime() + this.deps.sessionTtlMs).toISOString(),
+      via,
     });
     return token;
   }
