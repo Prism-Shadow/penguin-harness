@@ -1,7 +1,13 @@
 /**
- * Workspace pill picker, extracted verbatim from draft-view.tsx so the Project settings
- * dialog's "new chat defaults" section can offer the exact control the chat draft uses
- * (same markup, classes and behavior — a mechanical move, not a redesign).
+ * Workspace picker, extracted from draft-view.tsx so the Project settings dialog's
+ * "new chat defaults" section can offer the same dir-browser popover the chat draft uses.
+ * Two trigger variants, one menu:
+ * - "pill" (default): the draft page's pill trigger with viewport-docked in-flow menu —
+ *   moved verbatim, unchanged markup/classes/behavior;
+ * - "form": a full-width trigger styled like the dialog's Input/Select (controlBase +
+ *   the sm size tier), with the SAME menu portaled to body — a dialog's overflow-y-auto
+ *   content area would clip an in-flow panel, and the portal tier (z-[60]) clears the
+ *   Modal overlay.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
@@ -11,7 +17,9 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { Chevron } from "../../components/ui/chevron";
 import { Dropdown } from "../../components/ui/dropdown";
-import { noAutofill } from "../../components/ui/input";
+import { controlBase } from "../../components/ui/field";
+import { ChevronDown } from "../../components/ui/icons";
+import { noAutofill, sizeClass } from "../../components/ui/input";
 import { toastError } from "../../components/ui/toast";
 
 /** Shared style for pill trigger buttons (ChatGPT project button style: small rounded pill + icon + short name + collapse arrow). */
@@ -32,10 +40,13 @@ export function WorkspaceSelect({
   projectId,
   workspace,
   onChange,
+  variant = "pill",
 }: {
   projectId: string;
   workspace: string;
   onChange: (path: string) => void;
+  /** Trigger style: the draft page's pill (default), or a dialog form control (see the header comment). */
+  variant?: "pill" | "form";
 }) {
   const [open, setOpen] = useState(false);
   /**
@@ -77,7 +88,9 @@ export function WorkspaceSelect({
 
   const toggle = (e: ReactMouseEvent<HTMLButtonElement>) => {
     const next = !open;
-    if (next) {
+    // The dock measurement steers the in-flow (pill) panel only; the form variant portals,
+    // and Dropdown's own viewport clamping takes over.
+    if (next && variant === "pill") {
       const r = e.currentTarget.getBoundingClientRect();
       const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
       const margin = 12; // breathing room against the viewport edge
@@ -121,41 +134,68 @@ export function WorkspaceSelect({
   const parentPath = dir?.parent ?? null;
   // Hidden directories (starting with .) are excluded from the list.
   const entries = (dir?.entries ?? []).filter((e) => !e.name.startsWith("."));
+  /** Folder glyph shared by both triggers. */
+  const folderIcon = (extraClass: string) => (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      className={`shrink-0 text-gray-400 ${extraClass}`}
+      aria-hidden
+    >
+      <path
+        d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
   return (
     <Dropdown
       open={open}
       setOpen={setOpen}
-      menuClass={`top-full mt-1 w-80 max-w-[calc(100vw-2rem)] ${
-        menuDock.right ? "right-0 origin-top-right" : "left-0 origin-top-left"
-      }`}
-      {...(menuDock.maxWidth !== undefined ? { menuStyle: { maxWidth: menuDock.maxWidth } } : {})}
+      {...(variant === "form"
+        ? // Portaled menu (size classes only; placement is measured from the trigger).
+          { menuClass: "w-80", portal: { direction: "down" as const, align: "left" as const } }
+        : {
+            menuClass: `top-full mt-1 w-80 max-w-[calc(100vw-2rem)] ${
+              menuDock.right ? "right-0 origin-top-right" : "left-0 origin-top-left"
+            }`,
+            ...(menuDock.maxWidth !== undefined
+              ? { menuStyle: { maxWidth: menuDock.maxWidth } }
+              : {}),
+          })}
       button={
-        <button
-          type="button"
-          title={trimmed ? `${S.chat.workspace}：${trimmed}` : S.chat.workspaceHint}
-          aria-label={S.chat.workspace}
-          onClick={toggle}
-          className={pillClass}
-        >
-          {/* Folder icon */}
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            className="ml-0.5 shrink-0 text-gray-400"
-            aria-hidden
+        variant === "form" ? (
+          // Dialog form control: full width, same border/height/typography as Input/Select (sm tier).
+          <button
+            type="button"
+            title={trimmed ? `${S.chat.workspace}：${trimmed}` : S.chat.workspaceHint}
+            aria-label={S.chat.workspace}
+            aria-haspopup="dialog"
+            aria-expanded={open}
+            onClick={toggle}
+            className={`flex w-full items-center gap-2 text-left ${controlBase} ${sizeClass.sm}`}
           >
-            <path
-              d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"
-              strokeWidth="1.6"
-              strokeLinejoin="round"
-            />
-          </svg>
-          <span className={`min-w-0 truncate ${trimmed ? "font-mono" : ""}`}>{label}</span>
-          <Chevron open={open} size={12} className="shrink-0 text-gray-400" />
-        </button>
+            {folderIcon("")}
+            <span className={`min-w-0 flex-1 truncate ${trimmed ? "font-mono" : ""}`}>{label}</span>
+            <ChevronDown className="text-gray-400" />
+          </button>
+        ) : (
+          <button
+            type="button"
+            title={trimmed ? `${S.chat.workspace}：${trimmed}` : S.chat.workspaceHint}
+            aria-label={S.chat.workspace}
+            onClick={toggle}
+            className={pillClass}
+          >
+            {folderIcon("ml-0.5")}
+            <span className={`min-w-0 truncate ${trimmed ? "font-mono" : ""}`}>{label}</span>
+            <Chevron open={open} size={12} className="shrink-0 text-gray-400" />
+          </button>
+        )
       }
     >
       <div className="space-y-1.5 px-2.5 pb-2.5 pt-2">

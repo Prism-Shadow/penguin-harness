@@ -410,8 +410,9 @@ export function ProjectSettingsDialog({ open, onClose }: { open: boolean; onClos
  * delete zone): the `[default_chat]` block (Agent / Workspace / approval mode / thinking
  * level) plus the Project's default model, laid out as a compact responsive two-column
  * grid. Workspace and model reuse the chat draft's own pickers — WorkspaceSelect (the
- * dir-browser pill) and ModelSelect (the composer's model dropdown) — so the controls
- * look and behave exactly like the new-chat page.
+ * dir browser) and ModelSelect (the composer's model dropdown) — with their `form`
+ * trigger variant, so the controls line up with the dialog's Input/Select while the
+ * POPOVER menus stay exactly the composer's.
  * The model default is SINGLE-SOURCED with the models page — the picker renders and writes
  * the same top-level `default_model` (via the narrow PUT /models/default route), never a
  * second key; changing it also releases the draft-cached model pin exactly as the models
@@ -583,7 +584,7 @@ function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwne
                     defaultModel={models.defaultModel}
                     onChange={setModelRef}
                     disabled={busy}
-                    alwaysShowLabel
+                    variant="form"
                   />
                   <FieldHint>{S.project.chatDefaultsModelHint}</FieldHint>
                 </>
@@ -599,6 +600,7 @@ function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwne
                 projectId={projectId}
                 workspace={workspace}
                 onChange={setWorkspace}
+                variant="form"
               />
               <FieldHint>{S.project.chatDefaultsWorkspaceHint}</FieldHint>
             </div>

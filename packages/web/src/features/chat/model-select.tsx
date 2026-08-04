@@ -1,12 +1,13 @@
 /**
- * Model picker pieces, extracted verbatim from chat-input.tsx so the Project settings
- * dialog's "new chat defaults" section can offer the exact control the chat composer uses
- * (same markup, classes and behavior — a mechanical move, not a redesign):
+ * Model picker pieces, extracted from chat-input.tsx so the Project settings dialog's
+ * "new chat defaults" section can offer the same menu the chat composer uses (the panels
+ * are mechanical moves; the composer's trigger is unchanged, and a "form" trigger variant
+ * is added for dialog hosts — see ModelSelect):
  * - PickerList: the generic candidate panel (search box, scroll cap, keyboard navigation,
  *   current-entry marker) shared with chat-input's `/agent` handoff picker;
  * - ModelMenuList: the model candidate panel (grouped, key-configured-first, "show all"
  *   expander) shared by the draft dropdown and the in-session `/model` switch picker;
- * - ModelSelect: the dropdown trigger (provider logo + name + chevron).
+ * - ModelSelect: the dropdown trigger (provider logo + name + chevron), pill or form style.
  */
 import { useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
@@ -14,8 +15,10 @@ import type { ModelInfo, ModelRefDto } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
 import { Badge } from "../../components/ui/badge";
 import { Dropdown } from "../../components/ui/dropdown";
+import { controlBase } from "../../components/ui/field";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { noAutofill } from "../../components/ui/input";
+import { ChevronDown } from "../../components/ui/icons";
+import { noAutofill, sizeClass } from "../../components/ui/input";
 import { ProviderLogo } from "../../components/ui/provider-logo";
 import {
   hasConfiguredKey,
@@ -251,6 +254,13 @@ export function ModelMenuList({
  * menu opens **downward** — the draft card is vertically centered with room below. The
  * candidate list itself is the shared ModelMenuList panel (search, key-configured-first
  * grouping, Free badge, "show all" expander — documented there).
+ *
+ * Two trigger variants, one menu:
+ * - "pill" (default): the composer's compact toolbar button — collapses to the logo alone
+ *   under the card's own `@container` query, menu right-aligned;
+ * - "form": a full-width trigger styled like the dialog's Input/Select (controlBase + the
+ *   sm size tier), label always visible (a container-less host's `@md:` variant would never
+ *   match), menu left-aligned under the control.
  */
 export function ModelSelect({
   models,
@@ -258,7 +268,7 @@ export function ModelSelect({
   defaultModel,
   onChange,
   disabled,
-  alwaysShowLabel,
+  variant = "pill",
 }: {
   models: ModelInfo[];
   /** Currently selected (provider, modelId) pair; null = not yet chosen. */
@@ -266,63 +276,76 @@ export function ModelSelect({
   defaultModel?: ModelRefDto;
   onChange: (ref: ModelRefDto) => void;
   disabled: boolean;
-  /**
-   * Keep the name visible at every width. The composer collapses the label under its own
-   * `@container` query when the card is narrow; a host without a container ancestor (the
-   * Project settings dialog) would otherwise never show it, since a container-less `@md:`
-   * variant simply never matches.
-   */
-  alwaysShowLabel?: boolean;
+  /** Trigger style: the composer's toolbar pill (default), or a dialog form control (see the header comment). */
+  variant?: "pill" | "form";
 }) {
   const [open, setOpen] = useState(false);
   const current = models.find((m) => sameModelRef(m, value));
   // Display rule matches the model page's card: display name, or falls back to the upstream id (grouping is already conveyed by the provider logo).
   const label = current ? modelLabel(current) : (value?.modelId ?? "…");
+  const logo = (
+    <ProviderLogo
+      provider={current?.provider ?? value?.provider ?? "custom"}
+      className="h-4 w-4 shrink-0"
+    />
+  );
   return (
     <Dropdown
       open={open}
       setOpen={setOpen}
-      // The panel's right edge docks to the button; portal placement then clamps both edges
-      // inside the viewport, so a w-max panel can no longer run off-screen on phones (it used
-      // to need a hand-tuned width clamp reserving the anchor offset).
-      menuClass="w-max min-w-56 origin-top-right"
-      portal={{ direction: "down", align: "right" }}
+      // Pill: the panel's right edge docks to the button; portal placement then clamps both
+      // edges inside the viewport, so a w-max panel can no longer run off-screen on phones
+      // (it used to need a hand-tuned width clamp reserving the anchor offset). Form: the
+      // panel hangs under the full-width control's left edge, like the dialog's Select.
+      menuClass={`w-max min-w-56 ${variant === "form" ? "origin-top-left" : "origin-top-right"}`}
+      portal={{ direction: "down", align: variant === "form" ? "left" : "right" }}
       button={
-        <button
-          type="button"
-          title={`${S.chat.chooseModel}：${label}`}
-          aria-label={S.chat.chooseModel}
-          disabled={disabled || models.length === 0}
-          onClick={() => setOpen(!open)}
-          className="flex h-8 max-w-44 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-        >
-          <ProviderLogo
-            provider={current?.provider ?? value?.provider ?? "custom"}
-            className="h-4 w-4 shrink-0"
-          />
-          {/* When the card is narrower than @md, only the provider logo remains (title shows the full name). */}
-          <span
-            className={alwaysShowLabel ? "min-w-0 truncate" : "hidden min-w-0 truncate @md:block"}
+        variant === "form" ? (
+          // Dialog form control: full width, same border/height/typography as Input/Select (sm tier).
+          <button
+            type="button"
+            title={`${S.chat.chooseModel}：${label}`}
+            aria-label={S.chat.chooseModel}
+            aria-haspopup="listbox"
+            aria-expanded={open}
+            disabled={disabled || models.length === 0}
+            onClick={() => setOpen(!open)}
+            className={`flex w-full items-center gap-2 text-left ${controlBase} ${sizeClass.sm} disabled:cursor-not-allowed disabled:opacity-60`}
           >
-            {label}
-          </span>
-          <svg
-            width="10"
-            height="10"
-            viewBox="0 0 12 12"
-            fill="none"
-            stroke="currentColor"
-            className="shrink-0"
-            aria-hidden
+            {logo}
+            <span className="min-w-0 flex-1 truncate">{label}</span>
+            <ChevronDown className="text-gray-400" />
+          </button>
+        ) : (
+          <button
+            type="button"
+            title={`${S.chat.chooseModel}：${label}`}
+            aria-label={S.chat.chooseModel}
+            disabled={disabled || models.length === 0}
+            onClick={() => setOpen(!open)}
+            className="flex h-8 max-w-44 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
           >
-            <path
-              d="M3 4.5l3 3 3-3"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
+            {logo}
+            {/* When the card is narrower than @md, only the provider logo remains (title shows the full name). */}
+            <span className="hidden min-w-0 truncate @md:block">{label}</span>
+            <svg
+              width="10"
+              height="10"
+              viewBox="0 0 12 12"
+              fill="none"
+              stroke="currentColor"
+              className="shrink-0"
+              aria-hidden
+            >
+              <path
+                d="M3 4.5l3 3 3-3"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        )
       }
     >
       <ModelMenuList
