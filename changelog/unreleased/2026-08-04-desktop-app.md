@@ -17,3 +17,7 @@ Desktop mode is loopback-only and adds: the one-shot login endpoint, the reusabl
 ## Web App in desktop mode
 
 The window hides what the shell makes meaningless: the logout entry (the window is the session), the initial-password banner (the seed is random and never shown), and the self-update entry (updates belong to the desktop app; the web self-update re-runs the CLI entry, which does not exist under the shell). The change-password dialog drops the old-password field for desktop sessions.
+
+## Packaging (three platforms)
+
+electron-builder produces macOS dmg + zip (arm64/x64), Windows NSIS and Linux AppImage + deb from a `pnpm deploy --prod` staging tree — a portable node_modules with the workspace packages materialized and the web build placed in the server package's npm layout; asar is off on purpose (the shell forks the server, the skill library reads its files from disk, agent commands spawn real shells). Windows carries the same pinned MinGit as the CLI zip and advertises it as `PENGUIN_BUNDLED_SHELL`. A reusable `desktop-build.yml` three-OS matrix (with `workflow_dispatch` dry runs) runs inside `release.yml` BEFORE the Release is created — assets are immutable at publish — attaching the installers plus `SHA256SUMS.desktop`. M3 artifacts are unsigned; signing, notarization, icons and electron-updater are the next milestone. Dev quality-of-life: root `pnpm desktop` builds everything and starts the shell on the dev data root, and a preflight turns the stale-injected-copy `ERR_MODULE_NOT_FOUND` into an actionable message.
