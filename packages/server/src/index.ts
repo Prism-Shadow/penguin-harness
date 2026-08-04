@@ -45,7 +45,10 @@ const app = createApp(deps);
 // users table is empty. The returned initial password (random unless pinned via
 // PENGUIN_SEED_ADMIN_PASSWORD) is printed here once — the only place it is ever shown.
 const seededAdminPassword = await deps.authService.seedAdmin();
-if (seededAdminPassword !== null) {
+// Never printed in desktop mode: the seed there is fully random by design (config.ts)
+// and sign-in goes through the shell's one-shot token, so showing it would only leak a
+// credential into a log nobody needs.
+if (seededAdminPassword !== null && config.desktopToken === null) {
   console.log(
     `Seeded built-in admin "admin" — initial password: ${seededAdminPassword} (change it after first sign-in)`,
   );
