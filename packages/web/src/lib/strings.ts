@@ -1004,6 +1004,9 @@ Benchmark：
     toolDefs: (n: number) => `工具定义（${n}）`,
     exportFile: "导出",
     importTrace: "导入 Trace",
+    /** Import dialog: which Agent receives the file (the endpoint is per-Agent). */
+    importAgent: "导入到 Agent",
+    importPickFile: "选择文件",
     importing: "导入中…",
     /** Client-side pre-check before reading the picked file (same cap as the server's import route). */
     fileTooLarge: "文件超过 14MB 上限。",

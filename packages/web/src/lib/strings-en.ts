@@ -1029,6 +1029,9 @@ Scenarios:
     toolDefs: (n: number) => `Tool definitions (${n})`,
     exportFile: "Export",
     importTrace: "Import Trace",
+    /** Import dialog: which Agent receives the file (the endpoint is per-Agent). */
+    importAgent: "Import into Agent",
+    importPickFile: "Choose file",
     importing: "Importing…",
     /** Client-side pre-check before reading the picked file (same cap as the server's import route). */
     fileTooLarge: "The file exceeds the 14MB limit.",

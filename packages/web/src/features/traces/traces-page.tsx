@@ -13,7 +13,7 @@
  * performance analysis (an execution timeline) + an event timeline.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ChangeEvent, ReactNode } from "react";
+import type { ChangeEvent } from "react";
 import { useSearchParams } from "react-router";
 import type { SessionCategory, SessionCategoryCounts } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
@@ -44,6 +44,8 @@ import {
 import type { GroupMode } from "../../components/ui/group-list";
 import { HiddenFileInput } from "../../components/ui/hidden-file-input";
 import { DownloadIcon, UploadIcon } from "../../components/ui/icons";
+import { Modal } from "../../components/ui/modal";
+import { Select } from "../../components/ui/select";
 import { toastError } from "../../components/ui/toast";
 import { Truncated } from "../../components/ui/truncated";
 import { useSessions } from "../../state/sessions";
@@ -125,7 +127,10 @@ export function TracesPage() {
   const [openFolders, setOpenFolders] = useState<ReadonlySet<string>>(new Set());
   /** "More" rows with a fetch in flight, keyed `${category}\0${groupKey}` (disable + loading text). */
   const [pendingLoads, setPendingLoads] = useState<ReadonlySet<string>>(new Set());
-  /** Agent whose Trace import is in flight (its header button disables). */
+  /** Import dialog open state and its target Agent (the endpoint is per-Agent, so the page-level button asks which one). */
+  const [importOpen, setImportOpen] = useState(false);
+  const [importAgentId, setImportAgentId] = useState("");
+  /** Agent whose Trace import is in flight (the header button disables and reads "importing"). */
   const [importingAgent, setImportingAgent] = useState<string | null>(null);
   /** File-pill overflow expanded for the current selection. */
   const [showAllFiles, setShowAllFiles] = useState(false);
@@ -327,15 +332,19 @@ export function TracesPage() {
     }
   };
 
-  const onPickFile = (agentId: string) => (e: ChangeEvent<HTMLInputElement>) => {
+  const onPickFile = (e: ChangeEvent<HTMLInputElement>) => {
+    const agentId = importAgentId;
     const file = e.target.files?.[0];
     // Reset before reading so re-picking the same file fires change again.
     e.target.value = "";
-    if (!file) return;
+    if (!file || agentId === "") return;
     if (file.size > MAX_TRACE_BYTES) {
       toastError(S.traces.fileTooLarge);
       return;
     }
+    // Picking a file IS the confirmation: close the dialog and run the import (the
+    // header button shows the in-flight state; failures toast as before).
+    setImportOpen(false);
     const reader = new FileReader();
     reader.onload = () => {
       const url = reader.result as string;
@@ -343,6 +352,12 @@ export function TracesPage() {
     };
     reader.onerror = () => toastError(S.common.unknownError);
     reader.readAsDataURL(file);
+  };
+
+  /** Opens the import dialog, defaulting the target to the deep-linked / first Agent. */
+  const openImport = () => {
+    setImportAgentId(focusAgentId ?? orderedAgents[0]?.agentId ?? "");
+    setImportOpen(true);
   };
 
   /** In-flight key of one group's category "More" (folderKey shares the same composite for folder categories). */
@@ -514,24 +529,6 @@ export function TracesPage() {
     );
   };
 
-  /** Owner-only Trace import control (the Agent group header's trailing action). */
-  const importAction = (agentId: string): ReactNode => {
-    if (currentProject?.role !== "owner") return undefined;
-    const importing = importingAgent === agentId;
-    return (
-      <label
-        title={importing ? S.traces.importing : S.traces.importTrace}
-        className={`shrink-0 cursor-pointer rounded p-1 text-gray-400 transition-colors duration-150 hover:bg-gray-200/50 hover:text-gray-600 dark:hover:bg-gray-800/50 dark:hover:text-gray-300 ${
-          importing ? "pointer-events-none opacity-60" : ""
-        }`}
-      >
-        <HiddenFileInput accept=".jsonl" disabled={importing} onChange={onPickFile(agentId)} />
-        <UploadIcon size={13} />
-        <span className="sr-only">{importing ? S.traces.importing : S.traces.importTrace}</span>
-      </label>
-    );
-  };
-
   if (!projectId) return null;
 
   const activeFile =
@@ -557,9 +554,26 @@ export function TracesPage() {
           <p className="text-xs font-bold uppercase tracking-wide text-gray-500">
             {S.traces.title}
           </p>
-          {/* Hidden while an ?agentId= deep link forces agent grouping: a toggle showing
-              the (possibly different) stored preference would look broken. */}
-          {focusAgentId === null && <GroupModeToggle value={modePref} onChange={setGroupMode} />}
+          <div className="flex items-center gap-0.5">
+            {/* Page-level Trace import (owner-only; moved here from the per-Agent group
+                headers): one button beside the grouping toggle, matching its control
+                height; the dialog then asks which Agent receives the file. */}
+            {currentProject?.role === "owner" && (
+              <button
+                type="button"
+                title={importingAgent !== null ? S.traces.importing : S.traces.importTrace}
+                aria-label={importingAgent !== null ? S.traces.importing : S.traces.importTrace}
+                disabled={importingAgent !== null}
+                onClick={openImport}
+                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/50 hover:text-gray-700 disabled:opacity-60 dark:text-gray-500 dark:hover:bg-gray-800/70 dark:hover:text-gray-300"
+              >
+                <UploadIcon size={14} />
+              </button>
+            )}
+            {/* Hidden while an ?agentId= deep link forces agent grouping: a toggle showing
+                the (possibly different) stored preference would look broken. */}
+            {focusAgentId === null && <GroupModeToggle value={modePref} onChange={setGroupMode} />}
+          </div>
         </div>
         {agentsLoading || (groupMode === "workspace" && wsLoading) ? (
           <SkeletonList rows={4} />
@@ -585,7 +599,6 @@ export function TracesPage() {
                     }
                     label={name}
                     uppercase
-                    actions={importAction(a.agentId)}
                   />
                   {open && (
                     <div className="anim-fade">
@@ -748,6 +761,37 @@ export function TracesPage() {
           <EmptyState title={S.traces.selectSession} />
         )}
       </section>
+
+      {/* Import dialog: the endpoint is per-Agent (the file's own session_meta cannot
+          name a local Agent — its agent_state path belongs to the exporting machine),
+          so the page-level button asks which Agent receives the file. Picking a file
+          confirms and starts the import; everything downstream (validation, 409 on a
+          duplicate session id, refresh + auto-select of the imported Session) is the
+          unchanged runImport flow. */}
+      <Modal open={importOpen} title={S.traces.importTrace} onClose={() => setImportOpen(false)}>
+        <div className="space-y-4">
+          <Select
+            label={S.traces.importAgent}
+            value={importAgentId}
+            onChange={(e) => setImportAgentId(e.target.value)}
+          >
+            {agents.map((a) => (
+              <option key={a.agentId} value={a.agentId}>
+                {agentDisplayName(a)}
+              </option>
+            ))}
+          </Select>
+          <div className="flex justify-end">
+            {/* File pick doubles as the confirm action (primary-button styling on a label
+                so the native picker opens without a detour). */}
+            <label className="inline-flex cursor-pointer items-center justify-center gap-1 rounded-md border border-[var(--accent-bg)] bg-[var(--accent-bg)] px-3 py-1.5 text-sm font-medium text-[var(--accent-fg)] transition-opacity hover:opacity-90">
+              <HiddenFileInput accept=".jsonl" onChange={onPickFile} />
+              <UploadIcon size={14} />
+              {S.traces.importPickFile}
+            </label>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
