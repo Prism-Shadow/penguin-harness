@@ -23,6 +23,7 @@ import { ProjectsRepo } from "./db/repos/projects.js";
 import { GoalsRepo } from "./db/repos/goals.js";
 import { SchedulesRepo } from "./db/repos/schedules.js";
 import { SessionsRepo } from "./db/repos/sessions.js";
+import { TraceIndexRepo } from "./db/repos/trace-index.js";
 import { UiPrefsRepo } from "./db/repos/ui-prefs.js";
 import { UsageRepo } from "./db/repos/usage.js";
 import { UsersRepo } from "./db/repos/users.js";
@@ -38,6 +39,7 @@ import { eventsRoutes, userChannelKey } from "./http/routes/events.js";
 import { projectsRoutes } from "./http/routes/projects.js";
 import { membersRoutes } from "./http/routes/members.js";
 import { modelsRoutes } from "./http/routes/models.js";
+import { chatDefaultsRoutes } from "./http/routes/chat-defaults.js";
 import { vaultRoutes } from "./http/routes/vault.js";
 import { scheduleRoutes } from "./http/routes/schedules.js";
 import { benchmarksRoutes } from "./http/routes/benchmarks.js";
@@ -69,6 +71,7 @@ import { SnapshotService } from "./services/snapshot-service.js";
 import { ProjectConfigService } from "./services/project-config-service.js";
 import { ProjectService } from "./services/project-service.js";
 import { SessionService } from "./services/session-service.js";
+import { TraceIndexService } from "./services/trace-index.js";
 import { TraceService } from "./services/trace-service.js";
 import { UpdateCheckService } from "./services/update-check-service.js";
 import { UsageService } from "./services/usage-service.js";
@@ -98,6 +101,8 @@ export interface AppDeps {
   agentConfigService: AgentConfigService;
   sessionService: SessionService;
   traceService: TraceService;
+  /** Trace-file index (derived cache + reconciler); routes use it for delete-time coherence. */
+  traceIndex: TraceIndexService;
   usageService: UsageService;
   /** GitHub latest-release lookup for the web UI's update reminder (cached, fail-soft). */
   updateCheck: UpdateCheckService;
@@ -153,7 +158,20 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
   const projectConfigService = new ProjectConfigService(config.root);
   const agentConfigService = new AgentConfigService(config.root);
   const agentService = new AgentService(config.root, agentsRepo, agentConfigService);
-  const traceService = new TraceService(config.root);
+  // Session-origin registry: session_meta is the single source of truth (no DB column);
+  // shared by the manager (subagent registration), the loader (self-heal rebuild),
+  // SessionService (creation / adoption / lazy list resolution), and the Trace index /
+  // listing classification.
+  const sessionSources = new SessionSources();
+  // Trace-file index: the derived cache every trace listing/locating path serves from
+  // (mtime-gated reconciler keeps it in step with the on-disk tree; see trace-index.ts).
+  const traceIndexRepo = new TraceIndexRepo(db);
+  const traceIndex = new TraceIndexService(config.root, traceIndexRepo, sessionSources);
+  const traceService = new TraceService(config.root, {
+    index: traceIndex,
+    sessions: sessionsRepo,
+    sources: sessionSources,
+  });
   const workspaceFiles = new WorkspaceFilesService();
   // Per-process secret: preview tokens are short-lived, so losing them on restart is
   // harmless and there is nothing to persist or rotate.
@@ -182,10 +200,6 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
   const titles =
     overrides.titles ??
     new TitleGenerator({ sessions: sessionsRepo, channels, recorder, errors, log });
-  // Session-origin registry: session_meta is the single source of truth (no DB column);
-  // shared by the manager (subagent registration), the loader (self-heal rebuild) and
-  // SessionService (creation / adoption / lazy list resolution).
-  const sessionSources = new SessionSources();
   const manager = new SessionManager({
     sessions: sessionsRepo,
     channels,
@@ -212,6 +226,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     goals: goalsRepo,
     projectConfig: projectConfigService,
     manager,
+    traceIndex,
   });
   const authService = new AuthService({
     users: usersRepo,
@@ -236,6 +251,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     manager,
     projectConfig: projectConfigService,
     sources: sessionSources,
+    traceIndex,
   });
   // Schedule scheduler: active only while the server is running. Only
   // assembled here; start() is called in index.ts (tests drive it via tickOnce, no real timer).
@@ -246,6 +262,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     sessions: sessionsRepo,
     runner: manager,
     sessionCreator: sessionService,
+    projectConfig: projectConfigService,
     errors,
     notify: (userId, event) => {
       channels.get(userChannelKey(userId)).publish(event, "server_event");
@@ -266,6 +283,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     agentConfigService,
     sessionService,
     traceService,
+    traceIndex,
     usageService,
     updateCheck,
     workspaceFiles,
@@ -378,6 +396,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   app.route("/api/projects", projectsRoutes(deps));
   app.route("/api/projects/:projectId/members", membersRoutes(deps));
   app.route("/api/projects/:projectId/models", modelsRoutes(deps));
+  app.route("/api/projects/:projectId/chat-defaults", chatDefaultsRoutes(deps));
   app.route("/api/projects/:projectId/agents", agentsRoutes(deps));
   app.route("/api/projects/:projectId/dirs", dirsRoutes(deps));
   app.route("/api/projects/:projectId/agents/:agentId/config", agentConfigRoutes(deps));

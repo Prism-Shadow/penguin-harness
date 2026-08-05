@@ -8,11 +8,14 @@ import type { ChatItem } from "../src/lib/omni/stream-model";
 import { handoffMessage } from "../src/features/chat/agent-handoff";
 import { buildScheduledMessage } from "@prismshadow/penguin-core/markers";
 import {
+  OUTLINE_MIN_TURNS,
   OUTLINE_WINDOW_AFTER,
   OUTLINE_WINDOW_BEFORE,
   TICK_PITCH_MAX,
   TICK_PITCH_MIN,
   buildOutline,
+  globalTurnNumber,
+  outlineVisible,
   previewText,
   railTickPitch,
   railWindowHalf,
@@ -159,6 +162,35 @@ describe("rail fit (pitch and height-adaptive window half-width)", () => {
       // Ticks plus the two edge-dot marks (~36px worst case) stay within the rail.
       expect(count * railTickPitch(height, count) + 36).toBeLessThanOrEqual(height);
     }
+  });
+});
+
+describe("windowed-history offset (globalTurnNumber / outlineVisible)", () => {
+  it("numbers loaded entries globally: offset (unloaded earlier turns) + loaded index + 1", () => {
+    // A conversation of 10 turns loaded from turn 8 on (server earlierTurns = 7): the
+    // three loaded entries must read 第 8/9/10 轮 — the window never renumbers.
+    const items: ChatItem[] = [
+      user("q8"),
+      assistant("a8"),
+      stats(),
+      user("q9"),
+      assistant("a9"),
+      stats(),
+      user("q10"),
+    ];
+    const entries = buildOutline(items);
+    expect(entries.map((_, i) => globalTurnNumber(7, i))).toEqual([8, 9, 10]);
+    // Without an offset the numbering degenerates to the classic 1-based index.
+    expect(globalTurnNumber(0, 0)).toBe(1);
+  });
+
+  it("the visibility gate counts the WHOLE conversation, not the loaded window", () => {
+    // Two loaded entries alone would hide the outline; 7 earlier turns make it a long
+    // conversation that deserves its index (with the earlier-turns hint shown).
+    expect(outlineVisible(0, 2)).toBe(false);
+    expect(outlineVisible(7, 2)).toBe(true);
+    expect(outlineVisible(0, OUTLINE_MIN_TURNS)).toBe(true);
+    expect(outlineVisible(OUTLINE_MIN_TURNS, 0)).toBe(true);
   });
 });
 

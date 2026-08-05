@@ -11,12 +11,14 @@
  * made — never by guessing. A source checkout is refused outright: overwriting a working tree
  * would destroy uncommitted work.
  *
- * The latest version comes from the GitHub Releases API, the same source of truth install.sh
- * resolves `releases/latest/download` against. The target-a-specific-release flag is spelled
- * `--release <tag>` rather than `--version <tag>`: commander's program-level `-v, --version`
- * intercepts a subcommand's own `--version` when it is written with a space, so
- * `penguin update --version 0.1.2` would silently print the CLI version and do nothing. A flag
- * that works only in its `--version=0.1.2` form is a trap, so it got an unambiguous name.
+ * Release discovery and installer download use the same environment contract as the public
+ * installer entry point: an explicit PENGUIN_DOWNLOAD_BASE_URL has highest download priority;
+ * otherwise auto prefers the OSS latest pointer and immutable release, then falls back to the same
+ * GitHub tag, while oss and github are strict. The target-a-specific-release flag is spelled
+ * `--release <tag>` rather than `--version <tag>`: commander's program-level
+ * `-v, --version` intercepts a subcommand's own `--version` when it is written with a space, so
+ * `penguin update --version 0.1.2` would silently print the CLI version and do nothing. A flag that
+ * works only in its `--version=0.1.2` form is a trap, so it got an unambiguous name.
  *
  * Self-replacement hazard, and how it is handled: for a tarball install the installer deletes and
  * replaces `lib/`, which is the directory this very process is executing from. Two things make
@@ -60,7 +62,7 @@ import { fileURLToPath } from "node:url";
 import { realpathSync } from "node:fs";
 import { VERSION, compareVersions, normalizeVersion } from "@prismshadow/penguin-core";
 import type { Command } from "commander";
-import type { Messages } from "../i18n.js";
+import type { InstallerSource, Messages } from "../i18n.js";
 
 // The version helpers live in core (internal/version.ts) so the server's update-check
 // endpoint shares them; re-exported because they are part of this module's public,
@@ -71,6 +73,29 @@ export { compareVersions, normalizeVersion };
 export const REPO_SLUG = "Prism-Shadow/penguin-harness";
 /** Releases API endpoint for the newest published release. */
 export const LATEST_RELEASE_API = `https://api.github.com/repos/${REPO_SLUG}/releases/latest`;
+/** Public roots shared with the stable installer entry point. */
+export const OSS_ORIGIN = "https://penguin-harness-releases.oss-cn-beijing.aliyuncs.com";
+export const OSS_RELEASE_ROOT = `${OSS_ORIGIN}/releases`;
+export const GITHUB_RELEASE_ROOT = `https://github.com/${REPO_SLUG}/releases/download`;
+
+export type DownloadSource = "auto" | "oss" | "github";
+export type ReleaseDiscovery = "pinned" | "oss" | "github";
+
+export interface ResolvedRelease {
+  version: string;
+  tag: string;
+  discoveredFrom: ReleaseDiscovery;
+}
+
+export interface InstallerCandidate {
+  source: InstallerSource;
+  baseUrl: string;
+  url: string;
+  /** Same-tag payload fallback passed to install.sh after this candidate is selected. */
+  fallbackBaseUrl?: string;
+}
+
+type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
 /** How this copy of the CLI was installed, which decides how it can be upgraded. */
 export type InstallKind = "tarball" | "npm" | "source" | "unknown";
@@ -189,6 +214,8 @@ export function buildInstallerInvocation(opts: {
   hasBundledNode: boolean;
   defaultInstallDir: string;
   version?: string;
+  downloadBaseUrl?: string;
+  downloadFallbackBaseUrl?: string;
 }): { args: string[]; env: Record<string, string> } {
   const args = [opts.scriptPath];
   if (!opts.hasBundledNode) args.push("--universal");
@@ -197,15 +224,68 @@ export function buildInstallerInvocation(opts: {
     env.PENGUIN_INSTALL_DIR = opts.installDir;
   }
   if (opts.version) env.PENGUIN_VERSION = `v${normalizeVersion(opts.version)}`;
+  if (opts.downloadBaseUrl !== undefined) env.PENGUIN_DOWNLOAD_BASE_URL = opts.downloadBaseUrl;
+  if (opts.downloadFallbackBaseUrl !== undefined)
+    env.PENGUIN_DOWNLOAD_FALLBACK_BASE_URL = opts.downloadFallbackBaseUrl;
   return { args, env };
 }
 
-/** Download URL for the installer of a given release (latest when no version is pinned). */
+/** GitHub download URL for the installer of a given release (latest when no version is pinned). */
 export function installerUrl(version?: string): string {
-  const base = `https://github.com/${REPO_SLUG}/releases`;
   return version
-    ? `${base}/download/v${normalizeVersion(version)}/install.sh`
-    : `${base}/latest/download/install.sh`;
+    ? `${GITHUB_RELEASE_ROOT}/v${normalizeVersion(version)}/install.sh`
+    : `https://github.com/${REPO_SLUG}/releases/latest/download/install.sh`;
+}
+
+/** Normalizes the environment contract without silently accepting misspellings. */
+export function parseDownloadSource(value: string | undefined): DownloadSource | null {
+  const source = value || "auto";
+  return source === "auto" || source === "oss" || source === "github" ? source : null;
+}
+
+/** Accepts only absolute HTTPS bases before any remote installer code is downloaded. */
+export function normalizeHttpsBaseUrl(value: string | undefined): string | null {
+  if (!value) return null;
+  const normalized = value.replace(/\/+$/, "");
+  try {
+    const url = new URL(normalized);
+    return url.protocol === "https:" && url.hostname ? normalized : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Explicit mirror settings outrank OSS/GitHub selection, matching the public forwarder. */
+export function configuredInstallerCandidate(
+  baseUrl: string,
+  fallbackBaseUrl?: string,
+): InstallerCandidate {
+  return {
+    source: "configured",
+    baseUrl,
+    url: `${baseUrl}/install.sh`,
+    ...(fallbackBaseUrl ? { fallbackBaseUrl } : {}),
+  };
+}
+
+function isReleaseTag(value: string): boolean {
+  return /^v[0-9A-Za-z][0-9A-Za-z._-]*$/.test(value);
+}
+
+/** Validates OSS latest.json exactly like the public forwarders, including its fixed bucket base. */
+export function parseOssLatestManifest(value: unknown): ResolvedRelease | null {
+  if (typeof value !== "object" || value === null) return null;
+  const manifest = value as {
+    schemaVersion?: unknown;
+    tag?: unknown;
+    releaseBaseUrl?: unknown;
+  };
+  if (manifest.schemaVersion !== 1 || typeof manifest.tag !== "string") return null;
+  if (!isReleaseTag(manifest.tag)) return null;
+  if (manifest.releaseBaseUrl !== `${OSS_RELEASE_ROOT}/${manifest.tag}`) return null;
+  const version = normalizeVersion(manifest.tag);
+  if (!version) return null;
+  return { version, tag: manifest.tag, discoveredFrom: "oss" };
 }
 
 /**
@@ -214,10 +294,10 @@ export function installerUrl(version?: string): string {
  * arrives with no useful body from an unauthenticated client), any other HTTP status, and a body
  * that parses but carries no usable `tag_name`.
  */
-export async function fetchLatestVersion(t: Messages): Promise<string> {
+export async function fetchLatestVersion(t: Messages, fetcher: FetchLike = fetch): Promise<string> {
   let res: Response;
   try {
-    res = await fetch(LATEST_RELEASE_API, {
+    res = await fetcher(LATEST_RELEASE_API, {
       headers: { accept: "application/vnd.github+json", "user-agent": "penguin-cli" },
       signal: AbortSignal.timeout(15_000),
     });
@@ -235,6 +315,93 @@ export async function fetchLatestVersion(t: Messages): Promise<string> {
   if (typeof tag !== "string" || normalizeVersion(tag) === "")
     throw new Error(t.update.apiMalformed());
   return normalizeVersion(tag);
+}
+
+/** Resolves and validates the OSS latest pointer; callers decide whether failure is strict. */
+export async function fetchOssLatestRelease(
+  t: Messages,
+  fetcher: FetchLike = fetch,
+): Promise<ResolvedRelease> {
+  try {
+    const res = await fetcher(`${OSS_ORIGIN}/latest.json`, {
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (!res.ok) throw new Error(String(res.status));
+    const release = parseOssLatestManifest(await res.json());
+    if (!release) throw new Error("invalid manifest");
+    return release;
+  } catch {
+    throw new Error(t.update.ossUnavailable());
+  }
+}
+
+/** Resolves one immutable target tag before planning or downloading anything. */
+export async function resolveRelease(
+  source: DownloadSource,
+  requestedRelease: string | undefined,
+  t: Messages,
+  fetcher: FetchLike = fetch,
+): Promise<ResolvedRelease> {
+  if (requestedRelease) {
+    const version = normalizeVersion(requestedRelease);
+    return { version, tag: `v${version}`, discoveredFrom: "pinned" };
+  }
+
+  if (source !== "github") {
+    try {
+      return await fetchOssLatestRelease(t, fetcher);
+    } catch (error) {
+      if (source === "oss") throw error;
+    }
+  }
+
+  const version = await fetchLatestVersion(t, fetcher);
+  return { version, tag: `v${version}`, discoveredFrom: "github" };
+}
+
+/**
+ * Produces immutable, same-tag installer candidates. If auto had to discover the target through
+ * GitHub because OSS metadata was unavailable, it follows the forwarder and stays on GitHub.
+ */
+export function installerCandidates(
+  source: DownloadSource,
+  release: ResolvedRelease,
+): InstallerCandidate[] {
+  const githubBase = `${GITHUB_RELEASE_ROOT}/${release.tag}`;
+  const github: InstallerCandidate = {
+    source: "github",
+    baseUrl: githubBase,
+    url: `${githubBase}/install.sh`,
+  };
+  if (source === "github" || (source === "auto" && release.discoveredFrom === "github")) {
+    return [github];
+  }
+
+  const ossBase = `${OSS_RELEASE_ROOT}/${release.tag}`;
+  const oss: InstallerCandidate = {
+    source: "oss",
+    baseUrl: ossBase,
+    url: `${ossBase}/install.sh`,
+    ...(source === "auto" ? { fallbackBaseUrl: githubBase } : {}),
+  };
+  return source === "auto" ? [oss, github] : [oss];
+}
+
+/** Downloads fully before execution; transport failure advances only to the next same-tag source. */
+export async function downloadInstaller(
+  candidates: InstallerCandidate[],
+  fetcher: FetchLike = fetch,
+): Promise<{ script: string; candidate: InstallerCandidate } | null> {
+  for (const candidate of candidates) {
+    try {
+      const res = await fetcher(candidate.url, { signal: AbortSignal.timeout(30_000) });
+      if (!res.ok) continue;
+      return { script: await res.text(), candidate };
+    } catch {
+      // Try the next same-version candidate, if one was configured.
+    }
+  }
+  return null;
 }
 
 /** Interactive y/N confirmation; SIGINT and stream close both count as "no", so it can never hang. */
@@ -370,7 +537,10 @@ export function registerUpdateCommand(program: Command, t: Messages): void {
     .option("-y, --yes", t.update.yes)
     .action(async (opts: { check?: boolean; release?: string; yes?: boolean }) => {
       const current = VERSION;
-      const target = opts.release ? normalizeVersion(opts.release) : await fetchLatestVersion(t);
+      const source = parseDownloadSource(process.env.PENGUIN_DOWNLOAD_SOURCE);
+      if (!source) throw new Error(t.update.invalidDownloadSource());
+      const release = await resolveRelease(source, opts.release, t);
+      const target = release.version;
       const modulePath = selfPath();
       const defaultInstallDir = path.join(homedir(), ".penguin");
       const plan = planUpdate({
@@ -419,14 +589,28 @@ export function registerUpdateCommand(program: Command, t: Messages): void {
       );
       if (!(await confirmUpgrade(opts.yes, t))) return;
 
-      const url = installerUrl(opts.release ? target : undefined);
-      let script: string;
-      try {
-        const res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
-        if (!res.ok) throw new Error(String(res.status));
-        script = await res.text();
-      } catch {
-        process.stdout.write(`${t.update.installerFetchFailed(url)}\n`);
+      const explicitBaseValue = process.env.PENGUIN_DOWNLOAD_BASE_URL;
+      const explicitFallbackValue = process.env.PENGUIN_DOWNLOAD_FALLBACK_BASE_URL;
+      let candidates: InstallerCandidate[];
+      if (explicitBaseValue) {
+        const explicitBase = normalizeHttpsBaseUrl(explicitBaseValue);
+        if (!explicitBase)
+          throw new Error(t.update.downloadBaseMustBeHttps("PENGUIN_DOWNLOAD_BASE_URL"));
+        let explicitFallback: string | undefined;
+        if (explicitFallbackValue) {
+          const normalizedFallback = normalizeHttpsBaseUrl(explicitFallbackValue);
+          if (!normalizedFallback)
+            throw new Error(t.update.downloadBaseMustBeHttps("PENGUIN_DOWNLOAD_FALLBACK_BASE_URL"));
+          explicitFallback = normalizedFallback;
+        }
+        candidates = [configuredInstallerCandidate(explicitBase, explicitFallback)];
+      } else {
+        candidates = installerCandidates(source, release);
+      }
+      const downloaded = await downloadInstaller(candidates);
+      if (!downloaded) {
+        const sources = candidates.map((candidate) => candidate.source);
+        process.stdout.write(`${t.update.installerFetchFailed(sources)}\n`);
         process.exitCode = 1;
         return;
       }
@@ -439,14 +623,17 @@ export function registerUpdateCommand(program: Command, t: Messages): void {
       // not something to rely on.
       const scriptDir = mkdtempSync(path.join(tmpdir(), "penguin-update-"));
       const scriptPath = path.join(scriptDir, "install.sh");
-      writeFileSync(scriptPath, script, { mode: 0o700, flag: "wx" });
+      writeFileSync(scriptPath, downloaded.script, { mode: 0o700, flag: "wx" });
 
       const { args, env } = buildInstallerInvocation({
         scriptPath,
         installDir,
         hasBundledNode,
         defaultInstallDir,
-        version: opts.release ? target : undefined,
+        version: target,
+        downloadBaseUrl: downloaded.candidate.baseUrl,
+        // Always override the inherited environment: an absent fallback must clear a stale one.
+        downloadFallbackBaseUrl: downloaded.candidate.fallbackBaseUrl ?? "",
       });
       // Past this point the installer may delete the tree this process runs from. Everything below
       // is already-loaded code and already-resolved strings: no import, no file read, no re-entry.

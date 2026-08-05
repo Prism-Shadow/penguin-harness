@@ -6,6 +6,10 @@
 
 <p align="center"><b>Your Automated Agent Builder, Right on Your Desktop / Server</b><br />Create Self-Evolving Agents in One Click</p>
 
+<h3 align="center"><a href="https://penguin.ooo/download/">⬇️ Click to Download</a></h3>
+
+<p align="center">macOS · Windows · Linux</p>
+
 <p align="center">
   <a href="https://www.producthunt.com/products/penguinharness?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-penguinharness" target="_blank" rel="noopener noreferrer"><img alt="PenguinHarness - Let Agents Autonomously Build Better Agents for $0.02 | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1202577&amp;theme=light&amp;t=1784804711946" /></a>
 </p>
@@ -108,16 +112,64 @@ Each family's latest generation only — the app's **Models** page lists every b
 
 ## Installation
 
-Every route installs the same `penguin` command: `penguin web` launches the full Web experience (multi-session chat, agent/skill/model management, usage stats, Trace observability, evaluation center; first login is `admin` with the initial password printed on the server's first start, of the form `penguin-1234` — change it right after), and models are configured on the in-app Models page. The online installers bundle their own Node runtime — unpack and run; upgrades and reinstalls never touch your data.
+Two ways in — both work on the same `~/.penguin/data` root, so a desktop install and a CLI install can be mixed freely:
 
-### 🐧 Linux (online install)
+- **🖥️ Desktop app** — a double-click install: it embeds the server and opens already signed in, no terminal involved.
+- **⌨️ CLI** — a one-line installer (or npm / offline package) puts the `penguin` command on the machine; `penguin web` then serves the full Web experience in your browser at `http://127.0.0.1:7364` (multi-session chat, agent / skill / model management, usage stats, Trace observability, evaluation center). The online installers bundle their own Node runtime — unpack and run; upgrades and reinstalls never touch your data.
+
+> [!NOTE]
+> On a CLI install, the first Web login is `admin`, with the initial password printed on the server's first start (of the form `penguin-1234`) — change it right after. Models are configured on the in-app **Models** page.
+
+### 🖥️ Desktop app
+
+The full Web experience as a standalone application: it embeds the server and opens already signed in — no terminal, no login page, no initial password to copy. It works on the same `~/.penguin/data` root as a CLI install, so the two can be used interchangeably (a data root only ever runs one server; if a CLI-started instance is already up, the app attaches to it).
+
+**[⬇️ Get it from the download page](https://penguin.ooo/download)** — the page serves the OSS-accelerated mirror when it is reachable, and every installer is also attached to each [GitHub Release](https://github.com/Prism-Shadow/penguin-harness/releases).
+
+| Platform    | Installers                  |
+| ----------- | --------------------------- |
+| macOS 11+   | dmg (Apple Silicon / Intel) |
+| Windows 10+ | installer (.exe, x64)       |
+| Linux (x64) | AppImage / deb              |
+
+Current builds are unsigned, so the system may block the very first launch. Expand your platform for the one-time fix:
+
+<details>
+<summary><b>🍎 macOS says “PenguinHarness” is damaged and can’t be opened</b></summary>
+
+macOS quarantines files downloaded from the internet, and the missing signature makes that flag surface as a false “damaged” alert. Deleting the flag clears it:
+
+1. Open the downloaded dmg and drag `PenguinHarness.app` into the **Applications** folder.
+2. Open **Terminal** (Launchpad → Other → Terminal).
+3. Paste this command into Terminal and press Enter, then type your login password (nothing shows while you type; press Enter when done):
+
+   ```bash
+   sudo xattr -rd com.apple.quarantine /Applications/PenguinHarness.app
+   ```
+
+4. Once it finishes, double-click the app — it now opens normally.
+
+</details>
+
+<details>
+<summary><b>🪟 Windows SmartScreen says “Windows protected your PC”</b></summary>
+
+The installer is not signed yet, so SmartScreen holds the first run: click **More info**, then **Run anyway** to continue installing — first run only.
+
+</details>
+
+<details>
+<summary><b>🐧 Linux: double-clicking the AppImage does nothing</b></summary>
+
+Browsers download AppImages without the execute permission. Grant it once and the app starts normally from then on (the deb package installs through the package manager and is not affected):
 
 ```bash
-curl -fsSL https://penguin.ooo/install.sh | sh
-penguin web        # start the service and open http://127.0.0.1:7364
+chmod +x penguin-desktop-linux-x86_64.AppImage
 ```
 
-### 🍎 macOS (online install)
+</details>
+
+### 🐧🍎 Linux / macOS (online install)
 
 ```bash
 curl -fsSL https://penguin.ooo/install.sh | sh
@@ -198,7 +250,7 @@ for await (const output of session.run([userText("Create hello.txt containing hi
 ## Roadmap
 
 - [ ] Public release of the benchmark suite
-- [ ] Desktop app
+- [x] Desktop app
 - [x] Windows support
 - [ ] Agent company and templates
 - [ ] Company-level self evolving

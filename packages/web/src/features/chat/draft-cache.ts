@@ -132,3 +132,20 @@ export function clearDraft(key: string, storage: DraftStorage = localStorage): v
     /* ignore */
   }
 }
+
+/**
+ * Drops the draft-cached model selection for this user × Project, so an open draft follows
+ * a just-changed Project default model instead of pinning the old pick forever. Shared by
+ * the models page and the project-settings default-model control (single implementation —
+ * both surfaces flip the SAME `default_model`, so they must release the draft pin the same
+ * way). Everything else in the draft is preserved; a draft with no cached pick is a no-op.
+ */
+export function clearDraftModelRef(
+  userId: string,
+  projectId: string,
+  storage: DraftStorage = localStorage,
+): void {
+  const key = draftKey(userId, projectId);
+  const draft = loadDraft(key, storage);
+  if (draft.modelRef) saveDraft(key, { ...draft, modelRef: undefined }, storage);
+}

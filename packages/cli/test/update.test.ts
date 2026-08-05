@@ -4,7 +4,7 @@
  * argv/env built for each combination of install dir and bundled runtime, and the decision the
  * command makes before it touches anything (planUpdate) plus its confirmation gate.
  *
- * No network and no filesystem mutation — every function under test takes its inputs as arguments.
+ * No real network and no filesystem mutation — every I/O helper takes its inputs as arguments.
  */
 import { describe, expect, it } from "vitest";
 import { Command } from "commander";
@@ -12,13 +12,20 @@ import {
   buildInstallerInvocation,
   compareVersions,
   confirmationMode,
+  configuredInstallerCandidate,
   detectInstall,
   detectPackageManager,
+  downloadInstaller,
   globalInstallCommand,
+  installerCandidates,
   installerUrl,
   normalizeVersion,
+  normalizeHttpsBaseUrl,
+  parseDownloadSource,
+  parseOssLatestManifest,
   planUpdate,
   registerUpdateCommand,
+  resolveRelease,
 } from "../src/commands/update.js";
 import { getMessages } from "../src/i18n.js";
 
@@ -175,6 +182,171 @@ describe("installerUrl", () => {
   });
 });
 
+describe("release source selection", () => {
+  const ossOrigin = "https://penguin-harness-releases.oss-cn-beijing.aliyuncs.com";
+  const githubApi = "https://api.github.com/repos/Prism-Shadow/penguin-harness/releases/latest";
+  const manifest = {
+    schemaVersion: 1,
+    tag: "v0.2.1",
+    version: "0.2.1",
+    releaseBaseUrl: `${ossOrigin}/releases/v0.2.1`,
+  };
+  const t = getMessages("en");
+
+  it("accepts the same auto/oss/github environment contract as the installers", () => {
+    expect(parseDownloadSource(undefined)).toBe("auto");
+    expect(parseDownloadSource("auto")).toBe("auto");
+    expect(parseDownloadSource("oss")).toBe("oss");
+    expect(parseDownloadSource("github")).toBe("github");
+    expect(parseDownloadSource("OSS")).toBeNull();
+    expect(parseDownloadSource("mirror")).toBeNull();
+  });
+
+  it("accepts only absolute HTTPS mirror bases and removes trailing slashes", () => {
+    expect(normalizeHttpsBaseUrl("https://mirror.example/releases/v0.2.1/")).toBe(
+      "https://mirror.example/releases/v0.2.1",
+    );
+    expect(normalizeHttpsBaseUrl("http://mirror.example/releases/v0.2.1")).toBeNull();
+    expect(normalizeHttpsBaseUrl("/releases/v0.2.1")).toBeNull();
+    expect(normalizeHttpsBaseUrl(undefined)).toBeNull();
+  });
+
+  it("an explicit mirror is one strict installer candidate with its configured fallback", () => {
+    expect(
+      configuredInstallerCandidate(
+        "https://mirror.example/releases/v0.2.1",
+        "https://backup.example/releases/v0.2.1",
+      ),
+    ).toEqual({
+      source: "configured",
+      baseUrl: "https://mirror.example/releases/v0.2.1",
+      url: "https://mirror.example/releases/v0.2.1/install.sh",
+      fallbackBaseUrl: "https://backup.example/releases/v0.2.1",
+    });
+  });
+
+  it("validates latest.json's schema, tag, and fixed OSS release base", () => {
+    expect(parseOssLatestManifest(manifest)).toEqual({
+      version: "0.2.1",
+      tag: "v0.2.1",
+      discoveredFrom: "oss",
+    });
+    expect(parseOssLatestManifest({ ...manifest, schemaVersion: 2 })).toBeNull();
+    expect(parseOssLatestManifest({ ...manifest, tag: "../bad" })).toBeNull();
+    expect(
+      parseOssLatestManifest({ ...manifest, releaseBaseUrl: "https://example.com/v0.2.1" }),
+    ).toBeNull();
+  });
+
+  it("auto discovers latest through OSS without touching GitHub when metadata is valid", async () => {
+    const calls: string[] = [];
+    const fetcher = async (url: string) => {
+      calls.push(url);
+      return new Response(JSON.stringify(manifest), { status: 200 });
+    };
+    await expect(resolveRelease("auto", undefined, t, fetcher)).resolves.toMatchObject({
+      tag: "v0.2.1",
+      discoveredFrom: "oss",
+    });
+    expect(calls).toEqual([`${ossOrigin}/latest.json`]);
+  });
+
+  it("auto falls back to GitHub discovery when OSS metadata is unavailable", async () => {
+    const calls: string[] = [];
+    const fetcher = async (url: string) => {
+      calls.push(url);
+      if (url === `${ossOrigin}/latest.json`) return new Response("unavailable", { status: 503 });
+      return new Response(JSON.stringify({ tag_name: "v0.2.2" }), { status: 200 });
+    };
+    await expect(resolveRelease("auto", undefined, t, fetcher)).resolves.toEqual({
+      version: "0.2.2",
+      tag: "v0.2.2",
+      discoveredFrom: "github",
+    });
+    expect(calls).toEqual([`${ossOrigin}/latest.json`, githubApi]);
+  });
+
+  it("forced oss is strict, while forced github skips OSS", async () => {
+    const ossCalls: string[] = [];
+    const unavailable = async (url: string) => {
+      ossCalls.push(url);
+      return new Response("unavailable", { status: 503 });
+    };
+    await expect(resolveRelease("oss", undefined, t, unavailable)).rejects.toThrow(
+      t.update.ossUnavailable(),
+    );
+    expect(ossCalls).toEqual([`${ossOrigin}/latest.json`]);
+
+    const githubCalls: string[] = [];
+    const github = async (url: string) => {
+      githubCalls.push(url);
+      return new Response(JSON.stringify({ tag_name: "v0.2.2" }), { status: 200 });
+    };
+    await expect(resolveRelease("github", undefined, t, github)).resolves.toMatchObject({
+      tag: "v0.2.2",
+      discoveredFrom: "github",
+    });
+    expect(githubCalls).toEqual([githubApi]);
+  });
+
+  it("a requested release skips discovery and produces same-tag source candidates", async () => {
+    let fetched = false;
+    const shouldNotFetch = async () => {
+      fetched = true;
+      throw new Error("unexpected fetch");
+    };
+    const release = await resolveRelease("auto", "0.2.0", t, shouldNotFetch);
+    expect(fetched).toBe(false);
+    expect(installerCandidates("auto", release)).toEqual([
+      {
+        source: "oss",
+        baseUrl: `${ossOrigin}/releases/v0.2.0`,
+        url: `${ossOrigin}/releases/v0.2.0/install.sh`,
+        fallbackBaseUrl: "https://github.com/Prism-Shadow/penguin-harness/releases/download/v0.2.0",
+      },
+      {
+        source: "github",
+        baseUrl: "https://github.com/Prism-Shadow/penguin-harness/releases/download/v0.2.0",
+        url: "https://github.com/Prism-Shadow/penguin-harness/releases/download/v0.2.0/install.sh",
+      },
+    ]);
+  });
+
+  it("auto stays on GitHub when OSS latest discovery failed", () => {
+    const release = {
+      version: "0.2.2",
+      tag: "v0.2.2",
+      discoveredFrom: "github" as const,
+    };
+    expect(installerCandidates("auto", release).map((candidate) => candidate.source)).toEqual([
+      "github",
+    ]);
+    expect(installerCandidates("github", release).map((candidate) => candidate.source)).toEqual([
+      "github",
+    ]);
+    expect(installerCandidates("oss", release).map((candidate) => candidate.source)).toEqual([
+      "oss",
+    ]);
+  });
+
+  it("installer transport failure falls back to the matching GitHub tag", async () => {
+    const release = parseOssLatestManifest(manifest);
+    expect(release).not.toBeNull();
+    const candidates = installerCandidates("auto", release!);
+    const calls: string[] = [];
+    const fetcher = async (url: string) => {
+      calls.push(url);
+      return url.includes("aliyuncs.com")
+        ? new Response("unavailable", { status: 503 })
+        : new Response("#!/bin/sh\n", { status: 200 });
+    };
+    const downloaded = await downloadInstaller(candidates, fetcher);
+    expect(downloaded?.candidate.source).toBe("github");
+    expect(downloaded?.script).toBe("#!/bin/sh\n");
+    expect(calls).toEqual(candidates.map((candidate) => candidate.url));
+  });
+});
+
 describe("buildInstallerInvocation (preserves the shape of the install being upgraded)", () => {
   const base = {
     scriptPath: "/tmp/penguin-install-1.sh",
@@ -245,6 +417,63 @@ describe("buildInstallerInvocation (preserves the shape of the install being upg
       args: ["/tmp/penguin-install-1.sh", "--universal"],
       env: { PENGUIN_INSTALL_DIR: "/opt/penguin", PENGUIN_VERSION: "v0.2.0" },
     });
+  });
+
+  it("pins the selected payload source and same-version fallback for the child installer", () => {
+    expect(
+      buildInstallerInvocation({
+        ...base,
+        installDir: "/home/me/.penguin",
+        hasBundledNode: true,
+        version: "0.2.0",
+        downloadBaseUrl:
+          "https://penguin-harness-releases.oss-cn-beijing.aliyuncs.com/releases/v0.2.0",
+        downloadFallbackBaseUrl:
+          "https://github.com/Prism-Shadow/penguin-harness/releases/download/v0.2.0",
+      }).env,
+    ).toEqual({
+      PENGUIN_VERSION: "v0.2.0",
+      PENGUIN_DOWNLOAD_BASE_URL:
+        "https://penguin-harness-releases.oss-cn-beijing.aliyuncs.com/releases/v0.2.0",
+      PENGUIN_DOWNLOAD_FALLBACK_BASE_URL:
+        "https://github.com/Prism-Shadow/penguin-harness/releases/download/v0.2.0",
+    });
+  });
+
+  it("explicitly clears an inherited fallback when the selected source has none", () => {
+    expect(
+      buildInstallerInvocation({
+        ...base,
+        installDir: "/home/me/.penguin",
+        hasBundledNode: true,
+        version: "0.2.0",
+        downloadBaseUrl: "https://github.com/Prism-Shadow/penguin-harness/releases/download/v0.2.0",
+        downloadFallbackBaseUrl: "",
+      }).env,
+    ).toEqual({
+      PENGUIN_VERSION: "v0.2.0",
+      PENGUIN_DOWNLOAD_BASE_URL:
+        "https://github.com/Prism-Shadow/penguin-harness/releases/download/v0.2.0",
+      PENGUIN_DOWNLOAD_FALLBACK_BASE_URL: "",
+    });
+  });
+
+  it("localizes the source list and connector in installer download failures", () => {
+    expect(getMessages("en").update.installerFetchFailed(["oss", "github"])).toBe(
+      "Could not download the installer from the OSS mirror or GitHub. Check your network and retry.",
+    );
+    expect(getMessages("zh").update.installerFetchFailed(["oss"])).toBe(
+      "无法从 OSS 镜像下载安装脚本。请检查网络后重试。",
+    );
+    expect(getMessages("zh").update.installerFetchFailed(["github"])).toBe(
+      "无法从 GitHub 下载安装脚本。请检查网络后重试。",
+    );
+    expect(getMessages("zh").update.installerFetchFailed(["oss", "github"])).toBe(
+      "无法从 OSS 镜像或 GitHub 下载安装脚本。请检查网络后重试。",
+    );
+    expect(getMessages("zh").update.installerFetchFailed(["configured"])).toBe(
+      "无法从配置的镜像下载安装脚本。请检查网络后重试。",
+    );
   });
 });
 

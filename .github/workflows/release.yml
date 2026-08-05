@@ -84,6 +84,8 @@ jobs:
     needs: check-release
     if: needs.check-release.outputs.exists != 'true'
     uses: ./.github/workflows/desktop-build.yml
+    with:
+      tag: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
 
   release:
     needs: [check-release, desktop]
@@ -316,8 +318,8 @@ jobs:
 
       # Desktop installers built by the desktop job (three-OS matrix): collected here so
       # they are part of the Release's initial (immutable) asset set. Their checksums go
-      # in a separate SHA256SUMS.desktop — the OSS mirror script's canonical file list
-      # stays untouched (desktop installers are not mirrored yet).
+      # in a separate SHA256SUMS.desktop, which is also how the OSS mirror script verifies
+      # them (its manifest lists the installers by their version-less names).
       - name: Collect desktop artifacts
         uses: actions/download-artifact@v4
         with:

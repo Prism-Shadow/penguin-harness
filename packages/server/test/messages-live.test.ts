@@ -85,8 +85,8 @@ describe("messages live tail", () => {
     await t.cleanup();
   });
 
-  const getMessages = async (): Promise<MessagesResponse> => {
-    const res = await apiClient(t.app, cookie).get(`/api/sessions/${SID}/messages`);
+  const getMessages = async (query = ""): Promise<MessagesResponse> => {
+    const res = await apiClient(t.app, cookie).get(`/api/sessions/${SID}/messages${query}`);
     expect(res.status).toBe(200);
     return (await res.json()) as MessagesResponse;
   };
@@ -133,5 +133,59 @@ describe("messages live tail", () => {
     expect(t.deps.manager.liveFragments(SID)).toEqual([]);
     const after = await getMessages();
     expect(after.live).toBeUndefined();
+  });
+
+  it("windowed reads: `live` rides TAIL pages with identical semantics and never rides `before` pages", async () => {
+    t.deps.manager.adopt(row, midStreamFakeSession(SID));
+    await t.deps.manager.startTask(SID, [userText("go")]);
+    await waitFor(() => t.deps.manager.pendingApprovalCount(SID) === 1);
+
+    const full = await getMessages();
+    const tail = await getMessages("?tailLimit=5");
+    expect(tail.page).toBeDefined();
+    expect(tail.live).toBeDefined();
+    // Same capture as the full read: cursor shape and open-fragment snapshot.
+    expect(tail.live!.cursor).toMatch(/^[0-9a-f]{8}-\d+$/);
+    expect(tail.live!.fragments.map((f) => (f.payload as { type: string }).type)).toEqual(
+      full.live!.fragments.map((f) => (f.payload as { type: string }).type),
+    );
+
+    // A `before` page is immutable history: never a live attachment, even mid-run.
+    const before = await getMessages("?before=1:0&limit=5");
+    expect(before.page).toBeDefined();
+    expect(before.live).toBeUndefined();
+
+    expect(t.deps.manager.decideApproval(SID, "tc-lv", "deny")).toBe(true);
+    await waitFor(() => t.deps.manager.statusOf(SID) === "idle");
+  });
+
+  it("the parameterless read stays byte-identical to the pre-pagination contract (no page envelope)", async () => {
+    t.deps.manager.adopt(row, midStreamFakeSession(SID));
+    await t.deps.manager.startTask(SID, [userText("go")]);
+    await waitFor(() => t.deps.manager.pendingApprovalCount(SID) === 1);
+    expect(t.deps.manager.decideApproval(SID, "tc-lv", "deny")).toBe(true);
+    await waitFor(() => t.deps.manager.statusOf(SID) === "idle");
+
+    const res = await apiClient(t.app, cookie).get(`/api/sessions/${SID}/messages`);
+    expect(res.status).toBe(200);
+    const raw = await res.text();
+    const body = JSON.parse(raw) as MessagesResponse;
+    expect(Object.keys(body)).toEqual(["messages"]);
+    // Exactly the legacy serialization: the full transcript and nothing else.
+    const expected = JSON.stringify({
+      messages: await t.deps.traceService.readMessages(row.projectId, row.agentId, row.sessionId),
+    });
+    expect(raw).toBe(expected);
+    // Windowed-param validation stays loud rather than guessy.
+    const bad = await apiClient(t.app, cookie).get(
+      `/api/sessions/${SID}/messages?tailLimit=5&before=1:0`,
+    );
+    expect(bad.status).toBe(400);
+    const badLimit = await apiClient(t.app, cookie).get(`/api/sessions/${SID}/messages?limit=5`);
+    expect(badLimit.status).toBe(400);
+    const badCursor = await apiClient(t.app, cookie).get(
+      `/api/sessions/${SID}/messages?before=xyz`,
+    );
+    expect(badCursor.status).toBe(400);
   });
 });

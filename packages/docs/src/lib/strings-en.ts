@@ -13,6 +13,7 @@ export const en: Strings = {
     contract: "CONTRACT.md",
     features: "Features",
     blog: "Blog",
+    download: "Download",
     docs: "Docs",
     github: "GitHub",
     openMenu: "Open navigation",

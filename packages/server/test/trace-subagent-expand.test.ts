@@ -22,7 +22,8 @@ import {
   userText,
 } from "@prismshadow/penguin-core";
 import type { OmniMessage, SessionMetaPayload } from "@prismshadow/penguin-core";
-import { TraceService } from "../src/services/trace-service.js";
+import type { TraceService } from "../src/services/trace-service.js";
+import { makeTraceHarness } from "./helpers.js";
 
 const PROJECT = "proj";
 const PARENT_AGENT = "default_agent";
@@ -63,12 +64,15 @@ async function writeTrace(
 describe("TraceService.readMessages — sub-session expansion", () => {
   let root: string;
   let svc: TraceService;
+  let harness: ReturnType<typeof makeTraceHarness>;
 
   beforeEach(async () => {
     root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-trace-expand-"));
-    svc = new TraceService(root);
+    harness = makeTraceHarness(root);
+    svc = harness.service;
   });
   afterEach(async () => {
+    harness.close();
     await fs.rm(root, { recursive: true, force: true });
   });
 

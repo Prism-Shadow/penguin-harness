@@ -9,6 +9,9 @@
 /** UI language. */
 export type Language = "en" | "zh";
 
+/** Installer locations are localized at the message boundary, not embedded in update logic. */
+export type InstallerSource = "configured" | "oss" | "github";
+
 /** Readiness probe failure classes; selects which hint `webProbeFailed` appends. */
 export type WebProbeFailureKind =
   "timeout" | "refused" | "reset" | "permission" | "dns" | "unknown";
@@ -119,7 +122,10 @@ export interface Messages {
     rateLimited(): string;
     apiFailed(status: number): string;
     apiMalformed(): string;
-    installerFetchFailed(url: string): string;
+    invalidDownloadSource(): string;
+    downloadBaseMustBeHttps(name: string): string;
+    ossUnavailable(): string;
+    installerFetchFailed(sources: InstallerSource[]): string;
   };
 
   // —— Runtime output ——
@@ -384,7 +390,19 @@ const en: Messages = {
     apiFailed: (status) => `The GitHub release lookup failed with HTTP ${status}.`,
     apiMalformed: () =>
       "The GitHub release lookup returned an unexpected response with no usable version tag.",
-    installerFetchFailed: (url) => `Could not download the installer from ${url}.`,
+    invalidDownloadSource: () => "PENGUIN_DOWNLOAD_SOURCE must be auto, oss, or github.",
+    downloadBaseMustBeHttps: (name) => `${name} must be an absolute HTTPS URL.`,
+    ossUnavailable: () => "The OSS mirror is unavailable or its release metadata is invalid.",
+    installerFetchFailed: (sources) =>
+      `Could not download the installer from ${sources
+        .map((source) =>
+          source === "configured"
+            ? "the configured mirror"
+            : source === "oss"
+              ? "the OSS mirror"
+              : "GitHub",
+        )
+        .join(" or ")}. Check your network and retry.`,
   },
 
   header: headerEn,
@@ -598,7 +616,19 @@ const zh: Messages = {
       "GitHub 对版本查询做了限流。请等待几分钟后重试，或用 --release <tag> 跳过查询。",
     apiFailed: (status) => `GitHub 版本查询失败，HTTP ${status}。`,
     apiMalformed: () => "GitHub 版本查询返回了非预期的响应，其中没有可用的版本号。",
-    installerFetchFailed: (url) => `无法从 ${url} 下载安装脚本。`,
+    invalidDownloadSource: () => "PENGUIN_DOWNLOAD_SOURCE 必须是 auto、oss 或 github。",
+    downloadBaseMustBeHttps: (name) => `${name} 必须是绝对 HTTPS URL。`,
+    ossUnavailable: () => "OSS 镜像不可用，或其版本元数据无效。",
+    installerFetchFailed: (sources) => {
+      const sourceText = sources
+        .map((source) =>
+          source === "configured" ? "配置的镜像" : source === "oss" ? "OSS 镜像" : "GitHub",
+        )
+        .join("或 ");
+      const leadingSpace = /^[A-Za-z]/.test(sourceText) ? " " : "";
+      const trailingSpace = /[A-Za-z]$/.test(sourceText) ? " " : "";
+      return `无法从${leadingSpace}${sourceText}${trailingSpace}下载安装脚本。请检查网络后重试。`;
+    },
   },
 
   header: headerZh,

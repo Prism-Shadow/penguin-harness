@@ -51,6 +51,7 @@ import { Skeleton } from "../../components/ui/skeleton";
 import { Truncated } from "../../components/ui/truncated";
 import { Dropdown } from "../../components/ui/dropdown";
 import { EmptyState } from "../../components/ui/empty-state";
+import { NAV_ICONS } from "../../components/ui/icons";
 import { toastError } from "../../components/ui/toast";
 import { MessageStream } from "./message-stream";
 import type { StreamRenderContext } from "./message-stream";
@@ -288,16 +289,43 @@ export function ChatPage() {
     discard: discardSessionDraft,
   } = useSessionDraft(selected?.sessionId ?? null);
 
+  // The rendered transcript: backfilled older windows (frozen items, negative ids) ahead
+  // of the live tail model's items. Version keys the memo — a prepend bumps it.
+  const allItems = useMemo(
+    () =>
+      stream.prefixItems.length > 0
+        ? [...stream.prefixItems, ...stream.model.items]
+        : stream.model.items,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [stream.version, routeSessionId],
+  );
   // Derivations over the stream items (the model mutates in place, so `version` — its own
   // repaint signal — keys the memos; the session id covers a switch racing a same-valued
-  // version): the composer's ↑/↓ recall list and the left outline's entries.
+  // version): the composer's ↑/↓ recall list and the left outline's entries. Both read the
+  // LOADED transcript (prefix included), so backfilling extends recall and the index alike.
   const inputHistory = useMemo(
-    () => buildInputHistory(stream.model.items),
+    () => buildInputHistory(allItems),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [stream.version, routeSessionId],
   );
   const outline = useMemo(
-    () => buildOutline(stream.model.items),
+    () => buildOutline(allItems),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [stream.version, routeSessionId],
+  );
+  // The subagents panel's model view: the live model, with backfilled windows' items and
+  // nested subagent models merged in — a chip clicked on a backfilled turn must still
+  // resolve its historical Task slice and child conversation. Scalar fields snapshot per
+  // version, which is exactly as fresh as everything else the panel renders.
+  const panelModel = useMemo<StreamModel>(
+    () =>
+      stream.prefixItems.length > 0 || stream.prefixSubagents.size > 0
+        ? {
+            ...stream.model,
+            items: [...allItems],
+            subagents: new Map([...stream.prefixSubagents, ...stream.model.subagents]),
+          }
+        : stream.model,
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [stream.version, routeSessionId],
   );
@@ -346,6 +374,10 @@ export function ChatPage() {
   // dot still signal), and never re-triggers an already-open panel (that would yank a pinned
   // historical graph back to the latest Task); the tracker consumes the attempt regardless.
   const panelTaskScopeRef = useRef(createPanelTaskScope());
+  // Deliberately the LIVE model's items only (never the backfilled prefix): the tracker
+  // reads an INCREASE as "the user started a new Task", and a scroll-up backfill growing
+  // the count would spuriously re-arm the auto-open mid-conversation. The latest Task
+  // always lives in the live tail window, so live-only loses nothing.
   const taskCount = taskStartCount(stream.model.items);
   const liveSpawn = stream.taskState !== "idle" && latestTaskHasSubagent(stream.model);
   useEffect(() => {
@@ -1088,6 +1120,7 @@ export function ChatPage() {
           {!railFit.shown && (
             <OutlineMenuButton
               entries={outline}
+              turnOffset={stream.outlineOffset}
               scrollRef={streamScrollRef}
               running={stream.taskState !== "idle"}
             />
@@ -1159,6 +1192,39 @@ export function ChatPage() {
                 </p>
               </div>
             </div>
+            {/* Jump to this Session's Trace: SPA-navigates to the Trace page deep-linked to
+                the owning Agent AND this Session (?agentId= focuses/expands the Agent group,
+                ?sessionId= auto-selects — a Session beyond the first loaded page resolves via
+                the Trace page's full-fetch fallback). Only reachable for a real Session: this
+                whole header renders behind the `selected` guard, so a draft never shows it. */}
+            <div className="border-t border-gray-100 py-1 dark:border-gray-800">
+              <button
+                type="button"
+                onClick={() => {
+                  setInfoOpen(false);
+                  navigate(
+                    `/traces?agentId=${encodeURIComponent(selected.agentId)}&sessionId=${encodeURIComponent(selected.sessionId)}`,
+                  );
+                }}
+                className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800"
+              >
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.7"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden
+                  className="shrink-0 text-gray-400 dark:text-gray-500"
+                >
+                  <path d={NAV_ICONS.traces} />
+                </svg>
+                {S.chat.viewTrace}
+              </button>
+            </div>
           </Dropdown>
         </div>
       )}
@@ -1208,16 +1274,27 @@ export function ChatPage() {
                         </div>
                       ) : (
                         <MessageStream
-                          items={stream.model.items}
+                          items={allItems}
                           version={stream.version}
                           ctx={ctx}
                           scrollElRef={streamScrollRef}
+                          // Scroll-up backfill of older history windows (tail-first
+                          // loading): near-top scrolling prepends the previous window,
+                          // scroll position anchored (see MessageStream).
+                          older={{
+                            hasMore: stream.older.hasMore,
+                            loading: stream.older.loading,
+                            error: stream.older.error,
+                            prependedCount: stream.prefixItems.length,
+                            onLoad: stream.loadOlder,
+                          }}
                           // Tick-rail minimap over the stream's left gutter (zero layout
                           // width; hides itself when the gutter is too narrow or the
                           // pointer can't hover).
                           outline={
                             <ConversationOutline
                               entries={outline}
+                              turnOffset={stream.outlineOffset}
                               version={stream.version}
                               scrollRef={streamScrollRef}
                               running={stream.taskState !== "idle"}
@@ -1257,7 +1334,9 @@ export function ChatPage() {
           <SubagentsPanel
             session={selected}
             panel={subagentsPanel}
-            model={stream.model}
+            // The merged view (backfilled windows included): a chip on an older turn keeps
+            // its historical graph and child conversation reachable after pagination.
+            model={panelModel}
             version={stream.version}
             taskRunning={stream.taskState !== "idle"}
             ctx={ctx}

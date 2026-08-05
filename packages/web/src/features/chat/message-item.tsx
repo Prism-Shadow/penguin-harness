@@ -217,10 +217,6 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
         <>
           {scheduled && <ScheduledBanner origin={scheduled.origin} />}
           {skills && <SkillsBanner names={skills.skills} />}
-          {/* Files uploaded with this message: named above the bubble, like the other
-              message-level notices — the bytes live in the session scratchpad, the model
-              opens them by path (goal mode never gets here: it takes text and images only). */}
-          {files.length > 0 && <AttachedFilesBanner files={files} />}
           {text && (
             <div className="anim-msg group my-4 flex flex-col items-end">
               <div className="max-w-[88%] rounded-lg bg-gray-100 px-4 py-2.5 md:max-w-[75%] dark:bg-gray-800">
@@ -232,6 +228,19 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
               <MessageMeta
                 {...(item.atMs !== undefined ? { atMs: item.atMs } : {})}
                 text={text}
+                align="right"
+              />
+            </div>
+          )}
+          {/* Files uploaded with this message: shown below the text in the same user-side
+              container and with the same timestamp footer as uploaded images. The bytes live in
+              the session scratchpad, where the model opens them by path (goal mode never gets
+              here: it takes text and images only). */}
+          {files.length > 0 && (
+            <div className="anim-msg group my-4 flex flex-col items-end">
+              <AttachedFilesBanner files={files} />
+              <MessageMeta
+                {...(item.atMs !== undefined ? { atMs: item.atMs } : {})}
                 align="right"
               />
             </div>
@@ -262,8 +271,15 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
       // Images sent with the message live inside the same chip: `item.images` on a vision
       // model (delivered as image messages right behind the text), or restored from the
       // [attached image: …] path lines without one — the same two shapes a user_text bubble
-      // handles, so both render identically here.
-      const { text: steerText, images: steerImages } = splitAttachments(item.text);
+      // handles, so both render identically here. Files ride steering only as
+      // [attached file: …] rows (there is no item.files channel) and collapse into the same
+      // banner a full prompt uses, kept inside the chip — a files-only steering would
+      // otherwise render as an empty chip with the filenames lost.
+      const {
+        text: steerText,
+        images: steerImages,
+        files: steerFiles,
+      } = splitAttachments(item.text);
       const shown = [...steerImages, ...(item.images ?? [])];
       return (
         <div className="anim-msg group my-2 flex flex-col items-end">
@@ -290,6 +306,11 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
                     className="max-h-28 max-w-full rounded-md"
                   />
                 ))}
+              </div>
+            )}
+            {steerFiles.length > 0 && (
+              <div className="flex justify-end">
+                <AttachedFilesBanner files={steerFiles} />
               </div>
             )}
           </div>

@@ -34,6 +34,7 @@ import type { OmniMessage, ToolCallPayload } from "@prismshadow/penguin-core/omn
 import type {
   GoalServerEvent,
   MessagesLiveTail,
+  MessagesPageInfo,
   PendingSteeringInfo,
   ServerEvent,
   SessionStatus,
@@ -51,7 +52,8 @@ import {
   pushMessages,
   registerLocalDecision,
 } from "./stream-model";
-import type { StreamModel } from "./stream-model";
+import type { ChatItem, StreamModel } from "./stream-model";
+import { seedPriorStats } from "./task-stats";
 
 /** A single pending approval (keyed by approvalKey(origin, toolCallId)). */
 export interface PendingApproval {
@@ -73,17 +75,45 @@ function parseEventId(id: string): { epoch: string; seq: number } | null {
   return { epoch: id.slice(0, sep), seq };
 }
 
+/** A windowed history request (mirrors the server's tailLimit / before params). */
+export type MessagesPageQuery =
+  { kind: "tail"; limit: number } | { kind: "before"; cursor: string; limit: number };
+
+/**
+ * Initial (tail) window size, in message-bearing units — one unit = one Task, opened by
+ * a user prompt (the server's cut rule; see MessagesPageInfo). 200 covers the vast
+ * majority of real sessions in a single request, so ordinary conversations still load
+ * whole exactly as before — only the pathological long tail (months-long sessions,
+ * agentic marathons) starts windowed, which is the point: their full-transcript reads
+ * were the unbounded memory/disk cost this pagination removes.
+ */
+export const TAIL_UNITS = 200;
+
+/** Scroll-up backfill window size: smaller than the tail so each prepend stays snappy. */
+export const OLDER_UNITS = 100;
+
+/**
+ * Item-id space reserved per prepended window. The live model numbers its items upward
+ * from 1; each prepended window numbers upward from its own NEGATIVE base, so ids stay
+ * unique across the concatenated view (React keys, outline anchors) without ever
+ * renumbering already-mounted items. A window holds at most a few thousand items —
+ * far under the span.
+ */
+const PREPEND_ID_SPAN = 1_000_000;
+
 export interface StreamControllerDeps {
   /**
    * Fetch history messages (GET /api/sessions/:id/messages), including the live tail while
    * running. `serverNowMs` is the server's clock at read time (the response's `Date` header);
    * omitted/null just costs a running Task's header the time its in-flight event has taken so
-   * far, which falls back to the Trace's own span (see pushMessages).
+   * far, which falls back to the Trace's own span (see pushMessages). `page` requests a
+   * WINDOW (the response then carries `page`); omitted = the legacy full transcript.
    */
-  loadMessages: () => Promise<{
+  loadMessages: (page?: MessagesPageQuery) => Promise<{
     messages: OmniMessage[];
     live?: MessagesLiveTail;
     serverNowMs?: number | null;
+    page?: MessagesPageInfo;
   }>;
   /** Authoritative running state from the stream (covers both the subscription snapshot and transition events). */
   onTaskState: (state: SessionStatus) => void;
@@ -108,14 +138,37 @@ export interface StreamControllerDeps {
   now?: () => number;
 }
 
+/** Scroll-up backfill state (drives the stream's top affordance). */
+export interface OlderHistoryState {
+  /** Older windows exist beyond the loaded prefix. */
+  hasMore: boolean;
+  /** A backfill request is in flight. */
+  loading: boolean;
+  /** The last backfill failed (the affordance offers a retry); null = fine. */
+  error: string | null;
+}
+
 export interface StreamController {
-  /** The current view model (a resync rebuild swaps in a new object). */
+  /** The current view model (a resync rebuild swaps in a new object): the LIVE tail window. */
   readonly model: StreamModel;
+  /**
+   * Items of the backfilled older windows, oldest first — render them immediately BEFORE
+   * `model.items`. Frozen once built (their Tasks are complete); item ids are negative
+   * and unique across windows, so the concatenated list keys/anchors cleanly.
+   */
+  readonly prefixItems: readonly ChatItem[];
+  /** Nested subagent models of the backfilled windows (merged view for the subagents panel; disjoint from model.subagents — a child session lives in exactly one window). */
+  readonly prefixSubagents: ReadonlyMap<string, StreamModel>;
+  /** Outline entries that exist before the OLDEST loaded window: the outline's global numbering offset. */
+  readonly outlineOffset: number;
+  readonly older: OlderHistoryState;
   readonly pendingApprovals: ReadonlyMap<string, PendingApproval>;
-  /** Load history for the first time (called once after connect-first). */
+  /** Load history for the first time (called once after connect-first): fetches the TAIL window. */
   load: () => Promise<void>;
   /** Retry entry point after a history load failure (keeps the buffer, refetches history). */
   retry: () => Promise<void>;
+  /** Prepend the previous window (scroll-up backfill); no-op while loading, failed, at the beginning, or before the initial load settled. */
+  loadOlder: () => Promise<void>;
   /** SSE OmniMessage entry point (`eventId`: the SSE event id, used for live-tail cursor alignment). */
   handleOmni: (msg: OmniMessage, eventId?: string | null) => void;
   /** SSE server-event entry point (`eventId`: same as handleOmni). */
@@ -145,6 +198,49 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
   let epoch = 0;
   /** Whether the most recent load failed (retry only takes effect after a failure, to avoid mistakenly replaying history). */
   let failed = false;
+
+  // —— Windowed-history state (tail-first load + scroll-up backfill) ——
+  /** Items of backfilled older windows, oldest first (frozen; rendered before model.items). */
+  let prefixItems: ChatItem[] = [];
+  /** Nested subagent models owned by backfilled windows. */
+  let prefixSubagents = new Map<string, StreamModel>();
+  /** How many windows have been prepended (derives each one's negative item-id base). */
+  let prependCount = 0;
+  /** Cursor for the NEXT older window (= the oldest loaded window's start); null = beginning reached or full transcript loaded. */
+  let nextBefore: string | null = null;
+  /**
+   * The LIVE tail window's start cursor, as returned by the last tail fetch — the resync
+   * continuity anchor: a refetched tail whose start cursor equals this provably abuts the
+   * retained prefix. Null = the tail reaches the beginning (or the transcript was loaded
+   * whole), in which case there is no prefix to splice against.
+   */
+  let tailStartCursor: string | null = null;
+  const older: OlderHistoryState = { hasMore: false, loading: false, error: null };
+  /** Outline entries before the OLDEST loaded window (the outline's numbering offset). */
+  let outlineOffset = 0;
+
+  /** Reset all windowed-history bookkeeping to "everything loaded from the beginning". */
+  const resetPaging = (): void => {
+    prefixItems = [];
+    prefixSubagents = new Map();
+    prependCount = 0;
+    nextBefore = null;
+    tailStartCursor = null;
+    older.hasMore = false;
+    older.loading = false;
+    older.error = null;
+    outlineOffset = 0;
+  };
+
+  /** Adopt a TAIL page's pagination envelope as the fresh baseline (initial load / prefix-dropping rebuild). */
+  const adoptTailPage = (page: MessagesPageInfo | undefined): void => {
+    resetPaging();
+    if (page === undefined) return; // full transcript: nothing older exists by definition
+    nextBefore = page.before ?? null;
+    tailStartCursor = page.before ?? null;
+    older.hasMore = page.before !== undefined;
+    outlineOffset = page.earlierTurns;
+  };
 
   const clearPending = (): void => {
     if (pending.size === 0) return;
@@ -222,6 +318,32 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
     }
   };
 
+  /**
+   * resync_required decision tree — which refetch rebuilds the model. Resync means the
+   * SSE buffer was evicted and the transcript state is suspect, so every branch below
+   * chooses correctness over cleverness (ANY doubt falls back to the full read):
+   *
+   *   1. No backfilled prefix → refetch the TAIL window. Identical in shape to the
+   *      initial load: the window is a disk-true suffix, the buffered events replay
+   *      with overlap dedup, and the live attachment weaves in under the existing
+   *      channel-epoch guard (weaveLiveTail skips seeding when the cursor's epoch
+   *      doesn't match the events seen on this connection).
+   *   2. Prefix retained → refetch the TAIL window and splice ONLY when continuity is
+   *      provable: the refetched window's start cursor must EQUAL the recorded start
+   *      of the current tail window (cursors are (shard, ordinal) positions on
+   *      immutable storage, so equality proves the new tail abuts the prefix exactly —
+   *      no gap, no overlap). Equality holds precisely when no new unit started since
+   *      the last tail fetch, the common mid-Task resync.
+   *   3. Prefix retained but the refetched tail reaches the very beginning (no cursor)
+   *      → the tail alone provably covers everything: drop the prefix and use it.
+   *   4. Anything else — the start cursor moved (new units arrived), the response
+   *      carried no page envelope, or the tail fetch itself failed mid-decision —
+   *      is doubt: fall back to the legacy FULL refetch (one complete transcript, no
+   *      prefix, offsets zeroed). Slow but beyond suspicion.
+   *
+   * The decision runs inside load() (it needs the response); this entry only picks the
+   * request shape.
+   */
   const rebuild = async (): Promise<void> => {
     epoch += 1;
     phase = "buffering";
@@ -238,7 +360,10 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
     // the input for a skeleton, losing scroll position, expanded tool cards, and composer
     // focus/draft.) Deltas arriving during the refetch are buffered and replayed on swap; the brief
     // no-new-text pause is invisible next to a full teardown.
-    await load(epoch, createStreamModel(localDecisions));
+    await load(epoch, createStreamModel(localDecisions), {
+      page: { kind: "tail", limit: TAIL_UNITS },
+      splice: prefixItems.length > 0,
+    });
   };
 
   /**
@@ -274,15 +399,45 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
     return [...pre, ...seeds, ...post];
   };
 
-  const load = async (currentEpoch: number, freshModel?: StreamModel): Promise<void> => {
+  const load = async (
+    currentEpoch: number,
+    freshModel?: StreamModel,
+    opts: { page?: MessagesPageQuery; splice?: boolean } = {},
+  ): Promise<void> => {
     try {
-      const { messages, live, serverNowMs } = await deps.loadMessages();
+      let res = await deps.loadMessages(opts.page);
       if (disposed || currentEpoch !== epoch) return;
+      if (opts.splice === true) {
+        // The resync decision tree's prefix-retained branches (see rebuild): splice only
+        // on exact cursor continuity; a beginning-reaching tail supersedes the prefix;
+        // everything else falls back to the full read within this same epoch (events
+        // keep buffering meanwhile).
+        const start = res.page?.before ?? null;
+        if (res.page !== undefined && start !== null && start === tailStartCursor) {
+          // Continuity proven: keep prefix and paging state exactly as they are.
+        } else if (res.page !== undefined && start === null) {
+          adoptTailPage(res.page); // tail covers everything: prefix dropped, provably complete
+        } else {
+          res = await deps.loadMessages();
+          if (disposed || currentEpoch !== epoch) return;
+          adoptTailPage(undefined); // full transcript: no prefix, no cursors
+        }
+      } else if (opts.page !== undefined) {
+        // Fresh tail baseline (initial load / retry): any previously-loaded prefix is
+        // superseded by the new window chain.
+        adoptTailPage(res.page);
+      } else {
+        adoptTailPage(undefined);
+      }
+      const { messages, live, serverNowMs } = res;
       // Rebuild path: make the freshly-built model visible only now, atomically — the old model
       // stayed on screen throughout the refetch above (see rebuild). Initial load / retry pass no
       // freshModel and keep operating on the current model.
       if (freshModel) model = freshModel;
       const target = model;
+      // Windowed loads seed the stats accrued before the window, so header chips and
+      // per-turn cumulative rows equal a full load (see seedPriorStats).
+      if (res.page !== undefined) seedPriorStats(target.stats, res.page.prior);
       pushMessages(target, messages, now(), serverNowMs ?? null);
       const dedup = buildDedupIndex(messages, 100);
       // Replay the buffer (events that arrived while fetching history), with dedup; while a
@@ -322,16 +477,79 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
     }
   };
 
+  /**
+   * Scroll-up backfill: fetch the window before the oldest loaded one and prepend it.
+   * The window's messages build a FRESH model (its own negative id base, priors seeded,
+   * finalizeHistory closing its last Task — complete by construction, since a newer
+   * window follows), whose items freeze into the prefix. Guarded to the live phase: a
+   * rebuild in flight owns the loading pipeline, and its epoch bump discards any
+   * backfill that raced it.
+   */
+  const loadOlder = async (): Promise<void> => {
+    if (disposed || phase !== "live" || failed) return;
+    if (older.loading || !older.hasMore || nextBefore === null) return;
+    const currentEpoch = epoch;
+    older.loading = true;
+    older.error = null;
+    deps.onModelChange();
+    try {
+      const res = await deps.loadMessages({
+        kind: "before",
+        cursor: nextBefore,
+        limit: OLDER_UNITS,
+      });
+      if (disposed || currentEpoch !== epoch) return;
+      // A before-request against a server without windowing support would return the
+      // full transcript with no envelope; prepending that would duplicate history.
+      if (res.page === undefined) throw new Error("windowed history not supported");
+      prependCount += 1;
+      const m = createStreamModel(localDecisions);
+      m.nextItemId = -prependCount * PREPEND_ID_SPAN;
+      seedPriorStats(m.stats, res.page.prior);
+      pushMessages(m, res.messages, now(), null);
+      finalizeHistory(m);
+      prefixItems = [...m.items, ...prefixItems];
+      // Child sessions live in exactly one window (a spawn is contained in its Task),
+      // so the merge is disjoint; newer windows' entries win defensively on a clash.
+      const mergedSubagents = new Map(m.subagents);
+      for (const [sid, sub] of prefixSubagents) mergedSubagents.set(sid, sub);
+      prefixSubagents = mergedSubagents;
+      nextBefore = res.page.before ?? null;
+      older.hasMore = res.page.before !== undefined;
+      outlineOffset = res.page.earlierTurns;
+    } catch (e) {
+      if (disposed || currentEpoch !== epoch) return;
+      older.error = e instanceof Error ? e.message : String(e);
+    } finally {
+      if (!disposed && currentEpoch === epoch) {
+        older.loading = false;
+        deps.onModelChange();
+      }
+    }
+  };
+
   return {
     get model() {
       return model;
+    },
+    get prefixItems(): readonly ChatItem[] {
+      return prefixItems;
+    },
+    get prefixSubagents(): ReadonlyMap<string, StreamModel> {
+      return prefixSubagents;
+    },
+    get outlineOffset() {
+      return outlineOffset;
+    },
+    get older(): OlderHistoryState {
+      return older;
     },
     get pendingApprovals(): ReadonlyMap<string, PendingApproval> {
       return pending;
     },
     load: () => {
       epoch += 1;
-      return load(epoch);
+      return load(epoch, undefined, { page: { kind: "tail", limit: TAIL_UNITS } });
     },
     retry: async () => {
       if (disposed || !failed) return;
@@ -341,11 +559,15 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
       // history straight onto it would duplicate the entire conversation (pushMessages appends with
       // no id-dedup). load() swaps the fresh model in only once the refetch succeeds, then replays
       // the still-accumulating buffer into it; localDecisions carry over via the shared set.
+      // The refetch is a fresh TAIL baseline: any retained prefix is superseded on success.
       deps.onError(null);
       deps.onLoading(true);
       epoch += 1;
-      await load(epoch, createStreamModel(localDecisions));
+      await load(epoch, createStreamModel(localDecisions), {
+        page: { kind: "tail", limit: TAIL_UNITS },
+      });
     },
+    loadOlder,
     handleOmni: (msg, eventId = null) => {
       if (disposed) return;
       if (eventId !== null) lastEventId = eventId;

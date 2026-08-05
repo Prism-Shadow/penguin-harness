@@ -139,6 +139,33 @@ export function createTaskStatsTracker(): TaskStatsTracker {
   };
 }
 
+/**
+ * Seed the tracker with the cumulative stats accrued BEFORE a partial history window
+ * (MessagesPageInfo.prior from a windowed GET /messages): finished-Task elapsed,
+ * subagent token totals, and the last session/context token readings. Applied before
+ * the window's messages replay, so header chips and per-turn cumulative rows land on
+ * the same figures a full-transcript load computes. sessionTotal/contextNow are only
+ * "last seen" fallbacks — any token_usage inside the window overwrites them; the
+ * elapsed/subagent/delta baselines genuinely accumulate on top.
+ */
+export function seedPriorStats(
+  t: TaskStatsTracker,
+  prior: {
+    subagentTokens: number;
+    elapsedMs: number;
+    sessionTokens: number;
+    contextTokens: number;
+  },
+): void {
+  t.subagentTotal = prior.subagentTokens;
+  t.sessionElapsedMs = prior.elapsedMs;
+  t.sessionTotal = prior.sessionTokens;
+  t.contextNow = prior.contextTokens;
+  // The first in-window stats row's context delta measures against the pre-window
+  // occupancy, not against zero.
+  t.contextAtLastStats = prior.contextTokens;
+}
+
 /** This Task's bucketed accumulation (shared by main + subagent sessions; for real-time cost calc). */
 function addBuckets(t: TaskStatsTracker, p: TokenUsagePayload): void {
   t.taskCacheRead += p.request.cache_read;

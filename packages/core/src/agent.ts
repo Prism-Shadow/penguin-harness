@@ -94,7 +94,9 @@ export interface CreateSessionOptions {
   /**
    * Thinking level for this Session — a tri-state:
    * - a `ThinkingLevelName` pins the level;
-   * - `undefined` (omitted) falls back to the Agent config's `model.thinking_level`;
+   * - `undefined` (omitted) falls back to the config chain: the Agent's explicit
+   *   `model.thinking_level` > the Project's `default_chat.thinking_level` > the built-in
+   *   `"medium"` (see `configuredThinkingLevel`);
    * - `null` means "no thinking level": the config fallback is suppressed entirely
    *   (nothing goes into the LLM config; session_meta echoes `"default"`).
    * Subagent spawning always passes the parent Session's effective level (its level, or
@@ -155,6 +157,23 @@ export class Agent {
     readonly state: AgentState,
     readonly projectConfig: ProjectConfig,
   ) {}
+
+  /**
+   * A Session's default thinking level when no explicit per-session level is given — the
+   * resolution chain (the single rule, keep both sites on it): the Agent's explicit
+   * `model.thinking_level` > the Project's `default_chat.thinking_level` > the built-in
+   * `"medium"` (the documented Agent default). Mirrored by the web draft picker's DISPLAY
+   * (web features/chat/thinking-level.ts `effectiveThinkingLevel`): the picker shows this
+   * effective value, and a pick writes through to the AGENT config — the project default
+   * is only ever a fallback, never overwritten from there.
+   */
+  private configuredThinkingLevel(): ThinkingLevelName {
+    return (
+      this.state.systemConfig.model?.thinking_level ??
+      this.projectConfig.default_chat?.thinking_level ??
+      "medium"
+    );
+  }
 
   /**
    * Create a Session in the specified (or a temporary) Workspace.
@@ -222,13 +241,14 @@ export class Agent {
     }
     const sessionId = formatSessionId();
     const subagentDepth = opts.subagentDepth ?? 0;
-    // Effective thinking level (tri-state option): a value wins over this Agent's own
-    // system_config; `null` — how subagent spawning says "the parent has none" — suppresses
-    // the config fallback entirely; only `undefined` (no option) reads the Agent config.
+    // Effective thinking level (tri-state option): a value wins over every config; `null` —
+    // how subagent spawning says "the parent has none" — suppresses the config fallback
+    // entirely; only `undefined` (no option) reads the config chain (Agent explicit >
+    // Project default_chat > built-in "medium", see configuredThinkingLevel).
     const thinkingLevel =
       opts.thinkingLevel === null
         ? undefined
-        : (opts.thinkingLevel ?? this.state.systemConfig.model?.thinking_level);
+        : (opts.thinkingLevel ?? this.configuredThinkingLevel());
 
     // Agent-level vault (agent_state/.vault.toml) and installed Skills: read the current values each time a Session is created.
     const vault = await loadAgentVault(this.state.root, this.state.projectId, this.state.agentId);
@@ -383,12 +403,13 @@ export class Agent {
     // original history); the vault uses current values (it's injected into the
     // subprocess environment, not the history, so a resumed Session should get the
     // latest keys too).
-    // The default thinking level comes from this Agent's current config only: session_meta
-    // no longer records one (it became a per-turn run parameter), and a `thinking_level`
-    // still present in a legacy Trace's meta JSON is deliberately ignored — a resumed
-    // legacy subagent session falls back to this Agent's configured level instead of
-    // keeping the level it inherited at spawn time.
-    const thinkingLevel = this.state.systemConfig.model?.thinking_level;
+    // The default thinking level comes from the current config chain only (Agent explicit >
+    // Project default_chat > built-in "medium", the same configuredThinkingLevel chain
+    // createSession uses): session_meta no longer records one (it became a per-turn run
+    // parameter), and a `thinking_level` still present in a legacy Trace's meta JSON is
+    // deliberately ignored — a resumed legacy subagent session falls back to this Agent's
+    // configured level instead of keeping the level it inherited at spawn time.
+    const thinkingLevel = this.configuredThinkingLevel();
 
     const rt = await this.buildRuntime({
       sessionId,

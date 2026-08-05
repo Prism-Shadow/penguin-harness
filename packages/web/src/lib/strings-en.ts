@@ -179,6 +179,17 @@ export const en: Strings = {
     members: "Members",
     addMember: "Add member",
     removeMember: "Remove",
+    /** New-chat defaults section (Project settings): prefill for every new chat. */
+    chatDefaultsTitle: "New chat defaults",
+    chatDefaultsHint:
+      "Prefilled defaults for every new chat: agent, working directory, approval mode, thinking level and default model.",
+    chatDefaultsAgent: "Agent",
+    chatDefaultsNotSet: "Not set",
+    chatDefaultsApprovalNotSet: "Not set (defaults to allow all)",
+    chatDefaultsThinkingNotSet: "Not set (follow the agent's config)",
+    chatDefaultsWorkspaceHint: "Empty = auto temp directory",
+    /** The model default is single-sourced with the Models page (the same default_model); this is just another entry point. */
+    chatDefaultsModelHint: "Same default model as the Models page",
     deleteProject: "Delete Project",
     deleteConfirm:
       "Delete this Project? Its directory will be removed recursively and cannot be recovered.",
@@ -747,6 +758,12 @@ Scenarios:
     statusCompacting: "Compacting",
     pendingApprovals: (n: number) => `${n} pending approval${n > 1 ? "s" : ""}`,
     jumpToLatest: "Jump to latest",
+    /** Top-of-stream affordance while the previous history window is being fetched (scroll-up backfill). */
+    loadingEarlier: "Loading earlier messages…",
+    /** Top-of-stream affordance after a backfill failure: click to retry fetching the previous window. */
+    loadEarlierRetry: "Failed to load earlier messages — click to retry",
+    /** Top-of-stream marker once the loaded history reaches the very beginning (shown only after a backfill happened). */
+    historyBeginning: "Beginning of conversation",
     /** Conversation minimap (tick rail over the stream's left gutter): rail aria-label. */
     outlineTitle: "Outline",
     /** Tick accessible name: turn number + the question (or the no-text placeholder). */
@@ -838,6 +855,8 @@ Scenarios:
       "This model cannot view images directly: on send, images are saved to the session scratchpad and passed as file paths (viewed via describe_image)",
     infoPanel: "Session info",
     sessionStats: "Stats",
+    /** Info-dropdown jump to the Trace page, deep-linked to the current Session. */
+    viewTrace: "View trace",
     statTokens: "Total Tokens",
     statElapsed: "Elapsed",
     statInput: "Input tokens",
@@ -1073,6 +1092,9 @@ Scenarios:
     toolDefs: (n: number) => `Tool definitions (${n})`,
     exportFile: "Export",
     importTrace: "Import Trace",
+    /** Import dialog: which Agent receives the file (the endpoint is per-Agent). */
+    importAgent: "Import into Agent",
+    importPickFile: "Choose file",
     importing: "Importing…",
     /** Client-side pre-check before reading the picked file (same cap as the server's import route). */
     fileTooLarge: "The file exceeds the 14MB limit.",
@@ -1118,6 +1140,7 @@ Scenarios:
       admin_required: "Only an admin can perform this operation.",
       not_found: "This resource does not exist, or you do not have access.",
       agent_not_found: "This agent no longer exists.",
+      unknown_agent: "That agent does not exist in this Project.",
       agent_exists: "This agent id is already taken.",
       project_exists: "This Project id is already taken.",
       user_exists: "This username is already taken.",

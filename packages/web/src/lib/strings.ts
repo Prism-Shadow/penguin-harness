@@ -173,6 +173,16 @@ export const zh = {
     members: "成员",
     addMember: "添加成员",
     removeMember: "移除",
+    /** 新对话默认值分节（Project 设置）：预填每个新建对话的 Agent / 工作目录 / 审批模式 / 思考等级 / 默认模型。 */
+    chatDefaultsTitle: "新对话默认值",
+    chatDefaultsHint: "新建对话时预填的默认值：Agent、工作目录、审批模式、思考等级与默认模型。",
+    chatDefaultsAgent: "Agent",
+    chatDefaultsNotSet: "未设置",
+    chatDefaultsApprovalNotSet: "未设置（默认全部放行）",
+    chatDefaultsThinkingNotSet: "未设置（跟随智能体配置）",
+    chatDefaultsWorkspaceHint: "留空表示自动临时目录",
+    /** 模型默认值与模型页同源（同一个 default_model），此处仅是另一处入口。 */
+    chatDefaultsModelHint: "与模型页的默认模型同步",
     deleteProject: "删除 Project",
     deleteConfirm: "确认删除该 Project？项目目录将被递归删除，不可恢复。",
     deleteDefaultForbidden: "default_project 与 CLI 共用，不允许在 Web 端删除",
@@ -726,6 +736,12 @@ Benchmark：
     statusCompacting: "压缩中",
     pendingApprovals: (n: number) => `${n} 个待审批`,
     jumpToLatest: "回到最新消息",
+    /** Top-of-stream affordance while the previous history window is being fetched (scroll-up backfill). */
+    loadingEarlier: "正在加载更早的对话…",
+    /** Top-of-stream affordance after a backfill failure: click to retry fetching the previous window. */
+    loadEarlierRetry: "更早的对话加载失败，点击重试",
+    /** Top-of-stream marker once the loaded history reaches the very beginning (shown only after a backfill happened). */
+    historyBeginning: "已是对话开头",
     /** Conversation minimap (tick rail over the stream's left gutter): rail aria-label. */
     outlineTitle: "对话索引",
     /** Tick accessible name: turn number + the question (or the no-text placeholder). */
@@ -813,6 +829,8 @@ Benchmark：
       "当前模型不支持直接查看图片：发送时图片将保存到会话临时目录，以文件路径转交（模型经 describe_image 查看）",
     infoPanel: "Session 信息",
     sessionStats: "统计",
+    /** Info-dropdown jump to the Trace page, deep-linked to the current Session. */
+    viewTrace: "查看轨迹",
     statTokens: "Token 累计",
     statElapsed: "用时",
     statInput: "输入 tokens",
@@ -1044,6 +1062,9 @@ Benchmark：
     toolDefs: (n: number) => `工具定义（${n}）`,
     exportFile: "导出",
     importTrace: "导入 Trace",
+    /** Import dialog: which Agent receives the file (the endpoint is per-Agent). */
+    importAgent: "导入到 Agent",
+    importPickFile: "选择文件",
     importing: "导入中…",
     /** Client-side pre-check before reading the picked file (same cap as the server's import route). */
     fileTooLarge: "文件超过 14MB 上限。",
@@ -1093,6 +1114,7 @@ Benchmark：
       admin_required: "仅管理员可执行此操作。",
       not_found: "资源不存在，或你没有访问权限。",
       agent_not_found: "该 Agent 已不存在。",
+      unknown_agent: "该 Agent 不存在于本 Project。",
       agent_exists: "该 Agent id 已被占用。",
       project_exists: "该 Project id 已被占用。",
       user_exists: "该用户名已被占用。",
