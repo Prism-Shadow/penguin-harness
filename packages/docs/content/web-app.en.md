@@ -67,13 +67,14 @@ The list page creates and deletes Agents; clicking through opens the `/agents/:a
 | Tab | Contents |
 | --- | --- |
 | Overview | Basic info, export / import of Agent State snapshots, and restoring the default configuration (overwrites customizations, keeping only name/description) |
-| Prompt | AGENTS.md and system_prompt, the placeholder reference, and Workspace Memory's Agent-level switch (what `{{MEMORY}}` resolves to) |
+| Prompt | AGENTS.md and system_prompt |
+| Memory | Workspace Memory's Agent-level switch, the memory directory, and the way in to the [Memory page](#memory-memory) |
 | Runtime | Runtime parameters such as max_turns, model.*, compaction.* |
 | Tools | Built-in tool table (incl. per-tool call_description switches) and MCP server JSON configuration |
 | Vault | Environment-variable entries with masked values |
 | Schedule | Scheduled tasks (TOML-defined): create, edit, toggle, delete |
 
-Memory's *content* is not here — it is browsed and edited on the [Memory page](#memory-memory). The switch on the Prompt tab only decides whether it reaches the model: turning Memory off keeps every file and leaves the Memory page fully usable, it just stops Memory from entering the agent's context and from preparing directories for new Sessions.
+The Memory tab holds configuration only — memory's *content* is browsed and edited on the [Memory page](#memory-memory). Its switch writes immediately rather than joining the tab-level Save, so turning Memory off never drags an unrelated half-finished edit along with it. Turning it off keeps every file and leaves the Memory page fully usable: it only stops Memory from entering the agent's context and from preparing directories for new Sessions. The tab also warns when an agent is enabled but its prompt template carries no `{{MEMORY}}` placeholder — enabled, yet injecting nothing.
 
 Scheduled tasks fire on a fixed period (minimum 5 minutes) and run only while the service is running.
 
@@ -96,7 +97,7 @@ A per-Project model table grouped by provider. Models can be added and edited: i
 
 Workspace Memory across the Project's Agents, as a tree: Agent → Workspace → topic file. The shared index `memory/AGENTS.md` is the Agent's own first child — one index covers every Workspace — and the right side edits whatever is selected. Create a topic file from the `+` on a Workspace row; rename and delete act on the selected file.
 
-Editing here writes the same files the agent maintains itself with its file tools. Renaming or deleting a topic file also repoints or removes the index links that named it, so the index never lists a file that is gone. An Agent whose memory cannot reach the model is marked in the tree — **Off** for the switch, **No placeholder** for a prompt template with no `{{MEMORY}}` — and both link back to the Agent's Prompt tab. For the storage model, see [Configuration](/configuration#workspace-memory).
+Editing here writes the same files the agent maintains itself with its file tools. Renaming or deleting a topic file also repoints or removes the index links that named it, so the index never lists a file that is gone. An Agent whose memory cannot reach the model is marked in the tree — **Off** for the switch, **No placeholder** for a prompt template with no `{{MEMORY}}` — and both link back to the Agent's Memory tab. For the storage model, see [Configuration](/configuration#workspace-memory).
 
 ## Trace Browser (/traces)
 

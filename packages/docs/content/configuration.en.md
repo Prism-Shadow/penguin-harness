@@ -203,7 +203,7 @@ updated_at: 2026-07-30
 
 Only the index reaches the context. At Session creation the Harness ensures the Workspace's directory exists, reads `memory/AGENTS.md`, and renders the Agent's `memory.prompt` into `{{MEMORY}}` with `{{MEMORY_DIR}}` (this Workspace's directory) and `{{MEMORY_AGENTS_MD}}` (the whole index) substituted; topic bodies are read on demand by the model. The Harness only decides where Memory lives and keeps writes inside it — deciding what is worth keeping, splitting topics and maintaining the index is the model's job, done with the ordinary file tools.
 
-Existing Agents are not migrated: their `system_config.yaml` carries no `memory` section and no `{{MEMORY}}` placeholder, so nothing is injected. Add the placeholder on the settings page's Prompt tab — which is also where the Agent-level switch lives — or restore the default configuration.
+Existing Agents are not migrated: their `system_config.yaml` carries no `memory` section and no `{{MEMORY}}` placeholder, so nothing is injected. Add the placeholder on the settings page's Prompt tab, or restore the default configuration.
 
 To read or edit what an Agent has saved, use the Web App's [Memory page](/web-app#memory-memory).
 

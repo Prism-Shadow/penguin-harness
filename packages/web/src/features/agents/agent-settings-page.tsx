@@ -10,7 +10,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router";
+import { useNavigate, useParams, useSearchParams } from "react-router";
 import type {
   AgentConfigResponse,
   AgentConfigUpdateRequest,
@@ -34,14 +34,20 @@ import { Switch } from "../../components/ui/switch";
 import { ConfirmModal, useSaveConfirm } from "../../components/ui/confirm-modal";
 import { Skeleton } from "../../components/ui/skeleton";
 import { SkillsTab } from "./skills-tab";
+import { MemoryTab } from "./memory-tab";
 import { VaultTab } from "./vault-tab";
 import { SchedulesTab } from "./schedules-tab";
 import { thinkingLevelOptionsFor } from "../chat/thinking-level";
 
-type TabKey = "overview" | "prompt" | "runtime" | "tools" | "skills" | "vault" | "schedules";
-
-/** Placeholder the Workspace Memory block is substituted into (core default-config.ts MEMORY_PLACEHOLDER). */
-const MEMORY_PLACEHOLDER = "{{MEMORY}}";
+type TabKey =
+  | "overview"
+  | "prompt"
+  | "memory"
+  | "runtime"
+  | "tools"
+  | "skills"
+  | "vault"
+  | "schedules";
 
 /**
  * Dropdown rows from a dictionary's [value, description] pairs (exported for unit tests).
@@ -94,6 +100,7 @@ export function AgentSettingsPage() {
   const TABS = [
     { key: "overview", label: S.agent.tabOverview },
     { key: "prompt", label: S.agent.tabPrompt },
+    { key: "memory", label: S.agent.tabMemory },
     { key: "runtime", label: S.agent.tabRuntime },
     { key: "tools", label: S.agent.tabTools },
     { key: "skills", label: S.agent.tabSkills },
@@ -234,7 +241,8 @@ export function AgentSettingsPage() {
               onConfigReset={onConfigReset}
             />
           )}
-          {tab === "prompt" && <PromptTab data={data} agentId={agentId} onSave={save} />}
+          {tab === "prompt" && <PromptTab data={data} onSave={save} />}
+          {tab === "memory" && <MemoryTab agentId={agentId} />}
           {tab === "runtime" && <RuntimeTab data={data} onSave={save} />}
           {tab === "tools" && <ToolsTab data={data} onSave={save} />}
           {tab === "skills" && <SkillsTab agentId={agentId} />}
@@ -445,35 +453,16 @@ function OverviewTab({
   );
 }
 
-function PromptTab({
-  data,
-  agentId,
-  onSave,
-}: {
-  data: AgentConfigResponse;
-  agentId: string;
-  onSave: SaveFn;
-}) {
+function PromptTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn }) {
   const [agentsMd, setAgentsMd] = useState(data.agentsMd);
   const [systemPrompt, setSystemPrompt] = useState(data.config.systemPrompt);
-  // Workspace Memory's Agent-level switch. It lives here rather than on a tab of its own
-  // because what it governs is this template: with it off, {{MEMORY}} resolves to nothing.
-  // Memory's *content* is managed on the Memory page.
-  const [memoryEnabled, setMemoryEnabled] = useState(data.config.memory.enabled);
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const { requestSave, element: saveConfirm } = useSaveConfirm();
-
-  // Read off the editor buffer, not the saved config: an Agent created before Memory shipped
-  // has no {{MEMORY}} in its template, and the warning should clear the moment one is inserted.
-  const templateInjects = systemPrompt.includes(MEMORY_PLACEHOLDER);
 
   const submit = () => {
     const update: AgentConfigUpdateRequest = {};
     if (agentsMd !== data.agentsMd) update.agentsMd = agentsMd;
-    const config: NonNullable<AgentConfigUpdateRequest["config"]> = {};
-    if (systemPrompt !== data.config.systemPrompt) config.systemPrompt = systemPrompt;
-    if (memoryEnabled !== data.config.memory.enabled) config.memory = { enabled: memoryEnabled };
-    if (Object.keys(config).length > 0) update.config = config;
+    if (systemPrompt !== data.config.systemPrompt) update.config = { systemPrompt };
     if (update.agentsMd === undefined && update.config === undefined) {
       toastInfo(S.common.noChangesToSave);
       return;
@@ -544,37 +533,6 @@ function PromptTab({
           ))}
         </ul>
       </div>
-
-      {/* Workspace Memory's Agent-level switch: it decides whether the {{MEMORY}} placeholder
-          above resolves to anything, so it belongs next to the template rather than on a tab of
-          its own. The memories themselves are content and live on the Memory page. */}
-      <div className="rounded-md border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900">
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <p className="text-sm font-medium">{S.memory.enable}</p>
-            <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-              {memoryEnabled ? S.memory.enabledHint : S.memory.disabledHint}
-            </p>
-          </div>
-          <Switch
-            checked={memoryEnabled}
-            onChange={setMemoryEnabled}
-            aria-label={S.memory.enable}
-          />
-        </div>
-        {memoryEnabled && !templateInjects && (
-          <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
-            {S.memory.templateMissingHint}
-          </p>
-        )}
-        <Link
-          to={`/memory?agentId=${encodeURIComponent(agentId)}`}
-          className="mt-2 inline-block text-xs font-medium text-gray-600 underline decoration-gray-300 underline-offset-2 hover:text-gray-900 dark:text-gray-300 dark:decoration-gray-600 dark:hover:text-gray-100"
-        >
-          {S.memory.manageLink}
-        </Link>
-      </div>
-
       <Button size="sm" variant="primary" onClick={submit}>
         {S.common.save}
       </Button>

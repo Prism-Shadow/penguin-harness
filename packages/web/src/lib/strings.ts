@@ -226,6 +226,7 @@ export const zh = {
     backToList: "返回 Agents",
     tabOverview: "概览",
     tabPrompt: "Prompt",
+    tabMemory: "记忆",
     tabRuntime: "运行参数",
     tabTools: "工具",
     tabSkills: "技能",
@@ -453,13 +454,16 @@ export const zh = {
   },
 
   memory: {
-    desc: "跨 Session 的长期记忆（存于 agent_state/memory/）：按 Workspace 分目录保存主题文件，全部 Workspace 共用一份索引 memory/AGENTS.md。索引进入模型上下文，主题正文由模型按需读取。记忆由模型用文件工具维护，也可在此手工编辑。",
+    desc: "跨 Session 的长期记忆（存于 agent_state/memory/）：按 Workspace 分目录保存主题文件，全部 Workspace 共用一份索引 memory/AGENTS.md。索引进入模型上下文，主题正文由模型按需读取。记忆由模型用文件工具维护，也可手工编辑。",
     enable: "启用记忆",
     enabledHint:
       "记忆索引会进入 Agent 上下文；使用持久 Workspace 的新 Session 会准备对应的记忆目录。",
     disabledHint: "记忆当前不会进入 Agent 上下文；已有文件保留，仍可在此管理。",
     templateMissingHint:
-      "当前 system_prompt 不含 {{MEMORY}} 占位符（Agent 创建于记忆功能之前），因此记忆不会注入。可在下方插入该占位符，或在概览页恢复默认配置。",
+      "当前 system_prompt 不含 {{MEMORY}} 占位符（Agent 创建于记忆功能之前），因此记忆不会注入。可在 Prompt 页插入该占位符，或在概览页恢复默认配置。",
+    dirLabel: "记忆目录",
+    workspaceCount: (n: number): string =>
+      n === 0 ? "尚无 Workspace 记忆目录" : `${n} 个 Workspace 记忆目录`,
     /** Tree badges on an Agent whose memory never reaches the model. */
     offBadge: "已关闭",
     noPlaceholderBadge: "无占位符",

@@ -203,7 +203,7 @@ updated_at: 2026-07-30
 
 进入上下文的只有索引。创建 Session 时，Harness 确保当前 Workspace 的记忆目录存在、读取 `memory/AGENTS.md`，并把 Agent 的 `memory.prompt` 渲染进 `{{MEMORY}}`，其中 `{{MEMORY_DIR}}` 替换为该 Workspace 的目录、`{{MEMORY_AGENTS_MD}}` 替换为完整索引；主题正文由模型按需读取。Harness 只负责确定记忆位置并限制写入边界，判断什么值得保存、如何划分主题、如何维护索引都由模型用现有文件工具完成。
 
-存量 Agent 不会自动迁移：其 `system_config.yaml` 既无 `memory` 段也无 `{{MEMORY}}` 占位符，因此不会注入任何内容。需要时可在设置页 Prompt 标签插入该占位符（Agent 级开关也在该页），或还原为默认配置。
+存量 Agent 不会自动迁移：其 `system_config.yaml` 既无 `memory` 段也无 `{{MEMORY}}` 占位符，因此不会注入任何内容。需要时可在设置页 Prompt 标签插入该占位符，或还原为默认配置。
 
 查看与编辑 Agent 已保存的记忆，见 Web App 的[记忆中心](/web-app#记忆中心memory)。
 

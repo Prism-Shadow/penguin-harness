@@ -237,6 +237,7 @@ export const en: Strings = {
     backToList: "Back to Agents",
     tabOverview: "Overview",
     tabPrompt: "Prompt",
+    tabMemory: "Memory",
     tabRuntime: "Runtime",
     tabTools: "Tools",
     tabSkills: "Skills",
@@ -473,14 +474,19 @@ export const en: Strings = {
   },
 
   memory: {
-    desc: "Long-term memory across Sessions (stored in agent_state/memory/): topic files kept per Workspace, with one index, memory/AGENTS.md, shared by all of them. The index enters the model context; topic bodies are read on demand. The agent maintains memory with its file tools — you can also edit it here.",
+    desc: "Long-term memory across Sessions (stored in agent_state/memory/): topic files kept per Workspace, with one index, memory/AGENTS.md, shared by all of them. The index enters the model context; topic bodies are read on demand. The agent maintains memory with its file tools — you can also edit it by hand.",
     enable: "Enable memory",
     enabledHint:
       "The memory index enters the agent's context, and a new Session with a persistent Workspace gets its memory directory prepared.",
     disabledHint:
       "Memory does not enter the agent's context right now; existing files are kept and stay editable here.",
     templateMissingHint:
-      "This system_prompt carries no {{MEMORY}} placeholder (the agent predates memory), so nothing is injected. Insert the placeholder below, or restore the default configuration from Overview.",
+      "This system_prompt carries no {{MEMORY}} placeholder (the agent predates memory), so nothing is injected. Insert the placeholder on the Prompt tab, or restore the default configuration from Overview.",
+    dirLabel: "Memory directory",
+    workspaceCount: (n: number): string =>
+      n === 0
+        ? "No Workspace memory directory yet"
+        : `${n} Workspace memory director${n === 1 ? "y" : "ies"}`,
     /** Tree badges on an Agent whose memory never reaches the model. */
     offBadge: "Off",
     noPlaceholderBadge: "No placeholder",

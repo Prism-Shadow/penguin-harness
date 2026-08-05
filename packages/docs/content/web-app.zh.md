@@ -66,13 +66,14 @@ penguin web
 | 标签页 | 内容 |
 | --- | --- |
 | Overview | 基本信息、Agent State 快照的导出 / 导入，以及还原为默认配置（覆盖自定义内容，仅保留名称与描述） |
-| Prompt | AGENTS.md 与 system_prompt、占位符速查，以及 Workspace 记忆的 Agent 级开关（决定 `{{MEMORY}}` 取到什么） |
+| Prompt | AGENTS.md 与 system_prompt |
+| Memory | Workspace 记忆的 Agent 级开关、记忆目录，以及进入[记忆中心](#记忆中心memory)的入口 |
 | Runtime | max_turns、model.*、compaction.* 等运行参数 |
 | Tools | 内置工具表格（含条目级 call_description 开关）与 MCP Server 的 JSON 配置 |
 | Vault | 环境变量条目，值以掩码显示 |
 | Schedule | 定时任务（TOML 定义）：创建、编辑、启停、删除 |
 
-记忆的**内容**不在这里，而在[记忆中心](#记忆中心memory)浏览与编辑。Prompt 页上的开关只决定它是否进入模型：关闭记忆不会删除任何文件，记忆中心仍可正常管理——只是记忆不再进入 Agent 上下文，也不再为新 Session 准备目录。
+Memory 标签页只放配置，记忆的**内容**在[记忆中心](#记忆中心memory)浏览与编辑。该页的开关拨动即写入，不参与标签页的保存按钮，因此关闭记忆不会连带把别处未改完的内容一起存盘。关闭记忆也不会删除任何文件，记忆中心仍可正常管理——只是记忆不再进入 Agent 上下文，也不再为新 Session 准备目录。该页还会在 Agent 已启用、但 system_prompt 不含 `{{MEMORY}}` 占位符时给出警告——启用了，却什么也没注入。
 
 定时任务按固定周期触发（最短 5 分钟），且仅在服务运行期间执行。
 
@@ -95,7 +96,7 @@ penguin web
 
 以树的形式浏览 Project 下各 Agent 的 Workspace 记忆：Agent → Workspace → 主题文件。统一索引 `memory/AGENTS.md` 挂在 Agent 名下、位于全部 Workspace 之上——一份索引覆盖所有 Workspace；右侧编辑当前选中的内容。新建主题文件用 Workspace 行上的 `+`，重命名与删除作用于选中的文件。
 
-这里写入的就是 Agent 自己用文件工具维护的那批文件。重命名或删除主题文件时，索引中指向它的链接会一并改写或清除，索引不会列出已不存在的文件。记忆无法进入模型的 Agent 会在树上标出——开关关闭标 **已关闭**，system_prompt 不含 `{{MEMORY}}` 标 **无占位符**——两者都可回到该 Agent 的 Prompt 页处理。存储模型见[配置说明](/configuration#workspace-记忆)。
+这里写入的就是 Agent 自己用文件工具维护的那批文件。重命名或删除主题文件时，索引中指向它的链接会一并改写或清除，索引不会列出已不存在的文件。记忆无法进入模型的 Agent 会在树上标出——开关关闭标 **已关闭**，system_prompt 不含 `{{MEMORY}}` 标 **无占位符**——两者都可回到该 Agent 的 Memory 标签页处理。存储模型见[配置说明](/configuration#workspace-记忆)。
 
 ## Trace 浏览（/traces）
 
