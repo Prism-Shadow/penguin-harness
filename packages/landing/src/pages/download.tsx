@@ -5,20 +5,27 @@
  * resolves (validated the same way the installers validate it; any failure, e.g. CORS
  * not configured on the bucket or the mirror unreachable, silently keeps the GitHub
  * links). Plain-anchor downloads are never CORS-gated — only this version lookup is.
+ * Below the cards, a first-launch FAQ covers the unsigned builds — one collapsible item
+ * per platform (macOS quarantine removal, SmartScreen, AppImage execute bit), with the
+ * visitor's own platform pre-expanded.
  */
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
+import type { ReactNode } from "react";
 import { S } from "../lib/strings";
 import {
   DESKTOP_INSTALLERS,
   DESKTOP_SHA256SUMS,
   GITHUB_LATEST_DOWNLOAD,
+  LINUX_APPIMAGE_CHMOD_CMD,
+  MAC_UNQUARANTINE_CMD,
   OSS_LATEST_JSON_URL,
   OSS_ORIGIN,
   RELEASES_URL,
 } from "../lib/links";
 import { Section } from "../components/section";
-import { DownloadIcon, ExternalLinkIcon } from "../components/icons";
+import { CodeCard } from "../components/code-card";
+import { ChevronDownIcon, DownloadIcon, ExternalLinkIcon } from "../components/icons";
 
 type Platform = "mac" | "windows" | "linux";
 const PLATFORMS: Platform[] = ["mac", "windows", "linux"];
@@ -35,6 +42,36 @@ function detectPlatform(): Platform | null {
 interface Mirror {
   tag: string;
   base: string;
+}
+
+/**
+ * One collapsible item of the first-launch FAQ. `defaultOpen` pre-expands the visitor's
+ * own platform on mount; after that the element owns its open state (React only writes
+ * the `open` property again if the rendered value changes, which it never does here).
+ */
+function FaqItem({
+  question,
+  defaultOpen,
+  children,
+}: {
+  question: string;
+  defaultOpen: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <details
+      open={defaultOpen}
+      className="group rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900"
+    >
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-medium tracking-tight [&::-webkit-details-marker]:hidden">
+        {question}
+        <ChevronDownIcon className="h-4 w-4 shrink-0 text-gray-400 transition-transform group-open:rotate-180 dark:text-gray-500" />
+      </summary>
+      <div className="border-t border-gray-200 px-4 py-3 text-sm leading-6 text-gray-600 dark:border-gray-800 dark:text-gray-400">
+        {children}
+      </div>
+    </details>
+  );
 }
 
 /** latest.json validated like the installer forwarders validate it: schema 1, safe v-tag, fixed bucket base. */
@@ -135,10 +172,40 @@ export function DownloadPage() {
             <ExternalLinkIcon className="h-3 w-3" />
           </a>
         </p>
-        <p className="mt-6 text-xs leading-5 text-gray-500 dark:text-gray-400">
-          {S.download.unsignedNote}
+      </div>
+
+      <div className="mx-auto mt-12 max-w-2xl">
+        <h3 className="text-center text-base font-semibold tracking-tight">
+          {S.download.faq.title}
+        </h3>
+        <p className="mt-1 text-center text-sm leading-6 text-gray-600 dark:text-gray-400">
+          {S.download.faq.intro}
         </p>
-        <p className="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">
+        <div className="mt-4 flex flex-col gap-3 text-left">
+          <FaqItem question={S.download.faq.mac.question} defaultOpen={detected === "mac"}>
+            <p>{S.download.faq.mac.why}</p>
+            <ol className="mt-2 flex list-decimal flex-col gap-1.5 pl-5">
+              <li>{S.download.faq.mac.stepDrag}</li>
+              <li>{S.download.faq.mac.stepTerminal}</li>
+              <li>
+                {S.download.faq.mac.stepPaste}
+                <CodeCard code={MAC_UNQUARANTINE_CMD} label="Terminal" className="mt-2 mb-1" />
+              </li>
+              <li>{S.download.faq.mac.stepOpen}</li>
+            </ol>
+          </FaqItem>
+          <FaqItem question={S.download.faq.windows.question} defaultOpen={detected === "windows"}>
+            <p>{S.download.faq.windows.answer}</p>
+          </FaqItem>
+          <FaqItem question={S.download.faq.linux.question} defaultOpen={detected === "linux"}>
+            <p>{S.download.faq.linux.answer}</p>
+            <CodeCard code={LINUX_APPIMAGE_CHMOD_CMD} label="shell" className="mt-2" />
+          </FaqItem>
+        </div>
+      </div>
+
+      <div className="mx-auto mt-10 max-w-4xl text-center">
+        <p className="text-xs leading-5 text-gray-500 dark:text-gray-400">
           {S.download.cliHint}{" "}
           <Link to="/#quickstart" className={textLink}>
             {S.download.cliHintLink}
