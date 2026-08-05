@@ -112,16 +112,64 @@ https://github.com/user-attachments/assets/aec49ae9-b743-467b-b247-37bedfeaa36e
 
 ## 安装
 
-每种方式装出的都是同一个 `penguin` 命令：`penguin web` 启动完整 Web 体验（多会话对话、Agent / 技能 / 模型管理、用量统计、轨迹观测、评估中心；首次登录使用 `admin`，初始密码在服务端首次启动时打印，形如 `penguin-1234`，登录后请尽快修改密码），在应用内模型页配置模型后即可对话。在线安装器自带 Node 运行时，解压即用，升级与重装不触碰数据。
+两条路线——数据同在 `~/.penguin/data` 目录，桌面端与命令行安装可自由混用：
 
-### 🐧 Linux（在线安装）
+- **🖥️ 桌面端应用**——双击安装：内嵌服务端，打开即已登录，全程无需终端。
+- **⌨️ 命令行**——一行命令（或 npm / 离线包）装出 `penguin` 命令，`penguin web` 即在浏览器打开完整 Web 体验 `http://127.0.0.1:7364`（多会话对话、Agent / 技能 / 模型管理、用量统计、轨迹观测、评估中心）。在线安装器自带 Node 运行时，解压即用；升级与重装不触碰数据。
+
+> [!NOTE]
+> 命令行安装后，Web 首次登录用户名为 `admin`，初始密码在服务端首次启动时打印（形如 `penguin-1234`），登录后请尽快修改；模型在应用内「模型」页配置。
+
+### 🖥️ 桌面端应用
+
+完整的 Web 体验打包为独立应用：内嵌服务端，打开即已登录——无需终端、无登录页、也不用抄初始密码——并与 CLI 安装共用同一个 `~/.penguin/data` 数据目录，两者可以混用（一个数据目录同一时刻只运行一个服务端；CLI 已启动实例时，应用会直接接入它）。
+
+**[⬇️ 前往下载页获取](https://penguin.ooo/download)**——国内自动走 OSS 镜像加速，安装包也附于每个 [GitHub Release](https://github.com/Prism-Shadow/penguin-harness/releases)。
+
+| 平台          | 安装包                       |
+| ------------- | ---------------------------- |
+| macOS 11+     | dmg（Apple 芯片 / Intel）    |
+| Windows 10+   | 安装程序（.exe，x64）        |
+| Linux（x64）  | AppImage / deb               |
+
+当前构建暂未签名，系统可能拦截首次启动。展开对应系统的步骤，操作一次即可解除：
+
+<details>
+<summary><b>🍎 macOS 提示「PenguinHarness」已损坏，无法打开？</b></summary>
+
+macOS 会给从网络下载的文件加上隔离标记，应用未签名时会因此被误报「已损坏」。删除该标记即可解除：
+
+1. 打开下载的 dmg，把 `PenguinHarness.app` 拖入「应用程序（Applications）」文件夹。
+2. 打开终端：「启动台 → 其他 → 终端」。
+3. 在终端粘贴这条命令并回车，然后输入开机密码（输入时屏幕不显示字符，输完回车即可）：
+
+   ```bash
+   sudo xattr -rd com.apple.quarantine /Applications/PenguinHarness.app
+   ```
+
+4. 执行完成后，双击即可正常打开应用。
+
+</details>
+
+<details>
+<summary><b>🪟 Windows SmartScreen 提示「Windows 已保护你的电脑」？</b></summary>
+
+安装程序暂未签名，SmartScreen 会拦截首次运行：点「更多信息」，再点「仍要运行」即可继续安装，仅首次运行需要。
+
+</details>
+
+<details>
+<summary><b>🐧 Linux 双击 AppImage 没有反应？</b></summary>
+
+浏览器下载的 AppImage 默认没有执行权限，赋权一次后即可正常启动（deb 包经包管理器安装，无此问题）：
 
 ```bash
-curl -fsSL https://penguin.ooo/install.sh | sh
-penguin web        # 启动服务并打开 http://127.0.0.1:7364
+chmod +x penguin-desktop-linux-x86_64.AppImage
 ```
 
-### 🍎 macOS（在线安装）
+</details>
+
+### 🐧🍎 Linux / macOS（在线安装）
 
 ```bash
 curl -fsSL https://penguin.ooo/install.sh | sh
@@ -141,10 +189,6 @@ penguin web        # 启动服务并打开 http://127.0.0.1:7364
 npm install -g @prismshadow/penguin-cli
 penguin web        # 启动服务并打开 http://127.0.0.1:7364
 ```
-
-### 🖥️ 桌面端应用
-
-完整的 Web 体验打包为独立应用：内嵌服务端，打开即已登录——无需终端、无登录页、也不用抄初始密码——并与 CLI 安装共用同一个 `~/.penguin/data` 数据目录，两者可以混用（一个数据目录同一时刻只运行一个服务端；CLI 已启动实例时，应用会直接接入它）。macOS（dmg，Apple 芯片 / Intel）、Windows 与 Linux（AppImage / deb）的安装包可在[下载页](https://penguin.ooo/download)获取——国内自动走 OSS 镜像加速——也附于每个 [GitHub Release](https://github.com/Prism-Shadow/penguin-harness/releases)。当前构建暂未签名：macOS 首次启动请右键 →「打开」，Windows 在 SmartScreen 提示中选「仍要运行」。
 
 <details>
 <summary><b>📴 离线安装（无网环境）</b></summary>

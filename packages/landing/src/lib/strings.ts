@@ -107,8 +107,30 @@ export const zh = {
     altOss: "改用 OSS 镜像下载",
     checksums: "校验和（SHA256SUMS.desktop）",
     allReleases: "全部版本",
-    unsignedNote:
-      "当前构建暂未签名：macOS 首次启动请右键 →「打开」；Windows 在 SmartScreen 提示中选「更多信息 → 仍要运行」。",
+    /** First-launch FAQ: one collapsible item per platform, the visitor's own pre-expanded. */
+    faq: {
+      title: "首次启动常见问题",
+      intro: "当前构建暂未签名，系统可能拦截首次启动——按对应系统的步骤解除即可，只需操作一次。",
+      mac: {
+        question: "macOS 提示「PenguinHarness」已损坏，无法打开？",
+        why: "macOS 会给从网络下载的文件加上隔离标记，应用未签名时会因此被误报「已损坏」。删除该标记即可解除：",
+        stepDrag: "打开下载的 dmg，把 PenguinHarness 拖入「应用程序（Applications）」文件夹。",
+        stepTerminal: "打开终端：「启动台 → 其他 → 终端」。",
+        stepPaste:
+          "在终端粘贴这条命令并回车，然后输入开机密码（输入时屏幕不显示字符，输完回车即可）：",
+        stepOpen: "执行完成后，双击即可正常打开应用。",
+      },
+      windows: {
+        question: "Windows SmartScreen 提示「Windows 已保护你的电脑」？",
+        answer:
+          "安装程序暂未签名，SmartScreen 会拦截首次运行：点「更多信息」，再点「仍要运行」即可继续安装，仅首次运行需要。",
+      },
+      linux: {
+        question: "Linux 双击 AppImage 没有反应？",
+        answer:
+          "浏览器下载的 AppImage 默认没有执行权限，赋权一次后即可正常启动（deb 包经包管理器安装，无此问题）：",
+      },
+    },
     cliHint: "只需要命令行或浏览器里的 Web 界面？",
     cliHintLink: "参见快速开始",
   },

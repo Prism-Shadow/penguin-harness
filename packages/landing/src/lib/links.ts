@@ -102,6 +102,12 @@ export interface DesktopInstaller {
   variant: string;
 }
 
+/** Named separately: the first-launch FAQ's chmod command quotes this exact file name. */
+const LINUX_APPIMAGE: DesktopInstaller = {
+  file: "penguin-desktop-linux-x86_64.AppImage",
+  variant: "AppImage",
+};
+
 /** Installers per platform card, in display order. */
 export const DESKTOP_INSTALLERS: Record<"mac" | "windows" | "linux", DesktopInstaller[]> = {
   mac: [
@@ -109,11 +115,18 @@ export const DESKTOP_INSTALLERS: Record<"mac" | "windows" | "linux", DesktopInst
     { file: "penguin-desktop-darwin-x64.dmg", variant: "Intel" },
   ],
   windows: [{ file: "penguin-desktop-win32-x64.exe", variant: "x64" }],
-  linux: [
-    { file: "penguin-desktop-linux-x86_64.AppImage", variant: "AppImage" },
-    { file: "penguin-desktop-linux-amd64.deb", variant: "deb" },
-  ],
+  linux: [LINUX_APPIMAGE, { file: "penguin-desktop-linux-amd64.deb", variant: "deb" }],
 };
 
 /** Checksum list covering every desktop installer of a release. */
 export const DESKTOP_SHA256SUMS = "SHA256SUMS.desktop";
+
+/**
+ * First-launch fixes for the unsigned desktop builds (the download page FAQ).
+ * Language-neutral, like the install commands above. The macOS one deletes the
+ * quarantine flag that makes Gatekeeper report the app as "damaged"; the Linux
+ * one restores the execute bit browsers strip from a downloaded AppImage.
+ */
+export const MAC_UNQUARANTINE_CMD =
+  "sudo xattr -rd com.apple.quarantine /Applications/PenguinHarness.app";
+export const LINUX_APPIMAGE_CHMOD_CMD = `chmod +x ${LINUX_APPIMAGE.file}`;

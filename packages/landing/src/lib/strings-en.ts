@@ -105,8 +105,31 @@ export const en: Strings = {
     altOss: "Use the OSS mirror instead",
     checksums: "Checksums (SHA256SUMS.desktop)",
     allReleases: "All releases",
-    unsignedNote:
-      'Current builds are unsigned: on first launch use right-click → Open on macOS, and "More info → Run anyway" past Windows SmartScreen.',
+    /** First-launch FAQ: one collapsible item per platform, the visitor's own pre-expanded. */
+    faq: {
+      title: "First-launch FAQ",
+      intro:
+        "Current builds are not signed yet, so the system may block the very first launch — the fix for your platform below is needed only once.",
+      mac: {
+        question: "macOS says “PenguinHarness” is damaged and can’t be opened?",
+        why: "macOS quarantines files downloaded from the internet, and the missing signature makes that flag surface as a false “damaged” alert. Deleting the flag clears it:",
+        stepDrag: "Open the downloaded dmg and drag PenguinHarness into the Applications folder.",
+        stepTerminal: "Open Terminal (Launchpad → Other → Terminal).",
+        stepPaste:
+          "Paste this command into Terminal and press Enter, then type your login password (nothing shows while you type; press Enter when done):",
+        stepOpen: "Once it finishes, double-click the app — it now opens normally.",
+      },
+      windows: {
+        question: "Windows SmartScreen says “Windows protected your PC”?",
+        answer:
+          "The installer is not signed yet, so SmartScreen holds the first run: click “More info”, then “Run anyway” to continue installing — first run only.",
+      },
+      linux: {
+        question: "Nothing happens when double-clicking the AppImage on Linux?",
+        answer:
+          "Browsers download AppImages without the execute permission. Grant it once and the app starts normally from then on (the deb package installs through the package manager and is not affected):",
+      },
+    },
     cliHint: "Just need the CLI, or the Web UI in a browser?",
     cliHintLink: "See the quick start",
   },
