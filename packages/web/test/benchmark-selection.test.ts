@@ -82,4 +82,15 @@ describe("Benchmark selection cache", () => {
     expect(() => saveBenchmarkSelection(key, value, broken)).not.toThrow();
     expect(() => clearBenchmarkSelection(key, value, broken)).not.toThrow();
   });
+
+  it("degrades safely when the default localStorage global is unavailable", () => {
+    const key = benchmarkSelectionKey("user-a", "project-1");
+    const value = { agentId: "agent-a", benchmarkId: "benchmark-a" };
+
+    // Vitest runs in Node without a localStorage global. Resolving the default inside each try
+    // keeps that ReferenceError on the same best-effort path as browser SecurityErrors.
+    expect(loadBenchmarkSelection(key)).toBeNull();
+    expect(() => saveBenchmarkSelection(key, value)).not.toThrow();
+    expect(() => clearBenchmarkSelection(key, value)).not.toThrow();
+  });
 });

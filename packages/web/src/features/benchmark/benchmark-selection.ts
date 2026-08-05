@@ -44,10 +44,10 @@ export function parseBenchmarkSelection(raw: string | null): BenchmarkSelectionR
 
 export function loadBenchmarkSelection(
   key: string,
-  storage: BenchmarkSelectionStorage = localStorage,
+  storage?: BenchmarkSelectionStorage,
 ): BenchmarkSelectionRef | null {
   try {
-    return parseBenchmarkSelection(storage.getItem(key));
+    return parseBenchmarkSelection((storage ?? localStorage).getItem(key));
   } catch {
     return null;
   }
@@ -56,10 +56,10 @@ export function loadBenchmarkSelection(
 export function saveBenchmarkSelection(
   key: string,
   selection: BenchmarkSelectionRef,
-  storage: BenchmarkSelectionStorage = localStorage,
+  storage?: BenchmarkSelectionStorage,
 ): void {
   try {
-    storage.setItem(key, JSON.stringify(selection));
+    (storage ?? localStorage).setItem(key, JSON.stringify(selection));
   } catch {
     /* Storage can be unavailable under privacy restrictions; page state still works. */
   }
@@ -72,12 +72,13 @@ export function saveBenchmarkSelection(
 export function clearBenchmarkSelection(
   key: string,
   expected: BenchmarkSelectionRef,
-  storage: BenchmarkSelectionStorage = localStorage,
+  storage?: BenchmarkSelectionStorage,
 ): void {
   try {
-    const current = parseBenchmarkSelection(storage.getItem(key));
+    const target = storage ?? localStorage;
+    const current = parseBenchmarkSelection(target.getItem(key));
     if (current?.agentId === expected.agentId && current.benchmarkId === expected.benchmarkId) {
-      storage.removeItem(key);
+      target.removeItem(key);
     }
   } catch {
     /* Best-effort cleanup only. */
