@@ -197,12 +197,8 @@ penguin config model add \
 
 不是每个人桌下都有一块 AMD GPU——而要试用这一切，你并不需要它。通过 AMD AI Developer Program，AMD 与 Fireworks AI 合作，向符合条件的开发者提供**价值 50 美元的免费 Fireworks 额度**。Fireworks 通过 OpenAI 兼容端点提供开源权重模型，因此——和上面的本地 Ollama 一样——把 PenguinHarness 指向它也只是一行配置的事。
 
-领取额度（审核通常需要 2–3 个工作日）：
+领取额度（审核通常需要 2–3 个工作日）可参阅 [Fireworks API 获取指南](https://penguin.ooo/blog/fireworks-credits-amd)，了解额度兑换和 API Key 获取步骤。
 
-1. 在 [AMD AI Developer Program](https://developer.amd.com/ai-developer-program/) 注册。
-2. 进入 **Member Perks → Cloud Credit Options → Request Cloud Credits**。
-3. 在表单中把"所需产品"选为 **Fireworks AI**，附上至少一个公开主页链接（GitHub、LinkedIn 等），提交。
-4. AMD 会把优惠码发到你的邮箱。到 [fireworks.ai](https://fireworks.ai/) 通过 **Redeem Promo** 兑换，然后生成 API Key。
 
 之后像接入任何其他端点一样把它接进 PenguinHarness：
 
