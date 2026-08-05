@@ -126,10 +126,16 @@ async function realPathOrResolve(dir: string): Promise<string> {
  * Whether a Workspace is one PenguinHarness created for a Session itself, i.e. it sits under
  * some Agent's `workspaces/` directory (`<project>/agents/<agent>/workspaces/tmp-xxxxxxxx`).
  *
- * Temporary Workspaces get no Memory: their contents are per-Session and the directory is
- * gone by the time anything could be recalled. The check is by location rather than by "did
- * the caller pass a workspaceDir", because a subagent inherits its parent's Workspace as an
- * explicit argument — including when that Workspace is the parent's temporary one.
+ * Temporary Workspaces get no Memory, because one is allocated per Session (see
+ * `createTempWorkspace`, called once per `createSession`): no later Session ever runs in that
+ * directory, so anything written to a Memory directory keyed off it could never be read back —
+ * it would be write-only storage. Note this is *not* because the directory gets cleaned up:
+ * deleting a Session removes its Traces and scratchpad but leaves `workspaces/tmp-xxxxxxxx`
+ * behind, and nothing prunes it.
+ *
+ * The check is by location rather than by "did the caller pass a workspaceDir", because a
+ * subagent inherits its parent's Workspace as an explicit argument — including when that
+ * Workspace is the parent's temporary one.
  */
 export async function isTemporaryWorkspace(
   root: string,
@@ -147,9 +153,16 @@ export async function isTemporaryWorkspace(
 
 /**
  * Creates a Workspace's Memory directory if needed and records the Workspace path in its
- * `.workspace` marker (rewritten when the path changed, e.g. the directory was reached
- * through a different symlink). Never touches the index or any topic file — those are the
- * model's to create on the first save.
+ * `.workspace` marker.
+ *
+ * The marker is (re)written whenever it is missing or does not match, which repairs one that
+ * was hand-edited, truncated or written by an older version. It is deliberately *not* a rename
+ * path and cannot be one: the key is a hash of the very path the marker records, so a directory
+ * reached another way — through a symlink — canonicalizes to the same real path and lands on
+ * this same directory with an identical marker, while a directory that genuinely moved hashes
+ * to a different key and therefore a different Memory directory.
+ *
+ * Never touches the index or any topic file — those are the model's to create on the first save.
  */
 export async function ensureWorkspaceMemoryDir(args: {
   root: string;
