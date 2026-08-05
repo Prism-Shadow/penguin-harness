@@ -23,13 +23,16 @@ https://developer.amd.com.cn/login?source=2a6CMBw3K
 
 - 已有 AMD ADP 账户：点击“登录”，然后按页面提示登录。
 
-![image\.png](图片和附件/image%202.png)
+<img width="327" height="690" alt="image 2" src="https://github.com/user-attachments/assets/e904e4aa-28e4-424e-98e1-373275000623" />
+
 
 ## 第二步：进入活动页
 
 点击首页“新闻/公告”或进入“活动中心”相关活动页，点击“去申请”。
 
-![image\.png](图片和附件/image.png)
+<img width="1533" height="904" alt="image" src="https://github.com/user-attachments/assets/650ad0a8-6f27-4fea-b157-381d24fb3d15" />
+
+
 
 ## 第三步：填写 Credits 申请表
 
@@ -47,7 +50,7 @@ https://developer.amd.com.cn/login?source=2a6CMBw3K
 
 ## 第四步：等待审核
 
-提交后，AMD 会验证账户及申请资料。A通常需要 2–3 个工作日，实际时间可能因申请量、资料完整度或节假日而变化。
+提交后，AMD 会验证账户及申请资料。通常需要 2–3 个工作日，实际时间可能因申请量、资料完整度或节假日而变化。
 
 
 
@@ -66,7 +69,8 @@ https://developer.amd.com.cn/login?source=2a6CMBw3K
 
 3. 兑换成功后，点击 Create API Key，即可生成 Fireworks API Key。
 
-![image\.png](图片和附件/image%201.png)
+<img width="1462" height="733" alt="image 1" src="https://github.com/user-attachments/assets/179c8f11-18f2-4e80-b0b0-4d48fd81db80" />
+
 
 
 ## 在 PenguinHarness 中用起来
