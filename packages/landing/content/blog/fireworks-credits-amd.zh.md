@@ -9,53 +9,65 @@ excerpt: 我们很高兴与 AMD AI Developer Program 合作，为大家带来 Fi
 
 > 页面内容、Credits 金额与有效期可能调整，请以申请时的页面及审批邮件为准。
 
-## 第一步：加入 AMD AI Developer Program
+## 第一步：打开 AMD AI Developer Program 页面
 
-访问官方入口：<https://developer.amd.com/ai-developer-program/>，在 **Join the AMD AI Developer Program** 区域：
+访问 AMD AI Developer Program 中国站官方入口：
 
-- 没有 AMD ADP 账户：点击 **Create Account**，填写个人信息创建账户；
-- 已有账户：点击 **Log In**，按页面提示登录。
+点击此链接 [AMD AI Developer Program 中国站](https://developer.amd.com.cn/login?source=2a6CMBw3K)
 
-![AMD AI Developer Program 加入页面](https://github.com/user-attachments/assets/47a3055b-9a95-40a1-80c6-e3bac7a9ac49)
+或在浏览器中输入下面的网址
 
-## 第二步：在 Member Perks 申请 Cloud Credits
+https://developer.amd.com.cn/login?source=2a6CMBw3K
 
-注册并登录后：
+- 没有 AMD ADP账户：点击 “注册账号”。输入个人信息，创建ADP账户。
 
-1. 点击顶部导航栏中的 **Member Perks**；
-2. 找到 **Cloud Credit Options**；
-3. 点击底部的 **Request Cloud Credits**。
+- 已有 AMD ADP 账户：点击“登录”，然后按页面提示登录。
 
-![Member Perks 中的 Cloud Credit Options](https://github.com/user-attachments/assets/773f8cf1-d72f-4aa3-83b8-f31fc7c9ed9e)
+![image\.png](图片和附件/image%202.png)
 
-## 第三步：填写申请表
+## 第二步：进入活动页
 
-进入申请表后填写个人信息：
+点击首页“新闻/公告”或进入“活动中心”相关活动页，点击“去申请”。
 
-- **Product Needed** 处选择 **Fireworks AI**；
-- **Profile** 处提供至少一个公开资料用于账户验证：LinkedIn、GitHub、Portfolio、公司 / 学校主页、WeChat、WeCom 等均可。
+![image\.png](图片和附件/image.png)
 
-![申请表：Product Needed 选择 Fireworks AI](https://github.com/user-attachments/assets/12a49136-0956-4f29-9d47-f0e473615075)
+## 第三步：填写 Credits 申请表
 
-填完页面中其他带 `*` 的必填项，检查邮箱、身份、产品选项与公开资料链接无误后提交。
+进入申请表后，填写对应的个人信息。
+
+在Product Needed 处默认选择Fireworks AI。
+
+在Profile从处至少一个公开资料用于账户验证。审核人员将查看您的相关账号用于评估您的申请资格。
+
+
+
+填写页面中其他带 `*` 的必填项，检查邮箱、身份、产品选项和公开资料链接无误后提交申请。
+
+
 
 ## 第四步：等待审核
 
-AMD 会验证账户与申请资料，通常需要 **2–3 个工作日**；实际时间可能因申请量、资料完整度或节假日而变化。
+提交后，AMD 会验证账户及申请资料。A通常需要 2–3 个工作日，实际时间可能因申请量、资料完整度或节假日而变化。
 
-## 第五步：收到兑换码并兑换
 
-审核通过后，AMD 会向申请邮箱发送包含唯一 **Coupon Code** 的邮件，可兑换 **$50 Fireworks AI Credits**。请妥善保存，不要公开、转发或提交到代码仓库。
 
-![审批邮件中的 Coupon Code](https://github.com/user-attachments/assets/c53129c7-2c87-4510-a4e3-31f52598dc24)
+## 第五步：收到邮件并激活 Credits
 
-兑换与创建 API key：
+审核通过后，AMD 会向申请邮箱发送附带兑换码的邮件
 
-1. 打开 <https://fireworks.ai/> 并登录；
-2. 点击 **Redeem Promo**，输入邮件中的 Coupon Code，兑换 $50 Credits；
-3. 点击 **Create API Key**，生成 Fireworks API key。
+审批邮件包含一个唯一 Coupon Code，用于兑换 $50 Fireworks AI Credits，请妥善保存，请勿公开、转发或提交到代码仓库中。
 
-![在 Fireworks 控制台兑换并创建 API key](https://github.com/user-attachments/assets/051a1e69-db7f-4867-b899-89981df15142)
+
+## 第六步：兑换 Fireworks AI Credits 并创建 API Key
+
+1. 打开 [https://fireworks\.ai/](https://fireworks.ai/) 并登录 Fireworks AI 账户。
+
+2. 点击 Redeem Promo，输入邮件中的 Coupon Code，兑换 $50 Credits。
+
+3. 兑换成功后，点击 Create API Key，即可生成 Fireworks API Key。
+
+![image\.png](图片和附件/image%201.png)
+
 
 ## 在 PenguinHarness 中用起来
 
@@ -78,7 +90,6 @@ penguin web        # 打开 http://127.0.0.1:7364（首次登录：admin，初�
 
 ## 参考链接
 
-- [AMD AI Developer Program](https://developer.amd.com/ai-developer-program/)
-- [AMD 官方 Cloud Credits 申请视频演示](https://www.youtube.com/watch?v=masSW53JkTY)
-- 申请步骤与截图整理自 WhatGhost 的申请指南（[中文](https://github.com/WhatGhost/whatghost_Notebooks/blob/main/other/AMD_AI_Developer_Program_Credits_%E7%94%B3%E8%AF%B7%E6%8C%87%E5%8D%97.md) / [English](https://github.com/WhatGhost/whatghost_Notebooks/blob/main/other/AMD_AI_Developer_Program_Credits_Application_Guide_EN.md)），感谢原作者
+- [AMD AI Developer Program 中国站](https://developer.amd.com.cn/login?source=2a6CMBw3K)
+- 申请步骤与截图整理自[AMD AI Developer Program 官方申请指南](https://acn658bi9o7j.feishu.cn/docx/T8VIdjkZXoqyDwxwNjacbcsYngd)，感谢原作者
 - [PenguinHarness 模型配置文档](https://penguin.ooo/docs/models)
