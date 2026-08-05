@@ -3,11 +3,16 @@
  * what the Agent remembers between Sessions.
  *
  * The layout is core's (see core's state/memory.ts): one shared index at `memory/AGENTS.md`,
- * one directory per Workspace holding Markdown topic files. This service never invents paths
- * from client input — a request names an `agentId`, a `workspaceKey` and a file name inside
- * that Workspace, each validated against a character rule and then re-checked for containment
- * after resolution, so neither `..` nor a symlink can reach outside the Agent's Memory
- * directory.
+ * then one directory per scope holding Markdown topic files — `memory/agent/` for the Agent
+ * scope and `memory/<workspace_key>/` for each Workspace. The Agent scope is addressed through
+ * the same `workspaceKey` parameter as any Workspace (`AGENT_SCOPE_KEY`), so it needs no routes
+ * of its own; the one difference is that it may be created on demand, since it belongs to the
+ * Agent rather than to a Session that has run.
+ *
+ * This service never invents paths from client input — a request names an `agentId`, a
+ * `workspaceKey` and a file name inside that scope, each validated against a character rule and
+ * then re-checked for containment after resolution, so neither `..` nor a symlink can reach
+ * outside the Agent's Memory directory.
  *
  * Files are the source of truth and are read fresh on every request (they are small, requests
  * are rare, and the model edits the same files from its side).
@@ -15,6 +20,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
+  AGENT_SCOPE_KEY,
   MEMORY_INDEX_FILENAME,
   MEMORY_PLACEHOLDER,
   memoryDir,
@@ -62,27 +68,32 @@ export class MemoryService {
     };
   }
 
-  /** Workspace directories under `memory/`, newest activity first (a directory with no topic file yet sorts last, by key). */
+  /**
+   * The scope directories under `memory/`: the Agent scope first — always listed, even before it
+   * exists on disk, so a memory can be filed there without waiting for a Session to create it —
+   * then the Workspaces, newest activity first (one with no topic file yet sorts last, by key).
+   */
   async listWorkspaces(projectId: string, agentId: string): Promise<MemoryWorkspaceInfo[]> {
     const base = memoryDir(this.root, projectId, agentId);
-    let entries: string[];
+    let entries: string[] = [];
     try {
       entries = (await fs.readdir(base, { withFileTypes: true }))
-        .filter((e) => e.isDirectory())
+        .filter((e) => e.isDirectory() && e.name !== AGENT_SCOPE_KEY)
         .map((e) => e.name);
     } catch {
-      // No memory/ directory yet (never initialized, or an Agent that has only run in temporary Workspaces).
-      return [];
+      // No memory/ directory yet (never initialized): the Agent scope entry below still stands.
     }
     const workspaces = await Promise.all(
       entries.map((key) => this.workspaceInfo(path.join(base, key), key)),
     );
-    return workspaces.sort((a, b) => {
+    workspaces.sort((a, b) => {
       if (a.updatedAt && b.updatedAt) return b.updatedAt.localeCompare(a.updatedAt);
       if (a.updatedAt) return -1;
       if (b.updatedAt) return 1;
       return a.workspaceKey.localeCompare(b.workspaceKey);
     });
+    const agentScope = await this.workspaceInfo(path.join(base, AGENT_SCOPE_KEY), AGENT_SCOPE_KEY);
+    return [{ ...agentScope, agentScope: true }, ...workspaces];
   }
 
   private async workspaceInfo(dir: string, key: string): Promise<MemoryWorkspaceInfo> {
@@ -154,7 +165,7 @@ export class MemoryService {
     };
   }
 
-  /** Creates or overwrites a topic file. The Workspace directory must already exist — Workspaces come from Sessions, not from this API. */
+  /** Creates or overwrites a topic file. A Workspace directory must already exist (Workspaces come from Sessions, not from this API); the Agent scope's is created on demand. */
   async writeFile(
     projectId: string,
     agentId: string,
@@ -268,9 +279,13 @@ export class MemoryService {
   }
 
   /**
-   * Validates a workspace key and returns its directory, 404 if it does not exist. The key is
-   * only ever a single directory name — a Workspace directory is created by a Session, so this
-   * API never creates one.
+   * Validates a scope key and returns its directory, 404 if it does not exist. The key is only
+   * ever a single directory name.
+   *
+   * A Workspace directory is created by a Session, so this API never creates one — a key with no
+   * directory means no Session has run there and there is nothing to file against. The Agent
+   * scope is the exception: it belongs to the Agent rather than to any Session, so it is created
+   * on demand and the first agent-level memory can be written before the Agent has ever run.
    */
   private async requireWorkspaceDir(
     projectId: string,
@@ -282,6 +297,10 @@ export class MemoryService {
       throw badRequest("workspaceKey is invalid.");
     }
     const dir = workspaceMemoryDir(this.root, projectId, agentId, workspaceKey);
+    if (workspaceKey === AGENT_SCOPE_KEY) {
+      await fs.mkdir(dir, { recursive: true });
+      return dir;
+    }
     try {
       if ((await fs.stat(dir)).isDirectory()) return dir;
     } catch {

@@ -1,19 +1,21 @@
 /**
  * Memory page: Workspace Memory (`agent_state/memory/`) across the Project's Agents.
  *
- * The left directory is a three-level tree — Agent → Workspace → topic file — following the
- * same shape as trace observability and the evaluation center (lazy fetch on expand, inline
- * loading/empty/error inside the node that owns them). The shared index `memory/AGENTS.md` is
- * the Agent node's first child: one index covers every Workspace, so it belongs to the Agent
- * and not to any Workspace under it. The right side is the editor for whatever is selected.
+ * The left directory is a three-level tree — Agent → scope → topic file — following the same
+ * shape as trace observability and the evaluation center (lazy fetch on expand, inline
+ * loading/empty/error inside the node that owns them). Under each Agent sit the shared index
+ * `memory/AGENTS.md`, then the Agent scope, then one node per Workspace: the index covers every
+ * scope so it belongs to the Agent, and the Agent scope leads the rest because it is the one
+ * every Session reads. A scope is addressed by its directory name throughout, the Agent scope
+ * included, so it needs no separate code path here. The right side edits whatever is selected.
  *
  * Unlike the two sibling pages this one writes, so the tree data lives here rather than inside
  * each node: renaming or deleting a topic file also rewrites the index links that pointed at it,
  * which means the Agent's index has to be reachable while one of its files is selected.
  *
- * The Agent-level switch is not here — it is Agent configuration and lives on the Prompt tab of
- * the Agent settings page, next to the `{{MEMORY}}` placeholder it governs. This page only
- * reports the state, so an edit made while Memory is off doesn't look like it reached the model.
+ * The Agent-level switch is not here — it is Agent configuration and lives on the Memory tab of
+ * the Agent settings page. This page only reports the state, so an edit made while Memory is off
+ * doesn't look like it reached the model.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
@@ -122,7 +124,11 @@ function WorkspaceNode({
         <button
           type="button"
           onClick={onToggle}
-          title={workspace.workspacePath ?? workspace.workspaceKey}
+          title={
+            workspace.agentScope
+              ? S.memory.agentScopeHint
+              : (workspace.workspacePath ?? workspace.workspaceKey)
+          }
           aria-label={open ? S.nav.collapseGroup : S.nav.expandGroup}
           className={rowClass(false, "pl-2.5")}
         >
@@ -257,24 +263,25 @@ function AgentNode({
                   <span className={rowTextClass(indexActive)}>{S.memory.indexRow}</span>
                 </button>
               </li>
-              {overview.workspaces.length === 0 ? (
+              {overview.workspaces.map((w) => (
+                <WorkspaceNode
+                  key={w.workspaceKey}
+                  agentId={agentId}
+                  workspace={w}
+                  open={openWorkspaces.has(workspaceNodeKey(agentId, w.workspaceKey))}
+                  files={memory?.files.get(w.workspaceKey)}
+                  selection={selection}
+                  onToggle={() => onToggleWorkspace(w.workspaceKey)}
+                  onOpenFile={(fileName) => onOpenFile(w.workspaceKey, fileName)}
+                  onCreate={() => onCreate(w.workspaceKey)}
+                />
+              ))}
+              {/* The Agent scope is always listed, so an empty list is impossible — what is
+                  worth saying is that no Session has run in a persistent Workspace yet. */}
+              {!overview.workspaces.some((w) => !w.agentScope) && (
                 <li className="px-2.5 py-1 text-xs text-gray-400 dark:text-gray-600">
                   {S.memory.noWorkspaces}
                 </li>
-              ) : (
-                overview.workspaces.map((w) => (
-                  <WorkspaceNode
-                    key={w.workspaceKey}
-                    agentId={agentId}
-                    workspace={w}
-                    open={openWorkspaces.has(workspaceNodeKey(agentId, w.workspaceKey))}
-                    files={memory?.files.get(w.workspaceKey)}
-                    selection={selection}
-                    onToggle={() => onToggleWorkspace(w.workspaceKey)}
-                    onOpenFile={(fileName) => onOpenFile(w.workspaceKey, fileName)}
-                    onCreate={() => onCreate(w.workspaceKey)}
-                  />
-                ))
               )}
             </ul>
           )}

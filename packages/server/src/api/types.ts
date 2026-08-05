@@ -560,11 +560,13 @@ export interface AgentConfigUpdateRequest {
 // Workspace Memory
 // ---------------------------------------------------------------------------
 
-/** One Workspace's Memory directory (`agent_state/memory/<workspaceKey>/`). */
+/** One Memory scope directory: `agent_state/memory/agent/` or `agent_state/memory/<workspaceKey>/`. */
 export interface MemoryWorkspaceInfo {
   /** Directory name under `memory/`, and the group heading used in the index. */
   workspaceKey: string;
-  /** Workspace path the key was derived from, read from the directory's `.workspace` marker; unset for a directory written before the marker existed or edited by hand. */
+  /** Set on the Agent scope (`memory/agent/`), which is shared by every Session including those in a temporary Workspace; absent on a Workspace. */
+  agentScope?: true;
+  /** Workspace path the key was derived from, read from the directory's `.workspace` marker; unset on the Agent scope (it stands for no path) and for a directory written before the marker existed or edited by hand. */
   workspacePath?: string;
   /** Number of Markdown topic files in the directory. */
   fileCount: number;

@@ -95,7 +95,7 @@ A per-Project model table grouped by provider. Models can be added and edited: i
 
 ## Memory (/memory)
 
-Workspace Memory across the Project's Agents, as a tree: Agent → Workspace → topic file. The shared index `memory/AGENTS.md` is the Agent's own first child — one index covers every Workspace — and the right side edits whatever is selected. Create a topic file from the `+` on a Workspace row; rename and delete act on the selected file.
+Workspace Memory across the Project's Agents, as a tree: Agent → scope → topic file. Under each Agent sit the shared index `memory/AGENTS.md`, then the **Agent-level** scope, then one node per Workspace — the index covers every scope so it belongs to the Agent, and the Agent scope leads the rest because it is the one every Session reads (a Session in a temporary Workspace has no other). The right side edits whatever is selected. Create a topic file from the `+` on a scope row; rename and delete act on the selected file.
 
 Editing here writes the same files the agent maintains itself with its file tools. Renaming or deleting a topic file also repoints or removes the index links that named it, so the index never lists a file that is gone. An Agent whose memory cannot reach the model is marked in the tree — **Off** for the switch, **No placeholder** for a prompt template with no `{{MEMORY}}` — and both link back to the Agent's Memory tab. For the storage model, see [Configuration](/configuration#workspace-memory).
 

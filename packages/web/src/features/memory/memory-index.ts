@@ -76,11 +76,13 @@ export function headingOffset(index: string, workspaceKey: string): number {
 }
 
 /**
- * Tree label for a Workspace: the recorded path's last segment reads as the project the
- * Workspace is, where the key it hashes to does not. Directories written before the
- * `.workspace` marker existed, or created by hand, have no path and fall back to the key.
+ * Tree label for a Memory scope. The Agent scope stands for no path, so it is named for what it
+ * is. For a Workspace the recorded path's last segment reads as the project the Workspace is,
+ * where the key it hashes to does not; directories written before the `.workspace` marker
+ * existed, or created by hand, have no path and fall back to the key.
  */
 export function workspaceLabel(w: MemoryWorkspaceInfo): string {
+  if (w.agentScope) return S.memory.agentScope;
   if (!w.workspacePath) return w.workspaceKey;
   const segments = w.workspacePath.split("/").filter(Boolean);
   return segments[segments.length - 1] ?? w.workspacePath;

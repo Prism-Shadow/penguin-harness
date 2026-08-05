@@ -6,16 +6,25 @@
  * It is **not** context compaction: compaction preserves one Session's short-term working
  * state, Memory preserves what later Sessions need.
  *
- * Scope is `Project + Agent + Workspace`: Sessions of the same Agent in the same Workspace
- * share one Memory; different Workspaces of one Agent keep their topic files apart but share
- * a single index; different Agents never share Memory even in the same Workspace. Memory lives
- * in Agent State, so it travels with export / import / snapshots and is visible to every
- * Project member who can reach the Agent — which is why there is no `user` topic type here.
+ * There are two scopes, both belonging to one Agent and never shared with another:
+ *
+ *   - **Agent scope** (`memory/agent/`) — what stays true wherever the Agent works: the user's
+ *     standing preferences, reference material not tied to one codebase. Every Session reads it,
+ *     including one running in a temporary Workspace, which has no other place to write.
+ *   - **Workspace scope** (`memory/<workspace_key>/`) — facts about one Workspace. Sessions of
+ *     the same Agent in the same Workspace share it; different Workspaces keep their topic files
+ *     apart. A Session in a temporary Workspace gets no Workspace scope at all.
+ *
+ * Both share a single index. Memory lives in Agent State, so it travels with export / import /
+ * snapshots and is visible to every Project member who can reach the Agent — which is why there
+ * is no `user` topic type here.
  *
  * On-disk layout (`agent_state/memory/`):
  *
  *     memory/
- *     ├── AGENTS.md                    # the single index, grouped by workspace key
+ *     ├── AGENTS.md                    # the single index, grouped by scope directory name
+ *     ├── agent/                       # Agent scope (no marker: it stands for no path)
+ *     │   └── <topic>.md
  *     └── <workspace_key>/
  *         ├── .workspace               # the Workspace path this key stands for
  *         └── <topic>.md               # frontmatter + body, semantic topics (not per Task/date)
@@ -34,8 +43,19 @@ import { agentsDir, memoryIndexPath, workspaceMemoryDir } from "./paths.js";
 export const MEMORY_TOPIC_TYPES = ["feedback", "project", "reference"] as const;
 export type MemoryTopicType = (typeof MEMORY_TOPIC_TYPES)[number];
 
-/** The index file name, used both for `memory/AGENTS.md` and to exclude it from a Workspace's topic listing. */
+/** The index file name, used both for `memory/AGENTS.md` and to exclude it from a scope's topic listing. */
 export const MEMORY_INDEX_FILENAME = "AGENTS.md";
+
+/**
+ * Directory name of the Agent scope under `memory/`, and its heading in the index — it sits
+ * alongside the Workspace directories and is read and written through the same code paths.
+ *
+ * The name is safe to reserve because a generated workspace key is always
+ * `<safe-basename>-<8 hex>` and therefore always contains a hyphen: a name without one can
+ * never be produced by `workspaceMemoryKeyForRealPath`, so no Workspace can ever collide with
+ * it. (A Workspace directory literally named `agent` yields `agent-<hash>`, not `agent`.)
+ */
+export const AGENT_SCOPE_KEY = "agent";
 
 /**
  * Marker file inside a Workspace Memory directory recording the Workspace path the key was
@@ -62,15 +82,23 @@ export interface MemoryTopicMetadata {
   updatedAt?: string;
 }
 
-/**
- * The Memory binding of one Session: the Workspace's own topic directory plus the shared
- * index content, as resolved at Session creation.
- */
-export interface SessionMemory {
+/** The Workspace scope of one Session: absent when the Session runs in a temporary Workspace. */
+export interface SessionWorkspaceMemory {
   /** Workspace key — the `memory/` subdirectory name and the index's group heading. */
   key: string;
   /** Absolute path of the Workspace's topic directory (the `{{MEMORY_DIR}}` value). */
   dir: string;
+}
+
+/**
+ * The Memory binding of one Session, as resolved at Session creation: the Agent scope (always),
+ * the Workspace scope (only in a persistent Workspace), and the shared index both are listed in.
+ */
+export interface SessionMemory {
+  /** Absolute path of `memory/agent/` (the `{{MEMORY_AGENT_DIR}}` value). */
+  agentDir: string;
+  /** The Workspace scope; `undefined` in a temporary Workspace, where the Agent scope is the only place to write. */
+  workspace?: SessionWorkspaceMemory;
   /** Full content of `memory/AGENTS.md` (empty string when it does not exist yet). */
   index: string;
 }
@@ -92,7 +120,8 @@ function safeKeyBase(dirName: string): string {
 
 /**
  * The workspace key for an already-canonical absolute path: `<safe-basename>-<8 hex of the
- * path's sha256>`.
+ * path's sha256>`. The hyphen before the hash is what makes `AGENT_SCOPE_KEY` safe to reserve —
+ * every generated key carries one, so a hyphen-free name is unreachable from here.
  *
  * Identity is the directory itself and has nothing to do with Git: two symlinks pointing at
  * one directory resolve to the same real path and therefore the same key, while moving or
@@ -184,6 +213,26 @@ export async function ensureWorkspaceMemoryDir(args: {
   return dir;
 }
 
+/** Absolute path of the Agent scope's topic directory (`memory/agent/`). */
+export function agentMemoryDir(root: string, projectId: string, agentId: string): string {
+  return workspaceMemoryDir(root, projectId, agentId, AGENT_SCOPE_KEY);
+}
+
+/**
+ * Creates the Agent scope's directory if needed. Unlike a Workspace directory it gets no
+ * `.workspace` marker: the marker records the path a key was hashed from, and this scope stands
+ * for no path at all — it is the Agent itself.
+ */
+export async function ensureAgentMemoryDir(
+  root: string,
+  projectId: string,
+  agentId: string,
+): Promise<string> {
+  const dir = agentMemoryDir(root, projectId, agentId);
+  await fs.mkdir(dir, { recursive: true });
+  return dir;
+}
+
 /** Reads the Workspace path recorded in a Memory directory's marker; `undefined` when the marker is missing or empty. */
 export async function readWorkspaceMarker(dir: string): Promise<string | undefined> {
   try {
@@ -208,11 +257,14 @@ export async function readMemoryIndex(
 }
 
 /**
- * Resolves the Memory a Session should run with, creating its Workspace directory as a side
- * effect. Returns `null` — meaning nothing is injected into the prompt and no directory is
- * created — when Memory is disabled for the Agent or the Session runs in a temporary
- * Workspace. Failures to prepare the directory are also `null`: Memory is an enhancement, and
- * an unwritable Agent State should not take down Session creation.
+ * Resolves the Memory a Session should run with, creating the scope directories as a side
+ * effect. The Agent scope is always prepared; the Workspace scope only when the Session runs in
+ * a persistent Workspace, so a temporary one never gets a directory that no later Session could
+ * read back.
+ *
+ * Returns `null` — nothing injected, nothing created — when Memory is disabled for the Agent.
+ * Failures to prepare a directory are also `null`: Memory is an enhancement, and an unwritable
+ * Agent State should not take down Session creation.
  */
 export async function resolveSessionMemory(args: {
   root: string;
@@ -223,7 +275,11 @@ export async function resolveSessionMemory(args: {
 }): Promise<SessionMemory | null> {
   if (!args.enabled) return null;
   try {
-    if (await isTemporaryWorkspace(args.root, args.projectId, args.workspaceDir)) return null;
+    const agentDir = await ensureAgentMemoryDir(args.root, args.projectId, args.agentId);
+    const index = await readMemoryIndex(args.root, args.projectId, args.agentId);
+    if (await isTemporaryWorkspace(args.root, args.projectId, args.workspaceDir)) {
+      return { agentDir, index };
+    }
     const workspacePath = await realPathOrResolve(args.workspaceDir);
     const key = workspaceMemoryKeyForRealPath(workspacePath);
     const dir = await ensureWorkspaceMemoryDir({
@@ -233,7 +289,7 @@ export async function resolveSessionMemory(args: {
       workspaceKey: key,
       workspacePath,
     });
-    return { key, dir, index: await readMemoryIndex(args.root, args.projectId, args.agentId) };
+    return { agentDir, workspace: { key, dir }, index };
   } catch {
     return null;
   }

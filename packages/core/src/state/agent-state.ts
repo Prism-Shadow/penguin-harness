@@ -31,8 +31,10 @@ import {
   DATE_PLACEHOLDER,
   MEMORY_PLACEHOLDER,
   MEMORY_DIR_PLACEHOLDER,
+  MEMORY_AGENT_DIR_PLACEHOLDER,
   MEMORY_AGENTS_MD_PLACEHOLDER,
   MEMORY_INDEX_EMPTY_NOTE,
+  type MemoryConfig,
   agentStateVersion,
   defaultAgentsMd,
   defaultSystemConfig,
@@ -275,9 +277,14 @@ function vaultKeysList(keys: string[]): string {
 }
 
 /**
- * The `{{MEMORY}}` replacement value: the Agent's own `memory.prompt` with its Workspace
- * directory and the shared index substituted in, or an empty string when this Session has no
- * Memory (disabled, or a temporary Workspace) or the config carries no Memory prompt.
+ * The `{{MEMORY}}` replacement value: the Agent's own `memory.prompt` (the Agent scope and the
+ * shared index, which every Session has), plus `memory.workspace_prompt` when the Session also
+ * runs in a persistent Workspace. An empty string when this Session has no Memory (disabled) or
+ * the config carries no Memory prompt.
+ *
+ * The two blocks are separate config keys because substitution has no conditionals: each block
+ * only ever names placeholders that are defined wherever it appears, so a temporary Workspace is
+ * never told about a `{{MEMORY_DIR}}` it does not have.
  *
  * Every word of the block comes from `system_config.yaml`; the only text this function can add
  * is `MEMORY_INDEX_EMPTY_NOTE`, standing in for an index that does not exist yet so the model
@@ -285,17 +292,27 @@ function vaultKeysList(keys: string[]): string {
  * says what exists, and the model opens what it needs.
  */
 function memorySection(
-  prompt: string | undefined,
+  config: MemoryConfig | undefined,
   memory: SessionMemory | null | undefined,
 ): string {
-  if (!prompt || !memory) return "";
+  if (!config?.prompt || !memory) return "";
   const index = memory.index.trim();
-  return prompt
+  const substituteShared = (text: string): string =>
+    text
+      .split(MEMORY_AGENT_DIR_PLACEHOLDER)
+      .join(memory.agentDir)
+      .split(MEMORY_AGENTS_MD_PLACEHOLDER)
+      .join(index.length > 0 ? index : MEMORY_INDEX_EMPTY_NOTE);
+
+  const agentBlock = substituteShared(config.prompt).trim();
+  const workspace = memory.workspace;
+  if (!workspace || !config.workspace_prompt) return agentBlock;
+  const workspaceBlock = substituteShared(config.workspace_prompt)
     .split(MEMORY_DIR_PLACEHOLDER)
-    .join(memory.dir)
-    .split(MEMORY_AGENTS_MD_PLACEHOLDER)
-    .join(index.length > 0 ? index : MEMORY_INDEX_EMPTY_NOTE)
+    .join(workspace.dir)
     .trim();
+  if (workspaceBlock.length === 0) return agentBlock;
+  return agentBlock.length > 0 ? `${agentBlock}\n\n${workspaceBlock}` : workspaceBlock;
 }
 
 /**
@@ -485,7 +502,7 @@ export function assembleSystemPrompt(
     .split(AGENTS_MD_PLACEHOLDER)
     .join(state.agentsMd.trim())
     .split(MEMORY_PLACEHOLDER)
-    .join(memorySection(state.systemConfig.memory?.prompt, memory))
+    .join(memorySection(state.systemConfig.memory, memory))
     .split(VAULT_KEYS_PLACEHOLDER)
     .join(vaultKeysList(vaultKeys ?? []))
     .split(SKILL_METADATA_PLACEHOLDER)

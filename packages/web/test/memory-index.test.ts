@@ -9,6 +9,7 @@
  */
 import { describe, expect, it } from "vitest";
 import type { MemoryWorkspaceInfo } from "@prismshadow/penguin-server/api";
+import { S } from "../src/lib/strings";
 import {
   frontmatterProblem,
   headingOffset,
@@ -90,6 +91,12 @@ describe("workspaceLabel", () => {
   it("falls back to the key for a directory with no .workspace marker", () => {
     // Written before the marker existed, or created by hand: the path is all we would have had.
     expect(workspaceLabel(info({}))).toBe(KEY);
+  });
+
+  it("names the Agent scope for what it is, not for a path it does not have", () => {
+    const agentScope = workspaceLabel(info({ workspaceKey: "agent", agentScope: true }));
+    expect(agentScope).toBe(S.memory.agentScope);
+    expect(agentScope).not.toBe("agent");
   });
 
   it("keeps the root path itself rather than collapsing to nothing", () => {

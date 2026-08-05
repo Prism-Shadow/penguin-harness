@@ -244,7 +244,7 @@ export const zh = {
       ["{{SKILL_METADATA}}", "注入已安装 Skill 的元数据行（无 Skill 时为空）"],
       [
         "{{MEMORY}}",
-        "注入 memory.prompt 记忆区块（关闭记忆或本次 Session 使用临时 Workspace 时为空）",
+        "注入记忆区块：memory.prompt（Agent 级作用域与索引）加上 memory.workspace_prompt（仅持久 Workspace）；关闭记忆时为空",
       ],
       ["{{PLATFORM}}", "运行平台"],
       ["{{OS_VERSION}}", "操作系统版本"],
@@ -464,6 +464,10 @@ export const zh = {
     dirLabel: "记忆目录",
     workspaceCount: (n: number): string =>
       n === 0 ? "尚无 Workspace 记忆目录" : `${n} 个 Workspace 记忆目录`,
+    /** The Agent-level scope (memory/agent/), shared by every Session including those in a temporary Workspace. */
+    agentScope: "Agent 级",
+    agentScopeHint:
+      "跨 Workspace 通用的记忆：用户的长期偏好、与具体代码库无关的参考。每个 Session 都会读到，临时 Workspace 的会话只能写这里。",
     /** Tree badges on an Agent whose memory never reaches the model. */
     offBadge: "已关闭",
     noPlaceholderBadge: "无占位符",

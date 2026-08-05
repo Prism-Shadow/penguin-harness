@@ -94,7 +94,7 @@ Memory 标签页只放配置，记忆的**内容**在[记忆中心](#记忆中�
 
 ## 记忆中心（/memory）
 
-以树的形式浏览 Project 下各 Agent 的 Workspace 记忆：Agent → Workspace → 主题文件。统一索引 `memory/AGENTS.md` 挂在 Agent 名下、位于全部 Workspace 之上——一份索引覆盖所有 Workspace；右侧编辑当前选中的内容。新建主题文件用 Workspace 行上的 `+`，重命名与删除作用于选中的文件。
+以树的形式浏览 Project 下各 Agent 的 Workspace 记忆：Agent → 作用域 → 主题文件。每个 Agent 名下依次是统一索引 `memory/AGENTS.md`、**Agent 级**作用域，然后是各个 Workspace——索引覆盖所有作用域，所以挂在 Agent 名下；Agent 级排在最前，因为它是每个 Session 都会读到的那一层（临时 Workspace 的会话只有它）。右侧编辑当前选中的内容。新建主题文件用作用域行上的 `+`，重命名与删除作用于选中的文件。
 
 这里写入的就是 Agent 自己用文件工具维护的那批文件。重命名或删除主题文件时，索引中指向它的链接会一并改写或清除，索引不会列出已不存在的文件。记忆无法进入模型的 Agent 会在树上标出——开关关闭标 **已关闭**，system_prompt 不含 `{{MEMORY}}` 标 **无占位符**——两者都可回到该 Agent 的 Memory 标签页处理。存储模型见[配置说明](/configuration#workspace-记忆)。
 

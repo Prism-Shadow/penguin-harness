@@ -8,7 +8,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { memoryDir, workspaceMemoryDir } from "@prismshadow/penguin-core";
+import { AGENT_SCOPE_KEY, memoryDir, workspaceMemoryDir } from "@prismshadow/penguin-core";
 import type {
   AgentConfigResponse,
   MemoryFileResponse,
@@ -64,7 +64,7 @@ describe("memory api", () => {
 
   const filesPath = (key = WORKSPACE_KEY) => `${memoryPath}/workspaces/${key}/files`;
 
-  it("overview reports the switch, the index, and one entry per Workspace directory", async () => {
+  it("overview reports the switch, the index, the Agent scope, and one entry per Workspace", async () => {
     await fs.writeFile(path.join(wsDir, "feedback_testing.md"), TOPIC, "utf8");
     await fs.writeFile(
       path.join(memoryDir(t.root, projectId, "default_agent"), "AGENTS.md"),
@@ -78,13 +78,47 @@ describe("memory api", () => {
     expect(body.templateInjects).toBe(true);
     expect(body.memoryDir).toBe(memoryDir(t.root, projectId, "default_agent"));
     expect(body.index).toContain(`## ${WORKSPACE_KEY}`);
-    expect(body.workspaces).toHaveLength(1);
+    expect(body.workspaces).toHaveLength(2);
+    // The Agent scope leads the list and is listed even though nothing created it on disk yet.
     expect(body.workspaces[0]).toMatchObject({
+      workspaceKey: AGENT_SCOPE_KEY,
+      agentScope: true,
+      fileCount: 0,
+    });
+    expect(body.workspaces[0]?.workspacePath).toBeUndefined();
+    expect(body.workspaces[1]).toMatchObject({
       workspaceKey: WORKSPACE_KEY,
       workspacePath: "/home/dev/my-app",
       fileCount: 1,
     });
-    expect(body.workspaces[0]?.updatedAt).toBeTruthy();
+    expect(body.workspaces[1]?.agentScope).toBeUndefined();
+    expect(body.workspaces[1]?.updatedAt).toBeTruthy();
+  });
+
+  it("writes an Agent-scope memory into a directory no Session has created yet", async () => {
+    // A Workspace directory comes from a Session, but the Agent scope belongs to the Agent, so
+    // the first agent-level memory must not have to wait for one.
+    await expect(
+      fs.stat(workspaceMemoryDir(t.root, projectId, "default_agent", AGENT_SCOPE_KEY)),
+    ).rejects.toThrow();
+
+    const written = await owner.put(`${filesPath(AGENT_SCOPE_KEY)}/feedback_style.md`, {
+      content: TOPIC,
+    });
+    expect(written.status).toBe(200);
+
+    const list = (await (
+      await owner.get(filesPath(AGENT_SCOPE_KEY))
+    ).json()) as MemoryFilesResponse;
+    expect(list.files.map((f) => f.name)).toEqual(["feedback_style.md"]);
+
+    const body = (await (await owner.get(memoryPath)).json()) as MemoryOverviewResponse;
+    expect(body.workspaces[0]).toMatchObject({ workspaceKey: AGENT_SCOPE_KEY, fileCount: 1 });
+  });
+
+  it("still 404s a Workspace key with no directory, so only the Agent scope is auto-created", async () => {
+    const res = await owner.get(filesPath("never-run-0badc0de"));
+    expect(res.status).toBe(404);
   });
 
   it("lists and reads topic files with their frontmatter, ignoring the .workspace marker", async () => {
@@ -173,7 +207,7 @@ describe("memory api", () => {
     // from reaching the model's context.
     const body = (await (await owner.get(memoryPath)).json()) as MemoryOverviewResponse;
     expect(body.enabled).toBe(false);
-    expect(body.workspaces[0]?.fileCount).toBe(1);
+    expect(body.workspaces.find((w) => w.workspaceKey === WORKSPACE_KEY)?.fileCount).toBe(1);
 
     const on = await owner.put(configPath, { config: { memory: { enabled: true } } });
     expect(((await on.json()) as AgentConfigResponse).config.memory.enabled).toBe(true);

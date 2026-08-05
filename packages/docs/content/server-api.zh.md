@@ -123,11 +123,11 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 | DELETE | /agents/:agentId | 删除 Agent |
 | GET / PUT | /agents/:agentId/config | 读写配置（AGENTS.md + system_config.yaml，PUT 保留 YAML 注释） |
 | GET / PUT | /agents/:agentId/vault | Vault 环境变量（值掩码显示；PUT 全表替换） |
-| GET | /agents/:agentId/memory | Workspace 记忆总览：开关、统一索引、各 Workspace 条目 |
+| GET | /agents/:agentId/memory | Workspace 记忆总览：开关、统一索引、各作用域条目——Agent 级（`agent`，带 `agentScope: true`）在前，其后为各 Workspace |
 | GET / PUT | /agents/:agentId/memory/index | 读写统一索引 `memory/AGENTS.md` |
-| GET | /agents/:agentId/memory/workspaces/:key/files | 列出单个 Workspace 的主题文件（frontmatter + 文件信息） |
+| GET | /agents/:agentId/memory/workspaces/:key/files | 列出单个作用域的主题文件（frontmatter + 文件信息）；`:key` 为 workspace key 或 `agent` |
 | GET / PUT / DELETE | /agents/:agentId/memory/workspaces/:key/files/:name | 读取 / 写入 / 删除单个主题文件 |
-| POST | /agents/:agentId/memory/workspaces/:key/files/:name/rename | 在所属 Workspace 内重命名主题文件 |
+| POST | /agents/:agentId/memory/workspaces/:key/files/:name/rename | 在所属作用域内重命名主题文件 |
 | GET | /agents/:agentId/export | 导出 Agent State 快照（tar.gz 下载） |
 | POST | /agents/:agentId/import | 导入快照：`{dataBase64, confirm?}`；版本冲突且未确认时返回 409 |
 | GET / POST | /agents/:agentId/skills | 已安装 Skill 列表 / 安装 |

@@ -107,7 +107,8 @@ output = 0.857143
 | `compaction.mode` | `summarize` | `summarize` / `discard` |
 | `compaction.prompt` | 内置模板 | summarize 压缩使用的 Prompt |
 | `memory.enabled` | `true` | Workspace 记忆是否进入上下文、是否为持久 Workspace 准备记忆目录 |
-| `memory.prompt` | 内置模板 | `{{MEMORY}}` 区块：记忆使用说明，含 `{{MEMORY_DIR}}` / `{{MEMORY_AGENTS_MD}}` |
+| `memory.prompt` | 内置模板 | `{{MEMORY}}` 区块中恒注入的一半：记忆使用说明、Agent 级作用域与索引，含 `{{MEMORY_AGENT_DIR}}` / `{{MEMORY_AGENTS_MD}}` |
+| `memory.workspace_prompt` | 内置模板 | 仅持久 Workspace 追加：Workspace 级作用域与二选一规则，含 `{{MEMORY_DIR}}` |
 | `tools.builtin` | 缺省时为完整默认工具集 | 工具条目：`name` / `description` / `parameters` / `permission`（`r` 或 `rw`）/ `forModel` / `timeoutMs` / `maxOutputLength` / `call_description`（条目级开关：控制 `description` 调用参数，开启时为必填，缺省保留）；一旦写出即整体替换默认列表 |
 | `tools.mcpServers` | `[]` | MCP Server 配置（`name` + `config`），预留给 MCP 适配层 |
 
@@ -152,7 +153,7 @@ compaction:
 | `{{AGENTS_MD}}` | `AGENTS.md` 的全文 |
 | `{{VAULT_KEYS}}` | Vault 的键名列表（仅键名） |
 | `{{SKILL_METADATA}}` | 已安装 Skill 的元数据 |
-| `{{MEMORY}}` | 渲染后的 `memory.prompt` 区块；关闭记忆或使用临时 Workspace 时为空 |
+| `{{MEMORY}}` | 渲染后的 `memory.prompt` 区块，持久 Workspace 下再追加 `memory.workspace_prompt`；关闭记忆时为空 |
 | `{{PLATFORM}}` | 运行平台 |
 | `{{OS_VERSION}}` | 操作系统版本 |
 | `{{DATE}}` | 当前日期 |
@@ -173,18 +174,27 @@ Windows 上注入的 `{{PROJECT_DIR}}` 与 `{{CWD}}` 统一使用正斜杠——
 
 `agent_state/memory/` 保存 Agent 跨 Session 的长期记忆：用户反馈、项目决策、协作约定与外部系统入口——这些无法从 Workspace 或代码历史可靠重新推导。它不是上下文压缩：压缩保存单个 Session 的短期工作状态。
 
-记忆的作用域是 **Project + Agent + Workspace**。同一 Agent、同一 Workspace 的多个 Session 共享一份记忆；不同 Workspace 的主题文件相互隔离，但共用一份索引；不同 Agent 即使使用同一 Workspace 也各自维护。记忆位于 Agent State，因此随导出、导入与快照一同流转，Project 内有权访问该 Agent 的成员都能读到——所以只属于某个成员的隐私信息不应写入（也因此不提供 `user` 类型）。
+记忆有两个作用域，都归属于单个 Agent，绝不跨 Agent 共享：
+
+- **Agent 级**（`memory/agent/`）——无论在哪工作都成立的内容：用户的长期偏好、与具体代码库无关的参考。每个 Session 都会读到，包括运行在临时 Workspace 中的会话——那种会话没有别处可写。
+- **Workspace 级**（`memory/<workspace_key>/`）——关于某一个 Workspace 的事实。同一 Agent、同一 Workspace 的多个 Session 共享；不同 Workspace 的主题文件相互隔离。
+
+两者共用一份索引；不同 Agent 即使使用同一 Workspace 也各自维护。记忆位于 Agent State，因此随导出、导入与快照一同流转，Project 内有权访问该 Agent 的成员都能读到——所以只属于某个成员的隐私信息不应写入（也因此不提供 `user` 类型）。
 
 ```text
 agent_state/memory/
-├── AGENTS.md                     # 统一索引，按 workspace key 分组
+├── AGENTS.md                     # 统一索引，按作用域目录名分组
+├── agent/                        # Agent 级（无 marker：它不对应任何路径）
+│   └── feedback_style.md
 └── my-app-a81f32c4/              # 单个 Workspace
     ├── .workspace                # 该 key 对应的 Workspace 路径
     ├── feedback_testing.md
     └── project_release.md
 ```
 
-workspace key 为 `<安全 basename>-<真实路径 sha256 的 8 位十六进制>`。身份只由实际目录决定，与 Git 无关：指向同一目录的两个软链接得到同一 key；目录移动或重命名后视为新的 Workspace（旧记忆仍以旧 key 留在磁盘上）。PenguinHarness 自动创建的临时 Workspace（位于 `agents/<agent_id>/workspaces/` 下）不创建记忆目录，子 Agent 继承该临时 Workspace 时同样不创建。
+`agent` 是保留目录名。之所以安全：生成的 workspace key 一律是 `<base>-<8 位十六进制>`，必然含连字符——不含连字符的名字永远不会被生成出来。
+
+workspace key 为 `<安全 basename>-<真实路径 sha256 的 8 位十六进制>`。身份只由实际目录决定，与 Git 无关：指向同一目录的两个软链接得到同一 key；目录移动或重命名后视为新的 Workspace（旧记忆仍以旧 key 留在磁盘上）。PenguinHarness 自动创建的临时 Workspace（位于 `agents/<agent_id>/workspaces/` 下）没有 Workspace 级作用域，子 Agent 继承该临时 Workspace 时同样没有：临时 Workspace 是每个 Session 分配一个，之后不会有任何 Session 再跑进去读它。这类会话仍然拥有 Agent 级作用域——它能学到的东西本来也属于那一层。
 
 主题文件按语义划分，不按 Task、Session 或日期划分，并带 frontmatter：
 
@@ -201,7 +211,9 @@ updated_at: 2026-07-30
 
 `type` 取 `feedback`（用户明确给出、未来应持续遵守的反馈与偏好）、`project`（无法仅从代码推导的决策、约束与计划及其理由）或 `reference`（外部系统、文档与服务的稳定入口）。不应保存：可从代码、配置或 Git 历史直接获得的事实；短期任务进度与调试流水；凭据、Token 等敏感值；未经确认的推测；大段对话原文。
 
-进入上下文的只有索引。创建 Session 时，Harness 确保当前 Workspace 的记忆目录存在、读取 `memory/AGENTS.md`，并把 Agent 的 `memory.prompt` 渲染进 `{{MEMORY}}`，其中 `{{MEMORY_DIR}}` 替换为该 Workspace 的目录、`{{MEMORY_AGENTS_MD}}` 替换为完整索引；主题正文由模型按需读取。Harness 只负责确定记忆位置并限制写入边界，判断什么值得保存、如何划分主题、如何维护索引都由模型用现有文件工具完成。
+进入上下文的只有索引。创建 Session 时，Harness 准备好各作用域目录、读取 `memory/AGENTS.md`，再从该 Agent 自己的配置渲染出 `{{MEMORY}}`：`memory.prompt` 恒定注入，其中 `{{MEMORY_AGENT_DIR}}` 替换为 Agent 级目录、`{{MEMORY_AGENTS_MD}}` 替换为完整索引；持久 Workspace 下再追加 `memory.workspace_prompt`，其中 `{{MEMORY_DIR}}` 替换为该 Workspace 的目录。主题正文由模型按需读取。
+
+两半之所以是两个独立配置键：替换引擎没有条件分支，因此每一半只能提及在它出现的场合必定有值的占位符——临时 Workspace 不会被告知一个它并不存在的 `{{MEMORY_DIR}}`。作用域二选一的规则同理放在 Workspace 那一半：只有一个作用域的会话没得选，也就不必看到这条规则。Harness 只负责确定记忆位置并限制写入边界，判断什么值得保存、如何划分主题、如何维护索引都由模型用现有文件工具完成。
 
 存量 Agent 不会自动迁移：其 `system_config.yaml` 既无 `memory` 段也无 `{{MEMORY}}` 占位符，因此不会注入任何内容。需要时可在设置页 Prompt 标签插入该占位符，或还原为默认配置。
 

@@ -255,7 +255,7 @@ export const en: Strings = {
       ["{{SKILL_METADATA}}", "Injects the installed skills' metadata lines (empty when none)"],
       [
         "{{MEMORY}}",
-        "Injects the memory.prompt block (empty when memory is off or the Session runs in a temporary Workspace)",
+        "Injects the memory block: memory.prompt (the Agent scope and the index) plus memory.workspace_prompt (persistent Workspaces only); empty when memory is off",
       ],
       ["{{PLATFORM}}", "Runtime platform"],
       ["{{OS_VERSION}}", "Operating system version"],
@@ -487,6 +487,10 @@ export const en: Strings = {
       n === 0
         ? "No Workspace memory directory yet"
         : `${n} Workspace memory director${n === 1 ? "y" : "ies"}`,
+    /** The Agent-level scope (memory/agent/), shared by every Session including those in a temporary Workspace. */
+    agentScope: "Agent-level",
+    agentScopeHint:
+      "Memory that holds wherever the agent works: the user's standing preferences, and reference material not tied to one codebase. Every Session reads it, and a Session in a temporary Workspace can write nowhere else.",
     /** Tree badges on an Agent whose memory never reaches the model. */
     offBadge: "Off",
     noPlaceholderBadge: "No placeholder",

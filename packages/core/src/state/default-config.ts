@@ -36,11 +36,13 @@ export const OS_VERSION_PLACEHOLDER = "{{OS_VERSION}}";
 /** The shell exec_command runs (`bash` on POSIX; on Windows whatever shell.ts resolved), so the model knows which command syntax to write. */
 export const SHELL_PLACEHOLDER = "{{SHELL}}";
 export const DATE_PLACEHOLDER = "{{DATE}}";
-/** Expands to the whole rendered `memory.prompt` block, or to nothing when Memory is off or the Session has no persistent Workspace. */
+/** Expands to the rendered `memory.prompt` block, plus `memory.workspace_prompt` when the Session has a persistent Workspace; nothing at all when Memory is off. */
 export const MEMORY_PLACEHOLDER = "{{MEMORY}}";
-/** Inside `memory.prompt` only: the current Workspace's Memory directory. */
+/** Inside `memory.workspace_prompt` only: the current Workspace's Memory directory — a temporary Workspace has none, which is why it is not available in `memory.prompt`. */
 export const MEMORY_DIR_PLACEHOLDER = "{{MEMORY_DIR}}";
-/** Inside `memory.prompt` only: the full content of the shared Memory index (`memory/AGENTS.md`). */
+/** Inside either Memory prompt: the Agent scope's Memory directory (`memory/agent/`), which every Session has. */
+export const MEMORY_AGENT_DIR_PLACEHOLDER = "{{MEMORY_AGENT_DIR}}";
+/** Inside either Memory prompt: the full content of the shared Memory index (`memory/AGENTS.md`). */
 export const MEMORY_AGENTS_MD_PLACEHOLDER = "{{MEMORY_AGENTS_MD}}";
 
 /**
@@ -63,10 +65,21 @@ export interface CompactionConfig {
  * Docs: /docs/configuration § "Workspace Memory".
  */
 export interface MemoryConfig {
-  /** Whether Memory enters the model context and Workspace Memory directories are prepared; defaults to true. */
+  /** Whether Memory enters the model context and its directories are prepared; defaults to true. */
   enabled?: boolean;
-  /** The `{{MEMORY}}` block: how the model should use Memory, plus the `{{MEMORY_DIR}}` / `{{MEMORY_AGENTS_MD}}` injection points; defaults to the built-in value (editable config, not hardcoded). */
+  /**
+   * The always-injected half of the `{{MEMORY}}` block: what Memory is for, the Agent scope, and
+   * the shared index — carrying the `{{MEMORY_AGENT_DIR}}` / `{{MEMORY_AGENTS_MD}}` injection
+   * points. Defaults to the built-in value (editable config, not hardcoded).
+   */
   prompt?: string;
+  /**
+   * Appended to `prompt` only when the Session runs in a persistent Workspace: the Workspace
+   * scope and the rule for choosing between the two, carrying `{{MEMORY_DIR}}`. A separate key
+   * rather than a conditional inside `prompt` because substitution has no conditionals — a
+   * temporary Workspace would otherwise be told about a directory it does not have.
+   */
+  workspace_prompt?: string;
 }
 
 /**
@@ -177,24 +190,40 @@ Skills are reusable instruction packages at <app_data_dir>/agents/<agent_id>/age
 - Session ID: {{SESSION_ID}}`;
 
 /**
- * Built-in default Memory Prompt: the body of the `{{MEMORY}}` block. It states what Memory is
- * for, what must never be written to it, and the mechanics of one save (read the index, prefer
- * updating an existing topic, create a topic file with frontmatter, refresh the index entry);
- * the two placeholders inside it are the only Memory content the Harness injects.
+ * Built-in default Memory Prompt: the always-injected half of the `{{MEMORY}}` block. It states
+ * what Memory is for, what must never be written to it, the mechanics of one save (read the
+ * index, prefer updating an existing topic, create a topic file with frontmatter, refresh the
+ * index entry), and the Agent scope — the one scope every Session has, a Session in a temporary
+ * Workspace included. The placeholders inside it are the only Memory content the Harness injects.
  *
- * Rendered only when Memory is enabled and the Session has a persistent Workspace, so the model
- * is never told about a Memory directory it has no reason to write to.
+ * Rendered whenever Memory is enabled; `DEFAULT_MEMORY_WORKSPACE_PROMPT` is appended to it when
+ * the Session also has a persistent Workspace.
  */
 export const DEFAULT_MEMORY_PROMPT = `# Memory
-Memory is your long-term record across sessions in this workspace: Markdown files you maintain yourself with the file tools. Keep in it what you could not re-derive from the workspace later — the user's standing feedback and preferences, project decisions and constraints together with their reasons, and stable entry points into external systems.
+Memory is your long-term record across sessions: Markdown files you maintain yourself with the file tools. Keep in it what you could not re-derive later — the user's standing feedback and preferences, decisions and constraints together with their reasons, and stable entry points into external systems.
 
-Save only what is specific, durable, and worth having in a later session. Before writing, read the index below and any topic file it lists for this workspace; then update an existing topic instead of opening a near-duplicate. A genuinely new subject becomes \`<topic>.md\` in the directory below, with frontmatter \`name\`, \`description\`, \`type\` (feedback | project | reference) and \`updated_at\`, plus a one-line entry in the index under this workspace's heading. Update the index in the same round as the file, so the two never disagree.
+Save only what is specific, durable, and worth having in a later session. Before writing, read the index below and open any topic file that might already cover the subject; then update that topic instead of opening a near-duplicate. A genuinely new subject becomes \`<topic>.md\` in one of the memory directories named here, with frontmatter \`name\`, \`description\`, \`type\` (feedback | project | reference) and \`updated_at\`, plus a one-line entry in the index under that directory's own heading. Update the index in the same round as the file, so the two never disagree.
 
-Never save what the code, config or git history already states; short-lived task progress or debugging notes; credentials, tokens or other secrets; guesses you have not confirmed; or long stretches of transcript. Memory is shared with everyone who can reach this agent, so personal data about one person does not belong in it. Entries under another workspace's heading are that workspace's facts, not this one's.
+Never save what the code, config or git history already states; short-lived task progress or debugging notes; credentials, tokens or other secrets; guesses you have not confirmed; or long stretches of transcript. Memory is shared with everyone who can reach this agent, so personal data about one person does not belong in it.
 
-Current workspace memory directory: {{MEMORY_DIR}}
-The shared index is \`AGENTS.md\` in that directory's parent, and its links are relative to that parent; this workspace's heading is the directory name above.
+Agent memory directory: {{MEMORY_AGENT_DIR}}
+This holds what stays true wherever you work: the user's standing preferences, and reference material not tied to one codebase. Every one of your sessions reads it, so hold what you put here to a higher bar than anything else.
+
+The shared index is \`AGENTS.md\` in the parent of that directory, and its links are relative to that parent; each memory directory's heading in the index is its own name.
 {{MEMORY_AGENTS_MD}}`;
+
+/**
+ * Built-in default for the Workspace half of the `{{MEMORY}}` block, appended to
+ * `DEFAULT_MEMORY_PROMPT` only when the Session runs in a persistent Workspace.
+ *
+ * The rule for choosing between the two scopes lives here rather than in the always-injected
+ * half on purpose: a Session in a temporary Workspace has one scope and no choice to make, so it
+ * never sees the rule at all.
+ */
+export const DEFAULT_MEMORY_WORKSPACE_PROMPT = `Workspace memory directory: {{MEMORY_DIR}}
+This holds facts about the workspace you are working in now. Entries under a different directory's heading in the index belong to that scope, not this one.
+
+Choosing between the two: something about the user that would still hold in a different project goes in the agent directory; something about this codebase goes in the workspace directory. When you are unsure, write to the workspace directory — a note filed too narrowly can be moved up later, while one filed too widely is read by every session from then on.`;
 
 /** Stands in for `{{MEMORY_AGENTS_MD}}` when the index file does not exist yet or is blank — the model is told the store is empty rather than being handed nothing. */
 export const MEMORY_INDEX_EMPTY_NOTE = "(the index is empty — nothing has been saved yet)";
@@ -551,6 +580,7 @@ export function defaultSystemConfig(): SystemConfig {
     memory: {
       enabled: true,
       prompt: DEFAULT_MEMORY_PROMPT,
+      workspace_prompt: DEFAULT_MEMORY_WORKSPACE_PROMPT,
     },
     tools: {
       builtin: defaultBuiltinTools(),
