@@ -114,6 +114,9 @@ importers:
 
   packages/desktop:
     dependencies:
+      '@prismshadow/penguin-cli':
+        specifier: workspace:*
+        version: file:packages/cli(supports-color@10.2.2)
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)

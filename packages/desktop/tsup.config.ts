@@ -1,7 +1,9 @@
 import { defineConfig } from "tsup";
 
 export default defineConfig({
-  entry: ["src/main.ts"],
+  // launcher.ts is a second entry on purpose: scripts/stage.mjs imports dist/launcher.js
+  // at stage time (plain node, no Electron) to generate the CLI launcher scripts.
+  entry: ["src/main.ts", "src/launcher.ts"],
   format: ["esm"],
   target: "node22",
   platform: "node",
