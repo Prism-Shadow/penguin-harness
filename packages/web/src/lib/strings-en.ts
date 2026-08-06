@@ -187,7 +187,7 @@ export const en: Strings = {
     chatDefaultsNotSet: "Not set",
     chatDefaultsApprovalNotSet: "Not set (defaults to allow all)",
     chatDefaultsThinkingNotSet: "Not set (follow the agent's config)",
-    chatDefaultsWorkspaceHint: "Empty = auto temp directory",
+    chatDefaultsWorkspaceHint: "Empty = temporary workspace",
     /** The model default is single-sourced with the Models page (the same default_model); this is just another entry point. */
     chatDefaultsModelHint: "Same default model as the Models page",
     deleteProject: "Delete Project",
@@ -512,7 +512,7 @@ export const en: Strings = {
     targetNew: "New session each time",
     targetSession: "Bound Session",
     sessionId: "Session id",
-    workspace: "Workspace (optional, auto-created when empty)",
+    workspace: "Workspace (optional; a temporary workspace is created when empty)",
     model: "Model",
     modelDefault: "Project default",
     deleteTitle: "Delete scheduled task",
@@ -608,13 +608,13 @@ export const en: Strings = {
     workspaceUseThis: "Use this dir",
     workspaceUp: "Parent dir",
     workspaceNoSubdirs: "No subdirectories",
-    workspaceAuto: "Auto temp directory",
-    workspaceClear: "Use auto temp directory instead",
+    workspaceAuto: "Temporary workspace",
+    workspaceClear: "Use a temporary workspace instead",
     workspaceDirInvalid: "Directory does not exist or is inaccessible; reverted",
     /** Sidebar conversation-list grouping toggle (workspace is the default) + workspace groups. */
     groupByWorkspace: "Group by workspace",
     groupByAgent: "Group by agent",
-    tempWorkspaces: "Temp workspaces",
+    tempWorkspaces: "Temporary workspaces",
     newSessionInWorkspace: "New chat in this workspace",
     draftSubtitle: "The self-evolving agent that excels at AI development tasks",
     /** Folder names for the draft page's collapsible examples (bookmark-style: exactly one open at a time). */
@@ -740,7 +740,7 @@ Scenarios:
     model: "Model",
     workspace: "Workspace",
     workspaceHint:
-      "Leave empty for an auto-created temp directory; if set, it must be an existing directory on the server",
+      "Leave empty for an auto-created temporary workspace; if set, it must be an existing directory on the server",
     approvalMode: "Approval mode",
     approvalModeNames: {
       "allow-all": "Approve everything",

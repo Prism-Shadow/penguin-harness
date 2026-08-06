@@ -135,7 +135,7 @@ Schedule writes are owner-only. A task in new-Session mode carries `modelId` and
 | POST | /agents/:agentId/sessions | Create a Session: `{modelId?, provider?, workspace?, approvalMode?}` → 201 |
 | GET | /dirs?path= | Server-side directory browser (backs the Workspace picker) |
 
-On Session creation, `modelId` and `provider` are both-or-neither: send the complete pair to pick a model, or omit both to take the Project's default model — one without the other is a 400. The Workspace defaults to an auto-created temporary directory, and the approval mode defaults to `allow-all`.
+On Session creation, `modelId` and `provider` are both-or-neither: send the complete pair to pick a model, or omit both to take the Project's default model — one without the other is a 400. The Workspace defaults to an auto-created temporary workspace, and the approval mode defaults to `allow-all`.
 
 ### Usage and Traces (Agent Level)
 

@@ -3,8 +3,8 @@ name: penguin-sdk
 description: Build AI apps on the Penguin Harness SDK — self-contained projects, the createSession/run streaming loop with thinking and image messages, and a complete RAG recipe that ingests documents into a knowledge base and answers with citations behind a web UI.
 short_description: Build AI and RAG apps on the Penguin Harness SDK.
 short_description_zh: 基于 Penguin SDK 构建 AI 与 RAG 应用。
-version: 18
-updated: 2026-07-30T11:10:00Z
+version: 19
+updated: 2026-08-06T00:00:00Z
 ---
 
 # Penguin Harness SDK
@@ -97,7 +97,7 @@ rl.close();
 session.dispose();
 ```
 
-- `createSession({ workspaceDir, provider, modelId })` — `workspaceDir` must already exist (omit for an auto temp dir); the model reference is the `(provider, modelId)` pair, so pass both to pick a configured model or neither for the project default — passing one alone throws.
+- `createSession({ workspaceDir, provider, modelId })` — `workspaceDir` must already exist (omit for a temporary workspace); the model reference is the `(provider, modelId)` pair, so pass both to pick a configured model or neither for the project default — passing one alone throws.
 - The `approve` callback gates every tool call; **omitting it denies everything**.
 - `opts.thinkingLevel` (`"none" | "low" | "medium" | "high" | "xhigh"`) overrides the agent's default (`model.thinking_level` in `system_config.yaml`) for this turn only — raise it for hard questions, drop it for latency-sensitive calls like titling or classification.
 - Session lifetime is the app's memory model: reuse one Session for a stateful chat (context accumulates, as above), create one per request for stateless QA (the RAG recipe below); either way call `session.dispose()` when done to release background processes.

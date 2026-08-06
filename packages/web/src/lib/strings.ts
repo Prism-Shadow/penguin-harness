@@ -180,7 +180,7 @@ export const zh = {
     chatDefaultsNotSet: "未设置",
     chatDefaultsApprovalNotSet: "未设置（默认全部放行）",
     chatDefaultsThinkingNotSet: "未设置（跟随智能体配置）",
-    chatDefaultsWorkspaceHint: "留空表示自动临时目录",
+    chatDefaultsWorkspaceHint: "留空表示使用临时工作区",
     /** 模型默认值与模型页同源（同一个 default_model），此处仅是另一处入口。 */
     chatDefaultsModelHint: "与模型页的默认模型同步",
     deleteProject: "删除 Project",
@@ -490,7 +490,7 @@ export const zh = {
     targetNew: "每次新建会话",
     targetSession: "绑定 Session",
     sessionId: "Session id",
-    workspace: "Workspace（可选，留空自动创建）",
+    workspace: "Workspace（可选，留空自动创建临时工作区）",
     model: "Model",
     modelDefault: "Project 默认",
     deleteTitle: "删除定时任务",
@@ -585,8 +585,8 @@ export const zh = {
     workspaceUseThis: "使用此目录",
     workspaceUp: "上级目录",
     workspaceNoSubdirs: "无子目录",
-    workspaceAuto: "自动临时目录",
-    workspaceClear: "改用自动临时目录",
+    workspaceAuto: "临时工作区",
+    workspaceClear: "改用临时工作区",
     workspaceDirInvalid: "目录不存在或无法访问，已回退",
     /** 侧栏对话列表的分组切换（默认按工作区）与工作区分组。 */
     groupByWorkspace: "按工作区分组",
@@ -717,7 +717,7 @@ Benchmark：
     defaultSessionTitle: "新对话",
     model: "Model",
     workspace: "Workspace",
-    workspaceHint: "留空自动创建临时目录；指定时必须是服务器上已存在的目录",
+    workspaceHint: "留空自动创建临时工作区；指定时必须是服务器上已存在的目录",
     approvalMode: "审批模式",
     /** Short description (the trigger button shows only the description, not the mode id). */
     approvalModeNames: {

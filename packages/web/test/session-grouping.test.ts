@@ -2,7 +2,7 @@
  * Workspace grouping for the chat sidebar (pure logic):
  * - named Workspaces group by exact path, labeled by basename (full path kept for
  *   tooltips), newest group first;
- * - auto temp Workspaces (`<agentDir>/workspaces/tmp-<8hex>`, the shape produced by
+ * - temporary Workspaces (`<agentDir>/workspaces/tmp-<8hex>`, the shape produced by
  *   core's createTempWorkspace) are all merged into ONE trailing temp group — an
  *   empty path (defensive; the server always backfills the resolved dir) counts too;
  * - sessions inside every group are re-sorted newest first: the flat store list
@@ -58,7 +58,7 @@ function session(
 const TEMP_A = "/data/proj/agents/default_agent/workspaces/tmp-1a2b3c4d";
 const TEMP_B = "/data/proj/agents/agent_helper/workspaces/tmp-00ff00aa";
 
-describe("isTempWorkspace (auto temp directory pattern from core's createTempWorkspace)", () => {
+describe("isTempWorkspace (temporary-workspace pattern from core's createTempWorkspace)", () => {
   it("matches <...>/workspaces/tmp-<8hex> with either path separator, and the empty path", () => {
     expect(isTempWorkspace(TEMP_A)).toBe(true);
     expect(isTempWorkspace("C:\\pg\\data\\proj\\agents\\a\\workspaces\\tmp-00ff00aa")).toBe(true);
@@ -74,7 +74,7 @@ describe("isTempWorkspace (auto temp directory pattern from core's createTempWor
     expect(isTempWorkspace("/x/workspaces/tmp-XYZWQPRS")).toBe(false);
     expect(isTempWorkspace("/x/workspaces/tmp-1a2b3c4")).toBe(false);
     expect(isTempWorkspace("/x/workspaces/tmp-1a2b3c4d5")).toBe(false);
-    // a subdirectory below a temp Workspace is not itself the temp Workspace
+    // a subdirectory below a temporary workspace is not itself the temporary workspace
     expect(isTempWorkspace(`${TEMP_A}/nested`)).toBe(false);
   });
 });
@@ -115,7 +115,7 @@ describe("groupSessionsByWorkspace", () => {
     expect(groups[0]!.sessions.map((s) => s.sessionId)).toEqual([a2.sessionId, a1.sessionId]);
   });
 
-  it("merges every temp Workspace into one trailing group, after named groups sorted by newest session", () => {
+  it("merges every temporary Workspace into one trailing group, after named groups sorted by newest session", () => {
     const oldAlpha = session("/srv/alpha", "2026-07-01T10:00:00.000Z");
     const newAlpha = session("/srv/alpha", "2026-07-06T10:00:00.000Z");
     const beta = session("/srv/beta", "2026-07-05T10:00:00.000Z");
@@ -276,7 +276,7 @@ describe("aggregateWorkspaceCounts (per-group exact server share)", () => {
     expect(aggregateWorkspaceCounts(new Map()).size).toBe(0);
   });
 
-  it("folds every auto-temp path into the merged temp group, deduplicating agents", () => {
+  it("folds every temporary-workspace path into the merged temp group, deduplicating agents", () => {
     const byAgent = new Map([
       [
         "agent_a",

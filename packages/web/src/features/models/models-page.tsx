@@ -71,6 +71,11 @@ import {
 } from "@prismshadow/penguin-core/model-catalog";
 import type { ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
 import { groupModelRows, isFreeModel, sameModelRef, userProviderInfo } from "./model-grouping";
+import {
+  defaultExpandedProviders,
+  isGroupExpanded,
+  toggleExpandedProvider,
+} from "./model-group-expansion";
 import { clearDraftModelRef } from "../chat/draft-cache";
 import { syncRowsWithCatalog } from "./catalog-sync";
 import { tpsTone, ttftTone } from "./speed-test";
@@ -352,8 +357,12 @@ export function ModelsPage() {
   /** Target group (provider id) for adding a model: taken from the group header entry point, falling back to custom when empty. */
   const [addingTo, setAddingTo] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  /** Collapsed vendor groups (all expanded by default). */
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  /**
+   * Expanded vendor groups — only DeepSeek on first paint; every other group (including
+   * user-defined ones, which arrive with the async row load) starts collapsed. Searching
+   * force-opens the rendered groups without touching this set (see model-group-expansion.ts).
+   */
+  const [expanded, setExpanded] = useState<Set<string>>(defaultExpandedProviders);
   /** Vendor group (provider id) currently having its API key configured in bulk. */
   const [groupKeyFor, setGroupKeyFor] = useState<string | null>(null);
   /** "Add group" popup (user-defined group): a valid name proceeds to that group's add-model dialog. */
@@ -434,6 +443,8 @@ export function ModelsPage() {
   };
 
   const groups = useMemo(() => (rows ? groupModelRows(rows, query) : []), [rows, query]);
+  /** Non-empty search query: groups are filtered to matches and force-opened while it lasts. */
+  const searching = query.trim() !== "";
 
   /**
    * "Sync presets": merge the built-in catalog into the current table (union; the catalog
@@ -514,13 +525,15 @@ export function ModelsPage() {
 
   if (!projectId) return null;
 
-  const toggleGroup = (id: string) =>
-    setCollapsed((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+  /**
+   * Header toggles are inert while searching: every rendered group is force-opened (see
+   * isGroupExpanded), so a flip would change nothing visibly and only silently mutate the
+   * state restored once the query clears.
+   */
+  const toggleGroup = (id: string) => {
+    if (searching) return;
+    setExpanded((prev) => toggleExpandedProvider(prev, id));
+  };
 
   return (
     <div className="h-full overflow-y-auto p-4 md:p-6">
@@ -571,7 +584,7 @@ export function ModelsPage() {
         ) : (
           <div className="space-y-3">
             {groups.map((group) => {
-              const open = !collapsed.has(group.provider.id);
+              const open = isGroupExpanded(expanded, group.provider.id, searching);
               return (
                 <section
                   key={group.provider.id}

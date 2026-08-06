@@ -4,7 +4,7 @@
  *   the first message is sent, and all four selections land faithfully in its meta;
  * - the draft auto-caches (body persisted via debounce): after a page reload, both the body and
  *   the selections are restored, and the cache clears once sending succeeds;
- * - the sidebar defaults to grouping by Workspace: auto temp directories merge into one
+ * - the sidebar defaults to grouping by Workspace: temporary workspaces merge into one
  *   "临时工作区" group, a named directory groups under its basename, and that group header's
  *   "+" pre-fills the draft's Workspace (via router state, applied once per navigation — a
  *   manual change made afterwards survives a reload instead of being re-overridden);
@@ -171,8 +171,11 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   );
 
   // —— Default grouping: the sidebar groups Sessions by Workspace — the session just created
-  // used the auto temp directory, so it lands in the merged "临时工作区" group. ——
-  await expect(page.getByText("临时工作区")).toBeVisible();
+  // used an auto-created temporary workspace, so it lands in the merged "临时工作区" group.
+  // Scoped to the sidebar (<aside>): the draft page's Workspace pill reads 临时工作区 too
+  // (S.chat.workspaceAuto === S.chat.tempWorkspaces), so a page-wide text lookup would be
+  // ambiguous whenever both are on screen. ——
+  await expect(page.locator("aside").getByText("临时工作区", { exact: true })).toBeVisible();
 
   // A session in a named Workspace groups under that directory's basename, and its group
   // header's "+" pre-fills the draft's Workspace selection with the group's path.
@@ -242,7 +245,9 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   // —— Pinning: the header's hover pin toggle lifts a group above the others in its mode and
   // persists per Project (localStorage penguin.sidebarPinnedGroups.<projectId>); order is
   // asserted geometrically, like layout.spec does for the login language buttons. ——
-  const tempLabel = page.getByText("临时工作区", { exact: true });
+  // Sidebar-scoped for the same reason as the group assertion above: the draft's Workspace
+  // pill would also read 临时工作区 whenever its selection is empty.
+  const tempLabel = page.locator("aside").getByText("临时工作区", { exact: true });
   const namedLabel = page.getByText(wsLabel, { exact: true });
   const yOf = async (locator) => (await locator.boundingBox())?.y ?? -1;
   // Unpinned baseline: the merged temp group sits below the named group.

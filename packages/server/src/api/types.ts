@@ -391,7 +391,7 @@ export interface DefaultModelResponse {
 export interface ChatDefaultsDto {
   /** Preselected Agent; must reference an existing Agent of the Project (400 unknown_agent). */
   agentId?: string;
-  /** Prefilled Workspace directory; absent/empty = auto temp directory. */
+  /** Prefilled Workspace directory; absent/empty = a temporary workspace. */
   workspace?: string;
   /** Prefilled approval mode; absent = the built-in "allow-all". */
   approvalMode?: ApprovalMode;

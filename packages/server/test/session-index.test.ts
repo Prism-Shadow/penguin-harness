@@ -84,7 +84,7 @@ describe("session-index", () => {
     }
   });
 
-  it("creating a Session: auto temp Workspace by default, allow-all default, shows in the list", async () => {
+  it("creating a Session: temporary Workspace by default, allow-all default, shows in the list", async () => {
     await configureModels();
     const res = await api.post(base(), {});
     expect(res.status).toBe(201);
@@ -321,8 +321,8 @@ describe("session-index", () => {
     expect((await list("")).workspaceCounts).toBeUndefined();
 
     // The per-Workspace breakdown accompanies the totals and sums back to them: the
-    // subagent Session sits alone in its path; every other row lives in its own auto
-    // temp directory.
+    // subagent Session sits alone in its path; every other row lives in its own
+    // temporary workspace.
     const byWorkspace = full.workspaceCounts!;
     expect(byWorkspace["/tmp/w-sub"]).toEqual({
       active: 0,

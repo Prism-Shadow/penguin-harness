@@ -4,7 +4,7 @@
  * Trace) -> Session area with two grouping modes (a small toggle in the section header; the
  * choice and each Project's group collapse and pin state persist in localStorage): by Workspace
  * (the default; groups loaded Sessions by their
- * Workspace path, auto temp directories merged into one trailing group, header "+" starts a
+ * Workspace path, temporary workspaces merged into one trailing group, header "+" starts a
  * draft in that Workspace) or by Agent (group header = Agent name + new chat + Agent settings;
  * shows all Agents, including empty groups). Groups can be pinned via the header's hover pin
  * toggle: pinned groups sort before unpinned within their mode, keeping each partition's own
@@ -457,7 +457,7 @@ export function Sidebar({
    * chat" uses default_agent; this explicit intent overrides the previously selected Agent in
    * the draft cache (the rest of the draft content, such as the message body, is preserved).
    * The workspace-mode group header's "+" additionally carries that group's Workspace path
-   * ("" = the auto temp directory), pre-filling the draft's Workspace selection the same way.
+   * ("" = a temporary workspace), pre-filling the draft's Workspace selection the same way.
    */
   const newChat = (agentId?: string, workspace?: string) => {
     if (agentId) setCurrentAgentId(agentId);
@@ -909,7 +909,7 @@ export function Sidebar({
                   actions={
                     <>
                       <GroupPinButton pinned={pinned} onToggle={() => togglePin(group.key)} />
-                      {/* New chat in this Workspace: pre-fills the group's path in the draft ("" = auto temp directory); the Agent is the current one, falling back to default_agent */}
+                      {/* New chat in this Workspace: pre-fills the group's path in the draft ("" = temporary workspace); the Agent is the current one, falling back to default_agent */}
                       <button
                         type="button"
                         title={S.chat.newSessionInWorkspace}
@@ -949,13 +949,22 @@ export function Sidebar({
             <button
               type="button"
               onClick={() => setUserOpen(!userOpen)}
+              {...(newVersion !== null
+                ? {
+                    // The dot alone is mysterious: name the release on the trigger (hover
+                    // tooltip + accessible name), in the update row's exact wording.
+                    title: S.update.newVersion(newVersion),
+                    "aria-label": `${user?.userId ?? ""} · ${S.update.newVersion(newVersion)}`,
+                  }
+                : {})}
               className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors duration-150 hover:bg-gray-200/70 dark:hover:bg-gray-800"
             >
               <span className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-900 text-xs font-bold text-white dark:bg-gray-200 dark:text-gray-900">
                 {(user?.userId ?? "?").slice(0, 1).toUpperCase()}
                 {/* Update reminder dot: only once the lazy check has actually run and found a
-                    newer release. The border (sidebar background color) separates it from the
-                    avatar for every accent — the neutral accent matches the avatar fill. */}
+                    newer release (the trigger button's tooltip/label above explains it). The
+                    border (sidebar background color) separates it from the avatar for every
+                    accent — the neutral accent matches the avatar fill. */}
                 {updateAvailable && (
                   <span
                     aria-hidden

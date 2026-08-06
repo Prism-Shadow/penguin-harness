@@ -5,7 +5,7 @@
  * Regression: an explicitly given Workspace must be an existing directory. When it
  * does not exist, a clear error must be thrown rather than auto-creating it, and bash must not
  * be started with an invalid cwd after Session creation, which would throw a misleading
- * `spawn bash ENOENT`. A temp directory is only created when no Workspace is specified.
+ * `spawn bash ENOENT`. A temporary workspace is only created when no Workspace is specified.
  *
  * vault: the Agent vault's (agent_state/.vault.toml) **key names** are
  * injected into the assembled system prompt; values are never injected.
@@ -131,7 +131,7 @@ describe("Agent.createSession workspace handling", () => {
     const ws = path.join(tmpRoot, "ws-bad-model");
     await fs.mkdir(ws, { recursive: true });
     // A reference outside the config is not silently allowed (the unique key is provider +
-    // model_id); the error is thrown before creating the temp Workspace.
+    // model_id); the error is thrown before creating the temporary workspace.
     await expect(
       agent.createSession({
         workspaceDir: ws,
