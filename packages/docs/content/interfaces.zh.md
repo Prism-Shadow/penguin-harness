@@ -127,6 +127,7 @@ interface EnvironmentConfig {
   sessionScratchpadDir?: string;            // 本 Session 的 scratchpad（scratchpad/<sessionId>），提供后启用截断输出恢复
   services?: EnvironmentServices;           // 注入给个别工具的运行时服务
   vault?: Record<string, string>;           // Vault 环境变量,注入 exec_command / input_command 子进程
+  stripProxyEnv?: () => boolean;            // 返回 true 时从命令子进程剥除 HTTP(S)_PROXY/ALL_PROXY（保留 NO_PROXY）；每次 spawn 重读，缺省即允许代理
 }
 
 interface EnvironmentServices {

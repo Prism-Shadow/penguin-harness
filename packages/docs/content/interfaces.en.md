@@ -127,6 +127,7 @@ interface EnvironmentConfig {
   sessionScratchpadDir?: string;            // this Session's scratchpad (scratchpad/<sessionId>); enables truncated-output recovery
   services?: EnvironmentServices;           // runtime services injected into individual tools
   vault?: Record<string, string>;           // Vault env vars, injected into exec_command / input_command subprocesses
+  stripProxyEnv?: () => boolean;            // true = strip HTTP(S)_PROXY/ALL_PROXY (NO_PROXY kept) from command subprocesses; re-read per spawn, absent = proxy allowed
 }
 
 interface EnvironmentServices {
