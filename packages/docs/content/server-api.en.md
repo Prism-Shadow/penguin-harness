@@ -67,6 +67,15 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 | POST | /api/admin/users/:userId/password | Reset a password (invalidates all of that user's login sessions) |
 | DELETE | /api/admin/users/:userId | Delete a user |
 
+### Server Settings (admin only)
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | /api/admin/settings | Server-global settings: `{settings: {useSystemProxy}}` |
+| PUT | /api/admin/settings | Update settings (fields optional; omitted fields keep their current value), returns the full updated settings |
+
+`useSystemProxy` is the "use system HTTP proxy" switch (default on): while on, the server and its child processes honor HTTP_PROXY / HTTPS_PROXY / NO_PROXY (both spellings) for outbound traffic; while off, the server always connects directly and the proxy variables are stripped from agent command subprocess environments (NO_PROXY is kept). In either state the effective NO_PROXY always includes `localhost,127.0.0.1,::1` (loopback is never proxied). Toggling takes effect for newly initiated connections immediately — no restart.
+
 ### Version and Self-Update
 
 | Method | Path | Description |

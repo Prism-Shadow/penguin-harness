@@ -121,14 +121,21 @@ export interface SessionLoader {
  * lets the no-Trace self-heal rebuild re-record a known origin into the fresh session_meta;
  * with no registry entry (e.g. the process restarted and no Trace was ever written) the
  * rebuilt Session is unsourced — session_meta is the single source of truth, and none survived.
+ * `opts.stripProxyEnv` threads the "use system HTTP proxy" switch into core (a live getter:
+ * true = strip HTTP(S)_PROXY/ALL_PROXY from agent command subprocess environments).
  */
-export function createCoreSessionLoader(root: string, sources?: SessionSources): SessionLoader {
+export function createCoreSessionLoader(
+  root: string,
+  sources?: SessionSources,
+  opts: { stripProxyEnv?: () => boolean } = {},
+): SessionLoader {
   return {
     async load(row: SessionRow): Promise<RuntimeSession> {
       const agent = await createAgent({
         root,
         projectId: row.projectId,
         agentId: row.agentId,
+        ...(opts.stripProxyEnv ? { stripProxyEnv: opts.stripProxyEnv } : {}),
       });
       const located = await findLatestTraceFile(
         tracesDir(root, row.projectId, row.agentId),

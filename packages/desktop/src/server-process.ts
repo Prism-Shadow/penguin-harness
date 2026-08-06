@@ -11,6 +11,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { app, utilityProcess } from "electron";
 import type { UtilityProcess } from "electron";
+import { osProxyEnv } from "./os-proxy.js";
 import { choosePort, readPreferredPort, rememberPreferredPort } from "./port-memory.js";
 import { appOriginFor, parsePortFile } from "./util.js";
 
@@ -125,6 +126,10 @@ export async function startEmbeddedServer(opts: {
     env: {
       ...process.env,
       ...bundledShellEnv(),
+      // OS proxy settings resolved at fork time (Electron resolveProxy) — only for the
+      // proxy variables the environment leaves unset, never overriding existing values.
+      // The server's "use system HTTP proxy" switch then governs whether they are used.
+      ...(await osProxyEnv()),
       PENGUIN_HOME: opts.dataRoot,
       HOST: "127.0.0.1",
       PORT: String(requestedPort),

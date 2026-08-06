@@ -292,6 +292,14 @@ export interface EnvironmentConfig {
    * environment; hardened entries cannot be overridden.
    */
   vault?: Record<string, string>;
+  /**
+   * When it returns true, the proxy variables (HTTP_PROXY / HTTPS_PROXY / ALL_PROXY, any
+   * casing; NO_PROXY is kept) are stripped from exec_command / input_command subprocess
+   * environments. Threaded by the Web server from its admin-level "use system HTTP proxy"
+   * switch (off state); re-read at every spawn so a toggle needs no restart. Absent =
+   * proxy allowed (the default for SDK/CLI standalone use).
+   */
+  stripProxyEnv?: () => boolean;
 }
 
 /**

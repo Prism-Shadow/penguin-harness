@@ -33,6 +33,11 @@ export const en: Strings = {
     language: "Language",
     /** Sidebar Session list: also show CLI-created Sessions (default off — the list then never scans the Trace directories). */
     showCliSessions: "Show CLI sessions",
+    /** Admin-only server-global switch (design § "出网与系统代理"): saved immediately on toggle. */
+    useSystemProxy: "Use system HTTP proxy",
+    /** Row tooltip: scope (server + its child processes, server-wide) and the loopback exemption. */
+    useSystemProxyHint:
+      "Whether the server and its child processes (update checks, LLM requests, agent commands) reach the internet through the proxy named by HTTP_PROXY / HTTPS_PROXY. Applies server-wide; loopback addresses (localhost, 127.0.0.1, ::1) always connect directly. When off, the server connects directly and the proxy variables are removed from agent command subprocess environments.",
     theme: "Theme",
     themeLight: "Light",
     themeDark: "Dark",
