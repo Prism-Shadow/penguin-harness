@@ -26,6 +26,13 @@
  * field, the Project's new-chat defaults ([default_chat]) prefill Agent / Workspace /
  * approval mode (precedence: route state > draft cache > project default > built-in
  * fallback); the model default already flows through models.defaultModel.
+ *
+ * Saving the Project's new-chat defaults resets the seeded selections so new chats pick
+ * the change up: the project-settings dialog strips the cached pins (next visits reseed
+ * from the fresh defaults) and dispatches a same-tab chat-defaults-changed event that a
+ * MOUNTED draft answers by resetting Agent / Workspace / approval mode / Model in
+ * component state (see onDefaultsChanged) — typed-but-unsent text and staged skills
+ * always survive.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
@@ -60,6 +67,11 @@ import { EXAMPLE_FOLDERS } from "./example-tasks";
 import type { ExampleFolderId, ExampleTask, ExampleTaskId } from "./example-tasks";
 import { clearDraft, draftKey, loadDraft, saveDraft } from "./draft-cache";
 import type { DraftCache } from "./draft-cache";
+import {
+  CHAT_DEFAULTS_CHANGED_EVENT,
+  chatDefaultsChangedDetail,
+  type ChatDefaultsChangedDetail,
+} from "./chat-defaults-event";
 import { effectiveThinkingLevel } from "./thinking-level";
 import { WorkspaceSelect, pillClass } from "./workspace-select";
 import { sameModelRef } from "../models/model-grouping";
@@ -161,15 +173,21 @@ export function DraftView({
   // route location.state > mount-time draft cache > project default > built-in fallback;
   // null = still loading (the thinking picker below stays disabled until resolved).
   const [chatDefaults, setChatDefaults] = useState<ChatDefaultsDto | null>(null);
+  /**
+   * Set once the chat-defaults-changed event delivered a fresh block (see the reseed
+   * handler below): from then on the mount-time fetch must not apply — it was started
+   * earlier and would overwrite the fresher event payload when it resolves.
+   */
+  const defaultsFromEventRef = useRef(false);
   useEffect(() => {
     let cancelled = false;
     api
       .getChatDefaults(projectId)
       .then((res) => {
-        if (!cancelled) setChatDefaults(res);
+        if (!cancelled && !defaultsFromEventRef.current) setChatDefaults(res);
       })
       .catch(() => {
-        if (!cancelled) setChatDefaults({});
+        if (!cancelled && !defaultsFromEventRef.current) setChatDefaults({});
       });
     return () => {
       cancelled = true;
@@ -291,6 +309,64 @@ export function DraftView({
       models.defaultModel ?? (first ? { provider: first.provider, modelId: first.modelId } : null),
     );
   }, [models, modelRef]);
+
+  /**
+   * Live reseed: the project-settings dialog saved new defaults in THIS tab while the
+   * draft is mounted. The dialog already stripped the cached pins, but this component's
+   * state still holds the old selections and persistNow would silently write them right
+   * back over the stripped cache — so the seeded fields are reset here to exactly what a
+   * fresh /chat/new mount would now produce (with the cache stripped, the seeding
+   * precedence collapses to: fresh project default > built-in fallback); the persist
+   * effect then pins the NEW values. Typed text and staged skills are user content and
+   * stay untouched; route-state overrides and in-mount picks are superseded — the save is
+   * the later explicit intent, and the next fresh mount would drop them anyway. Values
+   * come from the event payload (server-confirmed by the dialog's PUTs), not a refetch.
+   * The mount-time seeding effects re-run when chatDefaults changes but cannot fight
+   * this: their apply-once refs are already consumed, and where they are not, they
+   * re-apply the same fresh values.
+   */
+  const onDefaultsChanged = useCallback(
+    (detail: ChatDefaultsChangedDetail) => {
+      if (detail.defaults) {
+        const d = detail.defaults;
+        defaultsFromEventRef.current = true;
+        setChatDefaults(d);
+        touchedRef.current = { agent: false, workspace: false, approval: false };
+        setWorkspace(d.workspace ?? "");
+        setApprovalMode(d.approvalMode ?? "allow-all");
+        const valid = (id: string | undefined): id is string =>
+          id !== undefined && agents.some((a) => a.agentId === id);
+        if (valid(d.agentId)) {
+          setAgentId(d.agentId);
+        } else if (agents.length > 0) {
+          // No (valid) default Agent in the new block: the same fallback chain a fresh
+          // mount runs — the global current Agent, then default_agent, then the first.
+          // Skipped while the list is empty (nothing to validate against; keep the pick).
+          setAgentId(
+            currentAgent?.agentId ??
+              (agents.find((a) => a.agentId === "default_agent") ?? agents[0])?.agentId ??
+              null,
+          );
+        }
+      }
+      // New default model: adopt it directly (the event carries the authoritative pair).
+      // Setting null and leaning on the fallback effect would race ChatPage's models
+      // refetch and re-pin the STALE default from the old models prop.
+      if (detail.defaultModel !== undefined) setModelRef(detail.defaultModel);
+    },
+    [agents, currentAgent],
+  );
+  /** Latest-closure mirror for the window listener (same convention as persistRef). */
+  const onDefaultsChangedRef = useRef(onDefaultsChanged);
+  onDefaultsChangedRef.current = onDefaultsChanged;
+  useEffect(() => {
+    const onEvent = (e: Event) => {
+      const detail = chatDefaultsChangedDetail(e, projectId);
+      if (detail) onDefaultsChangedRef.current(detail);
+    };
+    window.addEventListener(CHAT_DEFAULTS_CHANGED_EVENT, onEvent);
+    return () => window.removeEventListener(CHAT_DEFAULTS_CHANGED_EVENT, onEvent);
+  }, [projectId]);
 
   // —— Conversation-time thinking level (backed by the Agent settings) ——
   // The picker DISPLAYS the effective level, resolved by the same chain core applies when

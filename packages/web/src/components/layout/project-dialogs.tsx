@@ -20,7 +20,11 @@ import {
 } from "../../lib/semantic-id";
 import { agentDisplayName, projectDisplayName, useProject } from "../../state/project";
 import { useAuth } from "../../state/auth";
-import { clearDraftModelRef } from "../../features/chat/draft-cache";
+import { clearDraftChatDefaults, clearDraftModelRef } from "../../features/chat/draft-cache";
+import {
+  dispatchChatDefaultsChanged,
+  type ChatDefaultsChangedDetail,
+} from "../../features/chat/chat-defaults-event";
 import { ModelSelect } from "../../features/chat/model-select";
 import { SELECTABLE_THINKING_LEVELS } from "../../features/chat/thinking-level";
 import { WorkspaceSelect } from "../../features/chat/workspace-select";
@@ -479,10 +483,21 @@ function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwne
    * One Save persists both writes: the `[default_chat]` block (whole-block PUT — a field
    * left "not set" is simply omitted, which clears it) and, when changed, the default
    * model via the narrow route. Failures toast and keep the edits for retry.
+   *
+   * Each landed write also resets the saving user's new-conversation draft so new chats
+   * pick the change up instead of being shadowed by the values a previous /chat/new visit
+   * pinned into the cache: the corresponding cache fields are stripped (typed text and
+   * staged skills always survive), and one same-tab event carries the fresh values to any
+   * MOUNTED draft view — its component state still holds the old selections and its
+   * debounced persist would silently write them right back over the stripped cache.
    */
   const save = async () => {
     if (busy || (!blockDirty && !modelDirty)) return;
     setBusy(true);
+    // Collected per landed write, dispatched in `finally`: when the block PUT lands but the
+    // model PUT throws, the block change still happened server-side and live views must
+    // still reseed from it.
+    let changed: ChatDefaultsChangedDetail | null = null;
     try {
       if (blockDirty) {
         const body: ChatDefaultsDto = {
@@ -491,7 +506,14 @@ function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwne
           ...(approval ? { approvalMode: approval as ApprovalMode } : {}),
           ...(thinking ? { thinkingLevel: thinking as ChatDefaultsDto["thinkingLevel"] } : {}),
         };
-        setSaved(await api.putChatDefaults(projectId, body));
+        const stored = await api.putChatDefaults(projectId, body);
+        setSaved(stored);
+        // Release the draft-cached Agent / Workspace / approval pins so the next
+        // /chat/new seeds from the just-saved block. The model pin is deliberately NOT
+        // touched here: it is the switch-becomes-default carry-over, released only below
+        // when the default model itself changed.
+        if (user) clearDraftChatDefaults(user.userId, projectId);
+        changed = { projectId, defaults: stored };
       }
       if (modelDirty && modelRef) {
         const res = await api.putDefaultModel(projectId, {
@@ -502,10 +524,12 @@ function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwne
         // Same follow-through as the models page: drop the draft-cached model pin so open
         // drafts pick up the new default.
         if (user) clearDraftModelRef(user.userId, projectId);
+        changed = { ...(changed ?? { projectId }), defaultModel: res.defaultModel };
       }
     } catch (e) {
       toastError(apiErrorText(e));
     } finally {
+      if (changed) dispatchChatDefaultsChanged(changed);
       setBusy(false);
     }
   };
