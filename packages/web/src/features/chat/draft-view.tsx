@@ -21,7 +21,7 @@
  * The sidebar group header "+" / menu "New conversation" explicitly specify an
  * Agent via route state (overriding the cached selection); the workspace-mode
  * group header "+" additionally carries a Workspace path pre-filling the
- * Workspace selection ("" = auto temp directory). A direct visit or refresh
+ * Workspace selection ("" = temporary workspace). A direct visit or refresh
  * falls back to the cache. When neither route state nor the mount-time cache claims a
  * field, the Project's new-chat defaults ([default_chat]) prefill Agent / Workspace /
  * approval mode (precedence: route state > draft cache > project default > built-in
@@ -238,7 +238,7 @@ export function DraftView({
 
   // Explicit Workspace from route state (the workspace-mode group header "+"): applied once per
   // location.key, same convention as the Agent above, overriding the cached selection ("" pre-fills
-  // the auto temp directory). Unlike the Agent there's no list to validate against, so this is a
+  // the temporary workspace). Unlike the Agent there's no list to validate against, so this is a
   // separate effect that never has to wait for a load.
   const stateWorkspace = routeState?.workspace;
   const appliedWorkspaceKey = useRef<string | null>(null);
@@ -258,7 +258,7 @@ export function DraftView({
   // Project defaults for Workspace / approval mode: the same apply-once discipline as the
   // route-state effects above, deferred until the defaults resolve. A field is only seeded
   // when nothing with higher precedence claims it — no route override (workspace only), no
-  // mount-time cached value (a cached "" workspace counts: it is an explicit "auto temp"),
+  // mount-time cached value (a cached "" workspace counts: it is an explicit temporary workspace),
   // and no user edit since mount. Model is deliberately not here (models.defaultModel
   // already flows through its own fallback effect below — the single-sourced default).
   const appliedProjectDefaults = useRef(false);

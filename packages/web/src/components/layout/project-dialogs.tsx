@@ -595,7 +595,7 @@ function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwne
             <div className="sm:col-span-2">
               <FieldLabel>{S.chat.workspace}</FieldLabel>
               {/* The draft page's dir-browser pill: browse server directories, edit the path
-                  inline, or clear back to the auto temp directory. */}
+                  inline, or clear back to a temporary workspace. */}
               <WorkspaceSelect
                 projectId={projectId}
                 workspace={workspace}

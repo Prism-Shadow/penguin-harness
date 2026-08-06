@@ -30,7 +30,7 @@ export const pillClass =
 
 /**
  * Workspace selection (pill dropdown): the button shows the selected directory name (empty =
- * auto temporary directory). The menu browses server-side directories: **the current path can be
+ * a temporary workspace). The menu browses server-side directories: **the current path can be
  * edited directly** at the top (Enter/blur commits it, an invalid directory toasts and reverts
  * to the previous path), the list omits hidden directories, and the hint text sits at the bottom
  * of the menu; only loads on first expand. On narrow screens the menu docks to whichever side
@@ -129,7 +129,7 @@ export function WorkspaceSelect({
   };
 
   const trimmed = workspace.trim();
-  // Pill short name: the last segment of the directory name (root gives "/"); shows "auto temp directory" when empty.
+  // Pill short name: the last segment of the directory name (root gives "/"); shows "temporary workspace" when empty.
   const label = trimmed ? (trimmed.split("/").filter(Boolean).pop() ?? "/") : S.chat.workspaceAuto;
   const parentPath = dir?.parent ?? null;
   // Hidden directories (starting with .) are excluded from the list.
@@ -293,7 +293,7 @@ export function WorkspaceSelect({
             )}
           </ul>
         </div>
-        {/* When a directory has been specified, offer a one-click way back to the auto temp directory */}
+        {/* When a directory has been specified, offer a one-click way back to a temporary workspace */}
         {trimmed && (
           <button
             type="button"

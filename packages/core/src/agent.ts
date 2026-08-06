@@ -181,7 +181,7 @@ export class Agent {
    */
   async createSession(opts: CreateSessionOptions = {}): Promise<Session> {
     // Model is validated first (before creating the Workspace, so failure leaves no
-    // temp directory behind): the reference must be the complete (provider, model_id)
+    // temporary workspace behind): the reference must be the complete (provider, model_id)
     // pair — the config's unique key — and must name an entry in the Project config; a
     // reference outside the config throws immediately rather than passing silently,
     // otherwise credentials, pricing, and the context window would all be unavailable.
@@ -217,7 +217,7 @@ export class Agent {
 
     // An explicit Workspace must already exist as a directory: if it
     // doesn't, throw rather than auto-create (to avoid a typo silently working in
-    // the wrong location); a temp Workspace is only created when unspecified.
+    // the wrong location); a temporary workspace is only created when unspecified.
     let workspaceDir: string;
     if (opts.workspaceDir) {
       workspaceDir = path.resolve(opts.workspaceDir);
@@ -226,7 +226,7 @@ export class Agent {
         stat = await fs.stat(workspaceDir);
       } catch {
         throw new Error(
-          `Workspace does not exist: ${workspaceDir}. Specify an existing directory, or omit the Workspace to use a temporary directory.`,
+          `Workspace does not exist: ${workspaceDir}. Specify an existing directory, or omit the Workspace to use a temporary workspace.`,
         );
       }
       if (!stat.isDirectory()) {
