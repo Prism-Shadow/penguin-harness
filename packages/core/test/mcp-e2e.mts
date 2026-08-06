@@ -40,8 +40,10 @@ if (!names.includes("mcp__echo__echo")) {
 }
 
 // 2) executeTool should route to the real MCP server and stream its output.
-const request = {
+const request: any = {
   toolCall: {
+    timestamp: new Date().toISOString(),
+    type: "tool_call",
     payload: {
       tool_call_id: "tc-e2e",
       name: "mcp__echo__echo",

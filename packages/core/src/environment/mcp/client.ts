@@ -13,6 +13,7 @@
  */
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import type { StdioServerParameters } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { partialToolCallOutput } from "../../omnimessage/index.js";
 import type { OmniMessage } from "../../omnimessage/index.js";
@@ -41,9 +42,9 @@ function buildTransport(serverName: string, cfg: Record<string, unknown>): Stdio
       args: Array.isArray(cfg.args) ? (cfg.args as string[]) : undefined,
       env: (cfg.env as Record<string, string> | undefined) ?? undefined,
       cwd: typeof cfg.cwd === "string" ? cfg.cwd : undefined,
-      // Carry the server name so the connected Client can self-identify (used by init() to
-      // map enumerated tools back to their originating server).
-      ...{ config: { serverName } },
+      // Carry the server name on the transport so the connected Client can self-identify
+      // (used by the mock Client in tests, ignored by the real SDK's StdioClientTransport).
+      ...{ config: { serverName } } as Partial<StdioServerParameters>,
     });
   }
   if (typeof cfg.url === "string") {
@@ -128,12 +129,18 @@ export class McpToolAdapter {
     ctx: ToolExecutionContext,
   ): AsyncGenerator<OmniMessage, ToolResult | void> {
     try {
-      // NOTE: signal forwarding to the SDK call is a follow-up; the surrounding Environment
-      // still enforces timeout/abort on the tool stream.
-      const result = await entry.client.callTool({
-        name: entry.originalName,
-        arguments: args,
-      });
+      // Forward the caller's abort signal into the MCP call so user-interrupt / timeout
+      // cancels an in-flight request to the server (not just the surrounding stream).
+      const options: { signal?: AbortSignal } = {};
+      if (ctx.signal) options.signal = ctx.signal;
+      const result = await entry.client.callTool(
+        {
+          name: entry.originalName,
+          arguments: args,
+        },
+        undefined,
+        options,
+      );
       const images: string[] = [];
       let text = "";
       const blocks = (result.content ?? []) as Array<{
