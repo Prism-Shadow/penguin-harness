@@ -35,6 +35,11 @@ export const zh = {
     language: "语言",
     /** Sidebar Session list: also show CLI-created Sessions (default off — the list then never scans the Trace directories). */
     showCliSessions: "显示 CLI 会话",
+    /** Admin-only server-global switch (design § "出网与系统代理"): saved immediately on toggle. */
+    useSystemProxy: "使用系统 HTTP 代理",
+    /** Row tooltip: scope (server + its child processes, server-wide) and the loopback exemption. */
+    useSystemProxyHint:
+      "服务端及其子进程（更新检查、LLM 请求、Agent 命令）出网时是否使用 HTTP_PROXY / HTTPS_PROXY 环境变量指定的代理，对整个服务端全局生效；回环地址（localhost、127.0.0.1、::1）始终直连。关闭后服务端一律直连，并从 Agent 命令子进程环境中移除代理变量。",
     theme: "主题",
     themeLight: "浅色",
     themeDark: "深色",

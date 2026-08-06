@@ -406,3 +406,71 @@ describe("harness environment variables never reach a spawned command", () => {
     }
   });
 });
+
+describe("proxy variables are stripped from commands when the host opts out", () => {
+  // The Web server's "use system HTTP proxy" switch (off state) threads stripProxyEnv
+  // through Agent -> Environment -> CommandSessionManager; standalone Environments (no
+  // getter) keep the historical pass-through.
+  const KEYS = ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY"] as const;
+  const saved: Partial<Record<(typeof KEYS)[number], string | undefined>> = {};
+  let strip = true;
+  let stripEnv: Environment;
+
+  beforeEach(() => {
+    for (const k of KEYS) saved[k] = process.env[k];
+    process.env.HTTP_PROXY = "http://proxy.corp.example:8080";
+    process.env.HTTPS_PROXY = "http://proxy.corp.example:8443";
+    process.env.ALL_PROXY = "socks5://proxy.corp.example:1080";
+    process.env.NO_PROXY = "localhost,127.0.0.1,::1";
+    strip = true;
+    stripEnv = new Environment({
+      workspaceDir: tmp,
+      toolConfig: sessionConfig(),
+      stripProxyEnv: () => strip,
+    });
+  });
+  afterEach(() => {
+    stripEnv.dispose();
+    for (const k of KEYS) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+  });
+
+  it("HTTP(S)_PROXY/ALL_PROXY are removed, NO_PROXY stays (inert without them)", async () => {
+    const READ = KEYS.map((k) => `${k}=[' + (process.env.${k} ?? '') + ']`).join(" ");
+    const res = await runTool(stripEnv, "exec_command", {
+      cmd: `node -e "console.log('${READ}')"`,
+    });
+    expect(res.output).toContain(
+      "HTTP_PROXY=[] HTTPS_PROXY=[] ALL_PROXY=[] NO_PROXY=[localhost,127.0.0.1,::1]",
+    );
+  });
+
+  it("a lowercase spelling is stripped too (the conventional POSIX form)", async () => {
+    process.env.https_proxy = "http://proxy.corp.example:8443";
+    try {
+      const res = await runTool(stripEnv, "exec_command", {
+        cmd: `node -e "console.log('s=[' + (process.env.https_proxy ?? '') + ']')"`,
+      });
+      expect(res.output).toContain("s=[]");
+    } finally {
+      delete process.env.https_proxy;
+    }
+  });
+
+  it("the getter is re-read at every spawn, so a live toggle needs no new Environment", async () => {
+    strip = false;
+    const res = await runTool(stripEnv, "exec_command", {
+      cmd: `node -e "console.log('H=[' + (process.env.HTTP_PROXY ?? '') + ']')"`,
+    });
+    expect(res.output).toContain("H=[http://proxy.corp.example:8080]");
+  });
+
+  it("without the getter (SDK/CLI standalone), proxy variables pass through", async () => {
+    const res = await runTool(env, "exec_command", {
+      cmd: `node -e "console.log('H=[' + (process.env.HTTP_PROXY ?? '') + ']')"`,
+    });
+    expect(res.output).toContain("H=[http://proxy.corp.example:8080]");
+  });
+});

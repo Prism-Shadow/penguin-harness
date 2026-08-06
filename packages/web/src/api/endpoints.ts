@@ -50,6 +50,8 @@ import type {
   ScheduleItem,
   SchedulesResponse,
   ScheduleUpsertRequest,
+  ServerSettingsResponse,
+  ServerSettingsUpdateRequest,
   SessionCategory,
   SessionCreateRequest,
   SessionCreateResponse,
@@ -113,6 +115,13 @@ export const adminResetPassword = (userId: string, body: AdminPasswordResetReque
 
 export const adminDeleteUser = (userId: string) =>
   apiFetch<void>(`/api/admin/users/${encodeURIComponent(userId)}`, { method: "DELETE" });
+
+/** Server-global settings (admin only): currently the "use system HTTP proxy" switch. */
+export const adminGetSettings = () => apiFetch<ServerSettingsResponse>("/api/admin/settings");
+
+/** Omitted fields keep their current value; applies immediately (no restart). */
+export const adminPutSettings = (body: ServerSettingsUpdateRequest) =>
+  apiFetch<ServerSettingsResponse>("/api/admin/settings", { method: "PUT", body });
 
 // Project & members --------------------------------------------------------------
 

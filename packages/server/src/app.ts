@@ -22,6 +22,7 @@ import { MembersRepo } from "./db/repos/members.js";
 import { ProjectsRepo } from "./db/repos/projects.js";
 import { GoalsRepo } from "./db/repos/goals.js";
 import { SchedulesRepo } from "./db/repos/schedules.js";
+import { ServerSettingsRepo } from "./db/repos/server-settings.js";
 import { SessionsRepo } from "./db/repos/sessions.js";
 import { TraceIndexRepo } from "./db/repos/trace-index.js";
 import { UiPrefsRepo } from "./db/repos/ui-prefs.js";
@@ -33,6 +34,7 @@ import type { AppEnv } from "./auth/middleware.js";
 import { AuthService } from "./auth/service.js";
 import { handleError, HttpError, errorBody } from "./http/errors.js";
 import { adminUsersRoutes } from "./http/routes/admin.js";
+import { adminSettingsRoutes } from "./http/routes/admin-settings.js";
 import { authRoutes } from "./http/routes/auth.js";
 import { meRoutes } from "./http/routes/me.js";
 import { eventsRoutes, userChannelKey } from "./http/routes/events.js";
@@ -93,6 +95,8 @@ export interface AppDeps {
   db: DatabaseSync;
   sessionsRepo: SessionsRepo;
   prefsRepo: UiPrefsRepo;
+  /** Admin-level server-global settings (currently the "use system HTTP proxy" switch). */
+  serverSettingsRepo: ServerSettingsRepo;
   authService: AuthService;
   adminService: AdminService;
   projectService: ProjectService;
@@ -152,6 +156,13 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
   const usageRepo = new UsageRepo(db);
   const errorsRepo = new ErrorsRepo(db);
   const prefsRepo = new UiPrefsRepo(db);
+  const serverSettingsRepo = new ServerSettingsRepo(db);
+  // Proxy-off also strips HTTP(S)_PROXY/ALL_PROXY from agent command subprocess
+  // environments (design § "出网与系统代理"). A getter, not a snapshot: it is re-read at
+  // every command spawn, so a toggle reaches already-loaded Sessions. Threaded through
+  // BOTH core entry paths — the loader (resume/self-heal) and SessionService (creation,
+  // whose runtime the manager adopts for the first Task).
+  const stripProxyEnv = () => !serverSettingsRepo.getUseSystemProxy();
   const schedulesRepo = new SchedulesRepo(db);
   const goalsRepo = new GoalsRepo(db);
 
@@ -203,7 +214,8 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
   const manager = new SessionManager({
     sessions: sessionsRepo,
     channels,
-    loader: overrides.loader ?? createCoreSessionLoader(config.root, sessionSources),
+    loader:
+      overrides.loader ?? createCoreSessionLoader(config.root, sessionSources, { stripProxyEnv }),
     sources: sessionSources,
     recorder,
     errors,
@@ -252,6 +264,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     projectConfig: projectConfigService,
     sources: sessionSources,
     traceIndex,
+    stripProxyEnv,
   });
   // Schedule scheduler: active only while the server is running. Only
   // assembled here; start() is called in index.ts (tests drive it via tickOnce, no real timer).
@@ -275,6 +288,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     db,
     sessionsRepo,
     prefsRepo,
+    serverSettingsRepo,
     authService,
     adminService,
     projectService,
@@ -390,6 +404,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   app.route("/api/me", meRoutes(deps));
   app.route("/api/version", versionRoutes(deps));
   app.route("/api/admin/users", adminUsersRoutes(deps));
+  app.route("/api/admin/settings", adminSettingsRoutes(deps));
   app.route("/api/events", eventsRoutes(deps));
   // Skill library listing: readable once logged in, not nested under a Project prefix.
   app.route("/api/skills", skillLibraryRoutes());

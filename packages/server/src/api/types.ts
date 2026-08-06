@@ -119,6 +119,28 @@ export interface AdminPasswordResetRequest {
   password: string;
 }
 
+/** Admin-level server-global settings (SQLite server_settings; design § "出网与系统代理"). */
+export interface ServerSettings {
+  /**
+   * "Use system HTTP proxy" (default on): whether the server process and its child
+   * processes reach the internet through the proxy named by HTTP_PROXY / HTTPS_PROXY
+   * (both spellings). Off = direct connections, with the proxy variables also stripped
+   * from agent command subprocess environments. Either way the effective NO_PROXY always
+   * includes localhost/127.0.0.1/::1 (loopback is never proxied). Toggling applies to
+   * newly initiated connections immediately — no restart.
+   */
+  useSystemProxy: boolean;
+}
+
+export interface ServerSettingsResponse {
+  settings: ServerSettings;
+}
+
+/** PUT body: every field optional, omitted fields keep their current value (mirrors prefs). */
+export interface ServerSettingsUpdateRequest {
+  useSystemProxy?: boolean;
+}
+
 /** User UI preferences (SQLite ui_prefs, free-form JSON; known keys declared here). */
 export interface UiPrefs {
   theme?: "light" | "dark";

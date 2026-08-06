@@ -85,15 +85,29 @@ const STRIPPED_ENV_KEYS = new Set([
   "PENGUIN_SEED_ADMIN_PASSWORD",
 ]);
 
-/** The host environment minus {@link STRIPPED_ENV_KEYS}. */
-function hostEnvForChild(): NodeJS.ProcessEnv {
+/**
+ * Proxy variables removed IN ADDITION when the host asks for it (`stripProxyEnv`, see
+ * {@link CommandSessionManager}): the Web server's "use system HTTP proxy" switch in the
+ * off state must keep commands from inheriting the serving process's proxy environment
+ * (design § "出网与系统代理"). NO_PROXY is deliberately NOT stripped — with no proxy
+ * variables left it is inert, and removing it would change behavior for commands that
+ * set their own proxy. Matched case-insensitively like {@link STRIPPED_ENV_KEYS}, which
+ * also covers the conventional lowercase spellings (http_proxy etc.).
+ */
+const PROXY_ENV_KEYS = new Set(["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"]);
+
+/** The host environment minus {@link STRIPPED_ENV_KEYS} (and {@link PROXY_ENV_KEYS} when asked). */
+function hostEnvForChild(stripProxy: boolean): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   // Matched case-insensitively rather than deleting the upper-case spellings: Windows resolves
   // environment names without regard to case but stores whatever casing was written, so a
   // `set Port=3000` before `penguin web` would survive a `delete env.PORT` and still reach the
   // child as PORT. On POSIX the two are distinct names and only the exact one exists.
   for (const [key, value] of Object.entries(process.env)) {
-    if (!STRIPPED_ENV_KEYS.has(key.toUpperCase())) env[key] = value;
+    const name = key.toUpperCase();
+    if (STRIPPED_ENV_KEYS.has(name)) continue;
+    if (stripProxy && PROXY_ENV_KEYS.has(name)) continue;
+    env[key] = value;
   }
   return env;
 }
@@ -106,9 +120,17 @@ export class CommandSessionManager {
 
   /** Agent vault environment variables: injected into the child process on every spawn (values never enter the model context, only the environment). */
   private readonly vault: Record<string, string>;
+  /**
+   * When it returns true, {@link PROXY_ENV_KEYS} are removed from the child environment
+   * too. A getter rather than a boolean: the hosting server's "use system HTTP proxy"
+   * switch is toggled at runtime, and re-reading at every spawn makes the toggle reach
+   * Sessions that are already running. Absent = proxy allowed (SDK/CLI standalone use).
+   */
+  private readonly stripProxyEnv: (() => boolean) | undefined;
 
-  constructor(opts?: { vault?: Record<string, string> }) {
+  constructor(opts?: { vault?: Record<string, string>; stripProxyEnv?: () => boolean }) {
     this.vault = opts?.vault ?? {};
+    this.stripProxyEnv = opts?.stripProxyEnv;
   }
 
   /** Starts a command, returning an **unregistered** session (no process_id yet). */
@@ -122,9 +144,10 @@ export class CommandSessionManager {
       // Spread order is priority: vault overrides host variables of the same name, but must
       // come before HARDENED_ENV — the hardening entries (GIT_EDITOR/PAGER etc. that prevent
       // interactive hangs) must never be overridable by vault. The host side is stripped of
-      // the harness's own variables first (see STRIPPED_ENV_KEYS); the vault still wins, so a
-      // user who genuinely wants PORT in commands can set it there.
-      env: { ...hostEnvForChild(), ...this.vault, ...HARDENED_ENV },
+      // the harness's own variables first (see STRIPPED_ENV_KEYS; plus the proxy variables
+      // when stripProxyEnv says so); the vault still wins, so a user who genuinely wants
+      // PORT — or a proxy — in commands can set it there.
+      env: { ...hostEnvForChild(this.stripProxyEnv?.() === true), ...this.vault, ...HARDENED_ENV },
     });
   }
 
