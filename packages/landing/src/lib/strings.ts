@@ -59,9 +59,14 @@ export const zh = {
     titleWords: ["桌面", "服务器"],
     titleSuffix: "上",
     subtitle: "一键创建自进化 Agent",
-    ctaPrimary: "快速开始",
+    /** Primary CTA: base label, and the platform-aware variant once the OS is detected. */
+    downloadCta: "下载桌面版",
+    downloadCtaFor: (platform: string) => `下载桌面版（${platform}）`,
+    ctaQuickstart: "快速开始",
     ctaGithub: "GitHub",
-    installHint: "一行命令安装（内嵌 Node 运行时，解压即用）",
+    /** Line under the CTAs: all installers on /download, CLI / self-hosted below the fold. */
+    downloadAll: "全部平台下载（macOS / Windows / Linux）",
+    cliAlt: "命令行与自托管安装 ↓",
     stats: [
       { value: "1000+", label: "支持模型数量" },
       { value: "1×CPU", label: "最低运行配置" },
@@ -70,7 +75,7 @@ export const zh = {
     ],
   },
 
-  /** Install-method switcher (hero + quick start): OS tabs, online/offline methods. */
+  /** Install-method switcher (quick start step 1): OS tabs, online/offline methods. */
   install: {
     linux: "Linux",
     macos: "macOS",
@@ -85,8 +90,7 @@ export const zh = {
       windows: "解压后也可直接双击 install.cmd 完成安装。",
     },
     offlineRelease: "前往 GitHub Releases 下载离线安装包",
-    desktopNote:
-      "更喜欢独立应用？桌面端把 Web 界面与服务端打包成免终端的安装程序（macOS / Windows / Linux），与 CLI 安装共用同一份本地数据。",
+    desktopNote: "已经装了桌面版？CLI 安装与桌面版共用同一份本地数据，两者可以随时并用。",
     desktopPage: "前往桌面端下载页",
   },
 
@@ -475,7 +479,8 @@ export const zh = {
     title: "让复杂的 AI 开发越来越简单",
     subtitle:
       "通过不断进化，PenguinHarness 为你提供更高效、更可靠、更低幻觉、更低成本的 Agent 生产力引擎。",
-    install: "立即安装",
+    download: "下载桌面版",
+    quickstart: "快速开始",
     docs: "阅读文档",
   },
 
