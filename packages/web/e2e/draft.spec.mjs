@@ -201,12 +201,39 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   await expect(page.getByRole("textbox", { name: "Workspace" })).toHaveValue(
     new RegExp(`${wsLabel}$`),
   );
-  await page.getByRole("button", { name: "上级目录" }).click();
+  // Regression (workspace picker race): while a /dirs request is in flight the picker's rows
+  // are disabled, so a rapid double-click on "parent dir" must issue exactly ONE request and
+  // ascend exactly one level — previously both clicks fired an un-sequenced load and could
+  // relocate the browsing position. The response is gated on an explicit release (not a
+  // timeout) so the second click deterministically lands inside the loading window.
+  let releaseDirs;
+  const dirsGate = new Promise((resolve) => {
+    releaseDirs = resolve;
+  });
+  let dirsRequests = 0;
+  const dirsRoute = (url) => url.pathname.endsWith("/dirs");
+  const gateDirs = async (route) => {
+    dirsRequests += 1;
+    await dirsGate;
+    await route.continue();
+  };
+  await page.route(dirsRoute, gateDirs);
+  const upRow = page.getByRole("button", { name: "上级目录" });
+  await upRow.click();
+  // force: the row is disabled while loading, and a plain click would stall on Playwright's
+  // actionability wait instead of exercising the double-click; the disabled button swallows it.
+  await upRow.click({ force: true });
+  releaseDirs();
+  const parentLabel = basename(dirname(namedWs));
+  await expect(page.getByRole("textbox", { name: "Workspace" })).toHaveValue(
+    new RegExp(`${parentLabel}$`),
+  );
   await expect(page.getByRole("textbox", { name: "Workspace" })).not.toHaveValue(
     new RegExp(`${wsLabel}$`),
   );
+  expect(dirsRequests, "double-click while loading fires a single /dirs request").toBe(1);
+  await page.unroute(dirsRoute, gateDirs);
   await page.getByRole("button", { name: "使用此目录" }).click();
-  const parentLabel = basename(dirname(namedWs));
   await expect(page.getByLabel("Workspace")).toContainText(parentLabel);
   await page.reload();
   await expect(page.getByLabel("Workspace")).toContainText(parentLabel);

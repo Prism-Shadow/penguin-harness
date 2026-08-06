@@ -22,6 +22,7 @@ import { ApiError } from "../../api/client";
 import { useAuth } from "../../state/auth";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
+import { joinWorkspacePath } from "../../lib/file-path";
 import { formatBytes, formatDateTime } from "../../lib/format";
 import { Button } from "../../components/ui/button";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
@@ -120,10 +121,6 @@ function extOf(name: string): string {
   return i >= 0 ? name.slice(i + 1).toLowerCase() : name.toLowerCase();
 }
 
-function joinPath(dir: string, name: string): string {
-  return dir === "" ? name : `${dir}/${name}`;
-}
-
 function dirOf(filePath: string): string {
   return filePath.includes("/") ? filePath.slice(0, filePath.lastIndexOf("/")) : "";
 }
@@ -207,7 +204,15 @@ export function WorkspaceBrowser({
   // silently in the page) and the in-app rendered view to the srcDoc fallback.
   const { previewIsolated } = useAuth();
   const [path, setPath] = useState("");
-  const [data, setData] = useState<WorkspaceFilesResponse | null>(null);
+  /**
+   * The loaded listing, bound to the path it was fetched for. Entry-row targets (descend /
+   * preview / download) are joined against `base` — the generation the rendered rows came
+   * from — never against the live `path` state: the stale rows stay on screen while a
+   * navigation fetch is in flight, and joining onto the already-advanced path would compound
+   * segments on a double-click ("home" → "home/home", a directory that does not exist).
+   * Base-bound targets make a repeated click recompute the same target, i.e. a no-op.
+   */
+  const [data, setData] = useState<{ base: string; res: WorkspaceFilesResponse } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -234,7 +239,7 @@ export function WorkspaceBrowser({
     api
       .listWorkspaceFiles(session.sessionId, path)
       .then((res) => {
-        if (!cancelled) setData(res);
+        if (!cancelled) setData({ base: path, res });
       })
       .catch((e: unknown) => {
         if (!cancelled) setError(e instanceof ApiError ? e.message : S.files.loadFailed);
@@ -403,10 +408,6 @@ export function WorkspaceBrowser({
     void previewPath(target);
   }, [openRequest, previewPath]);
 
-  const openEntry = (name: string) => {
-    void previewPath(joinPath(path, name));
-  };
-
   const doUpload = (files: File[]) => {
     setUploading(true);
     setError(null);
@@ -422,7 +423,7 @@ export function WorkspaceBrowser({
             reader.onerror = () => reject(new Error("read failed"));
             reader.readAsDataURL(file);
           });
-          await api.uploadWorkspaceFile(session.sessionId, joinPath(path, file.name), b64);
+          await api.uploadWorkspaceFile(session.sessionId, joinWorkspacePath(path, file.name), b64);
         }
         toastSuccess(S.files.uploaded);
         setReloadTick((t) => t + 1);
@@ -440,13 +441,22 @@ export function WorkspaceBrowser({
     if (files.length === 0) return;
     // Uploads overwrite same-name files: names already present in the loaded listing
     // confirm first (the picker is stashed — confirm continues, cancel drops it).
-    const existing = new Set((data?.entries ?? []).map((entry) => entry.name));
+    const existing = new Set((data?.res.entries ?? []).map((entry) => entry.name));
     const clashes = files.filter((f) => existing.has(f.name)).map((f) => f.name);
     if (clashes.length > 0) setPendingUpload({ files, clashes });
     else doUpload(files);
   };
 
   const crumbs = path === "" ? [] : path.split("/");
+  /**
+   * A navigation fetch is in flight: the rendered rows belong to a different directory than
+   * the one being loaded. Entry rows and breadcrumbs are disabled for the duration — the
+   * base-bound targets above are what make clicks safe regardless of timing; this is the
+   * user-visible feedback. Derived, not stored: initial load and same-path refreshes
+   * (reloadTick) don't count, and a failed navigation renders `error` instead of rows, so
+   * the disabled state can never outlive the fetch that justified it.
+   */
+  const busy = error === null && data !== null && data.base !== path;
 
   if (preview !== null) {
     return (
@@ -699,10 +709,11 @@ export function WorkspaceBrowser({
       <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-gray-200 px-3 py-2 dark:border-gray-800">
         <button
           type="button"
+          disabled={busy}
           onClick={() => {
             setPath("");
           }}
-          className="rounded px-1.5 py-0.5 text-sm text-gray-600 transition-colors duration-150 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+          className="rounded px-1.5 py-0.5 text-sm text-gray-600 transition-colors duration-150 hover:bg-gray-100 disabled:opacity-50 dark:text-gray-300 dark:hover:bg-gray-800"
         >
           {S.files.root}
         </button>
@@ -711,8 +722,9 @@ export function WorkspaceBrowser({
             <span className="text-gray-300 dark:text-gray-700">/</span>
             <button
               type="button"
+              disabled={busy}
               onClick={() => setPath(crumbs.slice(0, i + 1).join("/"))}
-              className="max-w-32 truncate rounded px-1 py-0.5 text-sm text-gray-600 transition-colors duration-150 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+              className="max-w-32 truncate rounded px-1 py-0.5 text-sm text-gray-600 transition-colors duration-150 hover:bg-gray-100 disabled:opacity-50 dark:text-gray-300 dark:hover:bg-gray-800"
             >
               {seg}
             </button>
@@ -756,21 +768,28 @@ export function WorkspaceBrowser({
           <p className="px-3 py-3 text-sm text-red-600 dark:text-red-400">{error}</p>
         ) : data === null ? (
           <SkeletonList rows={6} />
-        ) : data.entries.length === 0 ? (
+        ) : data.res.entries.length === 0 ? (
           <p className="px-3 py-3 text-sm text-gray-400">{S.files.empty}</p>
         ) : (
           // No "up a level" row: going up a level is done via the toolbar breadcrumbs (root / any segment is clickable).
-          <ul className="divide-y divide-gray-100 dark:divide-gray-800/60">
-            {data.entries.map((entry) => (
+          // While a navigation is in flight (busy) the stale rows stay visible but dimmed and inert.
+          <ul
+            aria-busy={busy}
+            className={`divide-y divide-gray-100 dark:divide-gray-800/60 ${busy ? "opacity-60" : ""}`}
+          >
+            {data.res.entries.map((entry) => (
               <li key={entry.name}>
                 <div className="group flex items-center gap-2 px-3 py-1.5 transition-colors duration-150 hover:bg-gray-50 dark:hover:bg-gray-800/50">
                   <button
                     type="button"
-                    onClick={() =>
-                      entry.kind === "dir"
-                        ? setPath(joinPath(path, entry.name))
-                        : openEntry(entry.name)
-                    }
+                    disabled={busy}
+                    onClick={() => {
+                      // Joined against the listing's own base (see the data state comment): a second
+                      // click on the same stale row resolves to the same target, not a deeper one.
+                      const target = joinWorkspacePath(data.base, entry.name);
+                      if (entry.kind === "dir") setPath(target);
+                      else void previewPath(target);
+                    }}
                     className="flex min-w-0 flex-1 items-center gap-2 text-left"
                     title={entry.name}
                   >
@@ -811,7 +830,7 @@ export function WorkspaceBrowser({
                     <a
                       href={api.workspaceFileUrl(
                         session.sessionId,
-                        joinPath(path, entry.name),
+                        joinWorkspacePath(data.base, entry.name),
                         true,
                       )}
                       download={entry.name}

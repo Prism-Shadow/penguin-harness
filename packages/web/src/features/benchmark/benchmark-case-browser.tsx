@@ -10,6 +10,7 @@ import type { Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
+import { joinWorkspacePath } from "../../lib/file-path";
 import { formatBytes } from "../../lib/format";
 import { S } from "../../lib/strings";
 import { SkeletonList } from "../../components/ui/skeleton";
@@ -77,10 +78,6 @@ function extOf(name: string): string {
   return index >= 0 ? name.slice(index + 1).toLowerCase() : name.toLowerCase();
 }
 
-function joinPath(dir: string, name: string): string {
-  return dir === "" ? name : `${dir}/${name}`;
-}
-
 function dirOf(filePath: string): string {
   return filePath.includes("/") ? filePath.slice(0, filePath.lastIndexOf("/")) : "";
 }
@@ -136,7 +133,12 @@ function MaterialGroup({
 }: MaterialGroupProps) {
   const [open, setOpen] = useState(defaultOpen);
   const [path, setPath] = useState("");
-  const [listing, setListing] = useState<WorkspaceFilesResponse | null>(null);
+  /** Bound to the path it was fetched for: entry targets join against `base`, so a click on a
+   *  row that is momentarily stale (the fetch effect nulls the listing, but the state update
+   *  commits one frame later) cannot compound segments onto an already-advanced `path`. */
+  const [listing, setListing] = useState<{ base: string; res: WorkspaceFilesResponse } | null>(
+    null,
+  );
   const [listError, setListError] = useState<string | null>(null);
   const initialReadmeOpened = useRef(false);
 
@@ -149,7 +151,7 @@ function MaterialGroup({
       .listBenchmarkCaseFiles(projectId, agentId, benchmarkId, caseSummary.id, path, material)
       .then((data) => {
         if (cancelled) return;
-        setListing(data);
+        setListing({ base: path, res: data });
         if (path === "" && !initialReadmeOpened.current) {
           initialReadmeOpened.current = true;
           const readme = data.entries.find(
@@ -169,11 +171,13 @@ function MaterialGroup({
   const crumbs = path === "" ? [] : path.split("/");
 
   const openEntry = (entry: WorkspaceFileEntry) => {
+    if (listing === null) return; // rows only render out of a loaded listing
+    const target = joinWorkspacePath(listing.base, entry.name);
     if (entry.kind === "dir") {
-      setPath(joinPath(path, entry.name));
+      setPath(target);
       return;
     }
-    onPreview(material, joinPath(path, entry.name));
+    onPreview(material, target);
   };
 
   return (
@@ -219,10 +223,10 @@ function MaterialGroup({
           )}
           {listError && <p className="px-6 py-2 text-xs text-red-500">{listError}</p>}
           {!listing && !listError && <SkeletonList rows={3} />}
-          {listing?.entries.length === 0 && (
+          {listing?.res.entries.length === 0 && (
             <p className="px-6 py-2 text-xs text-gray-400">{S.files.empty}</p>
           )}
-          {listing?.entries.map((entry) => (
+          {listing?.res.entries.map((entry) => (
             <button
               key={`${entry.kind}/${entry.name}`}
               type="button"
