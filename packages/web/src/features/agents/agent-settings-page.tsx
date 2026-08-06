@@ -3,7 +3,7 @@
  * Overview (name/description/State path/active count/State version + snapshot
  * export-import + restore default configuration), Prompt (AGENTS.md and system_prompt editors + placeholder
  * reference), Runtime (max_turns, model.*, compaction.*), Tools (editable built-in
- * tools table, MCP Server read-only JSON), Skills (skills-tab.tsx), Vault
+ * tools table, MCP Server editor), Skills (skills-tab.tsx), Vault
  * (vault-tab.tsx), Schedule (schedules-tab.tsx).
  * Save = PUT config (sends only the changed keys; YAML comments are preserved
  * server-side).
@@ -17,7 +17,7 @@ import type {
   AgentCompactionConfigDto,
   AgentModelConfigDto,
 } from "@prismshadow/penguin-server/api";
-import type { ToolDefinitionConfig, ToolPermission } from "@prismshadow/penguin-core/interfaces";
+import type { ToolDefinitionConfig, ToolPermission, MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
@@ -272,6 +272,16 @@ function OverviewTab({
   const [description, setDescription] = useState(data.config.description ?? "");
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
+  // MCP servers: editable list. config is free-form (stdio {command,args,...} / sse {url,...}),
+  // surfaced as a JSON string per row so the user can paste the exact shape the core adapter expects.
+  const [mcpServers, setMcpServers] = useState<
+    { name: string; configText: string; error?: string }[]
+  >(
+    (data.config.mcpServers ?? []).map((s) => ({
+      name: s.name,
+      configText: JSON.stringify(s.config, null, 2),
+    })),
+  );
   // base64 of the snapshot package pending confirmation for a version conflict (409 version_conflict); non-null shows the confirm modal.
   const [conflict, setConflict] = useState<string | null>(null);
   const [resetOpen, setResetOpen] = useState(false);
@@ -297,6 +307,15 @@ function OverviewTab({
     if (name.trim() !== (data.config.name ?? "")) config.name = name.trim();
     if (description.trim() !== (data.config.description ?? "")) {
       config.description = description.trim();
+    }
+    // MCP servers: only include if the user edited them (and they all parse).
+    const original = JSON.stringify(data.config.mcpServers ?? []);
+    const parsed = mcpServers.map((s) => ({
+      name: s.name,
+      config: JSON.parse(s.configText),
+    }));
+    if (JSON.stringify(parsed) !== original) {
+      config.mcpServers = parsed as MCPServerConfig[];
     }
     if (Object.keys(config).length === 0) {
       toastInfo(S.common.noChangesToSave);
@@ -899,9 +918,71 @@ function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn 
 
       <div>
         <p className="mb-1 text-xs font-medium text-gray-500">{S.agent.mcpServers}</p>
-        <pre className="max-h-64 overflow-auto rounded-md border border-gray-200 bg-gray-50 p-3 text-xs dark:border-gray-800 dark:bg-gray-900">
-          {JSON.stringify(data.config.mcpServers, null, 2)}
-        </pre>
+        {mcpServers.length === 0 && (
+          <p className="text-xs text-gray-400 dark:text-gray-500">{S.agent.mcpEmpty}</p>
+        )}
+        <div className="space-y-3">
+          {mcpServers.map((srv, idx) => (
+            <div
+              key={idx}
+              className="rounded-md border border-gray-200 p-3 dark:border-gray-800"
+            >
+              <div className="mb-2 flex items-center gap-2">
+                <Input
+                  className="w-48"
+                  value={srv.name}
+                  placeholder="server name"
+                  onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                    const next = [...mcpServers];
+                    next[idx] = { ...srv, name: e.target.value };
+                    setMcpServers(next);
+                  }}
+                />
+                <Button
+                  size="sm"
+                  variant="default"
+                  onClick={() =>
+                    setMcpServers(mcpServers.filter((_, i) => i !== idx))
+                  }
+                >
+                  {S.common.remove}
+                </Button>
+              </div>
+              <Textarea
+                rows={4}
+                value={srv.configText}
+                onChange={(e: ChangeEvent<HTMLTextAreaElement>) => {
+                  const text = e.target.value;
+                  let error: string | undefined;
+                  try {
+                    JSON.parse(text);
+                  } catch (err) {
+                    error = err instanceof Error ? err.message : String(err);
+                  }
+                  const next = [...mcpServers];
+                  next[idx] = { ...srv, configText: text, error };
+                  setMcpServers(next);
+                }}
+              />
+              {srv.error && (
+                <p className="mt-1 text-xs text-red-500">{srv.error}</p>
+              )}
+            </div>
+          ))}
+        </div>
+        <Button
+          size="sm"
+          variant="default"
+          className="mt-3"
+          onClick={() =>
+            setMcpServers([...mcpServers, { name: "", configText: "{}" }])
+          }
+        >
+          {S.agent.mcpAdd}
+        </Button>
+        <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+          {S.agent.mcpHint}
+        </p>
       </div>
 
       <Button size="sm" variant="primary" onClick={submit}>
