@@ -116,6 +116,24 @@ describe("trace-service", () => {
     expect(messages).toHaveLength(1);
   });
 
+  it("messages: salvages past corrupt middle lines instead of failing the whole session (#215)", async () => {
+    const file = await writeTraceFile(root, P, A, "2026-07-05", S, 1, [
+      sessionMeta(metaPayload()),
+      userText("before"),
+    ]);
+    // The #215 interleaving shape: another record landed between a large record's chunks,
+    // leaving two unparseable lines in the middle of the shard.
+    await fs.appendFile(
+      file,
+      '<large JSON part 1>{"interleaved":true}\n<large JSON part 2>\n',
+      "utf8",
+    );
+    await fs.appendFile(file, `${JSON.stringify(userText("after"))}\n`, "utf8");
+    const messages = await service.readMessages(P, A, S);
+    expect(messages).toHaveLength(3);
+    expect((messages[2]!.payload as { text: string }).text).toBe("after");
+  });
+
   it("traces listing: index / date / size / mtime", async () => {
     await writeTraceFile(root, P, A, "2026-07-05", S, 1, [userText("a")]);
     await writeTraceFile(root, P, A, "2026-07-06", S, 2, [userText("bb")]);

@@ -68,9 +68,14 @@ function isRecordable(msg: OmniMessage): boolean {
 /**
  * append-only JSONL Trace writer.
  *
- * Single-writer scenario (MVP): concurrency safety isn't required, but every write uses
- * `appendFile` (O_APPEND) rather than caching a file handle and seeking to write, avoiding
- * overwriting existing content; this also removes the need for an explicit close.
+ * Every write uses `appendFile` (O_APPEND) rather than caching a file handle and seeking to
+ * write, avoiding overwriting existing content; this also removes the need for an explicit close.
+ *
+ * `write()`/`rotate()` are serialized through an internal promise chain: Node's `appendFile`
+ * splits payloads larger than 512 KiB into multiple underlying writes, so two in-flight appends
+ * to the same file could interleave mid-record and corrupt the JSONL (large multimodal records
+ * make this practical, see issue #215). The chain guarantees one record lands completely before
+ * the next starts; a failed operation rejects its own caller but never blocks the chain.
  */
 export class Writer {
   private readonly tracesDir: string;
@@ -80,6 +85,18 @@ export class Writer {
   private index = 1;
   /** Set true once the date directory has been created for the current file, to avoid a redundant mkdir. */
   private ensuredDirForIndex = -1;
+  /** Tail of the write/rotate serialization chain; always kept resolved so failures don't block it. */
+  private tail: Promise<void> = Promise.resolve();
+
+  /** Appends `op` to the serialization chain: it runs after all previously queued operations. */
+  private enqueue<T>(op: () => Promise<T>): Promise<T> {
+    const run = this.tail.then(op);
+    this.tail = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
 
   constructor(opts: WriterOptions) {
     this.tracesDir = opts.tracesDir;
@@ -97,15 +114,20 @@ export class Writer {
   /**
    * Appends one message. Only written if it's a recordable message; streaming `partial_*` is
    * skipped. `mkdir -p`s the date directory on the first write to the current file.
+   *
+   * Concurrent calls are serialized in call order; the path is resolved when the queued
+   * operation runs, so a `rotate()` queued ahead of this write takes effect first.
    */
   async write(msg: OmniMessage): Promise<void> {
     if (!isRecordable(msg)) return;
-    const path = this.currentPath();
-    if (this.ensuredDirForIndex !== this.index) {
-      await mkdir(dirname(path), { recursive: true });
-      this.ensuredDirForIndex = this.index;
-    }
-    await appendFile(path, `${JSON.stringify(msg)}\n`, "utf8");
+    await this.enqueue(async () => {
+      const path = this.currentPath();
+      if (this.ensuredDirForIndex !== this.index) {
+        await mkdir(dirname(path), { recursive: true });
+        this.ensuredDirForIndex = this.index;
+      }
+      await appendFile(path, `${JSON.stringify(msg)}\n`, "utf8");
+    });
   }
 
   /** Writes multiple messages in sequence. */
@@ -132,10 +154,13 @@ export class Writer {
   /**
    * Starts a new Trace file: increments the index, so the next `write` goes to the new file.
    * Used to split into a separate file when the context is compacted and a new context segment is produced.
+   * Serialized with `write()`: pending writes land in the old file before the boundary moves.
    * Docs: /docs/sessions-and-traces § "Trace design".
    */
   async rotate(): Promise<void> {
-    this.index += 1;
+    await this.enqueue(async () => {
+      this.index += 1;
+    });
   }
 }
 

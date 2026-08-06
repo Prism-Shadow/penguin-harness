@@ -4,7 +4,9 @@ export {
   findLatestTraceFile,
   latestSessionId,
   parseTraceLines,
+  parseTraceLinesSalvage,
+  readTraceSalvage,
   readTraceTolerant,
   resumeTrace,
 } from "./resume.js";
-export type { LocatedTraceFile, ResumeResult } from "./resume.js";
+export type { LocatedTraceFile, ResumeResult, SalvagedTrace } from "./resume.js";

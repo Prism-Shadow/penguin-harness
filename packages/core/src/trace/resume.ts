@@ -80,7 +80,9 @@ const PROCESS_EXIT_PLACEHOLDER = "[interrupted: process exited before the tool f
 /**
  * Parse Trace JSONL content. Tolerates a **truncated last line** left behind by an abnormal
  * process exit (that line is ignored); corruption in the middle is outside the crash window
- * (append-only, single writer), so it throws loudly.
+ * (append-only, serialized writer), so it throws loudly — resume must not silently drop
+ * records, or turns and tool_call pairing would desync (use `parseTraceLinesSalvage` for
+ * display reads that should survive corruption).
  */
 export function parseTraceLines(content: string): OmniMessage[] {
   const lines = content.split("\n");
@@ -93,7 +95,8 @@ export function parseTraceLines(content: string): OmniMessage[] {
     } catch (err) {
       const isLastNonEmpty = lines.slice(i + 1).every((l) => l.trim().length === 0);
       if (isLastNonEmpty) break;
-      throw err;
+      const detail = err instanceof Error ? err.message : String(err);
+      throw new Error(`Trace JSONL corrupt at line ${i + 1}: ${detail}`);
     }
   }
   return out;
@@ -102,6 +105,42 @@ export function parseTraceLines(content: string): OmniMessage[] {
 /** Read and parse a Trace file (tolerates a truncated last line). */
 export async function readTraceTolerant(path: string): Promise<OmniMessage[]> {
   return parseTraceLines(await readFile(path, "utf8"));
+}
+
+/** Result of a salvage parse: the parseable records plus where the skipped corruption was. */
+export interface SalvagedTrace {
+  messages: OmniMessage[];
+  /** 1-based line numbers of unparseable lines that were skipped (a truncated last line is not counted). */
+  corruptLines: number[];
+}
+
+/**
+ * Salvage parse for **display** reads: skips unparseable lines (recording their line
+ * numbers) and returns the partial history instead of throwing. Exists for shards written
+ * before the Writer serialized concurrent appends (issue #215) — those files can carry
+ * interleaved records in the middle, and one bad line must not make a whole session
+ * unviewable. Never use for resume: dropped records would desync tool_call pairing.
+ */
+export function parseTraceLinesSalvage(content: string): SalvagedTrace {
+  const lines = content.split("\n");
+  const messages: OmniMessage[] = [];
+  const corruptLines: number[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!.trim();
+    if (!line) continue;
+    try {
+      messages.push(JSON.parse(line) as OmniMessage);
+    } catch {
+      const isLastNonEmpty = lines.slice(i + 1).every((l) => l.trim().length === 0);
+      if (!isLastNonEmpty) corruptLines.push(i + 1);
+    }
+  }
+  return { messages, corruptLines };
+}
+
+/** Read and salvage-parse a Trace file (see `parseTraceLinesSalvage`). */
+export async function readTraceSalvage(path: string): Promise<SalvagedTrace> {
+  return parseTraceLinesSalvage(await readFile(path, "utf8"));
 }
 
 /** A located Trace file: its path, containing date-directory name, and index. */

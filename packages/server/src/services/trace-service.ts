@@ -2,9 +2,11 @@
  * Trace service.
  *
  * History messages: all of the Session's index files concatenated in order
- * (readTraceTolerant, tolerating a truncated last line), containing only the
- * complete messages and events that were actually written to Trace (naturally
- * excluding partial_*); in-flight increments are continued by SSE.
+ * (readTraceSalvage: a truncated last line is tolerated and corrupt middle lines
+ * are skipped with a warning — one bad record must not make the whole session
+ * unviewable), containing only the complete messages and events that were
+ * actually written to Trace (naturally excluding partial_*); in-flight
+ * increments are continued by SSE.
  * Performance analysis is derived from a single Trace file: nearest-neighbor
  * pairing of request_begin/end, tool call duration pairing, reconnect / compaction
  * counts, and Token trend.
@@ -15,7 +17,7 @@ import {
   isSessionMeta,
   parseTraceLines,
   parseUserSteeringText,
-  readTraceTolerant,
+  readTraceSalvage,
   tracesDir,
 } from "@prismshadow/penguin-core";
 import type { OmniMessage } from "@prismshadow/penguin-core";
@@ -149,6 +151,23 @@ interface TraceSessionFacts {
   workspace: string;
 }
 
+/**
+ * Display read of one shard: salvages past corrupt middle lines (shards written before
+ * the Writer serialized concurrent appends, issue #215) so one bad record never makes a
+ * session unviewable, warning once per read about what was skipped. Resume/import keep
+ * their strict parse — this helper is for reads whose consumer is a human looking at
+ * history.
+ */
+async function readShardSalvaging(path: string): Promise<OmniMessage[]> {
+  const { messages, corruptLines } = await readTraceSalvage(path);
+  if (corruptLines.length > 0) {
+    console.warn(
+      `[server] Trace shard ${path} has ${corruptLines.length} corrupt line(s) (skipped for display): ${corruptLines.join(", ")}`,
+    );
+  }
+  return messages;
+}
+
 export class TraceService {
   constructor(
     private readonly root: string,
@@ -183,7 +202,7 @@ export class TraceService {
   /** All shard reads funnel through here (deps.observeShardRead is the windowed-read tests' proof of which files were touched). */
   private async readShard(path: string): Promise<OmniMessage[]> {
     this.deps.observeShardRead?.(path);
-    return readTraceTolerant(path);
+    return readShardSalvaging(path);
   }
 
   /** Deletes all of this Session's Trace files (called when the Session is deleted); the index rows go with them. */
@@ -1154,7 +1173,7 @@ export class TraceService {
     index: number,
   ): Promise<OmniMessage[]> {
     const file = await this.locateByIndex(projectId, agentId, sessionId, index);
-    return readTraceTolerant(file.path);
+    return readShardSalvaging(file.path);
   }
 
   private async locateByIndex(
