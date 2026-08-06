@@ -98,6 +98,7 @@ https://github.com/user-attachments/assets/aec49ae9-b743-467b-b247-37bedfeaa36e
 | GPT 5.6          | OpenRouter                                                                       |
 | Gemini 3.6 Flash | Google Gemini, OpenRouter                                                        |
 | Claude 5         | Anthropic, OpenRouter                                                            |
+| Inkling          | OpenRouter, Fireworks AI                                                         |
 
 上表每个系列只列最新一代，完整预置清单请在应用的**模型**页查看；只要是 OpenAI 协议的端点都可以接入：选择预置，或用自定义端点连接 1000+ 在线与本地模型。
 
