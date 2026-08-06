@@ -1129,6 +1129,7 @@ Benchmark：
       too_many_files: "一条消息附加的文件过多。",
       payload_too_large: "请求体过大。",
       dir_not_absolute: "目录必须是绝对路径。",
+      dir_not_found: "该目录不存在或不可访问。",
       not_a_dir: "该路径不是目录。",
       path_not_found: "该路径不存在。",
       workspace_missing: "该 Session 的 Workspace 已不存在。",

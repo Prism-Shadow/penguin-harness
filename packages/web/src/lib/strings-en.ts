@@ -1155,6 +1155,7 @@ Scenarios:
       too_many_files: "Too many files attached to one message.",
       payload_too_large: "The request is too large.",
       dir_not_absolute: "The directory must be an absolute path.",
+      dir_not_found: "That directory does not exist or is inaccessible.",
       not_a_dir: "That path is not a directory.",
       path_not_found: "That path does not exist.",
       workspace_missing: "This Session's Workspace no longer exists.",
