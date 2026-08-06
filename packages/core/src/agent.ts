@@ -76,6 +76,16 @@ export interface CreateAgentOptions {
   projectId?: string;
   /** Local data root directory; defaults to `resolveRoot()` (PENGUIN_HOME or ~/.penguin/data). */
   root?: string;
+  /**
+   * When it returns true, the proxy variables (HTTP_PROXY / HTTPS_PROXY / ALL_PROXY;
+   * NO_PROXY is kept) are stripped from exec_command subprocess environments of every
+   * Session this Agent creates or resumes — and of its subagents' Sessions, which
+   * inherit the getter. The Web server threads its admin-level "use system HTTP proxy"
+   * switch (off state) through here; the getter is re-read at every command spawn, so a
+   * toggle needs no restart. Absent = proxy allowed (SDK/CLI standalone use follows the
+   * user's own shell environment).
+   */
+  stripProxyEnv?: () => boolean;
 }
 
 export interface CreateSessionOptions {
@@ -149,13 +159,15 @@ export function metaMaxTokens(budget: number, modelCap: number | undefined): num
 export async function createAgent(opts: CreateAgentOptions = {}): Promise<Agent> {
   const state = await loadOrInitAgentState(opts);
   const projectConfig = await loadProjectConfig(state.root, state.projectId);
-  return new Agent(state, projectConfig);
+  return new Agent(state, projectConfig, opts.stripProxyEnv);
 }
 
 export class Agent {
   constructor(
     readonly state: AgentState,
     readonly projectConfig: ProjectConfig,
+    /** See {@link CreateAgentOptions.stripProxyEnv}; forwarded into every Session's Environment. */
+    private readonly stripProxyEnv?: () => boolean,
   ) {}
 
   /**
@@ -582,7 +594,15 @@ export class Agent {
         }
         const childAgent =
           agentId !== undefined && agentId !== parentAgentId
-            ? await createAgent({ root, projectId, agentId })
+            ? await createAgent({
+                root,
+                projectId,
+                agentId,
+                // A child Agent loads its own vault/config, but the proxy-strip getter is
+                // host policy, not Agent state: the subagent's commands run in the same
+                // serving process, so they follow the same switch as the parent's.
+                ...(parentAgent.stripProxyEnv ? { stripProxyEnv: parentAgent.stripProxyEnv } : {}),
+              })
             : parentAgent;
         // The child Session follows the PARENT Session, never the Project default: with the
         // model pair fully omitted it reuses the parent's resolved (provider, model_id) —
@@ -724,6 +744,7 @@ export class Agent {
       ),
       services: { subagentRunner, ...(visionDescriber ? { visionDescriber } : {}) },
       ...(Object.keys(vault).length > 0 ? { vault } : {}),
+      ...(this.stripProxyEnv ? { stripProxyEnv: this.stripProxyEnv } : {}),
     });
     const tools = await environment.listTools();
 

@@ -69,6 +69,15 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 
 桌面模式下（server 由桌面应用拉起）整组路由返回 `403`、错误码 `desktop_single_user`：桌面应用是单用户形态，用户管理整体停用——数据根中已有的用户不受影响。
 
+### 服务端设置（仅管理员）
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | /api/admin/settings | 服务端全局设置：`{settings: {useSystemProxy}}` |
+| PUT | /api/admin/settings | 更新设置（字段可省略，省略即保持现值），返回更新后的完整设置 |
+
+`useSystemProxy` 即「使用系统 HTTP 代理」开关（默认开）：开时服务端及其子进程出网遵循 HTTP_PROXY / HTTPS_PROXY / NO_PROXY（大小写并存）；关时服务端一律直连，并从 Agent 命令子进程环境中剥除代理变量（NO_PROXY 保留）。任一状态下生效的 NO_PROXY 恒包含 `localhost,127.0.0.1,::1`（回环不代理）。切换即时生效（对新发起的连接），无需重启。
+
 ### 版本与在线更新
 
 | 方法 | 路径 | 说明 |

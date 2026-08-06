@@ -15,10 +15,18 @@ import { config as loadDotenv } from "dotenv";
 import { serve } from "@hono/node-server";
 import { buildAppDeps, createApp } from "./app.js";
 import { resolveServerConfig } from "./config.js";
+import { installGlobalProxyDispatcher, setUseSystemProxy } from "./net/proxy.js";
 import { loopbackHostRoles } from "./services/preview-token.js";
 import { acquireServerLock, liveServerLock, releaseServerLock } from "./lock.js";
 
 loadDotenv({ quiet: true });
+
+// Outbound proxy support, installed at the earliest point (right after dotenv, which may
+// itself define HTTP_PROXY): replaces globalThis.fetch with undici's and sets the global
+// dispatcher, starting from the switch default (on). The persisted value can only be
+// read once the database is open, so it is applied via setUseSystemProxy right after
+// buildAppDeps below — nothing in between makes an outbound request. See net/proxy.ts.
+installGlobalProxyDispatcher();
 
 /** Exit code for "another server already owns this data root" (see lock.ts). */
 const EXIT_ALREADY_RUNNING = 3;
@@ -39,6 +47,10 @@ if (existingLock) {
 }
 
 const deps = buildAppDeps(config);
+// The database is open now: bring the dispatcher in line with the persisted
+// "use system HTTP proxy" switch (an absent row reads as the default: on) before the
+// first possible outbound request (update check, LLM calls — all behind HTTP handlers).
+setUseSystemProxy(deps.serverSettingsRepo.getUseSystemProxy());
 const app = createApp(deps);
 
 // Built-in admin seed (idempotent): creates admin and adopts default_project when the

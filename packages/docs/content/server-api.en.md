@@ -69,6 +69,15 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 
 In desktop mode (the server spawned by the desktop app) the whole surface answers `403` with code `desktop_single_user`: the desktop app is single-user, so user management is disabled — existing users in the data root are untouched.
 
+### Server Settings (admin only)
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | /api/admin/settings | Server-global settings: `{settings: {useSystemProxy}}` |
+| PUT | /api/admin/settings | Update settings (fields optional; omitted fields keep their current value), returns the full updated settings |
+
+`useSystemProxy` is the "use system HTTP proxy" switch (default on): while on, the server and its child processes honor HTTP_PROXY / HTTPS_PROXY / NO_PROXY (both spellings) for outbound traffic; while off, the server always connects directly and the proxy variables are stripped from agent command subprocess environments (NO_PROXY is kept). In either state the effective NO_PROXY always includes `localhost,127.0.0.1,::1` (loopback is never proxied). Toggling takes effect for newly initiated connections immediately — no restart.
+
 ### Version and Self-Update
 
 | Method | Path | Description |
