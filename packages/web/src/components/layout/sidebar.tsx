@@ -1077,8 +1077,10 @@ export function Sidebar({
                 )}
               </button>
             )}
-            {/* User management is visible only to admins (the page route also has its own guard as a fallback). */}
-            {user?.isAdmin && (
+            {/* User management is visible only to admins (the page route also has its own
+                guard as a fallback), and never in desktop mode: the desktop app is
+                single-user and the server rejects the routes (desktop_single_user). */}
+            {user?.isAdmin && !desktopMode && (
               <button
                 type="button"
                 className={menuItemClass}

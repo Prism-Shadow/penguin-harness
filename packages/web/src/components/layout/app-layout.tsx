@@ -12,6 +12,7 @@ import { useVersionInfo } from "../../lib/use-version-info";
 import { useAuth } from "../../state/auth";
 import { useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
+import { useCompletionNotifications } from "../../state/use-completion-notifications";
 import { Drawer } from "../ui/drawer";
 import { GlyphIcon } from "../ui/glyph-icon";
 import { NAV_ICONS } from "../ui/icons";
@@ -167,6 +168,9 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
 
 export function AppLayout() {
   const { user, desktopMode } = useAuth();
+  // Desktop shell only (gated inside): system notification when a task finishes while
+  // the window is unfocused.
+  useCompletionNotifications();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   // Desktop sidebar collapse (persisted): collapsed state leaves a narrow rail to expand from.

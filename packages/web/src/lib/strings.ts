@@ -87,6 +87,13 @@ export const zh = {
     adminOnly: "只有管理员可以在这里执行更新。",
   },
 
+  /** Desktop task-completion notifications (window unfocused; desktop-shell sessions only). */
+  notify: {
+    taskCompleteTitle: "任务完成",
+    /** `session` is the Session title (defaultSessionTitle when unnamed). */
+    taskCompleteBody: (session: string): string => `「${session}」已完成，点击查看`,
+  },
+
   common: {
     save: "保存",
     cancel: "取消",
@@ -1112,6 +1119,7 @@ Benchmark：
       password_mismatch: "当前密码不正确。",
       invalid_password: "密码至少 8 位。",
       admin_required: "仅管理员可执行此操作。",
+      desktop_single_user: "桌面应用为单用户模式，用户管理不可用。",
       not_found: "资源不存在，或你没有访问权限。",
       agent_not_found: "该 Agent 已不存在。",
       unknown_agent: "该 Agent 不存在于本 Project。",

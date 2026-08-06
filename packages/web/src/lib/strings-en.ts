@@ -87,6 +87,13 @@ export const en: Strings = {
     adminOnly: "Only an administrator can run the update from here.",
   },
 
+  /** Desktop task-completion notifications (window unfocused; desktop-shell sessions only). */
+  notify: {
+    taskCompleteTitle: "Task completed",
+    /** `session` is the Session title (defaultSessionTitle when unnamed). */
+    taskCompleteBody: (session: string): string => `"${session}" has finished — click to view`,
+  },
+
   common: {
     save: "Save",
     cancel: "Cancel",
@@ -1138,6 +1145,7 @@ Scenarios:
       password_mismatch: "The current password is incorrect.",
       invalid_password: "Password must be at least 8 characters.",
       admin_required: "Only an admin can perform this operation.",
+      desktop_single_user: "The desktop app is single-user; user management is unavailable.",
       not_found: "This resource does not exist, or you do not have access.",
       agent_not_found: "This agent no longer exists.",
       unknown_agent: "That agent does not exist in this Project.",

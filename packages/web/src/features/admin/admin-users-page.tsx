@@ -23,7 +23,7 @@ import { Modal } from "../../components/ui/modal";
 
 export function AdminUsersPage() {
   useDocumentTitle(S.admin.users);
-  const { user } = useAuth();
+  const { user, desktopMode } = useAuth();
   const [users, setUsers] = useState<UserInfo[] | null>(null);
   const [listError, setListError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
@@ -40,11 +40,13 @@ export function AdminUsersPage() {
   }, []);
 
   useEffect(() => {
-    if (user?.isAdmin) void reload();
-  }, [user?.isAdmin, reload]);
+    if (user?.isAdmin && !desktopMode) void reload();
+  }, [user?.isAdmin, desktopMode, reload]);
 
-  // Route guard fallback: non-admins are redirected back to the chat page (the sidebar has no entry point anyway).
-  if (user && !user.isAdmin) return <Navigate to="/chat" replace />;
+  // Route guard fallback: non-admins are redirected back to the chat page (the sidebar has
+  // no entry point anyway); same for desktop mode, where the app is single-user and the
+  // server rejects the admin-user routes (desktop_single_user).
+  if (user && (!user.isAdmin || desktopMode)) return <Navigate to="/chat" replace />;
 
   return (
     <div className="h-full overflow-y-auto p-4 md:p-6">
