@@ -711,7 +711,7 @@ export class Agent {
     // into command subprocesses (shared by createSession and resumeSession; the
     // caller reads the current agent_state/.vault.toml); a child Agent loads **its
     // own** vault via createAgent rather than inheriting the parent's.
-    const environment = new Environment({
+    const environment = await Environment.create({
       workspaceDir,
       toolConfig,
       // The Session's generic scratchpad root; Environment derives its truncated-tool-output
