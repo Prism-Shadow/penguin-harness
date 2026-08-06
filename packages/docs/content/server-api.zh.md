@@ -67,6 +67,8 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 | POST | /api/admin/users/:userId/password | 重置密码（该用户全部登录会话失效） |
 | DELETE | /api/admin/users/:userId | 删除用户 |
 
+桌面模式下（server 由桌面应用拉起）整组路由返回 `403`、错误码 `desktop_single_user`：桌面应用是单用户形态，用户管理整体停用——数据根中已有的用户不受影响。
+
 ### 服务端设置（仅管理员）
 
 | 方法 | 路径 | 说明 |
@@ -97,7 +99,7 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 | POST | /api/projects/:projectId/members | 添加成员：`{userId}` |
 | DELETE | /api/projects/:projectId/members/:userId | 移除成员 |
 
-成员写操作仅限 Owner。
+成员写操作仅限 Owner。成员路由在桌面模式下同样返回 `403 desktop_single_user`（见上文「用户管理」）。
 
 ### 模型
 

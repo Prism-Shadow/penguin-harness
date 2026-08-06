@@ -19,6 +19,9 @@ import path from "node:path";
 import { app, BrowserWindow, dialog, shell } from "electron";
 import { resolveRoot } from "@prismshadow/penguin-core";
 import { liveServerLock } from "@prismshadow/penguin-server/lock";
+import { resolveWindowIcon } from "./app-icon.js";
+import { installCliCommand, maybeOfferCliInstall, currentCliInstallKind } from "./cli-install.js";
+import { installAppMenu } from "./menu.js";
 import { startEmbeddedServer, stopEmbeddedServer } from "./server-process.js";
 import type { EmbeddedServer } from "./server-process.js";
 import {
@@ -30,6 +33,10 @@ import {
 } from "./util.js";
 
 app.setName("PenguinHarness");
+// Windows toasts (the web app's task-completion notifications) need the AppUserModelID
+// of the installed shortcuts; electron-builder stamps them with the appId. Keep in sync
+// with electron-builder.yml.
+if (process.platform === "win32") app.setAppUserModelId("com.prismshadow.penguinharness");
 
 let win: BrowserWindow | null = null;
 let server: EmbeddedServer | null = null;
@@ -46,11 +53,15 @@ function fatal(context: string, err: unknown): void {
 }
 
 function createWindow(url: string): void {
+  // Linux window/taskbar icon (and Windows dev runs); packaged Windows uses the exe
+  // resources and macOS its bundle icns, so those ignore it (see app-icon.ts).
+  const iconPath = resolveWindowIcon(app.getAppPath(), process.platform);
   win = new BrowserWindow({
     width: 1280,
     height: 860,
     show: false,
     autoHideMenuBar: true,
+    ...(iconPath !== null ? { icon: iconPath } : {}),
     webPreferences: {
       // The window is a plain browser: no Node, no preload — the minimal attack surface.
       contextIsolation: true,
@@ -75,6 +86,7 @@ function createWindow(url: string): void {
           width: 1100,
           height: 800,
           autoHideMenuBar: true,
+          ...(iconPath !== null ? { icon: iconPath } : {}),
           // Same hardening as the main window: the preview is Agent-written, untrusted
           // HTML and must never get Node.
           webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
@@ -202,9 +214,20 @@ if (!app.requestSingleInstanceLock()) {
     }
   });
 
-  void app
-    .whenReady()
-    .then(() => boot().catch((err) => fatal("PenguinHarness failed to start.", err)));
+  void app.whenReady().then(() =>
+    (async () => {
+      // Standard menu plus the CLI-install entry where installing makes sense
+      // (packaged macOS / Windows / AppImage; deb ships /usr/bin/penguin itself).
+      installAppMenu({
+        includeCliInstall: currentCliInstallKind() !== null,
+        onInstallCli: () => void installCliCommand(win),
+      });
+      await boot();
+      // First launch only: offer the 'penguin' command once; the menu entry remains.
+      // Skipped in smoke mode — a modal dialog would hang the automated run.
+      if (process.env.PENGUIN_DESKTOP_SMOKE !== "1") await maybeOfferCliInstall(win);
+    })().catch((err) => fatal("PenguinHarness failed to start.", err)),
+  );
 }
 
 // --- smoke hook ------------------------------------------------------------

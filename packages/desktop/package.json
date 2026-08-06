@@ -17,6 +17,7 @@
     "pack:win": "node scripts/stage.mjs && electron-builder --win"
   },
   "dependencies": {
+    "@prismshadow/penguin-cli": "workspace:*",
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/penguin-server": "workspace:*"
   },
