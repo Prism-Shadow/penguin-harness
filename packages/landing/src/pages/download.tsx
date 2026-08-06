@@ -23,21 +23,13 @@ import {
   OSS_ORIGIN,
   RELEASES_URL,
 } from "../lib/links";
+import { detectPlatform } from "../lib/platform";
+import type { Platform } from "../lib/platform";
 import { Section } from "../components/section";
 import { CodeCard } from "../components/code-card";
 import { ChevronDownIcon, DownloadIcon, ExternalLinkIcon } from "../components/icons";
 
-type Platform = "mac" | "windows" | "linux";
 const PLATFORMS: Platform[] = ["mac", "windows", "linux"];
-
-/** Coarse OS detection, used only to badge one card; absent or wrong detection changes nothing else. */
-function detectPlatform(): Platform | null {
-  const ua = navigator.userAgent;
-  if (/Windows/i.test(ua)) return "windows";
-  if (/Macintosh|Mac OS X/i.test(ua)) return "mac";
-  if (/Linux|X11/.test(ua) && !/Android/i.test(ua)) return "linux";
-  return null;
-}
 
 interface Mirror {
   tag: string;

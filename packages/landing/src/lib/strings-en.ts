@@ -54,9 +54,14 @@ export const en: Strings = {
     titleWords: ["Desktop", "Server"],
     titleSuffix: "",
     subtitle: "Create Self-Evolving Agents in One Click",
-    ctaPrimary: "Get started",
+    /** Primary CTA: base label, and the platform-aware variant once the OS is detected. */
+    downloadCta: "Download the desktop app",
+    downloadCtaFor: (platform: string) => `Download for ${platform}`,
+    ctaQuickstart: "Get started",
     ctaGithub: "GitHub",
-    installHint: "One-line install (bundled Node runtime — unpack and run)",
+    /** Line under the CTAs: all installers on /download, CLI / self-hosted below the fold. */
+    downloadAll: "All platforms (macOS / Windows / Linux)",
+    cliAlt: "CLI and self-hosted install ↓",
     stats: [
       { value: "1000+", label: "supported models" },
       { value: "1×CPU", label: "minimum footprint" },
@@ -80,7 +85,7 @@ export const en: Strings = {
     },
     offlineRelease: "Download offline packages from GitHub Releases",
     desktopNote:
-      "Prefer a standalone app? The desktop app packages the Web interface and the server into a terminal-free installer (macOS / Windows / Linux), sharing the same local data as a CLI install.",
+      "Already on the desktop app? A CLI install shares the same local data with it, and the two can be used side by side.",
     desktopPage: "Go to the desktop download page",
   },
 
@@ -485,7 +490,8 @@ export const en: Strings = {
     title: "Complex AI development, made ever simpler",
     subtitle:
       "Through continuous evolution, PenguinHarness gives you a more efficient, more reliable, lower-hallucination and lower-cost Agent productivity engine.",
-    install: "Install now",
+    download: "Download the desktop app",
+    quickstart: "Get started",
     docs: "Read the docs",
   },
 

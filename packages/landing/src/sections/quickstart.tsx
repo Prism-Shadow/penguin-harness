@@ -200,8 +200,9 @@ export function Quickstart() {
                 </p>
               </>
             )}
-            {/* Below both install methods: the desktop app replaces this whole flow for
-                users who never want a terminal, so it stays visible on every switch. */}
+            {/* Below both install methods: the desktop app is the headline install path
+                (hero + /download); this note tells CLI installers the two share one data
+                root, and still routes anyone terminal-averse back to the download page. */}
             <p className="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">
               {S.install.desktopNote}{" "}
               <Link
