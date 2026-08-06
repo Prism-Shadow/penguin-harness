@@ -67,6 +67,8 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 | POST | /api/admin/users/:userId/password | Reset a password (invalidates all of that user's login sessions) |
 | DELETE | /api/admin/users/:userId | Delete a user |
 
+In desktop mode (the server spawned by the desktop app) the whole surface answers `403` with code `desktop_single_user`: the desktop app is single-user, so user management is disabled — existing users in the data root are untouched.
+
 ### Version and Self-Update
 
 | Method | Path | Description |
@@ -88,7 +90,7 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 | POST | /api/projects/:projectId/members | Add a member: `{userId}` |
 | DELETE | /api/projects/:projectId/members/:userId | Remove a member |
 
-Member writes are owner-only.
+Member writes are owner-only. The member routes also answer `403 desktop_single_user` in desktop mode (see User Administration above).
 
 ### Models
 

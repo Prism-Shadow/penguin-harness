@@ -1,10 +1,11 @@
 /**
  * Desktop mode: one-shot desktop-login, Bearer-token shutdown, desktopMode in /api/me,
- * and the desktop-session password change without oldPassword.
+ * the desktop-session password change without oldPassword, and the single-user guard
+ * closing the user-management and Project-member surfaces.
  */
 import { describe, expect, it } from "vitest";
 import { apiClient, createTestApp, loginAdmin } from "./helpers.js";
-import type { MeResponse } from "../src/api/types.js";
+import type { ErrorBody, MeResponse } from "../src/api/types.js";
 
 const TOKEN = "test-desktop-token";
 
@@ -115,6 +116,75 @@ describe("desktop shutdown endpoint", () => {
       expect(res.status).toBe(401);
     } finally {
       await plain.cleanup();
+    }
+  });
+});
+
+describe("desktop single-user mode", () => {
+  async function expectSingleUser403(res: Response): Promise<void> {
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as ErrorBody;
+    expect(body.error.code).toBe("desktop_single_user");
+  }
+
+  it("rejects the whole admin-users surface with desktop_single_user", async () => {
+    const t = await desktopApp();
+    try {
+      // The seeded admin signed in through the regular login form: even a fully
+      // authorized admin session gets the dedicated 403, not admin_required.
+      const admin = await loginAdmin(t.app);
+      const api = apiClient(t.app, admin.cookie);
+      await expectSingleUser403(await api.get("/api/admin/users"));
+      await expectSingleUser403(
+        await api.post("/api/admin/users", { userId: "eve", password: "password-123" }),
+      );
+      await expectSingleUser403(
+        await api.post("/api/admin/users/admin/password", { password: "password-456" }),
+      );
+      await expectSingleUser403(
+        await t.app.request("/api/admin/users/eve", {
+          method: "DELETE",
+          headers: { cookie: admin.cookie },
+        }),
+      );
+      // No user was created by the rejected POST.
+      expect(t.deps.db.prepare("SELECT COUNT(*) AS n FROM users").get()?.n).toBe(1);
+    } finally {
+      await t.cleanup();
+    }
+  });
+
+  it("rejects Project member management (reads and writes) with desktop_single_user", async () => {
+    const t = await desktopApp();
+    try {
+      const admin = await loginAdmin(t.app);
+      const api = apiClient(t.app, admin.cookie);
+      await expectSingleUser403(await api.get("/api/projects/default_project/members"));
+      await expectSingleUser403(
+        await api.post("/api/projects/default_project/members", { userId: "eve" }),
+      );
+      await expectSingleUser403(
+        await t.app.request("/api/projects/default_project/members/eve", {
+          method: "DELETE",
+          headers: { cookie: admin.cookie },
+        }),
+      );
+    } finally {
+      await t.cleanup();
+    }
+  });
+
+  it("leaves both surfaces working on a normal multi-user server", async () => {
+    const t = await createTestApp();
+    try {
+      const admin = await loginAdmin(t.app);
+      const api = apiClient(t.app, admin.cookie);
+      const users = await api.get("/api/admin/users");
+      expect(users.status).toBe(200);
+      const members = await api.get("/api/projects/default_project/members");
+      expect(members.status).toBe(200);
+    } finally {
+      await t.cleanup();
     }
   });
 });

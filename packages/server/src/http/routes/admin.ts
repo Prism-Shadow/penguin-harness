@@ -1,10 +1,12 @@
 /**
- * Admin user-backend routes: only the built-in admin can use these (403 for non-admins).
+ * Admin user-backend routes: only the built-in admin can use these (403 for non-admins),
+ * and desktop mode rejects the whole surface (single-user; 403 `desktop_single_user`).
  * GET|POST /api/admin/users, POST /api/admin/users/:userId/password, DELETE /api/admin/users/:userId.
  */
 import { Hono } from "hono";
 import type { AdminUserCreateResponse, AdminUsersResponse } from "../../api/types.js";
 import { HttpError } from "../errors.js";
+import { rejectInDesktopMode } from "./desktop.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { pathParam, readJson, requireString } from "../validate.js";
 import type { AppDeps } from "../../app.js";
@@ -12,6 +14,7 @@ import type { AppDeps } from "../../app.js";
 export function adminUsersRoutes(deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
+  app.use("*", rejectInDesktopMode(deps));
   app.use("*", async (c, next) => {
     if (!c.var.user.isAdmin) {
       throw new HttpError(403, "admin_required", "Only an admin can perform this operation.");
