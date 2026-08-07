@@ -252,10 +252,10 @@ export const en: Strings = {
       ["{{AGENTS_MD}}", "Injects the AGENTS.md content"],
       ["{{VAULT_KEYS}}", "Injects the vault key-name section (empty when no keys)"],
       ["{{SKILL_METADATA}}", "Injects the installed skills' metadata lines (empty when none)"],
-      ["{{MEMORY_USER_DIR}}", "Absolute path of the user memory directory (inside # Memory)"],
-      ["{{MEMORY_USER_INDEX}}", "Content of the user MEMORY.md index (truncated past 200 lines)"],
-      ["{{MEMORY_DIR}}", "The current workspace's memory directory (inside ## Workspace memory)"],
-      ["{{MEMORY_INDEX}}", "Content of the workspace MEMORY.md index (truncated past 200 lines)"],
+      [
+        "{{MEMORY}}",
+        "Injects the memory block: memory.prompt plus memory.workspace_prompt (persistent workspaces only); empty when memory is off",
+      ],
       ["{{PLATFORM}}", "Runtime platform"],
       ["{{OS_VERSION}}", "Operating system version"],
       ["{{DATE}}", "Current date"],
@@ -485,6 +485,16 @@ export const en: Strings = {
       "What the template's {{MEMORY}} placeholder expands to. The main prompt is injected into every session; the workspace addendum only in sessions with a persistent workspace.",
     promptLabel: "Main prompt",
     workspacePromptLabel: "Workspace addendum",
+    /** Memory-prompt placeholder reference: the first two insert into the main prompt, the last two into the workspace addendum. */
+    promptPlaceholders: [
+      ["{{MEMORY_USER_DIR}}", "Absolute path of the user memory directory"],
+      ["{{MEMORY_USER_INDEX}}", "Content of the user MEMORY.md index (truncated past 200 lines)"],
+    ],
+    workspacePromptPlaceholders: [
+      ["{{MEMORY_DIR}}", "The current workspace's memory directory"],
+      ["{{MEMORY_INDEX}}", "Content of the workspace MEMORY.md index (truncated past 200 lines)"],
+    ],
+    insertToken: "Insert at the cursor",
     itemCount: (n: number): string => (n === 1 ? "1 item" : `${n} items`),
     emptyScope:
       "No memories for this Workspace yet — the agent saves what is worth keeping as it works",

@@ -16,7 +16,8 @@
  * fully usable; it only stops Memory from entering the context and from preparing directories
  * for new Sessions.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { RefObject } from "react";
 import { useNavigate } from "react-router";
 import type { MemoryFileInfo, MemoryScopeInfo } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
@@ -83,6 +84,8 @@ export function MemoryTab({ agentId }: { agentId: string }) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [memoryPrompt, setMemoryPrompt] = useState("");
   const [workspacePrompt, setWorkspacePrompt] = useState("");
+  const mainPromptRef = useRef<HTMLTextAreaElement>(null);
+  const workspacePromptRef = useRef<HTMLTextAreaElement>(null);
   const { requestSave, element: saveConfirm } = useSaveConfirm();
   const [viewing, setViewing] = useState<(Selected & { content: string }) | null>(null);
   const [editing, setEditing] = useState<Selected | null>(null);
@@ -147,6 +150,30 @@ export function MemoryTab({ agentId }: { agentId: string }) {
     } catch (e) {
       toastError(apiErrorText(e));
     }
+  };
+
+  /** Same contract as the Prompt tab's inserter: execCommand keeps the textarea's native undo stack, with a state-splice fallback. */
+  const insertPromptToken = (
+    ref: RefObject<HTMLTextAreaElement | null>,
+    value: string,
+    setValue: (next: string) => void,
+    token: string,
+  ) => {
+    const el = ref.current;
+    if (el) {
+      el.focus();
+      const inserted = document.execCommand?.("insertText", false, token);
+      if (inserted) return; // onChange updates state from e.target.value
+    }
+    const start = el ? el.selectionStart : value.length;
+    const end = el ? el.selectionEnd : value.length;
+    setValue(value.slice(0, start) + token + value.slice(end));
+    requestAnimationFrame(() => {
+      if (!el) return;
+      el.focus();
+      const caret = start + token.length;
+      el.setSelectionRange(caret, caret);
+    });
   };
 
   /** Saves both memory prompts through the ordinary config write (confirm-first, like the other settings tabs). */
@@ -371,19 +398,56 @@ export function MemoryTab({ agentId }: { agentId: string }) {
           </p>
         </div>
         <Textarea
+          ref={mainPromptRef}
           label={S.memory.promptLabel}
+          mono
           size="sm"
           rows={12}
           value={memoryPrompt}
           onChange={(e) => setMemoryPrompt(e.target.value)}
         />
         <Textarea
+          ref={workspacePromptRef}
           label={S.memory.workspacePromptLabel}
+          mono
           size="sm"
           rows={6}
           value={workspacePrompt}
           onChange={(e) => setWorkspacePrompt(e.target.value)}
         />
+        {/* Placeholder reference, the Prompt tab's convention — each token inserts into the field it belongs to. */}
+        <div className="rounded-md border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-900">
+          <p className="mb-2 text-xs font-semibold text-gray-500">{S.agent.placeholdersTitle}</p>
+          <ul className="space-y-1">
+            {[
+              ...S.memory.promptPlaceholders.map(([token, desc]) => [token, desc, "main"] as const),
+              ...S.memory.workspacePromptPlaceholders.map(
+                ([token, desc]) => [token, desc, "workspace"] as const,
+              ),
+            ].map(([token, desc, field]) => (
+              <li key={token} className="flex items-center gap-3 text-xs">
+                <button
+                  type="button"
+                  onClick={() =>
+                    field === "main"
+                      ? insertPromptToken(mainPromptRef, memoryPrompt, setMemoryPrompt, token!)
+                      : insertPromptToken(
+                          workspacePromptRef,
+                          workspacePrompt,
+                          setWorkspacePrompt,
+                          token!,
+                        )
+                  }
+                  title={S.memory.insertToken}
+                  className="shrink-0 rounded border border-gray-200 bg-white px-1.5 py-0.5 font-mono font-semibold text-gray-800 transition-colors duration-150 hover:border-gray-400 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:border-gray-500 dark:hover:bg-gray-700"
+                >
+                  {token}
+                </button>
+                <span className="text-gray-500 dark:text-gray-400">{desc}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
         <div className="flex justify-end">
           <Button size="sm" variant="primary" onClick={savePrompts}>
             {S.common.save}

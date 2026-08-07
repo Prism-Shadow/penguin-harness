@@ -241,10 +241,10 @@ export const zh = {
       ["{{AGENTS_MD}}", "注入 AGENTS.md 内容"],
       ["{{VAULT_KEYS}}", "注入密钥保险柜的键名小节（无键时为空）"],
       ["{{SKILL_METADATA}}", "注入已安装 Skill 的元数据行（无 Skill 时为空）"],
-      ["{{MEMORY_USER_DIR}}", "用户记忆目录的绝对路径（# Memory 小节内）"],
-      ["{{MEMORY_USER_INDEX}}", "用户记忆索引 MEMORY.md 的内容（超 200 行截断）"],
-      ["{{MEMORY_DIR}}", "当前工作区的记忆目录（## Workspace memory 子节内）"],
-      ["{{MEMORY_INDEX}}", "当前工作区记忆索引的内容（超 200 行截断）"],
+      [
+        "{{MEMORY}}",
+        "注入记忆区块：memory.prompt 加 memory.workspace_prompt（仅持久工作区）；关闭记忆时为空",
+      ],
       ["{{PLATFORM}}", "运行平台"],
       ["{{OS_VERSION}}", "操作系统版本"],
       ["{{DATE}}", "当前日期"],
@@ -464,6 +464,16 @@ export const zh = {
       "注入模板 {{MEMORY}} 占位符的内容。主提示词每个会话都注入；工作区附加段仅在持久工作区的会话中追加。",
     promptLabel: "主提示词",
     workspacePromptLabel: "工作区附加段",
+    /** Memory-prompt placeholder reference: the first two insert into the main prompt, the last two into the workspace addendum. */
+    promptPlaceholders: [
+      ["{{MEMORY_USER_DIR}}", "用户记忆目录的绝对路径"],
+      ["{{MEMORY_USER_INDEX}}", "用户记忆索引 MEMORY.md 的内容（超 200 行截断）"],
+    ],
+    workspacePromptPlaceholders: [
+      ["{{MEMORY_DIR}}", "当前工作区的记忆目录"],
+      ["{{MEMORY_INDEX}}", "当前工作区记忆索引的内容（超 200 行截断）"],
+    ],
+    insertToken: "插入到光标处",
     itemCount: (n: number): string => `${n} 条`,
     emptyScope: "这个工作区还没有记忆——agent 会在会话中自行记下值得保留的信息",
     emptyUserScope: "还没有用户记忆——在对话里说「记住……」即可让 agent 保存",
