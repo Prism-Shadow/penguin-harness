@@ -72,8 +72,9 @@ import {
 import type { ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
 import { groupModelRows, isFreeModel, sameModelRef, userProviderInfo } from "./model-grouping";
 import {
-  defaultExpandedProviders,
   isGroupExpanded,
+  loadExpandedProviders,
+  saveExpandedProviders,
   toggleExpandedProvider,
 } from "./model-group-expansion";
 import { clearDraftModelRef } from "../chat/draft-cache";
@@ -358,11 +359,17 @@ export function ModelsPage() {
   const [addingTo, setAddingTo] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   /**
-   * Expanded vendor groups — only DeepSeek on first paint; every other group (including
-   * user-defined ones, which arrive with the async row load) starts collapsed. Searching
-   * force-opens the rendered groups without touching this set (see model-group-expansion.ts).
+   * Expanded vendor groups — hydrated from this Project's persisted set (DeepSeek-only
+   * on a first visit; every other group, including user-defined ones arriving with the
+   * async row load, starts collapsed), written back on every toggle so the user's
+   * choices survive a refresh. Searching force-opens the rendered groups without
+   * touching this set (see model-group-expansion.ts).
    */
-  const [expanded, setExpanded] = useState<Set<string>>(defaultExpandedProviders);
+  const [expanded, setExpanded] = useState<Set<string>>(() => loadExpandedProviders(projectId));
+  // Project resolved on first load / switched: swap in that Project's persisted expansion set.
+  useEffect(() => {
+    setExpanded(loadExpandedProviders(projectId));
+  }, [projectId]);
   /** Vendor group (provider id) currently having its API key configured in bulk. */
   const [groupKeyFor, setGroupKeyFor] = useState<string | null>(null);
   /** "Add group" popup (user-defined group): a valid name proceeds to that group's add-model dialog. */
@@ -528,11 +535,15 @@ export function ModelsPage() {
   /**
    * Header toggles are inert while searching: every rendered group is force-opened (see
    * isGroupExpanded), so a flip would change nothing visibly and only silently mutate the
-   * state restored once the query clears.
+   * state restored once the query clears. Computed outside the state updater (sidebar
+   * toggleGroup convention): the persistence write is a side effect, and updaters must
+   * stay pure (double-invoked in StrictMode).
    */
   const toggleGroup = (id: string) => {
     if (searching) return;
-    setExpanded((prev) => toggleExpandedProvider(prev, id));
+    const next = toggleExpandedProvider(expanded, id);
+    setExpanded(next);
+    saveExpandedProviders(projectId, next);
   };
 
   return (
