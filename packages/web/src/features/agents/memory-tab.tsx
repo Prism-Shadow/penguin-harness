@@ -4,10 +4,12 @@
  * its `.workspace` path, newest activity first).
  *
  * The tab is read + delete only, matching the API: a memory's content is the model's document,
- * so "edit" jumps to a new chat with this Agent and a prefilled draft naming the file (the same
- * draft-cache route the skill import flow uses); for a Workspace memory the draft also pins
- * that Workspace, so the editing Session is injected with the very index it is about to change.
- * Deleting confirms first and also drops the file's MEMORY.md index lines (server-side).
+ * so "edit" opens a modal first — the requirement field and a live preview of the generated
+ * prompt, the same shape as the skill import modal — and then jumps to a new chat with this
+ * Agent and the prompt as the prefilled draft (the same draft-cache route). For a Workspace
+ * memory the draft also pins that Workspace, so the editing Session is injected with the very
+ * index it is about to change. Deleting confirms first and also drops the file's MEMORY.md
+ * index lines (server-side).
  *
  * The switch writes immediately rather than joining a tab-level Save, so turning Memory off
  * never drags an unrelated half-finished edit along with it. Off keeps every file and this tab
@@ -25,6 +27,8 @@ import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
 import { Button } from "../../components/ui/button";
+import { Modal } from "../../components/ui/modal";
+import { Textarea } from "../../components/ui/input";
 import { Switch } from "../../components/ui/switch";
 import { Badge, type BadgeTone } from "../../components/ui/badge";
 import { Drawer } from "../../components/ui/drawer";
@@ -77,6 +81,8 @@ export function MemoryTab({ agentId }: { agentId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [switchBusy, setSwitchBusy] = useState(false);
   const [viewing, setViewing] = useState<(Selected & { content: string }) | null>(null);
+  const [editing, setEditing] = useState<Selected | null>(null);
+  const [editRequirement, setEditRequirement] = useState("");
   const [removing, setRemoving] = useState<Selected | null>(null);
 
   const load = useCallback(async () => {
@@ -144,19 +150,45 @@ export function MemoryTab({ agentId }: { agentId: string }) {
     }
   };
 
+  const memoryFilePath = (scope: MemoryScopeInfo, file: MemoryFileInfo) =>
+    `${memoryDir}/${scope.scopeKey}/${file.name}`;
+
+  /** Opens the edit modal (closing the view drawer if it is up): requirement field + prompt preview, then the chat jump. */
+  const openEditor = (scope: MemoryScopeInfo, file: MemoryFileInfo) => {
+    setViewing(null);
+    setEditRequirement("");
+    setEditing({ scope, file });
+  };
+
+  const editPrompt = editing
+    ? buildMemoryEditPrompt(
+        editing.file.title,
+        memoryFilePath(editing.scope, editing.file),
+        editRequirement,
+      )
+    : "";
+
+  const copyEditPrompt = () => {
+    void navigator.clipboard
+      .writeText(editPrompt)
+      .then(() => toastSuccess(S.memory.editCopied))
+      .catch(() => toastError(S.common.unknownError));
+  };
+
   /**
    * The edit-via-chat jump: prefill the draft (merging over what is already cached, clearing a
    * stale `/agent` handoff chip that would forward the prompt to a different Agent), pin this
    * Agent — and for a Workspace memory pin that Workspace too, so the editing Session reads the
    * index it is editing.
    */
-  const openEdit = (scope: MemoryScopeInfo, file: MemoryFileInfo) => {
-    if (!userId || !projectId) return;
+  const openEditChat = () => {
+    if (!editing || !userId || !projectId) return;
+    const { scope } = editing;
     const key = draftKey(userId, projectId);
     saveDraft(key, {
       ...loadDraft(key),
       agentId,
-      text: buildMemoryEditPrompt(file.title, `${memoryDir}/${scope.scopeKey}/${file.name}`),
+      text: editPrompt,
       ...(scope.workspacePath !== undefined ? { workspace: scope.workspacePath } : {}),
       skills: [],
       handoffAgentId: undefined,
@@ -198,7 +230,7 @@ export function MemoryTab({ agentId }: { agentId: string }) {
       <Button size="sm" onClick={() => void openView(scope, file)}>
         {S.memory.view}
       </Button>
-      <Button size="sm" variant="primary" onClick={() => openEdit(scope, file)}>
+      <Button size="sm" variant="primary" onClick={() => openEditor(scope, file)}>
         {S.memory.edit}
       </Button>
       <Button size="sm" variant="danger" onClick={() => setRemoving({ scope, file })}>
@@ -314,7 +346,7 @@ export function MemoryTab({ agentId }: { agentId: string }) {
               <Button
                 size="sm"
                 variant="primary"
-                onClick={() => openEdit(viewing.scope, viewing.file)}
+                onClick={() => openEditor(viewing.scope, viewing.file)}
               >
                 {S.memory.edit}
               </Button>
@@ -325,6 +357,46 @@ export function MemoryTab({ agentId }: { agentId: string }) {
           </div>
         )}
       </Drawer>
+
+      <Modal
+        open={editing !== null}
+        title={S.memory.editTitle}
+        onClose={() => setEditing(null)}
+        widthClass="sm:max-w-lg"
+      >
+        {editing && (
+          <div className="space-y-2.5">
+            <p className="text-xs text-gray-500 dark:text-gray-400">{S.memory.editWhy}</p>
+            <p className="break-all font-mono text-[11px] text-gray-400 dark:text-gray-500">
+              {memoryFilePath(editing.scope, editing.file)}
+            </p>
+            <Textarea
+              label={S.memory.editRequirementLabel}
+              size="sm"
+              rows={2}
+              value={editRequirement}
+              onChange={(e) => setEditRequirement(e.target.value)}
+              placeholder={S.memory.editRequirementPlaceholder}
+            />
+            <Textarea
+              label={S.memory.editPromptLabel}
+              size="sm"
+              rows={6}
+              readOnly
+              value={editPrompt}
+              className="text-gray-600 dark:text-gray-300"
+            />
+            <div className="flex gap-2">
+              <Button size="sm" onClick={copyEditPrompt}>
+                {S.memory.editCopyPrompt}
+              </Button>
+              <Button size="sm" variant="primary" onClick={openEditChat}>
+                {S.memory.editOpenChat}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       <ConfirmModal
         open={removing !== null}

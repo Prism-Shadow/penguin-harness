@@ -23,6 +23,15 @@ describe("buildMemoryEditPrompt", () => {
     expect(prompt.endsWith(S.memory.editPromptTail.split("\n").at(-1)!)).toBe(true);
   });
 
+  it("appends the modal's requirement after the trailing line, and trims it", () => {
+    const prompt = buildMemoryEditPrompt("t", "/m/user/t.md", "  改成两条命令  ");
+    expect(prompt.endsWith("改成两条命令")).toBe(true);
+    // Empty and whitespace-only requirements leave the line trailing for the composer.
+    expect(buildMemoryEditPrompt("t", "/m/user/t.md", "   ")).toBe(
+      buildMemoryEditPrompt("t", "/m/user/t.md"),
+    );
+  });
+
   it("follows the active dictionary", () => {
     setActiveStrings(en);
     expect(buildMemoryEditPrompt("t", "/m/user/t.md")).toContain("Please update a memory");

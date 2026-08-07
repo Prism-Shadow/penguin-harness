@@ -487,6 +487,15 @@ export const en: Strings = {
     emptyUserScope: 'No user memories yet — say "remember …" in a chat and the agent will save it',
     view: "View",
     edit: "Edit",
+    editTitle: "Edit memory",
+    editWhy:
+      "Content edits are made by the agent in a chat: confirm the prompt to open a new conversation, and the agent updates the memory file and its MEMORY.md index together.",
+    editRequirementLabel: "What to change",
+    editRequirementPlaceholder: "Describe the change (optional — you can finish it in the chat)",
+    editPromptLabel: "Prompt preview",
+    editCopyPrompt: "Copy prompt",
+    editCopied: "Copied",
+    editOpenChat: "Open a new chat",
     delete: "Delete",
     deleteTitle: "Delete this memory?",
     deleteConfirm: (name: string): string =>

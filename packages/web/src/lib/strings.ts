@@ -465,6 +465,15 @@ export const zh = {
     emptyUserScope: "还没有用户记忆——在对话里说「记住……」即可让 agent 保存",
     view: "查看",
     edit: "编辑",
+    editTitle: "编辑记忆",
+    editWhy:
+      "内容修改由 agent 在对话中完成：确认引导语后打开新对话，agent 会同步更新记忆文件与 MEMORY.md 索引。",
+    editRequirementLabel: "修改要求",
+    editRequirementPlaceholder: "描述要怎么改（可留空，跳转后在对话中补充）",
+    editPromptLabel: "引导语预览",
+    editCopyPrompt: "复制 Prompt",
+    editCopied: "已复制",
+    editOpenChat: "打开新对话",
     delete: "删除",
     deleteTitle: "删除这条记忆？",
     deleteConfirm: (name: string): string =>
