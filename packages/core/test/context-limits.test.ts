@@ -8,6 +8,7 @@ import {
   COMPACTION_HEADROOM,
   DEFAULT_CONTEXT_WINDOW,
   MIN_OUTPUT_TOKENS,
+  MIN_USABLE_CONTEXT_WINDOW,
   OUTPUT_SAFETY_MARGIN,
   approximateMessagesTokens,
   approximateTokens,
@@ -18,14 +19,29 @@ import {
 import { toolCallOutput, userText } from "../src/omnimessage/index.js";
 import type { OmniMessage } from "../src/omnimessage/index.js";
 
+describe("constant derivation (one tunable: OUTPUT_SAFETY_MARGIN)", () => {
+  it("derives the floor and headroom from the margin so their invariants cannot drift", () => {
+    // Floor below the margin: a floored request still fits the window when the input
+    // estimate is accurate. Headroom above the margin: at the compaction trigger the
+    // summary request keeps a usable output budget (~1k), not just the floor.
+    expect(MIN_OUTPUT_TOKENS).toBe(Math.floor(OUTPUT_SAFETY_MARGIN / 2));
+    expect(COMPACTION_HEADROOM).toBe(OUTPUT_SAFETY_MARGIN * 2);
+    expect(COMPACTION_HEADROOM - OUTPUT_SAFETY_MARGIN).toBeGreaterThanOrEqual(1000);
+  });
+});
+
 describe("resolveContextWindow", () => {
-  it("uses a positive number and falls back to the 128000 default otherwise", () => {
+  it("takes a plausible configured window at face value, anything else is unconfigured", () => {
     expect(resolveContextWindow(32768)).toBe(32768);
-    expect(resolveContextWindow(undefined)).toBe(DEFAULT_CONTEXT_WINDOW);
-    expect(resolveContextWindow("unknown")).toBe(DEFAULT_CONTEXT_WINDOW);
-    expect(resolveContextWindow(0)).toBe(DEFAULT_CONTEXT_WINDOW);
-    expect(resolveContextWindow(-1)).toBe(DEFAULT_CONTEXT_WINDOW);
-    expect(resolveContextWindow(Number.NaN)).toBe(DEFAULT_CONTEXT_WINDOW);
+    expect(resolveContextWindow(MIN_USABLE_CONTEXT_WINDOW)).toBe(MIN_USABLE_CONTEXT_WINDOW);
+    expect(resolveContextWindow(undefined)).toBeUndefined();
+    expect(resolveContextWindow("unknown")).toBeUndefined();
+    expect(resolveContextWindow(0)).toBeUndefined();
+    expect(resolveContextWindow(-1)).toBeUndefined();
+    expect(resolveContextWindow(Number.NaN)).toBeUndefined();
+    // Below the sane minimum = a typo'd window (no real model sits under 4096): treated as
+    // unconfigured rather than clamping every request against a bogus number.
+    expect(resolveContextWindow(2048)).toBeUndefined();
   });
 });
 
@@ -41,23 +57,24 @@ describe("approximateTokens (character heuristic, not a tokenizer)", () => {
 });
 
 describe("approximateMessagesTokens", () => {
-  it("estimates text-bearing payloads from their serialized size plus per-message overhead", () => {
+  it("estimates text-bearing payloads from their serialized size", () => {
     const text = userText("x".repeat(400));
     const est = approximateMessagesTokens([text]);
-    // ~100 tokens of body + JSON envelope + the flat message overhead: a loose sanity
-    // band, not an exact figure (the heuristic's contract is "close and erring high").
+    // ~100 tokens of body + the JSON envelope: a loose sanity band, not an exact figure
+    // (the heuristic's contract is "close and erring high").
     expect(est).toBeGreaterThanOrEqual(100);
     expect(est).toBeLessThan(150);
-    // Tool outputs go through the same serialized-payload path.
-    const out = toolCallOutput({
-      output: "y".repeat(400),
+    // Tool outputs go through the same serialized-payload path; a genuinely huge text
+    // output still counts as text.
+    const big = toolCallOutput({
+      output: "y".repeat(120_000),
       toolCallId: "c1",
       stopReason: "completed",
     });
-    expect(approximateMessagesTokens([out])).toBeGreaterThanOrEqual(100);
+    expect(approximateMessagesTokens([big])).toBeGreaterThanOrEqual(30_000);
   });
 
-  it("gives images a flat allowance instead of counting data-URI characters", () => {
+  it("gives image payloads a flat allowance instead of counting data-URI characters", () => {
     const image = {
       type: "model_msg",
       payload: {
@@ -72,6 +89,33 @@ describe("approximateMessagesTokens", () => {
     expect(est).toBeLessThan(2000);
     expect(est).toBeGreaterThan(1000);
   });
+
+  it("counts a tool output's `images` data URLs at the flat allowance, not as base64 text", () => {
+    // read_image-style outputs carry the image as tool_call_output.images (data URLs). A
+    // 1 MB base64 string serialized as text would estimate ~262k "tokens" (~163x over)
+    // and floor the NEXT request's cap even on a 128k window.
+    const withImage = toolCallOutput({
+      output: "Read image OK (1024x768).",
+      toolCallId: "c1",
+      stopReason: "completed",
+      images: [`data:image/png;base64,${"A".repeat(1_000_000)}`],
+    });
+    const est = approximateMessagesTokens([withImage]);
+    expect(est).toBeLessThan(2000); // flat image allowance + a small text payload
+    expect(est).toBeGreaterThan(1600 - 1);
+    // Two images: two allowances.
+    const twoImages = toolCallOutput({
+      output: "ok",
+      toolCallId: "c2",
+      stopReason: "completed",
+      images: [
+        `data:image/png;base64,${"A".repeat(500_000)}`,
+        `data:image/jpeg;base64,${"B".repeat(500_000)}`,
+      ],
+    });
+    expect(approximateMessagesTokens([twoImages])).toBeLessThan(3400);
+    expect(approximateMessagesTokens([twoImages])).toBeGreaterThan(3200 - 1);
+  });
 });
 
 describe("effectiveMaxOutputTokens (per-request output clamp)", () => {
@@ -84,6 +128,14 @@ describe("effectiveMaxOutputTokens (per-request output clamp)", () => {
     expect(effectiveMaxOutputTokens(undefined, 32768, 1000)).toBeUndefined();
     expect(effectiveMaxOutputTokens(-1, 32768, 1000)).toBeUndefined();
     expect(effectiveMaxOutputTokens(0, 32768, 1000)).toBeUndefined();
+  });
+
+  it("does not clamp without a configured window: no hard cap from an assumption", () => {
+    // An entry without context_window used to derive a clamp from the assumed 128000;
+    // with compaction disabled that pinned the cap to the floor past ~127k of real
+    // context on a model that used to work. Unconfigured window = configured cap as-is.
+    expect(effectiveMaxOutputTokens(32000, undefined, 500_000)).toBe(32000);
+    expect(effectiveMaxOutputTokens(32000, undefined, 10)).toBe(32000);
   });
 
   it("clamps so estimated input + cap + margin fits the window (the issue #218 report)", () => {
@@ -121,30 +173,30 @@ describe("effectiveMaxContextLength (window-derived compaction threshold)", () =
     expect(effectiveMaxContextLength(128000, 32768)).toBe(32768 - COMPACTION_HEADROOM);
     expect(effectiveMaxContextLength(128000, 200000)).toBe(128000); // ample window: unchanged
     expect(effectiveMaxContextLength(8000, 32768)).toBe(8000); // tighter user setting wins
+    // A window at the sanity minimum still derives a positive threshold, so a usable
+    // window can never flip the value into the "<=0 disables" contract.
+    expect(effectiveMaxContextLength(128000, MIN_USABLE_CONTEXT_WINDOW)).toBe(
+      MIN_USABLE_CONTEXT_WINDOW - COMPACTION_HEADROOM,
+    );
   });
 
-  it("derives from the 128000 default when the window is unknown", () => {
+  it("derives from the 128000 default when the window is unconfigured or implausible", () => {
     expect(effectiveMaxContextLength(128000, undefined)).toBe(
       DEFAULT_CONTEXT_WINDOW - COMPACTION_HEADROOM,
     );
     expect(effectiveMaxContextLength(128000, "unknown")).toBe(
       DEFAULT_CONTEXT_WINDOW - COMPACTION_HEADROOM,
     );
+    // A typo'd tiny window counts as unconfigured (resolveContextWindow's sanity
+    // threshold): the threshold derives from the assumption instead of collapsing to a
+    // near-zero value that would compact after every request.
+    expect(effectiveMaxContextLength(128000, 2048)).toBe(
+      DEFAULT_CONTEXT_WINDOW - COMPACTION_HEADROOM,
+    );
   });
 
-  it("keeps <=0 as 'compaction disabled' and never derives a threshold that disables it", () => {
+  it("keeps <=0 as 'compaction disabled'", () => {
     expect(effectiveMaxContextLength(-1, 32768)).toBe(-1); // off: no clamping
     expect(effectiveMaxContextLength(0, 32768)).toBe(0); // off: no clamping
-    // An absurdly small window must not push the derived threshold to <=0 (which would
-    // silently *disable* compaction): the derivation floors at half the window.
-    expect(effectiveMaxContextLength(128000, 2048)).toBe(1024);
-    expect(effectiveMaxContextLength(128000, COMPACTION_HEADROOM)).toBeGreaterThan(0);
-  });
-
-  it("keeps the headroom large enough for a usable summary at the trigger point", () => {
-    // At the trigger the compaction request's own output budget is about
-    // COMPACTION_HEADROOM − OUTPUT_SAFETY_MARGIN (minus the compaction prompt): the
-    // reserve must leave a usable summary budget (~1k), not just the floor.
-    expect(COMPACTION_HEADROOM - OUTPUT_SAFETY_MARGIN).toBeGreaterThanOrEqual(1000);
   });
 });

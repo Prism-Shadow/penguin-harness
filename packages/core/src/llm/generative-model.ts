@@ -13,13 +13,13 @@
  *   3. Interruption/error handling: `finishInterrupted` first closes any open
  *      streaming segments and backfills the complete message, then the output ends — never
  *      leaking a malformed structure. This interface **never retries internally** — it only
- *      classifies, and `context_engine` owns the retry policy: errors recognised as retryable
- *      (network/transport drops, timeouts, 429/5xx, provider quota exhaustion, see
- *      `isRetryableError`) end with `timeout`; AgentHub JSON parse errors end with `malformed`;
- *      everything else the classifier does not recognise ends with `failed` — which the engine
- *      reconnects on all the same, because this classifier is an allowlist and a gateway
- *      wording a transient fault its own way falls through it. User interruption ends with
- *      `aborted`; credentials failures end with their own terminal status `auth` (see
+ *      labels, and `context_engine` owns the retry policy: every LLM error retries on the
+ *      engine's ladder EXCEPT `auth`. The label picks the taxonomy, not the policy:
+ *      transport-shaped errors (network/transport drops, timeouts, 429/5xx, see
+ *      `isRetryableError`) end with `timeout`; AgentHub JSON parse errors end with
+ *      `malformed`; everything else — provider 4xx rejections included — ends with
+ *      `failed`, and the engine reconnects on all three the same. User interruption ends
+ *      with `aborted`; credentials failures end with their own terminal status `auth` (see
  *      `isAuthenticationError`) — the one status the engine refuses to retry, and the one
  *      hosts key on to gate input.
  *
@@ -827,9 +827,6 @@ const RETRYABLE_NETWORK_CODES: ReadonlySet<string> = new Set([
   "UND_ERR_BODY_TIMEOUT",
 ]);
 
-/** Provider "quota / subscription exhausted" error codes (OpenAI-compatible bodies). */
-const QUOTA_CODES: ReadonlySet<string> = new Set(["insufficient_user_quota", "insufficient_quota"]);
-
 /** Credentials/authentication error codes and types (OpenAI-compatible bodies / SDK errors). */
 const AUTH_CODES: ReadonlySet<string> = new Set([
   "invalid_api_key",
@@ -854,13 +851,13 @@ function anyInCauseChain(error: unknown, probe: (level: object) => boolean): boo
 }
 
 /**
- * Provider error-code signals at one level of an error: `code` on the error itself (the
- * OpenAI SDK exposes the parsed body's code directly), plus the parsed body under `error` —
- * both the OpenAI shape (`err.error.code`) and the Anthropic SDK shape, whose `error`
- * property holds the whole response body (`err.error.error.code`). With `includeType`, the
- * matching `type` fields are collected too (auth signals ride on `type` in some bodies).
+ * Provider error-code signals at one level of an error: `code` and `type` on the error
+ * itself (the OpenAI SDK exposes the parsed body's code directly), plus the parsed body
+ * under `error` — both the OpenAI shape (`err.error.code`) and the Anthropic SDK shape,
+ * whose `error` property holds the whole response body (`err.error.error.code`). Auth
+ * signals ride on `type` in some bodies, so both fields are collected.
  */
-function providerSignals(level: object, includeType: boolean): string[] {
+function providerSignals(level: object): string[] {
   const err = level as {
     code?: unknown;
     type?: unknown;
@@ -868,43 +865,8 @@ function providerSignals(level: object, includeType: boolean): string[] {
   };
   const body = typeof err.error === "object" && err.error !== null ? err.error : undefined;
   const inner = typeof body?.error === "object" && body.error !== null ? body.error : undefined;
-  const signals = [err.code, body?.code, inner?.code];
-  if (includeType) signals.push(err.type, body?.type, inner?.type);
+  const signals = [err.code, body?.code, inner?.code, err.type, body?.type, inner?.type];
   return signals.filter((v): v is string => typeof v === "string");
-}
-
-/**
- * Determines whether an error is the provider's "quota / subscription exhausted" rejection
- * (e.g. a gateway 403 whose body carries `insufficient_user_quota`). Topping up or the
- * billing cycle rolling over fixes it without touching the Session, so it is transient and
- * goes through the engine's reconnect flow like a network problem. Deliberately tight:
- * only a payment/permission status (402/403 — or no status at all) combined with a known
- * quota code (own, `cause` chain, or parsed provider body), or a 403 whose message names
- * quota/subscription; a plain 403 (permission denied) stays non-retryable.
- */
-export function isQuotaExhaustedError(error: unknown): boolean {
-  if (error == null || typeof error !== "object") return false;
-  // Belt to the auth-first ordering in isRetryableError: an error carrying a definitive
-  // auth signal is never quota, no matter what its message says — a 403 whose body codes
-  // `invalid_api_key` but whose message mentions a subscription must not classify as
-  // retryable-quota and burn through the reconnect ladder against a dead credential.
-  if (isAuthenticationError(error)) return false;
-  const err = error as { status?: number; statusCode?: number; message?: unknown };
-  const status = err.status ?? err.statusCode;
-  // Any other status keeps its own classification (401 auth, 429 rate limit, …).
-  if (typeof status === "number" && status !== 402 && status !== 403) return false;
-  if (
-    anyInCauseChain(error, (level) => providerSignals(level, false).some((c) => QUOTA_CODES.has(c)))
-  ) {
-    return true;
-  }
-  // 额度 covers Chinese-language gateway messages such as 订阅额度不足 ("subscription quota
-  // exhausted") that carry no machine-readable code.
-  return (
-    status === 403 &&
-    typeof err.message === "string" &&
-    /quota|subscription|额度/i.test(err.message)
-  );
 }
 
 /**
@@ -915,41 +877,46 @@ export function isQuotaExhaustedError(error: unknown): boolean {
  * API key (Models page) — after which the Session can continue — not retrying. Signals:
  * HTTP 401 (any), a known auth code/type (on the error, its `cause` chain, or the parsed
  * provider body), or the SDK error class name `AuthenticationError` (OpenAI / Anthropic
- * SDKs). A bare 403 carries no such signal and stays a plain failure (usually
- * permission/policy, not credentials).
+ * SDKs). Deliberately narrow and explicit — this detector is the ONLY thing that stops a
+ * request from retrying, so nothing heuristic belongs in it: a bare 403 carries no
+ * credential signal, classifies like any other failure, and rides the retry ladder.
  */
 export function isAuthenticationError(error: unknown): boolean {
   return anyInCauseChain(error, (level) => {
     const err = level as { status?: unknown; statusCode?: unknown; name?: unknown };
     if (err.status === 401 || err.statusCode === 401) return true;
-    if (providerSignals(level, true).some((c) => AUTH_CODES.has(c))) return true;
+    if (providerSignals(level).some((c) => AUTH_CODES.has(c))) return true;
     const name = typeof err.name === "string" ? err.name : "";
     return name === "AuthenticationError" || level.constructor?.name === "AuthenticationError";
   });
 }
 
 /**
- * Determines whether an error is retryable.
+ * Determines whether an error is transport-shaped — the `timeout` vs `failed` LABEL for
+ * an errored request, not the retry gate: the engine retries every LLM error except
+ * `auth`, whatever this returns. What the label buys is honest taxonomy for
+ * observability and hosts — `timeout` reads as "connectivity/provider hiccup", `failed`
+ * as "the provider rejected the request" — while both ride the same reconnect ladder.
  *
- * Retryable: network/transport errors (including undici's `UND_ERR_*` on the `cause` chain),
- * timeouts, connection reset, HTTP 429 / 5xx, and provider quota/subscription exhaustion
- * (see `isQuotaExhaustedError`).
- * Not retryable: authentication errors (checked FIRST — a definitive credential signal is
- * never reclassified by the heuristics below, see `isAuthenticationError`) and other HTTP
- * 4xx auth/parameter errors (401/403/400/404, etc.).
- * JSON parse errors are classified separately as `malformed` by `isMalformedJsonParseError`.
+ * `timeout`-shaped: network/transport errors (including undici's `UND_ERR_*` on the
+ * `cause` chain), timeouts, connection reset, HTTP 429 / 5xx.
+ * `failed`-shaped: everything else, HTTP 4xx provider rejections included (a quota or
+ * subscription rejection lands here too — it retries all the same and its real message
+ * rides on the outcome).
+ * Authentication errors are checked FIRST and are never transport-shaped (see
+ * `isAuthenticationError`); JSON parse errors are classified separately as `malformed`
+ * by `isMalformedJsonParseError`.
  *
- * Since AgentHub doesn't guarantee the shape of error objects, this uses a lenient check: first
- * the status code, then error codes / message keywords. When undeterminable, treat it as
- * **non-retryable** to avoid pointless retries.
+ * Since AgentHub doesn't guarantee the shape of error objects, this uses a lenient check:
+ * first the status code, then error codes / message keywords. When undeterminable, label
+ * it `failed` — still retried, just reported for what it is.
  */
 export function isRetryableError(error: unknown): boolean {
   if (error == null) return false;
 
   // 0. Authentication is definitive and terminal: retrying a dead credential can never
-  //    succeed, and no heuristic below (quota keywords, message vocabulary) may reclassify
-  //    it — this ordering is the only thing keeping a dead credential out of the retry
-  //    ladder now that quota errors are deliberately retryable.
+  //    succeed, and no vocabulary heuristic below may reclassify it — a definitive
+  //    credential signal always wins.
   if (isAuthenticationError(error)) return false;
 
   const err = error as {
@@ -964,10 +931,7 @@ export function isRetryableError(error: unknown): boolean {
   if (typeof status === "number") {
     if (status === 429 || status === 408) return true; // Rate limited / request timeout (transient)
     if (status >= 500 && status <= 599) return true; // Server error
-    // Provider quota/subscription exhaustion (402/403 + explicit signals): transient —
-    // checked before the blanket 4xx rule below would discard it.
-    if (isQuotaExhaustedError(error)) return true;
-    if (status >= 400 && status <= 499) return false; // Other 4xx auth/parameter errors, not retryable
+    if (status >= 400 && status <= 499) return false; // Provider rejection: labeled failed (still retried by the engine)
   }
 
   // 2. Network/transport error codes, probing the `cause` chain (Node fetch wraps the real
@@ -980,9 +944,6 @@ export function isRetryableError(error: unknown): boolean {
   ) {
     return true;
   }
-
-  // 2b. Status-less quota signals (some gateways surface only the provider code).
-  if (isQuotaExhaustedError(error)) return true;
 
   // 3. Error name / message keywords (timeout, network, rate limit, undici disconnects).
   if (err.name === "AbortError") return false; // User interruption, not retryable
@@ -1036,23 +997,26 @@ export class GenerativeModel implements LLMInterface {
   private readonly toolCallIds: ToolCallIdAllocator;
   /** Configured output cap (`GenerativeModelConfig.maxTokens`); the per-request clamp derives the effective cap from it (see effectiveMaxTokens). */
   private readonly configuredMaxTokens: number | undefined;
-  /** Model context window; unknown falls back to DEFAULT_CONTEXT_WINDOW (the web app displays the same assumption). */
-  private readonly contextWindow: number;
+  /** Model context window; `undefined` when unconfigured (or implausibly small, see resolveContextWindow) — the per-request clamp then disables itself rather than clamp against an assumption. */
+  private readonly contextWindow: number | undefined;
   /**
    * Construction-time estimate of the fixed request prefix (system prompt + tool schemas):
-   * the input-size floor for the first request of this object, before any real
-   * `token_usage` exists (the prefix is part of every request but never part of
-   * `newMessages`).
+   * the prefix is part of every request but never part of `newMessages`. Seeds
+   * `lastRequestTotal`, and re-seeds it in `setHistory`.
    */
   private readonly baseInputTokens: number;
   /**
-   * The most recent completed request's `token_usage.request.total` — the freshest real
-   * measure of this context's size. The next request's input is that total plus the newly
-   * appended messages (the previous output became part of the context; providers stripping
-   * historical thinking only make this an overestimate, the safe direction). 0 until the
-   * first request completes; `setHistory` seeds an estimate on resume.
+   * The current context's size: the most recent completed request's real
+   * `token_usage.request.total` once one exists (a measured total always includes the
+   * prefix, so it can only refine the seed upward from real data; providers stripping
+   * historical thinking only make it an overestimate, the safe direction), the
+   * `baseInputTokens` seed before that, plus the replayed-history estimate after
+   * `setHistory`. The next request's input is this figure plus the newly appended
+   * messages.
    */
-  private lastRequestTotal = 0;
+  private lastRequestTotal: number;
+  /** Last hard-clamped cap already warned about on stderr (dedupe: retries reuse the same estimate and would repeat the identical line). */
+  private lastWarnedCap: number | undefined;
 
   /** Cumulative session tokens. */
   sessionTokens: TokenCounts = emptyTokenCounts();
@@ -1078,6 +1042,7 @@ export class GenerativeModel implements LLMInterface {
     this.baseInputTokens =
       approximateTokens(config.systemPrompt ?? "") +
       approximateTokens(JSON.stringify(this.uniConfig.tools ?? []));
+    this.lastRequestTotal = this.baseInputTokens;
   }
 
   /**
@@ -1117,15 +1082,33 @@ export class GenerativeModel implements LLMInterface {
    * MIN_OUTPUT_TOKENS floor; the floor only binds when compaction is disabled or the window
    * is misconfigured, where a deterministic small cap beats a provider rejection.
    * `undefined` = no positive cap configured: the key stays off the wire and the provider's
-   * own remaining-window default applies (the existing `-1` contract).
+   * own remaining-window default applies (the existing `-1` contract). Without a configured
+   * `contextWindow` the clamp is off entirely (see effectiveMaxOutputTokens).
+   *
+   * A hard clamp — the derived cap dropping below half the configured one — is announced
+   * once per distinct value on stderr with the numbers involved, so a shaved `max_tokens`
+   * is diagnosable from the log instead of surfacing only as an opaque failed/short turn.
    */
   private effectiveMaxTokens(newMessages: OmniMessage[]): number | undefined {
-    return effectiveMaxOutputTokens(
+    const estimatedInput = this.lastRequestTotal + approximateMessagesTokens(newMessages);
+    const derived = effectiveMaxOutputTokens(
       this.configuredMaxTokens,
       this.contextWindow,
-      Math.max(this.lastRequestTotal, this.baseInputTokens) +
-        approximateMessagesTokens(newMessages),
+      estimatedInput,
     );
+    if (
+      derived !== undefined &&
+      this.configuredMaxTokens !== undefined &&
+      derived < this.configuredMaxTokens / 2 &&
+      derived !== this.lastWarnedCap
+    ) {
+      this.lastWarnedCap = derived;
+      process.stderr.write(
+        `[penguin] output cap clamped hard: max_tokens ${this.configuredMaxTokens} -> ${derived} ` +
+          `(context_window ${this.contextWindow}, estimated input ${estimatedInput})\n`,
+      );
+    }
+    return derived;
   }
 
   /**
@@ -1138,7 +1121,7 @@ export class GenerativeModel implements LLMInterface {
    * and the terminal state is then returned as `LLMOutcome`:
    *   - **Normal completion**: `finish()` closes out and produces `token_usage` (usage is only
    *     produced in this case) → `completed`;
-   *   - **Idle timeout / network drop** (retryable errors like network/429/5xx/quota):
+   *   - **Idle timeout / network drop** (transport-shaped errors like network/429/5xx):
    *     `finishInterrupted("timeout")` closes out, produces no usage → `timeout` (carrying
    *     the error detail as `message` when a concrete error was caught), reconnected by
    *     `context_engine` within the same run;
@@ -1292,10 +1275,9 @@ export class GenerativeModel implements LLMInterface {
         // branch as a belt — isRetryableError itself already refuses auth signals.
         outcome = { status: "auth", errorMessage: describeError(error) };
       } else if (isRetryableError(error)) {
-        // Network drop / transient provider rejection -> needs reconnection. The detail
-        // (e.g. "403 … (insufficient_user_quota)") rides on the outcome so observability
-        // (request_end -> the Cost center's errors panel) shows the real reason behind a
-        // retried request, not just "timeout".
+        // Transport-shaped failure (network drop, 429/5xx) -> labeled timeout. The detail
+        // rides on the outcome so observability (request_end -> the Cost center's errors
+        // panel) shows the real reason behind a retried request, not just "timeout".
         outcome = { status: "timeout", errorMessage: describeError(error) };
       } else if ((error as { name?: string })?.name === "AbortError") {
         outcome = { status: "aborted" }; // Fallback: an unexpected abort (neither timeout nor user)
@@ -1362,13 +1344,11 @@ export class GenerativeModel implements LLMInterface {
       }
     }
     // The injected history is context this object's first request carries without any
-    // token_usage having measured it: seed the input-size tracker with an estimate so the
-    // output-cap clamp (effectiveMaxTokens) doesn't reason from an empty context on a
-    // resumed session. The first completed request replaces this with the real total.
-    this.lastRequestTotal = Math.max(
-      this.lastRequestTotal,
-      this.baseInputTokens + approximateMessagesTokens(history),
-    );
+    // token_usage having measured it: re-seed the input-size tracker (prefix + history
+    // estimate) so the output-cap clamp (effectiveMaxTokens) doesn't reason from an empty
+    // context on a resumed session. The first completed request replaces this with the
+    // real total.
+    this.lastRequestTotal = this.baseInputTokens + approximateMessagesTokens(history);
     this.client.setHistory(groupHistoryToUniMessages(history));
   }
 

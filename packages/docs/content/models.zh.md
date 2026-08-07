@@ -21,7 +21,7 @@ description: 经 AgentHub 单一网关接入模型，以 (provider, model_id) �
 | --- | --- |
 | `provider` | 配置分组名，与 `model_id` 成对构成唯一键 |
 | `model_id` | 上游请求 id |
-| `context_window` | 上下文窗口（Token 数）。不只用于展示：每次请求的实际输出上限与压缩阈值都由它推导，请求不会索要超出窗口剩余空间的输出。缺省按 128000 假定——窗口更小的模型务必填真实值 |
+| `context_window` | 上下文窗口（Token 数）。不只用于展示：每次请求的实际输出上限与压缩阈值都由它推导，请求不会索要超出窗口剩余空间的输出。缺省（或小于 4096 的非常规值）时输出收敛关闭、压缩按 128000 假定推导——窗口更小的模型务必填真实值 |
 | `max_tokens` | 可选的按模型输出上限（单次请求最大输出 Token 数）。设置后覆盖 Agent 的 `model.max_tokens`，缺省沿用。该值是天花板而非逐字上线值：每次请求实际发送 `min(max_tokens, context_window − 估算输入 − 安全余量)`，小窗口模型无需手工调低。Web 整表保存时省略该字段即清除 |
 | `client_type` | 协议提示(如 `openai`)；缺省由 AgentHub 按 model id 推断 |
 | `display_name` | 显示名 |
@@ -82,7 +82,7 @@ api_key = "sk-..."
 本地推理服务就是一条 `custom` 条目：`client_type = "openai"`、`base_url` 指向服务地址（如 `http://127.0.0.1:8000/v1`）、`model_id` 填服务端的模型名。两处设置决定运行是否顺畅：
 
 - **服务端要开启工具调用。** vLLM 需以 `--enable-auto-tool-choice` 启动，并按模型选择对应的 `--tool-call-parser`（如 Qwen 用 `hermes`、Llama 3.x 用 `llama3_json`）；不开启时工具调用会以纯文本返回，Agent 循环无法执行任何工具。
-- **条目的 `context_window` 填服务端的真实窗口**——vLLM 即 `--max-model-len` 的值（如 `32768`）。每次请求的输出上限与压缩阈值都会由该窗口自动推导：请求把 `max_tokens` 收敛到窗口剩余空间以内，压缩也会在撞上窗口硬限制之前触发，无需手工调低 `max_tokens`。不填时窗口按 128000 假定，真实窗口更小会导致请求被拒。
+- **条目的 `context_window` 填服务端的真实窗口**——vLLM 即 `--max-model-len` 的值（如 `32768`）。每次请求的输出上限与压缩阈值都会由该窗口自动推导：请求把 `max_tokens` 收敛到窗口剩余空间以内，压缩也会在撞上窗口硬限制之前触发，无需手工调低 `max_tokens`。不填时不做逐请求输出收敛、压缩按 128000 假定，真实窗口更小会导致请求被拒。
 
 ## 思考等级
 

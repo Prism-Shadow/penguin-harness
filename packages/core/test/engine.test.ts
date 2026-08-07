@@ -1910,14 +1910,15 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     expect((abort!.payload as { reason?: string }).reason).toContain("llm request error");
   });
 
-  it("a quota-403 (classified timeout) retries within the default cap and succeeds", async () => {
+  it("a bare 403 (classified failed) retries within the default cap and succeeds", async () => {
     let calls = 0;
     const llm: LLMInterface = {
       async *streamGenerate() {
         calls += 1;
-        // Two quota rejections (GenerativeModel classifies them as timeout), then success —
-        // attempt 3 is within the default cap of 5.
-        if (calls <= 2) return { status: "timeout" };
+        // Two provider 403 rejections (GenerativeModel labels them failed — there is no
+        // quota/message heuristic anymore), then success: every non-auth failure rides
+        // the ladder, and attempt 3 is within the default cap of 5.
+        if (calls <= 2) return { status: "failed", errorMessage: "403 forbidden" };
         yield assistantText("recovered");
         yield tokenUsage(emptyTokenCounts(), {
           cache_read: 0,

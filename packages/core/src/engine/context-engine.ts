@@ -361,7 +361,7 @@ const RETRY_STATUSES: readonly StopReason[] = ["failed", "timeout", "malformed"]
  * ceiling `max` — `min(base × 2^(N−1), max)`. With the defaults (2s base, 30s ceiling,
  * 5 reconnects) the ladder is 2s, 4s, 8s, 16s, 30s ≈ 60s of total patience: one shared
  * schedule serves every retryable class. The base is sized for the slow ones — transient
- * provider failures (restarts, quota/rate limits) need seconds, not milliseconds, to
+ * provider failures (restarts, rate limits) need seconds, not milliseconds, to
  * recover, and the old 250ms base burned the whole ladder in ~7.75s (issue #218); it also
  * keeps every planned wait at or above the hosts' 2s countdown floor (the Web App's
  * COUNTDOWN_MIN_MS), so no retry ever looks like a silent stall. Transport blips pay at
