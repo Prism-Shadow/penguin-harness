@@ -104,6 +104,17 @@ export interface ParseTraceLinesOptions {
 export function parseTraceLines(content: string, options?: ParseTraceLinesOptions): OmniMessage[] {
   const onMalformed = options?.onMalformed ?? "skip";
   const lines = content.split("\n");
+  // Index of the last non-empty line, found with one backward scan up front. The malformed
+  // branch below runs once per skipped line in skip mode, so rescanning the remainder there
+  // (slice + every) would make widely damaged content O(n^2) — seconds of synchronous CPU on
+  // the server history path for a large non-JSONL file.
+  let lastNonEmptyIndex = -1;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (lines[i]!.trim().length > 0) {
+      lastNonEmptyIndex = i;
+      break;
+    }
+  }
   const out: OmniMessage[] = [];
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!.trim();
@@ -111,8 +122,7 @@ export function parseTraceLines(content: string, options?: ParseTraceLinesOption
     try {
       out.push(JSON.parse(line) as OmniMessage);
     } catch (err) {
-      const isLastNonEmpty = lines.slice(i + 1).every((l) => l.trim().length === 0);
-      if (isLastNonEmpty) break; // truncated tail: expected crash artifact, ignore silently
+      if (i === lastNonEmptyIndex) break; // truncated tail: expected crash artifact, ignore silently
       if (onMalformed === "throw") throw err;
       options?.onSkip?.(i + 1, err);
     }
@@ -120,10 +130,14 @@ export function parseTraceLines(content: string, options?: ParseTraceLinesOption
   return out;
 }
 
+/** Maximum count of skipped line numbers spelled out in the readTraceTolerant diagnostic. */
+const SKIPPED_LINES_SHOWN = 20;
+
 /**
  * Read and parse a Trace file, best-effort: tolerates a truncated last line, and skips
  * malformed middle lines (files damaged by the pre-fix concurrent-append bug, #215) while
- * keeping every parseable record. Skipped lines are diagnosed once per read on stderr.
+ * keeping every parseable record. Skipped lines are diagnosed once per read on stderr, with
+ * the spelled-out line-number list capped (a heavily damaged file can skip thousands).
  */
 export async function readTraceTolerant(path: string): Promise<OmniMessage[]> {
   const skipped: number[] = [];
@@ -131,8 +145,10 @@ export async function readTraceTolerant(path: string): Promise<OmniMessage[]> {
     onSkip: (lineNumber) => skipped.push(lineNumber),
   });
   if (skipped.length > 0) {
+    const shown = skipped.slice(0, SKIPPED_LINES_SHOWN);
+    const ellipsis = skipped.length > shown.length ? ", …" : "";
     process.stderr.write(
-      `[trace] skipped ${skipped.length} malformed line(s) [${skipped.join(", ")}] in ${path}\n`,
+      `[trace] skipped ${skipped.length} malformed line(s) [${shown.join(", ")}${ellipsis}] in ${path}\n`,
     );
   }
   return messages;

@@ -79,14 +79,19 @@ function isRecordable(msg: OmniMessage): boolean {
  * so two overlapping appends can interleave mid-record and corrupt the JSONL (#215). All
  * mutating operations (`write`, `rotate`) are therefore serialized through one per-instance
  * promise chain: each record lands as one uninterrupted append, and a rotation cannot land in
- * the middle of an append. Cross-instance/file concurrency does not occur by design: a Session
- * allows one active run at a time, child sessions write their own files, and server-side Trace
- * import only ever creates brand-new files (`wx`).
+ * the middle of an append. Cross-instance/file concurrency does not occur by design **within a
+ * single server/CLI process**: a Session allows one active run at a time, child sessions write
+ * their own files, and server-side Trace import only ever creates brand-new files (`wx`). Two
+ * processes pointed at the same agent data directory are outside this contract (and outside
+ * supported usage) — the chain cannot cover them.
  *
  * Error semantics: a failed operation rejects **that caller's** returned promise only; the
  * chain itself absorbs the failure so subsequent operations still run (a transient disk error
- * must not wedge Trace recording for the rest of the session). Callers (context_engine,
- * Session) already treat Trace writes as best-effort and log the surfaced error.
+ * must not wedge Trace recording for the rest of the session). A **hung** append is different:
+ * it blocks this instance's chain until it settles — deliberate head-of-line blocking, because
+ * ordering cannot be preserved around an append whose outcome is still unknown. Callers
+ * (context_engine, Session) already treat Trace writes as best-effort and log the surfaced
+ * error.
  */
 export class Writer {
   private readonly tracesDir: string;

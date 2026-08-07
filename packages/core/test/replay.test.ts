@@ -364,6 +364,31 @@ describe("parseTraceLines", () => {
     const truncatedTail = `${JSON.stringify(userText("a"))}\n{"timestamp":"2026-07-06T`;
     expect(parseTraceLines(truncatedTail, { onMalformed: "throw" })).toHaveLength(1);
   });
+
+  it("handles thousands of malformed lines without quadratic rescans (wide corruption)", () => {
+    // A large mostly-unparseable file (e.g. a non-JSONL file dropped into the traces dir).
+    // The tail check must not rescan the remainder per skipped line — with the old
+    // slice-per-hit check, this content took seconds of synchronous CPU; now it's O(n).
+    const early = userText("early survivor");
+    const late = userText("late survivor");
+    const lines: string[] = [];
+    for (let i = 0; i < 5000; i++) lines.push(`{torn ${i}`);
+    lines.push(JSON.stringify(early));
+    for (let i = 0; i < 5000; i++) lines.push(`{torn ${5000 + i}`);
+    lines.push(JSON.stringify(late));
+    const content = `${lines.join("\n")}\n`;
+
+    const skipped: number[] = [];
+    const msgs = parseTraceLines(content, { onSkip: (line) => skipped.push(line) });
+    expect(msgs).toEqual([early, late]);
+    // Every malformed line is reported exactly once, in order, none treated as the tail
+    // (the last non-empty line is the valid "late survivor").
+    expect(skipped).toHaveLength(10000);
+    expect(skipped[0]).toBe(1);
+    expect(skipped[4999]).toBe(5000);
+    expect(skipped[5000]).toBe(5002);
+    expect(skipped[9999]).toBe(10001);
+  });
 });
 
 describe("readTraceTolerant", () => {
@@ -403,6 +428,27 @@ describe("readTraceTolerant", () => {
     expect(diagnostics).toHaveLength(1);
     expect(diagnostics[0]).toContain("skipped 2 malformed line(s)");
     expect(diagnostics[0]).toContain(file);
+  });
+
+  it("caps the spelled-out line numbers in the diagnostic on heavily damaged files", async () => {
+    const survivor = userText("survivor");
+    const badLines = Array.from({ length: 30 }, (_, i) => `{torn ${i}`);
+    const file = join(dir, "sess_abc_001.jsonl");
+    await mkdir(dir, { recursive: true });
+    await writeFile(file, `${badLines.join("\n")}\n${JSON.stringify(survivor)}\n`, "utf8");
+
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const msgs = await readTraceTolerant(file);
+    expect(msgs).toEqual([survivor]);
+    const diagnostic = stderr.mock.calls
+      .map((c) => String(c[0]))
+      .find((s) => s.includes("[trace]"))!;
+    // The total is exact, but only the first 20 line numbers are spelled out.
+    expect(diagnostic).toContain("skipped 30 malformed line(s)");
+    const list = /malformed line\(s\) \[([^\]]*)\]/.exec(diagnostic);
+    expect(list).not.toBeNull();
+    const firstTwenty = Array.from({ length: 20 }, (_, i) => i + 1).join(", ");
+    expect(list![1]).toBe(`${firstTwenty}, …`);
   });
 });
 
