@@ -329,9 +329,6 @@ export const zh = {
       "新增模型固定走 OpenAI Chat Completions 兼容协议（不按模型 id 自动路由），base URL 填其兼容端点",
     addAutoRouteHint:
       "该分组的新模型按上游 id 由 AgentHub 自动路由到厂商官方客户端：base URL 留空即官方端点，API key 留空按解析出的客户端读取环境变量",
-    /** Caution beside the base URL when the entry uses a vendor's official protocol (everything except the OpenAI-protocol path). */
-    baseUrlOfficialNote:
-      "注意：该模型走厂商官方协议——自定义 base URL 必须是兼容官方协议的端点，不会因此切换为 OpenAI 协议",
     autoRouteNone:
       "该 id 无法被 AgentHub 自动路由：请核对 id，或改在 Custom / 自建分组下以 OpenAI 协议接入",
     addGroup: "新增分组",
@@ -405,6 +402,8 @@ export const zh = {
     clearApiKey: "清除已存 API key",
     baseUrl: "自定义 base URL",
     baseUrlHint: "留空使用厂商默认地址",
+    /** Hover title for the base URL field: explains the grey in-field suffix (the protocol path the client appends to the base URL). */
+    baseUrlSuffixTitle: "客户端会在 base URL 后追加右侧灰色协议路径",
     baseUrlRequired: "必须填写 base URL",
     contextWindowDefaultHint: (n: number): string => `留空按 ${n} 计`,
     confirmDeleteTitle: "删除模型",

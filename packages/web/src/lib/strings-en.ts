@@ -354,9 +354,6 @@ export const en: Strings = {
       "New models always use the OpenAI Chat Completions protocol (no auto-routing by model id); set the base URL to a compatible endpoint",
     addAutoRouteHint:
       "New models in this group are auto-routed by their upstream id to the vendor's official client: leave the base URL empty for the official endpoint, and an empty API key falls back to the resolved client's environment variable",
-    /** Caution beside the base URL when the entry uses a vendor's official protocol (everything except the OpenAI-protocol path). */
-    baseUrlOfficialNote:
-      "Note: this model uses the vendor's official protocol — a custom base URL must serve an endpoint compatible with it; it never switches the model to the OpenAI protocol",
     autoRouteNone:
       "AgentHub cannot auto-route this id: double-check it, or add the model under Custom / a user-defined group with the OpenAI protocol",
     addGroup: "Add group",
@@ -427,6 +424,7 @@ export const en: Strings = {
     clearApiKey: "Clear stored API key",
     baseUrl: "Custom base URL",
     baseUrlHint: "Leave empty to use the provider default",
+    baseUrlSuffixTitle: "The client appends the grey protocol path to the base URL",
     baseUrlRequired: "A base URL is required",
     contextWindowDefaultHint: (n: number): string => `Defaults to ${n} if empty`,
     confirmDeleteTitle: "Delete model",
