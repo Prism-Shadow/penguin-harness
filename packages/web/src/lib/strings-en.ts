@@ -473,7 +473,7 @@ export const en: Strings = {
   },
 
   memory: {
-    desc: "Long-term memory across Sessions (stored in agent_state/memory/): the agent remembers things as it works, and you can also just ask it to remember something. User memory applies to all of this agent's sessions; workspace memory is kept per workspace. Memory edits are made by the agent in chat. Turning the switch off only stops memory from being used and deletes nothing.",
+    desc: "Long-term memory across Sessions (stored in agent_state/memory/): the agent saves what is worth keeping as it works, and you can also just ask it to remember something. User memory applies to all of this agent's sessions; workspace memory is kept per workspace. Memory edits are made by the agent in chat. Turning the switch off only stops memory from being used and deletes nothing.",
     enable: "Enable memory",
     userScope: "User memory",
     templateMissing:
