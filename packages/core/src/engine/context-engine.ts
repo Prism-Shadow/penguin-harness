@@ -165,7 +165,7 @@ export interface ContextEngineDeps {
   trace?: TraceSink;
   /** Engine initial state (derived by replaying Trace on Session resumption). */
   initialState?: EngineInitialState;
-  /** Maximum LLM turns for a single Task. Defaults to 100; -1 removes the cap. */
+  /** Maximum LLM turns for a single Task; -1 removes the cap. Omitted means -1 too — the agent-config default and the SDK fallback agree (unlimited). */
   maxTurns?: number;
   /**
    * Maximum automatic retries for LLM timeout/reconnect within a single run. Defaults
@@ -410,7 +410,7 @@ export class ContextEngine {
   private taskRunning = false;
 
   constructor(private readonly deps: ContextEngineDeps) {
-    this.maxTurns = deps.maxTurns ?? 100;
+    this.maxTurns = deps.maxTurns ?? -1;
     this.maxReconnects = deps.maxReconnects ?? 5;
     this.reconnectBackoffMs = deps.reconnectBackoffMs ?? 250;
     this.reconnectBackoffMaxMs = deps.reconnectBackoffMaxMs ?? 30_000;
