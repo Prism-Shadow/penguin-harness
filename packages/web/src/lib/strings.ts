@@ -453,7 +453,7 @@ export const zh = {
   },
 
   memory: {
-    desc: "跨 Session 的长期记忆：agent 在对话中自动积累，也可以直接让它记住或修改某条内容。用户记忆对所有会话生效，工作区记忆按工作区隔离；关闭开关只停用记忆，不删除文件。",
+    desc: "跨 Session 的长期记忆（存于 agent_state/memory/）：agent 在对话中自动记住内容，你也可以直接让它记住某件事。用户记忆对本 Agent 的所有会话生效，工作区记忆按工作区隔离；记忆修改在对话中由 agent 完成。关闭开关只停止使用记忆，不删除任何文件。",
     enable: "启用记忆",
     userScope: "用户记忆",
     templateMissing: "提示词模板中没有 # Memory 小节，记忆不会进入上下文。",
