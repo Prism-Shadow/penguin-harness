@@ -36,6 +36,8 @@ import {
   MEMORY_USER_INDEX_PLACEHOLDER,
   MEMORY_INDEX_EMPTY_NOTE,
   MEMORY_INDEX_MAX_LINES,
+  DEFAULT_MEMORY_PROMPT,
+  DEFAULT_MEMORY_WORKSPACE_PROMPT,
   type MemoryConfig,
   agentStateVersion,
   defaultAgentsMd,
@@ -316,7 +318,13 @@ function memorySection(
   config: MemoryConfig | undefined,
   memory: SessionMemory | null | undefined,
 ): string {
-  if (!config?.prompt || !memory) return "";
+  if (!memory) return "";
+  // Missing keys fall back to the built-in defaults — matching compaction and the config DTO —
+  // so an Agent whose yaml predates Memory injects the very prompts the Memory tab shows it.
+  // An explicitly emptied prompt still disables the block (`??`, not `||`).
+  const promptText = config?.prompt ?? DEFAULT_MEMORY_PROMPT;
+  if (!promptText) return "";
+  const workspacePromptText = config?.workspace_prompt ?? DEFAULT_MEMORY_WORKSPACE_PROMPT;
   const substituteUser = (text: string): string =>
     text
       .split(MEMORY_USER_DIR_PLACEHOLDER)
@@ -324,17 +332,21 @@ function memorySection(
       .split(MEMORY_USER_INDEX_PLACEHOLDER)
       .join(indexForInjection(memory.userIndex));
 
-  const userBlock = substituteUser(config.prompt).trim();
+  const userBlock = substituteUser(promptText).trim();
   const workspace = memory.workspace;
-  if (!workspace || !config.workspace_prompt) return userBlock;
-  const workspaceBlock = substituteUser(config.workspace_prompt)
+  const workspaceBlock =
+    workspace && workspacePromptText ? substituteUser(workspacePromptText).trim() : "";
+  const joined =
+    userBlock && workspaceBlock ? `${userBlock}\n\n${workspaceBlock}` : userBlock || workspaceBlock;
+  // The Workspace placeholders substitute over the whole joined block, so one written into the
+  // main prompt resolves too (with real values in a persistent Workspace, blank otherwise)
+  // instead of leaking literally. DIR before INDEX: injected index content is never re-scanned.
+  return joined
     .split(MEMORY_DIR_PLACEHOLDER)
-    .join(workspace.dir)
+    .join(workspace?.dir ?? "")
     .split(MEMORY_INDEX_PLACEHOLDER)
-    .join(indexForInjection(workspace.index))
+    .join(workspace ? indexForInjection(workspace.index) : "")
     .trim();
-  if (workspaceBlock.length === 0) return userBlock;
-  return userBlock.length > 0 ? `${userBlock}\n\n${workspaceBlock}` : workspaceBlock;
 }
 
 /**
@@ -525,8 +537,6 @@ export function assembleSystemPrompt(
   const assembled = template
     .split(AGENTS_MD_PLACEHOLDER)
     .join(state.agentsMd.trim())
-    .split(MEMORY_PLACEHOLDER)
-    .join(memorySection(state.systemConfig.memory, memory))
     .split(VAULT_KEYS_PLACEHOLDER)
     .join(vaultKeysList(vaultKeys ?? []))
     .split(SKILL_METADATA_PLACEHOLDER)
@@ -551,6 +561,11 @@ export function assembleSystemPrompt(
     .join(sessionEnvironment?.shell ?? "")
     .split(DATE_PLACEHOLDER)
     .join(sessionEnvironment?.date ?? "")
+    // {{MEMORY}} expands last: everything the Memory block carries (index lines the model wrote
+    // included) lands after the other placeholders were consumed, so index content can never
+    // smuggle a {{VAULT_KEYS}}-style token into a second expansion.
+    .split(MEMORY_PLACEHOLDER)
+    .join(memorySection(state.systemConfig.memory, memory))
     .trim();
   return withShellLineFallback(assembled, template, sessionEnvironment);
 }

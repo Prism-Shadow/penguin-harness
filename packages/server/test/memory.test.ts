@@ -97,9 +97,50 @@ describe("memory api", () => {
     await fs.writeFile(path.join(wsDir, MEMORY_INDEX_FILENAME), "- [t](t.md) — hook\n", "utf8");
     const list = (await (await owner.get(filesPath())).json()) as MemoryFilesResponse;
     expect(list.files).toHaveLength(0);
-    // Nor can the index be fetched or deleted as a topic file.
+    // Nor can the index be fetched or deleted as a topic file — under any casing, since
+    // macOS/Windows resolve memory.md to MEMORY.md.
     expect((await owner.get(`${filesPath()}/${MEMORY_INDEX_FILENAME}`)).status).toBe(400);
     expect((await owner.delete(`${filesPath()}/${MEMORY_INDEX_FILENAME}`)).status).toBe(400);
+    expect((await owner.get(`${filesPath()}/memory.md`)).status).toBe(400);
+    expect((await owner.delete(`${filesPath()}/Memory.Md`)).status).toBe(400);
+  });
+
+  it("accepts a workspace key starting with an underscore, as core generates for _site-style directories", async () => {
+    const key = "_site-1a2b3c4d";
+    const dir = memoryScopeDir(t.root, projectId, "default_agent", key);
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, "notes.md"), "---\nname: n\n---\nbody\n", "utf8");
+    const list = (await (await owner.get(filesPath(key))).json()) as MemoryFilesResponse;
+    expect(list.files.map((f) => f.name)).toEqual(["notes.md"]);
+  });
+
+  it("lists, reads and deletes a non-ASCII topic file the model wrote", async () => {
+    const name = "项目背景.md";
+    await fs.writeFile(path.join(wsDir, name), "---\nname: 项目背景\n---\n正文\n", "utf8");
+    const list = (await (await owner.get(filesPath())).json()) as MemoryFilesResponse;
+    expect(list.files.map((f) => f.name)).toContain(name);
+    const encoded = `${filesPath()}/${encodeURIComponent(name)}`;
+    expect((await owner.get(encoded)).status).toBe(200);
+    expect((await owner.delete(encoded)).status).toBe(204);
+    expect(await fs.readdir(wsDir)).not.toContain(name);
+  });
+
+  it("neither lists nor follows a symlinked topic file", async () => {
+    const outside = path.join(t.root, "outside-secret.txt");
+    await fs.writeFile(outside, "secret", "utf8");
+    await fs.symlink(outside, path.join(wsDir, "leak.md"));
+    const list = (await (await owner.get(filesPath())).json()) as MemoryFilesResponse;
+    expect(list.files.map((f) => f.name)).not.toContain("leak.md");
+    // Direct addressing must not follow the link either.
+    expect((await owner.get(`${filesPath()}/leak.md`)).status).toBe(404);
+  });
+
+  it("404s a scope directory smuggled in as a symlink", async () => {
+    const outside = path.join(t.root, "outside-dir");
+    await fs.mkdir(outside, { recursive: true });
+    await fs.writeFile(path.join(outside, "loot.md"), "---\nname: l\n---\nx\n", "utf8");
+    await fs.symlink(outside, memoryScopeDir(t.root, projectId, "default_agent", "evil-12345678"));
+    expect((await owner.get(filesPath("evil-12345678"))).status).toBe(404);
   });
 
   it("lists the user scope of an Agent that predates Memory, creating it on demand", async () => {
@@ -144,7 +185,7 @@ describe("memory api", () => {
     await fs.writeFile(path.join(wsDir, "release-process.md"), "---\nname: r\n---\nbody\n", "utf8");
     await fs.writeFile(
       path.join(wsDir, MEMORY_INDEX_FILENAME),
-      "- [Testing](testing-conventions.md) — how tests are run here\n" +
+      "- [Testing](./testing-conventions.md) — how tests are run here\n" +
         "- [Release](release-process.md) — release steps\n" +
         "Prose mentioning testing-conventions.md survives.\n",
       "utf8",

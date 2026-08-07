@@ -235,7 +235,7 @@ export function AgentSettingsPage() {
             />
           )}
           {tab === "prompt" && <PromptTab data={data} onSave={save} />}
-          {tab === "memory" && <MemoryTab agentId={agentId} />}
+          {tab === "memory" && <MemoryTab agentId={agentId} onConfigChanged={load} />}
           {tab === "runtime" && <RuntimeTab data={data} onSave={save} />}
           {tab === "tools" && <ToolsTab data={data} onSave={save} />}
           {tab === "skills" && <SkillsTab agentId={agentId} />}

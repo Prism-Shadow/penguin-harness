@@ -67,7 +67,14 @@ interface Selected {
   file: MemoryFileInfo;
 }
 
-export function MemoryTab({ agentId }: { agentId: string }) {
+export function MemoryTab({
+  agentId,
+  onConfigChanged,
+}: {
+  agentId: string;
+  /** Config writes happen here directly, so the settings page must refetch its own copy — otherwise a later Prompt-tab save from stale data would silently revert them (e.g. the inserted placeholder). */
+  onConfigChanged?: () => void;
+}) {
   const navigate = useNavigate();
   const { locale } = useLocale();
   const userId = useAuth().user?.userId ?? null;
@@ -111,10 +118,18 @@ export function MemoryTab({ agentId }: { agentId: string }) {
       // Files are the source of truth and each scope is one request; fetch them in parallel.
       setGroups(
         await Promise.all(
-          overview.scopes.map(async (scope) => ({
-            scope,
-            files: (await api.getMemoryFiles(projectId, agentId, scope.scopeKey)).files,
-          })),
+          overview.scopes.map(async (scope) => {
+            try {
+              return {
+                scope,
+                files: (await api.getMemoryFiles(projectId, agentId, scope.scopeKey)).files,
+              };
+            } catch {
+              // One unreadable scope (bad hand-made directory name, raced delete) must not
+              // blank the whole tab; it lists as an empty group instead.
+              return { scope, files: [] };
+            }
+          }),
         ),
       );
     } catch (e) {
@@ -135,6 +150,7 @@ export function MemoryTab({ agentId }: { agentId: string }) {
       });
       setEnabled(res.config.memory.enabled);
       toastSuccess(S.common.saved);
+      onConfigChanged?.();
     } catch (e) {
       toastError(apiErrorText(e));
     } finally {
@@ -149,6 +165,7 @@ export function MemoryTab({ agentId }: { agentId: string }) {
       const overview = await api.insertMemoryPlaceholder(projectId, agentId);
       setTemplateHasMemory(overview.templateHasMemory);
       toastSuccess(S.memory.insertPlaceholderDone);
+      onConfigChanged?.();
     } catch (e) {
       toastError(apiErrorText(e));
     }
@@ -190,6 +207,7 @@ export function MemoryTab({ agentId }: { agentId: string }) {
           setMemoryPrompt(res.config.memory.prompt);
           setWorkspacePrompt(res.config.memory.workspacePrompt);
           toastSuccess(S.common.saved);
+          onConfigChanged?.();
         })
         .catch((e: unknown) => toastError(apiErrorText(e)));
     });

@@ -45,11 +45,25 @@ import { HttpError } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
 import type { AgentConfigService } from "./agent-config-service.js";
 
-/** Scope directory names: what core's key generator produces, plus the leeway of a hand-made directory. Excludes `.`/`..` and any separator, so the name can never climb out of `memory/`. */
-const SCOPE_KEY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+/** Scope directory names: what core's key generator produces (a safe base may start with `_`), plus the leeway of a hand-made directory. Excludes `.`/`..` and any separator, so the name can never climb out of `memory/`. */
+const SCOPE_KEY_PATTERN = /^[A-Za-z0-9_][A-Za-z0-9._-]*$/;
 
-/** Topic file names: a Markdown file, no leading dot (dotfiles like `.workspace` are the Harness's, not topics). */
-const FILE_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*\.md$/;
+/**
+ * Whether a name is a topic file: any Markdown file that is not a dotfile (`.workspace` is the
+ * Harness's), carries no path separator, and is not the index under any casing — macOS and
+ * Windows resolve `memory.md` to `MEMORY.md`. The model writes these files with the ordinary
+ * file tools, so non-ASCII names are as legitimate as kebab-case ones; the same rule guards
+ * client-supplied names, with containment re-checked after resolution.
+ */
+function isTopicFileName(name: string): boolean {
+  return (
+    name.length > 0 &&
+    !name.startsWith(".") &&
+    !/[/\\]/.test(name) &&
+    name.toLowerCase().endsWith(".md") &&
+    name.toLowerCase() !== MEMORY_INDEX_FILENAME.toLowerCase()
+  );
+}
 
 export class MemoryService {
   constructor(
@@ -141,13 +155,11 @@ export class MemoryService {
     };
   }
 
-  /** Topic files of one scope: Markdown only, minus the index — the `.workspace` marker and any stray directory stay out too. */
+  /** Topic files of one scope: regular Markdown files only — the index, the `.workspace` marker, stray directories and symlinks (dirents that are not regular files) all stay out. */
   private async topicFileNames(dir: string): Promise<string[]> {
     try {
       return (await fs.readdir(dir, { withFileTypes: true }))
-        .filter(
-          (e) => e.isFile() && e.name !== MEMORY_INDEX_FILENAME && FILE_NAME_PATTERN.test(e.name),
-        )
+        .filter((e) => e.isFile() && isTopicFileName(e.name))
         .map((e) => e.name)
         .sort((a, b) => a.localeCompare(b));
     } catch {
@@ -178,18 +190,21 @@ export class MemoryService {
   ): Promise<MemoryFileResponse> {
     const dir = await this.requireScopeDir(projectId, agentId, scopeKey);
     const target = this.resolveFile(dir, fileName);
-    let content: string;
     try {
-      content = await fs.readFile(target, "utf8");
+      // lstat, not stat: a symlink planted among the topic files (the model can create one with
+      // its file tools) must not lead the read outside the Memory directory. A non-regular file
+      // — or one deleted between the calls — is a 404, never a 500.
+      const stat = await fs.lstat(target);
+      if (!stat.isFile()) throw new Error("not a regular file");
+      const content = await fs.readFile(target, "utf8");
+      return {
+        scopeKey,
+        file: this.describe(fileName, content, stat.size, stat.mtime),
+        content,
+      };
     } catch {
       throw new HttpError(404, "memory_file_not_found", `Memory file not found: ${fileName}`);
     }
-    const stat = await fs.stat(target);
-    return {
-      scopeKey,
-      file: this.describe(fileName, content, stat.size, stat.mtime),
-      content,
-    };
   }
 
   /**
@@ -223,9 +238,13 @@ export class MemoryService {
     } catch {
       return;
     }
-    const link = `](${fileName})`;
-    if (!content.includes(link)) return;
-    const kept = content.split("\n").filter((line) => !line.includes(link));
+    // Match the mechanical link forms an index line may use: `](file)`, `](./file)`,
+    // `](<file>)`, `](file "title")`. A prose mention without the link form survives.
+    const escaped = fileName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const link = new RegExp(`\\]\\(\\s*<?(?:\\./)?${escaped}>?\\s*(?:"[^"]*"\\s*)?\\)`);
+    const lines = content.split("\n");
+    const kept = lines.filter((line) => !link.test(line));
+    if (kept.length === lines.length) return;
     await fs.writeFile(indexPath, kept.join("\n"), "utf8");
   }
 
@@ -277,12 +296,39 @@ export class MemoryService {
     const dir = memoryScopeDir(this.root, projectId, agentId, scopeKey);
     if (scopeKey === USER_SCOPE_KEY) {
       await fs.mkdir(dir, { recursive: true });
-      return dir;
+      return this.requireRealScopeDir(projectId, agentId, scopeKey, dir);
     }
     try {
-      if ((await fs.stat(dir)).isDirectory()) return dir;
+      if ((await fs.stat(dir)).isDirectory()) {
+        return this.requireRealScopeDir(projectId, agentId, scopeKey, dir);
+      }
     } catch {
       // Fall through to the 404 below.
+    }
+    throw new HttpError(
+      404,
+      "memory_scope_not_found",
+      `No Memory directory for scope: ${scopeKey}`,
+    );
+  }
+
+  /**
+   * Symlink hardening for the scope directory itself: a scope smuggled in as a symlink (the
+   * model can create one with its file tools) would carry every read and delete outside
+   * `memory/`, so the resolved real path must be exactly `<real memory/>/<scopeKey>` — not a
+   * link's target, wherever it points.
+   */
+  private async requireRealScopeDir(
+    projectId: string,
+    agentId: string,
+    scopeKey: string,
+    dir: string,
+  ): Promise<string> {
+    try {
+      const realBase = await fs.realpath(memoryDir(this.root, projectId, agentId));
+      if ((await fs.realpath(dir)) === path.join(realBase, scopeKey)) return dir;
+    } catch {
+      // Unresolvable path: treat as absent.
     }
     throw new HttpError(
       404,
@@ -297,11 +343,10 @@ export class MemoryService {
    * for containment — belt and braces, since the rule already excludes separators.
    */
   private resolveFile(dir: string, fileName: string): string {
-    if (!FILE_NAME_PATTERN.test(fileName)) {
-      throw badRequest("File name must be a Markdown file (letters, digits, . _ - and .md).");
-    }
-    if (fileName === MEMORY_INDEX_FILENAME) {
-      throw badRequest(`${MEMORY_INDEX_FILENAME} is the scope's index, not a topic file.`);
+    if (!isTopicFileName(fileName)) {
+      throw badRequest(
+        `File name must be a Markdown topic file — no path, no leading dot, and not the ${MEMORY_INDEX_FILENAME} index.`,
+      );
     }
     const target = path.join(dir, fileName);
     const rel = path.relative(dir, target);

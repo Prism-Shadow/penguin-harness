@@ -338,24 +338,60 @@ describe("{{MEMORY}} rendering", () => {
     );
   });
 
-  it("keeps the User half when the config carries no workspace_prompt", async () => {
+  it("falls back to the built-in prompts for a config that predates Memory", async () => {
     const state = await agentState();
-    const noWorkspaceBlock: AgentState = {
+    const { memory: _memory, ...withoutMemory } = state.systemConfig;
+    const legacy: AgentState = { ...state, systemConfig: withoutMemory };
+    // The DTO reports the defaults as effective; rendering must agree, or the one-click
+    // placeholder insert on an old agent would enable a block that expands to nothing.
+    const prompt = assembleSystemPrompt(legacy, undefined, undefined, undefined, bothScopes);
+    expect(prompt).toContain("# Memory");
+    expect(prompt).toContain(USER_LINE);
+    expect(prompt).toContain(WORKSPACE_LINE);
+  });
+
+  it("resolves workspace placeholders anywhere in the block instead of leaking them", async () => {
+    const state = await agentState();
+    const custom: AgentState = {
       ...state,
       systemConfig: {
         ...state.systemConfig,
-        memory: { ...state.systemConfig.memory, workspace_prompt: undefined },
+        memory: { enabled: true, prompt: "P {{MEMORY_DIR}} Q", workspace_prompt: "" },
       },
     };
-    // An Agent whose config predates the Workspace half degrades to User-scope-only rather
-    // than losing Memory altogether.
-    const prompt = assembleSystemPrompt(
-      noWorkspaceBlock,
-      undefined,
-      undefined,
-      undefined,
-      bothScopes,
-    );
+    // In a persistent Workspace a workspace token written into the main prompt gets the value…
+    const withWorkspace = assembleSystemPrompt(custom, undefined, undefined, undefined, bothScopes);
+    expect(withWorkspace).toContain("P /data/memory/my-app-12345678 Q");
+    // …and without one it blanks rather than leaking the literal token.
+    const without = assembleSystemPrompt(custom, undefined, undefined, undefined, {
+      userDir: "/data/memory/user",
+      userIndex: "",
+    });
+    expect(without).not.toContain("{{MEMORY_DIR}}");
+  });
+
+  it("never re-expands template placeholders smuggled into index content", async () => {
+    const state = await agentState();
+    const prompt = assembleSystemPrompt(state, undefined, ["SOME_KEY"], undefined, {
+      userDir: "/data/memory/user",
+      userIndex: "- [x](x.md) — {{VAULT_KEYS}} {{SESSION_ID}}",
+    });
+    // {{MEMORY}} expands last, so the tokens the model wrote stay literal text.
+    expect(prompt).toContain("- [x](x.md) — {{VAULT_KEYS}} {{SESSION_ID}}");
+  });
+
+  it("drops the Workspace half only for an explicitly emptied workspace_prompt", async () => {
+    const state = await agentState();
+    const emptied: AgentState = {
+      ...state,
+      systemConfig: {
+        ...state.systemConfig,
+        memory: { ...state.systemConfig.memory, workspace_prompt: "" },
+      },
+    };
+    // A missing key falls back to the built-in default (see the legacy-config test above);
+    // clearing the field is the deliberate off channel — `??`, not `||`.
+    const prompt = assembleSystemPrompt(emptied, undefined, undefined, undefined, bothScopes);
     expect(prompt).toContain(USER_LINE);
     expect(prompt).not.toContain(WORKSPACE_LINE);
   });
